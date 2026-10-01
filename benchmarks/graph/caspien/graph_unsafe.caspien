@@ -1,0 +1,84 @@
+// Heap graph benchmark (GRAPH_N nodes): a random-valued node set, 4 outgoing edges per node (next in a ring + 3 random), one needle
+// node (value 0xFFFFFFFF), breadth-first search from node 0. UNSAFE variant: unsafe dynarrays, no bounds proofs.
+// Caspien cannot hold a typed node pointer inside a node (recursive structs are rejected), so the graph is stored as parallel
+// arrays (value, dist, edge targets) and the edges are INDICES, not pointers. Prints: reachable maxdepth needledist valuesum.
+import "../../../stdlib/libc.caspien"
+import "../../../stdlib/gt_init.caspien"
+import "../../../stdlib/gt_register.caspien"
+import "../../../stdlib/gt_alive_check.caspien"
+import "../../../stdlib/gt_destruct.caspien"
+
+extern getenv(static imut string) static imut string
+extern atol(static imut string) mut u64
+
+func main() void{
+	unsafe{
+		let n = mut 0
+		n = atol(getenv("GRAPH_N"))
+		let value = mut unsafe dyn:<u64>([])
+		let dist = mut unsafe dyn:<u64>([])
+		let edges = mut unsafe dyn:<u64>([])
+		let queue = mut unsafe dyn:<u64>([])
+		let:<mut u64> zero = mut 0
+		let en = mut (n * 4)
+		value = resize(value, n)
+		dist = resize(dist, n)
+		edges = resize(edges, en)
+		queue = resize(queue, n)
+		let x = mut 12345
+		for i in 0..n{
+			x = bits_and(x * 1664525 + 1013904223, 0xFFFFFFFF)
+			value[i] = x % 16777216
+			dist[i] = 0
+		}
+		let needle = mut (n * 7 / 10)
+		value[needle] = 0xFFFFFFFF
+		for i in 0..n{
+			let base = mut (i * 4)
+			edges[base] = (i + 1) % n
+			x = bits_and(x * 1664525 + 1013904223, 0xFFFFFFFF)
+			edges[base + 1] = x % n
+			x = bits_and(x * 1664525 + 1013904223, 0xFFFFFFFF)
+			edges[base + 2] = x % n
+			x = bits_and(x * 1664525 + 1013904223, 0xFFFFFFFF)
+			edges[base + 3] = x % n
+		}
+		let head = mut 0
+		let tail = mut 0
+		queue[tail] = 0
+		tail += 1
+		dist[0] = 1
+		let maxdist = mut 1
+		let needledist = mut 0
+		let sum = mut 0
+		loop{
+			if head >= tail{
+				break
+			}
+			let u = mut queue[head]
+			head += 1
+			let du = mut dist[u]
+			let vu = mut value[u]
+			sum += vu
+			if vu == 0xFFFFFFFF{
+				needledist = du
+			}
+			if du > maxdist{
+				maxdist = du
+			}
+			let base = mut (u * 4)
+			for k in 0..4{
+				let v = mut edges[base + k]
+				if dist[v] == 0{
+					dist[v] = du + 1
+					queue[tail] = v
+					tail += 1
+				}
+			}
+		}
+		let total = mut (bits_and(sum, 0xFFFFFFFF))
+		let md = mut (maxdist - 1)
+		let nd = mut (needledist - 1)
+		printf("%llu %llu %llu %llu\n", tail, md, nd, total)
+	}
+}

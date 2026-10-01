@@ -1,0 +1,860 @@
+{
+ "program": "graph",
+ "title": "Heap graph search",
+ "n": 2000000,
+ "runs": 3,
+ "builds": 1,
+ "results": [
+  {
+   "label": "C -O0",
+   "group": "bare",
+   "lang": "C",
+   "prec": "",
+   "note": "",
+   "compile_s": 0.14789719800000967,
+   "size_bytes": 16152,
+   "time_s": 0.3735241669996867,
+   "times": [
+    0.3735241669996867,
+    0.40383227199981775,
+    0.4065619160001006
+   ],
+   "rss_kb": 126568,
+   "output": [
+    "2000000",
+    "16",
+    "12",
+    "1597026363"
+   ],
+   "ok": true
+  },
+  {
+   "label": "C -O2 (free)",
+   "group": "bare",
+   "lang": "C",
+   "prec": "",
+   "note": "",
+   "compile_s": 0.07811566400005177,
+   "size_bytes": 16128,
+   "time_s": 0.26286019200006194,
+   "times": [
+    0.2815280800000437,
+    0.3000937530000556,
+    0.26286019200006194
+   ],
+   "rss_kb": 126568,
+   "output": [
+    "2000000",
+    "16",
+    "12",
+    "1597026363"
+   ],
+   "ok": true
+  },
+  {
+   "label": "C -O2 (leak)",
+   "group": "bare",
+   "lang": "C",
+   "prec": "",
+   "note": "",
+   "compile_s": 0.06663927499994315,
+   "size_bytes": 16088,
+   "time_s": 0.26489838299994517,
+   "times": [
+    0.27079058599974815,
+    0.26489838299994517,
+    0.27029044899973087
+   ],
+   "rss_kb": 126696,
+   "output": [
+    "2000000",
+    "16",
+    "12",
+    "1597026363"
+   ],
+   "ok": true
+  },
+  {
+   "label": "C++ -O2 (free)",
+   "group": "bare",
+   "lang": "C++",
+   "prec": "",
+   "note": "",
+   "compile_s": 0.3137707410000985,
+   "size_bytes": 17008,
+   "time_s": 0.2633718349998162,
+   "times": [
+    0.29106113800025923,
+    0.2853630909999083,
+    0.2633718349998162
+   ],
+   "rss_kb": 144172,
+   "output": [
+    "2000000",
+    "16",
+    "12",
+    "1597026363"
+   ],
+   "ok": true
+  },
+  {
+   "label": "C++ -O2 (leak)",
+   "group": "bare",
+   "lang": "C++",
+   "prec": "",
+   "note": "",
+   "compile_s": 0.27891834799993376,
+   "size_bytes": 16816,
+   "time_s": 0.24875584899973546,
+   "times": [
+    0.26719767500026137,
+    0.2579951530001381,
+    0.24875584899973546
+   ],
+   "rss_kb": 128556,
+   "output": [
+    "2000000",
+    "16",
+    "12",
+    "1597026363"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Rust -O (free)",
+   "group": "bare",
+   "lang": "Rust",
+   "prec": "",
+   "note": "",
+   "compile_s": 0.2094206199999462,
+   "size_bytes": 4342496,
+   "time_s": 0.2447912420002467,
+   "times": [
+    0.26226541400001224,
+    0.26035450600011245,
+    0.2447912420002467
+   ],
+   "rss_kb": 127000,
+   "output": [
+    "2000000",
+    "16",
+    "12",
+    "1597026363"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Rust -O (leak)",
+   "group": "bare",
+   "lang": "Rust",
+   "prec": "",
+   "note": "",
+   "compile_s": 0.19291586700001062,
+   "size_bytes": 4342432,
+   "time_s": 0.2300484279999182,
+   "times": [
+    0.24634996900022088,
+    0.23663787599980424,
+    0.2300484279999182
+   ],
+   "rss_kb": 126964,
+   "output": [
+    "2000000",
+    "16",
+    "12",
+    "1597026363"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Go",
+   "group": "bare",
+   "lang": "Go",
+   "prec": "",
+   "note": "",
+   "compile_s": 6.13188030099991,
+   "size_bytes": 2231052,
+   "time_s": 0.3665460910001457,
+   "times": [
+    0.3736851129997376,
+    0.3963797629999135,
+    0.3665460910001457
+   ],
+   "rss_kb": 131472,
+   "output": [
+    "2000000",
+    "16",
+    "12",
+    "1597026363"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Java",
+   "group": "vm",
+   "lang": "Java",
+   "prec": "",
+   "note": "size = bin/java + lib/ + conf/ of the JRE plus the class file",
+   "compile_s": 0.6826595999996243,
+   "size_bytes": 212765936,
+   "time_s": 0.5515707159997874,
+   "times": [
+    0.5515707159997874,
+    0.5985560209996947,
+    0.6490826019999076
+   ],
+   "rss_kb": 162056,
+   "output": [
+    "2000000",
+    "16",
+    "12",
+    "1597026363"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Node",
+   "group": "js",
+   "lang": "JavaScript",
+   "prec": "",
+   "note": "size = node binary + script",
+   "compile_s": 0.0,
+   "size_bytes": 124680838,
+   "time_s": 2.737753213999895,
+   "times": [
+    2.742370590000064,
+    2.737753213999895,
+    2.7389786009998716
+   ],
+   "rss_kb": 297572,
+   "output": [
+    "2000000",
+    "16",
+    "12",
+    "1597026363"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Bun",
+   "group": "js",
+   "lang": "JavaScript",
+   "prec": "",
+   "note": "size = bun binary + script",
+   "compile_s": 0.0,
+   "size_bytes": 101815998,
+   "time_s": 0.7814516579996962,
+   "times": [
+    0.7901558789999399,
+    0.9947616750000634,
+    0.7814516579996962
+   ],
+   "rss_kb": 220208,
+   "output": [
+    "2000000",
+    "16",
+    "12",
+    "1597026363"
+   ],
+   "ok": true
+  },
+  {
+   "label": "LuaJIT",
+   "group": "luajit",
+   "lang": "LuaJIT",
+   "prec": "",
+   "note": "size = luajit binary + script (tracing JIT)",
+   "compile_s": 0.0,
+   "size_bytes": 605645,
+   "time_s": 2.094144516000142,
+   "times": [
+    2.6680059069999515,
+    2.094144516000142,
+    2.486089704999813
+   ],
+   "rss_kb": 676256,
+   "output": [
+    "2000000",
+    "16",
+    "12",
+    "1597026363"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Fortran",
+   "group": "bare",
+   "lang": "Fortran",
+   "prec": "",
+   "note": "",
+   "compile_s": 0.10026669099988794,
+   "size_bytes": 17432,
+   "time_s": 0.32694280399982745,
+   "times": [
+    0.32694280399982745,
+    0.3611971969999104,
+    0.33609324999997625
+   ],
+   "rss_kb": 158592,
+   "output": [
+    "2000000",
+    "16",
+    "12",
+    "1597026363"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Objective-C",
+   "group": "bare",
+   "lang": "Objective-C",
+   "prec": "",
+   "note": "GNU libobjc runtime, gcc -O2",
+   "compile_s": 0.09310493500015582,
+   "size_bytes": 26352,
+   "time_s": 0.3423214250001365,
+   "times": [
+    0.4127691109997613,
+    0.3680269120000048,
+    0.3423214250001365
+   ],
+   "rss_kb": 158112,
+   "output": [
+    "2000000",
+    "16",
+    "12",
+    "1597026363"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Odin",
+   "group": "bare",
+   "lang": "Odin",
+   "prec": "",
+   "note": "-o:speed, bounds checks on (Odin default)",
+   "compile_s": 2.9997896739996577,
+   "size_bytes": 164728,
+   "time_s": 0.29410580300009315,
+   "times": [
+    0.44583693800041146,
+    0.29410580300009315,
+    0.30303626900013114
+   ],
+   "rss_kb": 157968,
+   "output": [
+    "2000000",
+    "16",
+    "12",
+    "1597026363"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Zig",
+   "group": "bare",
+   "lang": "Zig",
+   "prec": "",
+   "note": "ReleaseFast (no safety checks), cold cache build",
+   "compile_s": 23.41580702400006,
+   "size_bytes": 3787936,
+   "time_s": 0.27882576499996503,
+   "times": [
+    0.326150785000209,
+    0.2959989249998216,
+    0.27882576499996503
+   ],
+   "rss_kb": 156836,
+   "output": [
+    "2000000",
+    "16",
+    "12",
+    "1597026363"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Chapel",
+   "group": "bare",
+   "lang": "Chapel",
+   "prec": "",
+   "note": "chpl --fast",
+   "compile_s": 8.832955435999793,
+   "size_bytes": 2034472,
+   "time_s": 0.28009327099971415,
+   "times": [
+    0.2968715010001688,
+    0.28009327099971415,
+    0.3360772370001541
+   ],
+   "rss_kb": 133820,
+   "output": [
+    "2000000",
+    "16",
+    "12",
+    "1597026363"
+   ],
+   "ok": true
+  },
+  {
+   "label": "D (LDC)",
+   "group": "native",
+   "lang": "D (LDC)",
+   "prec": "",
+   "note": "ldc2 -O2 -release (bounds checks only in @safe code)",
+   "compile_s": 0.43557308100025693,
+   "size_bytes": 46760,
+   "time_s": 0.3757941369999571,
+   "times": [
+    0.3757941369999571,
+    0.37863686399987273,
+    0.38573159100042176
+   ],
+   "rss_kb": 166848,
+   "output": [
+    "2000000",
+    "16",
+    "12",
+    "1597026363"
+   ],
+   "ok": true
+  },
+  {
+   "label": "D (GDC)",
+   "group": "native",
+   "lang": "D (GDC)",
+   "prec": "",
+   "note": "gdc -O2 -frelease",
+   "compile_s": 0.5168096510001305,
+   "size_bytes": 41304,
+   "time_s": 0.48417097899982764,
+   "times": [
+    0.48702828199975556,
+    0.48417097899982764,
+    0.48954688899993926
+   ],
+   "rss_kb": 168032,
+   "output": [
+    "2000000",
+    "16",
+    "12",
+    "1597026363"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Nim",
+   "group": "native",
+   "lang": "Nim",
+   "prec": "",
+   "note": "nim c -d:release (bounds checks on), default memory manager",
+   "compile_s": 2.511223921000237,
+   "size_bytes": 104720,
+   "time_s": 1.1719301690000066,
+   "times": [
+    1.2480687160000343,
+    1.1719301690000066,
+    1.318795246999798
+   ],
+   "rss_kb": 225260,
+   "output": [
+    "2000000",
+    "16",
+    "12",
+    "1597026363"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Crystal",
+   "group": "native",
+   "lang": "Crystal",
+   "prec": "",
+   "note": "crystal build --release, Boehm GC",
+   "compile_s": 10.231358201000148,
+   "size_bytes": 749064,
+   "time_s": 0.39359429799969803,
+   "times": [
+    0.39359429799969803,
+    0.40606436000007307,
+    0.44893442700004016
+   ],
+   "rss_kb": 169960,
+   "output": [
+    "2000000",
+    "16",
+    "12",
+    "1597026363"
+   ],
+   "ok": true
+  },
+  {
+   "label": "OCaml",
+   "group": "native",
+   "lang": "OCaml",
+   "prec": "",
+   "note": "ocamlopt -inline 200 (no flambda: -O3 is accepted and ignored)",
+   "compile_s": 0.11580516200001512,
+   "size_bytes": 1117416,
+   "time_s": 0.7853163390000191,
+   "times": [
+    0.8167309269997531,
+    0.8115478800000346,
+    0.7853163390000191
+   ],
+   "rss_kb": 150948,
+   "output": [
+    "2000000",
+    "16",
+    "12",
+    "1597026363"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Swift",
+   "group": "native",
+   "lang": "Swift",
+   "prec": "",
+   "note": "swiftc -O -static-stdlib (overflow and bounds checks on)",
+   "compile_s": 1.033231024000088,
+   "size_bytes": 8639472,
+   "time_s": 1.8543714770003135,
+   "times": [
+    1.8708340739999585,
+    2.0410646129998895,
+    1.8543714770003135
+   ],
+   "rss_kb": 163892,
+   "output": [
+    "2000000",
+    "16",
+    "12",
+    "1597026363"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Codon",
+   "group": "native",
+   "lang": "Codon",
+   "prec": "",
+   "note": "codon build -release (Python syntax, compiled with LLVM)",
+   "compile_s": 2.7916767060000893,
+   "size_bytes": 16792,
+   "time_s": 0.5213148949997048,
+   "times": [
+    0.5698028339998018,
+    0.5265907580001112,
+    0.5213148949997048
+   ],
+   "rss_kb": 172672,
+   "output": [
+    "2000000",
+    "16",
+    "12",
+    "1597026363"
+   ],
+   "ok": true
+  },
+  {
+   "label": "C#",
+   "group": "vm",
+   "lang": "C#",
+   "prec": "",
+   "note": ".NET 8 JIT (tiered, PGO), size = shared runtime dir + bench.dll",
+   "compile_s": 4.102010832999895,
+   "size_bytes": 69549699,
+   "time_s": 0.5248774520000552,
+   "times": [
+    0.5248774520000552,
+    0.5266560580002988,
+    0.5928316279996579
+   ],
+   "rss_kb": 167824,
+   "output": [
+    "2000000",
+    "16",
+    "12",
+    "1597026363"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Kotlin",
+   "group": "vm",
+   "lang": "Kotlin",
+   "prec": "",
+   "note": "kotlinc 2.0.21 on the JVM, size = JRE + jar (jar includes the Kotlin runtime)",
+   "compile_s": 6.7300326019999375,
+   "size_bytes": 217591916,
+   "time_s": 0.6257479379996767,
+   "times": [
+    0.6302057829998375,
+    0.6257479379996767,
+    0.6791888059997291
+   ],
+   "rss_kb": 159828,
+   "output": [
+    "2000000",
+    "16",
+    "12",
+    "1597026363"
+   ],
+   "ok": true
+  },
+  {
+   "label": "WebAssembly",
+   "group": "wasm",
+   "lang": "WebAssembly",
+   "prec": "",
+   "note": "the C program built with zig cc -target wasm32-wasi -O2, ahead-of-time compiled by wasmtime 25 (Cranelift); size = wasmtime binary + .wasm; wasm32 address space",
+   "compile_s": 27.816268858999592,
+   "size_bytes": 41832132,
+   "time_s": 0.261668851000195,
+   "times": [
+    0.27733698000020013,
+    0.261668851000195,
+    0.2723644470002
+   ],
+   "rss_kb": 156692,
+   "output": [
+    "2000000",
+    "16",
+    "12",
+    "1597026363"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Caspien naive (DynamicArray) \u00b7 off",
+   "group": "caspien",
+   "lang": "Caspien",
+   "prec": "",
+   "note": "stdlib DynamicArray<u64> x4 (index-based edges), get/set under bounds proofs; optimisations off",
+   "compile_s": 1.2726808530001108,
+   "size_bytes": 49792,
+   "time_s": 1.5155342959997142,
+   "times": [
+    1.5155342959997142,
+    1.5469504499997129,
+    1.518636466999851
+   ],
+   "rss_kb": 111040,
+   "output": [
+    "2000000",
+    "16",
+    "12",
+    "1597026363"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Caspien naive (DynamicArray) \u00b7 full",
+   "group": "caspien",
+   "lang": "Caspien",
+   "prec": "",
+   "note": "stdlib DynamicArray<u64> x4 (index-based edges), get/set under bounds proofs; optimisations full",
+   "compile_s": 1.7199110849996941,
+   "size_bytes": 38488,
+   "time_s": 0.6564055449998705,
+   "times": [
+    0.6638193399999182,
+    0.6769204250003895,
+    0.6564055449998705
+   ],
+   "rss_kb": 111096,
+   "output": [
+    "2000000",
+    "16",
+    "12",
+    "1597026363"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Caspien optimized safe \u00b7 off",
+   "group": "caspien",
+   "lang": "Caspien",
+   "prec": "",
+   "note": "safe dynarrays, bounds proofs; optimisations off",
+   "compile_s": 1.1589122239997778,
+   "size_bytes": 28168,
+   "time_s": 0.9119642539999404,
+   "times": [
+    0.9119642539999404,
+    1.0372089429997686,
+    1.0036453570000958
+   ],
+   "rss_kb": 111088,
+   "output": [
+    "2000000",
+    "16",
+    "12",
+    "1597026363"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Caspien optimized safe \u00b7 full",
+   "group": "caspien",
+   "lang": "Caspien",
+   "prec": "",
+   "note": "safe dynarrays, bounds proofs; optimisations full",
+   "compile_s": 1.4498099209999964,
+   "size_bytes": 28872,
+   "time_s": 0.327430099999674,
+   "times": [
+    0.37446564999982,
+    0.327430099999674,
+    0.33913833700034957
+   ],
+   "rss_kb": 111088,
+   "output": [
+    "2000000",
+    "16",
+    "12",
+    "1597026363"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Caspien optimized unsafe \u00b7 off",
+   "group": "caspien",
+   "lang": "Caspien",
+   "prec": "",
+   "note": "unsafe dynarrays, no checks; optimisations off",
+   "compile_s": 1.094765415999973,
+   "size_bytes": 22728,
+   "time_s": 0.6093003600003613,
+   "times": [
+    0.6825164419997236,
+    0.662860744000227,
+    0.6093003600003613
+   ],
+   "rss_kb": 111084,
+   "output": [
+    "2000000",
+    "16",
+    "12",
+    "1597026363"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Caspien optimized unsafe \u00b7 full",
+   "group": "caspien",
+   "lang": "Caspien",
+   "prec": "",
+   "note": "unsafe dynarrays, no checks; optimisations full",
+   "compile_s": 1.2801750300000094,
+   "size_bytes": 22720,
+   "time_s": 0.3552943340000638,
+   "times": [
+    0.36831542800018724,
+    0.3689304779995837,
+    0.3552943340000638
+   ],
+   "rss_kb": 111084,
+   "output": [
+    "2000000",
+    "16",
+    "12",
+    "1597026363"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Caspien struct nodes, safe \u00b7 off",
+   "group": "caspien",
+   "lang": "Caspien",
+   "prec": "",
+   "note": "ONE safe dynarray of Node structs (value, dist, 4 edge indices), bounds proofs; optimisations off",
+   "compile_s": 1.0063035640000635,
+   "size_bytes": 27912,
+   "time_s": 0.9165981999999531,
+   "times": [
+    0.9522351729997354,
+    0.9165981999999531,
+    0.9980923640000583
+   ],
+   "rss_kb": 126704,
+   "output": [
+    "2000000",
+    "16",
+    "12",
+    "1597026363"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Caspien struct nodes, safe \u00b7 full",
+   "group": "caspien",
+   "lang": "Caspien",
+   "prec": "",
+   "note": "ONE safe dynarray of Node structs (value, dist, 4 edge indices), bounds proofs; optimisations full",
+   "compile_s": 1.4047174970000924,
+   "size_bytes": 28024,
+   "time_s": 0.699168651999571,
+   "times": [
+    0.699168651999571,
+    0.7029189800000495,
+    0.7608962000003885
+   ],
+   "rss_kb": 126704,
+   "output": [
+    "2000000",
+    "16",
+    "12",
+    "1597026363"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Caspien struct nodes, unsafe \u00b7 off",
+   "group": "caspien",
+   "lang": "Caspien",
+   "prec": "",
+   "note": "ONE unsafe dynarray of Node structs, no checks; optimisations off",
+   "compile_s": 1.0452665640000305,
+   "size_bytes": 26872,
+   "time_s": 0.7220268329997452,
+   "times": [
+    0.7488739800000985,
+    0.740044522000062,
+    0.7220268329997452
+   ],
+   "rss_kb": 126704,
+   "output": [
+    "2000000",
+    "16",
+    "12",
+    "1597026363"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Caspien struct nodes, unsafe \u00b7 full",
+   "group": "caspien",
+   "lang": "Caspien",
+   "prec": "",
+   "note": "ONE unsafe dynarray of Node structs, no checks; optimisations full",
+   "compile_s": 1.2662229310003568,
+   "size_bytes": 22680,
+   "time_s": 0.6279374139999163,
+   "times": [
+    0.6435965559999204,
+    0.6279374139999163,
+    0.7490382699998008
+   ],
+   "rss_kb": 126700,
+   "output": [
+    "2000000",
+    "16",
+    "12",
+    "1597026363"
+   ],
+   "ok": true
+  }
+ ]
+}

@@ -1,0 +1,134 @@
+// Heap graph benchmark (GRAPH_N nodes), NAIVE variant: the stdlib DynamicArray<u64> class (get/set methods,
+// each under its bounds proof) instead of bare dynarrays. Same algorithm and index-based edges as graph_unsafe (see there for why edges are indices).
+// Prints: reachable maxdepth needledist valuesum.
+import "../../../stdlib/libc.caspien"
+import "../../../stdlib/dynamic_array.caspien"
+import "../../../stdlib/gt_init.caspien"
+import "../../../stdlib/gt_register.caspien"
+import "../../../stdlib/gt_alive_check.caspien"
+import "../../../stdlib/gt_destruct.caspien"
+
+extern getenv(static imut string) static imut string
+extern atol(static imut string) mut u64
+
+func main() void{
+	?catch(e){ return }
+	unsafe{
+		let n = mut 0
+		n = atol(getenv("GRAPH_N"))
+		let:<mut u64> zero = mut 0
+		let en = mut (n * 4)
+		let rv = mut ? dyn:<u64>([])
+		rv = ? resize(rv, n, zero)
+		let value = mut ? new DynamicArray:<u64>(rv)
+		let rd = mut ? dyn:<u64>([])
+		rd = ? resize(rd, n, zero)
+		let dist = mut ? new DynamicArray:<u64>(rd)
+		let re = mut ? dyn:<u64>([])
+		re = ? resize(re, en, zero)
+		let edges = mut ? new DynamicArray:<u64>(re)
+		let rq = mut ? dyn:<u64>([])
+		rq = ? resize(rq, n, zero)
+		let queue = mut ? new DynamicArray:<u64>(rq)
+		let x = mut 12345
+		for i in 0..n{
+			x = bits_and(x * 1664525 + 1013904223, 0xFFFFFFFF)
+			match i into value.backing{
+				value.set(value, i, x % 16777216)
+			}
+		}
+		let needle = mut (n * 7 / 10)
+		match needle into value.backing{
+			value.set(value, needle, 0xFFFFFFFF)
+		}
+		for i in 0..n{
+			let base = mut (i * 4)
+			let b1 = mut (base + 1)
+			let b2 = mut (base + 2)
+			let b3 = mut (base + 3)
+			x = bits_and(x * 1664525 + 1013904223, 0xFFFFFFFF)
+			let r1 = mut (x % n)
+			x = bits_and(x * 1664525 + 1013904223, 0xFFFFFFFF)
+			let r2 = mut (x % n)
+			x = bits_and(x * 1664525 + 1013904223, 0xFFFFFFFF)
+			let r3 = mut (x % n)
+			let nxt = mut ((i + 1) % n)
+			match base into edges.backing{
+				edges.set(edges, base, nxt)
+			}
+			match b1 into edges.backing{
+				edges.set(edges, b1, r1)
+			}
+			match b2 into edges.backing{
+				edges.set(edges, b2, r2)
+			}
+			match b3 into edges.backing{
+				edges.set(edges, b3, r3)
+			}
+		}
+		let head = mut 0
+		let tail = mut 0
+		let zi = mut 0
+		match zi into queue.backing{
+			queue.set(queue, zi, 0)
+		}
+		match zi into dist.backing{
+			dist.set(dist, zi, 1)
+		}
+		tail += 1
+		let maxdist = mut 1
+		let needledist = mut 0
+		let sum = mut 0
+		loop{
+			if head >= tail{
+				break
+			}
+			let u = mut 0
+			match head in queue.backing{
+				u = queue.get(queue, head)
+			}
+			head += 1
+			let du = mut 0
+			let vu = mut 0
+			match u in dist.backing{
+				du = dist.get(dist, u)
+			}
+			match u in value.backing{
+				vu = value.get(value, u)
+			}
+			sum += vu
+			if vu == 0xFFFFFFFF{
+				needledist = du
+			}
+			if du > maxdist{
+				maxdist = du
+			}
+			let base = mut (u * 4)
+			for k in 0..4{
+				let ek = mut (base + k)
+				let v = mut 0
+				match ek in edges.backing{
+					v = edges.get(edges, ek)
+				}
+				let dv = mut 0
+				match v in dist.backing{
+					dv = dist.get(dist, v)
+				}
+				if dv == 0{
+					let nd1 = mut (du + 1)
+					match v into dist.backing{
+						dist.set(dist, v, nd1)
+					}
+					match tail into queue.backing{
+						queue.set(queue, tail, v)
+					}
+					tail += 1
+				}
+			}
+		}
+		let total = mut (bits_and(sum, 0xFFFFFFFF))
+		let md = mut (maxdist - 1)
+		let nd = mut (needledist - 1)
+		printf("%llu %llu %llu %llu\n", tail, md, nd, total)
+	}
+}

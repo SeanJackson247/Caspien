@@ -1,0 +1,164 @@
+// Heap graph benchmark (GRAPH_N nodes), STRUCT + SAFE variant: ONE safe dynarray of Node structs, every element access under a bounds proof
+// (match i in/into nodes). Same graph, RNG and search as graph_safe (parallel arrays). Prints: reachable maxdepth needledist valuesum.
+import "../../../stdlib/libc.caspien"
+import "../../../stdlib/gt_init.caspien"
+import "../../../stdlib/gt_register.caspien"
+import "../../../stdlib/gt_alive_check.caspien"
+import "../../../stdlib/gt_destruct.caspien"
+
+extern getenv(static imut string) static imut string
+extern atol(static imut string) mut u64
+
+// One node = value, BFS distance and four outgoing edges (indices of other nodes: a recursive struct is rejected, so no node pointers).
+struct Node{
+	@pub{ value: mut u64 }
+	@pub{ dist: mut u64 }
+	@pub{ e0: mut u64 }
+	@pub{ e1: mut u64 }
+	@pub{ e2: mut u64 }
+	@pub{ e3: mut u64 }
+}
+
+func main() void{
+	?catch(e){ return }
+	unsafe{
+		let n = mut 0
+		n = atol(getenv("GRAPH_N"))
+		let nodes = mut ? dyn:<Node>([])
+		let queue = mut ? dyn:<u64>([])
+		let zn = mut Node{value= 0, dist= 0, e0= 0, e1= 0, e2= 0, e3= 0}
+		let:<mut u64> zero = mut 0
+		nodes = ? resize(nodes, n, zn)
+		queue = ? resize(queue, n, zero)
+		let x = mut 12345
+		for i in 0..n{
+			x = bits_and(x * 1664525 + 1013904223, 0xFFFFFFFF)
+			match i into nodes{
+				nodes[i].value = x % 16777216
+			}
+		}
+		let needle = mut (n * 7 / 10)
+		match needle into nodes{
+			nodes[needle].value = 0xFFFFFFFF
+		}
+		for i in 0..n{
+			let nxt = mut ((i + 1) % n)
+			x = bits_and(x * 1664525 + 1013904223, 0xFFFFFFFF)
+			let r1 = mut (x % n)
+			x = bits_and(x * 1664525 + 1013904223, 0xFFFFFFFF)
+			let r2 = mut (x % n)
+			x = bits_and(x * 1664525 + 1013904223, 0xFFFFFFFF)
+			let r3 = mut (x % n)
+			match i into nodes{
+				nodes[i].e0 = nxt
+				nodes[i].e1 = r1
+				nodes[i].e2 = r2
+				nodes[i].e3 = r3
+			}
+		}
+		let head = mut 0
+		let tail = mut 0
+		let zi = mut 0
+		match zi into queue{
+			queue[zi] = 0
+		}
+		match zi into nodes{
+			nodes[zi].dist = 1
+		}
+		tail += 1
+		let maxdist = mut 1
+		let needledist = mut 0
+		let sum = mut 0
+		loop{
+			if head >= tail{
+				break
+			}
+			let u = mut 0
+			match head in queue{
+				u = queue[head]
+			}
+			head += 1
+			let du = mut 0
+			let vu = mut 0
+			let e0 = mut 0
+			let e1 = mut 0
+			let e2 = mut 0
+			let e3 = mut 0
+			match u in nodes{
+				du = nodes[u].dist
+				vu = nodes[u].value
+				e0 = nodes[u].e0
+				e1 = nodes[u].e1
+				e2 = nodes[u].e2
+				e3 = nodes[u].e3
+			}
+			sum += vu
+			if vu == 0xFFFFFFFF{
+				needledist = du
+			}
+			if du > maxdist{
+				maxdist = du
+			}
+			let dv_e0 = mut 0
+			match e0 in nodes{
+				dv_e0 = nodes[e0].dist
+			}
+			if dv_e0 == 0{
+				let nd_e0 = mut (du + 1)
+				match e0 into nodes{
+					nodes[e0].dist = nd_e0
+				}
+				match tail into queue{
+					queue[tail] = e0
+				}
+				tail += 1
+			}
+			let dv_e1 = mut 0
+			match e1 in nodes{
+				dv_e1 = nodes[e1].dist
+			}
+			if dv_e1 == 0{
+				let nd_e1 = mut (du + 1)
+				match e1 into nodes{
+					nodes[e1].dist = nd_e1
+				}
+				match tail into queue{
+					queue[tail] = e1
+				}
+				tail += 1
+			}
+			let dv_e2 = mut 0
+			match e2 in nodes{
+				dv_e2 = nodes[e2].dist
+			}
+			if dv_e2 == 0{
+				let nd_e2 = mut (du + 1)
+				match e2 into nodes{
+					nodes[e2].dist = nd_e2
+				}
+				match tail into queue{
+					queue[tail] = e2
+				}
+				tail += 1
+			}
+			let dv_e3 = mut 0
+			match e3 in nodes{
+				dv_e3 = nodes[e3].dist
+			}
+			if dv_e3 == 0{
+				let nd_e3 = mut (du + 1)
+				match e3 into nodes{
+					nodes[e3].dist = nd_e3
+				}
+				match tail into queue{
+					queue[tail] = e3
+				}
+				tail += 1
+			}
+		}
+		let total = mut (bits_and(sum, 0xFFFFFFFF))
+		let md = mut (maxdist - 1)
+		let nd = mut (needledist - 1)
+		printf("%llu %llu %llu %llu\n", tail, md, nd, total)
+	}
+}
