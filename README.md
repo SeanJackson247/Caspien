@@ -300,10 +300,10 @@ The safe shape is the idiomatic one: `make_safe_args` copies every argument, so 
 pointer into the C runtime's memory. (`docs/examples/07_main_c_args.caspien` and
 `08_main_safe_args.caspien` are runnable versions.)
 
-A program that never terminates is written as an **event loop**. Three decorators work together, and the
+A program that might never terminate is written as an **event loop**. It can still end if the loop is broken or an error is thrown. Three decorators work together, and the
 compiler checks that each appears exactly once. `main` is marked `@with_tick` and builds the initial state,
 a heap struct. `@tick` marks a function that takes the state and returns it. `@event_loop` marks the real
-entry point, which calls `main` once and then calls `tick` forever. It is the only function allowed a bare
+entry point, which calls `main` once and then calls `tick` until the loop ends. It is the only function allowed a bare
 `loop{}` outside `unsafe`.
 
 ```rust

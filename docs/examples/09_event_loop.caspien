@@ -1,10 +1,10 @@
-// A program that never terminates: `@with_tick` on `main`, an `@event_loop` entry point,
-// and a `@tick` handler. `main` builds the state, the loop hands it to `tick` forever.
+// A program that might never terminate (it ends only if the loop is broken or an error is thrown): `@with_tick` on `main`, an `@event_loop` entry point,
+// and a `@tick` handler. `main` builds the state, the loop hands it to `tick` repeatedly.
 // Each tick still runs to completion (the total-slice rule); only the loop is unbounded.
 // Run it with `timeout 1 ./09 | head -3`   Expected output: tick 1, tick 2, tick 3
 import "../../stdlib/libc.caspien"
 
-// stdout is block-buffered when piped, so flush each tick to see output from a loop that never ends.
+// stdout is block-buffered when piped, so flush each tick to see output from a long-running loop.
 extern fflush(raw mut u8) void
 import "../../stdlib/gt_init.caspien"
 import "../../stdlib/gt_register.caspien"
