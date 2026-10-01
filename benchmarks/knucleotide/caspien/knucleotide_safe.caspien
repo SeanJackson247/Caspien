@@ -1,0 +1,313 @@
+// k-nucleotide benchmark, SAFE variant: hand-written open-addressing hash table in two safe dynarrays (keys, counts), every element access under a bounds proof (match i in/into array).
+// Same sequence, k-mers and output as knucleotide.c (read its header): N = KNUC_N bases from the benchmarks-game LCG, the packed 2-bit
+// k-mers for k = 1,2,3,4,6,12 are counted in a hash map, prints 18 numbers (6 distinct counts, then 12 k-mer counts).
+// The table is linear probing with a multiplicative hash (key+1, 0 = empty), capacity a power of two >= 2 x min(4^k, N-k+1, 139968); the two arrays are allocated ONCE for the largest pass (2 x min(N, 139968)) and cleared per pass.
+import "../../../stdlib/libc.caspien"
+import "../../../stdlib/gt_init.caspien"
+import "../../../stdlib/gt_register.caspien"
+import "../../../stdlib/gt_alive_check.caspien"
+import "../../../stdlib/gt_destruct.caspien"
+extern getenv(static imut string) static imut string
+extern atol(static imut string) mut u64
+
+func main() void{
+	?catch(e){ return }
+	unsafe{
+		let n = mut 0
+		n = atol(getenv("KNUC_N"))
+		let:<mut u8> zb = mut 0
+		let:<mut u64> zw = mut 0
+		let seq = mut ? dyn:<u8>([])
+		seq = ? resize(seq, (n + 1), zb)
+		let qk = mut ? dyn:<u64>([])
+		qk = ? resize(qk, 12, zw)
+		let qv = mut ? dyn:<u64>([])
+		qv = ? resize(qv, 12, zw)
+		let res = mut ? dyn:<u64>([])
+		res = ? resize(res, 18, zw)
+		let last = mut 42
+		for i in 0..n{
+			last = (last * 3877 + 29573) % 139968
+			let b = mut 3
+			if last < 97767{
+				b = 2
+			}
+			if last < 70117{
+				b = 1
+			}
+			if last < 42404{
+				b = 0
+			}
+			let:<mut u8> sb = mut 0
+			sb = wrap:<u8>(b)
+			match i into seq{
+				seq[i] = sb
+			}
+		}
+		let m12 = mut 12
+		if n < 12{
+			m12 = n
+		}
+		let first12 = mut 0
+		for i in 0..m12{
+			let sv = mut 0
+			match i in seq{
+				sv = seq[i] as u64
+			}
+			first12 = first12 * 4 + sv
+		}
+		let qi = mut 0
+		qi = 0
+		match qi into qk{
+			qk[qi] = 1
+		}
+		match qi into qv{
+			qv[qi] = 0
+		}
+		qi = 1
+		match qi into qk{
+			qk[qi] = 1
+		}
+		match qi into qv{
+			qv[qi] = 1
+		}
+		qi = 2
+		match qi into qk{
+			qk[qi] = 1
+		}
+		match qi into qv{
+			qv[qi] = 2
+		}
+		qi = 3
+		match qi into qk{
+			qk[qi] = 1
+		}
+		match qi into qv{
+			qv[qi] = 3
+		}
+		qi = 4
+		match qi into qk{
+			qk[qi] = 2
+		}
+		match qi into qv{
+			qv[qi] = 10
+		}
+		qi = 5
+		match qi into qk{
+			qk[qi] = 2
+		}
+		match qi into qv{
+			qv[qi] = 11
+		}
+		qi = 6
+		match qi into qk{
+			qk[qi] = 2
+		}
+		match qi into qv{
+			qv[qi] = 0
+		}
+		qi = 7
+		match qi into qk{
+			qk[qi] = 3
+		}
+		match qi into qv{
+			qv[qi] = 43
+		}
+		qi = 8
+		match qi into qk{
+			qk[qi] = 4
+		}
+		match qi into qv{
+			qv[qi] = 172
+		}
+		qi = 9
+		match qi into qk{
+			qk[qi] = 6
+		}
+		match qi into qv{
+			qv[qi] = 2767
+		}
+		qi = 10
+		match qi into qk{
+			qk[qi] = 12
+		}
+		match qi into qv{
+			qv[qi] = 11337487
+		}
+		qi = 11
+		match qi into qk{
+			qk[qi] = 12
+		}
+		match qi into qv{
+			qv[qi] = first12
+		}
+		let capmax = mut 2
+		let maxd12 = mut 139968
+		if n < maxd12{
+			maxd12 = n
+		}
+		let tw = mut (2 * maxd12)
+		loop{
+			if capmax >= tw{
+				break
+			}
+			capmax = capmax * 2
+		}
+		let tk = mut ? dyn:<u64>([])
+		tk = ? resize(tk, capmax, zw)
+		let tc = mut ? dyn:<u64>([])
+		tc = ? resize(tc, capmax, zw)
+		let nq = mut 0
+		for ki in 0..6{
+			let k = mut 1
+			if ki == 1{
+				k = 2
+			}
+			if ki == 2{
+				k = 3
+			}
+			if ki == 3{
+				k = 4
+			}
+			if ki == 4{
+				k = 6
+			}
+			if ki == 5{
+				k = 12
+			}
+			let maxd = mut 1
+			maxd = bits_left(maxd, 2 * k)
+			let win = mut 0
+			if n >= k{
+				win = n - k + 1
+			}
+			if win < maxd{
+				maxd = win
+			}
+			if maxd > 139968{
+				maxd = 139968
+			}
+			let two = mut (2 * maxd)
+			let sh = mut (64 - 2 * k)
+			let nd = mut 0
+			let key = mut 0
+			let kmask = mut (64 - 2 * k)
+			let cap = mut 2
+			let bits = mut 1
+			loop{
+				if cap >= two{
+					break
+				}
+				cap = cap * 2
+				bits += 1
+			}
+			let hsh = mut (64 - bits)
+			for z in 0..cap{
+				match z into tk{
+					tk[z] = 0
+				}
+				match z into tc{
+					tc[z] = 0
+				}
+			}
+			for i in 0..n{
+				let sv = mut 0
+				match i in seq{
+					sv = seq[i] as u64
+				}
+				key = bits_right(bits_left(key * 4 + sv, kmask), kmask)
+				let ik = mut (i + 1)
+				if ik >= k{
+					let kk = mut (key + 1)
+					let hh = mut bits_right(kk * 11400714819323198485, hsh)
+					loop{
+						let tv = mut 0
+						match hh in tk{
+							tv = tk[hh]
+						}
+						if tv == 0{
+							match hh into tk{
+								tk[hh] = kk
+							}
+							match hh into tc{
+								tc[hh] = 1
+							}
+							nd += 1
+							break
+						}
+						if tv == kk{
+							let cv = mut 0
+							match hh in tc{
+								cv = tc[hh]
+							}
+							cv += 1
+							match hh into tc{
+								tc[hh] = cv
+							}
+							break
+						}
+						hh += 1
+						if hh == cap{
+							hh = 0
+						}
+					}
+				}
+			}
+			match ki into res{
+				res[ki] = nd
+			}
+			for q in 0..12{
+				let qkv = mut 0
+				match q in qk{
+					qkv = qk[q]
+				}
+				if qkv == k{
+					let qvv = mut 0
+					match q in qv{
+						qvv = qv[q]
+					}
+					let found = mut 0
+					let kq = mut (qvv + 1)
+					let hq = mut bits_right(kq * 11400714819323198485, hsh)
+					loop{
+						let tq = mut 0
+						match hq in tk{
+							tq = tk[hq]
+						}
+						if tq == 0{
+							break
+						}
+						if tq == kq{
+							match hq in tc{
+								found = tc[hq]
+							}
+							break
+						}
+						hq += 1
+						if hq == cap{
+							hq = 0
+						}
+					}
+					let ri = mut (6 + nq)
+					match ri into res{
+						res[ri] = found
+					}
+					nq += 1
+				}
+			}
+		}
+		for i in 0..18{
+			let pv = mut 0
+			match i in res{
+				pv = res[i]
+			}
+			if i == 0{
+				printf("%llu", pv)
+			}
+			else{
+				printf(" %llu", pv)
+			}
+		}
+		printf("\n")
+	}
+}
