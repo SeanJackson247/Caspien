@@ -59208,7 +59208,7 @@ func await_call(fn: raw imut u8, handle: raw mut u8) void{
 //
 // REWRITTEN under a new, explicitly-requested precondition philosophy
 // ("the whole point of @lock(match x in X) on methods is so this kind
-// of bullshit is unnecessary... want me to write on something or
+// of boilerplate is unnecessary... want me to write on something or
 // retrieve out of it? No, I pass the null check responsibility to
 // you. Want me to access bounds? No, you do that before you call me,
 // and I insist on it being so," confirmed directly) -- every method
@@ -59251,7 +59251,7 @@ func await_call(fn: raw imut u8, handle: raw mut u8) void{
 // **`pushFront`/`popFront`/`popBack` still hand-check "is the
 // backing store empty" internally, with a real, caller-supplied
 // `defaultValue: T` fallback for that one case.** This is deliberately
-// *not* the same kind of "bullshit" the null/bounds checks above were
+// *not* the same kind of "boilerplate" the null/bounds checks above were
 // -- there is no parameter naming a candidate index for these three to
 // prove bounds on ahead of time (they always operate on a fixed,
 // implicit end of the collection), so there is currently no `@lock`
