@@ -370,8 +370,9 @@ runtime exceptions. Here is the current state, property by property.
 | **Soundness of the checker** | About 70 runtime regression programs in [`tests/`](tests), generated tests with expected values from independent Python models, and shell checks for the optimiser passes. | There is no formal proof, mechanised or otherwise. The checker is about 15,000 lines of Java, and "the compiler accepts it" is evidence, not proof. The large corpus of compile-error fixtures is kept outside this repository. |
 | **Platforms** | Linux x86-64 is the tested target. | The Windows (`windows_gnu`) output assembles and links but has not been run on a real Windows machine, and the MASM/Intel backend is unverified. |
 
-Known bugs that affect the guarantees are tracked in the `CLAUDE.md` files. Two examples are a plain
-struct used as a swap-lock local that crashes at run time, and `deref(p) = wholeStruct` miscompiling.
+Known bugs that affect the guarantees are tracked in the `CLAUDE.md` files. One open example: reassigning
+an `owns` field reached through a pointer (`h.w = pass(h.w)`) still destructs the old value before the
+right side is evaluated.
 
 ---
 

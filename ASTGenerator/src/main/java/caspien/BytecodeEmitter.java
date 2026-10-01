@@ -4360,7 +4360,10 @@ public class BytecodeEmitter {
      * before this instruction ran.
      */
     private void emitSwap(Token op) {
-        emitExpr(op.left);
+        // ATOMIC_SWAP consumes an ADDRESS (xchg through it), so push the target as an address (as an
+        // assignment target does). It used to push the field's VALUE, which only worked for statics
+        // (resolved by name downstream); a swap-lock struct held in a local segfaulted.
+        emitAssignTarget(op.left);
         emitExpr(op.right);
         line("ATOMIC_SWAP " + op.left.resolvedType + " " + op.right.resolvedType + " " + op.resolvedType);
     }

@@ -1,6 +1,5 @@
 // 'match @lock': every non-target (CLOSED) path must end in 'continue' (retry the acquire),
 // 'break' (give up without the lock), 'return' or 'throw'. Falling off the end is a compile error.
-// (The mutexes are statics: a swap-mutex struct as a plain local segfaults at runtime -- separate, unfixed.)
 import "../stdlib/libc.caspien"
 
 enum St{ OPEN, CLOSED }
@@ -9,6 +8,18 @@ struct Mtx{@pub{
 	swap lockState: atomic mut St
 	n: mut u64
 }}
+
+// a swap-mutex struct held in a plain local (used to segfault: the lock field's value was used as its address)
+func localTest() void{
+	let m = mut Mtx{lockState= St.OPEN, n= mut 0}
+	match @lock m{
+		OPEN:{
+			m.n += 1
+			unsafe{ printf("local: got lock n=%llu\n", m.n) }
+		}
+		CLOSED:{ continue }
+	}
+}
 
 // continue = retry: three failed attempts, then the lock is freed and the fourth succeeds
 func retryTest() void{
@@ -83,6 +94,7 @@ func mixedTest() mut u64{
 
 func main() void{
 	retryTest()
+	localTest()
 	giveUpTest()
 	unsafe{ printf("return: %llu\n", returnTest()) }
 	unsafe{ printf("mixed: %llu\n", mixedTest()) }
