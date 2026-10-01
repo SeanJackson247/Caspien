@@ -1,0 +1,285 @@
+#!/usr/bin/env python3
+"""
+n-body cross-language benchmark: execution time, peak memory, compile time and executable size.
+
+    python3 benchmarks/nbody/bench.py [--n 5000000] [--runs 5] [--out results.json] [--only substring ...]
+
+Builds and runs every implementation that this machine has a toolchain for, and writes one JSON file (default
+benchmarks/nbody/results.json) with, per implementation:
+  compile_s   wall time of the build command (median of --builds builds; 0 for Node, Bun, Lua and LuaJIT, which have no compile step)
+  size_bytes  the executable; for Java, Node and Bun the size of their runtime plus the program (class file / script)
+  time_s      wall time of one run (minimum of --runs)
+  rss_kb      peak resident set size of one run (median of --runs), from wait4()
+  output      the two energies the program prints; ok = matches the C program of the same precision at the same N
+Caspien programs are built twice, with every optimisation off and with everything on (all optimizer passes at their most
+aggressive setting plus register variables/temporaries). The shipped toolchain.config targets windows_gnu, so on Linux a scratch copy of
+the tree is made with `target linux` and `default: sysv_x64`; the shipped file is not touched.
+Charts are made from the JSON by charts.py.
+"""
+import argparse, json, os, re, shutil, statistics, subprocess, sys, tempfile, time
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
+REF = os.path.join(HERE, "reference")
+CAS = os.path.join(HERE, "caspien")
+
+OFF = {
+    "deferred-operands": "off", "variables-in-registers": "off", "float-variables-in-registers": "off",
+    "float-temporaries-in-registers": "off", "loop-unrolling": "off", "function-inlining": "off", "constant-folding": "off",
+    "variable-elision": "off", "variable-shifting": "off", "struct-unpacking": "off", "dead-control-flow-removal": "off",
+    "dead-function-removal": "off", "unused-declaration-removal": "off",
+}
+FULL = {
+    "deferred-operands": "on", "variables-in-registers": "on", "float-variables-in-registers": "on",
+    "float-temporaries-in-registers": "on", "loop-unrolling": "aggressive", "function-inlining": "aggressive",
+    "constant-folding": "on", "variable-elision": "on", "variable-shifting": "on", "struct-unpacking": "on",
+    "dead-control-flow-removal": "on", "dead-function-removal": "on", "unused-declaration-removal": "on",
+}
+# (source file, precision, description)
+CASPIEN = [
+    ("nbody_natural_f64", "f64", "natural (small functions, loops)"),
+    ("nbody_plain_f64", "f64", "plain loops"),
+    ("nbody_loop_f64", "f64", "looped nested match"),
+    ("nbody_arr_f64", "f64", "hand-unrolled, arrays"),
+    ("nbody_f64", "f64", "hand-unrolled, scalars"),
+    ("nbody_plain", "f32", "plain loops"),
+    ("nbody_loop", "f32", "looped nested match"),
+    ("nbody_arr", "f32", "hand-unrolled, arrays"),
+    ("nbody", "f32", "hand-unrolled, scalars"),
+]
+
+
+LAUNCHER_C = r"""
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <sys/resource.h>
+int main(int argc, char **argv){ /* rsswrap <outfile> cmd args... : runs cmd, writes its peak RSS (KB) to outfile */
+  pid_t p = fork();
+  if(p==0){ execvp(argv[2], argv+2); _exit(127); }
+  int st; struct rusage ru; wait4(p,&st,0,&ru);
+  FILE *f=fopen(argv[1],"w"); fprintf(f,"%ld\n",ru.ru_maxrss); fclose(f);
+  return WIFEXITED(st)?WEXITSTATUS(st):128+WTERMSIG(st);
+}
+"""
+_LAUNCHER = None
+
+
+def launcher():
+    """A tiny C launcher: wait4 on a child of the (large) Python process reports Python's own peak RSS, inherited across
+    fork/exec, so every program would show the same number. A small launcher process has no such history."""
+    global _LAUNCHER
+    if _LAUNCHER is None:
+        d = tempfile.mkdtemp(prefix="rsswrap")
+        src = os.path.join(d, "w.c")
+        open(src, "w").write(LAUNCHER_C)
+        _LAUNCHER = os.path.join(d, "rsswrap")
+        subprocess.check_call(["gcc", "-O1", "-o", _LAUNCHER, src])
+    return _LAUNCHER
+
+
+def run(cmd, cwd=None, env=None, timeout=900):
+    """Run a command; returns (wall seconds, peak RSS in KB, exit code, output text)."""
+    base = os.environ if env is None else env
+    env = {k: v for k, v in base.items() if k != "JAVA_TOOL_OPTIONS"}   # even an empty value makes java print "Picked up ..."
+    rf = tempfile.mktemp(prefix="rss")
+    t0 = time.perf_counter()
+    try:
+        p = subprocess.run([launcher(), rf] + list(cmd), cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=timeout)
+    except subprocess.TimeoutExpired:   # a row that takes longer than `timeout` is reported as failed, it must not abort the whole run
+        return float(timeout), 0, 124, "TIMEOUT after %d s" % timeout
+    t1 = time.perf_counter()
+    try:
+        kb = int(open(rf).read().strip()); os.unlink(rf)
+    except Exception:
+        kb = 0
+    return t1 - t0, kb, p.returncode, p.stdout.decode("utf-8", "replace")
+
+
+def have(tool):
+    return shutil.which(tool) is not None
+
+
+def size_of(path):
+    return os.path.getsize(path)
+
+
+def dir_size(path):
+    total = 0
+    for dp, _, fs in os.walk(path):
+        for f in fs:
+            fp = os.path.join(dp, f)
+            if os.path.isfile(fp) and not os.path.islink(fp):
+                total += os.path.getsize(fp)
+    return total
+
+
+def java_runtime_size():
+    """bin/java + lib/ + conf/ of the JRE that runs the program (not the JDK's compiler tools, jmods, docs or headers)."""
+    r = subprocess.run(["java", "-XshowSettings:properties", "-version"], capture_output=True, text=True)
+    m = re.search(r"java\.home = (\S+)", r.stderr)
+    home = m.group(1)
+    return size_of(os.path.join(home, "bin", "java")) + dir_size(os.path.join(home, "lib")) + dir_size(os.path.join(home, "conf"))
+
+
+def patch_config(path, kv):
+    text = open(path).read()
+    for k, v in kv.items():
+        text, n = re.subn(r"^%s:.*$" % re.escape(k), "%s: %s" % (k, v), text, flags=re.M)
+        if n == 0:
+            raise SystemExit("config key %s not found in %s" % (k, path))
+    open(path, "w").write(text)
+
+
+def make_caspien_tree(root):
+    ct = tempfile.mkdtemp(prefix="caspien_tree_")
+    for d in ("ASTGenerator", "Optimizer", "LowerOrderGenerator", "Codegen", "stdlib"):
+        shutil.copytree(os.path.join(root, d), os.path.join(ct, d))
+    for f in os.listdir(root):
+        if f.startswith("Compiler"):
+            shutil.copy(os.path.join(root, f), ct)
+    cfg = open(os.path.join(root, "toolchain.config")).read()
+    cfg = re.sub(r"^target windows_gnu", "target linux", cfg, flags=re.M)
+    cfg = re.sub(r"^(\s*)default: win64", r"\1default: sysv_x64", cfg, flags=re.M)
+    open(os.path.join(ct, "toolchain.config"), "w").write(cfg)
+    return ct
+
+
+def median(xs):
+    return statistics.median(xs) if xs else 0.0
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--n", type=int, default=5000000)
+    ap.add_argument("--runs", type=int, default=5)
+    ap.add_argument("--builds", type=int, default=3)
+    ap.add_argument("--out", default=os.path.join(HERE, "results.json"))
+    ap.add_argument("--only", nargs="*", default=[])
+    a = ap.parse_args()
+    N = str(a.n)
+    W = tempfile.mkdtemp(prefix="nbody_bench_")
+    for f in os.listdir(REF):
+        shutil.copy(os.path.join(REF, f), W)
+    results = []
+    envn = dict(os.environ, NBODY_N=N, JAVA_TOOL_OPTIONS="")
+
+    def wanted(label):
+        return not a.only or any(s.lower() in label.lower() for s in a.only)
+
+    def measure(label, group, lang, build_cmds, exe_cmd, size_bytes_fn, prec, note=""):
+        if not wanted(label):
+            return
+        ctimes = []
+        for _ in range(a.builds if build_cmds else 0):
+            t = 0.0
+            for bc in build_cmds:
+                dt, _, rc, out = run(bc["cmd"], cwd=bc.get("cwd", W), env=bc.get("env"))
+                t += dt
+                if rc != 0:
+                    print("BUILD FAILED", label, out[-500:], file=sys.stderr)
+                    return
+            ctimes.append(t)
+        times, rss, outs = [], [], []
+        for _ in range(a.runs):
+            dt, kb, rc, out = run(exe_cmd, cwd=W, env=envn)
+            if rc != 0:
+                print("RUN FAILED", label, out[-300:], file=sys.stderr)
+                return
+            times.append(dt)
+            rss.append(kb)
+            outs.append(out.strip().split())
+        res = {
+            "label": label, "group": group, "lang": lang, "prec": prec, "note": note,
+            "compile_s": median(ctimes), "size_bytes": size_bytes_fn(), "time_s": min(times), "times": times,
+            "rss_kb": median(rss), "output": outs[-1],
+        }
+        results.append(res)
+        print("%-34s compile %6.2fs  size %10d  time %7.3fs  rss %8d KB  %s" % (
+            label, res["compile_s"], res["size_bytes"], res["time_s"], res["rss_kb"], " ".join(res["output"])), flush=True)
+
+    # ---- bare metal (red) ----
+    if have("gcc"):
+        for opt, lab in (("-O0", "C -O0"), ("-O2", "C -O2")):
+            exe = os.path.join(W, "c_" + opt[1:])
+            measure(lab, "bare", "C", [{"cmd": ["gcc", opt, "-o", exe, "nbody.c", "-lm"]}], [exe, N], lambda e=exe: size_of(e), "f64")
+        for opt, lab in (("-O0", "C f32 -O0"), ("-O2", "C f32 -O2")):
+            exe = os.path.join(W, "cf32_" + opt[1:])
+            measure(lab, "bare", "C", [{"cmd": ["gcc", opt, "-o", exe, "nbody_f32.c", "-lm"]}], [exe, N], lambda e=exe: size_of(e), "f32")
+    if have("g++"):
+        exe = os.path.join(W, "cpp_O2")
+        measure("C++ -O2", "bare", "C++", [{"cmd": ["g++", "-O2", "-x", "c++", "-o", exe, "nbody.cpp", "-lm"]}], [exe, N], lambda: size_of(exe), "f64")
+    if have("rustc"):
+        exe = os.path.join(W, "rs_nbody")
+        measure("Rust -O", "bare", "Rust", [{"cmd": ["rustc", "-O", "-o", exe, "nbody.rs"]}], [exe, N], lambda: size_of(exe), "f64")
+    if have("go"):
+        exe = os.path.join(W, "go_nbody")
+        genv = dict(os.environ, GOCACHE=os.path.join(W, "gocache"), GOFLAGS="-buildvcs=false")
+        measure("Go", "bare", "Go", [{"cmd": ["go", "build", "-o", exe, "nbody.go"], "env": genv}], [exe, N], lambda: size_of(exe), "f64")
+    # ---- compiled + VM (purple) ----
+    if have("javac") and have("java"):
+        cls = os.path.join(W, "NBody.class")
+        measure("Java", "vm", "Java", [{"cmd": ["javac", "-d", W, "NBody.java"], "env": dict(os.environ, JAVA_TOOL_OPTIONS="")}],
+                ["java", "-cp", W, "NBody", N], lambda: java_runtime_size() + size_of(cls), "f64",
+                "size = bin/java + lib/ + conf/ of the JRE plus NBody.class")
+    # ---- interpreted (blue) ----
+    if have("node"):
+        measure("Node", "js", "JavaScript", [], ["node", "nbody.js", N],
+                lambda: size_of(os.path.realpath(shutil.which("node"))) + size_of(os.path.join(W, "nbody.js")), "f64",
+                "size = node binary + nbody.js")
+    if have("bun"):
+        measure("Bun", "js", "JavaScript", [], ["bun", "nbody.js", N],
+                lambda: size_of(os.path.realpath(shutil.which("bun"))) + size_of(os.path.join(W, "nbody.js")), "f64",
+                "size = bun binary + nbody.js")
+    # ---- LuaJIT (Lua 5.4 was dropped from the analysis: too slow to measure) ----
+    for exe_name, lab, grp, what in (("luajit", "LuaJIT", "luajit", "tracing JIT"),):
+        if have(exe_name):
+            path = os.path.realpath(shutil.which(exe_name))
+            measure(lab, grp, lab, [], [exe_name, "nbody.lua", N],
+                    lambda p=path: size_of(p) + size_of(os.path.join(W, "nbody.lua")), "f64",
+                    "size = %s binary + nbody.lua (%s)" % (exe_name, what))
+    # ---- the fifteen languages added on 1 Oct 2026 ----
+    sys.path.insert(0, os.path.dirname(HERE))
+    import newlangs as NL
+    for row in NL.rows("nbody", W, W, N):
+        measure(row["label"], row["group"], row["lang"], row["build"], row["exe"], row["size"], "f64", row["note"])
+    # ---- Caspien (green) ----
+    if have("java") and have("gcc"):
+        ct = make_caspien_tree(ROOT)
+        base = open(os.path.join(ct, "toolchain.config")).read()
+        for src, prec, desc in CASPIEN:
+            for mode, kv in (("off", OFF), ("full", FULL)):
+                label = "Caspien %s %s · %s" % ({"nbody": "scalars", "nbody_f64": "scalars"}.get(src, src.replace("nbody_", "").replace("_f64", "")), prec, mode)
+                if not wanted(label):
+                    continue
+                open(os.path.join(ct, "toolchain.config"), "w").write(base)
+                patch_config(os.path.join(ct, "toolchain.config"), kv)
+                shutil.copy(os.path.join(CAS, src + ".caspien"), os.path.join(ct, "_nb.caspien"))
+                exe = os.path.join(W, "cas_%s_%s" % (src, mode))
+                measure(label, "caspien", "Caspien", [{"cmd": ["java", "Compiler", "-i", "_nb.caspien", exe], "cwd": ct,
+                                                       "env": dict(os.environ, JAVA_TOOL_OPTIONS="")}],
+                        [exe], lambda e=exe: size_of(e), prec, desc + "; optimisations " + mode)
+        shutil.rmtree(ct, ignore_errors=True)
+    # ---- correctness: same precision as the C program at the same N ----
+    ref = {}
+    for r in results:
+        if r["label"] == "C -O0":
+            ref["f64"] = r["output"]
+        if r["label"] == "C f32 -O0":
+            ref["f32"] = r["output"]
+    for r in results:
+        r["ok"] = False
+        if r["prec"] in ref and len(r["output"]) == 2 and len(ref[r["prec"]]) == 2:
+            if r["prec"] == "f64":
+                r["ok"] = r["output"] == ref["f64"]          # double precision: identical to 9 digits
+            else:                                            # f32 ports round differently (operation order): same to ~4 digits
+                r["ok"] = all(abs(float(x) - float(y)) < 5e-4 for x, y in zip(r["output"], ref["f32"]))
+    json.dump({"n": a.n, "runs": a.runs, "builds": a.builds, "results": results}, open(a.out, "w"), indent=1)
+    shutil.rmtree(W, ignore_errors=True)
+    bad = [r["label"] for r in results if not r["ok"]]
+    print("wrote", a.out, "| output differs from the same-precision C program:", bad or "none")
+
+
+if __name__ == "__main__":
+    main()

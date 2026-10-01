@@ -1,0 +1,182 @@
+// n-body (Computer Language Benchmarks Game), written the natural way: small functions with one job each, plain `for` loops,
+// nothing unrolled by hand and nothing inlined by hand. Everything the optimizer is meant to do for you (unrolling the fixed-size
+// loops, inlining the helpers) is left for it to do; compile with the optimizer switches off and on to compare.
+//
+// Same data and same arithmetic as the reference C program (nbody-gcc-1, double precision), so the printed energies match it:
+// -0.169075164 at the start and -0.169086185 after 1,000,000 steps (N = 1000000; N is read from NBODY_N).
+//
+// DIFFERENCES FROM THE C PROGRAM (forced by the current language, none of them an optimisation):
+//  * struct-of-arrays: seven `let static` f64[5] arrays (x, y, z, vx, vy, vz, mass) with their initial values in the initialisers.
+//  * every array access through an index sits under an `assume match i in/into <array>` line (a proof is keyed to one array, so one
+//    line per array); the helpers repeat the ones they need for their own parameters.
+//  * N comes from the environment variable NBODY_N (a plain `main` has no argv).
+extern printf(static imut string,...) void
+extern sqrt(mut f64) mut f64
+extern getenv(static imut string) static imut string
+extern atol(static imut string) mut u64
+
+let static:<mut f64[5]> x = mut [0.0, 4.841431442464721, 8.34336671824458, 12.894369562139131, 15.379697114850917]
+let static:<mut f64[5]> y = mut [0.0, -1.1603200440274284, 4.124798564124305, -15.111151401698631, -25.919314609987964]
+let static:<mut f64[5]> z = mut [0.0, -0.10362204447112311, -0.4035234171143214, -0.22330757889265573, 0.17925877295037118]
+let static:<mut f64[5]> vx = mut [0.0, 0.606326392995832, -1.0107743461787924, 1.0827910064415354, 0.979090732243898]
+let static:<mut f64[5]> vy = mut [0.0, 2.81198684491626, 1.8256623712304119, 0.8687130181696082, 0.5946989986476762]
+let static:<mut f64[5]> vz = mut [0.0, -0.02521836165988763, 0.008415761376584154, -0.010832637401363636, -0.034755955504078104]
+let static:<mut f64[5]> mass = mut [39.47841760435743, 0.03769367487038949, 0.011286326131968767, 0.0017237240570597112, 0.0020336868699246304]
+
+// distance between two points given by their coordinate differences
+func length(dx: mut f64, dy: mut f64, dz: mut f64) mut f64{
+	unsafe{
+		return sqrt(dx * dx + dy * dy + dz * dz)
+	}
+}
+
+// squared speed of body i
+func speedSquared(i: mut u64) mut f64{
+	unsafe{
+		assume match i in vx
+		assume match i in vy
+		assume match i in vz
+		return vx[i] * vx[i] + vy[i] * vy[i] + vz[i] * vz[i]
+	}
+}
+
+// kinetic energy of body i
+func kinetic(i: mut u64) mut f64{
+	unsafe{
+		assume match i in mass
+		return 0.5 * mass[i] * speedSquared(i)
+	}
+}
+
+// gravitational potential energy of the pair (i, j)
+func potential(i: mut u64, j: mut u64) mut f64{
+	unsafe{
+		assume match i in x
+		assume match i in y
+		assume match i in z
+		assume match i in mass
+		assume match j in x
+		assume match j in y
+		assume match j in z
+		assume match j in mass
+		let d = mut length(x[i] - x[j], y[i] - y[j], z[i] - z[j])
+		return (mass[i] * mass[j]) / d
+	}
+}
+
+// the velocity change the pair (i, j) causes in one time step of length dt
+func attract(i: mut u64, j: mut u64, dt: mut f64) void{
+	unsafe{
+		assume match i in x
+		assume match i in y
+		assume match i in z
+		assume match i in mass
+		assume match i into vx
+		assume match i into vy
+		assume match i into vz
+		assume match j in x
+		assume match j in y
+		assume match j in z
+		assume match j in mass
+		assume match j into vx
+		assume match j into vy
+		assume match j into vz
+		let dx = mut (x[i] - x[j])
+		let dy = mut (y[i] - y[j])
+		let dz = mut (z[i] - z[j])
+		let d = mut length(dx, dy, dz)
+		let mag = mut (dt / (d * d * d))
+		vx[i] -= dx * mass[j] * mag
+		vy[i] -= dy * mass[j] * mag
+		vz[i] -= dz * mass[j] * mag
+		vx[j] += dx * mass[i] * mag
+		vy[j] += dy * mass[i] * mag
+		vz[j] += dz * mass[i] * mag
+	}
+	return
+}
+
+// move body i along its velocity for dt
+func drift(i: mut u64, dt: mut f64) void{
+	unsafe{
+		assume match i into x
+		assume match i into y
+		assume match i into z
+		assume match i in vx
+		assume match i in vy
+		assume match i in vz
+		x[i] += dt * vx[i]
+		y[i] += dt * vy[i]
+		z[i] += dt * vz[i]
+	}
+	return
+}
+
+func advance(dt: mut f64) void{
+	for i in 0..5{
+		let j0 = mut (i + 1)
+		for j in j0..5{
+			attract(i, j, dt)
+		}
+	}
+	for i in 0..5{
+		drift(i, dt)
+	}
+	return
+}
+
+func energy() mut f64{
+	let:<mut f64> e = mut 0.0
+	unsafe{
+		for i in 0..5{
+			e += kinetic(i)
+			let j0 = mut (i + 1)
+			for j in j0..5{
+				e -= potential(i, j)
+			}
+		}
+	}
+	return e
+}
+
+// give the sun the momentum that makes the total momentum zero
+func offsetMomentum() void{
+	unsafe{
+		let:<mut f64> px = mut 0.0
+		let:<mut f64> py = mut 0.0
+		let:<mut f64> pz = mut 0.0
+		for i in 0..5{
+			assume match i in vx
+			assume match i in vy
+			assume match i in vz
+			assume match i in mass
+			px += vx[i] * mass[i]
+			py += vy[i] * mass[i]
+			pz += vz[i] * mass[i]
+		}
+		vx[0] = mut 0.0 - px / 39.47841760435743
+		vy[0] = mut 0.0 - py / 39.47841760435743
+		vz[0] = mut 0.0 - pz / 39.47841760435743
+	}
+	return
+}
+
+func main() void{
+	let n = mut 0
+	unsafe{
+		n = atol(getenv("NBODY_N"))
+	}
+	offsetMomentum()
+	let e0 = mut energy()
+	unsafe{
+		printf("%.9f\n", e0)
+	}
+	for s in 0..n{
+		advance(0.01)
+	}
+	let e1 = mut energy()
+	unsafe{
+		printf("%.9f\n", e1)
+	}
+	return
+}
