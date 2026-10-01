@@ -1,0 +1,410 @@
+// JSON serialise + parse benchmark (JSON_SERDE_N records), UNSAFE variant: unsafe dynarrays (u8 buffers and one dynarray of Rec structs), no bounds checks.
+// Same hand-written serialiser, index-based iterative parser (no recursion: a recursive struct is rejected on purpose) and checksum as json_serde.c.
+// Records are Rec structs (one dynarray of Rec; names and tags live in u8 pools). Prints: records textlen checksum.
+import "../../../stdlib/libc.caspien"
+import "../../../stdlib/gt_init.caspien"
+import "../../../stdlib/gt_register.caspien"
+import "../../../stdlib/gt_alive_check.caspien"
+import "../../../stdlib/gt_destruct.caspien"
+extern getenv(static imut string) static imut string
+extern atol(static imut string) mut u64
+
+// One parsed record: id, score in cents, the name (offset + length into the names pool) and the tags (offset + count into the tags pool).
+struct Rec{
+	@pub{ id: mut u64 }
+	@pub{ name_off: mut u64 }
+	@pub{ name_len: mut u64 }
+	@pub{ score: mut u64 }
+	@pub{ tag_off: mut u64 }
+	@pub{ tag_cnt: mut u64 }
+}
+
+func main() void{
+	unsafe{
+		let n = mut 0
+		n = atol(getenv("JSON_SERDE_N"))
+		let zr = mut Rec{id= 0, name_off= 0, name_len= 0, score= 0, tag_off= 0, tag_cnt= 0}
+		let cap = mut (n * 80 + 16)
+		let ncap = mut (n * 10 + 8)
+		let tcap = mut (n * 4 + 8)
+		let rcap = mut (n + 1)
+		let text = mut unsafe dyn:<u8>([])
+		let names = mut unsafe dyn:<u8>([])
+		let tags = mut unsafe dyn:<u8>([])
+		let recs = mut unsafe dyn:<Rec>([])
+		text = resize(text, cap)
+		names = resize(names, ncap)
+		tags = resize(tags, tcap)
+		recs = resize(recs, rcap)
+		let:<mut u8> ch = mut 0
+		let x = mut 12345
+		let p = mut 0
+		ch = 91
+		text[p] = ch
+		p += 1
+		for i in 0..n{
+			if i > 0{
+				ch = 44
+				text[p] = ch
+				p += 1
+			}
+			ch = 123
+			text[p] = ch
+			p += 1
+			ch = 34
+			text[p] = ch
+			p += 1
+			ch = 105
+			text[p] = ch
+			p += 1
+			ch = 100
+			text[p] = ch
+			p += 1
+			ch = 34
+			text[p] = ch
+			p += 1
+			ch = 58
+			text[p] = ch
+			p += 1
+			let idv = mut i
+			let da = mut 1
+			let ua = mut idv
+			loop{
+				if ua < 10{
+					break
+				}
+				ua = ua / 10
+				da += 1
+			}
+			let posa = mut (p + da - 1)
+			let vva = mut idv
+			for ka in 0..da{
+				ch = wrap:<u8>(48 + vva % 10)
+				text[posa] = ch
+				vva = vva / 10
+				posa -= 1
+			}
+			p += da
+			ch = 44
+			text[p] = ch
+			p += 1
+			ch = 34
+			text[p] = ch
+			p += 1
+			ch = 110
+			text[p] = ch
+			p += 1
+			ch = 97
+			text[p] = ch
+			p += 1
+			ch = 109
+			text[p] = ch
+			p += 1
+			ch = 101
+			text[p] = ch
+			p += 1
+			ch = 34
+			text[p] = ch
+			p += 1
+			ch = 58
+			text[p] = ch
+			p += 1
+			ch = 34
+			text[p] = ch
+			p += 1
+			x = bits_and(x * 1664525 + 1013904223, 0xFFFFFFFF)
+			let nl = mut (3 + bits_right(x, 16) % 8)
+			for k in 0..nl{
+				x = bits_and(x * 1664525 + 1013904223, 0xFFFFFFFF)
+				ch = wrap:<u8>(97 + bits_right(x, 16) % 26)
+				text[p] = ch
+				p += 1
+			}
+			ch = 34
+			text[p] = ch
+			p += 1
+			ch = 44
+			text[p] = ch
+			p += 1
+			ch = 34
+			text[p] = ch
+			p += 1
+			ch = 115
+			text[p] = ch
+			p += 1
+			ch = 99
+			text[p] = ch
+			p += 1
+			ch = 111
+			text[p] = ch
+			p += 1
+			ch = 114
+			text[p] = ch
+			p += 1
+			ch = 101
+			text[p] = ch
+			p += 1
+			ch = 34
+			text[p] = ch
+			p += 1
+			ch = 58
+			text[p] = ch
+			p += 1
+			x = bits_and(x * 1664525 + 1013904223, 0xFFFFFFFF)
+			let cents = mut (bits_right(x, 8) % 1000000)
+			let ip = mut (cents / 100)
+			let db = mut 1
+			let ub = mut ip
+			loop{
+				if ub < 10{
+					break
+				}
+				ub = ub / 10
+				db += 1
+			}
+			let posb = mut (p + db - 1)
+			let vvb = mut ip
+			for kb in 0..db{
+				ch = wrap:<u8>(48 + vvb % 10)
+				text[posb] = ch
+				vvb = vvb / 10
+				posb -= 1
+			}
+			p += db
+			ch = 46
+			text[p] = ch
+			p += 1
+			ch = wrap:<u8>(48 + cents % 100 / 10)
+			text[p] = ch
+			p += 1
+			ch = wrap:<u8>(48 + cents % 10)
+			text[p] = ch
+			p += 1
+			ch = 44
+			text[p] = ch
+			p += 1
+			ch = 34
+			text[p] = ch
+			p += 1
+			ch = 116
+			text[p] = ch
+			p += 1
+			ch = 97
+			text[p] = ch
+			p += 1
+			ch = 103
+			text[p] = ch
+			p += 1
+			ch = 115
+			text[p] = ch
+			p += 1
+			ch = 34
+			text[p] = ch
+			p += 1
+			ch = 58
+			text[p] = ch
+			p += 1
+			ch = 91
+			text[p] = ch
+			p += 1
+			x = bits_and(x * 1664525 + 1013904223, 0xFFFFFFFF)
+			let tc = mut (bits_right(x, 16) % 5)
+			for k in 0..tc{
+				if k > 0{
+					ch = 44
+					text[p] = ch
+					p += 1
+				}
+				x = bits_and(x * 1664525 + 1013904223, 0xFFFFFFFF)
+				let tv = mut (bits_right(x, 16) % 100)
+				let dc = mut 1
+				let uc = mut tv
+				loop{
+					if uc < 10{
+						break
+					}
+					uc = uc / 10
+					dc += 1
+				}
+				let posc = mut (p + dc - 1)
+				let vvc = mut tv
+				for kc in 0..dc{
+					ch = wrap:<u8>(48 + vvc % 10)
+					text[posc] = ch
+					vvc = vvc / 10
+					posc -= 1
+				}
+				p += dc
+			}
+			ch = 93
+			text[p] = ch
+			p += 1
+			ch = 125
+			text[p] = ch
+			p += 1
+		}
+		ch = 93
+		text[p] = ch
+		p += 1
+		let tlen = mut p
+		let count = mut 0
+		let noff = mut 0
+		let toff = mut 0
+		let q = mut 1
+		loop{
+			let c = mut 0
+			c = text[q] as u64
+			if c == 93{
+				break
+			}
+			if c == 44{
+				q += 1
+			}
+			else{
+				q += 1
+				let r = mut zr
+				loop{
+					q += 1
+					let k0 = mut 0
+					k0 = text[q] as u64
+					loop{
+						let kc = mut 0
+						kc = text[q] as u64
+						if kc == 34{
+							break
+						}
+						q += 1
+					}
+					q += 2
+					if k0 == 105{
+						let vi = mut 0
+						loop{
+							let cdi = mut 0
+							cdi = text[q] as u64
+							if cdi < 48{
+								break
+							}
+							if cdi > 57{
+								break
+							}
+							vi = vi * 10 + (cdi - 48)
+							q += 1
+						}
+						r.id = vi
+					}
+					else{
+						if k0 == 110{
+							q += 1
+							r.name_off = noff
+							loop{
+								let nc = mut 0
+								nc = text[q] as u64
+								if nc == 34{
+									break
+								}
+								ch = wrap:<u8>(nc)
+								names[noff] = ch
+								noff += 1
+								q += 1
+							}
+							r.name_len = noff - r.name_off
+							q += 1
+						}
+						else{
+							if k0 == 115{
+								let vs = mut 0
+								loop{
+									let cds = mut 0
+									cds = text[q] as u64
+									if cds < 48{
+										break
+									}
+									if cds > 57{
+										break
+									}
+									vs = vs * 10 + (cds - 48)
+									q += 1
+								}
+								q += 1
+								let q1 = mut (q + 1)
+								let d1 = mut 0
+								let d2 = mut 0
+								d1 = text[q] as u64
+								d2 = text[q1] as u64
+								r.score = vs * 100 + (d1 - 48) * 10 + (d2 - 48)
+								q += 2
+							}
+							else{
+								q += 1
+								r.tag_off = toff
+								loop{
+									let tcc = mut 0
+									tcc = text[q] as u64
+									if tcc == 93{
+										break
+									}
+									if tcc == 44{
+										q += 1
+									}
+									let vt = mut 0
+									loop{
+										let cdt = mut 0
+										cdt = text[q] as u64
+										if cdt < 48{
+											break
+										}
+										if cdt > 57{
+											break
+										}
+										vt = vt * 10 + (cdt - 48)
+										q += 1
+									}
+									ch = wrap:<u8>(vt)
+									tags[toff] = ch
+									toff += 1
+								}
+								r.tag_cnt = toff - r.tag_off
+								q += 1
+							}
+						}
+					}
+					let nx = mut 0
+					nx = text[q] as u64
+					if nx == 44{
+						q += 1
+					}
+					else{
+						q += 1
+						break
+					}
+				}
+				recs[count] = r
+				count += 1
+			}
+		}
+		let h = mut 7
+		for i in 0..count{
+			let r = mut zr
+			r = recs[i]
+			h = bits_and(h * 31 + r.id, 0xFFFFFFFF)
+			h = bits_and(h * 31 + r.score, 0xFFFFFFFF)
+			h = bits_and(h * 31 + r.name_len, 0xFFFFFFFF)
+			let nlen = mut r.name_len
+			for k in 0..nlen{
+				let ni = mut (r.name_off + k)
+				let nb = mut 0
+				nb = names[ni] as u64
+				h = bits_and(h * 31 + nb, 0xFFFFFFFF)
+			}
+			h = bits_and(h * 31 + r.tag_cnt, 0xFFFFFFFF)
+			let tcnt = mut r.tag_cnt
+			for k in 0..tcnt{
+				let ti = mut (r.tag_off + k)
+				let tb = mut 0
+				tb = tags[ti] as u64
+				h = bits_and(h * 31 + tb, 0xFFFFFFFF)
+			}
+		}
+		printf("%llu %llu %llu\n", count, tlen, h)
+	}
+}
