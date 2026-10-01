@@ -1,0 +1,178 @@
+// String manipulation benchmark, SAFE variant: byte buffers are safe dynarrays; every element access sits under a bounds proof
+// (match i in/into buf). Same steps and output as strings.c. N (characters) comes from STRINGS_N.
+import "../../../stdlib/libc.caspien"
+import "../../../stdlib/gt_init.caspien"
+import "../../../stdlib/gt_register.caspien"
+import "../../../stdlib/gt_alive_check.caspien"
+import "../../../stdlib/gt_destruct.caspien"
+extern getenv(static imut string) static imut string
+extern atol(static imut string) mut u64
+
+func main() void{
+	?catch(e){ return }
+	unsafe{
+		let n = mut 0
+		n = atol(getenv("STRINGS_N"))
+		let:<mut u8> zero = mut 0
+		let text = mut ? dyn:<u8>([])
+		text = ? resize(text, n, zero)
+		let x = mut 12345
+		for i in 0..n{
+			x = bits_and(x * 1664525 + 1013904223, 0xFFFFFFFF)
+			let r = mut (bits_right(x, 16) % 27)
+			let:<mut u8> ch = mut wrap:<u8>(97 + r)
+			if r == 26{
+				ch = 32
+			}
+			match i into text{
+				text[i] = ch
+			}
+		}
+		// word statistics
+		let words = mut 0
+		let longest = mut 0
+		let cur = mut 0
+		for i in 0..n{
+			let c = mut 0
+			match i in text{
+				c = text[i] as u64
+			}
+			if c == 32{
+				if cur > 0{
+					words += 1
+					if cur > longest{
+						longest = cur
+					}
+					cur = 0
+				}
+			}
+			else{
+				cur += 1
+			}
+		}
+		if cur > 0{
+			words += 1
+			if cur > longest{
+				longest = cur
+			}
+		}
+		// occurrences of "abc"
+		let abc = mut 0
+		let lim = mut 0
+		if n >= 3{
+			lim = n - 2
+		}
+		for i in 0..lim{
+			let i1 = mut (i + 1)
+			let i2 = mut (i + 2)
+			let c0 = mut 0
+			let c1 = mut 0
+			let c2 = mut 0
+			match i in text{
+				c0 = text[i] as u64
+			}
+			match i1 in text{
+				c1 = text[i1] as u64
+			}
+			match i2 in text{
+				c2 = text[i2] as u64
+			}
+			if c0 == 97{
+				if c1 == 98{
+					if c2 == 99{
+						abc += 1
+					}
+				}
+			}
+		}
+		// reverse
+		let rev = mut ? dyn:<u8>([])
+		rev = ? resize(rev, n, zero)
+		for i in 0..n{
+			let j = mut (n - 1 - i)
+			let c = mut zero
+			match j in text{
+				c = text[j]
+			}
+			match i into rev{
+				rev[i] = c
+			}
+		}
+		let hrev = mut 7
+		for i in 0..n{
+			match i in rev{
+				hrev = bits_and(hrev * 31 + rev[i] as u64, 0xFFFFFFFF)
+			}
+		}
+		// replace every 'e' by "33"
+		let es = mut 0
+		for i in 0..n{
+			let c = mut 0
+			match i in text{
+				c = text[i] as u64
+			}
+			if c == 101{
+				es += 1
+			}
+		}
+		let m = mut (n + es)
+		let rep = mut ? dyn:<u8>([])
+		rep = ? resize(rep, m, zero)
+		let k = mut 0
+		let:<mut u8> three = mut 51
+		for i in 0..n{
+			let c = mut zero
+			match i in text{
+				c = text[i]
+			}
+			if c == 101{
+				let k1 = mut (k + 1)
+				match k into rep{
+					rep[k] = three
+				}
+				match k1 into rep{
+					rep[k1] = three
+				}
+				k += 2
+			}
+			else{
+				match k into rep{
+					rep[k] = c
+				}
+				k += 1
+			}
+		}
+		let hrep = mut 7
+		for i in 0..m{
+			match i in rep{
+				hrep = bits_and(hrep * 31 + rep[i] as u64, 0xFFFFFFFF)
+			}
+		}
+		// upper case
+		let up = mut ? dyn:<u8>([])
+		up = ? resize(up, n, zero)
+		for i in 0..n{
+			let c = mut zero
+			match i in text{
+				c = text[i]
+			}
+			let:<mut u8> u = mut zero
+			if c == 32{
+				u = 32
+			}
+			else{
+				u = wrap:<u8>(c as u64 - 32)
+			}
+			match i into up{
+				up[i] = u
+			}
+		}
+		let hup = mut 7
+		for i in 0..n{
+			match i in up{
+				hup = bits_and(hup * 31 + up[i] as u64, 0xFFFFFFFF)
+			}
+		}
+		printf("%llu %llu %llu %llu %llu %llu %llu\n", words, longest, abc, hrev, m, hrep, hup)
+	}
+}

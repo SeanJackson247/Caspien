@@ -1,0 +1,128 @@
+// String manipulation benchmark, NAIVE variant: the stdlib String class (appendChar / charAt / setCharAt), one method call per
+// character. Same steps and output as strings.c. N (characters) comes from STRINGS_N.
+// A char cannot be cast to or from an integer, so code()/chr() move one byte with memcopy.
+import "../../../stdlib/libc.caspien"
+import "../../../stdlib/string.caspien"
+import "../../../stdlib/gt_init.caspien"
+import "../../../stdlib/gt_register.caspien"
+import "../../../stdlib/gt_alive_check.caspien"
+import "../../../stdlib/gt_destruct.caspien"
+extern getenv(static imut string) static imut string
+extern atol(static imut string) mut u64
+
+func code(c: mut char) mut u64{
+	unsafe{
+		let v = mut 0
+		memcopy(raw v, 1, raw c)
+		return v
+	}
+}
+
+func chr(b: mut u64) mut char{
+	unsafe{
+		let c = mut 'a'
+		memcopy(raw c, 1, raw b)
+		return c
+	}
+}
+
+func main() void{
+	?catch(e){ return }
+	unsafe{
+		let n = mut 0
+		n = atol(getenv("STRINGS_N"))
+		let text = mut ? new String()
+		let x = mut 12345
+		for i in 0..n{
+			x = bits_and(x * 1664525 + 1013904223, 0xFFFFFFFF)
+			let r = mut (bits_right(x, 16) % 27)
+			let b = mut (97 + r)
+			if r == 26{
+				b = 32
+			}
+			? text.appendChar(text, chr(b))
+		}
+		// word statistics
+		let words = mut 0
+		let longest = mut 0
+		let cur = mut 0
+		for i in 0..n{
+			let c = mut code(text.charAt(text, i))
+			if c == 32{
+				if cur > 0{
+					words += 1
+					if cur > longest{
+						longest = cur
+					}
+					cur = 0
+				}
+			}
+			else{
+				cur += 1
+			}
+		}
+		if cur > 0{
+			words += 1
+			if cur > longest{
+				longest = cur
+			}
+		}
+		// occurrences of "abc"
+		let abc = mut 0
+		let lim = mut 0
+		if n >= 3{
+			lim = n - 2
+		}
+		for i in 0..lim{
+			let i1 = mut (i + 1)
+			let i2 = mut (i + 2)
+			if code(text.charAt(text, i)) == 97{
+				if code(text.charAt(text, i1)) == 98{
+					if code(text.charAt(text, i2)) == 99{
+						abc += 1
+					}
+				}
+			}
+		}
+		// reverse
+		let rev = mut ? new String()
+		for i in 0..n{
+			let j = mut (n - 1 - i)
+			? rev.appendChar(rev, text.charAt(text, j))
+		}
+		let hrev = mut 7
+		for i in 0..n{
+			hrev = bits_and(hrev * 31 + code(rev.charAt(rev, i)), 0xFFFFFFFF)
+		}
+		// replace every 'e' by "33"
+		let rep = mut ? new String()
+		let three = mut chr(51)
+		for i in 0..n{
+			let c = mut text.charAt(text, i)
+			if code(c) == 101{
+				? rep.appendChar(rep, three)
+				? rep.appendChar(rep, three)
+			}
+			else{
+				? rep.appendChar(rep, c)
+			}
+		}
+		let m = mut len(rep.chars.backing)
+		let hrep = mut 7
+		for i in 0..m{
+			hrep = bits_and(hrep * 31 + code(rep.charAt(rep, i)), 0xFFFFFFFF)
+		}
+		// upper case, in place
+		for i in 0..n{
+			let c = mut code(text.charAt(text, i))
+			if c != 32{
+				text.setCharAt(text, i, chr(c - 32))
+			}
+		}
+		let hup = mut 7
+		for i in 0..n{
+			hup = bits_and(hup * 31 + code(text.charAt(text, i)), 0xFFFFFFFF)
+		}
+		printf("%llu %llu %llu %llu %llu %llu %llu\n", words, longest, abc, hrev, m, hrep, hup)
+	}
+}
