@@ -1,0 +1,148 @@
+// A general-purpose HashMap<T,T> -- key and value share one type
+// parameter. Real `impl<T> HashMap<T>` methods, `_self` a genuine
+// `ref` -- **not** a plain (no-storage) value, corrected for the same
+// reason `DynamicArray<T>` was (see its own file-level comment for
+// the full reasoning): a plain `_self` never actually made mutations
+// visible to the caller (that was an overclaim), and separately gave
+// every method here a silent null-dereference hole, since `owns`
+// values genuinely can be `null` in this type system and
+// `checkDot`'s liveness-proof restriction only ever fires on a value
+// with real storage. No `unsafe` anywhere in this file at all -- each
+// method's own probing walk used a bare `loop{...}` until `for` could
+// express it. Key equality uses "==" directly on T -- confirmed to
+// type-check for two struct values of the same type, not just
+// primitives ("checkComparison" only requires both sides share a
+// base type, no restriction to numeric/pointer types at all).
+//
+// REWRITTEN under the same precondition philosophy
+// `dynamic_array.caspien`/`string.caspien` were ("want me to write on
+// something or retrieve out of it? No, I pass the null check
+// responsibility to you," confirmed directly): `set`/`get`/`contains`
+// all now take `_self` as `ref some (imut|mut) self`, never a plain
+// `ref` -- the caller must already have proven non-null via
+// `match Some(_self){...}` before the call is even legal, so none of
+// these three needs its own internal `match Some(_self){...}`/
+// fallback for that case any more. **`cap != 0` is a genuinely
+// different kind of precondition, kept as an internal check, not
+// pushed onto the caller** -- unlike a null `_self` (which `some`
+// already has a caller-side proof mechanism for) or an out-of-bounds
+// index (which `@lock`/`match ... in/into ...` already has one for),
+// there is no existing precondition-proof shape in this language that
+// could express "this map's own capacity field is nonzero" as a
+// caller-side obligation at all -- `_self.capacity` is an ordinary
+// runtime field read, not a parameter or a literal a `match` could
+// name. A zero-capacity map is a real, if degenerate, construction
+// (`new HashMap:<T>(k, v, mut 0)` type-checks and compiles
+// cleanly), so this stays a genuine, internal runtime guard -- `set`
+// silently no-ops on one, `get`/`contains` still return their own
+// caller-supplied `defaultValue`/`false`, the same fallback pattern
+// `DynamicArray<T>::get` already established for its own "there's no
+// safe generic value to fabricate for an arbitrary T" case.
+//
+// The slot for a key starts at `hashOf(key) % capacity` and is probed linearly. `hashOf` is real 64-bit FNV-1a over the key's bytes (see
+// `hash.caspien`; it used to be a multiplicative `h*33 + byte` hash), so the order in which keys land in slots differs from the old
+// hash's, but the map's observable behaviour (set/get/contains/count) does not depend on it. A key type must be a non-struct type (the
+// `hashOf` parameter is a by-value `imut T`).
+//
+// `HashMap` is built with its constructor, `new HashMap:<u64>(k, v, cap)`.
+import "hash.caspien"
+
+@pub
+struct HashMapEntry<T>{@pub{
+	key: mut T
+	value: mut T
+	occupied: mut bool
+}}
+
+@pub
+struct HashMap<T>{@pub{
+	slots: owns some mut dynarray(imut HashMapEntry<T>)
+	capacity: mut u64
+	count: mut u64
+}}
+
+/** `new HashMap:<T>(defaultKey, defaultValue, capacity)` -- `defaultKey`/`defaultValue` seed every initially-empty slot (never read as real data -- `occupied` starts `false` everywhere); there's no default-construction mechanism for an arbitrary T to fall back on instead. `capacity` is fixed for this map's entire lifetime -- see the file-level note on rehashing. `@throws`: the `dyn` and `resize` (out of memory) can fail; the caught error is simply re-thrown to the caller. */
+@pub
+@throws
+impl<T> constructor for HashMap<T>(defaultKey: mut T, defaultValue: mut T, capacity: mut u64) self{
+	?catch(e){ throw e }
+	let seed = mut HashMapEntry:<T>{key= defaultKey, value= defaultValue, occupied= mut false}
+	let slots = mut ? dyn:<HashMapEntry:<T>>([])
+	let grownSlots = mut ? resize(slots, capacity, seed)
+	return HashMap:<T>{slots= grownSlots, capacity= capacity, count= mut 0}
+}
+
+@pub
+impl<T> HashMap<T>{
+	/** Inserts, or updates the value if `key` is already present. `void`, so `match Some(_self){...}` with no `else` needs nothing further -- a null `_self` simply makes this a no-op. `cap` is captured once and proven nonzero (`u64` is unsigned, so `!=0` alone is sufficient -- see CLAUDE.md, "match") before either `%` below -- a map's own capacity is a caller-supplied `u64`, never provably nonzero at the type level, so this needs a genuine runtime proof, not just a literal-divisor exemption; a zero-capacity map (a genuinely degenerate construction) simply no-ops instead of dividing by it. */
+	@pub
+	func set(_self: ref some mut self, key: mut T, value: mut T) void{
+		let cap = mut _self.capacity
+		match cap != 0{
+			let h = mut hashOf:<T>(imut key)
+			let startIdx = mut (h % cap)
+			for steps in 0..cap{
+				let idx = mut ((startIdx + steps) % cap)
+				match idx into _self.slots{
+					let entry = mut _self.slots[idx]
+					if !entry.occupied{
+						_self.slots[idx] = mut HashMapEntry:<T>{key= key, value= value, occupied= mut true}
+						_self.count = mut (_self.count + 1)
+						break
+					}
+					if entry.key == key{
+						_self.slots[idx] = mut HashMapEntry:<T>{key= key, value= value, occupied= mut true}
+						break
+					}
+				}
+			}
+		}
+	}
+
+	/** `defaultValue` is returned when `key` isn't present, or when `_self.capacity` is zero (a degenerate construction, see this file's own header comment) -- there's no way to signal "not found" separately without a real option/result type, which this language doesn't have yet; use `contains` first if the distinction matters. */
+	@pub
+	func get(_self: ref some imut self, key: mut T, defaultValue: mut T) mut T{
+		let cap = mut _self.capacity
+		match cap != 0{
+			let h = mut hashOf:<T>(imut key)
+			let startIdx = mut (h % cap)
+			for steps in 0..cap{
+				let idx = mut ((startIdx + steps) % cap)
+				match idx in _self.slots{
+					let entry = mut _self.slots[idx]
+					if !entry.occupied{
+						return defaultValue
+					}
+					if entry.key == key{
+						return entry.value
+					}
+				}
+			}
+			return defaultValue
+		}
+		return defaultValue
+	}
+
+	@pub
+	func contains(_self: ref some imut self, key: mut T) mut bool{
+		let cap = mut _self.capacity
+		match cap != 0{
+			let h = mut hashOf:<T>(imut key)
+			let startIdx = mut (h % cap)
+			for steps in 0..cap{
+				let idx = mut ((startIdx + steps) % cap)
+				match idx in _self.slots{
+					let entry = mut _self.slots[idx]
+					if !entry.occupied{
+						return mut false
+					}
+					if entry.key == key{
+						return mut true
+					}
+				}
+			}
+			return mut false
+		}
+		return mut false
+	}
+}

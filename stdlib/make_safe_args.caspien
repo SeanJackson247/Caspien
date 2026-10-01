@@ -1,0 +1,118 @@
+// "So make_safe_args is user written, but the expected normal
+// behaviour is the one in the stdlib," confirmed directly -- this
+// file. "make_safe_args returns owned memory, but make_safe_args
+// doesnt take ownership of the actual real arguments passed to main -
+// it copies them," confirmed directly: every byte of every argv
+// string is read via `memcopy` into freshly-allocated dynarrays of
+// this program's own; nothing here ever frees, or keeps a live
+// pointer into, the C runtime's own argv/argc memory at all.
+//
+// Every pointer walked here is kept as 'raw mut u8' throughout, never
+// 'raw mut char' or 'raw mut raw mut char' directly -- confirmed
+// directly that '++' (this language's only pointer-arithmetic
+// operator; there is no '+'/'+=' on a raw pointer at all) only accepts
+// a numeric base type, rejecting 'char' and rejecting a pointer-to-
+// pointer identically. Reinterpreted via `memcopy` (the same "read/
+// write raw bytes through a pointer" mechanism this whole file already
+// leans on) wherever the real, typed value underneath is actually
+// needed.
+import "libc.caspien"
+
+@pub
+@make_safe_args
+@throws
+func make_safe_args(argc: imut s32, argv: raw mut raw mut char) owns some mut dynarray(imut dynarray(imut char)){
+	?catch(e){ throw e }
+	// "int being the appropriate equivalent to C's int type,"
+	// confirmed directly, resolved to 's32' -- but every dynarray
+	// operation here needs a plain 'u64' count, and 'as' only ever
+	// widens within one signedness family (s32 can't become u64
+	// that way at all). argc is always non-negative in practice,
+	// so a zero-extending 4-byte 'memcopy' into an already-zeroed
+	// u64 local is exactly right -- the same "read raw bytes
+	// through a pointer" mechanism 'hash.caspien' already uses for
+	// an unrelated reason.
+	let count = mut 0
+	unsafe{
+		memcopy(raw count, mut 4, raw argc)
+	}
+
+	// UPDATE (throwing 'dyn'/'resize'): "new throws, but dyn and
+	// resize dont, they need to use the same pattern as new,"
+	// confirmed directly -- every one of these can fail (out of
+	// memory) too, now requiring the identical 'try'/'catch'
+	// wrapping 'new' already needed; each is wrapped individually
+	// and its caught error simply re-thrown, same as everywhere else
+	// in this file. The nested inner "dyn([mut 'x'])" inside
+	// "outer"'s own array literal needs no separate wrap of its own
+	// -- the one 'try'/'catch' around the whole "dyn([dyn([...])])"
+	// expression already covers it, at any depth (see
+	// TypeChecker.insideThrowingAllocContext's own doc comment).
+	let outer = mut ? dyn([dyn([mut 'x'])])
+	let fillValue = mut ? dyn([mut 'x'])
+	outer = ? resize(outer, count, fillValue)
+
+	// argv itself, reinterpreted once as a byte pointer to walk
+	// 8 bytes (one pointer width) per argument.
+	let:<raw mut u8> cur = null
+	unsafe{
+		memcopy(raw cur, mut 8, raw argv)
+	}
+	let oi = mut 0
+	for i in 0..count{
+		let:<raw mut u8> strPtr = null
+		unsafe{
+			memcopy(raw strPtr, mut 8, cur)
+		}
+
+		// Determine this argument's own length by scanning for a
+		// NUL byte.
+		let len = mut 0
+		let scan = mut strPtr
+		unsafe{
+			loop{
+				let b = mut 0
+				memcopy(raw b, mut 1, scan)
+				if b == mut 0{
+					break
+				}
+				len = mut (len + 1)
+				scan++
+			}
+		}
+
+		// Copy this argument's own `len` bytes, one at a time, into
+		// a freshly-sized dynarray(char) -- this program's own,
+		// independent copy.
+		let inner = mut ? dyn([mut 'x'])
+		inner = ? resize(inner, len, mut 'x')
+		let copyFrom = mut strPtr
+		let ii = mut 0
+		match ii into inner{
+			unsafe{
+				loop{
+					if ii >= len{
+						break
+					}
+					let b2 = mut 0
+					memcopy(raw b2, mut 1, copyFrom)
+					let ch = mut 'x'
+					memcopy(raw ch, mut 1, raw b2)
+					inner[ii] = mut ch
+					copyFrom++
+					ii = mut (ii + 1)
+				}
+			}
+		}
+
+		match oi into outer{
+			outer[oi] = mut inner
+		}
+		oi = mut (oi + 1)
+		// Advance `cur` by one full pointer width (8 bytes). `cur` is a
+		// `raw u8`, so `+=` moves it by that many bytes.
+		cur += 8
+	}
+
+	return outer
+}

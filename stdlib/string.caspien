@@ -1,0 +1,180 @@
+// A new, owned, growable/mutable String type -- distinct from the
+// built-in `string` primitive, which is fixed, read-only, and used
+// for literals and C interop.
+//
+// REWRITTEN under the same precondition philosophy
+// `dynamic_array.caspien` was ("want me to write on something or
+// retrieve out of it? No, I pass the null check responsibility to
+// you," confirmed directly): every method takes `_self`/`other` as
+// `ref some (imut|mut) self`, never a plain `ref` -- the caller must
+// already have proven non-null via `match Some(...)` before the call
+// is even legal, so no method here needs its own internal
+// `match Some(_self){...}`/fallback at all. `length` is gone as a
+// field entirely -- "length isnt needed in String or DynamicArray,
+// its built into a dyn," confirmed directly; every read of the
+// character count now reads `len(_self.chars.backing)` directly.
+//
+// **Zero `unsafe`/`raw` anywhere in this file's own public API, or
+// internally, at all.** `String`'s from-text construction used to walk a `malloc`'d
+// buffer one byte at a time via `strlen`/`memcopy`; `concat` (its `string` overload)
+// had an identical internal walk. Both are now built directly on the
+// extended `dyn(...)` builtin, which accepts a `static imut string`
+// argument and returns a real, runtime-populated `dynarray(char)` with
+// no memory access exposed to Caspien code at all (see CLAUDE.md's own
+// "Dynarrays" section, and `dynamic_array_from_string_test.caspien`).
+// `new String(text)` in particular is built from
+// `new DynamicArray:<char>(dyn(text))`.
+//
+// `String` is built with its constructors, `new String()` (empty) and
+// `new String(text)` (from a string literal), not with static methods:
+// once a struct declares a constructor, its struct-literal form
+// `String{...}` is legal only inside those constructors.
+import "dynamic_array.caspien"
+import "libc.caspien"
+
+@pub
+struct String{@pub{
+	chars: owns some mut DynamicArray<char>
+}}
+
+/** `new String()` -- a genuinely empty String, zero characters. `@throws`: the nested `new DynamicArray:<char>()` (and its `dyn`) can fail (out of memory); the caught error is simply re-thrown to the caller. */
+@pub
+@throws
+impl constructor for String() self{
+	?catch(e){ throw e }
+	let chars = mut ? new DynamicArray:<char>()
+	return String{chars= chars}
+}
+
+/** `new String(text)` -- a String holding a copy of the string literal `text`. "Have dyn also take a static imut string, returning a dyn of chars," confirmed directly: `String` is a thin wrapper over a safe dynarray of chars, so nothing here needs `unsafe`. `@throws`: the `dyn` and the nested `new DynamicArray` can fail (out of memory); the caught error is simply re-thrown to the caller. */
+@pub
+@throws
+impl constructor for String(text: static imut string) self{
+	?catch(e){ throw e }
+	let arr = mut ? dyn(text)
+	let chars = mut ? new DynamicArray:<char>(arr)
+	return String{chars= chars}
+}
+
+@pub
+impl String{
+	/**
+	 * `myString.concat(myString, other)` -- appends another String's own
+	 * characters (`other` may be `myString` itself, which doubles it -- this
+	 * replaces the old `concatRef`, whose signature differed from this one only
+	 * in mutability and so could not be an overload). Indexes `other.chars.backing` directly (never through
+	 * `charAt`) so the per-character bounds proof is a genuine
+	 * `match i in other.chars.backing{...}`, not a second, redundant
+	 * internal check.
+	 *
+	 * `chars` is declared `owns some`, so `ref some` on `_self`/`other`
+	 * is enough to reach `_self.chars.backing` directly: the type itself
+	 * says `chars` is always present (every constructor sets it), and no
+	 * method here needs a `match Some(...)` of its own.
+	 */
+	/** Now `@throws`: `appendChar` is itself `@throws` now (its own `pushBack` can fail -- see `appendChar`'s own doc comment), so this method must wrap every call to it and propagate the caught error to its own caller in turn. */
+	@pub
+	@throws
+	func concat(_self: ref some mut self, other: ref some imut self) void{
+		?catch(e){ throw e }
+		let n = mut len(other.chars.backing)
+		for i in 0..n{
+			match i in other.chars.backing{
+				? _self.appendChar(_self, other.chars.backing[i])
+			}
+		}
+	}
+
+	/** `myString.concat(myString, "literal text")` -- the overload of `concat` taking a plain Caspien string value instead of another `String` (chosen by argument type at the call site; formerly a separate method named `concatLiteral`). Appends via `dyn(other)` (a fresh, throwaway dynarray(char) populated from `other`'s own characters) rather than any raw memory walk. */
+	/** Now `@throws`: its own `dyn(other)` and `appendChar` are both `@throws`-capable now (see their own doc comments), each wrapped here and its caught error propagated to this method's own caller in turn. */
+	@pub
+	@throws
+	func concat(_self: ref some mut self, other: static imut string) void{
+		?catch(e){ throw e }
+		let otherChars = mut ? dyn(other)
+		let n = mut len(otherChars)
+		for i in 0..n{
+			match i in otherChars{
+				? _self.appendChar(_self, otherChars[i])
+			}
+		}
+	}
+
+	/** Now `@throws`: `DynamicArray::pushBack` is itself `@throws` now (its own `resize` can fail -- "new throws, but dyn and resize dont, they need to use the same pattern as new," confirmed directly), so this method must wrap that call and propagate the caught error to its own caller in turn -- the same cascade `sub` below already documents for `new String()`. */
+	@pub
+	@throws
+	func appendChar(_self: ref some mut self, c: mut char) void{
+		?catch(e){ throw e }
+		? _self.chars.pushBack(_self.chars, c)
+	}
+
+	/** The substring from `start` (inclusive) to `end` (exclusive) -- two separate arguments, not one "0..12" range value: a bare `range` used as an ordinary (non-storage) parameter type is an "incomplete type" in this language. Now `@throws`: its own internal call to `new String()` is itself `@throws` now (see the `String()` constructor's own doc comment), so this method must wrap that call and propagate the caught error to its own caller in turn. */
+	@pub
+	@throws
+	func sub(_self: ref some imut self, start: mut u64, end: mut u64) owns some mut String{
+		?catch(e){ throw e }
+		let result = mut ? new String()
+		for i in start..end{
+			match i in _self.chars.backing{
+				? result.appendChar(result, _self.chars.backing[i])
+			}
+		}
+		return result
+	}
+
+	/** Returns the index of the first occurrence of `target`, or `-1` when `target` isn't present -- there's no option/result type yet to signal that separately, so a negative `s64` is the sentinel (an index itself is never negative). Unlike the earlier version of this method, there is no internal null check on `_self` at all -- `ref some` already requires the caller to have proven that before the call was even legal. */
+	@pub
+	func firstIndexOf(_self: ref some imut self, target: mut char) mut s64{
+		let n = mut len(_self.chars.backing)
+		let position = mut -1
+		for i in 0..n{
+			position++
+			match i in _self.chars.backing{
+				if _self.chars.backing[i] == target{
+					return position
+				}
+			}
+		}
+		return -1
+	}
+
+	/**
+	 * Bounds-safe: out-of-range returns '\0'. `_self` needs no internal
+	 * null check any more (`ref some`, proven by the caller), but this
+	 * method still needs an ordinary
+	 * `match i in _self.chars.backing{...}` for the index itself, rather
+	 * than through a `@lock(match i in self.chars.backing)` precondition
+	 * the way `DynamicArray<T>::get` now does. This is a real, narrower
+	 * scope limitation, not an oversight: `@lock(match ...)`'s own
+	 * grammar (`Parser.parseLockInQualifier`) only ever accepts a
+	 * single-level `self.field`, never a nested chain like
+	 * `self.chars.backing` -- there is currently no way to make
+	 * bounds-proof through a nested struct member a caller-side
+	 * precondition at all. Once that grammar is extended, this can
+	 * become `@lock`-qualified exactly like `get`.
+	 */
+	@pub
+	func charAt(_self: ref some imut self, i: mut u64) mut char{
+		match i in _self.chars.backing{
+			return _self.chars.backing[i]
+		}
+		return mut '\0'
+	}
+
+	/**
+	 * Overwrites the character at index `i` with `c`, by composition: it
+	 * hands the write straight to `DynamicArray::set` on the underlying
+	 * `chars` (the same way `appendChar` hands off to `pushBack`), rather
+	 * than writing into `backing` itself. `DynamicArray::set` is
+	 * `@lock(match i into self.backing)` -- the caller must hold a write
+	 * authorization for `i` -- so this method takes that proof itself with
+	 * `match i into _self.chars.backing{...}` and out-of-range `i` is
+	 * simply a no-op (mirroring `charAt`, which returns '\0' out of range).
+	 */
+	@pub
+	func setCharAt(_self: ref some mut self, i: mut u64, c: mut char) void{
+		match i into _self.chars.backing{
+			_self.chars.set(_self.chars, i, c)
+		}
+	}
+}

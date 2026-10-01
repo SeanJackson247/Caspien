@@ -1,0 +1,34 @@
+// The real "@sleep" -- called by the compiler's own "sleep(...)"
+// keyword (see TypeChecker.checkSleepCall, and caspien-compiler's own
+// CLAUDE.md, "'sleep' introduced as a keyword") whenever it's used
+// anywhere in the compilation unit; using "sleep(...)" without a
+// function decorated "@sleep" imported somewhere is a compile-time
+// error ("requires a function decorated '@sleep' to exist..."), the
+// same shape "@par_call"/"@await_call" already have for "par"/"await".
+//
+// A pure wrapper around the real C library "sleep" -- "have it take
+// the same arguments as the function in C," confirmed directly: the
+// real POSIX signature is "unsigned int sleep(unsigned int seconds)",
+// approximated here (the same widening this stdlib's other C wrappers
+// already use, e.g. putchar/getchar's own "int" -> "u64") as a single
+// plain "u64" parameter (the number of seconds to sleep) returning a
+// plain "u64" (the number of seconds left unslept, if a signal
+// interrupted it early -- 0 on ordinary completion). "@sleep" itself
+// enforces this exact shape at compile time (TypeChecker.
+// requireSleepSignature) -- a function decorated "@sleep" with any
+// other signature is rejected before it can ever reach here.
+//
+// The real extern this wraps is declared as "c_sleep," not "sleep" --
+// see libc.caspien's own comment on why "sleep" itself was no longer
+// available to name it.
+import "libc.caspien"
+
+@sleep
+@pub
+func sleep_call(seconds: mut u64) mut u64{
+	let remaining = mut 0
+	unsafe{
+		remaining = mut c_sleep(seconds)
+	}
+	return remaining
+}

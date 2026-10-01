@@ -1,0 +1,350 @@
+// SHA-256 (FIPS 180-4), written in Caspien with the bitwise builtins (`bits_xor`, `bits_and`, `bits_not`, `bits_left`, `bits_right`, `bits_or`)
+// and native, wrapping `u32` arithmetic. Pointer-based, like `hash.caspien`: every function takes `raw` pointers (which only `unsafe` code can
+// make: `malloc`, `raw x`; a string literal is not a byte pointer, copy it into a `malloc`'d buffer with `memcopy` first).
+//
+//   one shot      `sha256(data, byteCount, digest)`            -- `data`: `raw imut u8`, `digest`: `raw mut u8`, 32 bytes written
+//   streaming     `sha256Begin(ctx)`, `sha256Update(ctx, data, byteCount)`, `sha256Finish(ctx, digest)`, `sha256Release(ctx)`
+//   block level   `sha256Init(state)`, `sha256Compress(state, block)` (one 64-byte block), `sha256CompressWords(state, words)` (one block
+//                 already given as 16 big-endian-interpreted `u32` words, e.g. a precomputed padding block), `sha256Digest(state, digest)`
+//   helpers       `sha256NewState()` / `sha256FreeState(state)` (a heap block of 8 `u32` words, initialised to the SHA-256 start state),
+//                 `sha256WordsAlloc(wordCount)` / `sha256WordsFree(p)` (a `raw mut u32` buffer: malloc's `raw mut u8` cannot be
+//                 converted to a `raw u32`, and a local array has no pointer)
+//
+// The state is 8 `u32` words H0..H7; the 32-byte digest is those words big-endian, H0 first. A block of 64 bytes is read as 16 big-endian
+// words. `sha256Compress` and `sha256CompressWords` are the same compression function; they differ only in how the 16 message words are
+// obtained (the function body is duplicated because an array cannot be passed to a function and a local array has no `raw` pointer).
+// Reading and writing through a `raw u32` goes through `deref(p + i)` and `memcopy` (a `deref(...)` is not assignable).
+// Verified against FIPS 180-4 vectors, hashlib digests for lengths around every padding boundary, a million 'a' and the streaming API in
+// tests/sha256_test.caspien; speed is not the goal here (the Merkle benchmark has its own hand-tuned, unrolled compression: its working values
+// are `u64` locals, which the register-form pass fuses much better than `u32` operands next to global arrays). With function-inlining
+// aggressive, every CALL SITE of `sha256` / `sha256Compress` becomes a private copy of the code (the loops are kept as loops through the
+// `sha256Rounds` static, but hundreds of call sites still add up); a program that hashes in many places should call it from a few.
+import "libc.caspien"
+
+// the round count lives in a `let static` so the optimiser's loop unroller (which only unrolls literal bounds) keeps the 64-round loops as
+// loops: unrolled and inlined into every call site the compression function is thousands of lines
+let static sha256Rounds = mut 64
+let static:<mut u32[64]> sha256K = mut [0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070, 0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3, 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2]
+
+@link_name(malloc)
+extern sha256MallocWords(mut u64) raw mut u32
+@link_name(free)
+extern sha256FreeWords(raw imut u32) void
+
+func sha256Rotr(x: mut u32, n: mut u32) mut u32{
+	return bits_or(bits_right(x, n), bits_left(x, 32 - n))
+}
+
+func sha256Put(p: raw mut u32, i: mut u64, v: mut u32) void{
+	unsafe{
+		memcopy(p + i, mut 4, raw v)
+	}
+}
+
+/** A heap buffer of `wordCount` `u32` words (contents unspecified); release with `sha256WordsFree`. */
+@pub
+func sha256WordsAlloc(wordCount: mut u64) raw mut u32{
+	let:<raw mut u32> p = null
+	unsafe{
+		p = sha256MallocWords(wordCount * 4)
+	}
+	return p
+}
+
+@pub
+func sha256WordsFree(p: raw mut u32) void{
+	unsafe{
+		sha256FreeWords(p)
+	}
+}
+
+/** Writes the SHA-256 start state (H0 of FIPS 180-4) into the 8 words at `state`. */
+@pub
+func sha256Init(state: raw mut u32) void{
+	sha256Put(state, 0, 0x6a09e667)
+	sha256Put(state, 1, 0xbb67ae85)
+	sha256Put(state, 2, 0x3c6ef372)
+	sha256Put(state, 3, 0xa54ff53a)
+	sha256Put(state, 4, 0x510e527f)
+	sha256Put(state, 5, 0x9b05688c)
+	sha256Put(state, 6, 0x1f83d9ab)
+	sha256Put(state, 7, 0x5be0cd19)
+}
+
+/** A new heap state (8 words) already initialised with `sha256Init`; release with `sha256FreeState`. */
+@pub
+func sha256NewState() raw mut u32{
+	let st = mut sha256WordsAlloc(8)
+	sha256Init(st)
+	return st
+}
+
+@pub
+func sha256FreeState(state: raw mut u32) void{
+	sha256WordsFree(state)
+}
+
+/** Compresses ONE 64-byte block (`block`: 64 bytes, read as 16 big-endian words) into the 8-word `state`, in place. No padding is applied. */
+@pub
+func sha256Compress(state: raw mut u32, block: raw imut u8) void{
+	let:<mut u32[64]> w = mut [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+	unsafe{
+		for i in 0..16{
+			match i into w{
+				let p = mut (block + i * 4)
+				let b0 = mut deref(p) as u32
+				let b1 = mut deref(p + 1) as u32
+				let b2 = mut deref(p + 2) as u32
+				let b3 = mut deref(p + 3) as u32
+				w[i] = bits_or(bits_or(bits_left(b0, 24), bits_left(b1, 16)), bits_or(bits_left(b2, 8), b3))
+			}
+		}
+		for i in 16..sha256Rounds{
+			let i15 = mut (i - 15)
+			let i2 = mut (i - 2)
+			let i16 = mut (i - 16)
+			let i7 = mut (i - 7)
+			match i15 in w{
+			match i2 in w{
+			match i16 in w{
+			match i7 in w{
+			match i into w{
+				let x15 = mut w[i15]
+				let x2 = mut w[i2]
+				let s0 = mut bits_xor(bits_xor(sha256Rotr(x15, 7), sha256Rotr(x15, 18)), bits_right(x15, 3))
+				let s1 = mut bits_xor(bits_xor(sha256Rotr(x2, 17), sha256Rotr(x2, 19)), bits_right(x2, 10))
+				w[i] = w[i16] + s0 + w[i7] + s1
+			}
+			}
+			}
+			}
+			}
+		}
+		let a = mut deref(state)
+		let b = mut deref(state + 1)
+		let c = mut deref(state + 2)
+		let d = mut deref(state + 3)
+		let e = mut deref(state + 4)
+		let f = mut deref(state + 5)
+		let g = mut deref(state + 6)
+		let h = mut deref(state + 7)
+		for i in 0..sha256Rounds{
+			match i in w{
+			match i in sha256K{
+				let s1 = mut bits_xor(bits_xor(sha256Rotr(e, 6), sha256Rotr(e, 11)), sha256Rotr(e, 25))
+				let ch = mut bits_xor(bits_and(e, f), bits_and(bits_not(e), g))
+				let t1 = mut (h + s1 + ch + sha256K[i] + w[i])
+				let s0 = mut bits_xor(bits_xor(sha256Rotr(a, 2), sha256Rotr(a, 13)), sha256Rotr(a, 22))
+				let mj = mut bits_xor(bits_xor(bits_and(a, b), bits_and(a, c)), bits_and(b, c))
+				let t2 = mut (s0 + mj)
+				h = g
+				g = f
+				f = e
+				e = d + t1
+				d = c
+				c = b
+				b = a
+				a = t1 + t2
+			}
+			}
+		}
+		sha256Put(state, 0, deref(state) + a)
+		sha256Put(state, 1, deref(state + 1) + b)
+		sha256Put(state, 2, deref(state + 2) + c)
+		sha256Put(state, 3, deref(state + 3) + d)
+		sha256Put(state, 4, deref(state + 4) + e)
+		sha256Put(state, 5, deref(state + 5) + f)
+		sha256Put(state, 6, deref(state + 6) + g)
+		sha256Put(state, 7, deref(state + 7) + h)
+	}
+}
+
+/** Compresses ONE block given as 16 words (`words`: 16 `u32`, word i is bytes 4i..4i+3 of the block read big-endian) into the 8-word `state`, in place. */
+@pub
+func sha256CompressWords(state: raw mut u32, words: raw imut u32) void{
+	let:<mut u32[64]> w = mut [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+	unsafe{
+		for i in 0..16{
+			match i into w{
+				w[i] = deref(words + i)
+			}
+		}
+		for i in 16..sha256Rounds{
+			let i15 = mut (i - 15)
+			let i2 = mut (i - 2)
+			let i16 = mut (i - 16)
+			let i7 = mut (i - 7)
+			match i15 in w{
+			match i2 in w{
+			match i16 in w{
+			match i7 in w{
+			match i into w{
+				let x15 = mut w[i15]
+				let x2 = mut w[i2]
+				let s0 = mut bits_xor(bits_xor(sha256Rotr(x15, 7), sha256Rotr(x15, 18)), bits_right(x15, 3))
+				let s1 = mut bits_xor(bits_xor(sha256Rotr(x2, 17), sha256Rotr(x2, 19)), bits_right(x2, 10))
+				w[i] = w[i16] + s0 + w[i7] + s1
+			}
+			}
+			}
+			}
+			}
+		}
+		let a = mut deref(state)
+		let b = mut deref(state + 1)
+		let c = mut deref(state + 2)
+		let d = mut deref(state + 3)
+		let e = mut deref(state + 4)
+		let f = mut deref(state + 5)
+		let g = mut deref(state + 6)
+		let h = mut deref(state + 7)
+		for i in 0..sha256Rounds{
+			match i in w{
+			match i in sha256K{
+				let s1 = mut bits_xor(bits_xor(sha256Rotr(e, 6), sha256Rotr(e, 11)), sha256Rotr(e, 25))
+				let ch = mut bits_xor(bits_and(e, f), bits_and(bits_not(e), g))
+				let t1 = mut (h + s1 + ch + sha256K[i] + w[i])
+				let s0 = mut bits_xor(bits_xor(sha256Rotr(a, 2), sha256Rotr(a, 13)), sha256Rotr(a, 22))
+				let mj = mut bits_xor(bits_xor(bits_and(a, b), bits_and(a, c)), bits_and(b, c))
+				let t2 = mut (s0 + mj)
+				h = g
+				g = f
+				f = e
+				e = d + t1
+				d = c
+				c = b
+				b = a
+				a = t1 + t2
+			}
+			}
+		}
+		sha256Put(state, 0, deref(state) + a)
+		sha256Put(state, 1, deref(state + 1) + b)
+		sha256Put(state, 2, deref(state + 2) + c)
+		sha256Put(state, 3, deref(state + 3) + d)
+		sha256Put(state, 4, deref(state + 4) + e)
+		sha256Put(state, 5, deref(state + 5) + f)
+		sha256Put(state, 6, deref(state + 6) + g)
+		sha256Put(state, 7, deref(state + 7) + h)
+	}
+}
+
+/** Writes the 32-byte digest (the state words, big-endian, H0 first) of `state` to `digest`. */
+@pub
+func sha256Digest(state: raw imut u32, digest: raw mut u8) void{
+	unsafe{
+		for i in 0..8{
+			let v = mut deref(state + i)
+			for k in 0..4{
+				let sh = mut wrap:<u32>(24 - 8 * k)
+				let byteVal = mut wrap:<u8>(bits_right(v, sh))
+				memcopy(digest + (i * 4 + k), mut 1, raw byteVal)
+			}
+		}
+	}
+}
+
+// Streaming context: a heap state (8 words), a 64-byte pending buffer, the pending byte count and the total byte count.
+@pub
+struct Sha256Ctx{@pub{
+	state: raw mut u32
+	pending: raw mut u8
+	pendingCount: mut u64
+	totalCount: mut u64
+}}
+
+/** Starts a hash: allocates the state and the pending buffer inside `ctx`. Release with `sha256Release`. */
+@pub
+func sha256Begin(ctx: auto mut Sha256Ctx) void{
+	unsafe{
+		ctx.state = mut sha256NewState()
+		ctx.pending = mut malloc(64)
+		ctx.pendingCount = mut 0
+		ctx.totalCount = mut 0
+	}
+}
+
+/** Feeds `byteCount` bytes at `data` into the hash. Any number of calls, any split of the message. Bytes are collected in the 64-byte pending buffer and compressed from there (one compression call site). */
+@pub
+func sha256Update(ctx: auto mut Sha256Ctx, data: raw imut u8, byteCount: mut u64) void{
+	unsafe{
+		let done = mut 0
+		ctx.totalCount = mut (ctx.totalCount + byteCount)
+		loop{
+			if ctx.pendingCount == 64{
+				sha256Compress(ctx.state, ctx.pending)
+				ctx.pendingCount = mut 0
+			}else{
+				let remaining = mut (byteCount - done)
+				if remaining == 0{
+					break
+				}
+				let take = mut (64 - ctx.pendingCount)
+				if take > remaining{
+					take = remaining
+				}
+				memcopy(ctx.pending + ctx.pendingCount, take, data + done)
+				ctx.pendingCount = mut (ctx.pendingCount + take)
+				done = done + take
+			}
+		}
+	}
+}
+
+/** Pads, finishes and writes the 32-byte digest to `digest`. The context must not be updated afterwards (call `sha256Begin` again to reuse it). */
+@pub
+func sha256Finish(ctx: auto mut Sha256Ctx, digest: raw mut u8) void{
+	unsafe{
+		let bitCount = mut (ctx.totalCount * 8)
+		let pad = mut 0x80
+		let zero = mut 0
+		memcopy(ctx.pending + ctx.pendingCount, mut 1, raw pad)
+		let from = mut (ctx.pendingCount + 1)
+		let lastBlock = mut (from <= 56)
+		loop{
+			if lastBlock{
+				for i in from..56{
+					memcopy(ctx.pending + i, mut 1, raw zero)
+				}
+				for k in 0..8{
+					let sh = mut wrap:<u64>(56 - 8 * k)
+					let byteVal = mut wrap:<u8>(bits_right(bitCount, sh))
+					memcopy(ctx.pending + (56 + k), mut 1, raw byteVal)
+				}
+			}else{
+				for i in from..64{
+					memcopy(ctx.pending + i, mut 1, raw zero)
+				}
+			}
+			sha256Compress(ctx.state, ctx.pending)
+			if lastBlock{
+				break
+			}
+			lastBlock = true
+			from = mut 0
+		}
+		sha256Digest(ctx.state, digest)
+		ctx.pendingCount = mut 0
+	}
+}
+
+/** Frees what `sha256Begin` allocated. */
+@pub
+func sha256Release(ctx: auto mut Sha256Ctx) void{
+	unsafe{
+		sha256FreeState(ctx.state)
+		free(ctx.pending)
+	}
+}
+
+/** One-shot SHA-256: hashes the `byteCount` bytes at `data` and writes the 32-byte digest to `digest`. `byteCount` may be 0 (`data` may then be null). */
+@pub
+func sha256(data: raw imut u8, byteCount: mut u64, digest: raw mut u8) void{
+	unsafe{
+		let ctx = mut Sha256Ctx{state= null, pending= null, pendingCount= mut 0, totalCount= mut 0}
+		sha256Begin(auto ctx)
+		sha256Update(auto ctx, data, byteCount)
+		sha256Finish(auto ctx, digest)
+		sha256Release(auto ctx)
+	}
+}

@@ -1,0 +1,131 @@
+// A handful of C standard library functions, made available via
+// 'extern' for linking against libc in the final assembly. Calling any
+// of these requires 'unsafe' code (see CLAUDE.md, "extern and export")
+// -- declaring/importing them does not.
+//
+// Signature notes:
+//   - printf's format string and every fixed/variadic argument are
+//     never validated against each other by this compiler (no printf-
+//     format-string checking exists) -- getting the format string
+//     wrong is exactly as unsafe here as it is in C itself.
+//   - putchar/getchar move a character as a full word (mirroring C's
+//     own "int", not a narrower char type) -- putchar returns the
+//     character written back (or an EOF-ish sentinel on failure),
+//     getchar returns the character read (or EOF).
+//   - strlen takes a Caspien 'string' directly, since a Caspien string
+//     is already the pointer C's 'const char*' expects.
+//   - malloc/realloc/free operate on raw bytes ('raw u8') -- the
+//     single shared source for these three, imported by anything that
+//     needs real heap allocation (the ghost table, the generic 'hashOf'
+//     byte-hasher, the SHA-256 streaming context) rather than each declaring its own independent
+//     copy, which would conflict the instant two such files were
+//     imported into the same program together (a real mistake caught
+//     exactly that way while building 'hashOf').
+//   - abort() genuinely never returns (it terminates the process) --
+//     this compiler's own "every path must return" check has no way
+//     to know that about an arbitrary extern, though, so a call to it
+//     still needs to be followed by *something* satisfying that check
+//     structurally. Real code (e.g. DynamicArray<T>::get) follows it
+//     with a break-free "loop{}" for exactly this reason -- genuinely
+//     dead code in any real run (abort() has already ended the
+//     process before it could ever be reached), there purely to
+//     satisfy the type checker, the same well-established pattern
+//     other languages use their own "unreachable()"-style markers for.
+//     Used specifically in place of silently looping forever on a
+//     genuine invariant violation (the actual bug this replaced) --
+//     crashing loudly and immediately beats hanging silently forever.
+//   - clock() returns CPU time consumed by the process (clock_t,
+//     scaled by CLOCKS_PER_SEC), not true monotonic wall-clock elapsed
+//     time -- "just extern clock() for me... we'll move forward with
+//     that limitation for now," confirmed directly: a genuine,
+//     accepted limitation (it won't count time spent blocked on I/O or
+//     asleep), chosen specifically because, unlike a true monotonic
+//     clock (POSIX's own clock_gettime(CLOCK_MONOTONIC, ...), not
+//     ANSI C, and takes an out-parameter pointer rather than returning
+//     a scalar), clock() is genuinely as universal and simply-shaped
+//     as strlen/printf themselves -- a plain, argument-less call
+//     returning one scalar. No CLOCKS_PER_SEC constant exposed here --
+//     not asked for.
+//   - popen()/pclose()/fgets()/fputs() -- "spawn"/"StdOut"/"StdIn,"
+//     confirmed directly, are built on top of these, in
+//     "stdlib/process.caspien," never called directly by ordinary
+//     code. "Ok if you could just give me one directional handles for
+//     now that would be good," confirmed directly -- popen()'s own
+//     mode string ("r" xor "w", never both at once) is exactly why a
+//     spawned process here only ever supports reading *or* writing,
+//     never both on the same handle (a genuine, real limitation, the
+//     same "accepted for now" shape clock()'s own CPU-time-not-wall-
+//     clock limitation already has -- true bidirectional access needs
+//     several lower-level calls orchestrated together per platform
+//     (pipe()/fork()/dup2()/exec() on POSIX; CreateProcess() with pipe
+//     handles on Windows), not one clean extern binding the way this
+//     is). fgets()'s own declared return type here (`static imut
+//     string`) doesn't literally match its real C signature (`char*`,
+//     not `const char*`) -- the same "best-fit Caspien approximation,
+//     not a literal signature match" already true of malloc/realloc's
+//     own declared return type here (`raw mut u8`, not C's `void*`).
+extern printf(static imut string,...) void
+extern putchar(mut u64) mut u64
+extern getchar() mut u64
+extern strlen(static imut string) mut u64
+extern malloc(mut u64) raw mut u8
+extern realloc(raw mut u8, mut u64) raw mut u8
+extern free(raw imut u8) void
+extern abort() void
+extern clock() mut u64
+// "c_sleep," not "sleep" -- "sleep" itself is now a reserved language
+// keyword (see "sleep(...)" in caspien-compiler's own CLAUDE.md), so
+// the real C library function can no longer be *declared* under its own
+// literal name (an extern's name and a keyword can't share a spelling
+// any more than an extern and an ordinary function can) -- but the real
+// C library still only ever exports it *linked* under that exact
+// literal "sleep" symbol, so "@link_name(sleep)" is required here:
+// without it, this would link against a nonexistent "c_sleep" symbol
+// instead of the real C library function. Never called directly by
+// ordinary code -- stdlib/sleep.caspien's own "@sleep"-decorated
+// wrapper is the only intended caller, and every "sleep(...)" keyword
+// call site in user code resolves to *that* wrapper, never to this
+// extern.
+@link_name(sleep)
+extern c_sleep(mut u64) mut u64
+extern popen(static imut string, static imut string) raw mut u8
+extern pclose(raw mut u8) mut u64
+extern fgets(raw mut u8, mut u64, raw mut u8) static imut string
+extern fputs(static imut string, raw mut u8) mut u64
+
+// pthread bindings, added for real OS-thread-backed "par"/"await" (see
+// "stdlib/par_call.caspien"/"stdlib/await_call.caspien" -- the only
+// two callers of these three). Linking these requires "-pthread"
+// (glibc's own pthread symbols live in a separate archive/shared
+// object from the rest of libc on Linux; mingw-w64's own winpthreads
+// is pulled in identically via the same "-pthread" flag on Windows).
+//
+//   - pthread_create's real C signature is
+//     "int pthread_create(pthread_t *thread, const pthread_attr_t
+//     *attr, void *(*start_routine)(void *), void *arg)" -- "pthread_t*
+//     as raw mut u64" (pthread_t is word-sized on Linux/glibc, the
+//     same "best-fit approximation" precedent malloc/realloc's own
+//     declared "raw mut u8" return type here already established for
+//     C's "void*"), "pthread_attr_t* as raw mut u8" (accepting 'null'
+//     for "use the default attributes," the only way this is ever
+//     called), the start routine as a bare "raw imut u8" (this
+//     bytecode has no real function-pointer *value* type distinct from
+//     a plain raw pointer once it's been reduced to a bare address --
+//     see "@par_call"/"@await_call"'s own identical parameter shape),
+//     "void* arg" as "raw mut u8".
+//   - pthread_join's real C signature is "int pthread_join(pthread_t
+//     thread, void **retval)" -- the thread is passed *by value*, not
+//     by pointer (unlike pthread_create's own first parameter), so
+//     "mut u64" here, not a pointer; "void** retval" as "raw mut u8"
+//     (accepting 'null' -- "@await_call" never wants the raw
+//     "pthread_exit"-style return value back, only the fact that the
+//     thread has finished).
+//   - pthread_exit is deliberately *not* declared here at all -- it's
+//     called directly by the not-yet-built-until-now codegen stage's
+//     own "EXIT_THREAD" mnemonic (X86Backend), by its own fixed,
+//     literal C symbol name, exactly the same "already linked in, no
+//     EXTERN declaration needed" precedent this file's own comment
+//     above already established for "exit" (see "EXIT"'s own codegen
+//     case) -- no real Caspien source anywhere ever calls it directly.
+extern pthread_create(raw mut u64, raw mut u8, raw imut u8, raw mut u8) mut u64
+extern pthread_join(mut u64, raw mut u8) mut u64

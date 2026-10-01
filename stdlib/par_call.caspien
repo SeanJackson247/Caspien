@@ -1,0 +1,33 @@
+// The real "@par_call" -- called by the compiler's own "par foo(...)"
+// desugaring (see caspien-compiler's own CLAUDE.md, "par"/"await"
+// real-thread desugaring) with the trampoline's own address (`fn`) and
+// the freshly-constructed, already-`gt_register`ed handle pointer
+// (`handle`, erased to a bare "raw mut u8" -- the fixed shape every
+// "@par_call"/"@await_call" must have, since the concrete
+// "AsyncHandle_<T>"/hidden-handle struct varies per "@async" function
+// and this must be one single, fixed-signature function for the whole
+// compilation unit).
+//
+// "par" is fire-and-forget: it starts the real OS thread and returns
+// immediately, handing the caller back the handle itself (still
+// pending) to poll/`:resolve()` later -- so this body is nothing more
+// than a bare "pthread_create". Unlike "@await_call" just below, it
+// never reads the pthread_t `pthread_create` writes out (nothing here
+// ever joins the thread it started) -- "threadId" on the handle struct
+// is kept purely as general-purpose plumbing for whatever a future
+// pass adds here (the language's own "join" keyword/"JOIN" bytecode
+// mnemonic were removed entirely, not deferred -- there is currently
+// no user-facing way to join a "par"'d thread at all), so a throwaway
+// local is used here instead of writing through the handle's own
+// (structurally unknown at this fixed, erased signature) "value"/
+// "threadId" field offsets.
+import "libc.caspien"
+
+@par_call
+@pub
+func par_call(fn: raw imut u8, handle: raw mut u8) void{
+	let tid = mut 0
+	unsafe{
+		pthread_create(raw tid, null, fn, handle)
+	}
+}
