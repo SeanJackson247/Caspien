@@ -1,0 +1,44 @@
+// A program that never terminates: `@with_tick` on `main`, an `@event_loop` entry point,
+// and a `@tick` handler. `main` builds the state, the loop hands it to `tick` forever.
+// Each tick still runs to completion (the total-slice rule); only the loop is unbounded.
+// Run it with `timeout 1 ./09 | head -3`   Expected output: tick 1, tick 2, tick 3
+import "../../stdlib/libc.caspien"
+
+// stdout is block-buffered when piped, so flush each tick to see output from a loop that never ends.
+extern fflush(raw mut u8) void
+import "../../stdlib/gt_init.caspien"
+import "../../stdlib/gt_register.caspien"
+import "../../stdlib/gt_alive_check.caspien"
+import "../../stdlib/gt_destruct.caspien"
+
+struct World{@pub{
+	ticks: mut u64
+}}
+
+// The entry point. It is the only function allowed one bare `loop{}` without `unsafe`.
+// (stdlib/event_loop.caspien is the same thing for a `main` that cannot throw.)
+@event_loop
+func start() void{
+	?catch(e){ return }
+	let state = mut ? main()
+	loop{
+		state = tick(state)
+	}
+}
+
+@with_tick
+@throws
+func main() owns some mut World{
+	?catch(e){ throw e }
+	return ? new World{ticks= 0}
+}
+
+@tick
+func tick(w: owns some mut World) owns some mut World{
+	w.ticks += 1
+	unsafe{
+		printf("tick %llu\n", w.ticks)
+		fflush(null)
+	}
+	return w
+}

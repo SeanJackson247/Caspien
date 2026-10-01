@@ -1,3 +1,8 @@
+## Fixed: `s = f(s)` destructed the old owns value BEFORE the call that moves it (`BytecodeEmitter.emitAssign`) (2 Oct 2026)
+
+Found while writing the event-loop example: `state = tick(state)` (the shape `stdlib/event_loop*.caspien` use) made `tick` read freed memory (garbage field values). `emitAssign` emitted `GT_DESTRUCT <target>` before evaluating the right side, so a call that moves the same variable in (nulling it) found the object already freed. For a flat-named target (a variable or pointer-free `.` chain) the destruct is now emitted AFTER the right side is evaluated, where it sees the moved-out (null) slot and is a no-op; an ordinary reassignment still frees the old value (valgrind: only the ghost table block in use at exit). New `tests/owns_reassign_move_test.caspien`; 60 `tests/*.caspien` programs (all but the n-body, bits, sha256 and fnv1a ones) give exit 0 and no FAIL on Linux.
+STILL OPEN (same bug): a target reached through a pointer (`h.w = pass(h.w)` with `h` a heap pointer, or a `LOOKUP` target) takes the `DUP_TOP` / `GT_DESTRUCT_ADDR` path, which still destructs before the right side is evaluated. Fixing it needs a way to destruct the address that sits UNDER the pushed value (a new mnemonic or a temporary). `stdlib/event_loop.caspien` cannot be used with a throwing `main` (it calls `main()` without `try`), so `docs/examples/09_event_loop.caspien` defines its own `@event_loop`.
+
 ## New: real FNV-1a `hashOf`, a real SHA-256 in the stdlib (`stdlib/sha256.caspien`), and the Merkle benchmark ported to real SHA-256 (1 Oct 2026)
 
 Asked for, once `bits_xor` / `bits_and` / `bits_not` / shifts existed. No compiler change (no compiler bug found; nothing in ASTGenerator / Optimizer / LowerOrderGenerator / Codegen was touched).

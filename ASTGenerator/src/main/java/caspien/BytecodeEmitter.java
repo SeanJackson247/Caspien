@@ -3821,6 +3821,15 @@ public class BytecodeEmitter {
      * side-effecting sub-expression inside the target, such as a LOOKUP
      * index expression containing a call).
      */
+    private boolean isFlatOwnsDestructTarget(Token target) {
+        if (target.type == TokenType.KEYWORD || target.resolvedType == null
+                || !target.resolvedType.startsWith("owns")) {
+            return false;
+        }
+        return target.type == TokenType.VARREF
+                || (target.type == TokenType.OPERATOR && target.text.equals(".") && isQualifiedNameableDot(target));
+    }
+
     private boolean emitDestructOldOwnedValue(Token target) {
         if (target.type == TokenType.KEYWORD || target.resolvedType == null
                 || !target.resolvedType.startsWith("owns")) {
@@ -3851,11 +3860,22 @@ public class BytecodeEmitter {
             emitStructRvoAssign(op);
             return;
         }
-        boolean addressAlreadyOnStack = emitDestructOldOwnedValue(op.left);
+        // A flat-named owns target (a variable, or a pointer-free '.' chain) is destructed
+        // AFTER the right side is evaluated: "s = pass(s)" moves the old value into the
+        // call, which nulls the variable, so destructing first freed an object the callee
+        // was about to use. Destructing late sees the moved-out (null) slot and is a no-op.
+        boolean lateDestruct = isFlatOwnsDestructTarget(op.left);
+        boolean addressAlreadyOnStack = false;
+        if (!lateDestruct) {
+            addressAlreadyOnStack = emitDestructOldOwnedValue(op.left);
+        }
         if (!addressAlreadyOnStack) {
             emitAssignTarget(op.left);
         }
         emitExpr(op.right);
+        if (lateDestruct) {
+            emitDestructOldOwnedValue(op.left);
+        }
         String assignMnemonic = isAtomicCanonical(op.left.resolvedType) ? "ATOMIC_ASSIGN" : "ASSIGN";
         line(assignMnemonic + " " + op.left.resolvedType + " " + op.right.resolvedType + " " + op.resolvedType);
         if (op.right.isOwnershipMoveSource) {

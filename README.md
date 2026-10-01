@@ -276,6 +276,71 @@ match @lock c{
 }
 ```
 
+#### Program entry: `main` arguments and event loops
+
+A plain program has one `main`. It takes no arguments and returns `void`, `bool` or `s32`. It can instead
+take the command-line arguments in one of two shapes.
+
+```rust
+// C shape: the raw argc/argv pair. The pointers are raw, so reading them needs `unsafe`.
+func main(argc: imut s32, argv: raw mut raw mut char) void{ /* ... */ }
+
+// Safe shape: the arguments copied into owned dynarrays of dynarrays of chars.
+// Needs `import "stdlib/make_safe_args.caspien"` (the function marked `@make_safe_args`).
+func main(args: owns some mut dynarray(imut dynarray(imut char))) void{
+	let n = mut len(args)             // how many arguments, including the program name
+	match 1 in args{                  // an index into a dynarray needs a proof
+		let first = mut args[1]
+		/* `first` is a dynarray of char */
+	}
+}
+```
+
+The safe shape is the idiomatic one: `make_safe_args` copies every argument, so your program never holds a
+pointer into the C runtime's memory. (`docs/examples/07_main_c_args.caspien` and
+`08_main_safe_args.caspien` are runnable versions.)
+
+A program that never terminates is written as an **event loop**. Three decorators work together, and the
+compiler checks that each appears exactly once. `main` is marked `@with_tick` and builds the initial state,
+a heap struct. `@tick` marks a function that takes the state and returns it. `@event_loop` marks the real
+entry point, which calls `main` once and then calls `tick` forever. It is the only function allowed a bare
+`loop{}` outside `unsafe`.
+
+```rust
+struct World{@pub{
+	ticks: mut u64
+}}
+
+@event_loop
+func start() void{
+	?catch(e){ return }
+	let state = mut ? main()
+	loop{
+		state = tick(state)
+	}
+}
+
+@with_tick
+@throws
+func main() owns some mut World{
+	?catch(e){ throw e }
+	return ? new World{ticks= 0}
+}
+
+@tick
+func tick(w: owns some mut World) owns some mut World{
+	w.ticks += 1
+	return w
+}
+```
+
+Each call to `tick` is an ordinary terminating function, so it is a total slice in the sense of section 1.1;
+the only unbounded construct is the loop that schedules them. `stdlib/event_loop.caspien` is a ready-made
+`@event_loop` for a `main` that cannot throw. A `main` that builds heap state has to throw, so it needs a
+local one like the above. If `main` takes arguments, the `@event_loop` function receives the raw `argc`
+and `argv` and passes them (or wraps them, in `stdlib/event_loop_safe_args.caspien`) through to `main`.
+The runnable version is `docs/examples/09_event_loop.caspien`.
+
 ### 1.3 Reading the code
 
 The syntax is deliberately regular. Blocks use braces, statements need no semicolons, `let` introduces a
@@ -288,7 +353,7 @@ it is checked (`@throws`, `@pub`, `@async`, `@recursive`, `@lock`, `@realizes`).
 - Struct values cannot be passed by value as parameters. Pass a pointer, or return the struct, which the
   compiler implements without a copy.
 - A dynarray's length is only known at run time, so every index into it, literal or not, needs a proof: `match 1 in a{ a[1] }` (or `into` to write). Fixed arrays with a literal index need none.
-- `main` takes no arguments by default and must return `void`, `bool` or `s32`.
+- `main` takes no arguments by default and must return `void`, `bool` or `s32`; see the entry-point section above for arguments and event loops.
 
 ### 1.4 Where the project stands against the ideal
 
@@ -301,7 +366,7 @@ runtime exceptions. Here is the current state, property by property.
 | **Bounded execution time** | Not enforced. | No worst-case execution time analysis. Loop bounds are runtime values, so a nested loop can be very long. The acyclic call graph would allow a static stack-depth bound, but none is computed. |
 | **Memory safety** | Single ownership with compile-time move checking; array and dynarray indexes proven in bounds; pointer dereference needs a liveness proof; `deref` and raw construction need `unsafe`. | Liveness of a `ref` is checked at *run time* against a table of live allocations, so a dangling `ref` is skipped rather than rejected at compile time. The lookup is a linear scan under a spin lock, so each check costs time proportional to the number of live allocations. The standard library itself contains `unsafe` code. |
 | **No runtime exceptions** | Division, float operations, narrowing, indexing and null access all need proofs; arithmetic wraps; failures are declared (`@throws`) and handled. | A thrown error is still a non-local transfer of control (a controlled one). Allocation failure is reported, not prevented. |
-| **The single event loop** | `stdlib/event_loop.caspien` sketches an `@event_loop` with a `tick` handler. | It is a minimal scaffold and has not been exercised by a test. `par`/`await` add real threads, which is a deliberate departure from a single loop. |
+| **The single event loop** | `@with_tick` / `@tick` / `@event_loop` give a non-terminating program (`docs/examples/09_event_loop.caspien`). | The stdlib `event_loop.caspien` only fits a `main` that cannot throw, so most programs write their own. The example is run by hand and is not in `tests/`. `par`/`await` add real threads, which is a deliberate departure from a single loop. |
 | **Soundness of the checker** | About 70 runtime regression programs in [`tests/`](tests), generated tests with expected values from independent Python models, and shell checks for the optimiser passes. | There is no formal proof, mechanised or otherwise. The checker is about 15,000 lines of Java, and "the compiler accepts it" is evidence, not proof. The large corpus of compile-error fixtures is kept outside this repository. |
 | **Platforms** | Linux x86-64 is the tested target. | The Windows (`windows_gnu`) output assembles and links but has not been run on a real Windows machine, and the MASM/Intel backend is unverified. |
 

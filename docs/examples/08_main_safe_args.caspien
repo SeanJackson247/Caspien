@@ -1,0 +1,19 @@
+// `main` may instead take the arguments already copied into owned, safe dynarrays.
+// A `@make_safe_args` function must exist; the stdlib one is the normal choice.
+// Run it as: ./08 one two   Expected output: args=3 first=3
+import "../../stdlib/libc.caspien"
+import "../../stdlib/gt_init.caspien"
+import "../../stdlib/gt_register.caspien"
+import "../../stdlib/gt_alive_check.caspien"
+import "../../stdlib/gt_destruct.caspien"
+import "../../stdlib/make_safe_args.caspien"
+
+func main(args: owns some mut dynarray(imut dynarray(imut char))) void{
+	let n = mut len(args)
+	let firstLen = mut 0
+	match 1 in args{
+		let one = mut args[1]
+		firstLen = len(one)
+	}
+	unsafe{ printf("args=%llu first=%llu\n", n, firstLen) }
+}

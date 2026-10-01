@@ -1,0 +1,11 @@
+// `main` may take the C argc/argv pair. The pointers are raw, so using them needs `unsafe`.
+// Run it as: ./07 one two   Expected output: argc=3
+import "../../stdlib/libc.caspien"
+
+func main(argc: imut s32, argv: raw mut raw mut char) void{
+	let count = mut 0
+	unsafe{
+		memcopy(raw count, mut 4, raw argc)
+		printf("argc=%llu\n", count)
+	}
+}
