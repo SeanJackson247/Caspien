@@ -287,7 +287,7 @@ it is checked (`@throws`, `@pub`, `@async`, `@recursive`, `@lock`, `@realizes`).
   a colon (`acct:deposit(50)`), which is sugar for passing the receiver explicitly (`acct.deposit(acct, 50)`).
 - Struct values cannot be passed by value as parameters. Pass a pointer, or return the struct, which the
   compiler implements without a copy.
-- A literal index into a dynarray is rejected. Bind it to a variable and prove it with `match k in a{...}`.
+- A dynarray's length is only known at run time, so every index into it, literal or not, needs a proof: `match 1 in a{ a[1] }` (or `into` to write). Fixed arrays with a literal index need none.
 - `main` takes no arguments by default and must return `void`, `bool` or `s32`.
 
 ### 1.4 Where the project stands against the ideal

@@ -9535,7 +9535,7 @@ public class TypeChecker {
                         "'u64 in <string>' is not valid as a match condition -- "
                                 + "it's only usable as an ordinary bool expression");
             }
-            out.add(new Token.MatchPattern(slotKeyOf(node.left), "in", null, boundsTargetSlotOf(node.right)));
+            out.add(new Token.MatchPattern(boundsSlotKeyOf(node.left), "in", null, boundsTargetSlotOf(node.right)));
             return;
         }
         if (node.type == TokenType.OPERATOR && node.text.equals("into")) {
@@ -9563,7 +9563,7 @@ public class TypeChecker {
                         "'u64 into <string>' is not valid -- 'into' only makes sense against a "
                                 + "range/dynarray target, never a string");
             }
-            out.add(new Token.MatchPattern(slotKeyOf(node.left), "into", null, boundsTargetSlotOf(node.right)));
+            out.add(new Token.MatchPattern(boundsSlotKeyOf(node.left), "into", null, boundsTargetSlotOf(node.right)));
             return;
         }
         if (node.type == TokenType.OPERATOR && node.text.equals("within")) {
@@ -9579,7 +9579,7 @@ public class TypeChecker {
             // same as a proven "match A in B{...}", with zero special-
             // casing needed anywhere past this point.
             resolveExprType(node, scope, func);
-            out.add(new Token.MatchPattern(slotKeyOf(node.left), "in", null, boundsTargetSlotOf(node.right)));
+            out.add(new Token.MatchPattern(boundsSlotKeyOf(node.left), "in", null, boundsTargetSlotOf(node.right)));
             return;
         }
         if (node.type == TokenType.OPERATOR && node.text.equals("fits")) {
@@ -16459,6 +16459,11 @@ public class TypeChecker {
     private String boundsSlotKeyOf(Token node) {
         if (node.type == TokenType.STRING) {
             return "STRING_LITERAL:" + node.literalValue;
+        }
+        if (node.type == TokenType.INTEGER) {
+            // A literal index can be proven like a variable: "match 1 in a{ a[1] }".
+            // A literal can never be reassigned, so the proof needs no invalidation.
+            return "INT_LITERAL:" + node.text;
         }
         return slotKeyOf(node);
     }
