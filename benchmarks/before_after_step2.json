@@ -1,0 +1,44 @@
+{
+ "old": {
+  "nb": {
+   "Caspien natural f64 · full": 0.6991729110000051,
+   "Caspien plain f64 · full": 0.6754126929999984,
+   "Caspien loop f64 · full": 1.6027546239999992,
+   "Caspien arr f64 · full": 0.6560368570001174,
+   "Caspien scalars f64 · full": 1.2658581050000066,
+   "Caspien plain f32 · full": 0.6731906640000034,
+   "Caspien loop f32 · full": 1.5136861970001974,
+   "Caspien arr f32 · full": 0.6462156330001108,
+   "Caspien scalars f32 · full": 1.1960933529999238
+  },
+  "fk": {
+   "Caspien naive · full": 4.129794728999968,
+   "Caspien optimized · full": 4.180630459999975
+  },
+  "sp": {
+   "Caspien naive · full": 0.4834192119999443,
+   "Caspien optimized · full": 0.24531144000002314
+  }
+ },
+ "new": {
+  "nb": {
+   "Caspien natural f64 · full": 0.6836122879999493,
+   "Caspien plain f64 · full": 0.6437856210000064,
+   "Caspien loop f64 · full": 1.6118170130000635,
+   "Caspien arr f64 · full": 0.6583648789999188,
+   "Caspien scalars f64 · full": 0.6576293059999898,
+   "Caspien plain f32 · full": 0.6455284680000659,
+   "Caspien loop f32 · full": 1.515025254999955,
+   "Caspien arr f32 · full": 0.6214542390000588,
+   "Caspien scalars f32 · full": 0.6410175649998564
+  },
+  "fk": {
+   "Caspien naive · full": 4.033042163000118,
+   "Caspien optimized · full": 4.293507373000011
+  },
+  "sp": {
+   "Caspien naive · full": 0.4813956220000364,
+   "Caspien optimized · full": 0.2523153640001965
+  }
+ }
+}
