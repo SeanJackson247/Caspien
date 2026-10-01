@@ -1,30 +1,21 @@
-// A program that might never terminate (it ends only if the loop is broken or an error is thrown): `@with_tick` on `main`, an `@event_loop` entry point,
-// and a `@tick` handler. `main` builds the state, the loop hands it to `tick` repeatedly.
+// A program that might never terminate (it ends only if the loop is broken or an error is thrown):
+// `@with_tick` on `main`, a `@tick` handler, and an `@event_loop` entry point, which comes from the
+// stdlib. `main` builds the state, then the loop hands it to `tick` repeatedly.
 // Each tick still runs to completion (the total-slice rule); only the loop is unbounded.
 // Run it with `timeout 1 ./09 | head -3`   Expected output: tick 1, tick 2, tick 3
 import "../../stdlib/libc.caspien"
-
-// stdout is block-buffered when piped, so flush each tick to see output from a long-running loop.
-extern fflush(raw mut u8) void
 import "../../stdlib/gt_init.caspien"
 import "../../stdlib/gt_register.caspien"
 import "../../stdlib/gt_alive_check.caspien"
 import "../../stdlib/gt_destruct.caspien"
+import "../../stdlib/event_loop.caspien"
+
+// stdout is block-buffered when piped, so flush each tick to see output from a long-running loop.
+extern fflush(raw mut u8) void
 
 struct World{@pub{
 	ticks: mut u64
 }}
-
-// The entry point. It is the only function allowed one bare `loop{}` without `unsafe`.
-// (stdlib/event_loop.caspien is the same thing for a `main` that cannot throw.)
-@event_loop
-func start() void{
-	?catch(e){ return }
-	let state = mut ? main()
-	loop{
-		state = tick(state)
-	}
-}
 
 @with_tick
 @throws

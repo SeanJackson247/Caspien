@@ -1,3 +1,5 @@
+// NOTE: 'main' here must be '@throws' (a '@with_tick' main builds heap state, which can fail),
+// so the call is wrapped with '?'. If 'main' throws, this function simply returns.
 // The safe-args counterpart of "event_loop.caspien" -- for a program
 // whose own '@with_tick' 'main' takes the wrapped, safe
 // "owns some mut dynarray(dynarray(char))" shape rather than raw
@@ -12,8 +14,9 @@
 // generated directly as bytecode.
 @event_loop
 func start(argc: imut s32, argv: raw mut raw mut char) void{
-	let args = make_safe_args(argc, argv)
-	let state = main(args)
+	?catch(e){ return }
+	let args = mut ? make_safe_args(argc, argv)
+	let state = mut ? main(args)
 	loop{
 		state = tick(state)
 	}

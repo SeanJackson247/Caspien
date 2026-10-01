@@ -1,3 +1,5 @@
+// NOTE: 'main' here must be '@throws' (a '@with_tick' main builds heap state, which can fail),
+// so the call is wrapped with '?'. If 'main' throws, this function simply returns.
 // "@event_loop... func start()void{ let state = main() loop{
 // state = tick(state) } }," confirmed directly -- the reusable stdlib
 // version of the user's own exact example. "That's all it does for
@@ -15,7 +17,8 @@
 // '@with_tick' program has to hand-write for itself.
 @event_loop
 func start() void{
-	let state = main()
+	?catch(e){ return }
+	let state = mut ? main()
 	loop{
 		state = tick(state)
 	}
