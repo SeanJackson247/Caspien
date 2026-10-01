@@ -1,0 +1,509 @@
+// Binary trees (BINARYTREES_N = max depth), NAIVE variant: the node pool is ONE stdlib DynamicArray<Node> (struct elements: reads are `get` copies into a local, whole-node writes are `setPtr` of a local Node, the free-list link a direct field write) and the work stack a DynamicArray<u64>, every access under its bounds proof.
+// Prints one line: stretch-tree check, then for d = 4,6,..,N the summed check of 2^(N-d+4) trees of depth d, then the long-lived tree check
+// (check = number of nodes reached by walking the tree), exactly as binarytrees.c.
+//
+// DIFFERENCES FROM THE REFERENCE (pointer nodes, recursive make/check/free): Caspien rejects recursive structs and (for now) only supports
+// structurally-decreasing recursion, so the tree is INDEX-BASED: nodes live in one pool (a dynarray of Node{l, r} structs, children are pool
+// indices, 0 = null), allocated from a free list (a freed node is chained through its `l` field) or by bumping `top`. make/check/free are
+// iterative with an explicit work stack (entries pack node*64 + depth for the build). Allocation and freeing are real: every tree is
+// built node by node, walked, then every node is returned to the free list. The pool never grows (capacity 2^(N+2)+2 covers the stretch tree).
+import "../../../stdlib/libc.caspien"
+import "../../../stdlib/dynamic_array.caspien"
+import "../../../stdlib/gt_init.caspien"
+import "../../../stdlib/gt_register.caspien"
+import "../../../stdlib/gt_alive_check.caspien"
+import "../../../stdlib/gt_destruct.caspien"
+
+extern getenv(static imut string) static imut string
+extern atol(static imut string) mut u64
+
+struct Node{
+	@pub{ l: mut u64 }
+	@pub{ r: mut u64 }
+}
+
+func main() void{
+	?catch(e){ return }
+	unsafe{
+		let maxd = mut 0
+		maxd = atol(getenv("BINARYTREES_N"))
+		if maxd < 6{
+			maxd = 6
+		}
+		let cap = mut 1
+		let lim = mut (maxd + 2)
+		for i in 0..lim{
+			cap = cap * 2
+		}
+		cap += 2
+		let:<mut u64> zero = mut 0
+		let zn = mut Node{l= 0, r= 0}
+		let rn = mut ? dyn:<Node>([])
+		rn = ? resize(rn, cap, zn)
+		let nodes = mut ? new DynamicArray:<Node>(rn)
+		let rs = mut ? dyn:<u64>([])
+		rs = ? resize(rs, 128, zero)
+		let stack = mut ? new DynamicArray:<u64>(rs)
+		let freeh = mut 0
+		let top = mut 1
+		let sp = mut 0
+		let e = mut 0
+		let id = mut 0
+		let dp = mut 0
+		let ca = mut 0
+		let cb = mut 0
+		let cnt = mut 0
+		let root = mut 0
+		let llroot = mut 0
+		let sum = mut 0
+		let d = mut 4
+		let iters = mut 0
+		// stretch tree: build, check, free
+		let sd = mut (maxd + 1)
+		if freeh != 0{
+			root = freeh
+			match root in nodes.backing{
+				let nd = mut nodes.get(nodes, root)
+				freeh = nd.l
+			}
+		}else{
+			root = top
+			top += 1
+		}
+		match root into nodes.backing{
+			let nn = mut Node{l= 0, r= 0}
+			nodes.setPtr(nodes, root, auto nn)
+		}
+		sp = 0
+		match sp into stack.backing{
+			stack.set(stack, sp, root * 64 + sd)
+		}
+		sp += 1
+		loop{
+			if sp == 0{
+				break
+			}
+			sp -= 1
+			match sp in stack.backing{
+				e = stack.get(stack, sp)
+			}
+			id = e / 64
+			dp = e % 64
+			if dp > 0{
+				if freeh != 0{
+					ca = freeh
+					match ca in nodes.backing{
+						let nd = mut nodes.get(nodes, ca)
+						freeh = nd.l
+					}
+				}else{
+					ca = top
+					top += 1
+				}
+				match ca into nodes.backing{
+					let nn = mut Node{l= 0, r= 0}
+					nodes.setPtr(nodes, ca, auto nn)
+				}
+				if freeh != 0{
+					cb = freeh
+					match cb in nodes.backing{
+						let nd = mut nodes.get(nodes, cb)
+						freeh = nd.l
+					}
+				}else{
+					cb = top
+					top += 1
+				}
+				match cb into nodes.backing{
+					let nn = mut Node{l= 0, r= 0}
+					nodes.setPtr(nodes, cb, auto nn)
+				}
+				match id into nodes.backing{
+					let nn = mut Node{l= ca, r= cb}
+					nodes.setPtr(nodes, id, auto nn)
+				}
+				match sp into stack.backing{
+					stack.set(stack, sp, ca * 64 + (dp - 1))
+				}
+				sp += 1
+				match sp into stack.backing{
+					stack.set(stack, sp, cb * 64 + (dp - 1))
+				}
+				sp += 1
+			}
+		}
+		cnt = 0
+		sp = 0
+		match sp into stack.backing{
+			stack.set(stack, sp, root)
+		}
+		sp += 1
+		loop{
+			if sp == 0{
+				break
+			}
+			sp -= 1
+			match sp in stack.backing{
+				id = stack.get(stack, sp)
+			}
+			cnt += 1
+			match id in nodes.backing{
+				let nd = mut nodes.get(nodes, id)
+				ca = nd.l
+			}
+			if ca != 0{
+				match sp into stack.backing{
+					stack.set(stack, sp, ca)
+				}
+				sp += 1
+				match id in nodes.backing{
+					let nd = mut nodes.get(nodes, id)
+					cb = nd.r
+				}
+				match sp into stack.backing{
+					stack.set(stack, sp, cb)
+				}
+				sp += 1
+			}
+		}
+		printf("%llu", cnt)
+		sp = 0
+		match sp into stack.backing{
+			stack.set(stack, sp, root)
+		}
+		sp += 1
+		loop{
+			if sp == 0{
+				break
+			}
+			sp -= 1
+			match sp in stack.backing{
+				id = stack.get(stack, sp)
+			}
+			match id in nodes.backing{
+				let nd = mut nodes.get(nodes, id)
+				ca = nd.l
+			}
+			if ca != 0{
+				match sp into stack.backing{
+					stack.set(stack, sp, ca)
+				}
+				sp += 1
+				match id in nodes.backing{
+					let nd = mut nodes.get(nodes, id)
+					cb = nd.r
+				}
+				match sp into stack.backing{
+					stack.set(stack, sp, cb)
+				}
+				sp += 1
+			}
+			match id into nodes.backing{
+				nodes.backing[id].l = freeh
+			}
+			freeh = id
+		}
+		// long-lived tree: kept until the end
+		if freeh != 0{
+			llroot = freeh
+			match llroot in nodes.backing{
+				let nd = mut nodes.get(nodes, llroot)
+				freeh = nd.l
+			}
+		}else{
+			llroot = top
+			top += 1
+		}
+		match llroot into nodes.backing{
+			let nn = mut Node{l= 0, r= 0}
+			nodes.setPtr(nodes, llroot, auto nn)
+		}
+		sp = 0
+		match sp into stack.backing{
+			stack.set(stack, sp, llroot * 64 + maxd)
+		}
+		sp += 1
+		loop{
+			if sp == 0{
+				break
+			}
+			sp -= 1
+			match sp in stack.backing{
+				e = stack.get(stack, sp)
+			}
+			id = e / 64
+			dp = e % 64
+			if dp > 0{
+				if freeh != 0{
+					ca = freeh
+					match ca in nodes.backing{
+						let nd = mut nodes.get(nodes, ca)
+						freeh = nd.l
+					}
+				}else{
+					ca = top
+					top += 1
+				}
+				match ca into nodes.backing{
+					let nn = mut Node{l= 0, r= 0}
+					nodes.setPtr(nodes, ca, auto nn)
+				}
+				if freeh != 0{
+					cb = freeh
+					match cb in nodes.backing{
+						let nd = mut nodes.get(nodes, cb)
+						freeh = nd.l
+					}
+				}else{
+					cb = top
+					top += 1
+				}
+				match cb into nodes.backing{
+					let nn = mut Node{l= 0, r= 0}
+					nodes.setPtr(nodes, cb, auto nn)
+				}
+				match id into nodes.backing{
+					let nn = mut Node{l= ca, r= cb}
+					nodes.setPtr(nodes, id, auto nn)
+				}
+				match sp into stack.backing{
+					stack.set(stack, sp, ca * 64 + (dp - 1))
+				}
+				sp += 1
+				match sp into stack.backing{
+					stack.set(stack, sp, cb * 64 + (dp - 1))
+				}
+				sp += 1
+			}
+		}
+		loop{
+			if d > maxd{
+				break
+			}
+			iters = 1
+			let sh = mut ((maxd - d) + 4)
+			for k in 0..sh{
+				iters = iters * 2
+			}
+			sum = 0
+			for it in 0..iters{
+				if freeh != 0{
+					root = freeh
+					match root in nodes.backing{
+						let nd = mut nodes.get(nodes, root)
+						freeh = nd.l
+					}
+				}else{
+					root = top
+					top += 1
+				}
+				match root into nodes.backing{
+					let nn = mut Node{l= 0, r= 0}
+					nodes.setPtr(nodes, root, auto nn)
+				}
+				sp = 0
+				match sp into stack.backing{
+					stack.set(stack, sp, root * 64 + d)
+				}
+				sp += 1
+				loop{
+					if sp == 0{
+						break
+					}
+					sp -= 1
+					match sp in stack.backing{
+						e = stack.get(stack, sp)
+					}
+					id = e / 64
+					dp = e % 64
+					if dp > 0{
+						if freeh != 0{
+							ca = freeh
+							match ca in nodes.backing{
+								let nd = mut nodes.get(nodes, ca)
+								freeh = nd.l
+							}
+						}else{
+							ca = top
+							top += 1
+						}
+						match ca into nodes.backing{
+							let nn = mut Node{l= 0, r= 0}
+							nodes.setPtr(nodes, ca, auto nn)
+						}
+						if freeh != 0{
+							cb = freeh
+							match cb in nodes.backing{
+								let nd = mut nodes.get(nodes, cb)
+								freeh = nd.l
+							}
+						}else{
+							cb = top
+							top += 1
+						}
+						match cb into nodes.backing{
+							let nn = mut Node{l= 0, r= 0}
+							nodes.setPtr(nodes, cb, auto nn)
+						}
+						match id into nodes.backing{
+							let nn = mut Node{l= ca, r= cb}
+							nodes.setPtr(nodes, id, auto nn)
+						}
+						match sp into stack.backing{
+							stack.set(stack, sp, ca * 64 + (dp - 1))
+						}
+						sp += 1
+						match sp into stack.backing{
+							stack.set(stack, sp, cb * 64 + (dp - 1))
+						}
+						sp += 1
+					}
+				}
+				cnt = 0
+				sp = 0
+				match sp into stack.backing{
+					stack.set(stack, sp, root)
+				}
+				sp += 1
+				loop{
+					if sp == 0{
+						break
+					}
+					sp -= 1
+					match sp in stack.backing{
+						id = stack.get(stack, sp)
+					}
+					cnt += 1
+					match id in nodes.backing{
+						let nd = mut nodes.get(nodes, id)
+						ca = nd.l
+					}
+					if ca != 0{
+						match sp into stack.backing{
+							stack.set(stack, sp, ca)
+						}
+						sp += 1
+						match id in nodes.backing{
+							let nd = mut nodes.get(nodes, id)
+							cb = nd.r
+						}
+						match sp into stack.backing{
+							stack.set(stack, sp, cb)
+						}
+						sp += 1
+					}
+				}
+				sum += cnt
+				sp = 0
+				match sp into stack.backing{
+					stack.set(stack, sp, root)
+				}
+				sp += 1
+				loop{
+					if sp == 0{
+						break
+					}
+					sp -= 1
+					match sp in stack.backing{
+						id = stack.get(stack, sp)
+					}
+					match id in nodes.backing{
+						let nd = mut nodes.get(nodes, id)
+						ca = nd.l
+					}
+					if ca != 0{
+						match sp into stack.backing{
+							stack.set(stack, sp, ca)
+						}
+						sp += 1
+						match id in nodes.backing{
+							let nd = mut nodes.get(nodes, id)
+							cb = nd.r
+						}
+						match sp into stack.backing{
+							stack.set(stack, sp, cb)
+						}
+						sp += 1
+					}
+					match id into nodes.backing{
+						nodes.backing[id].l = freeh
+					}
+					freeh = id
+				}
+			}
+			printf(" %llu", sum)
+			d += 2
+		}
+		cnt = 0
+		sp = 0
+		match sp into stack.backing{
+			stack.set(stack, sp, llroot)
+		}
+		sp += 1
+		loop{
+			if sp == 0{
+				break
+			}
+			sp -= 1
+			match sp in stack.backing{
+				id = stack.get(stack, sp)
+			}
+			cnt += 1
+			match id in nodes.backing{
+				let nd = mut nodes.get(nodes, id)
+				ca = nd.l
+			}
+			if ca != 0{
+				match sp into stack.backing{
+					stack.set(stack, sp, ca)
+				}
+				sp += 1
+				match id in nodes.backing{
+					let nd = mut nodes.get(nodes, id)
+					cb = nd.r
+				}
+				match sp into stack.backing{
+					stack.set(stack, sp, cb)
+				}
+				sp += 1
+			}
+		}
+		printf(" %llu\n", cnt)
+		sp = 0
+		match sp into stack.backing{
+			stack.set(stack, sp, llroot)
+		}
+		sp += 1
+		loop{
+			if sp == 0{
+				break
+			}
+			sp -= 1
+			match sp in stack.backing{
+				id = stack.get(stack, sp)
+			}
+			match id in nodes.backing{
+				let nd = mut nodes.get(nodes, id)
+				ca = nd.l
+			}
+			if ca != 0{
+				match sp into stack.backing{
+					stack.set(stack, sp, ca)
+				}
+				sp += 1
+				match id in nodes.backing{
+					let nd = mut nodes.get(nodes, id)
+					cb = nd.r
+				}
+				match sp into stack.backing{
+					stack.set(stack, sp, cb)
+				}
+				sp += 1
+			}
+			match id into nodes.backing{
+				nodes.backing[id].l = freeh
+			}
+			freeh = id
+		}
+	}
+}
