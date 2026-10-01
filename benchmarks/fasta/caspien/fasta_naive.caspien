@@ -1,0 +1,230 @@
+// FASTA benchmark, NAIVE variant: the stdlib DynamicArray class (get/set methods, each under its bounds proof) for the output buffer, the constant table and the thresholds.
+// Benchmarks-game style generator, N = FASTA_N nucleotides written as FASTA text (60-column lines) into ONE heap
+// buffer, nothing goes to stdout. Same algorithm and output as fasta.c: 2N/10 bases of the repeated ALU sequence, 3N/10 from the
+// IUB alphabet, the rest from the human-frequency alphabet, LCG IM=139968 IA=3877 IC=29573 seed 42, integer thresholds.
+// Prints: textlength checksum A C G T other. The constant text (ALU, the 19 alphabet letters, the three header lines) is ONE
+// string literal copied byte by byte (malloc + memcopy, then a raw pointer walk) into a constant table: Caspien cannot index a
+// string and a u8 array literal is not usable here. Layout: ALU 0..286, letters 287..305, headers at 306 (22), 328 (25), 353 (30).
+import "../../../stdlib/libc.caspien"
+import "../../../stdlib/dynamic_array.caspien"
+import "../../../stdlib/gt_init.caspien"
+import "../../../stdlib/gt_register.caspien"
+import "../../../stdlib/gt_alive_check.caspien"
+import "../../../stdlib/gt_destruct.caspien"
+extern getenv(static imut string) static imut string
+extern atol(static imut string) mut u64
+
+func main() void{
+	?catch(e){ return }
+	unsafe{
+		let n = mut 0
+		n = atol(getenv("FASTA_N"))
+		let cnt0 = mut (n * 2 / 10)
+		let cnt1 = mut (n * 3 / 10)
+		let cnt2 = mut (n - cnt0 - cnt1)
+		let cap = mut (n + n / 60 + 1024)
+		let blob = "GGCCGGGCGCGGTGGCTCACGCCTGTAATCCCAGCACTTTGGGAGGCCGAGGCGGGCGGATCACCTGAGGTCAGGAGTTCGAGACCAGCCTGGCCAACATGGTGAAACCCCGTCTCTACTAAAAATACAAAAATTAGCCGGGCGTGGTGGCGCGCGCCTGTAATCCCAGCTACTCGGGAGGCTGAGGCAGGAGAATCGCTTGAACCCGGGAGGCGGAGGTTGCAGTGAGCCGAGATCGCGCCACTGCACTCCAGCCTGGGCGACAGAGCGAGACTCCGTCTCAAAAAACGTBDHKMNRSVWYACGT>ONE Homo sapiens alu\n>TWO IUB ambiguity codes\n>THREE Homo sapiens frequency\n"
+		let:<raw mut u8> src = null
+		src = mut malloc(383)
+		memcopy(src, 383, raw blob)
+		let cur = mut src
+		let:<mut u8> zb = mut 0
+		let:<mut u64> zw = mut 0
+		let rb = mut ? dyn:<u8>([])
+		rb = ? resize(rb, cap, zb)
+		let buf = mut ? new DynamicArray:<u8>(rb)
+		let rk = mut ? dyn:<u8>([])
+		rk = ? resize(rk, 383, zb)
+		let kk = mut ? new DynamicArray:<u8>(rk)
+		let rt = mut ? dyn:<u64>([])
+		rt = ? resize(rt, 19, zw)
+		let thr = mut ? new DynamicArray:<u64>(rt)
+		match 0 into thr.backing{
+			thr.set(thr, 0, 37792)
+		}
+		match 1 into thr.backing{
+			thr.set(thr, 1, 54588)
+		}
+		match 2 into thr.backing{
+			thr.set(thr, 2, 71384)
+		}
+		match 3 into thr.backing{
+			thr.set(thr, 3, 109176)
+		}
+		match 4 into thr.backing{
+			thr.set(thr, 4, 111975)
+		}
+		match 5 into thr.backing{
+			thr.set(thr, 5, 114774)
+		}
+		match 6 into thr.backing{
+			thr.set(thr, 6, 117574)
+		}
+		match 7 into thr.backing{
+			thr.set(thr, 7, 120373)
+		}
+		match 8 into thr.backing{
+			thr.set(thr, 8, 123172)
+		}
+		match 9 into thr.backing{
+			thr.set(thr, 9, 125972)
+		}
+		match 10 into thr.backing{
+			thr.set(thr, 10, 128771)
+		}
+		match 11 into thr.backing{
+			thr.set(thr, 11, 131570)
+		}
+		match 12 into thr.backing{
+			thr.set(thr, 12, 134370)
+		}
+		match 13 into thr.backing{
+			thr.set(thr, 13, 137169)
+		}
+		match 14 into thr.backing{
+			thr.set(thr, 14, 139968)
+		}
+		match 15 into thr.backing{
+			thr.set(thr, 15, 42404)
+		}
+		match 16 into thr.backing{
+			thr.set(thr, 16, 70117)
+		}
+		match 17 into thr.backing{
+			thr.set(thr, 17, 97767)
+		}
+		match 18 into thr.backing{
+			thr.set(thr, 18, 139968)
+		}
+		for i in 0..383{
+			let:<mut u8> v = mut 0
+			memcopy(raw v, 1, cur)
+			cur++
+			match i into kk.backing{
+				kk.set(kk, i, v)
+			}
+		}
+		let last = mut 42
+		let pos = mut 0
+		let ai = mut 0
+		let ca = mut 0
+		let cc = mut 0
+		let cg = mut 0
+		let ct = mut 0
+		let other = mut 0
+		for s in 0..3{
+			let hs = mut 306
+			let hl = mut 22
+			let cn = mut cnt0
+			let o = mut 0
+			if s == 1{
+				hs = 328
+				hl = 25
+				cn = cnt1
+			}
+			if s == 2{
+				hs = 353
+				hl = 30
+				cn = cnt2
+				o = 15
+			}
+			for k in 0..hl{
+				let hi = mut (hs + k)
+				let hc = mut 0
+				match hi in kk.backing{
+					hc = kk.get(kk, hi) as u64
+				}
+				let:<mut u8> hb = mut 0
+				hb = wrap:<u8>(hc)
+				match pos into buf.backing{
+					buf.set(buf, pos, hb)
+				}
+				pos += 1
+			}
+			let col = mut 0
+			for i in 0..cn{
+				let ch = mut 0
+				if s == 0{
+					match ai in kk.backing{
+						ch = kk.get(kk, ai) as u64
+					}
+					ai += 1
+					if ai == 287{
+						ai = 0
+					}
+				}
+				else{
+					last = (last * 3877 + 29573) % 139968
+					let j = mut o
+					let tv = mut 0
+					loop{
+						match j in thr.backing{
+							tv = thr.get(thr, j)
+						}
+						if last < tv{
+							break
+						}
+						j += 1
+					}
+					let ji = mut (287 + j)
+					match ji in kk.backing{
+						ch = kk.get(kk, ji) as u64
+					}
+				}
+				let:<mut u8> cb = mut 0
+				cb = wrap:<u8>(ch)
+				match pos into buf.backing{
+					buf.set(buf, pos, cb)
+				}
+				pos += 1
+				if ch == 65{
+					ca += 1
+				}
+				else{
+					if ch == 67{
+						cc += 1
+					}
+					else{
+						if ch == 71{
+							cg += 1
+						}
+						else{
+							if ch == 84{
+								ct += 1
+							}
+							else{
+								other += 1
+							}
+						}
+					}
+				}
+				col += 1
+				if col == 60{
+					let:<mut u8> nl = mut 10
+					match pos into buf.backing{
+						buf.set(buf, pos, nl)
+					}
+					pos += 1
+					col = 0
+				}
+			}
+			if col > 0{
+				let:<mut u8> nl2 = mut 10
+				match pos into buf.backing{
+					buf.set(buf, pos, nl2)
+				}
+				pos += 1
+			}
+		}
+		let h = mut 7
+		for i in 0..pos{
+			let bv = mut 0
+			match i in buf.backing{
+				bv = buf.get(buf, i) as u64
+			}
+			h = bits_and(h * 31 + bv, 0xFFFFFFFF)
+		}
+		free(src)
+		printf("%llu %llu %llu %llu %llu %llu %llu\n", pos, h, ca, cc, cg, ct, other)
+	}
+}
