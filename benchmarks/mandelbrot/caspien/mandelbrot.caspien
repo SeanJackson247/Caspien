@@ -1,0 +1,66 @@
+// Mandelbrot escape-time benchmark (MANDELBROT_N x MANDELBROT_N grid), f64 scalars, no allocation. Same grid, maths and operation order
+// as mandelbrot.c: c = (2x/N - 1.5, 2y/N - 1), at most 100 iterations of z = z^2 + c per point, bail out when |z|^2 > 4.
+// Prints: points-that-never-escaped total-iterations.
+//
+// DIFFERENCES FROM THE C PROGRAM (forced by the language, none changes the arithmetic): there is no integer-to-float cast, so the loops keep
+// f64 mirrors of their integer indices (`fx += 1.0`, exact for every N below 2^53) and N as f64 is built the same way by counting.
+import "../../../stdlib/libc.caspien"
+
+extern getenv(static imut string) static imut string
+extern atol(static imut string) mut u64
+
+func main() void{
+	unsafe{
+		let n = mut 0
+		n = atol(getenv("MANDELBROT_N"))
+		let:<mut f64> dn = mut 0.0
+		for k in 0..n{
+			dn += 1.0
+		}
+		let inside = mut 0
+		let total = mut 0
+		let:<mut f64> fy = mut 0.0
+		let:<mut f64> ci = mut 0.0
+		let:<mut f64> fx = mut 0.0
+		let:<mut f64> cr = mut 0.0
+		let:<mut f64> zr = mut 0.0
+		let:<mut f64> zi = mut 0.0
+		let:<mut f64> tr = mut 0.0
+		let:<mut f64> ti = mut 0.0
+		let:<mut f64> t4 = mut 0.0
+		let i = mut 0
+		for y in 0..n{
+			ci = 2.0 * fy / dn - 1.0
+			fx = 0.0
+			for x in 0..n{
+				cr = 2.0 * fx / dn - 1.5
+				zr = 0.0
+				zi = 0.0
+				tr = 0.0
+				ti = 0.0
+				i = 0
+				loop{
+					t4 = tr + ti
+					if i >= 100{
+						break
+					}
+					if t4 > 4.0{
+						break
+					}
+					zi = 2.0 * zr * zi + ci
+					zr = tr - ti + cr
+					tr = zr * zr
+					ti = zi * zi
+					i += 1
+				}
+				total += i
+				if i == 100{
+					inside += 1
+				}
+				fx += 1.0
+			}
+			fy += 1.0
+		}
+		printf("%llu %llu\n", inside, total)
+	}
+}
