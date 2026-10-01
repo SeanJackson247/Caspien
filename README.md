@@ -101,7 +101,7 @@ types, so a literal takes the type of the slot it lands in, and a variable never
 
 ```rust
 let acct = mut ? new Account{id= 1, balance= 100}
-acct.deposit(acct, 50)
+acct:deposit(50)
 
 let wide = mut 200
 match wide fits u8{                  // a proof that the narrowing is safe
@@ -283,8 +283,8 @@ binding, `:<T>` supplies a type argument, and a `@decorator` on the line above a
 it is checked (`@throws`, `@pub`, `@async`, `@recursive`, `@lock`, `@realizes`). Comments are `//` and
 `/** ... */`. A few things that surprise newcomers:
 
-- A name used as a value must be bound with `mut` or `imut` before it is stored, and a method call passes
-  the receiver again (`acct.deposit(acct, 50)`).
+- A name used as a value must be bound with `mut` or `imut` before it is stored, and a method is called with
+  a colon (`acct:deposit(50)`), which is sugar for passing the receiver explicitly (`acct.deposit(acct, 50)`).
 - Struct values cannot be passed by value as parameters. Pass a pointer, or return the struct, which the
   compiler implements without a copy.
 - A literal index into a dynarray is rejected. Bind it to a variable and prove it with `match k in a{...}`.

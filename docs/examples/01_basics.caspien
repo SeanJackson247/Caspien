@@ -35,7 +35,7 @@ func sides(s: imut Shape) mut u64{
 func main() void{
 	?catch(e){ return }
 	let acct = mut ? new Account{id= 1, balance= 100}
-	acct.deposit(acct, 50)
+	acct:deposit(50)
 	unsafe{ printf("balance=%llu sides=%llu\n", acct.balance, sides(Shape.SQUARE)) }
 
 	// A `for` loop runs over a range. The loop variable is immutable.
