@@ -1,0 +1,653 @@
+{
+ "program": "fannkuchredux",
+ "title": "Fannkuch-redux",
+ "n": 11,
+ "runs": 3,
+ "builds": 1,
+ "results": [
+  {
+   "label": "C -O0",
+   "group": "bare",
+   "lang": "C",
+   "prec": "f64",
+   "note": "",
+   "compile_s": 0.0991658360007932,
+   "size_bytes": 16104,
+   "time_s": 5.859549714000423,
+   "times": [
+    6.008850176000124,
+    5.859549714000423,
+    6.007752393000374
+   ],
+   "rss_kb": 1640,
+   "output": [
+    "556355",
+    "Pfannkuchen(11)",
+    "=",
+    "51"
+   ],
+   "ok": true
+  },
+  {
+   "label": "C -O2",
+   "group": "bare",
+   "lang": "C",
+   "prec": "f64",
+   "note": "",
+   "compile_s": 0.08008599599997979,
+   "size_bytes": 16160,
+   "time_s": 3.5727949649999573,
+   "times": [
+    3.6086478300003364,
+    3.5727949649999573,
+    3.6607602530002623
+   ],
+   "rss_kb": 1640,
+   "output": [
+    "556355",
+    "Pfannkuchen(11)",
+    "=",
+    "51"
+   ],
+   "ok": true
+  },
+  {
+   "label": "C++ -O2",
+   "group": "bare",
+   "lang": "C++",
+   "prec": "f64",
+   "note": "",
+   "compile_s": 0.09009389400034706,
+   "size_bytes": 16168,
+   "time_s": 3.5655135340002744,
+   "times": [
+    3.617986280999503,
+    3.5655135340002744,
+    3.6665657600005943
+   ],
+   "rss_kb": 1640,
+   "output": [
+    "556355",
+    "Pfannkuchen(11)",
+    "=",
+    "51"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Rust -O",
+   "group": "bare",
+   "lang": "Rust",
+   "prec": "f64",
+   "note": "",
+   "compile_s": 0.210780153000087,
+   "size_bytes": 4343368,
+   "time_s": 2.7698238700004367,
+   "times": [
+    2.7698238700004367,
+    2.823830272000123,
+    2.8522699409995766
+   ],
+   "rss_kb": 2236,
+   "output": [
+    "556355",
+    "Pfannkuchen(11)",
+    "=",
+    "51"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Go",
+   "group": "bare",
+   "lang": "Go",
+   "prec": "f64",
+   "note": "",
+   "compile_s": 7.110424081000019,
+   "size_bytes": 2244790,
+   "time_s": 3.255208106000282,
+   "times": [
+    3.294428901000174,
+    3.255208106000282,
+    3.4558850480007095
+   ],
+   "rss_kb": 1804,
+   "output": [
+    "556355",
+    "Pfannkuchen(11)",
+    "=",
+    "51"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Java",
+   "group": "vm",
+   "lang": "Java",
+   "prec": "f64",
+   "note": "size = bin/java + lib/ + conf/ of the JRE plus the class file",
+   "compile_s": 0.6604615769992961,
+   "size_bytes": 212765480,
+   "time_s": 3.5135692580006435,
+   "times": [
+    3.547423770000023,
+    4.262026055000206,
+    3.5135692580006435
+   ],
+   "rss_kb": 42772,
+   "output": [
+    "556355",
+    "Pfannkuchen(11)",
+    "=",
+    "51"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Node",
+   "group": "js",
+   "lang": "JavaScript",
+   "prec": "f64",
+   "note": "size = node binary + script",
+   "compile_s": 0.0,
+   "size_bytes": 124680756,
+   "time_s": 4.767685802000415,
+   "times": [
+    4.767685802000415,
+    4.87839147700015,
+    5.039744755999891
+   ],
+   "rss_kb": 49128,
+   "output": [
+    "556355",
+    "Pfannkuchen(11)",
+    "=",
+    "51"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Bun",
+   "group": "js",
+   "lang": "JavaScript",
+   "prec": "f64",
+   "note": "size = bun binary + script",
+   "compile_s": 0.0,
+   "size_bytes": 101815916,
+   "time_s": 3.788803886000096,
+   "times": [
+    3.7943299469998237,
+    3.9329338280003867,
+    3.788803886000096
+   ],
+   "rss_kb": 40004,
+   "output": [
+    "556355",
+    "Pfannkuchen(11)",
+    "=",
+    "51"
+   ],
+   "ok": true
+  },
+  {
+   "label": "LuaJIT",
+   "group": "luajit",
+   "lang": "LuaJIT",
+   "prec": "f64",
+   "note": "size = luajit binary + script (tracing JIT)",
+   "compile_s": 0.0,
+   "size_bytes": 605923,
+   "time_s": 7.494647540000187,
+   "times": [
+    7.595496500000081,
+    7.494647540000187,
+    7.676589601999694
+   ],
+   "rss_kb": 2656,
+   "output": [
+    "556355",
+    "Pfannkuchen(11)",
+    "=",
+    "51"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Fortran",
+   "group": "bare",
+   "lang": "Fortran",
+   "prec": "f64",
+   "note": "",
+   "compile_s": 0.10457456299991463,
+   "size_bytes": 16664,
+   "time_s": 3.7342903099997784,
+   "times": [
+    3.7342903099997784,
+    3.8390671010001824,
+    3.846541468000396
+   ],
+   "rss_kb": 2704,
+   "output": [
+    "556355",
+    "Pfannkuchen(11)",
+    "=",
+    "51"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Objective-C",
+   "group": "bare",
+   "lang": "Objective-C",
+   "prec": "f64",
+   "note": "GNU libobjc runtime, gcc -O2",
+   "compile_s": 0.07925686900034634,
+   "size_bytes": 19288,
+   "time_s": 3.3942313070001546,
+   "times": [
+    3.4107484289997956,
+    3.406971313000213,
+    3.3942313070001546
+   ],
+   "rss_kb": 1948,
+   "output": [
+    "556355",
+    "Pfannkuchen(11)",
+    "=",
+    "51"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Odin",
+   "group": "bare",
+   "lang": "Odin",
+   "prec": "f64",
+   "note": "-o:speed, bounds checks on (Odin default)",
+   "compile_s": 2.8255841109994435,
+   "size_bytes": 164832,
+   "time_s": 2.961643736000042,
+   "times": [
+    2.961643736000042,
+    3.036211460999766,
+    3.121971159000168
+   ],
+   "rss_kb": 1808,
+   "output": [
+    "556355",
+    "Pfannkuchen(11)",
+    "=",
+    "51"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Zig",
+   "group": "bare",
+   "lang": "Zig",
+   "prec": "f64",
+   "note": "ReleaseFast (no safety checks), cold cache build",
+   "compile_s": 25.802544719999787,
+   "size_bytes": 3781416,
+   "time_s": 3.2852591609998854,
+   "times": [
+    3.3014830669999355,
+    3.2852591609998854,
+    3.386712579000232
+   ],
+   "rss_kb": 548,
+   "output": [
+    "556355",
+    "Pfannkuchen(11)",
+    "=",
+    "51"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Chapel",
+   "group": "bare",
+   "lang": "Chapel",
+   "prec": "f64",
+   "note": "chpl --fast",
+   "compile_s": 8.505921863999902,
+   "size_bytes": 2030224,
+   "time_s": 3.3730500589999792,
+   "times": [
+    3.4811483779994887,
+    3.3730500589999792,
+    3.4323389290002524
+   ],
+   "rss_kb": 6272,
+   "output": [
+    "556355",
+    "Pfannkuchen(11)",
+    "=",
+    "51"
+   ],
+   "ok": true
+  },
+  {
+   "label": "D (LDC)",
+   "group": "native",
+   "lang": "D (LDC)",
+   "prec": "f64",
+   "note": "ldc2 -O2 -release (bounds checks only in @safe code)",
+   "compile_s": 0.38190001800012396,
+   "size_bytes": 35552,
+   "time_s": 3.313579082000615,
+   "times": [
+    3.349275096999918,
+    3.390649897000003,
+    3.313579082000615
+   ],
+   "rss_kb": 5948,
+   "output": [
+    "556355",
+    "Pfannkuchen(11)",
+    "=",
+    "51"
+   ],
+   "ok": true
+  },
+  {
+   "label": "D (GDC)",
+   "group": "native",
+   "lang": "D (GDC)",
+   "prec": "f64",
+   "note": "gdc -O2 -frelease",
+   "compile_s": 0.6863629649997165,
+   "size_bytes": 40408,
+   "time_s": 3.4461715059997005,
+   "times": [
+    3.798847859000489,
+    3.4461715059997005,
+    3.6913984029997664
+   ],
+   "rss_kb": 6664,
+   "output": [
+    "556355",
+    "Pfannkuchen(11)",
+    "=",
+    "51"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Nim",
+   "group": "native",
+   "lang": "Nim",
+   "prec": "f64",
+   "note": "nim c -d:release (bounds checks on), default memory manager",
+   "compile_s": 2.5656630120001864,
+   "size_bytes": 98880,
+   "time_s": 3.5693498239998007,
+   "times": [
+    3.737833443999989,
+    3.698981198999718,
+    3.5693498239998007
+   ],
+   "rss_kb": 1644,
+   "output": [
+    "556355",
+    "Pfannkuchen(11)",
+    "=",
+    "51"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Crystal",
+   "group": "native",
+   "lang": "Crystal",
+   "prec": "f64",
+   "note": "crystal build --release, Boehm GC",
+   "compile_s": 10.213379476999762,
+   "size_bytes": 744168,
+   "time_s": 3.3687379980001424,
+   "times": [
+    3.455371228000331,
+    3.3999953080001433,
+    3.3687379980001424
+   ],
+   "rss_kb": 2932,
+   "output": [
+    "556355",
+    "Pfannkuchen(11)",
+    "=",
+    "51"
+   ],
+   "ok": true
+  },
+  {
+   "label": "OCaml",
+   "group": "native",
+   "lang": "OCaml",
+   "prec": "f64",
+   "note": "ocamlopt -inline 200 (no flambda: -O3 is accepted and ignored)",
+   "compile_s": 0.13301476500055287,
+   "size_bytes": 1122032,
+   "time_s": 4.219139241999983,
+   "times": [
+    4.293316487000084,
+    4.3239077799998995,
+    4.219139241999983
+   ],
+   "rss_kb": 2816,
+   "output": [
+    "556355",
+    "Pfannkuchen(11)",
+    "=",
+    "51"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Swift",
+   "group": "native",
+   "lang": "Swift",
+   "prec": "f64",
+   "note": "swiftc -O -static-stdlib (overflow and bounds checks on)",
+   "compile_s": 1.0612455330001467,
+   "size_bytes": 8628344,
+   "time_s": 3.3132768530003887,
+   "times": [
+    3.589204286000495,
+    3.3477037949996884,
+    3.3132768530003887
+   ],
+   "rss_kb": 7772,
+   "output": [
+    "556355",
+    "Pfannkuchen(11)",
+    "=",
+    "51"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Codon",
+   "group": "native",
+   "lang": "Codon",
+   "prec": "f64",
+   "note": "codon build -release (Python syntax, compiled with LLVM)",
+   "compile_s": 2.6685204229997908,
+   "size_bytes": 20896,
+   "time_s": 3.2420489300002373,
+   "times": [
+    3.387217898000017,
+    3.2420489300002373,
+    3.324312419999842
+   ],
+   "rss_kb": 5764,
+   "output": [
+    "556355",
+    "Pfannkuchen(11)",
+    "=",
+    "51"
+   ],
+   "ok": true
+  },
+  {
+   "label": "C#",
+   "group": "vm",
+   "lang": "C#",
+   "prec": "f64",
+   "note": ".NET 8 JIT (tiered, PGO), size = shared runtime dir + bench.dll",
+   "compile_s": 1.7715007589995366,
+   "size_bytes": 69549699,
+   "time_s": 3.3384795299998586,
+   "times": [
+    3.3384795299998586,
+    3.515721896999821,
+    3.4005010609998862
+   ],
+   "rss_kb": 24820,
+   "output": [
+    "556355",
+    "Pfannkuchen(11)",
+    "=",
+    "51"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Kotlin",
+   "group": "vm",
+   "lang": "Kotlin",
+   "prec": "f64",
+   "note": "kotlinc 2.0.21 on the JVM, size = JRE + jar (jar includes the Kotlin runtime)",
+   "compile_s": 5.9871658949996345,
+   "size_bytes": 217591065,
+   "time_s": 3.748968705000152,
+   "times": [
+    3.820879626999158,
+    3.748968705000152,
+    4.066244996999558
+   ],
+   "rss_kb": 43960,
+   "output": [
+    "556355",
+    "Pfannkuchen(11)",
+    "=",
+    "51"
+   ],
+   "ok": true
+  },
+  {
+   "label": "WebAssembly",
+   "group": "wasm",
+   "lang": "WebAssembly",
+   "prec": "f64",
+   "note": "the C program built with zig cc -target wasm32-wasi -O2, ahead-of-time compiled by wasmtime 25 (Cranelift); size = wasmtime binary + .wasm; wasm32 address space",
+   "compile_s": 27.521176698999625,
+   "size_bytes": 41831585,
+   "time_s": 4.781362218999675,
+   "times": [
+    4.781362218999675,
+    4.80000346199995,
+    4.997200590999455
+   ],
+   "rss_kb": 16212,
+   "output": [
+    "556355",
+    "Pfannkuchen(11)",
+    "=",
+    "51"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Caspien naive \u00b7 off",
+   "group": "caspien",
+   "lang": "Caspien",
+   "prec": "f64",
+   "note": "plain helper functions; optimisations off",
+   "compile_s": 0.8305482650002887,
+   "size_bytes": 17344,
+   "time_s": 14.622220501000811,
+   "times": [
+    14.622220501000811,
+    14.79872663199967,
+    14.720067259999269
+   ],
+   "rss_kb": 1640,
+   "output": [
+    "556355",
+    "Pfannkuchen(11)",
+    "=",
+    "51"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Caspien naive \u00b7 full",
+   "group": "caspien",
+   "lang": "Caspien",
+   "prec": "f64",
+   "note": "plain helper functions; optimisations full",
+   "compile_s": 0.9167073589997017,
+   "size_bytes": 17216,
+   "time_s": 3.835368119999657,
+   "times": [
+    3.835368119999657,
+    4.126108704000217,
+    4.361169885999516
+   ],
+   "rss_kb": 1640,
+   "output": [
+    "556355",
+    "Pfannkuchen(11)",
+    "=",
+    "51"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Caspien optimized \u00b7 off",
+   "group": "caspien",
+   "lang": "Caspien",
+   "prec": "f64",
+   "note": "everything hand-inlined into main; optimisations off",
+   "compile_s": 0.9153526339996461,
+   "size_bytes": 17208,
+   "time_s": 13.120114702000137,
+   "times": [
+    13.120114702000137,
+    13.375425697000537,
+    13.84311912999965
+   ],
+   "rss_kb": 1636,
+   "output": [
+    "556355",
+    "Pfannkuchen(11)",
+    "=",
+    "51"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Caspien optimized \u00b7 full",
+   "group": "caspien",
+   "lang": "Caspien",
+   "prec": "f64",
+   "note": "everything hand-inlined into main; optimisations full",
+   "compile_s": 0.8054469870003231,
+   "size_bytes": 17208,
+   "time_s": 3.7511271419998593,
+   "times": [
+    3.885396763999779,
+    3.7511271419998593,
+    3.919304803999694
+   ],
+   "rss_kb": 1640,
+   "output": [
+    "556355",
+    "Pfannkuchen(11)",
+    "=",
+    "51"
+   ],
+   "ok": true
+  }
+ ]
+}

@@ -1,0 +1,126 @@
+// fannkuch-redux (Computer Language Benchmarks Game), single threaded, same algorithm as the reference C program
+// (fannkuchredux-gcc-1 by way of Mazurov/Gouy): prints the checksum, then "Pfannkuchen(n) = maxflips". N comes from FANNKUCH_N.
+//
+// DIFFERENCES FROM THE C PROGRAM (forced by the current language, none is an optimisation):
+//  * perm, perm1 and count are `let static` u64[12] arrays (an array cannot be a parameter), every variable index sits under an
+//    `assume match i in/into <array>` line, and a computed index (r - 1, k - i) is bound to a variable first.
+//  * counts are u64 (there is no int-to-float cast, nor u64 -> s64 `as`): the checksum keeps an even sum and an odd sum and is
+//    subtracted as s64 at the end.
+extern printf(static imut string,...) void
+extern getenv(static imut string) static imut string
+extern atol(static imut string) mut u64
+
+let static:<mut u64[12]> perm = mut [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+let static:<mut u64[12]> perm1 = mut [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+let static:<mut u64[12]> count = mut [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+// perm = perm1 (first n elements)
+func copyPerm(n: mut u64) void{
+	unsafe{
+		for i in 0..n{
+			assume match i in perm1
+			assume match i into perm
+			perm[i] = perm1[i]
+		}
+	}
+}
+
+// reverse perm[0..=k]
+func reversePrefix(k: mut u64) void{
+	unsafe{
+		let k2 = mut ((k + 1) / 2)
+		for i in 0..k2{
+			let j = mut (k - i)
+			assume match i into perm
+			assume match j into perm
+			let t = mut perm[i]
+			perm[i] = perm[j]
+			perm[j] = t
+		}
+	}
+}
+
+// number of flips until perm[0] == 0
+func countFlips() mut u64{
+	unsafe{
+		let flips = mut 0
+		loop{
+			let k = mut perm[0]
+			if k == 0{
+				break
+			}
+			reversePrefix(k)
+			flips += 1
+		}
+		return flips
+	}
+}
+
+// left-rotate perm1[0..=r]
+func rotate(r: mut u64) void{
+	unsafe{
+		let perm0 = mut perm1[0]
+		for i in 0..r{
+			let j = mut (i + 1)
+			assume match i into perm1
+			assume match j in perm1
+			perm1[i] = perm1[j]
+		}
+		assume match r into perm1
+		perm1[r] = perm0
+	}
+}
+
+func main() void{
+	unsafe{
+		let n = mut 0
+		n = atol(getenv("FANNKUCH_N"))
+		for i in 0..n{
+			assume match i into perm1
+			perm1[i] = i
+		}
+		let r = mut n
+		let permCount = mut 0
+		let maxFlips = mut 0
+		let sumEven = mut 0
+		let sumOdd = mut 0
+		loop{
+			loop{
+				if r == 1{
+					break
+				}
+				let rm = mut (r - 1)
+				assume match rm into count
+				count[rm] = r
+				r -= 1
+			}
+			copyPerm(n)
+			let flips = mut countFlips()
+			if flips > maxFlips{
+				maxFlips = flips
+			}
+			if permCount % 2 == 0{
+				sumEven += flips
+			}
+			else{
+				sumOdd += flips
+			}
+			loop{
+				if r == n{
+					let:<mut s64> checksum = mut (wrap:<s64>(sumEven) - wrap:<s64>(sumOdd))
+					printf("%lld\n", checksum)
+					printf("Pfannkuchen(%llu) = %llu\n", n, maxFlips)
+					return
+				}
+				rotate(r)
+				assume match r into count
+				count[r] -= 1
+				if count[r] > 0{
+					break
+				}
+				r += 1
+			}
+			permCount += 1
+		}
+	}
+}
