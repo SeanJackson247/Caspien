@@ -338,7 +338,7 @@ Each call to `tick` is an ordinary terminating function, so it is a total slice 
 the only unbounded construct is the loop that schedules them. `stdlib/event_loop.caspien` is a ready-made
 `@event_loop` that wraps the call to `main` in `?` and simply returns if `main` throws (so `main` must be
 `@throws`, as a `main` that builds heap state has to be). If `main` takes arguments, the `@event_loop` function receives the raw `argc`
-and `argv` and passes them (or wraps them, in `stdlib/event_loop_safe_args.caspien`, which currently crashes: see the status table) through to `main`.
+and `argv` and passes them (or wraps them, in `stdlib/event_loop_safe_args.caspien`) through to `main`.
 The runnable version is `docs/examples/09_event_loop.caspien`.
 
 ### 1.3 Reading the code
@@ -366,7 +366,7 @@ runtime exceptions. Here is the current state, property by property.
 | **Bounded execution time** | Not enforced. | No worst-case execution time analysis. Loop bounds are runtime values, so a nested loop can be very long. The acyclic call graph would allow a static stack-depth bound, but none is computed. |
 | **Memory safety** | Single ownership with compile-time move checking; array and dynarray indexes proven in bounds; pointer dereference needs a liveness proof; `deref` and raw construction need `unsafe`. | Liveness of a `ref` is checked at *run time* against a table of live allocations, so a dangling `ref` is skipped rather than rejected at compile time. The lookup is a linear scan under a spin lock, so each check costs time proportional to the number of live allocations. The standard library itself contains `unsafe` code. |
 | **No runtime exceptions** | Division, float operations, narrowing, indexing and null access all need proofs; arithmetic wraps; failures are declared (`@throws`) and handled. | A thrown error is still a non-local transfer of control (a controlled one). Allocation failure is reported, not prevented. |
-| **The single event loop** | `@with_tick` / `@tick` / `@event_loop` give a non-terminating program (`docs/examples/09_event_loop.caspien`). | The stdlib `event_loop_safe_args.caspien` compiles but crashes inside `make_safe_args` (cause not found; the compiler-synthesized safe-args `main` without an event loop works). The no-argument and C-argument loops run. The example is run by hand and is not in `tests/`. `par`/`await` add real threads, which is a deliberate departure from a single loop. |
+| **The single event loop** | `@with_tick` / `@tick` / `@event_loop` give a non-terminating program (`docs/examples/09_event_loop.caspien`). | All three stdlib loops (no arguments, C arguments, safe arguments) have been run. The example is run by hand and is not in `tests/`. `par`/`await` add real threads, which is a deliberate departure from a single loop. |
 | **Soundness of the checker** | About 70 runtime regression programs in [`tests/`](tests), generated tests with expected values from independent Python models, and shell checks for the optimiser passes. | There is no formal proof, mechanised or otherwise. The checker is about 15,000 lines of Java, and "the compiler accepts it" is evidence, not proof. The large corpus of compile-error fixtures is kept outside this repository. |
 | **Platforms** | Linux x86-64 is the tested target. | The Windows (`windows_gnu`) output assembles and links but has not been run on a real Windows machine, and the MASM/Intel backend is unverified. |
 

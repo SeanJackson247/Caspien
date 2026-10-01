@@ -1,5 +1,5 @@
 // `s = f(s)` moves the old value into f; it must not be destructed before the call.
-// Expected output: moved=6 replaced=9
+// Expected output: moved=6 replaced=9 grown=3
 import "../stdlib/libc.caspien"
 import "../stdlib/gt_init.caspien"
 import "../stdlib/gt_register.caspien"
@@ -20,5 +20,11 @@ func main() void{
 	s = ? new World{ticks= 7}
 	s = ? new World{ticks= 9}
 	let replaced = mut s.ticks
-	unsafe{ printf("moved=%llu replaced=%llu\n", moved, replaced) }
+	// `outer = resize(outer, ...)` moves outer into resize, then the (now null) old value is
+	// destructed. The drop of an owns-bearing dynarray must be null-safe.
+	let outer = mut ? dyn([dyn([mut 'x'])])
+	let fill = mut ? dyn([mut 'y'])
+	outer = ? resize(outer, 3, fill)
+	let grown = mut len(outer)
+	unsafe{ printf("moved=%llu replaced=%llu grown=%llu\n", moved, replaced, grown) }
 }

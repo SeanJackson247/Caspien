@@ -226,6 +226,15 @@ public class DropGlueGenerationPass implements OptimizationPass {
                         if (targetType != null) {
                             CanonicalType t = CanonicalType.parse(targetType);
                             if (t.isOwnsStorage() && structTable.isOwnsBearing(t.baseType)) {
+                                // The local may already be null (moved out earlier, e.g. "x = f(x)"
+                                // destructs x after f took it), and reading a null dynarray's length
+                                // or a null struct's members would segfault: guard the descent.
+                                String topSkip = newLabel("drop_skip");
+                                emit(rewritten, "PUSH " + targetName + " " + targetType);
+                                emit(rewritten, "PUSH null " + targetType);
+                                emit(rewritten, "NEQ " + targetType + " " + targetType + " imut_bool");
+                                emit(rewritten, "CMP");
+                                emit(rewritten, "JMP " + topSkip);
                                 String topLevelDynElem = CanonicalType.dynArrayElementTypeOf(t.baseType);
                                 if (topLevelDynElem != null) {
                                     // A bare, top-level owns local that is
@@ -267,6 +276,7 @@ public class DropGlueGenerationPass implements OptimizationPass {
                                     emit(rewritten, "CALL " + routineNameFor(t.baseType));
                                     enqueue(t.baseType);
                                 }
+                                emit(rewritten, topSkip + ":");
                                 changedAnyCallSite = true;
                             }
                         }
