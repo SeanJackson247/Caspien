@@ -1,0 +1,41 @@
+// Non-tail recursion (visit every node of a complete binary tree) written the only way Caspien allows today: an explicit stack
+// in an unsafe dynarray. Same work as tree.c -DSTACK. Environment: REC_TREE_DEPTH.
+import "../../../stdlib/libc.caspien"
+import "../../../stdlib/gt_init.caspien"
+import "../../../stdlib/gt_register.caspien"
+import "../../../stdlib/gt_alive_check.caspien"
+import "../../../stdlib/gt_destruct.caspien"
+
+extern getenv(static imut string) static imut string
+extern atol(static imut string) mut u64
+
+func main() void{
+	unsafe{
+		let depth = mut 0
+		depth = atol(getenv("REC_TREE_DEPTH"))
+		let stack = mut unsafe dyn:<u64>([])
+		let cap = mut (depth + 3)
+		stack = resize(stack, cap)
+		let sp = mut 0
+		let total = mut 0
+		stack[0] = depth
+		sp = 1
+		loop{
+			if sp == 0{
+				break
+			}
+			sp -= 1
+			let d = mut 0
+			d = stack[sp]
+			total += d + 1
+			if d > 0{
+				let dm = mut (d - 1)
+				stack[sp] = dm
+				let sp1 = mut (sp + 1)
+				stack[sp1] = dm
+				sp += 2
+			}
+		}
+		printf("%llu\n", total)
+	}
+}

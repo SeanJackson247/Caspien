@@ -1,0 +1,53 @@
+// Sieve of Eratosthenes, counting the primes <= N (SIEVE_N). NAIVE variant: the stdlib DynamicArray<u8> class (get/set methods,
+// each under its bounds proof) instead of a bare dynarray.
+import "../../../stdlib/libc.caspien"
+import "../../../stdlib/dynamic_array.caspien"
+import "../../../stdlib/gt_init.caspien"
+import "../../../stdlib/gt_register.caspien"
+import "../../../stdlib/gt_alive_check.caspien"
+import "../../../stdlib/gt_destruct.caspien"
+extern getenv(static imut string) static imut string
+extern atol(static imut string) mut u64
+
+func main() void{
+	?catch(e){ return }
+	unsafe{
+		let n = mut 0
+		n = atol(getenv("SIEVE_N"))
+		let total = mut (n + 1)
+		let:<mut u8> one = mut 1
+		let raw1 = mut ? dyn:<u8>([])
+		raw1 = ? resize(raw1, total, one)
+		let f = mut ? new DynamicArray:<u8>(raw1)
+		let i = mut 2
+		loop{
+			if i * i > n{
+				break
+			}
+			let keep = mut 0
+			match i in f.backing{
+				keep = f.get(f, i) as u64
+			}
+			if keep != 0{
+				let j = mut (i * i)
+				loop{
+					if j > n{
+						break
+					}
+					match j into f.backing{
+						f.set(f, j, 0)
+					}
+					j += i
+				}
+			}
+			i += 1
+		}
+		let count = mut 0
+		for k in 2..total{
+			match k in f.backing{
+				count += f.get(f, k) as u64
+			}
+		}
+		printf("%llu\n", count)
+	}
+}

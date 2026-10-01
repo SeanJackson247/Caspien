@@ -1,0 +1,29 @@
+// The same computation as chain_recursive.caspien written as a plain `for` loop by hand. Environment: REC_DEPTH, REC_REPS.
+import "../../../stdlib/libc.caspien"
+
+extern getenv(static imut string) static imut string
+extern atol(static imut string) mut u64
+
+func chain(acc0: mut u64, depth: mut u64) mut u64{
+	let acc = mut acc0
+	for i in 0..depth{
+		acc = bits_xor(acc * 31, i)
+	}
+	return acc
+}
+
+func main() void{
+	unsafe{
+		let depth = mut 0
+		depth = atol(getenv("REC_DEPTH"))
+		let reps = mut 0
+		reps = atol(getenv("REC_REPS"))
+		let total = mut 0
+		for rep in 0..reps{
+			let seed = mut 0
+			seed = rep
+			total = bits_xor(total, chain(seed, depth))
+		}
+		printf("%llu\n", total)
+	}
+}

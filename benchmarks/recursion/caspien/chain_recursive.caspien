@@ -1,0 +1,32 @@
+// Linear tail recursion written with @recursive (the compiler lowers it to a bounded `for` loop): acc = acc*31 ^ i, depth D, R times.
+// Same work as chain.c. Environment: REC_DEPTH, REC_REPS.
+import "../../../stdlib/libc.caspien"
+
+extern getenv(static imut string) static imut string
+extern atol(static imut string) mut u64
+
+@recursive
+func chain(acc: mut u64, r: imut range) mut u64{
+	match r is base{ return acc }
+	let lo = mut (r.start + 1)
+	let hi = mut r.end
+	let r2 = imut (lo..hi)
+	match r2 within r{ return chain(bits_xor(acc * 31, r.start), r2) }
+	else{ return acc }
+}
+
+func main() void{
+	unsafe{
+		let depth = mut 0
+		depth = atol(getenv("REC_DEPTH"))
+		let reps = mut 0
+		reps = atol(getenv("REC_REPS"))
+		let total = mut 0
+		for rep in 0..reps{
+			let seed = mut 0
+			seed = rep
+			total = bits_xor(total, chain(seed, 0..depth))
+		}
+		printf("%llu\n", total)
+	}
+}

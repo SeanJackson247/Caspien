@@ -1,0 +1,669 @@
+{
+ "program": "sieve",
+ "title": "Sieve of Eratosthenes",
+ "n": 100000000,
+ "runs": 3,
+ "builds": 1,
+ "results": [
+  {
+   "label": "C -O0",
+   "group": "bare",
+   "lang": "C",
+   "prec": "",
+   "note": "",
+   "compile_s": 0.13621465599999283,
+   "size_bytes": 16128,
+   "time_s": 2.528690138999991,
+   "times": [
+    2.528690138999991,
+    2.585843756000031,
+    2.5822639020000224
+   ],
+   "rss_kb": 99176,
+   "output": [
+    "5761455"
+   ],
+   "ok": true
+  },
+  {
+   "label": "C -O2 (free)",
+   "group": "bare",
+   "lang": "C",
+   "prec": "",
+   "note": "",
+   "compile_s": 0.06774672400001691,
+   "size_bytes": 16184,
+   "time_s": 1.1358120549998603,
+   "times": [
+    1.150978410000107,
+    1.1358120549998603,
+    1.1855376829998931
+   ],
+   "rss_kb": 99176,
+   "output": [
+    "5761455"
+   ],
+   "ok": true
+  },
+  {
+   "label": "C -O2 (leak)",
+   "group": "bare",
+   "lang": "C",
+   "prec": "",
+   "note": "",
+   "compile_s": 0.0579551089999768,
+   "size_bytes": 16144,
+   "time_s": 0.9396747429998413,
+   "times": [
+    0.9396747429998413,
+    1.0550606219999281,
+    1.1201485089998187
+   ],
+   "rss_kb": 99304,
+   "output": [
+    "5761455"
+   ],
+   "ok": true
+  },
+  {
+   "label": "C++ -O2 (free)",
+   "group": "bare",
+   "lang": "C++",
+   "prec": "",
+   "note": "",
+   "compile_s": 0.22157705499989788,
+   "size_bytes": 16496,
+   "time_s": 0.9843125449999661,
+   "times": [
+    1.1456662699999924,
+    1.1433722410001792,
+    0.9843125449999661
+   ],
+   "rss_kb": 101164,
+   "output": [
+    "5761455"
+   ],
+   "ok": true
+  },
+  {
+   "label": "C++ -O2 (leak)",
+   "group": "bare",
+   "lang": "C++",
+   "prec": "",
+   "note": "",
+   "compile_s": 0.23646243000007416,
+   "size_bytes": 16104,
+   "time_s": 1.0928220410000904,
+   "times": [
+    1.1095560960000057,
+    1.341996189999918,
+    1.0928220410000904
+   ],
+   "rss_kb": 101596,
+   "output": [
+    "5761455"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Rust -O (free)",
+   "group": "bare",
+   "lang": "Rust",
+   "prec": "",
+   "note": "",
+   "compile_s": 0.27730412899995827,
+   "size_bytes": 4340824,
+   "time_s": 1.2359312219998628,
+   "times": [
+    1.2359312219998628,
+    1.5000055509999584,
+    1.3066268969998873
+   ],
+   "rss_kb": 99708,
+   "output": [
+    "5761455"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Rust -O (leak)",
+   "group": "bare",
+   "lang": "Rust",
+   "prec": "",
+   "note": "",
+   "compile_s": 0.17974960600008671,
+   "size_bytes": 4340792,
+   "time_s": 1.1934357050001836,
+   "times": [
+    1.334910784000158,
+    1.1956856580000021,
+    1.1934357050001836
+   ],
+   "rss_kb": 99896,
+   "output": [
+    "5761455"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Go",
+   "group": "bare",
+   "lang": "Go",
+   "prec": "",
+   "note": "",
+   "compile_s": 7.085048302000132,
+   "size_bytes": 2231389,
+   "time_s": 1.215294381999911,
+   "times": [
+    1.4447741110000152,
+    1.2231281670001408,
+    1.215294381999911
+   ],
+   "rss_kb": 99728,
+   "output": [
+    "5761455"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Java",
+   "group": "vm",
+   "lang": "Java",
+   "prec": "",
+   "note": "size = bin/java + lib/ + conf/ of the JRE plus the class file",
+   "compile_s": 0.7463487589998294,
+   "size_bytes": 212764638,
+   "time_s": 1.2564117860001716,
+   "times": [
+    1.396677802000113,
+    1.2564117860001716,
+    1.335013441000001
+   ],
+   "rss_kb": 140372,
+   "output": [
+    "5761455"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Node",
+   "group": "js",
+   "lang": "JavaScript",
+   "prec": "",
+   "note": "size = node binary + script",
+   "compile_s": 0.0,
+   "size_bytes": 124679881,
+   "time_s": 1.2825739909999356,
+   "times": [
+    1.6048543609999797,
+    1.2825739909999356,
+    1.3695610190000025
+   ],
+   "rss_kb": 145996,
+   "output": [
+    "5761455"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Bun",
+   "group": "js",
+   "lang": "JavaScript",
+   "prec": "",
+   "note": "size = bun binary + script",
+   "compile_s": 0.0,
+   "size_bytes": 101815041,
+   "time_s": 1.2967581480002082,
+   "times": [
+    1.2967581480002082,
+    1.3047274240000206,
+    1.4674471309999717
+   ],
+   "rss_kb": 135832,
+   "output": [
+    "5761455"
+   ],
+   "ok": true
+  },
+  {
+   "label": "LuaJIT",
+   "group": "luajit",
+   "lang": "LuaJIT",
+   "prec": "",
+   "note": "size = luajit binary + script (tracing JIT)",
+   "compile_s": 0.0,
+   "size_bytes": 604792,
+   "time_s": 1.2787461569998868,
+   "times": [
+    1.5164691439999842,
+    1.4787263739999617,
+    1.2787461569998868
+   ],
+   "rss_kb": 100240,
+   "output": [
+    "5761455"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Fortran",
+   "group": "bare",
+   "lang": "Fortran",
+   "prec": "",
+   "note": "",
+   "compile_s": 0.07413252800006376,
+   "size_bytes": 16688,
+   "time_s": 1.0908765509998375,
+   "times": [
+    1.1924927279999338,
+    1.0908765509998375,
+    1.1395796309998332
+   ],
+   "rss_kb": 100100,
+   "output": [
+    "5761455"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Objective-C",
+   "group": "bare",
+   "lang": "Objective-C",
+   "prec": "",
+   "note": "GNU libobjc runtime, gcc -O2",
+   "compile_s": 0.06493281999996725,
+   "size_bytes": 19320,
+   "time_s": 1.037650296000038,
+   "times": [
+    1.1747887499998342,
+    1.2368276629999855,
+    1.037650296000038
+   ],
+   "rss_kb": 99480,
+   "output": [
+    "5761455"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Odin",
+   "group": "bare",
+   "lang": "Odin",
+   "prec": "",
+   "note": "-o:speed, bounds checks on (Odin default)",
+   "compile_s": 3.0864703879999524,
+   "size_bytes": 164688,
+   "time_s": 1.2820269169999392,
+   "times": [
+    1.2820269169999392,
+    1.363540230999888,
+    1.352332768999986
+   ],
+   "rss_kb": 99308,
+   "output": [
+    "5761455"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Zig",
+   "group": "bare",
+   "lang": "Zig",
+   "prec": "",
+   "note": "ReleaseFast (no safety checks), cold cache build",
+   "compile_s": 24.18855762499993,
+   "size_bytes": 3770672,
+   "time_s": 1.0101281019999533,
+   "times": [
+    1.0603566120000778,
+    1.0101281019999533,
+    1.2061831139999413
+   ],
+   "rss_kb": 98212,
+   "output": [
+    "5761455"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Chapel",
+   "group": "bare",
+   "lang": "Chapel",
+   "prec": "",
+   "note": "chpl --fast",
+   "compile_s": 8.506121234000148,
+   "size_bytes": 2021648,
+   "time_s": 0.9402810219999083,
+   "times": [
+    0.9402810219999083,
+    1.1284984400001576,
+    1.1605038789998616
+   ],
+   "rss_kb": 103960,
+   "output": [
+    "5761455"
+   ],
+   "ok": true
+  },
+  {
+   "label": "D (LDC)",
+   "group": "native",
+   "lang": "D (LDC)",
+   "prec": "",
+   "note": "ldc2 -O2 -release (bounds checks only in @safe code)",
+   "compile_s": 0.4005479730001298,
+   "size_bytes": 46448,
+   "time_s": 1.0438956929999677,
+   "times": [
+    1.0438956929999677,
+    1.2060091490000104,
+    1.0886933469998894
+   ],
+   "rss_kb": 103872,
+   "output": [
+    "5761455"
+   ],
+   "ok": true
+  },
+  {
+   "label": "D (GDC)",
+   "group": "native",
+   "lang": "D (GDC)",
+   "prec": "",
+   "note": "gdc -O2 -frelease",
+   "compile_s": 0.47521160199994483,
+   "size_bytes": 40416,
+   "time_s": 0.8874811550001596,
+   "times": [
+    0.9222141430000192,
+    1.0587436329999491,
+    0.8874811550001596
+   ],
+   "rss_kb": 104876,
+   "output": [
+    "5761455"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Nim",
+   "group": "native",
+   "lang": "Nim",
+   "prec": "",
+   "note": "nim c -d:release (bounds checks on), default memory manager",
+   "compile_s": 2.3402199839999867,
+   "size_bytes": 95160,
+   "time_s": 2.1190323769999395,
+   "times": [
+    2.495157468999878,
+    2.6016729069999656,
+    2.1190323769999395
+   ],
+   "rss_kb": 99304,
+   "output": [
+    "5761455"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Crystal",
+   "group": "native",
+   "lang": "Crystal",
+   "prec": "",
+   "note": "crystal build --release, Boehm GC",
+   "compile_s": 9.779085521999832,
+   "size_bytes": 737216,
+   "time_s": 0.9673472980002771,
+   "times": [
+    0.9673472980002771,
+    1.1734888820001288,
+    1.0441579440002897
+   ],
+   "rss_kb": 100848,
+   "output": [
+    "5761455"
+   ],
+   "ok": true
+  },
+  {
+   "label": "OCaml",
+   "group": "native",
+   "lang": "OCaml",
+   "prec": "",
+   "note": "ocamlopt -inline 200 (no flambda: -O3 is accepted and ignored)",
+   "compile_s": 0.10675587300011102,
+   "size_bytes": 1062248,
+   "time_s": 1.150151704000109,
+   "times": [
+    1.1782855470000868,
+    1.150151704000109,
+    1.261788565000188
+   ],
+   "rss_kb": 101736,
+   "output": [
+    "5761455"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Swift",
+   "group": "native",
+   "lang": "Swift",
+   "prec": "",
+   "note": "swiftc -O -static-stdlib (overflow and bounds checks on)",
+   "compile_s": 0.8531725070001812,
+   "size_bytes": 8628520,
+   "time_s": 2.0312901920001423,
+   "times": [
+    2.123497588000191,
+    2.2961677070002224,
+    2.0312901920001423
+   ],
+   "rss_kb": 105136,
+   "output": [
+    "5761455"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Codon",
+   "group": "native",
+   "lang": "Codon",
+   "prec": "",
+   "note": "codon build -release (Python syntax, compiled with LLVM)",
+   "compile_s": 2.4392212329998983,
+   "size_bytes": 16792,
+   "time_s": 1.0014875670003676,
+   "times": [
+    1.0014875670003676,
+    1.064458346000265,
+    1.1299703029999364
+   ],
+   "rss_kb": 103676,
+   "output": [
+    "5761455"
+   ],
+   "ok": true
+  },
+  {
+   "label": "C#",
+   "group": "vm",
+   "lang": "C#",
+   "prec": "",
+   "note": ".NET 8 JIT (tiered, PGO), size = shared runtime dir + bench.dll",
+   "compile_s": 5.078374982000241,
+   "size_bytes": 69549187,
+   "time_s": 0.9067986559998644,
+   "times": [
+    1.088895187000162,
+    0.9067986559998644,
+    1.003875404000155
+   ],
+   "rss_kb": 122924,
+   "output": [
+    "5761455"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Kotlin",
+   "group": "vm",
+   "lang": "Kotlin",
+   "prec": "",
+   "note": "kotlinc 2.0.21 on the JVM, size = JRE + jar (jar includes the Kotlin runtime)",
+   "compile_s": 5.588050684999871,
+   "size_bytes": 217590523,
+   "time_s": 1.061218646999805,
+   "times": [
+    1.061218646999805,
+    1.2423278129999744,
+    1.2600819670001329
+   ],
+   "rss_kb": 142528,
+   "output": [
+    "5761455"
+   ],
+   "ok": true
+  },
+  {
+   "label": "WebAssembly",
+   "group": "wasm",
+   "lang": "WebAssembly",
+   "prec": "",
+   "note": "the C program built with zig cc -target wasm32-wasi -O2, ahead-of-time compiled by wasmtime 25 (Cranelift); size = wasmtime binary + .wasm; wasm32 address space",
+   "compile_s": 28.028603518999716,
+   "size_bytes": 41830059,
+   "time_s": 1.3766664560002937,
+   "times": [
+    1.422389989000294,
+    1.3786824640001214,
+    1.3766664560002937
+   ],
+   "rss_kb": 113876,
+   "output": [
+    "5761455"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Caspien naive (DynamicArray) \u00b7 off",
+   "group": "caspien",
+   "lang": "Caspien",
+   "prec": "",
+   "note": "stdlib DynamicArray<u8>, get/set under bounds proofs; optimisations off",
+   "compile_s": 1.2162701879997257,
+   "size_bytes": 35328,
+   "time_s": 7.649449013999856,
+   "times": [
+    8.501429143000223,
+    7.649449013999856,
+    7.947922148000089
+   ],
+   "rss_kb": 99316,
+   "output": [
+    "5761455"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Caspien naive (DynamicArray) \u00b7 full",
+   "group": "caspien",
+   "lang": "Caspien",
+   "prec": "",
+   "note": "stdlib DynamicArray<u8>, get/set under bounds proofs; optimisations full",
+   "compile_s": 1.2968781419999686,
+   "size_bytes": 23472,
+   "time_s": 3.0727032109998618,
+   "times": [
+    3.0794012430001203,
+    3.0777800329997262,
+    3.0727032109998618
+   ],
+   "rss_kb": 99308,
+   "output": [
+    "5761455"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Caspien optimized safe \u00b7 off",
+   "group": "caspien",
+   "lang": "Caspien",
+   "prec": "",
+   "note": "safe dynarray, bounds proofs; optimisations off",
+   "compile_s": 0.9628680719997647,
+   "size_bytes": 22752,
+   "time_s": 3.805937472000096,
+   "times": [
+    3.805937472000096,
+    3.912273623999681,
+    3.971800020000046
+   ],
+   "rss_kb": 99308,
+   "output": [
+    "5761455"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Caspien optimized safe \u00b7 full",
+   "group": "caspien",
+   "lang": "Caspien",
+   "prec": "",
+   "note": "safe dynarray, bounds proofs; optimisations full",
+   "compile_s": 1.1915604329997223,
+   "size_bytes": 22856,
+   "time_s": 1.1169421439999496,
+   "times": [
+    1.3650373989999025,
+    1.1726609330003157,
+    1.1169421439999496
+   ],
+   "rss_kb": 99308,
+   "output": [
+    "5761455"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Caspien optimized unsafe \u00b7 off",
+   "group": "caspien",
+   "lang": "Caspien",
+   "prec": "",
+   "note": "unsafe dynarray, no checks; optimisations off",
+   "compile_s": 0.9877847069997188,
+   "size_bytes": 22688,
+   "time_s": 3.671612173000085,
+   "times": [
+    3.793271034999634,
+    3.673543805999998,
+    3.671612173000085
+   ],
+   "rss_kb": 99308,
+   "output": [
+    "5761455"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Caspien optimized unsafe \u00b7 full",
+   "group": "caspien",
+   "lang": "Caspien",
+   "prec": "",
+   "note": "unsafe dynarray, no checks; optimisations full",
+   "compile_s": 1.1843513019998682,
+   "size_bytes": 22600,
+   "time_s": 1.3087972329999502,
+   "times": [
+    1.4754544489996988,
+    1.4970731309999792,
+    1.3087972329999502
+   ],
+   "rss_kb": 99308,
+   "output": [
+    "5761455"
+   ],
+   "ok": true
+  }
+ ]
+}
