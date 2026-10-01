@@ -1,0 +1,23 @@
+// The real "@await_call" -- the "@par_call" counterpart that actually
+// blocks: starts the real OS thread exactly the same way, then
+// immediately `pthread_join`s it before returning, so by the time this
+// call returns, the trampoline it started has already finished running
+// (writing the real result and flipping "state" to "READY" on the
+// handle, for a non-void "@async" function) -- "await blocks until the
+// wrapped call finishes and yields the result directly," confirmed
+// directly, is exactly this join. The caller-side desugaring (see
+// caspien-compiler's own CLAUDE.md) reads the handle's own "result"
+// field immediately after this call returns and then `gt_destruct`s
+// the handle -- it was never exposed to the caller at all, purely
+// internal plumbing for this one call site.
+import "libc.caspien"
+
+@await_call
+@pub
+func await_call(fn: raw imut u8, handle: raw mut u8) void{
+	let tid = mut 0
+	unsafe{
+		pthread_create(raw tid, null, fn, handle)
+		pthread_join(tid, null)
+	}
+}

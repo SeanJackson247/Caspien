@@ -1,0 +1,96 @@
+// The ghost table itself: a capacitious (growing and shrinking) raw
+// byte buffer of stored addresses, guarded by a real 'swap'-tagged
+// atomic mutex-state field (a genuine ATOMIC_SWAP-backed spin lock,
+// touched through 'match @lock') rather than the '@guard' interface
+// this file previously used. "Globals and static locals in safe code
+// can't be @guards, only @locks with atomic swap locks and atomic
+// primitives" (see CLAUDE.md, "@guard: lock discipline for globals
+// and statics") revoked '@guard's own role as a safe-code exemption
+// for global/static access -- this is the compiler's own foundational
+// support structure adopting the replacement mechanism directly,
+// rather than merely working around the narrowed exemption with
+// 'unsafe'. A real improvement, not just a rename: the old
+// 'Guard<u8>' implementation's own lock()/unlock() were both
+// unconditional no-ops (`{ return }`) -- there's no real threading at
+// the bytecode/runtime level yet for them to actually coordinate --
+// whereas 'lockState' now gets a genuine ATOMIC_SWAP the moment real
+// concurrency exists to make use of it, with zero further changes
+// needed here. Every function here that reads or writes any of its
+// fields (base/len/capacity/lockState) does so directly by
+// referencing the `ghost_table` global by name -- never through a
+// pointer/self parameter -- both because real dereferencing/".member"
+// access through a pointer isn't implemented yet, and because it's
+// simply unnecessary: a global is already reachable by name from
+// anywhere.
+//
+// Doubles capacity when a write would fill it; halves capacity when
+// occupancy drops below half; grown/shrunk via realloc, changing size
+// in whole 8-byte (one stored address) slots.
+//
+// "These functions should be written with raw pointers... this needs
+// to descend the whole way down" -- confirmed directly: every pointer
+// in this whole file, including every parameter/return type of every
+// helper below, is `raw`, never `owns` -- deliberately avoiding ever
+// creating an `owns` local anywhere in the ghost table's own reachable
+// set, since that would need automatic destruction (GT_DESTRUCT),
+// which can never be generated here at all (see CLAUDE.md, "Ghost
+// table instruction suppression, and dundered duplicates").
+import "libc.caspien"
+
+// The mutex-state enum a 'swap'-tagged field requires -- a plain,
+// exactly-two-variant OPEN/CLOSED enum, per 'validateSwapMutexField'.
+// (Enums have no '@pub'/privacy concept of their own in this
+// language -- only structs/funcs/interfaces/impls/their members do.)
+enum GhostTableLockState{ OPEN, CLOSED }
+
+@pub
+@lock(match self.lockState : OPEN)
+struct GhostTable{@pub{
+	swap lockState: atomic mut GhostTableLockState
+	base: raw mut u8
+	len: mut u64
+	capacity: mut u64
+}}
+
+// Starts fully empty/unallocated -- "gt_init" is responsible for the
+// real first allocation; every other function here assumes it has
+// already run. Referencing this global itself needs no 'unsafe' --
+// 'GhostTable' is a swap-lock-struct type, one of the two mechanisms
+// that still exempt a global/static from that requirement -- 'unsafe'
+// is still needed at each of the four gt-functions' own extern calls
+// (malloc/realloc/free), for the ordinary, unrelated reason any
+// extern call always needs it.
+@pub
+let static ghost_table = mut GhostTable{base= null, len= mut 0, capacity= mut 0, lockState= GhostTableLockState.OPEN}
+
+// ---- pure slot-arithmetic helpers -- never touch `ghost_table` by
+// name, so none of these are subject to the guard-lock requirement at
+// all, and can be called from anywhere in the reachable set freely.
+
+/** The raw pointer to the i'th stored-address slot in a buffer starting at `base` -- walked one 8-byte slot at a time via '++' (pointer arithmetic on a 'raw u64', confirmed achievable once address-of construction stopped hardcoding 'imut' -- see CLAUDE.md, "Storage modifiers"), since there is no direct "jump to offset i" mechanism. `for i in 0..index` -- a real, checkable bound, not a `loop{...}` needing its own 'unsafe'. Passing, casting and stepping a raw pointer is safe; nothing here reads or writes through one. */
+@pub
+func gtSlotAt(base: raw mut u8, index: mut u64) raw mut u64{
+	let slot = mut (base as u64)
+	for i in 0..index{
+		slot++
+	}
+	return slot
+}
+
+/** Reads the 8-byte address value stored at `slot` -- via 'memcopy' into a fresh local, the mechanism for reading through a pointer at all in the absence of real dereferencing (see CLAUDE.md, "Built-in functions"). Only the 'memcopy' (and the 'raw val' it needs) is unsafe. */
+@pub
+func gtReadSlot(slot: raw imut u64) raw mut u8{
+	let:<raw mut u8> val = null
+	unsafe{
+		memcopy(raw val, mut 8, slot)
+	}
+	return val
+}
+
+/** Writes `val`'s own 8-byte address value into `slot` -- via 'memcopy' from a fresh local's own address, the write-side mirror of gtReadSlot. */
+@pub
+func gtWriteSlot(slot: raw imut u64, val: raw imut u8) void{
+	unsafe{
+		memcopy(slot, mut 8, raw val)
+	}
+}

@@ -1,0 +1,59 @@
+// A simple, generic hash function -- works uniformly on *any* type T
+// (primitive types; see the note on structs below) by hashing its own raw
+// in-memory bytes, sidestepping the fact that this language has no
+// generic bounds (`T: SomeInterface`) and primitives can't have methods
+// at all (so a duck-typed "T must have a .hash() method" requirement,
+// the more usual approach, isn't available here).
+//
+// The hash is real 64-bit FNV-1a (the published algorithm, not a
+// look-alike): start from the offset basis 0xcbf29ce484222325 and, for
+// every byte in order, `h = bits_xor(h, byte)` and then
+// `h = h * 0x100000001b3` (the 64-bit FNV prime), wrapping mod 2^64.
+// It used to be a multiplicative `h*33 + byte` rolling hash because the
+// language had no XOR; since `bits_xor` exists it is the real thing. The
+// bytes of a value are fed in memory order (least significant byte
+// first for an integer), so `hashOf:<u32>(7)` is FNV-1a-64 of the four
+// bytes 07 00 00 00. Published vectors (checked by tests/fnv1a_test.caspien):
+// "" -> 0xcbf29ce484222325, "a" -> 0xaf63dc4c8601ec8c,
+// "foobar" -> 0x85944171f73967e8.
+//
+// `fnv1a64Bytes` is the same hash over an arbitrary byte buffer (a
+// string's characters, a struct's bytes copied out through `memcopy`,
+// ...); `hashOf` is just "copy the value's bytes into a scratch buffer,
+// call `fnv1a64Bytes`".
+//
+// A struct T cannot be passed to `hashOf` (its parameter is a plain
+// by-value `imut T`, and a by-value struct parameter is illegal in this
+// language, so the instantiation is rejected for any struct T) -- hash a
+// struct by copying its bytes into a buffer yourself and calling
+// `fnv1a64Bytes`. Beware that a struct's padding bytes are not
+// initialised, so only a padding-free struct has a stable hash.
+import "libc.caspien"
+
+/** FNV-1a, 64 bit, over `byteCount` bytes starting at `p`. `byteCount` 0 gives the offset basis 0xcbf29ce484222325. */
+@pub
+func fnv1a64Bytes(p: raw imut u8, byteCount: mut u64) mut u64{
+	let h = mut 0xcbf29ce484222325
+	unsafe{
+		for i in 0..byteCount{
+			let byteVal = mut deref(p + i) as u64
+			h = bits_xor(h, byteVal)
+			h = h * 0x100000001b3
+		}
+	}
+	return h
+}
+
+@pub
+func hashOf<T>(x: imut T) mut u64{
+	let byteCount = mut sizeof(T)
+	let:<raw mut u8> buf = null
+	let h = mut 0
+	unsafe{
+		buf = mut malloc(byteCount)
+		memcopy(buf, byteCount, raw x)
+		h = fnv1a64Bytes(buf, byteCount)
+		free(buf)
+	}
+	return h
+}

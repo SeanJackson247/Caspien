@@ -1,0 +1,23 @@
+// The C-ABI-args counterpart of "event_loop.caspien" -- for a program
+// whose own '@with_tick' 'main' takes the raw '(imut s32, raw mut raw
+// mut char)' shape ("wire the arguments thru the event loop if they
+// are there," confirmed directly). '@event_loop' is always the real
+// entry point once it exists, so *it's* the one that has to receive
+// the real C-ABI arguments (TypeChecker.validateTickEventLoop requires
+// exactly this signature whenever 'main' itself takes arguments) --
+// here they're simply passed straight through to 'main', unmodified.
+//
+// "it's fine to have different event loop functions in the stdlib for
+// each eventuality, as long as there is only one used in the final
+// compilation unit," confirmed directly -- a program imports exactly
+// one of "event_loop.caspien"/this file/"event_loop_safe_args.caspien",
+// matching whichever argument shape its own 'main' actually uses; the
+// existing "'@event_loop' may only be used once" check already rules
+// out importing more than one.
+@event_loop
+func start(argc: imut s32, argv: raw mut raw mut char) void{
+	let state = main(argc, argv)
+	loop{
+		state = tick(state)
+	}
+}

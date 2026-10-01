@@ -1,0 +1,26 @@
+// A reusable "@guard" interface -- "make one for the stdlib, so it's
+// reusable," confirmed directly. Any concrete type can become
+// guard-protected by writing "impl Guard<SomeMarkerType> for
+// TheStruct{ @realizes @lock func lock() imut void{...} @realizes
+// @unlock func unlock() imut void{...} }" -- the generic parameter T
+// itself carries no runtime meaning (lock/unlock take no arguments at
+// all, matching the established "my_guard.lock()" calling shape --
+// receiver-only dispatch, no explicit self, no other parameters); it
+// exists purely because "@guard requires this to be a generic
+// interface, it must be able to guard any type." See CLAUDE.md,
+// "@guard: lock discipline for globals and statics".
+//
+// NOT currently imported by ghost_table.caspien -- the ghost table's
+// own lock was switched to a real 'swap'-tagged atomic mutex-state
+// field once '@guard' stopped exempting global/static access from
+// 'unsafe' (see CLAUDE.md, same section). '@guard' itself remains a
+// fully implemented, usable language feature for any other purpose --
+// this interface stays here, reusable, for that.
+@guard
+@pub
+interface Guard<T>{
+	@lock
+	lock() imut void;
+	@unlock
+	unlock() imut void;
+}

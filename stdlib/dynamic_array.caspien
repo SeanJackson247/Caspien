@@ -1,0 +1,283 @@
+// A general-purpose growable array. Real `impl` methods throughout,
+// `_self` a genuine `ref` -- not a plain (no-storage) value.
+//
+// REWRITTEN under a new, explicitly-requested precondition philosophy
+// ("the whole point of @lock(match x in X) on methods is so this kind
+// of bullshit is unnecessary... want me to write on something or
+// retrieve out of it? No, I pass the null check responsibility to
+// you. Want me to access bounds? No, you do that before you call me,
+// and I insist on it being so," confirmed directly) -- every method
+// that reads or writes through `_self` now takes it as `ref some
+// (imut|mut) self`, never a plain `ref`: a `some`-tagged type only
+// ever coerces one way (`some` -> plain), so a caller can only obtain
+// a `some`-tagged value at all by first proving it non-null via
+// `match Some(...)`, exactly like the compiler's own `par`-produced
+// async handle already does -- the call site itself is required to
+// have already ruled out null, so the method body needs no defensive
+// `match Some(_self){...}`/fallback of its own at all. Every
+// bounds-sensitive index parameter is likewise required, not
+// defensively checked: `@lock(match i in/into self.backing)` (see
+// CLAUDE.md's own "`@lock(...)` as a qualified method decorator")
+// injects the exact same bounds proof a hand-written
+// `match i in self.backing{...}` would grant, directly into the
+// method's own body scope, and *requires* every call site to already
+// hold that same proof before the call is even legal -- so `get`/
+// `set` need no `defaultValue` fallback for an out-of-bounds index
+// either; there is no legal way to call them with one.
+//
+// **`len` is gone as a field entirely** -- "length isnt needed in
+// String or DynamicArray, its built into a dyn," confirmed directly.
+// Every read of the logical element count now reads `len(_self.backing)`
+// directly (the dynarray's own real, runtime-tracked length -- see
+// CLAUDE.md's own "Dynarrays" section). This *does* give up the old
+// amortized-doubling growth strategy (`dynamicArrayGrowIfFull`/
+// `dynamicArrayShrinkIfSparse`, both removed outright): since there is
+// no longer a separately-tracked capacity distinct from the logical
+// count, `backing` is now `resize`d to the *exact* new element count
+// on every `pushBack`/`popBack`/`pushFront`/`popFront` -- each of
+// those becomes a genuine O(n) reallocation (`pushFront`/`popFront`
+// already were O(n) for their own shift; `pushBack`/`popBack` are new
+// O(n) callers of `resize`, where they used to be amortized O(1)).
+// This trade-off is exactly what the user's own instruction asks for,
+// not an oversight -- a real systems-language dynarray's own hidden
+// length is the single source of truth for both indexing and capacity
+// here, with no separate headroom bookkeeping duplicating it.
+//
+// **`pushFront`/`popFront`/`popBack` still hand-check "is the
+// backing store empty" internally, with a real, caller-supplied
+// `defaultValue: T` fallback for that one case.** This is deliberately
+// *not* the same kind of "bullshit" the null/bounds checks above were
+// -- there is no parameter naming a candidate index for these three to
+// prove bounds on ahead of time (they always operate on a fixed,
+// implicit end of the collection), so there is currently no `@lock`
+// shape that could express "the collection itself is non-empty" as an
+// external, caller-provable precondition. `pushBack` needs no such
+// check at all -- it can never fail on an empty backing store.
+//
+// **`DynamicArray<S>` for a struct `S` -- what works, and why the by-value methods are absent.** The language forbids a plain (by-value) struct
+// PARAMETER (passing one on the stack is broken at runtime), and `T x` parameters of this impl become exactly that when `T` is a struct. The
+// rule is not relaxed: a method or constructor of a generic impl whose signature is illegal for the chosen `T` is simply *unavailable* for that
+// instantiation (the compiler drops it; calling it is a compile error that names the method and says why). For a struct `S` these are:
+// the seed constructor `new DynamicArray:<S>(seed)` (start from `new DynamicArray:<S>()` and `pushBackPtr` instead: overloads are told apart by parameter base type only, so a pointer-seed constructor cannot sit beside the by-value one), `set`, `pushBack`, `pushFront`, `popBack(defaultValue)` and `popFront(defaultValue)`.
+// Everything else (the empty and adopt constructors, `get`, `backing`, `len(d.backing)`, loops over `d.backing`) works for any `T`. Every
+// by-value method has a pointer-taking twin that works for ANY `T` (`u64`, `char`, structs of any size): the `...Ptr` methods
+// take the value by an `auto` pointer, i.e. `d.pushBackPtr(d, auto s)` where `s` is a local variable (an
+// `auto` pointer needs an addressable variable; `auto d.backing[i]` or a struct literal is not one -- copy the element into a local first,
+// `let e = mut d.backing[i]`, then `auto e`). The popping methods still RETURN a struct `T` by value, which is fine (return-value
+// optimization: bind the call to a `let`, `let last = mut ? d.popBackPtr(d, auto fallback)`).
+@pub
+struct DynamicArray<T>{@pub{
+	backing: owns some mut dynarray(imut T)
+}}
+
+/** `new DynamicArray:<T>()` -- a genuinely empty DynamicArray<T>, zero elements, built on the typed empty dynarray `dyn:<T>([])` (an empty array literal has no element type of its own to infer, so `dyn` takes it explicitly). `@throws`: the nested `dyn` can fail (out of memory); the caught error is simply re-thrown to the caller. A constructor, not a static method: the struct-literal form `DynamicArray:<T>{...}` is usable only inside these three constructors. */
+@pub
+@throws
+impl<T> constructor for DynamicArray<T>() self{
+	?catch(e){ throw e }
+	let arr = mut ? dyn:<T>([])
+	return DynamicArray:<T>{backing= arr}
+}
+
+/** `new DynamicArray:<T>(seed)` -- starts with exactly one element, `seed` (element 0). */
+@pub
+@throws
+impl<T> constructor for DynamicArray<T>(seed: mut T) self{
+	?catch(e){ throw e }
+	let arr = mut ? dyn([seed])
+	return DynamicArray:<T>{backing= arr}
+}
+
+/** `new DynamicArray:<T>(arr)` -- adopts an existing dynarray as its backing store (ownership moves in). This is what lets `String` build itself from `dyn(text)` without an element-by-element copy. */
+@pub
+impl<T> constructor for DynamicArray<T>(arr: owns some mut dynarray(imut T)) self{
+	return DynamicArray:<T>{backing= arr}
+}
+
+@pub
+impl<T> DynamicArray<T>{
+	/** The caller must already hold a "match i in self.backing{...}" (or "for match i in self.backing{...}") proof, and must already have proven `_self` itself alive via "match Some(_self){...}" -- both required at the call site, neither checked here. */
+	@pub
+	@lock(match i in self.backing)
+	func get(_self: ref some imut self, i: imut u64) mut T{
+		return _self.backing[i]
+	}
+
+	/** The caller must already hold a "match i into self.backing{...}" write-authorization proof, and must already have proven `_self` itself alive. */
+	@pub
+	@lock(match i into self.backing)
+	func set(_self: ref some mut self, i: imut u64, x: mut T) void{
+		_self.backing[i] = x
+	}
+
+	/** Grows `backing` to exactly one more slot than it currently has, with the new slot already holding `x` -- no separate index write needed at all. Now `@throws`, the same "new throws, but dyn and resize dont, they need to use the same pattern as new" update the constructors' own `new` already went through: `resize` can fail (out of memory) too, so its own call here is wrapped in 'try ... catch { ... }' and the caught error simply re-thrown to this function's own caller. */
+	@pub
+	@throws
+	func pushBack(_self: ref some mut self, x: mut T) void{
+		?catch(e){ throw e }
+		let n = mut len(_self.backing)
+		let grown = mut ? resize(_self.backing, mut (n + 1), x)
+		_self.backing = grown
+	}
+
+	/** `defaultValue` is returned only when the backing store is already empty -- see this file's own header comment for why this one case still needs a caller-supplied fallback. Now `@throws` -- see `pushBack`'s own comment for why. */
+	@pub
+	@throws
+	func popBack(_self: ref some mut self, defaultValue: mut T) mut T{
+		?catch(e){ throw e }
+		let n = mut len(_self.backing)
+		match n != 0{
+			let lastIndex = mut (n - 1)
+			match lastIndex in _self.backing{
+				let value = mut _self.backing[lastIndex]
+				let shrunk = mut ? resize(_self.backing, lastIndex, value)
+				_self.backing = shrunk
+				return value
+			}
+		}
+		return defaultValue
+	}
+
+	/** O(n) -- every existing element shifts one slot toward the end to make room at index 0, walked *forward* (`for k in 0..n`) via the reversed index `j = n - k` (`for` only ever walks forward; this recovers the exact backward sequence `n, n-1, ..., 1` a correct right-shift needs). `backing` is grown to its new, final size first, so every write below always lands in an already-reserved slot. Now `@throws` -- see `pushBack`'s own comment for why. */
+	@pub
+	@throws
+	func pushFront(_self: ref some mut self, x: mut T) void{
+		?catch(e){ throw e }
+		let n = mut len(_self.backing)
+		let grown = mut ? resize(_self.backing, mut (n + 1), x)
+		_self.backing = grown
+		for k in 0..n{
+			let j = mut (n - k)
+			let prevIndex = mut (j - 1)
+			match prevIndex in _self.backing{
+				let prev = mut _self.backing[prevIndex]
+				match j into _self.backing{
+					_self.backing[j] = prev
+				}
+			}
+		}
+		let zeroIndex = mut 0
+		match zeroIndex into _self.backing{
+			_self.backing[zeroIndex] = x
+		}
+	}
+
+	/** O(n) -- every remaining element shifts one slot to close the gap left at index 0; already walks forward in its own natural order, so it needs none of `pushFront`'s own reversed-index trick. `backing` is shrunk by exactly one slot only at the very end, once every element that needs to survive has already been read out of the slot about to be dropped. `defaultValue` is returned only when the backing store is already empty. Now `@throws` -- see `pushBack`'s own comment for why. */
+	@pub
+	@throws
+	func popFront(_self: ref some mut self, defaultValue: mut T) mut T{
+		?catch(e){ throw e }
+		let n = mut len(_self.backing)
+		match n != 0{
+			let zeroIndex = mut 0
+			match zeroIndex in _self.backing{
+				let value = mut _self.backing[zeroIndex]
+				let last = mut (n - 1)
+				for i in 0..last{
+					let nextIndex = mut (i + 1)
+					match nextIndex in _self.backing{
+						let nextVal = mut _self.backing[nextIndex]
+						match i into _self.backing{
+							_self.backing[i] = nextVal
+						}
+					}
+				}
+				let shrunk = mut ? resize(_self.backing, last, value)
+				_self.backing = shrunk
+				return value
+			}
+		}
+		return defaultValue
+	}
+	/** Pointer twin of `set` (usable for a struct `T`): `_self.backing[i] = *x`. Same `@lock` proof requirement; `x` is an `auto` pointer to a local variable. */
+	@pub
+	@lock(match i into self.backing)
+	func setPtr(_self: ref some mut self, i: imut u64, x: auto mut T) void{
+		let value = mut deref(x)
+		_self.backing[i] = value
+	}
+
+	/** Pointer twin of `pushBack` (usable for a struct `T`): appends a copy of `*x`. Same `@throws` contract. */
+	@pub
+	@throws
+	func pushBackPtr(_self: ref some mut self, x: auto mut T) void{
+		?catch(e){ throw e }
+		let n = mut len(_self.backing)
+		let value = mut deref(x)
+		let grown = mut ? resize(_self.backing, mut (n + 1), value)
+		_self.backing = grown
+	}
+
+	/** Pointer twin of `popBack` (usable for a struct `T`): `*defaultValue` is returned only when the backing store is already empty. The result is a `T` by value -- bind it to a `let`. */
+	@pub
+	@throws
+	func popBackPtr(_self: ref some mut self, defaultValue: auto mut T) mut T{
+		?catch(e){ throw e }
+		let n = mut len(_self.backing)
+		match n != 0{
+			let lastIndex = mut (n - 1)
+			match lastIndex in _self.backing{
+				let value = mut _self.backing[lastIndex]
+				let shrunk = mut ? resize(_self.backing, lastIndex, value)
+				_self.backing = shrunk
+				return value
+			}
+		}
+		let fallback = mut deref(defaultValue)
+		return fallback
+	}
+
+	/** Pointer twin of `pushFront` (usable for a struct `T`): O(n), inserts a copy of `*x` at index 0. */
+	@pub
+	@throws
+	func pushFrontPtr(_self: ref some mut self, x: auto mut T) void{
+		?catch(e){ throw e }
+		let n = mut len(_self.backing)
+		let value = mut deref(x)
+		let grown = mut ? resize(_self.backing, mut (n + 1), value)
+		_self.backing = grown
+		for k in 0..n{
+			let j = mut (n - k)
+			let prevIndex = mut (j - 1)
+			match prevIndex in _self.backing{
+				let prev = mut _self.backing[prevIndex]
+				match j into _self.backing{
+					_self.backing[j] = prev
+				}
+			}
+		}
+		let zeroIndex = mut 0
+		match zeroIndex into _self.backing{
+			_self.backing[zeroIndex] = value
+		}
+	}
+
+	/** Pointer twin of `popFront` (usable for a struct `T`): O(n); `*defaultValue` is returned only when the backing store is already empty. The result is a `T` by value -- bind it to a `let`. */
+	@pub
+	@throws
+	func popFrontPtr(_self: ref some mut self, defaultValue: auto mut T) mut T{
+		?catch(e){ throw e }
+		let n = mut len(_self.backing)
+		match n != 0{
+			let zeroIndex = mut 0
+			match zeroIndex in _self.backing{
+				let value = mut _self.backing[zeroIndex]
+				let last = mut (n - 1)
+				for i in 0..last{
+					let nextIndex = mut (i + 1)
+					match nextIndex in _self.backing{
+						let nextVal = mut _self.backing[nextIndex]
+						match i into _self.backing{
+							_self.backing[i] = nextVal
+						}
+					}
+				}
+				let shrunk = mut ? resize(_self.backing, last, value)
+				_self.backing = shrunk
+				return value
+			}
+		}
+		let fallback = mut deref(defaultValue)
+		return fallback
+	}
+}

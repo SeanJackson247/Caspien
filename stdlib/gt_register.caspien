@@ -1,0 +1,48 @@
+// The real "@gt_register" -- called with a raw pointer to register it
+// with the ghost table. A no-op for 'null'. Grows the buffer
+// (doubling) if it's already full before adding; does nothing if the
+// pointer is already present.
+//
+// Uses 'match @lock ghost_table{...}' instead of the '@guard'-based
+// 'ghost_table.lock()'/'unlock()' this file used to need -- see
+// ghost_table.caspien's own file-level comment. 'unsafe' is still
+// needed around the 'realloc' extern call itself.
+import "ghost_table.caspien"
+
+@gt_register
+@pub
+func gt_register(ptr: raw imut u8) void{
+	if ptr != null{
+		match @lock ghost_table{
+			OPEN:{
+				let alreadyPresent = mut false
+				let n = mut ghost_table.len
+				for idx in 0..n{
+					let slot = mut gtSlotAt(ghost_table.base, idx)
+					let val = mut gtReadSlot(slot)
+					if val == ptr{
+						alreadyPresent = mut true
+						break
+					}
+				}
+				if !alreadyPresent{
+					if ghost_table.len == ghost_table.capacity{
+						let newCapacity = mut (ghost_table.capacity * 2)
+						let:<raw mut u8> newBase = null
+						unsafe{
+							newBase = mut realloc(ghost_table.base, newCapacity * 8)
+						}
+						ghost_table.base = mut newBase
+						ghost_table.capacity = mut newCapacity
+					}
+					let slot = mut gtSlotAt(ghost_table.base, ghost_table.len)
+					gtWriteSlot(slot, ptr)
+					ghost_table.len = mut (ghost_table.len + 1)
+				}
+			}
+			CLOSED:{
+				continue
+			}
+		}
+	}
+}

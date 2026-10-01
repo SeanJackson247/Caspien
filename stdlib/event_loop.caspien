@@ -1,0 +1,22 @@
+// "@event_loop... func start()void{ let state = main() loop{
+// state = tick(state) } }," confirmed directly -- the reusable stdlib
+// version of the user's own exact example. "That's all it does for
+// now," confirmed directly -- deliberately minimal, nothing beyond
+// this.
+//
+// The literal calls to "main" and "tick" here are not ordinary name
+// lookups: "main" always names the program's own entry point (fixed,
+// like any other program), but "tick" is special-cased by the
+// compiler specifically within an '@event_loop' function's own body
+// (this one) to mean "whichever function is actually decorated
+// '@tick'", regardless of its own real name -- "found purely by
+// decorator," confirmed directly, is exactly why this file can be
+// generic, shared stdlib code rather than something every
+// '@with_tick' program has to hand-write for itself.
+@event_loop
+func start() void{
+	let state = main()
+	loop{
+		state = tick(state)
+	}
+}

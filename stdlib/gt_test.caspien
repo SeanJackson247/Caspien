@@ -1,0 +1,6 @@
+import "gt_alive_check.caspien"
+
+func main() void{
+	let alive = gt_alive_check(null)
+	return
+}
