@@ -1,0 +1,275 @@
+// Regression test for register variables (`variables-in-registers: on`, needs `deferred-operands: on`). Hot scalar locals
+// (loop counters, accumulators) are hinted by the Optimizer and kept in r13/r14 by RegVarPromotionPass. Every expected value is
+// worked out by hand; the output must be identical with the switch on and off. Prints one PASS/FAIL line per check.
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+
+func check(name: static imut string, ok: mut bool) void{
+	unsafe{
+		if ok{
+			printf("PASS %s\n", name)
+		}else{
+			printf("FAIL %s\n", name)
+		}
+	}
+	return
+}
+
+// 1. plain u64 loop: counter and accumulator are the two hottest variables
+func sumTo(n: mut u64) mut u64{
+	let s = mut 0
+	let i = mut 1
+	unsafe{
+		loop{
+			if i > n{
+				break
+			}
+			s += i
+			i++
+		}
+	}
+	return s
+}
+
+// 2. a variable that is updated with a computed value (not just x += c), and read in several places
+func collatzSteps(start: mut u64) mut u64{
+	let x = mut start
+	let steps = mut 0
+	unsafe{
+		loop{
+			if x == 1{
+				break
+			}
+			if x % 2 == 0{
+				x = x / 2
+			}else{
+				x = x * 3 + 1
+			}
+			steps++
+		}
+	}
+	return steps
+}
+
+// 3. narrow variables: a u8 counter must wrap on store, a u32 must wrap at 2^32
+func narrowWrap() mut u64{
+	let:<mut u8> c = mut 250
+	let n = mut 0
+	unsafe{
+		loop{
+			c = c + 1
+			n++
+			if c == 3{
+				break
+			}
+		}
+	}
+	return n
+}
+func wide32() mut u64{
+	let:<mut u32> w = mut 4294967290
+	let k = mut 0
+	unsafe{
+		loop{
+			w = w + 2
+			k++
+			if k == 5{
+				break
+			}
+		}
+	}
+	return w as u64
+}
+
+// 4. an f32 accumulator
+func floatAcc() mut f32{
+	let f = mut 0.5
+	let k = mut 0
+	unsafe{
+		loop{
+			f = f + 0.25
+			k++
+			if k == 10{
+				break
+			}
+		}
+	}
+	return f
+}
+
+// 5. calls inside the loop: the callee has its own hot loop, so it wants the same registers; the caller's values must survive
+func inner(n: mut u64) mut u64{
+	let a = mut 0
+	let b = mut 0
+	unsafe{
+		loop{
+			if b == n{
+				break
+			}
+			a += b + 1
+			b++
+		}
+	}
+	return a
+}
+func outer(n: mut u64) mut u64{
+	let total = mut 0
+	let j = mut 0
+	unsafe{
+		loop{
+			if j == n{
+				break
+			}
+			total += inner(j + 1)
+			j++
+		}
+	}
+	return total
+}
+
+// 6. a throw from the middle of a loop (its own loop variables live in registers), caught one frame up; the catching loop keeps
+// its variables in registers across every call, including the ones that throw
+@throws
+func thrower(x: mut u64) mut u64{
+	let z = mut 0
+	let q = mut 0
+	unsafe{
+		loop{
+			if q == x{
+				break
+			}
+			z += 2
+			if z == 6{
+				throw "six"
+			}
+			q++
+		}
+	}
+	return z
+}
+func tryOne(i: mut u64) mut u64{
+	let r = try thrower(i) catch(e){
+		return 1000
+	}
+	return r
+}
+func catcher() mut u64{
+	let acc = mut 0
+	let i = mut 0
+	unsafe{
+		loop{
+			if i == 6{
+				break
+			}
+			acc += tryOne(i)
+			i++
+		}
+	}
+	return acc
+}
+func catchReturn() mut u64{
+	let acc = mut 0
+	let i = mut 0
+	unsafe{
+		loop{
+			if i == 6{
+				break
+			}
+			let r = try thrower(i) catch(e){
+				return acc + 7
+			}
+			acc += r
+			i++
+		}
+	}
+	return acc
+}
+
+// 7. a variable whose address is taken must stay in memory: the pointer read has to see every update
+func readThrough(p: raw imut u64) imut u64{
+	unsafe{ return deref(p) }
+}
+func addressTaken() imut u64{
+	let v = mut 0
+	let w = mut 0
+	unsafe{
+		let p = imut raw v
+		loop{
+			v += 3
+			w++
+			if w == 10{
+				break
+			}
+		}
+		return readThrough(p)
+	}
+}
+
+// 8. more hot variables than registers: the two hottest win, the rest stay in memory, all results stay correct
+func many(n: mut u64) mut u64{
+	let a = mut 0
+	let b = mut 0
+	let c = mut 0
+	let d = mut 0
+	let i = mut 0
+	unsafe{
+		loop{
+			if i == n{
+				break
+			}
+			a += 1
+			b += 2
+			c += 3
+			d += 4
+			i++
+		}
+	}
+	return a + b * 10 + c * 100 + d * 1000
+}
+
+// 9. a function that keeps variables in registers and also allocates: the allocation code needs r13/r14 itself, so this
+// function must keep its variables in memory (and still be right)
+struct Box{
+	@pub{ v: mut u64 }
+}
+@throws
+func boxed(n: mut u64) mut u64{
+	?catch(e){ throw e }
+	let s = mut 0
+	let i = mut 0
+	unsafe{
+		loop{
+			if i == n{
+				break
+			}
+			s += i
+			i++
+		}
+	}
+	let b = mut ?new Box{v= s}
+	return s
+}
+
+func main() void{
+	check("sumTo(100)", sumTo(100) == 5050)
+	check("collatz(27)", collatzSteps(27) == 111)
+	check("u8 wraps on store", narrowWrap() == 9)
+	check("u32 wraps on store", wide32() == 4)
+	let f = mut floatAcc()
+	let fok = mut false
+	unsafe{ fok = f == 3.0 }
+	check("f32 accumulator", fok)
+	check("calls inside a loop", outer(4) == 20)
+	check("throw caught in a loop", catcher() == 3006)
+	check("return from a catch in a loop", catchReturn() == 13)
+	check("address-taken variable", addressTaken() == 30)
+	check("more variables than registers", many(5) == 21605)
+	try{
+		?catch(e){ return }
+		let bx = mut ?boxed(10)
+		check("allocating function", bx == 45)
+	}
+}

@@ -1,0 +1,151 @@
+// Extra shapes for dead control flow removal: constant conditions around break, loops, early return, else-if chains and nesting.
+// Hand-computed expected values; output must be identical with the switch on and off.
+import "../stdlib/libc.caspien"
+
+func check(name: static imut string, ok: mut bool) void{
+	unsafe{
+		if ok{
+			printf("PASS %s\n", name)
+		}else{
+			printf("FAIL %s\n", name)
+		}
+	}
+	return
+}
+
+// `if true { break }`: loop runs exactly once
+func breakTrue() mut u64{
+	let n = mut 0
+	unsafe{
+		loop{
+			n += 1
+			if true{
+				break
+			}
+			n += 100
+		}
+	}
+	return n
+}
+
+// `if false { break }`: the break is dead, the real one ends it at 5
+func breakFalse() mut u64{
+	let n = mut 0
+	unsafe{
+		loop{
+			n += 1
+			if false{
+				break
+			}
+			if n == 5{
+				break
+			}
+		}
+	}
+	return n
+}
+
+// constant condition inside a for loop with a live break
+func forConst() mut u64{
+	let s = mut 0
+	for i in 0..10{
+		if true{
+			s += i
+		}else{
+			s += 1000
+		}
+		if false{
+			s += 5000
+		}
+		if i == 6{
+			break
+		}
+	}
+	return s
+}
+
+// early return behind a constant
+func earlyRet(k: mut u64) mut u64{
+	if false{
+		return 1
+	}
+	if true{
+		return k + 7
+	}
+	return 2
+}
+
+// else-if chain with constants in the middle
+func chain(k: mut u64) mut u64{
+	if k == 1{
+		return 10
+	}elseif false{
+		return 20
+	}elseif true{
+		return 30
+	}else{
+		return 40
+	}
+}
+
+// nested constants
+func nested(k: mut u64) mut u64{
+	let a = mut k
+	if true{
+		if false{
+			a += 1000
+		}else{
+			a += 1
+			if true{
+				a += 2
+			}
+		}
+	}
+	return a
+}
+
+// a loop whose only exit is behind a constant true inside an else
+func exitInElse() mut u64{
+	let n = mut 0
+	unsafe{
+		loop{
+			n += 2
+			if false{
+				n += 1000
+			}else{
+				if n >= 8{
+					break
+				}
+			}
+		}
+	}
+	return n
+}
+
+// constant condition after variable elision / folding
+func folded() mut u64{
+	let a = mut 3
+	let b = mut 4
+	let r = mut 0
+	if a < b{
+		r += 1
+	}else{
+		r += 100
+	}
+	if a == b{
+		r += 1000
+	}
+	return r
+}
+
+func main() void{
+	check("break behind true", breakTrue() == 1)
+	check("dead break behind false", breakFalse() == 5)
+	check("for with constants and break", forConst() == 21)
+	check("early return, constant false then true", earlyRet(5) == 12)
+	check("else-if chain, k = 1", chain(1) == 10)
+	check("else-if chain, k = 2 (false arm skipped)", chain(2) == 30)
+	check("nested constants", nested(10) == 13)
+	check("exit inside else of a false", exitInElse() == 8)
+	check("folded compares", folded() == 1)
+}

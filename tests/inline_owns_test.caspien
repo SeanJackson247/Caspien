@@ -1,0 +1,117 @@
+// Regression test: a call that MOVES an owns variable into the callee (`take(o)`) is followed by a null-out of the variable inside the call
+// bracket (`ADDR o / PUSH null / ASSIGN`). Such calls are inlined now; the moved variable must stay usable (refilled and moved again), the callee's
+// own destruct of its owns parameter must run exactly once, and results, throws and loops must give the same answers as with inlining off.
+// Run identically with inlining off and at every preset.
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+
+struct Box{
+	@pub{ v: mut u64 }
+}
+
+func check(name: static imut string, ok: mut bool) void{
+	unsafe{
+		if ok{
+			printf("PASS %s\n", name)
+		}else{
+			printf("FAIL %s\n", name)
+		}
+	}
+	return
+}
+
+@throws
+func makeBox(n: mut u64) owns some mut Box{
+	?catch(e){ throw e }
+	return ?new Box{v= n}
+}
+
+func take(b: owns some mut Box) mut u64{
+	let r = mut 0
+	match Some(b){
+		let copy = mut deref(b)
+		r = copy.v
+	}
+	return r
+}
+
+func take2(a: owns some mut Box, k: mut u64, b: owns some mut Box) mut u64{
+	let r = mut k
+	match Some(a){
+		let ca = mut deref(a)
+		r = r + ca.v
+	}
+	match Some(b){
+		let cb = mut deref(b)
+		r = r + cb.v * 10
+	}
+	return r
+}
+
+func drop(b: owns some mut Box) void{
+	return
+}
+
+@throws
+func takeThrow(b: owns some mut Box, limit: mut u64) mut u64{
+	let r = mut 0
+	match Some(b){
+		let copy = mut deref(b)
+		r = copy.v
+	}
+	if r > limit{
+		throw "over limit"
+	}
+	return r
+}
+
+func viaTake(limit: mut u64) mut u64{
+	?catch(e){ return 777 }
+	let o = mut ?makeBox(30)
+	let t = mut ?takeThrow(o, limit)
+	return t
+}
+
+func main() void{
+	try{
+		?catch(e){ return }
+		let o1 = mut ?makeBox(5)
+		let t1 = mut take(o1)
+		check("take returns the value", t1 == 5)
+		o1 = mut ?makeBox(6)
+		check("moved variable can be refilled and moved again", take(o1) == 6)
+
+		let a = mut ?makeBox(3)
+		let b = mut ?makeBox(4)
+		let t2 = mut take2(a, 100, b)
+		check("two owns arguments and a scalar", t2 == 143)
+		a = mut ?makeBox(7)
+		b = mut ?makeBox(8)
+		check("both moved variables refilled", take2(a, 1, b) == 88)
+
+		let c = mut ?makeBox(9)
+		drop(c)
+		c = mut ?makeBox(11)
+		check("dropped variable refilled", take(c) == 11)
+
+		let sum = mut 0
+		for i in 0..6{
+			let o = mut ?makeBox(i)
+			let v = mut take(o)
+			sum = sum + v
+		}
+		check("take in a loop", sum == 15)
+
+		let d = mut ?makeBox(20)
+		let t3 = mut ?takeThrow(d, 50)
+		check("throwing callee, no throw", t3 == 20)
+		d = mut ?makeBox(21)
+		let t4 = mut ?takeThrow(d, 50)
+		check("throwing callee, argument refilled", t4 == 21)
+		check("throw caught in the caller", viaTake(5) == 777)
+		check("no throw through the caller", viaTake(500) == 30)
+	}
+}

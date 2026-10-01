@@ -1,0 +1,76 @@
+// Regression test for the THIRD register variable (%v2 = r12, given to a function that never needs a fourth temporary) and for loop
+// counters that are declared in several loops under the same name and type (RegVarHintPass now accepts those). Expected values are
+// worked out by hand; output must be identical with variables-in-registers on and off.
+import "../stdlib/libc.caspien"
+
+func check(name: static imut string, ok: mut bool) void{
+	unsafe{
+		if ok{
+			printf("PASS %s\n", name)
+		}else{
+			printf("FAIL %s\n", name)
+		}
+	}
+	return
+}
+
+func bump(x: mut u64) mut u64{
+	let a = mut x
+	let b = mut 1
+	let c = mut 2
+	unsafe{
+		loop{
+			if a > 40{
+				break
+			}
+			a += b + c
+		}
+	}
+	return a
+}
+
+// three hot variables in one loop, with a call in the body (the callee uses r12/r13/r14 itself and must give them back)
+func three(n: mut u64) mut u64{
+	let s = mut 0
+	let t = mut 0
+	let u = mut 0
+	let i = mut 0
+	unsafe{
+		loop{
+			if i >= n{
+				break
+			}
+			s += i
+			t += bump(i)
+			u += 3
+			i++
+		}
+	}
+	return s * 1000000 + t * 1000 + u
+}
+
+// the same loop counter name in several for loops
+func twoLoops(n: mut u64) mut u64{
+	let acc = mut 0
+	for i in 0..10{
+		for j in 0..10{
+			acc += i * j
+		}
+	}
+	for i in 0..10{
+		acc += i
+	}
+	for i in 0..10{
+		acc += i * 2
+	}
+	return acc + n
+}
+
+func main() void{
+	// three(4): i=0..3; s=0+1+2+3=6; bump(0)=42 (step 3), bump(1)=40? 1+3k: 1,4,..,40,43 -> 43; bump(2): 2,5,..,41 -> 41; bump(3): 3..42 -> 42
+	// t = 42+43+41+42 = 168; u = 12 -> 6*1000000 + 168*1000 + 12 = 6168012
+	check("three variables with calls", three(4) == 6168012)
+	// twoLoops(7): sum i*j over 0..9 squared = 45*45 = 2025; + 45 + 90 + 7 = 2167
+	check("same counter in several loops", twoLoops(7) == 2167)
+	return
+}

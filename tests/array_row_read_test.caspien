@@ -1,0 +1,90 @@
+// Regression test: reading one element of an array whose elements are more than one word but NOT a multiple of 8 bytes (a row of a
+// `u32[3][2]` is 12 bytes, an element of a `Tri[]` is 12 bytes) while another value already sits on the stack beneath the read, i.e. the
+// value is stored (`let v = mut grid[1][2]`) rather than passed straight to a call. LOOKUP_ARRAY used to shrink the array block by
+// (total - elemSize) instead of whole words, leaving rsp 4 bytes off and writing 4 bytes past the old block over the pending store address:
+// segfault. Found when function inlining turned `check("..", g[0][0] == 1)` (register argument) into a store.
+import "../stdlib/libc.caspien"
+
+struct Grid{
+	@pub{
+		tag: mut u8
+		g: mut u32[3][2]
+		tail: mut u64
+	}
+}
+
+struct Tri{
+	@pub{
+		a: mut u32
+		b: mut u32
+		c: mut u32
+	}
+}
+
+func check(name: static imut string, ok: mut bool) void{
+	unsafe{
+		if ok{
+			printf("PASS %s\n", name)
+		}else{
+			printf("FAIL %s\n", name)
+		}
+	}
+	return
+}
+
+func main() void{
+	let:<mut u32[3]> q0 = mut [1, 2, 3]
+	let:<mut u32[3]> q1 = mut [4, 5, 6]
+	let:<mut u32[3][2]> grid = mut [q0, q1]
+	let g1 = mut Grid{tag= 3, g= grid, tail= 1007}
+
+	let v00 = mut grid[0][0]
+	let v12 = mut grid[1][2]
+	let v10 = mut grid[1][0]
+	check("local 2D read stored: [0][0]", v00 == 1)
+	check("local 2D read stored: [1][2]", v12 == 6)
+	check("local 2D read stored: [1][0]", v10 == 4)
+
+	let s00 = mut g1.g[0][0]
+	let s11 = mut g1.g[1][1]
+	check("member 2D read stored: [0][0]", s00 == 1)
+	check("member 2D read stored: [1][1]", s11 == 5)
+
+	let ok = mut (g1.g[0][0] == 1)
+	check("member 2D compare stored", ok)
+	let ok2 = mut (grid[1][2] == 6)
+	check("local 2D compare stored", ok2)
+
+	// the neighbours of the store target must not be touched
+	let before = mut 111
+	let mid = mut grid[1][1]
+	let after = mut 222
+	check("neighbour before", before == 111)
+	check("stored value", mid == 5)
+	check("neighbour after", after == 222)
+
+	// a 12-byte struct element of an array
+	let:<mut Tri[2]> ts = mut [Tri{a= 1, b= 2, c= 3}, Tri{a= 4, b= 5, c= 6}]
+	let t1 = mut ts[1]
+	let tc = mut t1.c
+	check("struct element read stored: c", tc == 6)
+	check("struct element read stored: a", t1.a == 4)
+	let direct = mut ts[0].b
+	check("struct element field stored", direct == 2)
+
+	// every element of the 2D array (rows start mid-word)
+	let e10 = mut grid[0][0]
+	let e11 = mut grid[0][1]
+	let e12 = mut grid[0][2]
+	let e20 = mut grid[1][0]
+	let e21 = mut grid[1][1]
+	let e22 = mut grid[1][2]
+	check("all elements in order", e10 == 1 && e11 == 2 && e12 == 3 && e20 == 4 && e21 == 5 && e22 == 6)
+
+	// a read in the middle of a call's argument list, after earlier arguments are already in registers
+	unsafe{
+		printf("row1: %llu %llu %llu\n", grid[1][0], grid[1][1], grid[1][2])
+	}
+	check("read as a later argument", grid[1][1] == 5)
+	return
+}

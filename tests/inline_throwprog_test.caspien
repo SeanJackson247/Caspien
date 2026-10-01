@@ -1,0 +1,88 @@
+// Regression test: in a program that uses throw, every function carries the routing/message slots (gt_routine_address, gt_error_message).
+// Leaf functions that never touch them are inlined anyway (the slots are dropped); functions that throw, or call something, are not.
+// Checks that inlined leaves, thrown messages and catches all still give the same answers. Identical with inlining off and at every preset.
+import "../stdlib/libc.caspien"
+
+extern strcmp(static imut string, static imut string) mut s32
+
+func check(name: static imut string, ok: mut bool) void{
+	unsafe{
+		if ok{
+			printf("PASS %s\n", name)
+		}else{
+			printf("FAIL %s\n", name)
+		}
+	}
+	return
+}
+
+func sq(x: mut u64) mut u64{
+	return x * x
+}
+
+func sumTo(n: mut u64) mut u64{
+	let t = mut 0
+	for i in 0..n{
+		t = t + i
+	}
+	t = t + n
+	return t
+}
+
+func clampAdd(a: mut u64, b: mut u64) mut u64{
+	let r = mut (a + b)
+	if r > 100{
+		r = 100
+	}
+	return r
+}
+
+@throws
+func guarded(x: mut u64) mut u64{
+	if x > 50{
+		throw "too big"
+	}
+	return sq(x)
+}
+
+@throws
+func viaGuard(x: mut u64) mut u64{
+	?catch(e){ throw e }
+	let v = mut ?guarded(x)
+	let w = mut clampAdd(v, 5)
+	return w
+}
+
+// a catch that turns a thrown message into a value; the inlined leaves sit on both sides of the throwing call
+func attempt(x: mut u64) mut u64{
+	?catch(e){ return 999 }
+	let v = mut ?viaGuard(x)
+	return v
+}
+
+func attemptMsg(x: mut u64) mut u64{
+	?catch(e){
+		unsafe{
+			if strcmp(e, "too big") == 0{
+				return 1
+			}
+		}
+		return 2
+	}
+	let v = mut ?viaGuard(x)
+	return v
+}
+
+func main() void{
+	check("leaf sq", sq(7) == 49)
+	check("leaf loop", sumTo(10) == 55)
+	check("leaf nested", sq(sumTo(3)) == 36)
+	check("leaf clamp low", clampAdd(3, 4) == 7)
+	check("leaf clamp high", clampAdd(90, 40) == 100)
+	check("throwing chain ok", attempt(6) == 41)
+	check("throwing chain caught", attempt(60) == 999)
+	check("message survives", attemptMsg(60) == 1)
+	check("no throw, big result", attemptMsg(9) == 86)
+	check("leaf after a catch", sq(attempt(60) - 990) == 81)
+	return
+}

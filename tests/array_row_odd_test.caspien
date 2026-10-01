@@ -1,0 +1,110 @@
+// Regression test: arrays whose ROWS are 3, 5, 6 or 7 bytes (`u8[3]`, `u8[5]`, `u16[3]`, `u8[7]` ...) built from row variables and read back.
+// Three separate bugs, all in Codegen: (1) the packed construction stored each odd-sized row with an 8-byte move, so the second row's store
+// overwrote the low bytes of the destination address (segfault) and a first row's junk landed in the image; (2) a row that starts in one
+// 8-byte word of the pushed block and ends in the next was read with a plain load (the block's words are in reverse order in memory, so the
+// bytes above the block were read instead of the second word); (3) a row taken out of an array that fits in one word was cut to one byte.
+import "../stdlib/libc.caspien"
+
+struct Holder{
+	@pub{
+		tag: mut u8
+		w: mut u16[3][2]
+		tail: mut u64
+	}
+}
+
+func check(name: static imut string, ok: mut bool) void{
+	unsafe{
+		if ok{
+			printf("PASS %s\n", name)
+		}else{
+			printf("FAIL %s\n", name)
+		}
+	}
+	return
+}
+
+func main() void{
+	// u16[3] rows: 6 bytes, the second row straddles the first and second word
+	let:<mut u16[3]> a0 = mut [1, 2, 3]
+	let:<mut u16[3]> a1 = mut [4, 5, 6]
+	let:<mut u16[3][2]> w = mut [a0, a1]
+	let w00 = mut w[0][0]
+	let w01 = mut w[0][1]
+	let w02 = mut w[0][2]
+	let w10 = mut w[1][0]
+	let w11 = mut w[1][1]
+	let w12 = mut w[1][2]
+	check("u16[3][2] row 0", w00 == 1 && w01 == 2 && w02 == 3)
+	check("u16[3][2] row 1", w10 == 4 && w11 == 5 && w12 == 6)
+
+	// u8[3] rows: the whole 6-byte array fits in one word
+	let:<mut u8[3]> b0 = mut [1, 2, 3]
+	let:<mut u8[3]> b1 = mut [4, 5, 6]
+	let:<mut u8[3][2]> v = mut [b0, b1]
+	let v00 = mut v[0][0]
+	let v02 = mut v[0][2]
+	let v10 = mut v[1][0]
+	let v12 = mut v[1][2]
+	check("u8[3][2] row 0", v00 == 1 && v02 == 3)
+	check("u8[3][2] row 1", v10 == 4 && v12 == 6)
+
+	// a whole row taken out of the array keeps all its bytes
+	let rv = mut v[1]
+	let rv0 = mut rv[0]
+	let rv1 = mut rv[1]
+	let rv2 = mut rv[2]
+	check("u8[3] row copied out", rv0 == 4 && rv1 == 5 && rv2 == 6)
+	let rw = mut w[1]
+	let rw1 = mut rw[1]
+	let rw2 = mut rw[2]
+	check("u16[3] row copied out", rw1 == 5 && rw2 == 6)
+
+	// u8[5] rows, three of them: 15 bytes, rows start at bytes 0, 5, 10
+	let:<mut u8[5]> c0 = mut [1, 2, 3, 4, 5]
+	let:<mut u8[5]> c1 = mut [6, 7, 8, 9, 10]
+	let:<mut u8[5]> c2 = mut [11, 12, 13, 14, 15]
+	let:<mut u8[5][3]> c = mut [c0, c1, c2]
+	let c04 = mut c[0][4]
+	let c10 = mut c[1][0]
+	let c14 = mut c[1][4]
+	let c20 = mut c[2][0]
+	let c24 = mut c[2][4]
+	check("u8[5][3] rows", c04 == 5 && c10 == 6 && c14 == 10 && c20 == 11 && c24 == 15)
+
+	// u8[7] rows: 14 bytes, row 1 starts at byte 7
+	let:<mut u8[7]> d0 = mut [1, 2, 3, 4, 5, 6, 7]
+	let:<mut u8[7]> d1 = mut [8, 9, 10, 11, 12, 13, 14]
+	let:<mut u8[7][2]> d = mut [d0, d1]
+	let d06 = mut d[0][6]
+	let d10 = mut d[1][0]
+	let d16 = mut d[1][6]
+	check("u8[7][2] rows", d06 == 7 && d10 == 8 && d16 == 14)
+
+	// u16[3] rows, three of them: 18 bytes
+	let:<mut u16[3]> e0 = mut [10, 20, 30]
+	let:<mut u16[3]> e1 = mut [40, 50, 60]
+	let:<mut u16[3]> e2 = mut [70, 80, 90]
+	let:<mut u16[3][3]> e = mut [e0, e1, e2]
+	let e12 = mut e[1][2]
+	let e20 = mut e[2][0]
+	let e22 = mut e[2][2]
+	check("u16[3][3] rows", e12 == 60 && e20 == 70 && e22 == 90)
+
+	// an odd-sized row array as a struct member, with neighbours on both sides
+	let h = mut Holder{tag= 3, w= w, tail= 1007}
+	let h11 = mut h.w[1][1]
+	let h02 = mut h.w[0][2]
+	check("struct member row array [1][1]", h11 == 5)
+	check("struct member row array [0][2]", h02 == 3)
+	check("struct member neighbour tag", h.tag == 3)
+	check("struct member neighbour tail", h.tail == 1007)
+
+	// writing one element of a row leaves its neighbours alone
+	w[1][1] = mut 55
+	let nw10 = mut w[1][0]
+	let nw11 = mut w[1][1]
+	let nw12 = mut w[1][2]
+	let nw02 = mut w[0][2]
+	check("write inside a row", nw10 == 4 && nw11 == 55 && nw12 == 6 && nw02 == 3)
+}

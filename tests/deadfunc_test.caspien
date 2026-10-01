@@ -1,0 +1,77 @@
+// Regression test for dead function removal (`dead-function-removal: on|off`, the Optimizer's DeadFunctionRemovalPass). Functions named `unused_*`
+// and `dead_*` are never called (directly, through another dead function, or only from a branch that dead control flow removal deletes); with the pass on they disappear
+// from the program, with it off they stay. Every function that IS reached -- directly, through a chain, through a catch, or by a `par`
+// trampoline -- must survive and compute the right answer. The output must be identical with the switch on and off.
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+
+func check(name: static imut string, ok: mut bool) void{
+	unsafe{
+		if ok{
+			printf("PASS %s\n", name)
+		}else{
+			printf("FAIL %s\n", name)
+		}
+	}
+	return
+}
+
+// never called
+func unused_plain(x: mut u64) mut u64{
+	return x + 1000
+}
+// called only by another dead function
+func dead_leaf(x: mut u64) mut u64{
+	return x * 7
+}
+func unused_root(x: mut u64) mut u64{
+	return dead_leaf(x) + 1
+}
+// only called from a branch that is provably never taken
+func dead_from_branch(x: mut u64) mut u64{
+	return x + 5000
+}
+
+// reached directly or through a chain
+func leaf(x: mut u64) mut u64{
+	return x + 1
+}
+func middle(x: mut u64) mut u64{
+	return leaf(x) * 2
+}
+func top(x: mut u64) mut u64{
+	return middle(x) + 3
+}
+// reached through a catch
+@throws
+func thrower(x: mut u64) mut u64{
+	if x == 0{
+		throw "zero"
+	}
+	return x
+}
+func guarded(x: mut u64) mut u64{
+	let r = mut try thrower(x) catch(e){
+		return 99
+	}
+	return r + 1
+}
+
+// the only call sits in a branch with a constant condition
+func gated(x: mut u64) mut u64{
+	let flag = imut false
+	if flag{
+		return dead_from_branch(x)
+	}
+	return x
+}
+
+func main() void{
+	check("top", top(4) == 13)
+	check("guarded_ok", guarded(5) == 6)
+	check("guarded_throw", guarded(0) == 99)
+	check("gated", gated(8) == 8)
+}

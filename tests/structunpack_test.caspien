@@ -1,0 +1,160 @@
+// Regression test for struct unpacking (`struct-unpacking: on|off`, the Optimizer's StructUnpackingPass). Every function has a hand-computed
+// expected result. Structs that are only constructed and accessed member by member are split into one variable per member; structs that are
+// copied, passed by address or reconstructed from their own members must be left alone and still give the right answer.
+// The output must be identical with the switch on and off (and with elision/shifting/folding on too).
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+
+struct V{
+	@pub{
+		x: mut u64
+		y: mut u64
+	}
+}
+struct Mix{
+	@pub{
+		a: mut u8
+		b: mut u32
+		c: mut f32
+		d: mut s16
+		e: mut bool
+	}
+}
+
+func check(name: static imut string, ok: mut bool) void{
+	unsafe{
+		if ok{
+			printf("PASS %s\n", name)
+		}else{
+			printf("FAIL %s\n", name)
+		}
+	}
+	return
+}
+
+func bumpV(p: auto mut V) void{
+	p.x += 1000
+	return
+}
+
+// computed member expressions, member writes and compound writes
+func compute(k: mut u64) mut u64{
+	let v = mut V{x= k * 2 + 1, y= k + 3}
+	v.x += 2
+	v.y = v.x + v.y
+	return v.x * 100 + v.y
+}
+
+// narrow, float and bool members, constant initialisers
+func mixed() mut bool{
+	let m = mut Mix{a= 200, b= 4000000000, c= 1.5, d= -5, e= true}
+	let ok = mut true
+	m.a += 100
+	m.b += 500000000
+	m.d += 10
+	if m.a != 44{
+		ok = false
+	}
+	if m.b != 205032704{
+		ok = false
+	}
+	if m.d != 5{
+		ok = false
+	}
+	if !m.e{
+		ok = false
+	}
+	unsafe{
+		m.c = m.c * 2.0 + 0.5
+		if m.c != 3.5{
+			ok = false
+		}
+	}
+	return ok
+}
+
+// immutable struct
+func immut(k: mut u64) mut u64{
+	let p = imut V{x= 5, y= 7}
+	return p.x * p.y + k
+}
+
+// whole-struct copy: not unpacked, still right
+func copied(k: mut u64) mut u64{
+	let p = mut V{x= k, y= 2}
+	let q = mut p
+	p.x += 50
+	return p.x + q.x + q.y
+}
+
+// passed by address: not unpacked
+func byaddr(k: mut u64) mut u64{
+	let p = mut V{x= k, y= 1}
+	bumpV(auto p)
+	return p.x + p.y
+}
+
+// constructed in a branch as well: several constructions of one variable
+func rebuilt(c: mut bool) mut u64{
+	let v = mut V{x= 1, y= 2}
+	if c{
+		v = mut V{x= 10, y= 20}
+	}
+	v.x += 5
+	return v.x + v.y
+}
+
+// reconstructed from its own members (swap): must not be unpacked
+func swapped() mut u64{
+	let v = mut V{x= 3, y= 8}
+	v = mut V{x= v.y, y= v.x}
+	return v.x * 10 + v.y
+}
+
+// members updated in a loop
+func looped(k: mut u64) mut u64{
+	let v = mut V{x= 0, y= 0}
+	for i in 0..k{
+		v.x += i
+		v.y += 2
+	}
+	return v.x * 1000 + v.y
+}
+
+// two independent variables of one struct type
+func two(k: mut u64) mut u64{
+	let a = mut V{x= k, y= 1}
+	let b = mut V{x= k + 1, y= 2}
+	a.x += b.x
+	b.y += a.y
+	return a.x * 10 + b.y
+}
+
+func rd(p: raw imut u64) imut u64{
+	unsafe{ return deref(p) }
+}
+// the address of one member is taken: the struct is left alone
+func addr_member(k: mut u64) mut u64{
+	let v = mut V{x= 41, y= k}
+	unsafe{
+		let q = imut raw v.x
+		return rd(q) + v.y
+	}
+}
+
+func main() void{
+	check("addr_member", addr_member(1) == 42)
+	check("compute", compute(10) == 2336)
+	check("mixed", mixed())
+	check("immut", immut(3) == 38)
+	check("copied", copied(4) == 54 + 4 + 2)
+	check("byaddr", byaddr(6) == 1006 + 1)
+	check("rebuilt_true", rebuilt(true) == 15 + 20)
+	check("rebuilt_false", rebuilt(false) == 6 + 2)
+	check("swapped", swapped() == 83)
+	check("looped", looped(5) == 10 * 1000 + 10)
+	check("two", two(4) == 9 * 10 + 3)
+}

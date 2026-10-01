@@ -1,0 +1,80 @@
+// A fixed array on the right of `in` / `into` / `for` (bare, no `range(...)`) works like a dyn array does:
+// `for match i in arr`, `match i in arr`, `match i into arr` prove the index, and the checked access is allowed.
+// The bare form is sugar for `range(arr)` (the array's compile-time length). An out-of-range index skips the block;
+// a write under a plain `in` proof is a compile error (not tested here: needs a separate negative fixture).
+// Prints one PASS/FAIL line per check and `ALL ARRAY MATCH TESTS PASSED`.
+extern printf(static imut string,...) void
+
+let static a = mut [1.5, 2.5, 3.5, 4.5, 5.5]
+let static b = mut [1, 2, 3]
+
+func check(name: static imut string, ok: mut bool) void{
+	unsafe{
+		if ok{
+			printf("PASS %s\n", name)
+		}else{
+			printf("FAIL %s\n", name)
+		}
+	}
+	return
+}
+
+func main() void{
+	let s = mut 0.0
+	let t = mut 0
+	let skipped = mut 5
+	let sum = mut 0
+	unsafe{
+		for match i in a{
+			s += a[i]
+		}
+		let k = mut 3
+		match k in a{
+			s += a[k]
+		}
+		for match j in b{
+			match j into b{
+				b[j] = 10
+			}
+		}
+		let q = mut 2
+		match q in b{
+			t = b[q]
+		}
+		let far = mut 7
+		match far in b{
+			skipped = b[far]
+		}
+		for m in 0..3{
+			match m in b{
+				sum = sum + b[m]
+			}
+		}
+	}
+	let ok1 = mut false
+	let ok2 = mut false
+	let ok3 = mut false
+	let ok4 = mut false
+	unsafe{
+		ok1 = s == 22.0
+		ok2 = t == 10
+		ok3 = skipped == 5
+		ok4 = sum == 30
+	}
+	check("for match i in float array", ok1)
+	check("match i into array writes", ok2)
+	check("out-of-range index skips the block", ok3)
+	check("match m in array (plain for over 0..3)", ok4)
+	unsafe{
+		if ok1{
+			if ok2{
+				if ok3{
+					if ok4{
+						printf("ALL ARRAY MATCH TESTS PASSED\n")
+					}
+				}
+			}
+		}
+	}
+	return
+}

@@ -1,0 +1,70 @@
+// Regression test: expressions that use %rcx as a scratch register (a variable shift count; the shift that extracts an element of a
+// small, sub-8-byte array such as u8[5] or u16[3]) used to clobber a finished earlier argument of the call being assembled (%rcx is the 4th
+// SysV argument register and the 1st win64 one, so on windows_gnu even the format string of a printf call). Each call below has such an
+// expression as a later argument. Output must be identical with every optimizer switch on and off.
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+
+func check(name: static imut string, ok: mut bool) void{
+	unsafe{
+		if ok{
+			printf("PASS %s\n", name)
+		}else{
+			printf("FAIL %s\n", name)
+		}
+	}
+	return
+}
+
+func five(a: mut u64, b: mut u64, c: mut u64, d: mut u64, e: mut u64) mut u64{
+	return a * 10000 + b * 1000 + c * 100 + d * 10 + e
+}
+
+func fiveBytes(a: mut u8, b: mut u8, c: mut u8, d: mut u8, e: mut u8) mut u64{
+	if a != 1{
+		return 1
+	}
+	if b != 2{
+		return 2
+	}
+	if c != 3{
+		return 3
+	}
+	if d != 4{
+		return 4
+	}
+	if e != 5{
+		return 5
+	}
+	return 0
+}
+
+func fiveHalves(a: mut u16, b: mut u16, c: mut u16) mut u64{
+	if a != 20{
+		return 1
+	}
+	if b != 21{
+		return 2
+	}
+	if c != 22{
+		return 3
+	}
+	return 0
+}
+
+func main() void{
+	let k = mut 3
+	check("shift as the last of five arguments", five(k, mut (k + 1), mut (k + 2), mut (k + 3), mut bits_left(k, mut 1)) == 34566)
+	check("shift as the middle argument", five(k, mut bits_left(k, mut 1), mut (k + 2), mut (k + 3), mut (k + 4)) == 36567)
+	let:<mut u8[5]> bytes = mut [1, 2, 3, 4, 5]
+	check("five elements of a u8[5] as arguments", fiveBytes(bytes[0], bytes[1], bytes[2], bytes[3], bytes[4]) == 0)
+	let:<mut u16[3]> halves = mut [20, 21, 22]
+	check("three elements of a u16[3] as arguments", fiveHalves(halves[0], halves[1], halves[2]) == 0)
+	unsafe{
+		printf("%u %u %u\n", bytes[1], bytes[3], bytes[4])
+		printf("%u %u %u\n", halves[0], halves[1], halves[2])
+	}
+}

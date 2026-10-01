@@ -1,0 +1,496 @@
+// Regression test for register SHARING in RegVarPromotionPass: when a function has more hot variables than registers (3 integer, 6 float
+// registers), variables whose lifetimes do not overlap now share one register (liveness over the final register-form text), instead of
+// the heaviest N winning and every other variable staying in memory. Each function below has more candidates than registers, split into
+// loops that run one after another, with a long-lived variable carried across later loops, calls between loops, a throw caught inside a
+// loop, a variable written only on one path, and f32 next to f64 (different widths never share). Expected values are worked out by hand
+// (everything is exactly representable); the output must be identical with variables-in-registers / float-variables-in-registers on and off.
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+
+func check(name: static imut string, ok: mut bool) void{
+	unsafe{
+		if ok{
+			printf("PASS %s\n", name)
+		}else{
+			printf("FAIL %s\n", name)
+		}
+	}
+	return
+}
+
+func feq(a: mut f32, b: mut f32) mut bool{
+	let r = mut false
+	unsafe{ r = a == b }
+	return r
+}
+
+func deq(a: mut f64, b: mut f64) mut bool{
+	let r = mut false
+	unsafe{ r = a == b }
+	return r
+}
+
+func addf(a: mut f32, b: mut f32) mut f32{
+	unsafe{ return a + b }
+}
+
+// 1. three float loops one after another; `keep` is born after loop A and is read in loop C (so it is live across loop B)
+func floatLoops(n: mut u64) mut f32{
+	let a = mut 0.0
+	let b = mut 0.0
+	let i = mut 0
+	unsafe{
+		loop{
+			if i == n{
+				break
+			}
+			a = a + 1.0
+			b = b + 0.5
+			i++
+		}
+	}
+	let keep = mut 0.0
+	unsafe{ keep = a + b }
+	let c = mut 0.0
+	let d = mut 1.0
+	let j = mut 0
+	unsafe{
+		loop{
+			if j == n{
+				break
+			}
+			c = c + d
+			d = d * 2.0
+			j++
+		}
+	}
+	let e = mut 0.0
+	let f = mut 0.0
+	let g = mut 0.0
+	let k = mut 0
+	unsafe{
+		loop{
+			if k == n{
+				break
+			}
+			e = e + 3.0
+			f = f + e
+			g = g + keep
+			k++
+		}
+		return keep + c + d + e + f + g
+	}
+}
+
+// 2. the same shape with calls between the loops (every promoted float is spilled and reloaded around them)
+func floatCalls(n: mut u64) mut f32{
+	let a = mut 0.0
+	let b = mut 0.0
+	let i = mut 0
+	unsafe{
+		loop{
+			if i == n{
+				break
+			}
+			a = a + 1.0
+			b = b + 2.0
+			i++
+		}
+	}
+	let keep = mut 0.0
+	unsafe{ keep = a + b }
+	let h = mut 0.0
+	h = addf(keep, 1.0)
+	let c = mut 0.0
+	let d = mut 0.0
+	let j = mut 0
+	unsafe{
+		loop{
+			if j == n{
+				break
+			}
+			c = c + h
+			d = d + keep
+			j++
+		}
+	}
+	h = addf(h, c)
+	let e = mut 0.0
+	let f = mut 0.0
+	let k = mut 0
+	unsafe{
+		loop{
+			if k == n{
+				break
+			}
+			e = e + h
+			f = f + 1.0
+			k++
+		}
+		return keep + h + c + d + e + f
+	}
+}
+
+// 3. a throw caught inside the second loop; the catch body reads two variables that live across the unwind
+@throws
+func fthrower(x: mut u64) mut f32{
+	let z = mut 0.0
+	let q = mut 0
+	unsafe{
+		loop{
+			if q == x{
+				break
+			}
+			z = z + 2.0
+			if q == 3{
+				throw "three"
+			}
+			q++
+		}
+	}
+	return z
+}
+func floatCatch(n: mut u64) mut f32{
+	let a = mut 0.0
+	let b = mut 0.0
+	let i = mut 0
+	unsafe{
+		loop{
+			if i == n{
+				break
+			}
+			a = a + 1.0
+			b = b + 2.0
+			i++
+		}
+	}
+	let keep = mut 0.0
+	unsafe{ keep = a + b }
+	let c = mut 0.0
+	let d = mut 0.0
+	let j = mut 0
+	unsafe{
+		loop{
+			if j == n{
+				break
+			}
+			c = c + 1.0
+			let r = try fthrower(j) catch(e){
+				return keep + c + 0.5
+			}
+			d = d + r
+			j++
+		}
+	}
+	let e = mut 0.0
+	let f = mut 0.0
+	let k = mut 0
+	unsafe{
+		loop{
+			if k == n{
+				break
+			}
+			e = e + keep
+			f = f + d
+			k++
+		}
+		return keep + c + d + e + f
+	}
+}
+
+// 4. `t` is written only when `flag` is set and read by both later loops; the loop variables of the first loop die early
+func floatCond(n: mut u64, flag: mut bool) mut f32{
+	let t = mut 1.0
+	if flag{
+		let a = mut 0.0
+		let b = mut 0.0
+		let i = mut 0
+		unsafe{
+			loop{
+				if i == n{
+					break
+				}
+				a = a + 1.0
+				b = b + a
+				t = t + 0.5
+				i++
+			}
+		}
+	}
+	let c = mut 0.0
+	let d = mut 0.0
+	let j = mut 0
+	unsafe{
+		loop{
+			if j == n{
+				break
+			}
+			c = c + t
+			d = d + c
+			j++
+		}
+	}
+	let e = mut 0.0
+	let f = mut 0.0
+	let k = mut 0
+	unsafe{
+		loop{
+			if k == n{
+				break
+			}
+			e = e + t
+			f = f + e
+			k++
+		}
+		return t + c + d + e + f
+	}
+}
+
+// 5. f32 and f64 loops in turn: different widths never share a register, same widths may; every loop total stays live to the end
+func widths(n: mut u64) mut f64{
+	let a1 = mut 0.0
+	let a2 = mut 0.0
+	let i = mut 0
+	unsafe{
+		loop{
+			if i == n{
+				break
+			}
+			a1 = a1 + 1.0
+			a2 = a2 + a1
+			i++
+		}
+	}
+	let:<mut f64> b1 = mut 0.0
+	let:<mut f64> b2 = mut 0.0
+	let j = mut 0
+	unsafe{
+		loop{
+			if j == n{
+				break
+			}
+			b1 = b1 + 0.5
+			b2 = b2 + b1
+			j++
+		}
+	}
+	let c1 = mut 0.0
+	let c2 = mut 0.0
+	let k = mut 0
+	unsafe{
+		loop{
+			if k == n{
+				break
+			}
+			c1 = c1 + 2.0
+			c2 = c2 + c1
+			k++
+		}
+	}
+	let:<mut f64> d1 = mut 0.0
+	let:<mut f64> d2 = mut 0.0
+	let m = mut 0
+	unsafe{
+		loop{
+			if m == n{
+				break
+			}
+			d1 = d1 + 0.25
+			d2 = d2 + d1
+			m++
+		}
+	}
+	let:<mut f64> wa = mut 0.0
+	let:<mut f64> wc = mut 0.0
+	unsafe{
+		wa = (a1 + a2) as f64
+		wc = (c1 + c2) as f64
+		return wa + b1 + b2 + wc + d1 + d2
+	}
+}
+
+// 6. integers: nine hot variables over three registers, three loops, a call between them
+func idf(x: mut u64) mut u64{
+	let y = mut x
+	let z = mut 0
+	unsafe{
+		loop{
+			if z == 2{
+				break
+			}
+			z++
+		}
+	}
+	return y + z - 2
+}
+func intLoops(n: mut u64) mut u64{
+	let s = mut 0
+	let t = mut 0
+	let i = mut 0
+	unsafe{
+		loop{
+			if i == n{
+				break
+			}
+			s += i
+			t += 2
+			i++
+		}
+	}
+	let keepA = mut 0
+	keepA = idf(s + t)
+	let u = mut 0
+	let v = mut 0
+	let j = mut 0
+	unsafe{
+		loop{
+			if j == n{
+				break
+			}
+			u += j * j
+			v += 1
+			j++
+		}
+	}
+	let keepB = mut 0
+	keepB = u + v
+	let w = mut 0
+	let x = mut 0
+	let k = mut 0
+	unsafe{
+		loop{
+			if k == n{
+				break
+			}
+			w += keepA
+			x += keepB
+			k++
+		}
+	}
+	return keepA + keepB + w + x
+}
+
+// 7. a float assigned from a call (`h = addf(h, 4.0)`: the old value is read inside the assignment) must keep its register through two
+//    loops whose variables could otherwise reuse it
+func floatPairLive(n: mut u64) mut f32{
+	let h = mut 0.0
+	h = addf(1.0, 2.0)
+	let a = mut 0.0
+	let b = mut 0.0
+	let i = mut 0
+	unsafe{
+		loop{
+			if i == n{
+				break
+			}
+			a = a + 1.0
+			b = b + a
+			i++
+		}
+	}
+	let c = mut 0.0
+	let d = mut 0.0
+	let j = mut 0
+	unsafe{
+		loop{
+			if j == n{
+				break
+			}
+			c = c + 1.0
+			d = d + c
+			j++
+		}
+	}
+	h = addf(h, 4.0)
+	let e = mut 0.0
+	let f = mut 0.0
+	let k = mut 0
+	unsafe{
+		loop{
+			if k == n{
+				break
+			}
+			e = e + h
+			f = f + e
+			k++
+		}
+		return h + e + f
+	}
+}
+
+// 8. integers with a throw caught inside the second loop; the catch body reads two variables that live across the unwind
+@throws
+func throwerI(x: mut u64) mut u64{
+	if x > 3{
+		throw "big"
+	}
+	return x * 2
+}
+func intCatch(n: mut u64) mut u64{
+	let s = mut 0
+	let t = mut 0
+	let i = mut 0
+	unsafe{
+		loop{
+			if i == n{
+				break
+			}
+			s += i
+			t += 2
+			i++
+		}
+	}
+	let keepA = mut 0
+	keepA = s + t
+	let u = mut 0
+	let v = mut 0
+	let j = mut 0
+	unsafe{
+		loop{
+			if j == n{
+				break
+			}
+			u += j
+			let r = try throwerI(j) catch(e){
+				return keepA + u + 1000
+			}
+			v += r
+			j++
+		}
+	}
+	let w = mut 0
+	let x = mut 0
+	let k = mut 0
+	unsafe{
+		loop{
+			if k == n{
+				break
+			}
+			w += keepA
+			x += v
+			k++
+		}
+	}
+	return keepA + u + v + w + x
+}
+
+func main() void{
+	check("float loops n=4", feq(floatLoops(4), 103.0))
+	check("float loops n=0", feq(floatLoops(0), 1.0))
+	check("float loops with calls n=4", feq(floatCalls(4), 441.0))
+	check("float loops with calls n=0", feq(floatCalls(0), 1.0))
+	check("float catch, no throw", feq(floatCatch(4), 124.0))
+	check("float catch, thrown in loop two", feq(floatCatch(6), 23.5))
+	check("conditional write, flag set", feq(floatCond(4, true), 87.0))
+	check("conditional write, flag clear", feq(floatCond(4, false), 29.0))
+	check("f32 and f64 loops", deq(widths(4), 52.5))
+	check("integer loops n=10", intLoops(10) == 3960)
+	check("integer loops n=0", intLoops(0) == 0)
+	check("call result keeps its register, n=4", feq(floatPairLive(4), 105.0))
+	check("call result keeps its register, n=0", feq(floatPairLive(0), 7.0))
+	check("integer catch, no throw", intCatch(4) == 136)
+	check("integer catch, thrown in loop two", intCatch(6) == 1037)
+}

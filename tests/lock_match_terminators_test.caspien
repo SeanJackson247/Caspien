@@ -1,0 +1,89 @@
+// 'match @lock': every non-target (CLOSED) path must end in 'continue' (retry the acquire),
+// 'break' (give up without the lock), 'return' or 'throw'. Falling off the end is a compile error.
+// (The mutexes are statics: a swap-mutex struct as a plain local segfaults at runtime -- separate, unfixed.)
+import "../stdlib/libc.caspien"
+
+enum St{ OPEN, CLOSED }
+
+struct Mtx{@pub{
+	swap lockState: atomic mut St
+	n: mut u64
+}}
+
+// continue = retry: three failed attempts, then the lock is freed and the fourth succeeds
+func retryTest() void{
+	let static m = mut Mtx{lockState= St.OPEN, n= mut 0}
+	unsafe{ m.lockState swap St.CLOSED }
+	let tries = mut 0
+	match @lock m{
+		OPEN:{
+			unsafe{ printf("retry: got lock after %llu failed attempts\n", tries) }
+		}
+		CLOSED:{
+			tries++
+			if tries == 3{
+				unsafe{ m.lockState swap St.OPEN }
+			}
+			continue
+		}
+	}
+}
+
+// break = give up: the lock is never taken, execution continues after the match
+func giveUpTest() void{
+	let static m = mut Mtx{lockState= St.OPEN, n= mut 0}
+	unsafe{ m.lockState swap St.CLOSED }
+	match @lock m{
+		OPEN:{
+			unsafe{ printf("giveup: WRONG, got lock\n") }
+		}
+		CLOSED:{
+			break
+		}
+	}
+	unsafe{ printf("giveup: gave up, carried on\n") }
+}
+
+// return from CLOSED
+func returnTest() mut u64{
+	let static m = mut Mtx{lockState= St.OPEN, n= mut 0}
+	unsafe{ m.lockState swap St.CLOSED }
+	match @lock m{
+		OPEN:{
+			return 1
+		}
+		CLOSED:{
+			return 2
+		}
+	}
+	return 3
+}
+
+// mixed paths: each branch ends in a different terminator
+func mixedTest() mut u64{
+	let static m = mut Mtx{lockState= St.OPEN, n= mut 7}
+	unsafe{ m.lockState swap St.CLOSED }
+	let k = mut 0
+	match @lock m{
+		OPEN:{
+			return 0
+		}
+		CLOSED:{
+			k++
+			if k == 1{
+				continue
+			}
+			else{
+				return 9
+			}
+		}
+	}
+	return 3
+}
+
+func main() void{
+	retryTest()
+	giveUpTest()
+	unsafe{ printf("return: %llu\n", returnTest()) }
+	unsafe{ printf("mixed: %llu\n", mixedTest()) }
+}

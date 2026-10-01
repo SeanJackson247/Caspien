@@ -1,0 +1,400 @@
+// Regression test for DynamicArray<S> with a struct element type S (it used to fail to compile: the generic impl's by-value `T` parameters
+// became by-value struct parameters, which the language forbids). Now a method/constructor whose signature is illegal for the chosen T is
+// simply unavailable for that instantiation (error only if called), and every operation has a pointer-taking twin (`setPtr`, `pushBackPtr`,
+// `pushFrontPtr`, `popBackPtr`, `popFrontPtr`) that works for any T. Also covers method calls that RETURN a
+// struct by value (`d.get(d, i)`, `? d.popBackPtr(...)`, a static method, a user-written method), which used to crash because only plain
+// functions got the hidden destination pointer. Struct sizes 16, 24, 40 and 56 bytes, a struct of mixed field widths, a struct containing a
+// struct, an adopted dynarray of structs, loops, growth/shrink from both ends, and a plain DynamicArray<u64> (unchanged behaviour). Expected
+// values are hand-computed. The output must be identical with every optimisation on and off.
+import "../stdlib/libc.caspien"
+import "../stdlib/dynamic_array.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+
+func check(name: static imut string, ok: mut bool) void{
+	unsafe{
+		if ok{
+			printf("PASS %s\n", name)
+		}else{
+			printf("FAIL %s\n", name)
+		}
+	}
+	return
+}
+
+struct S16{
+	@pub{ a: mut u64 }
+}
+
+struct Edge{
+	@pub{ to: mut u64 }
+	@pub{ w: mut u64 }
+}
+
+struct S40{
+	@pub{ a: mut u64 }
+	@pub{ b: mut u64 }
+	@pub{ c: mut u64 }
+	@pub{ d: mut u64 }
+}
+
+struct S56{
+	@pub{ a: mut u64 }
+	@pub{ b: mut u64 }
+	@pub{ c: mut u64 }
+	@pub{ d: mut u64 }
+	@pub{ e: mut u64 }
+	@pub{ f: mut u64 }
+}
+
+struct Mixed{
+	@pub{ a: mut u8 }
+	@pub{ b: mut u64 }
+	@pub{ c: mut u32 }
+	@pub{ d: mut u16 }
+	@pub{ e: mut u8 }
+}
+
+struct Inner{
+	@pub{ x: mut u64 }
+	@pub{ y: mut u64 }
+}
+
+struct Outer{
+	@pub{ tag: mut u64 }
+	@pub{ in1: mut Inner }
+	@pub{ last: mut u32 }
+}
+
+// a user-written method / static method returning a struct by value
+struct Maker{
+	@pub{ base: mut u64 }
+}
+
+impl Maker{
+	@pub
+	func edge(_self: ref some imut self, k: imut u64) mut Edge{
+		let r = mut Edge{to= _self.base + k, w= k * 2}
+		return r
+	}
+
+	@pub
+	static func fixed() mut Edge{
+		let r = mut Edge{to= 77, w= 88}
+		return r
+	}
+}
+
+func testEdge() void{
+	?catch(e){ return }
+	// adopt a dynarray of structs
+	let raw1 = mut ? dyn:<Edge>([])
+	let z = mut Edge{to= 1, w= 2}
+	raw1 = ? resize(raw1, 4, z)
+	for i in 0..4{
+		match i into raw1{
+			raw1[i].to = i * 10
+			raw1[i].w = i + 1
+		}
+	}
+	let d = mut ? new DynamicArray:<Edge>(raw1)
+	check("edge adopt: len 4", len(d.backing) == 4)
+	let k = mut 2
+	match k in d.backing{
+		check("edge adopt: backing[2] fields", d.backing[k].to == 20 && d.backing[k].w == 3)
+		let e2 = mut d.get(d, k)
+		check("edge get(2) returns the element", e2.to == 20 && e2.w == 3)
+	}
+	// update fields through the element and through setPtr
+	match k into d.backing{
+		d.backing[k].w = 99
+	}
+	let repl = mut Edge{to= 500, w= 600}
+	let k3 = mut 3
+	match k3 into d.backing{
+		d.setPtr(d, k3, auto repl)
+	}
+	match k in d.backing{
+		let e2 = mut d.get(d, k)
+		check("edge field write: [2]", e2.to == 20 && e2.w == 99)
+	}
+	match k3 in d.backing{
+		let e3 = mut d.get(d, k3)
+		check("edge setPtr: [3]", e3.to == 500 && e3.w == 600)
+	}
+	// grow at both ends
+	let nb = mut Edge{to= 7, w= 8}
+	? d.pushBackPtr(d, auto nb)
+	check("edge pushBackPtr: len 5", len(d.backing) == 5)
+	let nf = mut Edge{to= 9, w= 10}
+	? d.pushFrontPtr(d, auto nf)
+	check("edge pushFrontPtr: len 6", len(d.backing) == 6)
+	let i0 = mut 0
+	let i1 = mut 1
+	let i5 = mut 5
+	match i0 in d.backing{
+		check("edge pushFrontPtr: [0]", d.backing[i0].to == 9 && d.backing[i0].w == 10)
+	}
+	match i1 in d.backing{
+		check("edge pushFrontPtr: shifted old [0]", d.backing[i1].to == 0 && d.backing[i1].w == 1)
+	}
+	match i5 in d.backing{
+		check("edge pushBackPtr: [5]", d.backing[i5].to == 7 && d.backing[i5].w == 8)
+	}
+	// loop over all
+	let sumTo = mut 0
+	let sumW = mut 0
+	for i in 0..6{
+		match i in d.backing{
+			sumTo += d.backing[i].to
+			sumW += d.backing[i].w
+		}
+	}
+	// to: 9 + 0 + 10 + 20 + 500 + 7 = 546; w: 10 + 1 + 2 + 99 + 600 + 8 = 720
+	check("edge loop: sum of to", sumTo == 546)
+	check("edge loop: sum of w", sumW == 720)
+	// shrink from both ends
+	let dflt = mut Edge{to= 1234, w= 5678}
+	let last = mut ? d.popBackPtr(d, auto dflt)
+	check("edge popBackPtr: value", last.to == 7 && last.w == 8)
+	check("edge popBackPtr: len 5", len(d.backing) == 5)
+	let first = mut ? d.popFrontPtr(d, auto dflt)
+	check("edge popFrontPtr: value", first.to == 9 && first.w == 10)
+	check("edge popFrontPtr: len 4", len(d.backing) == 4)
+	match i0 in d.backing{
+		check("edge popFrontPtr: new [0]", d.backing[i0].to == 0 && d.backing[i0].w == 1)
+	}
+	// pop everything, then pop the empty array (default comes back)
+	for i in 0..4{
+		let junk = mut ? d.popBackPtr(d, auto dflt)
+		check("edge drain pop", junk.w != 5678)
+	}
+	check("edge drained: len 0", len(d.backing) == 0)
+	let dd = mut ? d.popBackPtr(d, auto dflt)
+	check("edge popBackPtr on empty -> default", dd.to == 1234 && dd.w == 5678)
+	let df = mut ? d.popFrontPtr(d, auto dflt)
+	check("edge popFrontPtr on empty -> default", df.to == 1234 && df.w == 5678)
+	// the empty constructor (a struct has no by-value seed constructor)
+	let em = mut ? new DynamicArray:<Edge>()
+	check("edge empty ctor: len 0", len(em.backing) == 0)
+	? em.pushBackPtr(em, auto nb)
+	? em.pushBackPtr(em, auto nf)
+	match i1 in em.backing{
+		check("edge empty then push x2: [1]", em.backing[i1].to == 9 && em.backing[i1].w == 10)
+	}
+	return
+}
+
+func testSizes() void{
+	?catch(e){ return }
+	let i0 = mut 0
+	let i1 = mut 1
+	let i2 = mut 2
+	// 16 bytes
+	let a16 = mut ? new DynamicArray:<S16>()
+	let v16 = mut S16{a= 11}
+	? a16.pushBackPtr(a16, auto v16)
+	v16.a = 22
+	? a16.pushBackPtr(a16, auto v16)
+	v16.a = 33
+	? a16.pushFrontPtr(a16, auto v16)
+	check("s16: len 3", len(a16.backing) == 3)
+	match i0 in a16.backing{
+		check("s16: [0]", a16.backing[i0].a == 33)
+	}
+	match i1 in a16.backing{
+		check("s16: [1]", a16.backing[i1].a == 11)
+	}
+	match i2 in a16.backing{
+		check("s16: [2]", a16.backing[i2].a == 22)
+	}
+	// 40 bytes
+	let a40 = mut ? new DynamicArray:<S40>()
+	let v40 = mut S40{a= 1, b= 2, c= 3, d= 4}
+	? a40.pushBackPtr(a40, auto v40)
+	v40.a = 10
+	v40.d = 40
+	? a40.pushBackPtr(a40, auto v40)
+	v40.b = 20
+	? a40.pushFrontPtr(a40, auto v40)
+	match i0 in a40.backing{
+		check("s40: [0]", a40.backing[i0].a == 10 && a40.backing[i0].b == 20 && a40.backing[i0].c == 3 && a40.backing[i0].d == 40)
+	}
+	match i1 in a40.backing{
+		check("s40: [1]", a40.backing[i1].a == 1 && a40.backing[i1].b == 2 && a40.backing[i1].c == 3 && a40.backing[i1].d == 4)
+	}
+	match i2 in a40.backing{
+		check("s40: [2]", a40.backing[i2].a == 10 && a40.backing[i2].b == 2 && a40.backing[i2].c == 3 && a40.backing[i2].d == 40)
+	}
+	let p40 = mut S40{a= 0, b= 0, c= 0, d= 0}
+	let popped40 = mut ? a40.popFrontPtr(a40, auto p40)
+	check("s40: popFront value", popped40.a == 10 && popped40.b == 20 && popped40.c == 3 && popped40.d == 40)
+	check("s40: len 2", len(a40.backing) == 2)
+	// 56 bytes
+	let a56 = mut ? new DynamicArray:<S56>()
+	let v56 = mut S56{a= 1, b= 2, c= 3, d= 4, e= 5, f= 6}
+	for i in 0..5{
+		v56.a = i
+		v56.f = i * 100
+		? a56.pushBackPtr(a56, auto v56)
+	}
+	let t56a = mut 0
+	let t56f = mut 0
+	let t56m = mut 0
+	for i in 0..5{
+		match i in a56.backing{
+			t56a += a56.backing[i].a
+			t56f += a56.backing[i].f
+			t56m += a56.backing[i].b + a56.backing[i].c + a56.backing[i].d + a56.backing[i].e
+		}
+	}
+	check("s56: sum a", t56a == 10)
+	check("s56: sum f", t56f == 1000)
+	check("s56: untouched middle fields", t56m == 70)
+	let p56 = mut S56{a= 0, b= 0, c= 0, d= 0, e= 0, f= 0}
+	let top56 = mut ? a56.popBackPtr(a56, auto p56)
+	check("s56: popBack value", top56.a == 4 && top56.f == 400 && top56.e == 5)
+	// 16 + mixed widths
+	let am = mut ? new DynamicArray:<Mixed>()
+	let vm = mut Mixed{a= 1, b= 2, c= 3, d= 4, e= 5}
+	? am.pushBackPtr(am, auto vm)
+	vm.a = 200
+	vm.b = 5000000000
+	vm.c = 4000000000
+	vm.d = 65000
+	vm.e = 250
+	? am.pushBackPtr(am, auto vm)
+	let mm = mut Mixed{a= 9, b= 9, c= 9, d= 9, e= 9}
+	? am.pushFrontPtr(am, auto mm)
+	match i1 in am.backing{
+		check("mixed: [1] a", am.backing[i1].a == 1)
+		check("mixed: [1] b", am.backing[i1].b == 2)
+		check("mixed: [1] c d e", am.backing[i1].c == 3 && am.backing[i1].d == 4 && am.backing[i1].e == 5)
+	}
+	match i2 in am.backing{
+		check("mixed: [2] a b", am.backing[i2].a == 200 && am.backing[i2].b == 5000000000)
+		check("mixed: [2] c d e", am.backing[i2].c == 4000000000 && am.backing[i2].d == 65000 && am.backing[i2].e == 250)
+	}
+	match i2 in am.backing{
+		let m2 = mut am.get(am, i2)
+		check("mixed: get(2)", m2.a == 200 && m2.b == 5000000000 && m2.c == 4000000000 && m2.d == 65000 && m2.e == 250)
+	}
+	// a struct containing a struct
+	let ao = mut ? new DynamicArray:<Outer>()
+	let vo = mut Outer{tag= 1, in1= Inner{x= 2, y= 3}, last= 4}
+	? ao.pushBackPtr(ao, auto vo)
+	vo.tag = 100
+	vo.in1.x = 7
+	vo.in1.y = 8
+	vo.last = 9
+	? ao.pushBackPtr(ao, auto vo)
+	let ko = mut Outer{tag= 55, in1= Inner{x= 56, y= 57}, last= 58}
+	match i1 into ao.backing{
+		ao.setPtr(ao, i1, auto ko)
+	}
+	match i0 in ao.backing{
+		check("outer: [0]", ao.backing[i0].tag == 1 && ao.backing[i0].in1.x == 2 && ao.backing[i0].in1.y == 3 && ao.backing[i0].last == 4)
+	}
+	match i1 in ao.backing{
+		check("outer: [1] after setPtr", ao.backing[i1].tag == 55 && ao.backing[i1].in1.x == 56 && ao.backing[i1].in1.y == 57 && ao.backing[i1].last == 58)
+	}
+	match i1 into ao.backing{
+		ao.backing[i1].in1.y = 1000
+	}
+	match i1 in ao.backing{
+		let o1 = mut ao.get(ao, i1)
+		check("outer: get(1) after nested field write", o1.tag == 55 && o1.in1.x == 56 && o1.in1.y == 1000 && o1.last == 58)
+	}
+	return
+}
+
+func testMethodReturns() void{
+	?catch(e){ return }
+	let mk = mut ? new Maker{base= 1000}
+	let e1 = mut mk.edge(mk, 5)
+	check("instance method returning a struct", e1.to == 1005 && e1.w == 10)
+	let e2 = mut Maker.fixed()
+	check("static method returning a struct", e2.to == 77 && e2.w == 88)
+	let e3 = mut Edge{to= 0, w= 0}
+	e3 = mk.edge(mk, 8)
+	check("method result assigned to an existing variable", e3.to == 1008 && e3.w == 16)
+	return
+}
+
+// a plain DynamicArray<u64>: every pre-existing method still works, and the new pointer twins work for a scalar T too
+func testU64() void{
+	?catch(e){ return }
+	let d = mut ? new DynamicArray:<u64>()
+	? d.pushBack(d, mut 10)
+	? d.pushBack(d, mut 20)
+	? d.pushFront(d, mut 5)
+	let i0 = mut 0
+	let i1 = mut 1
+	let i2 = mut 2
+	match i0 in d.backing{
+		check("u64: pushFront [0]", d.get(d, i0) == 5)
+	}
+	match i2 in d.backing{
+		check("u64: pushBack [2]", d.get(d, i2) == 20)
+	}
+	match i1 into d.backing{
+		d.set(d, i1, mut 11)
+	}
+	match i1 in d.backing{
+		check("u64: set then get", d.get(d, i1) == 11)
+	}
+	let last = mut ? d.popBack(d, mut 999)
+	check("u64: popBack", last == 20)
+	let first = mut ? d.popFront(d, mut 999)
+	check("u64: popFront", first == 5)
+	check("u64: len 1", len(d.backing) == 1)
+	let s = mut ? new DynamicArray:<u64>(mut 7)
+	match i0 in s.backing{
+		check("u64: seed ctor", s.get(s, i0) == 7)
+	}
+	let adopt = mut ? dyn([mut 4, mut 5, mut 6])
+	let a = mut ? new DynamicArray:<u64>(adopt)
+	match i2 in a.backing{
+		check("u64: adopt ctor", a.get(a, i2) == 6)
+	}
+	// pointer twins on a scalar element type
+	let x = mut 41
+	? a.pushBackPtr(a, auto x)
+	? a.pushFrontPtr(a, auto x)
+	let i3 = mut 3
+	let i4 = mut 4
+	match i0 in a.backing{
+		check("u64: pushFrontPtr [0]", a.get(a, i0) == 41)
+	}
+	match i4 in a.backing{
+		check("u64: pushBackPtr [4]", a.get(a, i4) == 41)
+	}
+	x = 42
+	match i3 into a.backing{
+		a.setPtr(a, i3, auto x)
+	}
+	match i3 in a.backing{
+		check("u64: setPtr [3]", a.get(a, i3) == 42)
+	}
+	let dflt = mut 0
+	let pb = mut ? a.popBackPtr(a, auto dflt)
+	let pf = mut ? a.popFrontPtr(a, auto dflt)
+	check("u64: popBackPtr", pb == 41)
+	check("u64: popFrontPtr", pf == 41)
+	let c = mut ? new DynamicArray:<char>()
+	? c.pushBack(c, mut 'q')
+	match i0 in c.backing{
+		check("char: pushBack/get", c.get(c, i0) == 'q')
+	}
+	return
+}
+
+func main() void{
+	testEdge()
+	testSizes()
+	testMethodReturns()
+	testU64()
+	return
+}

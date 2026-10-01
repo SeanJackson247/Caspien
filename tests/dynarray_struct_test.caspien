@@ -1,0 +1,157 @@
+// Regression test for READING a field of a dynarray element that is a struct (`es[i].to`). The element is wider than a word, so LOOKUP_DYN pushes
+// it as a value block and the DOT that follows must know its size; it used to find none ("DOT with no preceding pushed value") and push 0, so the
+// read gave 0 or crashed. Covers 16..40-byte elements, narrow fields (u8/u16/u32) at awkward offsets, a nested struct field, a field read as a
+// call argument, the whole element copied into a local, safe and unsafe dynarrays, and writes through the same element. Expected values come
+// from an independent Python model. The output must be identical with every optimisation on and off.
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+
+func check(name: static imut string, ok: mut bool) void{
+	unsafe{
+		if ok{
+			printf("PASS %s\n", name)
+		}else{
+			printf("FAIL %s\n", name)
+		}
+	}
+	return
+}
+
+struct Edge{
+	@pub{ to: mut u64 }
+	@pub{ w: mut u64 }
+}
+
+struct Mixed{
+	@pub{ a: mut u8 }
+	@pub{ b: mut u64 }
+	@pub{ c: mut u32 }
+	@pub{ d: mut u16 }
+	@pub{ e: mut u8 }
+}
+
+struct Inner{
+	@pub{ x: mut u64 }
+	@pub{ y: mut u64 }
+}
+
+struct Outer{
+	@pub{ tag: mut u64 }
+	@pub{ in1: mut Inner }
+	@pub{ last: mut u32 }
+}
+
+func add3(a: mut u64, b: mut u64, c: mut u64) mut u64{
+	return a * 100 + b * 10 + c
+}
+
+func main() void{
+	?catch(e){ return }
+	unsafe{
+		// 1. Edge (24 bytes): fill through the element, read back both fields
+		let es = mut ? dyn:<Edge>([])
+		let z = mut Edge{to= 1, w= 2}
+		es = ? resize(es, 6, z)
+		for i in 0..6{
+			match i into es{
+				es[i].to = i * 10
+				es[i].w = i + 1
+			}
+		}
+		let t1 = mut 0
+		let t2 = mut 0
+		for i in 0..6{
+			match i in es{
+				t1 += es[i].to
+				t2 += es[i].w * es[i].w
+			}
+		}
+		check("edge to sum", t1 == 150)
+		check("edge w squares", t2 == 91)
+		let k = mut 3
+		match k in es{
+			let e3 = mut es[k]
+			check("whole element copy", e3.to == 30 && e3.w == 4)
+			check("field as call argument", add3(es[k].w, es[k].to, 7) == 4 * 100 + 30 * 10 + 7)
+		}
+		// 2. Mixed (narrow fields at awkward offsets)
+		let ms = mut ? dyn:<Mixed>([])
+		let mz = mut Mixed{a= 1, b= 2, c= 3, d= 4, e= 5}
+		ms = ? resize(ms, 4, mz)
+		for i in 0..4{
+			let i8 = mut (i * 3 + 1)
+			match i into ms{
+				ms[i].a = wrap:<u8>(i8)
+				ms[i].b = i * 1000 + 7
+				ms[i].c = wrap:<u32>(i * 70000 + 5)
+				ms[i].d = wrap:<u16>(i * 300 + 2)
+				ms[i].e = wrap:<u8>(250 + i)
+			}
+		}
+		let sa = mut 0
+		let sb = mut 0
+		let sc = mut 0
+		let sd = mut 0
+		let se = mut 0
+		for i in 0..4{
+			match i in ms{
+				sa += ms[i].a as u64
+				sb += ms[i].b
+				sc += ms[i].c as u64
+				sd += ms[i].d as u64
+				se += ms[i].e as u64
+			}
+		}
+		check("mixed a", sa == 22)
+		check("mixed b", sb == 6028)
+		check("mixed c", sc == 420020)
+		check("mixed d", sd == 1808)
+		check("mixed e", se == 1006)
+		// 3. nested struct field: Outer = type id, tag, Inner (16), last
+		let os = mut ? dyn:<Outer>([])
+		let oz = mut Outer{tag= 1, in1= Inner{x= 2, y= 3}, last= 4}
+		os = ? resize(os, 3, oz)
+		for i in 0..3{
+			match i into os{
+				os[i].tag = i + 100
+				os[i].in1.x = i * 7
+				os[i].in1.y = i * 11 + 1
+				os[i].last = wrap:<u32>(i + 9)
+			}
+		}
+		let ot = mut 0
+		let ox = mut 0
+		let oy = mut 0
+		let ol = mut 0
+		for i in 0..3{
+			match i in os{
+				ot += os[i].tag
+				ox += os[i].in1.x
+				oy += os[i].in1.y
+				ol += os[i].last as u64
+			}
+		}
+		check("outer tag", ot == 303)
+		check("outer inner x", ox == 21)
+		check("outer inner y", oy == 36)
+		check("outer last", ol == 30)
+		// 4. unsafe dynarray of structs, no proofs
+		let us = mut unsafe dyn:<Edge>([])
+		us = resize(us, 5)
+		for i in 0..5{
+			us[i].to = i + 40
+			us[i].w = i * i
+		}
+		let ut = mut 0
+		let uw = mut 0
+		for i in 0..5{
+			ut += us[i].to
+			uw += us[i].w
+		}
+		check("unsafe to", ut == 210)
+		check("unsafe w", uw == 30)
+	}
+}

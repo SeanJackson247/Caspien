@@ -1,0 +1,125 @@
+// Regression test for struct member reordering (`struct-member-reordering: on|off`, the Optimizer's StructMemberReorderingPass).
+// `Mixed` (u8, u64, u8, u32) is reordered to b, d, a, c with its padding gathered at the end; every way of constructing it (stack literal,
+// RVO return, `new`, array literal, static literal) and every member read must still give the hand-computed value, and sizeof must follow
+// the new layout. `Pinned` has a `let static n = sizeof(Pinned)` folded by the front end, so it must be left alone (sizeof stays 32). The last line prints sizeof(Mixed): 32 with the switch off, 24 with it on.
+// `Base`/`Child` (extends) and `Holder` (raw pointer to it) must be left alone too. Output is identical with the switch on and off except the last line.
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+
+struct Mixed{
+	@pub{
+		a: mut u8
+		b: mut u64
+		c: mut u8
+		d: mut u32
+	}
+}
+struct Pinned{
+	@pub{
+		a: mut u8
+		b: mut u64
+		c: mut u8
+	}
+}
+struct Base{
+	@pub{
+		a: mut u8
+		b: mut u64
+	}
+}
+struct Child{
+	extends Base
+	@pub{
+		c: mut u8
+	}
+}
+struct Ptd{
+	@pub{
+		a: mut u8
+		b: mut u64
+		c: mut u8
+	}
+}
+
+let static g = mut Mixed{a: 9, b: 8, c: 7, d: 6}
+let static pinnedSize = mut sizeof(Pinned)
+
+func check(name: static imut string, ok: mut bool) void{
+	unsafe{
+		if ok{
+			printf("PASS %s\n", name)
+		}else{
+			printf("FAIL %s\n", name)
+		}
+	}
+	return
+}
+
+func mk(x: mut u64) Mixed{
+	return Mixed{a: 1, b: x + 1, c: 3, d: 4}
+}
+
+func sum(p: auto mut Mixed) mut u64{
+	return (p.a as u64) + p.b + (p.c as u64) + (p.d as u64)
+}
+
+func main() void{
+	?catch(e){ return }
+	let m = mut Mixed{a: 1, b: 2, c: 3, d: 4}
+	check("stack a", m.a == 1)
+	check("stack b", m.b == 2)
+	check("stack c", m.c == 3)
+	check("stack d", m.d == 4)
+	let r = mut mk(5)
+	check("rvo a", r.a == 1)
+	check("rvo b", r.b == 6)
+	check("rvo c", r.c == 3)
+	check("rvo d", r.d == 4)
+	let h = mut ?new Mixed{a: 11, b: 12, c: 13, d: 14}
+	check("new a", h.a == 11)
+	check("new b", h.b == 12)
+	check("new c", h.c == 13)
+	check("new d", h.d == 14)
+	let arr = mut [Mixed{a: 1, b: 2, c: 3, d: 4}, Mixed{a: 5, b: 6, c: 7, d: 8}]
+	check("arr0 b", arr[0].b == 2)
+	check("arr1 a", arr[1].a == 5)
+	check("arr1 b", arr[1].b == 6)
+	check("arr1 c", arr[1].c == 7)
+	check("arr1 d", arr[1].d == 8)
+	unsafe{
+		check("static a", g.a == 9)
+		check("static b", g.b == 8)
+		check("static c", g.c == 7)
+		check("static d", g.d == 6)
+	}
+	let k = mut m
+	check("copy b", k.b == 2)
+	check("sum", sum(auto m) == 10)
+	m.b = 100
+	m.a = 7
+	check("write b", m.b == 100)
+	check("write a", m.a == 7)
+	check("write keeps c", m.c == 3)
+	check("write keeps d", m.d == 4)
+	let p = mut Pinned{a: 1, b: 2, c: 3}
+	check("pinned b", p.b == 2)
+	check("pinned c", p.c == 3)
+	unsafe{
+		check("pinned sizeof", pinnedSize == 32)
+	}
+	let ps = mut sizeof(Pinned)
+	unsafe{
+		check("pinned sizeof static equals runtime", pinnedSize == ps)
+	}
+	let c = mut Child{a: 1, b: 2, c: 3}
+	check("extends b", c.b == 2)
+	check("extends c", c.c == 3)
+	let q = mut Ptd{a: 1, b: 2, c: 3}
+	unsafe{ let rp = mut raw q }
+	check("raw-pointed b", q.b == 2)
+	unsafe{ printf("sizeof Mixed = %llu\n", mut sizeof(Mixed)) }
+	return
+}

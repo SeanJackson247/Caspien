@@ -1,0 +1,214 @@
+// Regression test for the register-form pass, stage 2: float, narrow-integer and pointer operands, stores through
+// computed addresses (array elements, struct fields through a pointer), argument registers, float returns, and
+// `x += c` as one memory-operand instruction. Every expected value is worked out by hand; the output must be
+// identical with `deferred-operands: on` and `off`. Prints one PASS/FAIL line per check.
+extern printf(static imut string,...) void
+extern sqrtf(mut f32) mut f32
+
+let static ga = mut [1, 2, 3, 4, 5]
+let static gf = mut [1.5, 2.5, 3.5, 4.5]
+let static gs = mut 0
+let static gg = mut 0.5
+
+struct Pt{
+	@pub{
+		x: mut u64
+		y: mut u32
+		w: mut f32
+		b: mut u8
+	}
+}
+
+func check(name: static imut string, ok: mut bool) void{
+	unsafe{
+		if ok{
+			printf("PASS %s\n", name)
+		}else{
+			printf("FAIL %s\n", name)
+		}
+	}
+	return
+}
+
+func fmul(x: mut f32, y: mut f32) mut f32{
+	unsafe{
+		return x * y + 0.5
+	}
+}
+func fsel(x: mut f32, y: mut f32) mut f32{
+	unsafe{
+		if x < y{
+			return y - x
+		}
+		return x - y
+	}
+}
+func addu(a: mut u64, b: mut u64, c: mut u64) mut u64{
+	return a * 100 + b * 10 + c
+}
+func bump(p: auto mut Pt) void{
+	p.x += 5
+	p.y = p.y + 7
+	p.b += 1
+	unsafe{
+		p.w = p.w * 2.0 + 1.0
+	}
+	return
+}
+func retNarrow(a: mut u8, b: mut u8) mut u8{
+	return a + b
+}
+
+func main() void{
+	// ---- floats: arithmetic, compares, arguments, returns ----
+	let fa = mut 1.5
+	let fb = mut 2.25
+	let fr = mut 0.0
+	let fc = mut 0
+	unsafe{
+		fr = (fa + fb) * fa - fb / fa
+		if fa < fb{
+			fc += 1
+		}
+		if fa > fb{
+			fc += 2
+		}
+		if fa <= fb{
+			fc += 4
+		}
+		if fa >= fb{
+			fc += 8
+		}
+		if fa == 1.5{
+			fc += 16
+		}
+		if fa != fb{
+			fc += 32
+		}
+	}
+	let ok = mut false
+	unsafe{
+		ok = fr == 4.125
+	}
+	check("float arithmetic", ok)
+	check("float compares", fc == 53)
+	let g1 = mut 0.0
+	let g2 = mut 0.0
+	let g3 = mut 0.0
+	unsafe{
+		g1 = fmul(fa + 0.5, fb)
+		g2 = fsel(fa, fb) + fsel(fb, fa)
+		g3 = sqrtf(fa * 6.0 + 7.0)
+		ok = g1 == 5.0
+		check("float args and return", ok)
+		ok = g2 == 1.5
+		check("float select", ok)
+		ok = g3 == 4.0
+		check("sqrtf of an expression", ok)
+	}
+
+	// ---- narrow integers ----
+	let:<mut u8> u8a = mut 200
+	let:<mut u8> u8b = mut 100
+	let:<mut u8> u8c = mut 0
+	u8c = u8a + u8b
+	check("u8 wraps on store", u8c == 44)
+	check("u8 compare", u8a > u8b)
+	let:<mut u16> u16a = mut 65000
+	let:<mut u16> u16b = mut 1000
+	let:<mut u16> u16c = mut 0
+	u16c = u16a + u16b
+	check("u16 wraps on store", u16c == 464)
+	let:<mut u32> u32a = mut 4000000000
+	let:<mut u32> u32b = mut 500000000
+	let:<mut u32> u32c = mut 0
+	u32c = u32a + u32b
+	check("u32 wraps on store", u32c == 205032704)
+	check("u32 compare with wrapped sum", u32a + u32b == 205032704)
+	let:<mut s8> s8a = mut -100
+	let:<mut s8> s8b = mut 50
+	let:<mut s8> s8c = mut 0
+	s8c = s8a + s8b
+	check("s8 signed compare", s8a < s8b)
+	check("s8 sum", s8c == -50)
+	let:<mut s32> s32a = mut -5
+	let:<mut s32> s32b = mut 3
+	check("s32 signed compares", s32a < s32b && s32b > s32a)
+	check("narrow return value", retNarrow(mut 200, mut 100) == 44)
+	let:<mut u32> cnt = mut 0
+	let:<mut u32> n32 = mut 0
+	unsafe{
+		loop{
+			n32 += 1
+			if n32 > 10{
+				break
+			}
+			cnt += n32
+		}
+	}
+	check("u32 loop counter", cnt == 55)
+
+	// ---- 8-byte read-modify-write and register arguments ----
+	let x = mut 10
+	let y = mut 3
+	x += 5
+	x -= y
+	x += y * 2
+	x++
+	x--
+	x++
+	check("read-modify-write", x == 19)
+	check("register arguments", addu(x - 18, y + 1, x - 14) == 145)
+	check("nested argument expressions", addu(addu(0, 0, 1), addu(0, 1, 0), addu(1, 0, 0)) == 1 * 100 + 10 * 10 + 100)
+
+	// ---- static arrays: variable index reads/writes, scale 8 and 4 ----
+	let s = mut 0
+	let fs = mut 0.0
+	unsafe{
+		for i in ga{
+			assume match i into ga
+			ga[i] = ga[i] * 2 + i
+		}
+		for j in ga{
+			assume match j in ga
+			s += ga[j]
+		}
+		for k in gf{
+			assume match k into gf
+			gf[k] = gf[k] + gf[k] * 0.5
+		}
+		for m in gf{
+			assume match m in gf
+			fs += gf[m]
+		}
+		gs = gs + 7
+		gs += 1
+		gg = gg * 4.0
+	}
+	check("static u64 array read/write", s == 40)
+	unsafe{
+		ok = fs == 18.0
+	}
+	check("static f32 array read/write", ok)
+	unsafe{
+		ok = gs == 8
+	}
+	check("static scalar update", ok)
+	unsafe{
+		ok = gg == 2.0
+	}
+	check("static float update", ok)
+
+	// ---- struct fields through a pointer ----
+	let pt = mut Pt{x= 100, y= 4000000000, w= 1.5, b= 255}
+	bump(auto pt)
+	bump(auto pt)
+	check("struct u64 field", pt.x == 110)
+	check("struct u32 field wraps", pt.y == 4000000014)
+	check("struct u8 field wraps", pt.b == 1)
+	unsafe{
+		ok = pt.w == 9.0
+	}
+	check("struct f32 field", ok)
+	return
+}

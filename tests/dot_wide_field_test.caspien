@@ -1,0 +1,91 @@
+// Regression test: reading a struct-typed (or array-typed) field WIDER THAN 8 BYTES that is not a whole number of words, out of a struct that
+// arrived as a pushed value (an element of an array of structs: `arr[i].t`). The extraction shrank the pushed block by (total*8 - size) bytes
+// and addressed it as if the field started on a word boundary; a field at byte offset 12 of size 12 (a `Tri` after a `u8` tag) came out
+// shifted by 4 bytes. It is now cut out word by word with shrd, like an array row wider than a word.
+import "../stdlib/libc.caspien"
+
+struct Tri{
+	@pub{
+		a: mut u32
+		b: mut u32
+		c: mut u32
+	}
+}
+
+struct Outer{
+	@pub{
+		tag: mut u8
+		t: mut Tri
+		tail: mut u64
+	}
+}
+
+struct Wide{
+	@pub{
+		k: mut u16
+		v: mut u32[5]
+		m: mut u64
+	}
+}
+
+func check(name: static imut string, ok: mut bool) void{
+	unsafe{
+		if ok{
+			printf("PASS %s\n", name)
+		}else{
+			printf("FAIL %s\n", name)
+		}
+	}
+	return
+}
+
+func mix5(a: mut u64, b: mut u64, c: mut u64, d: mut u64, e: mut u32) mut u64{
+	return a * 10000 + b * 1000 + c * 100 + d * 10 + (e as u64)
+}
+
+func main() void{
+	let o0 = mut Outer{tag= 1, t= Tri{a= 10, b= 11, c= 12}, tail= 100}
+	let o1 = mut Outer{tag= 2, t= Tri{a= 20, b= 21, c= 22}, tail= 200}
+	let:<mut Outer[2]> arr = mut [o0, o1]
+
+	let t0 = mut arr[0].t
+	let t1 = mut arr[1].t
+	check("Tri at offset 12, element 0: a", t0.a == 10)
+	check("Tri at offset 12, element 0: b", t0.b == 11)
+	check("Tri at offset 12, element 0: c", t0.c == 12)
+	check("Tri at offset 12, element 1: a", t1.a == 20)
+	check("Tri at offset 12, element 1: b", t1.b == 21)
+	check("Tri at offset 12, element 1: c", t1.c == 22)
+	let tag1 = mut arr[1].tag
+	let tail1 = mut arr[1].tail
+	check("neighbours of the wide field", tag1 == 2 && tail1 == 200)
+
+	// the extraction needs rcx: the 4th call argument is already in it when the 5th one is read out of the block
+	let mixed = mut mix5(1, 2, 3, 4, arr[1].t.c)
+	check("wide-field read as the 5th argument keeps the 4th", mixed == 12340 + 22)
+
+	// a 20-byte array field at offset 10 (three words, starts mid-word)
+	let w0 = mut Wide{k= 7, v= [1, 2, 3, 4, 5], m= 900}
+	let w1 = mut Wide{k= 8, v= [6, 7, 8, 9, 10], m= 901}
+	let:<mut Wide[2]> ws = mut [w0, w1]
+	let v1 = mut ws[1].v
+	let x0 = mut v1[0]
+	let x4 = mut v1[4]
+	check("u32[5] field, first element", x0 == 6)
+	check("u32[5] field, last element", x4 == 10)
+	let v0 = mut ws[0].v
+	let y2 = mut v0[2]
+	check("u32[5] field of element 0", y2 == 3)
+	let m1 = mut ws[1].m
+	check("field after the wide one", m1 == 901)
+
+	// copying a 20-byte array into an existing variable (a block store whose last word is only half used) must not write the other 4 bytes
+	let lo = mut 111
+	let:<mut u32[5]> dest = mut [0, 0, 0, 0, 0]
+	let hi = mut 222
+	dest = mut ws[1].v
+	let d0 = mut dest[0]
+	let d4 = mut dest[4]
+	check("20-byte array assigned: elements", d0 == 6 && d4 == 10)
+	check("20-byte array assigned: neighbours untouched", lo == 111 && hi == 222)
+}

@@ -1,0 +1,31 @@
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+struct Box{
+	@pub{ v: mut u64 }
+}
+func readAuto(p: auto imut u64) imut u64{
+	return deref(p)
+}
+func readSome(p: raw some imut u64) imut u64{
+	return deref(p)
+}
+@throws
+func makeBox() owns some mut Box{
+	?catch(e){ throw e }
+	return ?new Box{v= 41}
+}
+func main() void{
+	let x = mut 7
+	unsafe{ printf("auto=%llu\n", readAuto(auto x)) }
+	try{
+		?catch(e){ return }
+		let b = mut ?makeBox()
+		match Some(b){
+			let copy = mut deref(b)
+			unsafe{ printf("owns box.v=%llu\n", copy.v) }
+		}
+	}
+}

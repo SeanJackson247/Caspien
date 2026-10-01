@@ -1,0 +1,233 @@
+// Regression test for `f64` (double precision), written to mirror floattemps_test / regvars_float_test.
+// Covers: values that only double precision can hold, arithmetic and compares, f64 arguments and results (register and nested calls),
+// libm `sqrt`, f32 <-> f64 conversion (`as f64`, `wrap:<f32>`), accumulators that live in registers across loops and calls, static f64 scalars
+// and arrays, float literals adapting to f64 slots (including negated literal products and literal arrays), and the float-scratch clobber
+// `g(a, 0.0 - f(x))`. Every expected value is exactly what IEEE double arithmetic gives. Prints one PASS/FAIL line per check, then one printf line.
+// The output must be identical with float-variables-in-registers / float-temporaries-in-registers on and off.
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+
+extern sqrt(mut f64) mut f64
+
+func check(name: static imut string, ok: mut bool) void{
+	unsafe{
+		if ok{
+			printf("PASS %s\n", name)
+		}else{
+			printf("FAIL %s\n", name)
+		}
+	}
+	return
+}
+
+func deq(a: mut f64, b: mut f64) mut bool{
+	let r = mut false
+	unsafe{ r = a == b }
+	return r
+}
+
+func feq(a: mut f32, b: mut f32) mut bool{
+	let r = mut false
+	unsafe{ r = a == b }
+	return r
+}
+
+func dne(a: mut f64, b: mut f64) mut bool{
+	let r = mut false
+	unsafe{ r = a != b }
+	return r
+}
+
+func dlt(a: mut f64, b: mut f64) mut bool{
+	let r = mut false
+	unsafe{ r = a < b }
+	return r
+}
+
+let static:<mut f64> gd = mut 1.5
+let static:<mut f64> ge = mut 0.0
+let static:<mut f64[3]> ga = mut [0.25, 0.5, 0.75]
+
+// 1. only double precision can hold 2^24 + 1
+func big() mut f64{
+	let:<mut f64> a = mut 16777216.0
+	unsafe{ return a + 1.0 }
+}
+
+// 2. 0.1 + 0.2 is not 0.3 in double precision
+func addf(a: mut f64, b: mut f64) mut f64{
+	unsafe{ return a + b }
+}
+
+// 3. balanced tree, two live subtrees, deep right-nesting, non-commutative destination, divide (a=2 b=3 c=4 d=5)
+func chain(a: mut f64, b: mut f64, c: mut f64, d: mut f64) mut f64{
+	unsafe{ return (a * b + c * d) * (a - c) / (b + d) }
+}
+func twoTrees(a: mut f64, b: mut f64, c: mut f64, d: mut f64) mut f64{
+	unsafe{ return (a + b) * (c + d) - (a - b) * (c - d) }
+}
+func deep(a: mut f64, b: mut f64, c: mut f64, d: mut f64) mut f64{
+	unsafe{ return a * b + (c * d + (a * c + (b * d + (a * d + b * c)))) }
+}
+func nonComm(a: mut f64, b: mut f64, c: mut f64, d: mut f64) mut f64{
+	unsafe{ return a - (b - (c - d)) }
+}
+
+// 4. libm
+func root2() mut f64{
+	let:<mut f64> r = mut 0.0
+	unsafe{ r = sqrt(2.0) }
+	unsafe{ return r * r }
+}
+func rootExpr(a: mut f64, b: mut f64) mut f64{
+	unsafe{ return sqrt(a * a + b * b) }
+}
+
+// 5. conversions
+func widen(x: mut f32) mut f64{
+	unsafe{ return x as f64 }
+}
+func narrowTenth() mut f32{
+	let:<mut f64> d = mut 0.1
+	let n = mut wrap:<f32>(d)
+	return n
+}
+func roundTrip() mut f64{
+	let:<mut f64> d = mut 0.1
+	let n = mut wrap:<f32>(d)
+	unsafe{ return n as f64 }
+}
+
+// 6. accumulator in a register across a loop: ten additions of 0.1
+func tenths() mut f64{
+	let:<mut f64> acc = mut 0.0
+	let i = mut 0
+	unsafe{
+		loop{
+			if i == 10{
+				break
+			}
+			acc = acc + 0.1
+			i++
+		}
+	}
+	return acc
+}
+
+// 7. variables live across calls: sum of squares of 1..n, and a call result added into an accumulator
+func sq(x: mut f64) mut f64{
+	unsafe{ return x * x }
+}
+func sumSquares(n: mut u64) mut f64{
+	let:<mut f64> total = mut 0.0
+	let:<mut f64> x = mut 1.0
+	let i = mut 0
+	unsafe{
+		loop{
+			if i == n{
+				break
+			}
+			total = total + sq(x)
+			x = x + 1.0
+			i++
+		}
+	}
+	return total
+}
+
+// 8. static scalar and static array
+func statics() mut f64{
+	unsafe{
+		ge = gd * 2.0
+		gd = gd + ge
+	}
+	unsafe{ return gd + ga[0] + ga[1] + ga[2] }
+}
+
+func readGd() mut f64{
+	unsafe{ return gd }
+}
+
+// 9. literals adapt to f64: a negated literal product and a literal-only group
+func negProduct() mut f64{
+	let:<mut f64> a = mut 3.7
+	let:<mut f64> b = mut 0.3
+	let:<mut f64> lit = mut 0.0
+	let:<mut f64> comp = mut 0.0
+	unsafe{ lit = -(3.7 * 0.3) }
+	unsafe{ comp = 0.0 - a * b }
+	if deq(lit, comp){
+		return 1.0
+	}
+	return 0.0
+}
+
+// 10. the float scratch registers must survive a call in the middle of an expression
+func negCall(x: mut f64) mut f64{
+	unsafe{ return 0.0 - x }
+}
+func sub2(a: mut f64, b: mut f64) mut f64{
+	unsafe{ return a - b }
+}
+func scratchClobber(x: mut f64) mut f64{
+	let:<mut f64> a = mut 10.0
+	unsafe{ return sub2(a, 0.0 - negCall(x)) }
+}
+
+// 11. more f64 variables than registers, all live over a call
+func manyVars(seed: mut f64) mut f64{
+	let:<mut f64> v0 = mut 1.0
+	let:<mut f64> v1 = mut 2.0
+	let:<mut f64> v2 = mut 3.0
+	let:<mut f64> v3 = mut 4.0
+	let:<mut f64> v4 = mut 5.0
+	let:<mut f64> v5 = mut 6.0
+	let:<mut f64> v6 = mut 7.0
+	let:<mut f64> v7 = mut 8.0
+	let i = mut 0
+	unsafe{
+		loop{
+			if i == 3{
+				break
+			}
+			v0 = v0 + sq(seed)
+			v1 = v1 + v0
+			v2 = v2 + v1
+			v3 = v3 + v2
+			v4 = v4 + v3
+			v5 = v5 + v4
+			v6 = v6 + v5
+			v7 = v7 + v6
+			i++
+		}
+	}
+	unsafe{ return v0 + v1 + v2 + v3 + v4 + v5 + v6 + v7 }
+}
+
+func main() void{
+	check("2^24 + 1 is exact in f64", deq(big(), 16777217.0))
+	check("0.1 + 0.2 != 0.3", dne(addf(0.1, 0.2), 0.3))
+	check("0.1 + 0.2 == 0.30000000000000004", deq(addf(0.1, 0.2), 0.30000000000000004))
+	check("chain", deq(chain(2.0, 3.0, 4.0, 5.0), -6.5))
+	check("twoTrees", deq(twoTrees(2.0, 3.0, 4.0, 5.0), 44.0))
+	check("deep", deq(deep(2.0, 3.0, 4.0, 5.0), 71.0))
+	check("nonComm", deq(nonComm(2.0, 3.0, 4.0, 5.0), -2.0))
+	check("sqrt(2)^2 in double", deq(root2(), 2.0000000000000004))
+	check("sqrt of an expression", deq(rootExpr(3.0, 4.0), 5.0))
+	check("widen f32 1.5", deq(widen(1.5), 1.5))
+	check("0.1 narrowed to f32 is not 0.1 in f64", dne(roundTrip(), 0.1))
+	check("0.1 narrowed to f32 == 0.1f", feq(narrowTenth(), 0.1))
+	check("ten additions of 0.1", deq(tenths(), 0.9999999999999999))
+	check("sum of squares 1..10", deq(sumSquares(10), 385.0))
+	check("statics", deq(statics(), 6.0))
+	check("static f64 scalar written", deq(readGd(), 4.5))
+	check("negated literal product", deq(negProduct(), 1.0))
+	check("float scratch across a call", deq(scratchClobber(4.0), 6.0))
+	check("many f64 variables over calls", dlt(manyVars(1.0), 1000000000.0))
+	let:<mut f64> third = mut 0.0
+	unsafe{ third = 1.0 / 3.0 }
+	unsafe{ printf("third=%.17g\n", third) }
+}

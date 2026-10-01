@@ -1,0 +1,336 @@
+// Regression test for stack struct literals whose member values are not all constants. Before the fix a literal with a member narrower
+// than 8 bytes (u8/u16/u32/f32/bool) AND a computed member (`k + 1`, a call, ...) stored its fields at the wrong offsets and crashed;
+// the packed all-constant path and all-8-byte structs were always fine. Run with every optimizer switch off and on: identical output.
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+
+struct Mixed{
+	@pub{
+		x: mut u64
+		y: mut u32
+		w: mut f32
+		b: mut u8
+		z: mut u64
+	}
+}
+struct Pair32{
+	@pub{
+		a: mut u32
+		b: mut u32
+	}
+}
+struct Wide{
+	@pub{
+		a: mut u64
+		b: mut u64
+	}
+}
+struct Flags{
+	@pub{
+		on: mut bool
+		n: mut u16
+		c: mut u8
+	}
+}
+
+// a member wider than 8 bytes (a 24-byte array of u64) next to narrow and computed members
+struct Holder{
+	@pub{
+		a: mut u32
+		arr: mut u64[3]
+		b: mut u8
+	}
+}
+// arrays of elements narrower than 8 bytes (u32[3], u8[5], u16[3]): written element by element (each element pushed as its own word) or taken from an existing array
+struct Narrow{
+	@pub{
+		flag: mut u8
+		small: mut u32[3]
+		tail: mut u16
+	}
+}
+struct FirstArr{
+	@pub{
+		small: mut u32[3]
+		tail: mut u16
+	}
+}
+
+struct Bytes{
+	@pub{
+		id: mut u32
+		tag: mut u8[5]
+		half: mut u16[3]
+		last: mut u8
+	}
+}
+
+// two array members of the SAME type in one literal, each written either as an element list or taken from a variable
+struct Two{
+	@pub{
+		first: mut u32[3]
+		mid: mut u8
+		second: mut u32[3]
+		tail: mut u16
+	}
+}
+
+// a heap literal nested inside another one, both with array members (one taken from a variable, one written as a list)
+struct Inner{
+	@pub{
+		v: mut u32[3]
+		w: mut u8
+	}
+}
+struct Outer{
+	@pub{
+		tag: mut u8
+		inner: owns some mut Inner
+		arr: mut u32[3]
+		tail: mut u16
+	}
+}
+
+func check(name: static imut string, ok: mut bool) void{
+	unsafe{
+		if ok{
+			printf("PASS %s\n", name)
+		}else{
+			printf("FAIL %s\n", name)
+		}
+	}
+	return
+}
+
+func twice(v: mut u64) mut u64{
+	return v * 2
+}
+
+func viaCall(k: mut u64) mut u64{
+	let m = mut Mixed{x= twice(k), y= 7, w= 1.5, b= 9, z= k + 100}
+	return m.x * 1000 + m.z
+}
+
+func passIn(p: auto mut Pair32) mut u32{
+	return p.a * 10 + p.b
+}
+
+// the literal is built 3,000,000 times: the stack must come back balanced every time (a leak of even one word per iteration overflows the stack)
+func manyLiterals(n: mut u64) mut u32{
+	let:<mut u32> c = mut 3
+	let:<mut u32> acc = mut 0
+	for i in 0..n{
+		let p = mut Pair32{a= c + 1, b= 9}
+		acc += p.a
+	}
+	return acc
+}
+
+// heap `new` of the same struct: the fields around the array must land correctly (the array's own elements cannot be read back through a
+// heap pointer here -- reading an array member through an owning pointer is a separate, older bug -- so this checks the neighbours)
+func heapNarrow(t: mut u16) mut u64{
+	?catch(e){ return 1 }
+	let p = mut ? new Narrow{flag= 6, small= [20, 21, 22], tail= t + 1}
+	if p.flag != 6{
+		return 2
+	}
+	if p.tail != 1001{
+		return 3
+	}
+	return 0
+}
+
+// heap `new` whose array value is an existing array (pushed as one block), first member, next to a computed member
+func heapFromArray(t: mut u16) mut u64{
+	?catch(e){ return 1 }
+	let:<mut u32[3]> src = mut [40, 41, 42]
+	let p = mut ? new FirstArr{small= src, tail= t + 1}
+	if p.tail != 1001{
+		return 2
+	}
+	return 0
+}
+
+// reading an array member through an owning heap pointer (the whole array is dereferenced as one value, then indexed)
+func heapReads(t: mut u16) mut u64{
+	?catch(e){ return 1 }
+	let p = mut ? new Narrow{flag= 6, small= [20, 21, 22], tail= t + 1}
+	if p.small[0] != 20{
+		return 2
+	}
+	if p.small[1] != 21{
+		return 3
+	}
+	if p.small[2] != 22{
+		return 4
+	}
+	let q = mut ? new Bytes{id= 7, tag= [1, 2, 3, 4, 5], half= [t, t + 1, t + 2], last= 9}
+	if q.tag[4] != 5{
+		return 5
+	}
+	if q.half[2] != 1002{
+		return 6
+	}
+	if q.last != 9{
+		return 7
+	}
+	return 0
+}
+
+func fiveBytes(a: mut u8, b: mut u8, c: mut u8, d: mut u8, e: mut u8) mut u64{
+	if a != 1{
+		return 1
+	}
+	if b != 2{
+		return 2
+	}
+	if c != 3{
+		return 3
+	}
+	if d != 4{
+		return 4
+	}
+	if e != 5{
+		return 5
+	}
+	return 0
+}
+
+// five elements of a heap struct's u8[5] member as the five arguments of one call (each element extraction needs %rcx as scratch)
+func heapArgs(t: mut u16) mut u64{
+	?catch(e){ return 1 }
+	let q = mut ?new Bytes{id= 7, tag= [1, 2, 3, 4, 5], half= [t, t + 1, t + 2], last= 9}
+	return fiveBytes(q.tag[0], q.tag[1], q.tag[2], q.tag[3], q.tag[4])
+}
+
+func nested(t: mut u16) mut u64{
+	?catch(e){ return 1 }
+	let:<mut u32[3]> src = mut [70, 71, 72]
+	let o = mut ?new Outer{tag= 1, inner= new Inner{v= src, w= 2}, arr= [1, 2, 3], tail= t + 1}
+	if o.tag != 1{
+		return 2
+	}
+	if o.arr[0] != 1{
+		return 3
+	}
+	if o.arr[2] != 3{
+		return 4
+	}
+	if o.tail != 1001{
+		return 5
+	}
+	if o.inner.w != 2{
+		return 6
+	}
+	if o.inner.v[0] != 70{
+		return 7
+	}
+	if o.inner.v[2] != 72{
+		return 8
+	}
+	return 0
+}
+
+func main() void{
+	let k = mut 4
+	let:<mut u32> c = mut 20
+	let q = mut Pair32{a= c + 1, b= 9}
+	check("pair a computed", q.a == 21)
+	check("pair b const", q.b == 9)
+	let q2 = mut Pair32{a= 5, b= c + 2}
+	check("pair a const", q2.a == 5)
+	check("pair b computed", q2.b == 22)
+	let q3 = mut Pair32{a= c + 1, b= c + 2}
+	check("pair both computed a", q3.a == 21)
+	check("pair both computed b", q3.b == 22)
+	let m = mut Mixed{x= k + 1, y= 3, w= 2.5, b= 200, z= k * 3}
+	check("mixed x", m.x == 5)
+	check("mixed y", m.y == 3)
+	check("mixed b", m.b == 200)
+	check("mixed z", m.z == 12)
+	check("mixed via call", viaCall(k) == 8104)
+	let cst = mut Mixed{x= 1, y= 2, w= 1.0, b= 3, z= 4}
+	check("all-constant literal x", cst.x == 1)
+	check("all-constant literal y", cst.y == 2)
+	check("all-constant literal b", cst.b == 3)
+	check("all-constant literal z", cst.z == 4)
+	let w = mut Wide{a= k + 1, b= k + 2}
+	check("wide a", w.a == 5)
+	check("wide b", w.b == 6)
+	let:<mut u16> h = mut 1000
+	let f = mut Flags{on= true, n= h + 4, c= 7}
+	check("flags on", f.on == true)
+	check("flags n", f.n == 1004)
+	check("flags c", f.c == 7)
+	let cpy = mut q
+	check("whole-value copy a", cpy.a == 21)
+	check("whole-value copy b", cpy.b == 9)
+	q.a = 50
+	check("copy is independent", cpy.a == 21)
+	check("original changed", q.a == 50)
+	check("literal in a loop keeps the stack balanced", manyLiterals(3000000) == 12000000)
+	let hd = mut Holder{a= c + 1, arr= [k, k + 1, k + 2], b= 9}
+	check("wide member: a", hd.a == 21)
+	check("wide member: arr[0]", hd.arr[0] == 4)
+	check("wide member: arr[1]", hd.arr[1] == 5)
+	check("wide member: arr[2]", hd.arr[2] == 6)
+	check("wide member: b", hd.b == 9)
+	let:<mut u32[3]> src = mut [30, 31, 32]
+	let n1 = mut Narrow{flag= 3, small= [20, 21, 22], tail= h + 1}
+	check("narrow array, constant elements: flag", n1.flag == 3)
+	check("narrow array, constant elements: [0]", n1.small[0] == 20)
+	check("narrow array, constant elements: [1]", n1.small[1] == 21)
+	check("narrow array, constant elements: [2]", n1.small[2] == 22)
+	check("narrow array, constant elements: tail", n1.tail == 1001)
+	let n2 = mut Narrow{flag= 4, small= [c, c + 1, c + 2], tail= h + 2}
+	check("narrow array, computed elements: [0]", n2.small[0] == 20)
+	check("narrow array, computed elements: [1]", n2.small[1] == 21)
+	check("narrow array, computed elements: [2]", n2.small[2] == 22)
+	check("narrow array, computed elements: tail", n2.tail == 1002)
+	let n3 = mut Narrow{flag= 5, small= src, tail= h + 3}
+	check("narrow array from a variable: flag", n3.flag == 5)
+	check("narrow array from a variable: [0]", n3.small[0] == 30)
+	check("narrow array from a variable: [2]", n3.small[2] == 32)
+	check("narrow array from a variable: tail", n3.tail == 1003)
+	let b1 = mut Bytes{id= c + 1, tag= [1, 2, 3, 4, 5], half= [h, h + 1, h + 2], last= 9}
+	check("byte/half arrays: id", b1.id == 21)
+	check("byte/half arrays: tag[0]", b1.tag[0] == 1)
+	check("byte/half arrays: tag[1]", b1.tag[1] == 2)
+	check("byte/half arrays: tag[2]", b1.tag[2] == 3)
+	check("byte/half arrays: tag[3]", b1.tag[3] == 4)
+	check("byte/half arrays: tag[4]", b1.tag[4] == 5)
+	check("byte/half arrays: half[0]", b1.half[0] == 1000)
+	check("byte/half arrays: half[1]", b1.half[1] == 1001)
+	check("byte/half arrays: half[2]", b1.half[2] == 1002)
+	check("byte/half arrays: last", b1.last == 9)
+	let:<mut u32[3]> s1 = mut [50, 51, 52]
+	let:<mut u32[3]> s2 = mut [60, 61, 62]
+	let w1 = mut Two{first= [10, 11, 12], mid= 4, second= s2, tail= h + 5}
+	check("same-typed arrays (list, variable): first", w1.first[0] == 10)
+	check("same-typed arrays (list, variable): first[2]", w1.first[2] == 12)
+	check("same-typed arrays (list, variable): second[0]", w1.second[0] == 60)
+	check("same-typed arrays (list, variable): second[2]", w1.second[2] == 62)
+	check("same-typed arrays (list, variable): mid", w1.mid == 4)
+	check("same-typed arrays (list, variable): tail", w1.tail == 1005)
+	let w2 = mut Two{first= s1, mid= 5, second= [20, 21, 22], tail= h + 6}
+	check("same-typed arrays (variable, list): first[1]", w2.first[1] == 51)
+	check("same-typed arrays (variable, list): second[1]", w2.second[1] == 21)
+	check("same-typed arrays (variable, list): tail", w2.tail == 1006)
+	let w3 = mut Two{first= s1, mid= 6, second= s2, tail= h + 7}
+	check("same-typed arrays (variable, variable): first[2]", w3.first[2] == 52)
+	check("same-typed arrays (variable, variable): second[1]", w3.second[1] == 61)
+	check("same-typed arrays (variable, variable): tail", w3.tail == 1007)
+	let w4 = mut Two{first= [30, 31, 32], mid= 7, second= [40, 41, 42], tail= h + 8}
+	check("same-typed arrays (list, list): first[1]", w4.first[1] == 31)
+	check("same-typed arrays (list, list): second[2]", w4.second[2] == 42)
+	check("same-typed arrays (list, list): tail", w4.tail == 1008)
+	check("array elements read through a heap pointer as call arguments", heapArgs(h) == 0)
+	check("nested heap literals with array members", nested(h) == 0)
+	check("heap new: array elements read back through the pointer", heapReads(h) == 0)
+	check("heap new, narrow array + computed member: neighbours intact", heapNarrow(h) == 0)
+	check("heap new, array taken from a variable + computed member", heapFromArray(h) == 0)
+	check("pass by address", passIn(auto q3) == 232)
+}

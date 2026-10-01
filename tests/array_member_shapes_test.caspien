@@ -1,0 +1,169 @@
+// Regression test for (1) an array of structs whose element struct itself has an array member (`h.cells[i].vals[j]`), on the stack and on the heap;
+// (2) array members that straddle an 8-byte word boundary of their struct (`u8[5]` at offset 4, `u16[3]` at offset 4, `u8[3]` at offset 6), read through
+// an array of structs (the pushed block's words are reversed, so such a member is not contiguous in memory); (3) a local narrow array literal with a
+// computed element (`let a: u16[3] = [c, c + 1, c + 7]`), which used to store the pushed words as if they were packed and crash; (4) an array literal that
+// mixes a typed variable with plain literals (`[c, 2, c + 7]` with `c: u16` is a `u16[3]`).
+// Run with every optimizer switch off and on: identical output.
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+
+struct Cell{
+	@pub{
+		id: mut u8
+		vals: mut u16[3]
+		z: mut u8
+	}
+}
+struct Holder{
+	@pub{
+		tag: mut u8
+		cells: mut Cell[2]
+		tail: mut u16
+	}
+}
+struct Strad{
+	@pub{
+		a: mut u32
+		b: mut u8[5]
+		c: mut u32
+	}
+}
+struct StradH{
+	@pub{
+		tag: mut u8
+		ss: mut Strad[2]
+		tail: mut u16
+	}
+}
+func check(name: static imut string, ok: mut bool) void{
+	unsafe{
+		if ok{
+			printf("PASS %s\n", name)
+		}else{
+			printf("FAIL %s\n", name)
+		}
+	}
+	return
+}
+func stackAos(t: mut u16, c: mut u16, k: mut u8) void{
+	let h = mut Holder{tag= 3, cells= [Cell{id= k, vals= [c, c + 1, c + 2], z= 9}, Cell{id= 5, vals= [c - 19, c - 18, c + 7], z= k}], tail= t + 1}
+	check("aos stack tag", h.tag == 3)
+	check("aos stack c0.id", h.cells[0].id == 4)
+	check("aos stack c0.vals[0]", h.cells[0].vals[0] == 20)
+	check("aos stack c0.vals[2]", h.cells[0].vals[2] == 22)
+	check("aos stack c0.z", h.cells[0].z == 9)
+	check("aos stack c1.id", h.cells[1].id == 5)
+	check("aos stack c1.vals[1]", h.cells[1].vals[1] == 2)
+	check("aos stack c1.vals[2]", h.cells[1].vals[2] == 27)
+	check("aos stack c1.z", h.cells[1].z == 4)
+	check("aos stack tail", h.tail == 1001)
+}
+func heapAos(t: mut u16, c: mut u16, k: mut u8) mut u64{
+	?catch(e){ return 1 }
+	let h = mut ? new Holder{tag= 3, cells= [Cell{id= k, vals= [c, c + 1, c + 2], z= 9}, Cell{id= 5, vals= [c - 19, c - 18, c + 7], z= k}], tail= t + 1}
+	match Some(h){
+		if h.tag != 3{ return 2 }
+		if h.cells[0].id != 4{ return 3 }
+		if h.cells[0].vals[1] != 21{ return 4 }
+		if h.cells[0].z != 9{ return 5 }
+		if h.cells[1].vals[2] != 27{ return 6 }
+		if h.cells[1].z != 4{ return 7 }
+		if h.tail != 1001{ return 8 }
+	}
+	return 0
+}
+func stackStrad(t: mut u16, c: mut u32, k: mut u8) void{
+	let s = mut Strad{a= c, b= [k, k + 1, k + 2, k + 3, k + 4], c= c + 1}
+	check("strad stack a", s.a == 20)
+	check("strad stack b[0]", s.b[0] == 4)
+	check("strad stack b[1]", s.b[1] == 5)
+	check("strad stack b[3]", s.b[3] == 7)
+	check("strad stack b[4]", s.b[4] == 8)
+	check("strad stack c", s.c == 21)
+	let h = mut StradH{tag= 1, ss= [Strad{a= c, b= [k, k - 2, k - 1, k, k + 1], c= 9}, Strad{a= 7, b= [k + 1, k + 2, k + 3, k + 4, k + 5], c= c + 2}], tail= t + 1}
+	check("strad arr tag", h.tag == 1)
+	check("strad arr s0.b[0]", h.ss[0].b[0] == 4)
+	check("strad arr s0.b[4]", h.ss[0].b[4] == 5)
+	check("strad arr s1.a", h.ss[1].a == 7)
+	check("strad arr s1.b[0]", h.ss[1].b[0] == 5)
+	check("strad arr s1.b[4]", h.ss[1].b[4] == 9)
+	check("strad arr s1.c", h.ss[1].c == 22)
+	check("strad arr tail", h.tail == 1001)
+}
+struct Tri{
+	@pub{
+		a: mut u32
+		b: mut u16
+		c: mut u8[3]
+		d: mut u8
+	}
+}
+struct TriH{
+	@pub{
+		tag: mut u8
+		ts: mut Tri[2]
+		tail: mut u16
+	}
+}
+func heapStrad(t: mut u16, c: mut u32, k: mut u8) mut u64{
+	?catch(e){ return 1 }
+	let h = mut ? new StradH{tag= 1, ss= [Strad{a= c, b= [k, k - 2, k - 1, k, k + 1], c= 9}, Strad{a= 7, b= [k + 1, k + 2, k + 3, k + 4, k + 5], c= c + 2}], tail= t + 1}
+	match Some(h){
+		if h.tag != 1{ return 2 }
+		if h.ss[0].b[0] != 4{ return 3 }
+		if h.ss[0].b[4] != 5{ return 4 }
+		if h.ss[1].a != 7{ return 5 }
+		if h.ss[1].b[0] != 5{ return 6 }
+		if h.ss[1].b[4] != 9{ return 7 }
+		if h.ss[1].c != 22{ return 8 }
+		if h.tail != 1001{ return 9 }
+	}
+	return 0
+}
+func stackTri(t: mut u16, c: mut u32, k: mut u8) void{
+	let h = mut TriH{tag= 2, ts= [Tri{a= c, b= t, c= [k, k + 1, k + 2], d= k + 3}, Tri{a= c + 1, b= t + 1, c= [k + 4, 5, k + 6], d= 8}], tail= t + 2}
+	check("tri arr t0.a", h.ts[0].a == 20)
+	check("tri arr t0.b", h.ts[0].b == 1000)
+	check("tri arr t0.c[0]", h.ts[0].c[0] == 4)
+	check("tri arr t0.c[2]", h.ts[0].c[2] == 6)
+	check("tri arr t0.d", h.ts[0].d == 7)
+	check("tri arr t1.a", h.ts[1].a == 21)
+	check("tri arr t1.c[0]", h.ts[1].c[0] == 8)
+	check("tri arr t1.c[1]", h.ts[1].c[1] == 5)
+	check("tri arr t1.c[2]", h.ts[1].c[2] == 10)
+	check("tri arr t1.d", h.ts[1].d == 8)
+	check("tri arr tail", h.tail == 1002)
+}
+func localArrays(c: mut u16, k: mut u8, w: mut u32) void{
+	let:<mut u16[3]> a = mut [c, c + 1, c + 7]
+	check("local u16[3] computed: a[0]", a[0] == 20)
+	check("local u16[3] computed: a[1]", a[1] == 21)
+	check("local u16[3] computed: a[2]", a[2] == 27)
+	let:<mut u8[5]> b = mut [k, k + 1, 9, k + 3, 200]
+	check("local u8[5] computed: b[0]", b[0] == 4)
+	check("local u8[5] computed: b[2]", b[2] == 9)
+	check("local u8[5] computed: b[3]", b[3] == 7)
+	check("local u8[5] computed: b[4]", b[4] == 200)
+	let:<mut u32[2]> d = mut [7, w + 1]
+	check("local u32[2] mixed: d[0]", d[0] == 7)
+	check("local u32[2] mixed: d[1]", d[1] == 10)
+	let:<mut u16[3]> m = mut [c, 2, c + 7]
+	check("mixed literal and variable: m[1]", m[1] == 2)
+	check("mixed literal and variable: m[2]", m[2] == 27)
+}
+func main() void{
+	let:<mut u16> t = mut 1000
+	let:<mut u16> c = mut 20
+	let:<mut u32> c32 = mut 20
+	let:<mut u32> w = mut 9
+	let:<mut u8> k = mut 4
+	stackAos(t, c, k)
+	check("aos heap", heapAos(t, c, k) == 0)
+	stackStrad(t, c32, k)
+	check("strad heap", heapStrad(t, c32, k) == 0)
+	stackTri(t, c32, k)
+	localArrays(c, k, w)
+}

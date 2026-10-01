@@ -1,0 +1,78 @@
+// Callee-saved register preservation. The Caspien functions below are called from a C/asm driver (callee_saved_probe.sh) that
+// loads rbx, r12-r15 with sentinel values, calls the function through the C ABI and checks the sentinels afterwards -- including
+// when a throw unwinds through several frames (GT_UNWIND must restore each frame's saved registers on the way out).
+// Run on its own it just prints the values the driver expects.
+import "../stdlib/libc.caspien"
+@throws
+func h(x: mut u64) mut u64{
+	if x == 0{
+		throw "zero"
+	}
+	return x * 3 + 1
+}
+@throws
+func g(x: mut u64) mut u64{
+	?catch(e){ throw e }
+	let v = mut ?h(x)
+	return v + 1
+}
+func probeThrow(x: mut u64) mut u64{
+	try{
+		let a = try g(x) catch(e){
+			return 1000
+		}
+		return a
+	}
+}
+func probePlain(x: mut u64) mut u64{
+	let y = mut (x * x + x / 3)
+	return y - (x % 5) * 7
+}
+// hot loops: with register variables on, `s`, `i` (and z, q) live in r13/r14, which the caller expects back untouched
+func probeLoop(n: mut u64) mut u64{
+	let s = mut 0
+	let i = mut 0
+	unsafe{
+		loop{
+			if i == n{
+				break
+			}
+			s += i * 2
+			i++
+		}
+	}
+	return s
+}
+@throws
+func hot(n: mut u64) mut u64{
+	let z = mut 0
+	let q = mut 0
+	unsafe{
+		loop{
+			if q == n{
+				break
+			}
+			z += 2
+			if z == 8{
+				throw "eight"
+			}
+			q++
+		}
+	}
+	return z
+}
+func probeLoopThrow(n: mut u64) mut u64{
+	let r = try hot(n) catch(e){
+		return 500
+	}
+	return r
+}
+func main() void{
+	let a = mut probeThrow(0)
+	let b = mut probeThrow(5)
+	let c = mut probePlain(9)
+	let d = mut probeLoop(10)
+	let e = mut probeLoopThrow(3)
+	let f = mut probeLoopThrow(6)
+	unsafe{ printf("%llu %llu %llu %llu %llu %llu\n", a, b, c, d, e, f) }
+}

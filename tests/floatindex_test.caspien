@@ -1,0 +1,194 @@
+// Regression test for indexed float access: an f32 / f64 element of a static array read or written through a variable index
+// (R_LEA + R_LDX / R_STX fused to R_LDXI / R_STXI by IndexedAccessPass, scale 4 for f32 and 8 for f64), and an f64 `a[i] -= ...`
+// whose result stays in an xmm register (FloatTempPass) until the store. Every expected value is worked out by hand from
+// exactly representable numbers. The output must be identical with every switch combination. Prints one PASS/FAIL line per check.
+extern printf(static imut string,...) void
+
+let static:<mut f64[5]> da = mut [1.5, 2.5, 3.5, 4.5, 5.5]
+let static:<mut f64[5]> db = mut [0.0, 0.0, 0.0, 0.0, 0.0]
+let static:<mut f32[5]> fa = mut [1.5, 2.5, 3.5, 4.5, 5.5]
+let static:<mut f32[5]> fb = mut [0.0, 0.0, 0.0, 0.0, 0.0]
+let static:<mut f32[3]> fc = mut [1.0, 2.0, 4.0]
+let static:<mut f64[3]> dc = mut [1.0, 2.0, 4.0]
+
+func check(name: static imut string, ok: mut bool) void{
+	unsafe{
+		if ok{
+			printf("PASS %s\n", name)
+		}else{
+			printf("FAIL %s\n", name)
+		}
+	}
+	return
+}
+
+func main() void{
+	let ok = mut false
+	let:<mut f64> sd = mut 0.0
+	let sf = mut 0.0 // f32
+
+	// ---- f64: read one array, write another, sum ----
+	unsafe{
+		for i in da{
+			assume match i into da
+			assume match i into db
+			db[i] = da[i] * 2.0 + 0.25
+		}
+		for j in db{
+			assume match j in db
+			sd += db[j]
+		}
+		ok = sd == 36.25 && db[0] == 3.25 && db[4] == 11.25
+	}
+	check("f64 array: write through a variable index", ok)
+
+	// ---- f64: compound subtract of a computed value (the xmm chain feeding the store) ----
+	unsafe{
+		for i in db{
+			assume match i into db
+			db[i] -= db[i] * 0.5
+		}
+		sd = 0.0
+		for j in db{
+			assume match j in db
+			sd += db[j]
+		}
+		ok = sd == 18.125 && db[0] == 1.625 && db[1] == 2.625 && db[4] == 5.625
+	}
+	check("f64 array: a[i] -= a[i] * c", ok)
+
+	// ---- f64: element of one array plus element of another, stored back ----
+	unsafe{
+		for i in da{
+			assume match i in da
+			assume match i into db
+			db[i] = da[i] + db[i]
+		}
+		sd = 0.0
+		for j in db{
+			assume match j in db
+			sd += db[j]
+		}
+		ok = sd == 35.625 && db[0] == 3.125 && db[3] == 9.125
+	}
+	check("f64 array: two arrays in one statement", ok)
+
+	// ---- f64: nested loops, two different indices ----
+	unsafe{
+		for j in db{
+			assume match j into db
+			db[j] = 0.0
+		}
+		for i in da{
+			assume match i in da
+			for j in db{
+				assume match j into db
+				db[j] += da[i]
+			}
+		}
+		sd = 0.0
+		for k in db{
+			assume match k in db
+			sd += db[k]
+		}
+		ok = sd == 87.5 && db[2] == 17.5
+	}
+	check("f64 array: nested loops with two indices", ok)
+
+	// ---- f32: the same four shapes (scale 4) ----
+	unsafe{
+		for i in fa{
+			assume match i into fa
+			assume match i into fb
+			fb[i] = fa[i] * 2.0 + 0.25
+		}
+		for j in fb{
+			assume match j in fb
+			sf += fb[j]
+		}
+		ok = sf == 36.25 && fb[0] == 3.25 && fb[4] == 11.25
+	}
+	check("f32 array: write through a variable index", ok)
+	unsafe{
+		for i in fb{
+			assume match i into fb
+			fb[i] -= fb[i] * 0.5
+		}
+		sf = 0.0
+		for j in fb{
+			assume match j in fb
+			sf += fb[j]
+		}
+		ok = sf == 18.125 && fb[0] == 1.625 && fb[1] == 2.625 && fb[4] == 5.625
+	}
+	check("f32 array: a[i] -= a[i] * c", ok)
+	unsafe{
+		for i in fa{
+			assume match i in fa
+			assume match i into fb
+			fb[i] = fa[i] + fb[i]
+		}
+		sf = 0.0
+		for j in fb{
+			assume match j in fb
+			sf += fb[j]
+		}
+		ok = sf == 35.625 && fb[0] == 3.125 && fb[3] == 9.125
+	}
+	check("f32 array: two arrays in one statement", ok)
+	unsafe{
+		for j in fb{
+			assume match j into fb
+			fb[j] = 0.0
+		}
+		for i in fa{
+			assume match i in fa
+			for j in fb{
+				assume match j into fb
+				fb[j] += fa[i]
+			}
+		}
+		sf = 0.0
+		for k in fb{
+			assume match k in fb
+			sf += fb[k]
+		}
+		ok = sf == 87.5 && fb[2] == 17.5
+	}
+	check("f32 array: nested loops with two indices", ok)
+
+	// ---- arrays whose size is not a multiple of 8 / short arrays; squares in place ----
+	unsafe{
+		for i in fc{
+			assume match i into fc
+			fc[i] = fc[i] * fc[i]
+		}
+		sf = 0.0
+		for j in fc{
+			assume match j in fc
+			sf += fc[j]
+		}
+		ok = sf == 21.0 && fc[0] == 1.0 && fc[1] == 4.0 && fc[2] == 16.0
+	}
+	check("f32 array of three: square in place", ok)
+	unsafe{
+		for i in dc{
+			assume match i into dc
+			dc[i] = dc[i] * dc[i]
+		}
+		sd = 0.0
+		for j in dc{
+			assume match j in dc
+			sd += dc[j]
+		}
+		ok = sd == 21.0 && dc[0] == 1.0 && dc[1] == 4.0 && dc[2] == 16.0
+	}
+	check("f64 array of three: square in place", ok)
+
+	// ---- the source arrays were never written ----
+	unsafe{
+		ok = da[0] == 1.5 && da[4] == 5.5 && fa[0] == 1.5 && fa[4] == 5.5
+	}
+	check("source arrays untouched", ok)
+	return
+}

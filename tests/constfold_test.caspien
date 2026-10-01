@@ -1,0 +1,481 @@
+// Regression test for constant folding (`constant-folding: on|off`, the Optimizer's ConstantFoldingPass). Every check compares an
+// expression made only of literals (which the pass may fold) against the same operation done at runtime through variables
+// (which it cannot fold), so a wrong folded value shows up as a FAIL. The output must be identical with folding on and off.
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+
+func check(name: static imut string, ok: mut bool) void{
+	unsafe{
+		if ok{
+			printf("PASS %s\n", name)
+		}else{
+			printf("FAIL %s\n", name)
+		}
+	}
+	return
+}
+
+func sq(x: mut u64) mut u64{
+	return x * x
+}
+
+// ---- unsigned 64-bit -------------------------------------------------------------------------------------------------
+func u64ops() mut bool{
+	let a = mut 7
+	let b = mut 4
+	let big = mut 18446744073709551615
+	let one = mut 1
+	let ten = mut 10
+	let ok = mut true
+	let x = mut (7 + 4)
+	if x != a + b{
+		ok = false
+	}
+	x = mut (7 - 4)
+	if x != a - b{
+		ok = false
+	}
+	x = mut (7 * 4)
+	if x != a * b{
+		ok = false
+	}
+	x = mut (7 / 4)
+	if x != 1{
+		ok = false
+	}
+	x = mut (7 % 4)
+	if x != 3{
+		ok = false
+	}
+	// wrap-around
+	x = mut (18446744073709551615 + 1)
+	if x != big + one{
+		ok = false
+	}
+	x = mut (0 - 1)
+	if x != 18446744073709551615{
+		ok = false
+	}
+	x = mut (4294967296 * 4294967296)
+	if x != 0{
+		ok = false
+	}
+	x = mut (4611686018427387904 * 3)
+	if x != 13835058055282163712{
+		ok = false
+	}
+	// unsigned division of a value above 2^63
+	x = mut (18446744073709551615 / 10)
+	unsafe{
+		if x != big / ten{
+			ok = false
+		}
+	}
+	x = mut (18446744073709551615 % 10)
+	if x != 5{
+		ok = false
+	}
+	return ok
+}
+
+func u64shifts() mut bool{
+	let ok = mut true
+	let x = mut bits_left(1, 4)
+	if x != 16{
+		ok = false
+	}
+	x = mut bits_left(1, 63)
+	if x != 9223372036854775808{
+		ok = false
+	}
+	x = mut bits_left(3, 63)
+	if x != 9223372036854775808{
+		ok = false
+	}
+	x = mut bits_right(256, 4)
+	if x != 16{
+		ok = false
+	}
+	x = mut bits_right(18446744073709551615, 63)
+	if x != 1{
+		ok = false
+	}
+	x = mut bits_or(5, 2)
+	if x != 7{
+		ok = false
+	}
+	return ok
+}
+
+// ---- signed 64-bit ---------------------------------------------------------------------------------------------------
+func s64ops() mut bool{
+	let ok = mut true
+	let m5 = mut -5
+	let m2 = mut -2
+	let x = mut (-5 + -2)
+	if x != m5 + m2{
+		ok = false
+	}
+	x = mut (-5 - -2)
+	if x != m5 - m2{
+		ok = false
+	}
+	x = mut (-5 * -2)
+	if x != m5 * m2{
+		ok = false
+	}
+	x = mut (-5 * -3)
+	if x != 15{
+		ok = false
+	}
+	// wrap-around at the signed limits
+	let lo = mut -9223372036854775808
+	let neg1 = mut -1
+	x = mut (-9223372036854775808 + -1)
+	if x != lo + neg1{
+		ok = false
+	}
+	let nearLo = mut -9223372036854775807
+	x = mut (-9223372036854775807 + -2)
+	if x != nearLo + m2{
+		ok = false
+	}
+	return ok
+}
+
+// ---- comparisons -----------------------------------------------------------------------------------------------------
+func compares() mut bool{
+	let ok = mut true
+	let t = mut (3 < 4)
+	let f = mut (3 == 4)
+	if !t{
+		ok = false
+	}
+	if f{
+		ok = false
+	}
+	if !(5 >= 5){
+		ok = false
+	}
+	if !(3 != 4){
+		ok = false
+	}
+	if 4 <= 3{
+		ok = false
+	}
+	if !(18446744073709551615 > 1){
+		ok = false
+	}
+	if 18446744073709551615 < 1{
+		ok = false
+	}
+	// equal and adjacent operands, every operator (a < that became <= would only show here)
+	if 5 < 5{
+		ok = false
+	}
+	if 5 > 5{
+		ok = false
+	}
+	if !(5 <= 5){
+		ok = false
+	}
+	if 5 != 5{
+		ok = false
+	}
+	if !(5 == 5){
+		ok = false
+	}
+	if 6 < 5{
+		ok = false
+	}
+	if 6 <= 5{
+		ok = false
+	}
+	if !(6 > 5){
+		ok = false
+	}
+	if !(5 < 6){
+		ok = false
+	}
+	if 5 == 6{
+		ok = false
+	}
+	if !(-2 < -1){
+		ok = false
+	}
+	if -1 < -2{
+		ok = false
+	}
+	if -2 < -2{
+		ok = false
+	}
+	if !(-2 <= -2){
+		ok = false
+	}
+	if !(-9223372036854775808 < -9223372036854775807){
+		ok = false
+	}
+	return ok
+}
+
+// ---- bool ------------------------------------------------------------------------------------------------------------
+func bools() mut bool{
+	let ok = mut true
+	let yes = mut true
+	let no = mut false
+	let a = mut (true && false)
+	let b = mut (true || false)
+	let c = mut (!true)
+	let d = mut (!false)
+	if a != (yes && no){
+		ok = false
+	}
+	if b != (yes || no){
+		ok = false
+	}
+	if c != !yes{
+		ok = false
+	}
+	if d != !no{
+		ok = false
+	}
+	if true && then false{
+		ok = false
+	}
+	return ok
+}
+
+// ---- nested ----------------------------------------------------------------------------------------------------------
+func nested() mut bool{
+	let ok = mut true
+	let x = mut ((10 - 3) * 2)
+	if x != 14{
+		ok = false
+	}
+	x = mut (((1 + 2) * (3 + 4)) - (5 * 2) + 100 / 5 % 7)
+	// 3*7 = 21; 21 - 10 = 11; 100/5 = 20; 20 % 7 = 6; 11 + 6 = 17
+	if x != 17{
+		ok = false
+	}
+	x = mut bits_left(1 + 1, 2 * 2)
+	if x != 32{
+		ok = false
+	}
+	if !((2 + 2) == 4){
+		ok = false
+	}
+	if 2 + 2 == 5{
+		ok = false
+	}
+	return ok
+}
+
+// ---- folded values as arguments, returns, statics, arrays --------------------------------------------------------------
+let static gv = mut (6 * 7)
+
+func viaCall() mut bool{
+	let ok = mut true
+	if sq(2 + 3) != 25{
+		ok = false
+	}
+	let arr = mut [1 + 1, 2 * 3, 10 - 4]
+	unsafe{
+		if gv != 42{
+			ok = false
+		}
+	}
+	return ok
+}
+
+func ret() mut u64{
+	return 40 + 2
+}
+
+// ---- narrow types: cast results ----------------------------------------------------------------------------------------
+func narrow() mut bool{
+	let ok = mut true
+	let a = mut wrap:<u8>(300)
+	let b = mut wrap:<u8>(255)
+	let c = mut wrap:<u16>(65537)
+	let d = mut wrap:<u32>(4294967297)
+	let three = mut 300
+	let w = mut wrap:<u8>(three)
+	if a != w{
+		ok = false
+	}
+	if a != 44{
+		ok = false
+	}
+	if b != 255{
+		ok = false
+	}
+	if c != 1{
+		ok = false
+	}
+	if d != 1{
+		ok = false
+	}
+	return ok
+}
+
+// ---- floats: folded literal vs the same operation at runtime -----------------------------------------------------------------
+func f32ops() mut bool{
+	let ok = mut true
+	unsafe{
+		let p = mut 0.1
+		let q = mut 0.2
+		let r = mut 1.5
+		let s = mut 2.25
+		let t = mut 3.0
+		let u = mut 0.5
+		let big = mut 340282300000000000000000000000000000000.0
+		let ten = mut 10.0
+		let z = mut 0.0
+		let x = mut (0.1 + 0.2)
+		if x != p + q{
+			ok = false
+		}
+		x = mut (1.5 + 2.25)
+		if x != r + s{
+			ok = false
+		}
+		x = mut (1.5 - 2.25)
+		if x != r - s{
+			ok = false
+		}
+		x = mut (3.0 * 0.5)
+		if x != t * u{
+			ok = false
+		}
+		x = mut (1.0 / 3.0)
+		let one = mut 1.0
+		if x != one / t{
+			ok = false
+		}
+		x = mut (10.0 / 4.0)
+		if x != 2.5{
+			ok = false
+		}
+		x = mut (0.0 - 1.5)
+		if x != z - r{
+			ok = false
+		}
+		x = mut (-2.5)
+		if x != z - 2.5{
+			ok = false
+		}
+		// overflow to infinity is not folded: both sides are computed at runtime and must agree
+		x = mut (340282300000000000000000000000000000000.0 * 10.0)
+		if x != big * ten{
+			ok = false
+		}
+		// 1.0 / 0.0 is infinity at runtime; folding must leave it alone
+		x = mut (1.0 / 0.0)
+		if x != one / z{
+			ok = false
+		}
+		if !(1.0 < 2.0){
+			ok = false
+		}
+		if 2.0 < 1.0{
+			ok = false
+		}
+		if !(1.5 >= 1.5){
+			ok = false
+		}
+		if 0.1 + 0.2 != p + q{
+			ok = false
+		}
+		if 1.5 < 1.5{
+			ok = false
+		}
+		if 1.5 > 1.5{
+			ok = false
+		}
+		if !(1.5 <= 1.5){
+			ok = false
+		}
+		if 1.5 != 1.5{
+			ok = false
+		}
+		if !(1.5 == 1.5){
+			ok = false
+		}
+		if 2.0 <= 1.0{
+			ok = false
+		}
+		if !(2.0 > 1.0){
+			ok = false
+		}
+		// inexact products and sums
+		let a1 = mut 0.1
+		let a3 = mut 0.3
+		x = mut (0.1 * 0.3)
+		if x != a1 * a3{
+			ok = false
+		}
+		let e1 = mut 1.1
+		x = mut (1.1 * 1.1)
+		if x != e1 * e1{
+			ok = false
+		}
+		let e2 = mut 16777216.0
+		x = mut (16777216.0 + 1.0)
+		if x != e2 + one{
+			ok = false
+		}
+		x = mut (0.7 / 0.1)
+		let a7 = mut 0.7
+		if x != a7 / a1{
+			ok = false
+		}
+	}
+	return ok
+}
+
+func f64ops() mut bool{
+	let ok = mut true
+	unsafe{
+		let:<mut f64> p = mut 0.1
+		let:<mut f64> q = mut 0.2
+		let:<mut f64> t = mut 3.0
+		let:<mut f64> one = mut 1.0
+		let:<mut f64> z = mut 0.0
+		let:<mut f64> x = mut (0.1 + 0.2)
+		if x != p + q{
+			ok = false
+		}
+		x = mut (1.0 / 3.0)
+		if x != one / t{
+			ok = false
+		}
+		x = mut (0.0 - 1.5)
+		if x != z - 1.5{
+			ok = false
+		}
+		x = mut (123456789.125 * 1000.0)
+		let:<mut f64> m = mut 123456789.125
+		let:<mut f64> k = mut 1000.0
+		if x != m * k{
+			ok = false
+		}
+	}
+	return ok
+}
+
+func main() void{
+	check("u64 + - * / %", u64ops())
+	check("u64 shifts and or", u64shifts())
+	check("s64 arithmetic", s64ops())
+	check("comparisons", compares())
+	check("bool logic", bools())
+	check("nested", nested())
+	check("as call argument, static, array", viaCall())
+	check("as return value", ret() == 42)
+	check("narrow casts", narrow())
+	check("f32", f32ops())
+	check("f64", f64ops())
+}

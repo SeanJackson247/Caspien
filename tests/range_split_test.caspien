@@ -1,0 +1,73 @@
+// Regression test for RangeWordSplitPass (LowerOrderGenerator): 16-byte range constructions and copies are done as two 8-byte stores,
+// and the two words may live in registers. Expected values are hand computed; output must be identical with everything on and off.
+import "../stdlib/libc.caspien"
+
+func check(name: static imut string, ok: mut bool) void{
+	unsafe{
+		if ok{
+			printf("PASS %s\n", name)
+		}else{
+			printf("FAIL %s\n", name)
+		}
+	}
+	return
+}
+
+// sums start*100+end of the range it is given
+func fold(r: imut range) mut u64{
+	return r.start * 100 + r.end
+}
+
+// shrinks one end per step, a weighted sum of the starts; checked against the arithmetic in main
+@recursive
+func weighted(acc: mut u64, r: imut range) mut u64{
+	match r is base{ return acc }
+	let lo = mut (r.start + 1)
+	let hi = mut r.end
+	let r2 = imut (lo..hi)
+	match r2 within r{ return weighted(bits_xor(acc * 31, r.start), r2) }
+	else{ return acc }
+}
+
+// start moves by 2, end by 1: lengths 10, 9 and 1 take 4, 3 and 1 steps
+@recursive
+func steps(acc: mut u64, r: imut range) mut u64{
+	match r is base{ return acc }
+	let lo = mut (r.start + 2)
+	let hi = mut (r.end - 1)
+	let r2 = imut (lo..hi)
+	match r2 within r{ return steps(acc + 1, r2) }
+	else{ return acc }
+}
+
+func main() void{
+	let a = mut 3
+	let b = mut 9
+	let r = imut (a..b)
+	let r2 = r
+	check("copy start", r2.start == 3)
+	check("copy end", r2.end == 9)
+	check("passed", fold(r2) == 309)
+	a = 10
+	b = 14
+	let r3 = imut (a..b)
+	check("rebuilt start", r3.start == 10)
+	check("rebuilt end", r3.end == 14)
+	check("old range untouched", r.start == 3 && r.end == 9)
+	let total = mut 0
+	for i in r3{
+		total = total + i
+	}
+	check("loop over copy", total == 46)
+	// the shrinking recursion against the same computation written by hand
+	let acc = mut 5
+	for i in 2..9{
+		acc = bits_xor(acc * 31, i)
+	}
+	check("weighted", weighted(5, 2..9) == acc)
+	check("weighted empty", weighted(7, 4..4) == 7)
+	check("weighted single", weighted(7, 4..5) == bits_xor(7 * 31, 4))
+	check("steps 0..10", steps(0, 0..10) == 4)
+	check("steps 0..9", steps(0, 0..9) == 3)
+	check("steps 3..4", steps(0, 3..4) == 1)
+}

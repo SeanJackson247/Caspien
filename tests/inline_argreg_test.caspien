@@ -1,0 +1,71 @@
+// Regression test for function inlining inside another call's argument list.
+// When "check("name", f(x) == v)" is compiled, the first argument (the name) is already in an argument register while f(x) is
+// evaluated. Inlined code has no register protection (a real nested call saves and restores the loaded argument registers, but
+// the backend's block copies use rdi/rsi/rcx and divides use rdx), so a call site in that position must NOT be inlined. Before
+// the fix, inlining a callee that copies a range (or divides) inside such a position printed nothing / garbage.
+// Output must be identical with inlining off and at every preset.
+import "../stdlib/libc.caspien"
+
+func check(name: static imut string, ok: mut bool) void{
+	unsafe{
+		if ok{
+			printf("PASS %s\n", name)
+		}else{
+			printf("FAIL %s\n", name)
+		}
+	}
+	return
+}
+
+// copies a range into locals (multi-word ASSIGN -> backend block copy)
+func rangeLen(r: imut range) mut u64{
+	let a = imut r
+	let n = mut (a.end - a.start)
+	return n
+}
+
+// divides (uses rdx)
+func divmod(x: mut u64, y: mut u64) mut u64{
+	unsafe{
+		let q = mut (x / y)
+		let m = mut (x % y)
+		return q * 10 + m
+	}
+}
+
+@recursive
+func stepsBoth(acc: mut u64, r: imut range) mut u64{
+	match r is base{ return acc }
+	let lo = mut (r.start + 1)
+	let hi = mut (r.end - 1)
+	let r2 = imut (lo..hi)
+	match r2 within r{ return stepsBoth(acc + 1, r2) }
+	else{ return acc }
+}
+
+func add3(a: mut u64, b: mut u64, c: mut u64) mut u64{
+	return a * 100 + b * 10 + c
+}
+
+func main() void{
+	// range copy inlined inside the argument list of check (name already in rdi)
+	check("rangeLen in arg", rangeLen(3..10) == 7)
+	// division inside an argument list (rdx is an argument register)
+	check("divmod in arg", divmod(mut 47, mut 5) == 92)
+	// recursion-lowered callee inside an argument list
+	check("stepsBoth in arg", stepsBoth(mut 0, 0..8) == 4)
+	// nested calls after earlier arguments are loaded
+	check("add3 of calls", add3(divmod(mut 9, mut 2), rangeLen(0..4), divmod(mut 8, mut 3)) == 41 * 100 + 4 * 10 + 22)
+	unsafe{
+		printf("printf arg %llu\n", rangeLen(5..9))
+		printf("printf args %llu %llu\n", divmod(mut 17, mut 4), stepsBoth(mut 0, 0..6))
+	}
+	// the same calls bound to variables first
+	let a = mut rangeLen(3..10)
+	let b = mut divmod(mut 47, mut 5)
+	let c = mut stepsBoth(mut 0, 0..8)
+	check("rangeLen bound", a == 7)
+	check("divmod bound", b == 92)
+	check("stepsBoth bound", c == 4)
+	return
+}

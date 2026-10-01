@@ -1,0 +1,156 @@
+// Regression test for the deferred-operand (register-form) pass. Each case checks a result against a value
+// worked out by hand; the output must be identical with `deferred-operands: on` and `off`.
+import "../stdlib/libc.caspien"
+
+func id(a: mut u64) mut u64{
+	return a
+}
+func add(a: mut u64, b: mut u64) mut u64{
+	return a + b
+}
+func report(name: static imut string, got: mut u64, want: mut u64) void{
+	unsafe{
+		if got == want{
+			printf("PASS %s\n", name)
+		}
+		if got != want{
+			printf("FAIL %s (got %llu, want %llu)\n", name, got, want)
+		}
+	}
+}
+
+func chain() mut u64{
+	let a = mut 3
+	let b = mut 5
+	let c = mut 7
+	return a + b * c - a + c * c - b
+}
+// more than four operands live at once: (a+b)*((c+d)*((e+f)*(g+h))) forces the spill path
+func deep() mut u64{
+	let a = mut 1
+	let b = mut 2
+	let c = mut 3
+	let d = mut 4
+	let e = mut 5
+	let f = mut 6
+	let g = mut 7
+	let h = mut 8
+	return (a + b) + ((c + d) + ((e + f) + ((g + h) + ((a + c) + ((b + d) + ((e + g) + (f + h)))))))
+}
+func compares(x: mut u64, y: mut u64) mut u64{
+	let r = mut 0
+	if x < y{
+		r += 1
+	}
+	if x <= y{
+		r += 2
+	}
+	if x > y{
+		r += 4
+	}
+	if x >= y{
+		r += 8
+	}
+	if x == y{
+		r += 16
+	}
+	if x != y{
+		r += 32
+	}
+	return r
+}
+func signedCompares(x: mut s64, y: mut s64) mut u64{
+	let r = mut 0
+	if x < y{
+		r += 1
+	}
+	if x > y{
+		r += 2
+	}
+	if x <= y{
+		r += 4
+	}
+	if x >= y{
+		r += 8
+	}
+	return r
+}
+func boolLogic(a: mut u64, b: mut u64) mut u64{
+	let r = mut 0
+	if a < b && b < 10{
+		r += 1
+	}
+	if a < b || b > 100{
+		r += 2
+	}
+	if !(a == b){
+		r += 4
+	}
+	if a == b || a + 1 == b{
+		r += 8
+	}
+	return r
+}
+func nested() mut u64{
+	return add(id(2) * add(1, 2), id(add(3, 4)) + 5) + id(1)
+}
+func storeThenRead() mut u64{
+	let x = mut 10
+	let y = mut 0
+	y = x + x
+	x = y + 1
+	y = x * y + x
+	x = x + y
+	return x
+}
+func loopBreak() mut u64{
+	let s = mut 0
+	let i = mut 0
+	unsafe{
+		loop{
+			i++
+			if i > 10{
+				break
+			}
+			if i == 5{
+				s += 100
+			}
+			s += i * 2 + 1
+		}
+	}
+	return s
+}
+func narrow() mut u64{
+	let:<mut u8> a = mut 200
+	let:<mut u8> b = mut 100
+	let c = mut 3
+	let d = mut ((a as u64) + (b as u64))
+	return d * c
+}
+func neg() mut u64{
+	let a = mut 5
+	let b = mut 9
+	let c = mut (b - a)
+	c--
+	c++
+	c++
+	return c * 2
+}
+
+func main() void{
+	report("chain", chain(), mut 79)
+	report("deep spill", deep(), mut 72)
+	report("compares lt", compares(mut 1, mut 2), mut 35)
+	report("compares gt", compares(mut 2, mut 1), mut 44)
+	report("compares eq", compares(mut 3, mut 3), mut 26)
+	report("unsigned high", compares(mut 18446744073709551615, mut 1), mut 44)
+	report("signed lt", signedCompares(mut -3, mut 2), mut 5)
+	report("signed gt", signedCompares(mut 2, mut -3), mut 10)
+	report("bool logic a", boolLogic(mut 1, mut 5), mut 7)
+	report("bool logic b", boolLogic(mut 4, mut 5), mut 15)
+	report("nested calls", nested(), mut 19)
+	report("store then read", storeThenRead(), mut 462)
+	report("loop break", loopBreak(), mut 220)
+	report("narrow", narrow(), mut 900)
+	report("inc dec", neg(), mut 10)
+}

@@ -1,0 +1,326 @@
+// Regression test for: (1) `for` loops without a lower-bound test (inverted, empty and ordinary ranges, variable bounds),
+// (2) jump cleanup (`if c { break }` for every comparison, unsigned and signed, nested loops), (3) indexed global array loads and
+// stores (1/2/4/8-byte elements, variable index in a register, neighbours untouched). Expected values are worked out by hand.
+import "../stdlib/libc.caspien"
+
+func check(name: static imut string, ok: mut bool) void{
+	unsafe{
+		if ok{
+			printf("PASS %s\n", name)
+		}else{
+			printf("FAIL %s\n", name)
+		}
+	}
+	return
+}
+
+let static cnt8 = mut 10
+let static cnt16 = mut 5
+let static cnt32 = mut 5
+let static cnt64 = mut 4
+let static:<mut u8[10]> g8 = mut [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+let static:<mut u16[5]> g16 = mut [0, 0, 0, 0, 0]
+let static:<mut u32[5]> g32 = mut [0, 0, 0, 0, 0]
+let static:<mut u64[4]> g64 = mut [0, 0, 0, 0]
+
+func trips(a: mut u64, b: mut u64) mut u64{
+	let t = mut 0
+	for i in a..b{
+		t += 1
+	}
+	return t
+}
+
+func rangeSum(a: mut u64, b: mut u64) mut u64{
+	let t = mut 0
+	for i in a..b{
+		t += i
+	}
+	return t
+}
+
+func feq() mut u64{
+	let x = mut 0
+	let n = mut 0
+	unsafe{
+		loop{
+			n++
+			if x == 5{
+				break
+			}
+			x++
+		}
+	}
+	return n * 1000 + x
+}
+
+func fneq() mut u64{
+	let x = mut 3
+	let n = mut 0
+	unsafe{
+		loop{
+			n++
+			if x != 3{
+				break
+			}
+			x++
+		}
+	}
+	return n * 1000 + x
+}
+
+func flt() mut u64{
+	let x = mut 10
+	let n = mut 0
+	unsafe{
+		loop{
+			n++
+			if x < 5{
+				break
+			}
+			x--
+		}
+	}
+	return n * 1000 + x
+}
+
+func fle() mut u64{
+	let x = mut 10
+	let n = mut 0
+	unsafe{
+		loop{
+			n++
+			if x <= 5{
+				break
+			}
+			x--
+		}
+	}
+	return n * 1000 + x
+}
+
+func fgt() mut u64{
+	let x = mut 0
+	let n = mut 0
+	unsafe{
+		loop{
+			n++
+			if x > 5{
+				break
+			}
+			x++
+		}
+	}
+	return n * 1000 + x
+}
+
+func fge() mut u64{
+	let x = mut 0
+	let n = mut 0
+	unsafe{
+		loop{
+			n++
+			if x >= 5{
+				break
+			}
+			x++
+		}
+	}
+	return n * 1000 + x
+}
+
+func sge() mut u64{
+	let s = mut -5
+	let n = mut 0
+	unsafe{
+		loop{
+			n++
+			if s >= 3{
+				break
+			}
+			s++
+		}
+	}
+	return n
+}
+
+func sgt() mut u64{
+	let s = mut -5
+	let n = mut 0
+	unsafe{
+		loop{
+			n++
+			if s > 2{
+				break
+			}
+			s++
+		}
+	}
+	return n
+}
+
+func slt() mut u64{
+	let s = mut -1
+	let n = mut 0
+	unsafe{
+		loop{
+			n++
+			if s < -4{
+				break
+			}
+			s--
+		}
+	}
+	return n
+}
+
+func sle() mut u64{
+	let s = mut -1
+	let n = mut 0
+	unsafe{
+		loop{
+			n++
+			if s <= -4{
+				break
+			}
+			s--
+		}
+	}
+	return n
+}
+
+func seq() mut u64{
+	let s = mut -3
+	let n = mut 0
+	unsafe{
+		loop{
+			n++
+			if s == 2{
+				break
+			}
+			s++
+		}
+	}
+	return n
+}
+
+// break leaves only the inner loop: i = 0, 1, 2 -> inner runs until j >= i, at least once
+func nested() mut u64{
+	let total = mut 0
+	for i in 0..3{
+		let j = mut 0
+		unsafe{
+			loop{
+				j++
+				total += 1
+				if j >= i{
+					break
+				}
+			}
+		}
+	}
+	return total
+}
+
+func fill8() mut u64{
+	unsafe{
+		let n = mut cnt8
+		let sum = mut 0
+		for i in 0..n{
+			assume match i into g8
+			g8[i] = wrap:<u8>(i * 11 + 3)
+		}
+		for j in 0..n{
+			assume match j in g8
+			sum += g8[j] as u64
+		}
+		return sum
+	}
+}
+
+func fill16() mut u64{
+	unsafe{
+		let n = mut cnt16
+		let sum = mut 0
+		for i in 0..n{
+			assume match i into g16
+			g16[i] = wrap:<u16>(i * 1000 + 7)
+		}
+		for j in 0..n{
+			assume match j in g16
+			sum += g16[j] as u64
+		}
+		return sum
+	}
+}
+
+func fill32() mut u64{
+	unsafe{
+		let n = mut cnt32
+		let sum = mut 0
+		for i in 0..n{
+			assume match i into g32
+			g32[i] = wrap:<u32>(i * 100000 + 9)
+		}
+		for j in 0..n{
+			assume match j in g32
+			sum += g32[j] as u64
+		}
+		return sum
+	}
+}
+
+func fill64() mut u64{
+	unsafe{
+		let n = mut cnt64
+		let sum = mut 0
+		for i in 0..n{
+			assume match i into g64
+			g64[i] = i * 10000000000 + 1
+		}
+		for j in 0..n{
+			assume match j in g64
+			sum += g64[j]
+		}
+		return sum
+	}
+}
+
+// an immediate store and a neighbour check: only element 4 changes
+func poke() mut u64{
+	unsafe{
+		let k = mut 4
+		assume match k into g8
+		g8[k] = 99
+		let a = mut (g8[3] as u64)
+		let b = mut (g8[4] as u64)
+		let c = mut (g8[5] as u64)
+		return a * 10000 + b * 100 + c
+	}
+}
+
+func main() void{
+	check("trips 0..10", trips(0, 10) == 10)
+	check("trips 5..5", trips(5, 5) == 0)
+	check("trips 7..3 (inverted)", trips(7, 3) == 0)
+	check("trips 3..4", trips(3, 4) == 1)
+	check("rangeSum 3..6", rangeSum(3, 6) == 12)
+	check("rangeSum 9..2 (inverted)", rangeSum(9, 2) == 0)
+	check("break ==", feq() == 6005)
+	check("break !=", fneq() == 2004)
+	check("break <", flt() == 7004)
+	check("break <=", fle() == 6005)
+	check("break >", fgt() == 7006)
+	check("break >=", fge() == 6005)
+	check("break signed >=", sge() == 9)
+	check("break signed >", sgt() == 9)
+	check("break signed <", slt() == 5)
+	check("break signed <=", sle() == 4)
+	check("break signed ==", seq() == 6)
+	check("nested break", nested() == 4)
+	check("global u8 indexed", fill8() == 525)
+	check("global u16 indexed", fill16() == 10035)
+	check("global u32 indexed", fill32() == 1000045)
+	check("global u64 indexed", fill64() == 60000000004)
+	check("immediate store, neighbours", poke() == 369958)
+}

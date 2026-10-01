@@ -1,0 +1,70 @@
+// Regression test for unused declaration removal (`unused-declaration-removal: on|off`, the Optimizer's UnusedDeclarationRemovalPass).
+// `extern`s, top-level statics and string literals that nothing references any more are deleted. Here:
+//   - `labs`, `atoi` are declared but never called                       -> removed
+//   - `unused_g`, `unused_arr` are statics nothing reads or writes         -> removed
+//   - strings that only appear in a dead function or a constant-false branch -> removed (needs dead-function/dead-control-flow on)
+//   - `abs64`/`used_g`/`used_arr` and the PASS/FAIL strings are used      -> must survive and give the right answers
+// The output must be identical with the switch on and off.
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+
+extern labs(mut u64) mut u64
+extern atoi(static imut string) mut u64
+extern toupper(mut u64) mut u64
+
+let static unused_g = mut 123
+let static unused_arr = mut [1, 2, 3]
+let static used_g = mut 40
+let static used_arr = mut [10, 20, 30]
+
+func check(name: static imut string, ok: mut bool) void{
+	unsafe{
+		if ok{
+			printf("PASS %s\n", name)
+		}else{
+			printf("FAIL %s\n", name)
+		}
+	}
+	return
+}
+
+func dead_printer() void{
+	unsafe{
+		printf("this string is only in a dead function\n")
+	}
+	return
+}
+
+func gated() void{
+	let flag = imut false
+	if flag{
+		unsafe{
+			printf("this string is only in a dead branch\n")
+		}
+	}
+	return
+}
+
+func upper(c: mut u64) mut u64{
+	unsafe{
+		return toupper(c)
+	}
+}
+
+func bump() mut u64{
+	unsafe{
+		used_g += 2
+		return used_g + used_arr[1]
+	}
+}
+
+func main() void{
+	gated()
+	check("used extern", upper(97) == 65)
+	check("used static + array", bump() == 62)
+	check("used static persists", bump() == 64)
+	check("strings survive", true)
+}

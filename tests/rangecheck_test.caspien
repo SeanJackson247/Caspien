@@ -1,0 +1,223 @@
+// Regression test for the constant-bounds `match i in/into <array>` check (RangeCheckFusionPass): the per-iteration test
+// `0 <= i < N` must give exactly the same answers as before for in-range, boundary and out-of-range indices, nested proofs of
+// arrays of different lengths, an index that changes between proofs, and a proof inside a loop whose body reads/writes the
+// array. Every expected value is worked out by hand. Prints one PASS/FAIL line per check.
+extern printf(static imut string,...) void
+
+let static a = mut [1, 2, 3, 4, 5]
+let static b = mut [10, 20, 30]
+let static c = mut [7]
+let static f = mut [1.5, 2.5, 3.5, 4.5]
+
+func check(name: static imut string, ok: mut bool) void{
+	unsafe{
+		if ok{
+			printf("PASS %s\n", name)
+		}else{
+			printf("FAIL %s\n", name)
+		}
+	}
+	return
+}
+
+// counts the indices 0..limit-1 for which the proof `k in a` (length 5) holds
+func hitsA(limit: mut u64) mut u64{
+	let n = mut 0
+	unsafe{
+		for k in 0..limit{
+			match k in a{
+				n += 1
+			}
+		}
+	}
+	return n
+}
+func hitsB(limit: mut u64) mut u64{
+	let n = mut 0
+	unsafe{
+		for k in 0..limit{
+			match k in b{
+				n += 1
+			}
+		}
+	}
+	return n
+}
+func hitsC(limit: mut u64) mut u64{
+	let n = mut 0
+	unsafe{
+		for k in 0..limit{
+			match k in c{
+				n += 1
+			}
+		}
+	}
+	return n
+}
+// the sum of a[k] for every k below limit that the proof lets through
+func sumA(limit: mut u64) mut u64{
+	let s = mut 0
+	unsafe{
+		for k in 0..limit{
+			match k in a{
+				s += a[k]
+			}
+		}
+	}
+	return s
+}
+// two proofs of different lengths around one index
+func nested(limit: mut u64) mut u64{
+	let s = mut 0
+	unsafe{
+		for k in 0..limit{
+			match k in a{
+				match k in b{
+					s += a[k] + b[k]
+				}
+			}
+		}
+	}
+	return s
+}
+// a write proof
+func fill(limit: mut u64) mut u64{
+	let s = mut 0
+	unsafe{
+		for k in 0..limit{
+			match k into b{
+				b[k] = b[k] + 1
+			}
+		}
+		for k in 0..3{
+			match k in b{
+				s += b[k]
+			}
+		}
+	}
+	return s
+}
+// a variable the proof's index is copied from, changed between proofs
+func moving() mut u64{
+	let s = mut 0
+	let i = mut 0
+	unsafe{
+		loop{
+			if i == 8{
+				break
+			}
+			match i in a{
+				s += 1
+			}
+			match i in b{
+				s += 100
+			}
+			i += 1
+		}
+	}
+	return s
+}
+func floats(limit: mut u64) mut u64{
+	let n = mut 0
+	unsafe{
+		for k in 0..limit{
+			match k in f{
+				n += 1
+			}
+		}
+	}
+	return n
+}
+
+// literal ranges with a non-zero lower bound: both halves of the test matter
+func hitsMid(limit: mut u64) mut u64{
+	let n = mut 0
+	unsafe{
+		for k in 0..limit{
+			match k in 3..7{
+				n += 1
+			}
+		}
+	}
+	return n
+}
+func sumMid(limit: mut u64) mut u64{
+	let s = mut 0
+	unsafe{
+		for k in 0..limit{
+			match k in 3..7{
+				s += k
+			}
+		}
+	}
+	return s
+}
+func hitsOne(limit: mut u64) mut u64{
+	let n = mut 0
+	unsafe{
+		for k in 0..limit{
+			match k in 1..5{
+				n += 1
+			}
+		}
+	}
+	return n
+}
+func hitsEmpty(limit: mut u64) mut u64{
+	let n = mut 0
+	unsafe{
+		for k in 0..limit{
+			match k in 4..4{
+				n += 1
+			}
+		}
+	}
+	return n
+}
+func hitsInverted(limit: mut u64) mut u64{
+	let n = mut 0
+	unsafe{
+		for k in 0..limit{
+			match k in 7..3{
+				n += 1
+			}
+		}
+	}
+	return n
+}
+func hitsHigh(limit: mut u64) mut u64{
+	let n = mut 0
+	unsafe{
+		for k in 0..limit{
+			match k in 4000000000..4000000003{
+				n += 1
+			}
+		}
+	}
+	return n
+}
+
+func main() void{
+	check("array of 5, limit 0", hitsA(0) == 0)
+	check("array of 5, limit 3", hitsA(3) == 3)
+	check("array of 5, limit 5 (all in)", hitsA(5) == 5)
+	check("array of 5, limit 6 (one past the end)", hitsA(6) == 5)
+	check("array of 5, limit 20", hitsA(20) == 5)
+	check("array of 3, limit 9", hitsB(9) == 3)
+	check("array of 1, limit 4", hitsC(4) == 1)
+	check("array of 4 f64, limit 9", floats(9) == 4)
+	check("sum through the proof", sumA(9) == 15)
+	check("two proofs of different lengths", nested(9) == 1 + 10 + 2 + 20 + 3 + 30)
+	check("write proof", fill(7) == 11 + 21 + 31)
+	check("index changes between proofs", moving() == 5 + 300)
+	check("range 3..7, limit 12", hitsMid(12) == 4)
+	check("range 3..7, limit 3 (none yet)", hitsMid(3) == 0)
+	check("range 3..7, limit 4 (first one)", hitsMid(4) == 1)
+	check("range 3..7, limit 7 (all four, none past)", hitsMid(7) == 4)
+	check("range 3..7, the indices themselves", sumMid(12) == 3 + 4 + 5 + 6)
+	check("range 1..5", hitsOne(9) == 4)
+	check("empty range 4..4", hitsEmpty(9) == 0)
+	check("inverted range 7..3", hitsInverted(9) == 0)
+	check("range bounds beyond 2^31 stay a real test", hitsHigh(9) == 0)
+	return
+}

@@ -1,0 +1,144 @@
+// Regression test for error-message propagation. A `throw` writes the thrown string into the thrower's own reserved slot
+// (`gt_error_message`, fixed at rbp-16 in every frame); GT_UNWIND MSG copies it into the caller's slot on every hop, so a `catch(e)` in
+// ANY frame up the chain reads the message that was thrown. Before this, only a catch in the throwing frame itself saw the message; from a
+// callee's throw the catch read its own never-written slot (garbage).
+// (The helpers bind the call first, `let v = mut ?f(x)`: a `?` directly inside a `return` statement is currently not wrapped in its catch at all,
+// a separate front-end gap noted in CLAUDE.md.)
+// Output must be identical with inlining off and at every preset.
+import "../stdlib/libc.caspien"
+
+extern strcmp(static imut string, static imut string) mut s32
+
+func check(name: static imut string, ok: mut bool) void{
+	unsafe{
+		if ok{
+			printf("PASS %s\n", name)
+		}else{
+			printf("FAIL %s\n", name)
+		}
+	}
+	return
+}
+
+@throws
+func thrower(x: mut u64) mut u64{
+	if x == 0{
+		throw "message from thrower"
+	}
+	if x == 1{
+		throw "second message"
+	}
+	return x
+}
+
+// re-throws exactly what it caught
+@throws
+func middle(x: mut u64) mut u64{
+	?catch(e){ throw e }
+	let v = mut ?thrower(x)
+	return v
+}
+
+@throws
+func outer(x: mut u64) mut u64{
+	?catch(e){ throw e }
+	let v = mut ?middle(x)
+	return v
+}
+
+// catches and throws a DIFFERENT message
+@throws
+func translator(x: mut u64) mut u64{
+	?catch(e){ throw "translated" }
+	let v = mut ?thrower(x)
+	return v
+}
+
+@throws
+func selfThrower() mut u64{
+	throw "own frame"
+}
+
+func oneFrame() void{
+	try{
+		let a = try thrower(0) catch(e){
+			unsafe{ check("one frame up", strcmp(e, "message from thrower") == 0) }
+			return
+		}
+		check("one frame: not thrown", false)
+	}
+}
+
+func twoFrames() void{
+	try{
+		let a = try middle(0) catch(e){
+			unsafe{ check("two frames up", strcmp(e, "message from thrower") == 0) }
+			return
+		}
+		check("two frames: not thrown", false)
+	}
+}
+
+func threeFrames() void{
+	try{
+		let a = try outer(0) catch(e){
+			unsafe{ check("three frames up", strcmp(e, "message from thrower") == 0) }
+			return
+		}
+		check("three frames: not thrown", false)
+	}
+}
+
+func otherMessage() void{
+	try{
+		let a = try outer(1) catch(e){
+			unsafe{ check("a different throw site", strcmp(e, "second message") == 0) }
+			return
+		}
+		check("different site: not thrown", false)
+	}
+}
+
+func translated() void{
+	try{
+		let a = try translator(0) catch(e){
+			unsafe{ check("message replaced by a catch", strcmp(e, "translated") == 0) }
+			return
+		}
+		check("translated: not thrown", false)
+	}
+}
+
+func sameFrame() void{
+	try{
+		let a = try selfThrower() catch(e){
+			unsafe{ check("thrown and caught one frame apart", strcmp(e, "own frame") == 0) }
+			return
+		}
+		check("same frame: not thrown", false)
+	}
+}
+
+func noThrow() void{
+	try{
+		let a = try outer(5) catch(e){
+			check("no throw: catch not entered", false)
+			return
+		}
+		check("no throw: value passes through", a == 5)
+	}
+}
+
+func main() void{
+	oneFrame()
+	twoFrames()
+	threeFrames()
+	otherMessage()
+	translated()
+	sameFrame()
+	noThrow()
+	// a second round in the same process: earlier messages must not leak into later ones
+	twoFrames()
+	otherMessage()
+	return
+}

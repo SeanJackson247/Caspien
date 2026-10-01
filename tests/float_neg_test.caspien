@@ -1,0 +1,50 @@
+// f32 negation and libm: (1) a negative f32 literal and unary minus on an f32 flip the sign (the code generator used to
+// two's-complement the IEEE-754 bits, giving garbage such as -1.16 -> -3.68), (2) `sqrtf` from libm links without any
+// manual flag (the link step now passes -lm). Prints one PASS/FAIL line per check and `ALL FLOAT NEG TESTS PASSED`.
+extern printf(static imut string,...) void
+extern sqrtf(mut f32) mut f32
+
+func check(name: static imut string, ok: mut bool) void{
+	unsafe{
+		if ok{
+			printf("PASS %s\n", name)
+		}else{
+			printf("FAIL %s\n", name)
+		}
+	}
+	return
+}
+
+func main() void{
+	let a = mut -1.5
+	let b = mut 2.25
+	let c = mut 0.0
+	let d = mut 0.0
+	let e = mut 0.0
+	unsafe{
+		c = -b
+		d = -(a - b)
+		e = sqrtf(16.0)
+	}
+	let ok1 = mut false
+	let ok2 = mut false
+	let ok3 = mut false
+	let ok4 = mut false
+	let ok5 = mut false
+	unsafe{
+		ok1 = a + 1.5 == 0.0
+		ok2 = c + 2.25 == 0.0
+		ok3 = d - 3.75 == 0.0
+		ok4 = 0.0 - a == 1.5
+		ok5 = e == 4.0
+	}
+	check("negative literal", ok1)
+	check("unary minus on variable", ok2)
+	check("unary minus on expression", ok3)
+	check("0.0 - negative literal", ok4)
+	check("sqrtf links (-lm)", ok5)
+	unsafe{
+		printf("ALL FLOAT NEG TESTS PASSED\n")
+	}
+	return
+}

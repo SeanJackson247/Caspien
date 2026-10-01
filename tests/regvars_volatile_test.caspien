@@ -1,0 +1,298 @@
+// Regression test for the call-free use of r8/r9/r10 as variable registers (RegVarPromotionPass, volatile registers %v3..%v5) and for the
+// register hint of a `for` loop's hidden range END (RangeEndHintPass). A function with more hot integer variables than r13/r14/r12 may put
+// the extra ones in r8/r9/r10, but only a variable that is never live across a call or any line that could clobber those registers
+// (r8/r9 carry arguments 5 and 6 on SysV; the six-argument call below loads them). Each function mixes call-free loops (volatile registers
+// allowed) with calls and a catch (not allowed), so a variable wrongly placed in r8..r10 gives a wrong sum. Every expected value was worked
+// out with an independent Python model of the same loops. The output must be identical with variables-in-registers on and off.
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+
+func check(name: static imut string, ok: mut bool) void{
+	unsafe{
+		if ok{
+			printf("PASS %s\n", name)
+		}else{
+			printf("FAIL %s\n", name)
+		}
+	}
+	return
+}
+
+// six integer arguments: arguments 5 and 6 travel in r8 and r9 on SysV
+func six(a: mut u64, b: mut u64, c: mut u64, d: mut u64, e: mut u64, f: mut u64) mut u64{
+	return a + b + c + d + e + f
+}
+
+// 1. seven hot variables in one call-free loop
+func wide(n: mut u64) mut u64{
+	let a = mut 0
+	let b = mut 0
+	let c = mut 0
+	let d = mut 0
+	let e = mut 0
+	let f = mut 0
+	let g = mut 0
+	for i in 0..n{
+		a += 1
+		b += 2
+		c += 3
+		d += a
+		e += b
+		f += c
+		g += i
+	}
+	return a + b + c + d + e + f + g
+}
+
+// 2. the same seven variables, but every iteration calls a function that loads r8 and r9
+func wideCalls(n: mut u64) mut u64{
+	let a = mut 0
+	let b = mut 0
+	let c = mut 0
+	let d = mut 0
+	let e = mut 0
+	let f = mut 0
+	let g = mut 0
+	for i in 0..n{
+		a += 1
+		b += 2
+		c += 3
+		d += a
+		e += b
+		f += c
+		g += six(a, b, c, d, e, f)
+	}
+	return a + b + c + d + e + f + g
+}
+
+// 3. call-free loop, a call, another call-free loop; `keep` and `k` are live across the call and across the second loop
+func phases(n: mut u64) mut u64{
+	let a = mut 0
+	let b = mut 0
+	let c = mut 0
+	let d = mut 0
+	let e = mut 0
+	for i in 0..n{
+		a += 1
+		b += a
+		c += b
+		d += c
+		e += d
+	}
+	let keep = mut 0
+	keep = a + b + c + d + e
+	let k = mut 0
+	k = six(1, 2, 3, 4, 5, 6)
+	let p = mut 0
+	let q = mut 0
+	let r = mut 0
+	let s = mut 0
+	let t = mut 0
+	for j in 0..n{
+		p += keep
+		q += p
+		r += q + k
+		s += r
+		t += s + j
+	}
+	return keep + k + p + q + r + s + t
+}
+
+// 4. three nested loops (three hidden range ends) and four accumulators
+func nested(n: mut u64) mut u64{
+	let t = mut 0
+	let u = mut 0
+	let v = mut 0
+	let w = mut 0
+	for i in 0..n{
+		for j in 0..n{
+			for k in 0..n{
+				t += i
+				u += j
+				v += k
+				w += 1
+			}
+		}
+	}
+	return t + u + v + w
+}
+
+// 5. narrow variables (the store truncates and zero-extends in the register, r8b/r9w/r10d forms)
+func narrow(n: mut u64) mut u64{
+	let:<mut u8> a = mut 0
+	let:<mut u16> b = mut 0
+	let:<mut u32> c = mut 0
+	let:<mut u8> d = mut 0
+	let:<mut u16> e = mut 0
+	let:<mut u32> f = mut 0
+	let s = mut 0
+	for i in 0..n{
+		a = wrap:<u8>(i * 100)
+		b = wrap:<u16>(i * 20000)
+		c = wrap:<u32>(i * 3000000000)
+		d = wrap:<u8>(i * 100 + 200)
+		e = wrap:<u16>(i * 20000 + 7)
+		f = wrap:<u32>(i * 3000000000 + 5)
+		s += (a as u64) + (b as u64) + (c as u64) + (d as u64) + (e as u64) + (f as u64)
+	}
+	return s
+}
+
+// 6a. a deep expression needs the third temporary (r11) while eight variables are live: r8/r9/r10 must not collide with any temporary
+func deep(n: mut u64) mut u64{
+	let a = mut 0
+	let b = mut 0
+	let c = mut 0
+	let d = mut 0
+	let e = mut 0
+	let f = mut 0
+	let g = mut 0
+	let h = mut 0
+	let s = mut 0
+	for i in 0..n{
+		a += 1
+		b += 2
+		c += 3
+		d += 4
+		e += 5
+		f += 6
+		g += 7
+		h += i
+		s += (a + b) * (c + d) + (e + f) * (g + h)
+	}
+	return s + a + b + c + d + e + f + g + h
+}
+
+@throws
+func throwerI(x: mut u64) mut u64{
+	if x > 3{
+		throw "big"
+	}
+	return x * 2
+}
+
+// 6. a throw caught inside the second loop; the catch body reads `keep` and `u`, which live across the unwind
+func catchWide(n: mut u64) mut u64{
+	let a = mut 0
+	let b = mut 0
+	let c = mut 0
+	let d = mut 0
+	for i in 0..n{
+		a += 1
+		b += a
+		c += b
+		d += c
+	}
+	let keep = mut 0
+	keep = a + b + c + d
+	let u = mut 0
+	let v = mut 0
+	let j = mut 0
+	unsafe{
+		loop{
+			if j == n{
+				break
+			}
+			u += j
+			let r = try throwerI(j) catch(e){
+				return keep + u + 1000
+			}
+			v += r
+			j++
+		}
+	}
+	let w = mut 0
+	let x = mut 0
+	let y = mut 0
+	let z = mut 0
+	for k in 0..n{
+		w += keep
+		x += v
+		y += w
+		z += x
+	}
+	return keep + u + v + w + x + y + z
+}
+
+// 7. the end of a `for` range is evaluated once, whatever the body does to the variables it was built from
+func endFixed() mut u64{
+	let m = mut 5
+	let count = mut 0
+	for i in 0..m{
+		m = m + 10
+		count++
+	}
+	return count * 1000 + m
+}
+
+// bounds are bare variables (the language allows nothing else), here computed just before the loops
+func endExpr(a: mut u64, b: mut u64) mut u64{
+	let s = mut 0
+	let sumEnd = mut 0
+	sumEnd = a + b
+	for i in 0..sumEnd{
+		s += i
+	}
+	let prodEnd = mut 0
+	prodEnd = a * b
+	for i in 0..prodEnd{
+		s += 1000
+	}
+	let diffEnd = mut 0
+	diffEnd = a - 1
+	for i in 0..diffEnd{
+		s += 1000000
+	}
+	return s
+}
+
+func startNonZero(lo: mut u64, hi: mut u64) mut u64{
+	let sum = mut 0
+	for i in lo..hi{
+		sum += i
+	}
+	return sum
+}
+
+func triangle(n: mut u64) mut u64{
+	let s = mut 0
+	for i in 0..n{
+		let hi = mut 0
+		hi = i + 1
+		for j in 0..hi{
+			s++
+		}
+	}
+	return s
+}
+
+func main() void{
+	check("wide n=0", wide(0) == 0)
+	check("wide n=3", wide(3) == 57)
+	check("wide n=10", wide(10) == 435)
+	check("wide with calls n=0", wideCalls(0) == 0)
+	check("wide with calls n=2", wideCalls(2) == 72)
+	check("wide with calls n=5", wideCalls(5) == 420)
+	check("phases n=0", phases(0) == 21)
+	check("phases n=3", phases(3) == 3503)
+	check("phases n=6", phases(6) == 214761)
+	check("nested n=0", nested(0) == 0)
+	check("nested n=3", nested(3) == 108)
+	check("deep expression n=0", deep(0) == 0)
+	check("deep expression n=4", deep(4) == 3443)
+	check("deep expression n=9", deep(9) == 37788)
+	check("narrow n=0", narrow(0) == 0)
+	check("narrow n=5", narrow(5) == 17050597236)
+	check("catch, no throw", catchWide(4) == 1221)
+	check("catch, thrown in loop two", catchWide(6) == 1219)
+	check("range end fixed at loop entry", endFixed() == 5055)
+	check("range end from expressions", endExpr(4, 3) == 21 + 12000 + 3000000)
+	check("range start not zero", startNonZero(3, 8) == 25)
+	check("empty inverted range", startNonZero(7, 3) == 0)
+	check("empty range", startNonZero(5, 5) == 0)
+	check("triangle n=5", triangle(5) == 15)
+	check("triangle n=0", triangle(0) == 0)
+}

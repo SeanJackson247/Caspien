@@ -1,0 +1,206 @@
+// Regression test: functions that throw, catch, re-throw or call throwing functions are inlined (the unwind becomes a jump to the
+// label the caller staged for the call: its landing pad or its catch). Every check below must give the same answer with inlining off
+// and at every preset; a wrong jump target, a lost message or a skipped catch shows up as a FAIL (or a crash).
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+
+extern strcmp(static imut string, static imut string) mut s32
+
+func check(name: static imut string, ok: mut bool) void{
+	unsafe{
+		if ok{
+			printf("PASS %s\n", name)
+		}else{
+			printf("FAIL %s\n", name)
+		}
+	}
+	return
+}
+
+struct Box{
+	@pub{
+		v: mut u64
+	}
+}
+
+@throws
+func thr(x: mut u64) mut u64{
+	if x == 0{
+		throw "zero"
+	}
+	if x == 1{
+		throw "one"
+	}
+	return x * 2
+}
+
+// catches the throw and returns a value
+func catcher(x: mut u64) mut u64{
+	?catch(e){ return 99 }
+	let v = mut ?thr(x)
+	return v + 1
+}
+
+// re-throws what it caught
+@throws
+func prop(x: mut u64) mut u64{
+	?catch(e){ throw e }
+	let v = mut ?thr(x)
+	return v + 2
+}
+
+// two levels of re-throwing
+@throws
+func prop2(x: mut u64) mut u64{
+	?catch(e){ throw e }
+	let v = mut ?prop(x)
+	return v + 3
+}
+
+// throws a different message than the one it caught
+@throws
+func translate(x: mut u64) mut u64{
+	?catch(e){ throw "translated" }
+	let v = mut ?thr(x)
+	return v
+}
+
+// two throwing calls in one function, the second one after work done with the first result
+@throws
+func twice(a: mut u64, b: mut u64) mut u64{
+	?catch(e){ throw e }
+	let p = mut ?thr(a)
+	let q = mut ?thr(b)
+	return p + q
+}
+
+// a catch inside a loop that skips the failing iterations
+func skipFailures(n: mut u64) mut u64{
+	let total = mut 0
+	for i in 0..n{
+		try{
+			?catch(e){ continue }
+			let v = mut ?thr(i)
+			total = total + v
+		}
+	}
+	return total
+}
+
+func msgOf0() mut bool{
+	let same = mut false
+	try{
+		let v = mut try prop2(0) catch(e){
+			unsafe{ same = strcmp(e, "zero") == 0 }
+			return same
+		}
+		same = false
+	}
+	return same
+}
+
+func msgOf1() mut bool{
+	let same = mut false
+	try{
+		let v = mut try prop2(1) catch(e){
+			unsafe{ same = strcmp(e, "one") == 0 }
+			return same
+		}
+		same = false
+	}
+	return same
+}
+
+func msgTranslated() mut bool{
+	let same = mut false
+	try{
+		let v = mut try translate(0) catch(e){
+			unsafe{ same = strcmp(e, "translated") == 0 }
+			return same
+		}
+		same = false
+	}
+	return same
+}
+
+func secondThrows() mut u64{
+	?catch(e){ return 1000 }
+	let v = mut ?twice(5, 0)
+	return v
+}
+
+func firstThrows() mut u64{
+	?catch(e){ return 2000 }
+	let v = mut ?twice(0, 5)
+	return v
+}
+
+func neither() mut u64{
+	?catch(e){ return 3000 }
+	let v = mut ?twice(5, 7)
+	return v
+}
+
+// allocates, then may throw: the landing pad destructs the box before the unwind continues
+@throws
+func boxThenThrow(x: mut u64) mut u64{
+	?catch(e){ throw e }
+	let b = mut ?new Box{v= x}
+	let v = mut ?thr(x)
+	match Some(b){
+		return v + b.v
+	}
+	return 0
+}
+
+func viaBox(x: mut u64) mut u64{
+	?catch(e){ return 4000 }
+	let v = mut ?boxThenThrow(x)
+	return v
+}
+
+// float variable around a catch: it lives in an xmm register (hot loop), and the catch must see its CURRENT value. The backend's catch entry
+// reloads float variables from their home slots (written only around real calls), so jumping there from inlined code would show a stale value
+func floatAround(x: mut u64) mut u64{
+	let f = mut 1.5
+	for i in 0..40{
+		unsafe{
+			f = f + 1.0
+		}
+	}
+	?catch(e){
+		let r = mut 0
+		unsafe{
+			if f > 40.0{
+				r = 5000
+			}
+		}
+		return r
+	}
+	let v = mut ?thr(x)
+	return v
+}
+
+func main() void{
+	check("catcher ok", catcher(4) == 9)
+	check("catcher throw 0", catcher(0) == 99)
+	check("catcher throw 1", catcher(1) == 99)
+	check("prop ok", catcher(3) == 7)
+	check("skip failures", skipFailures(5) == 18)
+	check("message 2 frames, zero", msgOf0())
+	check("message 2 frames, one", msgOf1())
+	check("message translated", msgTranslated())
+	check("second throws", secondThrows() == 1000)
+	check("first throws", firstThrows() == 2000)
+	check("neither throws", neither() == 24)
+	check("box, no throw", viaBox(6) == 18)
+	check("box, throw", viaBox(0) == 4000)
+	check("box, throw again", viaBox(1) == 4000)
+	check("box, again ok", viaBox(2) == 6)
+	check("float around catch, throw", floatAround(0) == 5000)
+	check("float around catch, ok", floatAround(4) == 8)
+	return
+}

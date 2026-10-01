@@ -1,0 +1,207 @@
+// Regression test for loop unrolling (`loop-unrolling: off|conservative|balanced|aggressive` plus the four numeric overrides).
+// Every loop here has LITERAL bounds (so the Optimizer may unroll it) unless its comment says otherwise. Every expected value is
+// worked out by hand; the output must be identical with unrolling off and at every preset. Prints one PASS/FAIL line per check.
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+
+let static tbl = mut [1, 2, 3]
+
+func check(name: static imut string, ok: mut bool) void{
+	unsafe{
+		if ok{
+			printf("PASS %s\n", name)
+		}else{
+			printf("FAIL %s\n", name)
+		}
+	}
+	return
+}
+
+func sq(x: mut u64) mut u64{
+	return x * x
+}
+
+@throws
+func mayThrow(x: mut u64) mut u64{
+	if x == 2{
+		throw "bad"
+	}
+	return x
+}
+
+// 4 trips: fully unrolled by conservative (<= 4)
+func sum4() mut u64{
+	let s = mut 0
+	for i in 0..4{
+		s += i
+	}
+	return s
+}
+
+// 1 trip
+func sum1() mut u64{
+	let s = mut 0
+	for i in 5..6{
+		s += i
+	}
+	return s
+}
+
+// 10 trips: conservative = partial (factor 2, remainder 0); balanced = full
+func sum10() mut u64{
+	let s = mut 0
+	for i in 0..10{
+		s += i
+	}
+	return s
+}
+
+// 7 trips: conservative = partial (factor 2, remainder 1)
+func sum7() mut u64{
+	let s = mut 0
+	for i in 0..7{
+		s += i
+	}
+	return s
+}
+
+// 100 trips: balanced = partial (factor 4, remainder 0); aggressive = full
+func sum100() mut u64{
+	let s = mut 0
+	for i in 0..100{
+		s += i
+	}
+	return s
+}
+
+// 103 trips: balanced = partial (factor 4, remainder 3)
+func sum103() mut u64{
+	let s = mut 0
+	for i in 0..103{
+		s += i
+	}
+	return s
+}
+
+// break out of an unrolled / partially unrolled loop
+func breakAt7() mut u64{
+	let s = mut 0
+	for i in 0..20{
+		if i == 7{
+			break
+		}
+		s += i
+	}
+	return s
+}
+
+// nested literal loops
+func nested() mut u64{
+	let s = mut 0
+	for i in 0..3{
+		for j in 0..4{
+			s += i * 10 + j
+		}
+	}
+	return s
+}
+
+// nested, bigger, so an inner loop is partially unrolled and then the outer one is considered
+func nestedBig() mut u64{
+	let s = mut 0
+	for i in 0..9{
+		for j in 0..25{
+			s += 1
+		}
+	}
+	return s
+}
+
+// variable bound: must never be unrolled, and must still be right
+func sumVar(n: mut u64) mut u64{
+	let s = mut 0
+	for i in 2..n{
+		s += i
+	}
+	return s
+}
+
+// a loop{} has no known trip count
+func countLoop() mut u64{
+	let k = mut 0
+	unsafe{
+		loop{
+			if k == 6{
+				break
+			}
+			k++
+		}
+	}
+	return k
+}
+
+// a call in the body
+func sumSquares() mut u64{
+	let s = mut 0
+	for i in 0..5{
+		s += sq(i)
+	}
+	return s
+}
+
+// for over a fixed array (the loop variable is the INDEX 0..3, so 0+1+2)
+func sumTable() mut u64{
+	let s = mut 0
+	unsafe{
+		for e in tbl{
+			s += e
+		}
+	}
+	return s
+}
+
+// a try/catch in the body: the third call throws, `continue` leaves the try block, so only 0 + 1 is summed
+func tryLoop() mut u64{
+	let s = mut 0
+	try{
+		for i in 0..4{
+			let r = mut try mayThrow(i) catch(e){ continue }
+			s += r
+		}
+	}
+	return s
+}
+
+// two sequential loops with the same literal bounds (labels must stay unique)
+func twice() mut u64{
+	let s = mut 0
+	for i in 0..3{
+		s += 1
+	}
+	for i in 0..3{
+		s += 10
+	}
+	return s
+}
+
+func main() void{
+	check("sum 0..4", sum4() == 6)
+	check("sum 5..6", sum1() == 5)
+	check("sum 0..10", sum10() == 45)
+	check("sum 0..7", sum7() == 21)
+	check("sum 0..100", sum100() == 4950)
+	check("sum 0..103", sum103() == 5253)
+	check("break at 7", breakAt7() == 21)
+	check("nested 3x4", nested() == 138)
+	check("nested 9x25", nestedBig() == 225)
+	check("variable bound 2..9", sumVar(9) == 35)
+	check("variable bound 2..2", sumVar(2) == 0)
+	check("loop{}", countLoop() == 6)
+	check("call in body", sumSquares() == 30)
+	check("for over array", sumTable() == 3)
+	check("try in body", tryLoop() == 1)
+	check("two loops", twice() == 33)
+}

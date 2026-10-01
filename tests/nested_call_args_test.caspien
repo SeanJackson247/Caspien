@@ -1,0 +1,44 @@
+// Regression test: a call used as an argument of another call must not disturb the arguments
+// already loaded for the outer call (or the ones loaded afterwards). Prints one PASS/FAIL line per case.
+import "../stdlib/libc.caspien"
+
+func two(a: mut u64, b: mut u64) mut u64{
+	return a + b
+}
+func three(a: mut u64, b: mut u64, c: mut u64) mut u64{
+	return a * 100 + b * 10 + c
+}
+func six(a: mut u64, b: mut u64, c: mut u64, d: mut u64, e: mut u64, f: mut u64) mut u64{
+	return a + b * 10 + c * 100 + d * 1000 + e * 10000 + f * 100000
+}
+func fadd(a: mut f32, b: mut f32) mut f32{
+	unsafe{ return a + b }
+}
+func fpick(name: static imut string, x: mut f32, n: mut u64) mut u64{
+	unsafe{ printf("%s x=%f n=%llu\n", name, x, n) }
+	return n
+}
+func report(name: static imut string, got: mut u64, want: mut u64) void{
+	unsafe{
+		if got == want{
+			printf("PASS %s\n", name)
+		}
+		if got != want{
+			printf("FAIL %s (got %llu, want %llu)\n", name, got, want)
+		}
+	}
+}
+
+func main() void{
+	report("call first arg", three(two(mut 1, mut 0), mut 2, mut 3), mut 123)
+	report("call middle arg", three(mut 1, two(mut 1, mut 1), mut 3), mut 123)
+	report("call last arg", three(mut 1, mut 2, two(mut 1, mut 2)), mut 123)
+	report("two calls", three(two(mut 0, mut 1), two(mut 1, mut 1), two(mut 1, mut 2)), mut 123)
+	report("deep nesting", three(mut 1, two(mut 2, two(mut 1, mut 2)), mut 5), mut 155)
+	report("calls in every slot of six", six(two(mut 0, mut 1), two(mut 1, mut 1), two(mut 1, mut 2), two(mut 2, mut 2), two(mut 2, mut 3), two(mut 3, mut 3)), mut 654321)
+	report("string arg before nested call", two(three(mut 0, mut 0, mut 1), mut 1), mut 2)
+	unsafe{ printf("%s %llu %llu %llu\n", "printf varargs (want 2 4 6):", two(mut 1, mut 1), two(mut 2, mut 2), two(mut 3, mut 3)) }
+	report("float arg before nested int call", fpick("float before int call (want 3.75, 3)", fadd(mut 1.5, mut 2.25), two(mut 1, mut 2)), mut 3)
+	report("float arg, nested float call", fpick("nested float calls (want 6.0, 7)", fadd(mut 1.0, fadd(mut 2.0, mut 3.0)), mut 7), mut 7)
+	return
+}

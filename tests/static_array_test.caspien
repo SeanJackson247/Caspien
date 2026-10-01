@@ -1,0 +1,86 @@
+// Static (global) arrays and float statics: (1) reading an element of a `let static` array used to segfault (the
+// code generator pushed only the array's first 8 bytes and indexed off that), (2) a static array's initial element
+// values were dropped (it started zeroed), (3) a float initialiser on any static was silently 0, (4) a negative
+// float in a static initialiser crashed the compiler (foldStaticConstant), (5) a small f32[1] array read emitted an
+// invalid `andq $4294967295`. Prints one PASS/FAIL line per check and `ALL STATIC ARRAY TESTS PASSED`.
+// Not covered (still broken): a fixed array of exactly 8 bytes (e.g. f32[2], u8[8]) segfaults on read.
+extern printf(static imut string,...) void
+
+let static ints = mut [10, 20, 30]
+let static floats = mut [1.5, -2.5, 3.5, -4.5, 5.5]
+let static single = mut [2.5]
+let static scalarF = mut -0.25
+let static scalarP = mut 0.75
+
+func check(name: static imut string, ok: mut bool) void{
+	unsafe{
+		if ok{
+			printf("PASS %s\n", name)
+		}else{
+			printf("FAIL %s\n", name)
+		}
+	}
+	return
+}
+
+func main() void{
+	let a = mut 0
+	let f1 = mut 0.0
+	let f3 = mut 0.0
+	let f4 = mut 0.0
+	let s = mut 0.0
+	let loc = mut [1.5]
+	let l = mut 0.0
+	unsafe{
+		a = ints[2]
+		f1 = floats[1]
+		f3 = floats[3]
+		f4 = floats[4]
+		s = single[0]
+		l = loc[0]
+	}
+	let ok1 = mut false
+	let ok2 = mut false
+	let ok3 = mut false
+	let ok4 = mut false
+	let ok5 = mut false
+	let ok6 = mut false
+	let ok7 = mut false
+	unsafe{
+		ok1 = a == 30
+		ok2 = f1 == -2.5
+		ok3 = f3 + 4.5 == 0.0
+		ok4 = f4 == 5.5
+		ok5 = s == 2.5
+		ok6 = scalarF + 0.25 == 0.0
+		ok7 = scalarP == 0.75
+	}
+	check("static int array element", ok1)
+	check("static f32 array, negative element", ok2)
+	check("static f32 array, negative element (2)", ok3)
+	check("static f32 array, last element", ok4)
+	check("static f32[1] array (small)", ok5)
+	check("negative float static scalar", ok6)
+	check("float static scalar initialiser", ok7)
+	unsafe{
+		printf("local f32[1]: %.3f\n", l)
+		if ok1{
+			if ok2{
+				if ok3{
+					if ok4{
+						if ok5{
+							if ok6{
+								if ok7{
+									if l == 1.5{
+										printf("ALL STATIC ARRAY TESTS PASSED\n")
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	return
+}

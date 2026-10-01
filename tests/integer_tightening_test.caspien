@@ -1,0 +1,219 @@
+// Integer tightening: (1) an integer literal adapts to the slot it lands in when the value fits (and is a compile error
+// when it does not), (2) `match x fits T{...}` proves x representable in T so `x as T` may narrow / change sign inside
+// the branch, (3) `wrap:<T>(x)` (keep the low bits) and `sat:<T>(x)` (clamp) are total conversions, no `unsafe` needed,
+// plus signed division / modulo / ordering, which the backend used to treat as unsigned.
+// Prints one PASS/FAIL line per check and `ALL INTEGER TIGHTENING TESTS PASSED`.
+//
+// Not runnable here (they must FAIL to compile; verify by hand):
+//   takes8(mut 300)      -> literal 300 does not fit u8
+//   let z = mut (x as u8) with x: mut s64, outside any `match x fits u8`   -> narrowing needs the proof
+import "../stdlib/libc.caspien"
+
+func check(name: static imut string, got: mut s64, want: mut s64) mut u64{
+	if got == want{
+		unsafe{ printf("PASS %s\n", name) }
+		return mut 0
+	}
+	unsafe{ printf("FAIL %s (got %lld, want %lld)\n", name, got, want) }
+	return mut 1
+}
+
+// ---- 1. literal adaptation -------------------------------------------------------------------
+func takes8(x: mut u8) mut u8{ return x }
+func takesS8(x: mut s8) mut s8{ return x }
+func addOne(a: mut u8) mut u8{
+	let c = mut (a + 1)
+	return c
+}
+func flag(v: mut bool) mut s64{
+	if v{
+		return mut 1
+	}
+	return mut 0
+}
+func isFive(a: mut u8) mut s64{
+	return flag(mut (a == 5))
+}
+func belowMinusFive(a: mut s8) mut s64{
+	return flag(mut (a < -5))
+}
+func bump(a: mut u8) mut u8{
+	let b = mut a
+	b += 2
+	return b
+}
+func pick(x: mut u64) mut u64{ return x + mut 1000 }
+func pick(x: mut u8) mut u8{ return x }
+func pickN(x: mut u16) mut s64{ return mut 16 }
+func pickN(x: mut s32) mut s64{ return mut 32 }
+
+// ---- 2. fits ---------------------------------------------------------------------------------
+func viaU8(v: mut s64) mut s64{
+	match v fits u8{
+		let small = mut (v as u8)
+		return mut wrap:<s64>(small)
+	}
+	else{
+		return mut -1
+	}
+}
+func viaS8(v: mut s64) mut s64{
+	match v fits s8{
+		let small = mut (v as s8)
+		return mut wrap:<s64>(small)
+	}
+	else{
+		return mut 1000
+	}
+}
+func viaU64(v: mut s64) mut s64{
+	match v fits u64{
+		let big = mut (v as u64)
+		return mut wrap:<s64>(big)
+	}
+	else{
+		return mut -1
+	}
+}
+
+func sdiv(a: mut s64, b: mut s64) mut s64{
+	unsafe{ return a / b }
+}
+func smod(a: mut s64, b: mut s64) mut s64{
+	unsafe{ return a % b }
+}
+func slt(a: mut s64, b: mut s64) mut bool{ return mut (a < b) }
+func sle(a: mut s64, b: mut s64) mut bool{ return mut (a <= b) }
+func slt8(a: mut s8, b: mut s8) mut bool{ return mut (a < b) }
+func sdiv8(a: mut s8, b: mut s8) mut s64{
+	unsafe{
+		let q = mut (a / b)
+		return mut wrap:<s64>(q)
+	}
+}
+
+// ---- 5. closed gaps: MIN / -1, signed bits_right, narrow unsigned compares, array literals ---------
+func minS64() mut s64{
+	let m = mut -9223372036854775807
+	return mut (m - 1)
+}
+func sdivMin(a: mut s64, b: mut s64) mut s64{
+	unsafe{ return a / b }
+}
+func smodMin(a: mut s64, b: mut s64) mut s64{
+	unsafe{ return a % b }
+}
+func shrS(a: mut s64, n: mut s64) mut s64{
+	return mut bits_right(a, n)
+}
+func shrU(a: mut u64, n: mut u64) mut s64{
+	let r = mut bits_right(a, n)
+	return mut wrap:<s64>(r)
+}
+func shrS8(a: mut s8, n: mut s8) mut s64{
+	let r = mut bits_right(a, n)
+	return mut wrap:<s64>(r)
+}
+func ltU8(a: mut u8, b: mut u8) mut bool{ return mut (a < b) }
+func gtU8(a: mut u8, b: mut u8) mut bool{ return mut (a > b) }
+func eqU8(a: mut u8, b: mut u8) mut bool{ return mut (a == b) }
+func sumArr8() mut s64{
+	let:<mut u8[3]> s = mut [1, 2, 200]
+	let t = mut (s[0] + s[1])
+	return mut wrap:<s64>(s[2])
+}
+func negArr16() mut s64{
+	let:<mut s16[2]> t = mut [-5, 300]
+	return mut wrap:<s64>(t[0])
+}
+func parenLit() mut s64{
+	return mut wrap:<s64>(takes8(mut (200)))
+}
+
+func main() void{
+	let fails = mut 0
+
+	fails += check("u8 arg from literal 200", mut wrap:<s64>(takes8(mut 200)), mut 200)
+	fails += check("s8 arg from literal -100", mut wrap:<s64>(takesS8(mut -100)), mut -100)
+	fails += check("u8 + literal", mut wrap:<s64>(addOne(mut 41)), mut 42)
+	fails += check("u8 + literal wraps in its slot", mut wrap:<s64>(addOne(mut 255)), mut 0)
+	fails += check("u8 == literal (true)", isFive(mut 5), mut 1)
+	fails += check("u8 == literal (false)", isFive(mut 6), mut 0)
+	fails += check("s8 < negative literal (true)", belowMinusFive(mut -6), mut 1)
+	fails += check("s8 < negative literal (false)", belowMinusFive(mut -5), mut 0)
+	fails += check("u8 += literal", mut wrap:<s64>(bump(mut 40)), mut 42)
+	fails += check("overload: exact type wins over adapting one", mut wrap:<s64>(pick(mut 5)), mut 1005)
+	fails += check("overload: literal adapts to first fitting", pickN(mut 5), mut 16)
+	fails += check("overload: negative literal skips the unsigned one", pickN(mut -5), mut 32)
+
+	fails += check("fits u8: 0", viaU8(mut 0), mut 0)
+	fails += check("fits u8: 255", viaU8(mut 255), mut 255)
+	fails += check("fits u8: 256 does not", viaU8(mut 256), mut -1)
+	fails += check("fits u8: -1 does not", viaU8(mut -1), mut -1)
+	fails += check("fits s8: 127", viaS8(mut 127), mut 127)
+	fails += check("fits s8: 128 does not", viaS8(mut 128), mut 1000)
+	fails += check("fits s8: -128", viaS8(mut -128), mut -128)
+	fails += check("fits s8: -129 does not", viaS8(mut -129), mut 1000)
+	fails += check("fits u64: 5", viaU64(mut 5), mut 5)
+	fails += check("fits u64: -1 does not", viaU64(mut -1), mut -1)
+
+	let n = mut 300
+	let neg = mut -5
+	let big = mut 70000
+	let low = mut -200
+	fails += check("wrap u8 300", mut wrap:<s64>(mut wrap:<u8>(n)), mut 44)
+	fails += check("wrap s8 300", mut wrap:<s64>(mut wrap:<s8>(n)), mut 44)
+	fails += check("wrap u8 -5", mut wrap:<s64>(mut wrap:<u8>(neg)), mut 251)
+	fails += check("wrap u64 -5 keeps the bits", mut wrap:<s64>(mut wrap:<u64>(neg)), mut -5)
+	fails += check("sat u8 300", mut wrap:<s64>(mut sat:<u8>(n)), mut 255)
+	fails += check("sat u8 -5", mut wrap:<s64>(mut sat:<u8>(neg)), mut 0)
+	fails += check("sat s8 300", mut wrap:<s64>(mut sat:<s8>(n)), mut 127)
+	fails += check("sat s8 -200", mut wrap:<s64>(mut sat:<s8>(low)), mut -128)
+	fails += check("sat u16 70000", mut wrap:<s64>(mut sat:<u16>(big)), mut 65535)
+	fails += check("sat s16 -5 unchanged", mut wrap:<s64>(mut sat:<s16>(neg)), mut -5)
+	fails += check("sat s32 of a huge u64", mut wrap:<s64>(mut sat:<s32>(mut 18446744073709551615)), mut 2147483647)
+	fails += check("sat s64 of a huge u64", mut wrap:<s64>(mut sat:<s64>(mut 18446744073709551615)), mut 9223372036854775807)
+	fails += check("literal wrap", mut wrap:<s64>(mut wrap:<u8>(300)), mut 44)
+	fails += check("literal sat", mut wrap:<s64>(mut sat:<u8>(300)), mut 255)
+	fails += check("literal sat negative", mut wrap:<s64>(mut sat:<u8>(-5)), mut 0)
+
+	// ---- 4. signed division / modulo / ordering -------------------------------------------------
+	fails += check("-7 / 2", sdiv(mut -7, mut 2), mut -3)
+	fails += check("-7 % 2", smod(mut -7, mut 2), mut -1)
+	fails += check("7 / -2", sdiv(mut 7, mut -2), mut -3)
+	fails += check("-7 / -2", sdiv(mut -7, mut -2), mut 3)
+	fails += check("-6 / -2", sdiv(mut -6, mut -2), mut 3)
+	fails += check("-7 < 2", flag(mut slt(mut -7, mut 2)), mut 1)
+	fails += check("2 < -7 is false", flag(mut slt(mut 2, mut -7)), mut 0)
+	fails += check("-2 <= -7 is false", flag(mut sle(mut -2, mut -7)), mut 0)
+	fails += check("-7 <= -7", flag(mut sle(mut -7, mut -7)), mut 1)
+	fails += check("s8 -1 < 1", flag(mut slt8(mut -1, mut 1)), mut 1)
+	fails += check("s8 -128 / 2", sdiv8(mut -128, mut 2), mut -64)
+
+	// ---- 5. closed gaps ------------------------------------------------------------------------
+	fails += check("MIN / -1 does not trap", sdivMin(minS64(), mut -1), minS64())
+	fails += check("MIN % -1", smodMin(minS64(), mut -1), mut 0)
+	fails += check("-7 / -1", sdivMin(mut -7, mut -1), mut 7)
+	fails += check("7 % -1", smodMin(mut 7, mut -1), mut 0)
+	fails += check("bits_right s64 -16 >> 2 is arithmetic", shrS(mut -16, mut 2), mut -4)
+	fails += check("bits_right s64 16 >> 2", shrS(mut 16, mut 2), mut 4)
+	fails += check("bits_right u64 stays logical", shrU(mut 16, mut 2), mut 4)
+	fails += check("bits_right s8 -16 >> 2", shrS8(mut -16, mut 2), mut -4)
+	fails += check("u8 200 < 100 is false", flag(mut ltU8(mut 200, mut 100)), mut 0)
+	fails += check("u8 100 < 200", flag(mut ltU8(mut 100, mut 200)), mut 1)
+	fails += check("u8 200 > 100", flag(mut gtU8(mut 200, mut 100)), mut 1)
+	fails += check("u8 200 == 200", flag(mut eqU8(mut 200, mut 200)), mut 1)
+	fails += check("array literal u8[3] element", sumArr8(), mut 200)
+	fails += check("array literal s16[2] negative element", negArr16(), mut -5)
+	fails += check("paren-wrapped literal adapts", parenLit(), mut 200)
+
+	unsafe{
+		if fails == 0{
+			printf("ALL INTEGER TIGHTENING TESTS PASSED\n")
+		}
+		if fails != 0{
+			printf("INTEGER TIGHTENING TESTS FAILED: %llu\n", fails)
+		}
+	}
+	return
+}

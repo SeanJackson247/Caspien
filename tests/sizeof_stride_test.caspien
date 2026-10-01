@@ -1,0 +1,99 @@
+// sizeof(Struct) must equal the real stride of an array of that struct, and `raw Struct` pointer steps must move by it.
+// Before sizeof was resolved by the Optimizer against the laid-out struct, sizeof(P) gave 9 (members only) for a struct whose
+// array stride is 16, and p++ stepped 9 bytes. Each check reads the real layout out of an array's bytes (memcopy into a u8 buffer).
+import "../stdlib/libc.caspien"
+struct P{
+	@pub{
+		a: mut u8
+	}
+}
+struct Q{
+	@pub{
+		x: mut u64
+		y: mut u64
+		z: mut u8
+	}
+}
+struct Two{
+	@pub{
+		a: mut P
+		b: mut P
+	}
+}
+struct Box<T>{
+	@pub{
+		v: mut T
+		w: mut u8
+	}
+}
+let static szq = mut sizeof(Q)
+let static szp = mut sizeof(P)
+let static szb = mut sizeof(Box:<u64>)
+let static szt = mut sizeof(Two)
+
+let static fails = mut 0
+
+func check(name: static imut string, ok: mut bool) void{
+	unsafe{
+		if ok{
+			printf("PASS %s\n", name)
+		}
+		else{
+			printf("FAIL %s\n", name)
+			fails = fails + 1
+		}
+	}
+}
+
+func main() void{
+	// 1. sizeof P against the stride of P[3]: byte 8 of each element holds its member
+	let pa = mut [P{a= 11}, P{a= 22}, P{a= 33}]
+	let:<mut u8[48]> pb = mut [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+	unsafe{
+		memcopy(raw pb, mut 48, raw pa)
+	}
+	let pstride = mut sizeof(P)
+	let lp = mut 0
+	let lq = mut 0
+	let lb = mut 0
+	let lt = mut 0
+	unsafe{
+		lp = szp
+		lq = szq
+		lb = szb
+		lt = szt
+	}
+	check("P: member of element 1 sits at sizeof(P)+8", pb[24] == 22 && pstride == 16)
+	check("P: member of element 2 sits at 2*sizeof(P)+8", pb[40] == 33)
+	check("P: static initialiser equals the runtime sizeof", lp == pstride)
+
+	// 2. Q (___type,u64,u64,u8): 25 bytes of members, padded to 32, so z of element 1 sits at 32+24
+	let qa = mut [Q{x= 1, y= 2, z= 3}, Q{x= 4, y= 5, z= 6}]
+	let:<mut u8[80]> qb = mut [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+	unsafe{
+		memcopy(raw qb, mut 80, raw qa)
+	}
+	let qstride = mut sizeof(Q)
+	check("Q: stride is sizeof(Q) (z of element 0 and 1)", qb[24] == 3 && qb[56] == 6 && qstride == 32)
+	check("Q: static initialiser equals the runtime sizeof", lq == qstride)
+
+	// 3. a generic struct
+	check("Box<u64>: static initialiser equals the runtime sizeof", lb == mut sizeof(Box:<u64>))
+
+	// 4. pointer step: q++ on a raw P moves to the next P member of Two
+	let t = mut Two{a= P{a= 1}, b= P{a= 2}}
+	let src = mut P{a= 77}
+	unsafe{
+		let p = mut raw t.a
+		p++
+		memcopy(p, mut sizeof(P), raw src)
+	}
+	check("raw P ++ steps sizeof(P) bytes (writes t.b)", t.b.a == 77 && t.a.a == 1)
+	check("Two: sizeof is the sum of its two Ps plus ___type", lt == mut sizeof(Two))
+
+	unsafe{
+		if fails == 0{
+			printf("ALL SIZEOF STRIDE TESTS PASSED\n")
+		}
+	}
+}

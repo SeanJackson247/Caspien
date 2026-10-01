@@ -1,0 +1,495 @@
+// Regression test for StrengthReductionPass (unsigned / and % by a constant power of two -> shift and mask) and
+// BranchFusionPass (a compare that only feeds a jump compares and jumps). Every case checks the optimised form against the
+// same operation written so that it cannot be optimised (a divisor held in a variable goes through a real `div`; a compare
+// stored into a variable is materialised with setcc), and some against a value worked out by hand.
+import "../stdlib/libc.caspien"
+
+let static:<mut u64> passes = mut 0
+let static:<mut u64> fails = mut 0
+
+func report(name: static imut string, got: mut u64, want: mut u64) void{
+	unsafe{
+		if got == want{
+			printf("PASS %s\n", name)
+		}
+		if got != want{
+			printf("FAIL %s (got %llu, want %llu)\n", name, got, want)
+		}
+	}
+}
+
+// ---- division and modulo ----
+func divs(x: mut u64) mut u64{
+	unsafe{
+		// returns 0 when every constant divisor agrees with the same divisor held in a variable, else the number of the first mismatch
+		let d2 = mut 2
+		let d4 = mut 4
+		let d8 = mut 8
+		let d1024 = mut 1024
+		let d31 = mut 2147483648
+		let d32 = mut 4294967296
+		let d63 = mut 9223372036854775808
+		if x / 2 != x / d2{
+			return 1
+		}
+		if x / 4 != x / d4{
+			return 2
+		}
+		if x / 8 != x / d8{
+			return 3
+		}
+		if x / 1024 != x / d1024{
+			return 4
+		}
+		if x / 2147483648 != x / d31{
+			return 5
+		}
+		if x / 4294967296 != x / d32{
+			return 6
+		}
+		if x / 9223372036854775808 != x / d63{
+			return 7
+		}
+		if x % 2 != x % d2{
+			return 8
+		}
+		if x % 4 != x % d4{
+			return 9
+		}
+		if x % 8 != x % d8{
+			return 10
+		}
+		if x % 1024 != x % d1024{
+			return 11
+		}
+		if x % 2147483648 != x % d31{
+			return 12
+		}
+		if x % 4294967296 != x % d32{
+			return 13
+		}
+		if x % 9223372036854775808 != x % d63{
+			return 14
+		}
+		return 0
+	}
+}
+
+func divValues() mut u64{
+	let bad = mut 0
+	let x = mut 0
+	let i = mut 0
+	unsafe{
+		loop{
+			if i == 300{
+				break
+			}
+			// a spread of values: small, around powers of two, near 2^63 and 2^64
+			x = i * 7919 + (i * i) * 104729
+			bad += divs(x)
+			bad += divs(x * 65537 * 65537)
+			bad += divs(x * 4294967311 * 1099511627791)
+			i++
+		}
+	}
+	bad += divs(0)
+	bad += divs(1)
+	bad += divs(18446744073709551615)
+	bad += divs(9223372036854775807)
+	bad += divs(9223372036854775808)
+	return bad
+}
+func divHandWorked() mut u64{
+	let a = mut 1000
+	let b = mut 1000
+	let c = mut 65
+	let d = mut 65
+	return (a / 8) * 1000000 + (b % 8) * 10000 + (c / 2) * 100 + (d % 2) * 10 + (a / 1)
+}
+func divExprOperand() mut u64{
+	// the dividend is a computed expression, the divisor a constant
+	let a = mut 13
+	let b = mut 29
+	return ((a * b + 3) / 4) * 100 + (a * b + 3) % 4 * 10 + (b + a) / 2
+}
+func divInLoop() mut u64{
+	let s = mut 0
+	let i = mut 0
+	unsafe{
+		loop{
+			if i == 50{
+				break
+			}
+			s += i / 4 + i % 4 * 3
+			i++
+		}
+	}
+	return s
+}
+
+// ---- compare and branch ----
+func cmpAll(a: mut u64, b: mut u64) mut u64{
+	// bit k set when the k-th compare is true, measured through a branch; must equal the same compares stored in variables
+	let viaBranch = mut 0
+	if a < b{
+		viaBranch += 1
+	}
+	if a <= b{
+		viaBranch += 2
+	}
+	if a > b{
+		viaBranch += 4
+	}
+	if a >= b{
+		viaBranch += 8
+	}
+	if a == b{
+		viaBranch += 16
+	}
+	if a != b{
+		viaBranch += 32
+	}
+	return viaBranch
+}
+func cmpAllStored(a: mut u64, b: mut u64) mut u64{
+	let r = mut 0
+	let c0 = mut (a < b)
+	let c1 = mut (a <= b)
+	let c2 = mut (a > b)
+	let c3 = mut (a >= b)
+	let c4 = mut (a == b)
+	let c5 = mut (a != b)
+	if c0{
+		r += 1
+	}
+	if c1{
+		r += 2
+	}
+	if c2{
+		r += 4
+	}
+	if c3{
+		r += 8
+	}
+	if c4{
+		r += 16
+	}
+	if c5{
+		r += 32
+	}
+	return r
+}
+func scmpAll(a: mut s64, b: mut s64) mut u64{
+	let r = mut 0
+	if a < b{
+		r += 1
+	}
+	if a <= b{
+		r += 2
+	}
+	if a > b{
+		r += 4
+	}
+	if a >= b{
+		r += 8
+	}
+	if a == b{
+		r += 16
+	}
+	if a != b{
+		r += 32
+	}
+	return r
+}
+func scmpAllStored(a: mut s64, b: mut s64) mut u64{
+	let r = mut 0
+	let c0 = mut (a < b)
+	let c1 = mut (a <= b)
+	let c2 = mut (a > b)
+	let c3 = mut (a >= b)
+	let c4 = mut (a == b)
+	let c5 = mut (a != b)
+	if c0{
+		r += 1
+	}
+	if c1{
+		r += 2
+	}
+	if c2{
+		r += 4
+	}
+	if c3{
+		r += 8
+	}
+	if c4{
+		r += 16
+	}
+	if c5{
+		r += 32
+	}
+	return r
+}
+func cmpValues() mut u64{
+	let bad = mut 0
+	let vals = mut 0
+	let x = mut 0
+	let y = mut 0
+	unsafe{
+		loop{
+			if vals == 7{
+				break
+			}
+			if vals == 0{
+				x = 0
+			}
+			if vals == 1{
+				x = 1
+			}
+			if vals == 2{
+				x = 5
+			}
+			if vals == 3{
+				x = 4294967295
+			}
+			if vals == 4{
+				x = 4294967296
+			}
+			if vals == 5{
+				x = 9223372036854775807
+			}
+			if vals == 6{
+				x = 18446744073709551615
+			}
+			let w = mut 0
+			loop{
+				if w == 7{
+					break
+				}
+				if w == 0{
+					y = 0
+				}
+				if w == 1{
+					y = 1
+				}
+				if w == 2{
+					y = 5
+				}
+				if w == 3{
+					y = 4294967295
+				}
+				if w == 4{
+					y = 4294967296
+				}
+				if w == 5{
+					y = 9223372036854775807
+				}
+				if w == 6{
+					y = 18446744073709551615
+				}
+				if cmpAll(x, y) != cmpAllStored(x, y){
+					bad += 1
+				}
+				w++
+			}
+			vals++
+		}
+	}
+	return bad
+}
+func scmpValues() mut u64{
+	let bad = mut 0
+	let x = mut -5
+	let y = mut -5
+	if scmpAll(x, y) != scmpAllStored(x, y){
+		bad += 1
+	}
+	y = 3
+	if scmpAll(x, y) != scmpAllStored(x, y){
+		bad += 1
+	}
+	if scmpAll(y, x) != scmpAllStored(y, x){
+		bad += 1
+	}
+	x = -9223372036854775807
+	y = 9223372036854775807
+	if scmpAll(x, y) != scmpAllStored(x, y){
+		bad += 1
+	}
+	if scmpAll(y, x) != scmpAllStored(y, x){
+		bad += 1
+	}
+	x = 0
+	y = -1
+	if scmpAll(x, y) != scmpAllStored(x, y){
+		bad += 1
+	}
+	if scmpAll(y, x) != scmpAllStored(y, x){
+		bad += 1
+	}
+	return bad
+}
+// a constant on the left and on the right, a slot against a slot, a huge constant
+func constSides(x: mut u64) mut u64{
+	let r = mut 0
+	if 5 < x{
+		r += 1
+	}
+	if 5 > x{
+		r += 2
+	}
+	if 5 <= x{
+		r += 4
+	}
+	if 5 >= x{
+		r += 8
+	}
+	if 5 == x{
+		r += 16
+	}
+	if x < 5{
+		r += 32
+	}
+	if x >= 5{
+		r += 64
+	}
+	if x > 4294967296{
+		r += 128
+	}
+	if 4294967296 >= x{
+		r += 256
+	}
+	return r
+}
+// signed compares with a constant on either side (x is a parameter, so a slot)
+func sconstSides(x: mut s64) mut u64{
+	let r = mut 0
+	if 5 < x{
+		r += 1
+	}
+	if 5 > x{
+		r += 2
+	}
+	if 5 <= x{
+		r += 4
+	}
+	if 5 >= x{
+		r += 8
+	}
+	if -5 < x{
+		r += 16
+	}
+	if -5 > x{
+		r += 32
+	}
+	if -5 <= x{
+		r += 64
+	}
+	if -5 >= x{
+		r += 128
+	}
+	if x < -5{
+		r += 256
+	}
+	if x >= 5{
+		r += 512
+	}
+	return r
+}
+func slotSlot() mut u64{
+	let a = mut 10
+	let b = mut 20
+	let r = mut 0
+	if a < b{
+		r += 1
+	}
+	if b < a{
+		r += 2
+	}
+	if a == b{
+		r += 4
+	}
+	if a != b{
+		r += 8
+	}
+	return r
+}
+// a range test the way a `for` loop builds it, and two compares joined with &&
+func rangeLoop(lo: mut u64, hi: mut u64) mut u64{
+	let s = mut 0
+	for i in lo..hi{
+		s += i
+	}
+	return s
+}
+func andPairs(a: mut u64, b: mut u64, c: mut u64) mut u64{
+	let r = mut 0
+	if a < b && b < c{
+		r += 1
+	}
+	if a <= b && b <= c{
+		r += 2
+	}
+	if a > b && b > c{
+		r += 4
+	}
+	if a == b && b == c{
+		r += 8
+	}
+	if a != b && b != c{
+		r += 16
+	}
+	if a < b && c < 100{
+		r += 32
+	}
+	if a >= 3 && a < 10{
+		r += 64
+	}
+	return r
+}
+func whileLike() mut u64{
+	let i = mut 0
+	let s = mut 0
+	unsafe{
+		loop{
+			if i >= 40{
+				break
+			}
+			if i % 4 == 0{
+				s += i
+			}
+			if i % 8 != 0 && i / 2 > 10{
+				s += 1000
+			}
+			i++
+		}
+	}
+	return s
+}
+
+func main() void{
+	report("division/modulo by 2^k agree with div", divValues(), 0)
+	report("divisions worked by hand", divHandWorked(), 125004210)
+	report("dividend is an expression", divExprOperand(), 9521)
+	report("division in a loop", divInLoop(), 507)
+	report("unsigned compares agree with stored compares", cmpValues(), 0)
+	report("signed compares agree with stored compares", scmpValues(), 0)
+	report("constant on the left and on the right (x = 3)", constSides(3), 298)
+	report("constant on the left and on the right (x = 5)", constSides(5), 348)
+	report("constant on the left and on the right (x = 9)", constSides(9), 325)
+	report("constant on the left and on the right (big)", constSides(5000000000), 197)
+	report("signed constants on both sides (x = -9)", sconstSides(-9), 2 + 8 + 32 + 128 + 256)
+	report("signed constants on both sides (x = -5)", sconstSides(-5), 2 + 8 + 64 + 128)
+	report("signed constants on both sides (x = 0)", sconstSides(0), 2 + 8 + 16 + 64)
+	report("signed constants on both sides (x = 5)", sconstSides(5), 4 + 8 + 16 + 64 + 512)
+	report("signed constants on both sides (x = 9)", sconstSides(9), 1 + 4 + 16 + 64 + 512)
+	report("slot against slot", slotSlot(), 1 + 8)
+	report("range loop 3..7", rangeLoop(3, 7), 3 + 4 + 5 + 6)
+	report("range loop empty (5..5)", rangeLoop(5, 5), 0)
+	report("range loop inverted (7..3)", rangeLoop(7, 3), 0)
+	report("range loop from 0", rangeLoop(0, 5), 10)
+	report("and of two compares, all true-ish", andPairs(1, 2, 3), 1 + 2 + 16 + 32)
+	report("and of two compares, equal", andPairs(4, 4, 4), 2 + 8 + 64)
+	report("and of two compares, descending", andPairs(9, 5, 1), 4 + 16 + 64)
+	report("and of two compares, mixed", andPairs(2, 7, 7), 34)
+	report("modulo and division as loop conditions", whileLike(), 16180)
+}

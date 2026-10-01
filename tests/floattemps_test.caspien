@@ -1,0 +1,135 @@
+// Regression test for f32 expression temporaries in xmm registers (`float-temporaries-in-registers: on`, needs `deferred-operands: on`;
+// independent of `float-variables-in-registers`). FloatTempPass keeps the intermediate results of float expressions in xmm registers
+// (%y0..%y3) instead of round-tripping through general registers. Every expected value is worked out by hand (all exactly representable
+// in f32); the output must be identical with the switch on and off. Prints one PASS/FAIL line per check, then one printf line.
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+
+extern sqrtf(mut f32) mut f32
+
+func check(name: static imut string, ok: mut bool) void{
+	unsafe{
+		if ok{
+			printf("PASS %s\n", name)
+		}else{
+			printf("FAIL %s\n", name)
+		}
+	}
+	return
+}
+
+func feq(a: mut f32, b: mut f32) mut bool{
+	let r = mut false
+	unsafe{ r = a == b }
+	return r
+}
+
+let static gx = mut 1.5
+let static gy = mut 2.5
+let static gz = mut 0.0
+
+// a: 2, b: 3, c: 4, d: 5 in every check below
+// 1. balanced tree: (a*b + c*d) * (a - c) / (b + d) = 26 * -2 / 8
+func chain(a: mut f32, b: mut f32, c: mut f32, d: mut f32) mut f32{
+	unsafe{ return (a * b + c * d) * (a - c) / (b + d) }
+}
+// 2. two subtrees live at once: (a+b)*(c+d) - (a-b)*(c-d) = 45 - 1
+func twoTrees(a: mut f32, b: mut f32, c: mut f32, d: mut f32) mut f32{
+	unsafe{ return (a + b) * (c + d) - (a - b) * (c - d) }
+}
+// 3. right-nested (deep enough that the register-form pass falls back to the stack form) = 6 + (20 + (8 + (15 + (10 + 12))))
+func deep(a: mut f32, b: mut f32, c: mut f32, d: mut f32) mut f32{
+	unsafe{ return a * b + (c * d + (a * c + (b * d + (a * d + b * c)))) }
+}
+// 4. the destination equals the right operand of a non-commutative op: a - (b - (c - d)) = 2 - (3 - (4 - 5))
+func nonComm(a: mut f32, b: mut f32, c: mut f32, d: mut f32) mut f32{
+	unsafe{ return a - (b - (c - d)) }
+}
+func divs(a: mut f32, b: mut f32, c: mut f32, d: mut f32) mut f32{
+	unsafe{ return (a * b) / (c - d) }
+}
+// 5. compares of computed values
+func lt(a: mut f32, b: mut f32, c: mut f32, d: mut f32) mut bool{
+	let r = mut false
+	unsafe{ r = a * b < c * d }
+	return r
+}
+func eq(a: mut f32, b: mut f32) mut bool{
+	let r = mut false
+	unsafe{ r = a + b == 5.0 }
+	return r
+}
+// 6. float arguments computed inline, nested calls in an argument list
+func addf(a: mut f32, b: mut f32) mut f32{
+	unsafe{ return a + b }
+}
+func viaArgs(a: mut f32, b: mut f32, c: mut f32, d: mut f32) mut f32{
+	unsafe{ return addf(a * b, addf(c * d, a)) }
+}
+func viaLibm(a: mut f32, b: mut f32) mut f32{
+	unsafe{ return sqrtf(a * a + b * b - 4.0) }
+}
+// 7. immediates, statics read and written
+func imm(a: mut f32) mut f32{
+	unsafe{ return a * 2.0 + 0.5 }
+}
+func statics() mut f32{
+	unsafe{
+		gz = gx * gy + gx
+		return gz + gx * 2.0
+	}
+}
+func readZ() mut f32{
+	unsafe{ return gz }
+}
+// 8. a loop mixing promoted variables and temporaries
+func sumSquares(n: mut u64) mut f32{
+	let s = mut 0.0
+	let x = mut 1.0
+	let i = mut 0
+	unsafe{
+		loop{
+			if i == n{
+				break
+			}
+			s = s + x * x
+			x = x + 1.0
+			i++
+		}
+	}
+	return s
+}
+// 9. printed (promoted to double for varargs)
+func printedExpr(a: mut f32, b: mut f32) mut f32{
+	let r = mut 0.0
+	unsafe{
+		r = a * b + a
+		printf("printed %f\n", mut (a * b + a + b)) // printed 11.000000
+	}
+	return r
+}
+// 10. a temporary that must survive a call made while it is live is never held in an xmm register across it
+func liveAcrossCall(a: mut f32, b: mut f32) mut f32{
+	unsafe{ return a * b + addf(a, b) * 2.0 }
+}
+
+func main() void{
+	check("balanced tree", feq(chain(2.0, 3.0, 4.0, 5.0), -6.5))
+	check("two subtrees", feq(twoTrees(2.0, 3.0, 4.0, 5.0), 44.0))
+	check("deeply nested", feq(deep(2.0, 3.0, 4.0, 5.0), 71.0))
+	check("dst equals rhs, subtract", feq(nonComm(2.0, 3.0, 4.0, 5.0), -2.0))
+	check("divide", feq(divs(2.0, 3.0, 4.0, 5.0), -6.0))
+	check("compare computed", lt(2.0, 3.0, 4.0, 5.0))
+	check("compare equal", eq(2.0, 3.0))
+	check("computed float args", feq(viaArgs(2.0, 3.0, 4.0, 5.0), 28.0))
+	check("libm of an expression", feq(viaLibm(2.0, 3.0), 3.0))
+	check("immediates", feq(imm(2.0), 4.5))
+	check("statics", feq(statics(), 8.25))
+	check("static stored", feq(readZ(), 5.25))
+	check("loop with temporaries", feq(sumSquares(4), 30.0))
+	check("printed expression", feq(printedExpr(2.0, 3.0), 8.0))
+	check("temp live across a call", feq(liveAcrossCall(2.0, 3.0), 16.0))
+}

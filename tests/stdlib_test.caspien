@@ -1,0 +1,247 @@
+// Exercises every stdlib module. Run: java Compiler -i tests/stdlib_test.caspien output/stdlib_test && ./output/stdlib_test
+// Prints one PASS/FAIL line per check and a final tally; look for 'ALL STDLIB TESTS PASSED'.
+import "../stdlib/libc.caspien"
+import "../stdlib/hash.caspien"
+import "../stdlib/dynamic_array.caspien"
+import "../stdlib/hash_map.caspien"
+import "../stdlib/string.caspien"
+import "../stdlib/process.caspien"
+import "../stdlib/sleep.caspien"
+import "../stdlib/par_call.caspien"
+import "../stdlib/await_call.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+
+// Returns 0 when the check passed, 1 when it failed, so main can total the failures.
+func check(name: static imut string, ok: imut bool) mut u64{
+	unsafe{
+		if ok{
+			printf("PASS %s\n", name)
+			return 0
+		}
+		printf("FAIL %s\n", name)
+	}
+	return 1
+}
+
+@async
+func triple(x: mut u64) mut u64{
+	return x * 3
+}
+
+// ---------------------------------------------------------------- DynamicArray
+func testDynamicArray() mut u64{
+	?catch(e){ return 1 }
+	let fails = mut 0
+	let d = mut ? new DynamicArray:<u64>()
+	fails = mut (fails + check("DynamicArray: new is empty", len(d.backing) == 0))
+	? d.pushBack(d, mut 10)
+	? d.pushBack(d, mut 20)
+	? d.pushBack(d, mut 30)
+	fails = mut (fails + check("DynamicArray: pushBack x3 -> len 3", len(d.backing) == 3))
+	let i1 = mut 1
+	match i1 in d.backing{
+		fails = mut (fails + check("DynamicArray: get(1) == 20", d.get(d, i1) == 20))
+	}
+	match i1 into d.backing{
+		d.set(d, i1, mut 21)
+	}
+	match i1 in d.backing{
+		fails = mut (fails + check("DynamicArray: set(1, 21) then get", d.get(d, i1) == 21))
+	}
+	? d.pushFront(d, mut 5)
+	let i0 = mut 0
+	match i0 in d.backing{
+		fails = mut (fails + check("DynamicArray: pushFront -> [0] == 5", d.get(d, i0) == 5))
+	}
+	fails = mut (fails + check("DynamicArray: pushFront -> len 4", len(d.backing) == 4))
+	let last = mut ? d.popBack(d, mut 999)
+	fails = mut (fails + check("DynamicArray: popBack == 30", last == 30))
+	let first = mut ? d.popFront(d, mut 999)
+	fails = mut (fails + check("DynamicArray: popFront == 5", first == 5))
+	fails = mut (fails + check("DynamicArray: len 2 after pops", len(d.backing) == 2))
+	match i0 in d.backing{
+		fails = mut (fails + check("DynamicArray: [0] == 10 after pops", d.get(d, i0) == 10))
+	}
+
+	let e = mut ? new DynamicArray:<u64>()
+	let dflt = mut ? e.popBack(e, mut 77)
+	fails = mut (fails + check("DynamicArray: popBack on empty -> default", dflt == 77))
+	let dflt2 = mut ? e.popFront(e, mut 88)
+	fails = mut (fails + check("DynamicArray: popFront on empty -> default", dflt2 == 88))
+
+	let s = mut ? new DynamicArray:<u64>(mut 7)
+	fails = mut (fails + check("DynamicArray: seed ctor len 1", len(s.backing) == 1))
+	match i0 in s.backing{
+		fails = mut (fails + check("DynamicArray: seed ctor [0] == 7", s.get(s, i0) == 7))
+	}
+
+	let raw1 = mut ? dyn([mut 4, mut 5, mut 6])
+	let a = mut ? new DynamicArray:<u64>(raw1)
+	fails = mut (fails + check("DynamicArray: adopt ctor len 3", len(a.backing) == 3))
+	let i2 = mut 2
+	match i2 in a.backing{
+		fails = mut (fails + check("DynamicArray: adopt ctor [2] == 6", a.get(a, i2) == 6))
+	}
+
+	let c = mut ? new DynamicArray:<char>()
+	? c.pushBack(c, mut 'q')
+	match i0 in c.backing{
+		fails = mut (fails + check("DynamicArray<char>: pushBack/get", c.get(c, i0) == 'q'))
+	}
+	return fails
+}
+
+// ---------------------------------------------------------------------- hashOf
+func testHash() mut u64{
+	let fails = mut 0
+	let a = mut hashOf:<u64>(imut 42)
+	let b = mut hashOf:<u64>(imut 42)
+	let c = mut hashOf:<u64>(imut 43)
+	fails = mut (fails + check("hashOf: deterministic", a == b))
+	fails = mut (fails + check("hashOf: different inputs differ", a != c))
+	return fails
+}
+
+// --------------------------------------------------------------------- HashMap
+func testHashMap() mut u64{
+	?catch(e){ return 1 }
+	let fails = mut 0
+	let m = mut ? new HashMap:<u64>(mut 0, mut 0, mut 8)
+	fails = mut (fails + check("HashMap: new -> count 0", m.count == 0))
+	fails = mut (fails + check("HashMap: capacity 8", m.capacity == 8))
+	m.set(m, mut 3, mut 30)
+	m.set(m, mut 11, mut 110)
+	m.set(m, mut 5, mut 50)
+	fails = mut (fails + check("HashMap: 3 inserts -> count 3", m.count == 3))
+	fails = mut (fails + check("HashMap: get(3)", m.get(m, mut 3, mut 999) == 30))
+	fails = mut (fails + check("HashMap: get(11) (collides with 3 at cap 8)", m.get(m, mut 11, mut 999) == 110))
+	fails = mut (fails + check("HashMap: get(5)", m.get(m, mut 5, mut 999) == 50))
+	fails = mut (fails + check("HashMap: get miss -> default", m.get(m, mut 77, mut 999) == 999))
+	m.set(m, mut 3, mut 31)
+	fails = mut (fails + check("HashMap: update existing", m.get(m, mut 3, mut 999) == 31))
+	fails = mut (fails + check("HashMap: update keeps count 3", m.count == 3))
+	fails = mut (fails + check("HashMap: contains hit", m.contains(m, mut 11)))
+	fails = mut (fails + check("HashMap: contains miss", !m.contains(m, mut 12)))
+
+	let z = mut ? new HashMap:<u64>(mut 0, mut 0, mut 0)
+	z.set(z, mut 1, mut 2)
+	fails = mut (fails + check("HashMap: zero capacity set is a no-op", z.count == 0))
+	fails = mut (fails + check("HashMap: zero capacity get -> default", z.get(z, mut 1, mut 555) == 555))
+	fails = mut (fails + check("HashMap: zero capacity contains false", !z.contains(z, mut 1)))
+	return fails
+}
+
+// ---------------------------------------------------------------------- String
+func testString() mut u64{
+	?catch(e){ return 1 }
+	let fails = mut 0
+	let empty = mut ? new String()
+	fails = mut (fails + check("String: new() is empty", len(empty.chars.backing) == 0))
+	let s = mut ? new String("Hello")
+	fails = mut (fails + check("String: new(text) len 5", len(s.chars.backing) == 5))
+	let i1 = mut 1
+	fails = mut (fails + check("String: charAt(1) == 'e'", s.charAt(s, i1) == 'e'))
+	fails = mut (fails + check("String: charAt out of range -> NUL", s.charAt(s, mut 99) == '\0'))
+	? s.appendChar(s, mut '!')
+	fails = mut (fails + check("String: appendChar -> len 6", len(s.chars.backing) == 6))
+	fails = mut (fails + check("String: appendChar -> last is '!'", s.charAt(s, mut 5) == '!'))
+	? s.concat(s, " World")
+	fails = mut (fails + check("String: concat(literal) -> len 12", len(s.chars.backing) == 12))
+	fails = mut (fails + check("String: concat(literal) -> [6] == ' '", s.charAt(s, mut 6) == ' '))
+	let t = mut ? new String("abc")
+	? s.concat(s, t)
+	fails = mut (fails + check("String: concat(String) -> len 15", len(s.chars.backing) == 15))
+	fails = mut (fails + check("String: concat(String) -> last 'c'", s.charAt(s, mut 14) == 'c'))
+	? t.concat(t, t)
+	fails = mut (fails + check("String: concat(self) doubles -> len 6", len(t.chars.backing) == 6))
+	s.setCharAt(s, mut 0, mut 'J')
+	fails = mut (fails + check("String: setCharAt(0, 'J')", s.charAt(s, mut 0) == 'J'))
+	s.setCharAt(s, mut 999, mut 'Z')
+	fails = mut (fails + check("String: setCharAt out of range is a no-op", len(s.chars.backing) == 15))
+	let found = mut s.firstIndexOf(s, mut 'W')
+	let missing = mut s.firstIndexOf(s, mut 'z')
+	fails = mut (fails + check("String: firstIndexOf found (7)", found * mut -1 == mut -7))
+	fails = mut (fails + check("String: firstIndexOf missing -> -1", missing == mut -1))
+	let sub = mut ? s.sub(s, mut 7, mut 12)
+	fails = mut (fails + check("String: sub(7,12) len 5", len(sub.chars.backing) == 5))
+	fails = mut (fails + check("String: sub(7,12) starts 'W'", sub.charAt(sub, mut 0) == 'W'))
+	fails = mut (fails + check("String: sub(7,12) ends 'd'", sub.charAt(sub, mut 4) == 'd'))
+	let none = mut ? s.sub(s, mut 3, mut 3)
+	fails = mut (fails + check("String: empty sub", len(none.chars.backing) == 0))
+	return fails
+}
+
+// ----------------------------------------------------------------------- libc
+func testLibc() mut u64{
+	let fails = mut 0
+	unsafe{
+		fails = mut (fails + check("libc: strlen", strlen("Caspien") == 7))
+		let t0 = mut clock()
+		let t1 = mut clock()
+		fails = mut (fails + check("libc: clock is monotonic", t1 >= t0))
+		putchar(mut 111)
+		putchar(mut 107)
+		putchar(mut 10)
+	}
+	return fails
+}
+
+// -------------------------------------------------------------------- process
+func testProcess() mut u64{
+	?catch(e){ return 1 }
+	let fails = mut 0
+	let p = mut ? spawn("echo child-says-hi", imut ProcessMode.READ)
+	let line = imut StdOut.read(p.stream)
+	unsafe{
+		fails = mut (fails + check("process: read one line from child", strlen(line) > 0))
+		printf("  child output: %s", line)
+	}
+	let status = mut closeProcess(p)
+	fails = mut (fails + check("process: closeProcess -> status 0", status == 0))
+
+	let w = mut ? spawn("cat > /dev/null", imut ProcessMode.WRITE)
+	StdIn.write(w.stream, "written to child\n")
+	let wstatus = mut closeProcess(w)
+	fails = mut (fails + check("process: write mode + close -> status 0", wstatus == 0))
+	return fails
+}
+
+// ----------------------------------------------------------------------- sleep
+func testSleep() mut u64{
+	let fails = mut 0
+	let r = mut sleep_call(mut 0)
+	fails = mut (fails + check("sleep: sleep_call(0) returns 0", r == 0))
+	return fails
+}
+
+// -------------------------------------------------------------- par / await
+func testAsync() mut u64{
+	let fails = mut 0
+	let r = mut await triple(mut 14)
+	fails = mut (fails + check("async: await triple(14) == 42", r == 42))
+	return fails
+}
+
+func main() void{
+	let fails = mut 0
+	fails = mut (fails + testDynamicArray())
+	fails = mut (fails + testHash())
+	fails = mut (fails + testHashMap())
+	fails = mut (fails + testString())
+	fails = mut (fails + testLibc())
+	fails = mut (fails + testProcess())
+	fails = mut (fails + testSleep())
+	fails = mut (fails + testAsync())
+	unsafe{
+		if fails == 0{
+			printf("ALL STDLIB TESTS PASSED\n")
+		}
+		if fails != 0{
+			printf("%llu STDLIB CHECK(S) FAILED\n", fails)
+		}
+	}
+	return
+}

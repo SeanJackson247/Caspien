@@ -1,0 +1,92 @@
+// Regression test for the recursion-to-loop conversion (TypeChecker.lowerRecursiveFunctionToLoop).
+// The converted loop runs (initial range length) times. A recursion that shrinks its range by ONE per step needs one more "call" than
+// that to reach its base case, so the base-case block is also placed after the loop (a copy of it: what the next recursive call would
+// have done on entry). Before that change, shrink-by-one recursions fell off the loop and returned garbage.
+// Every expected value below is what the real recursion returns. Output must be identical with inlining off and at every preset.
+import "../stdlib/libc.caspien"
+
+func check(name: static imut string, ok: mut bool) void{
+	unsafe{
+		if ok{
+			printf("PASS %s\n", name)
+		}else{
+			printf("FAIL %s\n", name)
+		}
+	}
+	return
+}
+
+// counts the steps until the range is empty; the range shrinks by ONE per step
+@recursive
+func stepsOne(acc: mut u64, r: imut range) mut u64{
+	match r is base{ return acc }
+	let lo = mut (r.start + 1)
+	let hi = mut r.end
+	let r2 = imut (lo..hi)
+	match r2 within r{ return stepsOne(acc + 1, r2) }
+	else{ return acc }
+}
+
+// the range shrinks by TWO per step (both ends)
+@recursive
+func stepsBoth(acc: mut u64, r: imut range) mut u64{
+	match r is base{ return acc }
+	let lo = mut (r.start + 1)
+	let hi = mut (r.end - 1)
+	let r2 = imut (lo..hi)
+	match r2 within r{ return stepsBoth(acc + 1, r2) }
+	else{ return acc }
+}
+
+// the range shrinks from the END, and the base case does more than return a parameter: it declares a local and computes
+@recursive
+func sumStarts(acc: mut u64, r: imut range) mut u64{
+	match r is base{
+		let doubled = mut (acc * 2)
+		return doubled + 1
+	}
+	let lo = mut (r.start + 1)
+	let hi = mut r.end
+	let r2 = imut (lo..hi)
+	match r2 within r{ return sumStarts(acc + r.start, r2) }
+	else{ return acc }
+}
+
+// two self-call sites in different branches
+@recursive
+func zigzag(acc: mut u64, r: imut range) mut u64{
+	match r is base{ return acc }
+	let lo = mut (r.start + 1)
+	let hi = mut r.end
+	let r2 = imut (lo..hi)
+	match r2 within r{
+		if acc > 15{
+			return zigzag(acc + 1, r2)
+		}else{
+			return zigzag(acc + 10, r2)
+		}
+	}
+	else{ return acc }
+}
+
+func main() void{
+	check("shrink by one, length 4", stepsOne(mut 0, 0..4) == 4)
+	check("shrink by one, length 1", stepsOne(mut 0, 0..1) == 1)
+	check("shrink by one, length 9", stepsOne(mut 0, 0..9) == 9)
+	check("shrink by one, start 5", stepsOne(mut 0, 5..8) == 3)
+	check("shrink by one, acc 100", stepsOne(mut 100, 0..4) == 104)
+	check("empty range", stepsOne(mut 7, 3..3) == 7)
+	check("shrink by two, length 8", stepsBoth(mut 0, 0..8) == 4)
+	check("shrink by two, length 6", stepsBoth(mut 0, 0..6) == 3)
+	// an odd length ends on an inverted range (4..3), which counts as one more step and is a base case: steps = ceil(length / 2)
+	check("shrink by two, odd length 7", stepsBoth(mut 0, 0..7) == 4)
+	check("shrink by two, length 1", stepsBoth(mut 0, 0..1) == 1)
+	check("shrink by two, length 3", stepsBoth(mut 0, 0..3) == 2)
+	check("base with a local, 3..7", sumStarts(mut 0, 3..7) == 37)
+	check("base with a local, 5..6", sumStarts(mut 0, 5..6) == 11)
+	check("base with a local, empty", sumStarts(mut 0, 4..4) == 1)
+	check("two call sites", zigzag(mut 0, 0..4) == 22)
+	let a = mut stepsOne(mut 0, 0..6)
+	check("bound to a variable", a == 6)
+	return
+}

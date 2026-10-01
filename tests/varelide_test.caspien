@@ -1,0 +1,225 @@
+// Regression test for variable elision and variable shifting (`variable-elision: on|off`, `variable-shifting: on|off`).
+// Each function has hand-computed expected results, so a wrong propagation or a wrong split shows up as a FAIL.
+// The output must be identical with both switches on and off.
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+
+func check(name: static imut string, ok: mut bool) void{
+	unsafe{
+		if ok{
+			printf("PASS %s\n", name)
+		}else{
+			printf("FAIL %s\n", name)
+		}
+	}
+	return
+}
+
+func id(x: mut u64) mut u64{
+	return x
+}
+
+// single constant assignment, propagated into expressions and calls
+func elide_basic(k: mut u64) mut u64{
+	let a = mut 5
+	let b = imut 7
+	return a * b + k + id(a)
+}
+
+// bound is a constant variable
+func elide_bound(k: mut u64) mut u64{
+	let n = imut 4
+	let s = mut 0
+	for i in 0..n{
+		s += i + k
+	}
+	return s
+}
+
+// assigned inside an if: reads after the branch must keep the variable
+func no_elide_branch(c: mut bool) mut u64{
+	let a = mut 5
+	if c{
+		a = 6
+	}
+	return a
+}
+
+// assigned in a loop: never elided or shifted
+func no_elide_loop(k: mut u64) mut u64{
+	let a = mut 1
+	for i in 0..k{
+		a = 2
+		a += i
+	}
+	return a
+}
+
+// address taken: never elided
+func no_elide_addr() mut u64{
+	let p = mut 3
+	unsafe{
+		let q = mut raw p
+		return p
+	}
+}
+
+// dead constant store, never read
+func dead_store() mut u64{
+	let unused = mut 9
+	return 1
+}
+
+// narrow types and negative narrow literals
+func narrow() mut bool{
+	let:<mut u8> a = mut 200
+	let:<mut s8> b = mut -5
+	let ok = mut true
+	let:<mut u8> x = mut 50
+	if a + x != 250{
+		ok = false
+	}
+	if b + 5 != 0{
+		ok = false
+	}
+	return ok
+}
+
+// bool and float
+func boolfloat(k: mut u64) mut bool{
+	let t = mut true
+	let f = mut false
+	let ok = mut true
+	if t && f{
+		ok = false
+	}
+	if !t{
+		ok = false
+	}
+	return ok
+}
+
+// straight-line reassignments (shifting)
+func shift_basic(k: mut u64) mut u64{
+	let x = mut 1
+	let r = mut (x + k)
+	x = 2
+	r += x * 10
+	x = 3
+	r += x * 100
+	return r
+}
+
+// reassignment inside an if is not split
+func shift_branch(c: mut bool) mut u64{
+	let x = mut 1
+	let r = mut x
+	if c{
+		x = 2
+	}
+	r += x
+	x = 5
+	r += x
+	return r
+}
+
+// reassignment after a loop, loop touches nothing constant
+func shift_after_loop(k: mut u64) mut u64{
+	let x = mut 1
+	let r = mut 0
+	for i in 0..k{
+		r += x + i
+	}
+	x = 100
+	r += x
+	return r
+}
+
+// reassignment inside a loop is not split
+func shift_in_loop(k: mut u64) mut u64{
+	let x = mut 1
+	let r = mut 0
+	for i in 0..k{
+		r += x
+		x = 2
+	}
+	x = 7
+	r += x
+	return r
+}
+
+func readThrough(p: raw imut u64) imut u64{
+	unsafe{ return deref(p) }
+}
+// the only assignment is a constant, but the value is read through a pointer: must stay a real variable
+func addr_read() imut u64{
+	let v = mut 41
+	unsafe{
+		let p = imut raw v
+		return readThrough(p) + 1
+	}
+}
+
+@throws
+func thrower(x: mut u64) mut u64{
+	if x == 0{
+		throw "zero"
+	}
+	return x
+}
+// reassignment in a function with a catch body that reads the variable: no shifting, results unchanged
+func catch_shift(x: mut u64) mut u64{
+	let s = mut 10
+	let r = try thrower(x) catch(e){
+		return s
+	}
+	s = 20
+	return r + s
+}
+
+// both bounds are constant variables: elision rewrites the range type, so loop unrolling (when on) can unroll it
+func bound_vars(k: mut u64) mut u64{
+	let n = imut 4
+	let lo = imut 1
+	let s = mut 0
+	for i in lo..n{
+		s += i * k
+	}
+	return s
+}
+// the bound is reassigned (not a constant variable): stays a runtime bound
+func bound_mut(k: mut u64) mut u64{
+	let n = mut 3
+	n = k
+	let s = mut 0
+	for i in 0..n{
+		s += 1
+	}
+	return s
+}
+
+func main() void{
+	check("bound_vars", bound_vars(10) == 60)
+	check("bound_mut", bound_mut(5) == 5)
+	check("addr_read", addr_read() == 42)
+	check("catch_shift_ok", catch_shift(5) == 25)
+	check("catch_shift_throw", catch_shift(0) == 10)
+	check("elide_basic", elide_basic(1) == 5 * 7 + 1 + 5)
+	check("elide_bound", elide_bound(1) == 10)
+	check("no_elide_branch_t", no_elide_branch(true) == 6)
+	check("no_elide_branch_f", no_elide_branch(false) == 5)
+	check("no_elide_loop", no_elide_loop(3) == 4)
+	check("no_elide_loop0", no_elide_loop(0) == 1)
+	check("no_elide_addr", no_elide_addr() == 3)
+	check("dead_store", dead_store() == 1)
+	check("narrow", narrow())
+	check("boolfloat", boolfloat(1))
+	check("shift_basic", shift_basic(4) == 1 + 4 + 20 + 300)
+	check("shift_branch_t", shift_branch(true) == 1 + 2 + 5)
+	check("shift_branch_f", shift_branch(false) == 1 + 1 + 5)
+	check("shift_after_loop", shift_after_loop(3) == 3 + 3 + 100)
+	check("shift_in_loop", shift_in_loop(3) == 1 + 2 + 2 + 7)
+}

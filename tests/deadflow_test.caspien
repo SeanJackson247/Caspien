@@ -1,0 +1,229 @@
+// Regression test for dead control flow removal (`dead-control-flow-removal: on|off`, the Optimizer's DeadControlFlowRemovalPass). The branch conditions
+// here are constants (written as literals, or made constant by variable elision + constant folding), so with the passes on the guarded branches are
+// removed. Every function has a hand-computed result; the output must be identical with the switches on and off.
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+
+let static hits = mut 0
+
+func check(name: static imut string, ok: mut bool) void{
+	unsafe{
+		if ok{
+			printf("PASS %s\n", name)
+		}else{
+			printf("FAIL %s\n", name)
+		}
+	}
+	return
+}
+
+func touch() void{
+	unsafe{ hits += 1 }
+	return
+}
+
+@throws
+func thrower(x: mut u64) mut u64{
+	if x == 0{
+		throw "zero"
+	}
+	return x
+}
+
+// literal conditions
+func lit_true(k: mut u64) mut u64{
+	let a = mut k
+	if true{
+		a += 1
+	}else{
+		a += 100
+	}
+	return a
+}
+func lit_false(k: mut u64) mut u64{
+	let a = mut k
+	if false{
+		a += 100
+	}else{
+		a += 2
+	}
+	return a
+}
+func lit_false_noelse(k: mut u64) mut u64{
+	let a = mut k
+	if false{
+		a += 100
+	}
+	return a + 3
+}
+
+// condition made constant by elision + folding
+func via_var(k: mut u64) mut u64{
+	let debug = imut false
+	let fast = imut true
+	let a = mut k
+	if debug{
+		a += 1000
+	}
+	if fast{
+		a += 5
+	}else{
+		a += 6
+	}
+	return a
+}
+func via_compare(k: mut u64) mut u64{
+	let n = imut 4
+	let a = mut k
+	if n > 3{
+		a += 7
+	}else{
+		a += 8
+	}
+	if n == 5{
+		a += 9
+	}
+	return a
+}
+
+// else-if chain with a constant in the middle
+func chain(k: mut u64) mut u64{
+	let a = mut 0
+	if k == 1{
+		a = 10
+	}else if true{
+		a = 20
+	}else{
+		a = 30
+	}
+	return a
+}
+
+// return inside constant branches
+func ret_true(k: mut u64) mut u64{
+	if true{
+		return k + 1
+	}else{
+		return k + 2
+	}
+}
+func ret_false(k: mut u64) mut u64{
+	if false{
+		return 100
+	}
+	return k + 4
+}
+
+// a dead branch that contains a loop, a nested if and a call
+func dead_with_loop(k: mut u64) mut u64{
+	let a = mut k
+	if false{
+		for i in 0..k{
+			a += i
+			if a > 5{
+				touch()
+			}
+		}
+		touch()
+	}
+	return a
+}
+// a live branch with a dead else that contains a loop
+func live_with_dead_else(k: mut u64) mut u64{
+	let a = mut 0
+	if true{
+		a = k * 2
+	}else{
+		for i in 0..k{
+			a += i
+		}
+		touch()
+	}
+	return a
+}
+
+// constant conditions inside a loop
+func in_loop(k: mut u64) mut u64{
+	let a = mut 0
+	for i in 0..k{
+		if false{
+			a += 1000
+		}
+		if true{
+			a += i
+		}else{
+			a += 500
+		}
+	}
+	return a
+}
+// a constant false guarding a break
+func loop_break(k: mut u64) mut u64{
+	let a = mut 0
+	unsafe{
+		loop{
+			if false{
+				break
+			}
+			a += 1
+			if a > k{
+				break
+			}
+		}
+	}
+	return a
+}
+
+// nested constants
+func nested(k: mut u64) mut u64{
+	let a = mut k
+	if true{
+		if false{
+			a += 100
+		}else{
+			a += 1
+			if true{
+				a += 2
+			}
+		}
+	}else{
+		a += 1000
+	}
+	return a
+}
+
+// try/catch in the function with a constant branch
+func with_catch(k: mut u64) mut u64{
+	let a = mut try thrower(k) catch(e){
+		return 77
+	}
+	if false{
+		a += 1000
+	}
+	return a + 1
+}
+
+func main() void{
+	check("lit_true", lit_true(10) == 11)
+	check("lit_false", lit_false(10) == 12)
+	check("lit_false_noelse", lit_false_noelse(10) == 13)
+	check("via_var", via_var(10) == 15)
+	check("via_compare", via_compare(10) == 17)
+	check("chain_1", chain(1) == 10)
+	check("chain_2", chain(2) == 20)
+	check("ret_true", ret_true(5) == 6)
+	check("ret_false", ret_false(5) == 9)
+	check("dead_with_loop", dead_with_loop(6) == 6)
+	check("live_with_dead_else", live_with_dead_else(4) == 8)
+	check("in_loop", in_loop(5) == 10)
+	check("loop_break", loop_break(3) == 4)
+	check("nested", nested(10) == 13)
+	check("with_catch_ok", with_catch(5) == 6)
+	check("with_catch_throw", with_catch(0) == 77)
+	let ran = mut 0
+	unsafe{ ran = hits }
+	check("no_dead_code_ran", ran == 0)
+}

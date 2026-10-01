@@ -1,0 +1,147 @@
+// Regression test for hot loop variables in r8/r9/r10 inside functions that ALLOCATE (new, unsafe dyn + resize). The allocation code uses
+// r12-r14 (and calls malloc/realloc, which clobbers r8-r11), so such a function may only put a variable in a caller-saved register where
+// that variable is not live across the allocation. A variable wrongly placed in r13/r14 corrupts the allocator, one wrongly kept in r8..r10
+// across the allocation comes back wrong. Expected values come from an independent Python model. The output must be identical with
+// variables-in-registers on and off.
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+
+func check(name: static imut string, ok: mut bool) void{
+	unsafe{
+		if ok{
+			printf("PASS %s\n", name)
+		}else{
+			printf("FAIL %s\n", name)
+		}
+	}
+	return
+}
+
+struct Box{
+	@pub{ v: mut u64 }
+}
+
+// 1. a value defined before a `new` and read after it, then a call-free loop with five hot variables
+@throws
+func hot(n: mut u64) mut u64{
+	?catch(e){ throw e }
+	let keep = mut 7
+	let a = mut 0
+	let b = mut 0
+	let c = mut 0
+	let d = mut 0
+	let e = mut 0
+	let bx = mut ?new Box{v= keep}
+	for i in 0..n{
+		a += 1
+		b += i
+		c += a
+		d += b
+		e += c
+	}
+	return a + b + c + d + e + keep
+}
+
+// 2. an allocation inside the loop: the running sums are live across it every iteration
+@throws
+func inLoop(n: mut u64) mut u64{
+	?catch(e){ throw e }
+	let s = mut 0
+	let t = mut 0
+	for i in 0..n{
+		let bx = mut ?new Box{v= i}
+		s += i
+		t += s * 2
+	}
+	return s + t
+}
+
+// 3. sieve on an unsafe dynarray: resize, then call-free loops
+func sieve(n: mut u64) mut u64{
+	let count = mut 0
+	unsafe{
+		let f = mut unsafe dyn:<u8>([])
+		let total = mut (n + 1)
+		f = resize(f, total)
+		for i in 0..total{
+			f[i] = 1
+		}
+		let i = mut 2
+		loop{
+			if i * i > n{
+				break
+			}
+			if f[i] != 0{
+				let j = mut (i * i)
+				loop{
+					if j > n{
+						break
+					}
+					f[j] = 0
+					j += i
+				}
+			}
+			i += 1
+		}
+		for k in 2..total{
+			count += f[k] as u64
+		}
+	}
+	return count
+}
+
+// 4. a u64 dynarray filled in a loop, then four running sums in one call-free loop
+func wideSum(n: mut u64) mut u64{
+	let r = mut 0
+	unsafe{
+		let arr = mut unsafe dyn:<u64>([])
+		let size = mut n
+		arr = resize(arr, size)
+		for i in 0..size{
+			arr[i] = i * 3
+		}
+		let a = mut 0
+		let b = mut 0
+		let c = mut 0
+		let d = mut 0
+		for i in 0..size{
+			a += arr[i]
+			b += a
+			c += b
+			d += c
+		}
+		r = a + b + c + d
+	}
+	return r
+}
+
+func main() void{
+	try{
+		?catch(e){ return }
+		let h0 = mut ?hot(0)
+		let h1 = mut ?hot(1)
+		let h5 = mut ?hot(5)
+		let h12 = mut ?hot(12)
+		let l0 = mut ?inLoop(0)
+		let l1 = mut ?inLoop(1)
+		let l6 = mut ?inLoop(6)
+		check("hot n=0", h0 == 7)
+		check("hot n=1", h1 == 10)
+		check("hot n=5", h5 == 92)
+		check("hot n=12", h12 == 813)
+		check("allocation in the loop n=0", l0 == 0)
+		check("allocation in the loop n=1", l1 == 0)
+		check("allocation in the loop n=6", l6 == 85)
+	}
+	check("sieve n=1", sieve(1) == 0)
+	check("sieve n=2", sieve(2) == 1)
+	check("sieve n=100", sieve(100) == 25)
+	check("sieve n=1000", sieve(1000) == 168)
+	check("wide sum n=0", wideSum(0) == 0)
+	check("wide sum n=1", wideSum(1) == 0)
+	check("wide sum n=4", wideSum(4) == 156)
+	check("wide sum n=9", wideSum(9) == 3834)
+}

@@ -1,0 +1,356 @@
+// Regression test for stack and heap struct literals with a computed member whose other members are arrays of structs, inline structs or
+// multi-dimensional arrays. Before the fix an array of structs crashed (the layout descriptor called the array one block, but each element is
+// pushed as its own words), a heap literal containing an inline struct literal took the wrong start for its layout, a list of row variables for
+// a narrow multi-dimensional array crashed, and reading `arr[i].field` for a field narrower than 8 bytes read the wrong half of the word.
+// Run with every optimizer switch off and on: identical output.
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+
+struct Pt{
+	@pub{
+		a: mut u32
+		b: mut u8
+	}
+}
+struct Wide{
+	@pub{
+		x: mut u64
+		y: mut f32
+	}
+}
+struct Box{
+	@pub{
+		tag: mut u8
+		pts: mut Pt[2]
+		tail: mut u16
+	}
+}
+struct Twin{
+	@pub{
+		first: mut Pt[2]
+		mid: mut u8
+		second: mut Pt[2]
+		tail: mut u16
+	}
+}
+struct Hold{
+	@pub{
+		tag: mut u8
+		p: mut Pt
+		tail: mut u16
+	}
+}
+struct WBox{
+	@pub{
+		tag: mut u8
+		ws: mut Wide[2]
+		tail: mut u16
+	}
+}
+struct Grid{
+	@pub{
+		tag: mut u8
+		g: mut u32[3][2]
+		tail: mut u16
+	}
+}
+struct Grid64{
+	@pub{
+		tag: mut u8
+		g: mut u64[2][2]
+		tail: mut u16
+	}
+}
+struct Cube{
+	@pub{
+		tag: mut u8
+		c: mut u16[2][2][2]
+		tail: mut u16
+	}
+}
+struct Wrap2{
+	@pub{
+		tag: mut u8
+		box: owns some mut Box
+		a: mut u32[3]
+		b: mut u32[3]
+		tail: mut u16
+	}
+}
+struct Wrap{
+	@pub{
+		tag: mut u8
+		box: owns some mut Box
+		small: mut u32[3]
+		small2: mut u32[3]
+		tail: mut u16
+	}
+}
+
+func check(name: static imut string, ok: mut bool) void{
+	unsafe{
+		if ok{
+			printf("PASS %s\n", name)
+		}else{
+			printf("FAIL %s\n", name)
+		}
+	}
+	return
+}
+
+// each heap check returns 0 when every value read back through the pointer is right
+func heapPts(t: mut u16, c: mut u32) mut u64{
+	?catch(e){ return 1 }
+	let b = mut ? new Box{tag= 3, pts= [Pt{a= c + 1, b= 12}, Pt{a= 21, b= 22}], tail= t + 2}
+	if b.tag != 3{
+		return 2
+	}
+	if b.tail != 1002{
+		return 3
+	}
+	if b.pts[0].a != 21{
+		return 4
+	}
+	if b.pts[0].b != 12{
+		return 5
+	}
+	if b.pts[1].a != 21{
+		return 6
+	}
+	if b.pts[1].b != 22{
+		return 7
+	}
+	return 0
+}
+
+func heapHold(t: mut u16, c: mut u32) mut u64{
+	?catch(e){ return 1 }
+	let h = mut ? new Hold{tag= 4, p= Pt{a= c + 5, b= 9}, tail= t + 6}
+	if h.tag != 4{
+		return 2
+	}
+	if h.tail != 1006{
+		return 3
+	}
+	if h.p.a != 25{
+		return 4
+	}
+	if h.p.b != 9{
+		return 5
+	}
+	return 0
+}
+
+func heapGrid(t: mut u16) mut u64{
+	?catch(e){ return 1 }
+	let:<mut u32[3]> r0 = mut [1, 2, 3]
+	let:<mut u32[3]> r1 = mut [4, 5, 6]
+	let g = mut ? new Grid{tag= 5, g= [[1, 2, 3], [4, 5, 6]], tail= t + 1}
+	if g.tag != 5{
+		return 2
+	}
+	if g.tail != 1001{
+		return 3
+	}
+	if g.g[0][1] != 2{
+		return 4
+	}
+	if g.g[1][2] != 6{
+		return 5
+	}
+	return 0
+}
+
+func heapGrid64(t: mut u16) mut u64{
+	?catch(e){ return 1 }
+	let g = mut ? new Grid64{tag= 5, g= [[1, 2], [3, 4]], tail= t + 1}
+	if g.tag != 5{
+		return 2
+	}
+	if g.tail != 1001{
+		return 3
+	}
+	if g.g[0][1] != 2{
+		return 4
+	}
+	if g.g[1][0] != 3{
+		return 5
+	}
+	return 0
+}
+
+// a nested heap literal followed by two same-typed array members, one written as a block (a variable) and one element by element: the
+// fallback counting cannot tell these apart, only the value-unit split can
+func heapNested2(t: mut u16, c: mut u32, k: mut u8) mut u64{
+	?catch(e){ return 1 }
+	let:<mut u32[3]> r = mut [1, 2, 3]
+	let w = mut ? new Wrap2{tag= 7, box= new Box{tag= 8, pts= [Pt{a= 31, b= k}, Pt{a= c + 3, b= 32}], tail= t + 4}, a= r, b= [c, c + 1, c + 2], tail= t + 5}
+	if w.tag != 7{
+		return 2
+	}
+	if w.tail != 1005{
+		return 3
+	}
+	if w.a[0] != 1{
+		return 4
+	}
+	if w.a[2] != 3{
+		return 5
+	}
+	if w.b[0] != 20{
+		return 6
+	}
+	if w.b[2] != 22{
+		return 7
+	}
+	return 0
+}
+
+// a nested heap literal that itself holds an array of structs
+func heapNested(t: mut u16, c: mut u32, k: mut u8) mut u64{
+	?catch(e){ return 1 }
+	let w = mut ? new Wrap{tag= 7, box= new Box{tag= 8, pts= [Pt{a= 31, b= k}, Pt{a= c + 3, b= 32}], tail= t + 4}, small= [c, c + 1, c + 2], small2= [c + 5, c + 6, c + 7], tail= t + 5}
+	if w.tag != 7{
+		return 2
+	}
+	if w.tail != 1005{
+		return 3
+	}
+	if w.small[0] != 20{
+		return 10
+	}
+	if w.small[2] != 22{
+		return 11
+	}
+	if w.small2[0] != 25{
+		return 12
+	}
+	if w.small2[2] != 27{
+		return 13
+	}
+	match Some(w.box){
+		if w.box.tag != 8{
+			return 4
+		}
+		if w.box.tail != 1004{
+			return 5
+		}
+		if w.box.pts[0].a != 31{
+			return 6
+		}
+		if w.box.pts[0].b != 9{
+			return 9
+		}
+		if w.box.pts[1].a != 23{
+			return 7
+		}
+		if w.box.pts[1].b != 32{
+			return 8
+		}
+	}
+	return 0
+}
+
+func main() void{
+	let:<mut u16> t = mut 1000
+	let:<mut u32> c = mut 20
+	let:<mut u8> k = mut 9
+
+	let b = mut Box{tag= 3, pts= [Pt{a= 11, b= 12}, Pt{a= 21, b= 22}], tail= t + 1}
+	check("array of structs: tag", b.tag == 3)
+	check("array of structs: pts[0].a", b.pts[0].a == 11)
+	check("array of structs: pts[0].b", b.pts[0].b == 12)
+	check("array of structs: pts[1].a", b.pts[1].a == 21)
+	check("array of structs: pts[1].b", b.pts[1].b == 22)
+	check("array of structs: tail", b.tail == 1001)
+
+	let b2 = mut Box{tag= 4, pts= [Pt{a= c + 1, b= 12}, Pt{a= 21, b= 23}], tail= t + 2}
+	check("computed element member: pts[0].a", b2.pts[0].a == 21)
+	check("computed element member: pts[0].b", b2.pts[0].b == 12)
+	check("computed element member: pts[1].b", b2.pts[1].b == 23)
+	check("computed element member: tail", b2.tail == 1002)
+
+	let src = mut [Pt{a= 41, b= 42}, Pt{a= 51, b= 52}]
+	let b3 = mut Box{tag= 5, pts= src, tail= t + 3}
+	check("array of structs from a variable: pts[0].a", b3.pts[0].a == 41)
+	check("array of structs from a variable: pts[1].b", b3.pts[1].b == 52)
+	check("array of structs from a variable: tail", b3.tail == 1003)
+
+	let tw = mut Twin{first= [Pt{a= 1, b= 2}, Pt{a= 3, b= 4}], mid= 5, second= [Pt{a= 6, b= 7}, Pt{a= 8, b= 9}], tail= t + 4}
+	check("two arrays of structs: first[1].a", tw.first[1].a == 3)
+	check("two arrays of structs: first[0].b", tw.first[0].b == 2)
+	check("two arrays of structs: mid", tw.mid == 5)
+	check("two arrays of structs: second[0].a", tw.second[0].a == 6)
+	check("two arrays of structs: second[1].b", tw.second[1].b == 9)
+	check("two arrays of structs: tail", tw.tail == 1004)
+
+	let h = mut Hold{tag= 6, p= Pt{a= c + 2, b= 8}, tail= t + 5}
+	check("inline struct member: tag", h.tag == 6)
+	check("inline struct member: p.a", h.p.a == 22)
+	check("inline struct member: p.b", h.p.b == 8)
+	check("inline struct member: tail", h.tail == 1005)
+
+	let wb = mut WBox{tag= 2, ws= [Wide{x= 100, y= 1.5}, Wide{x= 200, y= 2.5}], tail= t + 6}
+	check("array of wide structs: ws[0].x", wb.ws[0].x == 100)
+	check("array of wide structs: ws[1].x", wb.ws[1].x == 200)
+	check("array of wide structs: tail", wb.tail == 1006)
+	unsafe{ check("array of wide structs: ws[1].y", wb.ws[1].y == 2.5) }
+	unsafe{ check("array of wide structs: ws[0].y", wb.ws[0].y == 1.5) }
+
+	let:<mut u32[3]> r0 = mut [1, 2, 3]
+	let:<mut u32[3]> r1 = mut [4, 5, 6]
+	let:<mut u32[3][2]> grid = mut [r0, r1]
+	let g1 = mut Grid{tag= 3, g= grid, tail= t + 7}
+	check("2D narrow array from a variable: g[0][0]", g1.g[0][0] == 1)
+	check("2D narrow array from a variable: g[1][2]", g1.g[1][2] == 6)
+	check("2D narrow array from a variable: tail", g1.tail == 1007)
+	let g2 = mut Grid{tag= 4, g= [r0, r1], tail= t + 8}
+	check("2D narrow array from row variables: tag", g2.tag == 4)
+	check("2D narrow array from row variables: g[0][2]", g2.g[0][2] == 3)
+	check("2D narrow array from row variables: g[1][0]", g2.g[1][0] == 4)
+	check("2D narrow array from row variables: tail", g2.tail == 1008)
+
+	let g2b = mut Grid{tag= 6, g= [[10, 20, 30], [40, 50, 60]], tail= t + 10}
+	check("2D narrow nested literal in a struct literal: tag", g2b.tag == 6)
+	check("2D narrow nested literal in a struct literal: g[0][2]", g2b.g[0][2] == 30)
+	check("2D narrow nested literal in a struct literal: g[1][0]", g2b.g[1][0] == 40)
+	check("2D narrow nested literal in a struct literal: g[1][2]", g2b.g[1][2] == 60)
+	check("2D narrow nested literal in a struct literal: tail", g2b.tail == 1010)
+	let:<mut u32[3][2]> lit = mut [[11, 12, 13], [14, 15, 16]]
+	check("2D narrow nested literal in a let: lit[0][0]", lit[0][0] == 11)
+	check("2D narrow nested literal in a let: lit[1][2]", lit[1][2] == 16)
+	let:<mut u8[2][2]> litb = mut [[7, 8], [9, 250]]
+	check("2D u8 nested literal: litb[1][1]", litb[1][1] == 250)
+	check("2D u8 nested literal: litb[0][1]", litb[0][1] == 8)
+	let:<mut s32[2][2]> lits = mut [[-1, 2], [3, -4]]
+	check("2D s32 nested literal: lits[0][0]", lits[0][0] == -1)
+
+	let g3 = mut Grid64{tag= 3, g= [[1, 2], [3, 4]], tail= t + 9}
+	check("2D u64 array literal: g[0][1]", g3.g[0][1] == 2)
+	check("2D u64 array literal: g[1][0]", g3.g[1][0] == 3)
+	check("2D u64 array literal: g[1][1]", g3.g[1][1] == 4)
+	check("2D u64 array literal: tail", g3.tail == 1009)
+
+	let:<mut u16[2]> q0 = mut [1, 2]
+	let:<mut u16[2]> q1 = mut [3, 4]
+	let:<mut u16[2][2]> plane0 = mut [q0, q1]
+	let:<mut u16[2]> q2 = mut [5, 6]
+	let:<mut u16[2]> q3 = mut [7, 8]
+	let:<mut u16[2][2]> plane1 = mut [q2, q3]
+	let cu = mut Cube{tag= 9, c= [plane0, plane1], tail= t + 10}
+	check("3D narrow array from plane variables: tag", cu.tag == 9)
+	check("3D narrow array from plane variables: c[0][1][0]", cu.c[0][1][0] == 3)
+	check("3D narrow array from plane variables: c[1][0][1]", cu.c[1][0][1] == 6)
+	check("3D narrow array from plane variables: c[1][1][1]", cu.c[1][1][1] == 8)
+	check("3D narrow array from plane variables: tail", cu.tail == 1010)
+
+	check("heap new: array of structs", heapPts(t, c) == 0)
+	check("heap new: inline struct member", heapHold(t, c) == 0)
+	check("heap new: 2D narrow array from row variables", heapGrid(t) == 0)
+	check("heap new: 2D u64 array literal", heapGrid64(t) == 0)
+	check("heap new: nested new with an array of structs", heapNested(t, c, k) == 0)
+	check("heap new: nested new, then a block array and an element-wise array of one type", heapNested2(t, c, k) == 0)
+}
