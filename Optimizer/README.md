@@ -35,7 +35,7 @@ Each pass is a pure function `List<lines> -> PassResult` (`OptimizationPass`); p
 ## Where things are
 
 `src/main/java/caspien/optimizer/`: one file per pass, `BytecodeOptimizer` (pipeline), `Main` (CLI), `BytecodeParser` /
-`BytecodeSerializer` / `BytecodeToken` (the text interchange format). `master_code.md` mirrors every file here.
+`BytecodeSerializer` / `BytecodeToken` (the text interchange format).
 
 ## Related documents
 

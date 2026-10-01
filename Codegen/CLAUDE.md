@@ -130,7 +130,7 @@ Found while checking whether `stdlib/string.caspien` compiles end to end: `Strin
 
 Fix, applied identically to all three `BytecodeParser.parseLine` copies: a token starting with `'` that has the exact char-literal shape `BytecodeEmitter.escapeForBytecode` produces (quote, one character or backslash-plus-one, closing quote, ending the token) is now kept as ONE token, the same way a quoted string is. Char literals without whitespace produce exactly the same single token as before, so only the `' '` case changes.
 
-Verified: `stdlib/string.caspien` now goes through all four stages and links; the space literal now lowers to `PUSH 1 ' '` like every other char literal; Hello World output is unchanged. No regression fixtures (`examples/`) were available in the master code files to sweep.
+Verified: `stdlib/string.caspien` now goes through all four stages and links; the space literal now lowers to `PUSH 1 ' '` like every other char literal; Hello World output is unchanged. No regression fixtures (`examples/`) were available to sweep.
 
 ## Known, NOT fixed here (now rejected upstream at compile time instead): an ordinary struct-by-value function *parameter* segfaults at runtime
 
@@ -1505,17 +1505,15 @@ were themselves no-ops, so `gt_routine__main:` was never actually
 reached at all. Prompted by the user directly: the exception-handling
 design (the `gt_routine` prologue every function gets, `THROW`'s own
 bytecode shape, `GT_UNWIND`'s job) was already fully and accurately
-documented -- see the attached Project's own `compiler_master_code.md`
-doc (`emitThrow`/`emitGtRoutineAlloc`/`emitGtRoutineBody`'s doc
+documented -- see the compiler's own design notes
+(`emitThrow`/`emitGtRoutineAlloc`/`emitGtRoutineBody`'s doc
 comments) -- nothing about the *design* was ever missing or lost. What
-was missing was ever actually implementing it here. That same Project
-doc's own `examples/gt_unwind_*_cg_test.caspien` fixtures also prove a
+was missing was ever actually implementing it here. The original
+`examples/gt_unwind_*_cg_test.caspien` fixtures also proved a
 further-along backend (named `AssemblyEmitter`, run via a `CodegenMain
 --run` entry point) once existed with a real, execution-verified
 implementation of this -- but neither that class nor that entry point
-exists anywhere in this dev tree, the Project's own earlier
-`claude/codegen_master_code.md` snapshot, or anywhere else on this
-machine; only the fixtures' own doc-comments (and their expected
+exists anywhere in this tree; only the fixtures' own doc-comments (and their expected
 output) survive. This round is a fresh implementation against that
 same documented design and cross-checked against those exact fixtures'
 own documented expected output, not a recovery of any lost source.
@@ -1569,7 +1567,7 @@ documented status (exit code 1), separate from an ordinary,
 exception-free `exit 0` completion of main.
 
 **Verified two ways**, both directly against the Project's own
-`compiler_master_code.md` fixture doc-comments' documented expected
+original fixture doc-comments' documented expected
 behavior:
 1. A single-function throw (`main` constructs an `owns` local, calls a
    helper that immediately throws, never returns normally): prints
@@ -1892,7 +1890,7 @@ directory) selects the target.
 ## Provenance
 
 This project was originally split out of a single, combined
-`master_code.md` that used to hold all three pipeline stages (compiler,
+codebase that held all three pipeline stages (compiler,
 optimizer, codegen) together as one hypothetical whole -- the optimizer
 stage was later itself split in two, and this project is the first
 real code written for the codegen stage that was always named in that

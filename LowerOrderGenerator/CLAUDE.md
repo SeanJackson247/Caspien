@@ -100,7 +100,7 @@ Found while checking whether `stdlib/string.caspien` compiles end to end: `Strin
 
 Fix, applied identically to all three `BytecodeParser.parseLine` copies: a token starting with `'` that has the exact char-literal shape `BytecodeEmitter.escapeForBytecode` produces (quote, one character or backslash-plus-one, closing quote, ending the token) is now kept as ONE token, the same way a quoted string is. Char literals without whitespace produce exactly the same single token as before, so only the `' '` case changes.
 
-Verified: `stdlib/string.caspien` now goes through all four stages and links; the space literal now lowers to `PUSH 1 ' '` like every other char literal; Hello World output is unchanged. No regression fixtures (`examples/`) were available in the master code files to sweep.
+Verified: `stdlib/string.caspien` now goes through all four stages and links; the space literal now lowers to `PUSH 1 ' '` like every other char literal; Hello World output is unchanged. No regression fixtures (`examples/`) were available to sweep.
 
 ## `instanceof`/`implements` proof-narrowing now resolves a subclass-only member access
 
@@ -456,7 +456,7 @@ project's own root for that reason.
 ## Provenance
 
 This project was originally split out of a single, combined
-`master_code.md` that used to hold all three pipeline stages (compiler,
+codebase that held all three pipeline stages (compiler,
 optimizer, codegen) together, then split a second time out of that
 combined optimizer stage. It is now one of four sibling projects:
 

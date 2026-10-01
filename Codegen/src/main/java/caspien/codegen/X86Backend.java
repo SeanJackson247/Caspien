@@ -4823,8 +4823,8 @@ public class X86Backend {
                 // normally would, but then locate the first variable in
                 // that stack frame (should be relative to base pointer?)
                 // and set the instruction pointer to that," confirmed
-                // directly (the Project's own notes on this, recovered
-                // verbatim from compiler_master_code.md/emitGtRoutineBody
+                // directly (the original design notes, recovered
+                // from the compiler's emitGtRoutineBody
                 // after this backend was found to have never implemented
                 // it at all -- see this project's own CLAUDE.md).
                 //

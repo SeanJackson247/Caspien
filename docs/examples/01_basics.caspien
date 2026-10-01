@@ -1,0 +1,57 @@
+// Structs, methods, enums, loops and explicit integer narrowing.
+// Expected output:
+//   balance=150 sides=4
+//   total=45 fits=200 wrapped=44
+import "../../stdlib/libc.caspien"
+import "../../stdlib/gt_init.caspien"
+import "../../stdlib/gt_register.caspien"
+import "../../stdlib/gt_alive_check.caspien"
+import "../../stdlib/gt_destruct.caspien"
+
+enum Shape{ CIRCLE, SQUARE, TRIANGLE }
+
+struct Account{@pub{
+	id: mut u64
+	balance: mut u64
+}}
+
+impl Account{
+	@pub
+	func deposit(_self: ref some mut self, amount: mut u64) void{
+		_self.balance += amount
+	}
+}
+
+// `match` on an enum must name every case.
+func sides(s: imut Shape) mut u64{
+	match s{
+		CIRCLE:{ return 0 }
+		SQUARE:{ return 4 }
+		TRIANGLE:{ return 3 }
+	}
+	return 0
+}
+
+func main() void{
+	?catch(e){ return }
+	let acct = mut ? new Account{id= 1, balance= 100}
+	acct.deposit(acct, 50)
+	unsafe{ printf("balance=%llu sides=%llu\n", acct.balance, sides(Shape.SQUARE)) }
+
+	// A `for` loop runs over a range. The loop variable is immutable.
+	let total = mut 0
+	for i in 0..10{
+		total += i
+	}
+
+	// Narrowing is never implicit. Either prove the value fits, or say how to convert it.
+	let wide = mut 200
+	let small = mut 0
+	match wide fits u8{
+		let narrow = mut wide as u8
+		small = narrow as u64
+	}
+	let big = mut 300
+	let wrapped = mut wrap:<u8>(big)
+	unsafe{ printf("total=%llu fits=%llu wrapped=%u\n", total, small, wrapped) }
+}

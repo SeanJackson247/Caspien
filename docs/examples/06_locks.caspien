@@ -1,0 +1,37 @@
+// A lock is an enum-valued `swap` field. `match @lock` makes the OPEN case the only place
+// the protected members can be touched, and every CLOSED path must say what happens next.
+// Expected output:
+//   counter=3
+import "../../stdlib/libc.caspien"
+import "../../stdlib/gt_init.caspien"
+import "../../stdlib/gt_register.caspien"
+import "../../stdlib/gt_alive_check.caspien"
+import "../../stdlib/gt_destruct.caspien"
+
+enum State{ OPEN, CLOSED }
+
+struct Counter{@pub{
+	swap lockState: atomic mut State
+	n: mut u64
+}}
+
+func bump() mut u64{
+	let static c = mut Counter{lockState= State.OPEN, n= mut 0}
+	match @lock c{
+		OPEN:{
+			c.n += 1
+			return c.n
+		}
+		CLOSED:{
+			continue        // retry the acquire. `break` gives up, `return` and `throw` leave.
+		}
+	}
+	return 0
+}
+
+func main() void{
+	bump()
+	bump()
+	let last = mut bump()
+	unsafe{ printf("counter=%llu\n", last) }
+}

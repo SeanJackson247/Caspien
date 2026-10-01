@@ -61,7 +61,7 @@ This file describes the **current state** of this project only.
 
 **Q4: why peak memory matches C:** no GC and no runtime; allocation is libc malloc; data layouts are the same as C's (structs padded like C, dynarrays are one header plus elements); the ghost table adds only 8 bytes per registered pointer.
 
-**How to rebuild/run:** see the rules at the top of every `master_code.md`. Benchmarks: `benchmarks/bench_suite.py`, `bench_program.py`, `nbody/bench.py`, `recursion/run.py`, report via `charts_all.py`. Never compile two programs at once in one compiler tree; VM timing noise is ~30%, use best of 3-5.
+**How to rebuild/run:** build the four component projects with their own build instructions (see each folder's README.md). Benchmarks: `benchmarks/bench_suite.py`, `bench_program.py`, `nbody/bench.py`, `recursion/run.py`, report via `charts_all.py`. Never compile two programs at once in one compiler tree; VM timing noise is ~30%, use best of 3-5.
 
 ## Benchmarks: recursion micro-benchmark now covers nine languages (1 Oct 2026)
 

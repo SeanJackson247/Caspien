@@ -1,0 +1,53 @@
+// Interfaces, generics, the standard library and async calls.
+// Expected output:
+//   pair=7 list=2 area=42 triple=42
+import "../../stdlib/libc.caspien"
+import "../../stdlib/gt_init.caspien"
+import "../../stdlib/gt_register.caspien"
+import "../../stdlib/gt_alive_check.caspien"
+import "../../stdlib/gt_destruct.caspien"
+import "../../stdlib/dynamic_array.caspien"
+import "../../stdlib/par_call.caspien"
+import "../../stdlib/await_call.caspien"
+
+interface Shape{
+	area(_self: ref some imut self) imut u64;
+}
+
+struct Rect{@pub{
+	w: mut u64
+	h: mut u64
+}}
+
+impl Shape for Rect{
+	@pub
+	@realizes
+	func area(_self: ref some imut self) imut u64{
+		return _self.w * _self.h
+	}
+}
+
+struct Pair<T>{@pub{
+	first: mut T
+	second: mut T
+}}
+
+// An `@async` function runs on its own thread when called with `await` or `par`.
+@async
+func triple(x: mut u64) mut u64{
+	return x * 3
+}
+
+func main() void{
+	?catch(e){ return }
+	let p = mut Pair:<u64>{first= 3, second= 4}
+	let r = mut ? new Rect{w= 6, h= 7}
+	let list = mut ? new DynamicArray:<u64>()
+	? list.pushBack(list, mut 10)
+	? list.pushBack(list, mut 20)
+	let answer = mut await triple(mut 14)
+	let pairSum = mut (p.first + p.second)
+	let count = mut len(list.backing)
+	let area = imut r.area(r)
+	unsafe{ printf("pair=%llu list=%llu area=%llu triple=%llu\n", pairSum, count, area, answer) }
+}

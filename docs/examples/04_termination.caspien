@@ -1,0 +1,38 @@
+// Loops are bounded and recursion is a bounded loop.
+// Expected output:
+//   iterations=5 bound=505 recursive=45
+import "../../stdlib/libc.caspien"
+import "../../stdlib/gt_init.caspien"
+import "../../stdlib/gt_register.caspien"
+import "../../stdlib/gt_alive_check.caspien"
+import "../../stdlib/gt_destruct.caspien"
+
+// The range of a `for` loop is fixed when the loop starts. Changing `n` inside the body
+// does not extend the loop: this is the guarantee the LOOP language is built on.
+func boundedLoop() void{
+	let n = mut 5
+	let iterations = mut 0
+	for i in 0..n{
+		n += 100
+		iterations += 1
+	}
+	unsafe{ printf("iterations=%llu bound=%llu ", iterations, n) }
+}
+
+// Recursion is allowed only as a tail call on a strictly smaller range.
+// The compiler turns it into a `for` loop before optimisation.
+@recursive
+func sumTo(acc: mut u64, r: imut range) mut u64{
+	match r is base{ return acc }
+	let lo = mut (r.start + 1)
+	let hi = mut r.end
+	let r2 = imut (lo..hi)
+	match r2 within r{ return sumTo(acc + r.start, r2) }
+	else{ return acc }
+}
+
+func main() void{
+	boundedLoop()
+	let total = mut sumTo(mut 0, 0..10)
+	unsafe{ printf("recursive=%llu\n", total) }
+}

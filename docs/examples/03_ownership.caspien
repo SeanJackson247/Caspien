@@ -1,0 +1,51 @@
+// Ownership and errors. `owns` is the single owner of a heap value, `ref` borrows it.
+// Expected output:
+//   node=42 parsed=7 fallback=99
+import "../../stdlib/libc.caspien"
+import "../../stdlib/gt_init.caspien"
+import "../../stdlib/gt_register.caspien"
+import "../../stdlib/gt_alive_check.caspien"
+import "../../stdlib/gt_destruct.caspien"
+
+struct Node{@pub{
+	value: mut u64
+}}
+
+// `new` can fail (out of memory), so it is wrapped in `?` and the function is marked `@throws`.
+@throws
+func makeNode(v: mut u64) owns some mut Node{
+	?catch(e){ throw e }
+	return ?new Node{value= v}
+}
+
+// A `ref` can be null, so its members are reachable only inside `match Some`.
+func readNode(n: ref mut Node) mut u64{
+	let r = mut 0
+	match Some(n){
+		r = n.value
+	}
+	return r
+}
+
+@throws
+func parse(digit: mut u64) mut u64{
+	if digit > 9{
+		throw "not a digit"
+	}
+	return digit
+}
+
+// A catch body must end in return, throw or continue, so a failure can never fall through.
+func parseOr(digit: mut u64, fallback: mut u64) mut u64{
+	?catch(e){ return fallback }
+	return ?parse(digit)
+}
+
+func main() void{
+	?catch(e){ return }
+	let n = mut ? makeNode(42)
+	let value = mut readNode(ref n)
+	let parsed = mut parseOr(7, 99)
+	let fallback = mut parseOr(12, 99)
+	unsafe{ printf("node=%llu parsed=%llu fallback=%llu\n", value, parsed, fallback) }
+}

@@ -1,0 +1,60 @@
+// Operations that could fail at runtime must be proven safe at compile time.
+// Expected output:
+//   div=42 scaled=3.000000 sum=15 squares=8 last=49
+import "../../stdlib/libc.caspien"
+import "../../stdlib/gt_init.caspien"
+import "../../stdlib/gt_register.caspien"
+import "../../stdlib/gt_alive_check.caspien"
+import "../../stdlib/gt_destruct.caspien"
+
+// Division needs a proof that the divisor is not zero.
+func divide(a: mut u64, b: mut u64) mut u64{
+	match b != 0{
+		return a / b
+	}
+	return 0
+}
+
+// Float arithmetic needs a proof that the value is finite.
+func scale(x: mut f32) mut f32{
+	match x{
+		finite:{ return x * 2.0 }
+		infinite:{ return 0.0 }
+		nan:{ return 0.0 }
+	}
+	return 0.0
+}
+
+// `for match i in values` visits only indexes proven to be inside `values`.
+func sumFive() mut u64{
+	let values = mut [1, 2, 3, 4, 5]
+	let total = mut 0
+	for match i in values{
+		total += values[i]
+	}
+	return total
+}
+
+func main() void{
+	?catch(e){ return }
+	let quotient = mut divide(84, 2)
+	let scaled = mut scale(mut 1.5)
+	let sum = mut sumFive()
+
+	// A dynarray knows its length. `into` proves an index for writing, `in` for reading.
+	let zero = mut 0
+	let squares = mut ? dyn:<u64>([])
+	squares = ? resize(squares, 8, zero)
+	for i in 0..8{
+		match i into squares{
+			squares[i] = i * i
+		}
+	}
+	let k = mut 7
+	let last = mut 0
+	match k in squares{
+		last = squares[k]
+	}
+	let count = mut len(squares)
+	unsafe{ printf("div=%llu scaled=%f sum=%llu squares=%llu last=%llu\n", quotient, scaled, sum, count, last) }
+}
