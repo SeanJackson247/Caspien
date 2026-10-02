@@ -1,0 +1,85 @@
+// Dynamic arrays: the built-in safe dynarray, an unsafe one, and the standard library classes.
+// Expected output:
+//   built-in: total=100 len=8 grown=121 last=3 shrunk=1
+//   unsafe: sum=45
+//   DynamicArray: sum=30 top=16 bottom=0 len=4 first=100
+//   String: len=6 char=e index=2
+//   HashMap: hit=70 miss=999
+import "../../stdlib/libc.caspien"
+import "../../stdlib/gt_init.caspien"
+import "../../stdlib/gt_register.caspien"
+import "../../stdlib/gt_alive_check.caspien"
+import "../../stdlib/gt_destruct.caspien"
+import "../../stdlib/dynamic_array.caspien"
+import "../../stdlib/string.caspien"
+import "../../stdlib/hash_map.caspien"
+
+func main() void{
+	?catch(e){ return }
+
+	// Allocation can fail, so creating or resizing goes through `?`.
+	// `resize` hands back the array, so assign it back. New slots take the fill value.
+	let zero = mut 0
+	let d = mut ? dyn:<u64>([])
+	d = ? resize(d, 5, zero)
+	for i in 0..5{
+		match i into d{ d[i] = i * 10 }       // every index needs a proof, even a literal one
+	}
+	let total = mut 0
+	for match i in range(d){ total += d[i] }
+	let fill = mut 7
+	d = ? resize(d, 8, fill)
+	let grown = mut 0
+	for match i in range(d){ grown += d[i] }
+	let n = mut len(d)
+
+	let lit = mut ? dyn([1, 2, 3])            // the element type is inferred
+	let q = mut 2
+	let last = mut 0
+	match q in lit{ last = lit[q] }
+	lit = ? resize(lit, 1, zero)              // shrinking truncates
+	let shrunk = mut len(lit)
+	unsafe{ printf("built-in: total=%llu len=%llu grown=%llu last=%llu shrunk=%llu\n", total, n, grown, last, shrunk) }
+
+	// An unsafe dynarray has no length header to check, so it needs no proofs and no `?` on resize.
+	unsafe{
+		let us = mut unsafe dyn:<u64>([])
+		us = resize(us, 6)
+		for i in 0..6{ us[i] = i * 3 }
+		let sum = mut 0
+		for i in 0..6{ sum += us[i] }
+		printf("unsafe: sum=%llu\n", sum)
+	}
+
+	// The library class wraps the same thing behind get/set/push/pop methods.
+	let list = mut ? new DynamicArray:<u64>()
+	for i in 0..5{
+		let v = mut (i * i)
+		? list.pushBack(list, v)
+	}
+	let sum = mut 0
+	for i in 0..5{
+		match i in list.backing{ sum += list.get(list, i) }
+	}
+	let top = mut ? list.popBack(list, mut 999)       // the argument is returned if the array is empty
+	let bottom = mut ? list.popFront(list, mut 999)
+	? list.pushFront(list, mut 100)
+	let count = mut len(list.backing)
+	let first = mut 0
+	let zeroIdx = mut 0
+	match zeroIdx in list.backing{ first = list.get(list, zeroIdx) }
+	unsafe{ printf("DynamicArray: sum=%llu top=%llu bottom=%llu len=%llu first=%llu\n", sum, top, bottom, count, first) }
+
+	let s = mut ? new String("hello")
+	? s.appendChar(s, mut '!')
+	let slen = mut len(s.chars.backing)
+	let ch = mut s.charAt(s, 1)
+	let idx = mut s.firstIndexOf(s, 'l')              // -1 when absent
+	unsafe{ printf("String: len=%llu char=%c index=%lld\n", slen, ch, idx) }
+
+	let m = mut ? new HashMap:<u64>(mut 0, mut 0, mut 16)
+	m.set(m, mut 7, mut 70)
+	let hit = mut m.get(m, mut 7, mut 999)
+	let miss = mut m.get(m, mut 8, mut 999)
+	unsafe{ printf("HashMap: hit=%llu miss=%llu\n", hit, miss) }
+}

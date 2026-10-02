@@ -1,0 +1,148 @@
+// The forms of `match`, bounded loops, and bounded recursion.
+// Expected output:
+//   enums=2 99 | floats=4 0 0
+//   proofs=5 0 | fits=200 333 7
+//   bounds=30 99 777 | for_match=10
+//   loops=5 505 0 6 6 | fact=3628800 3628800 | steps=5 4 0
+import "../../stdlib/libc.caspien"
+
+enum Color{ RED, GREEN, BLUE }
+@non_exhaustive
+enum Level{ LOW, MID, HIGH, default }
+
+// 1. A case-match on an enum must name every case. `A|B` shares a body.
+func warm(c: imut Color) mut u64{
+	match c{
+		RED:{ return 1 }
+		GREEN|BLUE:{ return 2 }
+	}
+	return 0
+}
+// A @non_exhaustive enum lists `default` last, and the match must then handle it.
+func level(l: imut Level) mut u64{
+	match l{
+		LOW:{ return 10 }
+		default:{ return 99 }
+	}
+	return 0
+}
+// 2. A float must be matched on its three states before arithmetic is allowed.
+func twice(x: mut f32) mut f32{
+	match x{
+		finite:{ return x * 2.0 }
+		infinite:{ return 0.0 }
+		nan:{ return 0.0 }
+	}
+	return 0.0
+}
+// 3. A condition-match is a proof. The block is reachable only when it holds; `else` and
+//    `elsematch` chain like `else if`. A bare `x == 0` is not a proof, so value dispatch uses `if`.
+func safeDiv(a: mut u64, b: mut u64) mut u64{
+	match b != 0{ return a / b }
+	else{ return 0 }
+}
+func pick(n: mut u64, d: mut u64) mut u64{
+	match n fits u8{
+		let small = mut n as u8
+		return small as u64
+	}
+	elsematch d > 0{
+		return n / d
+	}
+	else{
+		return 7
+	}
+}
+
+// 4. Bounded recursion: a tail call on a strictly smaller range, which the compiler lowers to a `for`.
+@recursive
+func fact(acc: mut u64, r: imut range) mut u64{
+	match r is base{ return acc }
+	let lo = mut (r.start + 1)
+	let hi = mut r.end
+	let r2 = imut (lo..hi)
+	match r2 within r{ return fact(acc * r.start, r2) }
+	else{ return acc }
+}
+func factLoop(n: mut u64) mut u64{
+	let acc = mut 1
+	let hi = mut (n + 1)
+	for i in 1..hi{ acc *= i }
+	return acc
+}
+@recursive
+func steps(n: mut u64, r: imut range) mut u64{
+	match r is base{ return n }
+	let lo = mut (r.start + 1)
+	let hi = mut (r.end - 1)
+	let r2 = imut (lo..hi)
+	match r2 within r{ return steps(n + 1, r2) }
+	else{ return n }
+}
+
+func main() void{
+	let w = mut warm(Color.GREEN)
+	let l = mut level(Level.HIGH)
+	unsafe{ printf("enums=%llu %llu | ", w, l) }
+
+	let f = mut twice(2.0)
+	let z = mut safeDiv(10, 0)
+	unsafe{ printf("floats=%.0f %llu %llu\n", f, z, z) }
+
+	let d1 = mut safeDiv(10, 2)
+	let d2 = mut safeDiv(10, 0)
+	unsafe{ printf("proofs=%llu %llu | ", d1, d2) }
+
+	let p1 = mut pick(200, 3)
+	let p2 = mut pick(1000, 3)
+	let p3 = mut pick(1000, 0)
+	unsafe{ printf("fits=%llu %llu %llu\n", p1, p2, p3) }
+
+	// `in` proves an index for reading, `into` for writing. If it fails, `else` runs.
+	let arr = mut [10, 20, 30]
+	let got = mut 0
+	let k = mut 2
+	match k in arr{ got = arr[k] }
+	match k into arr{ arr[k] = 99 }
+	let last = mut 0
+	match k in arr{ last = arr[k] }
+	let miss = mut 5
+	let got2 = mut 0
+	match miss in arr{ got2 = arr[miss] }
+	else{ got2 = 777 }
+	unsafe{ printf("bounds=%llu %llu %llu | ", got, last, got2) }
+
+	// `for match` visits only proven indexes.
+	let v = mut [1, 2, 3, 4]
+	let s = mut 0
+	for match i in v{ s += v[i] }
+	unsafe{ printf("for_match=%llu\n", s) }
+
+	// The range is fixed when the loop starts, and the counter cannot be assigned.
+	let n = mut 5
+	let it = mut 0
+	for i in 0..n{
+		n += 100
+		it += 1
+	}
+	let inverted = mut 0
+	for i in 7..3{ inverted += 1 }
+	let early = mut 0
+	for i in 0..10{
+		if i == 4{ break }
+		early += i
+	}
+	let grid = mut 0
+	for i in 0..3{
+		for j in i..3{ grid += 1 }
+	}
+	unsafe{ printf("loops=%llu %llu %llu %llu %llu | ", it, n, inverted, early, grid) }
+
+	let a = mut fact(1, 1..11)
+	let b = mut factLoop(10)
+	unsafe{ printf("fact=%llu %llu | ", a, b) }
+	let s1 = mut steps(0, 0..10)
+	let s2 = mut steps(0, 0..7)
+	let s3 = mut steps(0, 3..3)
+	unsafe{ printf("steps=%llu %llu %llu\n", s1, s2, s3) }
+}

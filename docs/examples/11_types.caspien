@@ -1,0 +1,122 @@
+// Inheritance, abstract types, interfaces with default methods, and the two ways calls are dispatched.
+// Expected output:
+//   inherited=1 4 7
+//   is Dog name=7, instanceof Animal=1
+//   default=10 7
+//   dispatch=43 27
+import "../../stdlib/libc.caspien"
+import "../../stdlib/gt_init.caspien"
+import "../../stdlib/gt_register.caspien"
+import "../../stdlib/gt_alive_check.caspien"
+import "../../stdlib/gt_destruct.caspien"
+
+// An abstract type holds members but can never be instantiated.
+abstract Animal{@pub{
+	legs: mut u64
+}}
+abstract Named{@pub{
+	id: mut u64
+}}
+// `extends` is a line inside the body. Layout is flat: parent members first, then the child's own.
+struct Dog{
+	extends Animal
+	@pub{
+		name: mut u64
+	}
+}
+struct Bird{
+	extends Animal
+	@pub{
+		wings: mut u64
+	}
+}
+// An abstract made only of `extends` lines may extend several abstracts.
+abstract Pet{
+	extends Named
+	extends Animal
+}
+struct Cat{
+	extends Pet
+	@pub{
+		lives: mut u64
+	}
+}
+
+interface Greeter{
+	id(_self: ref some imut self) imut u64;
+	@default
+	func twice(n: mut u64) imut u64{ return 2 * n }
+}
+struct A{@pub{ x: mut u64 }}
+struct B{@pub{ x: mut u64 }}
+impl Greeter for A{
+	@pub
+	@realizes
+	func id(_self: ref some imut self) imut u64{ return 1 }
+}
+impl Greeter for B{
+	@pub
+	@realizes
+	func id(_self: ref some imut self) imut u64{ return 2 }
+	@pub
+	@overrides
+	func twice(n: mut u64) imut u64{ return 7 }
+}
+
+interface Shape{
+	area(_self: ref some imut self) imut u64;
+	tag(_self: ref some imut self) imut u64;
+}
+struct Rect{@pub{
+	w: mut u64
+	h: mut u64
+}}
+struct Sq{@pub{ s: mut u64 }}
+impl Shape for Rect{
+	@pub
+	@realizes
+	func area(_self: ref some imut self) imut u64{ return _self.w * _self.h }
+	@pub
+	@realizes
+	func tag(_self: ref some imut self) imut u64{ return 1 }
+}
+impl Shape for Sq{
+	@pub
+	@realizes
+	func area(_self: ref some imut self) imut u64{ return _self.s * _self.s }
+	@pub
+	@realizes
+	func tag(_self: ref some imut self) imut u64{ return 2 }
+}
+// A call through an interface-typed pointer is dispatched at run time on the object's class id.
+func total(s: ref some imut Shape) imut u64{
+	let a = imut s.area(s)
+	let t = imut s.tag(s)
+	return a + t
+}
+
+func main() void{
+	?catch(e){ return }
+	let cat = mut Cat{id= 1, legs= 4, lives= 7}
+	unsafe{ printf("inherited=%llu %llu %llu\n", cat.id, cat.legs, cat.lives) }
+
+	let d = mut ? new Dog{legs= 4, name= 7}
+	match Some(d){
+		match d instanceof Dog{ unsafe{ printf("is Dog name=%llu, ", d.name) } }
+		match d instanceof Bird{ unsafe{ printf("is Bird\n") } }
+		let isAnimal = imut d instanceof Animal
+		unsafe{ printf("instanceof Animal=%llu\n", isAnimal) }
+	}
+
+	let a = mut ? new A{x= 1}
+	let b = mut ? new B{x= 1}
+	let da = imut a.twice(mut 5)
+	let db = imut b.twice(mut 5)
+	unsafe{ printf("default=%llu %llu\n", da, db) }
+
+	let r = mut ? new Rect{w= 6, h= 7}
+	let s = mut ? new Sq{s= 5}
+	let tr = imut total(r)
+	let ts = imut total(s)
+	unsafe{ printf("dispatch=%llu %llu\n", tr, ts) }
+}

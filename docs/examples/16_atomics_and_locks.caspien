@@ -1,0 +1,102 @@
+// Atomics, `swap`, spin locks, a backoff policy, and threads with `par` and `await`.
+// Expected output:
+//   swap: old=0 again=5 cur=7 now=9
+//   backoff: closed, try 1 / closed, try 2 / closed, try 3 / n=1
+//   threads: n=200000 triple=42
+import "../../stdlib/libc.caspien"
+import "../../stdlib/gt_init.caspien"
+import "../../stdlib/gt_register.caspien"
+import "../../stdlib/gt_alive_check.caspien"
+import "../../stdlib/gt_destruct.caspien"
+import "../../stdlib/par_call.caspien"
+import "../../stdlib/await_call.caspien"
+
+// An atomic lives in a global or a `let static`. Reads and plain writes are single instructions.
+// `swap` exchanges and returns the old value. `+=`, `++` and computed right-hand sides are rejected,
+// because a read-modify-write is not one atomic step. (`swap` is an exchange, not a compare-and-swap.)
+let static flag = mut atomic 0
+let static doneA = mut atomic false
+let static doneB = mut atomic false
+
+// A lock is a `swap` field of an enum with exactly the variants OPEN and CLOSED. It must be the
+// struct's first member. @lock makes every other member reachable only after the lock is held.
+enum Gate{ OPEN, CLOSED }
+
+@lock(match self.gate : OPEN)
+struct Counter{@pub{
+	swap gate: atomic mut Gate
+	n: mut u64
+}}
+
+let static counter = mut Counter{gate= Gate.OPEN, n= mut 0}
+
+func bump() void{
+	match @lock counter{
+		OPEN:{ counter.n += 1 }          // the lock is released when this block ends, or on return/break/throw
+		CLOSED:{ continue }              // retry. `break` gives up. `return` and `throw` leave.
+	}
+}
+
+// A backoff policy replaces a CLOSED body. `tries` counts attempts from 1.
+impl default match @lock Counter{
+	CLOSED:(tries:imut u64, limit:imut u64)=>{
+		unsafe{ printf("closed, try %llu / ", tries) }
+		if tries >= limit{ break }
+		continue
+	}
+}
+
+@async
+func workerA() void{
+	for i in 0..100000{ bump() }
+	doneA = true
+}
+@async
+func workerB() void{
+	for i in 0..100000{ bump() }
+	doneB = true
+}
+@async
+func triple(x: mut u64) mut u64{ return x * 3 }
+
+func main() void{
+	let old = mut (flag swap 5)
+	let again = mut (flag swap 7)
+	let cur = mut flag
+	flag = 9
+	unsafe{ printf("swap: old=%llu again=%llu cur=%llu now=%llu\n", old, again, cur, flag) }
+
+	unsafe{ printf("backoff: ") }
+	match @lock counter{
+		OPEN:{
+			counter.n += 1
+			match @lock counter{                 // already held, so this can only see CLOSED
+				OPEN:{ counter.n += 100 }
+				CLOSED:default(3)                // run the policy with limit 3
+			}
+		}
+		CLOSED:{ break }
+	}
+	match @lock counter{
+		OPEN:{
+			unsafe{ printf("n=%llu\n", counter.n) }
+			counter.n = 0
+		}
+		CLOSED:{ continue }
+	}
+
+	// `par` starts an OS thread and returns at once; `await` blocks for the result.
+	par workerA()
+	par workerB()
+	for i in 0..100000000{
+		let a = mut doneA
+		let b = mut doneB
+		if a && b{ break }
+		yield
+	}
+	let answer = mut await triple(mut 14)
+	match @lock counter{
+		OPEN:{ unsafe{ printf("threads: n=%llu triple=%llu\n", counter.n, answer) } }
+		CLOSED:{ continue }
+	}
+}

@@ -1,0 +1,106 @@
+// Function overloading, constructors, @pure, generics and generic bounds.
+// Expected output:
+//   overloads=1 1 2 3 4 | methods=3 1001 5 8 | ctors=4 99
+//   pure=25 11 | generic=7 9 | bound=42 25
+import "../../stdlib/libc.caspien"
+import "../../stdlib/gt_init.caspien"
+import "../../stdlib/gt_register.caspien"
+import "../../stdlib/gt_alive_check.caspien"
+import "../../stdlib/gt_destruct.caspien"
+
+// Overloads are told apart by parameter count and parameter BASE types.
+// Mutability, storage, parameter names and return types never distinguish them.
+func describe(x: mut u64) mut u64{ return 1 }
+func describe(x: mut u8) mut u64{ return 2 }
+func describe(x: mut u64, y: mut u64) mut u64{ return 3 }
+func describe(x: static imut string) mut u64{ return 4 }
+
+struct Q{@pub{ a: mut u64 }}
+impl Q{
+	@pub
+	func add(_self: ref some mut self, n: mut u64) mut u64{ return _self.a + n }
+	@pub
+	func add(_self: ref some mut self, s: static imut string) mut u64{ return _self.a + 1000 }
+	@pub
+	static func make() mut u64{ return 5 }
+	@pub
+	static func make(n: mut u64) mut u64{ return n }
+}
+
+// A type with constructors can only be built through them.
+struct P{@pub{ a: mut u64 }}
+impl constructor for P(n: mut u64) self{ return P{a= n} }
+impl constructor for P(s: static imut string) self{ return P{a= 99} }
+
+// @pure functions may only call other @pure functions, touch no mutable global,
+// write through no pointer, and never throw.
+@pure
+func sq(x: mut u64) mut u64{ return x * x }
+@pure
+func hyp(a: mut u64, b: mut u64) mut u64{
+	let s = mut sq(a)
+	let t = mut sq(b)
+	return s + t
+}
+let static LIMIT = imut 10
+@pure
+func plusLimit(x: mut u64) mut u64{ unsafe{ return x + LIMIT } }
+
+struct Box<T>{@pub{ v: mut T }}
+impl<T> Box<T>{
+	@pub
+	func get(_self: ref some mut self) mut T{ return _self.v }
+}
+func twice<T>(x: mut T) mut T{ return x }
+
+interface Shape{
+	area(_self: ref some imut self) imut u64;
+}
+struct Rect{@pub{ w: mut u64
+	h: mut u64 }}
+struct Sq{@pub{ s: mut u64 }}
+impl Shape for Rect{
+	@pub
+	@realizes
+	func area(_self: ref some imut self) imut u64{ return _self.w * _self.h }
+}
+impl Shape for Sq{
+	@pub
+	@realizes
+	func area(_self: ref some imut self) imut u64{ return _self.s * _self.s }
+}
+// A bound generic is checked and instantiated per type: the call is direct.
+func areaOf<T: Shape>(s: ref some imut T) imut u64{ return s.area(s) }
+
+func main() void{
+	?catch(e){ return }
+	let c = mut 3
+	let small = mut wrap:<u8>(c)
+	let o1 = mut describe(5)
+	let o2 = mut describe(c)
+	let o3 = mut describe(small)
+	let o4 = mut describe(c, c)
+	let o5 = mut describe("hi")
+	let q = mut ? new Q{a= 1}
+	let m1 = mut q.add(q, mut 2)
+	let m2 = mut q.add(q, "x")
+	let m3 = mut Q.make()
+	let m4 = mut Q.make(mut 8)
+	let pa = mut P(mut 4)
+	let pb = mut P("z")
+	unsafe{
+		printf("overloads=%llu %llu %llu %llu %llu | methods=%llu %llu %llu %llu | ctors=%llu %llu\n", o1, o2, o3, o4, o5, m1, m2, m3, m4, pa.a, pb.a)
+	}
+	let h = mut hyp(3, 4)
+	let l = mut plusLimit(1)
+	unsafe{ printf("pure=%llu %llu | ", h, l) }
+	let b = mut ? new Box:<u64>{v= 7}
+	let t = mut twice:<u64>(mut 9)
+	let bv = mut b.get(b)
+	unsafe{ printf("generic=%llu %llu | ", bv, t) }
+	let r = mut ? new Rect{w= 6, h= 7}
+	let s = mut ? new Sq{s= 5}
+	let ra = imut areaOf:<Rect>(r)
+	let sa = imut areaOf:<Sq>(s)
+	unsafe{ printf("bound=%llu %llu\n", ra, sa) }
+}

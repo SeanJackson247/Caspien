@@ -1,0 +1,87 @@
+// throw, @throws, try/catch, `?`, `?catch`, and `continue` out of a catch.
+// Expected output:
+//   run(10): ok, r=22
+//   run(10): done
+//   middle: saw 'too big', passing it on
+//   run(500): caught 'top: request rejected'
+//   run(500): done
+//   sum=6 0 1000 1000
+import "../../stdlib/libc.caspien"
+import "../../stdlib/gt_init.caspien"
+import "../../stdlib/gt_register.caspien"
+import "../../stdlib/gt_alive_check.caspien"
+import "../../stdlib/gt_destruct.caspien"
+
+struct Point{@pub{
+	x: mut u64
+	y: mut u64
+}}
+
+// A function that throws is declared @throws, and a @throws function must contain a throw.
+@throws
+func parse(x: mut u64) mut u64{
+	if x > 100{ throw "too big" }
+	return x
+}
+
+@throws
+func middle(x: mut u64) mut u64{
+	// ?catch declares the handler that every `?` below it uses. It must end in return, throw or continue.
+	?catch(e){
+		unsafe{ printf("middle: saw '%s', passing it on\n", e) }
+		throw e                                  // re-throw the same message
+	}
+	let p = mut ? new Point{x= mut x, y= mut 1}  // `new` can fail, so it is a throwing call too
+	let v = mut ? parse(x)                       // when this throws, `p` is freed during the unwind
+	return v + 1
+}
+
+@throws
+func top(x: mut u64) mut u64{
+	?catch(e){ throw "top: request rejected" }   // a handler may throw a different message
+	let v = mut ? middle(x)
+	return v * 2
+}
+
+func run(x: mut u64) void{
+	try{                                         // a scope that compiles to nothing; it is where `continue` lands
+		let r = try top(x) catch(e){             // the long form of `?`, with its own handler
+			unsafe{ printf("run(%llu): caught '%s'\n", x, e) }
+			continue                             // jump to just past the enclosing try{} block
+		}
+		unsafe{ printf("run(%llu): ok, r=%llu\n", x, r) }
+	}
+	unsafe{ printf("run(%llu): done\n", x) }
+}
+
+@throws
+func f(x: mut u64) mut u64{
+	if x == 0{ throw "zero" }
+	return x
+}
+
+// The most recently declared ?catch applies, so one function can use different handlers.
+func sum(a: mut u64, b: mut u64, c: mut u64) mut u64{
+	let total = mut 0
+	try{
+		?catch(e){ continue }                    // a failure here abandons the block: total stays 0
+		let x = mut ? f(a)
+		total += x
+		?catch(e){ return 1000 }                 // from here on, a failure returns 1000
+		let y = mut ? f(b)
+		total += y
+		let z = mut ? f(c)
+		total += z
+	}
+	return total
+}
+
+func main() void{
+	run(10)
+	run(500)
+	let s1 = mut sum(1, 2, 3)
+	let s2 = mut sum(0, 2, 3)
+	let s3 = mut sum(1, 0, 3)
+	let s4 = mut sum(1, 2, 0)
+	unsafe{ printf("sum=%llu %llu %llu %llu\n", s1, s2, s3, s4) }
+}

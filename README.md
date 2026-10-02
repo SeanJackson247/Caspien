@@ -86,13 +86,62 @@ memory safety in a low-level language with a conventional imperative surface.
 
 ### 1.2 A tour of the language
 
-The examples below are excerpts from programs in [`docs/examples/`](docs/examples). Each program is
-complete, compiles, and prints the output shown in its header comment. The code blocks use the `rust`
-syntax hint only because GitHub has no Caspien highlighter.
+This section is a guide to writing idiomatic Caspien. It goes from the shape of a program to the features
+that need the most care, and each part ends with the errors you will meet first. The examples are excerpts
+from the programs in [`docs/examples/`](docs/examples). Each program is complete, compiles, and prints the
+output shown in its header comment, so you can run it and change it. The code blocks use the `rust` syntax
+hint only because GitHub has no Caspien highlighter.
 
-Every program that uses `new`, `owns` or `ref` imports the four `gt_*` files from `stdlib/`. They
-implement the runtime registry that tracks which heap values are alive, and they are ordinary Caspien
-source, not compiler magic.
+| Part | Program |
+|---|---|
+| Values, structs, methods, enums | `01_basics` |
+| Proofs | `02_proofs` |
+| Ownership | `03_ownership` |
+| Termination | `04_termination` |
+| Interfaces, generics, `par`/`await` | `05_abstraction` |
+| Locks | `06_locks` |
+| Program entry and event loops | `07` to `09` |
+| Functions, overloading, `@pure`, generics | `10_functions` |
+| Inheritance, abstract types, interfaces, dispatch | `11_types` |
+| `match`, loops, bounded recursion | `12_match_and_loops` |
+| Dynamic arrays and the standard library | `13_dynamic_arrays` |
+| Raw pointers and C | `14_unsafe_pointers` |
+| `throw`, `try`, `?` | `15_errors` |
+| Atomics, locks, threads | `16_atomics_and_locks` |
+
+#### The shape of a program
+
+```rust
+import "stdlib/libc.caspien"
+import "stdlib/gt_init.caspien"
+import "stdlib/gt_register.caspien"
+import "stdlib/gt_alive_check.caspien"
+import "stdlib/gt_destruct.caspien"
+
+@pub
+func answer() mut u64{
+	return 42
+}
+
+func main() void{
+	let a = mut answer()
+	unsafe{ printf("%llu\n", a) }
+}
+```
+
+- A file is a list of declarations: `import`, `func`, `struct`, `enum`, `interface`, `impl`, `extern`,
+  `let static`. Imports are resolved relative to the importing file.
+- Every program that uses `new`, `owns` or `ref` imports the four `gt_*` files from `stdlib/`. They
+  implement the runtime registry that tracks which heap values are alive, and they are ordinary Caspien
+  source, not compiler magic. `libc.caspien` declares the C functions, and calling any C function, `printf`
+  included, needs an `unsafe` block.
+- Blocks use braces and statements need no semicolons. A `@decorator` goes on **its own line** above the
+  declaration it changes. Several decorators are several lines. `@pub @realizes func f()` on one line is a
+  parse error.
+- `main` takes no arguments and returns `void`, `bool` or `s32` (the entry-point section at the end of this
+  tour covers arguments and event loops).
+- Everything has to be bound with `mut` or `imut` before it is stored. `printf` varargs must be bound
+  values too, so bind an expression to a `let` first.
 
 #### Values, mutability and types
 
@@ -109,46 +158,343 @@ match wide fits u8{                  // a proof that the narrowing is safe
 }
 let big = mut 300
 let wrapped = mut wrap:<u8>(big)     // explicit: keep the low bits (here 44)
+let clamped = mut sat:<u8>(big)      // explicit: clamp to the range (here 255)
 ```
 
 Integers are `u8` to `u64` and `s8` to `s64`; floats are `f32` and `f64`; there are also `bool`, `char`,
-fixed arrays (`u64[5]`), ranges (`0..10`) and strings. Hex, binary and underscore literals work
-(`0xFF_FF`, `0b1010`), and the bitwise builtins are `bits_and`, `bits_or`, `bits_xor`, `bits_not`,
+fixed arrays (`u64[5]`), ranges (`0..10`) and strings. A literal such as `5` is a `u64` unless the slot it
+lands in says otherwise, and a literal that does not fit is an error. `as` only widens within one
+signedness family. Narrowing needs a `fits` proof, `wrap` or `sat`. Hex, binary and underscore literals
+work (`0xFF_FF`, `0b1010`), and the bitwise builtins are `bits_and`, `bits_or`, `bits_xor`, `bits_not`,
 `bits_left` and `bits_right`, with one fully defined shift rule for every width.
 
-#### Structs, methods, enums and interfaces
+#### Functions, overloading and `@pure`
 
-Methods live in `impl` blocks. The receiver is an explicit `_self` parameter, and a `match` on an enum
-must name every case.
+A function declares each parameter with its mutability, and the return type follows the parameter list.
+Several functions can share one name. They are told apart by their parameter count and by the **base
+type** of each parameter. Mutability, storage, parameter names and return types never distinguish two
+overloads, so `f(x: mut u64)` and `f(y: imut u64)` are duplicates.
 
 ```rust
-enum Shape{ CIRCLE, SQUARE, TRIANGLE }
+func describe(x: mut u64) mut u64{ return 1 }
+func describe(x: mut u8) mut u64{ return 2 }
+func describe(x: mut u64, y: mut u64) mut u64{ return 3 }
+func describe(x: static imut string) mut u64{ return 4 }
 
-func sides(s: imut Shape) mut u64{
-	match s{
-		CIRCLE:{ return 0 }
-		SQUARE:{ return 4 }
-		TRIANGLE:{ return 3 }
+describe(5)        // 1: a bare literal is a u64, so the u64 overload is an exact match
+describe(small)    // 2: `small` is a u8 variable
+describe(c, c)     // 3
+describe("hi")     // 4
+```
+
+Methods overload the same way, inside a bare `impl` and for `static` methods. Constructors overload by
+parameter type, and a type that declares a constructor can only be built through it:
+
+```rust
+impl Q{
+	@pub
+	func add(_self: ref some mut self, n: mut u64) mut u64{ return _self.a + n }
+	@pub
+	func add(_self: ref some mut self, s: static imut string) mut u64{ return _self.a + 1000 }
+	@pub
+	static func make() mut u64{ return 5 }
+	@pub
+	static func make(n: mut u64) mut u64{ return n }
+}
+
+impl constructor for P(n: mut u64) self{ return P{a= n} }
+impl constructor for P(s: static imut string) self{ return P{a= 99} }
+
+let pa = mut P(mut 4)           // or `new P(...)` for a heap value
+```
+
+A call tries the overloads that need no literal adaptation first and then the rest in declaration order,
+and takes the first whose parameters accept the arguments. There is no decorator for overloading: it is
+implicit. A block `impl Interface for T` cannot overload, because an interface method is identified by
+name alone. These are the errors:
+
+```
+function 'f' with this parameter signature is already declared
+'Q' already has a method named 'add' with this parameter signature in this impl block
+no overload of 'f' matches argument types (f32)
+'P' declares its own constructor(s) -- its struct-literal form ('P{...}') can only be used inside one of those constructors' own bodies; ...
+```
+
+**`@pure`** marks a function whose result depends only on its arguments. The checker enforces it call by
+call (it is not transitive, so each function in a chain carries the decorator):
+
+```rust
+@pure
+func sq(x: mut u64) mut u64{ return x * x }
+
+@pure
+func hyp(a: mut u64, b: mut u64) mut u64{
+	let s = mut sq(a)
+	let t = mut sq(b)
+	return s + t
+}
+```
+
+A `@pure` function may call only other `@pure` functions. It may not call an extern or a function pointer,
+read a `mut` global, write through any pointer, or `throw`, and `unsafe` does not lift any of that. Local
+variables, arithmetic and loops are fine, and an `imut` global may be read. Because `new` can throw, it is
+effectively unavailable in a `@pure` function.
+
+```
+'f' is '@pure' and can only call other '@pure' functions -- 'impure' is not
+'f' is '@pure' and cannot read 'G' -- it is a mutable global/static variable
+'f' is '@pure' and cannot mutate through a pointer -- ...
+'f' is '@pure' and cannot 'throw' -- an unconditional program termination can never be verified at compile time
+```
+
+`@reads` and `@writes` (each takes one or more of `all`, `self`, `others`, `globals`) are accepted and
+checked for shape, but nothing enforces them yet. Treat them as documentation.
+
+#### Structs, methods and enums
+
+A struct lists its members, with `@pub` to make them visible outside the file. Methods live in `impl`
+blocks. The receiver is an explicit `_self` parameter, and a method is called with a colon
+(`acct:deposit(50)`), which is sugar for passing the receiver yourself (`acct.deposit(acct, 50)`). A struct
+value cannot be passed by value as a parameter: pass a pointer, or return the struct, which the compiler
+implements without a copy.
+
+```rust
+struct Account{@pub{
+	id: mut u64
+	balance: mut u64
+}}
+
+impl Account{
+	@pub
+	func deposit(_self: ref some mut self, amount: mut u64) void{
+		_self.balance += amount
+	}
+}
+
+enum Shape{ CIRCLE, SQUARE, TRIANGLE }
+```
+
+#### Generics and compile-time dispatch
+
+Generics use `:<T>` at the use site and `<T>` at the declaration. Each instantiation is compiled as its own
+ordinary function or struct (`Box:<u64>` becomes `Box_u64`, with its own `Box_u64_get`), so there is no
+run-time cost and nothing is looked up at run time.
+
+```rust
+struct Box<T>{@pub{ v: mut T }}
+impl<T> Box<T>{
+	@pub
+	func get(_self: ref some mut self) mut T{ return _self.v }
+}
+func twice<T>(x: mut T) mut T{ return x }
+
+let b = mut ? new Box:<u64>{v= 7}
+let t = mut twice:<u64>(mut 9)
+let bv = mut b.get(b)
+```
+
+A generic method has its own parameter (`func conv<U>(...)`, called `b.conv:<U>(b, ...)`). A method that is
+illegal for some `T` is simply unavailable for that `T` instead of being an error at the declaration, so
+`DynamicArray:<Rect>` exists even though its by-value `pushBack` does not (use `pushBackPtr`).
+
+A type parameter can carry an interface bound. The bound is checked at every instantiation, and the call
+inside is dispatched at compile time to the concrete implementation:
+
+```rust
+func areaOf<T: Shape>(s: ref some imut T) imut u64{ return s.area(s) }
+
+let ra = imut areaOf:<Rect>(r)       // calls Rect's area directly
+```
+
+Everything in this list is resolved by the compiler and costs nothing at run time: overload selection,
+generic instantiation, bounded generic calls, a method call on a value of a concrete type, `@pure`
+checking, and every proof. The only run-time dispatch in the language is a call through an interface-typed
+pointer and the `instanceof` and `implements` tests, described below.
+
+#### Inheritance and abstract types
+
+`extends` is a line inside the body of a struct or abstract. A child gets its parent's members first,
+then its own (the layout is flat). Every struct carries a hidden 8-byte class id in front of its members,
+which is what makes `instanceof` possible.
+
+```rust
+abstract Animal{@pub{
+	legs: mut u64
+}}
+abstract Named{@pub{
+	id: mut u64
+}}
+
+struct Dog{
+	extends Animal
+	@pub{
+		name: mut u64
+	}
+}
+
+// An abstract made only of `extends` lines may extend several abstracts.
+abstract Pet{
+	extends Named
+	extends Animal
+}
+struct Cat{
+	extends Pet
+	@pub{
+		lives: mut u64
+	}
+}
+
+let cat = mut Cat{id= 1, legs= 4, lives= 7}     // all inherited members are initialised in one literal
+
+let d = mut ? new Dog{legs= 4, name= 7}
+match Some(d){
+	match d instanceof Dog{ /* `d` is a Dog here */ }
+	let isAnimal = imut d instanceof Animal      // true: instanceof also accepts an ancestor
+}
+```
+
+- A struct extends one struct or abstract. An abstract that has members of its own extends at most one
+  abstract. Member names must not collide.
+- An abstract can never be instantiated: `'Animal' is abstract and cannot be instantiated directly`.
+- `@final` on a struct forbids extending it. `@untyped` drops the class id, which saves 8 bytes and bars
+  `instanceof` on that type. Decorators on a struct are not inherited.
+- `instanceof` on a pointer must be inside `match Some(...)`, like any other use of the pointer.
+- Inheritance gives you shared members and a runtime type test. It does not give you polymorphic calls.
+  Use an interface for that. Two limits to know today: a function parameter typed as an abstract does not
+  accept a struct that extends it, and reading a member through an abstract-typed pointer is a compiler
+  crash, so write the code against the concrete struct.
+
+#### Interfaces
+
+An interface is a list of method signatures. A type implements it in an `impl Interface for Type` block.
+Every method there must be `@pub`, must carry `@realizes`, and the block must match the interface's method
+set exactly.
+
+```rust
+interface Greeter{
+	id(_self: ref some imut self) imut u64;
+	@default
+	func twice(n: mut u64) imut u64{ return 2 * n }
+}
+
+impl Greeter for A{
+	@pub
+	@realizes
+	func id(_self: ref some imut self) imut u64{ return 1 }
+}
+impl Greeter for B{
+	@pub
+	@realizes
+	func id(_self: ref some imut self) imut u64{ return 2 }
+	@pub
+	@overrides
+	func twice(n: mut u64) imut u64{ return 7 }
+}
+```
+
+- `@realizes` marks a method that fulfils a plain signature. `@default` marks an interface method that has
+  a body, which every implementer inherits. `@overrides` marks a method that replaces a `@default`.
+  Each is required where it applies and forbidden where it does not, so the compiler tells you which
+  you meant (`... realizes 'G's 'id' and must be labelled '@realizes'`, `'@overrides' is for overriding a
+  '@default' method`).
+- A `@default` body cannot mention `self`: it has no receiver, so it works as a shared helper. A default
+  `static func` is not usable yet.
+- `x implements Interface` is the run-time test, with the same `match Some(...)` rule as `instanceof`.
+- `@guard` interfaces describe a lock and are covered with the locks below.
+
+A call on a value of a concrete type is a direct call. A call through an interface-typed pointer is
+dispatched at run time:
+
+```rust
+func total(s: ref some imut Shape) imut u64{
+	let a = imut s.area(s)       // which `area` runs depends on what `s` points at
+	let t = imut s.tag(s)
+	return a + t
+}
+```
+
+The compiler generates one dispatcher per interface method, which checks that the pointer is alive and
+compares the object's class id against each implementer in turn. There is no vtable, and that is why the
+`gt_*` imports are required for such a call. A method with no `self`-typed parameter cannot be called this
+way. When the type is known statically, prefer a bounded generic (`func f<T: Shape>(...)`), which compiles
+to a direct call.
+
+#### The `match` statement
+
+`match` is the one construct Caspien uses for branching on a type, a state or a proof, and it comes in two
+shapes. The parser tells them apart by the body: if its first line looks like `LABEL:{`, it is a case-match.
+Otherwise it is a proof-match.
+
+**Case-match.** It switches on an enum, or on the three states of a float. It must name every case, and
+`A|B:{...}` shares one body. There are no literal cases (`match x{ 0:{...} }` does not parse): dispatch on
+a plain value with `if`, `elseif` and `else`.
+
+```rust
+enum Color{ RED, GREEN, BLUE }
+
+func warm(c: imut Color) mut u64{
+	match c{
+		RED:{ return 1 }
+		GREEN|BLUE:{ return 2 }
 	}
 	return 0
 }
 
-interface Shape{
-	area(_self: ref some imut self) imut u64;
-}
+// An enum marked @non_exhaustive lists `default` as its last variant, and a match on it must handle it.
+@non_exhaustive
+enum Level{ LOW, MID, HIGH, default }
 
-impl Shape for Rect{
-	@pub
-	@realizes
-	func area(_self: ref some imut self) imut u64{
-		return _self.w * _self.h
+func twice(x: mut f32) mut f32{
+	match x{
+		finite:{ return x * 2.0 }       // arithmetic on `x` is allowed only here
+		infinite:{ return 0.0 }
+		nan:{ return 0.0 }
+	}
+	return 0.0
+}
+```
+
+```
+match on 'Color' isn't exhaustive -- missing: BLUE
+match on 'mut_f32' isn't exhaustive -- missing: infinite
+```
+
+**Proof-match.** The condition is something the compiler can use as evidence, and the block runs only when
+it holds. `elsematch` and `else` chain after it like `else if` and `else` (an `else` must start its own
+line). These are the conditions:
+
+| Condition | What the block may do |
+|---|---|
+| `b != 0` (unsigned), `b > 0` (signed) | divide or take a remainder by `b` |
+| `Some(p)` | use the pointer `p`: it is alive |
+| `x fits T` | write `x as T` (narrow or change sign) |
+| `i in arr` / `i into arr` | read / write `arr[i]` (also `Some(i) in arr`, which also proves the element alive) |
+| `r is base` | `r` is an empty range (the base case of a recursion) |
+| `a within b` | `a` is a strict sub-range of `b` (the recursive case) |
+| `x instanceof T`, `x implements I` | use `x` as that type |
+| `c1 and c2` | both proofs |
+| `@lock` | see the locks below |
+
+```rust
+func pick(n: mut u64, d: mut u64) mut u64{
+	match n fits u8{
+		let small = mut n as u8
+		return small as u64
+	}
+	elsematch d > 0{
+		return n / d
+	}
+	else{
+		return 7
 	}
 }
 ```
 
-Generics use `:<T>` at the use site (`Pair:<u64>{first= 3, second= 4}`, `new DynamicArray:<u64>()`),
-and a generic method that is illegal for some `T` is simply unavailable for that `T` instead of being an
-error at the declaration.
+A proof lives only inside its block, and nesting is fine. Writing to anything the proof mentions
+(the divisor, the index, the array) ends it, and the next use gets the original "not proven" error. A
+bare expression such as `x == 0` is not a proof and is rejected: write `match Some(...)` if you meant that
+a pointer is not null. A match chain in which every branch returns makes any statement after it an error
+(`unreachable code`), and `match k in a and k in b{}` is rejected, so nest the two matches instead.
 
 #### Proofs instead of runtime checks
 
@@ -190,12 +536,24 @@ These are the error messages for the most common attempts to skip a proof:
 member access on a pointer-typed struct value is not permitted -- the type system can't yet confirm it isn't null
 ```
 
-#### Ownership and errors
+Two details of bounds proofs. A *literal* index into a fixed array needs no proof (the compiler checks it
+against the length), but any index into a dynarray needs one, because its length exists only at run time.
+And a proof is tied to one array: indexing two arrays inside one loop takes two nested matches.
 
-`owns` is the single owner of a heap value, `ref` borrows it, `auto` points at a stack variable, and
-`raw` is a C-style pointer that needs `unsafe` to dereference. A pointer that might be absent is
-unwrapped with `match Some(...)`. Allocation can fail, so `new` goes through `?`, which forwards the
-error, and the function is marked `@throws`.
+#### Ownership and pointers
+
+Caspien has five kinds of pointer, and the kind says who is responsible for the target:
+
+| Kind | Meaning |
+|---|---|
+| `owns` | the single owner of a heap value. Moving it invalidates the old name at compile time, and the value is freed when its owner goes out of scope |
+| `ref` | a borrow of an `owns` value. It can be null or dangling, so its members are reachable only inside `match Some(...)`, which checks that the target is alive |
+| `auto` | the address of a live local variable, never null, and so usable without a check |
+| `static` | a pointer to static storage. A string literal is a `static imut string` |
+| `raw` | a C-style pointer. Making and dereferencing one needs `unsafe` |
+
+`new` allocates, and it can fail, so it goes through `?`. A pointer that might be absent is declared `owns
+some` (never null) or plain `owns` (possibly null), and a `some` pointer needs no check.
 
 ```rust
 @throws
@@ -211,70 +569,381 @@ func readNode(n: ref mut Node) mut u64{
 	}
 	return r
 }
-
-func parseOr(digit: mut u64, fallback: mut u64) mut u64{
-	?catch(e){ return fallback }         // a catch must end in return, throw or continue
-	return ?parse(digit)
-}
 ```
 
 Using a value after moving it is a compile error: `use of 'b' after its ownership was moved`.
 
-#### Termination
+#### Bounded loops and bounded recursion
+
+Every loop in safe code is a `for` over a range that is fixed when the loop starts. The counter cannot be
+assigned, and neither can the expression the range came from. An empty range (`5..5`) and an inverted one
+(`7..3`) run zero times. `break` leaves a loop, and `continue` is reserved for `catch` bodies and the
+`CLOSED` case of a lock.
 
 ```rust
-// The range is fixed when the loop starts: this runs exactly 5 times.
 let n = mut 5
-for i in 0..n{
+for i in 0..n{              // runs exactly 5 times, whatever `n` becomes
 	n += 100
 }
 
-// Recursion exists only as a tail call on a smaller range. The compiler lowers it to a `for` loop.
+for i in arr{ ... }          // i runs over the indexes 0..len of a fixed array
+for match i in v{ s += v[i] }   // only indexes proven to be inside `v`
+for i in 0..3{
+	for j in i..3{ ... }     // nested loops may use the outer counter in their range
+}
+```
+
+A bare `loop{}` has no bound and needs `unsafe`. The only exception is the `@event_loop` function
+(see the end of this tour).
+
+Recursion is limited to one shape, because the compiler must be able to turn it into a bounded loop. A
+`@recursive` function:
+
+1. takes an `imut range` as its **last** parameter,
+2. starts with `match r is base{ ... }`, which returns when the range is empty,
+3. makes one self-call, as the sole expression of a `return`, inside `match r2 within r{ ... }`, where
+   `r2` is a range strictly inside `r`,
+4. ends that match with an `else` branch.
+
+```rust
 @recursive
-func sumTo(acc: mut u64, r: imut range) mut u64{
+func fact(acc: mut u64, r: imut range) mut u64{
 	match r is base{ return acc }
 	let lo = mut (r.start + 1)
 	let hi = mut r.end
 	let r2 = imut (lo..hi)
-	match r2 within r{ return sumTo(acc + r.start, r2) }
+	match r2 within r{ return fact(acc * r.start, r2) }
 	else{ return acc }
+}
+// fact(1, 1..11) == 3628800: the compiler lowers this to a `for` loop that runs 10 times.
+```
+
+The range is the termination argument: it shrinks on every call, and `within` is a compile-time proof that
+it does. A range that shrinks by one runs as many steps as it has elements, and one that shrinks from
+both ends runs half as many (rounded up). The equivalent loop is shorter, and is usually what you want:
+
+```rust
+func factLoop(n: mut u64) mut u64{
+	let acc = mut 1
+	let hi = mut (n + 1)
+	for i in 1..hi{ acc *= i }
+	return acc
 }
 ```
 
-Everything else is rejected:
+Always write the `else` branch. A plain `return acc` statement after the `within` match compiles
+without an error and returns the wrong value, because the lowered loop falls through into it. Any other
+form of recursion is rejected:
 
 ```
 'f' calls itself -- recursion is not allowed unless the function is decorated '@recursive'
-indirect recursion detected: 'b' calls 'a', which (directly or transitively) calls back to 'b'
+indirect recursion detected: 'b' calls 'a', which (directly or transitively) calls back to 'b' ...
+a '@recursive' function must have an 'imut range' as its final parameter
+a recursive call to 'f' may only appear as the sole expression of a 'return' statement ...
+'i' is immutable for the duration of this 'for'/'for match' loop ...
 'loop' can only be used from within 'unsafe' code
-'i' is immutable for the duration of this 'for'/'for match' loop
 ```
 
-#### Dynamic arrays, the standard library, concurrency and locks
+#### Dynamic arrays and the standard library
 
-`dyn:<T>([])` makes a safe dynamic array, and the standard library has `DynamicArray<T>`, `HashMap<T>`,
-`String`, SHA-256 and FNV-1a hashing, process spawning and libc bindings. Async functions run on their own
-OS thread when called with `await` or `par`. Locks are enum-valued atomic fields, and `match @lock` is the
-only way to reach the data they protect.
+A fixed array (`u64[5]`) has its length in its type. A dynamic array (dynarray) has its length in a hidden
+header and lives on the heap, so creating or growing one can fail and goes through `?`.
 
 ```rust
-let squares = mut ? dyn:<u64>([])
-squares = ? resize(squares, 8, zero)
+?catch(e){ return }                       // see "Errors" below
 
-@async
-func triple(x: mut u64) mut u64{ return x * 3 }
-let answer = mut await triple(mut 14)
+let zero = mut 0
+let d = mut ? dyn:<u64>([])               // an empty array needs its element type
+d = ? resize(d, 5, zero)                  // resize returns the array: assign it back
+for i in 0..5{
+	match i into d{ d[i] = i * 10 }       // every index needs a proof, even a literal one
+}
+let total = mut 0
+for match i in range(d){ total += d[i] }  // iterate the proven indexes
+let n = mut len(d)
 
+let lit = mut ? dyn([1, 2, 3])            // or infer the element type from a literal
+lit = ? resize(lit, 1, zero)              // growing fills the new slots, shrinking truncates
+```
+
+`resize` takes the fill value as a variable (there is no `zero` keyword), and cannot be used inside a loop
+over the same array. Iterate a dynarray with `range(d)`: the bare form `for i in d` is accepted by the
+checker, but crashes at run time today.
+
+An `unsafe dyn` array has no checks at all: no proofs, no `?` on `resize`, and no protection against an
+index past the end. It is for code that has proved the bounds in its own way.
+
+```rust
+unsafe{
+	let us = mut unsafe dyn:<u64>([])
+	us = resize(us, 6)
+	for i in 0..6{ us[i] = i * 3 }
+}
+```
+
+The standard library wraps these in classes, each in its own file under `stdlib/`:
+
+- `DynamicArray<T>` (`new DynamicArray:<u64>()`) has `get`, `set`, `pushBack`, `pushFront`, `popBack`,
+  `popFront`. `get` and `set` need an index proof against `list.backing`, and the mutating methods are
+  `@throws`, so call them with `?`. The pop methods return the default value you pass when the array is
+  empty. `pushBack` reallocates on every call, so it suits small arrays, not hot loops. For a struct
+  element type use the `...Ptr` variants (`pushBackPtr(list, auto s)`), which take a pointer.
+- `String` (`new String("hello")`) has `appendChar`, `concat`, `charAt`, `setCharAt`, `sub` and
+  `firstIndexOf`, which returns -1 when the character is absent.
+- `HashMap<T>` (`new HashMap:<u64>(defaultKey, defaultValue, capacity)`) has `set`, `get` and `contains`.
+  It has a fixed capacity and no remove.
+- `hash.caspien` (FNV-1a) and `sha256.caspien`, `process.caspien` (spawn a process and read or write its
+  pipes), `sleep.caspien`, `par_call.caspien` / `await_call.caspien` (threads).
+
+```rust
+let list = mut ? new DynamicArray:<u64>()
+for i in 0..5{
+	let v = mut (i * i)
+	? list.pushBack(list, v)
+}
+let sum = mut 0
+for i in 0..5{
+	match i in list.backing{ sum += list.get(list, i) }
+}
+let top = mut ? list.popBack(list, mut 999)      // 16
+```
+
+#### `unsafe` and raw pointers
+
+`unsafe{}` is how a program says "the compiler cannot prove this, and I have". It is deliberately small, easy
+to find and easy to count. What needs it:
+
+- calling any C function (an `extern`),
+- making a `raw` pointer (`raw v`), and dereferencing one (`deref(p)`) unless it is proven alive,
+- `memcopy`,
+- a bare `loop{}`, and an `unsafe dyn` array,
+- reading or writing a `mut` global or static that is not atomic or lock-protected.
+
+Passing, returning, casting and stepping a `raw` pointer is safe. `raw x` needs an addressable variable (or a
+string literal), so bind a computed value to a `let` first. Pointer arithmetic is C's: `p++`, `p--`,
+`p += n`, `p -= n`, `p + n` and `p - n` move by `n * sizeof(pointee)` bytes, and `p - q` is the number of
+elements between two pointers of the same type, as an `s64`. Widening the pointee with `as` (a `raw u8` as
+`u64`) gives a pointer that steps by 8. `deref(p)` reads a value, and is never an assignment target: write
+through a pointer with member assignment on a proven pointer, or with `memcopy`.
+
+```rust
+@link_name(labs)                         // give a C function a different Caspien name
+extern c_abs(mut s64) mut s64
+
+func main() void{
+	let count = mut 5
+	let bytes = mut (count * sizeof(u64))
+	unsafe{
+		let base = mut malloc(bytes)            // a `raw u8`
+		let p = mut (base as u64)               // now a `raw u64`: it steps by 8
+		let start = mut p
+		for i in 0..count{
+			let v = mut (i * 10 + 1)
+			memcopy(p, mut 8, raw v)            // memcopy(destination, byteCount, source)
+			p++
+		}
+		let span = mut (p - start)              // 5 elements
+		let q = mut start
+		let sum = mut 0
+		for i in 0..count{
+			sum += deref(q)
+			q++
+		}
+		free(base)
+	}
+}
+```
+
+Keep each `unsafe` block as narrow as the unsafe operations in it, so that a reviewer can see exactly what
+was not proven. The standard library follows that rule: its `unsafe` blocks wrap the `malloc`, `memcopy`
+and similar calls and nothing else. These are the errors you will meet:
+
+```
+calling extern 'malloc' requires 'unsafe' code
+'raw' pointers can only be constructed from within 'unsafe' code
+'deref' of a pointer requires 'unsafe' code unless the pointer is proven alive -- ...
+'deref(...)' cannot be the target of an assignment -- it yields a copy of the value, not a place to write; ...
+'loop' can only be used from within 'unsafe' code
+```
+
+#### Errors: `throw`, `try`, `?`
+
+There are no exceptions that arrive unannounced. An error is a `throw` of a message, the function that can
+throw says so with `@throws`, and every caller must say what happens when it does.
+
+- A function with a `throw` must be marked `@throws`, and a `@throws` function must contain a `throw`.
+  `throw` takes a string literal, or the `e` of a `catch` to re-throw it.
+- Every call to a `@throws` function, and every `new`, must be wrapped, and the wrapper must be needed:
+  wrapping a call that cannot throw is an error too.
+- A handler must end in `return`, `throw` or `continue`. It cannot fall through, because a call that threw
+  never produced a value to carry on with.
+- When a throw leaves a function, every `owns` local in it is freed on the way, and the message is
+  delivered to the handler unchanged, however many frames up it is.
+
+The long form is `try EXPR catch(e){ ... }`, where `e` is the message. It is an expression, so it can sit
+on the right of a `let`. `?` is shorthand for it. `?catch(e){ ... }` declares a handler, and `? EXPR` is
+`try EXPR catch(e){ <the handler most recently declared> }`. Declare it once at the top of a function and
+mark each throwing call with `?`:
+
+```rust
+@throws
+func parse(x: mut u64) mut u64{
+	if x > 100{ throw "too big" }
+	return x
+}
+
+@throws
+func middle(x: mut u64) mut u64{
+	?catch(e){
+		unsafe{ printf("middle: saw '%s', passing it on\n", e) }
+		throw e                                  // re-throw the same message
+	}
+	let p = mut ? new Point{x= mut x, y= mut 1}  // freed during the unwind
+	let v = mut ? parse(x)
+	return v + 1
+}
+
+@throws
+func top(x: mut u64) mut u64{
+	?catch(e){ throw "top: request rejected" }   // a handler may throw a different message
+	let v = mut ? middle(x)
+	return v * 2
+}
+```
+
+The function that finally handles an error usually wants to carry on afterwards. `try{ ... }` is a scope
+that compiles to nothing, and it must contain at least one real `try`. Its only job is to be where
+`continue` lands, so a handler that ends in `continue` skips the rest of the block:
+
+```rust
+func run(x: mut u64) void{
+	try{
+		let r = try top(x) catch(e){
+			unsafe{ printf("run(%llu): caught '%s'\n", x, e) }
+			continue                 // jump to just past the enclosing try{} block
+		}
+		unsafe{ printf("run(%llu): ok, r=%llu\n", x, r) }
+	}
+	unsafe{ printf("run(%llu): done\n", x) }
+}
+```
+
+The most recent `?catch` applies, so one function can switch handlers part-way through. The declaration is
+positional and not scoped, so a `?catch` written inside an `if` stays in effect after it, even when the
+branch did not run. It resets at the start of every function. `throw` is safe code, and a catch parameter
+is a `static imut string`. These are the errors:
+
+```
+call to 'f', which is decorated '@throws', must be wrapped in 'try ... catch { ... }'
+'try' wraps a call to 'h', which is not decorated '@throws' -- ... only needed (and only allowed) around a call to a '@throws' function
+'g' is decorated '@throws' but its body contains no 'throw' -- remove '@throws' (or add a 'throw')
+'g' uses 'throw' but is not decorated '@throws' -- add '@throws' to this function's declaration
+'catch' must be terminating -- every path through its body must end in a 'return', a 'throw', or a 'continue' ...
+'?' requires a preceding '?catch(e) { ... }' declaration, earlier in this same function, to supply its catch block
+```
+
+#### Atomics, locks and threads
+
+**Atomics.** `atomic` makes a global or `let static` integer, `bool` or `char` that threads may share
+(floats and pointers cannot be atomic). Safe code reads and writes it without `unsafe`, and each read or
+plain write is one instruction. `swap` exchanges a new value for the old one and returns the old:
+
+```rust
+let static flag = mut atomic 0
+
+let old = mut (flag swap 5)       // old = 0, flag = 5
+let cur = mut flag                // a plain read
+flag = 9                          // a plain write
+```
+
+`swap`, and `=`, accept only a variable, a literal or an `Enum.Variant` on the right. `+=`, `++` and a
+computed right side (`c = c + 1`, `c swap (c + 1)`) are rejected, because a read-modify-write is not one
+atomic step and the compiler will not let it look like one. Binding the computed value to a `let` first
+satisfies the rule and is still a race. `swap` is an exchange and not a compare-and-swap, so an atomic is for
+flags and hand-offs. A shared counter belongs in a lock.
+
+**Locks.** A lock is a struct field written `swap`, of an enum with exactly the variants `OPEN` and
+`CLOSED`, and it must be the struct's first member. `@lock` on the struct names it, and from then on the
+other members are reachable only while the lock is held:
+
+```rust
+enum Gate{ OPEN, CLOSED }
+
+@lock(match self.gate : OPEN)
 struct Counter{@pub{
-	swap lockState: atomic mut State
+	swap gate: atomic mut Gate
 	n: mut u64
 }}
 
-match @lock c{
-	OPEN:{ c.n += 1 }
-	CLOSED:{ continue }       // retry. `break` gives up, `return` and `throw` leave.
+let static counter = mut Counter{gate= Gate.OPEN, n= mut 0}
+
+func bump() void{
+	match @lock counter{
+		OPEN:{ counter.n += 1 }       // the lock is held here, and released when the block ends
+		CLOSED:{ continue }           // someone else holds it: retry
+	}
 }
 ```
+
+`match @lock` spins on an atomic exchange. `OPEN` runs with the lock held and releases it on every way out:
+the end of the block, `return`, `break`, or a `throw`. `CLOSED` is where the lock was taken by someone
+else, and it must end every path in `continue` (retry), `break` (give up and carry on without the lock),
+`return` or `throw`. Falling off the end is an error. Outside `OPEN`, touching `n` is rejected:
+`'n' requires a 'match c.gate{...}' proof first ... or take the lock: 'match @lock c{ ... }'`.
+
+A policy gives the `CLOSED` case a backoff. It is declared once for the type, and `tries` counts attempts
+from 1:
+
+```rust
+impl default match @lock Counter{
+	CLOSED:(tries:imut u64, limit:imut u64)=>{
+		if tries >= limit{ break }
+		continue
+	}
+}
+
+match @lock counter{
+	OPEN:{ counter.n += 1 }
+	CLOSED:default(3)                 // run the policy, with limit = 3
+}
+```
+
+A method can require the lock too: `@lock(match self.gate : OPEN)` on a method means the caller must already
+be inside the matching `match @lock`, and the standard library uses the same decorator on
+`DynamicArray.get` and `set` to demand an index proof (`@lock(match i in self.backing)`). For a lock that
+is not a spin lock, `@guard` marks a generic interface with one `@lock` and one `@unlock` method (see
+`stdlib/guard.caspien`), and `lock x{ ... }` calls them around the block. A guarded value must be a global or
+`let static`, so that form needs `unsafe`.
+
+**Threads.** An `@async` function takes at most one parameter, which must fit in a register, and can only
+be called with `par` or `await`. Each call runs on its own OS thread. `await f(x)` blocks and returns the
+result. `par f(x)` starts the thread and returns at once. For a function that returns a value, `par` gives
+a handle with a `state` (`PENDING`, `RUNNING` or `READY`), a `result` and a method `resolve()`.
+`resolve()` does not wait, so poll `state` for `READY` first. A void function gives no handle. `yield` gives
+up the rest of the time slice, and `sleep(n)` (from `stdlib/sleep.caspien`) sleeps for `n` seconds.
+
+```rust
+@async
+func triple(x: mut u64) mut u64{ return x * 3 }
+
+let answer = mut await triple(mut 14)               // 42
+
+let h = mut par triple(mut 14)
+for i in 0..100000000{
+	let ready = mut false
+	match h.state{
+		READY:{ ready = true }
+		default:{ ready = false }
+	}
+	if ready{ break }
+	yield
+}
+let r = mut h:resolve()
+```
+
+Threads share data only through atomics and locks: `16_atomics_and_locks` runs two threads that each take
+a lock 100,000 times and ends with the exact count, and uses an atomic flag per worker to know that they
+finished.
 
 #### Program entry: `main` arguments and event loops
 
@@ -341,19 +1010,67 @@ the only unbounded construct is the loop that schedules them. `stdlib/event_loop
 and `argv` and passes them (or wraps them, in `stdlib/event_loop_safe_args.caspien`) through to `main`.
 The runnable version is `docs/examples/09_event_loop.caspien`.
 
+#### Idiomatic Caspien in brief
+
+- Prefer a `for` loop over a recursive function, and a `match` proof over an `unsafe` block. If you cannot
+  prove something, put the smallest possible operation in `unsafe`.
+- Start a function that allocates with `?catch(e){ ... }`, and mark every throwing call with `?`. Mark the
+  function `@throws` if the handler rethrows.
+- Bind every value with `mut` or `imut`, and bind a computed value to a `let` before passing it to
+  `printf`, `raw`, `auto` or `swap`.
+- Choose the pointer kind by who owns the value: `owns` for the single owner, `ref` for a borrow checked by
+  `match Some`, `auto` for a local, and `raw` only at the boundary with C.
+- Use an interface when callers should not care about the concrete type, a bounded generic when the type is
+  known at compile time, and `extends` only to share members.
+- Put shared mutable state behind a lock and flags behind an atomic. Keep a `CLOSED` case honest: say
+  whether you retry, give up or leave.
+- Put the `@pure` decorator on functions that can have it, and use the compiler's refusals as the review
+  checklist: each error message in this tour names the rule that was about to be broken.
+
+
 ### 1.3 Reading the code
 
 The syntax is deliberately regular. Blocks use braces, statements need no semicolons, `let` introduces a
-binding, `:<T>` supplies a type argument, and a `@decorator` on the line above a declaration changes how
-it is checked (`@throws`, `@pub`, `@async`, `@recursive`, `@lock`, `@realizes`). Comments are `//` and
-`/** ... */`. A few things that surprise newcomers:
+binding, `:<T>` supplies a type argument, and comments are `//` and `/** ... */`. A `@decorator` on the line
+above a declaration changes how it is checked or compiled, and a decorator the declaration does not accept
+is an error ("'@x' is not a valid decorator on a function"). This is the full set:
 
-- A name used as a value must be bound with `mut` or `imut` before it is stored, and a method is called with
-  a colon (`acct:deposit(50)`), which is sugar for passing the receiver explicitly (`acct.deposit(acct, 50)`).
-- Struct values cannot be passed by value as parameters. Pass a pointer, or return the struct, which the
-  compiler implements without a copy.
-- A dynarray's length is only known at run time, so every index into it, literal or not, needs a proof: `match 1 in a{ a[1] }` (or `into` to write). Fixed arrays with a literal index need none.
-- `main` takes no arguments by default and must return `void`, `bool` or `s32`; see the entry-point section above for arguments and event loops.
+| Decorator | On | Meaning |
+|---|---|---|
+| `@pub` | function, struct, member, `impl`, global | visible outside its file. Required on the methods of an `impl Interface for T` |
+| `@throws` | function | may `throw`; every caller must wrap the call |
+| `@pure` | function | calls only `@pure` functions, touches no mutable global or pointer target, never throws |
+| `@recursive` | function | the one allowed recursion shape (see Bounded loops) |
+| `@async` | function | runs on its own thread when called with `par` or `await` |
+| `@realizes` | method in `impl Interface for T` | fulfils a signature of the interface |
+| `@default` | interface method with a body | an implementation every implementer inherits |
+| `@overrides` | method in `impl Interface for T` | replaces a `@default` method |
+| `@lock(match self.f : OPEN)` | struct, method | the members are reachable only while the lock field `f` is held |
+| `@lock(match i in self.a)` | method | the caller must hold a bounds proof for `i` against `self.a` (`into` for writes) |
+| `@lock`, `@unlock` | method of a `@guard` implementer | the two operations behind `lock x{ ... }` |
+| `@guard` | interface | a generic interface with one `@lock` and one `@unlock` method |
+| `@final` | struct | cannot be extended |
+| `@untyped` | struct | no hidden class id, so no `instanceof` |
+| `@non_exhaustive` | enum | its last variant is `default`, which a `match` must handle |
+| `@link_name(sym)` | `extern` | the C symbol, when the Caspien name differs |
+| `@call_convention(c)` | function, `extern` | choose a calling convention from `toolchain.config` |
+| `@inline` | function | accepted; the inliner decides (see section 2.4) |
+| `@reads(...)`, `@writes(...)` | function | accepted and shape-checked, not yet enforced |
+| `@with_tick`, `@tick`, `@event_loop` | function | the event-loop trio (end of the tour) |
+| `@make_safe_args` | function | builds the safe `main` arguments (`stdlib/make_safe_args.caspien`) |
+| `@gt_init`, `@gt_register`, `@gt_alive_check`, `@gt_destruct` | function | the four ghost-table hooks the compiler calls (`stdlib/gt_*.caspien`) |
+| `@par_call`, `@await_call`, `@sleep` | function | the thread and sleep hooks behind `par`, `await` and `sleep` (`stdlib/`) |
+| `@par`, `@unroll` | `for` loop | accepted; they do not change the generated code today |
+| `@unpadded` | struct | rejected: not supported |
+
+A few more things that surprise newcomers:
+
+- `x swap y` and a `printf` argument need a bound value, not an expression. Bind it with `let` first.
+- A dynarray's length is only known at run time, so every index into it, literal or not, needs a proof
+  (`match i in a{ a[i] }`, or `into` to write). Fixed arrays with a literal index need none.
+- `main` takes no arguments by default and must return `void`, `bool` or `s32`; see the entry-point section
+  above for arguments and event loops.
+- Method calls use a colon (`acct:deposit(50)`) or pass the receiver explicitly (`acct.deposit(acct, 50)`).
 
 ### 1.4 Where the project stands against the ideal
 
