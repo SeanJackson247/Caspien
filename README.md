@@ -1285,12 +1285,15 @@ yours cannot reuse the name, and each is compiled directly instead of being call
 | `dyn(...)`, `resize(d, n, fill)` | allocate and grow a dynamic array | can fail, so wrap in `try` or `?` (`unsafe dyn` forms exist) |
 | `memcopy(dest, n, src)` | copy `n` bytes between pointers | `unsafe` only |
 | `call(fp, ...)` | call through a function pointer | `unsafe` only; arity, argument types and result are checked against the pointer's signature |
-| `clone(p)` | an `owns` copy of what `p` points to | see the note below |
+| `clone(p)` | a fresh `owns some` copy of what `p` points to | `p` must be proven alive (`auto`, `some`, or inside `match Some`), like `deref`; can fail, so wrap in `try` or `?` |
 | `insecure_rand()` | C's `rand()` as a `u64` | not cryptographic, hence the name; allowed in `@pure` functions |
 
 `new`, `par`, `await` and `yield` are keywords, not builtins, and `sleep` comes from the standard library.
-`clone` is the least finished of these: the copy is not entered in the ghost table, so `match Some` on it does
-not succeed, and it is not used by any example.
+`clone` makes a deep copy: it follows every `owns` member (and dynarray element) of the pointee, allocates a
+fresh copy of each and registers every new allocation with the ghost table, so the result is an ordinary
+`owns` value that shares nothing with the original. It does not null-check its source (the proof does that);
+it throws "out of memory" if an allocation fails. You write `clone(p)` whatever the type; the compiler works
+out the per-type copying.
 
 #### Idiomatic Caspien in brief
 

@@ -15,7 +15,7 @@ import java.util.Set;
  * a pointer value could reach any function), and does nothing when there is no {@code main} (a library: everything is an entry point).
  *
  * Otherwise a function is live when it is reachable from a root through CALL / RECURSIVE_CALL sites or through any other line that names it as an
- * operand (a function whose address is taken, e.g. {@code PUSH f static_imut_func(..)}, counts as used). Roots: {@code main}; the four ghost-table hooks
+ * operand (a function whose address is taken, e.g. {@code PUSH f static_imut_func(..)}, counts as used). Roots: {@code main}; any {@code export}ed function (it carries an {@code EXPORT} line and is called from C); the four ghost-table hooks
  * {@code gt_init}, {@code gt_register}, {@code gt_alive_check}, {@code gt_destruct}, which the backend calls by fixed name with no CALL in the bytecode;
  * any function carrying a decorator other than {@code @pub}/{@code @throws}/{@code @recursive}/{@code @pure} (the compiler looks such functions up by
  * decorator, e.g. @gt_*, @par_call, @await_call, @sleep, @async, @lock, @unlock, @guard); and any function named on a line outside every function (global initialisers). Reachability, rather than
@@ -70,7 +70,7 @@ public class DeadFunctionRemovalPass implements OptimizationPass {
         // roots
         for (Map.Entry<String, Integer> en : byName.entrySet()) {
             int k = en.getValue();
-            if (en.getKey().equals("main") || HOOKS.contains(en.getKey()) || hasActiveDecorator(lines, funcs.get(k))) {
+            if (en.getKey().equals("main") || HOOKS.contains(en.getKey()) || hasActiveDecorator(lines, funcs.get(k)) || isExported(lines, funcs.get(k))) {
                 markLive(live, work, k);
             }
         }
@@ -119,6 +119,14 @@ public class DeadFunctionRemovalPass implements OptimizationPass {
             live[k] = true;
             work.add(k);
         }
+    }
+
+    /** An `export`ed function (it carries an EXPORT line) is called from C, so it is a root even when nothing in Caspien calls it. */
+    private static boolean isExported(List<List<BytecodeToken>> L, int[] f) {
+        for (int i = f[0] + 1; i < f[1]; i++) {
+            if ("EXPORT".equals(VarAnalysis.mnemonic(L.get(i)))) return true;
+        }
+        return false;
     }
 
     /** A function is a root when one of the FUNC_DECORATE lines right after its FUNC_START is not one of the inert ones. */

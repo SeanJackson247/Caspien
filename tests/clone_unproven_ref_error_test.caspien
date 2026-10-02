@@ -1,0 +1,17 @@
+// clone of a plain (nullable) ref in safe code needs a Some proof first.
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+func take(r: ref imut u64) void{
+	try{
+		?catch(e){ return }
+		let c = mut ?clone(r)
+		match Some(c){ unsafe{ printf("%llu\n", deref(c)) } }
+	}
+}
+func main() void{
+	let v = mut 41
+	take(auto v)
+}

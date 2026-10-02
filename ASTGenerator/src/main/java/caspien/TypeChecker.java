@@ -10588,11 +10588,12 @@ public class TypeChecker {
         boolean isNewNode = callNode.type == TokenType.OPERATOR && callNode.text.equals("new");
         boolean isThrowingBuiltinCall = callNode.type == TokenType.OPERATOR && callNode.text.equals("CALL")
                 && callNode.left.type == TokenType.VARREF
-                && (callNode.left.text.equals("dyn") || callNode.left.text.equals("resize"));
+                && (callNode.left.text.equals("dyn") || callNode.left.text.equals("resize")
+                        || callNode.left.text.equals("clone"));
         if (!(callNode.type == TokenType.OPERATOR && callNode.text.equals("CALL")) && !isNewNode) {
             throw new CompilerException("type", callNode.file, callNode.line,
                     "'try' can only wrap a direct call to a '@throws' function, a 'new' expression, or a "
-                            + "'dyn'/'resize' builtin call, not a more general expression");
+                            + "'dyn'/'resize'/'clone' builtin call, not a more general expression");
         }
         callNode.insideTry = true;
         // UPDATE (nested 'new'/'dyn'/'resize'): a per-token `insideTry`
@@ -13168,13 +13169,32 @@ public class TypeChecker {
      * base type and mutability preserved, storage becomes 'owns'.
      */
     private TypeInfo checkCloneBuiltin(Token op, Scope scope, FuncInfo func) {
+        // `clone` allocates a fresh heap copy and registers it with the ghost table, exactly as `new` does, so it
+        // can fail the same way and needs the same try/catch (or `?`) discipline, and it makes the same demands of
+        // the program (ghost table functions, the throw machinery).
+        usesOwnsRefDynNew = true;
+        usesThrow = true;
+        if (!op.insideTry && !insideThrowingAllocContext) {
+            throw new CompilerException("type", op.file, op.line,
+                    "'clone' can fail (it throws when the underlying allocation fails) and must be "
+                            + "wrapped in 'try ... catch { ... }'");
+        }
         Token argExpr = collectSingleBuiltinArg(op, "clone", scope, func).get(0);
         TypeInfo argType = resolveExprType(argExpr, scope, func);
         if (argType.storage == null) {
             throw new CompilerException("type", argExpr.file, argExpr.line,
                     "'clone' requires a pointer, got '" + argType.canonical() + "'");
         }
-        return new TypeInfo("owns", argType.mutability, argType.baseType, argType.aliasName);
+        // The source is read, so it is held to the same rule as `deref`: safe code may clone only a pointer proven
+        // non-null and alive ('auto', 'some'-tagged, or inside 'match Some'). `clone` itself does no null check
+        // on its source.
+        if (!"unsafe".equals(scope.currentSafety) && requiresAliveProof(argType, argExpr, scope)) {
+            throw new CompilerException("type", op.file, op.line,
+                    "'clone' of a pointer requires 'unsafe' code unless the pointer is proven alive -- "
+                            + "'auto', 'some'-tagged, or inside 'match Some(...)'");
+        }
+        // A failed allocation throws, so what comes back is never null: `owns some`, like `new`.
+        return argType.withStorage("owns").withSome(true); // keeps dynarray/array shape, mutability and alias
     }
 
     /**

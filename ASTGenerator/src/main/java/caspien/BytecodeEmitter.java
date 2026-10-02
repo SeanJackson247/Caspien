@@ -4524,7 +4524,12 @@ public class BytecodeEmitter {
                     // to actually copy).
                     Token arg = singleBuiltinArg(op);
                     emitExpr(arg);
+                    requireGhostTableFunctionPresent("gt_register", op);
                     line("CLONE " + arg.resolvedType + " " + op.resolvedType);
+                    // Same tail as `new`: a null result (failed malloc) jumps to the enclosing catch, otherwise
+                    // the copy is registered with the ghost table so `match Some` and the scope-end destruct work.
+                    emitAllocFailureCheck(op);
+                    line("GT_REGISTER");
                     return;
                 }
                 case "Some":

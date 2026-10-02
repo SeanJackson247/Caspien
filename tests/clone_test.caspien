@@ -1,0 +1,45 @@
+// clone(p): the source must be proven alive (auto / some / match Some); the copy is a fresh registered 'owns some'.
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+struct Pair{
+	@pub{ a: mut u64
+	b: mut u64 }
+}
+func check(name: static imut string, got: imut u64, want: imut u64) mut u64{
+	if got == want{
+		unsafe{ printf("PASS %s\n", name) }
+		return 0
+	}
+	unsafe{ printf("FAIL %s got %llu want %llu\n", name, got, want) }
+	return 1
+}
+@throws
+func duplicate(src: ref some imut Pair) owns some imut Pair{
+	?catch(e){ throw e }
+	return ?clone(src)
+}
+func main() void{
+	let fails = mut 0
+	try{
+		?catch(e){ return }
+		let v = mut 41
+		let p = mut auto v
+		let c = mut ?clone(p)                       // source proven by 'auto'
+		match Some(c){
+			fails += check("clone u64 value", deref(c), 41)
+		}
+		let orig = mut ?new Pair{a= 7, b= 9}
+		let copy = mut ?clone(orig)                 // orig is 'owns some' (new)
+		copy.a = 100
+		fails += check("struct clone a", copy.a, 100)
+		fails += check("struct clone b", copy.b, 9)
+		fails += check("original untouched", orig.a, 7)
+		match Some(copy){
+			fails += check("match Some on clone", 1, 1)
+		}
+	}
+	unsafe{ printf("done fails=%llu\n", fails) }
+}

@@ -724,6 +724,10 @@ public class X86Backend {
         raw(isWindows() ? "    mov r12, rsp" : "    movq %rsp, %r12"); // r12: the reversed field words on the stack
         emitMallocCall(size);
         raw(isWindows() ? "    mov r14, rax" : "    movq %rax, %r14"); // r14: the fresh buffer
+        // A failed malloc leaves r14 null: skip every copy into it; the null is pushed and the bytecode's own check throws.
+        String newRepackDone = newInternalLabel("new_done");
+        raw(isWindows() ? "    test r14, r14" : "    testq %r14, %r14");
+        raw("    jz " + newRepackDone);
         long dst = 0;      // running true offset in the buffer
         long consumed = 0; // bytes of chunks pushed so far (from the first field)
         for (int i = 0; i < chunk.size(); i++) {
@@ -750,6 +754,7 @@ public class X86Backend {
             }
             dst += s;
         }
+        raw(newRepackDone + ":");
         raw(isWindows() ? ("    add rsp, " + total) : ("    addq $" + total + ", %rsp"));
         pushReg("r14");
     }
@@ -4138,6 +4143,10 @@ public class X86Backend {
                 raw(isWindows() ? "    mov r12, rsp" : "    movq %rsp, %r12"); // r12: source address -- the construction's own tightly-packed image already sitting on the stack, callee-saved, survives the malloc call below
                 emitMallocCall(size);
                 raw(isWindows() ? "    mov r14, rax" : "    movq %rax, %r14"); // r14: the fresh buffer, also callee-saved
+                // A failed malloc leaves r14 null: skip the copy (it would fault on address 0); the bytecode's own null check throws.
+                String newDone = newInternalLabel("new_done");
+                raw(isWindows() ? "    test r14, r14" : "    testq %r14, %r14");
+                raw("    jz " + newDone);
                 if (isWindows()) {
                     raw("    mov rdi, r14");
                     raw("    mov rsi, r12");
@@ -4149,6 +4158,7 @@ public class X86Backend {
                     raw("    movq $" + size + ", %rcx");
                     raw("    rep movsb");
                 }
+                raw(newDone + ":");
                 raw(isWindows() ? ("    add rsp, " + size) : ("    addq $" + size + ", %rsp"));
                 pushReg("r14");
                 return;
@@ -4158,6 +4168,11 @@ public class X86Backend {
                 popReg("r12"); // source address (r12: callee-saved, survives the call below)
                 emitMallocCall(size);
                 raw(isWindows() ? "    mov r14, rax" : "    movq %rax, %r14"); // r14: new pointer, also callee-saved
+                // A failed malloc leaves r14 null: skip the copy (it would fault on address 0) and push the null,
+                // which the bytecode's own null check right after CLONE turns into a throw.
+                String cloneDone = newInternalLabel("clone_done");
+                raw(isWindows() ? "    test r14, r14" : "    testq %r14, %r14");
+                raw("    jz " + cloneDone);
                 if (isWindows()) {
                     raw("    mov rdi, r14");
                     raw("    mov rsi, r12");
@@ -4169,6 +4184,7 @@ public class X86Backend {
                     raw("    movq $" + size + ", %rcx");
                     raw("    rep movsb");
                 }
+                raw(cloneDone + ":");
                 pushReg("r14");
                 return;
             }
@@ -5010,7 +5026,7 @@ public class X86Backend {
             }
             case "CALL": {
                 String name = line.get(1).text;
-                if (name.startsWith("__drop_") && callBufferStack.isEmpty()) {
+                if ((name.startsWith("__drop_") || name.startsWith("__clone_")) && callBufferStack.isEmpty()) {
                     emitDropGlueCall(name);
                     return;
                 }
@@ -5292,7 +5308,7 @@ public class X86Backend {
     }
 
     /**
-     * A drop-glue call (`__drop_<T>`) is a deliberately minimal, ad hoc
+     * A drop-glue call (`__drop_<T>`, and likewise a clone-glue call `__clone_<T>`, whose pointer result comes back in rax) is a deliberately minimal, ad hoc
      * shape: the LowerOrderGenerator emits a bare `PUSH pointer` /
      * `CALL __drop_T` with no `CC_START`/`CC_END`, and the routine reads
      * its one parameter as stack word 0 (`PUSH $16`), i.e. the word

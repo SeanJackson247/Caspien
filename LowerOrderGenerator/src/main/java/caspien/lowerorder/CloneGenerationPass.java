@@ -523,8 +523,10 @@ public class CloneGenerationPass implements OptimizationPass {
             emit(out, "FUNC_START " + pointerRoutineNameFor(structName));
             emit(out, "FUNC_DECORATE @clone_glue");
             emit(out, "RETURNS owns_mut_" + structName);
-            emitParamLoad(out, "src", paramType);
-            emitMemberPushSequence(out, structName, "src");
+            String root = emitParamLoad(out, "src", paramType, structName);
+            failReturnType = "owns_mut_" + structName; // a failed nested allocation returns null from this routine
+            emitMemberPushSequence(out, structName, root);
+            failReturnType = null;
             emit(out, "NEW " + structName);
             emit(out, "RET owns_mut_" + structName);
             emit(out, "FUNC_END");
@@ -549,8 +551,9 @@ public class CloneGenerationPass implements OptimizationPass {
             emit(out, "FUNC_START " + valueRoutineNameFor(structName));
             emit(out, "FUNC_DECORATE @clone_glue");
             emit(out, "RETURNS mut_" + structName);
-            emitParamLoad(out, "src", paramType);
-            emitMemberPushSequence(out, structName, "src");
+            String root = emitParamLoad(out, "src", paramType, structName);
+            failReturnType = null; // by-value result: a failed nested allocation stays a null member
+            emitMemberPushSequence(out, structName, root);
             emit(out, "RET mut_" + structName);
             emit(out, "FUNC_END");
             return out;
@@ -580,11 +583,50 @@ public class CloneGenerationPass implements OptimizationPass {
          * gives for its own, structurally identical one-parameter
          * routine.
          */
-        private void emitParamLoad(List<List<BytecodeToken>> out, String name, String type) {
+        private String emitParamLoad(List<List<BytecodeToken>> out, String name, String type, String structName) {
             emit(out, "ALLOC " + name + " " + type);
             emit(out, "ADDR " + name + " " + type);
             emit(out, "PUSH $16 " + type);
             emit(out, "ASSIGN " + type + " " + type + " " + type);
+            // Copy the pointee into a local so its members are plain "root.member" paths (what DropGlueGenerationPass does too);
+            // a dotted path off the pointer itself ("src.x") is not something any later stage lowers.
+            String derefType = "imut_" + structName;
+            tempCounter++;
+            String root = "$clone_src" + tempCounter;
+            emit(out, "ALLOC " + root + " " + derefType);
+            emit(out, "PUSH " + name + " " + type);
+            emit(out, "DEREF " + derefType);
+            emit(out, "POP " + root + " " + derefType);
+            return root;
+        }
+
+        /** Set while generating a pointer routine: a null from a nested clone makes the routine return null (the call site's own check then throws). Null for a by-value routine. */
+        private String failReturnType = null;
+
+        /**
+         * A freshly cloned `owns` pointer (type `ownsType`) is on top of the stack: register it with the ghost table, like `new`
+         * does. If it is null (allocation failed) a pointer routine returns that null at once; otherwise the null is left in place
+         * and not registered.
+         */
+        private void emitRegisterClone(List<List<BytecodeToken>> out, String ownsType) {
+            String ok = newLabel("clone_member_ok");
+            emit(out, "DUP_TOP");
+            emit(out, "PUSH null " + ownsType);
+            emit(out, "EQ " + ownsType + " " + ownsType + " imut_bool");
+            emit(out, "CMP");
+            if (failReturnType != null) {
+                emit(out, "JMP " + ok);
+                emit(out, "RET " + failReturnType);
+                emit(out, ok + ":");
+                emit(out, "GT_REGISTER");
+            } else {
+                String done = newLabel("clone_member_done");
+                emit(out, "JMP " + ok);
+                emit(out, "JMP " + done);
+                emit(out, ok + ":");
+                emit(out, "GT_REGISTER");
+                emit(out, done + ":");
+            }
         }
 
         /** Pushes `structName`'s own classId (if any, copied verbatim off `basePath`) followed by every ordinary member's own freshly cloned value, in declared order -- shared by both routine shapes above, matching NEW's/an inline struct literal's own identical construction order (BytecodeEmitter.emitInstantiate). */
@@ -653,6 +695,7 @@ public class CloneGenerationPass implements OptimizationPass {
                     // pass -- reduces it to a plain size.
                     emit(out, "CLONE " + canonicalType + " owns_mut_" + t.baseType);
                 }
+                emitRegisterClone(out, "owns_mut_" + t.baseType);
                 return;
             }
 

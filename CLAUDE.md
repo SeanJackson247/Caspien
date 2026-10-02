@@ -38,9 +38,9 @@ Caspien: a systems language for auditable code (ownership storage `owns/ref/raw/
 
 ## Known open items
 - Struct `extends`/`abstract` removed (committed `0345aaa`); flat `Class` enum; `instanceof` takes only a struct name, `implements` only an interface name. Status and open items: `TODO_REMOVE_STRUCT_EXTENDS.md`.
-- `clone(p)` returns an `owns` pointer that is not registered with the ghost table, so `match Some` on it never succeeds (no alloc-failure check either); no example or test uses it.
+- `clone(p)` is a deep copy (generated `__clone_<T>` routines, every nested owns allocation registered). On OOM inside a nested clone, already-made sibling copies leak (the routine returns null, the call site throws). A dynarray whose elements are owns pointers/owns-bearing structs goes through `buildCloneLoop`, not covered by any test.
 - `h.w = pass(h.w)` (assignment target through a pointer or `LOOKUP`) destructs the old owns value before the right side runs (`emitAssign` DUP_TOP / `GT_DESTRUCT_ADDR` path); flat-name targets are fixed.
-- Passing a struct by value as a plain parameter is rejected by design; arrays of exactly 8 bytes (`u8[8]`, `f32[2]`) crash on read.
+- Passing a struct by value as a plain parameter is rejected by design.
 - Safe-args `main` shape: leaks the args dynarray; String class leaks its buffer at scope end; `__drop_DynamicArray_char` does not free `backing`.
 - Float variables around an inlined catch are refused (not made to work); `catch` ending in `continue` leaks one operand word per throw.
 - MASM/Intel (`windows` target) text is probably not valid as-is; windows_gnu assembles/links but is only occasionally run under Wine.
