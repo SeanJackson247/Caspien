@@ -8952,24 +8952,27 @@ public class TypeChecker {
             caseTok.destructOnExit = collectNaturalEndDestruct(caseTok.childs, branchScope, branchScope);
             union.addAll(branchMoved);
         }
+        List<String> missing = new ArrayList<>();
+        for (String variant : enumInfo.variants) {
+            if (!variant.equals("default") && !covered.contains(variant)) {
+                missing.add(variant);
+            }
+        }
         if (enumInfo.isNonExhaustive) {
-            if (!sawDefault) {
+            if (sawDefault && missing.isEmpty()) {
                 throw new CompilerException("type", matchTok.file, matchTok.line,
-                        "matching '@non_exhaustive' enum '" + enumInfo.name + "' requires a 'default' "
-                                + "case as the last one");
+                        "'default' is unreachable: every variant of '" + enumInfo.name
+                                + "' is already covered by name");
             }
-        } else {
-            List<String> missing = new ArrayList<>();
-            for (String variant : enumInfo.variants) {
-                if (!covered.contains(variant)) {
-                    missing.add(variant);
-                }
-            }
-            if (!missing.isEmpty()) {
+            if (!sawDefault && !missing.isEmpty()) {
                 throw new CompilerException("type", matchTok.file, matchTok.line,
-                        "match on '" + enumInfo.name + "' isn't exhaustive -- missing: "
-                                + String.join(", ", missing));
+                        "match on '@non_exhaustive' enum '" + enumInfo.name + "' needs a 'default' case "
+                                + "as the last one -- uncovered: " + String.join(", ", missing));
             }
+        } else if (!missing.isEmpty()) {
+            throw new CompilerException("type", matchTok.file, matchTok.line,
+                    "match on '" + enumInfo.name + "' isn't exhaustive -- missing: "
+                            + String.join(", ", missing));
         }
         preState.clear();
         preState.addAll(union);

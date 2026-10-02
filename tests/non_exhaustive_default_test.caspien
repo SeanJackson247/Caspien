@@ -1,0 +1,36 @@
+// @non_exhaustive: `default` is required when a variant is uncovered (and rejected when none is: see non_exhaustive_*_error_test).
+import "../stdlib/libc.caspien"
+
+@non_exhaustive
+enum Level{ LOW, MID, HIGH, default }
+
+func level(l: imut Level) mut u64{
+	match l{
+		LOW:{ return 10 }
+		default:{ return 99 }
+	}
+	return 0
+}
+func two(l: imut Level) mut u64{
+	match l{
+		LOW|MID:{ return 1 }
+		default:{ return 2 }
+	}
+	return 0
+}
+
+func check(name: static imut string, got: imut u64, want: imut u64) void{
+	if got == want{
+		unsafe{ printf("PASS %s\n", name) }
+	}else{
+		unsafe{ printf("FAIL %s\n", name) }
+	}
+}
+
+func main() void{
+	check("low", level(Level.LOW), 10)
+	check("mid", level(Level.MID), 99)
+	check("high", level(Level.HIGH), 99)
+	check("two_mid", two(Level.MID), 1)
+	check("two_high", two(Level.HIGH), 2)
+}

@@ -415,7 +415,8 @@ func warm(c: imut Color) mut u64{
 	return 0
 }
 
-// An enum marked @non_exhaustive lists `default` as its last variant, and a match on it must handle it.
+// An enum marked @non_exhaustive lists `default` as its last variant. A match on it needs a `default` case
+// exactly when some variant isn't named; if every variant is named, `default` is an error.
 @non_exhaustive
 enum Level{ LOW, MID, HIGH, default }
 
@@ -440,7 +441,8 @@ func twice(x: mut f32) mut f32{
 ```
 match on 'Color' isn't exhaustive -- missing: BLUE
 match on 'mut_f32' isn't exhaustive -- missing: infinite
-matching '@non_exhaustive' enum 'Level' requires a 'default' case as the last one
+match on '@non_exhaustive' enum 'Level' needs a 'default' case as the last one -- uncovered: MID, HIGH
+'default' is unreachable: every variant of 'Level' is already covered by name
 ```
 
 **Proof-match.** The condition is something the compiler can use as evidence, and the block runs only when
@@ -1034,7 +1036,7 @@ is an error ("'@x' is not a valid decorator on a function"). This is the full se
 | `@lock`, `@unlock` | method of a `@guard` implementer | the two operations behind `lock x{ ... }` |
 | `@guard` | interface | a generic interface with one `@lock` and one `@unlock` method |
 | `@untyped` | struct | no hidden class id, so no `instanceof` |
-| `@non_exhaustive` | enum | its last variant is `default`, which a `match` must handle |
+| `@non_exhaustive` | enum | its last variant is `default`; a `match` needs a `default` case only when some variant is not named (an error when all are) |
 | `@link_name(sym)` | `extern` | the C symbol, when the Caspien name differs |
 | `@call_convention(c)` | function, `extern` | choose a calling convention from `toolchain.config` |
 | `@inline` | function | accepted; the inliner decides (see section 2.4) |

@@ -37,7 +37,7 @@ Caspien: a systems language for auditable code (ownership storage `owns/ref/raw/
 - Benchmarks vs C -O2 (1 Oct): about 1.0-2.9x depending on program; naive stdlib String/HashMap paths are the slow ones. Details: `benchmarks/RESULTS.md`.
 
 ## Known open items
-- BUILT, SWEPT (Linux), UNCOMMITTED: struct `extends` and `abstract` removed; flat `Class` enum; `instanceof` takes only a struct name, `implements` only an interface name. Status and open items: `TODO_REMOVE_STRUCT_EXTENDS.md`.
+- Struct `extends`/`abstract` removed (committed `0345aaa`); flat `Class` enum; `instanceof` takes only a struct name, `implements` only an interface name. Status and open items: `TODO_REMOVE_STRUCT_EXTENDS.md`.
 - `h.w = pass(h.w)` (assignment target through a pointer or `LOOKUP`) destructs the old owns value before the right side runs (`emitAssign` DUP_TOP / `GT_DESTRUCT_ADDR` path); flat-name targets are fixed.
 - Passing a struct by value as a plain parameter is rejected by design; arrays of exactly 8 bytes (`u8[8]`, `f32[2]`) crash on read.
 - Safe-args `main` shape: leaks the args dynarray; String class leaks its buffer at scope end; `__drop_DynamicArray_char` does not free `backing`.

@@ -18,7 +18,7 @@ func warm(c: imut Color) mut u64{
 	}
 	return 0
 }
-// A @non_exhaustive enum lists `default` last, and the match must then handle it.
+// A @non_exhaustive enum lists `default` last; a match needs `default` only while some variant is unnamed.
 func level(l: imut Level) mut u64{
 	match l{
 		LOW:{ return 10 }
