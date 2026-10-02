@@ -225,8 +225,11 @@ no overload of 'f' matches argument types (f32)
 'P' declares its own constructor(s) -- its struct-literal form ('P{...}') can only be used inside one of those constructors' own bodies; ...
 ```
 
-**`@pure`** marks a function whose result depends only on its arguments. The checker enforces it call by
-call (it is not transitive, so each function in a chain carries the decorator):
+**`@pure`** marks a function with no side effects. It is not the same as referentially transparent: a `@pure`
+function may read through a pointer argument, so the same call can return different results as the
+pointee changes, and it may call the built-in `insecure_rand()`, which is side-effect-free but
+non-deterministic. The checker enforces it call by call (it is not transitive, so each function in a chain
+carries the decorator):
 
 ```rust
 @pure
@@ -1006,7 +1009,7 @@ The runnable version is `docs/examples/09_event_loop.caspien`.
 - Choose the pointer kind by who owns the value: `owns` for the single owner, `ref` for a borrow checked by
   `match Some`, `auto` for a local, and `raw` only at the boundary with C.
 - Use an interface when callers should not care about the concrete type, a bounded generic when the type is
-  known at compile time, and `extends` only to share members.
+  known at compile time, and composition (a struct member) to share members.
 - Put shared mutable state behind a lock and flags behind an atomic. Keep a `CLOSED` case honest: say
   whether you retry, give up or leave.
 - Put the `@pure` decorator on functions that can have it, and use the compiler's refusals as the review
@@ -1024,7 +1027,7 @@ is an error ("'@x' is not a valid decorator on a function"). This is the full se
 |---|---|---|
 | `@pub` | function, struct, member, `impl`, global | visible outside its file. Required on the methods of an `impl Interface for T` |
 | `@throws` | function | may `throw`; every caller must wrap the call |
-| `@pure` | function | calls only `@pure` functions, touches no mutable global or pointer target, never throws |
+| `@pure` | function | side-effect-free, not referentially transparent: calls only `@pure` functions, reads no mutable global, writes through no pointer, never throws |
 | `@recursive` | function | the one allowed recursion shape (see Bounded loops) |
 | `@async` | function | runs on its own thread when called with `par` or `await` |
 | `@realizes` | method in `impl Interface for T` | fulfils a signature of the interface |
