@@ -38,6 +38,7 @@ Caspien: a systems language for auditable code (ownership storage `owns/ref/raw/
 
 ## Known open items
 - Struct `extends`/`abstract` removed (committed `0345aaa`); flat `Class` enum; `instanceof` takes only a struct name, `implements` only an interface name. Status and open items: `TODO_REMOVE_STRUCT_EXTENDS.md`.
+- `clone(p)` returns an `owns` pointer that is not registered with the ghost table, so `match Some` on it never succeeds (no alloc-failure check either); no example or test uses it.
 - `h.w = pass(h.w)` (assignment target through a pointer or `LOOKUP`) destructs the old owns value before the right side runs (`emitAssign` DUP_TOP / `GT_DESTRUCT_ADDR` path); flat-name targets are fixed.
 - Passing a struct by value as a plain parameter is rejected by design; arrays of exactly 8 bytes (`u8[8]`, `f32[2]`) crash on read.
 - Safe-args `main` shape: leaks the args dynarray; String class leaks its buffer at scope end; `__drop_DynamicArray_char` does not free `backing`.

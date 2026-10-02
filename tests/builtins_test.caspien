@@ -1,0 +1,60 @@
+// The compiler builtins listed in the README ("Builtins at a glance"). Expected values come from Python (see the comment on each line).
+import "../stdlib/libc.caspien"
+
+func inc(x: mut u64) mut u64{ return x + 1 }
+
+func check(name: static imut string, got: imut u64, want: imut u64) mut u64{
+	if got == want{
+		unsafe{ printf("PASS %s\n", name) }
+		return 0
+	}
+	unsafe{ printf("FAIL %s got %llu want %llu\n", name, got, want) }
+	return 1
+}
+
+func main() void{
+	let fails = mut 0
+	let arr = mut [3, 4, 5, 6]
+	fails += check("len array", len(arr), 4)                      // len([3,4,5,6]) == 4
+	fails += check("len literal", len("hello"), 5)                 // len("hello") == 5
+	fails += check("sizeof u64", sizeof(u64), 8)
+	fails += check("sizeof u8", sizeof(u8), 1)
+
+	let total = mut 0
+	for match i in range(arr){ total += arr[i] }                  // 3+4+5+6 == 18
+	fails += check("range sum", total, 18)
+
+	let v = mut 41
+	let p = mut auto v
+	fails += check("deref auto", deref(p), 41)
+
+	let a = mut 12
+	let b = mut 10
+	fails += check("bits_and", bits_and(a, b), 8)                 // 12 & 10
+	fails += check("bits_or", bits_or(a, b), 14)                  // 12 | 10
+	fails += check("bits_xor", bits_xor(a, b), 6)                 // 12 ^ 10
+	let one = mut 1
+	fails += check("bits_left", bits_left(one, 4), 16)            // 1 << 4
+	let big = mut 256
+	fails += check("bits_right", bits_right(big, 4), 16)          // 256 >> 4
+
+	let n = mut 300
+	fails += check("sat u8", sat:<u8>(n) as u64, 255)             // min(300, 255)
+	fails += check("wrap u8", wrap:<u8>(n) as u64, 44)            // 300 & 0xFF
+
+	let fp = imut inc
+	unsafe{
+		let r = mut call(fp, mut 5)                               // inc(5) == 6
+		fails += check("call", r, 6)
+	}
+
+	let r1 = mut insecure_rand()
+	let r2 = mut insecure_rand()
+	let ok1 = mut 0
+	let ok2 = mut 0
+	if r1 <= 2147483647{ ok1 = 1 }                                // C rand() is in 0..RAND_MAX
+	if r2 <= 2147483647{ ok2 = 1 }
+	fails += check("insecure_rand range", ok1, 1)
+	fails += check("insecure_rand range 2", ok2, 1)
+	unsafe{ printf("fails=%llu\n", fails) }
+}

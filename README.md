@@ -533,6 +533,14 @@ for match i in values{          // only indexes proven to be inside `values`
 match i into squares{           // `in` proves reading, `into` proves writing
 	squares[i] = i * i
 }
+
+func readNode(n: ref mut Node) mut u64{     // `Node` has a `value: mut u64` member
+	let r = mut 0
+	match Some(n){              // `n` may be null: it is proven alive only inside this block
+		r = n.value
+	}
+	return r
+}
 ```
 
 These are the error messages for the most common attempts to skip a proof:
@@ -675,7 +683,8 @@ Using a value after moving it is a compile error: `use of 'b' after its ownershi
 #### Bounded loops and bounded recursion
 
 Every loop in safe code is a `for` over a range that is fixed when the loop starts. The counter cannot be
-assigned, and neither can the expression the range came from. An empty range (`5..5`) and an inverted one
+assigned, and the bounds are read once, so assigning the variable the range came from does not change how
+many times the loop runs. An empty range (`5..5`) and an inverted one
 (`7..3`) run zero times. `break` leaves a loop, and `continue` is reserved for `catch` bodies and the
 `CLOSED` case of a lock.
 
@@ -809,7 +818,8 @@ let top = mut ? list.popBack(list, mut 999)      // 16
 
 #### `unsafe` and raw pointers
 
-`unsafe{}` is how a program says "the compiler cannot prove this, and I have". It is deliberately small, easy
+`unsafe{}` is how a program says "the compiler cannot prove this meets the guarantees of safe code: I have
+either proven it myself, or I am choosing to compile code without those guarantees". It is deliberately small, easy
 to find and easy to count. What needs it:
 
 - calling any C function (an `extern`),
@@ -1109,6 +1119,30 @@ the only unbounded construct is the loop that schedules them. `stdlib/event_loop
 `@throws`, as a `main` that builds heap state has to be). If `main` takes arguments, the `@event_loop` function receives the raw `argc`
 and `argv` and passes them (or wraps them, in `stdlib/event_loop_safe_args.caspien`) through to `main`.
 The runnable version is `docs/examples/09_event_loop.caspien`.
+
+#### Builtins at a glance
+
+A handful of names look like functions but are built into the compiler. Each is reserved, so a function of
+yours cannot reuse the name, and each is compiled directly instead of being called.
+
+| Builtin | What it does | Notes |
+|---|---|---|
+| `sizeof(T)` | the size of a type in bytes | folded to a constant; also the stride of `raw` pointer arithmetic |
+| `len(x)` | the length of a fixed array, a string literal or a safe dynarray | known at compile time except for a dynarray |
+| `range(x)` | the range `0..len(x)` of an array or safe dynarray | what `for match i in range(d)` iterates |
+| `deref(p)` | reads the value a pointer points to | `unsafe` unless the pointer is `auto`, `some` or inside `match Some`; never an assignment target |
+| `Some(p)` | proof condition: the pointer `p` is alive | only as a `match` condition (`Some(i) in arr` also proves the element alive) |
+| `wrap:<T>(x)`, `sat:<T>(x)` | convert an integer to `T` by keeping the low bits, or by clamping | total, no `unsafe`; `sat` needs a variable, field or literal |
+| `bits_and`, `bits_or`, `bits_xor`, `bits_not`, `bits_left`, `bits_right` | bitwise operations | one shift rule: a count of the width or more gives 0, or sign fill |
+| `dyn(...)`, `resize(d, n, fill)` | allocate and grow a dynamic array | can fail, so wrap in `try` or `?` (`unsafe dyn` forms exist) |
+| `memcopy(dest, n, src)` | copy `n` bytes between pointers | `unsafe` only |
+| `call(fp, ...)` | call through a function pointer | `unsafe` only; arity, argument types and result are checked against the pointer's signature |
+| `clone(p)` | an `owns` copy of what `p` points to | see the note below |
+| `insecure_rand()` | C's `rand()` as a `u64` | not cryptographic, hence the name; allowed in `@pure` functions |
+
+`new`, `par`, `await` and `yield` are keywords, not builtins, and `sleep` comes from the standard library.
+`clone` is the least finished of these: the copy is not entered in the ghost table, so `match Some` on it does
+not succeed, and it is not used by any example.
 
 #### Idiomatic Caspien in brief
 
