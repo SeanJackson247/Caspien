@@ -622,10 +622,12 @@ structs and arrays as C does.
 - Code written against the standard library classes is much slower than code written against raw arrays
   (about 5x on average, 57x for k-nucleotide). The classes pay for bounds proofs, wrapper calls and, in
   `hashOf`, a heap allocation on each call. That is an engineering gap, not a design limit.
-- Benchmarks of this kind favour the language's own authors' choices. The programs are the standard
-  benchmarks-game shapes, ported by hand, and no benchmark exercises the event-loop model. Timing noise on
-  this VM is about 30%, so differences under 1.3x between two rows are not meaningful. Java and the
-  JavaScript engines include start-up and warm-up time.
+- None of the programs was written for Caspien. Most come from the programming benchmarks website
+  (the benchmarks game); two were added because they are a better gauge of what programs do in the wild.
+  Each was ported by hand to every language (the binarytrees, lru and json_serde ports are index-based in
+  Caspien because recursive structs are rejected on purpose), and no benchmark exercises the event-loop
+  model. Timing noise on this VM is about 30%, so differences under 1.3x between two rows are not
+  meaningful. Java and the JavaScript engines include start-up and warm-up time.
 - Two outliers in the other languages are real and unrelated to Caspien: C++ and Go are slow on the lru
   cache because of their built-in hash maps for that access pattern, and Java beats C on binarytrees
   because its allocator is faster than `malloc` and `free`.
