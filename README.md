@@ -44,7 +44,7 @@ Each iteration of the loop handles one event, which is a slice of time, and the 
 *total* function: it is guaranteed to return a result for every input, with no non-termination, no
 exception and no undefined behaviour, absent a hardware fault. The loop itself is the only unbounded
 construct, and it lives in a small, auditable place. (The project's working name for this idea was
-*Time-Slice TIDAG*. "Total slice" says the same thing in terms that match the literature.)
+*Time-Slice TIDAG*, or Turing Incomplete Directed Acyclic Graph. "Total slice" says the same thing in terms that match the literature.)
 
 Four properties make a handler total:
 
