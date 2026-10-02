@@ -131,10 +131,12 @@ func main() void{
 
 - A file is a list of declarations: `import`, `func`, `struct`, `enum`, `interface`, `impl`, `extern`,
   `let static`. Imports are resolved relative to the importing file.
-- Every program that uses `new`, `owns` or `ref` imports the four `gt_*` files from `stdlib/`. They
-  implement the runtime registry that tracks which heap values are alive, and they are ordinary Caspien
-  source, not compiler magic. `libc.caspien` declares the C functions, and calling any C function, `printf`
-  included, needs an `unsafe` block.
+- Every program that uses `new`, `owns` or `ref` requires the four `gt_*` decorated functions (`@gt_init`,
+  `@gt_register`, `@gt_alive_check` and `@gt_destruct`) to be defined in the final compilation unit. Basic
+  defaults are available in `stdlib/`, and the examples import them. They implement the runtime registry
+  that tracks which heap values are alive, and they are ordinary Caspien source, not compiler magic.
+  `libc.caspien` declares the C functions, and calling any C function, `printf` included, needs an `unsafe`
+  block.
 - Blocks use braces and statements need no semicolons. A `@decorator` goes on **its own line** above the
   declaration it changes. Several decorators are several lines. `@pub @realizes func f()` on one line is a
   parse error.
