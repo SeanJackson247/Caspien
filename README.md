@@ -393,7 +393,7 @@ not proved. Costs inside that core are part of its contract, not of the safe-cod
 
 | Property | Enforced today | Open |
 |---|---|---|
-| **Soundness of the checker** | About 70 runtime regression programs in [`tests/`](tests), generated tests with expected values from independent Python models, and shell checks for the optimiser passes. | There is no formal proof, mechanised or otherwise. The checker is about 15,000 lines of Java, and "the compiler accepts it" is evidence, not proof. The large corpus of compile-error fixtures is kept outside this repository. |
+| **Soundness of the checker** | About 70 runtime regression programs in [`tests/`](tests), generated tests with expected values from independent Python models, and shell checks for the optimiser passes. | There is no formal proof, mechanised or otherwise. The checker is about 19,000 lines of Java, and "the compiler accepts it" is evidence, not proof. The large corpus of compile-error fixtures is kept outside this repository. |
 | **Platforms** | Linux x86-64 is the tested target. | The Windows (`windows_gnu`) output assembles and links but has not been run on a real Windows machine, and the MASM/Intel backend is unverified. |
 
 Known bugs that affect the guarantees are tracked in the `CLAUDE.md` files. One open example: reassigning
@@ -549,7 +549,7 @@ bytecode, plus an orchestrator (`Compiler.java`) that runs them in order and the
 ```
 
 **ASTGenerator** is the front end and holds all the language rules. A hand-written lexer and parser
-produce a token tree. The type checker, about 15,000 lines, is where every guarantee in section 1 is
+produce a token tree. The type checker, about 19,000 lines, is where every guarantee in section 1 is
 enforced: mutability, ownership and moves, bounds and nonzero proofs, the call-graph checks that reject
 recursion, and the `@throws` contract. The bytecode emitter then writes a stack-machine program in which
 every instruction states the types it operates on. Generics are expanded by monomorphisation before type
