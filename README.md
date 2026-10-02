@@ -358,21 +358,47 @@ it is checked (`@throws`, `@pub`, `@async`, `@recursive`, `@lock`, `@realizes`).
 ### 1.4 Where the project stands against the ideal
 
 The ideal is a language in which a type-checked program is *provably* total, memory safe and free of
-runtime exceptions. Here is the current state, property by property.
+runtime exceptions. Those guarantees are made about **safe code**. `unsafe` is the explicit escape hatch,
+and inside it the compiler checks types but promises nothing else. So the state is reported in two layers:
+what the checker enforces in safe code, then what `unsafe` gives up.
+
+#### Safe code
+
+| Property | Enforced today | Open (still safe code) |
+|---|---|---|
+| **Termination** | Direct and mutual recursion rejected; `@recursive` only as a tail call on a shrinking range, lowered to a bounded `for`; every `for` bound fixed at loop entry; counter immutable; no `loop{}` and no `call()` (both need `unsafe`). | `match @lock` spins until it acquires the lock, so it can wait forever under contention. `await` blocks on another thread. So safe code is not strictly total. |
+| **Bounded execution time** | Not enforced. | No worst-case execution time analysis. Loop bounds are runtime values, so a nested loop can be very long. The acyclic call graph would allow a static stack-depth bound, but none is computed. |
+| **Memory safety** | Single ownership with compile-time move checking; array and dynarray indexes proven in bounds; dereferencing a pointer needs a liveness proof. | Liveness of a `ref` is checked at *run time* against a table of live allocations, so a dangling `ref` is skipped rather than rejected at compile time. The lookup is a linear scan under a spin lock, so each check costs time proportional to the number of live allocations. |
+| **No runtime exceptions** | Division, float operations, narrowing, indexing and null access all need proofs; arithmetic wraps; failures are declared (`@throws`) and handled. | A thrown error is still a non-local transfer of control (a controlled one). Allocation failure is reported, not prevented. |
+| **The single event loop** | `@with_tick` / `@tick` / `@event_loop` give a non-terminating program (`docs/examples/09_event_loop.caspien`). | All three stdlib loops (no arguments, C arguments, safe arguments) have been run. The example is run by hand and is not in `tests/`. `par`/`await` add real threads, which is a deliberate departure from a single loop. |
+
+#### `unsafe` code
+
+Inside `unsafe` the guarantees above are the programmer's responsibility. What each hatch gives up:
+
+| `unsafe` operation | What it gives up |
+|---|---|
+| `loop{}` | Termination: an unbounded loop. |
+| `call(fp, ...)` on a function pointer | Termination and the call graph: the recursion check only follows direct calls, so recursion through a function pointer is possible. The inliner also refuses these calls. Not allowed in `@pure` functions. |
+| `deref` of an unproven pointer, constructing a `raw` pointer, `memcopy` | Memory safety: no liveness or bounds proof. |
+| `extern` calls | Everything: foreign code is outside the checker. |
+| Reading or writing statics and globals from non-atomic code | Data-race freedom. |
+| Float comparisons on unproven values | Freedom from NaN surprises. |
+
+The standard library is built on `unsafe` code (the ghost table, `memcopy`, the `pthread_*` calls). The
+guarantee is therefore "safe user code on top of a small trusted `unsafe` core", and that core is tested,
+not proved.
+
+#### Beyond the language
 
 | Property | Enforced today | Open |
 |---|---|---|
-| **Termination of safe code** | Direct and mutual recursion rejected; `@recursive` only as a tail call on a shrinking range; every `for` bound fixed at loop entry; counter immutable; `loop{}` needs `unsafe`. | Recursion through a function pointer is not audited. `match @lock` spins until it acquires the lock, so it can wait forever under contention. `await` blocks on another thread. Neither is a proof of totality. |
-| **Bounded execution time** | Not enforced. | No worst-case execution time analysis. Loop bounds are runtime values, so a nested loop can be very long. The acyclic call graph would allow a static stack-depth bound, but none is computed. |
-| **Memory safety** | Single ownership with compile-time move checking; array and dynarray indexes proven in bounds; pointer dereference needs a liveness proof; `deref` and raw construction need `unsafe`. | Liveness of a `ref` is checked at *run time* against a table of live allocations, so a dangling `ref` is skipped rather than rejected at compile time. The lookup is a linear scan under a spin lock, so each check costs time proportional to the number of live allocations. The standard library itself contains `unsafe` code. |
-| **No runtime exceptions** | Division, float operations, narrowing, indexing and null access all need proofs; arithmetic wraps; failures are declared (`@throws`) and handled. | A thrown error is still a non-local transfer of control (a controlled one). Allocation failure is reported, not prevented. |
-| **The single event loop** | `@with_tick` / `@tick` / `@event_loop` give a non-terminating program (`docs/examples/09_event_loop.caspien`). | All three stdlib loops (no arguments, C arguments, safe arguments) have been run. The example is run by hand and is not in `tests/`. `par`/`await` add real threads, which is a deliberate departure from a single loop. |
 | **Soundness of the checker** | About 70 runtime regression programs in [`tests/`](tests), generated tests with expected values from independent Python models, and shell checks for the optimiser passes. | There is no formal proof, mechanised or otherwise. The checker is about 15,000 lines of Java, and "the compiler accepts it" is evidence, not proof. The large corpus of compile-error fixtures is kept outside this repository. |
 | **Platforms** | Linux x86-64 is the tested target. | The Windows (`windows_gnu`) output assembles and links but has not been run on a real Windows machine, and the MASM/Intel backend is unverified. |
 
 Known bugs that affect the guarantees are tracked in the `CLAUDE.md` files. One open example: reassigning
-an `owns` field reached through a pointer (`h.w = pass(h.w)`) still destructs the old value before the
-right side is evaluated.
+an `owns` field reached through a pointer (`h.w = pass(h.w)`) still destructs the old value before the right
+side is evaluated.
 
 ---
 
