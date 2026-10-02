@@ -105,6 +105,8 @@ hint only because GitHub has no Caspien highlighter.
 | `match`, loops, bounded recursion | `12_match_and_loops` |
 | Dynamic arrays and the standard library | `13_dynamic_arrays` |
 | Raw pointers and C | `14_unsafe_pointers` |
+| `extern`, `export`, linking your own C | `docs/c_interop/` |
+| Inline assembly, `assume match` | `18_asm_and_assume` |
 | `throw`, `try`, `?` | `15_errors` |
 | Atomics, locks, threads | `16_atomics_and_locks` |
 | Locked structs, `Result`, constructors | `17_locked_results` |
@@ -825,6 +827,7 @@ to find and easy to count. What needs it:
 - calling any C function (an `extern`),
 - making a `raw` pointer (`raw v`), and dereferencing one (`deref(p)`) unless it is proven alive,
 - `memcopy`,
+- inline assembly (`ASM`) and `assume match`,
 - a bare `loop{}`, and an `unsafe dyn` array,
 - reading or writing a `mut` global or static that is not atomic or lock-protected.
 
@@ -873,6 +876,151 @@ calling extern 'malloc' requires 'unsafe' code
 'deref' of a pointer requires 'unsafe' code unless the pointer is proven alive -- ...
 'deref(...)' cannot be the target of an assignment -- it yields a copy of the value, not a place to write; ...
 'loop' can only be used from within 'unsafe' code
+```
+
+#### Vouching for a proof: `assume match`
+
+An ordinary proof is checked: `match i in arr{...}` compiles to a run-time bounds test around the block, and
+the block runs only if the test passes. `assume match` states the same condition as true **without testing
+it**. It takes the conditions `match` takes, it is allowed only inside `unsafe`, and it is the statement to
+reach for when the proof was established somewhere the compiler cannot see, or when the test itself is the
+cost (the inner loop of a numeric kernel, say). With no block, the proof holds for the rest of the scope. With
+a block, it holds inside the block only:
+
+```rust
+unsafe{
+	for i in a{
+		assume match i in a             // no block: holds until the end of the loop body
+		total += a[i]                   // no bounds test is emitted for this read
+	}
+	assume match b != 0{                // a block: holds inside it only
+		q = total / b
+	}
+	assume match r.status : LIVE        // the lock form: satisfies `@lock(match self.status : LIVE)`
+	total += r.value
+}
+```
+
+If the assumption is false the program has undefined behaviour: an out-of-bounds read, a division by zero, a
+member that was never initialised. The compiler has been told not to look, so reviewing an `assume match`
+means checking the claim yourself. `18_asm_and_assume` is a runnable version.
+
+```
+'assume match' is only allowed inside 'unsafe' code
+```
+
+#### Talking to C: `extern` and `export`
+
+`extern` declares a function the final program will find at link time, almost always a C function. The
+declaration lists the parameter types (no names) and the return type, and `...` as the last parameter marks a
+variadic function:
+
+```rust
+extern abs(mut s32) mut s32                    // int abs(int)
+extern labs(mut s64) mut s64                   // long labs(long)
+extern snprintf(raw mut u8, mut u64, static imut string,...) mut s32   // int snprintf(char *, size_t, const char *, ...)
+
+@link_name(labs)                               // a different Caspien name for the same C symbol
+extern c_abs(mut s64) mut s64
+```
+
+Calling an extern needs `unsafe`, and the compiler does not check an extern's declaration against the real
+C header, so a wrong one is as dangerous as it is in C. Match the C types by size and signedness: `s32` is
+`int`, `s64` is `long`, `u64` is `unsigned long` or `size_t`, a Caspien `string` is a `const char *`, and a
+`raw mut u8` is a byte pointer such as `void *`. `@link_name(symbol)` gives the C symbol when the name you
+want differs from it (a Caspien keyword such as `sleep` cannot be an extern's name), and
+`@call_convention(name)` selects the calling convention of the C side. Two declarations of one extern in a
+program are an error, so shared ones live in a file you import: `stdlib/libc.caspien` declares `printf`,
+`malloc`, `free`, `strlen` and the other C functions the standard library and the examples use.
+
+`export name` goes the other way. It names an ordinary top-level function, and the compiler emits it under its
+own bare name (no mangling) so that C can declare and call it. The function cannot be overloaded or generic,
+because C has neither, and it can be exported once:
+
+```rust
+extern c_apply(mut u64, mut u64) mut u64       // defined in helper.c
+
+func add(a: mut u64, b: mut u64) mut u64{ return a + b }
+export add                                     // C sees `unsigned long add(unsigned long, unsigned long)`
+
+func main() void{
+	unsafe{
+		let r = mut c_apply(mut 40, mut 2)     // helper.c: return add(a, b) * 2;
+		printf("%llu\n", r)                    // 84
+	}
+}
+```
+
+The compiler links only the C library (with `-pthread` and `-lm`). To link your own C files, stop after code generation and let
+`gcc` finish the job (with a Linux target in `toolchain.config`):
+
+```
+java Compiler --asm -i docs/c_interop/interop.caspien output/interop.s
+gcc output/interop.s docs/c_interop/helper.c -o output/interop -no-pie -pthread -lm
+```
+
+`docs/c_interop/` has the whole program and a script that builds and runs it. These are the errors:
+
+```
+calling extern 'malloc' requires 'unsafe' code
+'extern strlen' is already declared
+'export add' does not name a declared function
+'export f' is ambiguous -- 'f' has 2 overloads, and C has no overloading; only an overload-free function can be exported
+'f' is generic and can't be exported -- C has no equivalent of a monomorphized function family
+```
+
+#### Inline assembly: `ASM`
+
+`ASM` puts assembly text into the compiler's output exactly as you wrote it. It is the lowest-level hatch in
+the language, so it needs `unsafe` everywhere: a root-level `ASM` sits inside an `unsafe{ }` block, and one in
+a function sits inside an `unsafe` block of that function. The block's text is not parsed or checked. The
+only rules are that its braces balance (braces inside quotes and comments do not count) and that the word
+`ASM_END` does not appear in it. It must be in the assembler syntax of your target, which is AT&T for
+`linux`.
+
+```rust
+// Root level: this defines a C-callable function in assembly. The text is copied where it stands.
+unsafe{
+ASM {
+.text
+.globl asm_add3
+asm_add3:
+	lea (%rdi,%rsi), %rax
+	add %rdx, %rax
+	ret
+}
+}
+extern asm_add3(mut u64, mut u64, mut u64) mut u64    // call it like any other extern
+
+// The same text kept in a file. The path is relative to the source file.
+unsafe{
+ASM "18_asm_helper.s"
+}
+
+func main() void{
+	unsafe{
+		let s = mut asm_add3(mut 1, mut 2, mut 3)    // 6
+
+		ASM relax {                // inside a function a block can be named,
+			pause
+		}
+		relax                      // and then it is emitted wherever its name stands alone on a line
+		relax
+	}
+}
+```
+
+An unnamed `ASM { ... }` inside a function is emitted at that point. A named block is scoped like a `let`:
+it is visible from its declaration to the end of the enclosing block. The compiler cannot see what the text
+does, so the usual assembly rules are yours to keep: leave the stack as you found it and preserve the
+callee-saved registers (`rbx`, `rbp`, `r12` to `r15`). A function that contains an `ASM` block is
+conservatively left alone by the optimiser: it gets no register variables and its variable passes skip it, and
+a program with any `ASM` in it turns off `unused-declaration-removal` as a whole. `18_asm_and_assume` is a
+runnable version. These are the errors:
+
+```
+declaring 'ASM' requires 'unsafe' code
+invoking 'relax' requires 'unsafe' code
 ```
 
 #### Errors: `throw`, `try`, `?`

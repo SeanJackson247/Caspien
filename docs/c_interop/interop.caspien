@@ -1,0 +1,17 @@
+// Calling C from Caspien (`extern`) and Caspien from C (`export`), in one program.
+// `c_apply` lives in helper.c and calls back into the exported Caspien function `add`.
+// Build and run with `bash build_and_run.sh`. Expected output:
+//   84
+import "../../stdlib/libc.caspien"
+
+extern c_apply(mut u64, mut u64) mut u64
+
+func add(a: mut u64, b: mut u64) mut u64{ return a + b }
+export add
+
+func main() void{
+	unsafe{
+		let r = mut c_apply(mut 40, mut 2)
+		printf("%llu\n", r)
+	}
+}

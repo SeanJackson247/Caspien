@@ -1,0 +1,69 @@
+// Inline assembly (`ASM`) and `assume match`: two ways of telling the compiler "I have checked this".
+// Both need `unsafe`. The assembly is x86-64 AT&T syntax for the linux target.
+// Expected output:
+//   asm: 6 105
+//   assume: total=107 q=20
+import "../../stdlib/libc.caspien"
+
+enum Sensor{ LIVE, DEAD }
+
+@lock(match self.status : LIVE)
+struct Reading{@pub{
+	status: imut Sensor
+	value: mut u64
+}}
+
+// Root level: the text is copied into the output as written, so this defines a C-callable function.
+unsafe{
+ASM {
+.text
+.globl asm_add3
+asm_add3:
+	lea (%rdi,%rsi), %rax
+	add %rdx, %rax
+	ret
+}
+}
+extern asm_add3(mut u64, mut u64, mut u64) mut u64
+
+// The same, from a file (the path is relative to this source file).
+unsafe{
+ASM "18_asm_helper.s"
+}
+extern asm_plus100(mut u64) mut u64
+
+func main() void{
+	unsafe{
+		let s = mut asm_add3(mut 1, mut 2, mut 3)
+		let f = mut asm_plus100(mut 5)
+		printf("asm: %llu %llu\n", s, f)
+
+		// Inside a function: a named block is declared once, then emitted wherever its name is written.
+		ASM relax {
+			pause
+		}
+		relax
+		relax
+	}
+
+	let a = mut [10, 20, 30, 40]
+	let b = mut 5
+	let total = mut 0
+	let q = mut 0
+	let r = mut Reading{status= Sensor.LIVE, value= 7}
+	unsafe{
+		// No block: the proof holds for the rest of the scope, and no run-time check is emitted.
+		for i in a{
+			assume match i in a
+			total += a[i]
+		}
+		// With a block: the proof holds inside it only.
+		assume match b != 0{
+			q = total / b
+		}
+		// The lock form satisfies `@lock(match self.f : V)`.
+		assume match r.status : LIVE
+		total += r.value
+		printf("assume: total=%llu q=%llu\n", total, q)
+	}
+}
