@@ -212,9 +212,12 @@ let pa = mut P(mut 4)           // or `new P(...)` for a heap value
 ```
 
 A call tries the overloads that need no literal adaptation first and then the rest in declaration order,
-and takes the first whose parameters accept the arguments. There is no decorator for overloading: it is
-implicit. A block `impl Interface for T` cannot overload, because an interface method is identified by
-name alone. These are the errors:
+and takes the first whose parameters accept the arguments. Overloading needs no decorator for plain
+functions, constructors and the methods of a bare `impl`: it is implicit. It becomes explicit where a
+method fulfils or replaces a contract. A method in an `impl Interface for T` block must carry
+`@realizes` (or `@overrides`, to replace an interface method that has a `@default` body), and such a
+block cannot overload, because an interface method is identified by name alone (see Interfaces). These
+are the errors:
 
 ```
 function 'f' with this parameter signature is already declared
