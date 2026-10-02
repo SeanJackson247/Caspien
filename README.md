@@ -419,6 +419,14 @@ func warm(c: imut Color) mut u64{
 @non_exhaustive
 enum Level{ LOW, MID, HIGH, default }
 
+func level(l: imut Level) mut u64{
+	match l{
+		LOW:{ return 10 }
+		default:{ return 99 }       // `default` catches every variant not named above, so MID and HIGH land here
+	}
+	return 0
+}
+
 func twice(x: mut f32) mut f32{
 	match x{
 		finite:{ return x * 2.0 }       // arithmetic on `x` is allowed only here
@@ -432,6 +440,7 @@ func twice(x: mut f32) mut f32{
 ```
 match on 'Color' isn't exhaustive -- missing: BLUE
 match on 'mut_f32' isn't exhaustive -- missing: infinite
+matching '@non_exhaustive' enum 'Level' requires a 'default' case as the last one
 ```
 
 **Proof-match.** The condition is something the compiler can use as evidence, and the block runs only when
