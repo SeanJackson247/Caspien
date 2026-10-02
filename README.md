@@ -107,6 +107,7 @@ hint only because GitHub has no Caspien highlighter.
 | Raw pointers and C | `14_unsafe_pointers` |
 | `throw`, `try`, `?` | `15_errors` |
 | Atomics, locks, threads | `16_atomics_and_locks` |
+| Locked structs, `Result`, constructors | `17_locked_results` |
 
 #### The shape of a program
 
@@ -528,6 +529,103 @@ Two details of bounds proofs. A *literal* index into a fixed array needs no proo
 against the length), but any index into a dynarray needs one, because its length exists only at run time.
 And a proof is tied to one array: indexing two arrays inside one loop takes two nested matches.
 
+#### Locks and proofs on your own types
+
+`@lock` on a struct turns one member into a **discriminant** and makes every other member unreadable until a
+`match` on the discriminant has said it is safe. It is the same proof mechanism as `match b != 0`, applied to
+a type you define. The discriminant is an enum member, and it must be the struct's first member. There are
+two kinds. A `swap` atomic (`OPEN` or `CLOSED`) is a spin lock, described under *Atomics, locks and threads*.
+An ordinary `imut` enum is a **proof lock**, which is how a type can carry data that is only sometimes there.
+The classic use is a result:
+
+```rust
+enum ResultState{ OK, FAIL }
+
+@lock(match self.state : OK)
+struct Result<T>{@pub{
+	state: imut ResultState
+	payload: mut T
+}}
+```
+
+`payload` is reachable only inside a `match` on `state` that selected `OK`. The `FAIL` case never gets to
+touch it, and neither does code that forgot to look. The discriminant is `imut`, so it cannot change after
+construction and a proof of it cannot go stale:
+
+```rust
+let r = mut halve(10)               // a function returning Result<u64>
+match r.state{
+	OK:{ total += r.payload }       // the proof holds here
+	FAIL:{ total += 0 }             // r.payload would be rejected here
+}
+```
+
+```
+'payload' requires a 'match r.state{...}' proof first (this struct is decorated '@lock(match self.state : ...)')
+```
+
+**Constructing a locked value.** Three rules decide how any struct is built, and locked structs are where the
+last one matters.
+
+1. *One True Constructor.* A struct literal must name every member exactly once. There is no way to leave
+   a member unset, so safe code never sees uninitialised memory.
+2. *Constructor implementations.* A struct can declare constructors with `impl constructor for T(...) self`
+   (`impl<T> constructor for Result<T>(...)` for a generic one), overloaded by parameter type like any
+   function. Once a struct has one, its literal form is legal only inside the constructors' own bodies, and
+   callers write `Result:<u64>(5)` or `new Result:<u64>(5)`:
+
+```rust
+impl<T> constructor for Result<T>(v: mut T) self{
+	return Result:<T>{state= ResultState.OK, payload= v}
+}
+impl<T> constructor for Result<T>() self{
+	return Result:<T>{state= ResultState.FAIL}       // payload is left out, see below
+}
+
+func halve(n: mut u64) mut Result<u64>{
+	if n % 2 == 0{ return Result:<u64>(n / 2) }
+	return Result:<u64>()
+}
+```
+
+3. *The locked exception.* A locked struct may leave out **every** member except the discriminant, but only
+   when the discriminant is `imut` and is written as a direct `Enum.Variant` that does **not** satisfy the
+   lock. The compiler is then certain the other members can never be read, so it lets them stay
+   uninitialised. This is the only place the language allows uninitialised data, and the reason it is safe
+   is that safe code can never reach it. It works in a plain literal as well:
+
+```rust
+@lock(match self.status : LIVE)
+struct Reading{@pub{
+	status: imut Sensor
+	value: mut u64
+}}
+
+let live = mut Reading{status= Sensor.LIVE, value= 7}
+let dead = mut Reading{status= Sensor.DEAD}          // value is never initialised and never readable
+```
+
+These are the errors for getting it wrong:
+
+```
+'Result_u64' declares its own constructor(s) -- its struct-literal form ('Result_u64{...}') can only be used inside one of those constructors' own bodies; ...
+'Result_u64' cannot be constructed by omitting its other members -- 'ResultState.OK' satisfies this struct's own lock ('@lock(match self.state : OK)'), so every other member must be provided instead
+omitting every other member of 'Result_u64' requires 'state' to be given as a direct 'ResultState.Variant' reference -- never a variable or a call result, so the mismatch can be proven at compile time
+struct 'Result_u64' literal is missing member(s): state
+```
+
+**Every use of `@lock`.** The same decorator appears in several places, each described where it is used:
+
+| Form | On | Meaning |
+|---|---|---|
+| `@lock(match self.f : V)`, `f` an `imut` enum | struct | a proof lock: the other members need a `match` on `f` that selects `V` (this section) |
+| `@lock(match self.f : OPEN)`, `f` a `swap` atomic | struct | a spin lock: the other members need `match @lock x{ OPEN:{...} }` |
+| `@lock(match self.f : V)` | method | the caller must already be inside the matching `match` |
+| `@lock(match i in self.a)` | method | the caller must hold a bounds proof for `i` (`into` for writes) |
+| `@lock`, `@unlock` | method of a `@guard` implementer | the two operations behind `lock x{ ... }` |
+
+The full example is `17_locked_results`.
+
 #### Ownership and pointers
 
 Caspien has five kinds of pointer, and the kind says who is responsible for the target:
@@ -850,9 +948,10 @@ atomic step and the compiler will not let it look like one. Binding the computed
 satisfies the rule and is still a race. `swap` is an exchange and not a compare-and-swap, so an atomic is for
 flags and hand-offs. A shared counter belongs in a lock.
 
-**Locks.** A lock is a struct field written `swap`, of an enum with exactly the variants `OPEN` and
-`CLOSED`, and it must be the struct's first member. `@lock` on the struct names it, and from then on the
-other members are reachable only while the lock is held:
+**Locks.** A spin lock is the `swap` form of the locked structs described under *Locks and proofs on your own
+types*: a struct field written `swap`, of an enum with exactly the variants `OPEN` and `CLOSED`, and it must be
+the struct's first member. `@lock` on the struct names it, and from then on the other members are reachable
+only while the lock is held:
 
 ```rust
 enum Gate{ OPEN, CLOSED }

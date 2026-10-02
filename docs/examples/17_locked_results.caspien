@@ -1,0 +1,70 @@
+// A locked struct: `@lock(match self.f : OK)` makes every other member unreadable until a `match` on `f` says it is safe.
+// `Result<T>` uses it so that a payload can only be read when the operation succeeded, and `Reading` shows the one
+// exception to the One True Constructor rule: a value with no payload at all, built by naming only the discriminant.
+// Expected output:
+//   halve: 10 -> ok 5 / 7 -> fail / 0 -> ok 0
+//   readings: live=7 dead=none
+import "../../stdlib/libc.caspien"
+
+enum ResultState{ OK, FAIL }
+
+@lock(match self.state : OK)
+struct Result<T>{@pub{
+	state: imut ResultState
+	payload: mut T
+}}
+
+// Once a struct declares a constructor, `Result{...}` literals are legal only inside constructors.
+impl<T> constructor for Result<T>(v: mut T) self{
+	return Result:<T>{state= ResultState.OK, payload= v}
+}
+impl<T> constructor for Result<T>() self{
+	return Result:<T>{state= ResultState.FAIL}
+}
+
+func halve(n: mut u64) mut Result<u64>{
+	if n % 2 == 0{
+		return Result:<u64>(n / 2)
+	}
+	return Result:<u64>()
+}
+
+func show(n: mut u64) void{
+	let r = mut halve(n)
+	match r.state{
+		OK:{ unsafe{ printf("%llu -> ok %llu", n, r.payload) } }
+		FAIL:{ unsafe{ printf("%llu -> fail", n) } }
+	}
+}
+
+enum Sensor{ LIVE, DEAD }
+
+@lock(match self.status : LIVE)
+struct Reading{@pub{
+	status: imut Sensor
+	value: mut u64
+}}
+
+func main() void{
+	unsafe{ printf("halve: ") }
+	show(10)
+	unsafe{ printf(" / ") }
+	show(7)
+	unsafe{ printf(" / ") }
+	show(0)
+	unsafe{ printf("\n") }
+
+	// No constructor is declared for Reading, so a literal may appear anywhere.
+	let live = mut Reading{status= Sensor.LIVE, value= 7}
+	// Naming only a status that does not satisfy the lock may leave `value` out: it can never be read.
+	let dead = mut Reading{status= Sensor.DEAD}
+	unsafe{ printf("readings: ") }
+	match live.status{
+		LIVE:{ unsafe{ printf("live=%llu ", live.value) } }
+		DEAD:{ unsafe{ printf("live=none ") } }
+	}
+	match dead.status{
+		LIVE:{ unsafe{ printf("dead=%llu\n", dead.value) } }
+		DEAD:{ unsafe{ printf("dead=none\n") } }
+	}
+}

@@ -1,0 +1,11 @@
+// Must fail: payload omitted while state satisfies the lock.
+import "../stdlib/libc.caspien"
+enum ResultState{ OK, FAIL }
+@lock(match self.state : OK)
+struct Result<T>{@pub{
+	state: imut ResultState
+	payload: mut T
+}}
+func main() void{
+	let a = mut Result:<u64>{state= ResultState.OK}
+}

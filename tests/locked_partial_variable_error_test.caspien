@@ -1,0 +1,12 @@
+// Must fail: payload omitted but state is a variable, not a literal variant.
+import "../stdlib/libc.caspien"
+enum ResultState{ OK, FAIL }
+@lock(match self.state : OK)
+struct Result<T>{@pub{
+	state: imut ResultState
+	payload: mut T
+}}
+func main() void{
+	let s = imut ResultState.FAIL
+	let a = mut Result:<u64>{state= s}
+}
