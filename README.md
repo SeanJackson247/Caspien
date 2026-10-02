@@ -624,7 +624,8 @@ structs and arrays as C does.
   `hashOf`, a heap allocation on each call. That is an engineering gap, not a design limit.
 - The benchmark programs are not Caspien-specific. Twelve are taken from a public collection of
   programming benchmarks, and the other two were written to represent ordinary application work more
-  closely than numeric kernels do. They were ported by hand, so each port reflects its author's choices.
+  closely than numeric kernels do. All of the ports, in every language including Caspien, were written by
+  Claude, an LLM, working from the original programs; the language's author made no choices about them.
   Where Caspien deviates from the original shape (binarytrees, lru and json_serde use indices rather than
   recursive structs, which the language rejects), the difference is noted in `benchmarks/RESULTS.md`.
   None of them exercises the event-loop model.
