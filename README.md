@@ -34,8 +34,7 @@ func main() void{
 
 ### 1.1 Philosophy
 
-The idea behind Caspien is that one might not want to *write* in it, but might want one's *codebase* to
-be in it. Code that is accepted by the compiler carries properties that other languages ask you to take
+The idea behind Caspien is not so much rapid prototyping as building and maintaining auditable codebases. Code that is accepted by the compiler carries properties that other languages ask you to take
 on trust: it terminates, it does not use memory it does not own, and it has no hidden runtime failure
 paths. The language is verbose and explicit on purpose, because every explicit annotation is something a
 reviewer, an auditor or another tool can check.
