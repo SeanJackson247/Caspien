@@ -142,8 +142,9 @@ func main() void{
   parse error.
 - `main` takes no arguments and returns `void`, `bool` or `s32` (the entry-point section at the end of this
   tour covers arguments and event loops).
-- Everything has to be bound with `mut` or `imut` before it is stored. `printf` varargs must be bound
-  values too, so bind an expression to a `let` first.
+- Everything has to be bound with `mut` or `imut` before it is stored. Arguments to C functions are the
+  exception: C has no notion of mutability, so literals and expressions can be passed to `printf` and its
+  kin directly.
 
 #### Values, mutability and types
 
@@ -1018,8 +1019,8 @@ The runnable version is `docs/examples/09_event_loop.caspien`.
   prove something, put the smallest possible operation in `unsafe`.
 - Start a function that allocates with `?catch(e){ ... }`, and mark every throwing call with `?`. Mark the
   function `@throws` if the handler rethrows.
-- Bind every value with `mut` or `imut`, and bind a computed value to a `let` before passing it to
-  `printf`, `raw`, `auto` or `swap`.
+- Bind every value with `mut` or `imut` before storing it, and bind a computed value to a `let` before
+  passing it to `raw`, `auto` or `swap`. C function arguments need no binding.
 - Choose the pointer kind by who owns the value: `owns` for the single owner, `ref` for a borrow checked by
   `match Some`, `auto` for a local, and `raw` only at the boundary with C.
 - Use an interface when callers should not care about the concrete type, a bounded generic when the type is
@@ -1067,7 +1068,7 @@ is an error ("'@x' is not a valid decorator on a function"). This is the full se
 
 A few more things that surprise newcomers:
 
-- `x swap y` and a `printf` argument need a bound value, not an expression. Bind it with `let` first.
+- `x swap y` needs a bound value, not an expression. Bind it with `let` first.
 - A dynarray's length is only known at run time, so every index into it, literal or not, needs a proof
   (`match i in a{ a[i] }`, or `into` to write). Fixed arrays with a literal index need none.
 - `main` takes no arguments by default and must return `void`, `bool` or `s32`; see the entry-point section

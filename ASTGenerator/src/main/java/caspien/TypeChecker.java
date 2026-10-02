@@ -12742,12 +12742,9 @@ public class TypeChecker {
                                     + expected.canonical() + "', got '" + argType.canonical() + "'");
                 }
                 markMovedIfOwned(expected, argNode, scope);
-            } else if ("indeterminate".equals(argType.mutability)) {
-                throw new CompilerException("type", argNode.file, argNode.line,
-                        "this varargs argument to extern '" + info.name + "' has indeterminate mutability "
-                                + "-- write 'mut' or 'imut' before it (there's no expected type here for it "
-                                + "to coerce against)");
             }
+            // Varargs past the fixed parameters: C ignores mutability, so an
+            // indeterminate-mutability value (literal, expression) is accepted as is.
         }
         op.resolvedCallTarget = info.linkName; // the real linked symbol -- info.name unless "@link_name" overrides it (see ExternInfo.linkName's own doc comment)
         op.resolvedCallConvention = info.callConvention;
