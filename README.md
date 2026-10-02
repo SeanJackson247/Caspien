@@ -1,6 +1,6 @@
 # Caspien
 
-Caspien is a systems language for code that has to be *audited*, not just written. Its type checker
+Caspien is a systems programming language for code that has to be *audited*, not just written. Its type checker
 refuses programs it cannot show to terminate, to respect ownership, and to avoid runtime faults such as
 out-of-bounds indexing, null dereference, division by zero and unproven floating point operations.
 It compiles to native x86-64 code through a four-stage compiler written in Java.
