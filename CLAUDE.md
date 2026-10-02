@@ -1,3 +1,7 @@
+## Open: a throw out of `match @lock`'s OPEN case does not release the lock (2 Oct 2026)
+
+Found while rewording README 1.4 (the user asked for the "no lock release during unwind" note to be checked, not assumed). `tests/lock_unwind_test.caspien`: `holdAndThrow()` throws from the OPEN case, `main` catches it in a `try{ ?catch(e){ continue } ... }`, then `reacquire()` retries the same lock 1000 times. It prints `FAIL: lock still held after the throw` (Linux, everything-default config). The same program without the throw prints PASS, so the test is valid. Throw sites already run their own destruct lists but emit no lock release. NOT fixed. README 1.4 lists it as an open safe-code item. The test is kept in `tests/` as a known failure, so a sweep will show one FAIL until this is fixed.
+
 ## Fixed: `swap` on a lock field of a LOCAL struct segfaulted (`BytecodeEmitter.emitSwap`) (2 Oct 2026)
 
 `match @lock m{...}` on a swap-mutex struct held in a plain local crashed (statics and heap objects worked). Cause: `emitSwap` pushed the field's VALUE (`emitExpr(op.left)`) but `ATOMIC_SWAP` pops (newValue, address) and does `xchg`, so it exchanged through a garbage address. It now pushes the field's address (`emitAssignTarget(op.left)`). `tests/lock_match_terminators_test.caspien` gained `localTest()`. Sweep of 60 `tests/*.caspien` (not n-body, bits_ops, sha256, fnv1a) and `docs/examples/01-08` on Linux: no FAIL, all compile.

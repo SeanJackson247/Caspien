@@ -1,0 +1,47 @@
+// KNOWN BUG (open): a throw out of the OPEN case of 'match @lock' does not release the lock, so this prints FAIL.
+// Expected once fixed: PASS. Does a throw out of the OPEN case release the lock?
+import "../stdlib/libc.caspien"
+
+enum St{ OPEN, CLOSED }
+
+struct Mtx{@pub{
+	swap lockState: atomic mut St
+	n: mut u64
+}}
+
+let static m = mut Mtx{lockState= St.OPEN, n= mut 0}
+
+@throws
+func holdAndThrow() void{
+	match @lock m{
+		OPEN:{
+			throw "boom"
+		}
+		CLOSED:{ continue }
+	}
+}
+
+func reacquire() void{
+	let tries = mut 0
+	match @lock m{
+		OPEN:{
+			unsafe{ printf("PASS: lock was released by the throw\n") }
+		}
+		CLOSED:{
+			tries++
+			if tries == 1000{
+				unsafe{ printf("FAIL: lock still held after the throw\n") }
+				break
+			}
+			continue
+		}
+	}
+}
+
+func main() void{
+	try{
+		?catch(e){ continue }
+		?holdAndThrow()
+	}
+	reacquire()
+}
