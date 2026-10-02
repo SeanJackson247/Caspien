@@ -1,5 +1,5 @@
-// KNOWN BUG (open): a throw out of the OPEN case of 'match @lock' does not release the lock, so this prints FAIL.
-// Expected once fixed: PASS. Does a throw out of the OPEN case release the lock?
+// A throw out of the OPEN case of 'match @lock' must release the lock.
+// Expected: PASS. holdAndThrow() throws from OPEN; main catches it; reacquire() retries the lock.
 import "../stdlib/libc.caspien"
 
 enum St{ OPEN, CLOSED }

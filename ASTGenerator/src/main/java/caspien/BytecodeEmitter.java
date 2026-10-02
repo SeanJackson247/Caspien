@@ -129,11 +129,13 @@ public class BytecodeEmitter {
     private static final class PendingUnwindLandingPad {
         final String label;
         final List<String> destructNames;
+        final List<Token> unlockCalls;
         final Token at;
 
-        PendingUnwindLandingPad(String label, List<String> destructNames, Token at) {
+        PendingUnwindLandingPad(String label, List<String> destructNames, List<Token> unlockCalls, Token at) {
             this.label = label;
             this.destructNames = destructNames;
+            this.unlockCalls = unlockCalls;
             this.at = at;
         }
     }
@@ -896,7 +898,7 @@ public class BytecodeEmitter {
         // Staged with an empty destruct list -- "args" doesn't exist yet
         // at this point (this call's own return value is what creates
         // it) -- see `stageCallSiteForUnwindNames`'s own doc comment.
-        stageCallSiteForUnwindNames(Collections.emptyList(), userMain.funcToken);
+        stageCallSiteForUnwindNames(Collections.emptyList(), Collections.emptyList(), userMain.funcToken);
         emitCallSequence(null, Arrays.asList(argcTok, argvTok), () -> line("CALL make_safe_args"),
                 argsType.canonical(), makeSafeArgs.callConvention);
         line("ASSIGN " + argsType.canonical() + " " + argsType.canonical() + " " + argsType.canonical());
@@ -908,7 +910,7 @@ public class BytecodeEmitter {
         // moving into this exact call (`argsTok.isOwnershipMoveSource`),
         // so there is nothing left of this wrapper's own to destruct if
         // it unwinds back out of "__main".
-        stageCallSiteForUnwindNames(Collections.emptyList(), userMain.funcToken);
+        stageCallSiteForUnwindNames(Collections.emptyList(), Collections.emptyList(), userMain.funcToken);
         emitCallSequence(null, Arrays.asList(argsTok), () -> line("CALL __main"),
                 isVoid ? null : userMain.returnType.canonical(), userMain.callConvention);
         if (isVoid) {
@@ -1212,7 +1214,8 @@ public class BytecodeEmitter {
      */
     private void stageCallSiteForUnwind(Token op) {
         List<String> destructNames = op.destructOnExit != null ? op.destructOnExit : Collections.emptyList();
-        stageCallSiteForUnwindNames(destructNames, op);
+        List<Token> unlocks = op.unlockOnExit != null ? op.unlockOnExit : Collections.emptyList();
+        stageCallSiteForUnwindNames(destructNames, unlocks, op);
     }
 
     /**
@@ -1229,7 +1232,7 @@ public class BytecodeEmitter {
      * never anything of this wrapper's own left to destruct if either
      * call unwinds back into it.
      */
-    private void stageCallSiteForUnwindNames(List<String> destructNames, Token at) {
+    private void stageCallSiteForUnwindNames(List<String> destructNames, List<Token> unlockCalls, Token at) {
         if (!checker.usesThrow() || inGtSuppressedContext) {
             return;
         }
@@ -1247,7 +1250,7 @@ public class BytecodeEmitter {
             pendingTryCatchLabel = null;
         } else {
             label = newLabel("gt_callsite__" + currentFuncMangledName);
-            pendingCallSiteUnwindLandingPads.add(new PendingUnwindLandingPad(label, destructNames, at));
+            pendingCallSiteUnwindLandingPads.add(new PendingUnwindLandingPad(label, destructNames, unlockCalls, at));
         }
         line("ADDR gt_routine_address code_addr");
         line("PUSH_LABEL " + label + " code_addr");
@@ -1311,6 +1314,7 @@ public class BytecodeEmitter {
             for (String name : pad.destructNames) {
                 line("GT_DESTRUCT " + name);
             }
+            emitUnlockList(pad.unlockCalls, pad.at);
             if (emittedName.equals("main")) {
                 line("EXIT");
             } else if (info.isAsync) {
@@ -3209,6 +3213,7 @@ public class BytecodeEmitter {
         for (String name : destructNames) {
             line("GT_DESTRUCT " + name);
         }
+        emitUnlockList(throwTok.unlockOnExit, throwTok);
         if (currentFuncMangledName.equals("main")) {
             line("EXIT");
         } else if (currentFuncInfo != null && currentFuncInfo.isAsync) {

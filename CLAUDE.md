@@ -1,6 +1,6 @@
-## Open: a throw out of `match @lock`'s OPEN case does not release the lock (2 Oct 2026)
+## Fixed: a throw out of `match @lock`'s OPEN case now releases the lock (2 Oct 2026)
 
-Found while rewording README 1.4 (the user asked for the "no lock release during unwind" note to be checked, not assumed). `tests/lock_unwind_test.caspien`: `holdAndThrow()` throws from the OPEN case, `main` catches it in a `try{ ?catch(e){ continue } ... }`, then `reacquire()` retries the same lock 1000 times. It prints `FAIL: lock still held after the throw` (Linux, everything-default config). The same program without the throw prints PASS, so the test is valid. Throw sites already run their own destruct lists but emit no lock release. NOT fixed. README 1.4 lists it as an open safe-code item. The test is kept in `tests/` as a known failure, so a sweep will show one FAIL until this is fixed.
+Found while rewording README 1.4 (the user asked for the "no lock release during unwind" note to be checked, not assumed). `tests/lock_unwind_test.caspien`: `holdAndThrow()` throws from the OPEN case, `main` catches it in a `try{ ?catch(e){ continue } ... }`, then `reacquire()` retries the same lock 1000 times. Before the fix it printed `FAIL: lock still held after the throw`. Cause: throw sites and call sites carried a destruct list but no lock-release list, so an unwind skipped the `unlockOnExit` release that a `return` runs. Fix: `TypeChecker` now sets `unlockOnExit` (`collectLockReleasesToBoundary(scope, scope.functionRootScope)`) on every throw site (`checkThrow`) and every call site (the five `destructOnExit` assignments); `BytecodeEmitter` emits that list in `emitThrow` (after the `GT_DESTRUCT`s, before EXIT/EXIT_THREAD/GT_UNWIND) and in each call-site landing pad (`PendingUnwindLandingPad.unlockCalls`, `emitCallSiteUnwindLandingPads`). A try-guarded call has no landing pad (its staging goes straight to the catch label), so the catch body's own scope-exit release applies there. Verified (Linux): `lock_unwind_test` prints `PASS`; sweep of 69 `tests/*.caspien` + `docs/examples/01-09`: 71 ok lines, no FAIL, no NOCOMPILE. Not verified: Windows; the safe-args `main` call sites, which pass empty lists (no lock can be held there).
 
 ## Fixed: `swap` on a lock field of a LOCAL struct segfaulted (`BytecodeEmitter.emitSwap`) (2 Oct 2026)
 
@@ -2020,10 +2020,7 @@ before ever reaching `"after, ..."`; a catch body with no `return`/
 `throw` (the old empty-catch shape) is now rejected at compile time with
 the message above, on both `linux`/sysv_x64 and `windows_gnu`/win64.
 
-**Still open** (unrelated to any of the above): lock release during an
-unwind through a `try` (the pre-existing, already-documented "no lock
-release during unwind" gap this project's history already flags for
-`throw`/call-site landing pads generally).
+**Lock release during unwind**: fixed 2 Oct 2026, see the top of this file.
 
 **Verified**: full ~832-fixture corpus sweep, before and after every
 change in this round (the `@throws`-requires-`throw` check, the
@@ -2255,9 +2252,8 @@ thrown value) -- the second, target-label operand is gone, since a throw
 no longer jumps anywhere at all; it falls straight through into its own
 inline destruct-and-terminate sequence. The sibling `caspien-codegen`
 project's `case "THROW":` was updated to match (see its own CLAUDE.md).
-Deliberately NOT implemented, matching the old design's own pre-existing
-limitation: no lock release during unwind, for either a throw site or a
-call-site landing pad.
+(Lock release during unwind, for a throw site and a call-site landing
+pad, was added on 2 Oct 2026: see the top of this file.)
 
 A gt-suppressed (dundered, ghost-table-reachable) function duplicate
 never gets a `gt_routine_address` slot at all, old design or new -- both

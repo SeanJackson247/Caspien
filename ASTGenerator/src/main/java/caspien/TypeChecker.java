@@ -4373,6 +4373,7 @@ public class TypeChecker {
                 // this when the whole program uses 'throw' at all (checker.usesThrow());
                 // harmless, cheap to compute unconditionally otherwise.
                 op.destructOnExit = collectOwnsToDestruct(scope, scope.functionRootScope, null);
+                op.unlockOnExit = collectLockReleasesToBoundary(scope, scope.functionRootScope);
                 if (candidate == func && scope.suspendsSelfRecursion) {
                     throw new CompilerException("type", op.file, op.line,
                             "cannot call '" + func.name + "' from within its own base-case match "
@@ -10610,14 +10611,12 @@ public class TypeChecker {
         throwSites.add(new ThrowSite(func, throwTok));
         // Precise, per-throw-site destruct list -- see this method's
         // own doc comment. No preserved slot: unlike 'return', 'throw'
-        // never hands an owns value back to anything. Deliberately no
-        // lock-release list the way 'return' also gets one
-        // (collectLockReleasesToBoundary) -- matching this project's
-        // existing, pre-existing limitation that an unwind never
-        // releases locks (the old whole-function 'gt_routine' never did
-        // either); revisiting that is a separate concern from this
-        // change.
+        // never hands an owns value back to anything. A throw also
+        // releases every 'match @lock' lock held at this point, exactly
+        // like 'return' (collectLockReleasesToBoundary, below): without
+        // that, a throw out of an OPEN case left the lock held forever.
         throwTok.destructOnExit = collectOwnsToDestruct(scope, scope.functionRootScope, null);
+        throwTok.unlockOnExit = collectLockReleasesToBoundary(scope, scope.functionRootScope);
         // "compiles to: THROW string_id," confirmed directly -- a
         // single-operand bytecode line, not a "PUSH ...; RET ..." pair
         // the way 'return' itself uses. Restricted to exactly what
@@ -12649,6 +12648,7 @@ public class TypeChecker {
                 // this when the whole program uses 'throw' at all (checker.usesThrow());
                 // harmless, cheap to compute unconditionally otherwise.
                 op.destructOnExit = collectOwnsToDestruct(scope, scope.functionRootScope, null);
+                op.unlockOnExit = collectLockReleasesToBoundary(scope, scope.functionRootScope);
                 if (candidate == func && scope.suspendsSelfRecursion) {
                     throw new CompilerException("type", op.file, op.line,
                             "cannot call '" + func.name + "' from within its own base-case match "
@@ -13999,6 +13999,7 @@ public class TypeChecker {
                 // this when the whole program uses 'throw' at all (checker.usesThrow());
                 // harmless, cheap to compute unconditionally otherwise.
                 op.destructOnExit = collectOwnsToDestruct(scope, scope.functionRootScope, null);
+                op.unlockOnExit = collectLockReleasesToBoundary(scope, scope.functionRootScope);
                 if (candidate == func && scope.suspendsSelfRecursion) {
                     throw new CompilerException("type", op.file, op.line,
                             "cannot call '" + func.name + "' from within its own base-case match "
@@ -14120,6 +14121,7 @@ public class TypeChecker {
         // this when the whole program uses 'throw' at all (checker.usesThrow());
         // harmless, cheap to compute unconditionally otherwise.
         op.destructOnExit = collectOwnsToDestruct(scope, scope.functionRootScope, null);
+        op.unlockOnExit = collectLockReleasesToBoundary(scope, scope.functionRootScope);
         checkGuardLockDiscipline(receiverType, candidate, dotNode.left, scope, op);
         requireMethodLockProofs(candidate, dotNode.left, argNodes, scope, op);
         requirePureCalleeIfPure(func, candidate, op);
@@ -14381,6 +14383,7 @@ public class TypeChecker {
                 // this when the whole program uses 'throw' at all (checker.usesThrow());
                 // harmless, cheap to compute unconditionally otherwise.
                 op.destructOnExit = collectOwnsToDestruct(scope, scope.functionRootScope, null);
+                op.unlockOnExit = collectLockReleasesToBoundary(scope, scope.functionRootScope);
                 if (candidate == func && scope.suspendsSelfRecursion) {
                     throw new CompilerException("type", op.file, op.line,
                             "cannot call '" + func.name + "' from within its own base-case match "

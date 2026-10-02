@@ -3,6 +3,10 @@
 Read this first in any new conversation thread before making changes.
 This file describes the **current state** of this project only.
 
+## Fixed: a throw out of `match @lock` releases the lock (2 Oct 2026)
+
+`TypeChecker` sets `unlockOnExit = collectLockReleasesToBoundary(scope, scope.functionRootScope)` on every throw site (`checkThrow`) and call site (next to the five `destructOnExit` assignments). `BytecodeEmitter.emitThrow` and `emitCallSiteUnwindLandingPads` emit it via `emitUnlockList` (`PendingUnwindLandingPad` carries the list; `stageCallSiteForUnwindNames` takes it as an argument; safe-args call sites pass empty lists). Test: `tests/lock_unwind_test.caspien` prints `PASS`. Full account in the root CLAUDE.md.
+
 ## Benchmarks: recursion micro-benchmark covers nine languages (1 Oct 2026)
 
 No front-end change. `benchmarks/recursion/` now times C/C++/Rust/Go/Java/Node/Bun/LuaJIT/Caspien; recursion rules unchanged (`@recursive` tail self-call only; recursive structs rejected). See root CLAUDE.md and benchmarks/RESULTS.md.
@@ -2303,10 +2307,7 @@ before ever reaching `"after, ..."`; a catch body with no `return`/
 `throw` (the old empty-catch shape) is now rejected at compile time with
 the message above, on both `linux`/sysv_x64 and `windows_gnu`/win64.
 
-**Still open** (unrelated to any of the above): lock release during an
-unwind through a `try` (the pre-existing, already-documented "no lock
-release during unwind" gap this project's history already flags for
-`throw`/call-site landing pads generally).
+**Lock release during unwind**: fixed 2 Oct 2026, see the top of this file.
 
 **Verified**: full ~832-fixture corpus sweep, before and after every
 change in this round (the `@throws`-requires-`throw` check, the
@@ -2538,9 +2539,8 @@ thrown value) -- the second, target-label operand is gone, since a throw
 no longer jumps anywhere at all; it falls straight through into its own
 inline destruct-and-terminate sequence. The sibling `caspien-codegen`
 project's `case "THROW":` was updated to match (see its own CLAUDE.md).
-Deliberately NOT implemented, matching the old design's own pre-existing
-limitation: no lock release during unwind, for either a throw site or a
-call-site landing pad.
+(Lock release during unwind, for a throw site and a call-site landing
+pad, was added on 2 Oct 2026: see the top of this file.)
 
 A gt-suppressed (dundered, ghost-table-reachable) function duplicate
 never gets a `gt_routine_address` slot at all, old design or new -- both
