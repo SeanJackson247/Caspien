@@ -1816,8 +1816,9 @@ public class AddressLoweringPass implements OptimizationPass {
         // project is built with: for a `u64` fill value this becomes
         // "RESIZE 8".
         if (mnemonic.equals("RESIZE") && line.size() == 4) {
-            String fillBaseType = CanonicalType.parse(line.get(3).text).baseType;
-            long size = sizes.sizeOf(fillBaseType);
+            // A pointer fill (owns/ref/raw/auto) is one 8-byte element whatever it points at: size the canonical type, not just its base.
+            CanonicalType fillType = CanonicalType.parse(line.get(3).text);
+            long size = fillType.storage != null ? 8 : sizes.sizeOf(fillType.baseType);
             return PARSER.parse(Collections.singletonList("RESIZE " + size), "<address-lowered>").get(0);
         }
 
@@ -2174,6 +2175,12 @@ public class AddressLoweringPass implements OptimizationPass {
         // single-word-pointee-size shape here.
         if (mnemonic.equals("CLONE") && line.size() == 3) {
             String pointeeBaseType = CanonicalType.parse(line.get(1).text).baseType;
+            String dynElemText = CanonicalType.dynArrayElementTypeOf(pointeeBaseType);
+            if (dynElemText != null) {
+                // a safe dynarray is a 16-byte header plus length*elemSize bytes: the size is only known at run time
+                long elemSize = sizes.sizeOf(dynElemText);
+                return PARSER.parse(Collections.singletonList("CLONE_DYN " + elemSize), "<address-lowered>").get(0);
+            }
             long size = sizes.sizeOf(pointeeBaseType);
             return PARSER.parse(Collections.singletonList("CLONE " + size), "<address-lowered>").get(0);
         }

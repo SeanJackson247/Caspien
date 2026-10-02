@@ -1,0 +1,49 @@
+// clone under allocation failure. Run plainly it just prints "start / built / cloned 5 4 2"; clone_oom_check.sh runs it with a
+// malloc shim that fails each allocation in turn and checks that every failure inside a clone is caught ("out of memory"),
+// never crashes, and leaves no extra live allocation.
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+struct Pair{
+	@pub{ a: mut u64
+	b: mut u64 }
+}
+struct Outer{
+	@pub{ x: mut u64
+	inner: owns some mut Pair }
+}
+struct Bag{
+	@pub{ n: mut u64
+	data: owns some mut dynarray(mut u64) }
+}
+struct Top{
+	@pub{ y: mut u64
+	mid: owns some mut Outer }
+}
+func main() void{
+	unsafe{ printf("start\n") }
+	try{
+		?catch(e){
+			unsafe{ printf("CAUGHT %s\n", e) }
+			return
+		}
+		let ip = mut ?new Pair{a= 7, b= 9}
+		let o = mut ?new Outer{x= 5, inner= ip}
+		let ip2 = mut ?new Pair{a= 1, b= 2}
+		let o2 = mut ?new Outer{x= 3, inner= ip2}
+		let t = mut ?new Top{y= 4, mid= o2}
+		let p1 = mut ?new Pair{a= 1, b= 2}
+		let p2 = mut ?new Pair{a= 3, b= 4}
+		let arr = mut ?dyn([p1, p2])
+		let dd = mut ?dyn([mut 1, mut 2, mut 3])
+		let bag = mut ?new Bag{n= 9, data= dd}
+		unsafe{ printf("built\n") }
+		let c1 = mut ?clone(o)
+		let c2 = mut ?clone(t)
+		let c3 = mut ?clone(arr)
+		let c4 = mut ?clone(bag)
+		unsafe{ printf("cloned %llu %llu %llu\n", c1.x, c2.y, len(c3)) }
+	}
+}

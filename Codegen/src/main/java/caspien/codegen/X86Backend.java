@@ -4163,6 +4163,42 @@ public class X86Backend {
                 pushReg("r14");
                 return;
             }
+            case "CLONE_DYN": {
+                // A safe dynarray pointee: the block is a 16-byte header (length, capacity) plus length*elemSize bytes of
+                // elements, so the size is only known at run time. Same null handling as CLONE.
+                long elemSize = Long.parseLong(line.get(1).text);
+                popReg("r12"); // source block start
+                if (isWindows()) {
+                    raw("    mov r15, [r12]");
+                    raw("    imul r15, r15, " + elemSize);
+                    raw("    add r15, 16");
+                    raw("    mov " + argReg(0) + ", r15");
+                } else {
+                    raw("    movq (%r12), %r15");
+                    raw("    imulq $" + elemSize + ", %r15, %r15");
+                    raw("    addq $16, %r15");
+                    raw("    movq %r15, %" + argReg(0));
+                }
+                emitAlignedCall(() -> emitCallByName("malloc"));
+                raw(isWindows() ? "    mov r14, rax" : "    movq %rax, %r14");
+                String cloneDynDone = newInternalLabel("clone_dyn_done");
+                raw(isWindows() ? "    test r14, r14" : "    testq %r14, %r14");
+                raw("    jz " + cloneDynDone);
+                if (isWindows()) {
+                    raw("    mov rdi, r14");
+                    raw("    mov rsi, r12");
+                    raw("    mov rcx, r15");
+                    raw("    rep movsb");
+                } else {
+                    raw("    movq %r14, %rdi");
+                    raw("    movq %r12, %rsi");
+                    raw("    movq %r15, %rcx");
+                    raw("    rep movsb");
+                }
+                raw(cloneDynDone + ":");
+                pushReg("r14");
+                return;
+            }
             case "CLONE": {
                 long size = Long.parseLong(line.get(1).text);
                 popReg("r12"); // source address (r12: callee-saved, survives the call below)
@@ -4314,6 +4350,12 @@ public class X86Backend {
                 long dataBytes = count * 8;
                 emitMallocCall(16 + dataBytes);
                 raw(isWindows() ? "    mov r12, rax" : "    movq %rax, %r12");
+                // A failed malloc leaves r12 null: write nothing into it, drop the element words and push the null so the
+                // bytecode's own null check can throw.
+                String newDynNull = newInternalLabel("newdyn_null");
+                String newDynDone = newInternalLabel("newdyn_done");
+                raw(isWindows() ? "    test r12, r12" : "    testq %r12, %r12");
+                raw("    jz " + newDynNull);
                 storeSizedToAddr_withOffsetImm("r12", 0, count, 8);
                 storeSizedToAddr_withOffsetImm("r12", 8, count, 8);
                 for (long i = count - 1; i >= 0; i--) {
@@ -4325,6 +4367,12 @@ public class X86Backend {
                         raw("    movq %rax, " + off + "(%r12)");
                     }
                 }
+                raw("    jmp " + newDynDone);
+                raw(newDynNull + ":");
+                if (count > 0) {
+                    raw(isWindows() ? ("    add rsp, " + count * 8) : ("    addq $" + count * 8 + ", %rsp"));
+                }
+                raw(newDynDone + ":");
                 pushReg("r12");
                 return;
             }
@@ -4354,6 +4402,11 @@ public class X86Backend {
                 long count = totalBytes / 8;
                 emitMallocCall(16 + totalBytes);
                 raw(isWindows() ? "    mov r12, rax" : "    movq %rax, %r12");
+                // Failed malloc: r12 stays null (see NEW_DYN); nothing is written and no data-start offset is added.
+                String newUdynNull = newInternalLabel("newudyn_null");
+                String newUdynDone = newInternalLabel("newudyn_done");
+                raw(isWindows() ? "    test r12, r12" : "    testq %r12, %r12");
+                raw("    jz " + newUdynNull);
                 storeSizedToAddr_withOffsetImm("r12", 0, count, 8);
                 storeSizedToAddr_withOffsetImm("r12", 8, count, 8);
                 for (long i = count - 1; i >= 0; i--) {
@@ -4366,6 +4419,12 @@ public class X86Backend {
                     }
                 }
                 raw(isWindows() ? "    add r12, 16" : "    addq $16, %r12"); // r12: now the data-start pointer
+                raw("    jmp " + newUdynDone);
+                raw(newUdynNull + ":");
+                if (count > 0) {
+                    raw(isWindows() ? ("    add rsp, " + count * 8) : ("    addq $" + count * 8 + ", %rsp"));
+                }
+                raw(newUdynDone + ":");
                 pushReg("r12");
                 return;
             }
@@ -4505,12 +4564,20 @@ public class X86Backend {
                 // just above (rdi/rsi for SysV, rcx/rdx for win64).
                 emitAlignedCall(() -> emitCallByName("realloc"));
                 raw(isWindows() ? "    mov r15, rax" : "    movq %rax, %r15"); // r15: new block-start pointer
+                // A failed realloc leaves r15 null (the old block stays valid): write nothing, skip the fill and the
+                // data-start offset, and push the null so the bytecode's own check can throw.
+                String resizeEnd = newInternalLabel("resize_end");
+                raw(isWindows() ? "    test r15, r15" : "    testq %r15, %r15");
+                raw("    jz " + resizeEnd);
                 storeSizedToAddr_reg("r15", 0, "r12", 8);
                 storeSizedToAddr_reg("r15", 8, "r12", 8);
+                if (!hasFill) {
+                    raw(resizeEnd + ":");
+                }
                 if (hasFill) {
                     // for (i = oldLen; i < newCount; i++) data[i] = fill;
                     String loop = newInternalLabel("resize_fill");
-                    String end = newInternalLabel("resize_fill_end");
+                    String end = resizeEnd;
                     raw(loop + ":");
                     if (isWindows()) {
                         raw("    cmp rbx, r12");
@@ -4545,7 +4612,11 @@ public class X86Backend {
                     }
                 }
                 if (dataStartPtr) {
+                    String resizeNoAdd = newInternalLabel("resize_noadd");
+                    raw(isWindows() ? "    test r15, r15" : "    testq %r15, %r15");
+                    raw("    jz " + resizeNoAdd);
                     raw(isWindows() ? "    add r15, 16" : "    addq $16, %r15"); // r15: back to the data-start pointer this convention returns
+                    raw(resizeNoAdd + ":");
                 }
                 pushReg("r15");
                 return;
@@ -5431,7 +5502,7 @@ public class X86Backend {
     /** set when this function has an instruction whose code uses r13/r14 internally (see RegVarPromotionPass.R13_R14_USERS) */
     private boolean rfClobberSeen = false;
     private static final java.util.Set<String> RF_R13_R14_USERS = new java.util.HashSet<>(java.util.Arrays.asList(
-            "NEW", "NEW_DYN", "NEW_UDYN", "NEW_FROM_STRING", "CLONE", "RESIZE", "URESIZE", "DOT", "LOOKUP_ARRAY", "ASM_START"));
+            "NEW", "NEW_DYN", "NEW_UDYN", "NEW_FROM_STRING", "CLONE", "CLONE_DYN", "RESIZE", "URESIZE", "DOT", "LOOKUP_ARRAY", "ASM_START"));
 
     private String rfReg(String tok) {
         if (tok.equals("%s")) {

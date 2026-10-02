@@ -1292,7 +1292,7 @@ yours cannot reuse the name, and each is compiled directly instead of being call
 `clone` makes a deep copy: it follows every `owns` member (and dynarray element) of the pointee, allocates a
 fresh copy of each and registers every new allocation with the ghost table, so the result is an ordinary
 `owns` value that shares nothing with the original. It does not null-check its source (the proof does that);
-it throws "out of memory" if an allocation fails. You write `clone(p)` whatever the type; the compiler works
+it throws "out of memory" if an allocation fails, and in that case it frees whatever it had already copied, so a failed clone leaves nothing behind. You write `clone(p)` whatever the type; the compiler works
 out the per-type copying.
 
 #### Idiomatic Caspien in brief

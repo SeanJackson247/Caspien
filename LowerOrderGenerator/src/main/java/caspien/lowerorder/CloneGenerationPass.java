@@ -3,9 +3,11 @@ package caspien.lowerorder;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -283,7 +285,10 @@ public class CloneGenerationPass implements OptimizationPass {
                 // dynarray borrowed via "ref", say, at a top-level
                 // `clone()` call site) -- same reasoning as the struct
                 // branch below.
-                return buildCloneLoop(canonicalType, dynElem, elemRoutine, "owns_mut_" + t.baseType);
+                if (elemRoutine.startsWith("VAL:")) {
+                    return buildValueCloneLoop(canonicalType, dynElem, elemRoutine, "owns_mut_" + t.baseType);
+                }
+                return buildOwnsElementCloneLoop(canonicalType, dynElem, elemRoutine);
             }
 
             if (structTable.hasStruct(t.baseType)) {
@@ -413,7 +418,7 @@ public class CloneGenerationPass implements OptimizationPass {
          * `LOOKUP_LHS`/`ASSIGN`, rather than merely destructing what it
          * finds.
          */
-        private List<String> buildCloneLoop(String srcType, String dynElem, String elemRoutine, String resultType) {
+        private List<String> buildValueCloneLoop(String srcType, String dynElem, String elemRoutine, String resultType) {
             List<String> lines = new ArrayList<>();
 
             String srcTemp = newTemp(lines, "clone_loop_src", srcType);
@@ -506,31 +511,314 @@ public class CloneGenerationPass implements OptimizationPass {
         }
 
         /**
-         * Builds the full FUNC_START..FUNC_END block for `structName`'s
-         * own pointer-based clone-glue routine (takes the pointer,
-         * returns a freshly allocated, deeply cloned owns pointer) --
-         * see this pass's own header for why this deliberately gets no
-         * `gt_routine` prologue, and `emitParamLoad`'s own doc comment
-         * (below) for why its one parameter loads via a plain `PUSH $16`
-         * -- the sibling `caspien-compiler` project's own "ARG-to-ALLOC
-         * lowering" contract, applied to this pass's own generated
-         * routines too, now that the old `ARG name type` declaration line
-         * is extinct everywhere in this pipeline's bytecode.
+         * Bookkeeping for one generated pointer routine. Every `owns` value the routine clones is stored in a hidden local (a
+         * "leaf temp", zero at entry) before anything is assembled. If any later allocation fails, `failLabel` destructs all of
+         * those locals (the drop pass expands each `GT_DESTRUCT` recursively and null-safely) and returns null, so a failed
+         * clone leaves nothing allocated. `failLabel` null means a by-value routine, which cannot return null: a failed member
+         * simply stays null.
          */
+        private static final class CloneCtx {
+            final String failLabel;
+            final List<String> tempNames = new ArrayList<>();
+            final List<String> tempTypes = new ArrayList<>();
+            final Map<String, String> tempOfPath = new HashMap<>();
+
+            CloneCtx(String failLabel) {
+                this.failLabel = failLabel;
+            }
+        }
+
+        private void emitTempDecls(List<List<BytecodeToken>> out, CloneCtx ctx) {
+            for (int i = 0; i < ctx.tempNames.size(); i++) {
+                String n = ctx.tempNames.get(i);
+                String t = ctx.tempTypes.get(i);
+                emit(out, "ALLOC " + n + " " + t);
+                emit(out, "ADDR " + n + " " + t);
+                emit(out, "PUSH null " + t);
+                emit(out, "ASSIGN " + t + " " + t + " " + t);
+            }
+        }
+
+        /** The shared routine for a pointer to `structName`: clone every owns leaf into a temp, then build the copy; undo everything on failure. */
         private List<List<BytecodeToken>> generatePointerCloneRoutine(String structName) {
             List<List<BytecodeToken>> out = new ArrayList<>();
             String paramType = "raw_imut_" + structName;
+            String ownsType = "owns_mut_" + structName;
             emit(out, "FUNC_START " + pointerRoutineNameFor(structName));
             emit(out, "FUNC_DECORATE @clone_glue");
-            emit(out, "RETURNS owns_mut_" + structName);
+            emit(out, "RETURNS " + ownsType);
             String root = emitParamLoad(out, "src", paramType, structName);
-            failReturnType = "owns_mut_" + structName; // a failed nested allocation returns null from this routine
-            emitMemberPushSequence(out, structName, root);
-            failReturnType = null;
+            CloneCtx ctx = new CloneCtx(newLabel("clone_fail"));
+            List<List<BytecodeToken>> phase1 = new ArrayList<>();
+            emitCloneLeavesOfStruct(phase1, ctx, structName, root);
+            emitTempDecls(out, ctx);
+            out.addAll(phase1);
+            emitMemberPushSequence(out, structName, root, ctx);
             emit(out, "NEW " + structName);
-            emit(out, "RET owns_mut_" + structName);
+            String ok = newLabel("clone_new_ok");
+            emit(out, "DUP_TOP");
+            emit(out, "PUSH null " + ownsType);
+            emit(out, "EQ " + ownsType + " " + ownsType + " imut_bool");
+            emit(out, "CMP");
+            emit(out, "JMP " + ok);
+            emit(out, "JMP " + ctx.failLabel);
+            emit(out, ok + ":");
+            emit(out, "RET " + ownsType);
+            emit(out, ctx.failLabel + ":");
+            for (String t : ctx.tempNames) {
+                emit(out, "GT_DESTRUCT " + t);
+            }
+            emit(out, "PUSH null " + ownsType);
+            emit(out, "RET " + ownsType);
             emit(out, "FUNC_END");
             return out;
+        }
+
+        /** Phase 1: for every ordinary member of `structName` (read off the local copy at `basePath`), clone each owns leaf into a temp. */
+        private void emitCloneLeavesOfStruct(List<List<BytecodeToken>> out, CloneCtx ctx, String structName, String basePath) {
+            List<StructTable.Member> members = structTable.membersOf(structName);
+            boolean classIdBearing = !members.isEmpty() && members.get(0).name.equals("___type");
+            List<StructTable.Member> ordinary = classIdBearing ? members.subList(1, members.size()) : members;
+            for (StructTable.Member m : ordinary) {
+                emitCloneLeaves(out, ctx, basePath + "." + m.name, m.canonicalType);
+            }
+        }
+
+        private void emitCloneLeaves(List<List<BytecodeToken>> out, CloneCtx ctx, String path, String canonicalType) {
+            CanonicalType t = CanonicalType.parse(canonicalType);
+
+            if (t.isOwnsStorage()) {
+                String ownsType = "owns_mut_" + t.baseType;
+                String temp = "$clone_m" + (++tempCounter);
+                ctx.tempNames.add(temp);
+                ctx.tempTypes.add(ownsType);
+                ctx.tempOfPath.put(path, temp);
+                emit(out, "PUSH " + path + " " + canonicalType);
+                List<String> recurse = structTable.isOwnsBearing(t.baseType)
+                        ? ownsBearingCloneInstructions(canonicalType) : null;
+                if (recurse != null) {
+                    for (String l : recurse) {
+                        emit(out, l);
+                    }
+                } else {
+                    // A leaf owns pointer (or a documented gap shape): the flat allocate-and-copy is exactly right.
+                    emit(out, "CLONE " + canonicalType + " " + ownsType);
+                }
+                emitCheckRegisterStore(out, ctx, ownsType, temp);
+                return;
+            }
+
+            if (structTable.hasStruct(t.baseType)) {
+                if (structTable.isOwnsBearing(t.baseType)) {
+                    emitCloneLeavesOfStruct(out, ctx, t.baseType, path);
+                }
+                return;
+            }
+
+            String fixedElem = t.fixedArrayElementType();
+            if (fixedElem != null && elementNeedsWork(fixedElem)) {
+                int count = t.fixedArrayLength();
+                for (int i = 0; i < count; i++) {
+                    emitCloneLeaves(out, ctx, path + "." + i, fixedElem);
+                }
+            }
+        }
+
+        private boolean elementNeedsWork(String fixedElem) {
+            CanonicalType elemT = CanonicalType.parse(fixedElem);
+            return elemT.isOwnsStorage()
+                    || (structTable.hasStruct(elemT.baseType) && structTable.isOwnsBearing(elemT.baseType))
+                    || CanonicalType.fixedArrayElementTypeOf(elemT.baseType) != null;
+        }
+
+        /**
+         * A freshly cloned `owns` pointer is on top of the stack. If it is null the allocation failed: store the null in `temp`
+         * and go to the routine's fail label (or, in a by-value routine, carry on with a null member). Otherwise register it
+         * with the ghost table and store it in `temp`. Leaves the stack balanced either way.
+         */
+        private void emitCheckRegisterStore(List<List<BytecodeToken>> out, CloneCtx ctx, String ownsType, String temp) {
+            String ok = newLabel("clone_member_ok");
+            emit(out, "DUP_TOP");
+            emit(out, "PUSH null " + ownsType);
+            emit(out, "EQ " + ownsType + " " + ownsType + " imut_bool");
+            emit(out, "CMP");
+            if (ctx.failLabel != null) {
+                emit(out, "JMP " + ok);
+                emit(out, "POP " + temp + " " + ownsType);
+                emit(out, "JMP " + ctx.failLabel);
+                emit(out, ok + ":");
+                emit(out, "GT_REGISTER");
+                emit(out, "POP " + temp + " " + ownsType);
+            } else {
+                String done = newLabel("clone_member_done");
+                emit(out, "JMP " + ok);
+                emit(out, "JMP " + done);
+                emit(out, ok + ":");
+                emit(out, "GT_REGISTER");
+                emit(out, done + ":");
+                emit(out, "POP " + temp + " " + ownsType);
+            }
+        }
+
+        /** Phase 2: push the class id (if any) and every ordinary member in declared order, owns leaves taken from their temps. */
+        private void emitMemberPushSequence(List<List<BytecodeToken>> out, String structName, String basePath, CloneCtx ctx) {
+            List<StructTable.Member> members = structTable.membersOf(structName);
+            boolean classIdBearing = !members.isEmpty() && members.get(0).name.equals("___type");
+            List<StructTable.Member> ordinary = classIdBearing ? members.subList(1, members.size()) : members;
+
+            if (classIdBearing) {
+                emit(out, "PUSH " + basePath + ".___type imut_u64");
+            }
+            for (StructTable.Member m : ordinary) {
+                emitPushValue(out, basePath + "." + m.name, m.canonicalType, ctx);
+            }
+        }
+
+        private void emitPushValue(List<List<BytecodeToken>> out, String path, String canonicalType, CloneCtx ctx) {
+            CanonicalType t = CanonicalType.parse(canonicalType);
+
+            if (t.isOwnsStorage()) {
+                emit(out, "PUSH " + ctx.tempOfPath.get(path) + " owns_mut_" + t.baseType);
+                return;
+            }
+
+            if (structTable.hasStruct(t.baseType)) {
+                if (structTable.isOwnsBearing(t.baseType)) {
+                    emitMemberPushSequence(out, t.baseType, path, ctx);
+                    return;
+                }
+                emit(out, "PUSH " + path + " " + canonicalType);
+                return;
+            }
+
+            String fixedElem = t.fixedArrayElementType();
+            if (fixedElem != null && elementNeedsWork(fixedElem)) {
+                int count = t.fixedArrayLength();
+                for (int i = 0; i < count; i++) {
+                    emitPushValue(out, path + "." + i, fixedElem, ctx);
+                }
+                return;
+            }
+
+            emit(out, "PUSH " + path + " " + canonicalType);
+        }
+
+        /**
+         * Deep clone of a dynarray whose elements are `owns` pointers (to plain values, or to owns-bearing structs via their pointer
+         * routine). The new array is grown to the source length filled with null, each cloned element is registered and stored, and
+         * if any element's allocation fails the whole new array is destructed (the drop pass frees the elements already made and
+         * skips the still-null ones) before the null result goes back to the caller. The operand stack is balanced on every path.
+         */
+        private List<String> buildOwnsElementCloneLoop(String srcType, String dynElem, String elemRoutine) {
+            List<String> lines = new ArrayList<>();
+            CanonicalType elemT = CanonicalType.parse(dynElem);
+            String eType = "owns_mut_" + elemT.baseType;
+            String dstType = "owns_mut_dynarray(" + dynElem + ")";
+            String doneLabel = newLabel("clone_loop_done");
+            String failLabel = newLabel("clone_loop_fail");
+
+            String srcTemp = newTemp(lines, "clone_loop_src", srcType);
+            lines.add("POP " + srcTemp + " " + srcType);
+            String dstTemp = newTemp(lines, "clone_loop_dst", dstType);
+            String newTemp = newTemp(lines, "clone_loop_new", dstType);
+
+            // an empty array first; a failed allocation here has nothing to undo
+            lines.add("NEW_DYN mut_dynarray(" + dynElem + ") 0");
+            String ndOk = newLabel("clone_loop_nd_ok");
+            lines.add("DUP_TOP");
+            lines.add("PUSH null " + dstType);
+            lines.add("EQ " + dstType + " " + dstType + " imut_bool");
+            lines.add("CMP");
+            lines.add("JMP " + ndOk);
+            lines.add("JMP " + doneLabel);
+            lines.add(ndOk + ":");
+            lines.add("POP " + dstTemp + " " + dstType);
+
+            // Grow to the source length, new slots null. The array is not registered with the ghost table here (the caller
+            // registers the finished result, like any other clone); it is registered only on the failure paths below, just
+            // before it is destructed, so there is never a stale registration for a block realloc has moved.
+            lines.add("PUSH " + dstTemp + " " + dstType);
+            lines.add("PUSH " + srcTemp + " " + srcType);
+            lines.add("LEN");
+            lines.add("PUSH null " + dynElem);
+            lines.add("RESIZE " + dstType + " indeterminate_u64 " + dynElem);
+            lines.add("POP " + newTemp + " " + dstType);
+            String rsOk = newLabel("clone_loop_rs_ok");
+            lines.add("PUSH " + newTemp + " " + dstType);
+            lines.add("PUSH null " + dstType);
+            lines.add("EQ " + dstType + " " + dstType + " imut_bool");
+            lines.add("CMP");
+            lines.add("JMP " + rsOk);
+            lines.add("PUSH " + dstTemp + " " + dstType); // grow failed: the old (empty) block is still valid
+            lines.add("GT_REGISTER");
+            lines.add("POP " + dstTemp + " " + dstType);
+            lines.add("GT_DESTRUCT " + dstTemp);
+            lines.add("PUSH null " + dstType);
+            lines.add("JMP " + doneLabel);
+            lines.add(rsOk + ":");
+            lines.add("PUSH " + newTemp + " " + dstType);
+            lines.add("POP " + dstTemp + " " + dstType);
+
+            String counter = newTemp(lines, "clone_loop_i", "mut_u64");
+            lines.add("ADDR " + counter + " mut_u64");
+            lines.add("PUSH 0 indeterminate_u64");
+            lines.add("ASSIGN mut_u64 mut_u64 mut_u64");
+            String elemTemp = newTemp(lines, "clone_loop_e", eType);
+
+            String topLabel = newLabel("clone_loop");
+            String endLabel = newLabel("clone_loop_end");
+            lines.add(topLabel + ":");
+            lines.add("PUSH " + counter + " mut_u64");
+            lines.add("PUSH " + srcTemp + " " + srcType);
+            lines.add("LEN");
+            lines.add("LT mut_u64 indeterminate_u64 indeterminate_bool");
+            lines.add("CMP");
+            lines.add("JMP " + endLabel);
+
+            lines.add("PUSH " + srcTemp + " " + srcType);
+            lines.add("PUSH " + counter + " mut_u64");
+            lines.add("LOOKUP " + srcType + " mut_u64 " + dynElem);
+            if (elemRoutine.equals("NONE:PTR")) {
+                lines.add("CLONE " + dynElem + " " + eType);
+            } else {
+                lines.add("CALL " + elemRoutine.substring("PTR:".length()));
+                lines.add("PUSH_RET " + eType);
+            }
+            String elOk = newLabel("clone_loop_el_ok");
+            lines.add("DUP_TOP");
+            lines.add("PUSH null " + eType);
+            lines.add("EQ " + eType + " " + eType + " imut_bool");
+            lines.add("CMP");
+            lines.add("JMP " + elOk);
+            lines.add("POP " + elemTemp + " " + eType);
+            lines.add("JMP " + failLabel);
+            lines.add(elOk + ":");
+            lines.add("GT_REGISTER");
+            lines.add("POP " + elemTemp + " " + eType);
+
+            lines.add("PUSH " + dstTemp + " " + dstType);
+            lines.add("PUSH " + counter + " mut_u64");
+            lines.add("LOOKUP_LHS " + dstType + " mut_u64 " + dynElem);
+            lines.add("PUSH " + elemTemp + " " + eType);
+            lines.add("ASSIGN " + dynElem + " " + dynElem + " " + dynElem);
+
+            lines.add("ADDR " + counter + " mut_u64");
+            lines.add("PUSH " + counter + " mut_u64");
+            lines.add("INC mut_u64 indeterminate_u64");
+            lines.add("ASSIGN mut_u64 indeterminate_u64 indeterminate_u64");
+            lines.add("JMP " + topLabel);
+
+            lines.add(endLabel + ":");
+            lines.add("PUSH " + dstTemp + " " + dstType);
+            lines.add("JMP " + doneLabel);
+            lines.add(failLabel + ":");
+            lines.add("PUSH " + dstTemp + " " + dstType); // register so the drop frees the block, the made elements, and skips the null ones
+            lines.add("GT_REGISTER");
+            lines.add("POP " + dstTemp + " " + dstType);
+            lines.add("GT_DESTRUCT " + dstTemp);
+            lines.add("PUSH null " + dstType);
+            lines.add(doneLabel + ":");
+            return lines;
         }
 
         /**
@@ -552,8 +840,12 @@ public class CloneGenerationPass implements OptimizationPass {
             emit(out, "FUNC_DECORATE @clone_glue");
             emit(out, "RETURNS mut_" + structName);
             String root = emitParamLoad(out, "src", paramType, structName);
-            failReturnType = null; // by-value result: a failed nested allocation stays a null member
-            emitMemberPushSequence(out, structName, root);
+            CloneCtx ctx = new CloneCtx(null); // by-value result: a failed nested allocation stays a null member
+            List<List<BytecodeToken>> phase1 = new ArrayList<>();
+            emitCloneLeavesOfStruct(phase1, ctx, structName, root);
+            emitTempDecls(out, ctx);
+            out.addAll(phase1);
+            emitMemberPushSequence(out, structName, root, ctx);
             emit(out, "RET mut_" + structName);
             emit(out, "FUNC_END");
             return out;
@@ -600,142 +892,9 @@ public class CloneGenerationPass implements OptimizationPass {
             return root;
         }
 
-        /** Set while generating a pointer routine: a null from a nested clone makes the routine return null (the call site's own check then throws). Null for a by-value routine. */
-        private String failReturnType = null;
 
-        /**
-         * A freshly cloned `owns` pointer (type `ownsType`) is on top of the stack: register it with the ghost table, like `new`
-         * does. If it is null (allocation failed) a pointer routine returns that null at once; otherwise the null is left in place
-         * and not registered.
-         */
-        private void emitRegisterClone(List<List<BytecodeToken>> out, String ownsType) {
-            String ok = newLabel("clone_member_ok");
-            emit(out, "DUP_TOP");
-            emit(out, "PUSH null " + ownsType);
-            emit(out, "EQ " + ownsType + " " + ownsType + " imut_bool");
-            emit(out, "CMP");
-            if (failReturnType != null) {
-                emit(out, "JMP " + ok);
-                emit(out, "RET " + failReturnType);
-                emit(out, ok + ":");
-                emit(out, "GT_REGISTER");
-            } else {
-                String done = newLabel("clone_member_done");
-                emit(out, "JMP " + ok);
-                emit(out, "JMP " + done);
-                emit(out, ok + ":");
-                emit(out, "GT_REGISTER");
-                emit(out, done + ":");
-            }
-        }
 
-        /** Pushes `structName`'s own classId (if any, copied verbatim off `basePath`) followed by every ordinary member's own freshly cloned value, in declared order -- shared by both routine shapes above, matching NEW's/an inline struct literal's own identical construction order (BytecodeEmitter.emitInstantiate). */
-        private void emitMemberPushSequence(List<List<BytecodeToken>> out, String structName, String basePath) {
-            List<StructTable.Member> members = structTable.membersOf(structName);
-            // classId, when present, is always the *first* STRUCT_MEMBER
-            // (BytecodeEmitter.emitStruct emits it before every
-            // user-declared field -- see that method's own "load-bearing,
-            // not cosmetic" comment) -- checked at index 0, not the last
-            // index. (Found stale while wiring up struct padding: this
-            // used to check `members.get(members.size() - 1)`, a leftover
-            // from before the compiler-side "___type declared last" bug
-            // was fixed there; it had silently gone uncorrected here ever
-            // since, this pass's own "found missing/stale, not new"
-            // report gap.)
-            boolean classIdBearing = !members.isEmpty() && members.get(0).name.equals("___type");
-            List<StructTable.Member> ordinary = classIdBearing ? members.subList(1, members.size()) : members;
 
-            // "___type" is never part of a struct's own declared member
-            // list (BytecodeEmitter.emitStruct appends it separately,
-            // first, only for a classId-bearing struct) -- copied here
-            // directly off the source, matching NEW's own real
-            // construction order (classId first, then ordinary members,
-            // see BytecodeEmitter.emitInstantiate), rather than needing
-            // this pass to know the actual numeric classId at all: a
-            // clone always targets the exact same concrete struct type
-            // as its source, so simply copying the source's own already-
-            // correct value across is always right.
-            if (classIdBearing) {
-                emit(out, "PUSH " + basePath + ".___type imut_u64");
-            }
-            for (StructTable.Member m : ordinary) {
-                emitClonedValue(out, basePath + "." + m.name, m.canonicalType);
-            }
-        }
-
-        /**
-         * Pushes a freshly cloned value for one member (or one unrolled
-         * fixed-array element, or one recursively-visited inline
-         * struct's own sub-member) at `path`, of declared type
-         * `canonicalType` -- exactly one value pushed per call, for
-         * whatever's assembling a "NEW ..." sequence out of these to
-         * consume. Mirrors DropGlueGenerationPass.emitValueDestruct's
-         * own dispatch shape.
-         */
-        private void emitClonedValue(List<List<BytecodeToken>> out, String path, String canonicalType) {
-            CanonicalType t = CanonicalType.parse(canonicalType);
-
-            if (t.isOwnsStorage()) {
-                emit(out, "PUSH " + path + " " + canonicalType);
-                List<String> recurse = structTable.isOwnsBearing(t.baseType)
-                        ? ownsBearingCloneInstructions(canonicalType) : null;
-                if (recurse != null) {
-                    for (String l : recurse) {
-                        emit(out, l);
-                    }
-                } else {
-                    // A leaf owns pointer (nothing further inside to
-                    // clone), or one of the two documented gap shapes --
-                    // the plain, flat "CLONE" contract is exactly
-                    // correct either way. Carries the same trailing
-                    // "argType returnType" operand pair the compiler's
-                    // own "clone()" builtin now emits, so this generated
-                    // line is indistinguishable from a real one by the
-                    // time AddressLoweringPass -- which runs after this
-                    // pass -- reduces it to a plain size.
-                    emit(out, "CLONE " + canonicalType + " owns_mut_" + t.baseType);
-                }
-                emitRegisterClone(out, "owns_mut_" + t.baseType);
-                return;
-            }
-
-            if (structTable.hasStruct(t.baseType)) {
-                if (structTable.isOwnsBearing(t.baseType)) {
-                    // An inline (no-storage) embedded struct that itself
-                    // owns something further down -- recurse into its
-                    // own members in place, exactly as if they were this
-                    // routine's own top-level ones, so the freshly built
-                    // value never aliases whatever the embedded struct
-                    // itself owns.
-                    emitMemberPushSequence(out, t.baseType, path);
-                    return;
-                }
-                // No owns content anywhere inside -- safe to copy as one
-                // opaque block of bytes, same as any other flat value.
-                emit(out, "PUSH " + path + " " + canonicalType);
-                return;
-            }
-
-            String fixedElem = t.fixedArrayElementType();
-            if (fixedElem != null) {
-                CanonicalType elemT = CanonicalType.parse(fixedElem);
-                boolean elemNeedsWork = elemT.isOwnsStorage()
-                        || (structTable.hasStruct(elemT.baseType) && structTable.isOwnsBearing(elemT.baseType))
-                        || CanonicalType.fixedArrayElementTypeOf(elemT.baseType) != null;
-                if (elemNeedsWork) {
-                    int count = t.fixedArrayLength();
-                    for (int i = 0; i < count; i++) {
-                        emitClonedValue(out, path + "." + i, fixedElem);
-                    }
-                    return;
-                }
-                // Falls through -- no owns content anywhere inside the
-                // array, safe to copy the whole thing as one block.
-            }
-
-            // A plain scalar, or any other shape with no owns content.
-            emit(out, "PUSH " + path + " " + canonicalType);
-        }
 
         private static void emit(List<List<BytecodeToken>> out, String text) {
             out.addAll(PARSER.parse(Collections.singletonList(text), "<generated-clone-glue>"));

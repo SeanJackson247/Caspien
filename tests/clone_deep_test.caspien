@@ -63,6 +63,28 @@ func main() void{
 		fails += check("dyn len", len(rc), 3)
 		fails += check("dyn orig", o1, 2)
 		fails += check("dyn copy", c1, 20)
+
+		let d1 = mut ?new Pair{a= 1, b= 2}
+		let d2 = mut ?new Pair{a= 3, b= 4}
+		let ptrs = mut ?dyn([d1, d2])
+		let pc = mut ?clone(ptrs)
+		let origA = mut 0
+		let copyA = mut 0
+		let copyB = mut 0
+		match 1 in pc{
+			let q = mut pc[1]
+			q.a = 30
+			copyA = q.a
+			copyB = q.b
+		}
+		match 1 in ptrs{
+			let r = mut ptrs[1]
+			origA = r.a
+		}
+		fails += check("dyn of owns len", len(pc), 2)
+		fails += check("dyn of owns orig a", origA, 3)
+		fails += check("dyn of owns copy a", copyA, 30)
+		fails += check("dyn of owns copy b", copyB, 4)
 	}
 	unsafe{ printf("done fails=%llu\n", fails) }
 }
