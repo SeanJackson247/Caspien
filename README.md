@@ -367,8 +367,8 @@ what the checker enforces in safe code, then what `unsafe` gives up.
 | Property | Enforced today | Open (still safe code) |
 |---|---|---|
 | **Termination** | Direct and mutual recursion rejected; `@recursive` only as a tail call on a shrinking range, lowered to a bounded `for`; every `for` bound fixed at loop entry; counter immutable; no `loop{}` and no `call()` (both need `unsafe`). | `match @lock` spins until it acquires the lock, so it can wait forever under contention. `await` blocks on another thread. So safe code is not strictly total. |
-| **Bounded execution time** | Not enforced. | No worst-case execution time analysis. Loop bounds are runtime values, so a nested loop can be very long. The acyclic call graph would allow a static stack-depth bound, but none is computed. |
-| **Memory safety** | Single ownership with compile-time move checking; array and dynarray indexes proven in bounds; dereferencing a pointer needs a liveness proof. | Liveness of a `ref` is checked at *run time* against a table of live allocations, so a dangling `ref` is skipped rather than rejected at compile time. The lookup is a linear scan under a spin lock, so each check costs time proportional to the number of live allocations. |
+| **Bounded execution time** | Termination is guaranteed (above), and every `for` is bounded by its range, so each loop is finite. Safe code has no unbounded loop and an acyclic call graph, which is what makes a static bound possible. | The compiler does not yet compute a worst-case execution time, so "terminates" is not yet "time-bounded". This needs tooling, not a language change: tighter loop ranges for precision (a runtime-valued bound is only limited by its type, so a bare worst case is useless), per-primitive costs for the trusted core, and a wait model for `match @lock` and `await`, the only places safe code waits on another thread. |
+| **Memory safety** | Single ownership with compile-time move checking; array and dynarray indexes proven in bounds; dereferencing a pointer needs a liveness proof. | Liveness of a `ref` is checked at *run time* against a table of live allocations, so a dangling `ref` is skipped rather than rejected at compile time. |
 | **No runtime exceptions** | Division, float operations, narrowing, indexing and null access all need proofs; arithmetic wraps; failures are declared (`@throws`) and handled. | A thrown error is still a non-local transfer of control (a controlled one). Allocation failure is reported, not prevented. |
 | **The single event loop** | `@with_tick` / `@tick` / `@event_loop` give a non-terminating program (`docs/examples/09_event_loop.caspien`). | All three stdlib loops (no arguments, C arguments, safe arguments) have been run. The example is run by hand and is not in `tests/`. `par`/`await` add real threads, which is a deliberate departure from a single loop. |
 
@@ -387,7 +387,7 @@ Inside `unsafe` the guarantees above are the programmer's responsibility. What e
 
 The standard library is built on `unsafe` code (the ghost table, `memcopy`, the `pthread_*` calls). The
 guarantee is therefore "safe user code on top of a small trusted `unsafe` core", and that core is tested,
-not proved.
+not proved. Costs inside that core are part of its contract, not of the safe-code guarantees. For example, the liveness check behind `match Some` is currently a linear scan of the ghost table under a spin lock, and `malloc` has no bound. A timing analysis would take such costs as stated inputs, as it would for any library.
 
 #### Beyond the language
 
