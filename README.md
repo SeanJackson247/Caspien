@@ -152,8 +152,9 @@ Every value is `mut` or `imut`, and you write it. There are no implicit conversi
 types, so a literal takes the type of the slot it lands in, and a variable never silently changes width.
 
 ```rust
-let acct = mut ? new Account{id= 1, balance= 100}
-acct:deposit(50)
+let count = mut 1
+count += 1                           // fine: `count` is mut
+let limit = imut 10                  // `limit += 1` would be rejected: the value is imut
 
 let wide = mut 200
 match wide fits u8{                  // a proof that the narrowing is safe
@@ -190,40 +191,13 @@ describe(c, c)     // 3
 describe("hi")     // 4
 ```
 
-Methods overload the same way, inside a bare `impl` and for `static` methods. Constructors overload by
-parameter type, and a type that declares a constructor can only be built through it:
-
-```rust
-impl Q{
-	@pub
-	func add(_self: ref some mut self, n: mut u64) mut u64{ return _self.a + n }
-	@pub
-	func add(_self: ref some mut self, s: static imut string) mut u64{ return _self.a + 1000 }
-	@pub
-	static func make() mut u64{ return 5 }
-	@pub
-	static func make(n: mut u64) mut u64{ return n }
-}
-
-impl constructor for P(n: mut u64) self{ return P{a= n} }
-impl constructor for P(s: static imut string) self{ return P{a= 99} }
-
-let pa = mut P(mut 4)           // or `new P(...)` for a heap value
-```
-
 A call tries the overloads that need no literal adaptation first and then the rest in declaration order,
-and takes the first whose parameters accept the arguments. Overloading needs no decorator for plain
-functions, constructors and the methods of a bare `impl`: it is implicit. It becomes explicit where a
-method fulfils or replaces a contract. A method in an `impl Interface for T` block must carry
-`@realizes` (or `@overrides`, to replace an interface method that has a `@default` body), and such a
-block cannot overload, because an interface method is identified by name alone (see Interfaces). These
-are the errors:
+and takes the first whose parameters accept the arguments. Overloading needs no decorator: it is implicit.
+Methods and constructors overload the same way, and are covered with structs below. These are the errors:
 
 ```
 function 'f' with this parameter signature is already declared
-'Q' already has a method named 'add' with this parameter signature in this impl block
 no overload of 'f' matches argument types (f32)
-'P' declares its own constructor(s) -- its struct-literal form ('P{...}') can only be used inside one of those constructors' own bodies; ...
 ```
 
 **`@pure`** marks a function with no side effects. It is not the same as referentially transparent: a `@pure`
@@ -283,49 +257,56 @@ impl Account{
 enum Shape{ CIRCLE, SQUARE, TRIANGLE }
 ```
 
-#### Generics and compile-time dispatch
+The receiver type `ref some mut self` is a non-null borrowed pointer to the value (see *Ownership and
+pointers*), and the examples build the value with `new`, which allocates it on the heap (`?` handles an
+allocation failure; see *Errors*).
 
-Generics use `:<T>` at the use site and `<T>` at the declaration. Each instantiation is compiled as its own
-ordinary function or struct (`Box:<u64>` becomes `Box_u64`, with its own `Box_u64_get`), so there is no
-run-time cost and nothing is looked up at run time.
+Methods overload like functions, by parameter count and base type, inside a bare `impl`. A `static` method
+has no receiver and is called on the type (`Q.make()`). Overloading is implicit, with no decorator:
 
 ```rust
-struct Box<T>{@pub{ v: mut T }}
-impl<T> Box<T>{
+struct Q{@pub{ a: mut u64 }}
+impl Q{
 	@pub
-	func get(_self: ref some mut self) mut T{ return _self.v }
+	func add(_self: ref some mut self, n: mut u64) mut u64{ return _self.a + n }
+	@pub
+	func add(_self: ref some mut self, s: static imut string) mut u64{ return _self.a + 1000 }
+	@pub
+	static func make() mut u64{ return 5 }
+	@pub
+	static func make(n: mut u64) mut u64{ return n }
 }
-func twice<T>(x: mut T) mut T{ return x }
-
-let b = mut ? new Box:<u64>{v= 7}
-let t = mut twice:<u64>(mut 9)
-let bv = mut b.get(b)
 ```
 
-A generic method has its own parameter (`func conv<U>(...)`, called `b.conv:<U>(b, ...)`). A method that is
-illegal for some `T` is simply unavailable for that `T` instead of being an error at the declaration, so
-`DynamicArray:<Rect>` exists even though its by-value `pushBack` does not (use `pushBackPtr`).
-
-A type parameter can carry an interface bound. The bound is checked at every instantiation, and the call
-inside is dispatched at compile time to the concrete implementation:
+**Constructing a struct.** A struct literal must name every member exactly once, so there is no way to leave
+a member unset and safe code never sees uninitialised memory. This is the *One True Constructor* (OTC)
+policy, and the literal is the one true way to make a value. A struct can also declare constructors, with
+`impl constructor for T(...) self` (generic form: `impl<T> constructor for Box<T>(...)`). They overload by
+parameter type like any function, and once a struct has one, its literal form is legal only inside the
+constructors' own bodies. Everyone else writes `P(...)`, or `new P(...)` for a heap value:
 
 ```rust
-func areaOf<T: Shape>(s: ref some imut T) imut u64{ return s.area(s) }
+struct P{@pub{ a: mut u64 }}
+impl constructor for P(n: mut u64) self{ return P{a= n} }
+impl constructor for P(s: static imut string) self{ return P{a= 99} }
 
-let ra = imut areaOf:<Rect>(r)       // calls Rect's area directly
+let pa = mut P(mut 4)
 ```
 
-Everything in this list is resolved by the compiler and costs nothing at run time: overload selection,
-generic instantiation, bounded generic calls, a method call on a value of a concrete type, `@pure`
-checking, and every proof. The only run-time dispatch in the language is a call through an interface-typed
-pointer and the `instanceof` and `implements` tests, described below.
+```
+'Q' already has a method named 'add' with this parameter signature in this impl block
+struct 'Point' literal is missing member(s): y
+'P' declares its own constructor(s) -- its struct-literal form ('P{...}') can only be used inside one of those constructors' own bodies; ...
+```
+
+A locked struct (see *Locks and proofs on your own types*) has one narrow exception to the first rule.
 
 #### Composition (there is no struct inheritance)
 
 A struct cannot extend another struct and there are no abstract types. Share members by putting one struct
 inside another, and share behaviour with an interface (below). Every struct carries a hidden 8-byte class id
 in front of its members; the compiler numbers all structs in one flat `Class` enum, and that id is what
-makes `instanceof` possible.
+makes `instanceof` possible (see *Interfaces*).
 
 ```rust
 struct Legs{@pub{ count: mut u64 }}
@@ -337,10 +318,6 @@ let dog = mut Dog{legs= Legs{count= 4}, name= 7}
 ```
 
 - `@untyped` drops the class id, which saves 8 bytes and bars `instanceof` on that type.
-- `x instanceof S` takes an interface-typed `x` and a struct name `S`. It is one class-id comparison, and inside
-  `match x instanceof S{...}` `x` is narrowed to `S` (read its members inside `match Some(x)` as usual).
-- `x implements I` takes a struct-typed `x` and an interface name `I` (see Interfaces).
-- Both must be inside `match Some(...)` when `x` is a pointer, like any other use of the pointer.
 
 #### Interfaces
 
@@ -377,7 +354,12 @@ impl Greeter for B{
   '@default' method`).
 - A `@default` body cannot mention `self`: it has no receiver, so it works as a shared helper. A default
   `static func` is not usable yet.
-- `x implements Interface` is the run-time test, with the same `match Some(...)` rule as `instanceof`.
+- A block `impl Interface for T` cannot overload, because an interface method is identified by name alone.
+- `x instanceof S` takes an interface-typed `x` and a struct name `S`. It is one class-id comparison, and inside
+  `match x instanceof S{...}` `x` is narrowed to `S` (read its members inside `match Some(x)` as usual).
+- `x implements I` takes a struct-typed `x` and an interface name `I`.
+- Both are run-time tests and must be inside `match Some(...)` when `x` is a pointer, like any other use of
+  the pointer.
 - `@guard` interfaces describe a lock and are covered with the locks below.
 
 A call on a value of a concrete type is a direct call. A call through an interface-typed pointer is
@@ -396,6 +378,43 @@ compares the object's class id against each implementer in turn. There is no vta
 `gt_*` imports are required for such a call. A method with no `self`-typed parameter cannot be called this
 way. When the type is known statically, prefer a bounded generic (`func f<T: Shape>(...)`), which compiles
 to a direct call.
+
+#### Generics and compile-time dispatch
+
+Generics use `:<T>` at the use site and `<T>` at the declaration. Each instantiation is compiled as its own
+ordinary function or struct (`Box:<u64>` becomes `Box_u64`, with its own `Box_u64_get`), so there is no
+run-time cost and nothing is looked up at run time.
+
+```rust
+struct Box<T>{@pub{ v: mut T }}
+impl<T> Box<T>{
+	@pub
+	func get(_self: ref some mut self) mut T{ return _self.v }
+}
+func twice<T>(x: mut T) mut T{ return x }
+
+let b = mut ? new Box:<u64>{v= 7}
+let t = mut twice:<u64>(mut 9)
+let bv = mut b.get(b)
+```
+
+A generic method has its own parameter (`func conv<U>(...)`, called `b.conv:<U>(b, ...)`). A method that is
+illegal for some `T` is simply unavailable for that `T` instead of being an error at the declaration, so
+`DynamicArray:<Rect>` exists even though its by-value `pushBack` does not (use `pushBackPtr`).
+
+A type parameter can carry an interface bound. The bound is checked at every instantiation, and the call
+inside is dispatched at compile time to the concrete implementation:
+
+```rust
+func areaOf<T: Shape>(s: ref some imut T) imut u64{ return s.area(s) }
+
+let ra = imut areaOf:<Rect>(r)       // calls Rect's area directly
+```
+
+Everything in this list is resolved by the compiler and costs nothing at run time: overload selection,
+generic instantiation, bounded generic calls, a method call on a value of a concrete type, `@pure`
+checking, and every proof. The only run-time dispatch in the language is a call through an interface-typed
+pointer and the `instanceof` and `implements` tests, described under Interfaces.
 
 #### The `match` statement
 
@@ -564,15 +583,9 @@ match r.state{
 'payload' requires a 'match r.state{...}' proof first (this struct is decorated '@lock(match self.state : ...)')
 ```
 
-**Constructing a locked value.** Three rules decide how any struct is built, and locked structs are where the
-last one matters.
-
-1. *One True Constructor.* A struct literal must name every member exactly once. There is no way to leave
-   a member unset, so safe code never sees uninitialised memory.
-2. *Constructor implementations.* A struct can declare constructors with `impl constructor for T(...) self`
-   (`impl<T> constructor for Result<T>(...)` for a generic one), overloaded by parameter type like any
-   function. Once a struct has one, its literal form is legal only inside the constructors' own bodies, and
-   callers write `Result:<u64>(5)` or `new Result:<u64>(5)`:
+**Constructing a locked value.** The One True Constructor policy and constructor implementations (see
+*Structs, methods and enums*) apply unchanged: a struct literal names every member, and a struct that
+declares constructors can be built only through them. A `Result<T>` normally has two, one for each state:
 
 ```rust
 impl<T> constructor for Result<T>(v: mut T) self{
@@ -588,11 +601,11 @@ func halve(n: mut u64) mut Result<u64>{
 }
 ```
 
-3. *The locked exception.* A locked struct may leave out **every** member except the discriminant, but only
-   when the discriminant is `imut` and is written as a direct `Enum.Variant` that does **not** satisfy the
-   lock. The compiler is then certain the other members can never be read, so it lets them stay
-   uninitialised. This is the only place the language allows uninitialised data, and the reason it is safe
-   is that safe code can never reach it. It works in a plain literal as well:
+A locked struct adds one exception to the first rule. It may leave out **every** member except the
+discriminant, but only when the discriminant is `imut` and is written as a direct `Enum.Variant` that does
+**not** satisfy the lock. The compiler is then certain the other members can never be read, so it lets them
+stay uninitialised. This is the only place the language allows uninitialised data, and it is safe because
+safe code can never reach it. It works in a plain literal as well:
 
 ```rust
 @lock(match self.status : LIVE)
