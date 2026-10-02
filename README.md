@@ -102,7 +102,7 @@ hint only because GitHub has no Caspien highlighter.
 | Locks | `06_locks` |
 | Program entry and event loops | `07` to `09` |
 | Functions, overloading, `@pure`, generics | `10_functions` |
-| Inheritance, abstract types, interfaces, dispatch | `11_types` |
+| Composition, interfaces, dispatch | `11_types` |
 | `match`, loops, bounded recursion | `12_match_and_loops` |
 | Dynamic arrays and the standard library | `13_dynamic_arrays` |
 | Raw pointers and C | `14_unsafe_pointers` |
@@ -317,58 +317,27 @@ generic instantiation, bounded generic calls, a method call on a value of a conc
 checking, and every proof. The only run-time dispatch in the language is a call through an interface-typed
 pointer and the `instanceof` and `implements` tests, described below.
 
-#### Inheritance and abstract types
+#### Composition (there is no struct inheritance)
 
-`extends` is a line inside the body of a struct or abstract. A child gets its parent's members first,
-then its own (the layout is flat). Every struct carries a hidden 8-byte class id in front of its members,
-which is what makes `instanceof` possible.
+A struct cannot extend another struct and there are no abstract types. Share members by putting one struct
+inside another, and share behaviour with an interface (below). Every struct carries a hidden 8-byte class id
+in front of its members; the compiler numbers all structs in one flat `Class` enum, and that id is what
+makes `instanceof` possible.
 
 ```rust
-abstract Animal{@pub{
-	legs: mut u64
+struct Legs{@pub{ count: mut u64 }}
+struct Dog{@pub{
+	legs: mut Legs
+	name: mut u64
 }}
-abstract Named{@pub{
-	id: mut u64
-}}
-
-struct Dog{
-	extends Animal
-	@pub{
-		name: mut u64
-	}
-}
-
-// An abstract made only of `extends` lines may extend several abstracts.
-abstract Pet{
-	extends Named
-	extends Animal
-}
-struct Cat{
-	extends Pet
-	@pub{
-		lives: mut u64
-	}
-}
-
-let cat = mut Cat{id= 1, legs= 4, lives= 7}     // all inherited members are initialised in one literal
-
-let d = mut ? new Dog{legs= 4, name= 7}
-match Some(d){
-	match d instanceof Dog{ /* `d` is a Dog here */ }
-	let isAnimal = imut d instanceof Animal      // true: instanceof also accepts an ancestor
-}
+let dog = mut Dog{legs= Legs{count= 4}, name= 7}
 ```
 
-- A struct extends one struct or abstract. An abstract that has members of its own extends at most one
-  abstract. Member names must not collide.
-- An abstract can never be instantiated: `'Animal' is abstract and cannot be instantiated directly`.
-- `@final` on a struct forbids extending it. `@untyped` drops the class id, which saves 8 bytes and bars
-  `instanceof` on that type. Decorators on a struct are not inherited.
-- `instanceof` on a pointer must be inside `match Some(...)`, like any other use of the pointer.
-- Inheritance gives you shared members and a runtime type test. It does not give you polymorphic calls.
-  Use an interface for that. Two limits to know today: a function parameter typed as an abstract does not
-  accept a struct that extends it, and reading a member through an abstract-typed pointer is a compiler
-  crash, so write the code against the concrete struct.
+- `@untyped` drops the class id, which saves 8 bytes and bars `instanceof` on that type.
+- `x instanceof S` takes an interface-typed `x` and a struct name `S`. It is one class-id comparison, and inside
+  `match x instanceof S{...}` `x` is narrowed to `S` (read its members inside `match Some(x)` as usual).
+- `x implements I` takes a struct-typed `x` and an interface name `I` (see Interfaces).
+- Both must be inside `match Some(...)` when `x` is a pointer, like any other use of the pointer.
 
 #### Interfaces
 
@@ -1055,7 +1024,6 @@ is an error ("'@x' is not a valid decorator on a function"). This is the full se
 | `@lock(match i in self.a)` | method | the caller must hold a bounds proof for `i` against `self.a` (`into` for writes) |
 | `@lock`, `@unlock` | method of a `@guard` implementer | the two operations behind `lock x{ ... }` |
 | `@guard` | interface | a generic interface with one `@lock` and one `@unlock` method |
-| `@final` | struct | cannot be extended |
 | `@untyped` | struct | no hidden class id, so no `instanceof` |
 | `@non_exhaustive` | enum | its last variant is `default`, which a `match` must handle |
 | `@link_name(sym)` | `extern` | the C symbol, when the Caspien name differs |

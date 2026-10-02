@@ -287,8 +287,6 @@ public class BytecodeEmitter {
                 case "struct":
                     emitStruct(structs.get(t.sub.get(0).text));
                     break;
-                case "abstract":
-                    break; // no bytecode representation -- can never be instantiated, its fields are already fully flattened into whichever concrete structs extend it (same "no representation" precedent as 'interface' below)
                 case "type":
                     break; // no bytecode representation at all -- a type alias fully erases (confirmed directly: "there's no aliases in the bytecode"), every usage site already resolved to the real underlying type by TypeChecker
                 case "const":
@@ -329,7 +327,7 @@ public class BytecodeEmitter {
                     // FUNC_START/FUNC_END blocks under their own already-
                     // full-signature-mangled names (see
                     // TypeChecker.collectLibrary's own mangledName). An
-                    // "extends"-inherited function is never re-emitted
+                    // inherited (library "extends") function is never re-emitted
                     // here -- it only exists once, under its own
                     // originally-declaring library's root token, exactly
                     // the same "no duplication, just a naming-convention
@@ -610,15 +608,8 @@ public class BytecodeEmitter {
     // padding, so an array of these structs keeps every element
     // correctly aligned too).
     //
-    // `extends` needs no special-case handling at all here: by the time
-    // this runs, `info.members` is already TypeChecker's own fully
-    // flattened parent-then-own field list (flattenStruct), so walking
-    // it once, in that order, with the hidden classId field prepended,
-    // naturally reproduces "child fields laid out immediately after
-    // parent fields" -- the identical flat model this project's
-    // `extends` already uses for everything else (name lookup, OTC
-    // construction order, ...), never a separately-rounded, embedded
-    // parent sub-object.
+    // Walk `info.members` once, in order, with the hidden classId field
+    // prepended (structs have no inheritance, so there is no parent part).
     //
     // Deliberately duplicates its own tiny size/alignment table rather
     // than reusing TypeChecker's own private PRIMITIVE_SIZE (used only
@@ -3511,7 +3502,7 @@ public class BytecodeEmitter {
                 // directly by actually compiling "Point{x=1} instanceof
                 // Point" (a bare, non-`new` struct *literal* as the left
                 // operand -- legal; checkInstanceof only requires
-                // `leftType` be struct/abstract/interface-typed and, via
+                // `leftType` be struct/interface-typed and, via
                 // `requiresAliveProof`, explicitly allows "an inline
                 // (no-storage)... struct value," which a bare literal
                 // construction is). `emitInstantiate`'s own non-`new`

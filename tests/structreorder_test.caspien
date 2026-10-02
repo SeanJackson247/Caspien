@@ -2,7 +2,7 @@
 // `Mixed` (u8, u64, u8, u32) is reordered to b, d, a, c with its padding gathered at the end; every way of constructing it (stack literal,
 // RVO return, `new`, array literal, static literal) and every member read must still give the hand-computed value, and sizeof must follow
 // the new layout. `Pinned` has a `let static n = sizeof(Pinned)` folded by the front end, so it must be left alone (sizeof stays 32). The last line prints sizeof(Mixed): 32 with the switch off, 24 with it on.
-// `Base`/`Child` (extends) and `Holder` (raw pointer to it) must be left alone too. Output is identical with the switch on and off except the last line.
+// `Holder` (raw pointer to it) must be left alone too. Output is identical with the switch on and off except the last line.
 import "../stdlib/libc.caspien"
 import "../stdlib/gt_init.caspien"
 import "../stdlib/gt_register.caspien"
@@ -28,12 +28,6 @@ struct Base{
 	@pub{
 		a: mut u8
 		b: mut u64
-	}
-}
-struct Child{
-	extends Base
-	@pub{
-		c: mut u8
 	}
 }
 struct Ptd{
@@ -114,9 +108,6 @@ func main() void{
 	unsafe{
 		check("pinned sizeof static equals runtime", pinnedSize == ps)
 	}
-	let c = mut Child{a: 1, b: 2, c: 3}
-	check("extends b", c.b == 2)
-	check("extends c", c.c == 3)
 	let q = mut Ptd{a: 1, b: 2, c: 3}
 	unsafe{ let rp = mut raw q }
 	check("raw-pointed b", q.b == 2)

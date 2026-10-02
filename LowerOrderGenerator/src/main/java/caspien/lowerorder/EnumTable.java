@@ -12,16 +12,12 @@ import java.util.Map;
  * already takes for struct layout. Only the two shapes
  * MembershipLoweringPass actually needs are kept:
  *
- *   - range-valued ("ENUM Name variant1 lo1..hi1 variant2 lo2..hi2 ...")
- *     -- used for exactly one compiler-synthesized enum, "Class"
- *     (TypeChecker.generateClassHierarchyEnums): every struct/abstract's
- *     own pre-order-DFS subtree range, keyed by that struct/abstract's
- *     own name.
+ *   - range-valued ("ENUM Name variant1 lo1..hi1 ...") -- ordinary range enums.
  *   - value-valued ("ENUM Name variant1 val1 variant2 val2 ...") -- used
- *     both for ordinary user "guaranteed" enums and for every
- *     compiler-synthesized "$enum_for_OwnerName" enum
- *     (TypeChecker.registerEnumForEnum): each direct implementer's/
- *     child's own ClassID.
+ *     for ordinary user "guaranteed" enums, for the compiler-synthesized
+ *     flat "Class" enum (every non-@untyped struct and its class id),
+ *     and for every "$enum_for_InterfaceName" enum
+ *     (TypeChecker.registerEnumForEnum): each implementer's class id.
  *
  * A plain enum (no values at all, "ENUM Name variant1 variant2 ...")
  * used to carry nothing any pass here needed, and was left untracked
@@ -124,7 +120,7 @@ public class EnumTable {
     /**
      * The variant's own concrete scalar integer value -- explicit for a
      * value-valued enum (including every compiler-synthesized
-     * "$enum_for_..." ClassID enum), or implicit/sequential ("as in C",
+     * "$enum_for_..." and "Class" enums), or implicit/sequential ("as in C",
      * 0/1/2/... in declaration order) for a plain one. Returns null for
      * a range-valued enum (no single scalar value exists for one of
      * those -- see `classRangeOf` instead) or when `enumName`/
@@ -148,29 +144,11 @@ public class EnumTable {
     }
 
     /**
-     * The "Class" enum's own [lo,hi] pre-order-DFS subtree range for a
-     * struct/abstract name -- confirmed by TypeChecker.walkClassHierarchy
-     * to always be exactly one contiguous range per name -- or null when
-     * there's no synthesized "Class" enum at all (no eligible struct in
-     * the program) or `name` isn't one of its variants (most commonly
-     * because it's an interface, which never gets a "Class" entry --
-     * only "$enum_for_" ones, see implementerClassIdsOf).
-     */
-    public long[] classRangeOf(String structOrAbstractName) {
-        Map<String, RangeInfo> classEnum = rangeEnums.get("Class");
-        if (classEnum == null) {
-            return null;
-        }
-        RangeInfo info = classEnum.get(structOrAbstractName);
-        return info == null ? null : new long[]{info.lo, info.hi};
-    }
-
-    /**
-     * Every direct implementer's/child's own ClassID value, in
+     * Every direct implementer's own class id, in
      * declaration order, from the compiler-synthesized
      * "$enum_for_<ownerName>" enum (TypeChecker.registerEnumForEnum) --
      * or an empty list when there's no such enum (no implementers were
-     * ever registered for that interface/parent, or `ownerName` was
+     * ever registered for that interface, or `ownerName` was
      * never one of the compiler's own synthesized enum owners at all).
      */
     public List<Long> implementerClassIdsOf(String ownerName) {

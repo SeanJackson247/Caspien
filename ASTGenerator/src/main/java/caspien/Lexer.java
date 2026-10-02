@@ -40,7 +40,7 @@ public class Lexer {
     private static final Set<String> KEYWORDS = new HashSet<>(Arrays.asList(
             "if", "else", "elseif", "elif", "loop", "struct", "enum",
             "import", "func", "let", "return", "break", "continue", "interface", "impl", "for",
-            "extends", "abstract", "cast", "type", "new", "match", "elsematch", "unsafe", "safe",
+            "extends", "cast", "type", "new", "match", "elsematch", "unsafe", "safe",
             "extern", "export", "ASM", "const", "par", "await", "yield", "sleep", "throw", "assume",
             "library", "atomic", "try", "catch"
     ));
@@ -615,12 +615,12 @@ public class Lexer {
             // is), never a general-purpose operator elsewhere.
             emit(TokenType.OPERATOR, text, bufferStartLine);
         } else if (text.equals("instanceof") || text.equals("implements")) {
-            // Runtime type-check operators (struct/abstract, TypeName) ->
-            // bool ("instanceof") and (struct/abstract, InterfaceName) ->
+            // Runtime type-check operators (interface-typed value, StructName) ->
+            // bool ("instanceof") and (struct-typed value, InterfaceName) ->
             // bool ("implements") -- same "operator not keyword" reasoning
             // as "as"/"in", so both flow through the ordinary
             // shunting-yard machinery. "implements" is *also* reused,
-            // unrelated to this operator use, as a struct/abstract header
+            // unrelated to this operator use, as a struct header
             // clause keyword ("struct X implements Y{...}") -- Parser's
             // header-scanning code matches on the token's text directly
             // there, so classifying it as OPERATOR here doesn't conflict.

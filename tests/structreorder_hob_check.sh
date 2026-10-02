@@ -8,7 +8,7 @@ export JAVA_TOOL_OPTIONS=
 bad=0
 # S = { ___type, a:u8, b:u64, c:u8 } as the front end declares it (padding baked in); 32 bytes. Reordered: ___type, b, a, c, padding 6 (24 bytes).
 S='STRUCT_START S\nSTRUCT_MEMBER ___type imut_u64\nSTRUCT_MEMBER a mut_u8\nSTRUCT_PADDING 7\nSTRUCT_MEMBER b mut_u64\nSTRUCT_MEMBER c mut_u8\nSTRUCT_PADDING 7\nSTRUCT_END\n'
-TRL='ENUM Class S 1..1\nENUM ClassID S 1\n'
+TRL='ENUM Class S 1\n'
 # hob <case name> <extra declarations> <main body>
 hob(){ printf "$S$2"; printf 'FUNC_START main\nRETURNS imut_void\n'; printf "$3"; printf 'RET imut_void\nFUNC_END\n'; printf "$TRL"; }
 run(){ printf 'struct-member-reordering: on\n' > compiler.config
@@ -37,9 +37,6 @@ check b2 "$SAME_DECL;ALLOC s mut_S;ADDR s mut_S;PUSH 1 imut_u64;PUSH 10 indeterm
 # b3 STRUCT_PIN (a front-end-folded `let static n = sizeof(S)`): left alone, and the pin line is always removed
 hob b3 'STRUCT_PIN S\n' "ALLOC s mut_S\n$CONS_OLD" > b3.hob
 check b3 "$SAME_DECL;ALLOC s mut_S;$(printf "$CONS_OLD" | tr '\n' ';' | sed 's/;$//')"
-# b4 a struct that is extended (Class range covers a child) is left alone
-printf "$S" > b4.hob; printf 'STRUCT_START K\nSTRUCT_MEMBER ___type imut_u64\nSTRUCT_MEMBER a mut_u8\nSTRUCT_PADDING 7\nSTRUCT_MEMBER b mut_u64\nSTRUCT_MEMBER c mut_u8\nSTRUCT_PADDING 7\nSTRUCT_MEMBER e mut_u8\nSTRUCT_PADDING 7\nSTRUCT_END\nFUNC_START main\nRETURNS imut_void\nRET imut_void\nFUNC_END\nENUM Class S 1..2 K 2..2\nENUM ClassID S 1 K 2\n' >> b4.hob
-check b4 "$SAME_DECL"
 # b5 a struct with an array member is left alone
 printf 'STRUCT_START S\nSTRUCT_MEMBER ___type imut_u64\nSTRUCT_MEMBER a mut_u8\nSTRUCT_PADDING 7\nSTRUCT_MEMBER b mut_u64[2]\nSTRUCT_MEMBER c mut_u8\nSTRUCT_PADDING 7\nSTRUCT_END\nFUNC_START main\nRETURNS imut_void\nRET imut_void\nFUNC_END\nENUM Class S 1..1\nENUM ClassID S 1\n' > b5.hob
 check b5 "STRUCT_MEMBER ___type imut_u64;STRUCT_MEMBER a mut_u8;STRUCT_PADDING 7;STRUCT_MEMBER b mut_u64[2];STRUCT_MEMBER c mut_u8;STRUCT_PADDING 7"

@@ -707,11 +707,8 @@ public class TypeChecker {
 
     static class StructInfo {
         final String name;
-        /** Final, flattened member set (own + every ancestor's, name-collision-checked). Populated by the flatten pass -- empty/partial before it runs. */
+        /** Final member set (a struct has no ancestors). Populated by the flatten pass -- empty/partial before it runs. */
         final LinkedHashMap<String, TypeInfo> members = new LinkedHashMap<>();
-        boolean isAbstract;
-        /** Raw "extends" target name(s), before validation. Struct: at most 1. Abstract: at most 1, unless rawMemberLines is entirely empty (a "pure extends" abstract), in which case unlimited. */
-        List<String> extendsNames = new ArrayList<>();
         /** Declared interface conformance ("implements A,B") -- a compile-time contract, checked once all impls are collected. */
         List<String> implementsNames = new ArrayList<>();
         /** Own (non-"extends") member declaration lines, kept until the flatten pass consumes them. */
@@ -783,20 +780,14 @@ public class TypeChecker {
         DefaultLockMatchPolicy defaultLockMatchPolicy;
         /**
          * "the Class ID of the struct... pushed first as a secret
-         * argument on every OTC," confirmed directly -- this struct/
-         * abstract's own position in the auto-generated Class/ClassID
-         * hierarchy (see `generateClassHierarchyEnums`), null only for
-         * an `@untyped` one (excluded from the whole scheme entirely,
-         * "@untyped are excempt," confirmed directly). A struct/
-         * abstract with no single 'extends' parent (none at all, or an
-         * interface-like abstract with more than one) is its own root
-         * in the forest, not excluded -- it still gets a real classId.
-         * Equal to `ClassID.<name>`'s own explicit value, and to
-         * `Class.<name>`'s own range start. Read by
-         * BytecodeEmitter.emitStruct/emitInstantiate to add and
-         * populate the hidden "___type" struct field -- see
-         * emitInstantiate's own doc comment for why every construction
-         * site, not only 'new', needs to populate it.
+         * argument on every OTC," confirmed directly -- this struct's own
+         * value in the flat, auto-generated `Class` enum (see
+         * `generateClassHierarchyEnums`), null only for an `@untyped` one
+         * (excluded from the scheme entirely). Read by
+         * BytecodeEmitter.emitStruct/emitInstantiate to add and populate
+         * the hidden "___type" struct field -- see emitInstantiate's own
+         * doc comment for why every construction site, not only 'new',
+         * needs to populate it.
          */
         Long classId;
         StructInfo(String name) { this.name = name; }
@@ -1533,7 +1524,7 @@ public class TypeChecker {
     }
 
     private final Map<String, StructInfo> structs = new HashMap<>();
-    /** Every struct/abstract's own name, in declaration order (across the whole compilation unit, imports included) -- `structs` itself is unordered, but `generateClassHierarchyEnums` needs a real order to match "declaration order" for the Class/ClassID hierarchy and every 'enum for' membership list. Appended to only by `registerStructLike`. */
+    /** Every struct's own name, in declaration order (across the whole compilation unit, imports included) -- `structs` itself is unordered, but `generateClassHierarchyEnums` needs a real order to match "declaration order" for the Class/ClassID hierarchy and every 'enum for' membership list. Appended to only by `registerStructLike`. */
     private final List<String> structDeclOrder = new ArrayList<>();
     private final Map<String, EnumInfo> enums = new HashMap<>();
     /**
@@ -1621,7 +1612,7 @@ public class TypeChecker {
         }
         return " (" + String.join("; ", l) + ")";
     }
-    /** Library name -> its LibraryInfo. Shares its namespace with structs/enums/interfaces/abstracts (registerLibraryName cross-checks all four, and each of those checks back against this map too). */
+    /** Library name -> its LibraryInfo. Shares its namespace with structs/enums/interfaces (registerLibraryName cross-checks all three, and each of those checks back against this map too). */
     private final Map<String, LibraryInfo> libraries = new LinkedHashMap<>();
     /** Root-level "let static NAME = ..." globals -- name -> resolved type. */
     private final Map<String, TypeInfo> globals = new HashMap<>();
@@ -2393,7 +2384,7 @@ public class TypeChecker {
 
     private void collectDeclarations(List<Token> rootLines) {
         List<FlatDecl> flatDecls = flattenRootLines(rootLines, "indeterminate");
-        // Pass 1a: struct/abstract/interface -- registered *raw* first
+        // Pass 1a: struct/interface -- registered *raw* first
         // (own content captured, nothing cross-referenced resolved yet),
         // since one may extend another declared later in the file.
         // Globals are skipped here entirely (handled in their own pass,
@@ -2404,9 +2395,8 @@ public class TypeChecker {
             }
             Token t = requireTopLevelDecl(fd.lineTok);
             switch (t.text) {
-                case "struct": registerStructLike(t, false); break;
-                case "abstract": registerStructLike(t, true); break;
-                case "enum": collectEnum(t); break;
+                case "struct": registerStructLike(t); break;
+                                case "enum": collectEnum(t); break;
                 case "interface": registerInterface(t); break;
                 case "library": registerLibraryName(t); break;
                 case "type": registerAlias(t); break;
@@ -2414,8 +2404,8 @@ public class TypeChecker {
                 default: break; // func/impl handled below
             }
         }
-        // Pass 1a.5: flatten every struct/abstract's member set and every
-        // interface's method set, recursively resolving "extends" chains
+        // Pass 1a.5: flatten every struct's member set and every
+        // interface's method set, recursively resolving interface "extends" chains
         // (memoized, with circular-inheritance detection) -- must finish
         // before impls are validated, since an impl checks its interface's
         // *flattened* method set, and before globals are processed, since
@@ -2495,16 +2485,16 @@ public class TypeChecker {
         for (String name : new ArrayList<>(libraries.keySet())) {
             flattenLibrary(name, new HashSet<>());
         }
-        // Pass 1c: every struct/abstract's declared "implements" clause is
+        // Pass 1c: every struct's declared "implements" clause is
         // a compile-time contract -- a matching "impl X for Y{...}" must
         // actually exist somewhere in the compilation unit, checked now
         // that every impl has been collected.
         for (StructInfo info : structs.values()) {
             checkImplementsContract(info);
         }
-        // Pass 1c-bis: compiler-synthesized Class/ClassID enums over the
-        // whole struct/abstract hierarchy, and the "enum for X" membership
-        // enums (interface implementers, direct struct/abstract children).
+        // Pass 1c-bis: the compiler-synthesized flat Class enum over all
+        // non-@untyped structs, and the "enum for X" membership enums
+        // (interface implementers).
         // Must run after every impl is collected (Pass 1b) and after
         // implsByConcreteType is fully populated -- generateEnumForEnums
         // depends on it -- and after generateClassHierarchyEnums, since it
@@ -2734,7 +2724,7 @@ public class TypeChecker {
     private Token requireTopLevelDecl(Token lineTok) {
         if (lineTok.childs.size() != 1) {
             throw new CompilerException("type", lineTok.file, lineTok.line,
-                    "only 'struct', 'abstract', 'enum', 'interface', 'impl', 'library', 'func', 'type', "
+                    "only 'struct', 'enum', 'interface', 'impl', 'library', 'func', 'type', "
                             + "'extern', 'export', and 'ASM' declarations (or a bare 'asm_name;' "
                             + "invocation) are allowed at the top level");
         }
@@ -2749,14 +2739,14 @@ public class TypeChecker {
             return t;
         }
         if (t.type != TokenType.KEYWORD
-                || !(t.text.equals("struct") || t.text.equals("abstract") || t.text.equals("enum")
+                || !(t.text.equals("struct") || t.text.equals("enum")
                         || t.text.equals("func") || t.text.equals("interface") || t.text.equals("impl")
                         || t.text.equals("impl_default_lock_match")
                         || t.text.equals("library")
                         || t.text.equals("type") || t.text.equals("extern") || t.text.equals("export")
                         || t.text.equals("ASM") || t.text.equals("const"))) {
             throw new CompilerException("type", t.file, t.line,
-                    "only 'struct', 'abstract', 'enum', 'interface', 'impl', 'library', 'func', 'type', "
+                    "only 'struct', 'enum', 'interface', 'impl', 'library', 'func', 'type', "
                             + "'const', 'extern', 'export', and 'ASM' declarations (or a bare 'asm_name;' "
                             + "invocation) are allowed at the top level, found '" + t.text + "'");
         }
@@ -2766,7 +2756,7 @@ public class TypeChecker {
     /**
      * "type NAME <target>" -- just stores the raw target token span,
      * name-collision-checked against the same shared struct/enum/
-     * interface/abstract namespace (confirmed directly). Not checked
+     * interface namespace (confirmed directly). Not checked
      * against `globals` here (globals aren't registered until a later
      * pass) -- collectGlobal checks `aliasRawTargets` from its own side
      * instead, so the collision is still caught either way regardless of
@@ -2805,7 +2795,7 @@ public class TypeChecker {
     }
 
     /**
-     * "Shares the struct/enum/interface/abstract namespace," confirmed
+     * "Shares the struct/enum/interface namespace," confirmed
      * directly -- raw registration only (name/extends/decorators
      * captured, nothing about the library's own functions resolved
      * yet), the same "registered raw first, since one may extend
@@ -2831,13 +2821,13 @@ public class TypeChecker {
         libraries.put(name, info);
     }
 
-    private void registerStructLike(Token t, boolean isAbstract) {
+    private void registerStructLike(Token t) {
         String name = t.sub.get(0).text;
         if (structs.containsKey(name) || enums.containsKey(name) || interfaces.containsKey(name)
                 || libraries.containsKey(name)) {
             throw new CompilerException("type", t.file, t.line, "'" + name + "' is already declared");
         }
-        validateDecorators(t.decorators, STRUCT_DECORATORS, isAbstract ? "an abstract" : "a struct");
+        validateDecorators(t.decorators, STRUCT_DECORATORS, "a struct");
         // "@unpadded gets a not supported error for now," confirmed
         // directly -- every struct is now compiler-padded to its own
         // natural alignment by emitStruct below (see that method's own
@@ -2855,9 +2845,7 @@ public class TypeChecker {
                             + "natural alignment");
         }
         StructInfo info = new StructInfo(name);
-        info.isAbstract = isAbstract;
         info.isPublic = getDecorator(t.decorators, "pub") != null;
-        info.extendsNames = t.extendsNames != null ? t.extendsNames : new ArrayList<>();
         info.implementsNames = t.implementsNames != null ? t.implementsNames : new ArrayList<>();
         info.rawMemberLines = t.childs;
         info.declTok = t;
@@ -2866,75 +2854,14 @@ public class TypeChecker {
     }
 
     /**
-     * Recursively resolves `name`'s final, flattened member set. A
-     * struct's `extendsNames` is always capped at one entry (confirmed
-     * directly: "a struct can only inherit from one other struct" --
-     * generalized here to "one other struct-or-abstract", since a struct
-     * may also extend an abstract). An abstract with any member of its
-     * own is capped the same way; an abstract whose body is *entirely*
-     * "extends" lines (no member declarations at all) may have any
-     * number, each flattened in and collision-checked exactly like an
-     * interface's multi-extends -- confirmed directly as the one
-     * exception to single inheritance in this system.
+     * Resolves `name`'s final member set (a struct has only its own
+     * members -- struct inheritance does not exist) and validates its
+     * `swap` mutex field and struct-level `@lock` clause.
      */
     private void flattenStruct(String name, Set<String> visiting) {
         StructInfo info = structs.get(name);
         if (info == null || info.flattened) {
             return;
-        }
-        if (visiting.contains(name)) {
-            throw new CompilerException("type", info.declTok.file, info.declTok.line,
-                    "circular inheritance involving '" + name + "'");
-        }
-        visiting.add(name);
-
-        boolean pureExtends = info.rawMemberLines.isEmpty();
-        if (!info.isAbstract && info.extendsNames.size() > 1) {
-            throw new CompilerException("type", info.declTok.file, info.declTok.line,
-                    "a struct can only extend one other struct or abstract, '" + name + "' declares "
-                            + info.extendsNames.size());
-        }
-        if (info.isAbstract && info.extendsNames.size() > 1 && !pureExtends) {
-            throw new CompilerException("type", info.declTok.file, info.declTok.line,
-                    "abstract '" + name + "' has its own members, so it can only extend one other "
-                            + "abstract -- multiple 'extends' is only allowed for an abstract consisting "
-                            + "entirely of 'extends' clauses");
-        }
-
-        for (String parentName : info.extendsNames) {
-            StructInfo parentInfo = structs.get(parentName);
-            if (parentInfo == null) {
-                throw new CompilerException("type", info.declTok.file, info.declTok.line,
-                        "'" + parentName + "' is not a known struct or abstract");
-            }
-            if (getDecorator(parentInfo.declTok.decorators, "final") != null) {
-                throw new CompilerException("type", info.declTok.file, info.declTok.line,
-                        "'" + parentName + "' is '@final' -- it cannot be extended");
-            }
-            if (info.isAbstract && !parentInfo.isAbstract) {
-                throw new CompilerException("type", info.declTok.file, info.declTok.line,
-                        "abstract '" + name + "' can only extend another abstract, not struct '"
-                                + parentName + "'");
-            }
-            flattenStruct(parentName, visiting);
-            for (Map.Entry<String, TypeInfo> e : parentInfo.members.entrySet()) {
-                if (info.members.containsKey(e.getKey())) {
-                    throw new CompilerException("type", info.declTok.file, info.declTok.line,
-                            "'" + name + "' inherits a member named '" + e.getKey()
-                                    + "' from more than one extended type");
-                }
-                info.members.put(e.getKey(), e.getValue());
-                if (parentInfo.publicMembers.contains(e.getKey())) {
-                    // A member's own public/private status is fixed at
-                    // wherever it was originally declared -- carried
-                    // through inheritance so a later "is member X of
-                    // struct Y public" lookup gives the same answer
-                    // whether Y is the declaring struct or one that
-                    // merely extends it.
-                    info.publicMembers.add(e.getKey());
-                }
-                info.memberDeclFile.put(e.getKey(), parentInfo.memberDeclFile.get(e.getKey()));
-            }
         }
 
         String swapFieldName = null;
@@ -2984,9 +2911,9 @@ public class TypeChecker {
             validateLockEnumClause(lockDecorator, info, name);
             // "when a struct is decorated with @lock, then its first
             // member must be the lock in question" -- confirmed directly.
-            // info.members is the flattened, ordered list (parent members
-            // first, then own); the hidden ___type field is not in it, so
-            // "first" means the first user-declared member.
+            // info.members is the ordered list of declared members; the
+            // hidden ___type field is not in it, so "first" means the
+            // first user-declared member.
             if (!info.members.isEmpty()) {
                 String firstMember = info.members.keySet().iterator().next();
                 if (!firstMember.equals(lockDecorator.lockFieldName)) {
@@ -3016,7 +2943,6 @@ public class TypeChecker {
         }
 
         info.flattened = true;
-        visiting.remove(name);
     }
 
     /**
@@ -3443,8 +3369,8 @@ public class TypeChecker {
     }
 
     /**
-     * Recursively resolves `name`'s final, flattened method set. Unlike
-     * struct/abstract, an interface's `extendsNames` has no cap at all
+     * Recursively resolves `name`'s final, flattened method set. An
+     * interface's `extendsNames` has no cap at all
      * (confirmed directly: "an interface can extend over many
      * interfaces") -- every extended interface's already-flattened
      * method set is merged in, name-collision-checked, before this
@@ -3598,13 +3524,6 @@ public class TypeChecker {
             throw new CompilerException("type", t.file, t.line,
                     "'" + concreteName + "' is not a known struct or enum");
         }
-        if (concreteIsStruct && structs.get(concreteName).isAbstract) {
-            throw new CompilerException("type", t.file, t.line,
-                    "cannot 'impl' on abstract '" + concreteName + "' -- an abstract can never be "
-                            + "instantiated, so it can never have a method implementation of its own; "
-                            + "implement interfaces on the concrete structs that extend it instead");
-        }
-
         InterfaceInfo interfaceInfo = null;
         if (interfaceName != null) {
             interfaceInfo = interfaces.get(interfaceName);
@@ -4775,7 +4694,7 @@ public class TypeChecker {
             "pure", "recursive", "inline", "call_convention", "reads", "writes",
             "gt_init", "gt_alive_check", "gt_destruct", "gt_register", "par_call", "await_call", "sleep",
             "lock", "unlock", "async", "pub", "with_tick", "tick", "event_loop", "make_safe_args", "throws"));
-    private static final Set<String> STRUCT_DECORATORS = new HashSet<>(Arrays.asList("unpadded", "final", "untyped", "pub", "lock"));
+    private static final Set<String> STRUCT_DECORATORS = new HashSet<>(Arrays.asList("unpadded", "untyped", "pub", "lock"));
     private static final Set<String> ENUM_DECORATORS = new HashSet<>(Arrays.asList("non_exhaustive"));
     private static final Set<String> INTERFACE_DECORATORS = new HashSet<>(Arrays.asList("guard", "pub"));
     /** "structs, func definitions, struct members, interfaces, impls and impl members," confirmed directly -- 'impl' itself never validated any decorator at all before this; "pub" is genuinely its first one. */
@@ -6854,8 +6773,8 @@ public class TypeChecker {
      * cycle of any length, to get the guarantees we want"). Checked
      * post-monomorphization (confirmed directly, "yeah just do it post
      * monomorphization") on each concrete struct's own already-
-     * flattened `members` map -- own + every ancestor's, since
-     * "extensions should ultimately be flattened into their children,"
+     * flattened `members` map -- (structs have no ancestors; this
+     * used to flatten inherited members),
      * confirmed directly, meaning 'extends' itself contributes no
      * *direct* edge here at all; a cycle arising purely through
      * inherited members is still caught, since those members are
@@ -8491,14 +8410,11 @@ public class TypeChecker {
     }
 
     /**
-     * "cast varName as TypeName{ ... }" -- shadows `varName` with a
-     * narrowed (ancestor) static type for the duration of the block,
-     * exactly the way any nested `{}` scope shadows an outer variable;
-     * the original binding (and its original, wider member set) is back
-     * in effect the moment the block ends, same as ordinary scope exit.
-     * Only upcasting is allowed, confirmed directly -- `isAncestorOf`
-     * walks the (possibly multi-parent, for a "pure extends" abstract)
-     * extends graph rather than assuming a single linear chain.
+     * "cast varName as TypeName{ ... }" -- REMOVED together with struct
+     * "extends": it only ever narrowed a variable to an ancestor struct,
+     * and there are no ancestors any more. The syntax is still parsed so
+     * that using it gets a clear, specific error rather than a generic
+     * parse failure.
      */
     private void checkCast(Token castTok, Scope scope, FuncInfo func, boolean insideLoop) {
         Token varTok = castTok.sub.get(0);
@@ -8511,29 +8427,12 @@ public class TypeChecker {
             throw new CompilerException("type", varTok.file, varTok.line,
                     "use of undeclared variable '" + varName + "'");
         }
-        StructInfo currentInfo = structs.get(currentType.baseType);
-        if (currentInfo == null) {
-            throw new CompilerException("type", castTok.file, castTok.line,
-                    "'cast' can only be used on a struct- or abstract-typed variable; '" + varName
-                            + "' has type '" + currentType.canonical() + "'");
-        }
-        if (!structs.containsKey(targetType)) {
-            throw new CompilerException("type", targetTok.file, targetTok.line,
-                    "'" + targetType + "' is not a known struct or abstract");
-        }
-        if (!isAncestorOf(targetType, currentType.baseType)) {
-            throw new CompilerException("type", castTok.file, castTok.line,
-                    "'cast' only allows upcasting -- '" + targetType + "' is not an ancestor of '"
-                            + currentType.baseType + "'");
-        }
-
-        TypeInfo narrowedType = new TypeInfo(currentType.storage, currentType.mutability, targetType);
-        Scope inner = new Scope(scope);
-        inner.vars.put(varName, narrowedType);
-        checkLinesInScope(castTok.childs, inner, func, insideLoop);
-        // Same reasoning as an 'if' branch or match block -- a 'cast'
-        // block's own natural end isn't a function/loop boundary.
-        castTok.destructOnExit = collectNaturalEndDestruct(castTok.childs, inner, inner);
+        // A 'cast' block only ever narrowed a struct to an ancestor struct.
+        // Structs have no 'extends' any more, so there is nothing to cast to.
+        throw new CompilerException("type", castTok.file, castTok.line,
+                "'cast' has been removed together with struct 'extends' (there is no ancestor of '"
+                        + currentType.baseType + "' to cast '" + varName + "' to '" + targetType
+                        + "'); use composition and interfaces instead");
     }
 
     /**
@@ -9206,24 +9105,18 @@ public class TypeChecker {
     }
 
     /**
-     * "only in a match statement a Struct.enum may be used in place of
-     * a literal struct name for instanceof, or a Interface.enum for an
-     * implements, which then produces an enum style match statement,"
-     * confirmed directly -- "match x instanceof ParentClass.enum{
-     * SubClass1:{...} SubClass2:{...} }" / "match x implements
-     * MyInterface.enum{ StructWhichImplementsA:{...} ... }". Each
-     * case's own label names a real member of the owner's own
-     * compiler-synthesized "$enum_for_OwnerName" enum (see
-     * TypeChecker.generateEnumForEnums) -- a struct/abstract's direct
-     * children for 'instanceof', an interface's implementers for
-     * 'implements' -- and "must also be exhaustive," confirmed
-     * directly, over that exact membership list (no 'default' case
-     * exists for this form, matching how it was actually specified).
-     * "in here is the same type assertion as if it was in a match x
-     * instanceof SubClass1{}," confirmed directly -- each case's own
-     * body gets the identical "instanceof"/"implements" MatchPattern
-     * proof checkMatchCondition's own ordinary "x instanceof Y" case
-     * already records, just derived from this construct instead.
+     * Only in a match statement may an Interface.enum be used in place of
+     * a literal interface name for implements, which then produces an enum
+     * style match statement: "match x implements MyInterface.enum{
+     * StructWhichImplementsA:{...} ... }". Each case's own label names a
+     * real member of the interface's compiler-synthesized
+     * "$enum_for_InterfaceName" enum (see TypeChecker.generateEnumForEnums)
+     * -- the interface's implementers -- and the match must be exhaustive
+     * over that exact membership list (no 'default' case exists for this
+     * form). Structs have no subclasses, so 'Struct.enum' no longer exists.
+     * Each case's own body gets the "instanceof" MatchPattern proof that
+     * checkMatchCondition's own ordinary "x instanceof Y" case records,
+     * just derived from this construct instead.
      */
     private void checkEnumForMatch(Token matchTok, Token conditionExpr, Scope scope, FuncInfo func,
             boolean insideLoop) {
@@ -9232,15 +9125,9 @@ public class TypeChecker {
         String ownerName = conditionExpr.right.left.text;
         List<String> memberNames;
         if (isInstanceof) {
-            if (!structs.containsKey(ownerName)) {
-                throw new CompilerException("type", conditionExpr.right.file, conditionExpr.right.line,
-                        "'" + ownerName + "' is not a known struct or abstract");
-            }
-            memberNames = classHierarchyChildrenOf == null ? null : classHierarchyChildrenOf.get(ownerName);
-            if (memberNames == null || memberNames.isEmpty()) {
-                throw new CompilerException("type", conditionExpr.right.file, conditionExpr.right.line,
-                        "'" + ownerName + "' has no direct children -- '.enum' requires at least one");
-            }
+            throw new CompilerException("type", conditionExpr.right.file, conditionExpr.right.line,
+                    "'" + ownerName + ".enum' no longer exists: structs have no subclasses. "
+                            + "Only an interface has an '.enum' (use 'x implements " + ownerName + "')");
         } else {
             if (!interfaces.containsKey(ownerName)) {
                 throw new CompilerException("type", conditionExpr.right.file, conditionExpr.right.line,
@@ -9254,8 +9141,8 @@ public class TypeChecker {
             memberNames = enumForInfo.variants;
         }
         // Validate x itself exactly as an ordinary "x instanceof
-        // FirstMember" would (leftType is a struct/abstract, alive-
-        // proof, @untyped) -- reuses checkInstanceof directly, on a
+        // FirstMember" would (leftType is an interface-typed value,
+        // alive-proof, @untyped) -- reuses checkInstanceof directly, on a
         // throwaway node built against the owner's own first member,
         // purely so every one of those existing checks runs once, up
         // front, with a clear error if x itself is invalid, before any
@@ -9284,8 +9171,7 @@ public class TypeChecker {
                 }
                 if (!required.contains(labelName)) {
                     throw new CompilerException("type", label.file, label.line,
-                            "'" + labelName + "' is not a " + (isInstanceof ? "direct child of '" : "known implementer of '")
-                                    + ownerName + "'");
+                            "'" + labelName + "' is not a known implementer of '" + ownerName + "'");
                 }
                 if (!covered.add(labelName)) {
                     throw new CompilerException("type", label.file, label.line,
@@ -9298,8 +9184,7 @@ public class TypeChecker {
                 // Always an "instanceof" proof, even for the
                 // 'implements'-on-interface form -- a case label always
                 // names a concrete struct (the interface's own
-                // implementer, or the struct/abstract's own direct
-                // child), never an interface itself, so the real
+                // implementer), never an interface itself, so the real
                 // assertion a case body gains is always "x is this
                 // exact concrete type," the identical guarantee "match
                 // x instanceof SubClass1{}" already gives -- "in here is
@@ -9798,27 +9683,10 @@ public class TypeChecker {
         return rightExpr;
     }
 
-    /** Walks the (possibly multi-parent) extends graph -- true if `ancestorName` is `descendantName` itself or reachable via any "extends" chain. */
-    private boolean isAncestorOf(String ancestorName, String descendantName) {
-        if (ancestorName.equals(descendantName)) {
-            return true;
-        }
-        StructInfo info = structs.get(descendantName);
-        if (info == null) {
-            return false;
-        }
-        for (String parent : info.extendsNames) {
-            if (isAncestorOf(ancestorName, parent)) {
-                return true;
-            }
-        }
-        return false;
-    }
 
     /**
      * "We should also be able to bind to parent classes or interfaces,"
-     * confirmed directly -- true if `structName`, or any ancestor
-     * reachable through its own 'extends' chain, implements
+     * confirmed directly -- true if `structName` implements
      * `interfaceName` (directly or, since an interface can itself
      * 'extends' another, transitively). `StructInfo.implementsNames` is
      * never flattened down an 'extends' chain the way struct members
@@ -9889,11 +9757,6 @@ public class TypeChecker {
                 if (impl.interfaceName != null && interfaceExtendsOrIs(impl.interfaceName, interfaceName)) {
                     return true;
                 }
-            }
-        }
-        for (String parent : info.extendsNames) {
-            if (structImplementsInterface(parent, interfaceName)) {
-                return true;
             }
         }
         return false;
@@ -12059,7 +11922,7 @@ public class TypeChecker {
      * against a pointer-typed bound (reusing the same isPointerType
      * rule already used everywhere else null is accepted -- nothing new
      * built for this), an exact type match, or -- the one genuinely new
-     * capability here -- the RHS being a descendant of a struct/abstract
+     * capability here -- the RHS being an implementer of an interface
      * bound ("we should also be able to bind to parent classes or
      * interfaces," confirmed directly), with compatible storage/
      * mutability either way. No implicit casting beyond this -- "it
@@ -12101,8 +11964,6 @@ public class TypeChecker {
         } else {
             requireConcreteMutability(rhsType, rhsExpr);
             boolean sameOrAncestor = rhsType.baseType.equals(bound.baseType)
-                    || (structs.containsKey(bound.baseType) && structs.containsKey(rhsType.baseType)
-                            && isAncestorOf(bound.baseType, rhsType.baseType))
                     || (interfaces.containsKey(bound.baseType) && structs.containsKey(rhsType.baseType)
                             && structImplementsInterface(rhsType.baseType, bound.baseType));
             boolean literalOk = literalAdapts(bound, rhsType);
@@ -15451,18 +15312,12 @@ public class TypeChecker {
     }
 
     /**
-     * "structOrAbstractValue instanceof TypeName" -- a runtime check
-     * (confirmed directly: this needs an actual bytecode instruction, not
-     * a compile-time fold, since the left side's *runtime* concrete type
-     * can differ from its static type once interfaces/abstracts/`cast`
-     * are involved). Type-checking only, for now: validates the left
-     * side is struct/abstract-typed and the right side names a known
-     * struct/abstract, and resolves to 'bool'. The actual runtime tag
-     * comparison in BytecodeEmitter (the "single type byte" / leading
-     * u64 RTTI tag the project now needs) is a separate, not-yet-done
-     * piece of work -- see CLAUDE.md's "Next steps".
+     * "ifaceValue instanceof StructName" -- a runtime check: the left side must be
+     * interface-typed, the right side must name a struct. It compares the value's
+     * hidden `___type` class id against the named struct's own id. Never valid on a
+     * struct-typed left side (its type is already known statically).
      */
-    /** True if `structName` (the exact struct/abstract itself, not any ancestor or descendant) is decorated `@untyped` -- struct-level decorators in this project don't inherit through 'extends', matching every other one (`@final`/`@unpadded`). */
+    /** True if `structName` is decorated `@untyped` (no hidden class id, so no runtime type information). */
     private boolean isUntyped(String structName) {
         StructInfo si = structs.get(structName);
         return si != null && getDecorator(si.declTok.decorators, "untyped") != null;
@@ -15472,12 +15327,10 @@ public class TypeChecker {
         TypeInfo leftType = resolveExprType(op.left, scope, func);
         // Also legal on an interface-typed value ("c: C" where C is an
         // interface) -- this is the mirror-image of the ordinary
-        // struct/abstract case: instead of narrowing an abstract value
-        // down to one of its own concrete children, this narrows a
-        // value only known through its interface type down to one of
-        // that interface's own real implementers. Same runtime check
-        // either way (a ClassID comparison against the named struct's
-        // own tag), so nothing below this gate needs to change -- an
+        // This is the only legal shape: it narrows a value only known
+        // through its interface type down to one of that interface's own
+        // real implementers. The runtime check is a class-id comparison
+        // against the named struct's own tag, so nothing below this gate needs to change -- an
         // interface-typed leftType simply skips isUntyped (interfaces
         // aren't @untyped-able, isUntyped safely returns false for a
         // name absent from 'structs') and the alive-proof gate right
@@ -15485,9 +15338,9 @@ public class TypeChecker {
         // on its own (see TypeInfo/requiresAliveProof), so this widening
         // doesn't relax anything -- a bare interface-typed local still
         // needs the same proven 'Some(...)' this always required.
-        if (!structs.containsKey(leftType.baseType) && !interfaces.containsKey(leftType.baseType)) {
+        if (!interfaces.containsKey(leftType.baseType)) {
             throw new CompilerException("type", op.left.file, op.left.line,
-                    "'instanceof' can only be used on a struct-, abstract-, or interface-typed value, got '"
+                    "'instanceof' can only be used on an interface-typed value ('x instanceof SomeStruct'), got '"
                             + leftType.canonical() + "'");
         }
         // "instanceof and implements can be done on nullable types. They
@@ -15521,12 +15374,12 @@ public class TypeChecker {
         }
         if (op.right.type != TokenType.VARREF) {
             throw new CompilerException("type", op.right.file, op.right.line,
-                    "expected a struct or abstract name on the right of 'instanceof'");
+                    "expected a struct name on the right of 'instanceof'");
         }
         String targetName = op.right.text;
         if (!structs.containsKey(targetName)) {
             throw new CompilerException("type", op.right.file, op.right.line,
-                    "'" + targetName + "' is not a known struct or abstract");
+                    "'" + targetName + "' is not a known struct");
         }
         if (isUntyped(targetName)) {
             throw new CompilerException("type", op.right.file, op.right.line,
@@ -15538,9 +15391,8 @@ public class TypeChecker {
     }
 
     /**
-     * "structOrAbstractValue implements InterfaceName" -- same runtime
-     * check as 'instanceof', except the right side names an interface.
-     * Type-checking only for now; see checkInstanceof's doc comment.
+     * "structValue implements InterfaceName" -- the left side must be struct-typed,
+     * the right side must name an interface (a statically decidable question).
      */
     private TypeInfo checkImplementsOperator(Token op, Scope scope, FuncInfo func) {
         TypeInfo leftType = resolveExprType(op.left, scope, func);
@@ -15548,11 +15400,10 @@ public class TypeChecker {
         // its doc comment above for why an interface-typed left operand
         // ("c: C") is legal here too: "does the struct concretely behind
         // this interface-typed value implement SomeOtherInterface" is
-        // exactly as real a runtime question as the struct/abstract
-        // case already was.
-        if (!structs.containsKey(leftType.baseType) && !interfaces.containsKey(leftType.baseType)) {
+        // a real runtime question.
+        if (!structs.containsKey(leftType.baseType)) {
             throw new CompilerException("type", op.left.file, op.left.line,
-                    "'implements' can only be used on a struct-, abstract-, or interface-typed value, got '"
+                    "'implements' can only be used on a struct-typed value ('x implements SomeInterface'), got '"
                             + leftType.canonical() + "'");
         }
         // Same gate, same reasoning, as checkInstanceof's own -- see its
@@ -16468,37 +16319,12 @@ public class TypeChecker {
         return slotKeyOf(node);
     }
 
-    /** True if `derivedName` (transitively, through any number of `extends` hops) is or descends from `baseName`. Termination guaranteed the same way flattenStruct's own cycle-detection already relies on: circular inheritance is a separate, unconditional hard error, so this chain can never loop. */
-    private boolean structExtendsTransitively(String derivedName, String baseName) {
-        if (derivedName.equals(baseName)) {
-            return true;
-        }
-        StructInfo info = structs.get(derivedName);
-        if (info == null) {
-            return false;
-        }
-        for (String parent : info.extendsNames) {
-            if (structExtendsTransitively(parent, baseName)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     /**
      * "If a member of a struct, it is only referenceable in an impl for
      * that struct, or an impl for an interface on that struct,"
-     * confirmed directly, extended by "also from an impl of a struct
-     * that extends it," confirmed directly. `receiverStructName` is the
-     * receiver's own static type (`leftType.baseType`), which may
-     * itself already be a derived struct -- "an impl for that struct"
-     * naturally covers this case too (the enclosing impl's own
-     * `concreteName` simply equals the receiver's type directly, no
-     * extends-chain walk needed), so the transitive check below only
-     * ever needs to run in the direction "does the enclosing impl's own
-     * struct descend from the receiver's" (an impl of a *more* derived
-     * struct reaching into a *less* derived value's private member),
-     * never the reverse.
+     * confirmed directly. `receiverStructName` is the receiver's own
+     * static type (`leftType.baseType`); the enclosing impl's own
+     * `concreteName` must equal it.
      */
     private void checkStructMemberVisibility(StructInfo structInfo, String receiverStructName, String memberName,
             Token at, FuncInfo callerFunc) {
@@ -16511,12 +16337,11 @@ public class TypeChecker {
                     "'" + memberName + "' is private -- not accessible outside the file it's declared in");
         }
         boolean qualifies = callerFunc != null && callerFunc.enclosingImpl != null
-                && structExtendsTransitively(callerFunc.enclosingImpl.concreteName, receiverStructName);
+                && callerFunc.enclosingImpl.concreteName.equals(receiverStructName);
         if (!qualifies) {
             throw new CompilerException("type", at.file, at.line,
                     "'" + memberName + "' is private -- only referenceable in an impl for '"
-                            + receiverStructName + "', an impl for an interface on it, or an impl for a "
-                            + "struct that extends it");
+                            + receiverStructName + "' or an impl for an interface on it");
         }
     }
 
@@ -16707,11 +16532,6 @@ public class TypeChecker {
                     "'" + structName + "' is not a known struct");
         }
         checkTypeNameVisibility(structName, op.left);
-        if (structInfo.isAbstract) {
-            throw new CompilerException("type", op.left.file, op.left.line,
-                    "'" + structName + "' is abstract and cannot be instantiated directly -- construct "
-                            + "one of the structs that extends it instead");
-        }
         // "OTC only accessible there means nowhere else either on stack
         // or via new," confirmed directly -- once a struct declares its
         // own constructor(s), its bare "StructName{...}" literal (the
@@ -17422,108 +17242,40 @@ public class TypeChecker {
     }
 
     /**
-     * "I want the compiler to generate the above [nested-hierarchy]
-     * for abstract/struct hierarchy for the actual final compilation
-     * unit and include it, so it can be used by the user. There should
-     * be both a Class and a corresponding ClassID enum," confirmed
-     * directly. Called once, at the very end of `collectDeclarations`
-     * (impls already fully collected by then, needed for the
-     * interface side of `generateEnumForEnums`) -- entirely as real
-     * `EnumInfo`/root-token data, the same "synthesized directly,
-     * never written as real Caspien source" precedent
-     * `ensureAsyncStateEnum` already established, just eager and
-     * unconditional (once per compilation) rather than lazy.
-     *
-     * "One global pair over every non-@untyped struct+abstract in the
-     * whole compilation unit, declaration order, forest of roots for
-     * top-level ones," confirmed directly -- a struct/abstract with no
-     * single tree parent (no 'extends' at all, or a "pure extends"
-     * abstract with more than one, which is interface-like and has no
-     * single parent for this scheme to place it under) is its own
-     * root, in `structDeclOrder`. `Class` is range-valued (the exact
-     * pre-order-numbering algorithm `Parser.parseNestedEnumVariant`
-     * already established for the general nested-hierarchy enum
-     * syntax, applied here to the real struct tree instead of literal
-     * source nesting); `ClassID` is u64-valued, one value per name,
-     * always equal to that name's own `Class` range start -- the two
-     * are built from the exact same pre-order walk so they can never
-     * drift apart from each other.
-     *
-     * If there is not a single eligible struct/abstract in the whole
-     * program, neither enum is generated at all -- nothing for a user
-     * program with no structs to reference, and no risk of an
-     * unexplained, empty "Class"/"ClassID" enum showing up for it.
+     * Generates the compiler-owned `Class` enum: one u64 variant per
+     * non-@untyped struct in the compilation unit, in declaration order,
+     * numbered 0..n-1. A struct's value is its hidden `___type` class id
+     * (offset 0 of every instance), which interface dispatch and
+     * `x instanceof Struct` compare against. Called once, at the end of
+     * `collectDeclarations`. Built directly as `EnumInfo`/root-token data
+     * (the `ensureAsyncStateEnum` precedent). With no eligible struct, no
+     * enum is generated. `Class` is reserved.
      */
     private void generateClassHierarchyEnums() {
-        if (enums.containsKey("Class") || enums.containsKey("ClassID") || structs.containsKey("Class")
-                || structs.containsKey("ClassID") || interfaces.containsKey("Class")
-                || interfaces.containsKey("ClassID")) {
+        if (enums.containsKey("Class") || structs.containsKey("Class") || interfaces.containsKey("Class")) {
             throw new CompilerException("type", "<synthesized>", 0,
-                    "'Class'/'ClassID' are reserved for the compiler-generated struct/abstract hierarchy "
-                            + "enums -- rename the conflicting declaration");
+                    "'Class' is reserved for the compiler-generated enum of every struct -- "
+                            + "rename the conflicting declaration");
         }
-        Map<String, List<String>> childrenOf = new LinkedHashMap<>();
-        List<String> roots = new ArrayList<>();
+        EnumInfo classInfo = new EnumInfo("Class");
+        classInfo.explicitValues = new ArrayList<>();
+        long next = 0;
         for (String name : structDeclOrder) {
             if (isUntyped(name)) {
                 continue;
             }
-            StructInfo info = structs.get(name);
-            String parent = info.extendsNames.size() == 1 ? info.extendsNames.get(0) : null;
-            if (parent != null && structs.containsKey(parent) && !isUntyped(parent)) {
-                childrenOf.computeIfAbsent(parent, k -> new ArrayList<>()).add(name);
-            } else {
-                roots.add(name);
-            }
+            classInfo.variants.add(name);
+            classInfo.explicitValues.add(next);
+            structs.get(name).classId = next;
+            next++;
         }
-        classHierarchyChildrenOf = childrenOf;
-        if (roots.isEmpty()) {
+        if (classInfo.variants.isEmpty()) {
             return;
         }
-        List<String> order = new ArrayList<>();
-        Map<String, Long> startIdxOf = new HashMap<>();
-        Map<String, Long> endIdxOf = new HashMap<>();
-        long[] counter = {0};
-        for (String rootName : roots) {
-            walkClassHierarchy(rootName, childrenOf, order, startIdxOf, endIdxOf, counter);
-        }
-        EnumInfo classInfo = new EnumInfo("Class");
-        EnumInfo classIdInfo = new EnumInfo("ClassID");
-        classInfo.explicitRangeStarts = new ArrayList<>();
-        classInfo.explicitRangeEnds = new ArrayList<>();
-        classIdInfo.explicitValues = new ArrayList<>();
-        for (String name : order) {
-            classInfo.variants.add(name);
-            classInfo.explicitRangeStarts.add(startIdxOf.get(name));
-            classInfo.explicitRangeEnds.add(endIdxOf.get(name));
-            classIdInfo.variants.add(name);
-            classIdInfo.explicitValues.add(startIdxOf.get(name));
-            structs.get(name).classId = startIdxOf.get(name);
-        }
         enums.put("Class", classInfo);
-        enums.put("ClassID", classIdInfo);
         appendSynthesizedEnumRootToken("Class");
-        appendSynthesizedEnumRootToken("ClassID");
     }
 
-    /** childrenOf built by generateClassHierarchyEnums, reused directly by generateEnumForEnums for the struct/abstract side of "enum for X" (its own membership is exactly this same direct-children list) -- never recomputed a second time. */
-    private Map<String, List<String>> classHierarchyChildrenOf;
-
-    private void walkClassHierarchy(String name, Map<String, List<String>> childrenOf, List<String> order,
-            Map<String, Long> startIdxOf, Map<String, Long> endIdxOf, long[] counter) {
-        long startIdx = counter[0]++;
-        order.add(name);
-        startIdxOf.put(name, startIdx);
-        List<String> children = childrenOf.get(name);
-        long endIdx = startIdx;
-        if (children != null) {
-            for (String childName : children) {
-                walkClassHierarchy(childName, childrenOf, order, startIdxOf, endIdxOf, counter);
-            }
-            endIdx = counter[0] - 1;
-        }
-        endIdxOf.put(name, endIdx);
-    }
 
     private void appendSynthesizedEnumRootToken(String enumName) {
         Token nameTok = new Token(TokenType.VARREF, enumName, 0, "<synthesized>");
@@ -17535,15 +17287,12 @@ public class TypeChecker {
     }
 
     /**
-     * "The compiler should also generate a special third type of enum
-     * that is never written by the user... It's an enum for an
-     * interface, abstract or struct... enum for MyInterface{
-     * StructWhichImplementsA:ClassId, StructWhichImplementsB:ClassId }
-     * ... enum for ParentClass{ SubClass1 SubClass2 }," confirmed
-     * directly, together with "Direct children only, one case per
-     * immediate subclass" for the struct/abstract side. Every such
-     * enum is u64-valued (each member's own value is that concrete
-     * struct's own `ClassID`) and lives under a synthetic,
+     * A compiler-generated enum, never written by the user, for each
+     * interface: enum for MyInterface{ StructWhichImplementsA,
+     * StructWhichImplementsB }, one member per implementing struct.
+     * (Struct inheritance has been removed, so there is no struct-side
+     * form.) Every such enum is u64-valued (each member's own value is
+     * that concrete struct's own `Class` id) and lives under a synthetic,
      * never-user-nameable key (`"$enum_for_" + ownerName`, the same
      * `$`-prefixed "never real source" convention `$range`/
      * `$for_range_N` already established) -- reached only through the
@@ -17573,14 +17322,6 @@ public class TypeChecker {
             }
             if (!implementers.isEmpty()) {
                 registerEnumForEnum(interfaceName, implementers);
-            }
-        }
-        if (classHierarchyChildrenOf != null) {
-            for (String name : structDeclOrder) {
-                List<String> children = classHierarchyChildrenOf.get(name);
-                if (children != null && !children.isEmpty()) {
-                    registerEnumForEnum(name, children);
-                }
             }
         }
     }
@@ -19167,7 +18908,7 @@ public class TypeChecker {
             return storageCompatible(expected.storage, actual.storage);
         }
         // A concrete struct value satisfies an interface-typed slot it
-        // really implements -- "structOrAbstractValue implements
+        // really implements -- "structValue implements
         // InterfaceName" was already true as a runtime/instanceof-style
         // fact; a param/assignment/return slot declared as that
         // interface is the ordinary, general place this needs to hold

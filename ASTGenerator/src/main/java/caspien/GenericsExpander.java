@@ -1031,7 +1031,7 @@ public class GenericsExpander {
         // (decorators, isPubBlockMember, typeBound, isStaticMethod, all
         // found and fixed above in earlier rounds): "extends"/
         // "implements" were never copied at all, so a generic
-        // struct/abstract/interface/library with its own "extends"
+        // interface/library with its own "extends"
         // clause silently lost every one of its parents the instant it
         // was monomorphized -- confirmed directly this needed fixing
         // for real while adding generic library support, since a

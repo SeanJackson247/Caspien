@@ -455,7 +455,7 @@ public class AddressLoweringPass implements OptimizationPass {
                 }
                 // "STRUCT_START"/"STRUCT_MEMBER"/"STRUCT_END" and "ENUM"
                 // (both a plain, user-declared one and every compiler-
-                // synthesized one -- "Class", "ClassID", "$enum_for_...")
+                // synthesized one -- "Class", "$enum_for_...")
                 // -- dropped here too, now that every real use either of
                 // them ever had is already fully spent by this exact
                 // point in this exact pass:
@@ -482,13 +482,13 @@ public class AddressLoweringPass implements OptimizationPass {
                 //     new `resolveLiteralOrEnumValue`, via `EnumTable.
                 //     read(lines)`, the identical "read once, up front,
                 //     off the original lines" shape `StructTable` already
-                //     has); a "Class" enum's own [lo,hi] subtree range and
-                //     a "$enum_for_..." enum's own ClassID list, both
+                //     has); the "Class" enum's class ids and
+                //     a "$enum_for_..." enum's class-id list, both
                 //     already fully consumed by `MembershipLoweringPass`
                 //     -- a strictly *earlier* pass -- and rewritten there
                 //     into literal comparisons, well before this pass ever
                 //     starts; and a struct instance's own hidden
-                //     `___type`/ClassID field, which was never enum-
+                //     `___type` class-id field, which was never enum-
                 //     mediated at runtime in the first place -- always a
                 //     plain integer literal, pushed directly by
                 //     `BytecodeEmitter.emitStruct`'s own construction code
@@ -1199,9 +1199,9 @@ public class AddressLoweringPass implements OptimizationPass {
         return -1;
     }
 
-    /** The struct's class id (the value of its `___type` push), or null if the ClassID enum does not list it. */
+    /** The struct's class id (the value of its `___type` push), or null if the Class enum does not list it. */
     private static Long classIdOf(String structBaseType, EnumTable enumTable) {
-        return enumTable == null ? null : enumTable.variantValue("ClassID", structBaseType);
+        return enumTable == null ? null : enumTable.variantValue("Class", structBaseType);
     }
 
     private static Long typeIdValue(List<BytecodeToken> pushLine) {
@@ -2901,9 +2901,7 @@ public class AddressLoweringPass implements OptimizationPass {
         if (direct != null) {
             return direct;
         }
-        // "instanceof"/"implements" narrowing fallback -- see
-        // memberLocViaExtendingStruct's own doc comment.
-        return memberLocViaExtendingStruct(baseType, layout, memberName, sizes, structTable);
+        return null;
     }
 
     private static MemberLoc walkLayoutFor(List<StructTable.LayoutEntry> layout, String memberName,
@@ -2920,105 +2918,6 @@ public class AddressLoweringPass implements OptimizationPass {
             offset += sizes.sizeOf(entry.member.canonicalType);
         }
         return null;
-    }
-
-    /**
-     * `TypeChecker`'s own "instanceof"/"implements" narrowing (see
-     * `narrowInstanceofSlots`) lets a variable's *static* type be treated
-     * as a subclass for the rest of a match arm ("match b instanceof
-     * Sub{ let z = mut b.y }", `y` declared only on `Sub`, not `Base`) --
-     * fully type-checked and correctly resolved at that stage
-     * (`op.left.resolvedType` really does read `"mut_Sub"` inside that
-     * arm). But this bytecode format has no way to carry that fact
-     * forward: `BytecodeEmitter.emitDot`'s own `qualifiedDotName` builds
-     * a dotted chain's text purely from each node's own `.text` ("b.y"),
-     * never consulting `op.left.resolvedType` at all -- confirmed
-     * directly, the narrowing information exists in memory at emission
-     * time and is simply never written down. By the time this pass sees
-     * "b.y", `localTypes.get("b")` is unconditionally `b`'s own
-     * *declared* type from its `ALLOC` line ("Base") -- the narrowed
-     * "Sub" fact is already gone, and `walkLayoutFor` above (walking
-     * `Base`'s own real layout) can never find a member "Base" itself
-     * doesn't declare.
-     *
-     * Recovering the missing fact here, rather than threading it through
-     * three separate bytecode formats, works because of how `extends` is
-     * physically represented: this bytecode format has **no explicit
-     * "extends" declaration at all** -- a child struct's own
-     * `STRUCT_START`/`STRUCT_MEMBER` block is already fully flattened by
-     * the compiler (parent's own fields, in the parent's own order, then
-     * the child's own additional fields -- see `caspien-compiler`'s own
-     * CLAUDE.md), and single inheritance is a hard compiler-level rule
-     * (a non-abstract struct can only ever extend one parent). Put
-     * together, this means "does struct S extend Base" is always
-     * recoverable *structurally*, with no separate relationship to look
-     * up: S extends Base (directly or transitively) exactly when S's own
-     * real layout begins with Base's own real layout, entry for entry,
-     * as a strict prefix.
-     *
-     * So: scan every struct name `StructTable` knows about (added
-     * specifically for this, via `StructTable.allStructNames`) for one
-     * whose own layout is a strict, entry-for-entry prefix-extension of
-     * `baseLayout`, and which genuinely declares `memberName` somewhere
-     * in its own full layout (walked directly, non-recursively -- no
-     * further extends-fallback needed for a *transitive* grandchild,
-     * since flattening already means a grandchild's own layout already
-     * contains its grandparent's layout as a prefix too).
-     *
-     * **Deliberately conservative on ambiguity**: if two or more
-     * qualifying extending structs disagree about where (or as what
-     * type) `memberName` lives -- e.g. two different direct children of
-     * `Base` each independently declaring their own, differently-offset
-     * "y" -- there is no way to tell, from "b.y" alone, which one was
-     * actually proven at the real `instanceof`/`implements` site (that
-     * fact was already discarded, per this method's own doc comment
-     * above), so this bails to `null` (left unresolved, the same "don't
-     * guess" fallback every other gap in this codebase's lowering passes
-     * already relies on) rather than silently picking one. A truly
-     * unambiguous fix would thread the narrowed type through
-     * `BytecodeEmitter`/`MembershipLoweringPass` explicitly instead --
-     * flagged as a follow-up, not attempted here, since every currently
-     * known real fixture exercising this shape has only a single
-     * qualifying extending struct.
-     */
-    private MemberLoc memberLocViaExtendingStruct(String baseType, List<StructTable.LayoutEntry> baseLayout,
-            String memberName, SizeCalculator sizes, StructTable structTable) {
-        MemberLoc found = null;
-        for (String candidateName : structTable.allStructNames()) {
-            if (candidateName.equals(baseType)) {
-                continue;
-            }
-            List<StructTable.LayoutEntry> candidateLayout = structTable.layoutOf(candidateName);
-            if (candidateLayout == null || candidateLayout.size() <= baseLayout.size()
-                    || !layoutStartsWith(candidateLayout, baseLayout)) {
-                continue;
-            }
-            MemberLoc loc = walkLayoutFor(candidateLayout, memberName, sizes);
-            if (loc == null) {
-                continue;
-            }
-            if (found != null && !(found.offset == loc.offset && found.type.equals(loc.type))) {
-                return null; // genuinely ambiguous between two extending structs -- leave unresolved rather than guess
-            }
-            found = loc;
-        }
-        return found;
-    }
-
-    /** True when `longer`'s own layout begins, entry for entry (same member name and type, or an identical padding gap), with all of `prefix`. */
-    private static boolean layoutStartsWith(List<StructTable.LayoutEntry> longer, List<StructTable.LayoutEntry> prefix) {
-        for (int i = 0; i < prefix.size(); i++) {
-            StructTable.LayoutEntry a = longer.get(i);
-            StructTable.LayoutEntry b = prefix.get(i);
-            if (a.member == null || b.member == null) {
-                if (a.member != null || b.member != null || a.paddingBytes != b.paddingBytes) {
-                    return false;
-                }
-            } else if (!a.member.name.equals(b.member.name) || !a.member.canonicalType.equals(b.member.canonicalType)) {
-                return false;
-            }
-        }
-        return true;
     }
 
     /**

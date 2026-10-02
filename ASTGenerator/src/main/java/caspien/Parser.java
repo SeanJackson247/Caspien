@@ -1067,7 +1067,7 @@ public class Parser {
         }
         Token first = flat.get(0);
         if (first.type == TokenType.KEYWORD
-                && (first.text.equals("struct") || first.text.equals("enum") || first.text.equals("interface") || first.text.equals("abstract") || first.text.equals("type") || first.text.equals("extern") || first.text.equals("export") || first.text.equals("ASM"))) {
+                && (first.text.equals("struct") || first.text.equals("enum") || first.text.equals("interface") || first.text.equals("type") || first.text.equals("extern") || first.text.equals("export") || first.text.equals("ASM"))) {
             return;
         }
         if (first.type == TokenType.KEYWORD
@@ -1361,7 +1361,7 @@ public class Parser {
         }
         Token first = flat.get(0);
         if (first.type == TokenType.KEYWORD
-                && (first.text.equals("struct") || first.text.equals("enum") || first.text.equals("interface") || first.text.equals("abstract") || first.text.equals("type") || first.text.equals("extern") || first.text.equals("export") || first.text.equals("ASM"))) {
+                && (first.text.equals("struct") || first.text.equals("enum") || first.text.equals("interface") || first.text.equals("type") || first.text.equals("extern") || first.text.equals("export") || first.text.equals("ASM"))) {
             return;
         }
         if (first.type == TokenType.KEYWORD
@@ -2024,12 +2024,6 @@ public class Parser {
                     case "struct": {
                         requireRoot(isRoot, first, "struct");
                         result.add(wrapAsLine(gatherStruct(tokens, first)));
-                        i++;
-                        continue;
-                    }
-                    case "abstract": {
-                        requireRoot(isRoot, first, "abstract");
-                        result.add(wrapAsLine(gatherAbstract(tokens, first)));
                         i++;
                         continue;
                     }
@@ -2856,8 +2850,8 @@ public class Parser {
      * Parses an optional "implements A, B, ..." header clause. Purely a
      * compile-time contract declaration (checked in TypeChecker against
      * actual "impl X for Y{...}" blocks found anywhere in the compilation
-     * unit) -- never itself a source of method bodies, since struct/
-     * abstract bodies can't contain funcs.
+     * unit) -- never itself a source of method bodies, since struct
+     * bodies can't contain funcs.
      */
     private ImplementsParseResult parseOptionalImplementsClause(List<Token> tokens, int idx) {
         if (idx >= tokens.size() || tokens.get(idx).type != TokenType.OPERATOR
@@ -2892,15 +2886,11 @@ public class Parser {
     }
 
     /**
-     * Shared body for "struct" and "abstract" -- identical shape apart
-     * from the KEYWORD text produced, confirmed directly ("abstract" is
-     * "just like a struct except it can't be instantiated"). Member lines
-     * starting with "extends TypeName" are pulled out into
-     * `gathered.extendsNames` rather than left as ordinary member-
-     * declaration lines; everything else in the body passes through
-     * completely untouched, same as before (TypeChecker's collectStruct/
-     * collectAbstract interpret each remaining line via
-     * parseNameTypeGroup, exactly as it always has).
+     * Body for "struct". A member line starting with "extends" is a parse
+     * error: struct inheritance has been removed (use composition and
+     * interfaces). Everything else in the body passes through untouched
+     * (TypeChecker's collectStruct interprets each line via
+     * parseNameTypeGroup).
      */
     private Token gatherStructLike(List<Token> tokens, Token kwTok, String kindText) {
         if (tokens.size() < 2 || tokens.get(1).type != TokenType.VARREF) {
@@ -2917,17 +2907,12 @@ public class Parser {
         }
 
         List<Token> memberLines = new ArrayList<>();
-        List<String> extendsNames = new ArrayList<>();
         for (Token memberLine : blockTok.childs) {
             List<Token> lineTokens = memberLine.childs;
             if (!lineTokens.isEmpty() && lineTokens.get(0).type == TokenType.KEYWORD
                     && lineTokens.get(0).text.equals("extends")) {
-                if (lineTokens.size() != 2 || lineTokens.get(1).type != TokenType.VARREF) {
-                    throw new CompilerException("parse", lineTokens.get(0).file, lineTokens.get(0).line,
-                            "expected 'extends TypeName'");
-                }
-                extendsNames.add(lineTokens.get(1).text);
-                continue;
+                throw new CompilerException("parse", lineTokens.get(0).file, lineTokens.get(0).line,
+                        "struct 'extends' has been removed; use composition and interfaces");
             }
             memberLines.add(memberLine);
         }
@@ -2937,7 +2922,6 @@ public class Parser {
         gathered.sub.add(nameTok);
         gathered.typeParams = typeParams.names; // null if not generic
         gathered.typeParamBounds = typeParams.bounds;
-        gathered.extendsNames = extendsNames;
         gathered.implementsNames = implementsClause.names;
         gathered.decorators = kwTok.decorators;
         gathered.childs = memberLines; // member declaration lines, untouched
@@ -2947,10 +2931,6 @@ public class Parser {
 
     private Token gatherStruct(List<Token> tokens, Token structTok) {
         return gatherStructLike(tokens, structTok, "struct");
-    }
-
-    private Token gatherAbstract(List<Token> tokens, Token abstractTok) {
-        return gatherStructLike(tokens, abstractTok, "abstract");
     }
 
     /**
@@ -3019,10 +2999,8 @@ public class Parser {
     }
 
     /**
-     * "cast varName as TypeName{...}" -- scopes a variable's static type
-     * to one of its ancestors for the duration of the block (upcasting
-     * only; TypeChecker.checkCast validates the ancestor relationship and
-     * rejects anything else). Structurally identical to 'loop': a fixed
+     * "cast varName as TypeName{...}" -- (always rejected by
+     * TypeChecker.checkCast now that struct inheritance is gone). Structurally identical to 'loop': a fixed
      * header shape, then a trailing block gathered exactly like any
      * other.
      */
@@ -3742,7 +3720,7 @@ public class Parser {
      * mirrors gatherStructLike's; the body is a mix of "extends
      * TypeName;" statements (pulled out into `extendsNames`, reusing
      * exactly the same statement-list extraction gatherStructLike
-     * already established for struct/abstract) and plain "func"
+     * already established for interface) and plain "func"
      * declarations (gathered the same, non-static way gatherImpl
      * gathers a bare, non-static method -- a library function never
      * takes an implicit "self" at all, so there's no static/instance

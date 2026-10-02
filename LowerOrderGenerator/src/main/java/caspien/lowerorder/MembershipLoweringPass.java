@@ -177,22 +177,10 @@ import java.util.Map;
  *   - "u64 in string" -- already compiled to its own dedicated
  *     "IN_SCAN" mnemonic by the compiler itself (BytecodeEmitter), never
  *     plain "IN" -- this pass never sees it.
- *   - Interface-typed "instanceof"/"implements" targets, or any target
- *     name this pass can't resolve in the program's own "Class"/
- *     "$enum_for_" enum tables (EnumTable.classRangeOf/
- *     implementerClassIdsOf both return an empty/null result for these,
- *     so the match simply fails and the original bytecode is left
- *     alone). An interface-typed *left* operand is likewise never
- *     lowered -- confirmed directly against a real compiled fixture
- *     ("interface_typed_instanceof_test," which legally uses an
- *     interface-typed left operand as of a later round) -- an interface
- *     is never registered in StructTable (it has no STRUCT_START/
- *     STRUCT_MEMBER block of its own, only concrete structs do), so it
- *     never carries the hidden "___type" field this pass's rewrite
- *     needs to read, and hasTypeField's own check simply fails, leaving
- *     the original INSTANCEOF/IMPLEMENTS bytecode untouched -- exactly
- *     the same "let the pattern match fail rather than guess" fallback
- *     every other gap here already relies on.
+ *   - An "instanceof" target that is not a struct in the flat "Class" enum, or an "implements" target with
+ *     no "$enum_for_" table: the match fails and the original bytecode is left alone. "x instanceof S" (x
+ *     interface-typed, S a struct) lowers to one class-id equality test; "x implements I" (x struct-typed)
+ *     lowers to an OR-chain over I's implementers' class ids.
  *   - A non-simple-push left *or* right operand of a "u64 in range"/
  *     "dynarray" is since handled (see the design note above) --
  *     each is independently materialized into its own temp when it
@@ -1604,14 +1592,15 @@ public class MembershipLoweringPass implements OptimizationPass {
             }
 
             if (mnemonic.equals("INSTANCEOF")) {
-                long[] range = enumTable.classRangeOf(targetName);
-                if (range == null) {
-                    return null; // targetName isn't in the "Class" hierarchy (most commonly: it's an interface)
+                Long classId = enumTable.variantValue("Class", targetName);
+                if (classId == null) {
+                    return null; // targetName isn't a struct in the flat "Class" enum
                 }
                 List<String> lines = new ArrayList<>();
                 String leftName = resolveLeftName(leftSimple, leftPush, leftType, outSoFar, lines);
                 String typeFieldPath = typeFieldPathFor(leftName, leftType, outSoFar, lines);
-                lines.addAll(buildRangeMembershipCheck(typeFieldPath, range[0], range[1]));
+                // flat class ids: "x instanceof S" is one class-id equality test
+                lines.addAll(buildValueOrChain(typeFieldPath, java.util.Collections.singletonList(classId)));
                 return new InstanceofMatch(lines, !leftSimple);
             } else {
                 List<Long> implementerIds = enumTable.implementerClassIdsOf(targetName);
@@ -1632,9 +1621,8 @@ public class MembershipLoweringPass implements OptimizationPass {
                     // source (a declared-but-unimplemented interface),
                     // unlike `INSTANCEOF`'s own empty-range case just above
                     // (never actually reachable -- every legal `instanceof`
-                    // target is a real struct, and every real struct gets
-                    // at least a singleton `[classId,classId]` entry in the
-                    // "Class" table). Lowered to the same "single constant
+                    // target is a real struct, and every real struct is
+                    // listed in the flat "Class" enum). Lowered to the same "single constant
                     // value" shape a real, non-empty chain would ultimately
                     // leave on the stack (a bare "imut_bool", matching
                     // `checkImplementsOperator`'s own result type) --

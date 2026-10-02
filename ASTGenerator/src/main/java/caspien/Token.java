@@ -177,21 +177,19 @@ public class Token {
     public List<List<Token>> genericArgs;
 
     /**
-     * "extends X" lines' target names, collected on the struct/abstract/
-     * interface KEYWORD token itself. A struct/abstract's own extends
-     * list is capped at one entry unless it's an abstract whose body is
-     * *entirely* extends lines (see TypeChecker's flattening pass for the
-     * exact rule); an interface's extends list has no cap. Null/empty
+     * "extends X" lines' target names, collected on an interface or
+     * library KEYWORD token (struct extends no longer exists, and is a
+     * parse error); an interface's extends list has no cap. Null/empty
      * for a declaration with no extends clause at all.
      */
     public List<String> extendsNames;
 
     /**
-     * "implements A, B" header clause on a struct/abstract, giving the
+     * "implements A, B" header clause on a struct, giving the
      * interface names it declares conformance to -- purely a compile-time
      * contract check (a matching "impl X for Y{...}" must exist somewhere
      * in the compilation unit), never populated with method bodies here,
-     * since struct/abstract bodies can't contain funcs. Null/empty if no
+     * since struct bodies can't contain funcs. Null/empty if no
      * "implements" clause was written.
      */
     public List<String> implementsNames;

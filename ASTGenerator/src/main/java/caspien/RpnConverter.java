@@ -157,7 +157,6 @@ public class RpnConverter {
                 case "loop":
                 case "func":
                 case "struct":
-                case "abstract":
                 case "enum":
                 case "interface":
                 case "impl":
@@ -323,7 +322,6 @@ public class RpnConverter {
                 convertLines(t.childs);
                 break;
             case "struct":
-            case "abstract":
             case "enum":
             case "type":
             case "extern":

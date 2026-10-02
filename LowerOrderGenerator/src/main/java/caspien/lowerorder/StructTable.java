@@ -116,23 +116,6 @@ public class StructTable {
     }
 
     /**
-     * Every real struct name this table knows about (every
-     * "STRUCT_START name ... STRUCT_END" block this bytecode declared),
-     * in declared order. Used by `AddressLoweringPass.memberLocOf`'s
-     * "extends" fallback -- this bytecode format carries no explicit
-     * "extends" relationship at all (a child struct's own STRUCT_START
-     * block is already fully flattened, parent fields then its own,
-     * with nothing marking which member came from which -- see
-     * `caspien-compiler`'s own CLAUDE.md), so recovering "does S extend
-     * Base" has to be done structurally, by comparing two structs' own
-     * real layouts directly, rather than looked up from any stored
-     * relationship -- this accessor is what makes that scan possible.
-     */
-    public Set<String> allStructNames() {
-        return structs.keySet();
-    }
-
-    /**
      * True when a value of this base type (a struct name, a
      * "dynarray(elem)", or an "elem[N]" fixed array) either is itself
      * owns-storage somewhere inside it, or wraps/contains one -- the

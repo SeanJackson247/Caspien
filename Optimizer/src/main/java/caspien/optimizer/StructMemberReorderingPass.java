@@ -22,8 +22,6 @@ import java.util.Set;
  * A struct is reordered only when ALL of these hold (otherwise it is left exactly as it was):
  *   - it has at least two members, all plain scalars (u8..u64, s8..s64, bool, char, f32, f64; no pointer, no atomic, no nested struct,
  *     no array), and no decorator other than {@code @pub} (so not {@code @lock});
- *   - it takes no part in {@code extends}: its class-id range covers no child and no other struct's range covers it (a child's
- *     layout must start with its parent's);
  *   - no other struct has it as a member type (by value, or as an array of it), and no static/global declaration uses an array of it
  *     or an {@code ALLOC_STATIC} of it;
  *   - no {@code raw} pointer to it appears anywhere, except the hidden destination pointer of a struct-returning call
@@ -211,7 +209,6 @@ public class StructMemberReorderingPass implements OptimizationPass {
                 d.blocked = true;
             }
         }
-        blockByEnumRanges(L, decls);
         blockByUses(L, decls);
         // the new layout, and only when it is strictly smaller
         for (Decl d : decls.values()) {
@@ -376,10 +373,10 @@ public class StructMemberReorderingPass implements OptimizationPass {
         return out;
     }
 
-    /** Class id of each struct, and the id ranges used to find extends relations. */
+    /** Class id of each struct, from the flat "Class" enum. */
     private static void readClassIds(List<List<BytecodeToken>> L, Map<String, Decl> decls) {
         for (List<BytecodeToken> l : L) {
-            if (isMn(l, "ENUM") && l.size() >= 3 && l.get(1).text.equals("ClassID")) {
+            if (isMn(l, "ENUM") && l.size() >= 3 && l.get(1).text.equals("Class")) {
                 for (int i = 2; i + 1 < l.size(); i += 2) {
                     Decl d = decls.get(l.get(i).text);
                     if (d != null) {
@@ -389,37 +386,6 @@ public class StructMemberReorderingPass implements OptimizationPass {
                             d.classId = -1;
                         }
                     }
-                }
-            }
-        }
-    }
-
-    private static void blockByEnumRanges(List<List<BytecodeToken>> L, Map<String, Decl> decls) {
-        Map<String, long[]> range = new HashMap<>();
-        for (List<BytecodeToken> l : L) {
-            if (isMn(l, "ENUM") && l.size() >= 3 && l.get(1).text.equals("Class")) {
-                for (int i = 2; i + 1 < l.size(); i += 2) {
-                    String r = l.get(i + 1).text;
-                    int dots = r.indexOf("..");
-                    if (dots > 0) {
-                        try {
-                            range.put(l.get(i).text, new long[] {Long.parseLong(r.substring(0, dots)), Long.parseLong(r.substring(dots + 2))});
-                        } catch (NumberFormatException ex) {
-                            // leave it out; the struct then has no range and is blocked below
-                        }
-                    }
-                }
-            }
-        }
-        for (Decl d : decls.values()) {
-            long[] r = range.get(d.name);
-            if (r == null || r[0] != r[1]) {
-                d.blocked = true;   // unknown range, or it has children
-                continue;
-            }
-            for (Map.Entry<String, long[]> e : range.entrySet()) {
-                if (!e.getKey().equals(d.name) && e.getValue()[0] <= r[0] && r[0] <= e.getValue()[1] && e.getValue()[1] > e.getValue()[0]) {
-                    d.blocked = true;   // covered by another struct's range: a child
                 }
             }
         }

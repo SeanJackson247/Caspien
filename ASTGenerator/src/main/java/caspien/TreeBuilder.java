@@ -40,7 +40,6 @@ public class TreeBuilder {
                 case "loop":
                 case "func":
                 case "struct":
-                case "abstract":
                 case "enum":
                 case "interface":
                 case "impl":
@@ -164,7 +163,6 @@ public class TreeBuilder {
                 buildLines(t.childs); // t.sub is just two raw name tokens, nothing to build
                 break;
             case "struct":
-            case "abstract":
             case "enum":
             case "type":
             case "extern":

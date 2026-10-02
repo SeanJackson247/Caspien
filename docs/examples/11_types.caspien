@@ -1,8 +1,8 @@
-// Inheritance, abstract types, interfaces with default methods, and the two ways calls are dispatched.
+// Composition, interfaces with default methods, `instanceof`/`implements`, and the two ways calls are dispatched.
 // Expected output:
-//   inherited=1 4 7
-//   is Dog name=7, instanceof Animal=1
+//   composed=4 7 3
 //   default=10 7
+//   rect=1 sq=0 Rect implements Shape=1
 //   dispatch=43 27
 import "../../stdlib/libc.caspien"
 import "../../stdlib/gt_init.caspien"
@@ -10,37 +10,14 @@ import "../../stdlib/gt_register.caspien"
 import "../../stdlib/gt_alive_check.caspien"
 import "../../stdlib/gt_destruct.caspien"
 
-// An abstract type holds members but can never be instantiated.
-abstract Animal{@pub{
-	legs: mut u64
+// There is no struct inheritance: share members by composition.
+struct Legs{@pub{
+	count: mut u64
 }}
-abstract Named{@pub{
-	id: mut u64
+struct Dog{@pub{
+	legs: mut Legs
+	name: mut u64
 }}
-// `extends` is a line inside the body. Layout is flat: parent members first, then the child's own.
-struct Dog{
-	extends Animal
-	@pub{
-		name: mut u64
-	}
-}
-struct Bird{
-	extends Animal
-	@pub{
-		wings: mut u64
-	}
-}
-// An abstract made only of `extends` lines may extend several abstracts.
-abstract Pet{
-	extends Named
-	extends Animal
-}
-struct Cat{
-	extends Pet
-	@pub{
-		lives: mut u64
-	}
-}
 
 interface Greeter{
 	id(_self: ref some imut self) imut u64;
@@ -95,18 +72,17 @@ func total(s: ref some imut Shape) imut u64{
 	return a + t
 }
 
+// `instanceof` takes an interface-typed value and a struct name: one class-id comparison.
+func isRect(s: ref some imut Shape) imut bool{
+	let r = imut s instanceof Rect
+	return r
+}
+
 func main() void{
 	?catch(e){ return }
-	let cat = mut Cat{id= 1, legs= 4, lives= 7}
-	unsafe{ printf("inherited=%llu %llu %llu\n", cat.id, cat.legs, cat.lives) }
-
-	let d = mut ? new Dog{legs= 4, name= 7}
-	match Some(d){
-		match d instanceof Dog{ unsafe{ printf("is Dog name=%llu, ", d.name) } }
-		match d instanceof Bird{ unsafe{ printf("is Bird\n") } }
-		let isAnimal = imut d instanceof Animal
-		unsafe{ printf("instanceof Animal=%llu\n", isAnimal) }
-	}
+	let dog = mut Dog{legs= Legs{count= 4}, name= 7}
+	unsafe{ printf("composed=%llu %llu ", dog.legs.count, dog.name) }
+	unsafe{ printf("%llu\n", mut 3) }
 
 	let a = mut ? new A{x= 1}
 	let b = mut ? new B{x= 1}
@@ -118,5 +94,9 @@ func main() void{
 	let s = mut ? new Sq{s= 5}
 	let tr = imut total(r)
 	let ts = imut total(s)
+	let isShape = imut r implements Shape
+	let yes = imut isRect(r)
+	let no = imut isRect(s)
+	unsafe{ printf("rect=%llu sq=%llu Rect implements Shape=%llu\n", yes, no, isShape) }
 	unsafe{ printf("dispatch=%llu %llu\n", tr, ts) }
 }
