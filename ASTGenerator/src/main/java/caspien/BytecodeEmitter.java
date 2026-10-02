@@ -4697,9 +4697,13 @@ public class BytecodeEmitter {
                     // doesn't recover by re-deriving it from a
                     // neighboring line).
                     Token arrayLiteral = singleBuiltinArg(op);
+                    List<Token> literalElements = new ArrayList<>();
                     // `dyn:<T>([])` -- nothing to push for an empty literal.
                     if (!arrayLiteral.childs.isEmpty()) {
                         emitExpr(arrayLiteral);
+                        if (arrayLiteral.type == TokenType.DELINEATOR && arrayLiteral.text.equals("[")) {
+                            collectCommaArgs(arrayLiteral.childs.get(0), literalElements);
+                        }
                     }
                     String typeText = op.resolvedType.substring("owns_".length());
                     boolean isUnsafeLiteral = typeText.startsWith("indeterminate_unsafe_dynarray(");
@@ -4717,7 +4721,7 @@ public class BytecodeEmitter {
                     // for "NEW_UDYN": the unsafe variant is deliberately
                     // still not throw-capable at all.
                     if (!isUnsafeLiteral) {
-                        emitAllocFailureCheck(op);
+                        emitAllocFailureCheck(op, literalElements);
                     }
                     return;
                 }
@@ -6006,7 +6010,34 @@ public class BytecodeEmitter {
                 // move-source is nulled out immediately, before the
                 // loop advances to the next field at all -- not once,
                 // afterward, once every field has been pushed.
-                emitOwnershipMoveNullOut(value);
+                if (deferredMoveNullOuts != null) {
+                    deferredMoveNullOuts.add(value); // inside `new`: nulled only once the allocation has succeeded
+                } else {
+                    emitOwnershipMoveNullOut(value);
+                }
+            }
+        }
+    }
+
+    /**
+     * Moved-in `owns` sources whose null-out `emitNew` is holding back until its allocation succeeds (null outside `new`). If the
+     * allocation fails, the field values are gone with the discarded stack image, so the failure branch destructs these sources
+     * (which still hold their pointers) instead of leaking them.
+     */
+    private List<Token> deferredMoveNullOuts = null;
+
+    /** `GT_DESTRUCT` for each moved-in source that is a plain `owns` variable or field path; temporaries are not addressable and are skipped. */
+    private void emitDestructMovedSources(List<Token> sources) {
+        for (Token t : sources) {
+            if (t.resolvedType == null || !t.resolvedType.startsWith("owns")) {
+                continue;
+            }
+            if (t.type == TokenType.VARREF) {
+                requireGhostTableFunctionPresent("gt_destruct", t);
+                line("GT_DESTRUCT " + t.text);
+            } else if (t.type == TokenType.OPERATOR && t.text.equals(".") && isQualifiedNameableDot(t)) {
+                requireGhostTableFunctionPresent("gt_destruct", t);
+                line("GT_DESTRUCT " + qualifiedDotName(t));
             }
         }
     }
@@ -6171,11 +6202,15 @@ public class BytecodeEmitter {
 
     private void emitNew(Token op) {
         Token unwrapped = unwrapMutWrappers(op.left);
+        List<Token> savedDeferral = deferredMoveNullOuts;
+        List<Token> movedSources = new ArrayList<>();
+        deferredMoveNullOuts = movedSources;
         if (unwrapped.isStructRvoCall) {
             emitNewFromStructRvoCall(unwrapped);
         } else {
             emitExpr(op.left);
         }
+        deferredMoveNullOuts = savedDeferral;
         requireGhostTableFunctionPresent("gt_register", op);
         String constructedType = op.resolvedType.substring("owns_".length());
         if (constructedType.startsWith("some_")) {
@@ -6189,6 +6224,7 @@ public class BytecodeEmitter {
         String okLabel = newLabel("new_ok");
         line("JMP " + okLabel);
         if (!inGtSuppressedContext && pendingTryCatchLabel != null) {
+            emitDestructMovedSources(movedSources); // the moved-in values are lost with the failed allocation: free them
             String oomStringId = hoistedStringId("out of memory");
             line("ADDR gt_error_message static_imut_string");
             line("PUSH " + oomStringId + " static_imut_string");
@@ -6197,6 +6233,9 @@ public class BytecodeEmitter {
         }
         line(okLabel + ":");
         line("GT_REGISTER");
+        for (Token moved : movedSources) {
+            emitOwnershipMoveNullOut(moved); // the allocation took ownership: now the sources let go
+        }
     }
 
     /**
@@ -6223,6 +6262,11 @@ public class BytecodeEmitter {
      * `emitNew`'s own sequence actually applies here.
      */
     private void emitAllocFailureCheck(Token op) {
+        emitAllocFailureCheck(op, java.util.Collections.emptyList());
+    }
+
+    /** `movedSources`: owns variables just moved into the allocation (e.g. the elements of `dyn([a, b])`); freed if it fails. */
+    private void emitAllocFailureCheck(Token op, List<Token> movedSources) {
         line("DUP_TOP");
         line("PUSH null " + op.resolvedType);
         line("EQ " + op.resolvedType + " " + op.resolvedType + " imut_bool");
@@ -6230,6 +6274,7 @@ public class BytecodeEmitter {
         String okLabel = newLabel("alloc_ok");
         line("JMP " + okLabel);
         if (!inGtSuppressedContext && pendingTryCatchLabel != null) {
+            emitDestructMovedSources(movedSources);
             String oomStringId = hoistedStringId("out of memory");
             line("ADDR gt_error_message static_imut_string");
             line("PUSH " + oomStringId + " static_imut_string");

@@ -11,21 +11,7 @@ export JAVA_TOOL_OPTIONS=
 tar -C "$ROOT" --exclude=.git -cf - . | tar -C "$W" -xf -
 cd "$W" || exit 1
 sed -i 's/^target .*/target linux/; s/^\( *\)default: win64/\1default: sysv_x64/' toolchain.config
-cat > shim.c <<'EOS'
-#define _GNU_SOURCE
-#include <dlfcn.h>
-#include <stddef.h>
-#include <stdio.h>
-#include <stdlib.h>
-static long n=0, failn=-1, live=0, failrealloc=-1; static int rfailed=0;
-static void *(*rm)(size_t); static void *(*rr)(void*,size_t); static void (*rf)(void*);
-static void init(void){ if(!rm){ rm=dlsym(RTLD_NEXT,"malloc"); rr=dlsym(RTLD_NEXT,"realloc"); rf=dlsym(RTLD_NEXT,"free");
-  const char*e=getenv("FAILN"); if(e) failn=atol(e); e=getenv("FAILREALLOC"); if(e) failrealloc=atol(e);} }
-void *malloc(size_t s){ init(); n++; if(failn>0 && n==failn) return NULL; void*p=rm(s); if(p) live++; return p; }
-void *realloc(void*p,size_t s){ init(); if(failrealloc>0 && !rfailed && (long)s==failrealloc){ rfailed=1; return NULL; } void*q=rr(p,s); if(!p&&q) live++; return q; }
-void free(void*p){ init(); if(p) live--; rf(p); }
-__attribute__((destructor)) static void fin(void){ fprintf(stderr,"ALLOCS=%ld LIVE=%ld\n",n,live); }
-EOS
+cp "$ROOT/tests/alloc_shim.c" shim.c
 gcc -shared -fPIC -o shim.so shim.c -ldl || { echo "FAIL: cannot build shim"; exit 1; }
 java Compiler -i tests/clone_oom_test.caspien oom_prog >compile.log 2>&1 || { echo "FAIL: compile"; tail -5 compile.log; exit 1; }
 base=$(LD_PRELOAD=./shim.so ./oom_prog 2>err.txt); N=$(sed -n 's/ALLOCS=\([0-9]*\).*/\1/p' err.txt); L0=$(sed -n 's/.*LIVE=\(-\?[0-9]*\).*/\1/p' err.txt)
