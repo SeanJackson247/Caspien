@@ -4503,6 +4503,10 @@ public class BytecodeEmitter {
                     line("DEREF " + op.resolvedType);
                     return;
                 case "clone": {
+                    // A call nested in this builtin's operands would consume the pending catch label (it is meant for the
+                    // call-site staging of the first call), leaving the allocation check below without one: hold it back here.
+                    final String cloneCatchLabel = pendingTryCatchLabel;
+                    pendingTryCatchLabel = null;
                     // "the compiler should output the arguments for
                     // CLONE the same style as other standard operations,
                     // and then the optimizer should reduce it to CLONE
@@ -4528,6 +4532,7 @@ public class BytecodeEmitter {
                     line("CLONE " + arg.resolvedType + " " + op.resolvedType);
                     // Same tail as `new`: a null result (failed malloc) jumps to the enclosing catch, otherwise
                     // the copy is registered with the ghost table so `match Some` and the scope-end destruct work.
+                    pendingTryCatchLabel = cloneCatchLabel;
                     emitAllocFailureCheck(op);
                     line("GT_REGISTER");
                     return;
@@ -4634,6 +4639,10 @@ public class BytecodeEmitter {
                     return;
                 }
                 case "dyn": {
+                    // A call nested in this builtin's operands would consume the pending catch label (it is meant for the
+                    // call-site staging of the first call), leaving the allocation check below without one: hold it back here.
+                    final String dynCatchLabel = pendingTryCatchLabel;
+                    pendingTryCatchLabel = null;
                     if (op.dynFromStringSource) {
                         // "dyn(text)" -- a static imut string argument,
                         // not an array literal. Pushes the string value
@@ -4658,6 +4667,7 @@ public class BytecodeEmitter {
                         // needs the identical runtime null-check-and-
                         // jump-to-catch `emitNew` already does for 'new'.
                         if (!op.resolvedType.substring("owns_".length()).startsWith("indeterminate_unsafe_dynarray(")) {
+                            pendingTryCatchLabel = dynCatchLabel;
                             emitAllocFailureCheck(op);
                         }
                         return;
@@ -4721,11 +4731,16 @@ public class BytecodeEmitter {
                     // for "NEW_UDYN": the unsafe variant is deliberately
                     // still not throw-capable at all.
                     if (!isUnsafeLiteral) {
+                        pendingTryCatchLabel = dynCatchLabel;
                         emitAllocFailureCheck(op, literalElements);
                     }
                     return;
                 }
                 case "resize": {
+                    // A call nested in this builtin's operands would consume the pending catch label (it is meant for the
+                    // call-site staging of the first call), leaving the allocation check below without one: hold it back here.
+                    final String resizeCatchLabel = pendingTryCatchLabel;
+                    pendingTryCatchLabel = null;
                     // "resize should take ownership (owns) of the
                     // dynamicarray and return a new owns" -- confirmed
                     // directly, modeled directly on a real realloc
@@ -4796,6 +4811,7 @@ public class BytecodeEmitter {
                     // to unsafe mode" latitude already covers a failed
                     // realloc the same way raw C code would).
                     if (!isUnsafeResize) {
+                        pendingTryCatchLabel = resizeCatchLabel;
                         emitAllocFailureCheck(op);
                     }
                     return;
@@ -6205,12 +6221,17 @@ public class BytecodeEmitter {
         List<Token> savedDeferral = deferredMoveNullOuts;
         List<Token> movedSources = new ArrayList<>();
         deferredMoveNullOuts = movedSources;
+        // A call nested in the field values would consume the pending catch label (meant for the call-site staging of the
+        // first call), and the allocation check below would then have none -- an unchecked null: hold it back and restore it.
+        final String newCatchLabel = pendingTryCatchLabel;
+        pendingTryCatchLabel = null;
         if (unwrapped.isStructRvoCall) {
             emitNewFromStructRvoCall(unwrapped);
         } else {
             emitExpr(op.left);
         }
         deferredMoveNullOuts = savedDeferral;
+        pendingTryCatchLabel = newCatchLabel;
         requireGhostTableFunctionPresent("gt_register", op);
         String constructedType = op.resolvedType.substring("owns_".length());
         if (constructedType.startsWith("some_")) {
