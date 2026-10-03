@@ -25,9 +25,12 @@ import "libc.caspien"
 
 @par_call
 @pub
-func par_call(fn: raw imut u8, handle: raw mut u8) void{
+func par_call(fn: raw imut u8, handle: raw mut u8) imut bool{
 	let tid = mut 0
+	let:<mut u32> rc = mut 0
 	unsafe extern raw{
-		pthread_create(raw tid, null, fn, handle)
+		rc = mut pthread_create(raw tid, null, fn, handle)
 	}
+	let ok = imut (rc == 0)
+	return ok
 }

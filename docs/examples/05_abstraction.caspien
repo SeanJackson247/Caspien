@@ -46,7 +46,7 @@ func main() void{
 	let list = mut ? new DynamicArray:<u64>()
 	? list.pushBack(list, mut 10)
 	? list.pushBack(list, mut 20)
-	let answer = mut await triple(mut 14)
+	let answer = mut ? await triple(mut 14)
 	let pairSum = mut (p.first + p.second)
 	let count = mut len(list.backing)
 	let area = imut r.area(r)

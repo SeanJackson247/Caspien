@@ -127,5 +127,5 @@ extern fputs(static imut string, raw mut u8) mut u64
 //     EXTERN declaration needed" precedent this file's own comment
 //     above already established for "exit" (see "EXIT"'s own codegen
 //     case) -- no real Caspien source anywhere ever calls it directly.
-extern pthread_create(raw mut u64, raw mut u8, raw imut u8, raw mut u8) mut u64
-extern pthread_join(mut u64, raw mut u8) mut u64
+extern pthread_create(raw mut u64, raw mut u8, raw imut u8, raw mut u8) mut u32
+extern pthread_join(mut u64, raw mut u8) mut u32

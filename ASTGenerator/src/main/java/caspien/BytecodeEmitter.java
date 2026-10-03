@@ -5608,6 +5608,15 @@ public class BytecodeEmitter {
             collectCommaArgs(op.right.childs.get(0), args);
         }
         String tempName = "__async_handle_" + (++asyncHandleTempCounter);
+        // The argument may contain calls that would consume the pending catch label: hold it back (as emitNew does).
+        // Moved-in owns arguments are only let go once the thread really started; if the handle can not be made or the
+        // thread can not be started they are destructed here instead (the failed 'par'/'await' never took them).
+        final String asyncCatchLabel = pendingTryCatchLabel;
+        pendingTryCatchLabel = null;
+        final List<Token> movedSources = new ArrayList<>();
+        final List<String> movedTemps = new ArrayList<>();
+        final List<Token> savedDeferral = deferredMoveNullOuts;
+        final List<String> savedTempNames = deferredTempNames;
 
         line("ALLOC " + tempName + " " + handleCanonical);
         line("ADDR " + tempName + " " + handleCanonical);
@@ -5632,9 +5641,13 @@ public class BytecodeEmitter {
                 case "value":
                     if (!args.isEmpty()) {
                         Token argTok = args.get(0);
+                        deferredMoveNullOuts = movedSources;
+                        deferredTempNames = movedTemps;
                         emitExpr(argTok);
-                        if (argTok.isOwnershipMoveSource) {
-                            emitOwnershipMoveNullOut(argTok);
+                        deferredMoveNullOuts = savedDeferral;
+                        deferredTempNames = savedTempNames;
+                        if (argTok.isOwnershipMoveSource && !movedSources.contains(argTok)) {
+                            movedSources.add(argTok);
                         }
                     } else {
                         line("PUSH 0 " + entry.canonicalType);
@@ -5651,6 +5664,19 @@ public class BytecodeEmitter {
         line("NEW " + handleStructName);
         requireGhostTableFunctionPresent("gt_register", op);
         line("GT_REGISTER");
+        // Same null check as 'new': a failed malloc or a failed registration leaves null here.
+        line("DUP_TOP");
+        line("PUSH null " + handleCanonical);
+        line("EQ " + handleCanonical + " " + handleCanonical + " imut_bool");
+        line("CMP");
+        String handleOkLabel = newLabel("async_handle_ok");
+        line("JMP " + handleOkLabel);
+        if (!inGtSuppressedContext && asyncCatchLabel != null) {
+            emitDestructMovedSources(movedSources);
+            emitDestructTempNames(movedTemps, op);
+            emitAsyncFailureJump(asyncCatchLabel, "out of memory");
+        }
+        line(handleOkLabel + ":");
         line("ASSIGN " + handleCanonical + " " + handleCanonical + " " + handleCanonical);
 
         String glueDecorator = isAwait ? "await_call" : "par_call";
@@ -5672,6 +5698,26 @@ public class BytecodeEmitter {
         line("POP ARG1 " + handleCanonical);
         line("CALL " + glueInfo.mangledName);
         line("CC_END " + glueInfo.callConvention);
+        // The glue returns false when pthread_create failed: nothing runs the trampoline, so nothing else will ever free
+        // the handle (or use the moved-in argument).
+        line("PUSH_RET imut_bool");
+        line("CMP");
+        String threadFailLabel = newLabel("async_thread_fail");
+        String threadOkLabel = newLabel("async_thread_ok");
+        line("JMP " + threadFailLabel);
+        line("JMP " + threadOkLabel);
+        line(threadFailLabel + ":");
+        if (!inGtSuppressedContext && asyncCatchLabel != null) {
+            requireGhostTableFunctionPresent("gt_destruct", op);
+            line("GT_DESTRUCT " + tempName);
+            emitDestructMovedSources(movedSources);
+            emitDestructTempNames(movedTemps, op);
+            emitAsyncFailureJump(asyncCatchLabel, "cannot start thread");
+        }
+        line(threadOkLabel + ":");
+        for (Token moved : movedSources) {
+            emitOwnershipMoveNullOut(moved); // the thread now owns the argument
+        }
 
         boolean isVoidResult = isVoidCanonical(op.resolvedType);
         if (isAwait) {
@@ -5722,6 +5768,15 @@ public class BytecodeEmitter {
             // just above remains correct and non-racy for its own,
             // separate trampoline).
         }
+    }
+
+    /** Sets the shared `gt_error_message` and jumps to the catch of the `try`/`?` wrapping a 'par'/'await' (same shape as the 'new' out-of-memory exit). */
+    private void emitAsyncFailureJump(String catchLabel, String message) {
+        String messageId = hoistedStringId(message);
+        line("ADDR gt_error_message static_imut_string");
+        line("PUSH " + messageId + " static_imut_string");
+        line("ASSIGN static_imut_string static_imut_string static_imut_string");
+        line("JMP " + catchLabel);
     }
 
     /**

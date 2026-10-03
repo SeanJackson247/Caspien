@@ -61,6 +61,7 @@ func workerB() void{
 func triple(x: mut u64) mut u64{ return x * 3 }
 
 func main() void{
+	?catch(e){ return }
 	let old = mut (flag swap 5)
 	let again = mut (flag swap 7)
 	let cur = mut flag
@@ -87,15 +88,15 @@ func main() void{
 	}
 
 	// `par` starts an OS thread and returns at once; `await` blocks for the result.
-	par workerA()
-	par workerB()
+	? par workerA()
+	? par workerB()
 	for i in 0..100000000{
 		let a = mut doneA
 		let b = mut doneB
 		if a && b{ break }
 		yield
 	}
-	let answer = mut await triple(mut 14)
+	let answer = mut ? await triple(mut 14)
 	match @lock counter{
 		OPEN:{ unsafe extern{ printf("threads: n=%llu triple=%llu\n", counter.n, answer) } }
 		CLOSED:{ continue }

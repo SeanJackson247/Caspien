@@ -1286,9 +1286,9 @@ up the rest of the time slice, and `sleep(n)` (from `stdlib/sleep.caspien`) slee
 @async
 func triple(x: mut u64) mut u64{ return x * 3 }
 
-let answer = mut await triple(mut 14)               // 42
+let answer = mut ? await triple(mut 14)             // 42
 
-let h = mut par triple(mut 14)
+let h = mut ? par triple(mut 14)
 for i in 0..100000000{
 	let ready = mut false
 	match h.state{

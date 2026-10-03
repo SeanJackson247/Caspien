@@ -5455,10 +5455,10 @@ public class TypeChecker {
                     "'@" + decoratorName + "'s second parameter (the async handle pointer) must be "
                             + "'raw u8', got '" + handleParam.canonical() + "'");
         }
-        if (!info.returnType.baseType.equals("void")) {
+        if (!info.returnType.baseType.equals("bool")) {
             throw new CompilerException("type", t.file, t.line,
-                    "'@" + decoratorName + "' requires a return type of 'void', got '"
-                            + info.returnType.canonical() + "'");
+                    "'@" + decoratorName + "' requires a return type of 'bool' (true = the thread was started, "
+                            + "false = it could not be), got '" + info.returnType.canonical() + "'");
         }
     }
 
@@ -10781,15 +10781,17 @@ public class TypeChecker {
         // `requireThrowsWrapping`'s own CALL-node handling -- the one
         // thing this method still needs to do for them by hand is the
         // *nested* case just below, identical to 'new's own.
+        boolean isAsyncNode = callNode.type == TokenType.OPERATOR
+                && (callNode.text.equals("par") || callNode.text.equals("await"));
         boolean isNewNode = callNode.type == TokenType.OPERATOR && callNode.text.equals("new");
         boolean isThrowingBuiltinCall = callNode.type == TokenType.OPERATOR && callNode.text.equals("CALL")
                 && callNode.left.type == TokenType.VARREF
                 && (callNode.left.text.equals("dyn") || callNode.left.text.equals("resize")
                         || callNode.left.text.equals("clone"));
-        if (!(callNode.type == TokenType.OPERATOR && callNode.text.equals("CALL")) && !isNewNode) {
+        if (!(callNode.type == TokenType.OPERATOR && callNode.text.equals("CALL")) && !isNewNode && !isAsyncNode) {
             throw new CompilerException("type", callNode.file, callNode.line,
-                    "'try' can only wrap a direct call to a '@throws' function, a 'new' expression, or a "
-                            + "'dyn'/'resize'/'clone' builtin call, not a more general expression");
+                    "'try' can only wrap a direct call to a '@throws' function, a 'new' expression, a "
+                            + "'par'/'await' call, or a 'dyn'/'resize'/'clone' builtin call, not a more general expression");
         }
         callNode.insideTry = true;
         // UPDATE (nested 'new'/'dyn'/'resize'): a per-token `insideTry`
@@ -10815,7 +10817,7 @@ public class TypeChecker {
         // so a nested allocation's own null-check already lands at the
         // same, single outer catch label for free.
         boolean previousInsideThrowingAllocContext = insideThrowingAllocContext;
-        if (isNewNode || isThrowingBuiltinCall) {
+        if (isNewNode || isThrowingBuiltinCall || isAsyncNode) {
             insideThrowingAllocContext = true;
         }
         TypeInfo resultType;
@@ -17524,6 +17526,12 @@ public class TypeChecker {
             throw new CompilerException("type", op.left.file, op.left.line,
                     "'await' must directly wrap a function call, e.g. 'await foo(...)'");
         }
+        if (!op.insideTry) {
+            throw new CompilerException("type", op.file, op.line,
+                    "'await' can fail (out of memory for its handle, or the thread cannot be started), so it must be "
+                            + "wrapped in 'try ... catch(e){ ... }' or written '?await ...'");
+        }
+        usesThrow = true; // like 'new': the failure exits set gt_error_message
         op.left.asyncCallKind = "AWAIT";
         TypeInfo calleeReturnType = resolveExprType(op.left, scope, func);
         prepareAsyncCallSite(op.left, calleeReturnType);
@@ -18302,6 +18310,12 @@ public class TypeChecker {
             throw new CompilerException("type", op.left.file, op.left.line,
                     "'par' must directly wrap a function call, e.g. 'par foo(...)'");
         }
+        if (!op.insideTry) {
+            throw new CompilerException("type", op.file, op.line,
+                    "'par' can fail (out of memory for its handle, or the thread cannot be started), so it must be "
+                            + "wrapped in 'try ... catch(e){ ... }' or written '?par ...'");
+        }
+        usesThrow = true; // like 'new': the failure exits set gt_error_message
         op.left.asyncCallKind = "PAR";
         TypeInfo calleeReturnType = resolveExprType(op.left, scope, func);
         TypeInfo handleType = prepareAsyncCallSite(op.left, calleeReturnType);

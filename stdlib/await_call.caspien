@@ -14,10 +14,17 @@ import "libc.caspien"
 
 @await_call
 @pub
-func await_call(fn: raw imut u8, handle: raw mut u8) void{
+func await_call(fn: raw imut u8, handle: raw mut u8) imut bool{
 	let tid = mut 0
+	let:<mut u32> rc = mut 0
 	unsafe extern raw{
-		pthread_create(raw tid, null, fn, handle)
+		rc = mut pthread_create(raw tid, null, fn, handle)
+	}
+	if rc != 0{
+		return false
+	}
+	unsafe extern{
 		pthread_join(tid, null)
 	}
+	return true
 }
