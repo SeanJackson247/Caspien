@@ -25,6 +25,9 @@ struct Outer{
 	@pub{ x: mut u64
 	inner: owns some mut Pair }
 }
+struct Holder{
+	@pub{ w: owns some mut Pair }
+}
 func main() void{
 	try{
 		?catch(e){
@@ -59,13 +62,41 @@ BODY[clone_leaf]="$(fill 2)
 		match Some(o){
 			let c = mut ?clone(o)
 		}"
+BODY[clone_dyn_block]="$(fill 1)
+		let q1 = mut ?new Pair{a= 5, b= 6}
+		let q2 = mut ?new Pair{a= 7, b= 8}
+		let arr = mut ?dyn([q1, q2])
+		match Some(arr){
+			let c = mut ?clone(arr)
+		}"
+BODY[clone_dyn_elem]="$(fill 0)
+		let q1 = mut ?new Pair{a= 5, b= 6}
+		let q2 = mut ?new Pair{a= 7, b= 8}
+		let arr = mut ?dyn([q1, q2])
+		match Some(arr){
+			let c = mut ?clone(arr)
+		}"
+BODY[clone_dynval_block]="$(fill 1)
+		let q1 = mut ?new Pair{a= 5, b= 6}
+		let q2 = mut ?new Pair{a= 7, b= 8}
+		let arr = mut ?dyn([Holder{w= q1}, Holder{w= q2}])
+		match Some(arr){
+			let c = mut ?clone(arr)
+		}"
+BODY[clone_dynval_elem]="$(fill 0)
+		let q1 = mut ?new Pair{a= 5, b= 6}
+		let q2 = mut ?new Pair{a= 7, b= 8}
+		let arr = mut ?dyn([Holder{w= q1}, Holder{w= q2}])
+		match Some(arr){
+			let c = mut ?clone(arr)
+		}"
 bad=0; checked=0
-for name in new new_moved dyn_literal dyn_text clone_top clone_leaf; do
+for name in new new_moved dyn_literal dyn_text clone_top clone_leaf clone_dyn_block clone_dyn_elem clone_dynval_block clone_dynval_elem; do
   printf '%s\n%s\n%s\n' "$HEAD" "${BODY[$name]}" "$TAIL" > tests/grow_$name.caspien
   java Compiler -i tests/grow_$name.caspien prog_$name >compile_$name.log 2>&1 || { echo "FAIL $name: compile"; tail -3 compile_$name.log; bad=1; continue; }
   clean=$(LD_PRELOAD=./shim.so ./prog_$name 2>err.txt); L0=$(sed -n 's/.*LIVE=\(-\?[0-9]*\).*/\1/p' err.txt)
   [ "$clean" = "ok" ] || { echo "FAIL $name: clean run printed: $clean"; bad=1; continue; }
-  out=$(FAILREALLOC=64 LD_PRELOAD=./shim.so ./prog_$name 2>err.txt); rc=$?; live=$(sed -n 's/.*LIVE=\(-\?[0-9]*\).*/\1/p' err.txt)
+  out=$(FAILREALLOC=64 FAILREALLOC_STICKY=1 LD_PRELOAD=./shim.so ./prog_$name 2>err.txt); rc=$?; live=$(sed -n 's/.*LIVE=\(-\?[0-9]*\).*/\1/p' err.txt)
   checked=$((checked+1))
   if [ $rc -ne 0 ] || [ "$out" != "CAUGHT out of memory" ] || [ "$live" != "$L0" ]; then echo "FAIL $name: rc=$rc live=$live (clean $L0) out=$out"; bad=1; fi
 done

@@ -79,6 +79,10 @@ public class X86Backend {
     private int csrAllocPos = -1;
     private long csrAllocBytes = 0;
     private String csrAllocLine = null;
+    /** Sum of every ALLOC (16-aligned) of the current function: the frame size below rbp, once the callee-saved area is added (finishCalleeSaved). */
+    private long csrAllocSum = 0;
+    /** A catch landing is reached by an unwind that skipped the call's own rsp restore (and any operand words pushed): the mark becomes `rsp = rbp - frame` once the frame size is final. */
+    private static final String RSP_MARK = "@@RSP@@";
 
     // Declarations collected on a first pass so they can be emitted
     // into proper .data/.rodata/.bss sections ahead of .text, instead
@@ -2312,6 +2316,9 @@ public class X86Backend {
         // must also do -- see mangleLabel).
         if (first.endsWith(":") && line.size() == 1) {
             raw(mangleLabel(first.substring(0, first.length() - 1)) + ":");
+            if (first.contains("catch_") && csrFuncStart >= 0) {
+                raw(RSP_MARK); // a catch entry: the unwind left rsp wherever the callee's frame ended (finishCalleeSaved fixes it)
+            }
             return;
         }
 
@@ -2348,6 +2355,7 @@ public class X86Backend {
                 pushReg("rbp");
                 movRegToRegRbpFromRsp();
                 csrFuncStart = out.length();
+                csrAllocSum = 0;
                 csrAllocPos = -1;
                 csrAllocLine = null;
                 return;
@@ -2392,6 +2400,7 @@ public class X86Backend {
             case "ALLOC": {
                 long size = Long.parseLong(line.get(1).text);
                 long aligned = (size + 15) & ~15L;
+                csrAllocSum += aligned;
                 if (csrAllocPos < 0 && callBufferStack.isEmpty() && csrFuncStart >= 0) {
                     csrAllocPos = out.length();
                     csrAllocBytes = aligned;
@@ -6568,6 +6577,7 @@ public class X86Backend {
         if (csrFuncStart < 0) {
             return;
         }
+        long frameBytes = csrAllocSum;
         String body = out.substring(csrFuncStart);
         java.util.List<String[]> regs = new java.util.ArrayList<>(); // {name, kind gpr|xmm}
         java.util.regex.Pattern nb = java.util.regex.Pattern.compile("(?<![A-Za-z0-9_])(?:rbx|ebx|bx|bl|bh)(?![A-Za-z0-9_])");
@@ -6621,6 +6631,7 @@ public class X86Backend {
                 restores.append(ld).append('\n');
             }
             long total = (cur + 15) & ~15L;
+            frameBytes = csrAllocSum - csrAllocBytes + total;
             String newSub = isWindows() ? ("    sub rsp, " + total + "\n") : ("    subq $" + total + ", %rsp\n");
             if (!out.substring(csrAllocPos, csrAllocPos + csrAllocLine.length()).equals(csrAllocLine)) {
                 throw new RuntimeException("codegen internal error: ALLOC line moved in '" + currentFuncName + "'");
@@ -6634,6 +6645,14 @@ public class X86Backend {
         while ((i = out.indexOf(marked, from)) >= 0) {
             out.replace(i, i + marked.length(), restoreText);
             from = i + restoreText.length();
+        }
+        String rspMarked = RSP_MARK + "\n";
+        String rspFix = frameBytes == 0 ? (isWindows() ? "    mov rsp, rbp\n" : "    movq %rbp, %rsp\n")
+                : (isWindows() ? "    lea rsp, [rbp-" + frameBytes + "]\n" : "    leaq -" + frameBytes + "(%rbp), %rsp\n");
+        from = csrFuncStart;
+        while ((i = out.indexOf(rspMarked, from)) >= 0) {
+            out.replace(i, i + rspMarked.length(), rspFix);
+            from = i + rspFix.length();
         }
         csrFuncStart = -1;
     }

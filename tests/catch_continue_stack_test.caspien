@@ -1,0 +1,84 @@
+// A catch body that ends in `continue` used to leave the stack pointer lower after every caught throw (the unwind skips the call
+// site's own restore), so a loop of a million or two throws exhausted the 8 MB stack and crashed. The catch entry now resets rsp to
+// the frame base. Each loop below throws on every even trip, 3,000,000 trips (expected survivors 1,500,000 -- half of the trips).
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+
+func check(name: static imut string, ok: imut bool) void{
+	unsafe extern{
+		if ok{ printf("PASS %s\n", name) }
+		else{ printf("FAIL %s\n", name) }
+	}
+}
+
+@throws
+func thrower(n: imut u64) void{
+	if n % 2 == 0{
+		throw "even"
+	}
+}
+
+@throws
+func deeper(n: imut u64) void{
+	?catch(e){ throw e }
+	?thrower(n)
+}
+
+@throws
+func manyArgs(a: imut u64, b: imut u64, c: imut u64, d: imut u64, e: imut u64, f: imut u64, g: imut u64, h: imut u64) void{
+	if (a + h) % 2 == 0{
+		throw "even"
+	}
+}
+
+func direct() mut u64{
+	let total = mut 0
+	for i in 0..3000000{
+		try{
+			try thrower(i) catch(e){
+				continue
+			}
+			total = total + 1
+		}
+	}
+	return total
+}
+
+func twoLevels() mut u64{
+	let total = mut 0
+	for i in 0..3000000{
+		try{
+			try deeper(i) catch(e){
+				continue
+			}
+			total = total + 1
+		}
+	}
+	return total
+}
+
+func stackArgs() mut u64{
+	let total = mut 0
+	for i in 0..3000000{
+		try{
+			try manyArgs(1, 2, 3, 4, 5, 6, 7, i) catch(e){
+				continue
+			}
+			total = total + 1
+		}
+	}
+	return total
+}
+
+func main() void{
+	let a = mut direct()
+	check("catch continue, direct call, survivors", a == 1500000)
+	let b = mut twoLevels()
+	check("catch continue, two-level throw, survivors", b == 1500000)
+	let c = mut stackArgs()
+	check("catch continue, stack-passed arguments, survivors", c == 1500000)
+}

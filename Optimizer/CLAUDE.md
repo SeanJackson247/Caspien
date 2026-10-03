@@ -43,5 +43,4 @@ Outer loop until no change: StructMemberReordering -> SizeofResolution -> Struct
 
 ## Known gaps
 - Windows/MASM target unverified; Linux is the executed target.
-- A catch ending in `continue` leaks one operand-stack word per throw.
 - No CSE, loop-invariant hoisting or sqrt intrinsic.

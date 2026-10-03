@@ -440,8 +440,11 @@ public class CloneGenerationPass implements OptimizationPass {
             String dstTemp = newTemp(lines, "clone_loop_dst", dstType);
             String newTemp = newTemp(lines, "clone_loop_new", dstType);
 
-            // an empty array first; a failed allocation here has nothing to undo
+            // an empty array first; a failed allocation here has nothing to undo. It is registered at once (a failed
+            // registration frees it and leaves null, taking the same exit): from then on every resize keeps it registered
+            // (gt_moved(old) frees a slot before gt_register(new)), so no later cleanup can fail to find room in the table.
             lines.add("NEW_DYN mut_dynarray(" + dynElem + ") 0");
+            lines.add("GT_REGISTER");
             String ndOk = newLabel("clone_loop_nd_ok");
             lines.add("DUP_TOP");
             lines.add("PUSH null " + dstType);
@@ -887,8 +890,11 @@ public class CloneGenerationPass implements OptimizationPass {
             String dstTemp = newTemp(lines, "clone_loop_dst", dstType);
             String newTemp = newTemp(lines, "clone_loop_new", dstType);
 
-            // an empty array first; a failed allocation here has nothing to undo
+            // an empty array first; a failed allocation here has nothing to undo. It is registered at once (a failed
+            // registration frees it and leaves null, taking the same exit): from then on every resize keeps it registered
+            // (gt_moved(old) frees a slot before gt_register(new)), so no later cleanup can fail to find room in the table.
             lines.add("NEW_DYN mut_dynarray(" + dynElem + ") 0");
+            lines.add("GT_REGISTER");
             String ndOk = newLabel("clone_loop_nd_ok");
             lines.add("DUP_TOP");
             lines.add("PUSH null " + dstType);
