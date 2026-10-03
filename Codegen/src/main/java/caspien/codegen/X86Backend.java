@@ -4377,49 +4377,31 @@ public class X86Backend {
                 return;
             }
             case "NEW_UDYN": {
-                // "NEW_UDYN totalPushedBytes" -- the unsafe/no-explicit-
-                // count sibling of NEW_DYN; count is derived as
-                // totalBytes/8 under the same "8-byte elements" working
-                // assumption.
-                //
-                // Returns a pointer to the *data start* (element 0), not
-                // the malloc'd block start -- unlike NEW_DYN/LOOKUP_DYN's
-                // own header-first convention. This is a deliberate split
-                // this pass had to introduce after a real, confirmed bug:
-                // an unsafe dynarray's direct index always goes through
-                // the plain LOOKUP_ARRAY(_LHS) family (see its own doc
-                // comment), which computes element addresses as
-                // "base + index*elemSize" with no way to also know to
-                // skip a header (LOOKUP_ARRAY_LHS's base can just as
-                // easily be a genuine ADDR-computed fixed-array address,
-                // which has no header at all) -- so the only way to keep
-                // that shared indexing code correct for both is to make
-                // an unsafe dynarray's own "base" already point straight
-                // at its data, with the len/cap header living at
-                // *negative* offsets (-16/-8) from that same pointer
-                // instead. RESIZE/URESIZE below were updated to match.
+                // "NEW_UDYN totalPushedBytes" -- the unsafe sibling of NEW_DYN; the element count is derived as
+                // totalBytes/8 under the same "8-byte elements" working assumption. An unsafe dynarray is HEADERLESS:
+                // just the elements, and the pointer it returns (and the variable holds) is exactly what malloc
+                // returned, so it is also the address registered with the ghost table and the one free() needs.
+                // Direct indexing is plain "base + index*elemSize" (LOOKUP_ARRAY). It stores no length, so there is
+                // no len(); never allocates 0 bytes (an empty one gets 1) so a live array is never a NULL/zero-size block.
                 long totalBytes = Long.parseLong(line.get(1).text);
                 long count = totalBytes / 8;
-                emitMallocCall(16 + totalBytes);
+                emitMallocCall(Math.max(totalBytes, 1));
                 raw(isWindows() ? "    mov r12, rax" : "    movq %rax, %r12");
-                // Failed malloc: r12 stays null (see NEW_DYN); nothing is written and no data-start offset is added.
+                // Failed malloc: r12 stays null (see NEW_DYN); nothing is written.
                 String newUdynNull = newInternalLabel("newudyn_null");
                 String newUdynDone = newInternalLabel("newudyn_done");
                 raw(isWindows() ? "    test r12, r12" : "    testq %r12, %r12");
                 raw("    jz " + newUdynNull);
-                storeSizedToAddr_withOffsetImm("r12", 0, count, 8);
-                storeSizedToAddr_withOffsetImm("r12", 8, count, 8);
                 for (long i = count - 1; i >= 0; i--) {
                     popReg("rax");
-                    long off = 16 + i * 8;
+                    long off = i * 8;
                     if (isWindows()) {
                         raw("    mov [r12" + signed(off) + "], rax");
                     } else {
                         raw("    movq %rax, " + off + "(%r12)");
                     }
                 }
-                emitGtCall("gt_register", "r12"); // the real block start is what malloc returned (and what free needs)
-                raw(isWindows() ? "    add r12, 16" : "    addq $16, %r12"); // r12: now the data-start pointer
+                emitGtCall("gt_register", "r12");
                 raw("    jmp " + newUdynDone);
                 raw(newUdynNull + ":");
                 if (count > 0) {
@@ -4429,6 +4411,7 @@ public class X86Backend {
                 pushReg("r12");
                 return;
             }
+            case "NEW_FROM_USTRING":
             case "NEW_FROM_STRING": {
                 // Builds a dynarray(u8-ish) from a string-pool id already
                 // on the stack (its address, per the bare-name-PUSH
@@ -4437,6 +4420,9 @@ public class X86Backend {
                 // so it calls the real, already-declared extern strlen
                 // to get it, then allocates and copies via the same
                 // dynarray header layout as NEW_DYN/NEW_UDYN.
+                // NEW_FROM_USTRING: the unsafe, headerless form -- malloc'd block = the bytes plus a NUL terminator (so
+                // len(arr, '\0') works), pointer = block, registered with the ghost table.
+                final boolean ustr = mnemonic.equals("NEW_FROM_USTRING");
                 popReg("r12"); // address of the string literal
                 // The argument register is an ABI question (win64: rcx,
                 // SysV: rdi), not a syntax one -- argReg(0) resolves
@@ -4452,9 +4438,9 @@ public class X86Backend {
                 // rax now holds the string length.
                 raw(isWindows() ? "    mov r13, rax" : "    movq %rax, %r13"); // r13: length, callee-saved
                 if (isWindows()) {
-                    raw("    add rax, 16");
+                    raw("    add rax, " + (ustr ? 1 : 16));
                 } else {
-                    raw("    addq $16, %rax");
+                    raw("    addq $" + (ustr ? 1 : 16) + ", %rax");
                 }
                 if (isWindows()) {
                     raw("    mov " + argReg(0) + ", rax");
@@ -4463,6 +4449,26 @@ public class X86Backend {
                 }
                 emitAlignedCall(() -> emitCallByName("malloc"));
                 raw(isWindows() ? "    mov r14, rax" : "    movq %rax, %r14"); // r14: new block
+                if (ustr) {
+                    String ustrDone = newInternalLabel("newustr_done");
+                    raw(isWindows() ? "    test r14, r14" : "    testq %r14, %r14");
+                    raw("    jz " + ustrDone);
+                    if (isWindows()) {
+                        raw("    mov rdi, r14");
+                        raw("    mov rsi, r12");
+                        raw("    lea rcx, [r13+1]");
+                        raw("    rep movsb");
+                    } else {
+                        raw("    movq %r14, %rdi");
+                        raw("    movq %r12, %rsi");
+                        raw("    leaq 1(%r13), %rcx");
+                        raw("    rep movsb");
+                    }
+                    emitGtCall("gt_register", "r14");
+                    raw(ustrDone + ":");
+                    pushReg("r14");
+                    return;
+                }
                 if (isWindows()) {
                     raw("    mov [r14], r13");
                     raw("    mov [r14+8], r13");
@@ -4494,18 +4500,12 @@ public class X86Backend {
                 // for the safe form, fills any newly-added slots
                 // (oldLen..newCount) with the fill value.
                 //
-                // The safe (RESIZE) and unsafe (URESIZE) pointers use
-                // *different* header conventions on purpose (see
-                // NEW_UDYN's own doc comment): a safe dynarray's pointer
-                // is the malloc'd block start (header at +0/+8, matching
-                // NEW_DYN/LOOKUP_DYN), while an unsafe one's pointer is
-                // the data start (header at -16/-8), because its direct
-                // indexing goes through the header-agnostic
-                // LOOKUP_ARRAY(_LHS) family. `dataStartPtr` tracks which
-                // convention applies here.
+                // The safe (RESIZE) pointer is the malloc'd block start with a 16-byte [len][cap] header before the elements
+                // (matching NEW_DYN/LOOKUP_DYN). The unsafe (URESIZE) pointer is the malloc'd block itself and the block is
+                // just the elements: no header, nothing to read or write, realloc(ptr, newCount*elemSize) rounded up to
+                // at least 1 byte (realloc(p, 0) would free the block and return NULL).
                 int elemSize = (int) Long.parseLong(line.get(1).text);
                 boolean hasFill = mnemonic.equals("RESIZE");
-                boolean dataStartPtr = !hasFill;
                 // A fill value wider than one word (a struct element) is a
                 // whole pushed block, nw words deep, ahead of newCount and
                 // the old pointer; it stays on the real stack (rsp is
@@ -4529,9 +4529,7 @@ public class X86Backend {
                     popReg("r12"); // newCount
                     popReg("rax"); // old pointer (scratch; moved into the call's arg reg below)
                 }
-                if (dataStartPtr) {
-                    raw(isWindows() ? "    sub rax, 16" : "    subq $16, %rax"); // rax: real block start
-                }
+                // An unsafe dynarray is headerless: its pointer IS the malloc'd block (nothing to subtract, no length to read).
                 // The old block start is kept on the stack across the realloc: if the block moves, the ghost table
                 // entry for it is dropped (gt_moved: no free, realloc already released it) and the new address registered.
                 pushReg("rax");
@@ -4546,7 +4544,9 @@ public class X86Backend {
                 // pointer's been moved into the call's argument register,
                 // and emitAlignedCall never touches it, so oldLen lives
                 // there instead across the call.
-                loadSizedFromAddr("rbx", "rax", 8); // rbx = oldLen
+                if (hasFill) {
+                    loadSizedFromAddr("rbx", "rax", 8); // rbx = oldLen
+                }
                 // The two argument registers are an ABI question (win64:
                 // rcx/rdx, SysV: rdi/rsi), independent of syntax --
                 // argReg(0)/argReg(1) resolve that; this used to hardcode
@@ -4557,12 +4557,29 @@ public class X86Backend {
                     raw("    mov " + argReg(0) + ", rax"); // arg1 = old (block-start) pointer
                     raw("    mov " + argReg(1) + ", r12");
                     raw("    imul " + argReg(1) + ", " + elemSize);
-                    raw("    add " + argReg(1) + ", 16");
+                    if (hasFill) {
+                        raw("    add " + argReg(1) + ", 16");
+                    } else {
+                        // never realloc to 0 bytes (that frees the block and returns NULL): round up to 1
+                        String nz = newInternalLabel("uresize_nz");
+                        raw("    test " + argReg(1) + ", " + argReg(1));
+                        raw("    jnz " + nz);
+                        raw("    mov " + argReg(1) + ", 1");
+                        raw(nz + ":");
+                    }
                 } else {
                     raw("    movq %rax, %" + argReg(0)); // arg1 = old (block-start) pointer
                     raw("    movq %r12, %" + argReg(1));
                     raw("    imulq $" + elemSize + ", %" + argReg(1) + ", %" + argReg(1));
-                    raw("    addq $16, %" + argReg(1));
+                    if (hasFill) {
+                        raw("    addq $16, %" + argReg(1));
+                    } else {
+                        String nz = newInternalLabel("uresize_nz");
+                        raw("    testq %" + argReg(1) + ", %" + argReg(1));
+                        raw("    jnz " + nz);
+                        raw("    movq $1, %" + argReg(1));
+                        raw(nz + ":");
+                    }
                 }
                 // realloc(oldBlockPtr, newTotalBytes) -- args already
                 // staged into the ABI's own first two argument registers
@@ -4574,8 +4591,10 @@ public class X86Backend {
                 String resizeEnd = newInternalLabel("resize_end");
                 raw(isWindows() ? "    test r15, r15" : "    testq %r15, %r15");
                 raw("    jz " + resizeEnd);
-                storeSizedToAddr_reg("r15", 0, "r12", 8);
-                storeSizedToAddr_reg("r15", 8, "r12", 8);
+                if (hasFill) {
+                    storeSizedToAddr_reg("r15", 0, "r12", 8);
+                    storeSizedToAddr_reg("r15", 8, "r12", 8);
+                }
                 if (!hasFill) {
                     raw(resizeEnd + ":");
                     emitResizeGtUpdate();
@@ -4617,13 +4636,6 @@ public class X86Backend {
                         long drop = fillWords * 8L + 16;
                         raw(isWindows() ? "    add rsp, " + drop : "    addq $" + drop + ", %rsp");
                     }
-                }
-                if (dataStartPtr) {
-                    String resizeNoAdd = newInternalLabel("resize_noadd");
-                    raw(isWindows() ? "    test r15, r15" : "    testq %r15, %r15");
-                    raw("    jz " + resizeNoAdd);
-                    raw(isWindows() ? "    add r15, 16" : "    addq $16, %r15"); // r15: back to the data-start pointer this convention returns
-                    raw(resizeNoAdd + ":");
                 }
                 pushReg("r15");
                 return;
@@ -5539,7 +5551,7 @@ public class X86Backend {
     /** set when this function has an instruction whose code uses r13/r14 internally (see RegVarPromotionPass.R13_R14_USERS) */
     private boolean rfClobberSeen = false;
     private static final java.util.Set<String> RF_R13_R14_USERS = new java.util.HashSet<>(java.util.Arrays.asList(
-            "NEW", "NEW_DYN", "NEW_UDYN", "NEW_FROM_STRING", "CLONE", "CLONE_DYN", "RESIZE", "URESIZE", "DOT", "LOOKUP_ARRAY", "ASM_START"));
+            "NEW", "NEW_DYN", "NEW_UDYN", "NEW_FROM_STRING", "NEW_FROM_USTRING", "CLONE", "CLONE_DYN", "RESIZE", "URESIZE", "DOT", "LOOKUP_ARRAY", "ASM_START"));
 
     private String rfReg(String tok) {
         if (tok.equals("%s")) {

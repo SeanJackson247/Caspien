@@ -86,7 +86,7 @@ public class RegVarPromotionPass {
 
     /** Mnemonics whose backend code uses r13/r14 internally (CLONE, DOT of wide fields, LOOKUP_ARRAY, NEW*, RESIZE*) or that run arbitrary code. */
     static final Set<String> R13_R14_USERS = new HashSet<>(Arrays.asList(
-            "NEW", "NEW_DYN", "NEW_UDYN", "NEW_FROM_STRING", "CLONE", "CLONE_DYN", "RESIZE", "URESIZE",
+            "NEW", "NEW_DYN", "NEW_UDYN", "NEW_FROM_STRING", "NEW_FROM_USTRING", "CLONE", "CLONE_DYN", "RESIZE", "URESIZE",
             "DOT", "LOOKUP_ARRAY", "ASM_START", "ASM_END"));
 
     private final boolean enabled;

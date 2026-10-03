@@ -2630,7 +2630,9 @@ public class AddressLoweringPass implements OptimizationPass {
         // word-sized string value, build a fresh `dynarray(char)` handle
         // from it, leave that handle as the result.
         if (mnemonic.equals("NEW_FROM_STRING") && line.size() == 3) {
-            return PARSER.parse(Collections.singletonList("NEW_FROM_STRING"), "<address-lowered>").get(0);
+            // an unsafe dynarray is headerless (see Codegen NEW_UDYN): its own mnemonic
+            boolean unsafeTarget = line.get(1).text.contains("unsafe_dynarray(");
+            return PARSER.parse(Collections.singletonList(unsafeTarget ? "NEW_FROM_USTRING" : "NEW_FROM_STRING"), "<address-lowered>").get(0);
         }
 
         // "GT_DESTRUCT name" -> "GT_DESTRUCT $offset" -- `name` is a

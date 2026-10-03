@@ -62,6 +62,21 @@ func unsafePart() void{
 		c1 = live()
 		u[299999] = 5
 		c2 = u[299999]
+		u = resize(u, 0)
+		c3 = live()
+		u = resize(u, 4)
+		u[3] = 11
+		c2 = c2 + u[3]
+	}
+}
+
+func textPart() void{
+	unsafe{
+		let t = mut unsafe dyn("abc")
+		c0 = live()
+		c1 = len(t, '\0')
+		c2 = 0
+		if t[1] == 'b'{ c2 = 98 }
 	}
 }
 
@@ -81,6 +96,12 @@ func main() void{
 		unsafePart()
 		check("unsafe dyn registered", c0 == base + 1)
 		check("unsafe resize keeps one entry", c1 == base + 1)
-		check("unsafe element write", c2 == 5)
+		check("unsafe element write", c2 == 16)
+		check("unsafe resize to zero keeps one entry", c3 == base + 1)
+		check("unsafe scope end unregisters", live() == base)
+		textPart()
+		check("unsafe dyn(text) registered", c0 == base + 1)
+		check("unsafe dyn(text) is the bytes, NUL-terminated", c1 == 3 && c2 == 98)
+		check("unsafe dyn(text) scope end unregisters", live() == base)
 	}
 }

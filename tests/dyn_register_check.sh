@@ -11,6 +11,6 @@ sed -i 's/^target .*/target linux/; s/^\( *\)default: win64/\1default: sysv_x64/
 java Compiler -i tests/dyn_register_test.caspien prog >compile.log 2>&1 || { echo "FAIL: compile"; tail -5 compile.log; exit 1; }
 valgrind -q --leak-check=full --errors-for-leak-kinds=definite --error-exitcode=9 ./prog >out.txt 2>vg.txt; rc=$?
 grep -q FAIL out.txt && { echo "FAIL: $(grep FAIL out.txt)"; exit 1; }
-[ "$(grep -c PASS out.txt)" = 11 ] || { echo "FAIL: expected 11 PASS lines"; cat out.txt; exit 1; }
+[ "$(grep -c PASS out.txt)" = 16 ] || { echo "FAIL: expected 16 PASS lines"; cat out.txt; exit 1; }
 [ $rc -eq 0 ] || { echo "FAIL: valgrind rc=$rc"; head -20 vg.txt; exit 1; }
-echo "PASS dyn_register_check: 11 checks, valgrind clean"
+echo "PASS dyn_register_check: 16 checks, valgrind clean"
