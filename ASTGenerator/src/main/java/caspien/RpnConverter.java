@@ -163,7 +163,6 @@ public class RpnConverter {
                 case "impl_default_lock_match":
                 case "library":
                 case "for":
-                case "cast":
                 case "type":
                 case "match":
                 case "unsafe":
@@ -312,13 +311,6 @@ public class RpnConverter {
                     resolveNestedGroups(t.sub);
                     t.sub = toRpn(t.sub, t.file, t.line);
                 }
-                convertLines(t.childs);
-                break;
-            case "cast":
-                // t.sub = [varNameTok, targetTypeNameTok] -- two raw name
-                // tokens, not an expression (no 'as' token even kept here,
-                // see Parser.gatherCast), so nothing to RPN-convert there;
-                // only the block body needs walking.
                 convertLines(t.childs);
                 break;
             case "struct":

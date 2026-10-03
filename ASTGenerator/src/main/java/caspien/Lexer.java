@@ -40,7 +40,7 @@ public class Lexer {
     private static final Set<String> KEYWORDS = new HashSet<>(Arrays.asList(
             "if", "else", "elseif", "elif", "loop", "struct", "enum",
             "import", "func", "let", "return", "break", "continue", "interface", "impl", "for",
-            "extends", "cast", "type", "new", "match", "elsematch", "unsafe", "safe",
+            "extends", "type", "new", "match", "elsematch", "unsafe", "safe",
             "extern", "export", "ASM", "const", "par", "await", "yield", "sleep", "throw", "assume",
             "library", "atomic", "try", "catch"
     ));

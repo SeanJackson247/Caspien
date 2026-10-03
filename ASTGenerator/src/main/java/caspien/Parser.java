@@ -2037,17 +2037,6 @@ public class Parser {
                         i++;
                         continue;
                     }
-                    case "cast": {
-                        // "cast varName as TypeName{...}" -- a scoped
-                        // upcast, structurally just like 'loop': a fixed
-                        // header shape followed by a trailing block whose
-                        // body is gathered exactly like any other block.
-                        // Allowed anywhere a statement is (not root-only),
-                        // same as 'if'/'loop'/'for'.
-                        result.add(wrapAsLine(gatherCast(tokens, first)));
-                        i++;
-                        continue;
-                    }
                     case "enum": {
                         requireRoot(isRoot, first, "enum");
                         result.add(wrapAsLine(gatherEnum(tokens, first)));
@@ -3005,45 +2994,6 @@ public class Parser {
         gathered.childs = exprTokens;
         gathered.decorators = constTok.decorators;
         gathered.pinnedComments = constTok.pinnedComments;
-        return gathered;
-    }
-
-    /**
-     * "cast varName as TypeName{...}" -- (always rejected by
-     * TypeChecker.checkCast now that struct inheritance is gone). Structurally identical to 'loop': a fixed
-     * header shape, then a trailing block gathered exactly like any
-     * other.
-     */
-    private Token gatherCast(List<Token> tokens, Token castTok) {
-        if (tokens.size() < 4 || tokens.get(1).type != TokenType.VARREF) {
-            throw new CompilerException("parse", castTok.file, castTok.line,
-                    "expected a variable name after 'cast'");
-        }
-        Token varTok = tokens.get(1);
-        if (tokens.get(2).type != TokenType.OPERATOR || !tokens.get(2).text.equals("as")) {
-            throw new CompilerException("parse", castTok.file, castTok.line,
-                    "expected 'as' after 'cast " + varTok.text + "'");
-        }
-        if (tokens.get(3).type != TokenType.VARREF) {
-            throw new CompilerException("parse", castTok.file, castTok.line,
-                    "expected a target type name after 'cast " + varTok.text + " as'");
-        }
-        Token targetTypeTok = tokens.get(3);
-        Token blockTok = requireTrailingBlock(tokens, castTok);
-        if (tokens.indexOf(blockTok) != 4) {
-            throw new CompilerException("parse", castTok.file, castTok.line,
-                    "unexpected tokens between 'cast " + varTok.text + " as " + targetTypeTok.text
-                            + "' and '{'");
-        }
-        blockTok.childs = gatherKeywordBlocks(blockTok.childs, false);
-
-        Token gathered = new Token(TokenType.KEYWORD, "cast", castTok.line, castTok.file);
-        gathered.sub = new ArrayList<>();
-        gathered.sub.add(varTok);
-        gathered.sub.add(targetTypeTok);
-        gathered.decorators = castTok.decorators;
-        gathered.childs = blockTok.childs;
-        gathered.pinnedComments = castTok.pinnedComments;
         return gathered;
     }
 

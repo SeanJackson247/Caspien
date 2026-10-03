@@ -7284,7 +7284,6 @@ public class TypeChecker {
             case "unsafe":
             case "safe":
             case "lock":
-            case "cast":
                 return containsRealTryCatch(stmt.childs);
             case "assume":
                 return stmt.hasBlock && containsRealTryCatch(stmt.childs);
@@ -8132,9 +8131,6 @@ public class TypeChecker {
                     validateDecorators(stmt.decorators, LOOP_DECORATORS, "a 'for' statement");
                     checkForLoop(stmt, scope, func);
                     return;
-                case "cast":
-                    checkCast(stmt, scope, func, insideLoop);
-                    return;
                 case "match":
                     if (stmt.isCaseMatch) {
                         checkCaseMatch(stmt, scope, func, insideLoop);
@@ -8470,32 +8466,6 @@ public class TypeChecker {
     }
 
     /**
-     * "cast varName as TypeName{ ... }" -- REMOVED together with struct
-     * "extends": it only ever narrowed a variable to an ancestor struct,
-     * and there are no ancestors any more. The syntax is still parsed so
-     * that using it gets a clear, specific error rather than a generic
-     * parse failure.
-     */
-    private void checkCast(Token castTok, Scope scope, FuncInfo func, boolean insideLoop) {
-        Token varTok = castTok.sub.get(0);
-        Token targetTok = castTok.sub.get(1);
-        String varName = varTok.text;
-        String targetType = targetTok.text;
-
-        TypeInfo currentType = scope.lookup(varName);
-        if (currentType == null) {
-            throw new CompilerException("type", varTok.file, varTok.line,
-                    "use of undeclared variable '" + varName + "'");
-        }
-        // A 'cast' block only ever narrowed a struct to an ancestor struct.
-        // Structs have no 'extends' any more, so there is nothing to cast to.
-        throw new CompilerException("type", castTok.file, castTok.line,
-                "'cast' has been removed together with struct 'extends' (there is no ancestor of '"
-                        + currentType.baseType + "' to cast '" + varName + "' to '" + targetType
-                        + "'); use composition and interfaces instead");
-    }
-
-    /**
      * "match p instanceof Point{ ... }" -- originally: "the compiler
      * just needs to store these assertions about its type system...
      * later we will address how these change the type checking within
@@ -8506,13 +8476,12 @@ public class TypeChecker {
      * that this was still genuinely true -- `match b instanceof Sub{
      * b.subOnlyField }` still failed with "struct 'Base' has no member
      * named 'subOnlyField'" immediately before this round's fix, even
-     * though the exact same shadowing mechanism `cast x as Y{...}`
-     * already used (`checkCast`, just above) was sitting right there,
-     * unused for this. `checkMatchChain`/`checkEnumForMatch` now reuse
+     * though a shadowing mechanism for narrowing a variable (the
+     * since-removed `cast x as Y{...}`) already existed, unused for this. `checkMatchChain`/`checkEnumForMatch` now reuse
      * that identical mechanism automatically: any "instanceof"-kind
      * proof recorded for a plain local-variable slot (never a
      * '.'-chain -- narrowing only ever rebinds a real variable
-     * binding, the same restriction 'cast' itself already has) also
+     * binding) also
      * shadows that variable with the proven concrete type for the
      * branch's own duration, exactly as an explicit `cast x as
      * Sub{...}` immediately inside the branch would have. "implements"
@@ -8792,17 +8761,14 @@ public class TypeChecker {
      * Shared by `checkMatchChain` and `checkEnumForMatch` -- for every
      * "instanceof"-kind proof in `patterns` whose own slot is a plain
      * local-variable name (never a '.'-chain or a lookup -- narrowing
-     * only ever rebinds a real variable binding, the same restriction
-     * `checkCast` itself already has), shadows that variable inside
+     * only ever rebinds a real variable binding), shadows that variable inside
      * `branchScope` with a copy of its own original `TypeInfo` except
      * the baseType replaced by the proof's own concrete target --
-     * identical in shape to what an explicit `cast varName as
-     * TargetName{...}` immediately inside the branch would have done
+     * identical in shape to an explicit narrowing of the variable
      * by hand. Silently skips anything that doesn't resolve to a real,
      * currently-in-scope plain variable (an untrackable slot, or a
      * proof over an expression rather than a variable) -- there's
-     * nothing to shadow in that case, same as `cast` itself requiring
-     * a plain variable to operate on in the first place.
+     * nothing to shadow in that case.
      */
     private void narrowInstanceofSlots(List<Token.MatchPattern> patterns, Scope outerScope, Scope branchScope) {
         for (Token.MatchPattern p : patterns) {

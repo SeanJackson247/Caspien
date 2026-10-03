@@ -2,7 +2,7 @@
 
 Stage 1 of the toolchain: Caspien source -> plain-text high-order bytecode (HOB). History lives in git; this file describes only what is true now. The root `/home/claude/caspien/CLAUDE.md` covers the whole project.
 
-Struct `extends`/`abstract` are gone (`0345aaa`): composition plus interfaces only, flat `Class` enum, `x instanceof Struct` (x interface-typed, struct name only), `x implements IFace` (x struct-typed, interface name only), `cast` currently an unconditional error.
+Struct `extends`/`abstract` are gone (`0345aaa`): composition plus interfaces only, flat `Class` enum, `x instanceof Struct` (x interface-typed, struct name only), `x implements IFace` (x struct-typed, interface name only), the `cast` statement is removed.
 
 ## CLI and pipeline
 `java caspien.Main -i main.caspien out.txt` (normally driven by root `Compiler.java`, which chains all four stages). The output file, stdout and `output.txt` get the HOB. `compiler.config` (CWD-relative, REQUIRED, no fallback) lists calling conventions and the default one.
@@ -45,7 +45,7 @@ Stages in `src/main/java/caspien/`:
 No framework. Fixtures: `examples/` in this folder (hand-written `.caspien`); names with `_error_test`/`_error` must FAIL to compile, others must compile; `_cg_test` also run end to end through the later stages. Run each through `Main`, compare pass/fail before/after a change. Runtime tests are in `/home/claude/caspien/tests/*.caspien` plus `*_check.sh` scripts; compile and run ONE program at a time per compiler tree (shared scratch files). The shipped config targets windows_gnu, so run sweeps in a Linux-configured scratch copy.
 
 ## Known open gaps
-- After the extends removal: the struct `.enum` form is an error; `cast` is an unconditional error (keyword kept only for the message); constant instanceof/implements results are not reported.
+- After the extends removal: the struct `.enum` form is an error; constant instanceof/implements results are not reported.
 - Reassigning through a pointer-reached target with a right side that moves the same variable (`h.w = pass(h.w)`) still destructs before the right side runs.
 - By-value struct parameters rejected; `auto` cannot point at a dynarray element; `dyn([a, a])` double-use of an owns pointer not rejected.
 - Windows/MASM largely unverified.

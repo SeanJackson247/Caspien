@@ -46,7 +46,6 @@ public class TreeBuilder {
                 case "impl_default_lock_match":
                 case "library":
                 case "for":
-                case "cast":
                 case "type":
                 case "match":
                 case "unsafe":
@@ -158,9 +157,6 @@ public class TreeBuilder {
                     t.sub = singleton(buildTree(t.sub, t.file, t.line));
                 }
                 buildLines(t.childs);
-                break;
-            case "cast":
-                buildLines(t.childs); // t.sub is just two raw name tokens, nothing to build
                 break;
             case "struct":
             case "enum":

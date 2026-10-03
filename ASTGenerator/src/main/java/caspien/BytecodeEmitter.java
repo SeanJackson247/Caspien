@@ -1402,7 +1402,7 @@ public class BytecodeEmitter {
         // the stack pointers," confirmed directly -- every
         // ALLOC/ALLOC_STATIC this function will ever need, from
         // anywhere in its body no matter how deeply nested (an 'if'/
-        // 'loop'/'for'/'match'/'cast'/'lock'/'unsafe'/'safe'/'assume'
+        // 'loop'/'for'/'match'/'lock'/'unsafe'/'safe'/'assume'
         // body, at any depth), is collected up front here and emitted
         // contiguously, before a single byte of the gt_routine
         // machinery or the function's own statement bodies. This is a
@@ -2097,7 +2097,7 @@ public class BytecodeEmitter {
 
     /**
      * Recursively walks a function's entire body -- every nested
-     * 'if'/'match'/'loop'/'for'/'cast'/'lock'/'unsafe'/'safe'/'assume'
+     * 'if'/'match'/'loop'/'for'/'lock'/'unsafe'/'safe'/'assume'
      * block, at any depth -- collecting one `Runnable` per
      * ALLOC/ALLOC_STATIC this function will ever need to emit, in the
      * exact same program order `emitBlock` and friends would otherwise
@@ -2197,7 +2197,6 @@ public class BytecodeEmitter {
                 collectHoistedAllocs(stmt.childs, staticAllocs, ordinaryAllocs);
                 return;
             }
-            case "cast":
             case "unsafe":
             case "safe":
             case "lock":
@@ -2340,7 +2339,6 @@ public class BytecodeEmitter {
                     break;
                 case "loop":
                 case "for":
-                case "cast":
                 case "unsafe":
                 case "safe":
                 case "lock":
@@ -2408,7 +2406,6 @@ public class BytecodeEmitter {
                     break;
                 case "loop":
                 case "for":
-                case "cast":
                 case "unsafe":
                 case "safe":
                 case "lock":
@@ -2518,16 +2515,6 @@ public class BytecodeEmitter {
                     return;
                 case "for":
                     emitForLoop(stmt);
-                    return;
-                case "cast":
-                    // Purely a compile-time scope-narrowing (see
-                    // TypeChecker.checkCast) -- the underlying value
-                    // never actually changes at runtime, so there's
-                    // nothing to emit for the 'cast' construct itself,
-                    // just its block's own statements (with their own
-                    // 'let' ALLOCs hoisted, same as any other block).
-                    emitBlock(stmt.childs);
-                    emitDestructList(stmt.destructOnExit, stmt);
                     return;
                 case "match":
                     emitMatchChain(stmt);
