@@ -15787,6 +15787,12 @@ public class TypeChecker {
                     "'" + targetName + "' is '@untyped' -- it carries no runtime type information, so "
                             + "nothing can ever be proven to be an instance of it");
         }
+        if (!structImplements(targetName, leftType.baseType)) {
+            // Only a struct that implements the left side's interface can ever be behind that interface-typed value.
+            warn(op.right.file, op.right.line,
+                    "'instanceof " + targetName + "' can never be true -- '" + targetName + "' does not implement '"
+                            + leftType.baseType + "'");
+        }
         op.right.resolvedType = targetName;
         return new TypeInfo(null, "imut", "bool");
     }
@@ -15852,9 +15858,28 @@ public class TypeChecker {
             warn(op.right.file, op.right.line,
                     "'implements " + targetName + "' can never be true -- no struct anywhere in this "
                             + "program implements '" + targetName + "'");
+        } else if (!structImplements(leftType.baseType, targetName)) {
+            // The left side is a struct-typed value, so its type is known: some other struct implements the interface, this one does not.
+            warn(op.right.file, op.right.line,
+                    "'implements " + targetName + "' can never be true -- '" + leftType.baseType + "' does not implement '"
+                            + targetName + "'");
         }
         op.right.resolvedType = targetName;
         return new TypeInfo(null, "imut", "bool");
+    }
+
+    /** Whether `structName` has an `impl interfaceName for structName` block or declares `implements interfaceName`. */
+    private boolean structImplements(String structName, String interfaceName) {
+        List<ImplInfo> impls = implsByConcreteType.get(structName);
+        if (impls != null) {
+            for (ImplInfo impl : impls) {
+                if (interfaceName.equals(impl.interfaceName)) {
+                    return true;
+                }
+            }
+        }
+        StructInfo si = structs.get(structName);
+        return si != null && si.implementsNames.contains(interfaceName);
     }
 
     /** Whether any "impl `interfaceName` for SomeStruct" block exists anywhere in the whole compilation unit -- the exact same whole-program scan `generateEnumForEnums` already does to build `$enum_for_interfaceName`, reused here rather than duplicated with different logic that could drift out of sync with it. */

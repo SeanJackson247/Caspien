@@ -1,0 +1,43 @@
+// `instanceof` / `implements` that can never be true compile with a warning (the answer is still false at run time); the ones that can be true do not.
+// instanceof_warn_check.sh compiles this and expects exactly two warnings: `s instanceof Other` and `o implements Shape`.
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+interface Shape{
+	tag(_self: ref some imut self) imut u64;
+}
+struct Rect{@pub{ w: mut u64 }}
+struct Other{@pub{ n: mut u64 }}
+impl Shape for Rect{
+	@pub
+	@realizes
+	func tag(_self: ref some imut self) imut u64{ return 1 }
+}
+func check(name: static imut string, ok: imut bool) void{
+	unsafe extern{
+		if ok{ printf("PASS %s\n", name) }
+		else{ printf("FAIL %s\n", name) }
+	}
+}
+func isRect(s: ref some imut Shape) imut bool{
+	let r = imut s instanceof Rect
+	return r
+}
+func isOther(s: ref some imut Shape) imut bool{
+	let r = imut s instanceof Other
+	return r
+}
+func main() void{
+	?catch(e){ return }
+	let r = mut ? new Rect{w= 3}
+	let o = mut ? new Other{n= 4}
+	check("instanceof of an implementer", isRect(r))
+	check("instanceof of a non-implementer is false", !isOther(r))
+	let rs = imut r implements Shape
+	check("implements, true", rs)
+	let os = imut o implements Shape
+	check("implements, never true", !os)
+}
