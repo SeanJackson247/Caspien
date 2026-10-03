@@ -1740,6 +1740,13 @@ public class MembershipLoweringPass implements OptimizationPass {
          * pass's own dereference step exists for.
          */
         private static boolean isGenuinePointer(CanonicalType canonical) {
+            // A `ref` to a dynarray is the same block pointer the owner
+            // holds (`len(r)` and indexing read it directly), so it is a
+            // dynarray value here, never a pointer to one; only `raw`
+            // (the address of the variable) needs the dereference.
+            if ("ref".equals(canonical.storage) && canonical.baseType.startsWith("dynarray(")) {
+                return false;
+            }
             return canonical.storage != null && !canonical.isOwnsStorage();
         }
 

@@ -94,23 +94,24 @@ hint only because GitHub has no Caspien highlighter.
 
 | Part | Program |
 |---|---|
-| Values, structs, methods, enums | `01_basics` |
-| Proofs | `02_proofs` |
-| Ownership | `03_ownership` |
-| Termination | `04_termination` |
-| Interfaces, generics, `par`/`await` | `05_abstraction` |
-| Locks | `06_locks` |
-| Program entry and event loops | `07` to `09` |
-| Functions, overloading, `@pure`, generics | `10_functions` |
-| Composition, interfaces, dispatch | `11_types` |
-| `match`, loops, bounded recursion | `12_match_and_loops` |
-| Dynamic arrays and the standard library | `13_dynamic_arrays` |
-| Raw pointers and C | `14_unsafe_pointers` |
-| `extern`, `export`, linking your own C | `docs/c_interop/` |
-| Inline assembly, `assume match` | `18_asm_and_assume` |
-| `throw`, `try`, `?` | `15_errors` |
-| Atomics, locks, threads | `16_atomics_and_locks` |
-| Locked structs, `Result`, constructors | `17_locked_results` |
+| [Values](#values-mutability-and-types), [structs, methods and enums](#structs-methods-and-enums) | [`01_basics`](docs/examples/01_basics.caspien) |
+| [Proofs](#proofs-instead-of-runtime-checks) | [`02_proofs`](docs/examples/02_proofs.caspien) |
+| [Ownership](#ownership-and-pointers) | [`03_ownership`](docs/examples/03_ownership.caspien) |
+| [Termination](#bounded-loops-and-bounded-recursion) | [`04_termination`](docs/examples/04_termination.caspien) |
+| [Interfaces](#interfaces), [generics](#generics-and-compile-time-dispatch), [`par`/`await`](#atomics-locks-and-threads) | [`05_abstraction`](docs/examples/05_abstraction.caspien) |
+| [Locks](#locks-and-proofs-on-your-own-types) | [`06_locks`](docs/examples/06_locks.caspien) |
+| [Program entry and event loops](#program-entry-main-arguments-and-event-loops) | [`07_main_c_args`](docs/examples/07_main_c_args.caspien), [`08_main_safe_args`](docs/examples/08_main_safe_args.caspien), [`09_event_loop`](docs/examples/09_event_loop.caspien) |
+| [Functions, overloading, `@pure`](#functions-overloading-and-pure), [generics](#generics-and-compile-time-dispatch) | [`10_functions`](docs/examples/10_functions.caspien) |
+| [Composition](#composition-there-is-no-struct-inheritance), [interfaces](#interfaces), [dispatch](#generics-and-compile-time-dispatch) | [`11_types`](docs/examples/11_types.caspien) |
+| [`match`](#the-match-statement), [loops, bounded recursion](#bounded-loops-and-bounded-recursion) | [`12_match_and_loops`](docs/examples/12_match_and_loops.caspien) |
+| [Dynamic arrays and the standard library](#dynamic-arrays-and-the-standard-library) | [`13_dynamic_arrays`](docs/examples/13_dynamic_arrays.caspien) |
+| [Raw pointers and C](#unsafe-and-raw-pointers) | [`14_unsafe_pointers`](docs/examples/14_unsafe_pointers.caspien) |
+| [Every `unsafe` tag](#unsafe-and-raw-pointers) | [`19_unsafe_tags`](docs/examples/19_unsafe_tags.caspien) |
+| [`extern`, `export`, linking your own C](#talking-to-c-extern-and-export) | [`docs/c_interop/`](docs/c_interop/) |
+| [Inline assembly](#inline-assembly-asm), [`assume match`](#vouching-for-a-proof-assume-match) | [`18_asm_and_assume`](docs/examples/18_asm_and_assume.caspien) |
+| [`throw`, `try`, `?`](#errors-throw-try-) | [`15_errors`](docs/examples/15_errors.caspien) |
+| [Atomics, locks, threads](#atomics-locks-and-threads) | [`16_atomics_and_locks`](docs/examples/16_atomics_and_locks.caspien) |
+| [Locked structs, `Result`, constructors](#locks-and-proofs-on-your-own-types) | [`17_locked_results`](docs/examples/17_locked_results.caspien) |
 
 #### The shape of a program
 
@@ -711,8 +712,29 @@ for i in 0..3{
 }
 ```
 
-A bare `loop{}` has no bound and needs `unsafe`. The only exception is the `@event_loop` function
-(see the end of this tour).
+The same loop works directly over a dynamic array, and `match` in the header proves the index for you. `into`
+proves it for writing, and `Some(i)` additionally proves that the element `ps[i]` (a pointer) is alive:
+
+```rust
+for i in d{ n += 1 }                              // i runs over 0..len(d)
+for match i in d{ s += d[i] }                     // read d[i]
+for match i into d{ d[i] = d[i] * 2 }             // write d[i]
+for match Some(i) in ps{ s += ps[i].a }           // ps is a dynarray of owned pointers: read through ps[i]
+for match Some(i) into ps{ ps[i].b = 7 }          // ... or write through it
+```
+
+A bare `loop{}` has no bound and needs `unsafe` (the `loop` tag). The only exception is the `@event_loop`
+function (see the end of this tour).
+
+```rust
+let n = mut 0
+unsafe loop{
+	loop{                    // runs until something breaks out of it
+		n += 1
+		if n == 5{ break }
+	}
+}
+```
 
 #### Control flow: `break`, `continue` and lazy chains
 
@@ -927,6 +949,47 @@ A statement-level `unsafe` block must say why it is unsafe, by naming the reason
 compiler checks the list both ways: a block that needs a reason it does not name is an error, and so is a block
 that names one it does not need, so the line is also what you grep for. A bare `unsafe{}` is an error. (A
 root-level `unsafe{}` that holds declarations is not a statement block and takes no list.)
+
+One example of every tag (each is compiled and run in `docs/examples/19_unsafe_tags.caspien`, which also
+defines the helpers they use):
+
+```rust
+unsafe extern{ printf("%llu\n", n) }                        // extern: call a C function
+unsafe raw{ let r = mut (raw v) }                           // raw: make a raw pointer
+unsafe memcopy raw{ memcopy(raw dst, mut 8, raw v) }        // memcopy: copy 8 bytes from v to dst
+unsafe assume deref raw{                                    // deref: read through a raw pointer ...
+	let pv = mut (raw v)
+	assume match Some(pv)                                   // assume: ... that you vouch is alive
+	seen = mut deref(pv)
+}
+unsafe clone{ return ?clone(src) }                          // clone: deep copy of a `raw some` pointer
+unsafe global{ counter += 3 }                               // global: a mutable static that is not atomic or locked
+unsafe loop{                                                // loop: a bare `loop{}`
+	loop{
+		n += 1
+		if n == 5{ break }
+	}
+}
+unsafe udyn{ let a = mut unsafe dyn([10, 20, 30]) }         // udyn: an unsafe dynarray of plain data
+unsafe udyn:owns{ let a = mut unsafe dyn([h]) }             // udyn:owns: its elements own memory (here `h` owns a `World`)
+unsafe call{ let r = mut call(fp, mut 10) }                 // call: call through a function pointer
+unsafe asm{                                                 // asm: an inline `ASM` block (see "Inline assembly")
+	ASM relax {
+		pause
+	}
+	relax
+}
+unsafe async raw{                                           // async: a pointer crosses into an @async function
+	let pc = mut (raw cell)
+	got = mut ? await readCell(pc)
+}
+unsafe global guard{                                        // guard: a bare @lock/@unlock call (the safe form is `lock gate{ ... }`)
+	gate.lock()
+	counter += 8
+	gate.unlock()
+}
+unsafe swap{ m.lockState swap St.CLOSED }                   // swap: touch a swap mutex's state field by hand
+```
 
 Passing, returning, casting and stepping a `raw` pointer is safe. `raw x` needs an addressable variable (or a
 string literal), so bind a computed value to a `let` first. Pointer arithmetic is C's: `p++`, `p--`,
@@ -1489,7 +1552,7 @@ Inside `unsafe` the guarantees above are the programmer's responsibility. What e
 
 The standard library is built on `unsafe` code (the ghost table, `memcopy`, the `pthread_*` calls). The
 guarantee is therefore "safe user code on top of a small trusted `unsafe` core", and that core is tested,
-not proved. Costs inside that core are part of its contract, not of the safe-code guarantees. For example, the liveness check behind `match Some` is currently a linear scan of the ghost table under a spin lock, and `malloc` has no bound. A timing analysis would take such costs as stated inputs, as it would for any library.
+not proved. Costs inside that core are part of its contract, not of the safe-code guarantees. For example, the liveness check behind `match Some` is a lookup in the ghost table, an open-addressing hash set (expected O(1)) under a spin lock (the older linear-scan table is kept in `stdlib/gt_linear/`; import its `gt_*.caspien` files instead to use it), and `malloc` has no bound. A timing analysis would take such costs as stated inputs, as it would for any library.
 
 #### Beyond the language
 

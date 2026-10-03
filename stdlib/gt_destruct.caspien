@@ -1,16 +1,5 @@
-// The real "@gt_destruct" -- called with a raw pointer to an 'owns'
-// value whenever it leaves scope. A no-op for 'null', and a no-op if
-// the pointer isn't registered at all. Otherwise: removes it from the
-// table (swap-with-last, O(1), no ordering guarantee needed), shrinks
-// the buffer (halving) if occupancy has dropped below half capacity,
-// then actually frees the memory -- "don't worry about members of
-// structs," confirmed directly: this frees exactly the one pointer
-// given, never anything it might itself point to or contain.
-//
-// Uses 'match @lock ghost_table{...}' instead of the '@guard'-based
-// 'ghost_table.lock()'/'unlock()' this file used to need -- see
-// ghost_table.caspien's own file-level comment. 'unsafe' is still
-// needed around the 'realloc'/'free' extern calls themselves.
+// The real "@gt_destruct" -- unregisters `ptr` and frees it (nothing happens for null or an unregistered pointer). When the table falls below an
+// eighth of its capacity it is halved into a fresh array; a failed shrink is ignored and the old array is kept.
 import "ghost_table.caspien"
 
 @gt_destruct
@@ -19,36 +8,24 @@ func gt_destruct(ptr: raw imut u8) void{
 	if ptr != null{
 		match @lock ghost_table{
 			OPEN:{
-				let idx = mut 0
-				let found = mut false
-				let n = mut ghost_table.len
-				for walk in 0..n{
-					let slot = gtSlotAt(ghost_table.base, walk)
-					let val = gtReadSlot(slot)
-					if val == ptr{
-						found = mut true
-						idx = walk
-						break
-					}
-				}
-				if found{
-					let lastIdx = mut (ghost_table.len - 1)
-					if idx != lastIdx{
-						let lastSlot = gtSlotAt(ghost_table.base, lastIdx)
-						let lastVal = gtReadSlot(lastSlot)
-						let targetSlot = gtSlotAt(ghost_table.base, idx)
-						gtWriteSlot(targetSlot, lastVal)
-					}
+				let at = mut gtFind(ghost_table.base, ghost_table.capacity, ptr)
+				if at != ghost_table.capacity{
+					gtRemoveAt(ghost_table.base, ghost_table.capacity, at)
 					ghost_table.len = mut (ghost_table.len - 1)
-					if ghost_table.len < (ghost_table.capacity / 2){
+					if ghost_table.capacity > 8 && ghost_table.len * 8 < ghost_table.capacity{
 						let newCapacity = mut (ghost_table.capacity / 2)
 						let:<raw mut u8> newBase = null
 						unsafe extern{
-							newBase = realloc(ghost_table.base, newCapacity * 8)
+							newBase = mut realloc(null, newCapacity * 8)
 						}
 						if newBase != null{
-							ghost_table.base = newBase
-							ghost_table.capacity = newCapacity
+							gtClear(newBase, newCapacity)
+							gtRehash(ghost_table.base, ghost_table.capacity, newBase, newCapacity)
+							unsafe extern{
+								free(ghost_table.base)
+							}
+							ghost_table.base = mut newBase
+							ghost_table.capacity = mut newCapacity
 						}
 					}
 					unsafe extern{

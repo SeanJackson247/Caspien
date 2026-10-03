@@ -21,6 +21,32 @@ Lua rows: the same `nbody.lua` / `fannkuchredux.lua` / `spectralnorm.lua` (in ea
 n-body "naive" = `nbody_natural_f64` (small functions, plain loops); "optimized" = `nbody_scalars_f64` (hand-unrolled scalar statics).
 Fannkuch "naive/optimized" = `fannkuch_naive/opt`; spectral "naive" = A(i,j) through a function, "optimized" = incremental denominator, no calls.
 
+## Threads: spawning and lock contention (3 Oct 2026)
+
+Two programs for OS-level threads, in `threads/` and `swaplock/` (harness `bench_threads.py`; raw data in each folder's `results.json`). Only languages with OS threads
+are included: C (pthreads), C++ (`std::thread`), Rust (`std::thread`), Java (platform threads), Go (every task pinned to its own OS thread with
+`runtime.LockOSThread()`, since goroutines are otherwise multiplexed). Node, Bun and Lua are left out (workers and coroutines are not comparable thread-per-task
+units). Linux, 2-core VM, fastest of 3 runs; every output equals the C -O0 output (`tasks=1024 checksum=130561855306`, `count=16000000 sum=295999808`;
+the same sums come from a Python model at smaller sizes).
+
+* **threads**: 1024 tasks in waves of 64 OS threads (spawn 64, join 64, repeat). Each thread runs 1,000,000 xorshift64 steps on its own state and returns a
+  checksum; nothing is shared between threads. Caspien starts each thread with `par` and polls the handle's `state` (with `yield`) before `resolve()`; a `par`
+  handle has no type name, so it cannot sit in an array and `gen.py` writes the 64 handles of a wave as 64 locals. Naive = the kernel step is a function,
+  optimized = inlined by hand and unrolled four times.
+* **swaplock**: 32 OS threads, each does 500,000 times {lock; `count += 1`; `sum += id + i % 7`; unlock} on one shared struct. Caspien's lock is a `swap` field
+  (`match @lock`); the others use `pthread_mutex_t`, `std::mutex`, `Mutex`, `ReentrantLock` and `sync.Mutex`. Naive = a CLOSED lock is retried at once (pure spinning),
+  optimized = a backoff policy (`impl default match @lock`) that calls `yield` on every 16th failed attempt.
+
+| Program | C -O2 | C++ -O2 | Rust -O | Go | Java | Caspien naive off | Caspien naive full | Caspien optimized off | Caspien optimized full |
+|---|---|---|---|---|---|---|---|---|---|
+| threads (1024 tasks) | 1.23 s | 1.22 s | 1.23 s | 1.23 s | 1.39 s | 6.34 s | 1.49 s | 4.15 s | 1.48 s |
+| swaplock (16M lock operations) | 1.13 s | 1.15 s | 1.54 s | 0.57 s | 0.45 s | 20.33 s | 19.46 s | 0.69 s | 0.53 s |
+
+Reading: the thread-spawn work is compute bound, so Caspien with the optimizer on is within about 20% of C (naive 1.49 s, optimized 1.48 s against 1.23 s; the hand
+unrolling buys nothing once the optimizer inlines the step function, and costs 50% with every pass off). The lock benchmark is where the design shows: a pure
+spin lock with 32 threads on 2 cores wastes its time slices on lock holders that were preempted (19-20 s), and yielding on the 16th failed attempt brings it to
+0.5 s, faster than the C/C++ mutexes (1.1 s here) and level with Java's lock (0.45 s), while the Rust `Mutex` row (1.5 s) is slower than C's. Why Go and Java are fastest here was not investigated. Not verified: Windows, and any machine with more than 2 cores.
+
 ## Step 5: the `for` range end in a register, and call-free r8/r9/r10 variable registers (1 Oct 2026)
 
 Changes: `RangeEndHintPass` makes the hidden range end of a `for` loop promotable; `RegVarPromotionPass`/`X86Backend` add r8, r9, r10 as variable registers `%v3..%v5` for variables that are never live across a call (or any mnemonic outside a whitelist), only in functions with more hot variables than callee-saved registers. Part 1 alone changes nothing (the callee-saved registers are full); part 2 is what pays, and only on code of fannkuch's shape (many hot integer variables, call-free loops).

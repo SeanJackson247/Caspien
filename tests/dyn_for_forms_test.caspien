@@ -1,0 +1,71 @@
+// `for` / `for match` directly over a dynarray (and over a `ref` to one), and the `Some(i)` forms over a dynarray of owned
+// pointers. Regression: `x in d` where `d` was a `ref` dynarray dereferenced the block pointer once too often (segfault).
+// Expected values come from an independent Python model of the same arithmetic.
+// Prints one PASS/FAIL line per check and `ALL DYN FOR FORMS TESTS PASSED`.
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+
+struct Pair{@pub{
+	a: mut u64
+	b: mut u64
+}}
+
+func check(name: static imut string, got: mut u64, want: mut u64) void{
+	unsafe extern{
+		if got == want{
+			printf("PASS %s\n", name)
+		}else{
+			printf("FAIL %s got %llu want %llu\n", name, got, want)
+		}
+	}
+	return
+}
+
+func main() void{
+	?catch(e){ unsafe extern{ printf("FAIL out of memory\n") }
+		return }
+	let d = mut ?dyn([mut 5, mut 6, mut 7, mut 8])
+	let n = mut 0
+	for i in d{ n += 1 }
+	check("for i in dyn", n, 4)
+	let s = mut 0
+	for match i in d{ s += d[i] }
+	check("for match i in dyn", s, 26)
+	for match i into d{ d[i] = d[i] * 2 }
+	let s2 = mut 0
+	for match i in d{ s2 += d[i] }
+	check("for match i into dyn", s2, 52)
+
+	let r = mut ref d
+	let k = mut 3
+	let hit = mut 0
+	match k in r{ hit = 1 }
+	check("match k in ref dyn", hit, 1)
+	let far = mut 4
+	let miss = mut 0
+	match far in r{ miss = 1 }
+	else{ miss = 2 }
+	check("match far in ref dyn", miss, 2)
+
+	let p1 = mut ?new Pair{a= 1, b= 2}
+	let p2 = mut ?new Pair{a= 3, b= 4}
+	let ps = mut ?dyn([p1, p2])
+	let sa = mut 0
+	for match Some(i) in ps{ sa += ps[i].a }
+	check("for match Some(i) in", sa, 4)
+	for match Some(i) into ps{ ps[i].b = ps[i].b + 10 }
+	let sb = mut 0
+	for match Some(i) in ps{ sb += ps[i].b }
+	check("for match Some(i) into", sb, 26)
+
+	let fx = mut [1, 2, 3]
+	for match i into fx{ fx[i] = fx[i] + 10 }
+	let sf = mut 0
+	for match i in fx{ sf += fx[i] }
+	check("for match i into fixed", sf, 36)
+	unsafe extern{ printf("ALL DYN FOR FORMS TESTS PASSED\n") }
+}

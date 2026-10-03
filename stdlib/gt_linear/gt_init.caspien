@@ -1,0 +1,42 @@
+// The real "@gt_init" -- performs the ghost table's own first
+// allocation (starting capacity: 4 address slots, 32 bytes). Every
+// other gt_* function assumes this has already run before they're
+// ever called. If that malloc fails it prints a message and exits (no
+// unwinding is possible this early).
+//
+// Uses 'match @lock ghost_table{...}' (a real ATOMIC_SWAP-backed spin
+// lock over 'GhostTable's own swap-tagged 'lockState' field) instead
+// of the '@guard'-based 'lock ghost_table{...}'/'unsafe' this file
+// used to need purely to reference 'ghost_table' at all -- see
+// ghost_table.caspien's own file-level comment. 'unsafe' is still
+// needed for the 'malloc' extern call itself, the ordinary, unrelated
+// reason any extern call always needs it.
+import "ghost_table.caspien"
+
+extern exit(imut u32) void
+
+@gt_init
+@pub
+func gt_init() void{
+	match @lock ghost_table{
+		OPEN:{
+			let:<raw mut u8> newBase = null
+			unsafe extern{
+				newBase = mut malloc(mut 32)
+			}
+			if newBase == null{
+				// Nothing can be registered without the table and nothing exists yet to unwind: stop here, with a message.
+				unsafe extern{
+					printf("out of memory: cannot create the ghost table\n")
+					exit(1)
+				}
+			}
+			ghost_table.base = mut newBase
+			ghost_table.len = mut 0
+			ghost_table.capacity = mut 4
+		}
+		CLOSED:{
+			continue
+		}
+	}
+}

@@ -1,0 +1,130 @@
+// `lock x{ ... }` on a `@guard` type: the compiler calls lock() before the block and unlock() on every way out of it
+// (end of block, `return`, `break`, `continue`, and a throw). Here lock() adds 1 to `depth` and unlock() subtracts 1, so
+// `depth` is 0 whenever no block is open; each exit path below checks that. The guarded value must be a `let static`.
+// Prints one PASS/FAIL line per check and `ALL GUARD LOCK TESTS PASSED`.
+import "../stdlib/libc.caspien"
+import "../stdlib/guard.caspien"
+
+struct Gate{@pub{
+	n: mut u64
+}}
+struct Marker{@pub{
+	x: mut u64
+}}
+
+let static depth = mut 0
+let static locks = mut 0
+let static unlocks = mut 0
+
+impl Guard<Marker> for Gate{
+	@pub
+	@realizes
+	@lock
+	func lock() imut void{
+		unsafe global{
+			depth += 1
+			locks += 1
+		}
+	}
+	@pub
+	@realizes
+	@unlock
+	func unlock() imut void{
+		unsafe global{
+			depth -= 1
+			unlocks += 1
+		}
+	}
+}
+
+let static gate = mut Gate{n= 0}
+
+func check(name: static imut string, got: mut u64, want: mut u64) void{
+	unsafe extern{
+		if got == want{
+			printf("PASS %s\n", name)
+		}else{
+			printf("FAIL %s got %llu want %llu\n", name, got, want)
+		}
+	}
+	return
+}
+
+func readDepth() mut u64{
+	let d = mut 0
+	unsafe global{ d = depth }
+	return d
+}
+
+func readUnlocks() mut u64{
+	let d = mut 0
+	unsafe global{ d = unlocks }
+	return d
+}
+
+func early(flag: mut u64) mut u64{
+	let seen = mut 0
+	unsafe global{
+		lock gate{
+			seen = depth
+			if flag == 1{ return seen + 10 }
+		}
+	}
+	return seen
+}
+
+@throws
+func boom() void{
+	throw "boom"
+}
+
+func thrower() mut u64{
+	?catch(e){ return 1 }
+	unsafe global{
+		lock gate{
+			?boom()
+		}
+	}
+	return 0
+}
+
+func main() void{
+	let inside = mut 0
+	unsafe global{
+		lock gate{ inside = depth }
+	}
+	check("depth inside block", inside, 1)
+	check("depth after block", readDepth(), 0)
+
+	check("early return value", early(1), 11)
+	check("depth after return", readDepth(), 0)
+	check("normal path value", early(0), 1)
+
+	let n = mut 0
+	unsafe global{
+		for i in 0..5{
+			lock gate{
+				n += 1
+				if i == 2{ break }
+			}
+		}
+	}
+	check("break count", n, 3)
+	check("depth after break", readDepth(), 0)
+
+	let m = mut 0
+	unsafe global{
+		for i in 0..4{
+			lock gate{
+				if i % 2 == 0{ continue }
+				m += 1
+			}
+		}
+	}
+	check("continue count", m, 2)
+	check("depth after continue", readDepth(), 0)
+
+	check("throw caught", thrower(), 1)
+	check("depth after throw", readDepth(), 0)
+	unsafe extern{ printf("ALL GUARD LOCK TESTS PASSED\n") }
+}

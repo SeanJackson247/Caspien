@@ -1,0 +1,108 @@
+// The ghost table (stdlib/ghost_table.caspien, an open-addressing hash set) driven directly with 40000 pseudo-random register / moved /
+// alive_check operations on 3000 synthetic addresses (16 bytes apart inside one malloc'd region), checked against a model kept in the
+// program, then drained. Registered and removed addresses come from an LCG; tests/gt_hash_model.py replays the same sequence in Python
+// and gives the expected counts printed in the EXPECT line below.
+// Prints one PASS/FAIL line per check and `ALL GT HASH TESTS PASSED`.
+// EXPECT hits=5974 live=1557
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+
+struct Pair{@pub{
+	a: mut u64
+	b: mut u64
+}}
+
+
+func check(name: static imut string, got: mut u64, want: mut u64) mut u64{
+	let failed = mut 0
+	unsafe extern{
+		if got == want{
+			printf("PASS %s\n", name)
+		}else{
+			printf("FAIL %s got %llu want %llu\n", name, got, want)
+			failed = 1
+		}
+	}
+	return failed
+}
+
+func live() mut u64{
+	let n = mut 0
+	unsafe assume{
+		assume match ghost_table.lockState : OPEN
+		n = mut ghost_table.len
+	}
+	return n
+}
+
+func main() void{
+	?catch(e){
+		unsafe extern{ printf("FAIL out of memory\n") }
+		return
+	}
+	let anchor = mut ?new Pair{a= 1, b= 2}
+	let fails = mut 0
+	let:<raw mut u8> region = null
+	unsafe extern{ region = mut malloc(mut 65536) }
+	let inModel = mut ?dyn([mut 0, mut 0])
+	inModel = ?resize(inModel, 3000, 0)
+	let base = mut live()
+	let seed = mut 12345
+	let hits = mut 0
+	let wrong = mut 0
+	let refused = mut 0
+	for step in 0..40000{
+		seed = mut bits_and(seed * 1103515245 + 12345, 2147483647)
+		let k = mut (bits_right(seed, 8) % 3000)
+		let op = mut (seed % 3)
+		let p = mut (region + k * 16)
+		match k in inModel{
+			let have = mut inModel[k]
+			if op == 0{
+				let ok = gt_register(p)
+				if !ok{ refused += 1 }
+				match k into inModel{ inModel[k] = 1 }
+			}
+			if op == 1{
+				gt_moved(p)
+				match k into inModel{ inModel[k] = 0 }
+			}
+			if op == 2{
+				let alive = gt_alive_check(p)
+				if alive{ hits += 1 }
+				if alive && have == 0{ wrong += 1 }
+				if !alive && have == 1{ wrong += 1 }
+			}
+		}
+	}
+	fails += check("alive answers match the model", wrong, 0)
+	fails += check("no registration refused", refused, 0)
+	fails += check("alive hits", hits, 5974)
+	let stored = mut 0
+	for k in 0..3000{
+		match k in inModel{ stored += inModel[k] }
+	}
+	fails += check("len equals the model", live() - base, stored)
+	fails += check("final len", live() - base, 1557)
+	let startAlive = mut 0
+	let odd = mut (region + 8)
+	let sa = gt_alive_check(odd)
+	if sa{ startAlive = 1 }
+	fails += check("an unregistered address between two keys is not alive", startAlive, 0)
+	for k in 0..3000{
+		let p = mut (region + k * 16)
+		gt_moved(p)
+	}
+	fails += check("drained back to the baseline", live(), base)
+	let stillThere = mut 0
+	match Some(anchor){ stillThere = anchor.a }
+	fails += check("the real allocation survived", stillThere, 1)
+	unsafe extern{ free(region) }
+	if fails == 0{
+		unsafe extern{ printf("ALL GT HASH TESTS PASSED\n") }
+	}
+}

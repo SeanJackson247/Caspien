@@ -1,7 +1,7 @@
 #!/bin/bash
 # Ghost-table growth failure (needs Linux, java, gcc). gt_register returns false when the table can not grow; the allocation site must then
-# free the new block and take the ordinary out-of-memory path. Each case below fills the table to its capacity of 4 and makes the next
-# registration the one that must grow it; tests/alloc_shim.c (FAILREALLOC=64) fails that first growth. Every case must exit 0, print
+# free the new block and take the ordinary out-of-memory path. Each case below fills the table to its load limit (4 of 8 buckets) and makes the next
+# registration the one that must grow it; tests/alloc_shim.c (FAILREALLOC=128, the doubled bucket array) fails that first growth. Every case must exit 0, print
 # "CAUGHT out of memory" and end with the same number of live allocations as its clean run (no leak, no crash).
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
@@ -96,11 +96,11 @@ for name in new new_moved dyn_literal dyn_text clone_top clone_leaf clone_dyn_bl
   java Compiler -i tests/grow_$name.caspien prog_$name >compile_$name.log 2>&1 || { echo "FAIL $name: compile"; tail -3 compile_$name.log; bad=1; continue; }
   clean=$(LD_PRELOAD=./shim.so ./prog_$name 2>err.txt); L0=$(sed -n 's/.*LIVE=\(-\?[0-9]*\).*/\1/p' err.txt)
   [ "$clean" = "ok" ] || { echo "FAIL $name: clean run printed: $clean"; bad=1; continue; }
-  out=$(FAILREALLOC=64 FAILREALLOC_STICKY=1 LD_PRELOAD=./shim.so ./prog_$name 2>err.txt); rc=$?; live=$(sed -n 's/.*LIVE=\(-\?[0-9]*\).*/\1/p' err.txt)
+  out=$(FAILREALLOC=128 FAILREALLOC_STICKY=1 LD_PRELOAD=./shim.so ./prog_$name 2>err.txt); rc=$?; live=$(sed -n 's/.*LIVE=\(-\?[0-9]*\).*/\1/p' err.txt)
   checked=$((checked+1))
   if [ $rc -ne 0 ] || [ "$out" != "CAUGHT out of memory" ] || [ "$live" != "$L0" ]; then echo "FAIL $name: rc=$rc live=$live (clean $L0) out=$out"; bad=1; fi
 done
-# Shrinking the table (gt_destruct halves it when under half full): a failed shrink realloc keeps the old buffer and nothing else happens.
+# Shrinking the table (gt_destruct halves it when under an eighth full): a failed shrink realloc keeps the old buffer and nothing else happens.
 cat > tests/grow_shrink.caspien <<EOF
 $HEAD
 		unsafe extern{ printf("start\n") }
@@ -117,7 +117,7 @@ $HEAD
 EOF
 java Compiler -i tests/grow_shrink.caspien prog_shrink >compile_shrink.log 2>&1 || { echo "FAIL shrink: compile"; tail -3 compile_shrink.log; bad=1; }
 if [ -x prog_shrink ]; then
-  out=$(FAILREALLOC=32 LD_PRELOAD=./shim.so ./prog_shrink 2>err.txt); rc=$?; live=$(sed -n 's/.*LIVE=\(-\?[0-9]*\).*/\1/p' err.txt)
+  out=$(FAILREALLOC=64 LD_PRELOAD=./shim.so ./prog_shrink 2>err.txt); rc=$?; live=$(sed -n 's/.*LIVE=\(-\?[0-9]*\).*/\1/p' err.txt)
   clean=$(LD_PRELOAD=./shim.so ./prog_shrink 2>err.txt); L0=$(sed -n 's/.*LIVE=\(-\?[0-9]*\).*/\1/p' err.txt)
   checked=$((checked+1))
   if [ $rc -ne 0 ] || [ "$out" != "$clean" ] || [ "$live" != "$L0" ]; then echo "FAIL shrink: rc=$rc live=$live (clean $L0) out=$out"; bad=1; fi

@@ -1,46 +1,21 @@
-// The ghost table itself: a capacitious (growing and shrinking) raw
-// byte buffer of stored addresses, guarded by a real 'swap'-tagged
-// atomic mutex-state field (a genuine ATOMIC_SWAP-backed spin lock,
-// touched through 'match @lock') rather than the '@guard' interface
-// this file previously used. "Globals and static locals in safe code
-// can't be @guards, only @locks with atomic swap locks and atomic
-// primitives" (see CLAUDE.md, "@guard: lock discipline for globals
-// and statics") revoked '@guard's own role as a safe-code exemption
-// for global/static access -- this is the compiler's own foundational
-// support structure adopting the replacement mechanism directly,
-// rather than merely working around the narrowed exemption with
-// 'unsafe'. A real improvement, not just a rename: the old
-// 'Guard<u8>' implementation's own lock()/unlock() were both
-// unconditional no-ops (`{ return }`) -- there's no real threading at
-// the bytecode/runtime level yet for them to actually coordinate --
-// whereas 'lockState' now gets a genuine ATOMIC_SWAP the moment real
-// concurrency exists to make use of it, with zero further changes
-// needed here. Every function here that reads or writes any of its
-// fields (base/len/capacity/lockState) does so directly by
-// referencing the `ghost_table` global by name -- never through a
-// pointer/self parameter -- both because real dereferencing/".member"
-// access through a pointer isn't implemented yet, and because it's
-// simply unnecessary: a global is already reachable by name from
-// anywhere.
+// The ghost table: the set of every live allocation's address, kept as an open-addressing hash set (linear probing, backward-shift deletion,
+// no tombstones), so register, alive_check, destruct and moved cost O(1) expected. The older linear-scan table is kept in stdlib/gt_linear/
+// (same symbols, import its files instead of these to use it).
 //
-// Doubles capacity when a write would fill it; halves capacity when
-// occupancy drops below half; grown/shrunk via realloc, changing size
-// in whole 8-byte (one stored address) slots.
+// Layout: `base` is an array of `capacity` 8-byte buckets, `capacity` is a power of two, an empty bucket holds null (null is never
+// registered), and `len` counts the stored addresses. The table grows (capacity doubles, every address is rehashed into a fresh array) when
+// len + 1 would exceed half of the capacity, so the table is never full and every probe sequence ends at an empty bucket. A failed grow
+// leaves the old table untouched and gt_register returns false. gt_destruct shrinks (halves) when len drops below an eighth of the
+// capacity; a failed shrink is ignored. gt_moved never shrinks, so the gt_register(new) that follows it in `resize` cannot need to grow.
+// The address is hashed after dropping its 4 low bits (malloc blocks are 16-byte aligned) and mixed with its own upper bits.
 //
-// "These functions should be written with raw pointers... this needs
-// to descend the whole way down" -- confirmed directly: every pointer
-// in this whole file, including every parameter/return type of every
-// helper below, is `raw`, never `owns` -- deliberately avoiding ever
-// creating an `owns` local anywhere in the ghost table's own reachable
-// set, since that would need automatic destruction (GT_DESTRUCT),
-// which can never be generated here at all (see CLAUDE.md, "Ghost
-// table instruction suppression, and dundered duplicates").
+// The lock is a real 'swap'-tagged atomic mutex-state field, touched through 'match @lock'. Every function that reads or writes the fields
+// does so through the `ghost_table` global by name, and the helpers below take plain parameters and never touch it.
+//
+// Every pointer in this file is `raw`, never `owns`: an `owns` local would need an automatic GT_DESTRUCT, which can never be generated in the
+// ghost table's own reachable set (see CLAUDE.md, "Ghost table instruction suppression, and dundered duplicates").
 import "libc.caspien"
 
-// The mutex-state enum a 'swap'-tagged field requires -- a plain,
-// exactly-two-variant OPEN/CLOSED enum, per 'validateSwapMutexField'.
-// (Enums have no '@pub'/privacy concept of their own in this
-// language -- only structs/funcs/interfaces/impls/their members do.)
 enum GhostTableLockState{ OPEN, CLOSED }
 
 @pub
@@ -52,32 +27,18 @@ struct GhostTable{@pub{
 	capacity: mut u64
 }}
 
-// Starts fully empty/unallocated -- "gt_init" is responsible for the
-// real first allocation; every other function here assumes it has
-// already run. Referencing this global itself needs no 'unsafe' --
-// 'GhostTable' is a swap-lock-struct type, one of the two mechanisms
-// that still exempt a global/static from that requirement -- 'unsafe'
-// is still needed at each of the four gt-functions' own extern calls
-// (malloc/realloc/free), for the ordinary, unrelated reason any
-// extern call always needs it.
 @pub
 let static ghost_table = mut GhostTable{base= null, len= mut 0, capacity= mut 0, lockState= GhostTableLockState.OPEN}
 
-// ---- pure slot-arithmetic helpers -- never touch `ghost_table` by
-// name, so none of these are subject to the guard-lock requirement at
-// all, and can be called from anywhere in the reachable set freely.
-
-/** The raw pointer to the i'th stored-address slot in a buffer starting at `base` -- walked one 8-byte slot at a time via '++' (pointer arithmetic on a 'raw u64', confirmed achievable once address-of construction stopped hardcoding 'imut' -- see CLAUDE.md, "Storage modifiers"), since there is no direct "jump to offset i" mechanism. `for i in 0..index` -- a real, checkable bound, not a `loop{...}` needing its own 'unsafe'. Passing, casting and stepping a raw pointer is safe; nothing here reads or writes through one. */
+/** The pointer to bucket `index` of the array at `base`: one pointer addition (the pointee is widened to 8 bytes by `as u64`), O(1). Nothing is read or written through it here. */
 @pub
 func gtSlotAt(base: raw mut u8, index: mut u64) raw mut u64{
 	let slot = mut (base as u64)
-	for i in 0..index{
-		slot++
-	}
-	return slot
+	let at = mut (slot + index)
+	return at
 }
 
-/** Reads the 8-byte address value stored at `slot` -- via 'memcopy' into a fresh local, the mechanism for reading through a pointer at all in the absence of real dereferencing (see CLAUDE.md, "Built-in functions"). Only the 'memcopy' (and the 'raw val' it needs) is unsafe. */
+/** Reads the 8-byte address stored at `slot` (via 'memcopy' into a fresh local). */
 @pub
 func gtReadSlot(slot: raw imut u64) raw mut u8{
 	let:<raw mut u8> val = null
@@ -87,10 +48,107 @@ func gtReadSlot(slot: raw imut u64) raw mut u8{
 	return val
 }
 
-/** Writes `val`'s own 8-byte address value into `slot` -- via 'memcopy' from a fresh local's own address, the write-side mirror of gtReadSlot. */
+/** Writes `val`'s 8-byte address value into `slot` (the write-side mirror of gtReadSlot). */
 @pub
 func gtWriteSlot(slot: raw imut u64, val: raw imut u8) void{
 	unsafe memcopy raw{
 		memcopy(slot, mut 8, raw val)
 	}
+}
+
+/** The home bucket of `ptr` in a table with `mask + 1` buckets. */
+@pub
+func gtHash(ptr: raw imut u8, mask: mut u64) mut u64{
+	let:<raw imut u8> zero = null
+	let diff = mut (ptr - zero)
+	let addr = mut wrap:<u64>(diff)
+	let h = mut bits_right(addr, 4)
+	h = mut bits_xor(h, bits_right(h, 11))
+	return bits_and(h, mask)
+}
+
+/** Writes null into every one of the `cap` buckets. */
+@pub
+func gtClear(base: raw mut u8, cap: mut u64) void{
+	for i in 0..cap{
+		gtWriteSlot(gtSlotAt(base, i), null)
+	}
+}
+
+/** The bucket index holding `ptr`, or `cap` when it is not stored. `cap` is a power of two and the table always has an empty bucket, so the probe ends. */
+@pub
+func gtFind(base: raw mut u8, cap: mut u64, ptr: raw imut u8) mut u64{
+	let mask = mut (cap - 1)
+	let i = mut gtHash(ptr, mask)
+	let result = mut cap
+	for step in 0..cap{
+		let v = mut gtReadSlot(gtSlotAt(base, i))
+		if v == null{
+			break
+		}
+		if v == ptr{
+			result = mut i
+			break
+		}
+		i = mut bits_and(i + 1, mask)
+	}
+	return result
+}
+
+/** Stores `ptr` in the first empty bucket on its probe sequence. The caller guarantees `ptr` is not stored yet and an empty bucket exists. */
+@pub
+func gtInsert(base: raw mut u8, cap: mut u64, ptr: raw imut u8) void{
+	let mask = mut (cap - 1)
+	let i = mut gtHash(ptr, mask)
+	for step in 0..cap{
+		let v = mut gtReadSlot(gtSlotAt(base, i))
+		if v == null{
+			gtWriteSlot(gtSlotAt(base, i), ptr)
+			break
+		}
+		i = mut bits_and(i + 1, mask)
+	}
+}
+
+/** Inserts every address stored in the old array into the (cleared) new array. */
+@pub
+func gtRehash(oldBase: raw mut u8, oldCap: mut u64, newBase: raw mut u8, newCap: mut u64) void{
+	for i in 0..oldCap{
+		let v = mut gtReadSlot(gtSlotAt(oldBase, i))
+		if v != null{
+			gtInsert(newBase, newCap, v)
+		}
+	}
+}
+
+/** Empties bucket `hole` and closes the gap (backward-shift deletion): each following stored address whose home is not between the hole and itself moves back into the hole. */
+@pub
+func gtRemoveAt(base: raw mut u8, cap: mut u64, start: mut u64) void{
+	let mask = mut (cap - 1)
+	let hole = mut start
+	let j = mut start
+	for step in 0..cap{
+		j = mut bits_and(j + 1, mask)
+		let v = mut gtReadSlot(gtSlotAt(base, j))
+		if v == null{
+			break
+		}
+		let home = mut gtHash(v, mask)
+		let between = mut false
+		if hole <= j{
+			if hole < home && home <= j{
+				between = mut true
+			}
+		}
+		else{
+			if hole < home || home <= j{
+				between = mut true
+			}
+		}
+		if !between{
+			gtWriteSlot(gtSlotAt(base, hole), v)
+			hole = mut j
+		}
+	}
+	gtWriteSlot(gtSlotAt(base, hole), null)
 }

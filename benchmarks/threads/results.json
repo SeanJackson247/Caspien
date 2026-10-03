@@ -1,0 +1,209 @@
+{
+ "program": "threads",
+ "title": "Thread spawn",
+ "n": 1024,
+ "runs": 3,
+ "builds": 2,
+ "results": [
+  {
+   "label": "C -O0",
+   "group": "bare",
+   "lang": "C",
+   "note": "",
+   "compile_s": 0.08381990149973717,
+   "size_bytes": 16184,
+   "time_s": 4.1686623450004845,
+   "times": [
+    4.20553305500016,
+    4.203130642999895,
+    4.1686623450004845
+   ],
+   "rss_kb": 2176,
+   "output": [
+    "tasks=1024",
+    "checksum=130561855306"
+   ],
+   "ok": true
+  },
+  {
+   "label": "C -O2",
+   "group": "bare",
+   "lang": "C",
+   "note": "",
+   "compile_s": 0.05790433449965349,
+   "size_bytes": 16192,
+   "time_s": 1.234002426999723,
+   "times": [
+    1.234002426999723,
+    1.2449154109999654,
+    1.236150226999598
+   ],
+   "rss_kb": 2176,
+   "output": [
+    "tasks=1024",
+    "checksum=130561855306"
+   ],
+   "ok": true
+  },
+  {
+   "label": "C++ -O2",
+   "group": "bare",
+   "lang": "C++",
+   "note": "",
+   "compile_s": 0.2458986990000085,
+   "size_bytes": 17720,
+   "time_s": 1.2209375519996684,
+   "times": [
+    1.2209375519996684,
+    1.2367866700005834,
+    1.2235282239998924
+   ],
+   "rss_kb": 4072,
+   "output": [
+    "tasks=1024",
+    "checksum=130561855306"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Rust -O",
+   "group": "bare",
+   "lang": "Rust",
+   "note": "",
+   "compile_s": 0.45630213000004005,
+   "size_bytes": 4396776,
+   "time_s": 1.2258427240003584,
+   "times": [
+    1.2258427240003584,
+    1.2502982569994856,
+    1.2554187950008782
+   ],
+   "rss_kb": 2816,
+   "output": [
+    "tasks=1024",
+    "checksum=130561855306"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Go",
+   "group": "bare",
+   "lang": "Go",
+   "note": "",
+   "compile_s": 3.037622640000336,
+   "size_bytes": 2243863,
+   "time_s": 1.226612259999456,
+   "times": [
+    1.226612259999456,
+    1.2369772199999716,
+    1.2319800860004761
+   ],
+   "rss_kb": 6668,
+   "output": [
+    "tasks=1024",
+    "checksum=130561855306"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Java",
+   "group": "vm",
+   "lang": "Java",
+   "note": "size = bin/java + lib/ + conf/ of the JRE plus the class file",
+   "compile_s": 0.6428136145004828,
+   "size_bytes": 212890068,
+   "time_s": 1.3939293650000764,
+   "times": [
+    1.4135649760009983,
+    1.493179410999801,
+    1.3939293650000764
+   ],
+   "rss_kb": 46272,
+   "output": [
+    "tasks=1024",
+    "checksum=130561855306"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Caspien naive \u00b7 off",
+   "group": "caspien",
+   "lang": "Caspien",
+   "note": "the kernel step is a function call; optimisations off",
+   "compile_s": 2.1889002580001033,
+   "size_bytes": 416192,
+   "time_s": 6.339756159000899,
+   "times": [
+    6.350576386999819,
+    6.339756159000899,
+    6.451711338999303
+   ],
+   "rss_kb": 2992,
+   "output": [
+    "tasks=1024",
+    "checksum=130561855306"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Caspien naive \u00b7 full",
+   "group": "caspien",
+   "lang": "Caspien",
+   "note": "the kernel step is a function call; optimisations full",
+   "compile_s": 4.79894256749958,
+   "size_bytes": 477832,
+   "time_s": 1.4883551809998607,
+   "times": [
+    1.5542893130004813,
+    1.4883551809998607,
+    1.5899224000004324
+   ],
+   "rss_kb": 2928,
+   "output": [
+    "tasks=1024",
+    "checksum=130561855306"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Caspien optimized \u00b7 off",
+   "group": "caspien",
+   "lang": "Caspien",
+   "note": "kernel inlined by hand and unrolled four times; optimisations off",
+   "compile_s": 2.1682575170007112,
+   "size_bytes": 416016,
+   "time_s": 4.153622569998333,
+   "times": [
+    4.265351770000052,
+    4.153622569998333,
+    4.19403583500025
+   ],
+   "rss_kb": 2860,
+   "output": [
+    "tasks=1024",
+    "checksum=130561855306"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Caspien optimized \u00b7 full",
+   "group": "caspien",
+   "lang": "Caspien",
+   "note": "kernel inlined by hand and unrolled four times; optimisations full",
+   "compile_s": 4.724972947499737,
+   "size_bytes": 481784,
+   "time_s": 1.4840621190014645,
+   "times": [
+    1.4918504819997906,
+    1.4840621190014645,
+    1.5158118340004876
+   ],
+   "rss_kb": 2672,
+   "output": [
+    "tasks=1024",
+    "checksum=130561855306"
+   ],
+   "ok": true
+  }
+ ]
+}

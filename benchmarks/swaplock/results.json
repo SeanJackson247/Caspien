@@ -1,0 +1,209 @@
+{
+ "program": "swaplock",
+ "title": "Swap lock contention",
+ "n": 500000,
+ "runs": 3,
+ "builds": 2,
+ "results": [
+  {
+   "label": "C -O0",
+   "group": "bare",
+   "lang": "C",
+   "note": "",
+   "compile_s": 0.07000371499998437,
+   "size_bytes": 16360,
+   "time_s": 1.1006471260006947,
+   "times": [
+    1.1912358660010796,
+    1.1006471260006947,
+    1.2090237669999624
+   ],
+   "rss_kb": 1812,
+   "output": [
+    "count=16000000",
+    "sum=295999808"
+   ],
+   "ok": true
+  },
+  {
+   "label": "C -O2",
+   "group": "bare",
+   "lang": "C",
+   "note": "",
+   "compile_s": 0.057322164499964856,
+   "size_bytes": 16368,
+   "time_s": 1.1329497799997625,
+   "times": [
+    1.1356564369998523,
+    1.1329497799997625,
+    1.140511339999648
+   ],
+   "rss_kb": 1992,
+   "output": [
+    "count=16000000",
+    "sum=295999808"
+   ],
+   "ok": true
+  },
+  {
+   "label": "C++ -O2",
+   "group": "bare",
+   "lang": "C++",
+   "note": "",
+   "compile_s": 0.23451655200005916,
+   "size_bytes": 17992,
+   "time_s": 1.1467751729996962,
+   "times": [
+    1.1635978979993524,
+    1.1467751729996962,
+    1.1529324509992875
+   ],
+   "rss_kb": 3948,
+   "output": [
+    "count=16000000",
+    "sum=295999808"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Rust -O",
+   "group": "bare",
+   "lang": "Rust",
+   "note": "",
+   "compile_s": 0.3521030909996625,
+   "size_bytes": 4404048,
+   "time_s": 1.536358557999847,
+   "times": [
+    1.536358557999847,
+    1.5369777910000266,
+    1.5947778310001013
+   ],
+   "rss_kb": 2600,
+   "output": [
+    "count=16000000",
+    "sum=295999808"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Go",
+   "group": "bare",
+   "lang": "Go",
+   "note": "",
+   "compile_s": 2.9649038879997534,
+   "size_bytes": 2243631,
+   "time_s": 0.5693920410012652,
+   "times": [
+    0.57651708999947,
+    0.5693920410012652,
+    0.6011831769992568
+   ],
+   "rss_kb": 2444,
+   "output": [
+    "count=16000000",
+    "sum=295999808"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Java",
+   "group": "vm",
+   "lang": "Java",
+   "note": "size = bin/java + lib/ + conf/ of the JRE plus the class file",
+   "compile_s": 0.7600557605001086,
+   "size_bytes": 212890824,
+   "time_s": 0.44681406400013657,
+   "times": [
+    0.49034596599994984,
+    0.45252302100016095,
+    0.44681406400013657
+   ],
+   "rss_kb": 44736,
+   "output": [
+    "count=16000000",
+    "sum=295999808"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Caspien naive \u00b7 off",
+   "group": "caspien",
+   "lang": "Caspien",
+   "note": "a CLOSED lock is retried at once (pure spinning); optimisations off",
+   "compile_s": 1.101007319000928,
+   "size_bytes": 48800,
+   "time_s": 20.334537304999685,
+   "times": [
+    20.334537304999685,
+    20.448131723998813,
+    20.997800447999907
+   ],
+   "rss_kb": 2080,
+   "output": [
+    "count=16000000",
+    "sum=295999808"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Caspien naive \u00b7 full",
+   "group": "caspien",
+   "lang": "Caspien",
+   "note": "a CLOSED lock is retried at once (pure spinning); optimisations full",
+   "compile_s": 1.49500674149931,
+   "size_bytes": 50528,
+   "time_s": 19.457243614000618,
+   "times": [
+    19.457243614000618,
+    19.54865592399983,
+    21.35467646899997
+   ],
+   "rss_kb": 2144,
+   "output": [
+    "count=16000000",
+    "sum=295999808"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Caspien optimized \u00b7 off",
+   "group": "caspien",
+   "lang": "Caspien",
+   "note": "a backoff policy yields the time slice every 16th failed attempt; optimisations off",
+   "compile_s": 1.1579587544993046,
+   "size_bytes": 48880,
+   "time_s": 0.6917197200000373,
+   "times": [
+    0.805174471999635,
+    0.6917197200000373,
+    0.7092335800007277
+   ],
+   "rss_kb": 2144,
+   "output": [
+    "count=16000000",
+    "sum=295999808"
+   ],
+   "ok": true
+  },
+  {
+   "label": "Caspien optimized \u00b7 full",
+   "group": "caspien",
+   "lang": "Caspien",
+   "note": "a backoff policy yields the time slice every 16th failed attempt; optimisations full",
+   "compile_s": 1.577029265499732,
+   "size_bytes": 54984,
+   "time_s": 0.5277376779995393,
+   "times": [
+    0.5561736710005789,
+    0.5277376779995393,
+    0.5777668069986248
+   ],
+   "rss_kb": 1964,
+   "output": [
+    "count=16000000",
+    "sum=295999808"
+   ],
+   "ok": true
+  }
+ ]
+}
