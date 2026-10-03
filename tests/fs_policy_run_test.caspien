@@ -1,0 +1,106 @@
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+import "../stdlib/fs.caspien"
+
+// fs.config in force (see fs_policy_check.sh): roots /tmp/caspien_fs_pol/data:rw and /tmp/caspien_fs_pol/ro:r.
+// The script prepares: data/sub/, data/link -> ../ro (a symlink inside a root), ro/r.txt, and a symlink  /tmp/caspien_fs_pol/via -> data.
+func report(name: static imut string, ok: imut bool) void{
+	unsafe extern{
+		if ok{ printf("PASS %s\n", name) } else { printf("FAIL %s\n", name) }
+	}
+}
+
+func checks(path: static imut string) mut u64{
+	?catch(e){ return 0 }
+	let p = mut ? new RootPath(path)
+	return 1
+}
+
+func rwOpens(path: static imut string) mut u64{
+	?catch(e){ return 0 }
+	let p = mut ? new RootPath(path)
+	match Some(p){
+		let d = mut ? Dir.rootRW(p)
+	}
+	return 1
+}
+
+func roOpens(path: static imut string) mut u64{
+	?catch(e){ return 0 }
+	let p = mut ? new RootPath(path)
+	match Some(p){
+		let d = mut ? Dir.root(p)
+	}
+	return 1
+}
+
+func writeIn(d: ref some imut Dir) mut u64{
+	?catch(e){ return 0 }
+	let f = mut ? File.open(d, "x.txt", Open.WRITE_NEW)
+	return 1
+}
+
+func mkIn(d: ref some imut Dir) mut u64{
+	?catch(e){ return 0 }
+	? Dir.make(d, "nd")
+	return 1
+}
+
+func readIn(d: ref some imut Dir) mut u64{
+	?catch(e){ return 0 }
+	let f = mut ? File.open(d, "r.txt", Open.READ)
+	return 1
+}
+
+func anyOpens(path: static imut string) mut u64{
+	?catch(e){ return 0 }
+	unsafe file{
+		let d = mut ? Dir.rootAny(path)
+	}
+	return 1
+}
+
+func main() imut s32{
+	?catch(e){
+		unsafe extern{ printf("FAIL uncaught %s\n", e) }
+		return 1
+	}
+	report("root itself", checks("/tmp/caspien_fs_pol/data") == 1)
+	report("below root", checks("/tmp/caspien_fs_pol/data/sub/deeper") == 1)
+	report("trailing slash ok", checks("/tmp/caspien_fs_pol/data/") == 1)
+	report("prefix-sibling refused", checks("/tmp/caspien_fs_pol/data2") == 0)
+	report("outside refused", checks("/etc/passwd") == 0)
+	report("dotdot refused", checks("/tmp/caspien_fs_pol/data/../ro") == 0)
+	report("empty refused", checks("") == 0)
+	report("relative refused", checks("data") == 0)
+	report("rw root opens rw", rwOpens("/tmp/caspien_fs_pol/data/sub") == 1)
+	report("ro root refuses rw", rwOpens("/tmp/caspien_fs_pol/ro") == 0)
+	report("ro root opens ro", roOpens("/tmp/caspien_fs_pol/ro") == 1)
+	report("symlink last component refused", roOpens("/tmp/caspien_fs_pol/data/link") == 0)
+	report("symlink in the middle refused", roOpens("/tmp/caspien_fs_pol/via/sub") == 0)
+	report("missing refused", roOpens("/tmp/caspien_fs_pol/data/nothing") == 0)
+	let ro = mut ? Dir.root("/tmp/caspien_fs_pol/ro")
+	match Some(ro){
+		report("ro dir reads", readIn(ro) == 1)
+		report("ro dir refuses create", writeIn(ro) == 0)
+		report("ro dir refuses mkdir", mkIn(ro) == 0)
+		let rs = mut ? Dir.sub(ro, "rsub")
+		match Some(rs){
+			report("sub of ro stays ro", writeIn(rs) == 0)
+		}
+	}
+	let rw = mut ? Dir.rootRW("/tmp/caspien_fs_pol/data")
+	match Some(rw){
+		report("rw dir creates", writeIn(rw) == 1)
+		let sub = mut ? Dir.sub(rw, "sub")
+		match Some(sub){
+			report("sub inherits rw", writeIn(sub) == 1)
+		}
+	}
+	report("rootAny with unsafe file", anyOpens("/tmp") == 1)
+	return 0
+}

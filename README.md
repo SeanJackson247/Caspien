@@ -945,7 +945,7 @@ A statement-level `unsafe` block must say why it is unsafe, by naming the reason
 `unsafe assume extern{`. The reasons are `extern` (a C call), `memcopy`, `raw` (making a `raw` pointer),
 `deref` and `clone` (dereferencing or cloning a `raw` pointer), `global`, `loop`, `udyn` (an unsafe dynarray of plain data) or `udyn:owns` (an unsafe dynarray whose elements own memory: the compiler only frees the block, so you destruct the elements yourself before shrinking or leaving scope), `assume` (`assume match`),
 `call` (calling a function pointer), `asm`, `async` (a pointer across an `@async` boundary), `guard` (using a
-`@guard` type without proving it locked) and `swap` (touching a `swap` mutex field outside `match @lock`). The
+`@guard` type without proving it locked), `swap` (touching a `swap` mutex field outside `match @lock`) and `file` (opening a path the build's file policy has not vouched for, see 2.6). The
 compiler checks the list both ways: a block that needs a reason it does not name is an error, and so is a block
 that names one it does not need, so the line is also what you grep for. A bare `unsafe{}` is an error. (A
 root-level `unsafe{}` that holds declarations is not a statement block and takes no list.)
@@ -1603,6 +1603,7 @@ like `import "../stdlib/libc.caspien"`.
 | `--lob` | Stop after lowering. The output file is the low-order bytecode. |
 | `--asm` | Stop after code generation. The output file is x86-64 assembly. |
 | `--no-warnings` | Hide warnings (errors are always shown). |
+| `--fs-report` | Print every file-system root the program opens and every `unsafe file` use, next to the build's file policy (see 2.6). |
 
 The intermediate files of every stage are also kept under `output/.build/`, which is the easiest way to see
 what the compiler did to a program.
@@ -1681,9 +1682,58 @@ one function, so very large generated test programs are better split into severa
 
 `stdlib/` holds ordinary Caspien source: `libc.caspien` (C bindings), `dynamic_array.caspien`,
 `hash_map.caspien`, `string.caspien`, `hash.caspien` (FNV-1a), `sha256.caspien`, `process.caspien`,
-`sleep.caspien`, the thread glue `par_call.caspien` and `await_call.caspien`, and the `gt_*` files that
+`fs.caspien` (files and directories, 2.6), `sleep.caspien`, the thread glue `par_call.caspien` and `await_call.caspien`, and the `gt_*` files that
 back ownership. The older reference documentation, including the full description of every optimisation
 pass, is in [`docs/COMPILER_REFERENCE.md`](docs/COMPILER_REFERENCE.md).
+
+### 2.6 Files and directories
+
+`stdlib/fs.caspien` is the only file I/O. It is capability style: a program gets a `Dir` (an open directory)
+and everything else is relative to it, so code holding a `Dir` can reach what is below it and nothing else. A
+name is one path component (`..`, `/` and empty names are errors) and symlinks are never followed. `Dir` and
+`File` close themselves when their owner goes out of scope (a `@drop` function on the struct does the close).
+
+```
+import "../stdlib/fs.caspien"
+
+func main() imut s32{
+	?catch(e){ return 1 }
+	let data = mut ? Dir.rootRW("/var/app/data")        // a literal path: checked by the compiler
+	match Some(data){
+		let f = mut ? File.open(data, "log.txt", Open.APPEND)
+		match Some(f){
+			? File.writeText(f, "started\n")
+		}
+		let out = mut ? File.tempFile(data, "state.txt") // hidden temp file, replaced atomically on commit
+		match Some(out){
+			? File.writeText(out, "ready\n")
+			? File.commit(out)                           // flush, then rename over state.txt
+		}                                                // dropped without commit: the temp file is deleted
+	}
+	return 0
+}
+```
+
+Where a program may open things by path is decided by whoever compiles it, in the optional `===fs.config===`
+section of `toolchain.config`:
+
+```
+fs-roots: /var/app/data:rw, /var/app/config:r
+fs-deny-externs: open, openat, creat, fopen, unlink, rename, mkdir, rmdir
+```
+
+With `fs-roots` set, `Dir.root("...")` and `Dir.rootRW("...")` take a string literal that must be a root (or
+below one, no `..`), and `rootRW` needs an `:rw` root; a read-only `Dir` refuses every write, as do its
+sub-directories. A path that is only known at run time goes through `new RootPath(path)`, which checks the
+same table when the program runs and throws if the path is outside it; `Dir.root(rootPath)` then opens it.
+Everything else, `Dir.rootAny(path)`, needs an `unsafe file{ }` block. `fs-deny-externs` makes the compiler
+refuse a user `extern` (also under a `@link_name` alias) for those C functions, so the stdlib is the only way
+in. `java Compiler -i main.caspien out --fs-report` lists the roots and every `unsafe file` the compiler saw.
+The policy does not cover `unsafe asm` (raw system calls) or `call(...)`, nor externs that are not on the list.
+
+On Linux this is `openat` with `O_NOFOLLOW`; on Windows it is the NT native API (`NtCreateFile` relative to a
+directory handle) that refuses reparse points, names that Windows forbids (`NUL`, `COM1`, `a.`, `a:stream`) and
+roots without a drive letter. The Windows layer has only been run under Wine.
 
 ---
 

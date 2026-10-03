@@ -68,6 +68,7 @@ public class ImportResolver {
     private List<Token> resolveImport(Token importTok, String currentFilePath) {
         Token pathTok = importTok.childs.get(0);
         String importPath = pathTok.literalValue != null ? pathTok.literalValue : pathTok.text;
+        importPath = importPath.replace("{target}", FsPolicy.platform); // platform-specific stdlib file, e.g. fs_{target}.caspien
 
         Path importerDir = Paths.get(currentFilePath).toAbsolutePath().getParent();
         Path resolvedPath = (importerDir != null ? importerDir : Paths.get("."))

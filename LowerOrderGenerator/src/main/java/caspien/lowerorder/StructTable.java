@@ -74,6 +74,8 @@ public class StructTable {
     public static StructTable read(List<List<BytecodeToken>> lines) {
         StructTable table = new StructTable();
         String currentStruct = null;
+        String currentFunc = null;
+        boolean currentFuncIsDrop = false;
         List<Member> currentMembers = null;
         List<LayoutEntry> currentLayout = null;
         for (List<BytecodeToken> line : lines) {
@@ -81,7 +83,16 @@ public class StructTable {
                 continue;
             }
             String head = line.get(0).text;
-            if (head.equals("STRUCT_START") && line.size() >= 2) {
+            if (head.equals("FUNC_START") && line.size() >= 2) {
+                currentFunc = line.get(1).text;
+                currentFuncIsDrop = false;
+            } else if (head.equals("FUNC_DECORATE") && line.size() >= 2 && line.get(1).text.equals("@drop")) {
+                currentFuncIsDrop = true;
+            } else if (head.equals("ARG") && currentFuncIsDrop && currentFunc != null && line.size() >= 3) {
+                // The first (only) parameter of a `@drop` function is `ref some mut S`: S's cleanup hook is this function.
+                table.dropHooks.put(CanonicalType.parse(line.get(2).text).baseType, currentFunc);
+                currentFuncIsDrop = false;
+            } else if (head.equals("STRUCT_START") && line.size() >= 2) {
                 currentStruct = line.get(1).text;
                 currentMembers = new ArrayList<>();
                 currentLayout = new ArrayList<>();
@@ -100,6 +111,13 @@ public class StructTable {
             }
         }
         return table;
+    }
+
+    private final Map<String, String> dropHooks = new HashMap<>();
+
+    /** The `@drop` cleanup function of struct `structName`, or null. */
+    public String dropHookOf(String structName) {
+        return dropHooks.get(structName);
     }
 
     public boolean hasStruct(String name) {
@@ -152,6 +170,9 @@ public class StructTable {
         if (arrElem != null) {
             CanonicalType elemType = CanonicalType.parse(arrElem);
             return elemType.isOwnsStorage() || isOwnsBearing(elemType.baseType);
+        }
+        if (dropHooks.containsKey(baseType)) {
+            return true; // a struct with a cleanup hook needs its drop routine even when it owns no memory itself
         }
         List<Member> members = structs.get(baseType);
         if (members == null) {

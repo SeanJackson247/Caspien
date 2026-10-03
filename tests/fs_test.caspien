@@ -1,0 +1,103 @@
+// File-system stdlib (stdlib/fs.caspien), Linux. Run by fs_check.sh, which prepares /tmp/caspien_fs_test (including the symlinks
+// `link` -> w.txt and `dlink` -> other) and then checks the resulting bytes on disk against a Python model.
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+import "../stdlib/fs.caspien"
+
+func report(name: static imut string, ok: imut bool) void{
+	unsafe extern{
+		if ok{ printf("PASS %s\n", name) } else { printf("FAIL %s\n", name) }
+	}
+}
+
+/** 1 when the open succeeded, 0 when it threw. */
+func opens(d: ref some imut Dir, name: static imut string, mode: imut Open) mut u64{
+	?catch(e){ return 0 }
+	let f = mut ? File.open(d, name, mode)
+	return 1
+}
+
+func subOpens(d: ref some imut Dir, name: static imut string) mut u64{
+	?catch(e){ return 0 }
+	let s = mut ? Dir.sub(d, name)
+	return 1
+}
+
+func writes(d: ref some imut Dir, name: static imut string, mode: imut Open, text: static imut string) mut u64{
+	?catch(e){ return 0 }
+	let f = mut ? File.open(d, name, mode)
+	match Some(f){
+		? File.writeText(f, text)
+		? File.sync(f)
+	}
+	return 1
+}
+
+func replaces(d: ref some imut Dir, name: static imut string, text: static imut string, doCommit: imut bool) mut u64{
+	?catch(e){ return 0 }
+	let f = mut ? File.tempFile(d, name)
+	match Some(f){
+		? File.writeText(f, text)
+		if doCommit{
+			? File.commit(f)
+		}
+	}
+	return 1
+}
+
+func readLen(d: ref some imut Dir, name: static imut string) mut u64{
+	?catch(e){ return 9999 }
+	let f = mut ? File.open(d, name, Open.READ)
+	let n = mut 0
+	match Some(f){
+		let s = mut ? File.readAll(f)
+		match Some(s){
+			n = len(s.chars.backing)
+		}
+	}
+	return n
+}
+
+func main() imut s32{
+	?catch(e){
+		unsafe extern{ printf("FAIL uncaught %s\n", e) }
+		return 1
+	}
+	let d = mut ? Dir.rootRW("/tmp/caspien_fs_test")
+	match Some(d){
+		report("create new", writes(d, "w.txt", Open.WRITE_NEW, "alpha\n") == 1)
+		report("create new refuses existing", opens(d, "w.txt", Open.WRITE_NEW) == 0)
+		report("append", writes(d, "w.txt", Open.APPEND, "beta\n") == 1)
+		report("read length", readLen(d, "w.txt") == 11)
+		report("truncate", writes(d, "t.txt", Open.WRITE_TRUNC, "xyz") == 1)
+		report("truncate again", writes(d, "t.txt", Open.WRITE_TRUNC, "q") == 1)
+		report("read missing fails", opens(d, "nope.txt", Open.READ) == 0)
+		report("reject dotdot", opens(d, "..", Open.READ) == 0)
+		report("reject dot", opens(d, ".", Open.READ) == 0)
+		report("reject empty", opens(d, "", Open.READ) == 0)
+		report("reject slash", opens(d, "sub/in.txt", Open.READ) == 0)
+		report("reject absolute", opens(d, "/etc/passwd", Open.READ) == 0)
+		report("symlink file refused", opens(d, "link", Open.READ) == 0)
+		report("symlink dir refused", subOpens(d, "dlink") == 0)
+		? Dir.make(d, "sub")
+		let s = mut ? Dir.sub(d, "sub")
+		match Some(s){
+			report("write in subdir", writes(s, "in.txt", Open.WRITE_NEW, "inner") == 1)
+			report("subdir rejects dotdot", opens(s, "..", Open.READ) == 0)
+		}
+		report("old file", writes(d, "c.txt", Open.WRITE_NEW, "old") == 1)
+		report("temp commit", replaces(d, "c.txt", "newer", true) == 1)
+		report("replaced length", readLen(d, "c.txt") == 5)
+		report("temp uncommitted", replaces(d, "u.txt", "never", false) == 1)
+		report("uncommitted absent", opens(d, "u.txt", Open.READ) == 0)
+		report("temp over existing uncommitted", replaces(d, "c.txt", "lost", false) == 1)
+		report("existing kept", readLen(d, "c.txt") == 5)
+		? Dir.removeFile(d, "t.txt")
+		report("removed", opens(d, "t.txt", Open.READ) == 0)
+	}
+	return 0
+}

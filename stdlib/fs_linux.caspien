@@ -1,0 +1,196 @@
+// Linux (openat family) primitives under fs.caspien: everything operating-system specific lives in this file and its Windows twin
+// fs_windows_gnu.caspien (picked by `import "fs_{target}.caspien"`). A handle is an `s64` (a file descriptor here); a negative result is
+// failure. Symlinks are never followed: O_NOFOLLOW on every open (the last component of any open is refused when it is a link).
+import "libc.caspien"
+
+@link_name(openat)
+extern fsXOpenAt(mut s32, static imut string, mut s32, mut u32) mut s32
+@link_name(openat)
+extern fsXOpenAtRaw(mut s32, raw imut char, mut s32, mut u32) mut s32
+@link_name(close)
+extern fsXClose(mut s32) mut s32
+@link_name(read)
+extern fsXRead(mut s32, raw mut char, mut u64) mut s64
+@link_name(write)
+extern fsXWrite(mut s32, static imut string, mut u64) mut s64
+@link_name(mkdirat)
+extern fsXMkdirAt(mut s32, static imut string, mut u32) mut s32
+@link_name(unlinkat)
+extern fsXUnlinkAt(mut s32, static imut string, mut s32) mut s32
+@link_name(unlinkat)
+extern fsXUnlinkAtRaw(mut s32, raw imut char, mut s32) mut s32
+@link_name(renameat)
+extern fsXRenameAt(mut s32, raw imut char, mut s32, static imut string) mut s32
+@link_name(fcntl)
+extern fsXFcntl(mut s32, mut s32, mut s32) mut s32
+@link_name(fsync)
+extern fsXFsync(mut s32) mut s32
+@link_name(strncmp)
+extern fsXStrncmp(static imut string, static imut string, mut u64) mut s32
+@link_name(strncmp)
+extern fsXStrncmpRaw(raw imut char, static imut string, mut u64) mut s32
+
+/** Characters of `path` the platform consumes before the first component (0 here). */
+@pub
+func fsOsStartLen(path: static imut string) mut u64{
+	return 0
+}
+
+/** The directory the walk of `path` starts from: "/" for an absolute path, the current directory otherwise. */
+@pub
+func fsOsStart(path: static imut string) mut s64{
+	let:<mut s32> fd = mut 0
+	unsafe extern{
+		if fsXStrncmp(path, imut "/", 1) == 0{
+			fd = fsXOpenAt(-100, imut "/", 0xB0000, 0)
+		} else {
+			fd = fsXOpenAt(-100, imut ".", 0xB0000, 0)
+		}
+	}
+	return fd as s64
+}
+
+@pub
+func fsOsSub(h: mut s64, name: static imut string) mut s64{
+	let:<mut s32> fd = mut 0
+	unsafe extern{
+		fd = fsXOpenAt(wrap:<s32>(h), name, 0xB0000, 0)
+	}
+	return fd as s64
+}
+
+@pub
+func fsOsSubRaw(h: mut s64, name: raw imut char) mut s64{
+	let:<mut s32> fd = mut 0
+	unsafe extern{
+		fd = fsXOpenAtRaw(wrap:<s32>(h), name, 0xB0000, 0)
+	}
+	return fd as s64
+}
+
+@pub
+func fsOsMkdir(h: mut s64, name: static imut string) mut s64{
+	let:<mut s32> rc = mut 0
+	unsafe extern{
+		rc = fsXMkdirAt(wrap:<s32>(h), name, 0x1ed)
+	}
+	return rc as s64
+}
+
+/** Removes the file (isDir 0) or empty directory (isDir 1) `name` of directory `h`. */
+@pub
+func fsOsRemove(h: mut s64, name: static imut string, isDir: mut u64) mut s64{
+	let:<mut s32> rc = mut 0
+	unsafe extern{
+		if isDir == 1{
+			rc = fsXUnlinkAt(wrap:<s32>(h), name, 0x200)
+		} else {
+			rc = fsXUnlinkAt(wrap:<s32>(h), name, 0)
+		}
+	}
+	return rc as s64
+}
+
+@pub
+func fsOsRemoveRaw(h: mut s64, name: raw imut char) mut s64{
+	let:<mut s32> rc = mut 0
+	unsafe extern{
+		rc = fsXUnlinkAtRaw(wrap:<s32>(h), name, 0)
+	}
+	return rc as s64
+}
+
+/** mode: 0 read, 1 create (fails if it exists), 2 create/truncate, 3 append (creating). */
+@pub
+func fsOsOpen(h: mut s64, name: static imut string, mode: mut u64) mut s64{
+	let:<mut s32> flags = mut 0xA0000
+	if mode == 1{ flags = 0xA00C1 }
+	if mode == 2{ flags = 0xA0241 }
+	if mode == 3{ flags = 0xA0441 }
+	let:<mut s32> fd = mut 0
+	unsafe extern{
+		fd = fsXOpenAt(wrap:<s32>(h), name, flags, 0x1a4)
+	}
+	return fd as s64
+}
+
+/** Creates the new write-only file `name` (never replacing one) for a temp file. */
+@pub
+func fsOsCreateNewRaw(h: mut s64, name: raw imut char) mut s64{
+	let:<mut s32> fd = mut 0
+	unsafe extern{
+		fd = fsXOpenAtRaw(wrap:<s32>(h), name, 0xA00C1, 0x180)
+	}
+	return fd as s64
+}
+
+/** Renames `tmp` over `finalName`, both in directory `h` (replacing an existing file atomically); `fileh` is the open temp file (used by the Windows twin). */
+@pub
+func fsOsRenameOver(h: mut s64, fileh: mut s64, tmp: raw imut char, finalName: static imut string) mut s64{
+	let:<mut s32> rc = mut 0
+	unsafe extern{
+		rc = fsXRenameAt(wrap:<s32>(h), tmp, wrap:<s32>(h), finalName)
+	}
+	return rc as s64
+}
+
+@pub
+func fsOsClose(h: mut s64) void{
+	unsafe extern{
+		fsXClose(wrap:<s32>(h))
+	}
+}
+
+@pub
+func fsOsDup(h: mut s64) mut s64{
+	let:<mut s32> fd = mut 0
+	unsafe extern{
+		fd = fsXFcntl(wrap:<s32>(h), 1030, 3)
+	}
+	return fd as s64
+}
+
+@pub
+func fsOsRead(h: mut s64, buf: raw mut char, n: mut u64) mut s64{
+	let:<mut s64> got = mut 0
+	unsafe extern{
+		got = fsXRead(wrap:<s32>(h), buf, n)
+	}
+	return got
+}
+
+@pub
+func fsOsWrite(h: mut s64, text: static imut string, n: mut u64) mut s64{
+	let:<mut s64> wrote = mut 0
+	unsafe extern{
+		wrote = fsXWrite(wrap:<s32>(h), text, n)
+	}
+	return wrote
+}
+
+@pub
+func fsOsSync(h: mut s64) mut s64{
+	let:<mut s32> rc = mut 0
+	unsafe extern{
+		rc = fsXFsync(wrap:<s32>(h))
+	}
+	return rc as s64
+}
+
+/** 1 when `name` (already known to be a single component) is not usable on this platform; none extra here. */
+@pub
+func fsOsBadName(name: static imut string) mut u64{
+	return 0
+}
+
+/** 1 when the first `n` characters of `a` equal those of `b` (case-sensitive here). */
+@pub
+func fsOsPrefixEq(a: raw imut char, b: static imut string, n: mut u64) mut u64{
+	let:<mut u64> eq = mut 0
+	unsafe extern{
+		if fsXStrncmpRaw(a, b, n) == 0{
+			eq = 1
+		}
+	}
+	return eq
+}

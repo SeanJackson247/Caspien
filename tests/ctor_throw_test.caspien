@@ -1,0 +1,52 @@
+// A constructor that throws, called under `try` / `?` (also through `new`): the throw must land in the caller's own catch.
+// (Before the fix `new T(x)` staged no catch label for the constructor call, so the throw unwound past the caller's catch.)
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+
+struct T{@pub{
+	v: mut u64
+}}
+
+@pub
+@throws
+impl constructor for T(x: mut u64) self{
+	if x == 0{
+		throw "zero"
+	}
+	return T{v= x}
+}
+
+func viaQuestion(x: mut u64) mut u64{
+	?catch(e){ return 100 }
+	let p = mut ? new T(x)
+	match Some(p){
+		return p.v
+	}
+	return 7
+}
+
+func viaTry(x: mut u64) mut u64{
+	let p = mut try new T(x) catch(e){ return 200 }
+	match Some(p){
+		return p.v + 1
+	}
+	return 7
+}
+
+func check(name: static imut string, got: mut u64, want: mut u64) void{
+	unsafe extern{
+		if got == want{ printf("PASS %s\n", name) } else { printf("FAIL %s got %llu want %llu\n", name, got, want) }
+	}
+}
+
+func main() imut s32{
+	check("? ok", viaQuestion(5), 5)
+	check("? throws into caller catch", viaQuestion(0), 100)
+	check("try ok", viaTry(5), 6)
+	check("try throws into caller catch", viaTry(0), 200)
+	return 0
+}

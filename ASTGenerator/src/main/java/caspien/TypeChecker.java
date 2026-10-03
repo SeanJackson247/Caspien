@@ -1107,7 +1107,7 @@ public class TypeChecker {
     /** The reasons a statement-level `unsafe` block must name (`unsafe deref extern{`), each matching one rule that otherwise needs a proof or is refused in safe code. */
     static final Set<String> UNSAFE_TAGS = new java.util.LinkedHashSet<>(Arrays.asList(
             "extern", "memcopy", "raw", "deref", "clone", "global", "loop", "udyn", "udyn:owns",
-            "assume", "call", "asm", "async", "guard", "swap"));
+            "assume", "call", "asm", "async", "guard", "swap", "file"));
 
     /** One written `unsafe ...{` block: what it declares, and (unioned over every time it is checked, e.g. per generic instantiation) what it really used. */
     private static class UnsafeBlockRecord {
@@ -4802,7 +4802,97 @@ public class TypeChecker {
     private static final Set<String> FUNC_BASE_DECORATORS = new HashSet<>(Arrays.asList(
             "pure", "recursive", "inline", "call_convention", "reads", "writes",
             "gt_init", "gt_alive_check", "gt_destruct", "gt_register", "gt_moved", "par_call", "await_call", "sleep",
-            "lock", "unlock", "async", "pub", "with_tick", "tick", "event_loop", "make_safe_args", "throws"));
+            "lock", "unlock", "async", "pub", "with_tick", "tick", "event_loop", "make_safe_args", "throws", "drop", "fs_root", "fs_unsafe"));
+    /** `@drop` marks a struct's cleanup function: the drop glue calls it with the struct's address just before the struct (an `owns` value) is freed, so a handle type can close what it holds. It takes exactly one parameter, `ref some mut S` for a struct S, returns void and does not throw. */
+    private void requireDropHookShape(Token t, FuncInfo info, List<Token> returnTypeTokens) {
+        TypeInfo p = info.paramTypes.size() == 1 ? info.paramTypes.get(0) : null;
+        boolean shapeOk = p != null && "ref".equals(p.storage) && p.isSome && structs.containsKey(p.baseType);
+        if (!shapeOk || info.isThrows || info.isAsync) {
+            throw new CompilerException("type", t.file, t.line,
+                    "'@drop' function '" + info.name + "' must take exactly one parameter of type 'ref some mut <struct>', must not be '@throws' or '@async', and returns void");
+        }
+        String prior = dropHookOwners.put(p.baseType, info.name);
+        if (prior != null && !prior.equals(info.name)) {
+            throw new CompilerException("type", t.file, t.line,
+                    "struct '" + p.baseType + "' already has a '@drop' function ('" + prior + "')");
+        }
+    }
+    private final Map<String, String> dropHookOwners = new HashMap<>();
+
+    /** True for a file inside the compiler's own stdlib folder (../stdlib from the ASTGenerator working directory). */
+    private static boolean isStdlibFile(String file) {
+        try {
+            java.nio.file.Path stdlib = java.nio.file.Paths.get("..", "stdlib").toAbsolutePath().normalize();
+            return java.nio.file.Paths.get(file).toAbsolutePath().normalize().startsWith(stdlib);
+        } catch (RuntimeException e) {
+            return false;
+        }
+    }
+
+    private final List<String> fsReportLines = new ArrayList<>();
+
+    /** `--fs-report`: what the program may do to the file system, as seen by the compiler. */
+    void printFsReport(java.io.PrintStream out) {
+        FsPolicy p = FsPolicy.current;
+        out.println("[fs-report] roots: " + (p.rootsEnforced ? (p.roots.isEmpty() ? "(none: every path open is refused)" : p.runtimeRootsText()) : "(no fs-roots in fs.config: unrestricted)"));
+        out.println("[fs-report] denied externs: " + (p.denyExterns.isEmpty() ? "(none)" : String.join(", ", p.denyExterns)));
+        for (String l : fsReportLines) {
+            out.println("[fs-report] " + l);
+        }
+        out.println("[fs-report] not covered: 'unsafe asm' (raw syscalls), 'call(...)' function pointers, extern names not in the deny list, and the C library functions the stdlib itself links.");
+    }
+
+    /** Checks the file-system rules of a call to a static method carrying '@fs_root' (literal path, checked against fs-roots) or '@fs_unsafe' (needs 'unsafe file'). */
+    private void checkFsPolicyAtCall(FuncInfo callee, Token op, List<Token> argNodes, Scope scope) {
+        Token.Decorator root = getDecorator(callee.funcToken.decorators, "fs_root");
+        if (root != null) {
+            boolean rw = !root.args.isEmpty() && root.args.get(0).equals("rw");
+            Token a0 = argNodes.isEmpty() ? null : argNodes.get(0);
+            if (a0 != null && a0.type == TokenType.STRING) {
+                String why = FsPolicy.current.checkLiteralRoot(a0.literalValue, rw);
+                if (why != null) {
+                    throw new CompilerException("type", op.file, op.line,
+                            "'" + callee.name + "' cannot open this path: " + why);
+                }
+                fsReportLines.add(op.file + ":" + op.line + " opens \"" + a0.literalValue + "\" " + (rw ? "read-write" : "read-only"));
+            } else {
+                throw new CompilerException("type", op.file, op.line,
+                        "'" + callee.name + "' needs a string literal path inside an fs-roots entry; for a computed path use Root.check(path) "
+                                + "to get a checked RootPath, or 'unsafe file{ Dir.rootAny(path) }'");
+            }
+        }
+        if (getDecorator(callee.funcToken.decorators, "fs_unsafe") != null) {
+            if (!unsafeBypass(scope, "file")) {
+                throw new CompilerException("type", op.file, op.line,
+                        "'" + callee.name + "' opens an unchecked path and needs 'unsafe file{ ... }'");
+            }
+            fsReportLines.add(op.file + ":" + op.line + " UNSAFE unchecked path via " + callee.name);
+        }
+    }
+    /** True when the type text names (directly, through struct members, or as a dynarray element) a struct that has a `@drop` hook. */
+    private boolean typeReachesDropHook(String baseType, Set<String> seen) {
+        if (baseType == null) {
+            return false;
+        }
+        for (String id : baseType.split("[^A-Za-z0-9_]+")) {
+            if (id.isEmpty() || !seen.add(id)) {
+                continue;
+            }
+            if (dropHookOwners.containsKey(id)) {
+                return true;
+            }
+            StructInfo si = structs.get(id);
+            if (si != null) {
+                for (TypeInfo m : si.members.values()) {
+                    if (typeReachesDropHook(m.baseType, seen)) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
     private static final Set<String> STRUCT_DECORATORS = new HashSet<>(Arrays.asList("unpadded", "untyped", "pub", "lock"));
     private static final Set<String> ENUM_DECORATORS = new HashSet<>(Arrays.asList("non_exhaustive"));
     private static final Set<String> INTERFACE_DECORATORS = new HashSet<>(Arrays.asList("guard", "pub"));
@@ -4951,6 +5041,11 @@ public class TypeChecker {
                     throw new CompilerException("type", d.file, d.line,
                             "'@link_name' takes a bare name, not a string -- '@link_name(sleep)', not "
                                     + "'@link_name(\"sleep\")'");
+                }
+                break;
+            case "fs_root":
+                if (d.args.size() > 1 || (d.args.size() == 1 && !d.args.get(0).equals("rw"))) {
+                    throw new CompilerException("type", d.file, d.line, "'@fs_root' takes nothing (read-only) or 'rw'");
                 }
                 break;
             case "reads":
@@ -5108,6 +5203,11 @@ public class TypeChecker {
         info.linkName = linkNameDecorator != null ? linkNameDecorator.args.get(0) : name;
         info.declTok = t;
         info.callConvention = resolveCallConvention(t.decorators);
+        if (FsPolicy.current.denies(name, info.linkName) && !isStdlibFile(t.file)) {
+            throw new CompilerException("type", t.file, t.line,
+                    "extern '" + name + "' (links to '" + info.linkName + "') is forbidden by fs-deny-externs in the compiler's fs.config -- "
+                            + "use the stdlib's fs API (Dir/File) instead");
+        }
         ExternParamParseResult params = parseExternParamList(paramsTok.childs, t);
         info.paramTypes.addAll(params.fixedTypes);
         info.hasVarargs = params.hasVarargs;
@@ -5225,6 +5325,9 @@ public class TypeChecker {
         for (NameType nt : parseParamList(paramsTok.childs)) {
             info.paramNames.add(nt.name);
             info.paramTypes.add(nt.type);
+        }
+        if (getDecorator(t.decorators, "drop") != null) {
+            requireDropHookShape(t, info, returnTypeTokens);
         }
         if (info.isAsync) {
             requireAsyncParamShape(t, info);
@@ -13567,6 +13670,11 @@ public class TypeChecker {
                     "'clone' of a 'raw' pointer is inherently unsafe -- it needs an 'unsafe clone' block (and the "
                             + "alive proof as well: 'match Some(...)', or 'assume match Some(...)' in an 'unsafe assume' block)");
         }
+        if (typeReachesDropHook(argType.baseType, new HashSet<>())) {
+            throw new CompilerException("type", op.file, op.line,
+                    "'clone' of '" + argType.baseType + "' is rejected: it holds a '@drop' resource "
+                            + "(a handle cannot be duplicated)");
+        }
         // A failed allocation throws, so what comes back is never null: `owns some`, like `new`.
         return argType.withStorage("owns").withSome(true); // keeps dynarray/array shape, mutability and alias
     }
@@ -14627,6 +14735,7 @@ public class TypeChecker {
                 op.resolvedCallTarget = candidate.mangledName;
                 op.resolvedCallConvention = candidate.callConvention;
                 requireThrowsWrapping(candidate, op);
+                checkFsPolicyAtCall(candidate, op, argNodes, scope);
                 for (int i = 0; i < argNodes.size(); i++) {
                     markMovedIfOwned(candidate.paramTypes.get(i), argNodes.get(i), scope);
                 }

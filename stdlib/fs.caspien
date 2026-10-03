@@ -1,0 +1,476 @@
+// File-system I/O, capability style. Every operation is relative to an open `Dir` (openat-style); there is no path-based delete/stat
+// and no `exists()`. A name is ONE path component: empty, "." , "..", or anything containing '/' is rejected, and symlinks are never
+// followed, so a `Dir` can only reach what is below it. `Dir` and `File` close their handles through `@drop` when the owning value goes
+// out of scope. All API is static methods: `Dir.rootRW("/literal")`, `Dir.sub(d, name)`, `File.open(d, name, Open.READ)`, ...
+// `File.tempFile(d, name)` + `File.commit(f)` replace `name` atomically (write a hidden temp file, flush, rename over); a temp file that is
+// dropped uncommitted is removed again. This file is the portable layer; the operating-system calls are in `fs_linux.caspien` or
+// `fs_windows_gnu.caspien`, chosen by the build target through `import "fs_{target}.caspien"`.
+//
+// Which paths a program may open is a build-time policy (`fs.config` section of toolchain.config): `Dir.root`/`Dir.rootRW` take a string
+// literal that the compiler checks against `fs-roots`; a computed path goes through `new RootPath(path)` (run-time check against the same
+// table); `unsafe file{ Dir.rootAny(path) }` is the unchecked way. Handles are `s64` (a descriptor or a HANDLE).
+import "libc.caspien"
+import "string.caspien"
+import "fs_{target}.caspien"
+
+@link_name(malloc)
+extern fsMalloc(mut u64) raw mut char
+@link_name(free)
+extern fsFree(raw imut char) void
+@link_name(snprintf)
+extern fsSnprintf(raw mut char, mut u64, static imut string,...) mut s32
+@link_name(strdup)
+extern fsStrdup(static imut string) raw mut char
+@link_name(strspn)
+extern fsStrspn(raw imut char, static imut string) mut u64
+@link_name(strcspn)
+extern fsStrcspn(raw imut char, static imut string) mut u64
+@link_name(strncmp)
+extern fsStrncmpRaw(raw imut char, static imut string, mut u64) mut s32
+@link_name(strncmp)
+extern fsStrncmp(static imut string, static imut string, mut u64) mut s32
+@link_name(strstr)
+extern fsStrstr(static imut string, static imut string) mut u64
+@link_name(strchr)
+extern fsStrchr(static imut string, mut s32) mut u64
+@link_name(strcmp)
+extern fsStrcmp(static imut string, static imut string) mut s32
+
+enum Open{
+	READ,WRITE_NEW,WRITE_TRUNC,APPEND
+}
+
+@pub
+struct Dir{@pub{
+	h: mut s64
+	writable: mut u64
+}}
+
+/** A path that passed the build's `fs-roots` table at run time. Only `new RootPath(path)` makes one (it throws when `path` is outside every root); `Dir.root(p)` / `Dir.rootRW(p)` open it. */
+@pub
+struct RootPath{@pub{
+	path: static imut string
+	rw: mut u64
+}}
+
+@pub
+struct File{@pub{
+	h: mut s64
+	dirh: mut s64
+	pending: mut u64
+	tmp: raw mut char
+	finalName: static imut string
+}}
+
+@drop
+func dirClose(d: ref some mut Dir) void{
+	fsOsClose(d.h)
+}
+
+@drop
+func fileClose(f: ref some mut File) void{
+	fsOsClose(f.h)
+	if f.pending == 1{
+		fsOsRemoveRaw(f.dirh, f.tmp)
+		unsafe extern{
+			fsFree(f.tmp)
+		}
+		fsOsClose(f.dirh)
+	}
+}
+
+/** Throws unless `name` is a single plain path component (and usable on this platform). */
+@pub
+@throws
+func fsCheckName(name: static imut string) void{
+	let bad = mut 0
+	unsafe extern{
+		if fsStrchr(name, 47) != 0{ bad = 1 }
+		if fsStrcmp(name, imut "") == 0{ bad = 1 }
+		if fsStrcmp(name, imut ".") == 0{ bad = 1 }
+		if fsStrcmp(name, imut "..") == 0{ bad = 1 }
+	}
+	if bad == 0{
+		bad = fsOsBadName(name)
+	}
+	if bad == 1{
+		throw "fs: not a plain name"
+	}
+}
+
+@throws
+func fsNeedWritable(d: ref some imut Dir) void{
+	if d.writable != 1{
+		throw "fs: directory was opened read-only"
+	}
+}
+
+/** `new RootPath(path)`: checks a computed `path` against the fs-roots table the program was compiled with (`*` = no fs-roots configured, everything allowed). The path must equal a root or lie below it, and may not contain "/..". */
+@pub
+@throws
+impl constructor for RootPath(path: static imut string) self{
+	let:<mut u64> rw = mut 0
+	let:<mut u64> ok = mut 0
+	unsafe extern{
+		let table = mut fsStrdup(__FS_ROOTS)
+		let pc = mut fsStrdup(path)
+		let plen = mut strlen(path)
+		if fsStrstr(path, imut "/..") != 0{
+			ok = 2
+		}
+		if plen == 0{
+			ok = 2
+		}
+		if fsStrncmp(__FS_ROOTS, imut "*", 2) == 0{
+			if ok == 0{
+				ok = 1
+				rw = 1
+			}
+		}
+		let off = mut 0
+		let tlen = mut strlen(__FS_ROOTS)
+		for entry in 0..256{
+			if ok != 0{
+				break
+			}
+			if off >= tlen{
+				break
+			}
+			let rl = mut fsStrcspn(table + off, imut "|")
+			if rl == 0{
+				break
+			}
+			let pl = mut fsStrcspn(table + off, imut "?")
+			let inside = mut 0
+			if fsOsPrefixEq(table + off, path, pl) == 1{
+				if plen == pl{
+					inside = 1
+				}
+				if plen > pl{
+					if fsStrncmpRaw(pc + pl, imut "/", 1) == 0{
+						inside = 1
+					}
+					if fsStrncmpRaw(table + off, imut "/", 2) == 0{
+						inside = 1
+					}
+				}
+			}
+			if inside == 1{
+				ok = 1
+				if fsStrncmpRaw(table + off + pl + 1, imut "rw", 2) == 0{
+					rw = 1
+				}
+			}
+			off = off + rl + 1
+		}
+		fsFree(table)
+		fsFree(pc)
+	}
+	if ok != 1{
+		throw "fs: path is outside every fs-roots entry"
+	}
+	return RootPath{path= path, rw= rw}
+}
+
+/** Opens `path` one component at a time from its start (the root, a drive, or the current directory), refusing a symlink at any step. */
+@throws
+func fsOpenRoot(path: static imut string, writable: mut u64) owns some mut Dir{
+	?catch(e){ throw e }
+	let:<mut s64> start = mut fsOsStart(path)
+	if start < 0{
+		throw "fs: cannot open directory"
+	}
+	let holder = mut ? new Dir{h= start, writable= writable}
+	let failed = mut 0
+	match Some(holder){
+		let:<raw mut char> s = mut null
+		let:<raw mut char> buf = mut null
+		unsafe extern{
+			s = fsStrdup(path)
+			buf = fsMalloc(strlen(path) + 2)
+		}
+		let off = mut fsOsStartLen(path)
+		for step in 0..4096{
+			let skip = mut 0
+			let n = mut 0
+			unsafe extern{
+				skip = fsStrspn(s + off, imut "/")
+				off = off + skip
+				n = fsStrcspn(s + off, imut "/")
+			}
+			if n == 0{
+				break
+			}
+			let:<mut s64> next = mut 0
+			unsafe extern{
+				fsSnprintf(buf, n + 1, imut "%.*s", n, s + off)
+			}
+			next = fsOsSubRaw(holder.h, buf)
+			if next < 0{
+				failed = 1
+				break
+			}
+			fsOsClose(holder.h)
+			holder.h = next
+			off = off + n
+		}
+		unsafe extern{
+			fsFree(s)
+			fsFree(buf)
+		}
+	}
+	if failed == 1{
+		throw "fs: cannot open directory (missing, not a directory, or a symlink on the way)"
+	}
+	return holder
+}
+
+@pub
+impl Dir{
+	/** Opens the directory at a string LITERAL path, read-only. The compiler checks the literal against the `fs-roots` of the build (toolchain.config). */
+	@pub
+	@throws
+	@fs_root
+	static func root(path: static imut string) owns some mut Dir{
+		?catch(e){ throw e }
+		let d = mut ? fsOpenRoot(path, 0)
+		return d
+	}
+
+	/** As `root`, read-write (the literal must lie in an `:rw` root). */
+	@pub
+	@throws
+	@fs_root(rw)
+	static func rootRW(path: static imut string) owns some mut Dir{
+		?catch(e){ throw e }
+		let d = mut ? fsOpenRoot(path, 1)
+		return d
+	}
+
+	/** Opens a computed path that `new RootPath(path)` accepted, read-only. */
+	@pub
+	@throws
+	static func root(p: ref some imut RootPath) owns some mut Dir{
+		?catch(e){ throw e }
+		let d = mut ? fsOpenRoot(p.path, 0)
+		return d
+	}
+
+	/** As above, read-write: throws unless the matching root is `:rw`. */
+	@pub
+	@throws
+	static func rootRW(p: ref some imut RootPath) owns some mut Dir{
+		?catch(e){ throw e }
+		if p.rw != 1{
+			throw "fs: root is read-only"
+		}
+		let d = mut ? fsOpenRoot(p.path, 1)
+		return d
+	}
+
+	/** Any path at all, unchecked: needs `unsafe file{ }` at the call. Read-only. */
+	@pub
+	@throws
+	@fs_unsafe
+	static func rootAny(path: static imut string) owns some mut Dir{
+		?catch(e){ throw e }
+		let d = mut ? fsOpenRoot(path, 0)
+		return d
+	}
+
+	@pub
+	@throws
+	@fs_unsafe
+	static func rootAnyRW(path: static imut string) owns some mut Dir{
+		?catch(e){ throw e }
+		let d = mut ? fsOpenRoot(path, 1)
+		return d
+	}
+
+	/** Opens the subdirectory `name` of `d`; the result can only reach what is below `d` and is writable only if `d` is. */
+	@pub
+	@throws
+	static func sub(d: ref some imut Dir, name: static imut string) owns some mut Dir{
+		?catch(e){ throw e }
+		? fsCheckName(name)
+		let:<mut s64> h = mut fsOsSub(d.h, name)
+		if h < 0{
+			throw "fs: cannot open directory"
+		}
+		let r = mut ? new Dir{h= h, writable= d.writable}
+		return r
+	}
+
+	@pub
+	@throws
+	static func make(d: ref some imut Dir, name: static imut string) void{
+		?catch(e){ throw e }
+		? fsCheckName(name)
+		? fsNeedWritable(d)
+		if fsOsMkdir(d.h, name) < 0{
+			throw "fs: cannot create directory"
+		}
+	}
+
+	@pub
+	@throws
+	static func removeFile(d: ref some imut Dir, name: static imut string) void{
+		?catch(e){ throw e }
+		? fsCheckName(name)
+		? fsNeedWritable(d)
+		if fsOsRemove(d.h, name, 0) < 0{
+			throw "fs: cannot remove file"
+		}
+	}
+
+	@pub
+	@throws
+	static func removeDir(d: ref some imut Dir, name: static imut string) void{
+		?catch(e){ throw e }
+		? fsCheckName(name)
+		? fsNeedWritable(d)
+		if fsOsRemove(d.h, name, 1) < 0{
+			throw "fs: cannot remove directory"
+		}
+	}
+}
+
+@pub
+impl File{
+	@pub
+	@throws
+	static func open(d: ref some imut Dir, name: static imut string, mode: imut Open) owns some mut File{
+		?catch(e){ throw e }
+		? fsCheckName(name)
+		let:<mut u64> m = mut 0
+		match mode{
+			READ:{ m = 0 }
+			WRITE_NEW:{ m = 1 }
+			WRITE_TRUNC:{ m = 2 }
+			APPEND:{ m = 3 }
+		}
+		if m != 0{
+			? fsNeedWritable(d)
+		}
+		let:<mut s64> h = mut fsOsOpen(d.h, name, m)
+		if h < 0{
+			throw "fs: cannot open file"
+		}
+		let:<raw mut char> none = mut null
+		let f = mut ? new File{h= h, dirh= -1, pending= 0, tmp= none, finalName= name}
+		return f
+	}
+
+	/** Starts replacing `name`: returns a hidden temp file in `d` (created exclusively); `File.commit` flushes it and renames it over `name`. Dropped without a commit, the temp file is deleted and `name` is untouched. */
+	@pub
+	@throws
+	static func tempFile(d: ref some imut Dir, name: static imut string) owns some mut File{
+		?catch(e){ throw e }
+		? fsCheckName(name)
+		? fsNeedWritable(d)
+		let:<raw mut char> buf = mut null
+		let:<mut s64> h = mut -1
+		unsafe extern{
+			buf = fsMalloc(300)
+		}
+		for n in 0..100{
+			unsafe extern{
+				fsSnprintf(buf, 300, imut ".tmp.%llu.%s", n, name)
+			}
+			h = fsOsCreateNewRaw(d.h, buf)
+			if h >= 0{
+				break
+			}
+		}
+		if h < 0{
+			unsafe extern{
+				fsFree(buf)
+			}
+			throw "fs: cannot create temp file"
+		}
+		let:<mut s64> dh = mut fsOsDup(d.h)
+		let f = mut ? new File{h= h, dirh= dh, pending= 1, tmp= buf, finalName= name}
+		return f
+	}
+
+	/** Flushes a temp file and renames it over its final name; afterwards the file is an ordinary open file (still writable, no longer pending). */
+	@pub
+	@throws
+	static func commit(f: ref some mut File) void{
+		if f.pending != 1{
+			throw "fs: not a temp file"
+		}
+		if fsOsSync(f.h) < 0{
+			throw "fs: flush failed"
+		}
+		if fsOsRenameOver(f.dirh, f.h, f.tmp, f.finalName) < 0{
+			throw "fs: rename failed"
+		}
+		unsafe extern{
+			fsFree(f.tmp)
+		}
+		fsOsClose(f.dirh)
+		f.pending = 0
+	}
+
+	/** Writes all of `text` (its characters, no terminator). */
+	@pub
+	@throws
+	static func writeText(f: ref some imut File, text: static imut string) void{
+		let n = mut 0
+		unsafe extern{
+			n = strlen(text)
+		}
+		let:<mut s64> wrote = mut fsOsWrite(f.h, text, n)
+		if wrap:<u64>(wrote) != n{
+			throw "fs: short write"
+		}
+	}
+
+	@pub
+	@throws
+	static func sync(f: ref some imut File) void{
+		if fsOsSync(f.h) < 0{
+			throw "fs: flush failed"
+		}
+	}
+
+	/** Reads the rest of the file into a new String (bytes become chars). */
+	@pub
+	@throws
+	static func readAll(f: ref some imut File) owns some mut String{
+		?catch(e){ throw e }
+		let out = mut ? new String()
+		let:<raw mut char> buf = mut null
+		unsafe extern{
+			buf = fsMalloc(4096)
+		}
+		let failed = mut 0
+		for chunk in 0..1048576{
+			let:<mut s64> got = mut fsOsRead(f.h, buf, 4096)
+			if got < 0{
+				failed = 1
+				break
+			}
+			if got == 0{
+				break
+			}
+			let m = mut wrap:<u64>(got)
+			for i in 0..m{
+				let c = mut ' '
+				unsafe assume deref{
+					assume match Some(buf + i)
+					c = deref(buf + i)
+				}
+				? out.appendChar(out, c)
+			}
+		}
+		unsafe extern{
+			fsFree(buf)
+		}
+		if failed == 1{
+			throw "fs: read failed"
+		}
+		return out
+	}
+}

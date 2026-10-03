@@ -6554,6 +6554,12 @@ public class BytecodeEmitter {
         final String newCatchLabel = pendingTryCatchLabel;
         pendingTryCatchLabel = null;
         if (unwrapped.isStructRvoCall) {
+            // A '@throws' constructor is itself the call the try/'?' guards: it must stage the catch label (an unstaged
+            // throw would unwind past this function's own catch into the caller). The label is restored for the allocation check below.
+            TypeChecker.FuncInfo ctorInfo = findFuncInfoByMangledName(resolveCallTargetForEmission(unwrapped.resolvedCallTarget));
+            if (ctorInfo != null && ctorInfo.isThrows) {
+                pendingTryCatchLabel = newCatchLabel;
+            }
             emitNewFromStructRvoCall(unwrapped);
         } else {
             emitExpr(op.left);

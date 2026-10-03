@@ -479,6 +479,16 @@ public class DropGlueGenerationPass implements OptimizationPass {
             emit(out, "DEREF " + derefType);
             emit(out, "POP " + root + " " + derefType);
 
+            String hook = structTable.dropHookOf(structName);
+            if (hook != null) {
+                // The struct's `@drop` function runs first, while every member is still intact.
+                String conv = CompilerConfig.load("compiler.config").defaultConvention;
+                emit(out, "CC_START " + conv);
+                emit(out, "PUSH p " + paramType);
+                emit(out, "POP ARG0 " + paramType);
+                emit(out, "CALL " + hook);
+                emit(out, "CC_END " + conv);
+            }
             for (StructTable.Member member : structTable.membersOf(structName)) {
                 emitValueDestruct(out, root + "." + member.name, member.canonicalType);
             }

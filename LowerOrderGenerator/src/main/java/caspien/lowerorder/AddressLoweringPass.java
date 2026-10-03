@@ -862,6 +862,7 @@ public class AddressLoweringPass implements OptimizationPass {
         Map<Integer, Integer> result = new HashMap<>();   // ASSIGN line index -> index of the literal's own "ADDR v T" line
         java.util.ArrayDeque<String> pending = new java.util.ArrayDeque<>();
         java.util.ArrayDeque<Integer> pendingStart = new java.util.ArrayDeque<>();
+        Map<String, Integer> untypedAddr = new HashMap<>();   // struct type -> latest "ADDR v T" of an '@untyped' struct (no class id push)
         for (int k = start; k <= end; k++) {
             List<BytecodeToken> l = lines.get(k);
             if (l.isEmpty()) {
@@ -876,6 +877,15 @@ public class AddressLoweringPass implements OptimizationPass {
                     if (ct.storage == null && structTable.layoutOf(ct.baseType) != null) {
                         pending.push(l.get(2).text);
                         pendingStart.push(k);
+                    }
+                } else {
+                    // An '@untyped' struct has no hidden class id, so its literal starts straight with the first member's value.
+                    // Treat "ADDR v T" followed by anything but a single whole-value push of T as such a literal; the matching
+                    // ASSIGN below confirms it (a whole-value copy is "ADDR v T / PUSH w T / ASSIGN T T T").
+                    CanonicalType ct = CanonicalType.parse(l.get(2).text);
+                    List<StructTable.LayoutEntry> lay = ct.storage == null ? structTable.layoutOf(ct.baseType) : null;
+                    if (lay != null && !lay.isEmpty() && lay.get(0).member != null && !lay.get(0).member.name.equals("___type")) {
+                        untypedAddr.put(l.get(2).text, k);
                     }
                 }
             } else if (m.equals("PUSH") && l.size() == 3 && l.get(1).text.equals("$ret_dest") && l.get(2).text.startsWith("raw_") && k + 1 <= end) {
@@ -903,6 +913,15 @@ public class AddressLoweringPass implements OptimizationPass {
                     && l.get(1).text.equals(pending.peek()) && l.get(2).text.equals(pending.peek()) && l.get(3).text.equals(pending.peek())) {
                 pending.pop();
                 result.put(k, pendingStart.pop());
+            } else if ((m.equals("ASSIGN") || m.equals("ATOMIC_ASSIGN")) && l.size() == 4 && l.get(1).text.equals(l.get(2).text)
+                    && l.get(2).text.equals(l.get(3).text) && untypedAddr.containsKey(l.get(1).text)) {
+                // an '@untyped' struct literal's store -- unless it is a whole-value copy (one push of the struct itself)
+                int startIdx = untypedAddr.remove(l.get(1).text);
+                boolean wholeCopy = k == startIdx + 2 && lines.get(startIdx + 1).get(0).text.equals("PUSH")
+                        && lines.get(startIdx + 1).get(lines.get(startIdx + 1).size() - 1).text.equals(l.get(1).text);
+                if (!wholeCopy && k > startIdx + 1) {
+                    result.put(k, startIdx);
+                }
             }
         }
         return result;

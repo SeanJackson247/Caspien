@@ -1,0 +1,33 @@
+// A literal of an '@untyped' struct (no hidden class id) whose fields are computed values narrower than 8 bytes. Before the fix the
+// literal was stored through the blind 8-byte-word path (LowerOrderGenerator never recognised it as a struct literal) and crashed.
+// Expected values come from an independent Python model (big = 70000: big & 0xFFFF, (big+3) & 0xFFFF, (big>>3) & 0xFF, big*3).
+import "../stdlib/libc.caspien"
+
+@untyped
+struct Mixed{@pub{
+	a: mut u16
+	b: mut u16
+	c: mut u8
+	d: mut u64
+}}
+
+func check(name: static imut string, got: mut u64, want: mut u64) void{
+	unsafe extern{
+		if got == want{ printf("PASS %s\n", name) } else { printf("FAIL %s got %llu want %llu\n", name, got, want) }
+	}
+}
+
+func main() imut s32{
+	let big = mut 70000
+	let shifted = mut bits_right(big, 3)
+	let m = mut Mixed{a= wrap:<u16>(big), b= wrap:<u16>(big + 3), c= wrap:<u8>(shifted), d= big * 3}
+	check("computed u16", m.a as u64, 4464)
+	check("computed u16 sum", m.b as u64, 4467)
+	check("computed u8", m.c as u64, 46)
+	check("u64", m.d, 210000)
+	let copy = mut m
+	check("whole copy keeps fields", (copy.a as u64) + (copy.b as u64) + (copy.c as u64), 8977)
+	let lit = mut Mixed{a= 1, b= 2, c= 3, d= 4}
+	check("literal fields", (lit.a as u64) + (lit.b as u64) + (lit.c as u64) + lit.d, 10)
+	return 0
+}

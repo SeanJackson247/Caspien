@@ -665,6 +665,13 @@ public class Lexer {
             // __LINE__/__FILE__ macros are, being resolved before any
             // real compilation begins at all.
             tokens.add(new Token(TokenType.INTEGER, Integer.toString(bufferStartLine), bufferStartLine, file));
+        } else if (text.equals("__FS_ROOTS")) {
+            // the run-time table of fs-roots (see FsPolicy.runtimeRootsText), an ordinary string literal
+            String roots = FsPolicy.current.runtimeRootsText();
+            Token rootsTok = new Token(TokenType.STRING, roots, bufferStartLine, file);
+            rootsTok.literalValue = roots;
+            rootsTok.quoteDelimiter = '"';
+            tokens.add(rootsTok);
         } else if (text.equals("__FILENAME")) {
             // "a C style static string, encaps with "" as in
             // "main.caspien"," confirmed directly -- an ordinary STRING

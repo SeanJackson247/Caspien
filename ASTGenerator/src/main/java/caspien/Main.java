@@ -52,6 +52,14 @@ public class Main {
         String inputPath = args[1];
         String outputPath = args[2];
 
+        FsPolicy.current = FsPolicy.load("fs.config");
+        FsPolicy.loadPlatform("platform.config");
+        boolean fsReport = false;
+        for (int i = 3; i < args.length; i++) {
+            if (args[i].equals("--fs-report")) {
+                fsReport = true;
+            }
+        }
         String source = new String(Files.readAllBytes(Paths.get(inputPath)), StandardCharsets.UTF_8);
 
         // "the target file should be stripped down to the base file
@@ -85,6 +93,9 @@ public class Main {
         BytecodeEmitter bytecodeEmitter = new BytecodeEmitter();
         String bytecode = bytecodeEmitter.emit(expanded, typeChecker);
 
+        if (fsReport) {
+            typeChecker.printFsReport(System.err);
+        }
         System.out.print(bytecode);
 
         writeFile(outputPath, bytecode);

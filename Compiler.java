@@ -97,7 +97,7 @@ public class Compiler {
     }
 
     private static final String USAGE =
-            "Usage: java Compiler -i <input.caspien> <output> [--no-warnings] [--asm | --lob | --hob]";
+            "Usage: java Compiler -i <input.caspien> <output> [--no-warnings] [--fs-report] [--asm | --lob | --hob]";
 
     private static class UsageError extends RuntimeException {
         UsageError(String message) {
@@ -111,6 +111,7 @@ public class Compiler {
         String inputArg = null;
         String outputArg = null;
         boolean noWarnings = false;
+        boolean fsReport = false;
         boolean stopAsm = false, stopLob = false, stopHob = false;
 
         for (int i = 0; i < args.length; i++) {
@@ -124,6 +125,9 @@ public class Compiler {
                     break;
                 case "--no-warnings":
                     noWarnings = true;
+                    break;
+                case "--fs-report":
+                    fsReport = true;
                     break;
                 case "--asm":
                     stopAsm = true;
@@ -178,6 +182,8 @@ public class Compiler {
         Files.createDirectories(output.getParent() != null ? output.getParent() : root);
 
         splitToolchainConfig(root, astGenDir, optimizerDir, lowerOrderDir, codegenDir);
+        // the front end needs the target for the platform-specific stdlib imports ("{target}" in an import path, e.g. fs_{target}.caspien)
+        Files.writeString(astGenDir.resolve("platform.config"), "target: " + readCodegenTarget(codegenDir) + "\n", StandardCharsets.UTF_8);
 
         Path buildDir = null; // created lazily, only if an intermediate file is actually needed
 
@@ -185,7 +191,7 @@ public class Compiler {
 
         // ---- Stage 1: ASTGenerator (.caspien -> higher-order bytecode) ----
         Path hobOut = stopHob ? output : (buildDir = ensureBuildDir(buildDir, output)).resolve("1_ast_generator.hob.txt");
-        runJavaStage(astGenDir, "caspien.Main", input, hobOut, diag, "ASTGenerator");
+        runJavaStage(astGenDir, "caspien.Main", input, hobOut, diag, "ASTGenerator", fsReport ? "--fs-report" : null);
         if (diag.hasFatalError()) return diag.exitCode();
 
         if (stopHob) {
@@ -297,6 +303,13 @@ public class Compiler {
         // its calling convention's registers).
         validateAbiConsistency(compilerCfg.toString(), codegenCfg.toString());
 
+        // optional file-system policy for the type checker (FsPolicy): written when the section exists, removed otherwise
+        StringBuilder fsCfg = sections.get("fs.config");
+        if (fsCfg != null) {
+            Files.writeString(astGenDir.resolve("fs.config"), fsCfg.toString(), StandardCharsets.UTF_8);
+        } else {
+            Files.deleteIfExists(astGenDir.resolve("fs.config"));
+        }
         Files.writeString(astGenDir.resolve("compiler.config"), compilerCfg.toString(), StandardCharsets.UTF_8);
         Files.writeString(lowerOrderDir.resolve("compiler.config"), compilerCfg.toString(), StandardCharsets.UTF_8);
         Files.writeString(optimizerDir.resolve("compiler.config"), compilerCfg.toString(), StandardCharsets.UTF_8);
@@ -615,6 +628,11 @@ public class Compiler {
 
     private static void runJavaStage(Path componentDir, String mainClass, Path inputFile, Path outputFile,
                                       Diagnostics diag, String stageName) throws IOException, InterruptedException {
+        runJavaStage(componentDir, mainClass, inputFile, outputFile, diag, stageName, null);
+    }
+
+    private static void runJavaStage(Path componentDir, String mainClass, Path inputFile, Path outputFile,
+                                      Diagnostics diag, String stageName, String extraArg) throws IOException, InterruptedException {
         List<String> command = new ArrayList<>();
         command.add(javaLauncher());
         command.add("-cp");
@@ -623,6 +641,9 @@ public class Compiler {
         command.add("-i");
         command.add(inputFile.toString());
         command.add(outputFile.toString());
+        if (extraArg != null) {
+            command.add(extraArg);
+        }
         runProcess(command, componentDir.toFile(), diag, stageName);
     }
 
@@ -786,7 +807,7 @@ public class Compiler {
                 // way, so this is a strict improvement with no downside for
                 // that case.
                 runToolProcess(List.of(compiler, asmFile.toString(), "-o", output.toString(), "-m64", "-pthread",
-                        "-static", "-lm"), diag, compiler);
+                        "-static", "-lm", "-lntdll"), diag, compiler);
                 return;
             }
             default:

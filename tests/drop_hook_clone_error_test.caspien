@@ -1,0 +1,24 @@
+// Must fail to compile: `clone` of a type with a `@drop` hook.
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+
+struct Res{@pub{
+	id: mut u64
+}}
+
+@drop
+func resClose(r: ref some mut Res) void{
+}
+
+@throws
+func copyRes(r: auto imut Res) void{
+	let c = try clone(r) catch(e){ throw e }
+}
+
+func main() imut s32{
+	return 0
+}

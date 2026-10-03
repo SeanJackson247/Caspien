@@ -1,0 +1,16 @@
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+import "../stdlib/fs.caspien"
+
+// Must fail: unsafe block names a tag it does not need.
+func main() imut s32{
+	?catch(e){ return 1 }
+	unsafe file extern{
+		let d = mut ? Dir.rootAny("/etc")
+	}
+	return 0
+}

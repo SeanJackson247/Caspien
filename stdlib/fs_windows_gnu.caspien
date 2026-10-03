@@ -1,0 +1,486 @@
+// Windows (windows_gnu) primitives under fs.caspien, written against the NT native API in ntdll (linked with -lntdll), because only
+// NtCreateFile can open a name RELATIVE TO A DIRECTORY HANDLE (the openat of Windows): a `Dir` is a HANDLE and nothing reachable from it
+// is ever looked up by a path string again. Every open uses FILE_OPEN_REPARSE_POINT and then refuses a reparse point (symlink,
+// junction, mount point), so links are never followed. Names are checked against the Windows rules (no `<>:"|?*\`, no control
+// characters, no trailing '.' or ' ', no device names such as CON/NUL/COM1, so no alternate data streams either). Paths in roots are
+// "X:/dir/sub" (a drive letter and '/' separators); a root without a drive letter is refused.
+// Not verified on real Windows: only run under Wine so far.
+import "libc.caspien"
+
+@untyped
+struct FsWIosb{@pub{
+	status: mut u64
+	info: mut u64
+}}
+@untyped
+struct FsWUStr{@pub{
+	length: mut u16
+	maxLength: mut u16
+	buffer: raw mut u16
+}}
+@untyped
+struct FsWObjAttr{@pub{
+	length: mut u32
+	root: mut u64
+	name: raw mut FsWUStr
+	attrs: mut u32
+	sd: mut u64
+	sqos: mut u64
+}}
+@untyped
+struct FsWRenameHdr{@pub{
+	replace: mut u64
+	root: mut u64
+	nameLen: mut u32
+}}
+
+@link_name(NtCreateFile)
+extern fsWNtCreate(raw mut u64, mut u32, raw mut FsWObjAttr, raw mut FsWIosb, mut u64, mut u32, mut u32, mut u32, mut u32, mut u64, mut u32) mut s32
+@link_name(NtClose)
+extern fsWNtClose(mut u64) mut s32
+@link_name(NtReadFile)
+extern fsWNtRead(mut u64, mut u64, mut u64, mut u64, raw mut FsWIosb, raw mut char, mut u32, mut u64, mut u64) mut s32
+@link_name(NtWriteFile)
+extern fsWNtWrite(mut u64, mut u64, mut u64, mut u64, raw mut FsWIosb, static imut string, mut u32, mut u64, mut u64) mut s32
+@link_name(NtFlushBuffersFile)
+extern fsWNtFlush(mut u64, raw mut FsWIosb) mut s32
+@link_name(NtSetInformationFile)
+extern fsWNtSetInfo(mut u64, raw mut FsWIosb, raw mut u64, mut u32, mut u32) mut s32
+@link_name(NtSetInformationFile)
+extern fsWNtSetInfoBuf(mut u64, raw mut FsWIosb, raw mut u8, mut u32, mut u32) mut s32
+@link_name(NtQueryInformationFile)
+extern fsWNtQuery(mut u64, raw mut FsWIosb, raw mut u64, mut u32, mut u32) mut s32
+@link_name(MultiByteToWideChar)
+extern fsWWide(mut u32, mut u32, static imut string, mut s32, raw mut u16, mut s32) mut s32
+@link_name(MultiByteToWideChar)
+extern fsWWideRaw(mut u32, mut u32, raw imut char, mut s32, raw mut u16, mut s32) mut s32
+@link_name(DuplicateHandle)
+extern fsWDup(mut u64, mut u64, mut u64, raw mut u64, mut u32, mut s32, mut u32) mut s32
+@link_name(malloc)
+extern fsWMalloc(mut u64) raw mut u16
+@link_name(malloc)
+extern fsWMallocBytes(mut u64) raw mut u8
+@link_name(malloc)
+extern fsWMallocChars(mut u64) raw mut char
+@link_name(free)
+extern fsWFree(raw imut u16) void
+@link_name(free)
+extern fsWFreeBytes(raw imut u8) void
+@link_name(free)
+extern fsWFreeChars(raw imut char) void
+@link_name(memcpy)
+extern fsWMemcpy(raw mut u8, raw mut FsWRenameHdr, mut u64) raw mut u8
+@link_name(memcpy)
+extern fsWMemcpyWide(raw mut u8, raw imut u16, mut u64) raw mut u8
+@link_name(strdup)
+extern fsWStrdup(static imut string) raw mut char
+@link_name(strlen)
+extern fsWStrlen(static imut string) mut u64
+@link_name(strpbrk)
+extern fsWStrpbrk(static imut string, static imut string) mut u64
+@link_name(strcspn)
+extern fsWStrcspn(static imut string, static imut string) mut u64
+@link_name(strspn)
+extern fsWStrspnRaw(raw imut char, static imut string) mut u64
+@link_name(strncmp)
+extern fsWStrncmpRaw(raw imut char, static imut string, mut u64) mut s32
+@link_name(_stricmp)
+extern fsWStricmpRaw(raw imut char, static imut string) mut s32
+@link_name(_strnicmp)
+extern fsWStrnicmpRaw(raw imut char, static imut string, mut u64) mut s32
+@link_name(snprintf)
+extern fsWSnprintf(raw mut char, mut u64, static imut string,...) mut s32
+
+/** One NtCreateFile call: opens/creates the (wide) name relative to the directory handle `root` (0 = the name is a full NT path). Returns the handle, or -1. */
+func fsWCreate(root: mut u64, wname: raw mut u16, nchars: mut u64, access: mut u32, attrs: mut u32, disp: mut u32, options: mut u32) mut s64{
+	let:<mut u64> h = mut 0
+	let:<mut s32> st = mut 0
+	unsafe raw extern{
+		let us = mut FsWUStr{length= wrap:<u16>(nchars * 2), maxLength= wrap:<u16>(nchars * 2 + 2), buffer= wname}
+		let oa = mut FsWObjAttr{length= 48, root= root, name= raw us, attrs= 0x40, sd= 0, sqos= 0}
+		let iosb = mut FsWIosb{status= 0, info= 0}
+		st = fsWNtCreate(raw h, access, raw oa, raw iosb, 0, attrs, 7, disp, options, 0, 0)
+	}
+	if st < 0{
+		return -1
+	}
+	return wrap:<s64>(h)
+}
+
+@pub
+func fsOsClose(h: mut s64) void{
+	unsafe extern{
+		fsWNtClose(wrap:<u64>(h))
+	}
+}
+
+/** 1 when the opened handle is a reparse point (a link of some kind). */
+@pub
+func fsWIsReparse(h: mut s64) mut u64{
+	let:<mut u64> attrs = mut 0
+	let:<mut s32> st = mut 0
+	unsafe raw extern{
+		let iosb = mut FsWIosb{status= 0, info= 0}
+		st = fsWNtQuery(wrap:<u64>(h), raw iosb, raw attrs, 8, 35)
+	}
+	if st < 0{
+		return 1
+	}
+	let:<mut u64> low = mut bits_and(attrs, 0x400)
+	if low != 0{
+		return 1
+	}
+	return 0
+}
+
+/** Opens `wname` under `root` for the given access, refusing a reparse point (the handle is closed and -1 returned). */
+func fsWOpenChecked(root: mut u64, wname: raw mut u16, nchars: mut u64, access: mut u32, disp: mut u32, options: mut u32, attrs: mut u32) mut s64{
+	let:<mut s64> h = mut fsWCreate(root, wname, nchars, access, attrs, disp, options)
+	if h < 0{
+		return -1
+	}
+	if fsWIsReparse(h) == 1{
+		fsOsClose(h)
+		return -1
+	}
+	return h
+}
+
+/** Characters of `path` the platform consumes before the first component: "X:". */
+@pub
+func fsOsStartLen(path: static imut string) mut u64{
+	return 2
+}
+
+/** Opens the drive root "\??\X:\" of an absolute "X:/..." path; -1 for anything else (relative paths, UNC paths, device paths). The drive root itself is trusted and not tested for a reparse point (Wine, for one, reports its Z: root as a mount point); every component below it is. */
+@pub
+func fsOsStart(path: static imut string) mut s64{
+	let:<mut s64> h = mut -1
+	unsafe extern{
+		let p = mut fsWStrdup(path)
+		let plen = mut fsWStrlen(path)
+		let okShape = mut 0
+		if plen >= 2{
+			if fsWStrspnRaw(p, imut "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz") >= 1{
+				if fsWStrncmpRaw(p + 1, imut ":", 1) == 0{
+					okShape = 1
+				}
+			}
+		}
+		if okShape == 1{
+			if plen > 2{
+				okShape = 0
+				if fsWStrncmpRaw(p + 2, imut "/", 1) == 0{
+					okShape = 1
+				}
+			}
+		}
+		if okShape == 1{
+			let nt = mut fsWMallocChars(32)
+			let w = mut fsWMalloc(128)
+			fsWSnprintf(nt, 32, imut "\\??\\%.1s:\\", p)
+			let n = mut fsWWideRaw(65001, 0, nt, -1, w, 64)
+			if n > 1{
+				h = fsWCreate(0, w, wrap:<u64>(n - 1), 0x1000A1, 0, 1, 0x200021)
+			}
+			fsWFreeChars(nt)
+			fsWFree(w)
+		}
+		fsWFreeChars(p)
+	}
+	return h
+}
+
+@pub
+func fsOsSubRaw(h: mut s64, name: raw imut char) mut s64{
+	let:<mut s64> r = mut -1
+	unsafe extern{
+		let w = mut fsWMalloc(1024)
+		let n = mut fsWWideRaw(65001, 0, name, -1, w, 512)
+		if n > 1{
+			r = fsWOpenChecked(wrap:<u64>(h), w, wrap:<u64>(n - 1), 0x1000A1, 1, 0x200021, 0)
+		}
+		fsWFree(w)
+	}
+	return r
+}
+
+@pub
+func fsOsSub(h: mut s64, name: static imut string) mut s64{
+	let:<mut s64> r = mut -1
+	unsafe extern{
+		let w = mut fsWMalloc(1024)
+		let n = mut fsWWide(65001, 0, name, -1, w, 512)
+		if n > 1{
+			r = fsWOpenChecked(wrap:<u64>(h), w, wrap:<u64>(n - 1), 0x1000A1, 1, 0x200021, 0)
+		}
+		fsWFree(w)
+	}
+	return r
+}
+
+@pub
+func fsOsMkdir(h: mut s64, name: static imut string) mut s64{
+	let:<mut s64> r = mut -1
+	unsafe extern{
+		let w = mut fsWMalloc(1024)
+		let n = mut fsWWide(65001, 0, name, -1, w, 512)
+		if n > 1{
+			let:<mut s64> nh = mut fsWCreate(wrap:<u64>(h), w, wrap:<u64>(n - 1), 0x100001, 0, 2, 0x21)
+			if nh >= 0{
+				fsOsClose(nh)
+				r = 0
+			}
+		}
+		fsWFree(w)
+	}
+	return r
+}
+
+/** Deletes `wname` under `h`: opens it for DELETE (never following a link) and sets the delete disposition; the delete happens at close. */
+func fsWRemoveWide(h: mut s64, w: raw mut u16, nchars: mut u64, isDir: mut u64) mut s64{
+	let:<mut u32> options = mut 0x200060
+	if isDir == 1{
+		options = 0x200021
+	}
+	let:<mut s64> fh = mut fsWCreate(wrap:<u64>(h), w, nchars, 0x110000, 0, 1, options)
+	if fh < 0{
+		return -1
+	}
+	let:<mut u64> flag = mut 1
+	let:<mut s32> st = mut 0
+	unsafe raw extern{
+		let iosb = mut FsWIosb{status= 0, info= 0}
+		st = fsWNtSetInfo(wrap:<u64>(fh), raw iosb, raw flag, 1, 13)
+	}
+	fsOsClose(fh)
+	if st < 0{
+		return -1
+	}
+	return 0
+}
+
+@pub
+func fsOsRemove(h: mut s64, name: static imut string, isDir: mut u64) mut s64{
+	let:<mut s64> r = mut -1
+	unsafe extern{
+		let w = mut fsWMalloc(1024)
+		let n = mut fsWWide(65001, 0, name, -1, w, 512)
+		if n > 1{
+			r = fsWRemoveWide(h, w, wrap:<u64>(n - 1), isDir)
+		}
+		fsWFree(w)
+	}
+	return r
+}
+
+@pub
+func fsOsRemoveRaw(h: mut s64, name: raw imut char) mut s64{
+	let:<mut s64> r = mut -1
+	unsafe extern{
+		let w = mut fsWMalloc(1024)
+		let n = mut fsWWideRaw(65001, 0, name, -1, w, 512)
+		if n > 1{
+			r = fsWRemoveWide(h, w, wrap:<u64>(n - 1), 0)
+		}
+		fsWFree(w)
+	}
+	return r
+}
+
+/** mode: 0 read, 1 create (fails if it exists), 2 create/truncate, 3 append (creating). */
+@pub
+func fsOsOpen(h: mut s64, name: static imut string, mode: mut u64) mut s64{
+	let:<mut s64> r = mut -1
+	unsafe extern{
+		let w = mut fsWMalloc(1024)
+		let n = mut fsWWide(65001, 0, name, -1, w, 512)
+		if n > 1{
+			let nc = mut wrap:<u64>(n - 1)
+			if mode == 0{
+				r = fsWOpenChecked(wrap:<u64>(h), w, nc, 0x100081, 1, 0x200060, 0x80)
+			}
+			if mode == 1{
+				r = fsWCreate(wrap:<u64>(h), w, nc, 0x100186, 0x80, 2, 0x60)
+			}
+			if mode == 2{
+				r = fsWOpenChecked(wrap:<u64>(h), w, nc, 0x100186, 3, 0x200060, 0x80)
+				if r >= 0{
+					let:<mut u64> zero = mut 0
+					let:<mut s32> st = mut 0
+					unsafe raw extern{
+						let iosb = mut FsWIosb{status= 0, info= 0}
+						st = fsWNtSetInfo(wrap:<u64>(r), raw iosb, raw zero, 8, 20)
+					}
+					if st < 0{
+						fsOsClose(r)
+						r = -1
+					}
+				}
+			}
+			if mode == 3{
+				r = fsWOpenChecked(wrap:<u64>(h), w, nc, 0x100184, 3, 0x200060, 0x80)
+			}
+		}
+		fsWFree(w)
+	}
+	return r
+}
+
+/** Creates the new write file `name` (never replacing one), with DELETE access so it can later be renamed over its final name. */
+@pub
+func fsOsCreateNewRaw(h: mut s64, name: raw imut char) mut s64{
+	let:<mut s64> r = mut -1
+	unsafe extern{
+		let w = mut fsWMalloc(1024)
+		let n = mut fsWWideRaw(65001, 0, name, -1, w, 512)
+		if n > 1{
+			r = fsWCreate(wrap:<u64>(h), w, wrap:<u64>(n - 1), 0x110186, 0x80, 2, 0x60)
+		}
+		fsWFree(w)
+	}
+	return r
+}
+
+/** Renames the open temp file `fileh` to `finalName` in directory `h`, replacing an existing file. */
+@pub
+func fsOsRenameOver(h: mut s64, fileh: mut s64, tmp: raw imut char, finalName: static imut string) mut s64{
+	let:<mut s64> r = mut -1
+	unsafe raw extern{
+		let w = mut fsWMalloc(1024)
+		let n = mut fsWWide(65001, 0, finalName, -1, w, 512)
+		if n > 1{
+			let nb = mut wrap:<u64>((n - 1) * 2)
+			let buf = mut fsWMallocBytes(nb + 64)
+			let hdr = mut FsWRenameHdr{replace= 1, root= wrap:<u64>(h), nameLen= wrap:<u32>(nb)}
+			fsWMemcpy(buf, raw hdr, 20)
+			fsWMemcpyWide(buf + 20, w, nb)
+			let iosb = mut FsWIosb{status= 0, info= 0}
+			let:<mut s32> st = mut fsWNtSetInfoBuf(wrap:<u64>(fileh), raw iosb, buf, wrap:<u32>(nb + 20), 10)
+			if st >= 0{
+				r = 0
+			}
+			fsWFreeBytes(buf)
+		}
+		fsWFree(w)
+	}
+	return r
+}
+
+@pub
+func fsOsDup(h: mut s64) mut s64{
+	let:<mut u64> out = mut 0
+	let:<mut s32> ok = mut 0
+	unsafe raw extern{
+		ok = fsWDup(0xFFFFFFFFFFFFFFFF, wrap:<u64>(h), 0xFFFFFFFFFFFFFFFF, raw out, 0, 0, 2)
+	}
+	if ok == 0{
+		return -1
+	}
+	return wrap:<s64>(out)
+}
+
+@pub
+func fsOsRead(h: mut s64, buf: raw mut char, n: mut u64) mut s64{
+	let:<mut s32> st = mut 0
+	let:<mut s64> got = mut 0
+	unsafe raw extern{
+		let iosb = mut FsWIosb{status= 0, info= 0}
+		st = fsWNtRead(wrap:<u64>(h), 0, 0, 0, raw iosb, buf, wrap:<u32>(n), 0, 0)
+		got = wrap:<s64>(iosb.info)
+	}
+	if st < 0{
+		if st == -1073741807{
+			return 0
+		}
+		return -1
+	}
+	return got
+}
+
+@pub
+func fsOsWrite(h: mut s64, text: static imut string, n: mut u64) mut s64{
+	let:<mut s32> st = mut 0
+	let:<mut s64> wrote = mut 0
+	unsafe raw extern{
+		let iosb = mut FsWIosb{status= 0, info= 0}
+		st = fsWNtWrite(wrap:<u64>(h), 0, 0, 0, raw iosb, text, wrap:<u32>(n), 0, 0)
+		wrote = wrap:<s64>(iosb.info)
+	}
+	if st < 0{
+		return -1
+	}
+	return wrote
+}
+
+@pub
+func fsOsSync(h: mut s64) mut s64{
+	let:<mut s32> st = mut 0
+	unsafe raw extern{
+		let iosb = mut FsWIosb{status= 0, info= 0}
+		st = fsWNtFlush(wrap:<u64>(h), raw iosb)
+	}
+	if st < 0{
+		return -1
+	}
+	return 0
+}
+
+/** 1 when `name` (already known to be a single component) is not usable on Windows. */
+@pub
+func fsOsBadName(name: static imut string) mut u64{
+	let:<mut u64> bad = mut 0
+	unsafe extern{
+		if fsWStrpbrk(name, imut "<>:\"|?*\\") != 0{
+			bad = 1
+		}
+		let len = mut fsWStrlen(name)
+		let p = mut fsWStrdup(name)
+		for i in 0..len{
+			let c = mut ' '
+			unsafe assume deref{
+				assume match Some(p + i)
+				c = deref(p + i)
+			}
+			if c < ' '{
+				bad = 1
+			}
+			if i + 1 == len{
+				if c == '.'{ bad = 1 }
+				if c == ' '{ bad = 1 }
+			}
+		}
+		let bl = mut fsWStrcspn(name, imut ".")
+		let base = mut fsWMallocChars(len + 2)
+		fsWSnprintf(base, len + 2, imut "%.*s", bl, p)
+		if fsWStricmpRaw(base, imut "CON") == 0{ bad = 1 }
+		if fsWStricmpRaw(base, imut "PRN") == 0{ bad = 1 }
+		if fsWStricmpRaw(base, imut "AUX") == 0{ bad = 1 }
+		if fsWStricmpRaw(base, imut "NUL") == 0{ bad = 1 }
+		if fsWStricmpRaw(base, imut "CONIN$") == 0{ bad = 1 }
+		if fsWStricmpRaw(base, imut "CONOUT$") == 0{ bad = 1 }
+		if bl == 4{
+			if fsWStrnicmpRaw(base, imut "COM", 3) == 0{
+				if fsWStrspnRaw(base + 3, imut "123456789") == 1{ bad = 1 }
+			}
+			if fsWStrnicmpRaw(base, imut "LPT", 3) == 0{
+				if fsWStrspnRaw(base + 3, imut "123456789") == 1{ bad = 1 }
+			}
+		}
+		fsWFreeChars(base)
+		fsWFreeChars(p)
+	}
+	return bad
+}
+
+/** 1 when the first `n` characters of `a` equal those of `b`; Windows paths compare without regard to case. */
+@pub
+func fsOsPrefixEq(a: raw imut char, b: static imut string, n: mut u64) mut u64{
+	let:<mut u64> eq = mut 0
+	unsafe extern{
+		if fsWStrnicmpRaw(a, b, n) == 0{
+			eq = 1
+		}
+	}
+	return eq
+}
