@@ -83,20 +83,20 @@ func steps(n: mut u64, r: imut range) mut u64{
 func main() void{
 	let w = mut warm(Color.GREEN)
 	let l = mut level(Level.HIGH)
-	unsafe{ printf("enums=%llu %llu | ", w, l) }
+	unsafe extern{ printf("enums=%llu %llu | ", w, l) }
 
 	let f = mut twice(2.0)
 	let z = mut safeDiv(10, 0)
-	unsafe{ printf("floats=%.0f %llu %llu\n", f, z, z) }
+	unsafe extern{ printf("floats=%.0f %llu %llu\n", f, z, z) }
 
 	let d1 = mut safeDiv(10, 2)
 	let d2 = mut safeDiv(10, 0)
-	unsafe{ printf("proofs=%llu %llu | ", d1, d2) }
+	unsafe extern{ printf("proofs=%llu %llu | ", d1, d2) }
 
 	let p1 = mut pick(200, 3)
 	let p2 = mut pick(1000, 3)
 	let p3 = mut pick(1000, 0)
-	unsafe{ printf("fits=%llu %llu %llu\n", p1, p2, p3) }
+	unsafe extern{ printf("fits=%llu %llu %llu\n", p1, p2, p3) }
 
 	// `in` proves an index for reading, `into` for writing. If it fails, `else` runs.
 	let arr = mut [10, 20, 30]
@@ -110,13 +110,13 @@ func main() void{
 	let got2 = mut 0
 	match miss in arr{ got2 = arr[miss] }
 	else{ got2 = 777 }
-	unsafe{ printf("bounds=%llu %llu %llu | ", got, last, got2) }
+	unsafe extern{ printf("bounds=%llu %llu %llu | ", got, last, got2) }
 
 	// `for match` visits only proven indexes.
 	let v = mut [1, 2, 3, 4]
 	let s = mut 0
 	for match i in v{ s += v[i] }
-	unsafe{ printf("for_match=%llu\n", s) }
+	unsafe extern{ printf("for_match=%llu\n", s) }
 
 	// The range is fixed when the loop starts, and the counter cannot be assigned.
 	let n = mut 5
@@ -136,13 +136,13 @@ func main() void{
 	for i in 0..3{
 		for j in i..3{ grid += 1 }
 	}
-	unsafe{ printf("loops=%llu %llu %llu %llu %llu | ", it, n, inverted, early, grid) }
+	unsafe extern{ printf("loops=%llu %llu %llu %llu %llu | ", it, n, inverted, early, grid) }
 
 	let a = mut fact(1, 1..11)
 	let b = mut factLoop(10)
-	unsafe{ printf("fact=%llu %llu | ", a, b) }
+	unsafe extern{ printf("fact=%llu %llu | ", a, b) }
 	let s1 = mut steps(0, 0..10)
 	let s2 = mut steps(0, 0..7)
 	let s3 = mut steps(0, 3..3)
-	unsafe{ printf("steps=%llu %llu %llu\n", s1, s2, s3) }
+	unsafe extern{ printf("steps=%llu %llu %llu\n", s1, s2, s3) }
 }

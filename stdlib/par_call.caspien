@@ -27,7 +27,7 @@ import "libc.caspien"
 @pub
 func par_call(fn: raw imut u8, handle: raw mut u8) void{
 	let tid = mut 0
-	unsafe{
+	unsafe extern raw{
 		pthread_create(raw tid, null, fn, handle)
 	}
 }

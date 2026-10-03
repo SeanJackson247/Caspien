@@ -10,7 +10,7 @@ import "../stdlib/gt_destruct.caspien"
 import "../stdlib/gt_moved.caspien"
 
 func check(name: static imut string, ok: mut bool) void{
-	unsafe{
+	unsafe extern{
 		if ok{
 			printf("PASS %s\n", name)
 		}else{
@@ -64,7 +64,7 @@ func main() void{
 	check("five elements of a u8[5] as arguments", fiveBytes(bytes[0], bytes[1], bytes[2], bytes[3], bytes[4]) == 0)
 	let:<mut u16[3]> halves = mut [20, 21, 22]
 	check("three elements of a u16[3] as arguments", fiveHalves(halves[0], halves[1], halves[2]) == 0)
-	unsafe{
+	unsafe extern{
 		printf("%u %u %u\n", bytes[1], bytes[3], bytes[4])
 		printf("%u %u %u\n", halves[0], halves[1], halves[2])
 	}

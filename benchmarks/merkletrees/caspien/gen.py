@@ -99,7 +99,7 @@ let static:<mut u64[8]> S = mut [0, 0, 0, 0, 0, 0, 0, 0]
 
 // compress the block in W[0..15] into S: schedule W[16..63], 64 rounds fully unrolled with the working variables renamed instead of shifted
 func comp() void{{
-	unsafe{{
+	unsafe global{{
 {ind(decl, 2)}
 {ind(chr(10).join(sched), 2)}
 {ind(load, 2)}
@@ -111,7 +111,7 @@ func comp() void{{
 // compress the second block of a 64-byte message, which is pure padding (0x80000000, 13 zero words... , 512): its schedule is a constant, so
 // every round adds one precomputed literal K[i] + W[i] and no schedule is computed
 func compPad() void{{
-	unsafe{{
+	unsafe global{{
 {ind(decl, 2)}
 {ind(load, 2)}
 {ind(r2, 2)}
@@ -200,6 +200,7 @@ rt = ? resize(rt, tn, zero)
 let t = mut ? new DynamicArray:<u32>(rt)
 rsibs = ? resize(rsibs, 512, zero)
 let sibs = mut ? new DynamicArray:<u32>(rsibs)'''
+    udyn_tag = " udyn" if nv == "unsafe" else ""
     catch = "" if nv == "unsafe" else "\t?catch(e){ return }\n"
     leaf_store = store_S("t", "tb")
     build_loads = (load_to_W("t", "lb", 0) + "\n" + load_to_W("t", "rb", 8))
@@ -237,7 +238,7 @@ func bswap(v: mut u32) mut u32{{
 
 // S = SHA256(le64(d) || le64(i)) for d = dhi * 2^32 + dlo, i = ihi * 2^32 + ilo: one block (16-byte message plus padding)
 func leaf(dlo: mut u32, dhi: mut u32, ilo: mut u32, ihi: mut u32) void{{
-	unsafe{{
+	unsafe global{{
 		W[0] = bswap(dlo) as u64
 		W[1] = bswap(dhi) as u64
 		W[2] = bswap(ilo) as u64
@@ -252,7 +253,7 @@ func leaf(dlo: mut u32, dhi: mut u32, ilo: mut u32, ihi: mut u32) void{{
 
 // S = SHA256(L || R) where the 16 words of L || R are in W[0..15]: two blocks, the second one pure padding
 func node() void{{
-	unsafe{{
+	unsafe global{{
 {ind(h0_to_S, 2)}
 		comp()
 		compPad()
@@ -260,7 +261,7 @@ func node() void{{
 }}
 
 func main() void{{
-{catch}	unsafe{{
+{catch}	unsafe assume extern global loop{udyn_tag}{{
 		let n = mut 0
 		n = atol(getenv("MERKLE_N"))
 {ind(alloc, 2)}
@@ -313,6 +314,7 @@ func main() void{{
 		for p in 0..half{{
 			xl = xl * 1664525 + 1013904223
 			let xw = mut xl as u64
+			assume match n != 0
 			let idx = mut (xw % n)
 			let o = mut 0
 			let s = mut n

@@ -4,7 +4,7 @@ import "../../stdlib/libc.caspien"
 
 func main(argc: imut s32, argv: raw mut raw mut char) void{
 	let count = mut 0
-	unsafe{
+	unsafe extern memcopy raw{
 		memcopy(raw count, mut 4, raw argc)
 		printf("argc=%llu\n", count)
 	}

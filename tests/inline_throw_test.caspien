@@ -11,7 +11,7 @@ import "../stdlib/gt_moved.caspien"
 extern strcmp(static imut string, static imut string) mut s32
 
 func check(name: static imut string, ok: mut bool) void{
-	unsafe{
+	unsafe extern{
 		if ok{
 			printf("PASS %s\n", name)
 		}else{
@@ -95,7 +95,7 @@ func msgOf0() mut bool{
 	let same = mut false
 	try{
 		let v = mut try prop2(0) catch(e){
-			unsafe{ same = strcmp(e, "zero") == 0 }
+			unsafe extern{ same = strcmp(e, "zero") == 0 }
 			return same
 		}
 		same = false
@@ -107,7 +107,7 @@ func msgOf1() mut bool{
 	let same = mut false
 	try{
 		let v = mut try prop2(1) catch(e){
-			unsafe{ same = strcmp(e, "one") == 0 }
+			unsafe extern{ same = strcmp(e, "one") == 0 }
 			return same
 		}
 		same = false
@@ -119,7 +119,7 @@ func msgTranslated() mut bool{
 	let same = mut false
 	try{
 		let v = mut try translate(0) catch(e){
-			unsafe{ same = strcmp(e, "translated") == 0 }
+			unsafe extern{ same = strcmp(e, "translated") == 0 }
 			return same
 		}
 		same = false
@@ -168,13 +168,15 @@ func viaBox(x: mut u64) mut u64{
 func floatAround(x: mut u64) mut u64{
 	let f = mut 1.5
 	for i in 0..40{
-		unsafe{
+		unsafe assume{
+			assume match f : finite
 			f = f + 1.0
 		}
 	}
 	?catch(e){
 		let r = mut 0
-		unsafe{
+		unsafe assume{
+			assume match f : finite
 			if f > 40.0{
 				r = 5000
 			}

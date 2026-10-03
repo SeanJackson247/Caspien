@@ -15,7 +15,7 @@ extern getenv(static imut string) static imut string
 extern atol(static imut string) mut u64
 
 func main() void{
-	unsafe{
+	unsafe assume extern loop udyn{
 		let n = mut 0
 		n = atol(getenv("LRU_N"))
 		let:<mut u64> zero = mut 0
@@ -51,6 +51,7 @@ func main() void{
 			if (y / 1048576) % 4 == 0{
 				range = 1048576
 			}
+			assume match range != 0
 			let k = mut ((a / 256) % range)
 			let i = mut none
 			let h = mut ((bits_and(k * 2654435761, 0xFFFFFFFF)) / 8192)

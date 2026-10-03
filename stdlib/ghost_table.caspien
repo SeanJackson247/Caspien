@@ -81,7 +81,7 @@ func gtSlotAt(base: raw mut u8, index: mut u64) raw mut u64{
 @pub
 func gtReadSlot(slot: raw imut u64) raw mut u8{
 	let:<raw mut u8> val = null
-	unsafe{
+	unsafe memcopy raw{
 		memcopy(raw val, mut 8, slot)
 	}
 	return val
@@ -90,7 +90,7 @@ func gtReadSlot(slot: raw imut u64) raw mut u8{
 /** Writes `val`'s own 8-byte address value into `slot` -- via 'memcopy' from a fresh local's own address, the write-side mirror of gtReadSlot. */
 @pub
 func gtWriteSlot(slot: raw imut u64, val: raw imut u8) void{
-	unsafe{
+	unsafe memcopy raw{
 		memcopy(slot, mut 8, raw val)
 	}
 }

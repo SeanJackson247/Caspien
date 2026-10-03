@@ -13,7 +13,7 @@ func chain(acc0: mut u64, depth: mut u64) mut u64{
 }
 
 func main() void{
-	unsafe{
+	unsafe extern{
 		let depth = mut 0
 		depth = atol(getenv("REC_DEPTH"))
 		let reps = mut 0

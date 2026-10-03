@@ -17,7 +17,7 @@ func boundedLoop() void{
 		n += 100
 		iterations += 1
 	}
-	unsafe{ printf("iterations=%llu bound=%llu ", iterations, n) }
+	unsafe extern{ printf("iterations=%llu bound=%llu ", iterations, n) }
 }
 
 // Recursion is allowed only as a tail call on a strictly smaller range.
@@ -35,5 +35,5 @@ func sumTo(acc: mut u64, r: imut range) mut u64{
 func main() void{
 	boundedLoop()
 	let total = mut sumTo(mut 0, 0..10)
-	unsafe{ printf("recursive=%llu\n", total) }
+	unsafe extern{ printf("recursive=%llu\n", total) }
 }

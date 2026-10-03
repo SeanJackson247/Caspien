@@ -1829,12 +1829,22 @@ public class Parser {
                         // (it needs the current safety-context stack,
                         // not just parse-time shape), not enforced here.
                         Token blockTok = requireTrailingBlock(tokens, first);
-                        if (tokens.indexOf(blockTok) != 1) {
+                        int unsafeBlockIdx = tokens.indexOf(blockTok);
+                        List<String> unsafeTagList = null;
+                        if (first.text.equals("unsafe") && unsafeBlockIdx > 1) {
+                            // `unsafe deref extern{`: the words between the keyword and the block are the tags the
+                            // block declares (the TypeChecker validates them against what the block really needs).
+                            unsafeTagList = new ArrayList<>();
+                            for (int ti = 1; ti < unsafeBlockIdx; ti++) {
+                                unsafeTagList.add(tokens.get(ti).text);
+                            }
+                        } else if (unsafeBlockIdx != 1) {
                             throw new CompilerException("parse", first.file, first.line,
                                     "'" + first.text + "' takes no condition");
                         }
                         blockTok.childs = gatherKeywordBlocks(blockTok.childs, isRoot);
                         Token gathered = new Token(TokenType.KEYWORD, first.text, first.line, first.file);
+                        gathered.unsafeTags = unsafeTagList;
                         gathered.childs = blockTok.childs;
                         gathered.decorators = first.decorators;
                         gathered.pinnedComments = first.pinnedComments;

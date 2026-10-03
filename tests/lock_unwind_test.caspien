@@ -25,12 +25,12 @@ func reacquire() void{
 	let tries = mut 0
 	match @lock m{
 		OPEN:{
-			unsafe{ printf("PASS: lock was released by the throw\n") }
+			unsafe extern{ printf("PASS: lock was released by the throw\n") }
 		}
 		CLOSED:{
 			tries++
 			if tries == 1000{
-				unsafe{ printf("FAIL: lock still held after the throw\n") }
+				unsafe extern{ printf("FAIL: lock still held after the throw\n") }
 				break
 			}
 			continue

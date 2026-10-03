@@ -9,7 +9,7 @@ import "../stdlib/gt_destruct.caspien"
 import "../stdlib/gt_moved.caspien"
 
 func check(name: static imut string, ok: mut bool) void{
-	unsafe{
+	unsafe extern{
 		if ok{
 			printf("PASS %s\n", name)
 		}else{
@@ -62,7 +62,7 @@ func no_elide_loop(k: mut u64) mut u64{
 // address taken: never elided
 func no_elide_addr() mut u64{
 	let p = mut 3
-	unsafe{
+	unsafe raw{
 		let q = mut raw p
 		return p
 	}
@@ -153,12 +153,15 @@ func shift_in_loop(k: mut u64) mut u64{
 }
 
 func readThrough(p: raw imut u64) imut u64{
-	unsafe{ return deref(p) }
+	unsafe assume{
+		assume match Some(p)
+		return deref(p)
+	}
 }
 // the only assignment is a constant, but the value is read through a pointer: must stay a real variable
 func addr_read() imut u64{
 	let v = mut 41
-	unsafe{
+	unsafe raw{
 		let p = imut raw v
 		return readThrough(p) + 1
 	}

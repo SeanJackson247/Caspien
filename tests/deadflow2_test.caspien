@@ -3,7 +3,7 @@
 import "../stdlib/libc.caspien"
 
 func check(name: static imut string, ok: mut bool) void{
-	unsafe{
+	unsafe extern{
 		if ok{
 			printf("PASS %s\n", name)
 		}else{
@@ -16,7 +16,7 @@ func check(name: static imut string, ok: mut bool) void{
 // `if true { break }`: loop runs exactly once
 func breakTrue() mut u64{
 	let n = mut 0
-	unsafe{
+	unsafe loop{
 		loop{
 			n += 1
 			if true{
@@ -31,7 +31,7 @@ func breakTrue() mut u64{
 // `if false { break }`: the break is dead, the real one ends it at 5
 func breakFalse() mut u64{
 	let n = mut 0
-	unsafe{
+	unsafe loop{
 		loop{
 			n += 1
 			if false{
@@ -107,7 +107,7 @@ func nested(k: mut u64) mut u64{
 // a loop whose only exit is behind a constant true inside an else
 func exitInElse() mut u64{
 	let n = mut 0
-	unsafe{
+	unsafe loop{
 		loop{
 			n += 2
 			if false{

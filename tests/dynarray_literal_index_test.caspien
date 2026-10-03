@@ -19,5 +19,5 @@ func main() void{
 	match 7 in a{ s = a[7] }
 	match 0 in a{ t += a[0] }
 	match 2 in a{ t += a[2] }
-	unsafe{ printf("read=%llu wrote=%llu skipped=%llu total=%llu\n", r, w, s, t) }
+	unsafe extern{ printf("read=%llu wrote=%llu skipped=%llu total=%llu\n", r, w, s, t) }
 }

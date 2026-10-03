@@ -15,7 +15,7 @@ func localTest() void{
 	match @lock m{
 		OPEN:{
 			m.n += 1
-			unsafe{ printf("local: got lock n=%llu\n", m.n) }
+			unsafe extern{ printf("local: got lock n=%llu\n", m.n) }
 		}
 		CLOSED:{ continue }
 	}
@@ -24,16 +24,16 @@ func localTest() void{
 // continue = retry: three failed attempts, then the lock is freed and the fourth succeeds
 func retryTest() void{
 	let static m = mut Mtx{lockState= St.OPEN, n= mut 0}
-	unsafe{ m.lockState swap St.CLOSED }
+	unsafe swap{ m.lockState swap St.CLOSED }
 	let tries = mut 0
 	match @lock m{
 		OPEN:{
-			unsafe{ printf("retry: got lock after %llu failed attempts\n", tries) }
+			unsafe extern{ printf("retry: got lock after %llu failed attempts\n", tries) }
 		}
 		CLOSED:{
 			tries++
 			if tries == 3{
-				unsafe{ m.lockState swap St.OPEN }
+				unsafe swap{ m.lockState swap St.OPEN }
 			}
 			continue
 		}
@@ -43,22 +43,22 @@ func retryTest() void{
 // break = give up: the lock is never taken, execution continues after the match
 func giveUpTest() void{
 	let static m = mut Mtx{lockState= St.OPEN, n= mut 0}
-	unsafe{ m.lockState swap St.CLOSED }
+	unsafe swap{ m.lockState swap St.CLOSED }
 	match @lock m{
 		OPEN:{
-			unsafe{ printf("giveup: WRONG, got lock\n") }
+			unsafe extern{ printf("giveup: WRONG, got lock\n") }
 		}
 		CLOSED:{
 			break
 		}
 	}
-	unsafe{ printf("giveup: gave up, carried on\n") }
+	unsafe extern{ printf("giveup: gave up, carried on\n") }
 }
 
 // return from CLOSED
 func returnTest() mut u64{
 	let static m = mut Mtx{lockState= St.OPEN, n= mut 0}
-	unsafe{ m.lockState swap St.CLOSED }
+	unsafe swap{ m.lockState swap St.CLOSED }
 	match @lock m{
 		OPEN:{
 			return 1
@@ -73,7 +73,7 @@ func returnTest() mut u64{
 // mixed paths: each branch ends in a different terminator
 func mixedTest() mut u64{
 	let static m = mut Mtx{lockState= St.OPEN, n= mut 7}
-	unsafe{ m.lockState swap St.CLOSED }
+	unsafe swap{ m.lockState swap St.CLOSED }
 	let k = mut 0
 	match @lock m{
 		OPEN:{
@@ -96,6 +96,6 @@ func main() void{
 	retryTest()
 	localTest()
 	giveUpTest()
-	unsafe{ printf("return: %llu\n", returnTest()) }
-	unsafe{ printf("mixed: %llu\n", mixedTest()) }
+	unsafe extern{ printf("return: %llu\n", returnTest()) }
+	unsafe extern{ printf("mixed: %llu\n", mixedTest()) }
 }

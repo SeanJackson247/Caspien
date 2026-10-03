@@ -1,0 +1,11 @@
+// Must fail to compile: `unsafe` no longer relaxes the float-state proof; only `assume match x : finite` (in an `unsafe assume` block) does.
+func add(a: mut f64, b: mut f64) mut f64{
+	unsafe assume{
+		assume match a : finite
+		return a + b
+	}
+}
+
+func main() void{
+	let r = mut add(1.0, 2.0)
+}

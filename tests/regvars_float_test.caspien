@@ -13,7 +13,7 @@ import "../stdlib/gt_moved.caspien"
 extern sqrtf(mut f32) mut f32
 
 func check(name: static imut string, ok: mut bool) void{
-	unsafe{
+	unsafe extern{
 		if ok{
 			printf("PASS %s\n", name)
 		}else{
@@ -25,7 +25,11 @@ func check(name: static imut string, ok: mut bool) void{
 
 func feq(a: mut f32, b: mut f32) mut bool{
 	let r = mut false
-	unsafe{ r = a == b }
+	unsafe assume{
+		assume match a : finite
+		assume match b : finite
+		r = a == b
+	}
 	return r
 }
 
@@ -33,11 +37,12 @@ func feq(a: mut f32, b: mut f32) mut bool{
 func sumHalves(n: mut u64) mut f32{
 	let s = mut 0.0
 	let i = mut 0
-	unsafe{
+	unsafe assume loop{
 		loop{
 			if i == n{
 				break
 			}
+			assume match s : finite
 			s = s + 0.5
 			i++
 		}
@@ -46,8 +51,9 @@ func sumHalves(n: mut u64) mut f32{
 }
 func climb() mut f32{
 	let f = mut 0.0
-	unsafe{
+	unsafe assume loop{
 		loop{
+			assume match f : finite
 			if f > 10.0{
 				break
 			}
@@ -61,11 +67,12 @@ func climb() mut f32{
 func fInner(n: mut u64) mut f32{
 	let a = mut 0.0
 	let k = mut 0
-	unsafe{
+	unsafe assume loop{
 		loop{
 			if k == n{
 				break
 			}
+			assume match a : finite
 			a = a + 1.5
 			k++
 		}
@@ -75,11 +82,13 @@ func fInner(n: mut u64) mut f32{
 func fOuter(n: mut u64) mut f32{
 	let total = mut 0.0
 	let j = mut 0
-	unsafe{
+	unsafe assume loop{
 		loop{
 			if j == n{
 				break
 			}
+			assume match total : finite
+			assume match fInner((j+1)) : finite
 			total = total + fInner(j + 1)
 			j++
 		}
@@ -93,12 +102,14 @@ func rootsSum() mut f32{
 	let y = mut 0.0
 	let x = mut 16.0
 	let i = mut 0
-	unsafe{
+	unsafe assume extern loop{
 		loop{
 			if i == 4{
 				break
 			}
 			y = sqrtf(x)
+			assume match acc : finite
+			assume match y : finite
 			acc = acc + y
 			i++
 		}
@@ -108,12 +119,16 @@ func rootsSum() mut f32{
 
 // 4. a float argument, a float result and a nested call in the argument list
 func addf(a: mut f32, b: mut f32) mut f32{
-	unsafe{ return a + b }
+	unsafe assume{
+		assume match a : finite
+		assume match b : finite
+		return a + b
+	}
 }
 func viaCalls() mut f32{
 	let acc = mut 0.0
 	let i = mut 0
-	unsafe{
+	unsafe assume extern loop{
 		loop{
 			if i == 8{
 				break
@@ -123,6 +138,8 @@ func viaCalls() mut f32{
 		}
 		let r = mut 0.0
 		r = sqrtf(addf(acc, 2.0))
+		assume match acc : finite
+		assume match r : finite
 		acc = acc + r
 	}
 	return acc
@@ -133,11 +150,12 @@ func viaCalls() mut f32{
 func fthrower(x: mut u64) mut f32{
 	let z = mut 0.0
 	let q = mut 0
-	unsafe{
+	unsafe assume loop{
 		loop{
 			if q == x{
 				break
 			}
+			assume match z : finite
 			z = z + 2.0
 			if q == 3{
 				throw "three"
@@ -156,11 +174,13 @@ func ftry(i: mut u64) mut f32{
 func catchers() mut f32{
 	let acc = mut 0.0
 	let i = mut 0
-	unsafe{
+	unsafe assume loop{
 		loop{
 			if i == 6{
 				break
 			}
+			assume match acc : finite
+			assume match ftry(i) : finite
 			acc = acc + ftry(i)
 			i++
 		}
@@ -171,15 +191,19 @@ func catchers() mut f32{
 func catchUses() mut f32{
 	let acc = mut 0.0
 	let i = mut 0
-	unsafe{
+	unsafe assume loop{
 		loop{
 			if i == 6{
 				break
 			}
+			assume match acc : finite
 			acc = acc + 1.0
 			let r = try fthrower(i) catch(e){
+				assume match acc : finite
 				return acc + 0.5
 			}
+			assume match acc : finite
+			assume match r : finite
 			acc = acc + r
 			i++
 		}
@@ -197,22 +221,49 @@ func manyFloats(n: mut u64) mut f32{
 	let f = mut 0.0
 	let g = mut 0.0
 	let i = mut 0
-	unsafe{
+	unsafe assume loop{
 		loop{
 			if i == n{
 				break
 			}
+			assume match a : finite
 			a = a + 1.0
+			assume match b : finite
 			b = b + 2.0
+			assume match c : finite
 			c = c + 3.0
+			assume match d : finite
 			d = d + 4.0
+			assume match e : finite
 			e = e + 5.0
+			assume match f : finite
 			f = f + 6.0
+			assume match g : finite
 			g = g + 7.0
 			i++
 		}
 	}
-	unsafe{ return a + b * 2.0 + c * 3.0 + d * 4.0 + e * 5.0 + f * 6.0 + g * 7.0 }
+	unsafe assume{
+		assume match b : finite
+		assume match a : finite
+		assume match b*2.0 : finite
+		assume match c : finite
+		assume match a+(b*2.0) : finite
+		assume match c*3.0 : finite
+		assume match d : finite
+		assume match (a+(b*2.0))+(c*3.0) : finite
+		assume match d*4.0 : finite
+		assume match e : finite
+		assume match ((a+(b*2.0))+(c*3.0))+(d*4.0) : finite
+		assume match e*5.0 : finite
+		assume match f : finite
+		assume match (((a+(b*2.0))+(c*3.0))+(d*4.0))+(e*5.0) : finite
+		assume match f*6.0 : finite
+		assume match g : finite
+		assume match ((((a+(b*2.0))+(c*3.0))+(d*4.0))+(e*5.0))+(f*6.0) : finite
+		assume match g*7.0 : finite
+		return a + b * 2.0 + c * 3.0 + d * 4.0 + e * 5.0 + f * 6.0 + g * 7.0
+	}
 }
 
 // 7. a static (global) f32 read and written from a loop, and int and float variables together
@@ -220,11 +271,13 @@ let static gsum = mut 0.0
 func globals() mut f32{
 	let x = mut 0.5
 	let n = mut 0
-	unsafe{
+	unsafe assume global loop{
 		loop{
 			if n == 6{
 				break
 			}
+			assume match gsum : finite
+			assume match x : finite
 			gsum = gsum + x
 			x = x + 0.5
 			n++
@@ -237,11 +290,12 @@ func globals() mut f32{
 func printed() mut f32{
 	let v = mut 1.0
 	let k = mut 0
-	unsafe{
+	unsafe assume extern loop{
 		loop{
 			if k == 3{
 				break
 			}
+			assume match v : finite
 			v = v + 0.5
 			k++
 		}
@@ -259,11 +313,12 @@ func boxedF(n: mut u64) mut f32{
 	?catch(e){ throw e }
 	let s = mut 0.0
 	let i = mut 0
-	unsafe{
+	unsafe assume loop{
 		loop{
 			if i == n{
 				break
 			}
+			assume match s : finite
 			s = s + 0.25
 			i++
 		}

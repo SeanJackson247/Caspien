@@ -18,13 +18,13 @@ func ten(a: mut u64, b: mut u64, c: mut u64, d: mut u64, e: mut u64, f: mut u64,
 	return a + b*10 + c*100 + d*1000 + e*10000 + f*100000 + g*1000000 + h*10000000 + i*100000000 + j*1000000000
 }
 func mixed(a: mut u64, b: mut f32, c: mut u64, d: mut u64, e: mut u64, f: mut u64, g: mut u64, h: mut u64, i: mut f32, j: mut u64) void{
-	unsafe{ printf("mixed int/float, want 1 2.5 3 4 5 6 7 8 9.5 10 -> %llu %f %llu %llu %llu %llu %llu %llu %f %llu\n", a, b, c, d, e, f, g, h, i, j) }
+	unsafe extern{ printf("mixed int/float, want 1 2.5 3 4 5 6 7 8 9.5 10 -> %llu %f %llu %llu %llu %llu %llu %llu %f %llu\n", a, b, c, d, e, f, g, h, i, j) }
 }
 func manyFloats(a: mut f32, b: mut f32, c: mut f32, d: mut f32, e: mut f32, f: mut f32, g: mut f32, h: mut f32, i: mut f32, j: mut f32, k: mut f32) void{
-	unsafe{ printf("11 floats, want 1..11 -> %f %f %f %f %f %f %f %f %f %f %f\n", a, b, c, d, e, f, g, h, i, j, k) }
+	unsafe extern{ printf("11 floats, want 1..11 -> %f %f %f %f %f %f %f %f %f %f %f\n", a, b, c, d, e, f, g, h, i, j, k) }
 }
 func report(name: static imut string, got: mut u64, want: mut u64) void{
-	unsafe{
+	unsafe extern{
 		if got == want{
 			printf("PASS %s\n", name)
 		}
@@ -43,7 +43,7 @@ func main() void{
 	report("8 args with a call in every slot", eight(two(mut 0, mut 1), two(mut 1, mut 1), two(mut 1, mut 2), two(mut 2, mut 2), two(mut 2, mut 3), two(mut 3, mut 3), two(mut 3, mut 4), two(mut 4, mut 4)), mut 87654321)
 	mixed(mut 1, mut 2.5, mut 3, mut 4, mut 5, mut 6, mut 7, mut 8, mut 9.5, mut 10)
 	manyFloats(mut 1.0, mut 2.0, mut 3.0, mut 4.0, mut 5.0, mut 6.0, mut 7.0, mut 8.0, mut 9.0, mut 10.0, mut 11.0)
-	unsafe{
+	unsafe extern{
 		printf("printf 10 varargs, want 1 2 3 4 5 6 7 8 9 10 -> %llu %llu %llu %llu %llu %llu %llu %llu %llu %llu\n", mut 1, mut 2, mut 3, mut 4, mut 5, mut 6, mut 7, mut 8, mut 9, mut 10)
 		printf("printf 8 varargs with calls, want 2 4 6 8 10 12 14 16 -> %llu %llu %llu %llu %llu %llu %llu %llu\n", two(mut 1, mut 1), two(mut 2, mut 2), two(mut 3, mut 3), two(mut 4, mut 4), two(mut 5, mut 5), two(mut 6, mut 6), two(mut 7, mut 7), two(mut 8, mut 8))
 	}

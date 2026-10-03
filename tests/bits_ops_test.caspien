@@ -25,21 +25,21 @@ let static passed = mut 0
 let static failed = mut 0
 
 func failU(name: static imut string, e: mut u64, g: mut u64) void{
-	unsafe{
+	unsafe extern global{
 		failed++
 		printf("FAIL %s expected %llu got %llu\n", name, e, g)
 	}
 	return
 }
 func failS(name: static imut string, e: mut s64, g: mut s64) void{
-	unsafe{
+	unsafe extern global{
 		failed++
 		printf("FAIL %s expected %lld got %lld\n", name, e, g)
 	}
 	return
 }
 func check(name: static imut string, ok: mut bool) void{
-	unsafe{
+	unsafe extern global{
 		if ok{
 			passed++
 			printf("PASS %s\n", name)
@@ -52,7 +52,7 @@ func check(name: static imut string, ok: mut bool) void{
 }
 func chk_u8(name: static imut string, got: mut u8, exp: mut u8) void{
 	if got == exp{
-		unsafe{
+		unsafe extern global{
 			passed++
 			printf("PASS %s\n", name)
 		}
@@ -63,7 +63,7 @@ func chk_u8(name: static imut string, got: mut u8, exp: mut u8) void{
 }
 func chk_u16(name: static imut string, got: mut u16, exp: mut u16) void{
 	if got == exp{
-		unsafe{
+		unsafe extern global{
 			passed++
 			printf("PASS %s\n", name)
 		}
@@ -74,7 +74,7 @@ func chk_u16(name: static imut string, got: mut u16, exp: mut u16) void{
 }
 func chk_u32(name: static imut string, got: mut u32, exp: mut u32) void{
 	if got == exp{
-		unsafe{
+		unsafe extern global{
 			passed++
 			printf("PASS %s\n", name)
 		}
@@ -85,7 +85,7 @@ func chk_u32(name: static imut string, got: mut u32, exp: mut u32) void{
 }
 func chk_u64(name: static imut string, got: mut u64, exp: mut u64) void{
 	if got == exp{
-		unsafe{
+		unsafe extern global{
 			passed++
 			printf("PASS %s\n", name)
 		}
@@ -96,7 +96,7 @@ func chk_u64(name: static imut string, got: mut u64, exp: mut u64) void{
 }
 func chk_s8(name: static imut string, got: mut s8, exp: mut s8) void{
 	if got == exp{
-		unsafe{
+		unsafe extern global{
 			passed++
 			printf("PASS %s\n", name)
 		}
@@ -107,7 +107,7 @@ func chk_s8(name: static imut string, got: mut s8, exp: mut s8) void{
 }
 func chk_s16(name: static imut string, got: mut s16, exp: mut s16) void{
 	if got == exp{
-		unsafe{
+		unsafe extern global{
 			passed++
 			printf("PASS %s\n", name)
 		}
@@ -118,7 +118,7 @@ func chk_s16(name: static imut string, got: mut s16, exp: mut s16) void{
 }
 func chk_s32(name: static imut string, got: mut s32, exp: mut s32) void{
 	if got == exp{
-		unsafe{
+		unsafe extern global{
 			passed++
 			printf("PASS %s\n", name)
 		}
@@ -129,7 +129,7 @@ func chk_s32(name: static imut string, got: mut s32, exp: mut s32) void{
 }
 func chk_s64(name: static imut string, got: mut s64, exp: mut s64) void{
 	if got == exp{
-		unsafe{
+		unsafe extern global{
 			passed++
 			printf("PASS %s\n", name)
 		}
@@ -1735,7 +1735,7 @@ func ct_s64() void{
 
 // ---- values from atol() and from loop variables: whole sweeps of counts, compared as one checksum each ----
 func sweep_u8() void{
-	unsafe{
+	unsafe extern{
 		let:<mut u8> x = mut wrap:<u8>(atol("1"))
 		let acc = mut 0
 		for i in 0..78{
@@ -1744,7 +1744,7 @@ func sweep_u8() void{
 		}
 		check("sweep left u8 1 (78 counts)", acc == 255)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut u8> x = mut wrap:<u8>(atol("255"))
 		let acc = mut 0
 		for i in 0..78{
@@ -1753,7 +1753,7 @@ func sweep_u8() void{
 		}
 		check("sweep left u8 255 (78 counts)", acc == 1793)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut u8> x = mut wrap:<u8>(atol("0"))
 		let acc = mut 0
 		for i in 0..78{
@@ -1762,7 +1762,7 @@ func sweep_u8() void{
 		}
 		check("sweep left u8 0 (78 counts)", acc == 0)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut u8> x = mut wrap:<u8>(atol("170"))
 		let acc = mut 0
 		for i in 0..78{
@@ -1771,7 +1771,7 @@ func sweep_u8() void{
 		}
 		check("sweep left u8 170 (78 counts)", acc == 854)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut u8> x = mut wrap:<u8>(atol("85"))
 		let acc = mut 0
 		for i in 0..78{
@@ -1780,7 +1780,7 @@ func sweep_u8() void{
 		}
 		check("sweep left u8 85 (78 counts)", acc == 939)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut u8> x = mut wrap:<u8>(atol("1"))
 		let acc = mut 0
 		for i in 0..78{
@@ -1789,7 +1789,7 @@ func sweep_u8() void{
 		}
 		check("sweep right u8 1 (78 counts)", acc == 1)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut u8> x = mut wrap:<u8>(atol("255"))
 		let acc = mut 0
 		for i in 0..78{
@@ -1798,7 +1798,7 @@ func sweep_u8() void{
 		}
 		check("sweep right u8 255 (78 counts)", acc == 502)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut u8> x = mut wrap:<u8>(atol("0"))
 		let acc = mut 0
 		for i in 0..78{
@@ -1807,7 +1807,7 @@ func sweep_u8() void{
 		}
 		check("sweep right u8 0 (78 counts)", acc == 0)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut u8> x = mut wrap:<u8>(atol("170"))
 		let acc = mut 0
 		for i in 0..78{
@@ -1816,7 +1816,7 @@ func sweep_u8() void{
 		}
 		check("sweep right u8 170 (78 counts)", acc == 336)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut u8> x = mut wrap:<u8>(atol("85"))
 		let acc = mut 0
 		for i in 0..78{
@@ -1828,7 +1828,7 @@ func sweep_u8() void{
 	return
 }
 func sweep_u16() void{
-	unsafe{
+	unsafe extern{
 		let:<mut u16> x = mut wrap:<u16>(atol("1"))
 		let acc = mut 0
 		for i in 0..86{
@@ -1837,7 +1837,7 @@ func sweep_u16() void{
 		}
 		check("sweep left u16 1 (86 counts)", acc == 65535)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut u16> x = mut wrap:<u16>(atol("65535"))
 		let acc = mut 0
 		for i in 0..86{
@@ -1846,7 +1846,7 @@ func sweep_u16() void{
 		}
 		check("sweep left u16 65535 (86 counts)", acc == 983041)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut u16> x = mut wrap:<u16>(atol("0"))
 		let acc = mut 0
 		for i in 0..86{
@@ -1855,7 +1855,7 @@ func sweep_u16() void{
 		}
 		check("sweep left u16 0 (86 counts)", acc == 0)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut u16> x = mut wrap:<u16>(atol("43690"))
 		let acc = mut 0
 		for i in 0..86{
@@ -1864,7 +1864,7 @@ func sweep_u16() void{
 		}
 		check("sweep left u16 43690 (86 counts)", acc == 480598)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut u16> x = mut wrap:<u16>(atol("21845"))
 		let acc = mut 0
 		for i in 0..86{
@@ -1873,7 +1873,7 @@ func sweep_u16() void{
 		}
 		check("sweep left u16 21845 (86 counts)", acc == 502443)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut u16> x = mut wrap:<u16>(atol("1"))
 		let acc = mut 0
 		for i in 0..86{
@@ -1882,7 +1882,7 @@ func sweep_u16() void{
 		}
 		check("sweep right u16 1 (86 counts)", acc == 1)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut u16> x = mut wrap:<u16>(atol("65535"))
 		let acc = mut 0
 		for i in 0..86{
@@ -1891,7 +1891,7 @@ func sweep_u16() void{
 		}
 		check("sweep right u16 65535 (86 counts)", acc == 131054)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut u16> x = mut wrap:<u16>(atol("0"))
 		let acc = mut 0
 		for i in 0..86{
@@ -1900,7 +1900,7 @@ func sweep_u16() void{
 		}
 		check("sweep right u16 0 (86 counts)", acc == 0)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut u16> x = mut wrap:<u16>(atol("43690"))
 		let acc = mut 0
 		for i in 0..86{
@@ -1909,7 +1909,7 @@ func sweep_u16() void{
 		}
 		check("sweep right u16 43690 (86 counts)", acc == 87372)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut u16> x = mut wrap:<u16>(atol("21845"))
 		let acc = mut 0
 		for i in 0..86{
@@ -1921,7 +1921,7 @@ func sweep_u16() void{
 	return
 }
 func sweep_u32() void{
-	unsafe{
+	unsafe extern{
 		let:<mut u32> x = mut wrap:<u32>(atol("1"))
 		let acc = mut 0
 		for i in 0..102{
@@ -1930,7 +1930,7 @@ func sweep_u32() void{
 		}
 		check("sweep left u32 1 (102 counts)", acc == 4294967295)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut u32> x = mut wrap:<u32>(atol("4294967295"))
 		let acc = mut 0
 		for i in 0..102{
@@ -1939,7 +1939,7 @@ func sweep_u32() void{
 		}
 		check("sweep left u32 4294967295 (102 counts)", acc == 133143986177)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut u32> x = mut wrap:<u32>(atol("0"))
 		let acc = mut 0
 		for i in 0..102{
@@ -1948,7 +1948,7 @@ func sweep_u32() void{
 		}
 		check("sweep left u32 0 (102 counts)", acc == 0)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut u32> x = mut wrap:<u32>(atol("2863311530"))
 		let acc = mut 0
 		for i in 0..102{
@@ -1957,7 +1957,7 @@ func sweep_u32() void{
 		}
 		check("sweep left u32 2863311530 (102 counts)", acc == 65856165206)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut u32> x = mut wrap:<u32>(atol("1431655765"))
 		let acc = mut 0
 		for i in 0..102{
@@ -1966,7 +1966,7 @@ func sweep_u32() void{
 		}
 		check("sweep left u32 1431655765 (102 counts)", acc == 67287820971)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut u32> x = mut wrap:<u32>(atol("1"))
 		let acc = mut 0
 		for i in 0..102{
@@ -1975,7 +1975,7 @@ func sweep_u32() void{
 		}
 		check("sweep right u32 1 (102 counts)", acc == 1)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut u32> x = mut wrap:<u32>(atol("4294967295"))
 		let acc = mut 0
 		for i in 0..102{
@@ -1984,7 +1984,7 @@ func sweep_u32() void{
 		}
 		check("sweep right u32 4294967295 (102 counts)", acc == 8589934558)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut u32> x = mut wrap:<u32>(atol("0"))
 		let acc = mut 0
 		for i in 0..102{
@@ -1993,7 +1993,7 @@ func sweep_u32() void{
 		}
 		check("sweep right u32 0 (102 counts)", acc == 0)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut u32> x = mut wrap:<u32>(atol("2863311530"))
 		let acc = mut 0
 		for i in 0..102{
@@ -2002,7 +2002,7 @@ func sweep_u32() void{
 		}
 		check("sweep right u32 2863311530 (102 counts)", acc == 5726623044)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut u32> x = mut wrap:<u32>(atol("1431655765"))
 		let acc = mut 0
 		for i in 0..102{
@@ -2014,7 +2014,7 @@ func sweep_u32() void{
 	return
 }
 func sweep_u64() void{
-	unsafe{
+	unsafe extern{
 		let:<mut u64> x = mut wrap:<u64>(atol("1"))
 		let acc = mut 0
 		for i in 0..70{
@@ -2023,7 +2023,7 @@ func sweep_u64() void{
 		}
 		check("sweep left u64 1 (70 counts)", acc == 18446744073709551615)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut u64> x = mut wrap:<u64>(atol("9223372036854775807") + 9223372036854775808)
 		let acc = mut 0
 		for i in 0..70{
@@ -2032,7 +2032,7 @@ func sweep_u64() void{
 		}
 		check("sweep left u64 18446744073709551615 (70 counts)", acc == 1)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut u64> x = mut wrap:<u64>(atol("0"))
 		let acc = mut 0
 		for i in 0..70{
@@ -2041,7 +2041,7 @@ func sweep_u64() void{
 		}
 		check("sweep left u64 0 (70 counts)", acc == 0)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut u64> x = mut wrap:<u64>(atol("3074457345618258602") + 9223372036854775808)
 		let acc = mut 0
 		for i in 0..70{
@@ -2050,7 +2050,7 @@ func sweep_u64() void{
 		}
 		check("sweep left u64 12297829382473034410 (70 counts)", acc == 6148914691236517206)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut u64> x = mut wrap:<u64>(atol("6148914691236517205"))
 		let acc = mut 0
 		for i in 0..70{
@@ -2059,7 +2059,7 @@ func sweep_u64() void{
 		}
 		check("sweep left u64 6148914691236517205 (70 counts)", acc == 12297829382473034411)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut u64> x = mut wrap:<u64>(atol("1"))
 		let acc = mut 0
 		for i in 0..70{
@@ -2068,7 +2068,7 @@ func sweep_u64() void{
 		}
 		check("sweep right u64 1 (70 counts)", acc == 1)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut u64> x = mut wrap:<u64>(atol("9223372036854775807") + 9223372036854775808)
 		let acc = mut 0
 		for i in 0..70{
@@ -2077,7 +2077,7 @@ func sweep_u64() void{
 		}
 		check("sweep right u64 18446744073709551615 (70 counts)", acc == 18446744073709551550)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut u64> x = mut wrap:<u64>(atol("0"))
 		let acc = mut 0
 		for i in 0..70{
@@ -2086,7 +2086,7 @@ func sweep_u64() void{
 		}
 		check("sweep right u64 0 (70 counts)", acc == 0)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut u64> x = mut wrap:<u64>(atol("3074457345618258602") + 9223372036854775808)
 		let acc = mut 0
 		for i in 0..70{
@@ -2095,7 +2095,7 @@ func sweep_u64() void{
 		}
 		check("sweep right u64 12297829382473034410 (70 counts)", acc == 6148914691236517172)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut u64> x = mut wrap:<u64>(atol("6148914691236517205"))
 		let acc = mut 0
 		for i in 0..70{
@@ -2107,7 +2107,7 @@ func sweep_u64() void{
 	return
 }
 func sweep_s8() void{
-	unsafe{
+	unsafe extern{
 		let:<mut s8> x = mut wrap:<s8>(atol("1"))
 		let acc = mut 0
 		for i in 0..78{
@@ -2116,7 +2116,7 @@ func sweep_s8() void{
 		}
 		check("sweep left s8 1 (78 counts)", acc == 18446744073709551615)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut s8> x = mut wrap:<s8>(atol("127"))
 		let acc = mut 0
 		for i in 0..78{
@@ -2125,7 +2125,7 @@ func sweep_s8() void{
 		}
 		check("sweep left s8 127 (78 counts)", acc == 18446744073709551489)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut s8> x = mut wrap:<s8>(atol("128"))
 		let acc = mut 0
 		for i in 0..78{
@@ -2134,7 +2134,7 @@ func sweep_s8() void{
 		}
 		check("sweep left s8 -128 (78 counts)", acc == 18446744073709551488)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut s8> x = mut wrap:<s8>(atol("170"))
 		let acc = mut 0
 		for i in 0..78{
@@ -2143,7 +2143,7 @@ func sweep_s8() void{
 		}
 		check("sweep left s8 -86 (78 counts)", acc == 18446744073709551446)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut s8> x = mut wrap:<s8>(atol("85"))
 		let acc = mut 0
 		for i in 0..78{
@@ -2152,7 +2152,7 @@ func sweep_s8() void{
 		}
 		check("sweep left s8 85 (78 counts)", acc == 18446744073709551531)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut s8> x = mut wrap:<s8>(atol("1"))
 		let acc = mut 0
 		for i in 0..78{
@@ -2161,7 +2161,7 @@ func sweep_s8() void{
 		}
 		check("sweep right s8 1 (78 counts)", acc == 1)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut s8> x = mut wrap:<s8>(atol("127"))
 		let acc = mut 0
 		for i in 0..78{
@@ -2170,7 +2170,7 @@ func sweep_s8() void{
 		}
 		check("sweep right s8 127 (78 counts)", acc == 247)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut s8> x = mut wrap:<s8>(atol("128"))
 		let acc = mut 0
 		for i in 0..78{
@@ -2179,7 +2179,7 @@ func sweep_s8() void{
 		}
 		check("sweep right s8 -128 (78 counts)", acc == 18446744073709551291)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut s8> x = mut wrap:<s8>(atol("170"))
 		let acc = mut 0
 		for i in 0..78{
@@ -2188,7 +2188,7 @@ func sweep_s8() void{
 		}
 		check("sweep right s8 -86 (78 counts)", acc == 18446744073709551372)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut s8> x = mut wrap:<s8>(atol("85"))
 		let acc = mut 0
 		for i in 0..78{
@@ -2200,7 +2200,7 @@ func sweep_s8() void{
 	return
 }
 func sweep_s16() void{
-	unsafe{
+	unsafe extern{
 		let:<mut s16> x = mut wrap:<s16>(atol("1"))
 		let acc = mut 0
 		for i in 0..86{
@@ -2209,7 +2209,7 @@ func sweep_s16() void{
 		}
 		check("sweep left s16 1 (86 counts)", acc == 18446744073709551615)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut s16> x = mut wrap:<s16>(atol("32767"))
 		let acc = mut 0
 		for i in 0..86{
@@ -2218,7 +2218,7 @@ func sweep_s16() void{
 		}
 		check("sweep left s16 32767 (86 counts)", acc == 18446744073709518849)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut s16> x = mut wrap:<s16>(atol("32768"))
 		let acc = mut 0
 		for i in 0..86{
@@ -2227,7 +2227,7 @@ func sweep_s16() void{
 		}
 		check("sweep left s16 -32768 (86 counts)", acc == 18446744073709518848)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut s16> x = mut wrap:<s16>(atol("43690"))
 		let acc = mut 0
 		for i in 0..86{
@@ -2236,7 +2236,7 @@ func sweep_s16() void{
 		}
 		check("sweep left s16 -21846 (86 counts)", acc == 18446744073709507926)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut s16> x = mut wrap:<s16>(atol("21845"))
 		let acc = mut 0
 		for i in 0..86{
@@ -2245,7 +2245,7 @@ func sweep_s16() void{
 		}
 		check("sweep left s16 21845 (86 counts)", acc == 18446744073709529771)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut s16> x = mut wrap:<s16>(atol("1"))
 		let acc = mut 0
 		for i in 0..86{
@@ -2254,7 +2254,7 @@ func sweep_s16() void{
 		}
 		check("sweep right s16 1 (86 counts)", acc == 1)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut s16> x = mut wrap:<s16>(atol("32767"))
 		let acc = mut 0
 		for i in 0..86{
@@ -2263,7 +2263,7 @@ func sweep_s16() void{
 		}
 		check("sweep right s16 32767 (86 counts)", acc == 65519)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut s16> x = mut wrap:<s16>(atol("32768"))
 		let acc = mut 0
 		for i in 0..86{
@@ -2272,7 +2272,7 @@ func sweep_s16() void{
 		}
 		check("sweep right s16 -32768 (86 counts)", acc == 18446744073709486011)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut s16> x = mut wrap:<s16>(atol("43690"))
 		let acc = mut 0
 		for i in 0..86{
@@ -2281,7 +2281,7 @@ func sweep_s16() void{
 		}
 		check("sweep right s16 -21846 (86 counts)", acc == 18446744073709507848)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut s16> x = mut wrap:<s16>(atol("21845"))
 		let acc = mut 0
 		for i in 0..86{
@@ -2293,7 +2293,7 @@ func sweep_s16() void{
 	return
 }
 func sweep_s32() void{
-	unsafe{
+	unsafe extern{
 		let:<mut s32> x = mut wrap:<s32>(atol("1"))
 		let acc = mut 0
 		for i in 0..102{
@@ -2302,7 +2302,7 @@ func sweep_s32() void{
 		}
 		check("sweep left s32 1 (102 counts)", acc == 18446744073709551615)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut s32> x = mut wrap:<s32>(atol("2147483647"))
 		let acc = mut 0
 		for i in 0..102{
@@ -2311,7 +2311,7 @@ func sweep_s32() void{
 		}
 		check("sweep left s32 2147483647 (102 counts)", acc == 18446744071562067969)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut s32> x = mut wrap:<s32>(atol("2147483648"))
 		let acc = mut 0
 		for i in 0..102{
@@ -2320,7 +2320,7 @@ func sweep_s32() void{
 		}
 		check("sweep left s32 -2147483648 (102 counts)", acc == 18446744071562067968)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut s32> x = mut wrap:<s32>(atol("2863311530"))
 		let acc = mut 0
 		for i in 0..102{
@@ -2329,7 +2329,7 @@ func sweep_s32() void{
 		}
 		check("sweep left s32 -1431655766 (102 counts)", acc == 18446744070846240086)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut s32> x = mut wrap:<s32>(atol("1431655765"))
 		let acc = mut 0
 		for i in 0..102{
@@ -2338,7 +2338,7 @@ func sweep_s32() void{
 		}
 		check("sweep left s32 1431655765 (102 counts)", acc == 18446744072277895851)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut s32> x = mut wrap:<s32>(atol("1"))
 		let acc = mut 0
 		for i in 0..102{
@@ -2347,7 +2347,7 @@ func sweep_s32() void{
 		}
 		check("sweep right s32 1 (102 counts)", acc == 1)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut s32> x = mut wrap:<s32>(atol("2147483647"))
 		let acc = mut 0
 		for i in 0..102{
@@ -2356,7 +2356,7 @@ func sweep_s32() void{
 		}
 		check("sweep right s32 2147483647 (102 counts)", acc == 4294967263)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut s32> x = mut wrap:<s32>(atol("2147483648"))
 		let acc = mut 0
 		for i in 0..102{
@@ -2365,7 +2365,7 @@ func sweep_s32() void{
 		}
 		check("sweep right s32 -2147483648 (102 counts)", acc == 18446744069414584251)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut s32> x = mut wrap:<s32>(atol("2863311530"))
 		let acc = mut 0
 		for i in 0..102{
@@ -2374,7 +2374,7 @@ func sweep_s32() void{
 		}
 		check("sweep right s32 -1431655766 (102 counts)", acc == 18446744070846240000)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut s32> x = mut wrap:<s32>(atol("1431655765"))
 		let acc = mut 0
 		for i in 0..102{
@@ -2386,7 +2386,7 @@ func sweep_s32() void{
 	return
 }
 func sweep_s64() void{
-	unsafe{
+	unsafe extern{
 		let:<mut s64> x = mut wrap:<s64>(atol("1"))
 		let acc = mut 0
 		for i in 0..70{
@@ -2395,7 +2395,7 @@ func sweep_s64() void{
 		}
 		check("sweep left s64 1 (70 counts)", acc == 18446744073709551615)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut s64> x = mut wrap:<s64>(atol("9223372036854775807"))
 		let acc = mut 0
 		for i in 0..70{
@@ -2404,7 +2404,7 @@ func sweep_s64() void{
 		}
 		check("sweep left s64 9223372036854775807 (70 counts)", acc == 9223372036854775809)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut s64> x = mut wrap:<s64>(atol("0") + 9223372036854775808)
 		let acc = mut 0
 		for i in 0..70{
@@ -2413,7 +2413,7 @@ func sweep_s64() void{
 		}
 		check("sweep left s64 -9223372036854775808 (70 counts)", acc == 9223372036854775808)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut s64> x = mut wrap:<s64>(atol("3074457345618258602") + 9223372036854775808)
 		let acc = mut 0
 		for i in 0..70{
@@ -2422,7 +2422,7 @@ func sweep_s64() void{
 		}
 		check("sweep left s64 -6148914691236517206 (70 counts)", acc == 6148914691236517206)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut s64> x = mut wrap:<s64>(atol("6148914691236517205"))
 		let acc = mut 0
 		for i in 0..70{
@@ -2431,7 +2431,7 @@ func sweep_s64() void{
 		}
 		check("sweep left s64 6148914691236517205 (70 counts)", acc == 12297829382473034411)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut s64> x = mut wrap:<s64>(atol("1"))
 		let acc = mut 0
 		for i in 0..70{
@@ -2440,7 +2440,7 @@ func sweep_s64() void{
 		}
 		check("sweep right s64 1 (70 counts)", acc == 1)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut s64> x = mut wrap:<s64>(atol("9223372036854775807"))
 		let acc = mut 0
 		for i in 0..70{
@@ -2449,7 +2449,7 @@ func sweep_s64() void{
 		}
 		check("sweep right s64 9223372036854775807 (70 counts)", acc == 18446744073709551551)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut s64> x = mut wrap:<s64>(atol("0") + 9223372036854775808)
 		let acc = mut 0
 		for i in 0..70{
@@ -2458,7 +2458,7 @@ func sweep_s64() void{
 		}
 		check("sweep right s64 -9223372036854775808 (70 counts)", acc == 18446744073709551611)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut s64> x = mut wrap:<s64>(atol("3074457345618258602") + 9223372036854775808)
 		let acc = mut 0
 		for i in 0..70{
@@ -2467,7 +2467,7 @@ func sweep_s64() void{
 		}
 		check("sweep right s64 -6148914691236517206 (70 counts)", acc == 6148914691236517168)
 	}
-	unsafe{
+	unsafe extern{
 		let:<mut s64> x = mut wrap:<s64>(atol("6148914691236517205"))
 		let acc = mut 0
 		for i in 0..70{
@@ -2517,28 +2517,26 @@ func cont_u8(a: mut u8, b: mut u8, n: mut u8) void{
 			chk_u8("array element u8", arr[i], want[i])
 		}
 	}
-	unsafe{
-		let:<mut u8> zero = mut 0
-		let d = mut ? dyn:<u8>([])
-		d = ? resize(d, 8, zero)
-		for i in 0..8{
-			let:<mut u8> k = mut wrap:<u8>(i)
-			let:<mut u8> v = mut bits_xor(bits_left(1, k), wrap:<u8>(i * 11400714819323198485))
-			match i into d{
-				d[i] = v
-			}
+	let:<mut u8> zero = mut 0
+	let d = mut ? dyn:<u8>([])
+	d = ? resize(d, 8, zero)
+	for i in 0..8{
+		let:<mut u8> k = mut wrap:<u8>(i)
+		let:<mut u8> v = mut bits_xor(bits_left(1, k), wrap:<u8>(i * 11400714819323198485))
+		match i into d{
+			d[i] = v
 		}
-		for i in 0..8{
-			match i into d{
-				d[i] = bits_not(bits_and(d[i], b))
-			}
+	}
+	for i in 0..8{
+		match i into d{
+			d[i] = bits_not(bits_and(d[i], b))
 		}
-		let:<mut u8[8]> dwant = mut [255, 0xEF, 0x00df, 0xCf, 191, 0xbf, 0XCf, 0b11101111]
-		for i in 0..8{
-			match i in d{
-				match i in dwant{
-					chk_u8("dynarray element u8", d[i], dwant[i])
-				}
+	}
+	let:<mut u8[8]> dwant = mut [255, 0xEF, 0x00df, 0xCf, 191, 0xbf, 0XCf, 0b11101111]
+	for i in 0..8{
+		match i in d{
+			match i in dwant{
+				chk_u8("dynarray element u8", d[i], dwant[i])
 			}
 		}
 	}
@@ -2581,28 +2579,26 @@ func cont_u16(a: mut u16, b: mut u16, n: mut u16) void{
 			chk_u16("array element u16", arr[i], want[i])
 		}
 	}
-	unsafe{
-		let:<mut u16> zero = mut 0
-		let d = mut ? dyn:<u16>([])
-		d = ? resize(d, 8, zero)
-		for i in 0..8{
-			let:<mut u16> k = mut wrap:<u16>(i)
-			let:<mut u16> v = mut bits_xor(bits_left(1, k), wrap:<u16>(i * 11400714819323198485))
-			match i into d{
-				d[i] = v
-			}
+	let:<mut u16> zero = mut 0
+	let d = mut ? dyn:<u16>([])
+	d = ? resize(d, 8, zero)
+	for i in 0..8{
+		let:<mut u16> k = mut wrap:<u16>(i)
+		let:<mut u16> v = mut bits_xor(bits_left(1, k), wrap:<u16>(i * 11400714819323198485))
+		match i into d{
+			d[i] = v
 		}
-		for i in 0..8{
-			match i into d{
-				d[i] = bits_not(bits_and(d[i], b))
-			}
+	}
+	for i in 0..8{
+		match i into d{
+			d[i] = bits_not(bits_and(d[i], b))
 		}
-		let:<mut u16[8]> dwant = mut [0x00ffff, 0xf3eF, 63455, 0xfbcf, 0XfFbF, 0b1111001110111111, 0B1111_0111_1100_1111, 64_495]
-		for i in 0..8{
-			match i in d{
-				match i in dwant{
-					chk_u16("dynarray element u16", d[i], dwant[i])
-				}
+	}
+	let:<mut u16[8]> dwant = mut [0x00ffff, 0xf3eF, 63455, 0xfbcf, 0XfFbF, 0b1111001110111111, 0B1111_0111_1100_1111, 64_495]
+	for i in 0..8{
+		match i in d{
+			match i in dwant{
+				chk_u16("dynarray element u16", d[i], dwant[i])
 			}
 		}
 	}
@@ -2645,28 +2641,26 @@ func cont_u32(a: mut u32, b: mut u32, n: mut u32) void{
 			chk_u32("array element u32", arr[i], want[i])
 		}
 	}
-	unsafe{
-		let:<mut u32> zero = mut 0
-		let d = mut ? dyn:<u32>([])
-		d = ? resize(d, 8, zero)
-		for i in 0..8{
-			let:<mut u32> k = mut wrap:<u32>(i)
-			let:<mut u32> v = mut bits_xor(bits_left(1, k), wrap:<u32>(i * 11400714819323198485))
-			match i into d{
-				d[i] = v
-			}
+	let:<mut u32> zero = mut 0
+	let d = mut ? dyn:<u32>([])
+	d = ? resize(d, 8, zero)
+	for i in 0..8{
+		let:<mut u32> k = mut wrap:<u32>(i)
+		let:<mut u32> v = mut bits_xor(bits_left(1, k), wrap:<u32>(i * 11400714819323198485))
+		match i into d{
+			d[i] = v
 		}
-		for i in 0..8{
-			match i into d{
-				d[i] = bits_not(bits_and(d[i], b))
-			}
+	}
+	for i in 0..8{
+		match i into d{
+			d[i] = bits_not(bits_and(d[i], b))
 		}
-		let:<mut u32[8]> dwant = mut [4294967295, 0xf0bff3ef, 0XF16fF7Df, 0b11110010001011111111101111001111, 0B1111_0010_1101_1111_1111_1111_1011_1111, 4_086_297_535, 0xF4_4F_F7_CF, 0x00f4fffbef]
-		for i in 0..8{
-			match i in d{
-				match i in dwant{
-					chk_u32("dynarray element u32", d[i], dwant[i])
-				}
+	}
+	let:<mut u32[8]> dwant = mut [4294967295, 0xf0bff3ef, 0XF16fF7Df, 0b11110010001011111111101111001111, 0B1111_0010_1101_1111_1111_1111_1011_1111, 4_086_297_535, 0xF4_4F_F7_CF, 0x00f4fffbef]
+	for i in 0..8{
+		match i in d{
+			match i in dwant{
+				chk_u32("dynarray element u32", d[i], dwant[i])
 			}
 		}
 	}
@@ -2709,28 +2703,26 @@ func cont_u64(a: mut u64, b: mut u64, n: mut u64) void{
 			chk_u64("array element u64", arr[i], want[i])
 		}
 	}
-	unsafe{
-		let:<mut u64> zero = mut 0
-		let d = mut ? dyn:<u64>([])
-		d = ? resize(d, 8, zero)
-		for i in 0..8{
-			let:<mut u64> k = mut wrap:<u64>(i)
-			let:<mut u64> v = mut bits_xor(bits_left(1, k), wrap:<u64>(i * 11400714819323198485))
-			match i into d{
-				d[i] = v
-			}
+	let:<mut u64> zero = mut 0
+	let d = mut ? dyn:<u64>([])
+	d = ? resize(d, 8, zero)
+	for i in 0..8{
+		let:<mut u64> k = mut wrap:<u64>(i)
+		let:<mut u64> v = mut bits_xor(bits_left(1, k), wrap:<u64>(i * 11400714819323198485))
+		match i into d{
+			d[i] = v
 		}
-		for i in 0..8{
-			match i into d{
-				d[i] = bits_not(bits_and(d[i], b))
-			}
+	}
+	for i in 0..8{
+		match i into d{
+			d[i] = bits_not(bits_and(d[i], b))
 		}
-		let:<mut u64[8]> dwant = mut [0XfFfFfFfFfFfFfFfF, 0b1111000111001111111101100100111111110000101111111111001111101111, 0B1111_0011_1001_1111_1111_1100_1000_1111_1111_0001_0110_1111_1111_0111_1101_1111, 17_681_117_705_734_716_367, 0xF7_2F_F9_1F_F2_DF_FF_BF, 0x00f8efff6ff38ff3bf, 0xFaBfF5AfF44fF7Cf, 18194538027626265583]
-		for i in 0..8{
-			match i in d{
-				match i in dwant{
-					chk_u64("dynarray element u64", d[i], dwant[i])
-				}
+	}
+	let:<mut u64[8]> dwant = mut [0XfFfFfFfFfFfFfFfF, 0b1111000111001111111101100100111111110000101111111111001111101111, 0B1111_0011_1001_1111_1111_1100_1000_1111_1111_0001_0110_1111_1111_0111_1101_1111, 17_681_117_705_734_716_367, 0xF7_2F_F9_1F_F2_DF_FF_BF, 0x00f8efff6ff38ff3bf, 0xFaBfF5AfF44fF7Cf, 18194538027626265583]
+	for i in 0..8{
+		match i in d{
+			match i in dwant{
+				chk_u64("dynarray element u64", d[i], dwant[i])
 			}
 		}
 	}
@@ -2773,28 +2765,26 @@ func cont_s8(a: mut s8, b: mut s8, n: mut s8) void{
 			chk_s8("array element s8", arr[i], want[i])
 		}
 	}
-	unsafe{
-		let:<mut s8> zero = mut 0
-		let d = mut ? dyn:<s8>([])
-		d = ? resize(d, 8, zero)
-		for i in 0..8{
-			let:<mut s8> k = mut wrap:<s8>(i)
-			let:<mut s8> v = mut bits_xor(bits_left(1, k), wrap:<s8>(i * 11400714819323198485))
-			match i into d{
-				d[i] = v
-			}
+	let:<mut s8> zero = mut 0
+	let d = mut ? dyn:<s8>([])
+	d = ? resize(d, 8, zero)
+	for i in 0..8{
+		let:<mut s8> k = mut wrap:<s8>(i)
+		let:<mut s8> v = mut bits_xor(bits_left(1, k), wrap:<s8>(i * 11400714819323198485))
+		match i into d{
+			d[i] = v
 		}
-		for i in 0..8{
-			match i into d{
-				d[i] = bits_not(bits_and(d[i], b))
-			}
+	}
+	for i in 0..8{
+		match i into d{
+			d[i] = bits_not(bits_and(d[i], b))
 		}
-		let:<mut s8[8]> dwant = mut [-0B0001, -17, -0x21, -0x0031, -0x41, -65, -0x31, -0X11]
-		for i in 0..8{
-			match i in d{
-				match i in dwant{
-					chk_s8("dynarray element s8", d[i], dwant[i])
-				}
+	}
+	let:<mut s8[8]> dwant = mut [-0B0001, -17, -0x21, -0x0031, -0x41, -65, -0x31, -0X11]
+	for i in 0..8{
+		match i in d{
+			match i in dwant{
+				chk_s8("dynarray element s8", d[i], dwant[i])
 			}
 		}
 	}
@@ -2837,28 +2827,26 @@ func cont_s16(a: mut s16, b: mut s16, n: mut s16) void{
 			chk_s16("array element s16", arr[i], want[i])
 		}
 	}
-	unsafe{
-		let:<mut s16> zero = mut 0
-		let d = mut ? dyn:<s16>([])
-		d = ? resize(d, 8, zero)
-		for i in 0..8{
-			let:<mut s16> k = mut wrap:<s16>(i)
-			let:<mut s16> v = mut bits_xor(bits_left(1, k), wrap:<s16>(i * 11400714819323198485))
-			match i into d{
-				d[i] = v
-			}
+	let:<mut s16> zero = mut 0
+	let d = mut ? dyn:<s16>([])
+	d = ? resize(d, 8, zero)
+	for i in 0..8{
+		let:<mut s16> k = mut wrap:<s16>(i)
+		let:<mut s16> v = mut bits_xor(bits_left(1, k), wrap:<s16>(i * 11400714819323198485))
+		match i into d{
+			d[i] = v
 		}
-		for i in 0..8{
-			match i into d{
-				d[i] = bits_not(bits_and(d[i], b))
-			}
+	}
+	for i in 0..8{
+		match i into d{
+			d[i] = bits_not(bits_and(d[i], b))
 		}
-		let:<mut s16[8]> dwant = mut [-0x01, -0x00c11, -0x821, -1073, -0x41, -0XC41, -0b100000110001, -0B0100_0001_0001]
-		for i in 0..8{
-			match i in d{
-				match i in dwant{
-					chk_s16("dynarray element s16", d[i], dwant[i])
-				}
+	}
+	let:<mut s16[8]> dwant = mut [-0x01, -0x00c11, -0x821, -1073, -0x41, -0XC41, -0b100000110001, -0B0100_0001_0001]
+	for i in 0..8{
+		match i in d{
+			match i in dwant{
+				chk_s16("dynarray element s16", d[i], dwant[i])
 			}
 		}
 	}
@@ -2901,28 +2889,26 @@ func cont_s32(a: mut s32, b: mut s32, n: mut s32) void{
 			chk_s32("array element s32", arr[i], want[i])
 		}
 	}
-	unsafe{
-		let:<mut s32> zero = mut 0
-		let d = mut ? dyn:<s32>([])
-		d = ? resize(d, 8, zero)
-		for i in 0..8{
-			let:<mut s32> k = mut wrap:<s32>(i)
-			let:<mut s32> v = mut bits_xor(bits_left(1, k), wrap:<s32>(i * 11400714819323198485))
-			match i into d{
-				d[i] = v
-			}
+	let:<mut s32> zero = mut 0
+	let d = mut ? dyn:<s32>([])
+	d = ? resize(d, 8, zero)
+	for i in 0..8{
+		let:<mut s32> k = mut wrap:<s32>(i)
+		let:<mut s32> v = mut bits_xor(bits_left(1, k), wrap:<s32>(i * 11400714819323198485))
+		match i into d{
+			d[i] = v
 		}
-		for i in 0..8{
-			match i into d{
-				d[i] = bits_not(bits_and(d[i], b))
-			}
+	}
+	for i in 0..8{
+		match i into d{
+			d[i] = bits_not(bits_and(d[i], b))
 		}
-		let:<mut s32[8]> dwant = mut [-0x1, -255855633, -0xe900821, -0XdD00431, -0b1101001000000000000001000001, -0B1100_0111_0000_0000_1100_0100_0001, -196_085_809, -0x0B_00_04_11]
-		for i in 0..8{
-			match i in d{
-				match i in dwant{
-					chk_s32("dynarray element s32", d[i], dwant[i])
-				}
+	}
+	let:<mut s32[8]> dwant = mut [-0x1, -255855633, -0xe900821, -0XdD00431, -0b1101001000000000000001000001, -0B1100_0111_0000_0000_1100_0100_0001, -196_085_809, -0x0B_00_04_11]
+	for i in 0..8{
+		match i in d{
+			match i in dwant{
+				chk_s32("dynarray element s32", d[i], dwant[i])
 			}
 		}
 	}
@@ -2965,28 +2951,26 @@ func cont_s64(a: mut s64, b: mut s64, n: mut s64) void{
 			chk_s64("array element s64", arr[i], want[i])
 		}
 	}
-	unsafe{
-		let:<mut s64> zero = mut 0
-		let d = mut ? dyn:<s64>([])
-		d = ? resize(d, 8, zero)
-		for i in 0..8{
-			let:<mut s64> k = mut wrap:<s64>(i)
-			let:<mut s64> v = mut bits_xor(bits_left(1, k), wrap:<s64>(i * 11400714819323198485))
-			match i into d{
-				d[i] = v
-			}
+	let:<mut s64> zero = mut 0
+	let d = mut ? dyn:<s64>([])
+	d = ? resize(d, 8, zero)
+	for i in 0..8{
+		let:<mut s64> k = mut wrap:<s64>(i)
+		let:<mut s64> v = mut bits_xor(bits_left(1, k), wrap:<s64>(i * 11400714819323198485))
+		match i into d{
+			d[i] = v
 		}
-		for i in 0..8{
-			match i into d{
-				d[i] = bits_not(bits_and(d[i], b))
-			}
+	}
+	for i in 0..8{
+		match i into d{
+			d[i] = bits_not(bits_and(d[i], b))
 		}
-		let:<mut s64[8]> dwant = mut [-0x1, -0XE3009b00F400C11, -0b110001100000000000110111000000001110100100000000100000100001, -0B1010_1010_0000_0000_1101_0010_0000_0000_1101_1101_0000_0000_0100_0011_0001, -635_015_106_821_881_921, -0x07_10_00_90_0C_70_0C_41, -0x005400a500bb00831, -0x38004100b000411]
-		for i in 0..8{
-			match i in d{
-				match i in dwant{
-					chk_s64("dynarray element s64", d[i], dwant[i])
-				}
+	}
+	let:<mut s64[8]> dwant = mut [-0x1, -0XE3009b00F400C11, -0b110001100000000000110111000000001110100100000000100000100001, -0B1010_1010_0000_0000_1101_0010_0000_0000_1101_1101_0000_0000_0100_0011_0001, -635_015_106_821_881_921, -0x07_10_00_90_0C_70_0C_41, -0x005400a500bb00831, -0x38004100b000411]
+	for i in 0..8{
+		match i in d{
+			match i in dwant{
+				chk_s64("dynarray element s64", d[i], dwant[i])
 			}
 		}
 	}
@@ -3024,7 +3008,7 @@ func popcountShift(x: mut u64) mut u64{
 func popcountKernighan(x: mut u64) mut u64{
 	let y = mut x
 	let c = mut 0
-	unsafe{
+	unsafe loop{
 		loop{
 			if y == 0{
 				break
@@ -3463,7 +3447,7 @@ func literalForms() void{
 }
 
 func fromAtol() void{
-	unsafe{
+	unsafe extern{
 		let:<mut u8> au8 = mut wrap:<u8>(atol("43"))
 		let:<mut u8> bu8 = mut wrap:<u8>(atol("29"))
 		let:<mut u8> nu8 = mut wrap:<u8>(atol("5"))
@@ -3546,7 +3530,7 @@ extern c_snprintf(raw mut u8, mut u64, static imut string, ...) mut u64
 extern atol_buf(raw mut u8) mut u64
 
 func varargForms() void{
-	unsafe{
+	unsafe extern{
 		let:<raw mut u8> buf = null
 		buf = malloc(64)
 		let:<mut u8> vau8 = mut wrap:<u8>(atol("240"))
@@ -3660,7 +3644,7 @@ func main() void{
 	hotLoops()
 	literalForms()
 	varargForms()
-	unsafe{
+	unsafe extern global{
 		printf("bits_ops_test: %llu passed, %llu failed\n", passed, failed)
 		if failed == 0{
 			printf("ALL BITS OPS TESTS PASSED\n")

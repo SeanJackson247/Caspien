@@ -9,7 +9,7 @@ func add(a: mut u64, b: mut u64) mut u64{
 	return a + b
 }
 func report(name: static imut string, got: mut u64, want: mut u64) void{
-	unsafe{
+	unsafe extern{
 		if got == want{
 			printf("PASS %s\n", name)
 		}
@@ -106,7 +106,7 @@ func storeThenRead() mut u64{
 func loopBreak() mut u64{
 	let s = mut 0
 	let i = mut 0
-	unsafe{
+	unsafe loop{
 		loop{
 			i++
 			if i > 10{

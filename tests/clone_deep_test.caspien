@@ -20,17 +20,17 @@ struct Top{
 }
 func check(name: static imut string, got: imut u64, want: imut u64) mut u64{
 	if got == want{
-		unsafe{ printf("PASS %s\n", name) }
+		unsafe extern{ printf("PASS %s\n", name) }
 		return 0
 	}
-	unsafe{ printf("FAIL %s got %llu want %llu\n", name, got, want) }
+	unsafe extern{ printf("FAIL %s got %llu want %llu\n", name, got, want) }
 	return 1
 }
 func main() void{
 	let fails = mut 0
 	try{
 		?catch(e){
-			unsafe{ printf("FAIL caught %s\n", e) }
+			unsafe extern{ printf("FAIL caught %s\n", e) }
 			return
 		}
 		let ip = mut ?new Pair{a= 7, b= 9}
@@ -87,5 +87,5 @@ func main() void{
 		fails += check("dyn of owns copy a", copyA, 30)
 		fails += check("dyn of owns copy b", copyB, 4)
 	}
-	unsafe{ printf("done fails=%llu\n", fails) }
+	unsafe extern{ printf("done fails=%llu\n", fails) }
 }

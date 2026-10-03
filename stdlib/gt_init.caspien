@@ -18,7 +18,7 @@ func gt_init() void{
 	match @lock ghost_table{
 		OPEN:{
 			let:<raw mut u8> newBase = null
-			unsafe{
+			unsafe extern{
 				newBase = mut malloc(mut 32)
 			}
 			ghost_table.base = mut newBase

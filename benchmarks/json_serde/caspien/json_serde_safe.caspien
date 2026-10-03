@@ -22,7 +22,7 @@ struct Rec{
 
 func main() void{
 	?catch(e){ return }
-	unsafe{
+	unsafe extern loop{
 		let n = mut 0
 		n = atol(getenv("JSON_SERDE_N"))
 		let zr = mut Rec{id= 0, name_off= 0, name_len= 0, score= 0, tag_off= 0, tag_cnt= 0}

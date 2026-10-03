@@ -1,10 +1,13 @@
 import "../stdlib/libc.caspien"
 func rd(p: raw imut u64) imut u64{
-	unsafe{ return deref(p) }
+	unsafe assume{
+		assume match Some(p)
+		return deref(p)
+	}
 }
 func main() void{
 	let v = mut 7
-	unsafe{
+	unsafe extern raw{
 		let p = imut raw v
 		printf("v=%llu\n", rd(p))
 	}

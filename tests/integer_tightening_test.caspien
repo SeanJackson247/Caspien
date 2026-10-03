@@ -11,10 +11,10 @@ import "../stdlib/libc.caspien"
 
 func check(name: static imut string, got: mut s64, want: mut s64) mut u64{
 	if got == want{
-		unsafe{ printf("PASS %s\n", name) }
+		unsafe extern{ printf("PASS %s\n", name) }
 		return mut 0
 	}
-	unsafe{ printf("FAIL %s (got %lld, want %lld)\n", name, got, want) }
+	unsafe extern{ printf("FAIL %s (got %lld, want %lld)\n", name, got, want) }
 	return mut 1
 }
 
@@ -77,16 +77,23 @@ func viaU64(v: mut s64) mut s64{
 }
 
 func sdiv(a: mut s64, b: mut s64) mut s64{
-	unsafe{ return a / b }
+	unsafe assume{
+		assume match b > 0
+		return a / b
+	}
 }
 func smod(a: mut s64, b: mut s64) mut s64{
-	unsafe{ return a % b }
+	unsafe assume{
+		assume match b > 0
+		return a % b
+	}
 }
 func slt(a: mut s64, b: mut s64) mut bool{ return mut (a < b) }
 func sle(a: mut s64, b: mut s64) mut bool{ return mut (a <= b) }
 func slt8(a: mut s8, b: mut s8) mut bool{ return mut (a < b) }
 func sdiv8(a: mut s8, b: mut s8) mut s64{
-	unsafe{
+	unsafe assume{
+		assume match b > 0
 		let q = mut (a / b)
 		return mut wrap:<s64>(q)
 	}
@@ -98,10 +105,16 @@ func minS64() mut s64{
 	return mut (m - 1)
 }
 func sdivMin(a: mut s64, b: mut s64) mut s64{
-	unsafe{ return a / b }
+	unsafe assume{
+		assume match b > 0
+		return a / b
+	}
 }
 func smodMin(a: mut s64, b: mut s64) mut s64{
-	unsafe{ return a % b }
+	unsafe assume{
+		assume match b > 0
+		return a % b
+	}
 }
 func shrS(a: mut s64, n: mut s64) mut s64{
 	return mut bits_right(a, n)
@@ -207,7 +220,7 @@ func main() void{
 	fails += check("array literal s16[2] negative element", negArr16(), mut -5)
 	fails += check("paren-wrapped literal adapts", parenLit(), mut 200)
 
-	unsafe{
+	unsafe extern{
 		if fails == 0{
 			printf("ALL INTEGER TIGHTENING TESTS PASSED\n")
 		}

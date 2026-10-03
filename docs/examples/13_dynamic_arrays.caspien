@@ -40,10 +40,10 @@ func main() void{
 	match q in lit{ last = lit[q] }
 	lit = ? resize(lit, 1, zero)              // shrinking truncates
 	let shrunk = mut len(lit)
-	unsafe{ printf("built-in: total=%llu len=%llu grown=%llu last=%llu shrunk=%llu\n", total, n, grown, last, shrunk) }
+	unsafe extern{ printf("built-in: total=%llu len=%llu grown=%llu last=%llu shrunk=%llu\n", total, n, grown, last, shrunk) }
 
 	// An unsafe dynarray has no length header to check, so it needs no proofs and no `?` on resize.
-	unsafe{
+	unsafe extern udyn{
 		let us = mut unsafe dyn:<u64>([])
 		us = resize(us, 6)
 		for i in 0..6{ us[i] = i * 3 }
@@ -69,18 +69,18 @@ func main() void{
 	let first = mut 0
 	let zeroIdx = mut 0
 	match zeroIdx in list.backing{ first = list.get(list, zeroIdx) }
-	unsafe{ printf("DynamicArray: sum=%llu top=%llu bottom=%llu len=%llu first=%llu\n", sum, top, bottom, count, first) }
+	unsafe extern{ printf("DynamicArray: sum=%llu top=%llu bottom=%llu len=%llu first=%llu\n", sum, top, bottom, count, first) }
 
 	let s = mut ? new String("hello")
 	? s.appendChar(s, mut '!')
 	let slen = mut len(s.chars.backing)
 	let ch = mut s.charAt(s, 1)
 	let idx = mut s.firstIndexOf(s, 'l')              // -1 when absent
-	unsafe{ printf("String: len=%llu char=%c index=%lld\n", slen, ch, idx) }
+	unsafe extern{ printf("String: len=%llu char=%c index=%lld\n", slen, ch, idx) }
 
 	let m = mut ? new HashMap:<u64>(mut 0, mut 0, mut 16)
 	m.set(m, mut 7, mut 70)
 	let hit = mut m.get(m, mut 7, mut 999)
 	let miss = mut m.get(m, mut 8, mut 999)
-	unsafe{ printf("HashMap: hit=%llu miss=%llu\n", hit, miss) }
+	unsafe extern{ printf("HashMap: hit=%llu miss=%llu\n", hit, miss) }
 }

@@ -13,7 +13,7 @@ extern atoi(static imut string) mut s64
 func main() void{
 	let count = mut 5
 	let bytes = mut (count * sizeof(u64))
-	unsafe{
+	unsafe assume extern memcopy raw{
 		let base = mut malloc(bytes)            // a `raw u8`
 		let p = mut (base as u64)               // widening the pointee makes it a `raw u64`: it now steps by 8
 		let start = mut p
@@ -26,17 +26,19 @@ func main() void{
 		let q = mut start
 		let sum = mut 0
 		for i in 0..count{
+			assume match Some(q)
 			sum += deref(q)                     // deref reads; it is never an assignment target
 			q++
 		}
 		let third = mut (start + 2)
+		assume match Some(third)
 		let t = mut deref(third)
 		printf("span=%lld sum=%llu third=%llu bytes=%llu\n", span, sum, t, bytes)
 		free(base)
 	}
 
 	let n = mut -42
-	unsafe{
+	unsafe extern{
 		let a = mut c_abs(n)
 		let len = mut strlen("hello, world")
 		let v = mut atoi("123")

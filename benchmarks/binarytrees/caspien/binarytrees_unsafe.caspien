@@ -23,7 +23,7 @@ struct Node{
 }
 
 func main() void{
-	unsafe{
+	unsafe extern loop udyn{
 		let maxd = mut 0
 		maxd = atol(getenv("BINARYTREES_N"))
 		if maxd < 6{

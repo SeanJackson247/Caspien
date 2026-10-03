@@ -14,7 +14,7 @@ extern atol(static imut string) mut u64
 
 func main() void{
 	?catch(e){ return }
-	unsafe{
+	unsafe assume extern loop{
 		let n = mut 0
 		n = atol(getenv("GRAPH_N"))
 		let:<mut u64> zero = mut 0
@@ -48,6 +48,7 @@ func main() void{
 			let b2 = mut (base + 2)
 			let b3 = mut (base + 3)
 			x = bits_and(x * 1664525 + 1013904223, 0xFFFFFFFF)
+			assume match n != 0
 			let r1 = mut (x % n)
 			x = bits_and(x * 1664525 + 1013904223, 0xFFFFFFFF)
 			let r2 = mut (x % n)

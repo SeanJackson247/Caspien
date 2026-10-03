@@ -11,7 +11,7 @@ extern getenv(static imut string) static imut string
 extern atol(static imut string) mut u64
 
 func main() void{
-	unsafe{
+	unsafe extern loop udyn{
 		let depth = mut 0
 		depth = atol(getenv("REC_TREE_DEPTH"))
 		let stack = mut unsafe dyn:<u64>([])

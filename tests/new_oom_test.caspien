@@ -22,10 +22,10 @@ struct Top{
 func pass(p: owns some mut Pair) owns some mut Pair{ return p }
 func bump(n: imut u64) mut u64{ return n + 1 }
 func main() void{
-	unsafe{ printf("start\n") }
+	unsafe extern{ printf("start\n") }
 	try{
 		?catch(e){
-			unsafe{ printf("CAUGHT %s\n", e) }
+			unsafe extern{ printf("CAUGHT %s\n", e) }
 			return
 		}
 		let p1 = mut ?new Pair{a= 7, b= 9}
@@ -40,6 +40,6 @@ func main() void{
 		let q1 = mut ?new Pair{a= 5, b= 6}
 		let q2 = mut ?new Pair{a= 7, b= 8}
 		let arr = mut ?dyn([q1, pass(q2)])            // moves q1 and the result of pass(q2); arr itself is not freed at scope end (plain dyn blocks are not tracked)
-		unsafe{ printf("done %llu %llu %llu\n", o1.x, t.y + o3.x - 2, len(arr)) }
+		unsafe extern{ printf("done %llu %llu %llu\n", o1.x, t.y + o3.x - 2, len(arr)) }
 	}
 }

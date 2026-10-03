@@ -32,7 +32,7 @@ func probePlain(x: mut u64) mut u64{
 func probeLoop(n: mut u64) mut u64{
 	let s = mut 0
 	let i = mut 0
-	unsafe{
+	unsafe loop{
 		loop{
 			if i == n{
 				break
@@ -47,7 +47,7 @@ func probeLoop(n: mut u64) mut u64{
 func hot(n: mut u64) mut u64{
 	let z = mut 0
 	let q = mut 0
-	unsafe{
+	unsafe loop{
 		loop{
 			if q == n{
 				break
@@ -74,5 +74,5 @@ func main() void{
 	let d = mut probeLoop(10)
 	let e = mut probeLoopThrow(3)
 	let f = mut probeLoopThrow(6)
-	unsafe{ printf("%llu %llu %llu %llu %llu %llu\n", a, b, c, d, e, f) }
+	unsafe extern{ printf("%llu %llu %llu %llu %llu %llu\n", a, b, c, d, e, f) }
 }

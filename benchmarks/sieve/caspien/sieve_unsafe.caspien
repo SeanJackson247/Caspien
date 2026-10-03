@@ -11,7 +11,7 @@ extern getenv(static imut string) static imut string
 extern atol(static imut string) mut u64
 
 func main() void{
-	unsafe{
+	unsafe extern loop udyn{
 		let n = mut 0
 		n = atol(getenv("SIEVE_N"))
 		let f = mut unsafe dyn:<u8>([])

@@ -34,7 +34,7 @@ let static szt = mut sizeof(Two)
 let static fails = mut 0
 
 func check(name: static imut string, ok: mut bool) void{
-	unsafe{
+	unsafe extern global{
 		if ok{
 			printf("PASS %s\n", name)
 		}
@@ -49,7 +49,7 @@ func main() void{
 	// 1. sizeof P against the stride of P[3]: byte 8 of each element holds its member
 	let pa = mut [P{a= 11}, P{a= 22}, P{a= 33}]
 	let:<mut u8[48]> pb = mut [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-	unsafe{
+	unsafe memcopy raw{
 		memcopy(raw pb, mut 48, raw pa)
 	}
 	let pstride = mut sizeof(P)
@@ -57,7 +57,7 @@ func main() void{
 	let lq = mut 0
 	let lb = mut 0
 	let lt = mut 0
-	unsafe{
+	unsafe global{
 		lp = szp
 		lq = szq
 		lb = szb
@@ -70,7 +70,7 @@ func main() void{
 	// 2. Q (___type,u64,u64,u8): 25 bytes of members, padded to 32, so z of element 1 sits at 32+24
 	let qa = mut [Q{x= 1, y= 2, z= 3}, Q{x= 4, y= 5, z= 6}]
 	let:<mut u8[80]> qb = mut [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-	unsafe{
+	unsafe memcopy raw{
 		memcopy(raw qb, mut 80, raw qa)
 	}
 	let qstride = mut sizeof(Q)
@@ -83,7 +83,7 @@ func main() void{
 	// 4. pointer step: q++ on a raw P moves to the next P member of Two
 	let t = mut Two{a= P{a= 1}, b= P{a= 2}}
 	let src = mut P{a= 77}
-	unsafe{
+	unsafe memcopy raw{
 		let p = mut raw t.a
 		p++
 		memcopy(p, mut sizeof(P), raw src)
@@ -91,7 +91,7 @@ func main() void{
 	check("raw P ++ steps sizeof(P) bytes (writes t.b)", t.b.a == 77 && t.a.a == 1)
 	check("Two: sizeof is the sum of its two Ps plus ___type", lt == mut sizeof(Two))
 
-	unsafe{
+	unsafe extern global{
 		if fails == 0{
 			printf("ALL SIZEOF STRIDE TESTS PASSED\n")
 		}

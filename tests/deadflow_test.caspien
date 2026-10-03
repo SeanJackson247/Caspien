@@ -11,7 +11,7 @@ import "../stdlib/gt_moved.caspien"
 let static hits = mut 0
 
 func check(name: static imut string, ok: mut bool) void{
-	unsafe{
+	unsafe extern{
 		if ok{
 			printf("PASS %s\n", name)
 		}else{
@@ -22,7 +22,7 @@ func check(name: static imut string, ok: mut bool) void{
 }
 
 func touch() void{
-	unsafe{ hits += 1 }
+	unsafe global{ hits += 1 }
 	return
 }
 
@@ -164,7 +164,7 @@ func in_loop(k: mut u64) mut u64{
 // a constant false guarding a break
 func loop_break(k: mut u64) mut u64{
 	let a = mut 0
-	unsafe{
+	unsafe loop{
 		loop{
 			if false{
 				break
@@ -225,6 +225,6 @@ func main() void{
 	check("with_catch_ok", with_catch(5) == 6)
 	check("with_catch_throw", with_catch(0) == 77)
 	let ran = mut 0
-	unsafe{ ran = hits }
+	unsafe global{ ran = hits }
 	check("no_dead_code_ran", ran == 0)
 }

@@ -1,4 +1,3 @@
-// clone can fail (allocation), so it must sit inside try/catch or '?'.
 import "../stdlib/libc.caspien"
 import "../stdlib/gt_init.caspien"
 import "../stdlib/gt_register.caspien"
@@ -6,8 +5,10 @@ import "../stdlib/gt_alive_check.caspien"
 import "../stdlib/gt_destruct.caspien"
 import "../stdlib/gt_moved.caspien"
 func main() void{
-	let v = mut 41
-	let p = mut auto v
-	let c = mut clone(p)
-	match Some(c){ unsafe extern{ printf("%llu\n", deref(c)) } }
+	unsafe extern udyn{
+		let a = mut unsafe dyn([5, 6, 7])
+		printf("lit=%llu %llu %llu\n", a[0], a[1], a[2])
+		let t = mut unsafe dyn("abc")
+		printf("txt=%c%c%c len=%llu\n", t[0], t[1], t[2], len(t, '\0'))
+	}
 }

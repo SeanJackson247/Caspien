@@ -34,5 +34,5 @@ func main() void{
 	bump()
 	bump()
 	let last = mut bump()
-	unsafe{ printf("counter=%llu\n", last) }
+	unsafe extern{ printf("counter=%llu\n", last) }
 }

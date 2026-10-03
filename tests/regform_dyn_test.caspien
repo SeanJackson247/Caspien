@@ -11,7 +11,7 @@ import "../stdlib/gt_destruct.caspien"
 import "../stdlib/gt_moved.caspien"
 
 func check(name: static imut string, ok: mut bool) void{
-	unsafe{
+	unsafe extern{
 		if ok{
 			printf("PASS %s\n", name)
 		}else{
@@ -27,236 +27,234 @@ func twice(x: mut u64) mut u64{
 
 func main() void{
 	?catch(e){ return }
-	unsafe{
-		let:<mut u8> z8 = mut 0
-		let:<mut u16> z16 = mut 0
-		let:<mut u32> z32 = mut 0
-		let a = mut ? dyn:<u8>([])
-		a = ? resize(a, 10, z8)
-		let b = mut ? dyn:<u16>([])
-		b = ? resize(b, 7, z16)
-		let c = mut ? dyn:<u32>([])
-		c = ? resize(c, 5, z32)
-		let d = mut ? dyn:<u64>([])
-		d = ? resize(d, 4, 0)
+	let:<mut u8> z8 = mut 0
+	let:<mut u16> z16 = mut 0
+	let:<mut u32> z32 = mut 0
+	let a = mut ? dyn:<u8>([])
+	a = ? resize(a, 10, z8)
+	let b = mut ? dyn:<u16>([])
+	b = ? resize(b, 7, z16)
+	let c = mut ? dyn:<u32>([])
+	c = ? resize(c, 5, z32)
+	let d = mut ? dyn:<u64>([])
+	d = ? resize(d, 4, 0)
 
-		// fill (element writes through LOOKUP_DYN_LHS), 1, 2, 4 and 8 byte elements
-		for i in 0..10{
-			let v = mut wrap:<u8>(i * 37 + 200)
-			match i into a{
-				a[i] = v
-			}
+	// fill (element writes through LOOKUP_DYN_LHS), 1, 2, 4 and 8 byte elements
+	for i in 0..10{
+		let v = mut wrap:<u8>(i * 37 + 200)
+		match i into a{
+			a[i] = v
 		}
-		for i in 0..7{
-			let v = mut wrap:<u16>(i * 9001 + 40000)
-			match i into b{
-				b[i] = v
-			}
-		}
-		for i in 0..5{
-			let v = mut wrap:<u32>(i * 1000000007 + 4000000000)
-			match i into c{
-				c[i] = v
-			}
-		}
-		for i in 0..4{
-			let v = mut (18446744073709551615 - i * 1000)
-			match i into d{
-				d[i] = v
-			}
-		}
-
-		// sums (element reads, zero-extended)
-		let sa = mut 0
-		for i in 0..10{
-			match i in a{
-				sa += a[i] as u64
-			}
-		}
-		check("u8 sum", sa == 1361)
-		let sb = mut 0
-		for i in 0..7{
-			match i in b{
-				sb += b[i] as u64
-			}
-		}
-		check("u16 sum", sb == 206877)
-		let sc = mut 0
-		for i in 0..5{
-			match i in c{
-				sc += c[i] as u64
-			}
-		}
-		check("u32 sum", sc == 12820130886)
-		let sd = mut 0
-		for i in 0..4{
-			match i in d{
-				sd += d[i]
-			}
-		}
-		check("u64 sum (wraps)", sd == 18446744073709545612)
-
-		// single elements, top bit set
-		let k3 = mut 3
-		let e3 = mut 0
-		match k3 in a{
-			e3 = a[k3] as u64
-		}
-		check("u8 element 3", e3 == 55)
-		let k6 = mut 6
-		let e6 = mut 0
-		match k6 in b{
-			e6 = b[k6] as u64
-		}
-		check("u16 element 6", e6 == 28470)
-		let k4 = mut 4
-		let e4 = mut 0
-		match k4 in c{
-			e4 = c[k4] as u64
-		}
-		check("u32 element 4", e4 == 3705032732)
-		let k3b = mut 3
-		let e3b = mut 0
-		match k3b in d{
-			e3b = d[k3b]
-		}
-		check("u64 element 3", e3b == 18446744073709548615)
-
-		// an out-of-range index: the proof skips the block
-		let kb = mut 10
-		let hit = mut 0
-		match kb in a{
-			hit = 1
-		}
-		check("index == length is skipped", hit == 0)
-		let kb2 = mut 12345
-		match kb2 in a{
-			hit = 2
-		}
-		check("index far past the length is skipped", hit == 0)
-		let kl = mut 9
-		match kl in a{
-			hit = 3
-		}
-		check("last index is accepted", hit == 3)
-
-		// two reads in one expression, a computed index
-		let pairs = mut 0
-		for i in 0..9{
-			let nxt = mut (i + 1)
-			match i in a{
-				match nxt in a{
-					pairs += a[i] as u64 + a[nxt] as u64
-				}
-			}
-		}
-		check("neighbour sums", pairs == 2501)
-
-		// weighted sum: an element times a computed value
-		let wsum = mut 0
-		for i in 0..7{
-			match i in b{
-				wsum += (b[i] as u64) * (i + 1)
-			}
-		}
-		check("weighted u16 sum", wsum == 686320)
-
-		// read-modify-write in place: a[i] = a[i-1] + a[i] (u8 wrap)
-		for i in 1..10{
-			let prev = mut (i - 1)
-			match prev in a{
-				match i into a{
-					let s = mut wrap:<u8>(a[prev] as u64 + a[i] as u64)
-					a[i] = s
-				}
-			}
-		}
-		let sp = mut 0
-		for i in 0..10{
-			match i in a{
-				sp += a[i] as u64
-			}
-		}
-		check("prefix sums in place", sp == 1489)
-
-		// a call inside the loop (variables live across calls)
-		let tw = mut 0
-		for i in 0..4{
-			match i in d{
-				tw += twice(i) + (d[i] - d[i])
-			}
-		}
-		check("calls inside an indexed loop", tw == 12)
-
-		// (a was rewritten by the prefix sums: a[0] = 200, a[1] = 181) a narrow add leaves carry bits above its width in the register: widening it must mask, not just relabel
-		let w0 = mut 0
-		let w1 = mut 1
-		let ws = mut 0
-		match w0 in a{
-			match w1 in a{
-				ws = (a[w0] + a[w1]) as u64
-			}
-		}
-		check("u8 add wraps before widening (200 + 181)", ws == 125)
-		let wh = mut 0
-		match w0 in b{
-			match w1 in b{
-				wh = (b[w0] + b[w1]) as u64
-			}
-		}
-		check("u16 add wraps before widening (40000 + 49001)", wh == 23465)
-		let wm = mut 0
-		match w0 in a{
-			match w1 in a{
-				let t8 = mut wrap:<u8>(a[w0] as u64 + a[w1] as u64 + 1000)
-				wm = t8 as u64
-			}
-		}
-		check("wrap:<u8> of a sum", wm == 101)
-		let wm2 = mut 0
-		match w0 in b{
-			match w1 in b{
-				let t16 = mut wrap:<u16>(b[w0] as u64 * 3 + b[w1] as u64)
-				wm2 = t16 as u64
-			}
-		}
-		check("wrap:<u16> of a product", wm2 == (40000 * 3 + 49001) % 65536)
-		let wc = mut 0
-		match w0 in c{
-			match w1 in c{
-				wc = (c[w0] + c[w1]) as u64
-			}
-		}
-		check("u32 add wraps before widening", wc == 410065415)
-
-		// narrow locals: widening and narrowing around register-held values
-		let:<mut u8> n8 = mut 250
-		let:<mut u8> m8 = mut 9
-		let nsum = mut ((n8 + m8) as u64)
-		check("u8 locals add wraps (250 + 9)", nsum == 3)
-		let:<mut u16> n16 = mut 65535
-		let wide16 = mut ((n16 as u64) + 1)
-		check("u16 local widened then added", wide16 == 65536)
-		let big = mut 4294967301
-		let low8 = mut wrap:<u8>(big)
-		check("wrap:<u8> of a variable", (low8 as u64) == 5)
-		let low16 = mut wrap:<u16>(big + 65536 * 3)
-		check("wrap:<u16> of an expression", (low16 as u64) == 5)
-		let low32 = mut wrap:<u32>(big + 4294967296)
-		check("wrap:<u32> of an expression", (low32 as u64) == 5)
-
-		// u32 or of neighbours
-		let xs = mut 0
-		for i in 0..4{
-			let nxt = mut (i + 1)
-			match i in c{
-				match nxt in c{
-					let lo = mut (c[i] as u64)
-					let hi = mut (c[nxt] as u64)
-					xs += bits_or(lo, hi)
-				}
-			}
-		}
-		check("u32 neighbour or", xs == 13989153874)
 	}
+	for i in 0..7{
+		let v = mut wrap:<u16>(i * 9001 + 40000)
+		match i into b{
+			b[i] = v
+		}
+	}
+	for i in 0..5{
+		let v = mut wrap:<u32>(i * 1000000007 + 4000000000)
+		match i into c{
+			c[i] = v
+		}
+	}
+	for i in 0..4{
+		let v = mut (18446744073709551615 - i * 1000)
+		match i into d{
+			d[i] = v
+		}
+	}
+
+	// sums (element reads, zero-extended)
+	let sa = mut 0
+	for i in 0..10{
+		match i in a{
+			sa += a[i] as u64
+		}
+	}
+	check("u8 sum", sa == 1361)
+	let sb = mut 0
+	for i in 0..7{
+		match i in b{
+			sb += b[i] as u64
+		}
+	}
+	check("u16 sum", sb == 206877)
+	let sc = mut 0
+	for i in 0..5{
+		match i in c{
+			sc += c[i] as u64
+		}
+	}
+	check("u32 sum", sc == 12820130886)
+	let sd = mut 0
+	for i in 0..4{
+		match i in d{
+			sd += d[i]
+		}
+	}
+	check("u64 sum (wraps)", sd == 18446744073709545612)
+
+	// single elements, top bit set
+	let k3 = mut 3
+	let e3 = mut 0
+	match k3 in a{
+		e3 = a[k3] as u64
+	}
+	check("u8 element 3", e3 == 55)
+	let k6 = mut 6
+	let e6 = mut 0
+	match k6 in b{
+		e6 = b[k6] as u64
+	}
+	check("u16 element 6", e6 == 28470)
+	let k4 = mut 4
+	let e4 = mut 0
+	match k4 in c{
+		e4 = c[k4] as u64
+	}
+	check("u32 element 4", e4 == 3705032732)
+	let k3b = mut 3
+	let e3b = mut 0
+	match k3b in d{
+		e3b = d[k3b]
+	}
+	check("u64 element 3", e3b == 18446744073709548615)
+
+	// an out-of-range index: the proof skips the block
+	let kb = mut 10
+	let hit = mut 0
+	match kb in a{
+		hit = 1
+	}
+	check("index == length is skipped", hit == 0)
+	let kb2 = mut 12345
+	match kb2 in a{
+		hit = 2
+	}
+	check("index far past the length is skipped", hit == 0)
+	let kl = mut 9
+	match kl in a{
+		hit = 3
+	}
+	check("last index is accepted", hit == 3)
+
+	// two reads in one expression, a computed index
+	let pairs = mut 0
+	for i in 0..9{
+		let nxt = mut (i + 1)
+		match i in a{
+			match nxt in a{
+				pairs += a[i] as u64 + a[nxt] as u64
+			}
+		}
+	}
+	check("neighbour sums", pairs == 2501)
+
+	// weighted sum: an element times a computed value
+	let wsum = mut 0
+	for i in 0..7{
+		match i in b{
+			wsum += (b[i] as u64) * (i + 1)
+		}
+	}
+	check("weighted u16 sum", wsum == 686320)
+
+	// read-modify-write in place: a[i] = a[i-1] + a[i] (u8 wrap)
+	for i in 1..10{
+		let prev = mut (i - 1)
+		match prev in a{
+			match i into a{
+				let s = mut wrap:<u8>(a[prev] as u64 + a[i] as u64)
+				a[i] = s
+			}
+		}
+	}
+	let sp = mut 0
+	for i in 0..10{
+		match i in a{
+			sp += a[i] as u64
+		}
+	}
+	check("prefix sums in place", sp == 1489)
+
+	// a call inside the loop (variables live across calls)
+	let tw = mut 0
+	for i in 0..4{
+		match i in d{
+			tw += twice(i) + (d[i] - d[i])
+		}
+	}
+	check("calls inside an indexed loop", tw == 12)
+
+	// (a was rewritten by the prefix sums: a[0] = 200, a[1] = 181) a narrow add leaves carry bits above its width in the register: widening it must mask, not just relabel
+	let w0 = mut 0
+	let w1 = mut 1
+	let ws = mut 0
+	match w0 in a{
+		match w1 in a{
+			ws = (a[w0] + a[w1]) as u64
+		}
+	}
+	check("u8 add wraps before widening (200 + 181)", ws == 125)
+	let wh = mut 0
+	match w0 in b{
+		match w1 in b{
+			wh = (b[w0] + b[w1]) as u64
+		}
+	}
+	check("u16 add wraps before widening (40000 + 49001)", wh == 23465)
+	let wm = mut 0
+	match w0 in a{
+		match w1 in a{
+			let t8 = mut wrap:<u8>(a[w0] as u64 + a[w1] as u64 + 1000)
+			wm = t8 as u64
+		}
+	}
+	check("wrap:<u8> of a sum", wm == 101)
+	let wm2 = mut 0
+	match w0 in b{
+		match w1 in b{
+			let t16 = mut wrap:<u16>(b[w0] as u64 * 3 + b[w1] as u64)
+			wm2 = t16 as u64
+		}
+	}
+	check("wrap:<u16> of a product", wm2 == (40000 * 3 + 49001) % 65536)
+	let wc = mut 0
+	match w0 in c{
+		match w1 in c{
+			wc = (c[w0] + c[w1]) as u64
+		}
+	}
+	check("u32 add wraps before widening", wc == 410065415)
+
+	// narrow locals: widening and narrowing around register-held values
+	let:<mut u8> n8 = mut 250
+	let:<mut u8> m8 = mut 9
+	let nsum = mut ((n8 + m8) as u64)
+	check("u8 locals add wraps (250 + 9)", nsum == 3)
+	let:<mut u16> n16 = mut 65535
+	let wide16 = mut ((n16 as u64) + 1)
+	check("u16 local widened then added", wide16 == 65536)
+	let big = mut 4294967301
+	let low8 = mut wrap:<u8>(big)
+	check("wrap:<u8> of a variable", (low8 as u64) == 5)
+	let low16 = mut wrap:<u16>(big + 65536 * 3)
+	check("wrap:<u16> of an expression", (low16 as u64) == 5)
+	let low32 = mut wrap:<u32>(big + 4294967296)
+	check("wrap:<u32> of an expression", (low32 as u64) == 5)
+
+	// u32 or of neighbours
+	let xs = mut 0
+	for i in 0..4{
+		let nxt = mut (i + 1)
+		match i in c{
+			match nxt in c{
+				let lo = mut (c[i] as u64)
+				let hi = mut (c[nxt] as u64)
+				xs += bits_or(lo, hi)
+			}
+		}
+	}
+	check("u32 neighbour or", xs == 13989153874)
 }

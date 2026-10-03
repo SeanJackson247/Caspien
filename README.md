@@ -12,7 +12,7 @@ import "stdlib/gt_destruct.caspien"
 import "stdlib/gt_moved.caspien"
 
 func main() void{
-	unsafe{
+	unsafe extern{
 		printf("Hello World!\n")
 	}
 	return
@@ -129,7 +129,7 @@ func answer() mut u64{
 
 func main() void{
 	let a = mut answer()
-	unsafe{ printf("%llu\n", a) }
+	unsafe extern{ printf("%llu\n", a) }
 }
 ```
 
@@ -240,8 +240,10 @@ checked for shape, but nothing enforces them yet. Treat them as documentation.
 #### Structs, methods and enums
 
 A struct lists its members, with `@pub` to make them visible outside the file. Methods live in `impl`
-blocks. The receiver is an explicit `_self` parameter, and a method is called with a colon
-(`acct:deposit(50)`), which is sugar for passing the receiver yourself (`acct.deposit(acct, 50)`). A struct
+blocks. The receiver is an explicit `_self` parameter, and methods use Lua-style self bolting: `x:name(args)`
+is exactly `x.name(x, args)`. The receiver is evaluated once and bolted on as the first argument, so
+`acct:deposit(50)` and `acct.deposit(acct, 50)` are the same call, and the colon form is the one to write.
+There is no hidden `this`: what the method receives is the first argument you can see. A struct
 value cannot be passed by value as a parameter: pass a pointer, or return the struct, which the compiler
 implements without a copy.
 
@@ -689,8 +691,8 @@ Using a value after moving it is a compile error: `use of 'b' after its ownershi
 Every loop in safe code is a `for` over a range that is fixed when the loop starts. The counter cannot be
 assigned, and the bounds are read once, so assigning the variable the range came from does not change how
 many times the loop runs. An empty range (`5..5`) and an inverted one
-(`7..3`) run zero times. `break` leaves a loop, and `continue` is reserved for `catch` bodies and the
-`CLOSED` case of a lock.
+(`7..3`) run zero times. `break` leaves a loop (see "Control flow" below), and `continue` is not a loop
+statement here: it is reserved for `catch` bodies and the `CLOSED` case of a lock.
 
 ```rust
 let n = mut 5
@@ -707,6 +709,63 @@ for i in 0..3{
 
 A bare `loop{}` has no bound and needs `unsafe`. The only exception is the `@event_loop` function
 (see the end of this tour).
+
+#### Control flow: `break`, `continue` and lazy chains
+
+`break` leaves the **innermost** enclosing `for` (or `loop`) and carries on after it. It can sit inside
+any number of `if` or `match` blocks within that loop, and it is the only way to end a loop early:
+
+```rust
+for i in 0..6{
+	if i == 4{ break }           // prints i=0..3, then leaves the loop
+	unsafe extern{ printf("i=%llu\n", i) }
+}
+for i in 0..3{
+	for j in 0..3{
+		if j == 1{ break }       // leaves the inner loop only: prints j=0 once per i
+		unsafe extern{ printf("i=%llu j=%llu\n", i, j) }
+	}
+}
+```
+
+A `break` inside `match @lock ... OPEN` releases the lock on the way out (see "Atomics, locks and threads").
+Using `break` outside a loop is an error.
+
+`continue` does **not** yet mean "next iteration" as it does in other languages. This is a known gap: a `for` or
+`loop` has no `continue` today (it should have one, with the usual meaning), so skip an iteration by wrapping
+the rest of the body in an `if`. `continue` exists in exactly two places, and means "go back and carry on" in
+each:
+
+- at the end of a `catch(e){ ... }` handler it jumps to just past the enclosing `try{ ... }` block (see
+  "Errors"),
+- in the `CLOSED` case of a `match @lock` it retries the acquire.
+
+Anywhere else it is rejected: `'continue' can only be used inside a 'catch(e) { ... }' block, or directly in
+the 'CLOSED' case of a 'match @lock'`.
+
+An `if` or `elseif` condition made with `&&` or `||` evaluates **both** sides, as it is plain logic on two
+values. To make the chain lazy, write `&&then` or `||then`. The right side then runs only when the left side
+has not already decided the answer: `a &&then b` skips `b` when `a` is false, and `a ||then b` skips `b` when
+`a` is true. The compiler emits a compare-and-jump after each link instead of combining the two values, so a
+skipped operand is never called and its side effects never happen. A chain is evaluated left to right, and
+links can be mixed:
+
+```rust
+func noisy(name: static imut string, r: mut bool) mut bool{
+	unsafe extern{ printf("  called %s\n", name) }
+	return r
+}
+
+if noisy("a", false) && noisy("b", true){ ... }              // calls a, then b
+if noisy("a", false) &&then noisy("b", true){ ... }          // calls a only
+if noisy("c", true) ||then noisy("d", true){ ... }           // calls c only
+if noisy("e", false) &&then noisy("f", true) ||then noisy("g", true){ ... }
+                                                             // calls e, then g (f is skipped)
+```
+
+`&&then` and `||then` are written with or without a space (`&& then`), are only allowed at the root of an
+`if` or `elseif` condition (not inside a function argument, an assignment or a `match`), and `then` is not
+a reserved word elsewhere.
 
 Recursion is limited to one shape, because the compiler must be able to turn it into a bounded loop. A
 `@recursive` function:
@@ -786,7 +845,7 @@ An `unsafe dyn` array has no checks at all: no proofs, no `?` on `resize`, and n
 index past the end. It is for code that has proved the bounds in its own way.
 
 ```rust
-unsafe{
+unsafe udyn{
 	let us = mut unsafe dyn:<u64>([])
 	us = resize(us, 6)
 	for i in 0..6{ us[i] = i * 3 }
@@ -827,11 +886,25 @@ either proven it myself, or I am choosing to compile code without those guarante
 to find and easy to count. What needs it:
 
 - calling any C function (an `extern`),
-- making a `raw` pointer (`raw v`), and dereferencing one (`deref(p)`) unless it is proven alive,
+- making a `raw` pointer (`raw v`),
 - `memcopy`,
 - inline assembly (`ASM`) and `assume match`,
 - a bare `loop{}`, and an `unsafe dyn` array,
 - reading or writing a `mut` global or static that is not atomic or lock-protected.
+
+Anything that safe code proves with a `match` (a `deref` or `clone` of a pointer, a division, an arithmetic or
+compare operation on a float, a `@lock` method call) is vouched for in an `unsafe assume{` block with `assume match`, which is an assertion to the type checker
+and never runs, so it may name any expression: `assume match Some(p + i)`, `assume match d > 0`, `assume match x : finite`. Nothing else
+in `unsafe` relaxes those checks.
+
+A statement-level `unsafe` block must say why it is unsafe, by naming the reasons after the keyword:
+`unsafe assume extern{`. The reasons are `extern` (a C call), `memcopy`, `raw` (making a `raw` pointer),
+`global`, `loop`, `udyn` (an unsafe dynarray), `assume` (`assume match`),
+`call` (calling a function pointer), `asm`, `async` (a pointer across an `@async` boundary), `guard` (using a
+`@guard` type without proving it locked) and `swap` (touching a `swap` mutex field outside `match @lock`). The
+compiler checks the list both ways: a block that needs a reason it does not name is an error, and so is a block
+that names one it does not need, so the line is also what you grep for. A bare `unsafe{}` is an error. (A
+root-level `unsafe{}` that holds declarations is not a statement block and takes no list.)
 
 Passing, returning, casting and stepping a `raw` pointer is safe. `raw x` needs an addressable variable (or a
 string literal), so bind a computed value to a `let` first. Pointer arithmetic is C's: `p++`, `p--`,
@@ -847,7 +920,7 @@ extern c_abs(mut s64) mut s64
 func main() void{
 	let count = mut 5
 	let bytes = mut (count * sizeof(u64))
-	unsafe{
+	unsafe assume extern memcopy raw{
 		let base = mut malloc(bytes)            // a `raw u8`
 		let p = mut (base as u64)               // now a `raw u64`: it steps by 8
 		let start = mut p
@@ -860,6 +933,7 @@ func main() void{
 		let q = mut start
 		let sum = mut 0
 		for i in 0..count{
+			assume match Some(q)
 			sum += deref(q)
 			q++
 		}
@@ -890,7 +964,7 @@ cost (the inner loop of a numeric kernel, say). With no block, the proof holds f
 a block, it holds inside the block only:
 
 ```rust
-unsafe{
+unsafe assume{
 	for i in a{
 		assume match i in a             // no block: holds until the end of the loop body
 		total += a[i]                   // no bounds test is emitted for this read
@@ -946,7 +1020,7 @@ func add(a: mut u64, b: mut u64) mut u64{ return a + b }
 export add                                     // C sees `unsigned long add(unsigned long, unsigned long)`
 
 func main() void{
-	unsafe{
+	unsafe extern{
 		let r = mut c_apply(mut 40, mut 2)     // helper.c: return add(a, b) * 2;
 		printf("%llu\n", r)                    // 84
 	}
@@ -1000,7 +1074,7 @@ ASM "18_asm_helper.s"
 }
 
 func main() void{
-	unsafe{
+	unsafe asm extern{
 		let s = mut asm_add3(mut 1, mut 2, mut 3)    // 6
 
 		ASM relax {                // inside a function a block can be named,
@@ -1054,7 +1128,7 @@ func parse(x: mut u64) mut u64{
 @throws
 func middle(x: mut u64) mut u64{
 	?catch(e){
-		unsafe{ printf("middle: saw '%s', passing it on\n", e) }
+		unsafe extern{ printf("middle: saw '%s', passing it on\n", e) }
 		throw e                                  // re-throw the same message
 	}
 	let p = mut ? new Point{x= mut x, y= mut 1}  // freed during the unwind
@@ -1078,12 +1152,12 @@ that compiles to nothing, and it must contain at least one real `try`. Its only 
 func run(x: mut u64) void{
 	try{
 		let r = try top(x) catch(e){
-			unsafe{ printf("run(%llu): caught '%s'\n", x, e) }
+			unsafe extern{ printf("run(%llu): caught '%s'\n", x, e) }
 			continue                 // jump to just past the enclosing try{} block
 		}
-		unsafe{ printf("run(%llu): ok, r=%llu\n", x, r) }
+		unsafe extern{ printf("run(%llu): ok, r=%llu\n", x, r) }
 	}
-	unsafe{ printf("run(%llu): done\n", x) }
+	unsafe extern{ printf("run(%llu): done\n", x) }
 }
 ```
 
@@ -1383,10 +1457,9 @@ Inside `unsafe` the guarantees above are the programmer's responsibility. What e
 |---|---|
 | `loop{}` | Termination: an unbounded loop. |
 | `call(fp, ...)` on a function pointer | Termination and the call graph: the recursion check only follows direct calls, so recursion through a function pointer is possible. The inliner also refuses these calls. Not allowed in `@pure` functions. |
-| `deref` of an unproven pointer, constructing a `raw` pointer, `memcopy` | Memory safety: no liveness or bounds proof. |
+| `assume match` (a `deref` or `clone` of a pointer, a division or a float operation vouched for by hand), constructing a `raw` pointer, `memcopy` | Memory safety, division and float guarantees: the checker takes your word. |
 | `extern` calls | Everything: foreign code is outside the checker. |
 | Reading or writing statics and globals from non-atomic code | Data-race freedom. |
-| Float comparisons on unproven values | Freedom from NaN surprises. |
 
 The standard library is built on `unsafe` code (the ghost table, `memcopy`, the `pthread_*` calls). The
 guarantee is therefore "safe user code on top of a small trusted `unsafe` core", and that core is tested,
@@ -1401,7 +1474,7 @@ not proved. Costs inside that core are part of its contract, not of the safe-cod
 
 Known bugs that affect the guarantees are tracked in the `CLAUDE.md` files. One open example: reassigning
 an `owns` field reached through a pointer (`h.w = pass(h.w)`) still destructs the old value before the right
-side is evaluated.
+side is evaluated. Another: `continue` is not accepted inside a `for` or `loop` (see "Control flow").
 
 ---
 

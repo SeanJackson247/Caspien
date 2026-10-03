@@ -9,7 +9,7 @@ import "../stdlib/gt_destruct.caspien"
 import "../stdlib/gt_moved.caspien"
 
 func check(name: static imut string, ok: mut bool) void{
-	unsafe{
+	unsafe extern{
 		if ok{
 			printf("PASS %s\n", name)
 		}else{
@@ -70,7 +70,8 @@ func u64ops() mut bool{
 	}
 	// unsigned division of a value above 2^63
 	x = mut (18446744073709551615 / 10)
-	unsafe{
+	unsafe assume{
+		assume match ten != 0
 		if x != big / ten{
 			ok = false
 		}
@@ -283,7 +284,7 @@ func viaCall() mut bool{
 		ok = false
 	}
 	let arr = mut [1 + 1, 2 * 3, 10 - 4]
-	unsafe{
+	unsafe global{
 		if gv != 42{
 			ok = false
 		}
@@ -325,7 +326,7 @@ func narrow() mut bool{
 // ---- floats: folded literal vs the same operation at runtime -----------------------------------------------------------------
 func f32ops() mut bool{
 	let ok = mut true
-	unsafe{
+	unsafe assume{
 		let p = mut 0.1
 		let q = mut 0.2
 		let r = mut 1.5
@@ -336,45 +337,74 @@ func f32ops() mut bool{
 		let ten = mut 10.0
 		let z = mut 0.0
 		let x = mut (0.1 + 0.2)
+		assume match p : finite
+		assume match q : finite
+		assume match x : finite
+		assume match p+q : finite
 		if x != p + q{
 			ok = false
 		}
 		x = mut (1.5 + 2.25)
+		assume match r : finite
+		assume match s : finite
+		assume match x : finite
+		assume match r+s : finite
 		if x != r + s{
 			ok = false
 		}
 		x = mut (1.5 - 2.25)
+		assume match x : finite
+		assume match r-s : finite
 		if x != r - s{
 			ok = false
 		}
 		x = mut (3.0 * 0.5)
+		assume match t : finite
+		assume match u : finite
+		assume match x : finite
+		assume match t*u : finite
 		if x != t * u{
 			ok = false
 		}
 		x = mut (1.0 / 3.0)
 		let one = mut 1.0
+		assume match one : finite
+		assume match x : finite
+		assume match one/t : finite
 		if x != one / t{
 			ok = false
 		}
 		x = mut (10.0 / 4.0)
+		assume match x : finite
 		if x != 2.5{
 			ok = false
 		}
 		x = mut (0.0 - 1.5)
+		assume match z : finite
+		assume match x : finite
+		assume match z-r : finite
 		if x != z - r{
 			ok = false
 		}
 		x = mut (-2.5)
+		assume match x : finite
+		assume match z-2.5 : finite
 		if x != z - 2.5{
 			ok = false
 		}
 		// overflow to infinity is not folded: both sides are computed at runtime and must agree
 		x = mut (340282300000000000000000000000000000000.0 * 10.0)
+		assume match big : finite
+		assume match ten : finite
+		assume match x : finite
+		assume match big*ten : finite
 		if x != big * ten{
 			ok = false
 		}
 		// 1.0 / 0.0 is infinity at runtime; folding must leave it alone
 		x = mut (1.0 / 0.0)
+		assume match x : finite
+		assume match one/z : finite
 		if x != one / z{
 			ok = false
 		}
@@ -387,6 +417,7 @@ func f32ops() mut bool{
 		if !(1.5 >= 1.5){
 			ok = false
 		}
+		assume match 0.1+0.2 : finite
 		if 0.1 + 0.2 != p + q{
 			ok = false
 		}
@@ -415,21 +446,34 @@ func f32ops() mut bool{
 		let a1 = mut 0.1
 		let a3 = mut 0.3
 		x = mut (0.1 * 0.3)
+		assume match a1 : finite
+		assume match a3 : finite
+		assume match x : finite
+		assume match a1*a3 : finite
 		if x != a1 * a3{
 			ok = false
 		}
 		let e1 = mut 1.1
 		x = mut (1.1 * 1.1)
+		assume match e1 : finite
+		assume match x : finite
+		assume match e1*e1 : finite
 		if x != e1 * e1{
 			ok = false
 		}
 		let e2 = mut 16777216.0
 		x = mut (16777216.0 + 1.0)
+		assume match e2 : finite
+		assume match x : finite
+		assume match e2+one : finite
 		if x != e2 + one{
 			ok = false
 		}
 		x = mut (0.7 / 0.1)
 		let a7 = mut 0.7
+		assume match a7 : finite
+		assume match x : finite
+		assume match a7/a1 : finite
 		if x != a7 / a1{
 			ok = false
 		}
@@ -439,27 +483,42 @@ func f32ops() mut bool{
 
 func f64ops() mut bool{
 	let ok = mut true
-	unsafe{
+	unsafe assume{
 		let:<mut f64> p = mut 0.1
 		let:<mut f64> q = mut 0.2
 		let:<mut f64> t = mut 3.0
 		let:<mut f64> one = mut 1.0
 		let:<mut f64> z = mut 0.0
 		let:<mut f64> x = mut (0.1 + 0.2)
+		assume match p : finite
+		assume match q : finite
+		assume match x : finite
+		assume match p+q : finite
 		if x != p + q{
 			ok = false
 		}
 		x = mut (1.0 / 3.0)
+		assume match one : finite
+		assume match t : finite
+		assume match x : finite
+		assume match one/t : finite
 		if x != one / t{
 			ok = false
 		}
 		x = mut (0.0 - 1.5)
+		assume match z : finite
+		assume match x : finite
+		assume match z-1.5 : finite
 		if x != z - 1.5{
 			ok = false
 		}
 		x = mut (123456789.125 * 1000.0)
 		let:<mut f64> m = mut 123456789.125
 		let:<mut f64> k = mut 1000.0
+		assume match m : finite
+		assume match k : finite
+		assume match x : finite
+		assume match m*k : finite
 		if x != m * k{
 			ok = false
 		}

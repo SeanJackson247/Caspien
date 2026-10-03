@@ -13,7 +13,7 @@ extern atol(static imut string) mut u64
 
 func main() void{
 	?catch(e){ return }
-	unsafe{
+	unsafe extern loop udyn{
 		let n = mut 0
 		n = atol(getenv("KNUC_N"))
 		let:<mut u8> zb = mut 0

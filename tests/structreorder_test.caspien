@@ -43,7 +43,7 @@ let static g = mut Mixed{a: 9, b: 8, c: 7, d: 6}
 let static pinnedSize = mut sizeof(Pinned)
 
 func check(name: static imut string, ok: mut bool) void{
-	unsafe{
+	unsafe extern{
 		if ok{
 			printf("PASS %s\n", name)
 		}else{
@@ -84,7 +84,7 @@ func main() void{
 	check("arr1 b", arr[1].b == 6)
 	check("arr1 c", arr[1].c == 7)
 	check("arr1 d", arr[1].d == 8)
-	unsafe{
+	unsafe global{
 		check("static a", g.a == 9)
 		check("static b", g.b == 8)
 		check("static c", g.c == 7)
@@ -102,16 +102,16 @@ func main() void{
 	let p = mut Pinned{a: 1, b: 2, c: 3}
 	check("pinned b", p.b == 2)
 	check("pinned c", p.c == 3)
-	unsafe{
+	unsafe global{
 		check("pinned sizeof", pinnedSize == 32)
 	}
 	let ps = mut sizeof(Pinned)
-	unsafe{
+	unsafe global{
 		check("pinned sizeof static equals runtime", pinnedSize == ps)
 	}
 	let q = mut Ptd{a: 1, b: 2, c: 3}
-	unsafe{ let rp = mut raw q }
+	unsafe raw{ let rp = mut raw q }
 	check("raw-pointed b", q.b == 2)
-	unsafe{ printf("sizeof Mixed = %llu\n", mut sizeof(Mixed)) }
+	unsafe extern{ printf("sizeof Mixed = %llu\n", mut sizeof(Mixed)) }
 	return
 }

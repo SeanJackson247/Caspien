@@ -9,7 +9,7 @@ let static a = mut [1.5, 2.5, 3.5, 4.5, 5.5]
 let static b = mut [1, 2, 3]
 
 func check(name: static imut string, ok: mut bool) void{
-	unsafe{
+	unsafe extern{
 		if ok{
 			printf("PASS %s\n", name)
 		}else{
@@ -24,7 +24,7 @@ func main() void{
 	let t = mut 0
 	let skipped = mut 5
 	let sum = mut 0
-	unsafe{
+	unsafe global{
 		for match i in a{
 			s += a[i]
 		}
@@ -55,7 +55,8 @@ func main() void{
 	let ok2 = mut false
 	let ok3 = mut false
 	let ok4 = mut false
-	unsafe{
+	unsafe assume{
+		assume match s : finite
 		ok1 = s == 22.0
 		ok2 = t == 10
 		ok3 = skipped == 5
@@ -65,7 +66,7 @@ func main() void{
 	check("match i into array writes", ok2)
 	check("out-of-range index skips the block", ok3)
 	check("match m in array (plain for over 0..3)", ok4)
-	unsafe{
+	unsafe extern{
 		if ok1{
 			if ok2{
 				if ok3{

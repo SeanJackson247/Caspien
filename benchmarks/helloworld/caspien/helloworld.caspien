@@ -6,7 +6,7 @@ import "../../../stdlib/gt_destruct.caspien"
 import "../../../stdlib/gt_moved.caspien"
 
 func main() void{
-	unsafe{
+	unsafe extern{
 		printf("Hello, World!\n")
 	}
 }

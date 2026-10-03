@@ -1104,6 +1104,39 @@ public class TypeChecker {
      */
     private enum TryBlockBoundaryMarker { MARK }
 
+    /** The reasons a statement-level `unsafe` block must name (`unsafe deref extern{`), each matching one rule that otherwise needs a proof or is refused in safe code. */
+    static final Set<String> UNSAFE_TAGS = new java.util.LinkedHashSet<>(Arrays.asList(
+            "extern", "memcopy", "raw", "global", "loop", "udyn",
+            "assume", "call", "asm", "async", "guard", "swap"));
+
+    /** One written `unsafe ...{` block: what it declares, and (unioned over every time it is checked, e.g. per generic instantiation) what it really used. */
+    private static class UnsafeBlockRecord {
+        final Token tok;
+        final Set<String> declared = new java.util.TreeSet<>();
+        final Set<String> used = new java.util.TreeSet<>();
+        UnsafeBlockRecord(Token tok) { this.tok = tok; }
+    }
+
+    private final Map<String, UnsafeBlockRecord> unsafeBlockRecords = new java.util.LinkedHashMap<>();
+
+    /**
+     * Called at every place where `unsafe` lets something through that safe code would refuse (or demand a proof for): true when
+     * the code is in unsafe context, and notes that the enclosing tagged block needed `tag`. Call it only when the bypass is
+     * actually exercised (the proof is missing / the operation is the unsafe one), so a declared-but-unneeded tag can be flagged.
+     */
+    private boolean unsafeBypass(Scope scope, String tag) {
+        if (!"unsafe".equals(scope.currentSafety)) {
+            return false;
+        }
+        for (Scope sc = scope; sc != null; sc = sc.parent) {
+            if (sc.unsafeBlock != null) {
+                sc.unsafeBlock.used.add(tag);
+                break;
+            }
+        }
+        return true;
+    }
+
     private static class Scope {
         final Scope parent;
         final Map<String, TypeInfo> vars = new HashMap<>();
@@ -1182,6 +1215,8 @@ public class TypeChecker {
          * "unsafe"/"safe"/"indeterminate", never null.
          */
         final String currentSafety;
+        /** The tagged 'unsafe' block this scope sits in (set on the scope that block opens, found via parents); null outside any statement-level unsafe block. */
+        UnsafeBlockRecord unsafeBlock;
         /**
          * "Validation of liveness, type and bounds within a match
          * block," confirmed directly -- every MatchPattern currently
@@ -2021,6 +2056,7 @@ public class TypeChecker {
         validateNoRecursiveStructs();
         validateLockGuardExclusivity();
         validateMainFunction();
+        validateUnsafeBlockTags();
     }
 
     /**
@@ -3971,6 +4007,7 @@ public class TypeChecker {
         copy.typeParams = src.typeParams == null ? null : new ArrayList<>(src.typeParams);
         copy.typeParamBounds = src.typeParamBounds == null ? null : new ArrayList<>(src.typeParamBounds);
         copy.decorators = src.decorators;
+        copy.unsafeTags = src.unsafeTags;
         copy.isPubBlockMember = src.isPubBlockMember;
         copy.isStatic = src.isStatic;
         copy.isConst = src.isConst;
@@ -4627,7 +4664,7 @@ public class TypeChecker {
      * `match @lock` statement).
      */
     private void requireGuardOrUnsafe(TypeInfo t, String name, Scope scope, Token at) {
-        if (!isSwapLockStructType(t) && !t.isAtomic && !scope.currentSafety.equals("unsafe")) {
+        if (!isSwapLockStructType(t) && !t.isAtomic && !unsafeBypass(scope, "global")) {
             throw new CompilerException("type", at.file, at.line,
                     "'" + name + "' is a global/static variable -- in safe code, only an atomic primitive or "
                             + "a struct with a 'swap'-tagged atomic mutex-state field (touched through its "
@@ -8057,7 +8094,7 @@ public class TypeChecker {
                     // not a general loosening; a second bare 'loop{}' in
                     // the same '@event_loop' function still needs
                     // 'unsafe' the ordinary way.
-                    boolean alreadyUnsafe = scope.currentSafety.equals("unsafe");
+                    boolean alreadyUnsafe = unsafeBypass(scope, "loop");
                     boolean eventLoopExempt = !alreadyUnsafe && func != null
                             && func.eventLoopSafeLoopCount == 0
                             && hasDecorator(func.funcToken.decorators, "event_loop");
@@ -8149,6 +8186,9 @@ public class TypeChecker {
                                 "'unsafe' cannot be nested inside 'safe'");
                     }
                     Scope safetyBlockScope = new Scope(scope, stmt.text);
+                    if (stmt.text.equals("unsafe")) {
+                        safetyBlockScope.unsafeBlock = recordUnsafeBlock(stmt);
+                    }
                     checkLinesInScope(stmt.childs, safetyBlockScope, func, insideLoop);
                     // Same reasoning as an 'if' branch or match block --
                     // an 'unsafe'/'safe' block's own natural end isn't a
@@ -8263,7 +8303,7 @@ public class TypeChecker {
         if (stmt.type == TokenType.VARREF) {
             AsmInfo info = lookupAsmName(stmt.text, scope);
             if (info != null) {
-                if (!"unsafe".equals(scope.currentSafety)) {
+                if (!unsafeBypass(scope, "asm")) {
                     throw new CompilerException("type", stmt.file, stmt.line,
                             "invoking '" + stmt.text + "' requires 'unsafe' code");
                 }
@@ -8288,7 +8328,7 @@ public class TypeChecker {
      * point).
      */
     private void checkAsmDeclaration(Token stmt, Scope scope) {
-        if (!"unsafe".equals(scope.currentSafety)) {
+        if (!unsafeBypass(scope, "asm")) {
             throw new CompilerException("type", stmt.file, stmt.line,
                     "declaring 'ASM' requires 'unsafe' code");
         }
@@ -8499,8 +8539,73 @@ public class TypeChecker {
      * other restrictions; being inside 'unsafe' is this whole
      * statement's own precondition, not an exemption from it.
      */
+    /** Registers (or finds) the record of a statement-level `unsafe` block and validates its tag words. */
+    private UnsafeBlockRecord recordUnsafeBlock(Token stmt) {
+        if (stmt.synthesizedUnsafe) {
+            return null;
+        }
+        String key = stmt.file + ":" + stmt.line + ":" + (stmt.unsafeTags == null ? "" : String.join(",", stmt.unsafeTags));
+        UnsafeBlockRecord rec = unsafeBlockRecords.get(key);
+        if (rec == null) {
+            rec = new UnsafeBlockRecord(stmt);
+            if (stmt.unsafeTags != null) {
+                for (String tag : stmt.unsafeTags) {
+                    if (!UNSAFE_TAGS.contains(tag) && System.getenv("CASPIEN_UNSAFE_REPORT") == null) {
+                        throw new CompilerException("type", stmt.file, stmt.line,
+                                "'" + tag + "' is not an unsafe tag -- the tags are " + String.join(" ", UNSAFE_TAGS));
+                    }
+                    if (!rec.declared.add(tag)) {
+                        throw new CompilerException("type", stmt.file, stmt.line, "unsafe tag '" + tag + "' is written twice");
+                    }
+                }
+            }
+            unsafeBlockRecords.put(key, rec);
+        }
+        return rec;
+    }
+
+    /**
+     * After the whole program is checked: every statement-level `unsafe` block must name exactly the reasons it needs. A bare
+     * `unsafe{}`, a needed reason that is not written, and a written reason the block does not need are all errors. When the
+     * environment variable CASPIEN_UNSAFE_REPORT names a file, the needed tags of every block are appended there
+     * (file TAB line TAB tags) and nothing is reported -- the migration helper tests/unsafe_tags_migrate.py reads it.
+     */
+    private void validateUnsafeBlockTags() {
+        String reportPath = System.getenv("CASPIEN_UNSAFE_REPORT");
+        if (reportPath != null && !reportPath.isEmpty()) {
+            StringBuilder sb = new StringBuilder();
+            for (UnsafeBlockRecord rec : unsafeBlockRecords.values()) {
+                sb.append(rec.tok.file).append('\t').append(rec.tok.line).append('\t').append(String.join(" ", rec.used)).append('\n');
+            }
+            try {
+                java.nio.file.Files.write(java.nio.file.Paths.get(reportPath), sb.toString().getBytes(),
+                        java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND);
+            } catch (java.io.IOException e) {
+                throw new IllegalStateException("cannot write " + reportPath, e);
+            }
+            return;
+        }
+        for (UnsafeBlockRecord rec : unsafeBlockRecords.values()) {
+            Set<String> missing = new java.util.TreeSet<>(rec.used);
+            missing.removeAll(rec.declared);
+            Set<String> unused = new java.util.TreeSet<>(rec.declared);
+            unused.removeAll(rec.used);
+            if (!rec.declared.isEmpty() && missing.isEmpty() && unused.isEmpty()) {
+                continue;
+            }
+            String need = rec.used.isEmpty() ? "nothing (remove the 'unsafe' block)" : "'unsafe " + String.join(" ", rec.used) + "{'";
+            if (rec.declared.isEmpty()) {
+                throw new CompilerException("type", rec.tok.file, rec.tok.line,
+                        "a bare 'unsafe' block must say why it is unsafe; this one needs " + need);
+            }
+            throw new CompilerException("type", rec.tok.file, rec.tok.line,
+                    "this 'unsafe " + String.join(" ", rec.declared) + "' block " + (missing.isEmpty() ? "" : "also needs " + missing + (unused.isEmpty() ? "" : " and "))
+                            + (unused.isEmpty() ? "" : "does not need " + unused) + " -- it needs exactly " + need);
+        }
+    }
+
     private List<Token.MatchPattern> checkAssumeMatchCondition(Token stmt, Scope scope, FuncInfo func) {
-        if (!scope.currentSafety.equals("unsafe")) {
+        if (!unsafeBypass(scope, "assume")) {
             throw new CompilerException("type", stmt.file, stmt.line,
                     "'assume match' is only allowed inside 'unsafe' code");
         }
@@ -8508,7 +8613,13 @@ public class TypeChecker {
         if (stmt.assumeFieldVariants != null) {
             checkAssumeFieldVariant(stmt, scope, func, patterns);
         } else {
-            checkMatchCondition(stmt.sub.get(0), scope, func, patterns);
+            boolean savedAssumeKeyMode = assumeKeyMode;
+            assumeKeyMode = true;
+            try {
+                checkMatchCondition(stmt.sub.get(0), scope, func, patterns);
+            } finally {
+                assumeKeyMode = savedAssumeKeyMode;
+            }
         }
         return patterns;
     }
@@ -8526,10 +8637,40 @@ public class TypeChecker {
      */
     private void checkAssumeFieldVariant(Token stmt, Scope scope, FuncInfo func, List<Token.MatchPattern> out) {
         Token fieldAccess = stmt.sub.get(0);
+        {
+            // 'assume match x : finite' / 'finite|infinite' -- the assume form of a float-state match: it records
+            // the same "float_state" proof a real `match x{ finite:{..} .. }` case body has, and never runs.
+            if (fieldAccess.type == TokenType.OPERATOR && fieldAccess.text.equals(".")) {
+                fieldAccess.isCompilerSynthesizedSwapAccess = true;
+            }
+            TypeInfo floatType = resolveExprType(fieldAccess, scope, func);
+            if (isFloatType(floatType.baseType)) {
+                Set<String> allowed = floatType.floatStates != null ? floatType.floatStates : FLOAT_STATE_NAMES;
+                for (String state : stmt.assumeFieldVariants) {
+                    if (!isFloatStateName(state)) {
+                        throw new CompilerException("type", stmt.file, stmt.line,
+                                "'" + state + "' isn't a valid float state -- expected 'finite', 'infinite', or 'nan'");
+                    }
+                    if (!allowed.contains(state)) {
+                        throw new CompilerException("type", stmt.file, stmt.line,
+                                "'" + state + "' is impossible here -- '" + floatType.canonical()
+                                        + "'s own state modifier already rules it out");
+                    }
+                }
+                String floatSlot = exprKeyOf(fieldAccess);
+                if (floatSlot != null) {
+                    out.add(new Token.MatchPattern(floatSlot, "float_state", null));
+                }
+                return;
+            }
+        }
         if (fieldAccess.type != TokenType.OPERATOR || !fieldAccess.text.equals(".")) {
             throw new CompilerException("type", fieldAccess.file, fieldAccess.line,
                     "'assume match x.field : VARIANT' requires a '.' member access on the left");
         }
+        // 'assume match r.status : LIVE' only names the field for the checker; nothing is read or written at run time,
+        // so it is not an access to a 'swap' field that would need the 'swap' tag.
+        fieldAccess.isCompilerSynthesizedSwapAccess = true;
         TypeInfo fieldType = resolveExprType(fieldAccess, scope, func);
         EnumInfo enumInfo = enums.get(fieldType.baseType);
         if (enumInfo == null) {
@@ -9320,7 +9461,8 @@ public class TypeChecker {
             return;
         }
         if (node.type == TokenType.OPERATOR && (node.text.equals("!=") || node.text.equals(">"))
-                && node.left.type == TokenType.VARREF && node.right.type == TokenType.INTEGER
+                && (node.left.type == TokenType.VARREF || (assumeKeyMode && exprKeyOf(node.left) != null))
+                && node.right.type == TokenType.INTEGER
                 && node.right.text.equals("0")) {
             // "match rht!=0 and lft!=0{ return lft/rht }" -- confirmed
             // directly, a real, dedicated match-condition case: proving
@@ -9379,7 +9521,7 @@ public class TypeChecker {
             // either signedness, so it's always sufficient regardless.
             boolean sufficientForDivision = node.text.equals(">") || (node.text.equals("!=") && isUnsigned);
             if (sufficientForDivision) {
-                out.add(new Token.MatchPattern(slotKeyOf(node.left), "nonzero", null));
+                out.add(new Token.MatchPattern(proofKeyOf(node.left), "nonzero", null));
             }
             return;
         }
@@ -9545,7 +9687,7 @@ public class TypeChecker {
             // already have.
             resolveExprType(node, scope, func);
             Token argExpr = collectSingleBuiltinArg(node, "Some", scope, func).get(0);
-            out.add(new Token.MatchPattern(slotKeyOf(argExpr), "alive", null));
+            out.add(new Token.MatchPattern(proofKeyOf(argExpr), "alive", null));
             return;
         }
         // "we must update the match statement to no longer take a
@@ -10289,7 +10431,7 @@ public class TypeChecker {
                     "return type mismatch: function returns '" + func.returnType.canonical()
                             + "' but this statement returns '" + exprType.canonical() + "'");
         }
-        if (func.isAsync && containsPointerAnywhere(func.returnType) && !scope.currentSafety.equals("unsafe")) {
+        if (func.isAsync && containsPointerAnywhere(func.returnType) && !unsafeBypass(scope, "async")) {
             throw new CompilerException("type", returnTok.file, returnTok.line,
                     "returning '" + func.returnType.canonical() + "' (a pointer, or a struct with one "
                             + "nested somewhere inside it) from an '@async' function requires 'unsafe' "
@@ -11158,11 +11300,98 @@ public class TypeChecker {
         if (key == null) {
             return;
         }
+        java.util.regex.Pattern word = java.util.regex.Pattern.compile("(?<![A-Za-z0-9_.])" + java.util.regex.Pattern.quote(key) + "(?![A-Za-z0-9_])");
         for (Token.MatchPattern p : scope.activeMatchPatterns) {
             if (key.equals(p.slotKey) || key.equals(p.rightSlotKey)) {
                 p.invalidated = true;
+            } else if (p.slotKey != null && p.slotKey.startsWith("(") && word.matcher(p.slotKey).find()) {
+                p.invalidated = true; // an assumed fact about an expression ("p+i") dies when any variable in it is written
             }
         }
+    }
+
+    /** True while the condition of an 'assume match' is being checked: a proof there is an assertion to the checker that never runs, so it may name an arbitrary expression, not only a variable. */
+    private boolean assumeKeyMode = false;
+
+    /**
+     * A canonical key for an arithmetic expression over variables and integer literals ("(p+i)"), used only to record
+     * and look up facts vouched for with 'assume match'; null when the expression has any other shape. Always starts with
+     * "(" so it can never collide with a variable/field slot key.
+     */
+    private String exprKeyOf(Token node) {
+        if (node == null) {
+            return null;
+        }
+        if (node.type == TokenType.DELINEATOR && node.text.equals("(") && node.childs != null && node.childs.size() == 1) {
+            return exprKeyOf(node.childs.get(0));
+        }
+        if (node.type == TokenType.INTEGER || node.type == TokenType.FLOAT) {
+            return node.text;
+        }
+        String slot = slotKeyOf(node);
+        if (slot != null) {
+            return slot;
+        }
+        if (node.type == TokenType.OPERATOR && node.text.equals("-") && node.right == null && node.left != null) {
+            String uk = exprKeyOf(node.left);
+            return uk == null ? null : "(-" + uk + ")";
+        }
+        if (node.type == TokenType.OPERATOR && node.text.equals(".") && node.left != null && node.right != null
+                && node.right.type == TokenType.VARREF) {
+            String dk = exprKeyOf(node.left);
+            return dk == null ? null : dk + "." + node.right.text;
+        }
+        if (node.type == TokenType.OPERATOR && node.text.equals("LOOKUP") && node.left != null && node.right != null
+                && !node.right.childs.isEmpty()) {
+            String lk = exprKeyOf(node.left);
+            String ik = exprKeyOf(node.right.childs.get(0));
+            return lk == null || ik == null ? null : lk + "[" + ik + "]";
+        }
+        if (node.type == TokenType.OPERATOR && node.text.equals("CALL") && node.left != null
+                && node.left.type == TokenType.VARREF && node.right != null) {
+            // a plain call `f(a, b)` keyed by name and argument keys (for 'assume match f(x) : finite')
+            List<Token> callArgs = new ArrayList<>();
+            if (!node.right.childs.isEmpty()) {
+                collectCommaArgs(node.right.childs.get(0), callArgs);
+            }
+            StringBuilder sb = new StringBuilder(node.left.text).append("(");
+            for (int ai = 0; ai < callArgs.size(); ai++) {
+                String ak = exprKeyOf(callArgs.get(ai));
+                if (ak == null) {
+                    return null;
+                }
+                sb.append(ai > 0 ? "," : "").append(ak);
+            }
+            return sb.append(")").toString();
+        }
+        if (node.type == TokenType.OPERATOR && node.left != null && node.right != null
+                && java.util.Arrays.asList("+", "-", "*", "/", "%").contains(node.text)) {
+            String l = exprKeyOf(node.left);
+            String r = exprKeyOf(node.right);
+            return l == null || r == null ? null : "(" + l + node.text + r + ")";
+        }
+        return null;
+    }
+
+    /** The key a proof is recorded under: the slot key, or (in an 'assume match' condition only) the expression key. */
+    private String proofKeyOf(Token node) {
+        String k = slotKeyOf(node);
+        return (k == null && assumeKeyMode) ? exprKeyOf(node) : k;
+    }
+
+    /** The key a proof is looked up under: the slot key, else the expression key. */
+    private String lookupKeyOf(Token node) {
+        String k = slotKeyOf(node);
+        return k != null ? k : exprKeyOf(node);
+    }
+
+    /** Source-like text of an expression, for hints in error messages. */
+    private String exprHint(Token node) {
+        String k = exprKeyOf(node);
+        if (k == null) {
+            return node.text;
+        }
+        return k.startsWith("(") && k.endsWith(")") ? k.substring(1, k.length() - 1) : k;
     }
 
     /**
@@ -12138,16 +12367,13 @@ public class TypeChecker {
             }
             return;
         }
-        if (scope.currentSafety.equals("unsafe")) {
-            return;
-        }
         if (!isProvenNonzero(divisorExpr, scope)) {
             throw new CompilerException("type", op.file, op.line,
                     "'" + op.text + "' requires the divisor to be proven nonzero first (`match "
                             + divisorExpr.text + " != 0{...}` for an unsigned type, or `match "
                             + divisorExpr.text + " > 0{...}` for a signed one -- `!=0` alone "
                             + "isn't enough for a signed divisor, since it doesn't rule out the type's own "
-                            + "minimum value divided by -1, which overflows), or 'unsafe' code");
+                            + "minimum value divided by -1, which overflows), or vouched for with 'assume match' in an 'unsafe assume' block [needs: assume match " + exprHint(divisorExpr) + " != 0]");
         }
     }
 
@@ -12488,12 +12714,12 @@ public class TypeChecker {
                             "'" + op.asyncCallKind.toLowerCase() + "' can only be used on an '@async' "
                                     + "function -- '" + funcName + "' isn't one");
                 }
-                if (op.asyncCallKind != null && !scope.currentSafety.equals("unsafe")) {
+                if (op.asyncCallKind != null) {
                     // "Passing a pointer, including nested within
                     // struct members, would be unsafe," confirmed
                     // directly.
                     for (int i = 0; i < argNodes.size(); i++) {
-                        if (containsPointerAnywhere(candidate.paramTypes.get(i))) {
+                        if (containsPointerAnywhere(candidate.paramTypes.get(i)) && !unsafeBypass(scope, "async")) {
                             throw new CompilerException("type", argNodes.get(i).file, argNodes.get(i).line,
                                     "passing '" + candidate.paramTypes.get(i).canonical() + "' (a pointer, "
                                             + "or a struct with one nested somewhere inside it) across "
@@ -12578,7 +12804,7 @@ public class TypeChecker {
      * the other end for an indeterminate value to coerce against.
      */
     private TypeInfo checkExternCall(ExternInfo info, Token op, Scope scope, FuncInfo func) {
-        if (!"unsafe".equals(scope.currentSafety)) {
+        if (!unsafeBypass(scope, "extern")) {
             throw new CompilerException("type", op.file, op.line,
                     "calling extern '" + info.name + "' requires 'unsafe' code");
         }
@@ -13005,7 +13231,7 @@ public class TypeChecker {
             // element base type exactly, the identical "fill value must
             // match the element type" check `resize`'s own 3-arg form
             // already makes.
-            if (!scope.currentSafety.equals("unsafe")) {
+            if (!unsafeBypass(scope, "udyn")) {
                 throw new CompilerException("type", op.file, op.line,
                         "'len' with a terminator argument can only be used from within 'unsafe' code");
             }
@@ -13158,10 +13384,11 @@ public class TypeChecker {
         // Safe code may dereference only a pointer proven non-null and alive:
         // an 'auto' pointer, a 'some'-tagged pointer, or one inside a
         // 'match Some(p)' (the same rule '.' member access uses).
-        if (!"unsafe".equals(scope.currentSafety) && requiresAliveProof(argType, argExpr, scope)) {
+        if (requiresAliveProof(argType, argExpr, scope)) {
             throw new CompilerException("type", op.file, op.line,
-                    "'deref' of a pointer requires 'unsafe' code unless the pointer is proven alive -- "
-                            + "'auto', 'some'-tagged, or inside 'match Some(...)'");
+                    "'deref' of a pointer requires the pointer to be proven alive -- "
+                            + "'auto', 'some'-tagged, inside 'match Some(...)', or vouched for with "
+                            + "'assume match Some(...)' in an 'unsafe assume' block [needs: assume match Some(" + exprHint(argExpr) + ")]");
         }
         return new TypeInfo(null, argType.mutability, argType.baseType, argType.aliasName);
     }
@@ -13192,10 +13419,11 @@ public class TypeChecker {
         // The source is read, so it is held to the same rule as `deref`: safe code may clone only a pointer proven
         // non-null and alive ('auto', 'some'-tagged, or inside 'match Some'). `clone` itself does no null check
         // on its source.
-        if (!"unsafe".equals(scope.currentSafety) && requiresAliveProof(argType, argExpr, scope)) {
+        if (requiresAliveProof(argType, argExpr, scope)) {
             throw new CompilerException("type", op.file, op.line,
-                    "'clone' of a pointer requires 'unsafe' code unless the pointer is proven alive -- "
-                            + "'auto', 'some'-tagged, or inside 'match Some(...)'");
+                    "'clone' of a pointer requires the pointer to be proven alive -- "
+                            + "'auto', 'some'-tagged, inside 'match Some(...)', or vouched for with "
+                            + "'assume match Some(...)' in an 'unsafe assume' block [needs: assume match Some(" + exprHint(argExpr) + ")]");
         }
         // A failed allocation throws, so what comes back is never null: `owns some`, like `new`.
         return argType.withStorage("owns").withSome(true); // keeps dynarray/array shape, mutability and alias
@@ -13216,7 +13444,7 @@ public class TypeChecker {
      * from the function-pointer value's own recorded signature.
      */
     private TypeInfo checkCallBuiltin(Token op, Scope scope, FuncInfo func) {
-        if (!scope.currentSafety.equals("unsafe")) {
+        if (!unsafeBypass(scope, "call")) {
             throw new CompilerException("type", op.file, op.line,
                     "'call' can only be used from within 'unsafe' code");
         }
@@ -13361,7 +13589,7 @@ public class TypeChecker {
      * one is gated, not using one already in hand.
      */
     private TypeInfo checkMemcopyBuiltin(Token op, Scope scope, FuncInfo func) {
-        if (!scope.currentSafety.equals("unsafe")) {
+        if (!unsafeBypass(scope, "memcopy")) {
             throw new CompilerException("type", op.file, op.line,
                     "'memcopy' can only be used from within 'unsafe' code");
         }
@@ -13561,7 +13789,7 @@ public class TypeChecker {
      * is deliberately bypassed for the inner CALL node on this path.
      */
     private TypeInfo checkUnsafeDynWrapper(Token op, Scope scope, FuncInfo func) {
-        if (!scope.currentSafety.equals("unsafe")) {
+        if (!unsafeBypass(scope, "udyn")) {
             throw new CompilerException("type", op.file, op.line,
                     "'unsafe dyn(...)' can only be used from within 'unsafe' code");
         }
@@ -13632,7 +13860,7 @@ public class TypeChecker {
         // the potential for uninitialised memory, but its ok because it
         // is restricted to unsafe mode," confirmed directly.
         if (isUnsafeTarget) {
-            if (!scope.currentSafety.equals("unsafe")) {
+            if (!unsafeBypass(scope, "udyn")) {
                 throw new CompilerException("type", op.file, op.line,
                         "'resize' on an 'unsafe dynarray' can only be used from within 'unsafe' code");
             }
@@ -14331,13 +14559,20 @@ public class TypeChecker {
         // builds, which are never held to this (they're exactly the
         // guaranteed-unwind-safe alternative this restriction exists to
         // steer ordinary, safe code toward).
-        if ((isLockMethod || isUnlockMethod) && !scope.currentSafety.equals("unsafe")
-                && !at.isCompilerSynthesizedLockCall) {
+        if ((isLockMethod || isUnlockMethod) && !at.isCompilerSynthesizedLockCall && !unsafeBypass(scope, "guard")) {
             throw new CompilerException("type", at.file, at.line,
                     "a bare call to '" + candidate.name + "' requires 'unsafe' code -- use a "
                             + "'lock EXPR{...}' block instead for a guaranteed-unwind-safe way in");
         }
-        if (scope.currentSafety.equals("unsafe")) {
+        if ("unsafe".equals(scope.currentSafety)) {
+            // Unsafe code is not held to the lock discipline (and does not track it); a method that needs the guard locked
+            // and finds it not proven locked is what the 'lock' tag is for.
+            if (!isLockMethod && !isUnlockMethod) {
+                String unsafeSlotKey = slotKeyOf(receiverNode);
+                if (unsafeSlotKey == null || !scope.lockedGuardSlots.contains(unsafeSlotKey)) {
+                    unsafeBypass(scope, "guard");
+                }
+            }
             return;
         }
         String slotKey = slotKeyOf(receiverNode);
@@ -14970,9 +15205,21 @@ public class TypeChecker {
         return result;
     }
 
+    /** Runs a pure proof check; in unsafe context a failure is not an error but records that the enclosing block needed `tag`. */
+    private void checkOrBypass(Scope scope, String tag, Runnable check) {
+        try {
+            check.run();
+        } catch (CompilerException e) {
+            if (unsafeBypass(scope, tag)) {
+                return;
+            }
+            throw e;
+        }
+    }
+
     private void requireMethodLockProofs(FuncInfo candidate, Token receiverNode, List<Token> argNodes, Scope scope,
             Token at) {
-        if (scope.currentSafety.equals("unsafe") || candidate.funcToken.decorators == null) {
+        if (candidate.funcToken.decorators == null) {
             return;
         }
         String receiverSlot = slotKeyOf(receiverNode);
@@ -15011,7 +15258,8 @@ public class TypeChecker {
                     String requiredKind = operatorText.equals("into") ? "into" : "in";
                     int paramIdx = candidate.paramNames.indexOf(paramName);
                     Token argExpr = paramIdx >= 0 && paramIdx < argNodes.size() ? argNodes.get(paramIdx) : null;
-                    String argSlot = argExpr != null ? slotKeyOf(argExpr) : null;
+                    // boundsSlotKeyOf, not slotKeyOf: a literal index ("match 0 into thr.backing{ thr.set(thr, 0, v) }") is provable too
+                    String argSlot = argExpr != null ? boundsSlotKeyOf(argExpr) : null;
                     String targetSlot = receiverSlot != null ? receiverSlot + "." + fieldName : null;
                     boolean proven = argSlot != null && targetSlot != null && scope.activeMatchPatterns.stream()
                             .anyMatch(p -> !p.invalidated && (p.kind.equals(requiredKind)
@@ -15083,8 +15331,7 @@ public class TypeChecker {
      */
     private void requireStructLockProof(StructInfo structInfo, String memberName, Token receiverNode, Scope scope,
             Token at) {
-        if (structInfo.lockFieldName == null || memberName.equals(structInfo.lockFieldName)
-                || scope.currentSafety.equals("unsafe")) {
+        if (structInfo.lockFieldName == null || memberName.equals(structInfo.lockFieldName)) {
             return;
         }
         String slotKey = slotKeyOf(receiverNode);
@@ -15101,7 +15348,11 @@ public class TypeChecker {
     }
 
     private void requireGuardCurrentlyLocked(TypeInfo receiverType, Token receiverNode, Scope scope, Token at) {
-        if (!isGuardType(receiverType) || scope.currentSafety.equals("unsafe")) {
+        checkOrBypass(scope, "guard", () -> requireGuardCurrentlyLockedImpl(receiverType, receiverNode, scope, at));
+    }
+
+    private void requireGuardCurrentlyLockedImpl(TypeInfo receiverType, Token receiverNode, Scope scope, Token at) {
+        if (!isGuardType(receiverType)) {
             return;
         }
         String slotKey = slotKeyOf(receiverNode);
@@ -15584,7 +15835,7 @@ public class TypeChecker {
             // unsafe dynarray's own '[]' is unconditionally permitted
             // once inside 'unsafe' code, the same unchecked-write
             // precedent a raw pointer already has.
-            if (!scope.currentSafety.equals("unsafe")) {
+            if (!unsafeBypass(scope, "udyn")) {
                 throw new CompilerException("type", op.file, op.line,
                         "'[]' on an 'unsafe dynarray' can only be used from within 'unsafe' code -- it "
                                 + "has no bounds-proof mechanism at all, safe or otherwise");
@@ -16111,7 +16362,7 @@ public class TypeChecker {
     }
 
     private boolean isProvenFloatState(Token targetExpr, Scope scope) {
-        String key = slotKeyOf(targetExpr);
+        String key = lookupKeyOf(targetExpr);
         if (key == null) {
             return false;
         }
@@ -16160,6 +16411,10 @@ public class TypeChecker {
             // wrapped and bare literals identically.
             unwrapped = unwrapped.left;
         }
+        if (unwrapped.type == TokenType.OPERATOR && unwrapped.right == null && unwrapped.left != null
+                && unwrapped.text.equals("-") && unwrapped.left.type == TokenType.FLOAT) {
+            return; // a negated float literal is as known as the literal
+        }
         if (unwrapped.type == TokenType.FLOAT) {
             // A literal's value is already known at compile time --
             // the same "a literal divisor never needs a proof" shape
@@ -16170,10 +16425,7 @@ public class TypeChecker {
             // finite.
             return;
         }
-        if (type.floatStates != null) {
-            return;
-        }
-        if (scope.currentSafety.equals("unsafe")) {
+        if (type.floatStates != null || type.floatLiteral) {
             return;
         }
         if (isProvenFloatState(unwrapped, scope)) {
@@ -16182,7 +16434,9 @@ public class TypeChecker {
         throw new CompilerException("type", op.file, op.line,
                 "'" + op.text + "' on an unproven '" + type.baseType + "' isn't permitted -- prove it first with "
                         + "'match " + describeConditionForError(unwrapped) + "{ finite:{...} infinite:{...} "
-                        + "nan:{...} }' (or a narrower set), or use 'unsafe' code");
+                        + "nan:{...} }' (or a narrower set), or vouch for it with 'assume match "
+                        + describeConditionForError(unwrapped) + " : finite' in an 'unsafe assume' block"
+                        + (exprKeyOf(unwrapped) != null ? " [needs: assume match " + exprHint(unwrapped) + " : finite]" : ""));
     }
 
     /**
@@ -16215,7 +16469,7 @@ public class TypeChecker {
     }
 
     private boolean isProvenAlive(Token targetExpr, Scope scope) {
-        String key = slotKeyOf(targetExpr);
+        String key = lookupKeyOf(targetExpr);
         if (key == null) {
             return false;
         }
@@ -16229,7 +16483,7 @@ public class TypeChecker {
 
     /** "match rht!=0 and lft!=0{ return lft/rht }" -- the division-safety counterpart of isProvenAlive just above, identical shape. */
     private boolean isProvenNonzero(Token targetExpr, Scope scope) {
-        String key = slotKeyOf(targetExpr);
+        String key = lookupKeyOf(targetExpr);
         if (key == null) {
             return false;
         }
@@ -16399,7 +16653,7 @@ public class TypeChecker {
         if (!memberName.equals(structInfo.swapFieldName)) {
             return;
         }
-        if (op.isCompilerSynthesizedSwapAccess || scope.currentSafety.equals("unsafe")) {
+        if (op.isCompilerSynthesizedSwapAccess || unsafeBypass(scope, "swap")) {
             return;
         }
         throw new CompilerException("type", op.file, op.line,
@@ -18067,6 +18321,7 @@ public class TypeChecker {
         new TreeBuilder().buildLines(parsed);
 
         Token funcTok = parsed.get(0).childs.get(0);
+        markSynthesizedUnsafe(funcTok);
         Token callNode = findCallNodeByCalleeName(funcTok, asyncFuncInfo.name);
         if (callNode == null) {
             throw new IllegalStateException(
@@ -18082,6 +18337,21 @@ public class TypeChecker {
         functions.computeIfAbsent(trampolineInfo.name, k -> new ArrayList<>()).add(trampolineInfo);
         checkFunctionBody(trampolineInfo);
         appendSynthesizedRootToken(funcTok);
+    }
+
+    /** Marks every 'unsafe' block inside compiler-written code as exempt from the unsafe-tag rules. */
+    private void markSynthesizedUnsafe(Token node) {
+        if (node == null) {
+            return;
+        }
+        if (node.type == TokenType.KEYWORD && node.text.equals("unsafe")) {
+            node.synthesizedUnsafe = true;
+        }
+        if (node.childs != null) {
+            for (Token c : node.childs) {
+                markSynthesizedUnsafe(c);
+            }
+        }
     }
 
     /** Recursive left/right/childs/sub walk (the same generic Token-tree traversal shape `collectCallTargetsAndBanInvoke` in BytecodeEmitter already uses for an unrelated purpose) for the first "CALL" node whose own callee is a bare VARREF named `calleeName` -- used only to find synthesizeAsyncTrampoline's own single, known-unique call into the real "@async" function it wraps. */
@@ -18136,7 +18406,7 @@ public class TypeChecker {
 
     private TypeInfo checkAddressOf(Token op, Scope scope, FuncInfo func) {
         String storage = op.text;
-        if (storage.equals("raw") && !scope.currentSafety.equals("unsafe")) {
+        if (storage.equals("raw") && !unsafeBypass(scope, "raw")) {
             throw new CompilerException("type", op.file, op.line,
                     "'raw' pointers can only be constructed from within 'unsafe' code");
         }

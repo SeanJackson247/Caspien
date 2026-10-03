@@ -11,10 +11,10 @@ struct Pair{
 }
 func check(name: static imut string, got: imut u64, want: imut u64) mut u64{
 	if got == want{
-		unsafe{ printf("PASS %s\n", name) }
+		unsafe extern{ printf("PASS %s\n", name) }
 		return 0
 	}
-	unsafe{ printf("FAIL %s got %llu want %llu\n", name, got, want) }
+	unsafe extern{ printf("FAIL %s got %llu want %llu\n", name, got, want) }
 	return 1
 }
 @throws
@@ -42,5 +42,5 @@ func main() void{
 			fails += check("match Some on clone", 1, 1)
 		}
 	}
-	unsafe{ printf("done fails=%llu\n", fails) }
+	unsafe extern{ printf("done fails=%llu\n", fails) }
 }

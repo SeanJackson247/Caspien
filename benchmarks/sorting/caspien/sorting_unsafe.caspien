@@ -12,7 +12,7 @@ extern getenv(static imut string) static imut string
 extern atol(static imut string) mut u64
 
 func main() void{
-	unsafe{
+	unsafe assume extern loop udyn{
 		let n = mut 0
 		n = atol(getenv("SORT_N"))
 		let n1 = mut (n + 1)
@@ -374,6 +374,7 @@ func main() void{
 			x = bits_and(x * 1664525 + 1013904223, 0xFFFFFFFF)
 			let key = mut (x / 2)
 			if k % 2 == 0{
+				assume match n != 0
 				let kk = mut (key % n + 1)
 				key = orig[kk]
 			}
@@ -406,6 +407,7 @@ func main() void{
 			x = bits_and(x * 1664525 + 1013904223, 0xFFFFFFFF)
 			let key = mut (x / 2)
 			if k % 2 == 0{
+				assume match n != 0
 				let kk = mut (key % n + 1)
 				key = orig[kk]
 			}

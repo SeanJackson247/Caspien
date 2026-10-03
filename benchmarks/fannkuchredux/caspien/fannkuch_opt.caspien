@@ -17,7 +17,7 @@ let static:<mut u64[12]> count = mut [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 
 
 func main() void{
-	unsafe{
+	unsafe assume extern global loop{
 		let n = mut 0
 		n = atol(getenv("FANNKUCH_N"))
 		for i in 0..n{

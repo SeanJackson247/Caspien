@@ -63,7 +63,7 @@ you keep your own test files instead.
 import "stdlib/libc.caspien"
 import "stdlib/sha256.caspien"
 func main() void{
-	unsafe{
+	unsafe extern memcopy raw{
 		let msg = mut malloc(mut 3)
 		memcopy(msg, mut 3, "abc")              // a string literal is not a byte pointer: copy it
 		let digest = mut malloc(mut 32)

@@ -16,5 +16,5 @@ func main(args: owns some mut dynarray(imut dynarray(imut char))) void{
 		let one = mut args[1]
 		firstLen = len(one)
 	}
-	unsafe{ printf("args=%llu first=%llu\n", n, firstLen) }
+	unsafe extern{ printf("args=%llu first=%llu\n", n, firstLen) }
 }

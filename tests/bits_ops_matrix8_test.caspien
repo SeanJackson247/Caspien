@@ -25,21 +25,21 @@ let static passed = mut 0
 let static failed = mut 0
 
 func failU(name: static imut string, e: mut u64, g: mut u64) void{
-	unsafe{
+	unsafe extern global{
 		failed++
 		printf("FAIL %s expected %llu got %llu\n", name, e, g)
 	}
 	return
 }
 func failS(name: static imut string, e: mut s64, g: mut s64) void{
-	unsafe{
+	unsafe extern global{
 		failed++
 		printf("FAIL %s expected %lld got %lld\n", name, e, g)
 	}
 	return
 }
 func check(name: static imut string, ok: mut bool) void{
-	unsafe{
+	unsafe extern global{
 		if ok{
 			passed++
 			printf("PASS %s\n", name)
@@ -52,7 +52,7 @@ func check(name: static imut string, ok: mut bool) void{
 }
 func chk_u8(name: static imut string, got: mut u8, exp: mut u8) void{
 	if got == exp{
-		unsafe{
+		unsafe extern global{
 			passed++
 			printf("PASS %s\n", name)
 		}
@@ -63,7 +63,7 @@ func chk_u8(name: static imut string, got: mut u8, exp: mut u8) void{
 }
 func chk_s8(name: static imut string, got: mut s8, exp: mut s8) void{
 	if got == exp{
-		unsafe{
+		unsafe extern global{
 			passed++
 			printf("PASS %s\n", name)
 		}
@@ -930,7 +930,7 @@ func main() void{
 	rt_s8()
 	ct_u8()
 	ct_s8()
-	unsafe{
+	unsafe extern global{
 		printf("bits_ops_matrix8_test: %llu passed, %llu failed\n", passed, failed)
 		if failed == 0{
 			printf("ALL BITS OPS TESTS PASSED\n")

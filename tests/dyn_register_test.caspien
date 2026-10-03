@@ -16,12 +16,15 @@ let static c3 = mut 0
 
 func live() mut u64{
 	let n = mut 0
-	unsafe{ n = mut ghost_table.len }
+	unsafe assume{
+		assume match ghost_table.lockState : OPEN
+		n = mut ghost_table.len
+	}
 	return n
 }
 
 func check(name: static imut string, ok: imut bool) void{
-	unsafe{
+	unsafe extern{
 		if ok{ printf("PASS %s\n", name) }
 		else{ printf("FAIL %s\n", name) }
 	}
@@ -32,29 +35,29 @@ func check(name: static imut string, ok: imut bool) void{
 func safePart() void{
 	?catch(e){ return }
 	let arr = mut ?dyn:<u64>([])
-	unsafe{ c0 = live() }
+	unsafe global{ c0 = live() }
 	arr = ?resize(arr, 4, 3)
 	arr = ?resize(arr, 200000, 5)
-	unsafe{ c1 = live() }
+	unsafe global{ c1 = live() }
 	arr = ?resize(arr, 2, 9)
-	unsafe{ c2 = live() }
+	unsafe global{ c2 = live() }
 	let sum = mut 0
 	for i in 0..2{
 		match i in arr{ sum += arr[i] }
 	}
-	unsafe{ c3 = sum }
+	unsafe global{ c3 = sum }
 }
 
 func literalPart() void{
 	?catch(e){ return }
 	let lit = mut ?dyn([1, 2, 3])
-	unsafe{ c0 = live() }
+	unsafe global{ c0 = live() }
 	lit = ?resize(lit, 100000, 7)
-	unsafe{ c1 = live() }
+	unsafe global{ c1 = live() }
 }
 
 func unsafePart() void{
-	unsafe{
+	unsafe global udyn{
 		let u = mut unsafe dyn:<u64>([])
 		c0 = live()
 		u = resize(u, 3)
@@ -71,7 +74,7 @@ func unsafePart() void{
 }
 
 func textPart() void{
-	unsafe{
+	unsafe global udyn{
 		let t = mut unsafe dyn("abc")
 		c0 = live()
 		c1 = len(t, '\0')
@@ -82,7 +85,7 @@ func textPart() void{
 
 func main() void{
 	let base = mut live()
-	unsafe{
+	unsafe global{
 		safePart()
 		check("safe dyn registered", c0 == base + 1)
 		check("safe resize keeps one entry", c1 == base + 1)

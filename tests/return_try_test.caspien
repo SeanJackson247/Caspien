@@ -14,7 +14,7 @@ struct Box{
 }
 
 func check(name: static imut string, ok: mut bool) void{
-	unsafe{
+	unsafe extern{
 		if ok{
 			printf("PASS %s\n", name)
 		}else{
@@ -56,7 +56,7 @@ func message(x: mut u64) mut bool{
 	let same = mut false
 	try{
 		?catch(e){
-			unsafe{
+			unsafe extern{
 				if strcmp(e, "big") == 0{
 					same = true
 				}

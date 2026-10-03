@@ -25,32 +25,49 @@ let static:<mut f64[5]> mass = mut [39.47841760435743, 0.03769367487038949, 0.01
 
 // distance between two points given by their coordinate differences
 func length(dx: mut f64, dy: mut f64, dz: mut f64) mut f64{
-	unsafe{
+	unsafe assume extern{
+		assume match dx : finite
+		assume match dy : finite
+		assume match dx*dx : finite
+		assume match dy*dy : finite
+		assume match dz : finite
+		assume match (dx*dx)+(dy*dy) : finite
+		assume match dz*dz : finite
 		return sqrt(dx * dx + dy * dy + dz * dz)
 	}
 }
 
 // squared speed of body i
 func speedSquared(i: mut u64) mut f64{
-	unsafe{
+	unsafe assume global{
 		assume match i in vx
 		assume match i in vy
 		assume match i in vz
+		assume match vx[i] : finite
+		assume match vy[i] : finite
+		assume match vx[i]*vx[i] : finite
+		assume match vy[i]*vy[i] : finite
+		assume match vz[i] : finite
+		assume match (vx[i]*vx[i])+(vy[i]*vy[i]) : finite
+		assume match vz[i]*vz[i] : finite
 		return vx[i] * vx[i] + vy[i] * vy[i] + vz[i] * vz[i]
 	}
 }
 
 // kinetic energy of body i
 func kinetic(i: mut u64) mut f64{
-	unsafe{
+	unsafe assume global{
 		assume match i in mass
+		assume match mass[i] : finite
+		assume match 0.5*mass[i] : finite
+		assume match speedSquared(i) : finite
 		return 0.5 * mass[i] * speedSquared(i)
 	}
 }
 
 // gravitational potential energy of the pair (i, j)
 func potential(i: mut u64, j: mut u64) mut f64{
-	unsafe{
+	unsafe assume global{
 		assume match i in x
 		assume match i in y
 		assume match i in z
@@ -59,14 +76,24 @@ func potential(i: mut u64, j: mut u64) mut f64{
 		assume match j in y
 		assume match j in z
 		assume match j in mass
+		assume match x[i] : finite
+		assume match x[j] : finite
+		assume match y[i] : finite
+		assume match y[j] : finite
+		assume match z[i] : finite
+		assume match z[j] : finite
 		let d = mut length(x[i] - x[j], y[i] - y[j], z[i] - z[j])
+		assume match mass[i] : finite
+		assume match mass[j] : finite
+		assume match mass[i]*mass[j] : finite
+		assume match d : finite
 		return (mass[i] * mass[j]) / d
 	}
 }
 
 // the velocity change the pair (i, j) causes in one time step of length dt
 func attract(i: mut u64, j: mut u64, dt: mut f64) void{
-	unsafe{
+	unsafe assume global{
 		assume match i in x
 		assume match i in y
 		assume match i in z
@@ -81,16 +108,38 @@ func attract(i: mut u64, j: mut u64, dt: mut f64) void{
 		assume match j into vx
 		assume match j into vy
 		assume match j into vz
+		assume match x[i] : finite
+		assume match x[j] : finite
 		let dx = mut (x[i] - x[j])
+		assume match y[i] : finite
+		assume match y[j] : finite
 		let dy = mut (y[i] - y[j])
+		assume match z[i] : finite
+		assume match z[j] : finite
 		let dz = mut (z[i] - z[j])
 		let d = mut length(dx, dy, dz)
+		assume match d : finite
+		assume match d*d : finite
+		assume match dt : finite
+		assume match (d*d)*d : finite
 		let mag = mut (dt / (d * d * d))
+		assume match dx : finite
+		assume match mass[j] : finite
+		assume match dx*mass[j] : finite
+		assume match mag : finite
 		vx[i] -= dx * mass[j] * mag
+		assume match dy : finite
+		assume match dy*mass[j] : finite
 		vy[i] -= dy * mass[j] * mag
+		assume match dz : finite
+		assume match dz*mass[j] : finite
 		vz[i] -= dz * mass[j] * mag
+		assume match mass[i] : finite
+		assume match dx*mass[i] : finite
 		vx[j] += dx * mass[i] * mag
+		assume match dy*mass[i] : finite
 		vy[j] += dy * mass[i] * mag
+		assume match dz*mass[i] : finite
 		vz[j] += dz * mass[i] * mag
 	}
 	return
@@ -98,15 +147,19 @@ func attract(i: mut u64, j: mut u64, dt: mut f64) void{
 
 // move body i along its velocity for dt
 func drift(i: mut u64, dt: mut f64) void{
-	unsafe{
+	unsafe assume global{
 		assume match i into x
 		assume match i into y
 		assume match i into z
 		assume match i in vx
 		assume match i in vy
 		assume match i in vz
+		assume match dt : finite
+		assume match vx[i] : finite
 		x[i] += dt * vx[i]
+		assume match vy[i] : finite
 		y[i] += dt * vy[i]
+		assume match vz[i] : finite
 		z[i] += dt * vz[i]
 	}
 	return
@@ -127,13 +180,11 @@ func advance(dt: mut f64) void{
 
 func energy() mut f64{
 	let:<mut f64> e = mut 0.0
-	unsafe{
-		for i in 0..5{
-			e += kinetic(i)
-			let j0 = mut (i + 1)
-			for j in j0..5{
-				e -= potential(i, j)
-			}
+	for i in 0..5{
+		e += kinetic(i)
+		let j0 = mut (i + 1)
+		for j in j0..5{
+			e -= potential(i, j)
 		}
 	}
 	return e
@@ -141,7 +192,7 @@ func energy() mut f64{
 
 // give the sun the momentum that makes the total momentum zero
 func offsetMomentum() void{
-	unsafe{
+	unsafe assume global{
 		let:<mut f64> px = mut 0.0
 		let:<mut f64> py = mut 0.0
 		let:<mut f64> pz = mut 0.0
@@ -150,12 +201,22 @@ func offsetMomentum() void{
 			assume match i in vy
 			assume match i in vz
 			assume match i in mass
+			assume match vx[i] : finite
+			assume match mass[i] : finite
 			px += vx[i] * mass[i]
+			assume match vy[i] : finite
 			py += vy[i] * mass[i]
+			assume match vz[i] : finite
 			pz += vz[i] * mass[i]
 		}
+		assume match px : finite
+		assume match px/39.47841760435743 : finite
 		vx[0] = mut 0.0 - px / 39.47841760435743
+		assume match py : finite
+		assume match py/39.47841760435743 : finite
 		vy[0] = mut 0.0 - py / 39.47841760435743
+		assume match pz : finite
+		assume match pz/39.47841760435743 : finite
 		vz[0] = mut 0.0 - pz / 39.47841760435743
 	}
 	return
@@ -163,19 +224,19 @@ func offsetMomentum() void{
 
 func main() void{
 	let n = mut 0
-	unsafe{
+	unsafe extern{
 		n = atol(getenv("NBODY_N"))
 	}
 	offsetMomentum()
 	let e0 = mut energy()
-	unsafe{
+	unsafe extern{
 		printf("%.9f\n", e0)
 	}
 	for s in 0..n{
 		advance(0.01)
 	}
 	let e1 = mut energy()
-	unsafe{
+	unsafe extern{
 		printf("%.9f\n", e1)
 	}
 	return

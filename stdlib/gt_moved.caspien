@@ -41,7 +41,7 @@ func gt_moved(ptr: raw imut u8) void{
 					if ghost_table.len < (ghost_table.capacity / 2){
 						let newCapacity = mut (ghost_table.capacity / 2)
 						let:<raw mut u8> newBase = null
-						unsafe{
+						unsafe extern{
 							newBase = realloc(ghost_table.base, newCapacity * 8)
 						}
 						ghost_table.base = newBase

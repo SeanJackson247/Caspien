@@ -18,7 +18,7 @@ let static ga = mut [1, 2, 3, 4, 5]
 let static:<mut f64> macc = mut 0.0
 
 func check(name: static imut string, ok: mut bool) void{
-	unsafe{
+	unsafe extern{
 		if ok{
 			printf("PASS %s\n", name)
 		}else{
@@ -33,19 +33,20 @@ func addu(a: mut u64, b: mut u64, c: mut u64) mut u64{
 }
 // changes the global that the caller has already read in the same expression
 func bumpg() mut u64{
-	unsafe{
+	unsafe global{
 		g64 = g64 + 100
 	}
 	return 1
 }
 func bumpd() mut f64{
-	unsafe{
+	unsafe global{
 		gd = 100.0
 	}
 	return 0.5
 }
 func twice(x: mut f64) mut f64{
-	unsafe{
+	unsafe assume{
+		assume match x : finite
 		return x * 2.0
 	}
 }
@@ -55,45 +56,45 @@ func main() void{
 
 	// ---- global reads in plain integer expressions ----
 	let r = mut 0
-	unsafe{
+	unsafe global{
 		r = g64 + 5
 	}
 	check("u64 global + constant", r == 15)
-	unsafe{
+	unsafe global{
 		r = g64 * g64 - g64
 	}
 	check("u64 global twice and again", r == 90)
-	unsafe{
+	unsafe global{
 		g64 = g64 + g64 * 2
 	}
-	unsafe{
+	unsafe global{
 		r = g64
 	}
 	check("u64 global read-modify-write", r == 30)
-	unsafe{
+	unsafe global{
 		g64 = 10
 		g64 += 5
 		g64++
 	}
-	unsafe{
+	unsafe global{
 		r = g64
 	}
 	check("u64 global compound and increment", r == 16)
-	unsafe{
+	unsafe global{
 		g64 = 10
 	}
-	unsafe{
+	unsafe global{
 		r = addu(g64, g64 - 9, 1)
 	}
 	check("u64 global as call arguments", r == 1011)
 
 	// ---- more global reads than temporaries: the pass must fall back, not miscompile ----
-	unsafe{
+	unsafe global{
 		g64 = 10
 		r = g64 + g64 * (g64 + g64 * (g64 + g64))
 	}
 	check("six nested global reads (more than four temps)", r == 2110)
-	unsafe{
+	unsafe global{
 		r = (g64 + g64) * (g64 + g64) + (g64 + g64) * (g64 + g64)
 	}
 	check("four parenthesised pairs of global reads", r == 800)
@@ -102,7 +103,7 @@ func main() void{
 	let:<mut u8> r8 = mut 0
 	let:<mut u16> r16 = mut 0
 	let:<mut u32> r32 = mut 0
-	unsafe{
+	unsafe global{
 		r8 = g8 + 100
 		r16 = g16 + 1000
 		r32 = g32 + g32
@@ -110,68 +111,84 @@ func main() void{
 	check("u8 global wraps on store", r8 == 44)
 	check("u16 global wraps on store", r16 == 464)
 	check("u32 global wraps on store", r32 == 3705032704)
-	unsafe{
+	unsafe global{
 		ok = g8 + 100 == 44
 	}
 	check("u8 global compare after wrap", ok)
-	unsafe{
+	unsafe global{
 		ok = g16 > 60000 && g32 > 3000000000
 	}
 	check("narrow global compares", ok)
 
 	// ---- signed global ----
-	unsafe{
+	unsafe global{
 		ok = gs64 < 0 && gs64 + 3 == -4
 	}
 	check("s64 global signed compare", ok)
 
 	// ---- order: the global is read BEFORE a call in the same expression that changes it ----
-	unsafe{
+	unsafe global{
 		g64 = 10
 		r = g64 + bumpg()
 	}
 	check("global read before a call that changes it", r == 11)
-	unsafe{
+	unsafe global{
 		ok = g64 == 110
 	}
 	check("the call's change is visible afterwards", ok)
-	unsafe{
+	unsafe global{
 		g64 = 10
 		g64 = g64 + bumpg()
 	}
-	unsafe{
+	unsafe global{
 		r = g64
 	}
 	check("global assigned from itself plus a call", r == 11)
 
 	// ---- floats ----
 	let:<mut f64> fr = mut 0.0
-	unsafe{
+	unsafe assume global{
+		assume match gd : finite
+		assume match gd2 : finite
+		assume match gd*gd2 : finite
 		fr = gd * gd2 + gd
+		assume match fr : finite
 		ok = fr == 4.875
 	}
 	check("f64 global arithmetic", ok)
-	unsafe{
+	unsafe assume global{
 		gd = 1.5
+		assume match gd : finite
+		assume match bumpd() : finite
 		fr = gd + bumpd()
+		assume match fr : finite
 		ok = fr == 2.0
 	}
 	check("f64 global read before a call that changes it", ok)
-	unsafe{
+	unsafe assume global{
+		assume match gd : finite
 		ok = gd == 100.0
 		gd = 1.5
 	}
 	check("the f64 call's change is visible afterwards", ok)
 	let fs = mut 0.0 // f32
-	unsafe{
+	unsafe assume global{
+		assume match gf : finite
+		assume match gf*3.0 : finite
 		gf = gf + gf * 3.0
 		fs = gf
+		assume match fs : finite
 		ok = fs == 2.0
 	}
 	check("f32 global read-modify-write", ok)
-	unsafe{
+	unsafe assume global{
+		assume match gd : finite
+		assume match gd2 : finite
 		ok = gd < gd2 && gd2 > 2.0 && gd != gd2
+		assume match twice(gd) : finite
+		assume match twice(gd2) : finite
 		fr = twice(gd) - twice(gd2)
+		assume match fr : finite
 		ok = ok && fr == -1.5
 	}
 	check("f64 global compares and calls", ok)
@@ -182,36 +199,69 @@ func main() void{
 	let:<mut f64> t2 = mut 0.0
 	let:<mut f64> t3 = mut 0.0
 	let:<mut f64> acc2 = mut 0.0
-	unsafe{
+	unsafe assume extern global{
+		assume match gd2 : finite
+		assume match gd : finite
+		assume match sqrt((gd2*gd2)) : finite
+		assume match gd*sqrt((gd2*gd2)) : finite
+		assume match acc : finite
+		assume match (gd*sqrt((gd2*gd2)))/gd2 : finite
 		acc = acc - gd * sqrt(gd2 * gd2) / gd2
 		t1 = sqrt(gd2 * gd2)
+		assume match t1 : finite
 		t2 = gd * t1
+		assume match t2 : finite
 		t3 = t2 / gd2
+		assume match acc2 : finite
+		assume match t3 : finite
 		acc2 = acc2 - t3
+		assume match acc : finite
+		assume match acc2 : finite
 		ok = acc == acc2 && acc == -1.5
 	}
 	check("pending subtraction under a sqrt call (scalars)", ok)
-	unsafe{
+	unsafe assume extern global{
 		acc = 0.0
 		acc2 = 0.0
+		assume match gda[1] : finite
+		assume match gda[0] : finite
+		assume match sqrt((gda[1]*gda[1])) : finite
+		assume match gda[0]*sqrt((gda[1]*gda[1])) : finite
+		assume match gda[2] : finite
+		assume match acc : finite
+		assume match (gda[0]*sqrt((gda[1]*gda[1])))/gda[2] : finite
 		acc = acc - gda[0] * sqrt(gda[1] * gda[1]) / gda[2]
 		t1 = sqrt(gda[1] * gda[1])
+		assume match t1 : finite
 		t2 = gda[0] * t1
+		assume match t2 : finite
 		t3 = t2 / gda[2]
+		assume match acc2 : finite
+		assume match t3 : finite
 		acc2 = acc2 - t3
+		assume match acc : finite
+		assume match acc2 : finite
 		ok = acc == acc2
 	}
 	check("pending subtraction under a sqrt call (array elements)", ok)
-	unsafe{
+	unsafe assume extern global{
+		assume match gd2 : finite
+		assume match gd : finite
+		assume match sqrt((gd2*gd2)) : finite
+		assume match gd*sqrt((gd2*gd2)) : finite
+		assume match macc : finite
+		assume match (gd*sqrt((gd2*gd2)))/gd2 : finite
 		macc = macc - gd * sqrt(gd2 * gd2) / gd2
+		assume match macc : finite
 		macc = macc - gd * sqrt(gd2 * gd2) / gd2
+		assume match macc : finite
 		ok = macc == -3.0
 	}
 	check("pending subtraction on a global accumulator", ok)
 
 	// ---- a loop reading and updating global arrays and scalars ----
 	let s = mut 0
-	unsafe{
+	unsafe assume global{
 		g64 = 0
 		for i in ga{
 			assume match i into ga
@@ -224,20 +274,24 @@ func main() void{
 		}
 	}
 	// ga becomes 1, 3, 7, 15, 31 (each element plus the running total so far); g64 ends at 57
-	unsafe{
+	unsafe global{
 		ok = g64 == 57
 	}
 	check("array loop with a global running total", s == 57 && ok)
 	let:<mut f64> fsum = mut 0.0
-	unsafe{
+	unsafe assume global{
 		for k in gda{
 			assume match k into gda
+			assume match gda[k] : finite
+			assume match gda[k]*gda[k] : finite
+			assume match gd : finite
 			gda[k] = gda[k] * gda[k] - gd
 		}
 		for m in gda{
 			assume match m in gda
 			fsum += gda[m]
 		}
+		assume match fsum : finite
 		ok = fsum == 16.25
 	}
 	check("f64 array read-modify-write with a global operand", ok)

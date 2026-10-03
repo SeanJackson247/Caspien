@@ -12,7 +12,7 @@ import "../stdlib/gt_moved.caspien"
 extern sqrtf(mut f32) mut f32
 
 func check(name: static imut string, ok: mut bool) void{
-	unsafe{
+	unsafe extern{
 		if ok{
 			printf("PASS %s\n", name)
 		}else{
@@ -24,7 +24,11 @@ func check(name: static imut string, ok: mut bool) void{
 
 func feq(a: mut f32, b: mut f32) mut bool{
 	let r = mut false
-	unsafe{ r = a == b }
+	unsafe assume{
+		assume match a : finite
+		assume match b : finite
+		r = a == b
+	}
 	return r
 }
 
@@ -35,67 +39,160 @@ let static gz = mut 0.0
 // a: 2, b: 3, c: 4, d: 5 in every check below
 // 1. balanced tree: (a*b + c*d) * (a - c) / (b + d) = 26 * -2 / 8
 func chain(a: mut f32, b: mut f32, c: mut f32, d: mut f32) mut f32{
-	unsafe{ return (a * b + c * d) * (a - c) / (b + d) }
+	unsafe assume{
+		assume match a : finite
+		assume match b : finite
+		assume match c : finite
+		assume match d : finite
+		assume match a*b : finite
+		assume match c*d : finite
+		assume match (a*b)+(c*d) : finite
+		assume match a-c : finite
+		assume match ((a*b)+(c*d))*(a-c) : finite
+		assume match b+d : finite
+		return (a * b + c * d) * (a - c) / (b + d)
+	}
 }
 // 2. two subtrees live at once: (a+b)*(c+d) - (a-b)*(c-d) = 45 - 1
 func twoTrees(a: mut f32, b: mut f32, c: mut f32, d: mut f32) mut f32{
-	unsafe{ return (a + b) * (c + d) - (a - b) * (c - d) }
+	unsafe assume{
+		assume match a : finite
+		assume match b : finite
+		assume match c : finite
+		assume match d : finite
+		assume match a+b : finite
+		assume match c+d : finite
+		assume match a-b : finite
+		assume match c-d : finite
+		assume match (a+b)*(c+d) : finite
+		assume match (a-b)*(c-d) : finite
+		return (a + b) * (c + d) - (a - b) * (c - d)
+	}
 }
 // 3. right-nested (deep enough that the register-form pass falls back to the stack form) = 6 + (20 + (8 + (15 + (10 + 12))))
 func deep(a: mut f32, b: mut f32, c: mut f32, d: mut f32) mut f32{
-	unsafe{ return a * b + (c * d + (a * c + (b * d + (a * d + b * c)))) }
+	unsafe assume{
+		assume match a : finite
+		assume match b : finite
+		assume match c : finite
+		assume match d : finite
+		assume match a*d : finite
+		assume match b*c : finite
+		assume match b*d : finite
+		assume match (a*d)+(b*c) : finite
+		assume match a*c : finite
+		assume match (b*d)+((a*d)+(b*c)) : finite
+		assume match c*d : finite
+		assume match (a*c)+((b*d)+((a*d)+(b*c))) : finite
+		assume match a*b : finite
+		assume match (c*d)+((a*c)+((b*d)+((a*d)+(b*c)))) : finite
+		return a * b + (c * d + (a * c + (b * d + (a * d + b * c))))
+	}
 }
 // 4. the destination equals the right operand of a non-commutative op: a - (b - (c - d)) = 2 - (3 - (4 - 5))
 func nonComm(a: mut f32, b: mut f32, c: mut f32, d: mut f32) mut f32{
-	unsafe{ return a - (b - (c - d)) }
+	unsafe assume{
+		assume match c : finite
+		assume match d : finite
+		assume match b : finite
+		assume match c-d : finite
+		assume match a : finite
+		assume match b-(c-d) : finite
+		return a - (b - (c - d))
+	}
 }
 func divs(a: mut f32, b: mut f32, c: mut f32, d: mut f32) mut f32{
-	unsafe{ return (a * b) / (c - d) }
+	unsafe assume{
+		assume match a : finite
+		assume match b : finite
+		assume match c : finite
+		assume match d : finite
+		assume match a*b : finite
+		assume match c-d : finite
+		return (a * b) / (c - d)
+	}
 }
 // 5. compares of computed values
 func lt(a: mut f32, b: mut f32, c: mut f32, d: mut f32) mut bool{
 	let r = mut false
-	unsafe{ r = a * b < c * d }
+	unsafe assume{
+		assume match a : finite
+		assume match b : finite
+		assume match c : finite
+		assume match d : finite
+		assume match a*b : finite
+		assume match c*d : finite
+		r = a * b < c * d
+	}
 	return r
 }
 func eq(a: mut f32, b: mut f32) mut bool{
 	let r = mut false
-	unsafe{ r = a + b == 5.0 }
+	unsafe assume{
+		assume match a : finite
+		assume match b : finite
+		assume match a+b : finite
+		r = a + b == 5.0
+	}
 	return r
 }
 // 6. float arguments computed inline, nested calls in an argument list
 func addf(a: mut f32, b: mut f32) mut f32{
-	unsafe{ return a + b }
+	unsafe assume{
+		assume match a : finite
+		assume match b : finite
+		return a + b
+	}
 }
 func viaArgs(a: mut f32, b: mut f32, c: mut f32, d: mut f32) mut f32{
-	unsafe{ return addf(a * b, addf(c * d, a)) }
+	unsafe assume{
+		assume match a : finite
+		assume match b : finite
+		assume match c : finite
+		assume match d : finite
+		return addf(a * b, addf(c * d, a))
+	}
 }
 func viaLibm(a: mut f32, b: mut f32) mut f32{
-	unsafe{ return sqrtf(a * a + b * b - 4.0) }
+	unsafe assume extern{
+		assume match a : finite
+		assume match b : finite
+		assume match a*a : finite
+		assume match b*b : finite
+		assume match (a*a)+(b*b) : finite
+		return sqrtf(a * a + b * b - 4.0)
+	}
 }
 // 7. immediates, statics read and written
 func imm(a: mut f32) mut f32{
-	unsafe{ return a * 2.0 + 0.5 }
+	unsafe assume{
+		assume match a : finite
+		assume match a*2.0 : finite
+		return a * 2.0 + 0.5
+	}
 }
 func statics() mut f32{
-	unsafe{
+	unsafe global{
 		gz = gx * gy + gx
 		return gz + gx * 2.0
 	}
 }
 func readZ() mut f32{
-	unsafe{ return gz }
+	unsafe global{ return gz }
 }
 // 8. a loop mixing promoted variables and temporaries
 func sumSquares(n: mut u64) mut f32{
 	let s = mut 0.0
 	let x = mut 1.0
 	let i = mut 0
-	unsafe{
+	unsafe assume loop{
 		loop{
 			if i == n{
 				break
 			}
+			assume match x : finite
+			assume match s : finite
+			assume match x*x : finite
 			s = s + x * x
 			x = x + 1.0
 			i++
@@ -106,15 +203,26 @@ func sumSquares(n: mut u64) mut f32{
 // 9. printed (promoted to double for varargs)
 func printedExpr(a: mut f32, b: mut f32) mut f32{
 	let r = mut 0.0
-	unsafe{
+	unsafe assume extern{
+		assume match a : finite
+		assume match b : finite
+		assume match a*b : finite
 		r = a * b + a
+		assume match (a*b)+a : finite
 		printf("printed %f\n", mut (a * b + a + b)) // printed 11.000000
 	}
 	return r
 }
 // 10. a temporary that must survive a call made while it is live is never held in an xmm register across it
 func liveAcrossCall(a: mut f32, b: mut f32) mut f32{
-	unsafe{ return a * b + addf(a, b) * 2.0 }
+	unsafe assume{
+		assume match a : finite
+		assume match b : finite
+		assume match addf(a,b) : finite
+		assume match a*b : finite
+		assume match addf(a,b)*2.0 : finite
+		return a * b + addf(a, b) * 2.0
+	}
 }
 
 func main() void{

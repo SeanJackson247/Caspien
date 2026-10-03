@@ -22,7 +22,7 @@ struct Tri{
 }
 
 func check(name: static imut string, ok: mut bool) void{
-	unsafe{
+	unsafe extern{
 		if ok{
 			printf("PASS %s\n", name)
 		}else{
@@ -82,7 +82,7 @@ func main() void{
 	check("all elements in order", e10 == 1 && e11 == 2 && e12 == 3 && e20 == 4 && e21 == 5 && e22 == 6)
 
 	// a read in the middle of a call's argument list, after earlier arguments are already in registers
-	unsafe{
+	unsafe extern{
 		printf("row1: %llu %llu %llu\n", grid[1][0], grid[1][1], grid[1][2])
 	}
 	check("read as a later argument", grid[1][1] == 5)

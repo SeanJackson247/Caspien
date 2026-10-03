@@ -28,7 +28,7 @@ func main() owns some mut World{
 @tick
 func tick(w: owns some mut World) owns some mut World{
 	w.ticks += 1
-	unsafe{
+	unsafe extern{
 		printf("tick %llu\n", w.ticks)
 		fflush(null)
 	}

@@ -20,13 +20,13 @@ func makeBox() owns some mut Box{
 }
 func main() void{
 	let x = mut 7
-	unsafe{ printf("auto=%llu\n", readAuto(auto x)) }
+	unsafe extern{ printf("auto=%llu\n", readAuto(auto x)) }
 	try{
 		?catch(e){ return }
 		let b = mut ?makeBox()
 		match Some(b){
 			let copy = mut deref(b)
-			unsafe{ printf("owns box.v=%llu\n", copy.v) }
+			unsafe extern{ printf("owns box.v=%llu\n", copy.v) }
 		}
 	}
 }

@@ -34,8 +34,9 @@ import "libc.caspien"
 @pub
 func fnv1a64Bytes(p: raw imut u8, byteCount: mut u64) mut u64{
 	let h = mut 0xcbf29ce484222325
-	unsafe{
+	unsafe assume{
 		for i in 0..byteCount{
+			assume match Some(p+i)
 			let byteVal = mut deref(p + i) as u64
 			h = bits_xor(h, byteVal)
 			h = h * 0x100000001b3
@@ -49,7 +50,7 @@ func hashOf<T>(x: imut T) mut u64{
 	let byteCount = mut sizeof(T)
 	let:<raw mut u8> buf = null
 	let h = mut 0
-	unsafe{
+	unsafe extern memcopy raw{
 		buf = mut malloc(byteCount)
 		memcopy(buf, byteCount, raw x)
 		h = fnv1a64Bytes(buf, byteCount)

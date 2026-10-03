@@ -13,7 +13,7 @@ let static scalarF = mut -0.25
 let static scalarP = mut 0.75
 
 func check(name: static imut string, ok: mut bool) void{
-	unsafe{
+	unsafe extern{
 		if ok{
 			printf("PASS %s\n", name)
 		}else{
@@ -31,7 +31,7 @@ func main() void{
 	let s = mut 0.0
 	let loc = mut [1.5]
 	let l = mut 0.0
-	unsafe{
+	unsafe global{
 		a = ints[2]
 		f1 = floats[1]
 		f3 = floats[3]
@@ -46,11 +46,16 @@ func main() void{
 	let ok5 = mut false
 	let ok6 = mut false
 	let ok7 = mut false
-	unsafe{
+	unsafe assume global{
 		ok1 = a == 30
+		assume match f1 : finite
 		ok2 = f1 == -2.5
+		assume match f3 : finite
+		assume match f3+4.5 : finite
 		ok3 = f3 + 4.5 == 0.0
+		assume match f4 : finite
 		ok4 = f4 == 5.5
+		assume match s : finite
 		ok5 = s == 2.5
 		ok6 = scalarF + 0.25 == 0.0
 		ok7 = scalarP == 0.75
@@ -62,7 +67,7 @@ func main() void{
 	check("static f32[1] array (small)", ok5)
 	check("negative float static scalar", ok6)
 	check("float static scalar initialiser", ok7)
-	unsafe{
+	unsafe assume extern{
 		printf("local f32[1]: %.3f\n", l)
 		if ok1{
 			if ok2{
@@ -71,6 +76,7 @@ func main() void{
 						if ok5{
 							if ok6{
 								if ok7{
+									assume match l : finite
 									if l == 1.5{
 										printf("ALL STATIC ARRAY TESTS PASSED\n")
 									}

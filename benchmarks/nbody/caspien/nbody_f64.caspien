@@ -57,7 +57,7 @@ let static:<mut f64> mass4 = mut 0.0
 // because a negative float literal inside a static initialiser may crash the
 // compiler (foldStaticConstant calls Long.parseLong on it in the array case).
 func setup() void{
-	unsafe{
+	unsafe global{
 		x1 = mut 4.841431442464721
 		x2 = mut 8.34336671824458
 		x3 = mut 12.894369562139131
@@ -92,131 +92,337 @@ func setup() void{
 }
 
 func advance(dt: mut f64) void{
-	unsafe{
+	unsafe assume extern global{
+		assume match x0 : finite
+		assume match x1 : finite
 		let dx01 = mut (x0 - x1)
+		assume match y0 : finite
+		assume match y1 : finite
 		let dy01 = mut (y0 - y1)
+		assume match z0 : finite
+		assume match z1 : finite
 		let dz01 = mut (z0 - z1)
+		assume match dx01 : finite
+		assume match dy01 : finite
+		assume match dx01*dx01 : finite
+		assume match dy01*dy01 : finite
+		assume match dz01 : finite
+		assume match (dx01*dx01)+(dy01*dy01) : finite
+		assume match dz01*dz01 : finite
 		let dist01 = mut sqrt(dx01 * dx01 + dy01 * dy01 + dz01 * dz01)
+		assume match dist01 : finite
+		assume match dist01*dist01 : finite
+		assume match dt : finite
+		assume match (dist01*dist01)*dist01 : finite
 		let mag01 = mut (dt / (dist01 * dist01 * dist01))
+		assume match mass1 : finite
+		assume match dx01*mass1 : finite
+		assume match mag01 : finite
 		vx0 -= dx01 * mass1 * mag01
+		assume match dy01*mass1 : finite
 		vy0 -= dy01 * mass1 * mag01
+		assume match dz01*mass1 : finite
 		vz0 -= dz01 * mass1 * mag01
+		assume match mass0 : finite
+		assume match dx01*mass0 : finite
 		vx1 += dx01 * mass0 * mag01
+		assume match dy01*mass0 : finite
 		vy1 += dy01 * mass0 * mag01
+		assume match dz01*mass0 : finite
 		vz1 += dz01 * mass0 * mag01
+		assume match x2 : finite
 		let dx02 = mut (x0 - x2)
+		assume match y2 : finite
 		let dy02 = mut (y0 - y2)
+		assume match z2 : finite
 		let dz02 = mut (z0 - z2)
+		assume match dx02 : finite
+		assume match dy02 : finite
+		assume match dx02*dx02 : finite
+		assume match dy02*dy02 : finite
+		assume match dz02 : finite
+		assume match (dx02*dx02)+(dy02*dy02) : finite
+		assume match dz02*dz02 : finite
 		let dist02 = mut sqrt(dx02 * dx02 + dy02 * dy02 + dz02 * dz02)
+		assume match dist02 : finite
+		assume match dist02*dist02 : finite
+		assume match (dist02*dist02)*dist02 : finite
 		let mag02 = mut (dt / (dist02 * dist02 * dist02))
+		assume match mass2 : finite
+		assume match dx02*mass2 : finite
+		assume match mag02 : finite
 		vx0 -= dx02 * mass2 * mag02
+		assume match dy02*mass2 : finite
 		vy0 -= dy02 * mass2 * mag02
+		assume match dz02*mass2 : finite
 		vz0 -= dz02 * mass2 * mag02
+		assume match dx02*mass0 : finite
 		vx2 += dx02 * mass0 * mag02
+		assume match dy02*mass0 : finite
 		vy2 += dy02 * mass0 * mag02
+		assume match dz02*mass0 : finite
 		vz2 += dz02 * mass0 * mag02
+		assume match x3 : finite
 		let dx03 = mut (x0 - x3)
+		assume match y3 : finite
 		let dy03 = mut (y0 - y3)
+		assume match z3 : finite
 		let dz03 = mut (z0 - z3)
+		assume match dx03 : finite
+		assume match dy03 : finite
+		assume match dx03*dx03 : finite
+		assume match dy03*dy03 : finite
+		assume match dz03 : finite
+		assume match (dx03*dx03)+(dy03*dy03) : finite
+		assume match dz03*dz03 : finite
 		let dist03 = mut sqrt(dx03 * dx03 + dy03 * dy03 + dz03 * dz03)
+		assume match dist03 : finite
+		assume match dist03*dist03 : finite
+		assume match (dist03*dist03)*dist03 : finite
 		let mag03 = mut (dt / (dist03 * dist03 * dist03))
+		assume match mass3 : finite
+		assume match dx03*mass3 : finite
+		assume match mag03 : finite
 		vx0 -= dx03 * mass3 * mag03
+		assume match dy03*mass3 : finite
 		vy0 -= dy03 * mass3 * mag03
+		assume match dz03*mass3 : finite
 		vz0 -= dz03 * mass3 * mag03
+		assume match dx03*mass0 : finite
 		vx3 += dx03 * mass0 * mag03
+		assume match dy03*mass0 : finite
 		vy3 += dy03 * mass0 * mag03
+		assume match dz03*mass0 : finite
 		vz3 += dz03 * mass0 * mag03
+		assume match x4 : finite
 		let dx04 = mut (x0 - x4)
+		assume match y4 : finite
 		let dy04 = mut (y0 - y4)
+		assume match z4 : finite
 		let dz04 = mut (z0 - z4)
+		assume match dx04 : finite
+		assume match dy04 : finite
+		assume match dx04*dx04 : finite
+		assume match dy04*dy04 : finite
+		assume match dz04 : finite
+		assume match (dx04*dx04)+(dy04*dy04) : finite
+		assume match dz04*dz04 : finite
 		let dist04 = mut sqrt(dx04 * dx04 + dy04 * dy04 + dz04 * dz04)
+		assume match dist04 : finite
+		assume match dist04*dist04 : finite
+		assume match (dist04*dist04)*dist04 : finite
 		let mag04 = mut (dt / (dist04 * dist04 * dist04))
+		assume match mass4 : finite
+		assume match dx04*mass4 : finite
+		assume match mag04 : finite
 		vx0 -= dx04 * mass4 * mag04
+		assume match dy04*mass4 : finite
 		vy0 -= dy04 * mass4 * mag04
+		assume match dz04*mass4 : finite
 		vz0 -= dz04 * mass4 * mag04
+		assume match dx04*mass0 : finite
 		vx4 += dx04 * mass0 * mag04
+		assume match dy04*mass0 : finite
 		vy4 += dy04 * mass0 * mag04
+		assume match dz04*mass0 : finite
 		vz4 += dz04 * mass0 * mag04
 		let dx12 = mut (x1 - x2)
 		let dy12 = mut (y1 - y2)
 		let dz12 = mut (z1 - z2)
+		assume match dx12 : finite
+		assume match dy12 : finite
+		assume match dx12*dx12 : finite
+		assume match dy12*dy12 : finite
+		assume match dz12 : finite
+		assume match (dx12*dx12)+(dy12*dy12) : finite
+		assume match dz12*dz12 : finite
 		let dist12 = mut sqrt(dx12 * dx12 + dy12 * dy12 + dz12 * dz12)
+		assume match dist12 : finite
+		assume match dist12*dist12 : finite
+		assume match (dist12*dist12)*dist12 : finite
 		let mag12 = mut (dt / (dist12 * dist12 * dist12))
+		assume match dx12*mass2 : finite
+		assume match mag12 : finite
 		vx1 -= dx12 * mass2 * mag12
+		assume match dy12*mass2 : finite
 		vy1 -= dy12 * mass2 * mag12
+		assume match dz12*mass2 : finite
 		vz1 -= dz12 * mass2 * mag12
+		assume match dx12*mass1 : finite
 		vx2 += dx12 * mass1 * mag12
+		assume match dy12*mass1 : finite
 		vy2 += dy12 * mass1 * mag12
+		assume match dz12*mass1 : finite
 		vz2 += dz12 * mass1 * mag12
 		let dx13 = mut (x1 - x3)
 		let dy13 = mut (y1 - y3)
 		let dz13 = mut (z1 - z3)
+		assume match dx13 : finite
+		assume match dy13 : finite
+		assume match dx13*dx13 : finite
+		assume match dy13*dy13 : finite
+		assume match dz13 : finite
+		assume match (dx13*dx13)+(dy13*dy13) : finite
+		assume match dz13*dz13 : finite
 		let dist13 = mut sqrt(dx13 * dx13 + dy13 * dy13 + dz13 * dz13)
+		assume match dist13 : finite
+		assume match dist13*dist13 : finite
+		assume match (dist13*dist13)*dist13 : finite
 		let mag13 = mut (dt / (dist13 * dist13 * dist13))
+		assume match dx13*mass3 : finite
+		assume match mag13 : finite
 		vx1 -= dx13 * mass3 * mag13
+		assume match dy13*mass3 : finite
 		vy1 -= dy13 * mass3 * mag13
+		assume match dz13*mass3 : finite
 		vz1 -= dz13 * mass3 * mag13
+		assume match dx13*mass1 : finite
 		vx3 += dx13 * mass1 * mag13
+		assume match dy13*mass1 : finite
 		vy3 += dy13 * mass1 * mag13
+		assume match dz13*mass1 : finite
 		vz3 += dz13 * mass1 * mag13
 		let dx14 = mut (x1 - x4)
 		let dy14 = mut (y1 - y4)
 		let dz14 = mut (z1 - z4)
+		assume match dx14 : finite
+		assume match dy14 : finite
+		assume match dx14*dx14 : finite
+		assume match dy14*dy14 : finite
+		assume match dz14 : finite
+		assume match (dx14*dx14)+(dy14*dy14) : finite
+		assume match dz14*dz14 : finite
 		let dist14 = mut sqrt(dx14 * dx14 + dy14 * dy14 + dz14 * dz14)
+		assume match dist14 : finite
+		assume match dist14*dist14 : finite
+		assume match (dist14*dist14)*dist14 : finite
 		let mag14 = mut (dt / (dist14 * dist14 * dist14))
+		assume match dx14*mass4 : finite
+		assume match mag14 : finite
 		vx1 -= dx14 * mass4 * mag14
+		assume match dy14*mass4 : finite
 		vy1 -= dy14 * mass4 * mag14
+		assume match dz14*mass4 : finite
 		vz1 -= dz14 * mass4 * mag14
+		assume match dx14*mass1 : finite
 		vx4 += dx14 * mass1 * mag14
+		assume match dy14*mass1 : finite
 		vy4 += dy14 * mass1 * mag14
+		assume match dz14*mass1 : finite
 		vz4 += dz14 * mass1 * mag14
 		let dx23 = mut (x2 - x3)
 		let dy23 = mut (y2 - y3)
 		let dz23 = mut (z2 - z3)
+		assume match dx23 : finite
+		assume match dy23 : finite
+		assume match dx23*dx23 : finite
+		assume match dy23*dy23 : finite
+		assume match dz23 : finite
+		assume match (dx23*dx23)+(dy23*dy23) : finite
+		assume match dz23*dz23 : finite
 		let dist23 = mut sqrt(dx23 * dx23 + dy23 * dy23 + dz23 * dz23)
+		assume match dist23 : finite
+		assume match dist23*dist23 : finite
+		assume match (dist23*dist23)*dist23 : finite
 		let mag23 = mut (dt / (dist23 * dist23 * dist23))
+		assume match dx23*mass3 : finite
+		assume match mag23 : finite
 		vx2 -= dx23 * mass3 * mag23
+		assume match dy23*mass3 : finite
 		vy2 -= dy23 * mass3 * mag23
+		assume match dz23*mass3 : finite
 		vz2 -= dz23 * mass3 * mag23
+		assume match dx23*mass2 : finite
 		vx3 += dx23 * mass2 * mag23
+		assume match dy23*mass2 : finite
 		vy3 += dy23 * mass2 * mag23
+		assume match dz23*mass2 : finite
 		vz3 += dz23 * mass2 * mag23
 		let dx24 = mut (x2 - x4)
 		let dy24 = mut (y2 - y4)
 		let dz24 = mut (z2 - z4)
+		assume match dx24 : finite
+		assume match dy24 : finite
+		assume match dx24*dx24 : finite
+		assume match dy24*dy24 : finite
+		assume match dz24 : finite
+		assume match (dx24*dx24)+(dy24*dy24) : finite
+		assume match dz24*dz24 : finite
 		let dist24 = mut sqrt(dx24 * dx24 + dy24 * dy24 + dz24 * dz24)
+		assume match dist24 : finite
+		assume match dist24*dist24 : finite
+		assume match (dist24*dist24)*dist24 : finite
 		let mag24 = mut (dt / (dist24 * dist24 * dist24))
+		assume match dx24*mass4 : finite
+		assume match mag24 : finite
 		vx2 -= dx24 * mass4 * mag24
+		assume match dy24*mass4 : finite
 		vy2 -= dy24 * mass4 * mag24
+		assume match dz24*mass4 : finite
 		vz2 -= dz24 * mass4 * mag24
+		assume match dx24*mass2 : finite
 		vx4 += dx24 * mass2 * mag24
+		assume match dy24*mass2 : finite
 		vy4 += dy24 * mass2 * mag24
+		assume match dz24*mass2 : finite
 		vz4 += dz24 * mass2 * mag24
 		let dx34 = mut (x3 - x4)
 		let dy34 = mut (y3 - y4)
 		let dz34 = mut (z3 - z4)
+		assume match dx34 : finite
+		assume match dy34 : finite
+		assume match dx34*dx34 : finite
+		assume match dy34*dy34 : finite
+		assume match dz34 : finite
+		assume match (dx34*dx34)+(dy34*dy34) : finite
+		assume match dz34*dz34 : finite
 		let dist34 = mut sqrt(dx34 * dx34 + dy34 * dy34 + dz34 * dz34)
+		assume match dist34 : finite
+		assume match dist34*dist34 : finite
+		assume match (dist34*dist34)*dist34 : finite
 		let mag34 = mut (dt / (dist34 * dist34 * dist34))
+		assume match dx34*mass4 : finite
+		assume match mag34 : finite
 		vx3 -= dx34 * mass4 * mag34
+		assume match dy34*mass4 : finite
 		vy3 -= dy34 * mass4 * mag34
+		assume match dz34*mass4 : finite
 		vz3 -= dz34 * mass4 * mag34
+		assume match dx34*mass3 : finite
 		vx4 += dx34 * mass3 * mag34
+		assume match dy34*mass3 : finite
 		vy4 += dy34 * mass3 * mag34
+		assume match dz34*mass3 : finite
 		vz4 += dz34 * mass3 * mag34
+		assume match vx0 : finite
 		x0 += dt * vx0
+		assume match vy0 : finite
 		y0 += dt * vy0
+		assume match vz0 : finite
 		z0 += dt * vz0
+		assume match vx1 : finite
 		x1 += dt * vx1
+		assume match vy1 : finite
 		y1 += dt * vy1
+		assume match vz1 : finite
 		z1 += dt * vz1
+		assume match vx2 : finite
 		x2 += dt * vx2
+		assume match vy2 : finite
 		y2 += dt * vy2
+		assume match vz2 : finite
 		z2 += dt * vz2
+		assume match vx3 : finite
 		x3 += dt * vx3
+		assume match vy3 : finite
 		y3 += dt * vy3
+		assume match vz3 : finite
 		z3 += dt * vz3
+		assume match vx4 : finite
 		x4 += dt * vx4
+		assume match vy4 : finite
 		y4 += dt * vy4
+		assume match vz4 : finite
 		z4 += dt * vz4
 	}
 	return
@@ -224,88 +430,269 @@ func advance(dt: mut f64) void{
 
 func energy() mut f64{
 	let:<mut f64> e = mut 0.0
-	unsafe{
+	unsafe assume extern global{
+		assume match mass0 : finite
+		assume match vx0 : finite
+		assume match vy0 : finite
+		assume match vx0*vx0 : finite
+		assume match vy0*vy0 : finite
+		assume match vz0 : finite
+		assume match (vx0*vx0)+(vy0*vy0) : finite
+		assume match vz0*vz0 : finite
+		assume match 0.5*mass0 : finite
+		assume match ((vx0*vx0)+(vy0*vy0))+(vz0*vz0) : finite
 		e += 0.5 * mass0 * (vx0 * vx0 + vy0 * vy0 + vz0 * vz0)
+		assume match mass1 : finite
+		assume match vx1 : finite
+		assume match vy1 : finite
+		assume match vx1*vx1 : finite
+		assume match vy1*vy1 : finite
+		assume match vz1 : finite
+		assume match (vx1*vx1)+(vy1*vy1) : finite
+		assume match vz1*vz1 : finite
+		assume match 0.5*mass1 : finite
+		assume match ((vx1*vx1)+(vy1*vy1))+(vz1*vz1) : finite
 		e += 0.5 * mass1 * (vx1 * vx1 + vy1 * vy1 + vz1 * vz1)
+		assume match mass2 : finite
+		assume match vx2 : finite
+		assume match vy2 : finite
+		assume match vx2*vx2 : finite
+		assume match vy2*vy2 : finite
+		assume match vz2 : finite
+		assume match (vx2*vx2)+(vy2*vy2) : finite
+		assume match vz2*vz2 : finite
+		assume match 0.5*mass2 : finite
+		assume match ((vx2*vx2)+(vy2*vy2))+(vz2*vz2) : finite
 		e += 0.5 * mass2 * (vx2 * vx2 + vy2 * vy2 + vz2 * vz2)
+		assume match mass3 : finite
+		assume match vx3 : finite
+		assume match vy3 : finite
+		assume match vx3*vx3 : finite
+		assume match vy3*vy3 : finite
+		assume match vz3 : finite
+		assume match (vx3*vx3)+(vy3*vy3) : finite
+		assume match vz3*vz3 : finite
+		assume match 0.5*mass3 : finite
+		assume match ((vx3*vx3)+(vy3*vy3))+(vz3*vz3) : finite
 		e += 0.5 * mass3 * (vx3 * vx3 + vy3 * vy3 + vz3 * vz3)
+		assume match mass4 : finite
+		assume match vx4 : finite
+		assume match vy4 : finite
+		assume match vx4*vx4 : finite
+		assume match vy4*vy4 : finite
+		assume match vz4 : finite
+		assume match (vx4*vx4)+(vy4*vy4) : finite
+		assume match vz4*vz4 : finite
+		assume match 0.5*mass4 : finite
+		assume match ((vx4*vx4)+(vy4*vy4))+(vz4*vz4) : finite
 		e += 0.5 * mass4 * (vx4 * vx4 + vy4 * vy4 + vz4 * vz4)
+		assume match x0 : finite
+		assume match x1 : finite
 		let dx01 = mut (x0 - x1)
+		assume match y0 : finite
+		assume match y1 : finite
 		let dy01 = mut (y0 - y1)
+		assume match z0 : finite
+		assume match z1 : finite
 		let dz01 = mut (z0 - z1)
+		assume match dx01 : finite
+		assume match dy01 : finite
+		assume match dx01*dx01 : finite
+		assume match dy01*dy01 : finite
+		assume match dz01 : finite
+		assume match (dx01*dx01)+(dy01*dy01) : finite
+		assume match dz01*dz01 : finite
 		let dist01 = mut sqrt(dx01 * dx01 + dy01 * dy01 + dz01 * dz01)
+		assume match mass0*mass1 : finite
+		assume match dist01 : finite
 		e -= (mass0 * mass1) / dist01
+		assume match x2 : finite
 		let dx02 = mut (x0 - x2)
+		assume match y2 : finite
 		let dy02 = mut (y0 - y2)
+		assume match z2 : finite
 		let dz02 = mut (z0 - z2)
+		assume match dx02 : finite
+		assume match dy02 : finite
+		assume match dx02*dx02 : finite
+		assume match dy02*dy02 : finite
+		assume match dz02 : finite
+		assume match (dx02*dx02)+(dy02*dy02) : finite
+		assume match dz02*dz02 : finite
 		let dist02 = mut sqrt(dx02 * dx02 + dy02 * dy02 + dz02 * dz02)
+		assume match mass0*mass2 : finite
+		assume match dist02 : finite
 		e -= (mass0 * mass2) / dist02
+		assume match x3 : finite
 		let dx03 = mut (x0 - x3)
+		assume match y3 : finite
 		let dy03 = mut (y0 - y3)
+		assume match z3 : finite
 		let dz03 = mut (z0 - z3)
+		assume match dx03 : finite
+		assume match dy03 : finite
+		assume match dx03*dx03 : finite
+		assume match dy03*dy03 : finite
+		assume match dz03 : finite
+		assume match (dx03*dx03)+(dy03*dy03) : finite
+		assume match dz03*dz03 : finite
 		let dist03 = mut sqrt(dx03 * dx03 + dy03 * dy03 + dz03 * dz03)
+		assume match mass0*mass3 : finite
+		assume match dist03 : finite
 		e -= (mass0 * mass3) / dist03
+		assume match x4 : finite
 		let dx04 = mut (x0 - x4)
+		assume match y4 : finite
 		let dy04 = mut (y0 - y4)
+		assume match z4 : finite
 		let dz04 = mut (z0 - z4)
+		assume match dx04 : finite
+		assume match dy04 : finite
+		assume match dx04*dx04 : finite
+		assume match dy04*dy04 : finite
+		assume match dz04 : finite
+		assume match (dx04*dx04)+(dy04*dy04) : finite
+		assume match dz04*dz04 : finite
 		let dist04 = mut sqrt(dx04 * dx04 + dy04 * dy04 + dz04 * dz04)
+		assume match mass0*mass4 : finite
+		assume match dist04 : finite
 		e -= (mass0 * mass4) / dist04
 		let dx12 = mut (x1 - x2)
 		let dy12 = mut (y1 - y2)
 		let dz12 = mut (z1 - z2)
+		assume match dx12 : finite
+		assume match dy12 : finite
+		assume match dx12*dx12 : finite
+		assume match dy12*dy12 : finite
+		assume match dz12 : finite
+		assume match (dx12*dx12)+(dy12*dy12) : finite
+		assume match dz12*dz12 : finite
 		let dist12 = mut sqrt(dx12 * dx12 + dy12 * dy12 + dz12 * dz12)
+		assume match mass1*mass2 : finite
+		assume match dist12 : finite
 		e -= (mass1 * mass2) / dist12
 		let dx13 = mut (x1 - x3)
 		let dy13 = mut (y1 - y3)
 		let dz13 = mut (z1 - z3)
+		assume match dx13 : finite
+		assume match dy13 : finite
+		assume match dx13*dx13 : finite
+		assume match dy13*dy13 : finite
+		assume match dz13 : finite
+		assume match (dx13*dx13)+(dy13*dy13) : finite
+		assume match dz13*dz13 : finite
 		let dist13 = mut sqrt(dx13 * dx13 + dy13 * dy13 + dz13 * dz13)
+		assume match mass1*mass3 : finite
+		assume match dist13 : finite
 		e -= (mass1 * mass3) / dist13
 		let dx14 = mut (x1 - x4)
 		let dy14 = mut (y1 - y4)
 		let dz14 = mut (z1 - z4)
+		assume match dx14 : finite
+		assume match dy14 : finite
+		assume match dx14*dx14 : finite
+		assume match dy14*dy14 : finite
+		assume match dz14 : finite
+		assume match (dx14*dx14)+(dy14*dy14) : finite
+		assume match dz14*dz14 : finite
 		let dist14 = mut sqrt(dx14 * dx14 + dy14 * dy14 + dz14 * dz14)
+		assume match mass1*mass4 : finite
+		assume match dist14 : finite
 		e -= (mass1 * mass4) / dist14
 		let dx23 = mut (x2 - x3)
 		let dy23 = mut (y2 - y3)
 		let dz23 = mut (z2 - z3)
+		assume match dx23 : finite
+		assume match dy23 : finite
+		assume match dx23*dx23 : finite
+		assume match dy23*dy23 : finite
+		assume match dz23 : finite
+		assume match (dx23*dx23)+(dy23*dy23) : finite
+		assume match dz23*dz23 : finite
 		let dist23 = mut sqrt(dx23 * dx23 + dy23 * dy23 + dz23 * dz23)
+		assume match mass2*mass3 : finite
+		assume match dist23 : finite
 		e -= (mass2 * mass3) / dist23
 		let dx24 = mut (x2 - x4)
 		let dy24 = mut (y2 - y4)
 		let dz24 = mut (z2 - z4)
+		assume match dx24 : finite
+		assume match dy24 : finite
+		assume match dx24*dx24 : finite
+		assume match dy24*dy24 : finite
+		assume match dz24 : finite
+		assume match (dx24*dx24)+(dy24*dy24) : finite
+		assume match dz24*dz24 : finite
 		let dist24 = mut sqrt(dx24 * dx24 + dy24 * dy24 + dz24 * dz24)
+		assume match mass2*mass4 : finite
+		assume match dist24 : finite
 		e -= (mass2 * mass4) / dist24
 		let dx34 = mut (x3 - x4)
 		let dy34 = mut (y3 - y4)
 		let dz34 = mut (z3 - z4)
+		assume match dx34 : finite
+		assume match dy34 : finite
+		assume match dx34*dx34 : finite
+		assume match dy34*dy34 : finite
+		assume match dz34 : finite
+		assume match (dx34*dx34)+(dy34*dy34) : finite
+		assume match dz34*dz34 : finite
 		let dist34 = mut sqrt(dx34 * dx34 + dy34 * dy34 + dz34 * dz34)
+		assume match mass3*mass4 : finite
+		assume match dist34 : finite
 		e -= (mass3 * mass4) / dist34
 	}
 	return e
 }
 
 func offsetMomentum() void{
-	unsafe{
+	unsafe assume global{
 		let:<mut f64> px = mut 0.0
 		let:<mut f64> py = mut 0.0
 		let:<mut f64> pz = mut 0.0
+		assume match vx0 : finite
+		assume match mass0 : finite
 		px += vx0 * mass0
+		assume match vy0 : finite
 		py += vy0 * mass0
+		assume match vz0 : finite
 		pz += vz0 * mass0
+		assume match vx1 : finite
+		assume match mass1 : finite
 		px += vx1 * mass1
+		assume match vy1 : finite
 		py += vy1 * mass1
+		assume match vz1 : finite
 		pz += vz1 * mass1
+		assume match vx2 : finite
+		assume match mass2 : finite
 		px += vx2 * mass2
+		assume match vy2 : finite
 		py += vy2 * mass2
+		assume match vz2 : finite
 		pz += vz2 * mass2
+		assume match vx3 : finite
+		assume match mass3 : finite
 		px += vx3 * mass3
+		assume match vy3 : finite
 		py += vy3 * mass3
+		assume match vz3 : finite
 		pz += vz3 * mass3
+		assume match vx4 : finite
+		assume match mass4 : finite
 		px += vx4 * mass4
+		assume match vy4 : finite
 		py += vy4 * mass4
+		assume match vz4 : finite
 		pz += vz4 * mass4
+		assume match px : finite
+		assume match px/39.47841760435743 : finite
 		vx0 = mut 0.0 - px / 39.47841760435743
+		assume match py : finite
+		assume match py/39.47841760435743 : finite
 		vy0 = mut 0.0 - py / 39.47841760435743
+		assume match pz : finite
+		assume match pz/39.47841760435743 : finite
 		vz0 = mut 0.0 - pz / 39.47841760435743
 	}
 	return
@@ -313,20 +700,20 @@ func offsetMomentum() void{
 
 func main() void{
 	let n = mut 0
-	unsafe{
+	unsafe extern{
 		n = atol(getenv("NBODY_N"))
 	}
 	setup()
 	offsetMomentum()
 	let e0 = mut energy()
-	unsafe{
+	unsafe extern{
 		printf("%.9f\n", e0)
 	}
 	for s in 0..n{
 		advance(0.01)
 	}
 	let e1 = mut energy()
-	unsafe{
+	unsafe extern{
 		printf("%.9f\n", e1)
 	}
 	return

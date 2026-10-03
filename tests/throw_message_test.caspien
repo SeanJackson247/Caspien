@@ -10,7 +10,7 @@ import "../stdlib/libc.caspien"
 extern strcmp(static imut string, static imut string) mut s32
 
 func check(name: static imut string, ok: mut bool) void{
-	unsafe{
+	unsafe extern{
 		if ok{
 			printf("PASS %s\n", name)
 		}else{
@@ -62,7 +62,7 @@ func selfThrower() mut u64{
 func oneFrame() void{
 	try{
 		let a = try thrower(0) catch(e){
-			unsafe{ check("one frame up", strcmp(e, "message from thrower") == 0) }
+			unsafe extern{ check("one frame up", strcmp(e, "message from thrower") == 0) }
 			return
 		}
 		check("one frame: not thrown", false)
@@ -72,7 +72,7 @@ func oneFrame() void{
 func twoFrames() void{
 	try{
 		let a = try middle(0) catch(e){
-			unsafe{ check("two frames up", strcmp(e, "message from thrower") == 0) }
+			unsafe extern{ check("two frames up", strcmp(e, "message from thrower") == 0) }
 			return
 		}
 		check("two frames: not thrown", false)
@@ -82,7 +82,7 @@ func twoFrames() void{
 func threeFrames() void{
 	try{
 		let a = try outer(0) catch(e){
-			unsafe{ check("three frames up", strcmp(e, "message from thrower") == 0) }
+			unsafe extern{ check("three frames up", strcmp(e, "message from thrower") == 0) }
 			return
 		}
 		check("three frames: not thrown", false)
@@ -92,7 +92,7 @@ func threeFrames() void{
 func otherMessage() void{
 	try{
 		let a = try outer(1) catch(e){
-			unsafe{ check("a different throw site", strcmp(e, "second message") == 0) }
+			unsafe extern{ check("a different throw site", strcmp(e, "second message") == 0) }
 			return
 		}
 		check("different site: not thrown", false)
@@ -102,7 +102,7 @@ func otherMessage() void{
 func translated() void{
 	try{
 		let a = try translator(0) catch(e){
-			unsafe{ check("message replaced by a catch", strcmp(e, "translated") == 0) }
+			unsafe extern{ check("message replaced by a catch", strcmp(e, "translated") == 0) }
 			return
 		}
 		check("translated: not thrown", false)
@@ -112,7 +112,7 @@ func translated() void{
 func sameFrame() void{
 	try{
 		let a = try selfThrower() catch(e){
-			unsafe{ check("thrown and caught one frame apart", strcmp(e, "own frame") == 0) }
+			unsafe extern{ check("thrown and caught one frame apart", strcmp(e, "own frame") == 0) }
 			return
 		}
 		check("same frame: not thrown", false)

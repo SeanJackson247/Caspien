@@ -21,9 +21,9 @@ func two(l: imut Level) mut u64{
 
 func check(name: static imut string, got: imut u64, want: imut u64) void{
 	if got == want{
-		unsafe{ printf("PASS %s\n", name) }
+		unsafe extern{ printf("PASS %s\n", name) }
 	}else{
-		unsafe{ printf("FAIL %s\n", name) }
+		unsafe extern{ printf("FAIL %s\n", name) }
 	}
 }
 

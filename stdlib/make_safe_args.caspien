@@ -33,7 +33,7 @@ func make_safe_args(argc: imut s32, argv: raw mut raw mut char) owns some mut dy
 	// through a pointer" mechanism 'hash.caspien' already uses for
 	// an unrelated reason.
 	let count = mut 0
-	unsafe{
+	unsafe memcopy raw{
 		memcopy(raw count, mut 4, raw argc)
 	}
 
@@ -55,13 +55,13 @@ func make_safe_args(argc: imut s32, argv: raw mut raw mut char) owns some mut dy
 	// argv itself, reinterpreted once as a byte pointer to walk
 	// 8 bytes (one pointer width) per argument.
 	let:<raw mut u8> cur = null
-	unsafe{
+	unsafe memcopy raw{
 		memcopy(raw cur, mut 8, raw argv)
 	}
 	let oi = mut 0
 	for i in 0..count{
 		let:<raw mut u8> strPtr = null
-		unsafe{
+		unsafe memcopy raw{
 			memcopy(raw strPtr, mut 8, cur)
 		}
 
@@ -69,7 +69,7 @@ func make_safe_args(argc: imut s32, argv: raw mut raw mut char) owns some mut dy
 		// NUL byte.
 		let len = mut 0
 		let scan = mut strPtr
-		unsafe{
+		unsafe loop memcopy raw{
 			loop{
 				let b = mut 0
 				memcopy(raw b, mut 1, scan)
@@ -89,7 +89,7 @@ func make_safe_args(argc: imut s32, argv: raw mut raw mut char) owns some mut dy
 		let copyFrom = mut strPtr
 		let ii = mut 0
 		match ii into inner{
-			unsafe{
+			unsafe loop memcopy raw{
 				loop{
 					if ii >= len{
 						break

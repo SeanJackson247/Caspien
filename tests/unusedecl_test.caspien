@@ -22,7 +22,7 @@ let static used_g = mut 40
 let static used_arr = mut [10, 20, 30]
 
 func check(name: static imut string, ok: mut bool) void{
-	unsafe{
+	unsafe extern{
 		if ok{
 			printf("PASS %s\n", name)
 		}else{
@@ -33,7 +33,7 @@ func check(name: static imut string, ok: mut bool) void{
 }
 
 func dead_printer() void{
-	unsafe{
+	unsafe extern{
 		printf("this string is only in a dead function\n")
 	}
 	return
@@ -42,7 +42,7 @@ func dead_printer() void{
 func gated() void{
 	let flag = imut false
 	if flag{
-		unsafe{
+		unsafe extern{
 			printf("this string is only in a dead branch\n")
 		}
 	}
@@ -50,13 +50,13 @@ func gated() void{
 }
 
 func upper(c: mut u64) mut u64{
-	unsafe{
+	unsafe extern{
 		return toupper(c)
 	}
 }
 
 func bump() mut u64{
-	unsafe{
+	unsafe global{
 		used_g += 2
 		return used_g + used_arr[1]
 	}

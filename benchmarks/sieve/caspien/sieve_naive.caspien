@@ -12,7 +12,7 @@ extern atol(static imut string) mut u64
 
 func main() void{
 	?catch(e){ return }
-	unsafe{
+	unsafe extern loop{
 		let n = mut 0
 		n = atol(getenv("SIEVE_N"))
 		let total = mut (n + 1)

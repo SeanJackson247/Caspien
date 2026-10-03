@@ -8,7 +8,7 @@ let static:<mut u64> passes = mut 0
 let static:<mut u64> fails = mut 0
 
 func report(name: static imut string, got: mut u64, want: mut u64) void{
-	unsafe{
+	unsafe extern{
 		if got == want{
 			printf("PASS %s\n", name)
 		}
@@ -20,7 +20,7 @@ func report(name: static imut string, got: mut u64, want: mut u64) void{
 
 // ---- division and modulo ----
 func divs(x: mut u64) mut u64{
-	unsafe{
+	unsafe assume{
 		// returns 0 when every constant divisor agrees with the same divisor held in a variable, else the number of the first mismatch
 		let d2 = mut 2
 		let d4 = mut 4
@@ -29,24 +29,31 @@ func divs(x: mut u64) mut u64{
 		let d31 = mut 2147483648
 		let d32 = mut 4294967296
 		let d63 = mut 9223372036854775808
+		assume match d2 != 0
 		if x / 2 != x / d2{
 			return 1
 		}
+		assume match d4 != 0
 		if x / 4 != x / d4{
 			return 2
 		}
+		assume match d8 != 0
 		if x / 8 != x / d8{
 			return 3
 		}
+		assume match d1024 != 0
 		if x / 1024 != x / d1024{
 			return 4
 		}
+		assume match d31 != 0
 		if x / 2147483648 != x / d31{
 			return 5
 		}
+		assume match d32 != 0
 		if x / 4294967296 != x / d32{
 			return 6
 		}
+		assume match d63 != 0
 		if x / 9223372036854775808 != x / d63{
 			return 7
 		}
@@ -79,7 +86,7 @@ func divValues() mut u64{
 	let bad = mut 0
 	let x = mut 0
 	let i = mut 0
-	unsafe{
+	unsafe loop{
 		loop{
 			if i == 300{
 				break
@@ -115,7 +122,7 @@ func divExprOperand() mut u64{
 func divInLoop() mut u64{
 	let s = mut 0
 	let i = mut 0
-	unsafe{
+	unsafe loop{
 		loop{
 			if i == 50{
 				break
@@ -234,7 +241,7 @@ func cmpValues() mut u64{
 	let vals = mut 0
 	let x = mut 0
 	let y = mut 0
-	unsafe{
+	unsafe loop{
 		loop{
 			if vals == 7{
 				break
@@ -449,7 +456,7 @@ func andPairs(a: mut u64, b: mut u64, c: mut u64) mut u64{
 func whileLike() mut u64{
 	let i = mut 0
 	let s = mut 0
-	unsafe{
+	unsafe loop{
 		loop{
 			if i >= 40{
 				break

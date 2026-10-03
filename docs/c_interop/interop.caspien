@@ -10,7 +10,7 @@ func add(a: mut u64, b: mut u64) mut u64{ return a + b }
 export add
 
 func main() void{
-	unsafe{
+	unsafe extern{
 		let r = mut c_apply(mut 40, mut 2)
 		printf("%llu\n", r)
 	}

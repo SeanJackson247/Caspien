@@ -7,7 +7,7 @@
 import "../stdlib/libc.caspien"
 
 func check(name: static imut string, ok: mut bool) void{
-	unsafe{
+	unsafe extern{
 		if ok{
 			printf("PASS %s\n", name)
 		}else{
@@ -26,7 +26,8 @@ func rangeLen(r: imut range) mut u64{
 
 // divides (uses rdx)
 func divmod(x: mut u64, y: mut u64) mut u64{
-	unsafe{
+	unsafe assume{
+		assume match y != 0
 		let q = mut (x / y)
 		let m = mut (x % y)
 		return q * 10 + m
@@ -56,7 +57,7 @@ func main() void{
 	check("stepsBoth in arg", stepsBoth(mut 0, 0..8) == 4)
 	// nested calls after earlier arguments are loaded
 	check("add3 of calls", add3(divmod(mut 9, mut 2), rangeLen(0..4), divmod(mut 8, mut 3)) == 41 * 100 + 4 * 10 + 22)
-	unsafe{
+	unsafe extern{
 		printf("printf arg %llu\n", rangeLen(5..9))
 		printf("printf args %llu %llu\n", divmod(mut 17, mut 4), stepsBoth(mut 0, 0..6))
 	}

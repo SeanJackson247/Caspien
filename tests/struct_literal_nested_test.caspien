@@ -92,7 +92,7 @@ struct Wrap{
 }
 
 func check(name: static imut string, ok: mut bool) void{
-	unsafe{
+	unsafe extern{
 		if ok{
 			printf("PASS %s\n", name)
 		}else{
@@ -298,8 +298,14 @@ func main() void{
 	check("array of wide structs: ws[0].x", wb.ws[0].x == 100)
 	check("array of wide structs: ws[1].x", wb.ws[1].x == 200)
 	check("array of wide structs: tail", wb.tail == 1006)
-	unsafe{ check("array of wide structs: ws[1].y", wb.ws[1].y == 2.5) }
-	unsafe{ check("array of wide structs: ws[0].y", wb.ws[0].y == 1.5) }
+	unsafe assume{
+		assume match wb.ws[1].y : finite
+		check("array of wide structs: ws[1].y", wb.ws[1].y == 2.5)
+	}
+	unsafe assume{
+		assume match wb.ws[0].y : finite
+		check("array of wide structs: ws[0].y", wb.ws[0].y == 1.5)
+	}
 
 	let:<mut u32[3]> r0 = mut [1, 2, 3]
 	let:<mut u32[3]> r1 = mut [4, 5, 6]

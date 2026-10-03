@@ -22,7 +22,7 @@ struct Node{
 
 func main() void{
 	?catch(e){ return }
-	unsafe{
+	unsafe assume extern loop{
 		let n = mut 0
 		n = atol(getenv("GRAPH_N"))
 		let nodes = mut ? dyn:<Node>([])
@@ -43,6 +43,7 @@ func main() void{
 			nodes[needle].value = 0xFFFFFFFF
 		}
 		for i in 0..n{
+			assume match n != 0
 			let nxt = mut ((i + 1) % n)
 			x = bits_and(x * 1664525 + 1013904223, 0xFFFFFFFF)
 			let r1 = mut (x % n)

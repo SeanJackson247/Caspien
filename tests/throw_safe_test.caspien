@@ -12,12 +12,12 @@ func g(x: mut u64) mut u64{
 	return ?f(x)
 }
 func show(a: mut u64) void{
-	unsafe{ printf("a=%llu\n", a) }
+	unsafe extern{ printf("a=%llu\n", a) }
 }
 func main() void{
 	try{
 		let a = try g(0) catch(e){
-			unsafe{ printf("caught\n") }
+			unsafe extern{ printf("caught\n") }
 			return
 		}
 		show(a)

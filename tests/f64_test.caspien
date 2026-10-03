@@ -14,7 +14,7 @@ import "../stdlib/gt_moved.caspien"
 extern sqrt(mut f64) mut f64
 
 func check(name: static imut string, ok: mut bool) void{
-	unsafe{
+	unsafe extern{
 		if ok{
 			printf("PASS %s\n", name)
 		}else{
@@ -26,25 +26,41 @@ func check(name: static imut string, ok: mut bool) void{
 
 func deq(a: mut f64, b: mut f64) mut bool{
 	let r = mut false
-	unsafe{ r = a == b }
+	unsafe assume{
+		assume match a : finite
+		assume match b : finite
+		r = a == b
+	}
 	return r
 }
 
 func feq(a: mut f32, b: mut f32) mut bool{
 	let r = mut false
-	unsafe{ r = a == b }
+	unsafe assume{
+		assume match a : finite
+		assume match b : finite
+		r = a == b
+	}
 	return r
 }
 
 func dne(a: mut f64, b: mut f64) mut bool{
 	let r = mut false
-	unsafe{ r = a != b }
+	unsafe assume{
+		assume match a : finite
+		assume match b : finite
+		r = a != b
+	}
 	return r
 }
 
 func dlt(a: mut f64, b: mut f64) mut bool{
 	let r = mut false
-	unsafe{ r = a < b }
+	unsafe assume{
+		assume match a : finite
+		assume match b : finite
+		r = a < b
+	}
 	return r
 }
 
@@ -55,41 +71,105 @@ let static:<mut f64[3]> ga = mut [0.25, 0.5, 0.75]
 // 1. only double precision can hold 2^24 + 1
 func big() mut f64{
 	let:<mut f64> a = mut 16777216.0
-	unsafe{ return a + 1.0 }
+	unsafe assume{
+		assume match a : finite
+		return a + 1.0
+	}
 }
 
 // 2. 0.1 + 0.2 is not 0.3 in double precision
 func addf(a: mut f64, b: mut f64) mut f64{
-	unsafe{ return a + b }
+	unsafe assume{
+		assume match a : finite
+		assume match b : finite
+		return a + b
+	}
 }
 
 // 3. balanced tree, two live subtrees, deep right-nesting, non-commutative destination, divide (a=2 b=3 c=4 d=5)
 func chain(a: mut f64, b: mut f64, c: mut f64, d: mut f64) mut f64{
-	unsafe{ return (a * b + c * d) * (a - c) / (b + d) }
+	unsafe assume{
+		assume match a : finite
+		assume match b : finite
+		assume match c : finite
+		assume match d : finite
+		assume match a*b : finite
+		assume match c*d : finite
+		assume match (a*b)+(c*d) : finite
+		assume match a-c : finite
+		assume match ((a*b)+(c*d))*(a-c) : finite
+		assume match b+d : finite
+		return (a * b + c * d) * (a - c) / (b + d)
+	}
 }
 func twoTrees(a: mut f64, b: mut f64, c: mut f64, d: mut f64) mut f64{
-	unsafe{ return (a + b) * (c + d) - (a - b) * (c - d) }
+	unsafe assume{
+		assume match a : finite
+		assume match b : finite
+		assume match c : finite
+		assume match d : finite
+		assume match a+b : finite
+		assume match c+d : finite
+		assume match a-b : finite
+		assume match c-d : finite
+		assume match (a+b)*(c+d) : finite
+		assume match (a-b)*(c-d) : finite
+		return (a + b) * (c + d) - (a - b) * (c - d)
+	}
 }
 func deep(a: mut f64, b: mut f64, c: mut f64, d: mut f64) mut f64{
-	unsafe{ return a * b + (c * d + (a * c + (b * d + (a * d + b * c)))) }
+	unsafe assume{
+		assume match a : finite
+		assume match b : finite
+		assume match c : finite
+		assume match d : finite
+		assume match a*d : finite
+		assume match b*c : finite
+		assume match b*d : finite
+		assume match (a*d)+(b*c) : finite
+		assume match a*c : finite
+		assume match (b*d)+((a*d)+(b*c)) : finite
+		assume match c*d : finite
+		assume match (a*c)+((b*d)+((a*d)+(b*c))) : finite
+		assume match a*b : finite
+		assume match (c*d)+((a*c)+((b*d)+((a*d)+(b*c)))) : finite
+		return a * b + (c * d + (a * c + (b * d + (a * d + b * c))))
+	}
 }
 func nonComm(a: mut f64, b: mut f64, c: mut f64, d: mut f64) mut f64{
-	unsafe{ return a - (b - (c - d)) }
+	unsafe assume{
+		assume match c : finite
+		assume match d : finite
+		assume match b : finite
+		assume match c-d : finite
+		assume match a : finite
+		assume match b-(c-d) : finite
+		return a - (b - (c - d))
+	}
 }
 
 // 4. libm
 func root2() mut f64{
 	let:<mut f64> r = mut 0.0
-	unsafe{ r = sqrt(2.0) }
-	unsafe{ return r * r }
+	unsafe extern{ r = sqrt(2.0) }
+	unsafe assume{
+		assume match r : finite
+		return r * r
+	}
 }
 func rootExpr(a: mut f64, b: mut f64) mut f64{
-	unsafe{ return sqrt(a * a + b * b) }
+	unsafe assume extern{
+		assume match a : finite
+		assume match b : finite
+		assume match a*a : finite
+		assume match b*b : finite
+		return sqrt(a * a + b * b)
+	}
 }
 
 // 5. conversions
 func widen(x: mut f32) mut f64{
-	unsafe{ return x as f64 }
+	return x as f64
 }
 func narrowTenth() mut f32{
 	let:<mut f64> d = mut 0.1
@@ -99,18 +179,19 @@ func narrowTenth() mut f32{
 func roundTrip() mut f64{
 	let:<mut f64> d = mut 0.1
 	let n = mut wrap:<f32>(d)
-	unsafe{ return n as f64 }
+	return n as f64
 }
 
 // 6. accumulator in a register across a loop: ten additions of 0.1
 func tenths() mut f64{
 	let:<mut f64> acc = mut 0.0
 	let i = mut 0
-	unsafe{
+	unsafe assume loop{
 		loop{
 			if i == 10{
 				break
 			}
+			assume match acc : finite
 			acc = acc + 0.1
 			i++
 		}
@@ -120,18 +201,24 @@ func tenths() mut f64{
 
 // 7. variables live across calls: sum of squares of 1..n, and a call result added into an accumulator
 func sq(x: mut f64) mut f64{
-	unsafe{ return x * x }
+	unsafe assume{
+		assume match x : finite
+		return x * x
+	}
 }
 func sumSquares(n: mut u64) mut f64{
 	let:<mut f64> total = mut 0.0
 	let:<mut f64> x = mut 1.0
 	let i = mut 0
-	unsafe{
+	unsafe assume loop{
 		loop{
 			if i == n{
 				break
 			}
+			assume match total : finite
+			assume match sq(x) : finite
 			total = total + sq(x)
+			assume match x : finite
 			x = x + 1.0
 			i++
 		}
@@ -141,15 +228,25 @@ func sumSquares(n: mut u64) mut f64{
 
 // 8. static scalar and static array
 func statics() mut f64{
-	unsafe{
+	unsafe assume global{
+		assume match gd : finite
 		ge = gd * 2.0
+		assume match ge : finite
 		gd = gd + ge
 	}
-	unsafe{ return gd + ga[0] + ga[1] + ga[2] }
+	unsafe assume global{
+		assume match gd : finite
+		assume match ga[0] : finite
+		assume match gd+ga[0] : finite
+		assume match ga[1] : finite
+		assume match (gd+ga[0])+ga[1] : finite
+		assume match ga[2] : finite
+		return gd + ga[0] + ga[1] + ga[2]
+	}
 }
 
 func readGd() mut f64{
-	unsafe{ return gd }
+	unsafe global{ return gd }
 }
 
 // 9. literals adapt to f64: a negated literal product and a literal-only group
@@ -158,8 +255,13 @@ func negProduct() mut f64{
 	let:<mut f64> b = mut 0.3
 	let:<mut f64> lit = mut 0.0
 	let:<mut f64> comp = mut 0.0
-	unsafe{ lit = -(3.7 * 0.3) }
-	unsafe{ comp = 0.0 - a * b }
+	lit = -(3.7 * 0.3)
+	unsafe assume{
+		assume match a : finite
+		assume match b : finite
+		assume match a*b : finite
+		comp = 0.0 - a * b
+	}
 	if deq(lit, comp){
 		return 1.0
 	}
@@ -168,14 +270,24 @@ func negProduct() mut f64{
 
 // 10. the float scratch registers must survive a call in the middle of an expression
 func negCall(x: mut f64) mut f64{
-	unsafe{ return 0.0 - x }
+	unsafe assume{
+		assume match x : finite
+		return 0.0 - x
+	}
 }
 func sub2(a: mut f64, b: mut f64) mut f64{
-	unsafe{ return a - b }
+	unsafe assume{
+		assume match a : finite
+		assume match b : finite
+		return a - b
+	}
 }
 func scratchClobber(x: mut f64) mut f64{
 	let:<mut f64> a = mut 10.0
-	unsafe{ return sub2(a, 0.0 - negCall(x)) }
+	unsafe assume{
+		assume match negCall(x) : finite
+		return sub2(a, 0.0 - negCall(x))
+	}
 }
 
 // 11. more f64 variables than registers, all live over a call
@@ -189,23 +301,55 @@ func manyVars(seed: mut f64) mut f64{
 	let:<mut f64> v6 = mut 7.0
 	let:<mut f64> v7 = mut 8.0
 	let i = mut 0
-	unsafe{
+	unsafe assume loop{
 		loop{
 			if i == 3{
 				break
 			}
+			assume match v0 : finite
+			assume match sq(seed) : finite
 			v0 = v0 + sq(seed)
+			assume match v1 : finite
+			assume match v0 : finite
 			v1 = v1 + v0
+			assume match v2 : finite
+			assume match v1 : finite
 			v2 = v2 + v1
+			assume match v3 : finite
+			assume match v2 : finite
 			v3 = v3 + v2
+			assume match v4 : finite
+			assume match v3 : finite
 			v4 = v4 + v3
+			assume match v5 : finite
+			assume match v4 : finite
 			v5 = v5 + v4
+			assume match v6 : finite
+			assume match v5 : finite
 			v6 = v6 + v5
+			assume match v7 : finite
+			assume match v6 : finite
 			v7 = v7 + v6
 			i++
 		}
 	}
-	unsafe{ return v0 + v1 + v2 + v3 + v4 + v5 + v6 + v7 }
+	unsafe assume{
+		assume match v0 : finite
+		assume match v1 : finite
+		assume match v0+v1 : finite
+		assume match v2 : finite
+		assume match (v0+v1)+v2 : finite
+		assume match v3 : finite
+		assume match ((v0+v1)+v2)+v3 : finite
+		assume match v4 : finite
+		assume match (((v0+v1)+v2)+v3)+v4 : finite
+		assume match v5 : finite
+		assume match ((((v0+v1)+v2)+v3)+v4)+v5 : finite
+		assume match v6 : finite
+		assume match (((((v0+v1)+v2)+v3)+v4)+v5)+v6 : finite
+		assume match v7 : finite
+		return v0 + v1 + v2 + v3 + v4 + v5 + v6 + v7
+	}
 }
 
 func main() void{
@@ -229,6 +373,6 @@ func main() void{
 	check("float scratch across a call", deq(scratchClobber(4.0), 6.0))
 	check("many f64 variables over calls", dlt(manyVars(1.0), 1000000000.0))
 	let:<mut f64> third = mut 0.0
-	unsafe{ third = 1.0 / 3.0 }
-	unsafe{ printf("third=%.17g\n", third) }
+	third = 1.0 / 3.0
+	unsafe extern{ printf("third=%.17g\n", third) }
 }

@@ -41,7 +41,7 @@ func bump() void{
 // A backoff policy replaces a CLOSED body. `tries` counts attempts from 1.
 impl default match @lock Counter{
 	CLOSED:(tries:imut u64, limit:imut u64)=>{
-		unsafe{ printf("closed, try %llu / ", tries) }
+		unsafe extern{ printf("closed, try %llu / ", tries) }
 		if tries >= limit{ break }
 		continue
 	}
@@ -65,9 +65,9 @@ func main() void{
 	let again = mut (flag swap 7)
 	let cur = mut flag
 	flag = 9
-	unsafe{ printf("swap: old=%llu again=%llu cur=%llu now=%llu\n", old, again, cur, flag) }
+	unsafe extern{ printf("swap: old=%llu again=%llu cur=%llu now=%llu\n", old, again, cur, flag) }
 
-	unsafe{ printf("backoff: ") }
+	unsafe extern{ printf("backoff: ") }
 	match @lock counter{
 		OPEN:{
 			counter.n += 1
@@ -80,7 +80,7 @@ func main() void{
 	}
 	match @lock counter{
 		OPEN:{
-			unsafe{ printf("n=%llu\n", counter.n) }
+			unsafe extern{ printf("n=%llu\n", counter.n) }
 			counter.n = 0
 		}
 		CLOSED:{ continue }
@@ -97,7 +97,7 @@ func main() void{
 	}
 	let answer = mut await triple(mut 14)
 	match @lock counter{
-		OPEN:{ unsafe{ printf("threads: n=%llu triple=%llu\n", counter.n, answer) } }
+		OPEN:{ unsafe extern{ printf("threads: n=%llu triple=%llu\n", counter.n, answer) } }
 		CLOSED:{ continue }
 	}
 }

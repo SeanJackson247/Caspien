@@ -45,7 +45,7 @@ func hyp(a: mut u64, b: mut u64) mut u64{
 }
 let static LIMIT = imut 10
 @pure
-func plusLimit(x: mut u64) mut u64{ unsafe{ return x + LIMIT } }
+func plusLimit(x: mut u64) mut u64{ unsafe global{ return x + LIMIT } }
 
 struct Box<T>{@pub{ v: mut T }}
 impl<T> Box<T>{
@@ -89,19 +89,19 @@ func main() void{
 	let m4 = mut Q.make(mut 8)
 	let pa = mut P(mut 4)
 	let pb = mut P("z")
-	unsafe{
+	unsafe extern{
 		printf("overloads=%llu %llu %llu %llu %llu | methods=%llu %llu %llu %llu | ctors=%llu %llu\n", o1, o2, o3, o4, o5, m1, m2, m3, m4, pa.a, pb.a)
 	}
 	let h = mut hyp(3, 4)
 	let l = mut plusLimit(1)
-	unsafe{ printf("pure=%llu %llu | ", h, l) }
+	unsafe extern{ printf("pure=%llu %llu | ", h, l) }
 	let b = mut ? new Box:<u64>{v= 7}
 	let t = mut twice:<u64>(mut 9)
 	let bv = mut b.get(b)
-	unsafe{ printf("generic=%llu %llu | ", bv, t) }
+	unsafe extern{ printf("generic=%llu %llu | ", bv, t) }
 	let r = mut ? new Rect{w= 6, h= 7}
 	let s = mut ? new Sq{s= 5}
 	let ra = imut areaOf:<Rect>(r)
 	let sa = imut areaOf:<Sq>(s)
-	unsafe{ printf("bound=%llu %llu\n", ra, sa) }
+	unsafe extern{ printf("bound=%llu %llu\n", ra, sa) }
 }

@@ -57,5 +57,5 @@ func main() void{
 		last = squares[k]
 	}
 	let count = mut len(squares)
-	unsafe{ printf("div=%llu scaled=%f sum=%llu squares=%llu last=%llu\n", quotient, scaled, sum, count, last) }
+	unsafe extern{ printf("div=%llu scaled=%f sum=%llu squares=%llu last=%llu\n", quotient, scaled, sum, count, last) }
 }

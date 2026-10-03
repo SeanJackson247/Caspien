@@ -9,7 +9,7 @@ import "../stdlib/gt_destruct.caspien"
 import "../stdlib/gt_moved.caspien"
 
 func check(name: static imut string, ok: mut bool) void{
-	unsafe{
+	unsafe extern{
 		if ok{
 			printf("PASS %s\n", name)
 		}else{
@@ -23,7 +23,7 @@ func check(name: static imut string, ok: mut bool) void{
 func sumTo(n: mut u64) mut u64{
 	let s = mut 0
 	let i = mut 1
-	unsafe{
+	unsafe loop{
 		loop{
 			if i > n{
 				break
@@ -39,7 +39,7 @@ func sumTo(n: mut u64) mut u64{
 func collatzSteps(start: mut u64) mut u64{
 	let x = mut start
 	let steps = mut 0
-	unsafe{
+	unsafe loop{
 		loop{
 			if x == 1{
 				break
@@ -59,7 +59,7 @@ func collatzSteps(start: mut u64) mut u64{
 func narrowWrap() mut u64{
 	let:<mut u8> c = mut 250
 	let n = mut 0
-	unsafe{
+	unsafe loop{
 		loop{
 			c = c + 1
 			n++
@@ -73,7 +73,7 @@ func narrowWrap() mut u64{
 func wide32() mut u64{
 	let:<mut u32> w = mut 4294967290
 	let k = mut 0
-	unsafe{
+	unsafe loop{
 		loop{
 			w = w + 2
 			k++
@@ -89,8 +89,9 @@ func wide32() mut u64{
 func floatAcc() mut f32{
 	let f = mut 0.5
 	let k = mut 0
-	unsafe{
+	unsafe assume loop{
 		loop{
+			assume match f : finite
 			f = f + 0.25
 			k++
 			if k == 10{
@@ -105,7 +106,7 @@ func floatAcc() mut f32{
 func inner(n: mut u64) mut u64{
 	let a = mut 0
 	let b = mut 0
-	unsafe{
+	unsafe loop{
 		loop{
 			if b == n{
 				break
@@ -119,7 +120,7 @@ func inner(n: mut u64) mut u64{
 func outer(n: mut u64) mut u64{
 	let total = mut 0
 	let j = mut 0
-	unsafe{
+	unsafe loop{
 		loop{
 			if j == n{
 				break
@@ -137,7 +138,7 @@ func outer(n: mut u64) mut u64{
 func thrower(x: mut u64) mut u64{
 	let z = mut 0
 	let q = mut 0
-	unsafe{
+	unsafe loop{
 		loop{
 			if q == x{
 				break
@@ -160,7 +161,7 @@ func tryOne(i: mut u64) mut u64{
 func catcher() mut u64{
 	let acc = mut 0
 	let i = mut 0
-	unsafe{
+	unsafe loop{
 		loop{
 			if i == 6{
 				break
@@ -174,7 +175,7 @@ func catcher() mut u64{
 func catchReturn() mut u64{
 	let acc = mut 0
 	let i = mut 0
-	unsafe{
+	unsafe loop{
 		loop{
 			if i == 6{
 				break
@@ -191,12 +192,15 @@ func catchReturn() mut u64{
 
 // 7. a variable whose address is taken must stay in memory: the pointer read has to see every update
 func readThrough(p: raw imut u64) imut u64{
-	unsafe{ return deref(p) }
+	unsafe assume{
+		assume match Some(p)
+		return deref(p)
+	}
 }
 func addressTaken() imut u64{
 	let v = mut 0
 	let w = mut 0
-	unsafe{
+	unsafe loop raw{
 		let p = imut raw v
 		loop{
 			v += 3
@@ -216,7 +220,7 @@ func many(n: mut u64) mut u64{
 	let c = mut 0
 	let d = mut 0
 	let i = mut 0
-	unsafe{
+	unsafe loop{
 		loop{
 			if i == n{
 				break
@@ -241,7 +245,7 @@ func boxed(n: mut u64) mut u64{
 	?catch(e){ throw e }
 	let s = mut 0
 	let i = mut 0
-	unsafe{
+	unsafe loop{
 		loop{
 			if i == n{
 				break
@@ -261,7 +265,10 @@ func main() void{
 	check("u32 wraps on store", wide32() == 4)
 	let f = mut floatAcc()
 	let fok = mut false
-	unsafe{ fok = f == 3.0 }
+	unsafe assume{
+		assume match f : finite
+		fok = f == 3.0
+	}
 	check("f32 accumulator", fok)
 	check("calls inside a loop", outer(4) == 20)
 	check("throw caught in a loop", catcher() == 3006)

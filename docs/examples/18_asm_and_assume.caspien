@@ -33,7 +33,7 @@ ASM "18_asm_helper.s"
 extern asm_plus100(mut u64) mut u64
 
 func main() void{
-	unsafe{
+	unsafe asm extern{
 		let s = mut asm_add3(mut 1, mut 2, mut 3)
 		let f = mut asm_plus100(mut 5)
 		printf("asm: %llu %llu\n", s, f)
@@ -51,7 +51,7 @@ func main() void{
 	let total = mut 0
 	let q = mut 0
 	let r = mut Reading{status= Sensor.LIVE, value= 7}
-	unsafe{
+	unsafe assume extern{
 		// No block: the proof holds for the rest of the scope, and no run-time check is emitted.
 		for i in a{
 			assume match i in a

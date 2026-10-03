@@ -17,7 +17,7 @@ import "../stdlib/gt_alive_check.caspien"
 
 // Returns 0 when the check passed, 1 when it failed, so main can total the failures.
 func check(name: static imut string, ok: imut bool) mut u64{
-	unsafe{
+	unsafe extern{
 		if ok{
 			printf("PASS %s\n", name)
 			return 0
@@ -178,7 +178,7 @@ func testString() mut u64{
 // ----------------------------------------------------------------------- libc
 func testLibc() mut u64{
 	let fails = mut 0
-	unsafe{
+	unsafe extern{
 		fails = mut (fails + check("libc: strlen", strlen("Caspien") == 7))
 		let t0 = mut clock()
 		let t1 = mut clock()
@@ -196,7 +196,7 @@ func testProcess() mut u64{
 	let fails = mut 0
 	let p = mut ? spawn("echo child-says-hi", imut ProcessMode.READ)
 	let line = imut StdOut.read(p.stream)
-	unsafe{
+	unsafe extern{
 		fails = mut (fails + check("process: read one line from child", strlen(line) > 0))
 		printf("  child output: %s", line)
 	}
@@ -236,7 +236,7 @@ func main() void{
 	fails = mut (fails + testProcess())
 	fails = mut (fails + testSleep())
 	fails = mut (fails + testAsync())
-	unsafe{
+	unsafe extern{
 		if fails == 0{
 			printf("ALL STDLIB TESTS PASSED\n")
 		}

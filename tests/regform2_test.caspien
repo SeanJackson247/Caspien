@@ -20,7 +20,7 @@ struct Pt{
 }
 
 func check(name: static imut string, ok: mut bool) void{
-	unsafe{
+	unsafe extern{
 		if ok{
 			printf("PASS %s\n", name)
 		}else{
@@ -31,12 +31,17 @@ func check(name: static imut string, ok: mut bool) void{
 }
 
 func fmul(x: mut f32, y: mut f32) mut f32{
-	unsafe{
+	unsafe assume{
+		assume match x : finite
+		assume match y : finite
+		assume match x*y : finite
 		return x * y + 0.5
 	}
 }
 func fsel(x: mut f32, y: mut f32) mut f32{
-	unsafe{
+	unsafe assume{
+		assume match x : finite
+		assume match y : finite
 		if x < y{
 			return y - x
 		}
@@ -50,7 +55,9 @@ func bump(p: auto mut Pt) void{
 	p.x += 5
 	p.y = p.y + 7
 	p.b += 1
-	unsafe{
+	unsafe assume{
+		assume match p.w : finite
+		assume match p.w*2.0 : finite
 		p.w = p.w * 2.0 + 1.0
 	}
 	return
@@ -65,7 +72,12 @@ func main() void{
 	let fb = mut 2.25
 	let fr = mut 0.0
 	let fc = mut 0
-	unsafe{
+	unsafe assume{
+		assume match fa : finite
+		assume match fb : finite
+		assume match fa+fb : finite
+		assume match (fa+fb)*fa : finite
+		assume match fb/fa : finite
 		fr = (fa + fb) * fa - fb / fa
 		if fa < fb{
 			fc += 1
@@ -87,7 +99,8 @@ func main() void{
 		}
 	}
 	let ok = mut false
-	unsafe{
+	unsafe assume{
+		assume match fr : finite
 		ok = fr == 4.125
 	}
 	check("float arithmetic", ok)
@@ -95,14 +108,21 @@ func main() void{
 	let g1 = mut 0.0
 	let g2 = mut 0.0
 	let g3 = mut 0.0
-	unsafe{
+	unsafe assume extern{
+		assume match fa : finite
 		g1 = fmul(fa + 0.5, fb)
+		assume match fsel(fa,fb) : finite
+		assume match fsel(fb,fa) : finite
 		g2 = fsel(fa, fb) + fsel(fb, fa)
+		assume match fa*6.0 : finite
 		g3 = sqrtf(fa * 6.0 + 7.0)
+		assume match g1 : finite
 		ok = g1 == 5.0
 		check("float args and return", ok)
+		assume match g2 : finite
 		ok = g2 == 1.5
 		check("float select", ok)
+		assume match g3 : finite
 		ok = g3 == 4.0
 		check("sqrtf of an expression", ok)
 	}
@@ -137,7 +157,7 @@ func main() void{
 	check("narrow return value", retNarrow(mut 200, mut 100) == 44)
 	let:<mut u32> cnt = mut 0
 	let:<mut u32> n32 = mut 0
-	unsafe{
+	unsafe loop{
 		loop{
 			n32 += 1
 			if n32 > 10{
@@ -164,7 +184,7 @@ func main() void{
 	// ---- static arrays: variable index reads/writes, scale 8 and 4 ----
 	let s = mut 0
 	let fs = mut 0.0
-	unsafe{
+	unsafe assume global{
 		for i in ga{
 			assume match i into ga
 			ga[i] = ga[i] * 2 + i
@@ -175,6 +195,8 @@ func main() void{
 		}
 		for k in gf{
 			assume match k into gf
+			assume match gf[k] : finite
+			assume match gf[k]*0.5 : finite
 			gf[k] = gf[k] + gf[k] * 0.5
 		}
 		for m in gf{
@@ -183,18 +205,21 @@ func main() void{
 		}
 		gs = gs + 7
 		gs += 1
+		assume match gg : finite
 		gg = gg * 4.0
 	}
 	check("static u64 array read/write", s == 40)
-	unsafe{
+	unsafe assume{
+		assume match fs : finite
 		ok = fs == 18.0
 	}
 	check("static f32 array read/write", ok)
-	unsafe{
+	unsafe global{
 		ok = gs == 8
 	}
 	check("static scalar update", ok)
-	unsafe{
+	unsafe assume global{
+		assume match gg : finite
 		ok = gg == 2.0
 	}
 	check("static float update", ok)
@@ -206,7 +231,8 @@ func main() void{
 	check("struct u64 field", pt.x == 110)
 	check("struct u32 field wraps", pt.y == 4000000014)
 	check("struct u8 field wraps", pt.b == 1)
-	unsafe{
+	unsafe assume{
+		assume match pt.w : finite
 		ok = pt.w == 9.0
 	}
 	check("struct f32 field", ok)

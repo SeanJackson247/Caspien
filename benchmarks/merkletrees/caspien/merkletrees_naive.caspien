@@ -29,7 +29,7 @@ let static:<mut u64[8]> S = mut [0, 0, 0, 0, 0, 0, 0, 0]
 
 // compress the block in W[0..15] into S: schedule W[16..63], 64 rounds fully unrolled with the working variables renamed instead of shifted
 func comp() void{
-	unsafe{
+	unsafe global{
 		let:<mut u64> a = mut 0
 		let:<mut u64> b = mut 0
 		let:<mut u64> c = mut 0
@@ -1147,7 +1147,7 @@ func comp() void{
 // compress the second block of a 64-byte message, which is pure padding (0x80000000, 13 zero words... , 512): its schedule is a constant, so
 // every round adds one precomputed literal K[i] + W[i] and no schedule is computed
 func compPad() void{
-	unsafe{
+	unsafe global{
 		let:<mut u64> a = mut 0
 		let:<mut u64> b = mut 0
 		let:<mut u64> c = mut 0
@@ -1772,7 +1772,7 @@ func bswap(v: mut u32) mut u32{
 
 // S = SHA256(le64(d) || le64(i)) for d = dhi * 2^32 + dlo, i = ihi * 2^32 + ilo: one block (16-byte message plus padding)
 func leaf(dlo: mut u32, dhi: mut u32, ilo: mut u32, ihi: mut u32) void{
-	unsafe{
+	unsafe global{
 		W[0] = bswap(dlo) as u64
 		W[1] = bswap(dhi) as u64
 		W[2] = bswap(ilo) as u64
@@ -1803,7 +1803,7 @@ func leaf(dlo: mut u32, dhi: mut u32, ilo: mut u32, ihi: mut u32) void{
 
 // S = SHA256(L || R) where the 16 words of L || R are in W[0..15]: two blocks, the second one pure padding
 func node() void{
-	unsafe{
+	unsafe global{
 		S[0] = 0x6a09e667
 		S[1] = 0xbb67ae85
 		S[2] = 0x3c6ef372
@@ -1819,7 +1819,7 @@ func node() void{
 
 func main() void{
 	?catch(e){ return }
-	unsafe{
+	unsafe assume extern global loop{
 		let n = mut 0
 		n = atol(getenv("MERKLE_N"))
 		let:<mut u32> zero = mut 0
@@ -2054,6 +2054,7 @@ func main() void{
 		for p in 0..half{
 			xl = xl * 1664525 + 1013904223
 			let xw = mut xl as u64
+			assume match n != 0
 			let idx = mut (xw % n)
 			let o = mut 0
 			let s = mut n

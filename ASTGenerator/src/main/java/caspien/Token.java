@@ -285,6 +285,12 @@ public class Token {
     /** Null/empty if this token has no decorators. See the Decorator class doc for how these get here. */
     public List<Decorator> decorators;
 
+    /** On an 'unsafe' block statement only: the tags written after the keyword (`unsafe deref extern{`), in source order; empty/null otherwise. */
+    public List<String> unsafeTags;
+
+    /** True on an 'unsafe' block the compiler wrote itself (e.g. an async trampoline): exempt from the tag rules. */
+    public boolean synthesizedUnsafe;
+
     /**
      * Set on a "let" KEYWORD token by Parser when the source wrote
      * "let static name = ...". Confirmed directly: only legal as one of
@@ -1118,6 +1124,7 @@ public class Token {
         clone.forcedLiteralType = this.forcedLiteralType;
         clone.pinnedComments = this.pinnedComments;
         clone.decorators = this.decorators;
+        clone.unsafeTags = this.unsafeTags;
         clone.isStatic = this.isStatic;
         clone.isConst = this.isConst;
         clone.typeBound = this.typeBound;

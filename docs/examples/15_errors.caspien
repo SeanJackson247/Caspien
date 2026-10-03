@@ -29,7 +29,7 @@ func parse(x: mut u64) mut u64{
 func middle(x: mut u64) mut u64{
 	// ?catch declares the handler that every `?` below it uses. It must end in return, throw or continue.
 	?catch(e){
-		unsafe{ printf("middle: saw '%s', passing it on\n", e) }
+		unsafe extern{ printf("middle: saw '%s', passing it on\n", e) }
 		throw e                                  // re-throw the same message
 	}
 	let p = mut ? new Point{x= mut x, y= mut 1}  // `new` can fail, so it is a throwing call too
@@ -47,12 +47,12 @@ func top(x: mut u64) mut u64{
 func run(x: mut u64) void{
 	try{                                         // a scope that compiles to nothing; it is where `continue` lands
 		let r = try top(x) catch(e){             // the long form of `?`, with its own handler
-			unsafe{ printf("run(%llu): caught '%s'\n", x, e) }
+			unsafe extern{ printf("run(%llu): caught '%s'\n", x, e) }
 			continue                             // jump to just past the enclosing try{} block
 		}
-		unsafe{ printf("run(%llu): ok, r=%llu\n", x, r) }
+		unsafe extern{ printf("run(%llu): ok, r=%llu\n", x, r) }
 	}
-	unsafe{ printf("run(%llu): done\n", x) }
+	unsafe extern{ printf("run(%llu): done\n", x) }
 }
 
 @throws
@@ -84,5 +84,5 @@ func main() void{
 	let s2 = mut sum(0, 2, 3)
 	let s3 = mut sum(1, 0, 3)
 	let s4 = mut sum(1, 2, 0)
-	unsafe{ printf("sum=%llu %llu %llu %llu\n", s1, s2, s3, s4) }
+	unsafe extern{ printf("sum=%llu %llu %llu %llu\n", s1, s2, s3, s4) }
 }

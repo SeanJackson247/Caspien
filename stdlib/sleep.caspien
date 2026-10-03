@@ -27,7 +27,7 @@ import "libc.caspien"
 @pub
 func sleep_call(seconds: mut u64) mut u64{
 	let remaining = mut 0
-	unsafe{
+	unsafe extern{
 		remaining = mut c_sleep(seconds)
 	}
 	return remaining

@@ -16,7 +16,7 @@ extern atol(static imut string) mut u64
 
 func main() void{
 	?catch(e){ return }
-	unsafe{
+	unsafe extern loop memcopy raw udyn{
 		let n = mut 0
 		n = atol(getenv("FASTA_N"))
 		let cnt0 = mut (n * 2 / 10)

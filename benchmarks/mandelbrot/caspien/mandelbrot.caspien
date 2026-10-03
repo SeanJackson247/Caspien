@@ -10,7 +10,7 @@ extern getenv(static imut string) static imut string
 extern atol(static imut string) mut u64
 
 func main() void{
-	unsafe{
+	unsafe assume extern loop{
 		let n = mut 0
 		n = atol(getenv("MANDELBROT_N"))
 		let:<mut f64> dn = mut 0.0
@@ -30,9 +30,16 @@ func main() void{
 		let:<mut f64> t4 = mut 0.0
 		let i = mut 0
 		for y in 0..n{
+			assume match fy : finite
+			assume match 2.0*fy : finite
+			assume match dn : finite
+			assume match (2.0*fy)/dn : finite
 			ci = 2.0 * fy / dn - 1.0
 			fx = 0.0
 			for x in 0..n{
+				assume match fx : finite
+				assume match 2.0*fx : finite
+				assume match (2.0*fx)/dn : finite
 				cr = 2.0 * fx / dn - 1.5
 				zr = 0.0
 				zi = 0.0
@@ -40,16 +47,28 @@ func main() void{
 				ti = 0.0
 				i = 0
 				loop{
+					assume match tr : finite
+					assume match ti : finite
 					t4 = tr + ti
 					if i >= 100{
 						break
 					}
+					assume match t4 : finite
 					if t4 > 4.0{
 						break
 					}
+					assume match zr : finite
+					assume match 2.0*zr : finite
+					assume match zi : finite
+					assume match (2.0*zr)*zi : finite
+					assume match ci : finite
 					zi = 2.0 * zr * zi + ci
+					assume match tr-ti : finite
+					assume match cr : finite
 					zr = tr - ti + cr
+					assume match zr : finite
 					tr = zr * zr
+					assume match zi : finite
 					ti = zi * zi
 					i += 1
 				}

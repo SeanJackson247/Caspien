@@ -21,7 +21,7 @@ struct Node{
 }
 
 func main() void{
-	unsafe{
+	unsafe assume extern loop udyn{
 		let n = mut 0
 		n = atol(getenv("GRAPH_N"))
 		let nodes = mut unsafe dyn:<Node>([])
@@ -37,6 +37,7 @@ func main() void{
 		let needle = mut (n * 7 / 10)
 		nodes[needle].value = 0xFFFFFFFF
 		for i in 0..n{
+			assume match n != 0
 			nodes[i].e0 = (i + 1) % n
 			x = bits_and(x * 1664525 + 1013904223, 0xFFFFFFFF)
 			nodes[i].e1 = x % n

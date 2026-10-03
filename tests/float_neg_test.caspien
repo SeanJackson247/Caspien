@@ -5,7 +5,7 @@ extern printf(static imut string,...) void
 extern sqrtf(mut f32) mut f32
 
 func check(name: static imut string, ok: mut bool) void{
-	unsafe{
+	unsafe extern{
 		if ok{
 			printf("PASS %s\n", name)
 		}else{
@@ -21,8 +21,11 @@ func main() void{
 	let c = mut 0.0
 	let d = mut 0.0
 	let e = mut 0.0
-	unsafe{
+	unsafe assume extern{
+		assume match b : finite
 		c = -b
+		assume match a : finite
+		assume match a-b : finite
 		d = -(a - b)
 		e = sqrtf(16.0)
 	}
@@ -31,11 +34,19 @@ func main() void{
 	let ok3 = mut false
 	let ok4 = mut false
 	let ok5 = mut false
-	unsafe{
+	unsafe assume{
+		assume match a : finite
+		assume match a+1.5 : finite
 		ok1 = a + 1.5 == 0.0
+		assume match c : finite
+		assume match c+2.25 : finite
 		ok2 = c + 2.25 == 0.0
+		assume match d : finite
+		assume match d-3.75 : finite
 		ok3 = d - 3.75 == 0.0
+		assume match 0.0-a : finite
 		ok4 = 0.0 - a == 1.5
+		assume match e : finite
 		ok5 = e == 4.0
 	}
 	check("negative literal", ok1)
@@ -43,7 +54,7 @@ func main() void{
 	check("unary minus on expression", ok3)
 	check("0.0 - negative literal", ok4)
 	check("sqrtf links (-lm)", ok5)
-	unsafe{
+	unsafe extern{
 		printf("ALL FLOAT NEG TESTS PASSED\n")
 	}
 	return

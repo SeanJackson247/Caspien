@@ -48,5 +48,5 @@ func main() void{
 	let value = mut readNode(ref n)
 	let parsed = mut parseOr(7, 99)
 	let fallback = mut parseOr(12, 99)
-	unsafe{ printf("node=%llu parsed=%llu fallback=%llu\n", value, parsed, fallback) }
+	unsafe extern{ printf("node=%llu parsed=%llu fallback=%llu\n", value, parsed, fallback) }
 }

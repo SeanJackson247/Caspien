@@ -37,7 +37,7 @@ func main() void{
 	?catch(e){ return }
 	let acct = mut ? new Account{id= 1, balance= 100}
 	acct:deposit(50)
-	unsafe{ printf("balance=%llu sides=%llu\n", acct.balance, sides(Shape.SQUARE)) }
+	unsafe extern{ printf("balance=%llu sides=%llu\n", acct.balance, sides(Shape.SQUARE)) }
 
 	// A `for` loop runs over a range. The loop variable is immutable.
 	let total = mut 0
@@ -54,5 +54,5 @@ func main() void{
 	}
 	let big = mut 300
 	let wrapped = mut wrap:<u8>(big)
-	unsafe{ printf("total=%llu fits=%llu wrapped=%u\n", total, small, wrapped) }
+	unsafe extern{ printf("total=%llu fits=%llu wrapped=%u\n", total, small, wrapped) }
 }

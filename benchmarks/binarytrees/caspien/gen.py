@@ -61,6 +61,7 @@ DESC = {
 def program(kind):
     global KIND
     KIND = kind
+    udyn_tag = " udyn" if kind == "unsafe" else ""
     if kind == "unsafe":
         lines = ["let nodes = mut unsafe dyn:<Node>([])", "let stack = mut unsafe dyn:<u64>([])",
                  "nodes = resize(nodes, cap)", "stack = resize(stack, 128)"]
@@ -105,7 +106,7 @@ struct Node{{
 }}
 
 func main() void{{
-	{head}unsafe{{
+	{head}unsafe extern loop{udyn_tag}{{
 		let maxd = mut 0
 		maxd = atol(getenv("BINARYTREES_N"))
 		if maxd < 6{{

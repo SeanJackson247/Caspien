@@ -9,7 +9,7 @@ func take(r: ref imut u64) void{
 	try{
 		?catch(e){ return }
 		let c = mut ?clone(r)
-		match Some(c){ unsafe{ printf("%llu\n", deref(c)) } }
+		match Some(c){ unsafe extern{ printf("%llu\n", deref(c)) } }
 	}
 }
 func main() void{

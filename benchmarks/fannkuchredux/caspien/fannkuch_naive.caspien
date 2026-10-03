@@ -16,7 +16,7 @@ let static:<mut u64[12]> count = mut [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 
 // perm = perm1 (first n elements)
 func copyPerm(n: mut u64) void{
-	unsafe{
+	unsafe assume global{
 		for i in 0..n{
 			assume match i in perm1
 			assume match i into perm
@@ -27,7 +27,7 @@ func copyPerm(n: mut u64) void{
 
 // reverse perm[0..=k]
 func reversePrefix(k: mut u64) void{
-	unsafe{
+	unsafe assume global{
 		let k2 = mut ((k + 1) / 2)
 		for i in 0..k2{
 			let j = mut (k - i)
@@ -42,7 +42,7 @@ func reversePrefix(k: mut u64) void{
 
 // number of flips until perm[0] == 0
 func countFlips() mut u64{
-	unsafe{
+	unsafe global loop{
 		let flips = mut 0
 		loop{
 			let k = mut perm[0]
@@ -58,7 +58,7 @@ func countFlips() mut u64{
 
 // left-rotate perm1[0..=r]
 func rotate(r: mut u64) void{
-	unsafe{
+	unsafe assume global{
 		let perm0 = mut perm1[0]
 		for i in 0..r{
 			let j = mut (i + 1)
@@ -72,7 +72,7 @@ func rotate(r: mut u64) void{
 }
 
 func main() void{
-	unsafe{
+	unsafe assume extern global loop{
 		let n = mut 0
 		n = atol(getenv("FANNKUCH_N"))
 		for i in 0..n{

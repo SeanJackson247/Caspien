@@ -26,7 +26,7 @@ struct Mix{
 }
 
 func check(name: static imut string, ok: mut bool) void{
-	unsafe{
+	unsafe extern{
 		if ok{
 			printf("PASS %s\n", name)
 		}else{
@@ -68,8 +68,11 @@ func mixed() mut bool{
 	if !m.e{
 		ok = false
 	}
-	unsafe{
+	unsafe assume{
+		assume match m.c : finite
+		assume match m.c*2.0 : finite
 		m.c = m.c * 2.0 + 0.5
+		assume match m.c : finite
 		if m.c != 3.5{
 			ok = false
 		}
@@ -135,12 +138,15 @@ func two(k: mut u64) mut u64{
 }
 
 func rd(p: raw imut u64) imut u64{
-	unsafe{ return deref(p) }
+	unsafe assume{
+		assume match Some(p)
+		return deref(p)
+	}
 }
 // the address of one member is taken: the struct is left alone
 func addr_member(k: mut u64) mut u64{
 	let v = mut V{x= 41, y= k}
-	unsafe{
+	unsafe raw{
 		let q = imut raw v.x
 		return rd(q) + v.y
 	}

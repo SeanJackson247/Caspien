@@ -12,7 +12,7 @@ let static:<mut f32[3]> fc = mut [1.0, 2.0, 4.0]
 let static:<mut f64[3]> dc = mut [1.0, 2.0, 4.0]
 
 func check(name: static imut string, ok: mut bool) void{
-	unsafe{
+	unsafe extern{
 		if ok{
 			printf("PASS %s\n", name)
 		}else{
@@ -28,24 +28,30 @@ func main() void{
 	let sf = mut 0.0 // f32
 
 	// ---- f64: read one array, write another, sum ----
-	unsafe{
+	unsafe assume global{
 		for i in da{
 			assume match i into da
 			assume match i into db
+			assume match da[i] : finite
+			assume match da[i]*2.0 : finite
 			db[i] = da[i] * 2.0 + 0.25
 		}
 		for j in db{
 			assume match j in db
 			sd += db[j]
 		}
+		assume match sd : finite
+		assume match db[0] : finite
+		assume match db[4] : finite
 		ok = sd == 36.25 && db[0] == 3.25 && db[4] == 11.25
 	}
 	check("f64 array: write through a variable index", ok)
 
 	// ---- f64: compound subtract of a computed value (the xmm chain feeding the store) ----
-	unsafe{
+	unsafe assume global{
 		for i in db{
 			assume match i into db
+			assume match db[i] : finite
 			db[i] -= db[i] * 0.5
 		}
 		sd = 0.0
@@ -53,15 +59,21 @@ func main() void{
 			assume match j in db
 			sd += db[j]
 		}
+		assume match sd : finite
+		assume match db[0] : finite
+		assume match db[1] : finite
+		assume match db[4] : finite
 		ok = sd == 18.125 && db[0] == 1.625 && db[1] == 2.625 && db[4] == 5.625
 	}
 	check("f64 array: a[i] -= a[i] * c", ok)
 
 	// ---- f64: element of one array plus element of another, stored back ----
-	unsafe{
+	unsafe assume global{
 		for i in da{
 			assume match i in da
 			assume match i into db
+			assume match da[i] : finite
+			assume match db[i] : finite
 			db[i] = da[i] + db[i]
 		}
 		sd = 0.0
@@ -69,12 +81,15 @@ func main() void{
 			assume match j in db
 			sd += db[j]
 		}
+		assume match sd : finite
+		assume match db[0] : finite
+		assume match db[3] : finite
 		ok = sd == 35.625 && db[0] == 3.125 && db[3] == 9.125
 	}
 	check("f64 array: two arrays in one statement", ok)
 
 	// ---- f64: nested loops, two different indices ----
-	unsafe{
+	unsafe assume global{
 		for j in db{
 			assume match j into db
 			db[j] = 0.0
@@ -91,27 +106,35 @@ func main() void{
 			assume match k in db
 			sd += db[k]
 		}
+		assume match sd : finite
+		assume match db[2] : finite
 		ok = sd == 87.5 && db[2] == 17.5
 	}
 	check("f64 array: nested loops with two indices", ok)
 
 	// ---- f32: the same four shapes (scale 4) ----
-	unsafe{
+	unsafe assume global{
 		for i in fa{
 			assume match i into fa
 			assume match i into fb
+			assume match fa[i] : finite
+			assume match fa[i]*2.0 : finite
 			fb[i] = fa[i] * 2.0 + 0.25
 		}
 		for j in fb{
 			assume match j in fb
 			sf += fb[j]
 		}
+		assume match sf : finite
+		assume match fb[0] : finite
+		assume match fb[4] : finite
 		ok = sf == 36.25 && fb[0] == 3.25 && fb[4] == 11.25
 	}
 	check("f32 array: write through a variable index", ok)
-	unsafe{
+	unsafe assume global{
 		for i in fb{
 			assume match i into fb
+			assume match fb[i] : finite
 			fb[i] -= fb[i] * 0.5
 		}
 		sf = 0.0
@@ -119,13 +142,19 @@ func main() void{
 			assume match j in fb
 			sf += fb[j]
 		}
+		assume match sf : finite
+		assume match fb[0] : finite
+		assume match fb[1] : finite
+		assume match fb[4] : finite
 		ok = sf == 18.125 && fb[0] == 1.625 && fb[1] == 2.625 && fb[4] == 5.625
 	}
 	check("f32 array: a[i] -= a[i] * c", ok)
-	unsafe{
+	unsafe assume global{
 		for i in fa{
 			assume match i in fa
 			assume match i into fb
+			assume match fa[i] : finite
+			assume match fb[i] : finite
 			fb[i] = fa[i] + fb[i]
 		}
 		sf = 0.0
@@ -133,10 +162,13 @@ func main() void{
 			assume match j in fb
 			sf += fb[j]
 		}
+		assume match sf : finite
+		assume match fb[0] : finite
+		assume match fb[3] : finite
 		ok = sf == 35.625 && fb[0] == 3.125 && fb[3] == 9.125
 	}
 	check("f32 array: two arrays in one statement", ok)
-	unsafe{
+	unsafe assume global{
 		for j in fb{
 			assume match j into fb
 			fb[j] = 0.0
@@ -153,14 +185,17 @@ func main() void{
 			assume match k in fb
 			sf += fb[k]
 		}
+		assume match sf : finite
+		assume match fb[2] : finite
 		ok = sf == 87.5 && fb[2] == 17.5
 	}
 	check("f32 array: nested loops with two indices", ok)
 
 	// ---- arrays whose size is not a multiple of 8 / short arrays; squares in place ----
-	unsafe{
+	unsafe assume global{
 		for i in fc{
 			assume match i into fc
+			assume match fc[i] : finite
 			fc[i] = fc[i] * fc[i]
 		}
 		sf = 0.0
@@ -168,12 +203,17 @@ func main() void{
 			assume match j in fc
 			sf += fc[j]
 		}
+		assume match sf : finite
+		assume match fc[0] : finite
+		assume match fc[1] : finite
+		assume match fc[2] : finite
 		ok = sf == 21.0 && fc[0] == 1.0 && fc[1] == 4.0 && fc[2] == 16.0
 	}
 	check("f32 array of three: square in place", ok)
-	unsafe{
+	unsafe assume global{
 		for i in dc{
 			assume match i into dc
+			assume match dc[i] : finite
 			dc[i] = dc[i] * dc[i]
 		}
 		sd = 0.0
@@ -181,12 +221,20 @@ func main() void{
 			assume match j in dc
 			sd += dc[j]
 		}
+		assume match sd : finite
+		assume match dc[0] : finite
+		assume match dc[1] : finite
+		assume match dc[2] : finite
 		ok = sd == 21.0 && dc[0] == 1.0 && dc[1] == 4.0 && dc[2] == 16.0
 	}
 	check("f64 array of three: square in place", ok)
 
 	// ---- the source arrays were never written ----
-	unsafe{
+	unsafe assume global{
+		assume match da[0] : finite
+		assume match da[4] : finite
+		assume match fa[0] : finite
+		assume match fa[4] : finite
 		ok = da[0] == 1.5 && da[4] == 5.5 && fa[0] == 1.5 && fa[4] == 5.5
 	}
 	check("source arrays untouched", ok)

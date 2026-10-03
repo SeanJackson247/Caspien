@@ -82,14 +82,14 @@ func isRect(s: ref some imut Shape) imut bool{
 func main() void{
 	?catch(e){ return }
 	let dog = mut Dog{legs= Legs{count= 4}, name= 7}
-	unsafe{ printf("composed=%llu %llu ", dog.legs.count, dog.name) }
-	unsafe{ printf("%llu\n", mut 3) }
+	unsafe extern{ printf("composed=%llu %llu ", dog.legs.count, dog.name) }
+	unsafe extern{ printf("%llu\n", mut 3) }
 
 	let a = mut ? new A{x= 1}
 	let b = mut ? new B{x= 1}
 	let da = imut a.twice(mut 5)
 	let db = imut b.twice(mut 5)
-	unsafe{ printf("default=%llu %llu\n", da, db) }
+	unsafe extern{ printf("default=%llu %llu\n", da, db) }
 
 	let r = mut ? new Rect{w= 6, h= 7}
 	let s = mut ? new Sq{s= 5}
@@ -98,6 +98,6 @@ func main() void{
 	let isShape = imut r implements Shape
 	let yes = imut isRect(r)
 	let no = imut isRect(s)
-	unsafe{ printf("rect=%llu sq=%llu Rect implements Shape=%llu\n", yes, no, isShape) }
-	unsafe{ printf("dispatch=%llu %llu\n", tr, ts) }
+	unsafe extern{ printf("rect=%llu sq=%llu Rect implements Shape=%llu\n", yes, no, isShape) }
+	unsafe extern{ printf("dispatch=%llu %llu\n", tr, ts) }
 }

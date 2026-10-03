@@ -24,10 +24,10 @@ struct Top{
 	mid: owns some mut Outer }
 }
 func main() void{
-	unsafe{ printf("start\n") }
+	unsafe extern{ printf("start\n") }
 	try{
 		?catch(e){
-			unsafe{ printf("CAUGHT %s\n", e) }
+			unsafe extern{ printf("CAUGHT %s\n", e) }
 			return
 		}
 		let ip = mut ?new Pair{a= 7, b= 9}
@@ -40,11 +40,11 @@ func main() void{
 		let arr = mut ?dyn([p1, p2])
 		let dd = mut ?dyn([mut 1, mut 2, mut 3])
 		let bag = mut ?new Bag{n= 9, data= dd}
-		unsafe{ printf("built\n") }
+		unsafe extern{ printf("built\n") }
 		let c1 = mut ?clone(o)
 		let c2 = mut ?clone(t)
 		let c3 = mut ?clone(arr)
 		let c4 = mut ?clone(bag)
-		unsafe{ printf("cloned %llu %llu %llu\n", c1.x, c2.y, len(c3)) }
+		unsafe extern{ printf("cloned %llu %llu %llu\n", c1.x, c2.y, len(c3)) }
 	}
 }

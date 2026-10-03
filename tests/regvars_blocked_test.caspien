@@ -11,7 +11,7 @@ import "../stdlib/gt_destruct.caspien"
 import "../stdlib/gt_moved.caspien"
 
 func check(name: static imut string, ok: mut bool) void{
-	unsafe{
+	unsafe extern{
 		if ok{
 			printf("PASS %s\n", name)
 		}else{
@@ -63,7 +63,7 @@ func inLoop(n: mut u64) mut u64{
 // 3. sieve on an unsafe dynarray: resize, then call-free loops
 func sieve(n: mut u64) mut u64{
 	let count = mut 0
-	unsafe{
+	unsafe loop udyn{
 		let f = mut unsafe dyn:<u8>([])
 		let total = mut (n + 1)
 		f = resize(f, total)
@@ -97,7 +97,7 @@ func sieve(n: mut u64) mut u64{
 // 4. a u64 dynarray filled in a loop, then four running sums in one call-free loop
 func wideSum(n: mut u64) mut u64{
 	let r = mut 0
-	unsafe{
+	unsafe udyn{
 		let arr = mut unsafe dyn:<u64>([])
 		let size = mut n
 		arr = resize(arr, size)

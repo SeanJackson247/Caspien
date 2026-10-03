@@ -5,10 +5,10 @@ func inc(x: mut u64) mut u64{ return x + 1 }
 
 func check(name: static imut string, got: imut u64, want: imut u64) mut u64{
 	if got == want{
-		unsafe{ printf("PASS %s\n", name) }
+		unsafe extern{ printf("PASS %s\n", name) }
 		return 0
 	}
-	unsafe{ printf("FAIL %s got %llu want %llu\n", name, got, want) }
+	unsafe extern{ printf("FAIL %s got %llu want %llu\n", name, got, want) }
 	return 1
 }
 
@@ -43,7 +43,7 @@ func main() void{
 	fails += check("wrap u8", wrap:<u8>(n) as u64, 44)            // 300 & 0xFF
 
 	let fp = imut inc
-	unsafe{
+	unsafe call{
 		let r = mut call(fp, mut 5)                               // inc(5) == 6
 		fails += check("call", r, 6)
 	}
@@ -56,5 +56,5 @@ func main() void{
 	if r2 <= 2147483647{ ok2 = 1 }
 	fails += check("insecure_rand range", ok1, 1)
 	fails += check("insecure_rand range 2", ok2, 1)
-	unsafe{ printf("fails=%llu\n", fails) }
+	unsafe extern{ printf("fails=%llu\n", fails) }
 }

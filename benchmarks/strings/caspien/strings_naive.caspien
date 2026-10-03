@@ -12,7 +12,7 @@ extern getenv(static imut string) static imut string
 extern atol(static imut string) mut u64
 
 func code(c: mut char) mut u64{
-	unsafe{
+	unsafe memcopy raw{
 		let v = mut 0
 		memcopy(raw v, 1, raw c)
 		return v
@@ -20,7 +20,7 @@ func code(c: mut char) mut u64{
 }
 
 func chr(b: mut u64) mut char{
-	unsafe{
+	unsafe memcopy raw{
 		let c = mut 'a'
 		memcopy(raw c, 1, raw b)
 		return c
@@ -29,7 +29,7 @@ func chr(b: mut u64) mut char{
 
 func main() void{
 	?catch(e){ return }
-	unsafe{
+	unsafe extern{
 		let n = mut 0
 		n = atol(getenv("STRINGS_N"))
 		let text = mut ? new String()

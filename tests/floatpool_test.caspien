@@ -9,7 +9,7 @@ let static:<mut f64> g64 = mut 0.0
 let static:<mut f32> g32 = mut 0.0
 
 func check(name: static imut string, ok: mut bool) void{
-	unsafe{
+	unsafe extern{
 		if ok{
 			printf("PASS %s\n", name)
 		}else{
@@ -20,7 +20,8 @@ func check(name: static imut string, ok: mut bool) void{
 }
 
 func twice64(x: mut f64) mut f64{
-	unsafe{
+	unsafe assume{
+		assume match x : finite
 		return x * 2.0
 	}
 }
@@ -28,7 +29,8 @@ func k64() mut f64{
 	return 0.75
 }
 func twice32(x: mut f32) mut f32{
-	unsafe{
+	unsafe assume{
+		assume match x : finite
 		return x * 2.0
 	}
 }
@@ -42,30 +44,46 @@ func main() void{
 	// ---- f64: an expression with several different constants ----
 	let:<mut f64> x = mut 2.0
 	let:<mut f64> fr = mut 0.0
-	unsafe{
+	unsafe assume{
+		assume match x : finite
+		assume match x*0.5 : finite
+		assume match (x*0.5)+0.25 : finite
+		assume match ((x*0.5)+0.25)*4.0 : finite
+		assume match (((x*0.5)+0.25)*4.0)-3.0 : finite
+		assume match ((((x*0.5)+0.25)*4.0)-3.0)/8.0 : finite
 		fr = ((x * 0.5 + 0.25) * 4.0 - 3.0) / 8.0 + 1024.0
+		assume match fr : finite
 		ok = fr == 1024.25
 	}
 	check("f64 expression with six constants", ok)
 
 	// ---- f64: the constant is the LEFT operand (not commutative), and zero ----
-	unsafe{
+	unsafe assume{
+		assume match x : finite
 		fr = 10.0 - x
+		assume match fr : finite
 		ok = fr == 8.0
 	}
 	check("f64 constant minus variable", ok)
-	unsafe{
+	unsafe assume{
+		assume match x : finite
 		fr = 0.0 - x
+		assume match fr : finite
 		ok = fr == -2.0
 	}
 	check("f64 zero minus variable", ok)
-	unsafe{
+	unsafe assume{
+		assume match x : finite
 		fr = 1.0 / x
+		assume match fr : finite
 		ok = fr == 0.5
 	}
 	check("f64 constant divided by variable", ok)
-	unsafe{
+	unsafe assume{
+		assume match x : finite
+		assume match 0.0*x : finite
 		fr = 0.0 * x + 0.0
+		assume match fr : finite
 		ok = fr == 0.0
 	}
 	check("f64 zero times variable", ok)
@@ -92,7 +110,8 @@ func main() void{
 	s += 18.0
 	s += 19.0
 	s += 20.0
-	unsafe{
+	unsafe assume{
+		assume match s : finite
 		ok = s == 210.0
 	}
 	check("f64 twenty different constants", ok)
@@ -100,12 +119,15 @@ func main() void{
 	// ---- f64: the same two constants reused in a loop ----
 	let:<mut f64> t = mut 1.0
 	for i in 0..6{
-		unsafe{
+		unsafe assume{
+			assume match t : finite
+			assume match t*1.5 : finite
 			t = t * 1.5 + 0.5
 		}
 	}
 	// 1 -> 2 -> 3.5 -> 5.75 -> 9.125 -> 14.1875 -> 21.78125
-	unsafe{
+	unsafe assume{
+		assume match t : finite
 		ok = t == 21.78125
 	}
 	check("f64 reused constants in a loop", ok)
@@ -113,38 +135,52 @@ func main() void{
 	// ---- f64: large and small powers of two ----
 	let:<mut f64> big = mut 4294967296.0
 	let:<mut f64> small = mut 0.0009765625
-	unsafe{
+	unsafe assume{
+		assume match big : finite
 		fr = big * 0.0009765625
+		assume match fr : finite
 		ok = fr == 4194304.0
 		fr = 1099511627776.0 / 1024.0
+		assume match fr : finite
 		ok = ok && fr == 1073741824.0
 		fr = -0.75 * 4.0
+		assume match fr : finite
 		ok = ok && fr == -3.0
+		assume match small : finite
+		assume match small*1024.0 : finite
 		ok = ok && small * 1024.0 == 1.0
 	}
 	check("f64 large, small and negative constants", ok)
 
 	// ---- f64: compares against an immediate ----
-	unsafe{
+	unsafe assume{
+		assume match x : finite
 		ok = x < 3.0 && x == 2.0 && !(x > 2.5) && 0.0 < x && x >= 2.0 && x <= 2.0 && x != 0.5
 	}
 	check("f64 compares with immediate operands", ok)
 
 	// ---- f64: constants in call arguments, results and returns ----
-	unsafe{
+	unsafe assume{
 		fr = twice64(2.5)
+		assume match fr : finite
 		ok = fr == 5.0
 		fr = k64()
+		assume match fr : finite
 		ok = ok && fr == 0.75
+		assume match twice64(k64()) : finite
 		fr = twice64(k64()) + 0.25
+		assume match fr : finite
 		ok = ok && fr == 1.75
 	}
 	check("f64 constant arguments and returns", ok)
 
 	// ---- f64 global written from a constant, then used ----
-	unsafe{
+	unsafe assume global{
 		g64 = 1.5
+		assume match g64 : finite
+		assume match g64*3.0 : finite
 		g64 = g64 * 3.0 + 0.5
+		assume match g64 : finite
 		ok = g64 == 5.0
 	}
 	check("f64 global from constants", ok)
@@ -152,17 +188,28 @@ func main() void{
 	// ---- f32: the same shapes (a different pool width) ----
 	let fx = mut 2.0 // f32
 	let fs = mut 0.0 // f32
-	unsafe{
+	unsafe assume{
+		assume match fx : finite
+		assume match fx*0.5 : finite
+		assume match (fx*0.5)+0.25 : finite
+		assume match ((fx*0.5)+0.25)*4.0 : finite
+		assume match (((fx*0.5)+0.25)*4.0)-3.0 : finite
+		assume match ((((fx*0.5)+0.25)*4.0)-3.0)/8.0 : finite
 		fs = ((fx * 0.5 + 0.25) * 4.0 - 3.0) / 8.0 + 1024.0
+		assume match fs : finite
 		ok = fs == 1024.25
 	}
 	check("f32 expression with six constants", ok)
-	unsafe{
+	unsafe assume{
+		assume match fx : finite
 		fs = 10.0 - fx
+		assume match fs : finite
 		ok = fs == 8.0
 		fs = 0.0 - fx
+		assume match fs : finite
 		ok = ok && fs == -2.0
 		fs = 1.0 / fx
+		assume match fs : finite
 		ok = ok && fs == 0.5
 	}
 	check("f32 constant as left operand, zero", ok)
@@ -187,50 +234,80 @@ func main() void{
 	fq += 18.0
 	fq += 19.0
 	fq += 20.0
-	unsafe{
+	unsafe assume{
+		assume match fq : finite
 		ok = fq == 210.0
 	}
 	check("f32 twenty different constants", ok)
 	let fm = mut 1.0 // f32
 	for i in 0..6{
-		unsafe{
+		unsafe assume{
+			assume match fm : finite
+			assume match fm*1.5 : finite
 			fm = fm * 1.5 + 0.5
 		}
 	}
-	unsafe{
+	unsafe assume{
+		assume match fm : finite
 		ok = fm == 21.78125
 	}
 	check("f32 reused constants in a loop", ok)
-	unsafe{
+	unsafe assume global{
+		assume match fx : finite
 		ok = fx < 3.0 && fx == 2.0 && !(fx > 2.5) && 0.0 < fx && fx != 0.5
 		fs = twice32(2.5)
+		assume match fs : finite
 		ok = ok && fs == 5.0
 		fs = k32()
+		assume match fs : finite
 		ok = ok && fs == 0.75
 		g32 = 1.5
+		assume match g32 : finite
+		assume match g32*3.0 : finite
 		g32 = g32 * 3.0 + 0.5
+		assume match g32 : finite
 		ok = ok && g32 == 5.0
 	}
 	check("f32 compares, arguments, returns, global", ok)
 
 	// ---- f32 and f64 with the same numeric value in one function: the pool keeps them apart ----
-	unsafe{
+	unsafe assume{
+		assume match x : finite
 		fr = 1.5 * x
+		assume match fx : finite
 		fs = 1.5 * fx
+		assume match fr : finite
+		assume match fs : finite
 		ok = fr == 3.0 && fs == 3.0
+		assume match x*0.125 : finite
 		fr = x * 0.125 + 0.125
+		assume match fx*0.125 : finite
 		fs = fx * 0.125 + 0.125
+		assume match fr : finite
+		assume match fs : finite
 		ok = ok && fr == 0.375 && fs == 0.375
 	}
 	check("the same constant as f32 and as f64", ok)
 
 	// ---- negative constants as the right operand (a pool entry whose top bit is set) ----
-	unsafe{
+	unsafe assume{
+		assume match x : finite
+		assume match -2.5 : finite
+		assume match x*(-2.5) : finite
 		fr = x * -2.5 + -0.5
+		assume match fx : finite
+		assume match fx*(-2.5) : finite
 		fs = fx * -2.5 + -0.5
+		assume match fr : finite
+		assume match fs : finite
 		ok = fr == -5.5 && fs == -5.5
+		assume match -0.25 : finite
+		assume match x*(-0.25) : finite
 		fr = -4.0 - x * -0.25
+		assume match fx*(-0.25) : finite
 		fs = -4.0 - fx * -0.25
+		assume match fr : finite
+		assume match fs : finite
 		ok = ok && fr == -3.5 && fs == -3.5
 	}
 	check("negative f32 and f64 constants as operands", ok)

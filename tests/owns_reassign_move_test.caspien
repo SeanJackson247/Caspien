@@ -27,5 +27,5 @@ func main() void{
 	let fill = mut ? dyn([mut 'y'])
 	outer = ? resize(outer, 3, fill)
 	let grown = mut len(outer)
-	unsafe{ printf("moved=%llu replaced=%llu grown=%llu\n", moved, replaced, grown) }
+	unsafe extern{ printf("moved=%llu replaced=%llu grown=%llu\n", moved, replaced, grown) }
 }

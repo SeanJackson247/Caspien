@@ -12,7 +12,7 @@ import "../stdlib/gt_destruct.caspien"
 import "../stdlib/gt_moved.caspien"
 
 func check(name: static imut string, ok: mut bool) void{
-	unsafe{
+	unsafe extern{
 		if ok{
 			printf("PASS %s\n", name)
 		}else{
@@ -192,7 +192,7 @@ func catchWide(n: mut u64) mut u64{
 	let u = mut 0
 	let v = mut 0
 	let j = mut 0
-	unsafe{
+	unsafe loop{
 		loop{
 			if j == n{
 				break

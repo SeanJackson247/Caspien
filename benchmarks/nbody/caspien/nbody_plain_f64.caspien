@@ -25,7 +25,7 @@ let static:<mut f64[5]> vz = mut [0.0, -0.02521836165988763, 0.00841576137658415
 let static:<mut f64[5]> mass = mut [39.47841760435743, 0.03769367487038949, 0.011286326131968767, 0.0017237240570597112, 0.0020336868699246304]
 
 func advance(dt: mut f64) void{
-	unsafe{
+	unsafe assume extern global{
 		for i in x{
 			assume match i into vx
 			assume match i into vy
@@ -43,16 +43,42 @@ func advance(dt: mut f64) void{
 				assume match j in y
 				assume match j in z
 				assume match j in mass
+				assume match x[i] : finite
+				assume match x[j] : finite
 				let dx = mut (x[i] - x[j])
+				assume match y[i] : finite
+				assume match y[j] : finite
 				let dy = mut (y[i] - y[j])
+				assume match z[i] : finite
+				assume match z[j] : finite
 				let dz = mut (z[i] - z[j])
+				assume match dx : finite
+				assume match dy : finite
+				assume match dx*dx : finite
+				assume match dy*dy : finite
+				assume match dz : finite
+				assume match (dx*dx)+(dy*dy) : finite
+				assume match dz*dz : finite
 				let dist = mut sqrt(dx * dx + dy * dy + dz * dz)
+				assume match dist : finite
+				assume match dist*dist : finite
+				assume match dt : finite
+				assume match (dist*dist)*dist : finite
 				let mag = mut (dt / (dist * dist * dist))
+				assume match mass[j] : finite
+				assume match dx*mass[j] : finite
+				assume match mag : finite
 				vx[i] -= dx * mass[j] * mag
+				assume match dy*mass[j] : finite
 				vy[i] -= dy * mass[j] * mag
+				assume match dz*mass[j] : finite
 				vz[i] -= dz * mass[j] * mag
+				assume match mass[i] : finite
+				assume match dx*mass[i] : finite
 				vx[j] += dx * mass[i] * mag
+				assume match dy*mass[i] : finite
 				vy[j] += dy * mass[i] * mag
+				assume match dz*mass[i] : finite
 				vz[j] += dz * mass[i] * mag
 			}
 		}
@@ -63,8 +89,12 @@ func advance(dt: mut f64) void{
 			assume match i in vx
 			assume match i in vy
 			assume match i in vz
+			assume match dt : finite
+			assume match vx[i] : finite
 			x[i] += dt * vx[i]
+			assume match vy[i] : finite
 			y[i] += dt * vy[i]
+			assume match vz[i] : finite
 			z[i] += dt * vz[i]
 		}
 	}
@@ -73,7 +103,7 @@ func advance(dt: mut f64) void{
 
 func energy() mut f64{
 	let:<mut f64> e = mut 0.0
-	unsafe{
+	unsafe assume extern global{
 		for i in x{
 			assume match i in x
 			assume match i in y
@@ -82,6 +112,16 @@ func energy() mut f64{
 			assume match i in vx
 			assume match i in vy
 			assume match i in vz
+			assume match mass[i] : finite
+			assume match vx[i] : finite
+			assume match vy[i] : finite
+			assume match vx[i]*vx[i] : finite
+			assume match vy[i]*vy[i] : finite
+			assume match vz[i] : finite
+			assume match (vx[i]*vx[i])+(vy[i]*vy[i]) : finite
+			assume match vz[i]*vz[i] : finite
+			assume match 0.5*mass[i] : finite
+			assume match ((vx[i]*vx[i])+(vy[i]*vy[i]))+(vz[i]*vz[i]) : finite
 			e += 0.5 * mass[i] * (vx[i] * vx[i] + vy[i] * vy[i] + vz[i] * vz[i])
 			let j0 = mut (i + 1)
 			for j in j0..5{
@@ -89,10 +129,26 @@ func energy() mut f64{
 				assume match j in y
 				assume match j in z
 				assume match j in mass
+				assume match x[i] : finite
+				assume match x[j] : finite
 				let dx = mut (x[i] - x[j])
+				assume match y[i] : finite
+				assume match y[j] : finite
 				let dy = mut (y[i] - y[j])
+				assume match z[i] : finite
+				assume match z[j] : finite
 				let dz = mut (z[i] - z[j])
+				assume match dx : finite
+				assume match dy : finite
+				assume match dx*dx : finite
+				assume match dy*dy : finite
+				assume match dz : finite
+				assume match (dx*dx)+(dy*dy) : finite
+				assume match dz*dz : finite
 				let dist = mut sqrt(dx * dx + dy * dy + dz * dz)
+				assume match mass[j] : finite
+				assume match mass[i]*mass[j] : finite
+				assume match dist : finite
 				e -= (mass[i] * mass[j]) / dist
 			}
 		}
@@ -101,7 +157,7 @@ func energy() mut f64{
 }
 
 func offsetMomentum() void{
-	unsafe{
+	unsafe assume global{
 		let:<mut f64> px = mut 0.0
 		let:<mut f64> py = mut 0.0
 		let:<mut f64> pz = mut 0.0
@@ -110,12 +166,22 @@ func offsetMomentum() void{
 			assume match i in vy
 			assume match i in vz
 			assume match i in mass
+			assume match vx[i] : finite
+			assume match mass[i] : finite
 			px += vx[i] * mass[i]
+			assume match vy[i] : finite
 			py += vy[i] * mass[i]
+			assume match vz[i] : finite
 			pz += vz[i] * mass[i]
 		}
+		assume match px : finite
+		assume match px/39.47841760435743 : finite
 		vx[0] = mut 0.0 - px / 39.47841760435743
+		assume match py : finite
+		assume match py/39.47841760435743 : finite
 		vy[0] = mut 0.0 - py / 39.47841760435743
+		assume match pz : finite
+		assume match pz/39.47841760435743 : finite
 		vz[0] = mut 0.0 - pz / 39.47841760435743
 	}
 	return
@@ -123,19 +189,19 @@ func offsetMomentum() void{
 
 func main() void{
 	let n = mut 0
-	unsafe{
+	unsafe extern{
 		n = atol(getenv("NBODY_N"))
 	}
 	offsetMomentum()
 	let e0 = mut energy()
-	unsafe{
+	unsafe extern{
 		printf("%.9f\n", e0)
 	}
 	for s in 0..n{
 		advance(0.01)
 	}
 	let e1 = mut energy()
-	unsafe{
+	unsafe extern{
 		printf("%.9f\n", e1)
 	}
 	return

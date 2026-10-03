@@ -26,7 +26,8 @@ Caspien: a systems language for auditable code (ownership storage `owns/ref/raw/
 - `match @lock` on swap-mutex structs: every CLOSED path ends in `continue|break|return|throw`; lock released on throw unwinds.
 - Struct returns use RVO (hidden `$ret_dest`); legal only at `let` RHS, bare-variable assignment RHS, or `return f()`.
 - Generic impl methods are checked lazily; `DynamicArray<S>` for a struct uses the `...Ptr` twins.
-- `deref(p)` needs `unsafe` unless the pointer is proven alive; it is never an assignment target.
+- `deref(p)`/`clone(p)`, division, float operations (`assume match x : finite`) and `@lock` method calls need a proof (`match`), or `assume match` in an `unsafe assume{` block (any expression allowed, e.g. `assume match Some(p+i)`); `unsafe` relaxes nothing else for them. `deref` is never an assignment target.
+- Statement `unsafe` blocks must name exactly the reasons they need: `extern memcopy raw global loop udyn assume call asm async guard swap`; missing/extra/bare = error. Root-level `unsafe{}` declaration blocks stay bare. Compiler-written blocks are exempt (`synthesizedUnsafe`). `CASPIEN_UNSAFE_REPORT` env lists needed tags; `tests/unsafe_tags_migrate.py` retags.
 - Stdlib allocation goes through ghost table (`gt_init/gt_register/gt_alive_check/gt_destruct/gt_moved`, forced literal symbol names; `gt_moved` = unregister without free, required wherever `gt_init` is); `gt_alive_check` is a linear scan.
 - Recursion only via `@recursive` tail self-call (lowered to a bounded loop); recursive structs are rejected.
 
@@ -37,6 +38,7 @@ Caspien: a systems language for auditable code (ownership storage `owns/ref/raw/
 - Benchmarks vs C -O2 (1 Oct): about 1.0-2.9x depending on program; naive stdlib String/HashMap paths are the slow ones. Details: `benchmarks/RESULTS.md`.
 
 ## Known open items
+- GAP: `continue` is rejected inside `for`/`loop` (only `catch` bodies and `match @lock` `CLOSED`); it should work there like other languages (next iteration). Not implemented.
 - Struct `extends`/`abstract` removed (committed `0345aaa`); flat `Class` enum; `instanceof` takes only a struct name, `implements` only an interface name. Status and open items: `TODO_REMOVE_STRUCT_EXTENDS.md`.
 - `clone(p)`: deep copy via generated `__clone_<T>` routines (each owns leaf cloned into a hidden local, registered, then the copy assembled; any failure `GT_DESTRUCT`s the locals and returns null, so no leak). Safe dynarrays clone with `CLONE_DYN` (runtime size) or, when elements are owns pointers, a generated loop. A dynarray of INLINE structs that own memory is not supported (`dyn([h])` itself crashes, pre-existing; the `VAL:` clone path is untested). `tests/clone_oom_check.sh` sweeps allocation failures. Possible optimisation (not done): the owns-element dynarray clone fills the new array with null via `RESIZE` so a failure can destruct it whole; a 0..i-1 rollback (destruct only the elements made, free the shell) with an unfilled grow would skip the fill, at the cost of a new codegen grow and a more intricate cleanup path.
 - TODO (own task, full regression): drop the emitter's alloc pre-pass (`collectHoistedAllocs`) and emit ALLOCs as the body is emitted, spliced in at function end like `declareHiddenLocal` already does; changes every program's HOB. Label pre-passes (try/catch, continue) must stay.

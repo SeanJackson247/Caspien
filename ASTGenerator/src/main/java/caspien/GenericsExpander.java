@@ -957,6 +957,7 @@ public class GenericsExpander {
         // a generic func with @recursive, would have silently lost the
         // decorator too, not just @guard specifically).
         copy.decorators = src.decorators;
+        copy.unsafeTags = src.unsafeTags;
         // A third, separate instance of the exact same class of gap,
         // found while building @pub{}: a struct member's own
         // `isPubBlockMember` flag (set by Parser.stripDecoratorsDeep,

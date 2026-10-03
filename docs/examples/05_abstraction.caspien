@@ -50,5 +50,5 @@ func main() void{
 	let pairSum = mut (p.first + p.second)
 	let count = mut len(list.backing)
 	let area = imut r.area(r)
-	unsafe{ printf("pair=%llu list=%llu area=%llu triple=%llu\n", pairSum, count, area, answer) }
+	unsafe extern{ printf("pair=%llu list=%llu area=%llu triple=%llu\n", pairSum, count, area, answer) }
 }

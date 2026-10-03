@@ -218,21 +218,21 @@ emit("// Tests for the bitwise builtins bits_and / bits_or / bits_xor / bits_not
      "let static failed = mut 0",
      "",
      "func failU(name: static imut string, e: mut u64, g: mut u64) void{",
-     "\tunsafe{",
+     "\tunsafe extern global{",
      "\t\tfailed++",
      '\t\tprintf("FAIL %s expected %llu got %llu\\n", name, e, g)',
      "\t}",
      "\treturn",
      "}",
      "func failS(name: static imut string, e: mut s64, g: mut s64) void{",
-     "\tunsafe{",
+     "\tunsafe extern global{",
      "\t\tfailed++",
      '\t\tprintf("FAIL %s expected %lld got %lld\\n", name, e, g)',
      "\t}",
      "\treturn",
      "}",
      "func check(name: static imut string, ok: mut bool) void{",
-     "\tunsafe{",
+     "\tunsafe extern global{",
      "\t\tif ok{",
      "\t\t\tpassed++",
      '\t\t\tprintf("PASS %s\\n", name)',
@@ -248,7 +248,7 @@ for t, w, s in TYPES:
     fail = "failS" if s else "failU"
     emit("func chk_%s(name: static imut string, got: mut %s, exp: mut %s) void{" % (t, t, t),
          "\tif got == exp{",
-         "\t\tunsafe{",
+         "\t\tunsafe extern global{",
          "\t\t\tpassed++",
          '\t\t\tprintf("PASS %s\\n", name)',
          "\t\t}",
@@ -373,7 +373,7 @@ for t, w, s in TYPES:
                 src = "wrap:<%s>(atol(\"%d\") + 9223372036854775808)" % (t, (a & mask(w)) - (1 << 63))
             else:
                 src = "wrap:<%s>(atol(\"%d\"))" % (t, a & mask(w))
-            emit("\tunsafe{",
+            emit("\tunsafe extern{",
                  "\t\tlet:<mut %s> x = mut %s" % (t, src),
                  "\t\tlet acc = mut 0",
                  "\t\tfor i in 0..%d{" % hi,
@@ -425,28 +425,26 @@ for t, w, s in TYPES:
     # dynarray: filled from loop-variable-derived values, then combined
     dyn_in = [m_xor(m_shl(1, i, w, s), norm(i * 0x9E3779B97F4A7C15, w, s), w, s) for i in range(8)]
     dyn_out = [m_not(m_and(x, b0, w, s), w, s) for x in dyn_in]
-    emit("\tunsafe{",
-         "\t\tlet:<mut %s> zero = mut 0" % t,
-         "\t\tlet d = mut ? dyn:<%s>([])" % t,
-         "\t\td = ? resize(d, 8, zero)",
-         "\t\tfor i in 0..8{",
-         "\t\t\tlet:<mut %s> k = mut wrap:<%s>(i)" % (t, t),
-         "\t\t\tlet:<mut %s> v = mut bits_xor(bits_left(1, k), wrap:<%s>(i * 11400714819323198485))" % (t, t),
-         "\t\t\tmatch i into d{",
-         "\t\t\t\td[i] = v",
-         "\t\t\t}",
+    emit("\tlet:<mut %s> zero = mut 0" % t,
+         "\tlet d = mut ? dyn:<%s>([])" % t,
+         "\td = ? resize(d, 8, zero)",
+         "\tfor i in 0..8{",
+         "\t\tlet:<mut %s> k = mut wrap:<%s>(i)" % (t, t),
+         "\t\tlet:<mut %s> v = mut bits_xor(bits_left(1, k), wrap:<%s>(i * 11400714819323198485))" % (t, t),
+         "\t\tmatch i into d{",
+         "\t\t\td[i] = v",
          "\t\t}",
-         "\t\tfor i in 0..8{",
-         "\t\t\tmatch i into d{",
-         "\t\t\t\td[i] = bits_not(bits_and(d[i], b))",
-         "\t\t\t}",
+         "\t}",
+         "\tfor i in 0..8{",
+         "\t\tmatch i into d{",
+         "\t\t\td[i] = bits_not(bits_and(d[i], b))",
          "\t\t}",
-         "\t\tlet:<mut %s[8]> dwant = mut [%s]" % (t, ", ".join(sp(x) for x in dyn_out)),
-         "\t\tfor i in 0..8{",
-         "\t\t\tmatch i in d{",
-         "\t\t\t\tmatch i in dwant{",
-         '\t\t\t\t\tchk_%s("dynarray element %s", d[i], dwant[i])' % (t, t),
-         "\t\t\t\t}",
+         "\t}",
+         "\tlet:<mut %s[8]> dwant = mut [%s]" % (t, ", ".join(sp(x) for x in dyn_out)),
+         "\tfor i in 0..8{",
+         "\t\tmatch i in d{",
+         "\t\t\tmatch i in dwant{",
+         '\t\t\t\tchk_%s("dynarray element %s", d[i], dwant[i])' % (t, t),
          "\t\t\t}",
          "\t\t}",
          "\t}")
@@ -509,7 +507,7 @@ emit("func popcountShift(x: mut u64) mut u64{",
      "func popcountKernighan(x: mut u64) mut u64{",
      "\tlet y = mut x",
      "\tlet c = mut 0",
-     "\tunsafe{",
+     "\tunsafe loop{",
      "\t\tloop{",
      "\t\t\tif y == 0{",
      "\t\t\t\tbreak",
@@ -895,7 +893,7 @@ emit("")
 
 # ---------------------------------------------------------------------------------------------- G: atol-sourced mixed bag + main
 emit("func fromAtol() void{")
-emit("\tunsafe{")
+emit("\tunsafe extern{")
 for t, w, s in TYPES:
     a = norm(0x2B2B2B2B2B2B2B2B, w, s)
     b = norm(0x1D1D1D1D1D1D1D1D, w, s)
@@ -919,7 +917,7 @@ emit('@link_name(snprintf)', 'extern c_snprintf(raw mut u8, mut u64, static imut
      '@link_name(atol)', 'extern atol_buf(raw mut u8) mut u64',
      "")
 emit("func varargForms() void{")
-emit("\tunsafe{")
+emit("\tunsafe extern{")
 emit("\t\tlet:<raw mut u8> buf = null")
 emit("\t\tbuf = malloc(64)")
 for t, w, s in TYPES:
@@ -964,7 +962,7 @@ if MODE == "main":
     emit("\thotLoops()")
     emit("\tliteralForms()")
     emit("\tvarargForms()")
-emit("\tunsafe{",
+emit("\tunsafe extern global{",
      '\t\tprintf("bits_ops%s_test: %%llu passed, %%llu failed\\n", passed, failed)' % ("" if MODE == "main" else "_matrix" + MODE[1:]),
      "\t\tif failed == 0{",
      '\t\t\tprintf("ALL BITS OPS TESTS PASSED\\n")',

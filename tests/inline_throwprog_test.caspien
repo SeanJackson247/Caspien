@@ -6,7 +6,7 @@ import "../stdlib/libc.caspien"
 extern strcmp(static imut string, static imut string) mut s32
 
 func check(name: static imut string, ok: mut bool) void{
-	unsafe{
+	unsafe extern{
 		if ok{
 			printf("PASS %s\n", name)
 		}else{
@@ -62,7 +62,7 @@ func attempt(x: mut u64) mut u64{
 
 func attemptMsg(x: mut u64) mut u64{
 	?catch(e){
-		unsafe{
+		unsafe extern{
 			if strcmp(e, "too big") == 0{
 				return 1
 			}

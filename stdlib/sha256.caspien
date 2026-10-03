@@ -36,7 +36,7 @@ func sha256Rotr(x: mut u32, n: mut u32) mut u32{
 }
 
 func sha256Put(p: raw mut u32, i: mut u64, v: mut u32) void{
-	unsafe{
+	unsafe memcopy raw{
 		memcopy(p + i, mut 4, raw v)
 	}
 }
@@ -45,7 +45,7 @@ func sha256Put(p: raw mut u32, i: mut u64, v: mut u32) void{
 @pub
 func sha256WordsAlloc(wordCount: mut u64) raw mut u32{
 	let:<raw mut u32> p = null
-	unsafe{
+	unsafe extern{
 		p = sha256MallocWords(wordCount * 4)
 	}
 	return p
@@ -53,7 +53,7 @@ func sha256WordsAlloc(wordCount: mut u64) raw mut u32{
 
 @pub
 func sha256WordsFree(p: raw mut u32) void{
-	unsafe{
+	unsafe extern{
 		sha256FreeWords(p)
 	}
 }
@@ -88,13 +88,17 @@ func sha256FreeState(state: raw mut u32) void{
 @pub
 func sha256Compress(state: raw mut u32, block: raw imut u8) void{
 	let:<mut u32[64]> w = mut [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-	unsafe{
+	unsafe assume global{
 		for i in 0..16{
 			match i into w{
 				let p = mut (block + i * 4)
+				assume match Some(p)
 				let b0 = mut deref(p) as u32
+				assume match Some(p+1)
 				let b1 = mut deref(p + 1) as u32
+				assume match Some(p+2)
 				let b2 = mut deref(p + 2) as u32
+				assume match Some(p+3)
 				let b3 = mut deref(p + 3) as u32
 				w[i] = bits_or(bits_or(bits_left(b0, 24), bits_left(b1, 16)), bits_or(bits_left(b2, 8), b3))
 			}
@@ -120,13 +124,21 @@ func sha256Compress(state: raw mut u32, block: raw imut u8) void{
 			}
 			}
 		}
+		assume match Some(state)
 		let a = mut deref(state)
+		assume match Some(state+1)
 		let b = mut deref(state + 1)
+		assume match Some(state+2)
 		let c = mut deref(state + 2)
+		assume match Some(state+3)
 		let d = mut deref(state + 3)
+		assume match Some(state+4)
 		let e = mut deref(state + 4)
+		assume match Some(state+5)
 		let f = mut deref(state + 5)
+		assume match Some(state+6)
 		let g = mut deref(state + 6)
+		assume match Some(state+7)
 		let h = mut deref(state + 7)
 		for i in 0..sha256Rounds{
 			match i in w{
@@ -163,9 +175,10 @@ func sha256Compress(state: raw mut u32, block: raw imut u8) void{
 @pub
 func sha256CompressWords(state: raw mut u32, words: raw imut u32) void{
 	let:<mut u32[64]> w = mut [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-	unsafe{
+	unsafe assume global{
 		for i in 0..16{
 			match i into w{
+				assume match Some(words+i)
 				w[i] = deref(words + i)
 			}
 		}
@@ -190,13 +203,21 @@ func sha256CompressWords(state: raw mut u32, words: raw imut u32) void{
 			}
 			}
 		}
+		assume match Some(state)
 		let a = mut deref(state)
+		assume match Some(state+1)
 		let b = mut deref(state + 1)
+		assume match Some(state+2)
 		let c = mut deref(state + 2)
+		assume match Some(state+3)
 		let d = mut deref(state + 3)
+		assume match Some(state+4)
 		let e = mut deref(state + 4)
+		assume match Some(state+5)
 		let f = mut deref(state + 5)
+		assume match Some(state+6)
 		let g = mut deref(state + 6)
+		assume match Some(state+7)
 		let h = mut deref(state + 7)
 		for i in 0..sha256Rounds{
 			match i in w{
@@ -232,8 +253,9 @@ func sha256CompressWords(state: raw mut u32, words: raw imut u32) void{
 /** Writes the 32-byte digest (the state words, big-endian, H0 first) of `state` to `digest`. */
 @pub
 func sha256Digest(state: raw imut u32, digest: raw mut u8) void{
-	unsafe{
+	unsafe assume memcopy raw{
 		for i in 0..8{
+			assume match Some(state+i)
 			let v = mut deref(state + i)
 			for k in 0..4{
 				let sh = mut wrap:<u32>(24 - 8 * k)
@@ -256,7 +278,7 @@ struct Sha256Ctx{@pub{
 /** Starts a hash: allocates the state and the pending buffer inside `ctx`. Release with `sha256Release`. */
 @pub
 func sha256Begin(ctx: auto mut Sha256Ctx) void{
-	unsafe{
+	unsafe extern{
 		ctx.state = mut sha256NewState()
 		ctx.pending = mut malloc(64)
 		ctx.pendingCount = mut 0
@@ -267,7 +289,7 @@ func sha256Begin(ctx: auto mut Sha256Ctx) void{
 /** Feeds `byteCount` bytes at `data` into the hash. Any number of calls, any split of the message. Bytes are collected in the 64-byte pending buffer and compressed from there (one compression call site). */
 @pub
 func sha256Update(ctx: auto mut Sha256Ctx, data: raw imut u8, byteCount: mut u64) void{
-	unsafe{
+	unsafe loop memcopy{
 		let done = mut 0
 		ctx.totalCount = mut (ctx.totalCount + byteCount)
 		loop{
@@ -294,7 +316,7 @@ func sha256Update(ctx: auto mut Sha256Ctx, data: raw imut u8, byteCount: mut u64
 /** Pads, finishes and writes the 32-byte digest to `digest`. The context must not be updated afterwards (call `sha256Begin` again to reuse it). */
 @pub
 func sha256Finish(ctx: auto mut Sha256Ctx, digest: raw mut u8) void{
-	unsafe{
+	unsafe loop memcopy raw{
 		let bitCount = mut (ctx.totalCount * 8)
 		let pad = mut 0x80
 		let zero = mut 0
@@ -331,7 +353,7 @@ func sha256Finish(ctx: auto mut Sha256Ctx, digest: raw mut u8) void{
 /** Frees what `sha256Begin` allocated. */
 @pub
 func sha256Release(ctx: auto mut Sha256Ctx) void{
-	unsafe{
+	unsafe extern{
 		sha256FreeState(ctx.state)
 		free(ctx.pending)
 	}
@@ -340,11 +362,9 @@ func sha256Release(ctx: auto mut Sha256Ctx) void{
 /** One-shot SHA-256: hashes the `byteCount` bytes at `data` and writes the 32-byte digest to `digest`. `byteCount` may be 0 (`data` may then be null). */
 @pub
 func sha256(data: raw imut u8, byteCount: mut u64, digest: raw mut u8) void{
-	unsafe{
-		let ctx = mut Sha256Ctx{state= null, pending= null, pendingCount= mut 0, totalCount= mut 0}
-		sha256Begin(auto ctx)
-		sha256Update(auto ctx, data, byteCount)
-		sha256Finish(auto ctx, digest)
-		sha256Release(auto ctx)
-	}
+	let ctx = mut Sha256Ctx{state= null, pending= null, pendingCount= mut 0, totalCount= mut 0}
+	sha256Begin(auto ctx)
+	sha256Update(auto ctx, data, byteCount)
+	sha256Finish(auto ctx, digest)
+	sha256Release(auto ctx)
 }

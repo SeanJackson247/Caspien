@@ -16,21 +16,31 @@ let static:<mut f64[2000]> t = mut [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
 
 // the matrix element A[i][j] = 1 / ((i + j)(i + j + 1) / 2 + i + 1), i and j given as f64
 func evalA(fi: mut f64, fj: mut f64) mut f64{
-	unsafe{
+	unsafe assume{
+		assume match fi : finite
+		assume match fj : finite
 		let s = mut (fi + fj)
+		assume match s : finite
+		assume match s+1.0 : finite
+		assume match s*(s+1.0) : finite
+		assume match (s*(s+1.0))*0.5 : finite
+		assume match ((s*(s+1.0))*0.5)+fi : finite
+		assume match (((s*(s+1.0))*0.5)+fi)+1.0 : finite
 		return 1.0 / (s * (s + 1.0) * 0.5 + fi + 1.0)
 	}
 }
 
 // t = A u
 func mulAu(n: mut u64) void{
-	unsafe{
+	unsafe assume global{
 		let:<mut f64> fi = mut 0.0
 		for i in 0..n{
 			let:<mut f64> sum = mut 0.0
 			let:<mut f64> fj = mut 0.0
 			for j in 0..n{
 				assume match j in u
+				assume match evalA(fi,fj) : finite
+				assume match u[j] : finite
 				sum += evalA(fi, fj) * u[j]
 				fj += 1.0
 			}
@@ -43,13 +53,15 @@ func mulAu(n: mut u64) void{
 
 // v = At t
 func mulAtt(n: mut u64) void{
-	unsafe{
+	unsafe assume global{
 		let:<mut f64> fi = mut 0.0
 		for i in 0..n{
 			let:<mut f64> sum = mut 0.0
 			let:<mut f64> fj = mut 0.0
 			for j in 0..n{
 				assume match j in t
+				assume match evalA(fj,fi) : finite
+				assume match t[j] : finite
 				sum += evalA(fj, fi) * t[j]
 				fj += 1.0
 			}
@@ -62,13 +74,15 @@ func mulAtt(n: mut u64) void{
 
 // t = A v
 func mulAv(n: mut u64) void{
-	unsafe{
+	unsafe assume global{
 		let:<mut f64> fi = mut 0.0
 		for i in 0..n{
 			let:<mut f64> sum = mut 0.0
 			let:<mut f64> fj = mut 0.0
 			for j in 0..n{
 				assume match j in v
+				assume match evalA(fi,fj) : finite
+				assume match v[j] : finite
 				sum += evalA(fi, fj) * v[j]
 				fj += 1.0
 			}
@@ -81,13 +95,15 @@ func mulAv(n: mut u64) void{
 
 // u = At t
 func mulAtt2(n: mut u64) void{
-	unsafe{
+	unsafe assume global{
 		let:<mut f64> fi = mut 0.0
 		for i in 0..n{
 			let:<mut f64> sum = mut 0.0
 			let:<mut f64> fj = mut 0.0
 			for j in 0..n{
 				assume match j in t
+				assume match evalA(fj,fi) : finite
+				assume match t[j] : finite
 				sum += evalA(fj, fi) * t[j]
 				fj += 1.0
 			}
@@ -99,7 +115,7 @@ func mulAtt2(n: mut u64) void{
 }
 
 func main() void{
-	unsafe{
+	unsafe assume extern global{
 		let n = mut 0
 		n = atol(getenv("SPECTRAL_N"))
 		for round in 0..10{
@@ -113,9 +129,13 @@ func main() void{
 		for i in 0..n{
 			assume match i in u
 			assume match i in v
+			assume match u[i] : finite
+			assume match v[i] : finite
 			vBv += u[i] * v[i]
 			vv += v[i] * v[i]
 		}
+		assume match vBv : finite
+		assume match vv : finite
 		let r = mut sqrt(vBv / vv)
 		printf("%0.9f\n", r)
 	}

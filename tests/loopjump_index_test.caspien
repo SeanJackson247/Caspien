@@ -4,7 +4,7 @@
 import "../stdlib/libc.caspien"
 
 func check(name: static imut string, ok: mut bool) void{
-	unsafe{
+	unsafe extern{
 		if ok{
 			printf("PASS %s\n", name)
 		}else{
@@ -42,7 +42,7 @@ func rangeSum(a: mut u64, b: mut u64) mut u64{
 func feq() mut u64{
 	let x = mut 0
 	let n = mut 0
-	unsafe{
+	unsafe loop{
 		loop{
 			n++
 			if x == 5{
@@ -57,7 +57,7 @@ func feq() mut u64{
 func fneq() mut u64{
 	let x = mut 3
 	let n = mut 0
-	unsafe{
+	unsafe loop{
 		loop{
 			n++
 			if x != 3{
@@ -72,7 +72,7 @@ func fneq() mut u64{
 func flt() mut u64{
 	let x = mut 10
 	let n = mut 0
-	unsafe{
+	unsafe loop{
 		loop{
 			n++
 			if x < 5{
@@ -87,7 +87,7 @@ func flt() mut u64{
 func fle() mut u64{
 	let x = mut 10
 	let n = mut 0
-	unsafe{
+	unsafe loop{
 		loop{
 			n++
 			if x <= 5{
@@ -102,7 +102,7 @@ func fle() mut u64{
 func fgt() mut u64{
 	let x = mut 0
 	let n = mut 0
-	unsafe{
+	unsafe loop{
 		loop{
 			n++
 			if x > 5{
@@ -117,7 +117,7 @@ func fgt() mut u64{
 func fge() mut u64{
 	let x = mut 0
 	let n = mut 0
-	unsafe{
+	unsafe loop{
 		loop{
 			n++
 			if x >= 5{
@@ -132,7 +132,7 @@ func fge() mut u64{
 func sge() mut u64{
 	let s = mut -5
 	let n = mut 0
-	unsafe{
+	unsafe loop{
 		loop{
 			n++
 			if s >= 3{
@@ -147,7 +147,7 @@ func sge() mut u64{
 func sgt() mut u64{
 	let s = mut -5
 	let n = mut 0
-	unsafe{
+	unsafe loop{
 		loop{
 			n++
 			if s > 2{
@@ -162,7 +162,7 @@ func sgt() mut u64{
 func slt() mut u64{
 	let s = mut -1
 	let n = mut 0
-	unsafe{
+	unsafe loop{
 		loop{
 			n++
 			if s < -4{
@@ -177,7 +177,7 @@ func slt() mut u64{
 func sle() mut u64{
 	let s = mut -1
 	let n = mut 0
-	unsafe{
+	unsafe loop{
 		loop{
 			n++
 			if s <= -4{
@@ -192,7 +192,7 @@ func sle() mut u64{
 func seq() mut u64{
 	let s = mut -3
 	let n = mut 0
-	unsafe{
+	unsafe loop{
 		loop{
 			n++
 			if s == 2{
@@ -209,7 +209,7 @@ func nested() mut u64{
 	let total = mut 0
 	for i in 0..3{
 		let j = mut 0
-		unsafe{
+		unsafe loop{
 			loop{
 				j++
 				total += 1
@@ -223,7 +223,7 @@ func nested() mut u64{
 }
 
 func fill8() mut u64{
-	unsafe{
+	unsafe assume global{
 		let n = mut cnt8
 		let sum = mut 0
 		for i in 0..n{
@@ -239,7 +239,7 @@ func fill8() mut u64{
 }
 
 func fill16() mut u64{
-	unsafe{
+	unsafe assume global{
 		let n = mut cnt16
 		let sum = mut 0
 		for i in 0..n{
@@ -255,7 +255,7 @@ func fill16() mut u64{
 }
 
 func fill32() mut u64{
-	unsafe{
+	unsafe assume global{
 		let n = mut cnt32
 		let sum = mut 0
 		for i in 0..n{
@@ -271,7 +271,7 @@ func fill32() mut u64{
 }
 
 func fill64() mut u64{
-	unsafe{
+	unsafe assume global{
 		let n = mut cnt64
 		let sum = mut 0
 		for i in 0..n{
@@ -288,7 +288,7 @@ func fill64() mut u64{
 
 // an immediate store and a neighbour check: only element 4 changes
 func poke() mut u64{
-	unsafe{
+	unsafe assume global{
 		let k = mut 4
 		assume match k into g8
 		g8[k] = 99

@@ -26,7 +26,7 @@ struct Cell{
 }
 
 func check(name: static imut string, ok: mut bool) void{
-	unsafe{
+	unsafe extern{
 		if ok{
 			printf("PASS %s\n", name)
 		}else{
@@ -68,7 +68,10 @@ func firstChar(a: mut char, b: mut char, useFirst: mut bool) mut char{
 	return b
 }
 func fmix(a: mut f32, b: mut f32) mut f32{
-	unsafe{
+	unsafe assume{
+		assume match a : finite
+		assume match b : finite
+		assume match a*b : finite
 		return a * b + 0.5
 	}
 }
@@ -119,7 +122,7 @@ func firstOver(limit: mut u64) mut u64{
 
 // ---- side effects: evaluation order of the arguments ----
 func tick() mut u64{
-	unsafe{
+	unsafe global{
 		tickCount = tickCount + 1
 		return tickCount
 	}
@@ -165,7 +168,7 @@ func addto(n: mut u64, acc: mut u64, r: imut range) mut u64{
 // a callee that calls something and ignores the result leaves that result word on the operand stack; run inline in the middle of an
 // expression (`t += noisy(1)`) it must not upset the operands pending beneath it (found by the stdlib test, first at aggressive)
 func noisy(x: mut u64) mut u64{
-	unsafe{ putchar(46) }
+	unsafe extern{ putchar(46) }
 	return x + 1
 }
 
@@ -187,7 +190,8 @@ func main() void{
 	check("s64 negative result", sdiff(3, 10) == -7)
 	check("char select first", firstChar('x', 'y', true) == 'x')
 	check("char select second", firstChar('x', 'y', false) == 'y')
-	unsafe{
+	unsafe assume{
+		assume match fmix(2.0,3.0) : finite
 		ok = fmix(2.0, 3.0) == 6.5
 	}
 	check("f32 result", ok)
@@ -227,7 +231,7 @@ func main() void{
 	// evaluation order of arguments with side effects: tick() gives 1, then 2
 	let e = mut addTwo(tick(), tick() * 10)
 	check("argument order", e == 21)
-	unsafe{
+	unsafe global{
 		ok = tickCount == 2
 	}
 	check("tick count", ok)
@@ -269,10 +273,10 @@ func main() void{
 
 	let nz = mut 5
 	nz += noisy(1)
-	unsafe{ putchar(10) }
+	unsafe extern{ putchar(10) }
 	check("ignored call result inside an inlined callee, mid-expression", nz == 7)
 	let nz2 = mut (noisy(2) + noisy(3))
-	unsafe{ putchar(10) }
+	unsafe extern{ putchar(10) }
 	check("two such callees in one expression", nz2 == 7)
 	return
 }

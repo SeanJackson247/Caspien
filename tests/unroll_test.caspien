@@ -11,7 +11,7 @@ import "../stdlib/gt_moved.caspien"
 let static tbl = mut [1, 2, 3]
 
 func check(name: static imut string, ok: mut bool) void{
-	unsafe{
+	unsafe extern{
 		if ok{
 			printf("PASS %s\n", name)
 		}else{
@@ -133,7 +133,7 @@ func sumVar(n: mut u64) mut u64{
 // a loop{} has no known trip count
 func countLoop() mut u64{
 	let k = mut 0
-	unsafe{
+	unsafe loop{
 		loop{
 			if k == 6{
 				break
@@ -156,7 +156,7 @@ func sumSquares() mut u64{
 // for over a fixed array (the loop variable is the INDEX 0..3, so 0+1+2)
 func sumTable() mut u64{
 	let s = mut 0
-	unsafe{
+	unsafe global{
 		for e in tbl{
 			s += e
 		}

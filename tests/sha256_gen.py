@@ -85,20 +85,20 @@ w(table("nodeIn", [x for L, R in NODE for x in struct.unpack(">16I", L + R)]))
 w(table("nodeExp", [x for L, R in NODE for x in words(H(L + R))]))
 w('''
 func pass(name: static imut string) void{
-	unsafe{
+	unsafe extern global{
 		passed++
 		printf("PASS %s\\n", name)
 	}
 }
 func fail(name: static imut string) void{
-	unsafe{
+	unsafe extern global{
 		failed++
 		printf("FAIL %s\\n", name)
 	}
 }
 // PASS/FAIL line with one number in the name
 func reportN(name: static imut string, n: mut u64, ok: mut bool) void{
-	unsafe{
+	unsafe extern global{
 		if ok{
 			passed++
 			printf("PASS %s %llu\\n", name, n)
@@ -109,7 +109,7 @@ func reportN(name: static imut string, n: mut u64, ok: mut bool) void{
 	}
 }
 func reportNN(name: static imut string, n: mut u64, m: mut u64, ok: mut bool) void{
-	unsafe{
+	unsafe extern global{
 		if ok{
 			passed++
 			printf("PASS %s %llu / %llu\\n", name, n, m)
@@ -135,16 +135,19 @@ func nibble(v: mut u64) mut u8{
 // true when the 32 digest bytes at d, as lowercase hex, equal the 64 characters of `expected`
 func digestIs(d: raw imut u8, expected: static imut string) mut bool{
 	let ok = mut true
-	unsafe{
+	unsafe assume extern memcopy{
 		let exp = mut malloc(mut 65)
 		memcopy(exp, mut 64, expected)
 		for i in 0..32{
+			assume match Some(d+i)
 			let v = mut deref(d + i) as u64
 			let hi = mut nibble(bits_right(v, 4))
 			let lo = mut nibble(bits_and(v, 15))
+			assume match Some(exp+(2*i))
 			if deref(exp + (2 * i)) != hi{
 				ok = false
 			}
+			assume match Some(exp+((2*i)+1))
 			if deref(exp + (2 * i + 1)) != lo{
 				ok = false
 			}
@@ -156,10 +159,14 @@ func digestIs(d: raw imut u8, expected: static imut string) mut bool{
 // the 4 digest bytes at d + 4k read as one big-endian word
 func beWord(d: raw imut u8, k: mut u64) mut u32{
 	let:<mut u32> r = mut 0
-	unsafe{
+	unsafe assume{
+		assume match Some(d+(4*k))
 		let b0 = mut deref(d + 4 * k) as u32
+		assume match Some(d+((4*k)+1))
 		let b1 = mut deref(d + (4 * k + 1)) as u32
+		assume match Some(d+((4*k)+2))
 		let b2 = mut deref(d + (4 * k + 2)) as u32
+		assume match Some(d+((4*k)+3))
 		let b3 = mut deref(d + (4 * k + 3)) as u32
 		r = bits_or(bits_or(bits_left(b0, 24), bits_left(b1, 16)), bits_or(bits_left(b2, 8), b3))
 	}
@@ -168,7 +175,7 @@ func beWord(d: raw imut u8, k: mut u64) mut u32{
 // digest bytes against table row c of `patExp` (8 words per row)
 func matchesPat(d: raw imut u8, c: mut u64) mut bool{
 	let ok = mut true
-	unsafe{
+	unsafe global{
 		for k in 0..8{
 			let idx = mut (c * 8 + k)
 			match idx in patExp{
@@ -181,7 +188,7 @@ func matchesPat(d: raw imut u8, c: mut u64) mut bool{
 	return ok
 }
 func fillPattern(buf: raw mut u8, n: mut u64) void{
-	unsafe{
+	unsafe memcopy raw{
 		for i in 0..n{
 			let v = mut wrap:<u8>(i * 37 + 11)
 			memcopy(buf + i, mut 1, raw v)
@@ -189,7 +196,7 @@ func fillPattern(buf: raw mut u8, n: mut u64) void{
 	}
 }
 func put32(p: raw mut u32, i: mut u64, v: mut u32) void{
-	unsafe{
+	unsafe memcopy raw{
 		memcopy(p + i, mut 4, raw v)
 	}
 }
@@ -203,7 +210,7 @@ func bswap32(v: mut u32) mut u32{
 // state words (as the digest bytes of the state) against a row of a table
 func stateMatches(st: raw imut u32, which: mut u64, c: mut u64) mut bool{
 	let ok = mut true
-	unsafe{
+	unsafe extern global{
 		let dig = mut malloc(mut 32)
 		sha256Digest(st, dig)
 		for k in 0..8{
@@ -236,8 +243,10 @@ func stateMatches(st: raw imut u32, which: mut u64, c: mut u64) mut bool{
 }
 func sameWords(a: raw imut u32, b: raw imut u32) mut bool{
 	let ok = mut true
-	unsafe{
+	unsafe assume{
 		for i in 0..8{
+			assume match Some(a+i)
+			assume match Some(b+i)
 			if deref(a + i) != deref(b + i){
 				ok = false
 			}
@@ -255,10 +264,10 @@ w('''	return ""
 }
 
 func main() void{
-	unsafe{
+	unsafe global{
 	// ---- one-shot on the standard strings (one call site, looped)
 	for k in 0..nStd{
-		unsafe{
+		unsafe extern memcopy{
 			let s = imut stdString(k)
 			let n = mut strlen(s)
 			let buf = mut malloc(n + 1)
@@ -271,7 +280,7 @@ func main() void{
 		}
 	}
 	// ---- one-shot and streaming on one million 'a' (cdc76e5c...)
-	unsafe{
+	unsafe extern global memcopy raw{
 		let n = mut 1000000
 		let buf = mut malloc(n)
 		let dig = mut malloc(mut 32)
@@ -309,7 +318,7 @@ func main() void{
 	}
 	// ---- one-shot on patterned messages around every padding boundary
 	for c in 0..nPat{
-		unsafe{
+		unsafe extern global{
 			let n = mut 0
 			match c in patLen{
 				n = patLen[c] as u64
@@ -329,7 +338,7 @@ func main() void{
 		if c < nStream * 3{
 			if sel == 0{
 				for ci in 0..nChunk{
-					unsafe{
+					unsafe assume extern global loop{
 						let n = mut 0
 						match c in patLen{
 							n = patLen[c] as u64
@@ -361,6 +370,8 @@ func main() void{
 						sha256Release(auto ctx)
 						let same = mut true
 						for i in 0..32{
+							assume match Some(one+i)
+							assume match Some(dig+i)
 							if deref(one + i) != deref(dig + i){
 								same = false
 							}
@@ -375,7 +386,7 @@ func main() void{
 		}
 	}
 	// ---- block primitives
-	unsafe{
+	unsafe extern global memcopy raw{
 		let st = mut sha256NewState()
 		let st2 = mut sha256NewState()
 		let wd = mut sha256WordsAlloc(16)
@@ -463,7 +474,7 @@ func main() void{
 		free(blk)
 		free(dig)
 	}
-	unsafe{
+	unsafe extern global{
 		printf("sha256: %llu passed, %llu failed\\n", passed, failed)
 		if failed == 0{
 			printf("ALL SHA256 TESTS PASSED\\n")

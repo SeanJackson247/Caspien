@@ -32,8 +32,8 @@ func halve(n: mut u64) mut Result<u64>{
 func show(n: mut u64) void{
 	let r = mut halve(n)
 	match r.state{
-		OK:{ unsafe{ printf("%llu -> ok %llu", n, r.payload) } }
-		FAIL:{ unsafe{ printf("%llu -> fail", n) } }
+		OK:{ unsafe extern{ printf("%llu -> ok %llu", n, r.payload) } }
+		FAIL:{ unsafe extern{ printf("%llu -> fail", n) } }
 	}
 }
 
@@ -46,25 +46,25 @@ struct Reading{@pub{
 }}
 
 func main() void{
-	unsafe{ printf("halve: ") }
+	unsafe extern{ printf("halve: ") }
 	show(10)
-	unsafe{ printf(" / ") }
+	unsafe extern{ printf(" / ") }
 	show(7)
-	unsafe{ printf(" / ") }
+	unsafe extern{ printf(" / ") }
 	show(0)
-	unsafe{ printf("\n") }
+	unsafe extern{ printf("\n") }
 
 	// No constructor is declared for Reading, so a literal may appear anywhere.
 	let live = mut Reading{status= Sensor.LIVE, value= 7}
 	// Naming only a status that does not satisfy the lock may leave `value` out: it can never be read.
 	let dead = mut Reading{status= Sensor.DEAD}
-	unsafe{ printf("readings: ") }
+	unsafe extern{ printf("readings: ") }
 	match live.status{
-		LIVE:{ unsafe{ printf("live=%llu ", live.value) } }
-		DEAD:{ unsafe{ printf("live=none ") } }
+		LIVE:{ unsafe extern{ printf("live=%llu ", live.value) } }
+		DEAD:{ unsafe extern{ printf("live=none ") } }
 	}
 	match dead.status{
-		LIVE:{ unsafe{ printf("dead=%llu\n", dead.value) } }
-		DEAD:{ unsafe{ printf("dead=none\n") } }
+		LIVE:{ unsafe extern{ printf("dead=%llu\n", dead.value) } }
+		DEAD:{ unsafe extern{ printf("dead=none\n") } }
 	}
 }

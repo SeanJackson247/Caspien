@@ -38,12 +38,12 @@ func spawn(cmd: static imut string, mode: imut ProcessMode) owns some mut Proces
 	let:<raw mut u8> stream = null
 	match mode{
 		READ:{
-			unsafe{
+			unsafe extern{
 				stream = mut popen(cmd, imut "r")
 			}
 		}
 		WRITE:{
-			unsafe{
+			unsafe extern{
 				stream = mut popen(cmd, imut "w")
 			}
 		}
@@ -56,7 +56,7 @@ func spawn(cmd: static imut string, mode: imut ProcessMode) owns some mut Proces
 @pub
 func closeProcess(handle: ref some imut ProcessHandle) mut u64{
 	let status = mut 0
-	unsafe{
+	unsafe extern{
 		status = mut pclose(handle.stream)
 	}
 	return status
@@ -70,7 +70,7 @@ impl StdOut{
 	@pub
 	static func read(stream: raw mut u8) static imut string{
 		let bufSize = mut 4096
-		unsafe{
+		unsafe extern{
 			let buf = mut malloc(bufSize)
 			return fgets(buf, bufSize, stream)
 		}
@@ -84,7 +84,7 @@ impl StdIn{
 	/** "StdIn.write(child_process.stdin,"Test?")," confirmed directly (corrected from the user's own "StdIn.read" -- this sends `data` to the child, it doesn't read from it) -- writes `data` to a handle opened with ProcessMode.WRITE. */
 	@pub
 	static func write(stream: raw mut u8, data: static imut string) void{
-		unsafe{
+		unsafe extern{
 			fputs(data, stream)
 		}
 		return

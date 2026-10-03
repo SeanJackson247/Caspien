@@ -51,7 +51,7 @@ struct Quad{@pub{
 }}
 
 func check(name: static imut string, ok: mut bool) void{
-	unsafe{
+	unsafe extern global{
 		if ok{
 			passed++
 			printf("PASS %s\\n", name)
@@ -63,7 +63,7 @@ func check(name: static imut string, ok: mut bool) void{
 	return
 }
 func checkHash(name: static imut string, got: mut u64, expected: mut u64) void{
-	unsafe{
+	unsafe extern global{
 		if got == expected{
 			passed++
 			printf("PASS %s\\n", name)
@@ -77,7 +77,7 @@ func checkHash(name: static imut string, got: mut u64, expected: mut u64) void{
 // fnv1a64Bytes over the characters of a string literal (copied into a scratch buffer: a literal is not a `raw imut u8`)
 func hashStr(s: static imut string) mut u64{
 	let h = mut 0
-	unsafe{
+	unsafe extern memcopy{
 		let n = mut strlen(s)
 		let buf = mut malloc(n + 1)
 		memcopy(buf, n, s)
@@ -89,7 +89,7 @@ func hashStr(s: static imut string) mut u64{
 // fnv1a64Bytes over n bytes of the pattern byte(i) = (i * 37 + 11) mod 256
 func hashPattern(n: mut u64) mut u64{
 	let h = mut 0
-	unsafe{
+	unsafe extern memcopy raw{
 		let buf = mut malloc(n + 1)
 		for i in 0..n{
 			let v = mut wrap:<u8>(i * 37 + 11)
@@ -104,7 +104,7 @@ func hashPattern(n: mut u64) mut u64{
 // out of the `auto` pointer first (`raw p` would be the address of the parameter, not of the struct)
 func hashPair(p: auto imut Pair) mut u64{
 	let h = mut 0
-	unsafe{
+	unsafe extern memcopy raw{
 		let n = mut sizeof(Pair)
 		let buf = mut malloc(n)
 		let c = imut deref(p)
@@ -116,7 +116,7 @@ func hashPair(p: auto imut Pair) mut u64{
 }
 func hashQuad(p: auto imut Quad) mut u64{
 	let h = mut 0
-	unsafe{
+	unsafe extern memcopy raw{
 		let n = mut sizeof(Quad)
 		let buf = mut malloc(n)
 		let c = imut deref(p)
@@ -185,7 +185,7 @@ qb = struct.pack('<IIII', 1, 2, 0xdeadbeef, 0xffffffff)
 w('\tcheckHash("hashPair {0x0102030405060708, 0x1112131415161718}", hashPair(auto pr), %d)' % fnv(pb))
 w('\tcheckHash("hashPair {0, 0}", hashPair(auto pr0), %d)' % fnv(p0))
 w('\tcheckHash("hashQuad {1, 2, 0xdeadbeef, 0xffffffff}", hashQuad(auto q), %d)' % fnv(qb))
-w('''	unsafe{
+w('''	unsafe extern global{
 		printf("fnv1a: %llu passed, %llu failed\\n", passed, failed)
 		if failed == 0{
 			printf("ALL FNV1A TESTS PASSED\\n")

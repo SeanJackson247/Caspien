@@ -12,7 +12,7 @@ import "../stdlib/gt_destruct.caspien"
 import "../stdlib/gt_moved.caspien"
 
 func check(name: static imut string, ok: mut bool) void{
-	unsafe{
+	unsafe extern{
 		if ok{
 			printf("PASS %s\n", name)
 		}else{
@@ -24,18 +24,30 @@ func check(name: static imut string, ok: mut bool) void{
 
 func feq(a: mut f32, b: mut f32) mut bool{
 	let r = mut false
-	unsafe{ r = a == b }
+	unsafe assume{
+		assume match a : finite
+		assume match b : finite
+		r = a == b
+	}
 	return r
 }
 
 func deq(a: mut f64, b: mut f64) mut bool{
 	let r = mut false
-	unsafe{ r = a == b }
+	unsafe assume{
+		assume match a : finite
+		assume match b : finite
+		r = a == b
+	}
 	return r
 }
 
 func addf(a: mut f32, b: mut f32) mut f32{
-	unsafe{ return a + b }
+	unsafe assume{
+		assume match a : finite
+		assume match b : finite
+		return a + b
+	}
 }
 
 // 1. three float loops one after another; `keep` is born after loop A and is read in loop C (so it is live across loop B)
@@ -43,26 +55,34 @@ func floatLoops(n: mut u64) mut f32{
 	let a = mut 0.0
 	let b = mut 0.0
 	let i = mut 0
-	unsafe{
+	unsafe assume loop{
 		loop{
 			if i == n{
 				break
 			}
+			assume match a : finite
 			a = a + 1.0
+			assume match b : finite
 			b = b + 0.5
 			i++
 		}
 	}
 	let keep = mut 0.0
-	unsafe{ keep = a + b }
+	unsafe assume{
+		assume match a : finite
+		assume match b : finite
+		keep = a + b
+	}
 	let c = mut 0.0
 	let d = mut 1.0
 	let j = mut 0
-	unsafe{
+	unsafe assume loop{
 		loop{
 			if j == n{
 				break
 			}
+			assume match c : finite
+			assume match d : finite
 			c = c + d
 			d = d * 2.0
 			j++
@@ -72,16 +92,31 @@ func floatLoops(n: mut u64) mut f32{
 	let f = mut 0.0
 	let g = mut 0.0
 	let k = mut 0
-	unsafe{
+	unsafe assume loop{
 		loop{
 			if k == n{
 				break
 			}
+			assume match e : finite
 			e = e + 3.0
+			assume match f : finite
+			assume match e : finite
 			f = f + e
+			assume match g : finite
+			assume match keep : finite
 			g = g + keep
 			k++
 		}
+		assume match keep : finite
+		assume match c : finite
+		assume match keep+c : finite
+		assume match d : finite
+		assume match (keep+c)+d : finite
+		assume match e : finite
+		assume match ((keep+c)+d)+e : finite
+		assume match f : finite
+		assume match (((keep+c)+d)+e)+f : finite
+		assume match g : finite
 		return keep + c + d + e + f + g
 	}
 }
@@ -91,29 +126,39 @@ func floatCalls(n: mut u64) mut f32{
 	let a = mut 0.0
 	let b = mut 0.0
 	let i = mut 0
-	unsafe{
+	unsafe assume loop{
 		loop{
 			if i == n{
 				break
 			}
+			assume match a : finite
 			a = a + 1.0
+			assume match b : finite
 			b = b + 2.0
 			i++
 		}
 	}
 	let keep = mut 0.0
-	unsafe{ keep = a + b }
+	unsafe assume{
+		assume match a : finite
+		assume match b : finite
+		keep = a + b
+	}
 	let h = mut 0.0
 	h = addf(keep, 1.0)
 	let c = mut 0.0
 	let d = mut 0.0
 	let j = mut 0
-	unsafe{
+	unsafe assume loop{
 		loop{
 			if j == n{
 				break
 			}
+			assume match c : finite
+			assume match h : finite
 			c = c + h
+			assume match d : finite
+			assume match keep : finite
 			d = d + keep
 			j++
 		}
@@ -122,15 +167,28 @@ func floatCalls(n: mut u64) mut f32{
 	let e = mut 0.0
 	let f = mut 0.0
 	let k = mut 0
-	unsafe{
+	unsafe assume loop{
 		loop{
 			if k == n{
 				break
 			}
+			assume match e : finite
+			assume match h : finite
 			e = e + h
+			assume match f : finite
 			f = f + 1.0
 			k++
 		}
+		assume match keep : finite
+		assume match h : finite
+		assume match keep+h : finite
+		assume match c : finite
+		assume match (keep+h)+c : finite
+		assume match d : finite
+		assume match ((keep+h)+c)+d : finite
+		assume match e : finite
+		assume match (((keep+h)+c)+d)+e : finite
+		assume match f : finite
 		return keep + h + c + d + e + f
 	}
 }
@@ -140,11 +198,12 @@ func floatCalls(n: mut u64) mut f32{
 func fthrower(x: mut u64) mut f32{
 	let z = mut 0.0
 	let q = mut 0
-	unsafe{
+	unsafe assume loop{
 		loop{
 			if q == x{
 				break
 			}
+			assume match z : finite
 			z = z + 2.0
 			if q == 3{
 				throw "three"
@@ -158,30 +217,42 @@ func floatCatch(n: mut u64) mut f32{
 	let a = mut 0.0
 	let b = mut 0.0
 	let i = mut 0
-	unsafe{
+	unsafe assume loop{
 		loop{
 			if i == n{
 				break
 			}
+			assume match a : finite
 			a = a + 1.0
+			assume match b : finite
 			b = b + 2.0
 			i++
 		}
 	}
 	let keep = mut 0.0
-	unsafe{ keep = a + b }
+	unsafe assume{
+		assume match a : finite
+		assume match b : finite
+		keep = a + b
+	}
 	let c = mut 0.0
 	let d = mut 0.0
 	let j = mut 0
-	unsafe{
+	unsafe assume loop{
 		loop{
 			if j == n{
 				break
 			}
+			assume match c : finite
 			c = c + 1.0
 			let r = try fthrower(j) catch(e){
+				assume match keep : finite
+				assume match c : finite
+				assume match keep+c : finite
 				return keep + c + 0.5
 			}
+			assume match d : finite
+			assume match r : finite
 			d = d + r
 			j++
 		}
@@ -189,15 +260,27 @@ func floatCatch(n: mut u64) mut f32{
 	let e = mut 0.0
 	let f = mut 0.0
 	let k = mut 0
-	unsafe{
+	unsafe assume loop{
 		loop{
 			if k == n{
 				break
 			}
+			assume match e : finite
+			assume match keep : finite
 			e = e + keep
+			assume match f : finite
+			assume match d : finite
 			f = f + d
 			k++
 		}
+		assume match keep : finite
+		assume match c : finite
+		assume match keep+c : finite
+		assume match d : finite
+		assume match (keep+c)+d : finite
+		assume match e : finite
+		assume match ((keep+c)+d)+e : finite
+		assume match f : finite
 		return keep + c + d + e + f
 	}
 }
@@ -209,13 +292,17 @@ func floatCond(n: mut u64, flag: mut bool) mut f32{
 		let a = mut 0.0
 		let b = mut 0.0
 		let i = mut 0
-		unsafe{
+		unsafe assume loop{
 			loop{
 				if i == n{
 					break
 				}
+				assume match a : finite
 				a = a + 1.0
+				assume match b : finite
+				assume match a : finite
 				b = b + a
+				assume match t : finite
 				t = t + 0.5
 				i++
 			}
@@ -224,12 +311,16 @@ func floatCond(n: mut u64, flag: mut bool) mut f32{
 	let c = mut 0.0
 	let d = mut 0.0
 	let j = mut 0
-	unsafe{
+	unsafe assume loop{
 		loop{
 			if j == n{
 				break
 			}
+			assume match c : finite
+			assume match t : finite
 			c = c + t
+			assume match d : finite
+			assume match c : finite
 			d = d + c
 			j++
 		}
@@ -237,15 +328,27 @@ func floatCond(n: mut u64, flag: mut bool) mut f32{
 	let e = mut 0.0
 	let f = mut 0.0
 	let k = mut 0
-	unsafe{
+	unsafe assume loop{
 		loop{
 			if k == n{
 				break
 			}
+			assume match e : finite
+			assume match t : finite
 			e = e + t
+			assume match f : finite
+			assume match e : finite
 			f = f + e
 			k++
 		}
+		assume match t : finite
+		assume match c : finite
+		assume match t+c : finite
+		assume match d : finite
+		assume match (t+c)+d : finite
+		assume match e : finite
+		assume match ((t+c)+d)+e : finite
+		assume match f : finite
 		return t + c + d + e + f
 	}
 }
@@ -255,12 +358,15 @@ func widths(n: mut u64) mut f64{
 	let a1 = mut 0.0
 	let a2 = mut 0.0
 	let i = mut 0
-	unsafe{
+	unsafe assume loop{
 		loop{
 			if i == n{
 				break
 			}
+			assume match a1 : finite
 			a1 = a1 + 1.0
+			assume match a2 : finite
+			assume match a1 : finite
 			a2 = a2 + a1
 			i++
 		}
@@ -268,12 +374,15 @@ func widths(n: mut u64) mut f64{
 	let:<mut f64> b1 = mut 0.0
 	let:<mut f64> b2 = mut 0.0
 	let j = mut 0
-	unsafe{
+	unsafe assume loop{
 		loop{
 			if j == n{
 				break
 			}
+			assume match b1 : finite
 			b1 = b1 + 0.5
+			assume match b2 : finite
+			assume match b1 : finite
 			b2 = b2 + b1
 			j++
 		}
@@ -281,12 +390,15 @@ func widths(n: mut u64) mut f64{
 	let c1 = mut 0.0
 	let c2 = mut 0.0
 	let k = mut 0
-	unsafe{
+	unsafe assume loop{
 		loop{
 			if k == n{
 				break
 			}
+			assume match c1 : finite
 			c1 = c1 + 2.0
+			assume match c2 : finite
+			assume match c1 : finite
 			c2 = c2 + c1
 			k++
 		}
@@ -294,21 +406,38 @@ func widths(n: mut u64) mut f64{
 	let:<mut f64> d1 = mut 0.0
 	let:<mut f64> d2 = mut 0.0
 	let m = mut 0
-	unsafe{
+	unsafe assume loop{
 		loop{
 			if m == n{
 				break
 			}
+			assume match d1 : finite
 			d1 = d1 + 0.25
+			assume match d2 : finite
+			assume match d1 : finite
 			d2 = d2 + d1
 			m++
 		}
 	}
 	let:<mut f64> wa = mut 0.0
 	let:<mut f64> wc = mut 0.0
-	unsafe{
+	unsafe assume{
+		assume match a1 : finite
+		assume match a2 : finite
 		wa = (a1 + a2) as f64
+		assume match c1 : finite
+		assume match c2 : finite
 		wc = (c1 + c2) as f64
+		assume match wa : finite
+		assume match b1 : finite
+		assume match wa+b1 : finite
+		assume match b2 : finite
+		assume match (wa+b1)+b2 : finite
+		assume match wc : finite
+		assume match ((wa+b1)+b2)+wc : finite
+		assume match d1 : finite
+		assume match (((wa+b1)+b2)+wc)+d1 : finite
+		assume match d2 : finite
 		return wa + b1 + b2 + wc + d1 + d2
 	}
 }
@@ -317,7 +446,7 @@ func widths(n: mut u64) mut f64{
 func idf(x: mut u64) mut u64{
 	let y = mut x
 	let z = mut 0
-	unsafe{
+	unsafe loop{
 		loop{
 			if z == 2{
 				break
@@ -331,7 +460,7 @@ func intLoops(n: mut u64) mut u64{
 	let s = mut 0
 	let t = mut 0
 	let i = mut 0
-	unsafe{
+	unsafe loop{
 		loop{
 			if i == n{
 				break
@@ -346,7 +475,7 @@ func intLoops(n: mut u64) mut u64{
 	let u = mut 0
 	let v = mut 0
 	let j = mut 0
-	unsafe{
+	unsafe loop{
 		loop{
 			if j == n{
 				break
@@ -361,7 +490,7 @@ func intLoops(n: mut u64) mut u64{
 	let w = mut 0
 	let x = mut 0
 	let k = mut 0
-	unsafe{
+	unsafe loop{
 		loop{
 			if k == n{
 				break
@@ -382,12 +511,15 @@ func floatPairLive(n: mut u64) mut f32{
 	let a = mut 0.0
 	let b = mut 0.0
 	let i = mut 0
-	unsafe{
+	unsafe assume loop{
 		loop{
 			if i == n{
 				break
 			}
+			assume match a : finite
 			a = a + 1.0
+			assume match b : finite
+			assume match a : finite
 			b = b + a
 			i++
 		}
@@ -395,12 +527,15 @@ func floatPairLive(n: mut u64) mut f32{
 	let c = mut 0.0
 	let d = mut 0.0
 	let j = mut 0
-	unsafe{
+	unsafe assume loop{
 		loop{
 			if j == n{
 				break
 			}
+			assume match c : finite
 			c = c + 1.0
+			assume match d : finite
+			assume match c : finite
 			d = d + c
 			j++
 		}
@@ -409,15 +544,23 @@ func floatPairLive(n: mut u64) mut f32{
 	let e = mut 0.0
 	let f = mut 0.0
 	let k = mut 0
-	unsafe{
+	unsafe assume loop{
 		loop{
 			if k == n{
 				break
 			}
+			assume match e : finite
+			assume match h : finite
 			e = e + h
+			assume match f : finite
+			assume match e : finite
 			f = f + e
 			k++
 		}
+		assume match h : finite
+		assume match e : finite
+		assume match h+e : finite
+		assume match f : finite
 		return h + e + f
 	}
 }
@@ -434,7 +577,7 @@ func intCatch(n: mut u64) mut u64{
 	let s = mut 0
 	let t = mut 0
 	let i = mut 0
-	unsafe{
+	unsafe loop{
 		loop{
 			if i == n{
 				break
@@ -449,7 +592,7 @@ func intCatch(n: mut u64) mut u64{
 	let u = mut 0
 	let v = mut 0
 	let j = mut 0
-	unsafe{
+	unsafe loop{
 		loop{
 			if j == n{
 				break
@@ -465,7 +608,7 @@ func intCatch(n: mut u64) mut u64{
 	let w = mut 0
 	let x = mut 0
 	let k = mut 0
-	unsafe{
+	unsafe loop{
 		loop{
 			if k == n{
 				break

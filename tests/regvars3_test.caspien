@@ -4,7 +4,7 @@
 import "../stdlib/libc.caspien"
 
 func check(name: static imut string, ok: mut bool) void{
-	unsafe{
+	unsafe extern{
 		if ok{
 			printf("PASS %s\n", name)
 		}else{
@@ -18,7 +18,7 @@ func bump(x: mut u64) mut u64{
 	let a = mut x
 	let b = mut 1
 	let c = mut 2
-	unsafe{
+	unsafe loop{
 		loop{
 			if a > 40{
 				break
@@ -35,7 +35,7 @@ func three(n: mut u64) mut u64{
 	let t = mut 0
 	let u = mut 0
 	let i = mut 0
-	unsafe{
+	unsafe loop{
 		loop{
 			if i >= n{
 				break
