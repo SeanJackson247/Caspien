@@ -10,6 +10,7 @@ import "../stdlib/gt_init.caspien"
 import "../stdlib/gt_register.caspien"
 import "../stdlib/gt_alive_check.caspien"
 import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
 
 extern labs(mut u64) mut u64
 extern atoi(static imut string) mut u64

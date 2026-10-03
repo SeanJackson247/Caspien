@@ -4418,6 +4418,7 @@ public class X86Backend {
                         raw("    movq %rax, " + off + "(%r12)");
                     }
                 }
+                emitGtCall("gt_register", "r12"); // the real block start is what malloc returned (and what free needs)
                 raw(isWindows() ? "    add r12, 16" : "    addq $16, %r12"); // r12: now the data-start pointer
                 raw("    jmp " + newUdynDone);
                 raw(newUdynNull + ":");
@@ -4531,6 +4532,10 @@ public class X86Backend {
                 if (dataStartPtr) {
                     raw(isWindows() ? "    sub rax, 16" : "    subq $16, %rax"); // rax: real block start
                 }
+                // The old block start is kept on the stack across the realloc: if the block moves, the ghost table
+                // entry for it is dropped (gt_moved: no free, realloc already released it) and the new address registered.
+                pushReg("rax");
+                resizeExtraStack = 8;
                 // oldLen must survive the emitAlignedCall below, which
                 // internally saves/restores %rsp through %r13 -- so it
                 // cannot be kept in r13 (that was the actual bug behind a
@@ -4573,6 +4578,7 @@ public class X86Backend {
                 storeSizedToAddr_reg("r15", 8, "r12", 8);
                 if (!hasFill) {
                     raw(resizeEnd + ":");
+                    emitResizeGtUpdate();
                 }
                 if (hasFill) {
                     // for (i = oldLen; i < newCount; i++) data[i] = fill;
@@ -4606,6 +4612,7 @@ public class X86Backend {
                     }
                     raw(isWindows() ? "    jmp " + loop : "    jmp " + loop);
                     raw(end + ":");
+                    emitResizeGtUpdate();
                     if (wideFill) {
                         long drop = fillWords * 8L + 16;
                         raw(isWindows() ? "    add rsp, " + drop : "    addq $" + drop + ", %rsp");
@@ -5417,6 +5424,36 @@ public class X86Backend {
         }
     }
 
+    /** Bytes pushed on top of RESIZE's wide fill block while its fill loop runs (the saved old block start). */
+    private int resizeExtraStack = 0;
+
+    /** Push `reg`, pass it as the first argument to the ghost table function `fn`, restore `reg`. */
+    private void emitGtCall(String fn, String reg) {
+        pushReg(reg);
+        raw(isWindows() ? ("    mov " + argReg(0) + ", " + reg) : ("    movq %" + reg + ", %" + argReg(0)));
+        emitAlignedCall(() -> emitCallByName(fn));
+        popReg(reg);
+    }
+
+    /**
+     * End of RESIZE/URESIZE: the old block start is on top of the stack, the realloc result (block start or null) in
+     * r15. A moved block (new address, non-null) is unregistered at the old address WITHOUT freeing (gt_moved) and
+     * registered at the new one; an unmoved block or a failed realloc (old block still valid and registered) changes
+     * nothing. Clobbers rbx.
+     */
+    private void emitResizeGtUpdate() {
+        resizeExtraStack = 0;
+        popReg("rbx");
+        String skip = newInternalLabel("resize_gt_skip");
+        raw(isWindows() ? "    test r15, r15" : "    testq %r15, %r15");
+        raw("    jz " + skip);
+        raw(isWindows() ? "    cmp r15, rbx" : "    cmpq %rbx, %r15");
+        raw("    je " + skip);
+        emitGtCall("gt_moved", "rbx");
+        emitGtCall("gt_register", "r15");
+        raw(skip + ":");
+    }
+
     /**
      * RESIZE's fill loop for an element wider than one word: copies the
      * fill block still sitting on the stack (word k of the value is at
@@ -5426,7 +5463,7 @@ public class X86Backend {
      */
     private void emitResizeWideFillCopy(int elemSize, int words) {
         for (int k = 0; k < words; k++) {
-            long srcOff = (long) (words - 1 - k) * 8;
+            long srcOff = (long) (words - 1 - k) * 8 + resizeExtraStack;
             int n = Math.min(8, elemSize - 8 * k);
             if (isWindows()) {
                 raw("    mov rdx, [rsp+" + srcOff + "]");

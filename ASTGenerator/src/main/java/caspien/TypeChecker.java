@@ -4692,7 +4692,7 @@ public class TypeChecker {
     /** Valid on any func-shaped token (top-level func, interface default method, or impl method) regardless of context; @default/@overrides/@realizes are validated separately, per-context, since which of those (if any) is *required* depends on where the func sits. */
     private static final Set<String> FUNC_BASE_DECORATORS = new HashSet<>(Arrays.asList(
             "pure", "recursive", "inline", "call_convention", "reads", "writes",
-            "gt_init", "gt_alive_check", "gt_destruct", "gt_register", "par_call", "await_call", "sleep",
+            "gt_init", "gt_alive_check", "gt_destruct", "gt_register", "gt_moved", "par_call", "await_call", "sleep",
             "lock", "unlock", "async", "pub", "with_tick", "tick", "event_loop", "make_safe_args", "throws"));
     private static final Set<String> STRUCT_DECORATORS = new HashSet<>(Arrays.asList("unpadded", "untyped", "pub", "lock"));
     private static final Set<String> ENUM_DECORATORS = new HashSet<>(Arrays.asList("non_exhaustive"));
@@ -5239,6 +5239,10 @@ public class TypeChecker {
             requireGhostTableSignature(t, info, "gt_register", 1, "void");
             registerGhostTableFunction(t, info, "gt_register");
         }
+        if (getDecorator(t.decorators, "gt_moved") != null) {
+            requireGhostTableSignature(t, info, "gt_moved", 1, "void");
+            registerGhostTableFunction(t, info, "gt_moved");
+        }
         // "@par_call"/"@await_call" -- the two ghost-table-decorator-
         // shaped hooks the "par"/"await" desugaring calls at every call
         // site (see BytecodeEmitter.emitAsyncCall): mirrors
@@ -5424,7 +5428,7 @@ public class TypeChecker {
      * don't need (or want) their name forced.
      */
     private void forceGhostTableFunctionNames() {
-        for (String decoratorName : Arrays.asList("gt_init", "gt_alive_check", "gt_destruct", "gt_register")) {
+        for (String decoratorName : Arrays.asList("gt_init", "gt_alive_check", "gt_destruct", "gt_register", "gt_moved")) {
             FuncInfo decorated = ghostTableFunctions.get(decoratorName);
             if (decorated == null) {
                 continue;
@@ -6660,7 +6664,7 @@ public class TypeChecker {
      */
     private void validateNoThrowReachableFromGhostTableFunctions() {
         List<FuncInfo> gtFuncs = new ArrayList<>();
-        for (String decoratorName : Arrays.asList("gt_init", "gt_alive_check", "gt_destruct", "gt_register")) {
+        for (String decoratorName : Arrays.asList("gt_init", "gt_alive_check", "gt_destruct", "gt_register", "gt_moved")) {
             FuncInfo f = ghostTableFunctions.get(decoratorName);
             if (f != null) {
                 gtFuncs.add(f);
@@ -10448,7 +10452,7 @@ public class TypeChecker {
         // actually emitted anywhere -- confirmed directly by building
         // this exact case and inspecting the real, invalid bytecode it
         // produced before this check existed.
-        for (String decoratorName : Arrays.asList("gt_init", "gt_alive_check", "gt_destruct", "gt_register")) {
+        for (String decoratorName : Arrays.asList("gt_init", "gt_alive_check", "gt_destruct", "gt_register", "gt_moved")) {
             if (getDecorator(func.funcToken.decorators, decoratorName) != null) {
                 throw new CompilerException("type", throwTok.file, throwTok.line,
                         "'throw' cannot be used inside '@" + decoratorName + "' -- a ghost-table function "

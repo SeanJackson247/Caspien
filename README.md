@@ -9,6 +9,7 @@ It compiles to native x86-64 code through a four-stage compiler written in Java.
 import "stdlib/libc.caspien"
 import "stdlib/gt_init.caspien"
 import "stdlib/gt_destruct.caspien"
+import "stdlib/gt_moved.caspien"
 
 func main() void{
 	unsafe{
@@ -119,6 +120,7 @@ import "stdlib/gt_init.caspien"
 import "stdlib/gt_register.caspien"
 import "stdlib/gt_alive_check.caspien"
 import "stdlib/gt_destruct.caspien"
+import "stdlib/gt_moved.caspien"
 
 @pub
 func answer() mut u64{
@@ -134,7 +136,7 @@ func main() void{
 - A file is a list of declarations: `import`, `func`, `struct`, `enum`, `interface`, `impl`, `extern`,
   `let static`. Imports are resolved relative to the importing file.
 - Every program that uses `new`, `owns` or `ref` requires the four `gt_*` decorated functions (`@gt_init`,
-  `@gt_register`, `@gt_alive_check` and `@gt_destruct`) to be defined in the final compilation unit. Basic
+  `@gt_register`, `@gt_alive_check`, `@gt_destruct` and `@gt_moved`) to be defined in the final compilation unit. Basic
   defaults are available in `stdlib/`, and the examples import them. They implement the runtime registry
   that tracks which heap values are alive, and they are ordinary Caspien source, not compiler magic.
   `libc.caspien` declares the C functions, and calling any C function, `printf` included, needs an `unsafe`
@@ -1342,7 +1344,7 @@ is an error ("'@x' is not a valid decorator on a function"). This is the full se
 | `@reads(...)`, `@writes(...)` | function | accepted and shape-checked, not yet enforced |
 | `@with_tick`, `@tick`, `@event_loop` | function | the event-loop trio (end of the tour) |
 | `@make_safe_args` | function | builds the safe `main` arguments (`stdlib/make_safe_args.caspien`) |
-| `@gt_init`, `@gt_register`, `@gt_alive_check`, `@gt_destruct` | function | the four ghost-table hooks the compiler calls (`stdlib/gt_*.caspien`) |
+| `@gt_init`, `@gt_register`, `@gt_alive_check`, `@gt_destruct`, `@gt_moved` | function | the five ghost-table hooks the compiler calls (`stdlib/gt_*.caspien`) |
 | `@par_call`, `@await_call`, `@sleep` | function | the thread and sleep hooks behind `par`, `await` and `sleep` (`stdlib/`) |
 | `@par`, `@unroll` | `for` loop | accepted; they do not change the generated code today |
 | `@unpadded` | struct | rejected: not supported |

@@ -398,7 +398,7 @@ public class BytecodeEmitter {
      */
     private void computeGtReachableFunctions() {
         Deque<String> queue = new ArrayDeque<>();
-        for (String decoratorName : Arrays.asList("gt_init", "gt_alive_check", "gt_destruct", "gt_register")) {
+        for (String decoratorName : Arrays.asList("gt_init", "gt_alive_check", "gt_destruct", "gt_register", "gt_moved")) {
             TypeChecker.FuncInfo info = checker.getGhostTableFunction(decoratorName);
             if (info == null) {
                 continue;
@@ -879,6 +879,7 @@ public class BytecodeEmitter {
         // (`let args = make_safe_args(...)`).
         if (checker.usesOwnsRefDynNew()) {
             requireGhostTableFunctionPresent("gt_init", userMain.funcToken);
+            requireGhostTableFunctionPresent("gt_moved", userMain.funcToken);
             line("GT_INIT");
         }
         List<PendingUnwindLandingPad> previousPendingLandingPads = pendingCallSiteUnwindLandingPads;
@@ -1614,6 +1615,7 @@ public class BytecodeEmitter {
             Token at = currentFuncInfo != null && currentFuncInfo.funcToken != null ? currentFuncInfo.funcToken
                     : (lines.isEmpty() ? null : lines.get(0));
             requireGhostTableFunctionPresent("gt_init", at);
+            requireGhostTableFunctionPresent("gt_moved", at);
             line("GT_INIT");
         }
         for (Token lineTok : lines) {
@@ -4688,6 +4690,9 @@ public class BytecodeEmitter {
                         if (!op.resolvedType.substring("owns_".length()).startsWith("indeterminate_unsafe_dynarray(")) {
                             pendingTryCatchLabel = dynCatchLabel;
                             emitAllocFailureCheck(op);
+                            // The block start is registered with the ghost table (like `new`), so scope-end drop frees it.
+                            requireGhostTableFunctionPresent("gt_register", op);
+                            line("GT_REGISTER");
                         }
                         return;
                     }
@@ -4756,6 +4761,8 @@ public class BytecodeEmitter {
                     if (!isUnsafeLiteral) {
                         pendingTryCatchLabel = dynCatchLabel;
                         emitAllocFailureCheck(op, literalElements, literalTemps);
+                        requireGhostTableFunctionPresent("gt_register", op);
+                        line("GT_REGISTER");
                     }
                     return;
                 }

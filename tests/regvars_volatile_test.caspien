@@ -9,6 +9,7 @@ import "../stdlib/gt_init.caspien"
 import "../stdlib/gt_register.caspien"
 import "../stdlib/gt_alive_check.caspien"
 import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
 
 func check(name: static imut string, ok: mut bool) void{
 	unsafe{

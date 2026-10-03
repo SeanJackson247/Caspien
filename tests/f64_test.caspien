@@ -9,6 +9,7 @@ import "../stdlib/gt_init.caspien"
 import "../stdlib/gt_register.caspien"
 import "../stdlib/gt_alive_check.caspien"
 import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
 
 extern sqrt(mut f64) mut f64
 

@@ -94,6 +94,7 @@ import "../../../stdlib/libc.caspien"
 import "../../../stdlib/gt_register.caspien"
 import "../../../stdlib/gt_alive_check.caspien"
 import "../../../stdlib/gt_destruct.caspien"
+import "../../../stdlib/gt_moved.caspien"
 
 extern getenv(static imut string) static imut string
 extern atol(static imut string) mut u64

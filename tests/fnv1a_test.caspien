@@ -11,6 +11,7 @@ import "../stdlib/gt_init.caspien"
 import "../stdlib/gt_register.caspien"
 import "../stdlib/gt_alive_check.caspien"
 import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
 
 let static passed = mut 0
 let static failed = mut 0

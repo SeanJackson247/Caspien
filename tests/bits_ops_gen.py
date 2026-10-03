@@ -210,6 +210,7 @@ emit("// Tests for the bitwise builtins bits_and / bits_or / bits_xor / bits_not
      'import "../stdlib/gt_register.caspien"',
      'import "../stdlib/gt_alive_check.caspien"',
      'import "../stdlib/gt_destruct.caspien"',
+     'import "../stdlib/gt_moved.caspien"',
      "",
      "extern atol(static imut string) mut u64",
      "",

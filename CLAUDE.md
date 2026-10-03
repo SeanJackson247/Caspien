@@ -27,7 +27,7 @@ Caspien: a systems language for auditable code (ownership storage `owns/ref/raw/
 - Struct returns use RVO (hidden `$ret_dest`); legal only at `let` RHS, bare-variable assignment RHS, or `return f()`.
 - Generic impl methods are checked lazily; `DynamicArray<S>` for a struct uses the `...Ptr` twins.
 - `deref(p)` needs `unsafe` unless the pointer is proven alive; it is never an assignment target.
-- Stdlib allocation goes through ghost table (`gt_init/gt_register/gt_alive_check/gt_destruct`, forced literal symbol names); `gt_alive_check` is a linear scan.
+- Stdlib allocation goes through ghost table (`gt_init/gt_register/gt_alive_check/gt_destruct/gt_moved`, forced literal symbol names; `gt_moved` = unregister without free, required wherever `gt_init` is); `gt_alive_check` is a linear scan.
 - Recursion only via `@recursive` tail self-call (lowered to a bounded loop); recursive structs are rejected.
 
 ## Component state (all verified on Linux only)
@@ -42,7 +42,7 @@ Caspien: a systems language for auditable code (ownership storage `owns/ref/raw/
 - TODO (own task, full regression): drop the emitter's alloc pre-pass (`collectHoistedAllocs`) and emit ALLOCs as the body is emitted, spliced in at function end like `declareHiddenLocal` already does; changes every program's HOB. Label pre-passes (try/catch, continue) must stay.
 - `h.w = pass(h.w)` (assignment target through a pointer or `LOOKUP`) destructs the old owns value before the right side runs (`emitAssign` DUP_TOP / `GT_DESTRUCT_ADDR` path); flat-name targets are fixed.
 - Passing a struct by value as a plain parameter is rejected by design.
-- OOM gaps: the ghost table's own `realloc` growth/shrink is not failure-safe (crashes). `new`/`dyn([..])` failing frees owns variables moved into them (`tests/new_oom_check.sh`); a moved-in temporary (call result, e.g. `new T{f= pass(p)}`) is spilled to a hidden `$mvN` local first, so it is freed too. Safe `dyn` blocks are never `GT_REGISTER`ed (resize relocates), so a plain `dyn` local leaks its block at scope end (valgrind; pre-existing); a cloned dynarray IS registered, so `resize` on it leaves a stale entry.
+- OOM gaps: the ghost table's own `realloc` growth/shrink is not failure-safe (crashes). `new`/`dyn([..])` failing frees owns variables moved into them (`tests/new_oom_check.sh`); a moved-in temporary (call result, e.g. `new T{f= pass(p)}`) is spilled to a hidden `$mvN` local first, so it is freed too. Safe `dyn` blocks are `GT_REGISTER`ed (block start) so scope-end drop frees them; `resize` (RESIZE/URESIZE in codegen) calls `gt_moved(old)` (unregister, no free) + `gt_register(new)` only when the realloc moved the block. `unsafe dyn` registers the malloc'd block start, but the variable holds the data pointer (+16), so scope end frees nothing for it. `resize`'s realloc-failure path still leaves the moved-in old block unfreed.
 - Safe-args `main` shape: leaks the args dynarray; String class leaks its buffer at scope end; `__drop_DynamicArray_char` does not free `backing`.
 - Float variables around an inlined catch are refused (not made to work); `catch` ending in `continue` leaks one operand word per throw.
 - MASM/Intel (`windows` target) text is probably not valid as-is; windows_gnu assembles/links but is only occasionally run under Wine.
