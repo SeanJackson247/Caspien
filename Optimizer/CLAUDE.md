@@ -19,7 +19,7 @@ Outer loop until no change: StructMemberReordering -> SizeofResolution -> Struct
 - ConstantFolding `constant-folding`: only literal `PUSH`es directly before an operator. Integer arithmetic on u64/s64 only; compares, TRUNC/SEXT/ZEXT, bool ops, f32/f64 `+-*/`, compares, NEG (NaN/inf/-0.0 not folded); `foldBits` for BITS_AND/OR/XOR/NOT, SHL/SHR/SAR at all widths using the language shift rule (count >= width gives 0 / sign fill). Never folds div/mod by 0, signed MIN/-1, integer NEG.
 - VariableElision `variable-elision`: once-assigned literal local, dominated reads, no address taken -> literal substituted (also in hidden `for` range type text, enabling unrolling). Shared analysis in `VarAnalysis`.
 - VariableShifting `variable-shifting`: straight-line reassignments get fresh `x__sN`; not in loops/branches; skips `ASM_START`/`@catch_` functions.
-- DeadControlFlow `dead-control-flow-removal`: `PUSH true|false / CMP / JMP` folded, newly unreachable lines removed.
+- DeadControlFlow `dead-control-flow-removal`: `PUSH true|false / CMP / JMP` folded, newly unreachable lines removed. All foldable branches of a function are applied in one round (one reachability analysis before, one after, one rebuild; rounds repeat until none is left), so it is linear per round; with 2+ folds a jump straight to the next label is dropped first. Output differs from the old one-fold-at-a-time version only by also removing a few redundant `JMP`-to-next/unreferenced structural labels. Tests: `deadflow*_test`, `deadflow_many_test`, `deadflow_scale_check.sh` (2400 branches must compile in under 25 s).
 - DeadFunction `dead-function-removal`: reachability from `main`, the four `gt_*` hooks, specially decorated functions; no-op without `main` or with any `INVOKE`.
 - UnusedDeclaration `unused-declaration-removal`: drops unreferenced EXTERN/GLOBAL/ALLOC_STATIC/STRING; keeps backend-implicit externs (malloc realloc free strlen exit pthread_exit sched_yield) and `ghost_table`; no-op with `ASM_START` or no `main`.
 - LoopUnrolling `loop-unrolling` off|conservative|balanced|aggressive + `loop-unroll-factor|-full-max-trips|-max-body-lines|-max-growth`: only the exact `for` shape with literal bounds in the range type text; never variable bounds or `loop{}`.
@@ -36,7 +36,6 @@ Outer loop until no change: StructMemberReordering -> SizeofResolution -> Struct
 
 ## Gotchas
 - A mnemonic missing from a pass's op lists makes the function/struct "unknown" and refused: new operators must be added to ConstantFolding, FunctionInlining, StructUnpacking, StructMemberReordering.
-- DeadControlFlow reruns whole-function reachability per folded branch (quadratic in a huge `main` at `aggressive`); keep generated tests split.
 - Stack form: a `JMP` right after a bare `CMP` is conditional.
 - Passes must be pure functions of the whole program; ordering lives only in `BytecodeOptimizer`.
 

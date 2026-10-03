@@ -68,23 +68,29 @@ public class DeadControlFlowRemovalPass implements OptimizationPass {
         }
         List<List<BytecodeToken>> lines = new ArrayList<>(input);
         boolean changed = false;
-        boolean again = true;
-        while (again) {
-            again = false;
-            for (int[] f : VarAnalysis.functions(lines)) {
-                if (VarAnalysis.hasMnemonic(lines, f[0], f[1], "ASM_START")) continue;
-                if (rewriteOne(lines, f[0], f[1])) {
-                    changed = true;
-                    again = true;
-                    break;
-                }
+        // Last function first: a rewrite only changes the lines of its own function, so the ranges of the functions before it stay valid.
+        List<int[]> fns = VarAnalysis.functions(lines);
+        for (int fi = fns.size() - 1; fi >= 0; fi--) {
+            int[] f = fns.get(fi);
+            if (VarAnalysis.hasMnemonic(lines, f[0], f[1], "ASM_START")) continue;
+            int e = f[1];
+            while (true) {
+                int ne = rewriteAll(lines, f[0], e);
+                if (ne < 0) break;
+                changed = true;
+                e = ne;
             }
         }
         return new PassResult(changed ? lines : input, changed);
     }
 
-    /** Applies the first applicable rewrite in [s, e]; returns whether one was made. */
-    private static boolean rewriteOne(List<List<BytecodeToken>> L, int s, int e) {
+    /**
+     * Applies every foldable branch of the function [s, e] in one go (one reachability analysis before, one after, one rebuild of the line
+     * list), so the cost is linear in the function size per round instead of per folded branch. Returns the new end index, or -1 when
+     * nothing was foldable. Rounds repeat until nothing is left (a removal can expose another pattern).
+     */
+    private static List<Integer> findHits(List<List<BytecodeToken>> L, int s, int e) {
+        List<Integer> hits = new ArrayList<>();
         for (int i = s + 1; i + 2 <= e; i++) {
             List<BytecodeToken> p = L.get(i);
             boolean isTrue = isBoolLit(p, "true"), isFalse = isBoolLit(p, "false");
@@ -92,53 +98,74 @@ public class DeadControlFlowRemovalPass implements OptimizationPass {
             List<BytecodeToken> c = L.get(i + 1), j = L.get(i + 2);
             if (!"CMP".equals(VarAnalysis.mnemonic(c)) || c.size() != 1) continue;
             if (!"JMP".equals(VarAnalysis.mnemonic(j)) || j.size() != 2) continue;
-            // Lines that are already unreachable before this rewrite are none of this pass's business.
-            Set<List<BytecodeToken>> alreadyDead = newIdentitySet();
-            boolean[] before = reachable(L, s, e);
-            for (int k = s; k <= e; k++) {
-                if (!before[k - s]) alreadyDead.add(L.get(k));
-            }
-            int newEnd;
-            if (isTrue) {
-                L.subList(i, i + 3).clear();                       // never jumps: fall through into the branch
-                newEnd = e - 3;
-            } else {
-                L.set(i, j);                                       // always jumps
-                L.subList(i + 1, i + 3).clear();
-                newEnd = e - 2;
-            }
-            boolean[] after = reachable(L, s, newEnd);
-            boolean[] keep = new boolean[newEnd - s + 1];
-            for (int k = s; k <= newEnd; k++) {
-                List<BytecodeToken> l = L.get(k);
-                boolean dead = !after[k - s] && !alreadyDead.contains(l);
-                String m = VarAnalysis.mnemonic(l);
-                if (dead && m != null && (DECLS.contains(m) || m.equals("FUNC_START") || m.equals("FUNC_END"))) dead = false;
-                keep[k - s] = !dead;
-            }
-            // A label that a kept line still names must stay: code that was unreachable before this rewrite (for example the jump that
-            // follows an inlined early return) is left alone, and it may still refer to a label whose only reachable jumps just vanished.
-            boolean again = true;
-            while (again) {
-                again = false;
-                Set<String> named = new HashSet<>();
-                for (int k = s; k <= newEnd; k++) {
-                    List<BytecodeToken> l = L.get(k);
-                    if (!keep[k - s] || isLabelDef(l)) continue;
-                    for (BytecodeToken t : l) if (t.text.startsWith("@")) named.add(t.text);
-                }
-                for (int k = s; k <= newEnd; k++) {
-                    if (!keep[k - s] && isLabelDef(L.get(k)) && named.contains(labelName(L.get(k)))) { keep[k - s] = true; again = true; }
-                }
-            }
-            List<List<BytecodeToken>> out = new ArrayList<>();
-            for (int k = s; k <= newEnd; k++) if (keep[k - s]) out.add(L.get(k));
-            L.subList(s, newEnd + 1).clear();
-            L.addAll(s, out);
-            dropJumpToNext(L, s, s + out.size() - 1);
-            return true;
+            hits.add(i);
+            i += 2;
         }
-        return false;
+        return hits;
+    }
+
+    private static int rewriteAll(List<List<BytecodeToken>> L, int s, int e) {
+        List<Integer> hits = findHits(L, s, e);
+        if (hits.isEmpty()) return -1;
+        // A jump straight to the label that follows it is dropped first (the one-at-a-time version did this after every rewrite, so
+        // from the second fold on it was gone), so a label that only such a jump named can go with the dead code.
+        int pre = 0;
+        if (hits.size() > 1) {
+            pre = dropJumpToNext(L, s, e);
+            if (pre > 0) {
+                e -= pre;
+                hits = findHits(L, s, e);
+            }
+        }
+        // Lines that are already unreachable before the rewrites are none of this pass's business.
+        Set<List<BytecodeToken>> alreadyDead = newIdentitySet();
+        boolean[] before = reachable(L, s, e);
+        for (int k = s; k <= e; k++) {
+            if (!before[k - s]) alreadyDead.add(L.get(k));
+        }
+        // Rebuild the function body with every pattern rewritten.
+        List<List<BytecodeToken>> body = new ArrayList<>(e - s + 1);
+        int h = 0;
+        for (int k = s; k <= e; k++) {
+            if (h < hits.size() && hits.get(h) == k) {
+                List<BytecodeToken> jmp = L.get(k + 2);
+                if (isBoolLit(L.get(k), "false")) body.add(jmp);    // always jumps
+                                                                      // (true: never jumps, the three lines vanish)
+                k += 2;
+                h++;
+            } else {
+                body.add(L.get(k));
+            }
+        }
+        int newEnd = s + body.size() - 1;
+        L.subList(s, e + 1).clear();
+        L.addAll(s, body);
+        boolean[] after = reachable(L, s, newEnd);
+        boolean[] keep = new boolean[newEnd - s + 1];
+        for (int k = s; k <= newEnd; k++) {
+            List<BytecodeToken> l = L.get(k);
+            boolean dead = !after[k - s] && !alreadyDead.contains(l);
+            String m = VarAnalysis.mnemonic(l);
+            if (dead && m != null && (DECLS.contains(m) || m.equals("FUNC_START") || m.equals("FUNC_END"))) dead = false;
+            keep[k - s] = !dead;
+        }
+        // A label that a kept line still names must stay: code that was unreachable before this rewrite (for example the jump that
+        // follows an inlined early return) is left alone, and it may still refer to a label whose only reachable jumps just vanished.
+        Set<String> named = new HashSet<>();
+        for (int k = s; k <= newEnd; k++) {
+            List<BytecodeToken> l = L.get(k);
+            if (!keep[k - s] || isLabelDef(l)) continue;
+            for (BytecodeToken t : l) if (t.text.startsWith("@")) named.add(t.text);
+        }
+        for (int k = s; k <= newEnd; k++) {
+            if (!keep[k - s] && isLabelDef(L.get(k)) && named.contains(labelName(L.get(k)))) keep[k - s] = true;
+        }
+        List<List<BytecodeToken>> out = new ArrayList<>();
+        for (int k = s; k <= newEnd; k++) if (keep[k - s]) out.add(L.get(k));
+        L.subList(s, newEnd + 1).clear();
+        L.addAll(s, out);
+        int dropped = dropJumpToNext(L, s, s + out.size() - 1);
+        return s + out.size() - 1 - dropped;
     }
 
     private static Set<List<BytecodeToken>> newIdentitySet() {
@@ -191,15 +218,18 @@ public class DeadControlFlowRemovalPass implements OptimizationPass {
     }
 
     /** Removes an unconditional "JMP L" directly followed by "L:" in [s, e]. */
-    private static void dropJumpToNext(List<List<BytecodeToken>> L, int s, int e) {
+    private static int dropJumpToNext(List<List<BytecodeToken>> L, int s, int e) {
         int fs = Math.min(s, L.size() - 1);
         int fe = Math.min(e, L.size() - 1);
+        int removed = 0;
         for (int k = fe - 1; k > fs; k--) {
             List<BytecodeToken> l = L.get(k), nx = L.get(k + 1);
             if (!"JMP".equals(VarAnalysis.mnemonic(l)) || l.size() != 2 || !isLabelDef(nx)) continue;
             if (!l.get(1).text.equals(labelName(nx))) continue;
             if ("CMP".equals(VarAnalysis.mnemonic(L.get(k - 1)))) continue;
             L.remove(k);
+            removed++;
         }
+        return removed;
     }
 }
