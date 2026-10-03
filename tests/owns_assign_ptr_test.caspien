@@ -1,0 +1,88 @@
+// Assigning an `owns` value to a field reached through a pointer (`h.w = ...`): the right side runs BEFORE the old value is
+// destructed. `h.w = pass(h.w)` moves the old value into the call and gets it back (it used to free it first and then use it);
+// a throwing right side leaves the old value untouched; a plain replacement still frees the old value exactly once. Checked
+// through the ghost table's entry count (see owns_assign_ptr_check.sh, which runs this under valgrind).
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+struct World{@pub{
+	ticks: mut u64
+}}
+struct Holder{@pub{
+	w: owns some mut World
+}}
+
+func live() mut u64{
+	let n = mut 0
+	unsafe assume{
+		assume match ghost_table.lockState : OPEN
+		n = mut ghost_table.len
+	}
+	return n
+}
+
+func check(name: static imut string, ok: imut bool) void{
+	unsafe extern{
+		if ok{ printf("PASS %s\n", name) }
+		else{ printf("FAIL %s\n", name) }
+	}
+}
+
+func pass(w: owns some mut World) owns some mut World{
+	w.ticks += 1
+	return w
+}
+
+@throws
+func mk(t: mut u64) owns some mut World{
+	?catch(e){ throw e }
+	if t > 100{
+		throw "too big"
+	}
+	return ?new World{ticks= t + 1}
+}
+
+// 1 when the right side threw (and was caught), else 0
+func attempt(h: ref some mut Holder) mut u64{
+	try{
+		h.w = try mk(h.w.ticks) catch(e){
+			return 1
+		}
+	}
+	return 0
+}
+
+func body() void{
+	?catch(e){ return }
+	let base = mut live()
+	let w0 = mut ? new World{ticks= 5}
+	let h = mut ? new Holder{w= w0}
+	// self move through the pointer, three times
+	h.w = pass(h.w)
+	h.w = pass(h.w)
+	h.w = pass(h.w)
+	check("self-move ticks", h.w.ticks == 8)
+	check("self-move entries", live() == base + 2)
+	// plain replacement frees the old value
+	h.w = ?new World{ticks= 40}
+	check("replace ticks", h.w.ticks == 40)
+	check("replace entries", live() == base + 2)
+	// right side reads the old value, then replaces it
+	h.w = ?mk(h.w.ticks)
+	check("read-old ticks", h.w.ticks == 41)
+	check("read-old entries", live() == base + 2)
+	// throwing right side: old value stays, nothing leaks
+	h.w.ticks = 500
+	check("throw caught", attempt(h) == 1)
+	check("throw keeps old", h.w.ticks == 500)
+	check("throw entries", live() == base + 2)
+}
+
+func main() void{
+	let before = mut live()
+	body()
+	check("all freed", live() == before)
+}

@@ -3863,6 +3863,15 @@ public class BytecodeEmitter {
                 || (target.type == TokenType.OPERATOR && target.text.equals(".") && isQualifiedNameableDot(target));
     }
 
+    /** An `owns` assignment target with no flat name: a field reached through a pointer, or an indexed element. */
+    private boolean isPointerCrossingOwnsTarget(Token target) {
+        if (target.type == TokenType.KEYWORD || target.resolvedType == null || !target.resolvedType.startsWith("owns")) {
+            return false;
+        }
+        return target.type == TokenType.OPERATOR && (target.text.equals("LOOKUP")
+                || (target.text.equals(".") && !isQualifiedNameableDot(target)));
+    }
+
     private boolean emitDestructOldOwnedValue(Token target) {
         if (target.type == TokenType.KEYWORD || target.resolvedType == null
                 || !target.resolvedType.startsWith("owns")) {
@@ -3898,6 +3907,20 @@ public class BytecodeEmitter {
         // call, which nulls the variable, so destructing first freed an object the callee
         // was about to use. Destructing late sees the moved-out (null) slot and is a no-op.
         boolean lateDestruct = isFlatOwnsDestructTarget(op.left);
+        // An owns target reached through a pointer or an index ("h.w = pass(h.w)", "a[i] = f(a[i])") has no flat name, so
+        // its old value is destructed through the computed address. The right side is still evaluated FIRST (into a hidden
+        // local): it may move the old value out (the move nulls the slot, so the destruct below is then a no-op), and if it
+        // throws, the old value is left untouched instead of freed.
+        boolean pointerCrossingOwns = !lateDestruct && lateAllocs != null && op.right.resolvedType != null
+                && op.right.resolvedType.startsWith("owns") && isPointerCrossingOwnsTarget(op.left);
+        String spilledRight = null;
+        if (pointerCrossingOwns) {
+            String rightType = op.right.resolvedType;
+            spilledRight = declareHiddenLocal(rightType);
+            line("ADDR " + spilledRight + " " + rightType);
+            emitExpr(op.right);
+            line("ASSIGN " + rightType + " " + rightType + " " + rightType);
+        }
         boolean addressAlreadyOnStack = false;
         if (!lateDestruct) {
             addressAlreadyOnStack = emitDestructOldOwnedValue(op.left);
@@ -3905,7 +3928,11 @@ public class BytecodeEmitter {
         if (!addressAlreadyOnStack) {
             emitAssignTarget(op.left);
         }
-        emitExpr(op.right);
+        if (spilledRight != null) {
+            line("PUSH " + spilledRight + " " + op.right.resolvedType);
+        } else {
+            emitExpr(op.right);
+        }
         if (lateDestruct) {
             emitDestructOldOwnedValue(op.left);
         }
