@@ -17,6 +17,9 @@ import java.util.List;
  *   inline-max-depth: N            rounds of inlining: 1 inlines the calls written in each function, 2 also the calls that came in with
  *                                  the first round's bodies, and so on
  *   inline-max-growth: N           at most N added bytecode lines per function, over the whole run
+ *   inline-max-growth-factor: N    also at most N times the function's original size (but never below 2000 lines); 0 = no such limit
+ *   inline-max-total-factor: N     at most N times the original program size added over all functions (but never below 50000 lines); 0 = none
+ *                                  When a limit is reached the call is simply left as a call (never an error).
  *
  * The preset supplies all three numbers; any of the three keys after it overrides just that number. The keys do nothing while the preset is
  * off. A malformed value stops the compile (never silently ignored).
@@ -28,6 +31,11 @@ public final class InlineConfig {
     public int maxCalleeLines = 0;
     public int maxDepth = 0;
     public long maxGrowth = 0;
+    /** Per-caller cap as a multiple of the caller's original size (0 = none); never below GROWTH_FLOOR lines. */
+    public long growthFactor = 0;
+    /** Program-wide cap on added lines as a multiple of the original program size (0 = none); never below TOTAL_FLOOR lines. */
+    public long totalFactor = 0;
+    public static final long GROWTH_FLOOR = 2000, TOTAL_FLOOR = 50_000;
 
     public static InlineConfig disabled() {
         return new InlineConfig();
@@ -49,7 +57,7 @@ public final class InlineConfig {
     public static InlineConfig parse(List<String> lines, String path) {
         String preset = "off";
         Integer calleeLines = null, depth = null;
-        Long growth = null;
+        Long growth = null, gfactor = null, tfactor = null;
         for (int n = 0; n < lines.size(); n++) {
             String raw = lines.get(n);
             int hash = raw.indexOf('#');
@@ -85,6 +93,12 @@ public final class InlineConfig {
                 case "inline-max-growth":
                     growth = number(path, n, key, val);
                     break;
+                case "inline-max-growth-factor":
+                    gfactor = number(path, n, key, val);
+                    break;
+                case "inline-max-total-factor":
+                    tfactor = number(path, n, key, val);
+                    break;
                 default:
                     break;
             }
@@ -100,6 +114,8 @@ public final class InlineConfig {
                 break;
             case "aggressive":
                 c.set(Integer.MAX_VALUE, 32, 100_000_000L);
+                c.growthFactor = 30;
+                c.totalFactor = 10;
                 break;
             default:
                 return c; // off: the numbers are ignored
@@ -108,6 +124,8 @@ public final class InlineConfig {
         if (calleeLines != null) c.maxCalleeLines = calleeLines;
         if (depth != null) c.maxDepth = depth;
         if (growth != null) c.maxGrowth = growth;
+        if (gfactor != null) c.growthFactor = gfactor;
+        if (tfactor != null) c.totalFactor = tfactor;
         return c;
     }
 
@@ -139,6 +157,6 @@ public final class InlineConfig {
     @Override
     public String toString() {
         return enabled ? "function-inlining " + preset + " (callee<=" + maxCalleeLines + " lines, depth " + maxDepth + ", growth<="
-                + maxGrowth + ")" : "function-inlining off";
+                + maxGrowth + ", x" + growthFactor + " per function, x" + totalFactor + " per program)" : "function-inlining off";
     }
 }

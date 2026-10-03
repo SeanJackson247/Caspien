@@ -53,6 +53,10 @@ public class FunctionInliningPass implements OptimizationPass {
     private int roundsDone = 0;
     private final Map<String, Long> grown = new HashMap<>();
     private int fresh = -1;
+    /** Original size per function and for the program (first round), and lines added so far: the relative budgets. */
+    private final Map<String, Long> origSize = new HashMap<>();
+    private long origProgram = -1;
+    private long totalAdded = 0;
     /** Number of call sites inlined over the whole run (for diagnostics). */
     public int inlinedSites = 0;
 
@@ -618,6 +622,10 @@ public class FunctionInliningPass implements OptimizationPass {
         fresh = Math.max(fresh, maxNum + 1);
 
         List<int[]> fns = VarAnalysis.functions(L);
+        if (origProgram < 0) {
+            origProgram = L.size();
+            for (int[] f : fns) origSize.put(L.get(f[0]).get(1).text, (long) (f[1] - f[0] + 1));
+        }
         // call graph -> functions on a cycle
         Map<String, Set<String>> graph = new LinkedHashMap<>();
         for (int[] f : fns) {
@@ -877,7 +885,13 @@ public class FunctionInliningPass implements OptimizationPass {
         if (!c.balanced && cls != 0 && !(cls == 1 && mode.equals("TEMP"))) return false;
         // ---- growth
         long est = (long) c.code.size() + c.allocs.size() + words + c.params.size() * 2L + 4;
-        if (grown.getOrDefault(cx.caller, 0L) + cx.added + est > cfg.maxGrowth) return false;
+        long cap = cfg.maxGrowth;
+        if (cfg.growthFactor > 0) cap = Math.min(cap, Math.max(InlineConfig.GROWTH_FLOOR, cfg.growthFactor * origSize.getOrDefault(cx.caller, 1L)));
+        if (grown.getOrDefault(cx.caller, 0L) + cx.added + est > cap) return false;
+        if (cfg.totalFactor > 0 && totalAdded + est > Math.max(InlineConfig.TOTAL_FLOOR, cfg.totalFactor * origProgram)) {
+            if (System.getenv("CASPIEN_INLINE_WHY") != null) System.err.println("[inline] program growth budget reached: " + cx.caller + " keeps a call to " + c.name);
+            return false;
+        }
         // A callee with a catch of its own is entered by a real unwind with whatever the statement had pushed at the call still on the
         // operand stack (the callee's frame is not there to reset rsp any more), and its catch then falls out through the end label. With
         // operands of an enclosing expression beneath the site, those extra words would sit between them and the code that consumes them.
@@ -984,6 +998,7 @@ public class FunctionInliningPass implements OptimizationPass {
         if (mode.equals("TEMP")) cx.newAllocs.add(mk(ref, "ALLOC", retVar, retT));
         cx.callerNames.addAll(local.values());
         cx.added += blk.size() + newLocals;
+        totalAdded += blk.size() + newLocals;
         cx.changed = true;
         inlinedSites++;
         return true;

@@ -1,0 +1,73 @@
+// Fan-out chain f0 -> 3x f1 -> 3x f2 ... (3^10 call paths): unlimited inlining would grow it to hundreds of thousands of lines.
+// inline_budget_check.sh compiles it at `aggressive` and checks the size stays bounded; every config must print PASS.
+import "../stdlib/libc.caspien"
+func f10(x: mut u64) mut u64{
+	return x + 1
+}
+func f9(x: mut u64) mut u64{
+	let a = mut f10(x)
+	a += f10(x + 1)
+	a += f10(x + 2)
+	return a
+}
+func f8(x: mut u64) mut u64{
+	let a = mut f9(x)
+	a += f9(x + 1)
+	a += f9(x + 2)
+	return a
+}
+func f7(x: mut u64) mut u64{
+	let a = mut f8(x)
+	a += f8(x + 1)
+	a += f8(x + 2)
+	return a
+}
+func f6(x: mut u64) mut u64{
+	let a = mut f7(x)
+	a += f7(x + 1)
+	a += f7(x + 2)
+	return a
+}
+func f5(x: mut u64) mut u64{
+	let a = mut f6(x)
+	a += f6(x + 1)
+	a += f6(x + 2)
+	return a
+}
+func f4(x: mut u64) mut u64{
+	let a = mut f5(x)
+	a += f5(x + 1)
+	a += f5(x + 2)
+	return a
+}
+func f3(x: mut u64) mut u64{
+	let a = mut f4(x)
+	a += f4(x + 1)
+	a += f4(x + 2)
+	return a
+}
+func f2(x: mut u64) mut u64{
+	let a = mut f3(x)
+	a += f3(x + 1)
+	a += f3(x + 2)
+	return a
+}
+func f1(x: mut u64) mut u64{
+	let a = mut f2(x)
+	a += f2(x + 1)
+	a += f2(x + 2)
+	return a
+}
+func f0(x: mut u64) mut u64{
+	let a = mut f1(x)
+	a += f1(x + 1)
+	a += f1(x + 2)
+	return a
+}
+func main() void{
+	let r = mut f0(1)
+	unsafe extern{
+		if r == 708588{ printf("PASS chain sum\n") }
+		else{ printf("FAIL chain sum %llu\n", r) }
+	}
+}

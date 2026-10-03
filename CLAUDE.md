@@ -48,4 +48,4 @@ Caspien: a systems language for auditable code (ownership storage `owns/ref/raw/
 - Float variables (xmm registers) and catch: a call spills them to home slots, but a direct jump into a catch label (inlined throw, failed allocation) is not a call, so `RegVarPromotionPass` puts `R_XSPILL` before every `JMP`/`R_BR*` to a `@catch_` label and the catch entry `R_XRELOAD`s them; the inliner no longer refuses float variables. Test: `tests/float_catch_check.sh`. `auto` cannot point at a dynarray element (resize may move the block): deliberate.
 - MASM/Intel (`windows` target) text is probably not valid as-is; windows_gnu assembles/links but is only occasionally run under Wine.
 - Event loops in `stdlib/` wrap `main` in `?`; `deref`-style struct-wide assignment is rejected.
-- Aggressive inlining can blow the Optimizer heap (many inlined call sites); `DeadControlFlowRemovalPass` is quadratic in foldable checks per program.
+- `DeadControlFlowRemovalPass` is quadratic in foldable checks per program (a huge `main` at `aggressive` is slow). Inlining growth is budgeted (per function and per program).
