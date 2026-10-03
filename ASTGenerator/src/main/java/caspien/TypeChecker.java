@@ -6818,12 +6818,8 @@ public class TypeChecker {
      * cycle of any length, to get the guarantees we want"). Checked
      * post-monomorphization (confirmed directly, "yeah just do it post
      * monomorphization") on each concrete struct's own already-
-     * flattened `members` map -- (structs have no ancestors; this
-     * used to flatten inherited members),
-     * confirmed directly, meaning 'extends' itself contributes no
-     * *direct* edge here at all; a cycle arising purely through
-     * inherited members is still caught, since those members are
-     * already part of the flattened set by the time this runs. Every
+     * flattened `members` map (structs have no ancestors, so every
+     * member of a struct is declared in it directly). Every
      * member counts as an edge regardless of storage -- plain (the
      * request's own example is the plain, no-storage form specifically,
      * confirmed by testing that it compiles cleanly today, a genuine,

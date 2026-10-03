@@ -13,7 +13,7 @@ Tests in repo-root `tests/`: runtime programs (`inline*_test`, `constfold_test`,
 Outer loop until no change: StructMemberReordering -> SizeofResolution -> StructUnpacking -> inner loop (ConstantFolding, VariableElision, VariableShifting) -> DeadControlFlow -> DeadFunction -> UnusedDeclaration -> LoopUnrolling -> FunctionInlining. After: VariableAllocationReordering, then RegVarHint (once each).
 
 ## Passes (switch = compiler.config key; all default off unless noted)
-- StructMemberReordering `struct-member-reordering`: largest alignment first, `___type` first; rewrites every positional layout site. Skips structs with extends/decorators/non-scalar members, a `raw` pointer to them, unparseable constructions, `STRUCT_PIN` (always stripped).
+- StructMemberReordering `struct-member-reordering`: largest alignment first, `___type` first; rewrites every positional layout site. Skips structs with decorators/non-scalar members, a `raw` pointer to them, unparseable constructions, `STRUCT_PIN` (always stripped).
 - SizeofResolution (always on): `SIZEOF Name ..` -> `PUSH n ..` from declared layout; unknown struct = IllegalStateException; LOG must never see `SIZEOF`.
 - StructUnpacking `struct-unpacking`: scalar-only local structs become one local per member (`v__m`); any other mention leaves it alone.
 - ConstantFolding `constant-folding`: only literal `PUSH`es directly before an operator. Integer arithmetic on u64/s64 only; compares, TRUNC/SEXT/ZEXT, bool ops, f32/f64 `+-*/`, compares, NEG (NaN/inf/-0.0 not folded); `foldBits` for BITS_AND/OR/XOR/NOT, SHL/SHR/SAR at all widths using the language shift rule (count >= width gives 0 / sign fill). Never folds div/mod by 0, signed MIN/-1, integer NEG.
