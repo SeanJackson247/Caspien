@@ -82,6 +82,38 @@ func returned() mut u64{
 	return h.w.ticks
 }
 
+func rvoAssign() mut u64{
+	?catch(e){ return 0 }
+	let w = mut ? new World{ticks= 2}
+	let h = mut Holder{w= w}
+	h = ?build(40)
+	h = ?build(h.w.ticks + 1)
+	return h.w.ticks
+}
+
+@throws
+func buildFail(t: mut u64) mut Holder{
+	?catch(e){ throw e }
+	if t > 0{
+		throw "no"
+	}
+	let w = mut ? new World{ticks= 1}
+	let h = mut Holder{w= w}
+	return h
+}
+
+func rvoThrow() mut u64{
+	?catch(e){ return 0 }
+	let w = mut ? new World{ticks= 8}
+	let h = mut Holder{w= w}
+	try{
+		h = try buildFail(1) catch(e2){
+			return h.w.ticks
+		}
+	}
+	return 0
+}
+
 func inLoop() void{
 	?catch(e){ return }
 	for i in 0..4{
@@ -123,6 +155,12 @@ func main() void{
 	let d = mut returned()
 	check("returned: value", d == 21)
 	check("returned: freed", live() == base)
+	let f = mut rvoAssign()
+	check("h = f(): value", f == 41)
+	check("h = f(): freed", live() == base)
+	let g = mut rvoThrow()
+	check("h = f() throwing keeps the old value", g == 8)
+	check("h = f() throwing: freed", live() == base)
 	inLoop()
 	check("loop: freed", live() == base)
 	let e = mut caught()

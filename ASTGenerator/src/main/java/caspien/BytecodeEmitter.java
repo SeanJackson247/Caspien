@@ -4067,6 +4067,22 @@ public class BytecodeEmitter {
         String destVarName = destVarNameOf(op.left);
         String destType = op.left.resolvedType;
         String rawPtrType = "raw_indeterminate_" + structName;
+        if (op.left.inlineOwnsStruct != null && lateAllocs != null) {
+            // The destination already owns memory (an inline struct with owns members): the callee builds the new value in a
+            // hidden local, then the old members are dropped and the value is copied over. A callee that throws leaves the
+            // destination untouched, and an argument that moves a member out of it (`h = f(h.w)`) has already nulled it.
+            String hidden = declareHiddenLocal(destType);
+            emitStructRvoCallSequence(callOp, rawPtrType, () -> {
+                line("PUSH " + hidden + " " + destType);
+                line("ADDR_OF RAW " + destType + " " + rawPtrType);
+            });
+            requireGhostTableFunctionPresent("gt_destruct", op.left);
+            line("GT_DESTRUCT " + destVarName);
+            line("ADDR " + destVarName + " " + destType);
+            line("PUSH " + hidden + " " + destType);
+            line("ASSIGN " + destType + " " + destType + " " + destType);
+            return;
+        }
         emitStructRvoCallSequence(callOp, rawPtrType, () -> {
             line("PUSH " + destVarName + " " + destType);
             line("ADDR_OF RAW " + destType + " " + rawPtrType);
