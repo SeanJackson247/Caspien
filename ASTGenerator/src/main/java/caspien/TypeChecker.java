@@ -11476,10 +11476,13 @@ public class TypeChecker {
                         "'deref(...)' would copy a '" + declaredType.baseType + "', which owns memory -- two owners of one block. "
                                 + "Use 'clone(...)', or move the owned members out one by one");
             }
-            if (inner.type == TokenType.OPERATOR && "LOOKUP".equals(inner.text) && inner.left != null
-                    && inner.left.resolvedType != null && inner.left.resolvedType.endsWith("]")) {
+            Token chain = inner;
+            while (chain != null && chain.type == TokenType.OPERATOR && ".".equals(chain.text)) {
+                chain = chain.left; // `d[i].h`: still a read out of an indexed element
+            }
+            if (chain != null && chain.type == TokenType.OPERATOR && "LOOKUP".equals(chain.text)) {
                 throw new CompilerException("type", valueExpr.file, valueExpr.line,
-                        "reading '" + declaredType.baseType + "' out of a fixed array would copy a value that owns memory -- two owners "
+                        "reading '" + declaredType.baseType + "' out of an array element would copy a value that owns memory -- two owners "
                                 + "of one block. Use 'clone(...)' on the element, or move the owned members out one by one");
             }
             String key = slotKeyOf(inner);

@@ -1,0 +1,43 @@
+// Reading an element of a dynarray of owning structs out by value would make two owners of one block: an error (use clone).
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+struct World{@pub{
+	ticks: mut u64
+}}
+struct Holder{@pub{
+	w: owns some mut World
+}}
+struct Outer{@pub{
+	h: mut Holder
+	n: mut u64
+}}
+
+func live() mut u64{
+	let n = mut 0
+	unsafe assume{
+		assume match ghost_table.lockState : OPEN
+		n = mut ghost_table.len
+	}
+	return n
+}
+
+func check(name: static imut string, ok: imut bool) void{
+	unsafe extern{
+		if ok{ printf("PASS %s\n", name) }
+		else{ printf("FAIL %s\n", name) }
+	}
+}
+func main() void{
+	?catch(e){ return }
+	let w1 = mut ? new World{ticks= 1}
+	let w2 = mut ? new World{ticks= 2}
+	let d = mut ? dyn([Holder{w= w1}, Holder{w= w2}])
+	let i = mut 1
+	match i in d{
+		let x = mut d[i]
+	}
+}
