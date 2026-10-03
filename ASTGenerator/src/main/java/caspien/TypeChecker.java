@@ -11455,6 +11455,18 @@ public class TypeChecker {
      * whenever that declared type is exactly 'owns', whatever slot the
      * value came from (if any) is moved.
      */
+    /**
+     * Operands of one call, array literal or `dyn([..])` are all checked before any of them is marked moved, so `f(a, a)` or
+     * `dyn([a, a])` passes the read check. A slot that is already moved when its own move is being recorded was moved a moment ago
+     * by a sibling operand (a later read of an earlier-moved slot is rejected when it is read): two owners of one block.
+     */
+    private void requireNotMovedAlready(String key, Token valueExpr, Scope scope) {
+        if (scope.movedSlots.contains(key)) {
+            throw new CompilerException("type", valueExpr.file, valueExpr.line,
+                    "'" + key + "' is moved more than once in the same expression -- two owners of one block");
+        }
+    }
+
     private void markMovedIfOwned(TypeInfo declaredType, Token valueExpr, Scope scope) {
         if (isInlineOwningStruct(declaredType)) {
             // Copying a struct that owns memory would leave two owners: the source slot gives its owned members up
@@ -11487,6 +11499,7 @@ public class TypeChecker {
             }
             String key = slotKeyOf(inner);
             if (key != null) {
+                requireNotMovedAlready(key, valueExpr, scope);
                 scope.movedSlots.add(key);
                 valueExpr.isOwnershipMoveSource = true;
                 valueExpr.inlineOwnsStruct = declaredType.baseType;
@@ -11496,6 +11509,7 @@ public class TypeChecker {
         if ("owns".equals(declaredType.storage)) {
             String key = slotKeyOf(valueExpr);
             if (key != null) {
+                requireNotMovedAlready(key, valueExpr, scope);
                 scope.movedSlots.add(key);
                 valueExpr.isOwnershipMoveSource = true;
             }

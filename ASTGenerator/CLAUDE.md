@@ -47,5 +47,5 @@ No framework. Fixtures: `examples/` in this folder (hand-written `.caspien`); na
 
 ## Known open gaps
 - After the extends removal: the struct `.enum` form is an error; constant instanceof/implements results are not reported.
-- By-value struct parameters rejected; `auto` cannot point at a dynarray element; `dyn([a, a])` double-use of an owns pointer not rejected.
+- By-value struct parameters rejected; `auto` cannot point at a dynarray element. Moving one owns slot twice in one expression (`f(a, a)`, `dyn([a, a])`, `[a, a]`) is rejected by `requireNotMovedAlready` (operands are all checked before any is marked moved).
 - Windows/MASM largely unverified.

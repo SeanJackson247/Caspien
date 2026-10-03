@@ -1,0 +1,20 @@
+// The same owns variable passed twice in one call would give two owners of one block: an error.
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+struct World{@pub{
+	ticks: mut u64
+}}
+struct Two{@pub{
+	p: owns some mut World
+	q: owns some mut World
+}}
+func two(x: owns some mut World, y: owns some mut World) void{ }
+func main() void{
+	?catch(e){ return }
+	let a = mut ? new World{ticks= 1}
+	two(a, a)
+}
