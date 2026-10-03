@@ -31,6 +31,12 @@ func par_call(fn: raw imut u8, handle: raw mut u8) imut bool{
 	unsafe extern raw{
 		rc = mut pthread_create(raw tid, null, fn, handle)
 	}
+	if rc == 0{
+		// Nothing ever joins a `par` thread: detach it so its stack and thread block are released when it ends.
+		unsafe extern{
+			pthread_detach(tid)
+		}
+	}
 	let ok = imut (rc == 0)
 	return ok
 }

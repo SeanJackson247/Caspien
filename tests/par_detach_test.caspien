@@ -1,0 +1,42 @@
+// 40 `par` calls, each waited for through its handle. Prints "PASS par_detach: 40 results correct" when every result is right;
+// par_detach_check.sh runs it under valgrind: finished `par` threads must not leave their thread block behind.
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+import "../stdlib/par_call.caspien"
+import "../stdlib/await_call.caspien"
+
+@async
+func triple(x: mut u64) mut u64{
+	return x * 3
+}
+
+func main() void{
+	?catch(e){
+		unsafe extern{ printf("FAIL par_detach: %s\n", e) }
+		return
+	}
+	let good = mut 0
+	for n in 0..40{
+		let h = mut ? par triple(mut n)
+		for i in 0..100000000{
+			let ready = mut false
+			match h.state{
+				READY:{ ready = true }
+				default:{ ready = false }
+			}
+			if ready{ break }
+			yield
+		}
+		let r = mut h.resolve(h)
+		if r == n * 3{ good = good + 1 }
+	}
+	if good == 40{
+		unsafe extern{ printf("PASS par_detach: 40 results correct\n") }
+	} else{
+		unsafe extern{ printf("FAIL par_detach: %llu of 40 correct\n", good) }
+	}
+}
