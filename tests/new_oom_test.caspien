@@ -18,6 +18,7 @@ struct Top{
 	@pub{ y: mut u64
 	mid: owns some mut Outer }
 }
+func pass(p: owns some mut Pair) owns some mut Pair{ return p }
 func bump(n: imut u64) mut u64{ return n + 1 }
 func main() void{
 	unsafe{ printf("start\n") }
@@ -33,9 +34,11 @@ func main() void{
 		let t = mut ?new Top{y= 4, mid= o2}           // moves o2 (a whole nested chain)
 		let p3 = mut ?new Pair{a= 2, b= 3}
 		let o3 = mut ?new Outer{x= bump(1), inner= p3}  // a call inside the fields must not lose the catch label; moves p3
+		let p4 = mut ?new Pair{a= 6, b= 7}
+		let o4 = mut ?new Outer{x= 1, inner= pass(p4)}  // a call RESULT moved in (a temporary): freed too if the new fails
 		let q1 = mut ?new Pair{a= 5, b= 6}
 		let q2 = mut ?new Pair{a= 7, b= 8}
-		let arr = mut ?dyn([q1, q2])                  // moves q1 and q2; arr itself is not freed at scope end (plain dyn blocks are not tracked)
+		let arr = mut ?dyn([q1, pass(q2)])            // moves q1 and the result of pass(q2); arr itself is not freed at scope end (plain dyn blocks are not tracked)
 		unsafe{ printf("done %llu %llu %llu\n", o1.x, t.y + o3.x - 2, len(arr)) }
 	}
 }

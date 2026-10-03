@@ -1418,6 +1418,12 @@ public class BytecodeEmitter {
         for (Runnable r : ordinaryAllocs) {
             r.run();
         }
+        // Locals discovered while emitting the body (see `declareHiddenLocal`) get their ALLOC lines spliced in right here once the
+        // body is done: a variable cannot be used before it is declared, so no pre-pass is needed to find them.
+        final int savedLateAllocPos = lateAllocPos;
+        final List<String> savedLateAllocs = lateAllocs;
+        lateAllocPos = out.length();
+        lateAllocs = new ArrayList<>();
         emitGtRoutineBody(info, emittedName, gtSuppressed);
         emitHoistedCatchBlocks(info);
         // "this goes in @event_loop instead" when '@with_tick' --
@@ -1441,6 +1447,15 @@ public class BytecodeEmitter {
         // (see `emitCallSiteUnwindLandingPads`'s own doc comment).
         emitCallSiteUnwindLandingPads(info, emittedName, gtSuppressed);
         line("FUNC_END");
+        if (!lateAllocs.isEmpty()) {
+            StringBuilder sb = new StringBuilder();
+            for (String a : lateAllocs) {
+                sb.append(a).append('\n');
+            }
+            out.insert(lateAllocPos, sb);
+        }
+        lateAllocPos = savedLateAllocPos;
+        lateAllocs = savedLateAllocs;
         currentFuncMangledName = null;
         currentFuncInfo = null;
         inGtSuppressedContext = previousGtContext;
@@ -3272,7 +3287,11 @@ public class BytecodeEmitter {
                     List<Token> elements = new ArrayList<>();
                     collectCommaArgs(node.childs.get(0), elements);
                     for (Token element : elements) {
-                        emitExpr(element);
+                        if (dynLiteralTempNames != null && isOwnsTemporary(element)) {
+                            emitOwnsTemporaryViaLocal(element, dynLiteralTempNames);
+                        } else {
+                            emitExpr(element);
+                        }
                     }
                     return;
                 }
@@ -4708,9 +4727,13 @@ public class BytecodeEmitter {
                     // neighboring line).
                     Token arrayLiteral = singleBuiltinArg(op);
                     List<Token> literalElements = new ArrayList<>();
+                    final List<String> literalTemps = new ArrayList<>();
                     // `dyn:<T>([])` -- nothing to push for an empty literal.
                     if (!arrayLiteral.childs.isEmpty()) {
+                        final List<String> savedDynTemps = dynLiteralTempNames;
+                        dynLiteralTempNames = literalTemps;
                         emitExpr(arrayLiteral);
+                        dynLiteralTempNames = savedDynTemps;
                         if (arrayLiteral.type == TokenType.DELINEATOR && arrayLiteral.text.equals("[")) {
                             collectCommaArgs(arrayLiteral.childs.get(0), literalElements);
                         }
@@ -4732,7 +4755,7 @@ public class BytecodeEmitter {
                     // still not throw-capable at all.
                     if (!isUnsafeLiteral) {
                         pendingTryCatchLabel = dynCatchLabel;
-                        emitAllocFailureCheck(op, literalElements);
+                        emitAllocFailureCheck(op, literalElements, literalTemps);
                     }
                     return;
                 }
@@ -6017,6 +6040,10 @@ public class BytecodeEmitter {
                 continue;
             }
             Token value = valueByMember.get(entry.memberName);
+            if (deferredTempNames != null && isOwnsTemporary(value)) {
+                emitOwnsTemporaryViaLocal(value, deferredTempNames);
+                continue;
+            }
             emitExpr(value);
             if (value.isOwnershipMoveSource) {
                 // Same reasoning, and same placement principle, as the
@@ -6041,6 +6068,47 @@ public class BytecodeEmitter {
      * (which still hold their pointers) instead of leaking them.
      */
     private List<Token> deferredMoveNullOuts = null;
+
+    /** Hidden locals holding moved-in temporaries (call results) for the `new`/`dyn([..])` being emitted; destructed if it fails. Null outside those. */
+    private List<String> deferredTempNames = null;
+
+    /** Same, for the elements of a `dyn([..])` literal. */
+    private List<String> dynLiteralTempNames = null;
+
+    private int lateAllocPos = -1;
+    private List<String> lateAllocs = null;
+    private int hiddenLocalCounter = 0;
+
+    /** Declares a compiler-internal local of canonical type `type` in the function being emitted; its ALLOC is added to the function's alloc block when the function ends. */
+    private String declareHiddenLocal(String type) {
+        String name = "$mv" + (++hiddenLocalCounter);
+        lateAllocs.add("ALLOC " + name + " " + type);
+        return name;
+    }
+
+    /** An `owns` value that exists only as a computed result (a call), not in any variable or field. */
+    private boolean isOwnsTemporary(Token value) {
+        return value.resolvedType != null && value.resolvedType.startsWith("owns_") && !value.isOwnershipMoveSource
+                && value.type == TokenType.OPERATOR && !value.text.equals(".") && lateAllocs != null;
+    }
+
+    /** Evaluates the temporary into a hidden local and pushes it from there, so a failing allocation can still free it. */
+    private void emitOwnsTemporaryViaLocal(Token value, List<String> tempNames) {
+        String type = value.resolvedType;
+        String tmp = declareHiddenLocal(type);
+        line("ADDR " + tmp + " " + type);
+        emitExpr(value);
+        line("ASSIGN " + type + " " + type + " " + type);
+        line("PUSH " + tmp + " " + type);
+        tempNames.add(tmp);
+    }
+
+    private void emitDestructTempNames(List<String> names, Token at) {
+        for (String n : names) {
+            requireGhostTableFunctionPresent("gt_destruct", at);
+            line("GT_DESTRUCT " + n);
+        }
+    }
 
     /** `GT_DESTRUCT` for each moved-in source that is a plain `owns` variable or field path; temporaries are not addressable and are skipped. */
     private void emitDestructMovedSources(List<Token> sources) {
@@ -6221,6 +6289,9 @@ public class BytecodeEmitter {
         List<Token> savedDeferral = deferredMoveNullOuts;
         List<Token> movedSources = new ArrayList<>();
         deferredMoveNullOuts = movedSources;
+        final List<String> savedTempNames = deferredTempNames;
+        final List<String> movedTemps = new ArrayList<>();
+        deferredTempNames = movedTemps;
         // A call nested in the field values would consume the pending catch label (meant for the call-site staging of the
         // first call), and the allocation check below would then have none -- an unchecked null: hold it back and restore it.
         final String newCatchLabel = pendingTryCatchLabel;
@@ -6231,6 +6302,7 @@ public class BytecodeEmitter {
             emitExpr(op.left);
         }
         deferredMoveNullOuts = savedDeferral;
+        deferredTempNames = savedTempNames;
         pendingTryCatchLabel = newCatchLabel;
         requireGhostTableFunctionPresent("gt_register", op);
         String constructedType = op.resolvedType.substring("owns_".length());
@@ -6246,6 +6318,7 @@ public class BytecodeEmitter {
         line("JMP " + okLabel);
         if (!inGtSuppressedContext && pendingTryCatchLabel != null) {
             emitDestructMovedSources(movedSources); // the moved-in values are lost with the failed allocation: free them
+            emitDestructTempNames(movedTemps, op);
             String oomStringId = hoistedStringId("out of memory");
             line("ADDR gt_error_message static_imut_string");
             line("PUSH " + oomStringId + " static_imut_string");
@@ -6283,11 +6356,11 @@ public class BytecodeEmitter {
      * `emitNew`'s own sequence actually applies here.
      */
     private void emitAllocFailureCheck(Token op) {
-        emitAllocFailureCheck(op, java.util.Collections.emptyList());
+        emitAllocFailureCheck(op, java.util.Collections.emptyList(), java.util.Collections.emptyList());
     }
 
     /** `movedSources`: owns variables just moved into the allocation (e.g. the elements of `dyn([a, b])`); freed if it fails. */
-    private void emitAllocFailureCheck(Token op, List<Token> movedSources) {
+    private void emitAllocFailureCheck(Token op, List<Token> movedSources, List<String> movedTemps) {
         line("DUP_TOP");
         line("PUSH null " + op.resolvedType);
         line("EQ " + op.resolvedType + " " + op.resolvedType + " imut_bool");
@@ -6296,6 +6369,7 @@ public class BytecodeEmitter {
         line("JMP " + okLabel);
         if (!inGtSuppressedContext && pendingTryCatchLabel != null) {
             emitDestructMovedSources(movedSources);
+            emitDestructTempNames(movedTemps, op);
             String oomStringId = hoistedStringId("out of memory");
             line("ADDR gt_error_message static_imut_string");
             line("PUSH " + oomStringId + " static_imut_string");
