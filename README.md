@@ -319,7 +319,7 @@ struct Dog{@pub{
 let dog = mut Dog{legs= Legs{count= 4}, name= 7}
 ```
 
-- `@untyped` drops the class id, which saves 8 bytes and bars `instanceof` on that type.
+- `@untyped` drops the class id, which saves 8 bytes and bars `instanceof` and `implements` on that type.
 
 #### Interfaces
 
@@ -1334,7 +1334,7 @@ is an error ("'@x' is not a valid decorator on a function"). This is the full se
 | `@lock(match i in self.a)` | method | the caller must hold a bounds proof for `i` against `self.a` (`into` for writes) |
 | `@lock`, `@unlock` | method of a `@guard` implementer | the two operations behind `lock x{ ... }` |
 | `@guard` | interface | a generic interface with one `@lock` and one `@unlock` method |
-| `@untyped` | struct | no hidden class id, so no `instanceof` |
+| `@untyped` | struct | no hidden class id, so no `instanceof` or `implements` |
 | `@non_exhaustive` | enum | its last variant is `default`; a `match` needs a `default` case only when some variant is not named (an error when all are) |
 | `@link_name(sym)` | `extern` | the C symbol, when the Caspien name differs |
 | `@call_convention(c)` | function, `extern` | choose a calling convention from `toolchain.config` |
