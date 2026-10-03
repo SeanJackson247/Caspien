@@ -617,6 +617,7 @@ public class CloneGenerationPass implements OptimizationPass {
                     lines.add("PUSH_RET " + eType);
                 }
                 String elOk = newLabel("clone_fill_el_ok");
+                lines.add("GT_REGISTER");
                 lines.add("DUP_TOP");
                 lines.add("PUSH null " + eType);
                 lines.add("EQ " + eType + " " + eType + " imut_bool");
@@ -625,7 +626,6 @@ public class CloneGenerationPass implements OptimizationPass {
                 lines.add("POP " + elemTemp + " " + eType);
                 lines.add("JMP " + failLabel);
                 lines.add(elOk + ":");
-                lines.add("GT_REGISTER");
                 lines.add("POP " + elemTemp + " " + eType);
                 lines.add("PUSH " + arr + " " + arrType);
                 lines.add("PUSH " + counter + " mut_u64");
@@ -721,6 +721,9 @@ public class CloneGenerationPass implements OptimizationPass {
             out.addAll(phase1);
             emitMemberPushSequence(out, structName, root, ctx);
             emit(out, "NEW " + structName);
+            // Registered here, before the null check: if the ghost table can not grow, GT_REGISTER frees the block and leaves null,
+            // and the fail path below destructs the (already registered) leaf clones still held in the temps.
+            emit(out, "GT_REGISTER");
             String ok = newLabel("clone_new_ok");
             emit(out, "DUP_TOP");
             emit(out, "PUSH null " + ownsType);
@@ -803,25 +806,21 @@ public class CloneGenerationPass implements OptimizationPass {
          * with the ghost table and store it in `temp`. Leaves the stack balanced either way.
          */
         private void emitCheckRegisterStore(List<List<BytecodeToken>> out, CloneCtx ctx, String ownsType, String temp) {
-            String ok = newLabel("clone_member_ok");
-            emit(out, "DUP_TOP");
-            emit(out, "PUSH null " + ownsType);
-            emit(out, "EQ " + ownsType + " " + ownsType + " imut_bool");
-            emit(out, "CMP");
+            // Register first: a failed registration (ghost table can not grow) frees the block and leaves null, so the check
+            // below treats it exactly like a failed clone.
+            emit(out, "GT_REGISTER");
             if (ctx.failLabel != null) {
+                String ok = newLabel("clone_member_ok");
+                emit(out, "DUP_TOP");
+                emit(out, "PUSH null " + ownsType);
+                emit(out, "EQ " + ownsType + " " + ownsType + " imut_bool");
+                emit(out, "CMP");
                 emit(out, "JMP " + ok);
                 emit(out, "POP " + temp + " " + ownsType);
                 emit(out, "JMP " + ctx.failLabel);
                 emit(out, ok + ":");
-                emit(out, "GT_REGISTER");
                 emit(out, "POP " + temp + " " + ownsType);
             } else {
-                String done = newLabel("clone_member_done");
-                emit(out, "JMP " + ok);
-                emit(out, "JMP " + done);
-                emit(out, ok + ":");
-                emit(out, "GT_REGISTER");
-                emit(out, done + ":");
                 emit(out, "POP " + temp + " " + ownsType);
             }
         }
@@ -951,6 +950,7 @@ public class CloneGenerationPass implements OptimizationPass {
                 lines.add("PUSH_RET " + eType);
             }
             String elOk = newLabel("clone_loop_el_ok");
+            lines.add("GT_REGISTER");
             lines.add("DUP_TOP");
             lines.add("PUSH null " + eType);
             lines.add("EQ " + eType + " " + eType + " imut_bool");
@@ -959,7 +959,6 @@ public class CloneGenerationPass implements OptimizationPass {
             lines.add("POP " + elemTemp + " " + eType);
             lines.add("JMP " + failLabel);
             lines.add(elOk + ":");
-            lines.add("GT_REGISTER");
             lines.add("POP " + elemTemp + " " + eType);
 
             lines.add("PUSH " + dstTemp + " " + dstType);

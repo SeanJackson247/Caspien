@@ -4736,6 +4736,18 @@ public class X86Backend {
                 popReg("rax");
                 raw(isWindows() ? ("    mov " + argReg(0) + ", rax") : ("    movq %rax, %" + argReg(0)));
                 emitAlignedCall(() -> emitCallByName("gt_register"));
+                // gt_register returns false when the table could not grow (the pointer is then NOT registered): free the
+                // block and leave null in its place, exactly what a failed allocation leaves, so the allocation site's own
+                // null check takes the out-of-memory path. A null pointer registers as success (and stays null).
+                String regOk = newInternalLabel("gtreg_ok");
+                raw(isWindows() ? "    test al, al" : "    testb %al, %al");
+                raw("    jnz " + regOk);
+                popReg("rax"); // the surviving copy
+                raw(isWindows() ? ("    mov " + argReg(0) + ", rax") : ("    movq %rax, %" + argReg(0)));
+                emitAlignedCall(() -> emitCallByName("free"));
+                raw(isWindows() ? "    xor rax, rax" : "    xorq %rax, %rax");
+                pushReg("rax");
+                raw(regOk + ":");
                 return;
             }
             case "GT_ALIVE_CHECK": {

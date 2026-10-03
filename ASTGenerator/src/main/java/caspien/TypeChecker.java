@@ -5345,7 +5345,7 @@ public class TypeChecker {
             registerGhostTableFunction(t, info, "gt_destruct");
         }
         if (getDecorator(t.decorators, "gt_register") != null) {
-            requireGhostTableSignature(t, info, "gt_register", 1, "void");
+            requireGhostTableSignature(t, info, "gt_register", 1, "bool");
             registerGhostTableFunction(t, info, "gt_register");
         }
         if (getDecorator(t.decorators, "gt_moved") != null) {

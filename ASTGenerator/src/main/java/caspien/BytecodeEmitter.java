@@ -4685,8 +4685,8 @@ public class BytecodeEmitter {
                     // Same tail as `new`: a null result (failed malloc) jumps to the enclosing catch, otherwise
                     // the copy is registered with the ghost table so `match Some` and the scope-end destruct work.
                     pendingTryCatchLabel = cloneCatchLabel;
+                    line("GT_REGISTER"); // before the check: a failed registration frees the block and leaves null
                     emitAllocFailureCheck(op);
-                    line("GT_REGISTER");
                     return;
                 }
                 case "Some":
@@ -4820,10 +4820,11 @@ public class BytecodeEmitter {
                         // jump-to-catch `emitNew` already does for 'new'.
                         if (!op.resolvedType.substring("owns_".length()).startsWith("indeterminate_unsafe_dynarray(")) {
                             pendingTryCatchLabel = dynCatchLabel;
-                            emitAllocFailureCheck(op);
-                            // The block start is registered with the ghost table (like `new`), so scope-end drop frees it.
+                            // The block start is registered with the ghost table (like `new`), so scope-end drop frees it;
+                            // a failed registration frees the block and leaves null: the check below takes the OOM path.
                             requireGhostTableFunctionPresent("gt_register", op);
                             line("GT_REGISTER");
+                            emitAllocFailureCheck(op);
                         }
                         return;
                     }
@@ -4891,9 +4892,9 @@ public class BytecodeEmitter {
                     // still not throw-capable at all.
                     if (!isUnsafeLiteral) {
                         pendingTryCatchLabel = dynCatchLabel;
-                        emitAllocFailureCheck(op, literalElements, literalTemps);
                         requireGhostTableFunctionPresent("gt_register", op);
                         line("GT_REGISTER");
+                        emitAllocFailureCheck(op, literalElements, literalTemps);
                     }
                     return;
                 }
@@ -6489,6 +6490,9 @@ public class BytecodeEmitter {
             constructedType = constructedType.substring("some_".length());
         }
         line("NEW " + constructedType);
+        // Registered right away: when the ghost table can not grow, GT_REGISTER frees the block and leaves null, so the
+        // check below sees a failed registration exactly like a failed allocation (same catch, same freeing of moved sources).
+        line("GT_REGISTER");
         line("DUP_TOP");
         line("PUSH null " + op.resolvedType);
         line("EQ " + op.resolvedType + " " + op.resolvedType + " imut_bool");
@@ -6505,7 +6509,6 @@ public class BytecodeEmitter {
             line("JMP " + pendingTryCatchLabel);
         }
         line(okLabel + ":");
-        line("GT_REGISTER");
         for (Token moved : movedSources) {
             emitOwnershipMoveNullOut(moved); // the allocation took ownership: now the sources let go
         }
