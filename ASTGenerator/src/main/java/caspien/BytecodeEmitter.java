@@ -4979,7 +4979,11 @@ public class BytecodeEmitter {
                     if (tailArr == null) {
                         emitExpr(dynArrArg);
                     }
-                    if (dynArrArg.isOwnershipMoveSource) {
+                    // Safe resize: the source variable is only nulled once the realloc succeeded. When it fails the old block is
+                    // still allocated and registered (realloc leaves it intact) but nothing else would ever reach it, so the
+                    // failure branch frees it (like a failed `new` frees what was moved into it). Unsafe resize cannot fail.
+                    final boolean deferResizeNullOut = !isUnsafeResize && dynArrArg.isOwnershipMoveSource;
+                    if (dynArrArg.isOwnershipMoveSource && !deferResizeNullOut) {
                         emitOwnershipMoveNullOut(dynArrArg);
                     }
                     StringBuilder resizeLine = new StringBuilder(isUnsafeResize ? "URESIZE " : "RESIZE ")
@@ -5016,7 +5020,14 @@ public class BytecodeEmitter {
                     // realloc the same way raw C code would).
                     if (!isUnsafeResize) {
                         pendingTryCatchLabel = resizeCatchLabel;
-                        emitAllocFailureCheck(op);
+                        List<Token> resizeMoved = new ArrayList<>();
+                        if (deferResizeNullOut) {
+                            resizeMoved.add(dynArrArg);
+                        }
+                        emitAllocFailureCheck(op, resizeMoved, java.util.Collections.emptyList());
+                        if (deferResizeNullOut) {
+                            emitOwnershipMoveNullOut(dynArrArg);
+                        }
                     }
                     return;
                 }
