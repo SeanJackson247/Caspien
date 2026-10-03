@@ -220,6 +220,17 @@ public class DropGlueGenerationPass implements OptimizationPass {
 
                 for (int k = start; k <= end; k++) {
                     List<BytecodeToken> fl = lines.get(k);
+                    if (!fl.isEmpty() && fl.get(0).text.equals("GT_DROP_ADDR") && fl.size() >= 2) {
+                        // "GT_DROP_ADDR structType": the address of an inline owning struct is on top of the stack; drop its
+                        // members (the struct itself stays where it is). Becomes a call to the struct's drop routine.
+                        CanonicalType dt = CanonicalType.parse(fl.get(1).text);
+                        if (structTable.hasStruct(dt.baseType) && structTable.isOwnsBearing(dt.baseType)) {
+                            emit(rewritten, "CALL " + routineNameFor(dt.baseType));
+                            enqueue(dt.baseType);
+                        }
+                        changedAnyCallSite = true;
+                        continue;
+                    }
                     if (!fl.isEmpty() && fl.get(0).text.equals("GT_DESTRUCT_TAIL") && fl.size() >= 4) {
                         // "GT_DESTRUCT_TAIL arrayLocal arrayType startLocal": a shrinking `resize` drops every element at
                         // index >= startLocal (the owns members of each) before the block is cut down. The line itself is

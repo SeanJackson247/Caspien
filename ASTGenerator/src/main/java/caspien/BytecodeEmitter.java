@@ -3904,7 +3904,8 @@ public class BytecodeEmitter {
 
     /** An `owns` assignment target with no flat name: a field reached through a pointer, or an indexed element. */
     private boolean isPointerCrossingOwnsTarget(Token target) {
-        if (target.type == TokenType.KEYWORD || target.resolvedType == null || !target.resolvedType.startsWith("owns")) {
+        if (target.type == TokenType.KEYWORD || target.resolvedType == null
+                || !(target.resolvedType.startsWith("owns") || target.inlineOwnsStruct != null)) {
             return false;
         }
         return target.type == TokenType.OPERATOR && (target.text.equals("LOOKUP")
@@ -3917,7 +3918,12 @@ public class BytecodeEmitter {
             return false;
         }
         if (target.inlineOwnsStruct != null && !isFlatOwnsDestructTarget(target)) {
-            return false; // an inline owning struct reached through a pointer or an index: its old members are not dropped (known gap)
+            // an inline owning struct reached through a pointer or an index: drop the members of the value at the computed address
+            emitAssignTarget(target);
+            line("DUP_TOP");
+            requireGhostTableFunctionPresent("gt_destruct", target);
+            line("GT_DROP_ADDR " + target.resolvedType);
+            return true;
         }
         if (target.type == TokenType.VARREF) {
             requireGhostTableFunctionPresent("gt_destruct", target);
@@ -3954,10 +3960,11 @@ public class BytecodeEmitter {
         // local): it may move the old value out (the move nulls the slot, so the destruct below is then a no-op), and if it
         // throws, the old value is left untouched instead of freed.
         boolean pointerCrossingOwns = !lateDestruct && lateAllocs != null && op.right.resolvedType != null
-                && op.right.resolvedType.startsWith("owns") && isPointerCrossingOwnsTarget(op.left);
+                && (op.right.resolvedType.startsWith("owns") || op.left.inlineOwnsStruct != null)
+                && isPointerCrossingOwnsTarget(op.left);
         String spilledRight = null;
         if (pointerCrossingOwns) {
-            String rightType = op.right.resolvedType;
+            String rightType = op.left.inlineOwnsStruct != null ? op.left.resolvedType : op.right.resolvedType;
             spilledRight = declareHiddenLocal(rightType);
             line("ADDR " + spilledRight + " " + rightType);
             emitExpr(op.right);
@@ -3971,7 +3978,7 @@ public class BytecodeEmitter {
             emitAssignTarget(op.left);
         }
         if (spilledRight != null) {
-            line("PUSH " + spilledRight + " " + op.right.resolvedType);
+            line("PUSH " + spilledRight + " " + (op.left.inlineOwnsStruct != null ? op.left.resolvedType : op.right.resolvedType));
         } else {
             emitExpr(op.right);
         }
