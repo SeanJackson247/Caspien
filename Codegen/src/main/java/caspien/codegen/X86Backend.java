@@ -6043,37 +6043,63 @@ public class X86Backend {
     private String rfIdxReg = null;
     private long rfIdxScale = 1;
 
+    /** constant displacement added to the next indexed memory operand (a frame-slot base: `off(%rbp,%idx,scale)`) */
+    private long rfIdxDisp = 0;
+
     private String rfMemOperand(String baseReg) {
         if (rfIdxReg == null) {
             return isWindows() ? ("[" + baseReg + "]") : ("(%" + baseReg + ")");
         }
-        return isWindows() ? ("[" + baseReg + "+" + rfIdxReg + "*" + rfIdxScale + "]")
-                : ("(%" + baseReg + ",%" + rfIdxReg + "," + rfIdxScale + ")");
+        if (isWindows()) {
+            return "[" + baseReg + "+" + rfIdxReg + "*" + rfIdxScale + (rfIdxDisp != 0 ? signed(rfIdxDisp) : "") + "]";
+        }
+        return (rfIdxDisp != 0 ? String.valueOf(rfIdxDisp) : "") + "(%" + baseReg + ",%" + rfIdxReg + "," + rfIdxScale + ")";
+    }
+
+    /**
+     * Base of an indexed access (R_LDI/R_STI/R_LDXI/R_STXI): a global is loaded into `scratch`, a frame slot is addressed
+     * off rbp with a displacement, a temp or variable register is used as it is. Sets rfIdxDisp; the caller resets it.
+     */
+    private String rfIndexedBase(String baseTok, String scratch) {
+        rfIdxDisp = 0;
+        if (rfIsGlobal(baseTok)) {
+            leaGlobalToReg(scratch, baseTok.substring(1));
+            return scratch;
+        }
+        if (rfIsSlot(baseTok)) {
+            rfIdxDisp = rfSlot(baseTok);
+            return "rbp";
+        }
+        if (rfIsTemp(baseTok)) {
+            return rfReg(baseTok);
+        }
+        throw new IllegalStateException("malformed indexed base " + baseTok);
     }
 
     private void rfLoadIndexed(int n, String dstTok, String baseTok, String idxTok, long scale) {
-        if (!(n == 1 || n == 2 || n == 4 || n == 8) || !rfIsGlobal(baseTok) || !rfIsVar(idxTok)
+        if (!(n == 1 || n == 2 || n == 4 || n == 8) || !rfIsVar(idxTok)
                 || !(scale == 1 || scale == 2 || scale == 4 || scale == 8)) {
             throw new IllegalStateException("malformed R_LDI");
         }
         String d = rfReg(dstTok);
         String x = rfReg(idxTok);
-        leaGlobalToReg(d, baseTok.substring(1));
+        String b = rfIndexedBase(baseTok, d);
         rfIdxReg = x;
         rfIdxScale = scale;
         try {
-            loadSizedFromAddr(d, d, n);
+            loadSizedFromAddr(d, b, n);
         } finally {
             rfIdxReg = null;
+            rfIdxDisp = 0;
         }
     }
 
     private void rfStoreIndexed(int n, String baseTok, String idxTok, long scale, String srcTok) {
-        if (!(n == 1 || n == 2 || n == 4 || n == 8) || !rfIsGlobal(baseTok) || !rfIsVar(idxTok)
+        if (!(n == 1 || n == 2 || n == 4 || n == 8) || !rfIsVar(idxTok)
                 || !(scale == 1 || scale == 2 || scale == 4 || scale == 8)) {
             throw new IllegalStateException("malformed R_STI");
         }
-        leaGlobalToReg(RF_SCRATCH, baseTok.substring(1));
+        String b = rfIndexedBase(baseTok, RF_SCRATCH);
         rfIdxReg = rfReg(idxTok);
         rfIdxScale = scale;
         try {
@@ -6081,51 +6107,54 @@ public class X86Backend {
                 long v = rfTrunc(rfImm(srcTok), n);
                 if (isWindows()) {
                     String pfx = n == 1 ? "byte" : n == 2 ? "word" : n == 4 ? "dword" : "qword";
-                    raw("    mov " + pfx + " ptr " + rfMemOperand(RF_SCRATCH) + ", " + v);
+                    raw("    mov " + pfx + " ptr " + rfMemOperand(b) + ", " + v);
                 } else {
-                    raw("    mov" + movSuffix(n) + " $" + v + ", " + rfMemOperand(RF_SCRATCH));
+                    raw("    mov" + movSuffix(n) + " $" + v + ", " + rfMemOperand(b));
                 }
             } else {
-                storeSizedToAddr(rfReg(srcTok), RF_SCRATCH, n);
+                storeSizedToAddr(rfReg(srcTok), b, n);
             }
         } finally {
             rfIdxReg = null;
+            rfIdxDisp = 0;
         }
     }
 
     /** xmm register = the float at global + index*scale (R_LDXI): the base address goes through the scratch register. */
     private void rfLoadXIndexed(int n, String xTok, String baseTok, String idxTok, long scale) {
-        if (!(n == 4 || n == 8) || scale != n || !rfIsGlobal(baseTok) || !rfIsVar(idxTok)) {
+        if (!(n == 4 || n == 8) || scale != n || !rfIsVar(idxTok)) {
             throw new IllegalStateException("malformed R_LDXI");
         }
-        leaGlobalToReg(RF_SCRATCH, baseTok.substring(1));
+        String b = rfIndexedBase(baseTok, RF_SCRATCH);
         rfIdxReg = rfReg(idxTok);
         rfIdxScale = scale;
         try {
-            String mem = isWindows() ? ((n == 8 ? "qword ptr " : "dword ptr ") + rfMemOperand(RF_SCRATCH)) : rfMemOperand(RF_SCRATCH);
+            String mem = isWindows() ? ((n == 8 ? "qword ptr " : "dword ptr ") + rfMemOperand(b)) : rfMemOperand(b);
             String mn = n == 8 ? "movsd" : "movss";
             String xmm = xvReg(xTok);
             raw(isWindows() ? ("    " + mn + " " + xmm + ", " + mem) : ("    " + mn + " " + mem + ", %" + xmm));
         } finally {
             rfIdxReg = null;
+            rfIdxDisp = 0;
         }
     }
 
-    /** the float in an xmm register stored at global + index*scale (R_STXI). */
+    /** the float in an xmm register stored at base + index*scale (R_STXI). */
     private void rfStoreXIndexed(int n, String baseTok, String idxTok, long scale, String xTok) {
-        if (!(n == 4 || n == 8) || scale != n || !rfIsGlobal(baseTok) || !rfIsVar(idxTok)) {
+        if (!(n == 4 || n == 8) || scale != n || !rfIsVar(idxTok)) {
             throw new IllegalStateException("malformed R_STXI");
         }
-        leaGlobalToReg(RF_SCRATCH, baseTok.substring(1));
+        String b = rfIndexedBase(baseTok, RF_SCRATCH);
         rfIdxReg = rfReg(idxTok);
         rfIdxScale = scale;
         try {
-            String mem = isWindows() ? ((n == 8 ? "qword ptr " : "dword ptr ") + rfMemOperand(RF_SCRATCH)) : rfMemOperand(RF_SCRATCH);
+            String mem = isWindows() ? ((n == 8 ? "qword ptr " : "dword ptr ") + rfMemOperand(b)) : rfMemOperand(b);
             String mn = n == 8 ? "movsd" : "movss";
             String xmm = xvReg(xTok);
             raw(isWindows() ? ("    " + mn + " " + mem + ", " + xmm) : ("    " + mn + " %" + xmm + ", " + mem));
         } finally {
             rfIdxReg = null;
+            rfIdxDisp = 0;
         }
     }
 

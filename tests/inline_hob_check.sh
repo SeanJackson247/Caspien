@@ -76,7 +76,7 @@ mainpart t1.out | grep -q '^THROW' && { echo "FAIL t1: THROW marker copied"; bad
 sed -i 's/^RET imut_void$/RET imut_void\nJMP @end_c_1\n@catch_9:\nRET imut_void\n@end_c_1:/' t2.hob; check t2 "$AGG" tw 0
 mainpart t2.out | grep -q '^JMP @catch_9$' && echo "PASS t2: throw became a jump to the caller's catch" || { echo "FAIL t2: no jump to the catch"; bad=1; }
 { fn tw '@throws' "${SC}${THROWBODY}"; mainsc '@catch_9' 'ALLOC fl mut_f32\n' tw; } > t3.hob
-sed -i 's/^RET imut_void$/RET imut_void\nJMP @end_c_1\n@catch_9:\nRET imut_void\n@end_c_1:/' t3.hob; check t3 "$AGG" tw 1   # caller has a float variable: left alone at a catch
+sed -i 's/^RET imut_void$/RET imut_void\nJMP @end_c_1\n@catch_9:\nRET imut_void\n@end_c_1:/' t3.hob; check t3 "$AGG" tw 0   # caller has a float variable: inlined (float vars are spilled before the jump to the catch)
 { fn tw '@throws' "${SC}${THROWBODY}"; mainf tw; } > t4.hob;                          check t4 "$AGG" tw 1    # no staged label at the site
 { fn tw '@throws' "${SC}${THROWBODY}"; mainsc @gt_callsite__main_1 '' tw; } > t5.hob;  check t5 'function-inlining: off' tw 1
 # a callee that leaves a word behind (an ignored call result) is not run inline with operands beneath the site

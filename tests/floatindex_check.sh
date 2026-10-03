@@ -46,7 +46,7 @@ public class Drv6 {
         same("load into a general register: unchanged", "R_LEA %t0 &a %v0 8 ; R_LDX 8 %t3 %t0");
         same("index is a slot: unchanged", "R_LEA %t0 &a $-8 8 ; R_LDX 8 %y0 %t0");
         same("index is an immediate: unchanged", "R_LEA %t0 &a #2 8 ; R_LDX 8 %y0 %t0");
-        same("base is not a global: unchanged", "R_LEA %t0 $-40 %v0 8 ; R_LDX 8 %y0 %t0");
+        ia("base is a frame slot", "R_LEA %t0 $-40 %v0 8 ; R_LDX 8 %y0 %t0", "R_LDXI 8 %y0 $-40 %v0 8");
         same("address temp read again: unchanged", "R_LEA %t0 &a %v0 8 ; R_LDX 8 %y0 %t0 ; R_LDX 8 %y1 %t0");
         ia("address temp redefined by a float op afterwards", "R_LEA %t1 &a %v0 8 ; R_LDX 8 %y0 %t1 ; R_FBIN SUB 8 %t1 %y0 %y1", "R_LDXI 8 %y0 &a %v0 8 ; R_FBIN SUB 8 %t1 %y0 %y1");
         same("address temp read by a float op afterwards: unchanged", "R_LEA %t1 &a %v0 8 ; R_LDX 8 %y0 %t1 ; R_FBIN SUB 8 %t2 %t1 %y1");
@@ -73,9 +73,9 @@ public class Drv6 {
         same("a 41-line gap does not", g2 + " ; R_LDX 8 %y0 %t0");
         // ---- the integer forms are as before ----
         ia("int load, scale 8, size 8", "R_LEA %t0 &a %v0 8 ; R_LD 8 %t1 %t0", "R_LDI 8 %t1 &a %v0 8");
-        same("int load, scale 4: unchanged", "R_LEA %t0 &a %v0 4 ; R_LD 4 %t1 %t0");
+        ia("int load, scale 4", "R_LEA %t0 &a %v0 4 ; R_LD 4 %t1 %t0", "R_LDI 4 %t1 &a %v0 4");
         same("int load, scale 4, size 8: unchanged", "R_LEA %t0 &a %v0 4 ; R_LD 8 %t1 %t0");
-        same("int store, scale 4: unchanged", "R_LEA %t0 &a %v0 4 ; R_ST 4 %t0 %t1");
+        ia("int store, scale 4", "R_LEA %t0 &a %v0 4 ; R_ST 4 %t0 %t1", "R_STI 4 &a %v0 4 %t1");
         // ---- two array elements in one compound statement ----
         ia("read-modify-write through two leas", "R_LEA %t0 &a %v0 8 ; R_LEA %t1 &a %v0 8 ; R_LDX 8 %y0 %t1 ; R_FBINX MUL 8 %y0 %y0 %y1 ; R_STX 8 %t0 %y0",
                 "R_LDXI 8 %y0 &a %v0 8 ; R_FBINX MUL 8 %y0 %y0 %y1 ; R_STXI 8 &a %v0 8 %y0");

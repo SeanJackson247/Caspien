@@ -1243,6 +1243,10 @@ public class RegisterFormPass implements OptimizationPass {
             return 0;
         }
         String dest = line.get(1).text;
+        Long slot = parseSlot(dest);
+        if (slot != null) {
+            return fusePopToSlot(st, line, all, idx, dest, slot);
+        }
         boolean isF = dest.startsWith("FARG");
         boolean isI = !isF && dest.startsWith("ARG");
         if (!isF && !isI) {
@@ -1276,6 +1280,36 @@ public class RegisterFormPass implements OptimizationPass {
             st.freeTemp(v.temp);
         }
         return 1;
+    }
+
+    /**
+     * POP $slot n with a remembered value on top: the same store as "ADDR $slot; value; ASSIGN n n n", so it goes through
+     * fuseAssign with a transient address entry placed under the value (removed again if fuseAssign declines).
+     */
+    private int fusePopToSlot(State st, List<BytecodeToken> line, List<List<BytecodeToken>> all, int idx, String dest, long slot) {
+        int n = parseSize(line.get(2).text);
+        int sz = st.stack.size();
+        if (!isWidth(n) || sz < 1 || !isValue(st.stack.get(sz - 1))) {
+            return 0;
+        }
+        Entry a = new Entry();
+        a.kind = Kind.A;
+        a.orig = line;
+        a.text = dest;
+        a.off = slot;
+        st.stack.add(sz - 1, a);
+        BytecodeToken h = line.get(0);
+        String w = String.valueOf(n);
+        List<BytecodeToken> assign = new ArrayList<>();
+        assign.add(new BytecodeToken("ASSIGN", h.file, h.line, h.kind));
+        for (int k = 0; k < 3; k++) {
+            assign.add(new BytecodeToken(w, h.file, h.line, h.kind));
+        }
+        int r = fuseAssign(st, assign, all, idx);
+        if (r == 0) {
+            st.stack.remove(sz - 1);
+        }
+        return r;
     }
 
     /** RET size / RET_FLOAT size with exactly one remembered value: move it into rax / xmm0 and leave. */

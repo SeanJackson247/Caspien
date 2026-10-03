@@ -62,7 +62,9 @@ public class Drv {
         ia("index is an immediate: unchanged", "R_LEA %t0 &a #3 8 ; R_LD 8 %t1 %t0", "R_LEA %t0 &a #3 8 ; R_LD 8 %t1 %t0");
         ia("4-byte access: unchanged", "R_LEA %t0 &a %v0 8 ; R_LD 4 %t1 %t0", "R_LEA %t0 &a %v0 8 ; R_LD 4 %t1 %t0");
         ia("scale 4: unchanged", "R_LEA %t0 &a %v0 4 ; R_LD 8 %t1 %t0", "R_LEA %t0 &a %v0 4 ; R_LD 8 %t1 %t0");
-        ia("base is a slot: unchanged", "R_LEA %t0 $-8 %v0 8 ; R_LD 8 %t1 %t0", "R_LEA %t0 $-8 %v0 8 ; R_LD 8 %t1 %t0");
+        ia("base is a slot", "R_LEA %t0 $-8 %v0 8 ; R_LD 8 %t1 %t0", "R_LDI 8 %t1 $-8 %v0 8");
+        ia("register base", "R_LEA %t0 %v1 %v0 8 ; R_LD 8 %t1 %t0", "R_LDI 8 %t1 %v1 %v0 8");
+        ia("register base written in between: unchanged", "R_LEA %t0 %v1 %v0 8 ; R_MOV 8 %v1 %t2 ; R_LD 8 %t1 %t0", "R_LEA %t0 %v1 %v0 8 ; R_MOV 8 %v1 %t2 ; R_LD 8 %t1 %t0");
         ia("temp dead at a label", "R_LEA %t0 &a %v0 8 ; R_LD 8 %t1 %t0 ; @L: ; R_ST 8 %t2 %t0", "R_LDI 8 %t1 &a %v0 8 ; @L: ; R_ST 8 %t2 %t0");
         ia("destination equals the address temp", "R_LEA %t0 &a %v0 8 ; R_LD 8 %t0 %t0 ; R_ST 8 %t2 %t0", "R_LDI 8 %t0 &a %v0 8 ; R_ST 8 %t2 %t0");
         ia("consumer is not a load/store of the temp: unchanged", "R_LEA %t0 &a %v0 8 ; R_MOV 8 %t1 %t0", "R_LEA %t0 &a %v0 8 ; R_MOV 8 %t1 %t0");

@@ -21,7 +21,7 @@ Run: `lowerordergenerator -i in.txt out.txt`. Needs `compiler.config` in the CWD
 12. `FloatTempPass` (float-temporaries-in-registers): float temp chains to `%y0..%y3`.
 13. `BranchFusionPass` (always, no-op without register form): `R_BIN cmp 8` + `R_BRF` -> `R_BRC C 8 a b @L` (jump when NOT(a C b)); `&&` of two compares -> two `R_BRC`.
 14. `JumpCleanupPass` (always; up to 8 rounds): dead jump after jump, jump to next label, `R_BRC C ..@L1; JMP @L2; @L1:` -> inverse `R_BRC`. In stack form a `JMP` right after bare `CMP` is the conditional jump (never treat as unconditional, `followsCmp`). Labels never deleted.
-15. `IndexedAccessPass` (always): `R_LEA %tX &sym %vK scale` + later `R_LD/R_ST` (or float `R_LDX/R_STX`) -> `R_LDI/R_STI` (int: scale 8, size 8) / `R_LDXI/R_STXI` (float: scale = width 4 or 8). `MAX_GAP` 40; only 5-token `R_LEA` is fused.
+15. `IndexedAccessPass` (always): `R_LEA %tX base %vK scale` (base = `&global`, `$frameSlot`, or a `%t`/`%v` register holding a pointer; scale 1/2/4/8) + later `R_LD/R_ST` (or float `R_LDX/R_STX`) -> `R_LDI/R_STI` (int: access width == scale) / `R_LDXI/R_STXI` (float: scale = width 4 or 8). Neither the index nor a register base may be written between LEA and consumer; the lea temp must be dead after it. `MAX_GAP` 40; only 5-token `R_LEA` is fused. Tests: `indexed_narrow_test`, `indexed_bases_test`.
 
 ## Config switches (compiler.config top level, `on|off`, anything else is an error)
 `deferred-operands` (default off in code; needs nothing), `variables-in-registers` (needs deferred), `float-variables-in-registers` (needs variables), `float-temporaries-in-registers` (needs deferred). Shipped `toolchain.config`: deferred on, variables on, float vars off, float temps off. With a switch off the output of that stage is byte-identical to not having it.
@@ -47,6 +47,5 @@ Hand-made LOB check scripts live in `/home/claude/caspien/tests/`, run from the 
 
 ## Known open gaps
 - Intel/MASM (`windows`) forms of `R_*` lines are unexecuted; windows_gnu only assembled/linked.
-- Stack-form residues: `POP $slot 8` is not fused (`fusePop`), more than 4 live temps falls back, narrow M flush rolls back; loop `within` test is a full strict-subrange check.
-- Loop range START is not promoted; `IndexedAccessPass` only handles global arrays.
-- `R_LDI/R_STI` 1/2/4-byte forms are unexecuted.
+- Stack-form residues: more than 4 live temps falls back, narrow M flush rolls back; loop `within` test is a full strict-subrange check; a few `POP` lines remain unfused (4 in stdlib_test).
+- Loop range START is not promoted: measured (hand-patched asm), slower, not worth it.

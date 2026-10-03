@@ -1,0 +1,141 @@
+// Indexed access whose base is a local (frame) array or a pointer held in a register, through a variable index: IndexedAccessPass fuses
+// R_LEA + R_LD/R_ST (and the float R_LDX/R_STX) into R_LDI/R_STI/R_LDXI/R_STXI whatever the base is. Local u64/u8/u32/f32/f64 arrays and a
+// headerless unsafe dynarray (plain base + i*size), read and written in loops. Expected values come from a Python model.
+// The output must be identical with every switch combination. Prints one PASS/FAIL line per check.
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+
+func check(name: static imut string, ok: mut bool) void{
+	unsafe extern{
+		if ok{
+			printf("PASS %s\n", name)
+		}else{
+			printf("FAIL %s\n", name)
+		}
+	}
+	return
+}
+
+func localU64() mut u64{
+	let a = mut [3, 1, 4, 1, 5, 9, 2, 6]
+	for r in 0..3{
+		for i in a{
+			match i into a{
+				a[i] = a[i] * 2 + i
+			}
+		}
+	}
+	let s = mut 0
+	for j in a{
+		match j in a{ s += a[j] }
+	}
+	return s
+}
+
+func localNarrow() mut u64{
+	let:<mut u8[6]> b = mut [250, 3, 7, 255, 0, 9]
+	let:<mut u32[5]> w = mut [4000000000, 1, 3000000000, 7, 9]
+	let sb = mut 0
+	for j in b{
+		match j in b{ sb += b[j] as u64 }
+	}
+	let sw = mut 0
+	for j in w{
+		match j in w{ sw += w[j] as u64 }
+	}
+	let ok = mut 0
+	if sb == 524{ ok += 1 }
+	if sw == 7000000017{ ok += 2 }
+	let:<mut u8[6]> c = mut [0, 0, 0, 0, 0, 0]
+	let:<mut u32[5]> x = mut [0, 0, 0, 0, 0]
+	for i in c{
+		match i into c{
+			let v = mut (i * 40)
+			c[i] = wrap:<u8>(v)
+		}
+	}
+	for i in x{
+		match i into x{
+			let v = mut (i * 1000000000)
+			x[i] = wrap:<u32>(v)
+		}
+	}
+	let sc = mut 0
+	for j in c{
+		match j in c{ sc += c[j] as u64 }
+	}
+	let sx = mut 0
+	for j in x{
+		match j in x{ sx += x[j] as u64 }
+	}
+	if sc == 600{ ok += 4 }
+	if sx == 10000000000{ ok += 8 }
+	return ok
+}
+
+func localFloats() mut bool{
+	let d = mut [1.5, 2.5, 3.5, 4.5]
+	let f = mut [1.5, 2.5, 3.5, 4.5]
+	let ok = mut false
+	let sd = mut 0.0
+	let sf = mut 0.0
+	unsafe assume{
+		for r in 0..2{
+			for i in d{
+				assume match i into d
+				assume match d[i] : finite
+				assume match d[i]*2.0 : finite
+				d[i] = d[i] * 2.0 + 0.25
+			}
+			for i in f{
+				assume match i into f
+				assume match f[i] : finite
+				assume match f[i]*2.0 : finite
+				f[i] = f[i] * 2.0 + 0.25
+			}
+		}
+		for j in d{
+			assume match j in d
+			sd += d[j]
+		}
+		for j in f{
+			assume match j in f
+			sf += f[j]
+		}
+		assume match sd : finite
+		assume match sf : finite
+		ok = sd == 51.0 && sf == 51.0
+	}
+	return ok
+}
+
+func headerless() mut u64{
+	let s = mut 0
+	let h = mut 0
+	unsafe udyn{
+		let u = mut unsafe dyn:<u64>([])
+		u = resize(u, 6)
+		for i in 0..6{
+			u[i] = i * i + 1
+		}
+		for j in 0..6{
+			s += u[j]
+		}
+		let t = mut unsafe dyn("hello")
+		for k in 0..5{
+			if t[k] == 'l'{ h += 1 }
+		}
+	}
+	return s * 1000 + h
+}
+
+func main() void{
+	check("local u64 array", localU64() == 444)
+	check("local u8/u32 arrays", localNarrow() == 15)
+	check("local f32/f64 arrays", localFloats())
+	check("headerless unsafe dynarray (u64 and bytes)", headerless() == 61002)
+}
