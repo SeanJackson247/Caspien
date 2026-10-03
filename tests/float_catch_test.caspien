@@ -1,0 +1,91 @@
+// Float variables that live in xmm registers must hold their current value when control jumps straight into a catch (no call in
+// between): a throwing callee that was inlined, and a failed `new`. Each case doubles an f32 accumulator, fails on a known trip and
+// checks the accumulator in the catch. Prints PASS/FAIL lines (same output with float-variables-in-registers and inlining on or off).
+// float_catch_check.sh also fails the allocation of the second case with an LD_PRELOAD shim.
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+
+struct Cell{@pub{ v: mut u64 }}
+
+func feq(a: mut f32, b: mut f32) mut bool{
+	let r = mut false
+	unsafe assume{
+		assume match a : finite
+		assume match b : finite
+		r = a == b
+	}
+	return r
+}
+
+func report(name: static imut string, ok: mut bool) void{
+	unsafe extern{
+		if ok{
+			printf("PASS %s\n", name)
+		}else{
+			printf("FAIL %s\n", name)
+		}
+	}
+	return
+}
+
+@throws
+func failAt(n: mut u64, limit: mut u64) mut u64{
+	if n == limit{
+		throw "limit"
+	}
+	return n
+}
+
+// the accumulator is doubled on trips 0..limit, so it is 2^(limit+1) when trip `limit` throws
+func viaCall(limit: mut u64) mut f32{
+	let seen = mut 0.0
+	try{
+		?catch(e){
+			return seen
+		}
+		let acc = mut 1.0
+		for i in 0..10{
+			unsafe assume{
+				assume match acc : finite
+				acc = acc * 2.0
+			}
+			seen = acc
+			let r = mut ?failAt(i, limit)
+		}
+	}
+	return seen
+}
+
+func viaNew(limit: mut u64) mut f32{
+	let seen = mut 0.0
+	try{
+		?catch(e){
+			return seen
+		}
+		let acc = mut 1.0
+		for i in 0..10{
+			unsafe assume{
+				assume match acc : finite
+				acc = acc * 2.0
+			}
+			seen = acc
+			if i == limit{
+				let c = mut ?new Cell{v= i}
+			}
+		}
+	}
+	return seen
+}
+
+func main() void{
+	let a = mut viaCall(4)
+	report("float var in a register survives an inlined throw into the catch", feq(a, 32.0))
+	let b = mut viaCall(7)
+	report("... second limit", feq(b, 256.0))
+	let c = mut viaNew(3)
+	unsafe extern{ printf("viaNew=%f\n", c) }
+}

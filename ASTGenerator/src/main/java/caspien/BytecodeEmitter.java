@@ -4976,8 +4976,18 @@ public class BytecodeEmitter {
                             line("PUSH " + tailArr + " " + dynType);
                         }
                     }
+                    // A source that is a temporary (a call result) has no name to free if the realloc fails: it goes through a
+                    // hidden local (like a temporary moved into `new`), which the failure branch destructs.
+                    final List<String> resizeTemps = new ArrayList<>();
+                    if (tailArr != null && isOwnsTemporary(dynArrArg)) {
+                        resizeTemps.add(tailArr);
+                    }
                     if (tailArr == null) {
-                        emitExpr(dynArrArg);
+                        if (!isUnsafeResize && isOwnsTemporary(dynArrArg)) {
+                            emitOwnsTemporaryViaLocal(dynArrArg, resizeTemps);
+                        } else {
+                            emitExpr(dynArrArg);
+                        }
                     }
                     // Safe resize: the source variable is only nulled once the realloc succeeded. When it fails the old block is
                     // still allocated and registered (realloc leaves it intact) but nothing else would ever reach it, so the
@@ -5024,7 +5034,7 @@ public class BytecodeEmitter {
                         if (deferResizeNullOut) {
                             resizeMoved.add(dynArrArg);
                         }
-                        emitAllocFailureCheck(op, resizeMoved, java.util.Collections.emptyList());
+                        emitAllocFailureCheck(op, resizeMoved, resizeTemps);
                         if (deferResizeNullOut) {
                             emitOwnershipMoveNullOut(dynArrArg);
                         }

@@ -9323,6 +9323,12 @@ public class TypeChecker {
         String ownerName = conditionExpr.right.left.text;
         List<String> memberNames;
         if (isInstanceof) {
+            if (interfaces.containsKey(ownerName)) {
+                throw new CompilerException("type", conditionExpr.right.file, conditionExpr.right.line,
+                        "'instanceof " + ownerName + ".enum' is not a form: 'instanceof' takes a struct name. To match over "
+                                + "the implementers of the interface '" + ownerName + "', write 'match x implements " + ownerName
+                                + ".enum{ ... }'");
+            }
             throw new CompilerException("type", conditionExpr.right.file, conditionExpr.right.line,
                     "'" + ownerName + ".enum' no longer exists: structs have no subclasses. "
                             + "Only an interface has an '.enum' (use 'x implements " + ownerName + "')");

@@ -2,7 +2,7 @@
 # `resize` realloc failure (needs Linux, java, gcc). A failed realloc leaves the old block allocated and registered; the moved-in
 # dynarray must then be freed (like a failed `new` frees what was moved into it), the failure caught as "out of memory", and no
 # allocation left over compared with the clean run. Cases: growing and shrinking arrays of plain u64, of inline owning structs
-# and of owns pointers. tests/alloc_shim.c: FAILREALLOC=<size> FAILREALLOC_STICKY=1 fails the realloc of that size.
+# and of owns pointers, and a temporary (`resize(mut dyn([..]), ..)`) as the source. tests/alloc_shim.c: FAILREALLOC=<size> FAILREALLOC_STICKY=1 fails the realloc of that size.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 export JAVA_TOOL_OPTIONS=
@@ -74,4 +74,12 @@ run_case grow_ptrs 48 '		let p1 = mut ?new World{ticks= 1}
 		let pv = mut ?dyn([p1, p2])
 		let pf = mut ?new World{ticks= 9}
 		pv = ?resize(pv, 4, pf)'
+run_case grow_temp 336 '		let a = mut ?resize(mut dyn([1, 2, 3, 4]), 40, 0)'
+run_case grow_temp_inline 96 '		let w1 = mut ?new World{ticks= 10}
+		let w2 = mut ?new World{ticks= 20}
+		let h1 = mut Holder{w= w1}
+		let h2 = mut Holder{w= w2}
+		let wf = mut ?new World{ticks= 7}
+		let hf = mut Holder{w= wf}
+		let v = mut ?resize(mut dyn([h1, h2]), 5, hf)'
 if [ $bad -eq 0 ]; then echo "PASS resize_oom_check: $n resize failures caught, none crashed or leaked"; else exit 1; fi

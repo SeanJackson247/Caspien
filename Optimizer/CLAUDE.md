@@ -30,7 +30,7 @@ Outer loop until no change: StructMemberReordering -> SizeofResolution -> Struct
 ## FunctionInlining specifics
 - Call site `[ADDR x T] CC_START / args ending POP ARGn / CALL f / CC_END / [PUSH_RET]` (+ staging triple in throw programs). Accepted decorators: `@pub @pure @recursive @inline @throws @lock`; others (`@async`, `@sleep`, `@gt_*`, `@par_call`) refuse. Copies rename locals `name__i<n>`, hoist callee ALLOCs to the caller, result modes STACK/TEMP/DISCARD, `range` param = two words.
 - Throw programs: the `gt_routine_address`/`gt_error_message` ALLOCs are scaffolding (not copied; the caller's slots are used). `THROW` dropped; `GT_UNWIND` becomes `JMP` to the label the caller staged.
-- Never inlined: `main`, cycles, EXIT/ASM/ALLOC_STATIC/GLOBAL/REGVAR bodies, by-value struct/array/dynarray params, `INVOKE`, externs, unwinding callee with no staged label, unwinding callee into a `@catch_` when a float variable exists (stale reload), callee with own `@catch_` at a site with operands beneath, no-`RET` value callee.
+- Never inlined: `main`, cycles, EXIT/ASM/ALLOC_STATIC/GLOBAL/REGVAR bodies, by-value struct/array/dynarray params, `INVOKE`, externs, unwinding callee with no staged label, callee with own `@catch_` at a site with operands beneath, no-`RET` value callee.
 - A site after an earlier arg was popped into a register is NOT inlined (backend clobbers rdi/rsi/rdx/rcx). An unbalanced callee (leaves a word) only with nothing beneath the site (or TEMP form with one address). Owns-move null-outs after the last `POP` are carried; other lines there refuse.
 - Debug: `CASPIEN_INLINE_WHY=1` prints callee refusals.
 

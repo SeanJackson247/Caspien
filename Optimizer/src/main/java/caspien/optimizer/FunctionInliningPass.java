@@ -34,9 +34,7 @@ import java.util.Set;
  * Never inlined (the callee): a function with any decorator other than @pub / @pure / @recursive / @inline / @throws (so never
  * @async, the ghost-table hooks, par/await/sleep glue), `main`, anything on a call cycle, a function using EXIT / inline assembly /
  * a function-local static, a callee that unwinds at a call site with no staged label (old-form pads in non-throw programs), an
- * unwinding callee whose staged label is a `@catch_` while caller or callee has a float variable (the backend's catch entry reloads
- * float variables from their home slots), a function with a by-value struct, array or dynarray
- * parameter, one that reaches outside itself with a label, and one whose local names collide with tokens the renamer cannot tell apart.
+ * a function with a by-value struct, array or dynarray parameter, one that reaches outside itself with a label, and one whose local names collide with tokens the renamer cannot tell apart.
  * A bare `range` parameter is supported: the call site passes it as two words (start, end), which are assigned to the copy's range
  * variable like a `lo..hi` literal; variable names inside range type text (`imut_range(mut_lo,mut_hi)`) are renamed along with the
  * variables. A parameter that the callee declares again as a local of the same type (the loop-converted recursive form) is one variable.
@@ -213,7 +211,7 @@ public class FunctionInliningPass implements OptimizationPass {
         int scaffoldSlots;
         /** the body contains THROW / GT_UNWIND: it can leave through the caller's call-site label. */
         boolean unwinds;
-        boolean usesAddr, usesMsg, hasFloat;
+        boolean usesAddr, usesMsg;
         /** the body defines a `@catch_N` label (a `?catch` / `try ... catch` of its own). */
         boolean hasCatch;
         /** every statement leaves the operand stack as it found it (no ignored call result, no unknown mnemonic): safe to run with operands of an enclosing expression beneath. */
@@ -229,10 +227,6 @@ public class FunctionInliningPass implements OptimizationPass {
     }
 
     private static final Set<String> NAME_POS = new HashSet<>(Arrays.asList("PUSH", "ADDR", "GT_DESTRUCT", "ATOMIC_PUSH"));
-
-    private static boolean isFloatText(String t) {
-        return t != null && (t.contains("f32") || t.contains("f64"));
-    }
 
     /**
      * Simulates the operand-stack depth over the body in text order. True when it is 0 at every RET (after the returned value is
@@ -486,8 +480,6 @@ public class FunctionInliningPass implements OptimizationPass {
             c.locals.add(p[0]);
         }
         for (String[] a : c.allocs) c.locals.add(a[0]);
-        for (String[] p : c.params) if (isFloatText(p[1])) c.hasFloat = true;
-        for (String[] a : c.allocs) if (isFloatText(a[1])) c.hasFloat = true;
         if (c.locals.size() != c.params.size() + c.allocs.size()) {
             c.why = "duplicate parameter names";
             ok = false;
@@ -606,7 +598,6 @@ public class FunctionInliningPass implements OptimizationPass {
         List<List<BytecodeToken>> newAllocs = new ArrayList<>();
         long added = 0;
         boolean changed = false;
-        boolean callerHasFloat = false;
     }
 
     /** One round: every call site whose callee (as it stands now) is eligible is inlined. Returns null if nothing changed. */
@@ -671,7 +662,6 @@ public class FunctionInliningPass implements OptimizationPass {
                 String m = mn(l);
                 if (("ALLOC".equals(m) || "ARG".equals(m)) && l.size() >= 3) {
                     cx.callerNames.add(l.get(1).text);
-                    if (isFloatText(l.get(2).text)) cx.callerHasFloat = true;
                 }
             }
             List<List<BytecodeToken>> body = expandRange(L, f[0] + 1, f[1], cx, true, false);
@@ -897,9 +887,8 @@ public class FunctionInliningPass implements OptimizationPass {
         if (c.unwinds && unwindTo == null) return false;
         if (c.usesAddr && !cx.callerNames.contains("gt_routine_address")) return false;
         if (c.usesMsg && !cx.callerNames.contains("gt_error_message")) return false;
-        // A jump into a catch label lands on the backend's float-variable reload (the values come back from their home slots, which
-        // are only written around real calls), so a caller or callee with float variables is left alone there.
-        if (c.unwinds && unwindTo.startsWith("@catch_") && (cx.callerHasFloat || c.hasFloat)) return false;
+        // A jump straight into a catch label lands on the backend's float-variable reload; RegVarPromotionPass puts an R_XSPILL before
+        // every such jump, so float variables need no special treatment here.
         // ---- global-name capture: the callee's globals must not be shadowed by a caller local
         for (String g : c.globals) {
             if (cx.callerNames.contains(g)) return false;

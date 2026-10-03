@@ -373,6 +373,12 @@ public class RegVarPromotionPass {
                 res.add(mk(ref, "R_POPX", String.valueOf(assignReplace.get(idx).size), "%x" + assignReplace.get(idx).reg));
                 continue;
             }
+            if (!chosenX.isEmpty() && jumpsToCatchLabel(l)) {
+                // A jump straight into a catch label (an inlined throw, a failed allocation) is not a call, so the backend has not
+                // spilled the float variables: write them to their home slots first, where the catch entry's R_XRELOAD reads them.
+                // (Stores only, so it is harmless between a compare and its jump.)
+                res.add(mk(ref, "R_XSPILL"));
+            }
             res.add(rewrite(l, chosenInt, chosenX));
             if (idx == 0 && !chosenX.isEmpty()) {
                 // one declaration per register: its home slot (where the backend spills it around calls) is the slot of the heaviest
@@ -391,6 +397,18 @@ public class RegVarPromotionPass {
             }
         }
         out.addAll(chosenX.isEmpty() ? res : fuse(res));
+    }
+
+    /** True for a jump or branch line whose target is a `@catch_` label (a direct jump, not an unwind through a call). */
+    private static boolean jumpsToCatchLabel(List<BytecodeToken> l) {
+        if (l.size() < 2) {
+            return false;
+        }
+        String m = l.get(0).text;
+        if (!(m.equals("JMP") || m.startsWith("R_BR"))) {
+            return false;
+        }
+        return l.get(l.size() - 1).text.startsWith("@catch_");
     }
 
     /** Mnemonics that may transfer control into this function's landing pads / catch labels (the callee unwinds into them). */

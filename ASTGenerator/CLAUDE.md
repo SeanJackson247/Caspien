@@ -46,6 +46,12 @@ Stages in `src/main/java/caspien/`:
 No framework. Fixtures: `examples/` in this folder (hand-written `.caspien`); names with `_error_test`/`_error` must FAIL to compile, others must compile; `_cg_test` also run end to end through the later stages. Run each through `Main`, compare pass/fail before/after a change. Runtime tests are in `/home/claude/caspien/tests/*.caspien` plus `*_check.sh` scripts; compile and run ONE program at a time per compiler tree (shared scratch files). The shipped config targets windows_gnu, so run sweeps in a Linux-configured scratch copy.
 
 ## Known open gaps
-- After the extends removal: the struct `.enum` form is an error; constant instanceof/implements results are not reported.
-- By-value struct parameters rejected; `auto` cannot point at a dynarray element. Moving one owns slot twice in one expression (`f(a, a)`, `dyn([a, a])`, `[a, a]`) is rejected by `requireNotMovedAlready` (operands are all checked before any is marked moved).
 - Windows/MASM largely unverified.
+
+## Deliberate limits (not gaps)
+- The struct `.enum` form is an error (`x instanceof S.enum`; only an interface has `.enum`, used as `match x implements I.enum{..}`).
+- `instanceof`/`implements` tests that are always true are NOT reported, on purpose: the check can still guard against a type damaged through a raw pointer in unsafe code, and a warning would nudge users to delete it. (Never-true tests do warn.)
+- `auto` cannot point at a dynarray element: `resize` may move the block and leave the `auto` dangling.
+- Structs are never passed by value as parameters (returns use RVO): a struct can grow past 8 bytes when its definition changes, which would silently change how it is passed, so anything over a register must be argument-split, and splitting is only defined for ranges. Pass an explicit pointer instead (`auto`/`ref`), because explicit beats an implicit auto pointer.
+- `deref(p) = v` struct-wide assignment is rejected (`deref` is never a write target); an unsafe `resize` has no failure handling (the programmer's job, like C).
+- Moving one owns slot twice in one expression (`f(a, a)`, `dyn([a, a])`, `[a, a]`) is rejected by `requireNotMovedAlready` (operands are all checked before any is marked moved).

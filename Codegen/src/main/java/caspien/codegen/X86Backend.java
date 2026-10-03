@@ -2918,6 +2918,11 @@ public class X86Backend {
                 rfMovaps(xvReg(line.get(1).text), xvReg(line.get(2).text));
                 return;
             }
+            case "R_XSPILL": {
+                // write every float variable to its home slot: emitted before a direct jump into a catch label (no call spills them)
+                xvSpillAll();
+                return;
+            }
             case "R_XRELOAD": {
                 // reload every float variable from its home slot: emitted where control can arrive from an unwind (catch entry),
                 // after which the register-held copies are gone on ABIs whose xmm registers do not survive a call.
