@@ -936,29 +936,33 @@ elements between two pointers of the same type, as an `s64`. Widening the pointe
 through a pointer with member assignment on a proven pointer, or with `memcopy`.
 
 ```rust
-@link_name(labs)                         // give a C function a different Caspien name
-extern c_abs(mut s64) mut s64
-
 func main() void{
 	let count = mut 5
 	let bytes = mut (count * sizeof(u64))
-	unsafe assume deref extern memcopy raw{
-		let base = mut malloc(bytes)            // a `raw u8`
-		let p = mut (base as u64)               // now a `raw u64`: it steps by 8
-		let start = mut p
-		for i in 0..count{
-			let v = mut (i * 10 + 1)
+	let:<raw mut u8> base = null
+	unsafe extern{
+		base = mut malloc(bytes)                // the only extern call that allocates
+	}
+	let p = mut (base as u64)                   // now a `raw u64`: it steps by 8
+	let start = mut p
+	for i in 0..count{
+		let v = mut (i * 10 + 1)
+		unsafe memcopy raw{
 			memcopy(p, mut 8, raw v)            // memcopy(destination, byteCount, source)
-			p++
 		}
-		let span = mut (p - start)              // 5 elements
-		let q = mut start
-		let sum = mut 0
-		for i in 0..count{
+		p++
+	}
+	let span = mut (p - start)                  // 5 elements
+	let q = mut start
+	let sum = mut 0
+	for i in 0..count{
+		unsafe assume deref{
 			assume match Some(q)                // vouch that q is alive: it points into C memory, so a real Some(q) would be false
 			sum += deref(q)                     // reading through a raw pointer needs the `deref` tag as well
-			q++
 		}
+		q++
+	}
+	unsafe extern{
 		free(base)
 	}
 }

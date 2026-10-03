@@ -11507,7 +11507,19 @@ public class TypeChecker {
             return;
         }
         if ("owns".equals(declaredType.storage)) {
-            String key = slotKeyOf(valueExpr);
+            // `a = mut b`, `take(mut b)`, `let c = mut b`: the mutability wrapper is transparent -- b is what moves.
+            Token source = valueExpr;
+            while (true) {
+                if (source.type == TokenType.DELINEATOR && source.text.equals("(") && !source.childs.isEmpty()) {
+                    source = source.childs.get(0);
+                } else if (source.type == TokenType.OPERATOR && source.unary
+                        && (source.text.equals("mut") || source.text.equals("imut")) && source.left != null) {
+                    source = source.left;
+                } else {
+                    break;
+                }
+            }
+            String key = slotKeyOf(source);
             if (key != null) {
                 requireNotMovedAlready(key, valueExpr, scope);
                 scope.movedSlots.add(key);

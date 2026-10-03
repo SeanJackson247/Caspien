@@ -1,0 +1,18 @@
+// Passing an owns variable as `take(mut b)` moves b: using it afterwards is an error.
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+struct World{@pub{
+	ticks: mut u64
+}}
+func take(p: owns some mut World) void{ }
+func main() void{
+	?catch(e){ return }
+	let a = mut ? new World{ticks= 1}
+	let b = mut ? new World{ticks= 2}
+	take(mut b)
+	let t = mut b.ticks
+}

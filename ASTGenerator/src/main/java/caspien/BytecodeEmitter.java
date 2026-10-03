@@ -3825,9 +3825,10 @@ public class BytecodeEmitter {
             emitInlineOwnsNullOut(unwrapMutWrappers(valueExpr), valueExpr.inlineOwnsStruct);
             return;
         }
-        emitAssignTarget(valueExpr);
-        line("PUSH null " + valueExpr.resolvedType);
-        line("ASSIGN " + valueExpr.resolvedType + " " + valueExpr.resolvedType + " " + valueExpr.resolvedType);
+        Token source = unwrapMutWrappers(valueExpr); // `a = mut b`: the variable underneath the wrapper is what gets nulled
+        emitAssignTarget(source);
+        line("PUSH null " + source.resolvedType);
+        line("ASSIGN " + source.resolvedType + " " + source.resolvedType + " " + source.resolvedType);
     }
 
     /**
