@@ -1496,7 +1496,7 @@ not proved. Costs inside that core are part of its contract, not of the safe-cod
 | Property | Enforced today | Open |
 |---|---|---|
 | **Soundness of the checker** | About 70 runtime regression programs in [`tests/`](tests), generated tests with expected values from independent Python models, and shell checks for the optimiser passes. | There is no formal proof, mechanised or otherwise. The checker is about 19,000 lines of Java, and "the compiler accepts it" is evidence, not proof. The large corpus of compile-error fixtures is kept outside this repository. |
-| **Platforms** | Linux x86-64 is the tested target. | The Windows (`windows_gnu`) output assembles and links but has not been run on a real Windows machine, and the MASM/Intel backend is unverified. |
+| **Platforms** | Linux x86-64 is the tested target. | The Windows (`windows_gnu`) output is built with mingw-w64 and the test suite has been run under Wine on Linux; it has not been run on a real Windows machine. |
 
 Known bugs that affect the guarantees are tracked in the `CLAUDE.md` files. One open example: reassigning
 an `owns` field reached through a pointer (`h.w = pass(h.w)`) still destructs the old value before the right
@@ -1561,7 +1561,6 @@ target linux                 # in ===codegen.config===, was windows_gnu
 |---|---|
 | `linux` | ELF executable, System V ABI, GNU assembler syntax |
 | `windows_gnu` | PE executable, win64 ABI, GNU assembler syntax, built with mingw-w64 |
-| `windows` | MASM/Intel syntax. The compiler can produce the `.s` file but the orchestrator cannot assemble it, so use `--asm`. Unverified. |
 
 ### 2.4 Optimisations
 
@@ -1667,8 +1666,8 @@ become byte offsets, and each operation is rewritten with an explicit size. It a
 per-type clone and drop routines that ownership needs. Then the register passes fuse stack sequences into
 register form, keep the hottest scalar variables in registers, and fuse comparisons into branches.
 
-**Codegen** turns the low-order bytecode into assembly: GNU syntax for Linux and for mingw-w64, and Intel
-syntax for MASM. It handles both calling conventions, preserves callee-saved registers, implements the
+**Codegen** turns the low-order bytecode into assembly: GNU assembler syntax for Linux and for mingw-w64.
+It handles both calling conventions, preserves callee-saved registers, implements the
 unwinding behind `throw`, and calls the system's C library for allocation and threads.
 
 Roughly 60,000 lines of Java make up the four stages. The per-stage `CLAUDE.md` files record the design

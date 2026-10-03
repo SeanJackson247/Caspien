@@ -11,20 +11,12 @@ import java.util.List;
  * uses on the compiler/lowerordergenerator side) -- required, missing
  * entirely is a fatal error, same as that file.
  *
- * Format is deliberately minimal for this first version: one
- * "key value" pair per non-comment, non-blank line ('#' starts a
- * comment). The only key read so far is "target", one of "windows",
- * "windows_gnu", or "linux" -- "current target is x86 windows, but
- * whether windows or linux is the target is down to the config,"
- * confirmed directly; "windows_gnu" was added once it became clear the
- * real Windows toolchain in use is a GNU one (gcc/mingw-w64, assembled
- * with GNU `as`), not MASM/ml64 -- those two need genuinely different
- * assembly *syntax* (GAS AT&T vs MASM Intel) even though they share the
- * exact same win64 *ABI* (argument registers, 32-byte shadow space, no
- * SysV varargs %al convention), which is why they're separate `Target`
- * values rather than a single "windows" with a syntax flag bolted on --
- * every existing "windows" assumption in this backend already conflated
- * the two, so splitting them as distinct targets was the safer change.
+ * Format is deliberately minimal: one "key value" pair per
+ * non-comment, non-blank line ('#' starts a comment). The only key read
+ * is "target", one of "windows_gnu" (gcc/mingw-w64, GNU `as`, win64 ABI)
+ * or "linux" (SysV ABI). Both emit GAS AT&T syntax. (An Intel/MASM
+ * "windows" target existed once; it was removed on purpose -- Windows
+ * builds go through gcc/mingw-w64.)
  * Everything this stage needs to know about a target -- assembly
  * syntax, calling-convention register names, whether a call needs 32
  * bytes of shadow space reserved ahead of it -- is decided by which
@@ -36,7 +28,6 @@ import java.util.List;
 public class CodegenConfig {
 
     public enum Target {
-        WINDOWS_X64,      // MASM/ml64 syntax, win64 ABI -- structurally implemented, still execution-unverified (no MASM toolchain in this sandbox)
         WINDOWS_GNU_X64,  // GAS AT&T syntax, win64 ABI -- for gcc/mingw-w64; verified in this sandbox with a real mingw-w64 cross-toolchain + Wine
         LINUX_X64         // GAS AT&T syntax, SysV ABI -- verified in this sandbox with the real as/gcc/ld toolchain
     }
@@ -69,14 +60,15 @@ public class CodegenConfig {
             String value = parts[1].trim();
             if (key.equals("target")) {
                 if (value.equalsIgnoreCase("windows")) {
-                    target = Target.WINDOWS_X64;
+                    throw new CodegenException("config", path, i + 1,
+                            "target 'windows' (MASM/Intel syntax) is no longer supported -- use 'windows_gnu' (gcc/mingw-w64)");
                 } else if (value.equalsIgnoreCase("windows_gnu") || value.equalsIgnoreCase("windows-gnu") || value.equalsIgnoreCase("mingw")) {
                     target = Target.WINDOWS_GNU_X64;
                 } else if (value.equalsIgnoreCase("linux")) {
                     target = Target.LINUX_X64;
                 } else {
                     throw new CodegenException("config", path, i + 1,
-                            "unknown target '" + value + "' -- expected 'windows', 'windows_gnu', or 'linux'");
+                            "unknown target '" + value + "' -- expected 'windows_gnu' or 'linux'");
                 }
             } else {
                 throw new CodegenException("config", path, i + 1, "unknown config key '" + key + "'");

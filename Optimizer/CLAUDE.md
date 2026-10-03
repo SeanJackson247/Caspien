@@ -40,5 +40,5 @@ Outer loop until no change: StructMemberReordering -> SizeofResolution -> Struct
 - Passes must be pure functions of the whole program; ordering lives only in `BytecodeOptimizer`.
 
 ## Known gaps
-- MASM target does not assemble; windows_gnu runs under Wine; Linux is the main executed target.
+- windows_gnu runs under Wine; Linux is the main executed target; there is no MASM target.
 - No CSE, loop-invariant hoisting or sqrt intrinsic.

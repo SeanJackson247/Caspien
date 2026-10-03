@@ -46,6 +46,6 @@ Build (from this folder): `javac -d out $(find src/main/java -name '*.java')`. R
 Hand-made LOB check scripts live in `/home/claude/caspien/tests/`, run from the project root, need `LowerOrderGenerator/out` built, env `LOB_CP=<classpath>` runs against a mutant build: `lob_passes_check.sh` (JumpCleanup/IndexedAccess), `rangecheck_check.sh`, `regform_globals_check.sh`, `regform_dyn_check.sh`, `regvars_share_check.sh`, `regvars_volatile_check.sh` (also RangeEndHint), `floatindex_check.sh`. Runtime tests are `tests/*.caspien` (PASS/FAIL lines; compare output across configs: everything on, shipped, register-form only, everything off), e.g. `regform*_test`, `regvars_*_test`, `floattemps_test`, `range_split_test`, `bits_ops*_test`. `tests/callee_saved_probe.sh` checks callee-saved preservation (Linux, gcc).
 
 ## Known open gaps
-- Intel/MASM (`windows`) forms of `R_*` lines are unexecuted (MASM output does not assemble yet); windows_gnu is run under Wine.
+- There are no Intel/MASM forms any more (the target was removed); windows_gnu is run under Wine.
 - Stack-form residues: more than 4 live temps falls back, narrow M flush rolls back; loop `within` test is a full strict-subrange check; a few `POP` lines remain unfused (4 in stdlib_test).
 - Loop range START is not promoted: measured (hand-patched asm), slower, not worth it.

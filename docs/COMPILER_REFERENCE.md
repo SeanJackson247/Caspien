@@ -134,10 +134,6 @@ The `codegen.config` section's `target` key selects the backend:
     target linux         # GAS AT&T syntax, SysV ABI (as + gcc, native gcc/Linux)
     target windows_gnu    # GAS AT&T syntax, win64 ABI (gcc via mingw-w64 -- this
                            # is the one to use for "gcc on Windows")
-    target windows         # MASM/Intel syntax, win64 ABI -- Codegen can produce
-                           # the .s but this orchestrator doesn't know how to
-                           # assemble/link it (no ml64/link support); use --asm
-                           # and assemble it yourself if you need this one.
 
 Ships set to `target windows_gnu` (a fresh copy of this project builds a
 Windows `.exe` with gcc/mingw-w64 out of the box, no config edits needed,

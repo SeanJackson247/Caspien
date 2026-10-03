@@ -332,7 +332,7 @@ public class Compiler {
      * reserved by a `linux`-targeted caller). Found by hand-tracing real
      * stack addresses after a real test binary produced a wrong value/
      * segfault on exactly this combination; confirmed by hand that the
-     * two "sensible" pairings (win64 default + windows/windows_gnu
+     * two "sensible" pairings (win64 default + windows_gnu
      * target; sysv_x64 default + linux target) both produce correct
      * offsets.
      *
@@ -389,7 +389,6 @@ public class Compiler {
     /** The real, fixed ABI shape a codegen target's own emitted assembly actually implements (see X86Backend's own isWinAbi()/argReg tables) -- null for a target this orchestrator doesn't recognize at all (reported separately, later). */
     private static AbiShape requiredAbiShapeFor(String target) {
         switch (target) {
-            case "windows":
             case "windows_gnu":
                 return new AbiShape(4, 4, 32, true, "win64");
             case "linux":
@@ -790,18 +789,10 @@ public class Compiler {
                         "-static", "-lm"), diag, compiler);
                 return;
             }
-            case "windows": {
-                diag.fail(1);
-                System.err.println("[error] target 'windows' (MASM/ml64 syntax) has no assemble/link step in this "
-                        + "orchestrator -- no MASM/ml64 toolchain is driven here. Use --asm to get the .s file and "
-                        + "assemble/link it yourself with ml64/link, or switch codegen.config's target to "
-                        + "'windows_gnu' to build with gcc/mingw-w64 instead.");
-                return;
-            }
             default:
                 diag.fail(1);
-                System.err.println("[error] unknown codegen target '" + target + "' -- expected 'linux', "
-                        + "'windows_gnu', or 'windows'");
+                System.err.println("[error] unknown codegen target '" + target + "' -- expected 'linux' "
+                        + "or 'windows_gnu'");
         }
     }
 

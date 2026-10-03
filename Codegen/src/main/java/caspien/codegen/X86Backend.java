@@ -52,17 +52,13 @@ import java.util.Set;
  *   exactly the given size, no header at all.
  *
  * Two concrete targets share this one class, distinguished by
- * `CodegenConfig.Target` (set from `codegen.config`):
- * - LINUX_X64: GNU assembler (GAS), AT&T syntax, SysV calling
- *   convention (rdi/rsi/rdx/rcx/r8/r9) -- the only target actually
- *   assembled, linked, and run in this sandbox; treat every claim of
- *   correctness in this file as scoped to this target only.
- * - WINDOWS_X64: MASM-style Intel syntax, win64 calling convention
- *   (rcx/rdx/r8/r9 + 32-byte shadow space). Structurally mirrored for
- *   every mnemonic this pass now handles, but **not** execution-
- *   verified anywhere -- no Windows/MASM/MinGW toolchain is available
- *   in this sandbox. Treat the Windows path as unverified until it is
- *   actually run somewhere that can.
+ * `CodegenConfig.Target` (set from `codegen.config`); both emit GNU
+ * assembler (GAS) AT&T syntax:
+ * - LINUX_X64: SysV calling convention (rdi/rsi/rdx/rcx/r8/r9).
+ * - WINDOWS_GNU_X64: win64 calling convention (rcx/rdx/r8/r9 + 32-byte
+ *   shadow space), assembled and linked with mingw-w64 gcc.
+ * Both are run in this project's test sandbox (Windows under Wine). There
+ * is no MASM/Intel-syntax target: it was removed on purpose.
  */
 public class X86Backend {
 
@@ -594,13 +590,11 @@ public class X86Backend {
             pushReg(regName);
             return;
         }
-        raw(isWindows() ? ("    sub rsp, " + size) : ("    subq $" + size + ", %rsp"));
+        raw(("    subq $" + size + ", %rsp"));
         if (constructionOffset == 0) {
             storeSizedToAddr(regName, "rsp", size);
         } else if (isOddSize(size)) {
             storeOddSize(regName, "rsp", constructionOffset, size);
-        } else if (isWindows()) {
-            raw("    mov [rsp" + signed(constructionOffset) + "], " + sizedRegWin(regName, size));
         } else {
             raw("    mov" + movSuffix(size) + " %" + sizedReg(regName, size) + ", " + constructionOffset
                     + "(%rsp)");
@@ -725,12 +719,12 @@ public class X86Backend {
         for (long c : chunk) {
             total += c;
         }
-        raw(isWindows() ? "    mov r12, rsp" : "    movq %rsp, %r12"); // r12: the reversed field words on the stack
+        raw("    movq %rsp, %r12"); // r12: the reversed field words on the stack
         emitMallocCall(size);
-        raw(isWindows() ? "    mov r14, rax" : "    movq %rax, %r14"); // r14: the fresh buffer
+        raw("    movq %rax, %r14"); // r14: the fresh buffer
         // A failed malloc leaves r14 null: skip every copy into it; the null is pushed and the bytecode's own check throws.
         String newRepackDone = newInternalLabel("new_done");
-        raw(isWindows() ? "    test r14, r14" : "    testq %r14, %r14");
+        raw("    testq %r14, %r14");
         raw("    jz " + newRepackDone);
         long dst = 0;      // running true offset in the buffer
         long consumed = 0; // bytes of chunks pushed so far (from the first field)
@@ -759,7 +753,7 @@ public class X86Backend {
             dst += s;
         }
         raw(newRepackDone + ":");
-        raw(isWindows() ? ("    add rsp, " + total) : ("    addq $" + total + ", %rsp"));
+        raw(("    addq $" + total + ", %rsp"));
         pushReg("r14");
     }
 
@@ -806,8 +800,8 @@ public class X86Backend {
         for (long c : chunk) {
             total += c;
         }
-        raw(isWindows() ? "    mov r10, rsp" : "    movq %rsp, %r10");
-        raw(isWindows() ? ("    mov r11, [rsp" + signed(total) + "]") : ("    movq " + total + "(%rsp), %r11"));
+        raw("    movq %rsp, %r10");
+        raw(("    movq " + total + "(%rsp), %r11"));
         long dst = 0;
         long consumed = 0;
         for (int i = 0; i < chunk.size(); i++) {
@@ -835,7 +829,7 @@ public class X86Backend {
             }
             dst += s;
         }
-        raw(isWindows() ? ("    add rsp, " + (total + 8)) : ("    addq $" + (total + 8) + ", %rsp"));
+        raw(("    addq $" + (total + 8) + ", %rsp"));
     }
 
     /** Copies `n` (1..8) bytes from srcOff(srcReg) to dstOff(dstReg) through %rax, in the fewest naturally-sized moves. */
@@ -844,13 +838,9 @@ public class X86Backend {
         while (done < n) {
             long left = n - done;
             int w = left >= 8 ? 8 : left >= 4 ? 4 : left >= 2 ? 2 : 1;
-            if (isWindows()) {
-                raw("    mov " + sizedRegWin("rax", w) + ", [" + srcReg + signed(srcOff + done) + "]");
-                raw("    mov [" + dstReg + signed(dstOff + done) + "], " + sizedRegWin("rax", w));
-            } else {
-                raw("    mov" + movSuffix(w) + " " + (srcOff + done) + "(%" + srcReg + "), %" + sizedReg("rax", w));
-                raw("    mov" + movSuffix(w) + " %" + sizedReg("rax", w) + ", " + (dstOff + done) + "(%" + dstReg + ")");
-            }
+            raw("    mov" + movSuffix(w) + " " + (srcOff + done) + "(%" + srcReg + "), %" + sizedReg("rax", w));
+            raw("    mov" + movSuffix(w) + " %" + sizedReg("rax", w) + ", " + (dstOff + done) + "(%" + dstReg + ")");
+            
             done += w;
         }
     }
@@ -861,13 +851,9 @@ public class X86Backend {
         while (done < n) {
             long left = n - done;
             int w = left >= 8 ? 8 : left >= 4 ? 4 : left >= 2 ? 2 : 1;
-            if (isWindows()) {
-                raw("    mov " + sizedRegWin("rax", w) + ", [r12" + signed(srcOff + done) + "]");
-                raw("    mov [r14" + signed(dstOff + done) + "], " + sizedRegWin("rax", w));
-            } else {
-                raw("    mov" + movSuffix(w) + " " + (srcOff + done) + "(%r12), %" + sizedReg("rax", w));
-                raw("    mov" + movSuffix(w) + " %" + sizedReg("rax", w) + ", " + (dstOff + done) + "(%r14)");
-            }
+            raw("    mov" + movSuffix(w) + " " + (srcOff + done) + "(%r12), %" + sizedReg("rax", w));
+            raw("    mov" + movSuffix(w) + " %" + sizedReg("rax", w) + ", " + (dstOff + done) + "(%r14)");
+            
             done += w;
         }
     }
@@ -962,14 +948,9 @@ public class X86Backend {
         this.target = target;
     }
 
-    /** True only for the MASM/ml64-syntax target -- gates *assembly syntax* choices (Intel brackets/mnemonics/directives vs GAS AT&T). WINDOWS_GNU_X64 deliberately returns false here: it uses the exact same AT&T syntax as Linux, since that's what GNU `as` (mingw-w64's own assembler) actually accepts -- only its ABI differs from Linux, which isWinAbi() below covers separately. */
-    private boolean isWindows() {
-        return target == CodegenConfig.Target.WINDOWS_X64;
-    }
-
-    /** True for *either* Windows target -- gates win64 ABI choices (argument registers, 32-byte shadow space, no SysV varargs %al convention) independently of assembly syntax. WINDOWS_X64 and WINDOWS_GNU_X64 share this ABI; only isWindows() (syntax) tells them apart. */
+    /** True for the Windows target (windows_gnu: GNU as + mingw-w64): gates win64 ABI choices (argument registers, 32-byte shadow space, no SysV varargs %al convention). The assembly syntax is AT&T on every target. */
     private boolean isWinAbi() {
-        return target == CodegenConfig.Target.WINDOWS_X64 || target == CodegenConfig.Target.WINDOWS_GNU_X64;
+        return target == CodegenConfig.Target.WINDOWS_GNU_X64;
     }
 
     public String generate(List<List<BytecodeToken>> lines) {
@@ -984,7 +965,7 @@ public class X86Backend {
         collectDeclarations(lines);
         emitHeader();
         emitDataSections();
-        raw(isWindows() ? ".code" : ".text");
+        raw(".text");
         allLines = lines;
         precomputeConstructionOffsets();
         callBufferStack.clear();
@@ -1105,13 +1086,13 @@ public class X86Backend {
 
     private void emitDataSections() {
         if (!globalsSizeInit.isEmpty()) {
-            raw(isWindows() ? ".data" : ".data");
+            raw(".data");
             for (Map.Entry<String, long[]> e : globalsSizeInit.entrySet()) {
                 String label = mangleGlobalName(e.getKey());
                 long size = e.getValue()[0];
                 long init = e.getValue()[1];
                 boolean hasInit = globalsHasInit.getOrDefault(e.getKey(), false);
-                raw(isWindows() ? "PUBLIC " + label : ".globl " + label);
+                raw((".globl " + label));
                 raw(label + ":");
                 List<long[]> parts = aliasInits.get(e.getKey());
                 if (parts != null) {
@@ -1127,18 +1108,17 @@ public class X86Backend {
                     for (int b = 0; b < image.length; b++) {
                         bytes.append(b == 0 ? "" : ", ").append(image[b] & 0xFF);
                     }
-                    raw((isWindows() ? "    db " : "    .byte ") + bytes);
+                    raw(("    .byte ") + bytes);
                 } else {
                     emitStorageDirective(size, hasInit ? init : 0);
                 }
             }
         }
         if (!stringLiterals.isEmpty()) {
-            raw(isWindows() ? ".data" : ".section .rodata");
+            raw(".section .rodata");
             for (Map.Entry<String, String> e : stringLiterals.entrySet()) {
                 raw(e.getKey() + ":");
-                raw(isWindows() ? ("    db \"" + e.getValue() + "\", 0")
-                        : ("    .asciz \"" + e.getValue() + "\""));
+                raw(("    .asciz \"" + e.getValue() + "\""));
             }
         }
     }
@@ -1146,15 +1126,15 @@ public class X86Backend {
     /** Emits `size` bytes of storage, in units of quad/long/word/byte, initialized to `init` (repeated/truncated as needed -- good enough for the scalar globals this pass actually sees; anything wider than 8 bytes is zero-filled regardless of `init`, since no observed GLOBAL line initializes a multi-word aggregate). */
     private void emitStorageDirective(long size, long init) {
         if (size == 8) {
-            raw(isWindows() ? ("    dq " + init) : ("    .quad " + init));
+            raw(("    .quad " + init));
         } else if (size == 4) {
-            raw(isWindows() ? ("    dd " + init) : ("    .long " + init));
+            raw(("    .long " + init));
         } else if (size == 2) {
-            raw(isWindows() ? ("    dw " + init) : ("    .word " + init));
+            raw(("    .word " + init));
         } else if (size == 1) {
-            raw(isWindows() ? ("    db " + init) : ("    .byte " + init));
+            raw(("    .byte " + init));
         } else {
-            raw(isWindows() ? ("    db " + size + " dup(0)") : ("    .zero " + size));
+            raw(("    .zero " + size));
         }
     }
 
@@ -1164,11 +1144,7 @@ public class X86Backend {
     }
 
     private void emitHeader() {
-        if (isWindows()) {
-            out.append("; Generated by caspien-codegen (target: windows x86-64, MASM/ml64)\n");
-            out.append("; NOTE: MASM-style syntax -- not execution-verified in this sandbox\n");
-            out.append("; (no MASM/ml64 toolchain available here).\n");
-        } else if (target == CodegenConfig.Target.WINDOWS_GNU_X64) {
+        if (target == CodegenConfig.Target.WINDOWS_GNU_X64) {
             out.append("# Generated by caspien-codegen (target: windows_gnu x86-64, mingw-w64/GNU as)\n");
             out.append("# GAS AT&T syntax, win64 ABI -- assemble/link with x86_64-w64-mingw32-gcc.\n");
         } else {
@@ -1178,13 +1154,10 @@ public class X86Backend {
     }
 
     private void emitFooter() {
-        if (isWindows()) {
-            out.append("end\n");
-        }
     }
 
     private void comment(String text) {
-        out.append(isWindows() ? "; " : "# ").append(text).append('\n');
+        out.append("# ").append(text).append('\n');
     }
 
     /**
@@ -1253,36 +1226,27 @@ public class X86Backend {
 
     /** push the 64-bit value in the given register onto the real machine stack. */
     private void pushReg(String reg) {
-        raw(isWindows() ? ("    push " + reg) : ("    pushq %" + reg));
+        raw(("    pushq %" + reg));
     }
 
     /** pop the top of the real machine stack into the given register. */
     private void popReg(String reg) {
-        raw(isWindows() ? ("    pop " + reg) : ("    popq %" + reg));
+        raw(("    popq %" + reg));
     }
 
     private void movMemToReg(String reg, long offset) {
-        if (isWindows()) {
-            raw("    mov " + reg + ", [rbp" + signed(offset) + "]");
-        } else {
-            raw("    movq " + offset + "(%rbp), %" + reg);
-        }
+        raw("    movq " + offset + "(%rbp), %" + reg);
+        
     }
 
     private void movRegToMem(String reg, long offset) {
-        if (isWindows()) {
-            raw("    mov [rbp" + signed(offset) + "], " + reg);
-        } else {
-            raw("    movq %" + reg + ", " + offset + "(%rbp)");
-        }
+        raw("    movq %" + reg + ", " + offset + "(%rbp)");
+        
     }
 
     private void leaMemToReg(String reg, long offset) {
-        if (isWindows()) {
-            raw("    lea " + reg + ", [rbp" + signed(offset) + "]");
-        } else {
-            raw("    leaq " + offset + "(%rbp), %" + reg);
-        }
+        raw("    leaq " + offset + "(%rbp), %" + reg);
+        
     }
 
     private void leaGlobalToReg(String reg, String globalName) {
@@ -1293,31 +1257,18 @@ public class X86Backend {
             // referencing a separate (nonexistent) label of its own.
             String parentLabel = mangleGlobalName(globalAliasParent.get(globalName));
             long offset = globalAliasOffset.get(globalName);
-            if (isWindows()) {
-                raw("    lea " + reg + ", [" + parentLabel + (offset != 0 ? "+" + offset : "") + "]");
-            } else {
-                raw("    leaq " + parentLabel + (offset != 0 ? "+" + offset : "") + "(%rip), %" + reg);
-            }
+            raw("    leaq " + parentLabel + (offset != 0 ? "+" + offset : "") + "(%rip), %" + reg);
+            
             return;
         }
         String label = mangleGlobalName(globalName);
-        if (isWindows()) {
-            raw("    lea " + reg + ", [" + label + "]");
-        } else {
-            raw("    leaq " + label + "(%rip), %" + reg);
-        }
+        raw("    leaq " + label + "(%rip), %" + reg);
+        
     }
 
     private void movImmToReg(String reg, long imm) {
-        if (isWindows()) {
-            raw("    mov " + reg + ", " + imm);
-        } else {
-            raw("    movq $" + imm + ", %" + reg);
-        }
-    }
-
-    private String signed(long v) {
-        return v >= 0 ? ("+" + v) : String.valueOf(v);
+        raw("    movq $" + imm + ", %" + reg);
+        
     }
 
     // ---- Size-aware register/memory helpers ------------------------------
@@ -1344,13 +1295,7 @@ public class X86Backend {
         if (size >= 8) {
             return;
         }
-        if (isWindows()) {
-            if (size == 4) {
-                raw("    movsxd " + reg + ", " + sizedRegWin(reg, 4));
-            } else {
-                raw("    movsx " + reg + ", " + sizedRegWin(reg, size));
-            }
-        } else if (size == 4) {
+        if (size == 4) {
             raw("    movslq %" + sizedReg(reg, 4) + ", %" + reg);
         } else {
             raw("    movs" + movSuffix(size) + "q %" + sizedReg(reg, size) + ", %" + reg);
@@ -1370,15 +1315,10 @@ public class X86Backend {
             signExtendReg(v, size);
             // count = min(count, 63)
             movImmToReg(RF_SCRATCH, 63);
-            if (isWindows()) {
-                raw("    cmp rcx, " + RF_SCRATCH);
-                raw("    cmova rcx, " + RF_SCRATCH);
-                raw("    sar " + v + ", cl");
-            } else {
-                raw("    cmpq %" + RF_SCRATCH + ", %rcx");
-                raw("    cmovaq %" + RF_SCRATCH + ", %rcx");
-                raw("    sarq %cl, %" + v);
-            }
+            raw("    cmpq %" + RF_SCRATCH + ", %rcx");
+            raw("    cmovaq %" + RF_SCRATCH + ", %rcx");
+            raw("    sarq %cl, %" + v);
+            
             zeroExtendReg(v, size);
             return;
         }
@@ -1386,17 +1326,11 @@ public class X86Backend {
         if (!left) {
             zeroExtendReg(v, size);
         }
-        if (isWindows()) {
-            raw("    " + (left ? "shl " : "shr ") + v + ", cl");
-            raw("    cmp rcx, 64");
-            raw("    sbb rcx, rcx");   // rcx = -1 when count < 64 (borrow), else 0
-            raw("    and " + v + ", rcx");
-        } else {
-            raw("    " + (left ? "shlq" : "shrq") + " %cl, %" + v);
-            raw("    cmpq $64, %rcx");
-            raw("    sbbq %rcx, %rcx");
-            raw("    andq %rcx, %" + v);
-        }
+        raw("    " + (left ? "shlq" : "shrq") + " %cl, %" + v);
+        raw("    cmpq $64, %rcx");
+        raw("    sbbq %rcx, %rcx");
+        raw("    andq %rcx, %" + v);
+        
         if (left) {
             zeroExtendReg(v, size);
         }
@@ -1407,13 +1341,7 @@ public class X86Backend {
         if (size != 1 && size != 2 && size != 4) {
             return;
         }
-        if (isWindows()) {
-            if (size == 4) {
-                raw("    mov " + sizedRegWin(reg, 4) + ", " + sizedRegWin(reg, 4));
-            } else {
-                raw("    movzx " + reg + ", " + sizedRegWin(reg, size));
-            }
-        } else if (size == 4) {
+        if (size == 4) {
             raw("    movl %" + sizedReg(reg, 4) + ", %" + sizedReg(reg, 4));
         } else {
             raw("    movz" + movSuffix(size) + "q %" + sizedReg(reg, size) + ", %" + reg);
@@ -1449,14 +1377,6 @@ public class X86Backend {
     /** zero-extending load of `size` bytes at (%rbp+offset) into the full 64-bit `reg64`. */
     private void loadSizedFromFrame(String reg64, long offset, int size) {
         int loadSize = roundUpToLoadableWidth(size);
-        if (isWindows()) {
-            if (loadSize == 8) {
-                raw("    mov " + reg64 + ", [rbp" + signed(offset) + "]");
-            } else {
-                raw("    movzx " + reg64 + ", " + winPtrSize(loadSize) + " [rbp" + signed(offset) + "]");
-            }
-            return;
-        }
         if (loadSize == 8) {
             raw("    movq " + offset + "(%rbp), %" + reg64);
         } else if (loadSize == 4) {
@@ -1473,10 +1393,6 @@ public class X86Backend {
             storeOddSize(reg64, "rbp", offset, size);
             return;
         }
-        if (isWindows()) {
-            raw("    mov [rbp" + signed(offset) + "], " + sizedRegWin(reg64, size));
-            return;
-        }
         raw("    mov" + movSuffix(size) + " %" + sizedReg(reg64, size) + ", " + offset + "(%rbp)");
     }
 
@@ -1484,14 +1400,6 @@ public class X86Backend {
     private void loadSizedFromAddr(String destReg64, String addrReg64, int size) {
         int loadSize = roundUpToLoadableWidth(size);
         String mem = rfMemOperand(addrReg64);
-        if (isWindows()) {
-            if (loadSize == 8) {
-                raw("    mov " + destReg64 + ", " + mem);
-            } else {
-                raw("    movzx " + destReg64 + ", " + winPtrSize(loadSize) + " " + mem);
-            }
-            return;
-        }
         if (loadSize == 8) {
             raw("    movq " + mem + ", %" + destReg64);
         } else if (loadSize == 4) {
@@ -1516,39 +1424,25 @@ public class X86Backend {
      */
     private void extractWordsFromReversedBlock(long totalWords, int size) {
         long elemWords = (size + 7) / 8;
-        if (isWindows()) {
-            raw("    mov r11, rax");
-            raw("    sub r11, r14");
-            raw("    shl r14, 3");
-            raw("    mov r13, rcx");
-            raw("    mov rcx, r14");
-        } else {
-            raw("    movq %rax, %r11");
-            raw("    subq %r14, %r11");
-            raw("    shlq $3, %r14");
-            raw("    movq %rcx, %r13");
-            raw("    movq %r14, %rcx");
-        }
+        raw("    movq %rax, %r11");
+        raw("    subq %r14, %r11");
+        raw("    shlq $3, %r14");
+        raw("    movq %rcx, %r13");
+        raw("    movq %r14, %rcx");
+        
         for (long j = 0; j < elemWords; j++) {
             long lo = -(j * 8);
             long hi = -(j * 8 + 8);
             long dst = (totalWords - 1 - j) * 8;
-            if (isWindows()) {
-                raw("    mov rax, [r11" + (lo == 0 ? "" : String.valueOf(lo)) + "]");
-                raw("    mov r14, [r11" + hi + "]");
-                raw("    shrd rax, r14, cl");
-                raw("    mov [rsp+" + dst + "], rax");
-            } else {
-                raw("    movq " + lo + "(%r11), %rax");
-                raw("    movq " + hi + "(%r11), %r14");
-                raw("    shrdq %cl, %r14, %rax");
-                raw("    movq %rax, " + dst + "(%rsp)");
-            }
+            raw("    movq " + lo + "(%r11), %rax");
+            raw("    movq " + hi + "(%r11), %r14");
+            raw("    shrdq %cl, %r14, %rax");
+            raw("    movq %rax, " + dst + "(%rsp)");
+            
         }
-        raw(isWindows() ? "    mov rcx, r13" : "    movq %r13, %rcx");
+        raw("    movq %r13, %rcx");
         if (totalWords > elemWords) {
-            raw(isWindows() ? ("    add rsp, " + ((totalWords - elemWords) * 8))
-                    : ("    addq $" + ((totalWords - elemWords) * 8) + ", %rsp"));
+            raw(("    addq $" + ((totalWords - elemWords) * 8) + ", %rsp"));
         }
     }
 
@@ -1582,16 +1476,13 @@ public class X86Backend {
     }
 
     private void storePiece(String srcReg64, String baseReg64, long off, int width) {
-        if (isWindows()) {
-            raw("    mov [" + baseReg64 + (off == 0 ? "" : signed(off)) + "], " + sizedRegWin(srcReg64, width));
-        } else {
-            raw("    mov" + movSuffix(width) + " %" + sizedReg(srcReg64, width) + ", " + (off == 0 ? "" : String.valueOf(off)) + "(%" + baseReg64 + ")");
-        }
+        raw("    mov" + movSuffix(width) + " %" + sizedReg(srcReg64, width) + ", " + (off == 0 ? "" : String.valueOf(off)) + "(%" + baseReg64 + ")");
+        
     }
 
     private void rotReg(String reg64, boolean right, int bits) {
         String op = right ? "ror" : "rol";
-        raw(isWindows() ? ("    " + op + " " + reg64 + ", " + bits) : ("    " + op + "q $" + bits + ", %" + reg64));
+        raw(("    " + op + "q $" + bits + ", %" + reg64));
     }
 
     /** store the low `size` bytes of `srcReg64` to (%addrReg64). */
@@ -1600,19 +1491,7 @@ public class X86Backend {
             storeOddSize(srcReg64, addrReg64, 0, size);
             return;
         }
-        if (isWindows()) {
-            raw("    mov " + rfMemOperand(addrReg64) + ", " + sizedRegWin(srcReg64, size));
-            return;
-        }
         raw("    mov" + movSuffix(size) + " %" + sizedReg(srcReg64, size) + ", " + rfMemOperand(addrReg64));
-    }
-
-    private String winPtrSize(int size) {
-        return size == 1 ? "byte" : size == 2 ? "word" : "dword";
-    }
-
-    private String sizedRegWin(String reg64, int size) {
-        return sizedReg(reg64, size);
     }
 
     /** pushes a >8-byte value stored at (%rbp+baseOffset), one whole word at a time, lowest source offset first -- the highest-offset word ends up on top of the real stack. Mirror of `assignBlock`/POP's own block-store below. */
@@ -1654,22 +1533,16 @@ public class X86Backend {
         // just below rsp, which is where the fields of this construction stored EARLIER already sit (each field is stored at its final place,
         // below the current rsp, before rsp reaches it), so an earlier narrow field (`tag: u8` before an array member) was overwritten; and rdi/rsi
         // are argument registers that an enclosing call may already have loaded.
-        if (isWindows()) {
-            raw("    sub rsp, " + size);
-        } else {
-            raw("    subq $" + size + ", %rsp");
-        }
+        raw("    subq $" + size + ", %rsp");
+        
         long pos = 0;
         while (pos < size) {
             long left = size - pos;
             int w = left >= 8 ? 8 : left >= 4 ? 4 : left >= 2 ? 2 : 1;
             loadSizedFromFrame("rax", baseOffset + pos, w);
             long dst = constructionOffset + pos;
-            if (isWindows()) {
-                raw("    mov [rsp" + signed(dst) + "], " + sizedRegWin("rax", w));
-            } else {
-                raw("    mov" + movSuffix(w) + " %" + sizedReg("rax", w) + ", " + dst + "(%rsp)");
-            }
+            raw("    mov" + movSuffix(w) + " %" + sizedReg("rax", w) + ", " + dst + "(%rsp)");
+            
             pos += w;
         }
     }
@@ -1677,11 +1550,8 @@ public class X86Backend {
     /** the block-store counterpart of `pushBlockFromFrame`/DEREF's own multi-word push: pops a >8-byte value (top of stack = highest-offset word) together with the single-word address pushed just before it, and stores each word to its real position. The address is read non-destructively first (it sits `size` bytes below the current top, past the whole value block) so it can still be located after the value words are popped off. */
     private void assignBlock(long size) {
         long words = (size + 7) / 8;
-        if (isWindows()) {
-            raw("    mov r15, [rsp+" + (words * 8) + "]");
-        } else {
-            raw("    movq " + (words * 8) + "(%rsp), %r15");
-        }
+        raw("    movq " + (words * 8) + "(%rsp), %r15");
+        
         for (long i = 0; i < words; i++) {
             popReg("rax");
             // Word k of the value sits at byte 8k. The top word popped first is the highest one, k = words-1. (This used `size - 8 - 8i`, which is
@@ -1690,11 +1560,8 @@ public class X86Backend {
             long destOff = k * 8;
             long n = Math.min(8, size - destOff); // the last word of a size that is not a multiple of 8 is partial: write only its real bytes
             if (n == 8) {
-                if (isWindows()) {
-                    raw("    mov [r15" + (destOff == 0 ? "" : signed(destOff)) + "], rax");
-                } else {
-                    raw("    movq %rax, " + (destOff == 0 ? "" : String.valueOf(destOff)) + "(%r15)");
-                }
+                raw("    movq %rax, " + (destOff == 0 ? "" : String.valueOf(destOff)) + "(%r15)");
+                
             } else if (isOddSize((int) n)) {
                 storeOddSize("rax", "r15", destOff, (int) n);
             } else {
@@ -1704,7 +1571,7 @@ public class X86Backend {
         // The value block is now fully popped; the address word pushed
         // ahead of it is still sitting on top -- drop it for real now
         // that it's been read.
-        raw(isWindows() ? "    add rsp, 8" : "    addq $8, %rsp");
+        raw("    addq $8, %rsp");
     }
 
     /**
@@ -1731,44 +1598,25 @@ public class X86Backend {
         if (size > 0 && size % 8 == 0 && size <= 64) {
             // A small whole-word block (a range is 16 bytes, built on every `for` entry) is copied word by word: no rep prefix, no
             // rcx save/restore. Only r15 (destination) and rdi (data) are used; both were already clobbered by the general path below.
-            if (isWindows()) {
-                raw("    mov r15, [rsp+" + size + "]");
-                for (long o = 0; o < size; o += 8) {
-                    raw("    mov rdi, [rsp+" + o + "]");
-                    raw("    mov [r15+" + o + "], rdi");
-                }
-                raw("    add rsp, " + (size + 8));
-            } else {
-                raw("    movq " + size + "(%rsp), %r15");
-                for (long o = 0; o < size; o += 8) {
-                    raw("    movq " + o + "(%rsp), %rdi");
-                    raw("    movq %rdi, " + o + "(%r15)");
-                }
-                raw("    addq $" + (size + 8) + ", %rsp");
+            raw("    movq " + size + "(%rsp), %r15");
+            for (long o = 0; o < size; o += 8) {
+                raw("    movq " + o + "(%rsp), %rdi");
+                raw("    movq %rdi, " + o + "(%r15)");
             }
+            raw("    addq $" + (size + 8) + ", %rsp");
+            
             return;
         }
-        if (isWindows()) {
-            raw("    mov r15, [rsp+" + size + "]"); // destination address, sitting just past the value block
-            raw("    mov rdi, r15");
-            raw("    mov rsi, rsp");
-            raw("    push rcx"); // rcx may still hold a live, not-yet-consumed incoming argument (e.g. win64's ARG3) -- rep movsb needs it as a byte counter, so save/restore around that use rather than clobbering it
-            raw("    mov rcx, " + size);
-            raw("    rep movsb");
-            raw("    pop rcx");
-            raw("    add rsp, " + size);
-            raw("    add rsp, 8"); // the address word itself, now that it's been read
-        } else {
-            raw("    movq " + size + "(%rsp), %r15"); // destination address, sitting just past the value block
-            raw("    movq %r15, %rdi");
-            raw("    movq %rsp, %rsi");
-            raw("    pushq %rcx"); // rcx may still hold a live, not-yet-consumed incoming argument (SysV's ARG3) -- rep movsb needs it as a byte counter, so save/restore around that use rather than clobbering it
-            raw("    movq $" + size + ", %rcx");
-            raw("    rep movsb");
-            raw("    popq %rcx");
-            raw("    addq $" + size + ", %rsp");
-            raw("    addq $8, %rsp"); // the address word itself, now that it's been read
-        }
+        raw("    movq " + size + "(%rsp), %r15"); // destination address, sitting just past the value block
+        raw("    movq %r15, %rdi");
+        raw("    movq %rsp, %rsi");
+        raw("    pushq %rcx"); // rcx may still hold a live, not-yet-consumed incoming argument (SysV's ARG3) -- rep movsb needs it as a byte counter, so save/restore around that use rather than clobbering it
+        raw("    movq $" + size + ", %rcx");
+        raw("    rep movsb");
+        raw("    popq %rcx");
+        raw("    addq $" + size + ", %rsp");
+        raw("    addq $8, %rsp"); // the address word itself, now that it's been read
+        
     }
 
     private static boolean isFloatLiteral(String s) {
@@ -1839,11 +1687,11 @@ public class X86Backend {
     // (CLAUDE.md, "What's implemented").
 
     private void movRegToXmm(String gpr64, String xmmReg) {
-        raw(isWindows() ? ("    movq " + xmmReg + ", " + gpr64) : ("    movq %" + gpr64 + ", %" + xmmReg));
+        raw(("    movq %" + gpr64 + ", %" + xmmReg));
     }
 
     private void movXmmToReg(String xmmReg, String gpr64) {
-        raw(isWindows() ? ("    movq " + gpr64 + ", " + xmmReg) : ("    movq %" + xmmReg + ", %" + gpr64));
+        raw(("    movq %" + xmmReg + ", %" + gpr64));
     }
 
     /** "ss" (single-precision, 4-byte) vs "sd" (double-precision, 8-byte) SSE instruction suffix for a given byte size. `f32` is the only floating-point type this language has at all (checked directly, not assumed -- see FLOAT_CHECK's own doc comment below), so every real call site passes 4 here; the 8-byte ("sd") branch is kept only so this doesn't silently mishandle a size this pass has never actually seen, not because anything in the language can produce one today. */
@@ -1867,7 +1715,7 @@ public class X86Backend {
         for (long i = 0; i < words; i++) {
             loadSizedFromAddr("r11", addrReg64, 8);
             if (i < words - 1) {
-                raw(isWindows() ? ("    add " + addrReg64 + ", 8") : ("    addq $8, %" + addrReg64));
+                raw(("    addq $8, %" + addrReg64));
             }
             pushReg("r11");
         }
@@ -2069,8 +1917,7 @@ public class X86Backend {
         // address. `emitAlignedCall`'s own original restore ("movq
         // 8(%rsp), %rsp") already avoided this trap the same way; this
         // mirrors it exactly, just at a variable offset.
-        raw(isWindows() ? ("    mov rsp, [rsp+" + stackArgBytes + "]")
-                : ("    movq " + stackArgBytes + "(%rsp), %rsp"));
+        raw(("    movq " + stackArgBytes + "(%rsp), %rsp"));
     }
 
     /**
@@ -2089,12 +1936,6 @@ public class X86Backend {
      */
     private String buildStackArgReservation(long stackArgBytes) {
         int pad = alignPadFor(stackArgBytes);
-        if (isWindows()) {
-            return "    mov rax, rsp\n"
-                    + "    and rsp, -16\n"
-                    + "    sub rsp, " + pad + "\n"
-                    + "    mov [rsp], rax\n";
-        }
         return "    movq %rsp, %rax\n"
                 + "    andq $-16, %rsp\n"
                 + "    subq $" + pad + ", %rsp\n"
@@ -2127,17 +1968,11 @@ public class X86Backend {
         for (long i = 0; i < words / 2; i++) {
             long lo = i * 8;
             long hi = (words - 1 - i) * 8;
-            if (isWindows()) {
-                raw("    mov rax, [rsp+" + lo + "]");
-                raw("    mov r11, [rsp+" + hi + "]");
-                raw("    mov [rsp+" + lo + "], r11");
-                raw("    mov [rsp+" + hi + "], rax");
-            } else {
-                raw("    movq " + lo + "(%rsp), %rax");
-                raw("    movq " + hi + "(%rsp), %r11");
-                raw("    movq %r11, " + lo + "(%rsp)");
-                raw("    movq %rax, " + hi + "(%rsp)");
-            }
+            raw("    movq " + lo + "(%rsp), %rax");
+            raw("    movq " + hi + "(%rsp), %r11");
+            raw("    movq %r11, " + lo + "(%rsp)");
+            raw("    movq %rax, " + hi + "(%rsp)");
+            
         }
     }
 
@@ -2189,7 +2024,7 @@ public class X86Backend {
             try {
                 reverseStackArgWords(stackArgBytes);
                 if (winAbi) {
-                    raw(isWindows() ? "    sub rsp, 32" : "    subq $32, %rsp");
+                    raw("    subq $32, %rsp");
                 } else {
                     // Identical SysV "%al = vector registers used" rule as
                     // `emitAlignedCall`'s own non-win64 branch -- see that
@@ -2200,14 +2035,14 @@ public class X86Backend {
                     // -- worth fixing alongside the zero-stack-arg site
                     // rather than leaving this adjacent, same-class gap
                     // standing (this path is reached only via the AT&T-
-                    // syntax `linux` target -- win64/MASM's own `isWindows()`
-                    // branch is unconditionally `winAbi`, so it can never
-                    // reach this `else`).
+                    // syntax `linux` target -- the win64 path is
+                    // unconditionally `winAbi`, so it can never reach this
+                    // `else`).
                     raw("    movl $" + consumeVarargsXmmCount() + ", %eax");
                 }
                 callBody.run();
                 if (winAbi) {
-                    raw(isWindows() ? "    add rsp, 32" : "    addq $32, %rsp");
+                    raw("    addq $32, %rsp");
                 }
             } finally {
                 argTrackSuspendDepth--;
@@ -2232,54 +2067,40 @@ public class X86Backend {
         argTrackSuspendDepth++;
         try {
             boolean winAbi = isWinAbi(); // shadow space vs SysV varargs %al -- an ABI question, independent of syntax
-            if (isWindows()) {
-                raw("    mov rax, rsp");
-                raw("    and rsp, -16");
-                raw("    sub rsp, 16"); // reserved slot for the pre-align rsp -- keeps 16-alignment (subtracting a multiple of 16)
-                raw("    mov [rsp+8], rax");
-                if (winAbi) {
-                    raw("    sub rsp, 32"); // win64 shadow space
-                }
-                body.run();
-                if (winAbi) {
-                    raw("    add rsp, 32"); // undo shadow space -- rsp is back at the reserved slot
-                }
-                raw("    mov rsp, [rsp+8]"); // load the pre-align rsp straight into rsp -- also discards the reserved slot
+            raw("    movq %rsp, %rax");
+            raw("    andq $-16, %rsp");
+            raw("    subq $16, %rsp"); // reserved slot for the pre-align rsp -- keeps 16-alignment (subtracting a multiple of 16)
+            raw("    movq %rax, 8(%rsp)");
+            if (winAbi) {
+                raw("    subq $32, %rsp"); // win64 shadow space (WINDOWS_GNU_X64, AT&T syntax)
             } else {
-                raw("    movq %rsp, %rax");
-                raw("    andq $-16, %rsp");
-                raw("    subq $16, %rsp"); // reserved slot for the pre-align rsp -- keeps 16-alignment (subtracting a multiple of 16)
-                raw("    movq %rax, 8(%rsp)");
-                if (winAbi) {
-                    raw("    subq $32, %rsp"); // win64 shadow space (WINDOWS_GNU_X64, AT&T syntax)
-                } else {
-                    // SysV varargs rule: %al must hold the number of vector
-                    // (xmm) registers used for a varargs call (printf, most
-                    // visibly). This used to be unconditionally zeroed here
-                    // on the claim "this backend never passes float args in
-                    // xmm registers at all yet" -- stale even at the time it
-                    // was written (register-passed float arguments already
-                    // went through "POP FARGn" into a real xmm register by
-                    // then) and the root cause of a real, confirmed bug:
-                    // printf("%f", floatValue) always printed 0.000000, even
-                    // for one single, non-overflowing float argument with
-                    // zero relation to varargs-argument-count overflow --
-                    // glibc's own printf, trusting this (wrong) claim of
-                    // "0 vector registers used," never even looks at %xmm0
-                    // to find the real value. Fixed by reading the real,
-                    // compile-time-known count the front end already
-                    // computed for this exact call (`consumeVarargsXmmCount`
-                    // -- see its own doc comment) instead of a hardcoded
-                    // constant. Win64 has no equivalent convention at all,
-                    // so this whole branch stays SysV-only.
-                    raw("    movl $" + consumeVarargsXmmCount() + ", %eax");
-                }
-                body.run();
-                if (winAbi) {
-                    raw("    addq $32, %rsp"); // undo shadow space -- rsp is back at the reserved slot
-                }
-                raw("    movq 8(%rsp), %rsp"); // load the pre-align rsp straight into rsp -- also discards the reserved slot
+                // SysV varargs rule: %al must hold the number of vector
+                // (xmm) registers used for a varargs call (printf, most
+                // visibly). This used to be unconditionally zeroed here
+                // on the claim "this backend never passes float args in
+                // xmm registers at all yet" -- stale even at the time it
+                // was written (register-passed float arguments already
+                // went through "POP FARGn" into a real xmm register by
+                // then) and the root cause of a real, confirmed bug:
+                // printf("%f", floatValue) always printed 0.000000, even
+                // for one single, non-overflowing float argument with
+                // zero relation to varargs-argument-count overflow --
+                // glibc's own printf, trusting this (wrong) claim of
+                // "0 vector registers used," never even looks at %xmm0
+                // to find the real value. Fixed by reading the real,
+                // compile-time-known count the front end already
+                // computed for this exact call (`consumeVarargsXmmCount`
+                // -- see its own doc comment) instead of a hardcoded
+                // constant. Win64 has no equivalent convention at all,
+                // so this whole branch stays SysV-only.
+                raw("    movl $" + consumeVarargsXmmCount() + ", %eax");
             }
+            body.run();
+            if (winAbi) {
+                raw("    addq $32, %rsp"); // undo shadow space -- rsp is back at the reserved slot
+            }
+            raw("    movq 8(%rsp), %rsp"); // load the pre-align rsp straight into rsp -- also discards the reserved slot
+            
         } finally {
             argTrackSuspendDepth--;
         }
@@ -2287,13 +2108,13 @@ public class X86Backend {
 
     private void emitCallByName(String name) {
         xvSpillAll();
-        raw(isWindows() ? ("    call " + name) : ("    call " + name));
+        raw(("    call " + name));
         xvReloadAll();
     }
 
     private void emitCallIndirect(String reg64) {
         xvSpillAll();
-        raw(isWindows() ? ("    call " + reg64) : ("    call *%" + reg64));
+        raw(("    call *%" + reg64));
         xvReloadAll();
     }
 
@@ -2345,13 +2166,9 @@ public class X86Backend {
                 xvHome.clear();
                 xvWidth.clear();
                 raw("");
-                if (isWindows()) {
-                    raw("PUBLIC " + name);
-                    raw(name + " PROC");
-                } else {
-                    raw(".globl " + name);
-                    raw(name + ":");
-                }
+                raw(".globl " + name);
+                raw(name + ":");
+                
                 pushReg("rbp");
                 movRegToRegRbpFromRsp();
                 csrFuncStart = out.length();
@@ -2392,9 +2209,6 @@ public class X86Backend {
                             + "' keeps variables in r13/r14 but also has an instruction that uses them as scratch");
                 }
                 finishCalleeSaved();
-                if (isWindows()) {
-                    raw(currentFuncName + " ENDP");
-                }
                 return;
             }
             case "ALLOC": {
@@ -2404,13 +2218,10 @@ public class X86Backend {
                 if (csrAllocPos < 0 && callBufferStack.isEmpty() && csrFuncStart >= 0) {
                     csrAllocPos = out.length();
                     csrAllocBytes = aligned;
-                    csrAllocLine = isWindows() ? ("    sub rsp, " + aligned + "\n") : ("    subq $" + aligned + ", %rsp\n");
+                    csrAllocLine = ("    subq $" + aligned + ", %rsp\n");
                 }
-                if (isWindows()) {
-                    raw("    sub rsp, " + aligned);
-                } else {
-                    raw("    subq $" + aligned + ", %rsp");
-                }
+                raw("    subq $" + aligned + ", %rsp");
+                
                 return;
             }
             case "ADDR": {
@@ -2620,7 +2431,7 @@ public class X86Backend {
                     // its own local), so the argument register still
                     // holds its true incoming value here untouched.
                     int idx = Integer.parseInt(operand.substring(3));
-                    raw(isWindows() ? ("    mov rax, " + argReg(idx)) : ("    movq %" + argReg(idx) + ", %rax"));
+                    raw(("    movq %" + argReg(idx) + ", %rax"));
                 } else if (operand.startsWith("FARG")) {
                     // The float-bank counterpart of the "ARG" branch just
                     // above -- the incoming parameter's own real bits are
@@ -2819,7 +2630,7 @@ public class X86Backend {
             case "R_BRF": {
                 // "R_BRF %tN @label" -- jump if the temp is zero (replaces CMP + JMP).
                 String reg = rfReg(line.get(1).text);
-                raw(isWindows() ? ("    test " + reg + ", " + reg) : ("    testq %" + reg + ", %" + reg));
+                raw(("    testq %" + reg + ", %" + reg));
                 raw("    je " + mangleLabel(line.get(2).text));
                 return;
             }
@@ -2939,12 +2750,8 @@ public class X86Backend {
                 int gn = Integer.parseInt(line.get(1).text);
                 String src = line.get(3).text;
                 if (rfIsImm(src)) {
-                    if (floatPoolOn()) {
-                        rfLoadXmm(src, xvReg(line.get(2).text), gn);
-                    } else {
-                        movImmToReg(RF_SCRATCH, rfImm(src));
-                        rfGprToXmm(xvReg(line.get(2).text), RF_SCRATCH, gn);
-                    }
+                    rfLoadXmm(src, xvReg(line.get(2).text), gn);
+                    
                 } else {
                     rfGprToXmm(xvReg(line.get(2).text), rfReg(src), gn);
                 }
@@ -2978,7 +2785,7 @@ public class X86Backend {
                     rfGprToXmm(xk, "r10", 8);
                     floatResultInR10 = false;
                 } else {
-                    raw(isWindows() ? ("    movaps " + xk + ", xmm0") : ("    movaps %xmm0, %" + xk));
+                    raw(("    movaps %xmm0, %" + xk));
                 }
                 return;
             }
@@ -3018,7 +2825,7 @@ public class X86Backend {
                 int fsize = (int) Long.parseLong(line.get(2).text);
                 String src = line.get(3).text;
                 if (rfIsXvar(src)) {
-                    raw(isWindows() ? ("    movaps " + xr + ", " + xvReg(src)) : ("    movaps %" + xvReg(src) + ", %" + xr));
+                    raw(("    movaps %" + xvReg(src) + ", %" + xr));
                 } else if (rfIsTemp(src)) {
                     movRegToXmm(rfReg(src), xr);
                 } else {
@@ -3045,7 +2852,7 @@ public class X86Backend {
                         movMemToReg("rax", rfSlot(src));
                     }
                 } else if (rfIsXvar(src)) {
-                    raw(isWindows() ? ("    movaps xmm0, " + xvReg(src)) : ("    movaps %" + xvReg(src) + ", %xmm0"));
+                    raw(("    movaps %" + xvReg(src) + ", %xmm0"));
                 } else if (rfIsTemp(src)) {
                     movRegToXmm(rfReg(src), "xmm0");
                 } else {
@@ -3065,11 +2872,8 @@ public class X86Backend {
                 popReg("rbx");
                 popReg("rax");
                 String op = mnemonic.equals("ADD_INT") ? "add" : mnemonic.equals("SUB_INT") ? "sub" : "imul";
-                if (isWindows()) {
-                    raw("    " + op + " rax, rbx");
-                } else {
-                    raw("    " + op + "q %rbx, %rax");
-                }
+                raw("    " + op + "q %rbx, %rax");
+                
                 pushReg("rax");
                 return;
             }
@@ -3087,39 +2891,22 @@ public class X86Backend {
                 boolean isDiv = mnemonic.equals("SDIV_INT");
                 String notMinusOne = newInternalLabel("sdiv_normal");
                 String doneLabel = newInternalLabel("sdiv_done");
-                if (isWindows()) {
-                    raw("    cmp rbx, -1");
-                    raw("    jne " + notMinusOne);
-                    if (isDiv) {
-                        raw("    neg rax");
-                    } else {
-                        raw("    xor rax, rax");
-                    }
-                    raw("    jmp " + doneLabel);
-                    raw(notMinusOne + ":");
-                    raw("    cqo");
-                    raw("    idiv rbx");
-                    if (!isDiv) {
-                        raw("    mov rax, rdx");
-                    }
-                    raw(doneLabel + ":");
+                raw("    cmpq $-1, %rbx");
+                raw("    jne " + notMinusOne);
+                if (isDiv) {
+                    raw("    negq %rax");
                 } else {
-                    raw("    cmpq $-1, %rbx");
-                    raw("    jne " + notMinusOne);
-                    if (isDiv) {
-                        raw("    negq %rax");
-                    } else {
-                        raw("    xorq %rax, %rax");
-                    }
-                    raw("    jmp " + doneLabel);
-                    raw(notMinusOne + ":");
-                    raw("    cqto");
-                    raw("    idivq %rbx");
-                    if (!isDiv) {
-                        raw("    movq %rdx, %rax");
-                    }
-                    raw(doneLabel + ":");
+                    raw("    xorq %rax, %rax");
                 }
+                raw("    jmp " + doneLabel);
+                raw(notMinusOne + ":");
+                raw("    cqto");
+                raw("    idivq %rbx");
+                if (!isDiv) {
+                    raw("    movq %rdx, %rax");
+                }
+                raw(doneLabel + ":");
+                
                 pushReg("rax");
                 return;
             }
@@ -3137,15 +2924,10 @@ public class X86Backend {
                         : mnemonic.equals("SLT_EQ_INT") ? "setle"
                         : mnemonic.equals("SGT_EQ_INT") ? "setge"
                         : "setg";
-                if (isWindows()) {
-                    raw("    cmp rax, rbx");
-                    raw("    " + scc + " al");
-                    raw("    movzx rax, al");
-                } else {
-                    raw("    cmpq %rbx, %rax");
-                    raw("    " + scc + " %al");
-                    raw("    movzbq %al, %rax");
-                }
+                raw("    cmpq %rbx, %rax");
+                raw("    " + scc + " %al");
+                raw("    movzbq %al, %rax");
+                
                 pushReg("rax");
                 return;
             }
@@ -3166,13 +2948,9 @@ public class X86Backend {
                 popReg("rax");
                 zeroExtendReg("rax", dsize);
                 zeroExtendReg("rbx", dsize);
-                if (isWindows()) {
-                    raw("    xor rdx, rdx");
-                    raw("    div rbx");
-                } else {
-                    raw("    xorq %rdx, %rdx");
-                    raw("    divq %rbx");
-                }
+                raw("    xorq %rdx, %rdx");
+                raw("    divq %rbx");
+                
                 pushReg(mnemonic.equals("DIV_INT") ? "rax" : "rdx");
                 return;
             }
@@ -3190,7 +2968,7 @@ public class X86Backend {
                 popReg("rax"); // value
                 // %rcx is the shift-count register but also an argument register: save it around the shift (see LOOKUP_ARRAY's small-array path).
                 pushReg("rcx");
-                raw(isWindows() ? "    mov rcx, rbx" : "    movq %rbx, %rcx");
+                raw("    movq %rbx, %rcx");
                 zeroExtendReg("rcx", ssize);
                 emitShiftCore(mnemonic, ssize, "rax");
                 popReg("rcx");
@@ -3206,7 +2984,7 @@ public class X86Backend {
                 popReg("rbx");
                 popReg("rax");
                 String bop = mnemonic.equals("BITS_OR") ? "or" : mnemonic.equals("BITS_AND") ? "and" : "xor";
-                raw(isWindows() ? ("    " + bop + " rax, rbx") : ("    " + bop + "q %rbx, %rax"));
+                raw(("    " + bop + "q %rbx, %rax"));
                 zeroExtendReg("rax", bsize);
                 pushReg("rax");
                 return;
@@ -3215,7 +2993,7 @@ public class X86Backend {
                 // "BITS_NOT size": the bitwise complement, truncated to the operand width (u8: ~0 = 255).
                 int nsize = line.size() > 1 ? (int) Long.parseLong(line.get(1).text) : 8;
                 popReg("rax");
-                raw(isWindows() ? "    not rax" : "    notq %rax");
+                raw("    notq %rax");
                 zeroExtendReg("rax", nsize);
                 pushReg("rax");
                 return;
@@ -3249,15 +3027,10 @@ public class X86Backend {
                         : mnemonic.equals("LT_EQ_INT") ? "setbe"
                         : mnemonic.equals("GT_EQ_INT") ? "setae"
                         : "seta"; // GT_INT (unsigned; see DIV_INT's own note on signedness)
-                if (isWindows()) {
-                    raw("    cmp rax, rbx");
-                    raw("    " + setcc + " al");
-                    raw("    movzx rax, al");
-                } else {
-                    raw("    cmpq %rbx, %rax");
-                    raw("    " + setcc + " %al");
-                    raw("    movzbq %al, %rax");
-                }
+                raw("    cmpq %rbx, %rax");
+                raw("    " + setcc + " %al");
+                raw("    movzbq %al, %rax");
+                
                 pushReg("rax");
                 return;
             }
@@ -3281,7 +3054,7 @@ public class X86Backend {
                 // above), xmm1 the right, so "opss %xmm1, %xmm0" gives
                 // left-OP-right, in the correct order for the
                 // non-commutative SUB_FLOAT/DIV_FLOAT cases.
-                raw(isWindows() ? ("    " + op + sfx + " " + rfXmmA() + ", " + rfXmmB()) : ("    " + op + sfx + " %" + rfXmmB() + ", %" + rfXmmA()));
+                raw(("    " + op + sfx + " %" + rfXmmB() + ", %" + rfXmmA()));
                 movXmmToReg(rfXmmA(), "rax");
                 pushReg("rax");
                 return;
@@ -3308,20 +3081,16 @@ public class X86Backend {
                 popReg("rax");
                 movRegToXmm("rax", rfXmmA());
                 movRegToXmm("rbx", rfXmmB());
-                raw(isWindows() ? ("    " + cmp + " " + rfXmmA() + ", " + rfXmmB()) : ("    " + cmp + " %" + rfXmmB() + ", %" + rfXmmA()));
+                raw(("    " + cmp + " %" + rfXmmB() + ", %" + rfXmmA()));
                 String setcc = mnemonic.equals("EQ_FLOAT") ? "sete"
                         : mnemonic.equals("NEQ_FLOAT") ? "setne"
                         : mnemonic.equals("LT_FLOAT") ? "setb"
                         : mnemonic.equals("LT_EQ_FLOAT") ? "setbe"
                         : mnemonic.equals("GT_EQ_FLOAT") ? "setae"
                         : "seta"; // GT_FLOAT
-                if (isWindows()) {
-                    raw("    " + setcc + " al");
-                    raw("    movzx rax, al");
-                } else {
-                    raw("    " + setcc + " %al");
-                    raw("    movzbq %al, %rax");
-                }
+                raw("    " + setcc + " %al");
+                raw("    movzbq %al, %rax");
+                
                 pushReg("rax");
                 return;
             }
@@ -3329,21 +3098,19 @@ public class X86Backend {
             case "OR": {
                 popReg("rbx");
                 popReg("rax");
-                raw(isWindows()
-                        ? ("    " + (mnemonic.equals("AND") ? "and" : "or") + " al, bl")
-                        : ("    " + (mnemonic.equals("AND") ? "and" : "or") + "b %bl, %al"));
+                raw(("    " + (mnemonic.equals("AND") ? "and" : "or") + "b %bl, %al"));
                 pushReg("rax");
                 return;
             }
             case "NOT": {
                 popReg("rax");
-                raw(isWindows() ? "    xor al, 1" : "    xorb $1, %al");
+                raw("    xorb $1, %al");
                 pushReg("rax");
                 return;
             }
             case "NEG": {
                 popReg("rax");
-                raw(isWindows() ? "    neg rax" : "    negq %rax");
+                raw("    negq %rax");
                 pushReg("rax");
                 return;
             }
@@ -3353,10 +3120,10 @@ public class X86Backend {
                 int size = (int) Long.parseLong(line.get(1).text);
                 popReg("rax");
                 if (size <= 4) {
-                    raw(isWindows() ? "    xor eax, 80000000h" : "    xorl $0x80000000, %eax");
+                    raw("    xorl $0x80000000, %eax");
                 } else {
                     movImmToReg("rbx", Long.MIN_VALUE);
-                    raw(isWindows() ? "    xor rax, rbx" : "    xorq %rbx, %rax");
+                    raw("    xorq %rbx, %rax");
                 }
                 pushReg("rax");
                 return;
@@ -3364,9 +3131,7 @@ public class X86Backend {
             case "INC_INT":
             case "DEC_INT": {
                 popReg("rax");
-                raw(isWindows()
-                        ? ("    " + (mnemonic.equals("INC_INT") ? "inc" : "dec") + " rax")
-                        : ("    " + (mnemonic.equals("INC_INT") ? "inc" : "dec") + "q %rax"));
+                raw(("    " + (mnemonic.equals("INC_INT") ? "inc" : "dec") + "q %rax"));
                 pushReg("rax");
                 return;
             }
@@ -3388,7 +3153,7 @@ public class X86Backend {
                 movRegToXmm("rbx", rfXmmB());
                 String sfx = sseSuffix(size);
                 String op = mnemonic.equals("INC_FLOAT") ? "add" : "sub";
-                raw(isWindows() ? ("    " + op + sfx + " " + rfXmmA() + ", " + rfXmmB()) : ("    " + op + sfx + " %" + rfXmmB() + ", %" + rfXmmA()));
+                raw(("    " + op + sfx + " %" + rfXmmB() + ", %" + rfXmmA()));
                 movXmmToReg(rfXmmA(), "rax");
                 pushReg("rax");
                 return;
@@ -3403,25 +3168,23 @@ public class X86Backend {
                 // *next* JMP becomes a conditional "jump if false"
                 // rather than an unconditional jump; see the JMP case.
                 popReg("rax");
-                raw(isWindows() ? "    test rax, rax" : "    testq %rax, %rax");
+                raw("    testq %rax, %rax");
                 lastWasCmp = true;
                 return;
             }
             case "JMP": {
                 String label = mangleLabel(line.get(1).text);
                 if (wasCmp) {
-                    raw(isWindows() ? ("    je " + label) : ("    je " + label));
+                    raw(("    je " + label));
                 } else {
-                    raw(isWindows() ? ("    jmp " + label) : ("    jmp " + label));
+                    raw(("    jmp " + label));
                 }
                 return;
             }
             case "SEXT": {
                 int srcSize = (int) Long.parseLong(line.get(1).text);
                 popReg("rax");
-                if (isWindows()) {
-                    raw("    movsx rax, " + sizedRegWin("rax", srcSize));
-                } else if (srcSize == 4) {
+                if (srcSize == 4) {
                     raw("    movslq %eax, %rax");
                 } else {
                     raw("    movs" + movSuffix(srcSize) + "q %" + sizedReg("rax", srcSize) + ", %rax");
@@ -3430,9 +3193,7 @@ public class X86Backend {
                     // Narrow results are kept zero-extended in the stack word: drop the sign bits above dstSize.
                     int sextDst = (int) Long.parseLong(line.get(2).text);
                     if (sextDst < 8) {
-                        if (isWindows()) {
-                            raw(sextDst == 4 ? "    mov eax, eax" : "    movzx rax, " + sizedRegWin("rax", sextDst));
-                        } else if (sextDst == 4) {
+                        if (sextDst == 4) {
                             raw("    movl %eax, %eax");
                         } else {
                             raw("    movz" + movSuffix(sextDst) + "q %" + sizedReg("rax", sextDst) + ", %rax");
@@ -3449,13 +3210,7 @@ public class X86Backend {
                 int dstSize = (int) Long.parseLong(line.get(2).text);
                 popReg("rax");
                 if (dstSize < 8) {
-                    if (isWindows()) {
-                        if (dstSize == 4) {
-                            raw("    mov eax, eax");
-                        } else {
-                            raw("    movzx rax, " + sizedRegWin("rax", dstSize));
-                        }
-                    } else if (dstSize == 4) {
+                    if (dstSize == 4) {
                         raw("    movl %eax, %eax");
                     } else {
                         raw("    movz" + movSuffix(dstSize) + "q %" + sizedReg("rax", dstSize) + ", %rax");
@@ -3467,9 +3222,7 @@ public class X86Backend {
             case "ZEXT": {
                 int srcSize = (int) Long.parseLong(line.get(1).text);
                 popReg("rax");
-                if (isWindows()) {
-                    raw("    movzx rax, " + sizedRegWin("rax", srcSize));
-                } else if (srcSize == 4) {
+                if (srcSize == 4) {
                     raw("    movl %eax, %eax"); // writing the 32-bit half auto-zeroes the upper 32 bits
                 } else if (srcSize < 8) {
                     raw("    movz" + movSuffix(srcSize) + "q %" + sizedReg("rax", srcSize) + ", %rax");
@@ -3509,7 +3262,7 @@ public class X86Backend {
                 popReg("rax");
                 movRegToXmm("rax", rfXmmA());
                 String cv = fromSize == 4 ? "cvtss2sd" : "cvtsd2ss";
-                raw(isWindows() ? ("    " + cv + " " + rfXmmA() + ", " + rfXmmA()) : ("    " + cv + " %" + rfXmmA() + ", %" + rfXmmA()));
+                raw(("    " + cv + " %" + rfXmmA() + ", %" + rfXmmA()));
                 if (toSize == 4) {
                     rfXmmToGpr(rfXmmA(), "rax", 4); // movd: zero-extends the 32 result bits
                 } else {
@@ -3589,7 +3342,7 @@ public class X86Backend {
                 // runs for a later one.
                 popReg("rax");
                 movRegToXmm("rax", rfXmmA());
-                raw(isWindows() ? ("    cvtss2sd " + rfXmmA() + ", " + rfXmmA()) : ("    cvtss2sd %" + rfXmmA() + ", %" + rfXmmA()));
+                raw(("    cvtss2sd %" + rfXmmA() + ", %" + rfXmmA()));
                 movXmmToReg(rfXmmA(), "rax");
                 pushReg("rax");
                 return;
@@ -3614,7 +3367,7 @@ public class X86Backend {
                 int size = (int) Long.parseLong(line.get(1).text);
                 popReg("rbx"); // field offset (from PUSH_FIELDNAME)
                 popReg("rax"); // base address
-                raw(isWindows() ? "    add rax, rbx" : "    addq %rbx, %rax");
+                raw("    addq %rbx, %rax");
                 pushReg("rax"); // the computed field address itself
                 return;
             }
@@ -3648,34 +3401,14 @@ public class X86Backend {
                     // A field inside one word. The block's words are reversed (the front word is the deepest), so the byte at struct offset X lives at
                     // rsp + (totalWords-1-X/8)*8 + X%8. (The formula below is right only for a whole aligned word or a wider field: for a narrower field it
                     // pointed into the wrong half of a word, e.g. `arr[i].a` for a u32 at offset 8 read the byte at offset 12.)
-                    if (isWindows()) {
-                        raw("    mov rax, rbx");
-                        raw("    and rax, -8");
-                        raw("    neg rax");
-                        raw("    add rax, " + ((totalWords - 1) * 8));
-                        raw("    and rbx, 7");
-                        raw("    add rax, rbx");
-                        raw("    add rax, rsp");
-                    } else {
-                        raw("    movq %rbx, %rax");
-                        raw("    andq $-8, %rax");
-                        raw("    negq %rax");
-                        raw("    addq $" + ((totalWords - 1) * 8) + ", %rax");
-                        raw("    andq $7, %rbx");
-                        raw("    addq %rbx, %rax");
-                        raw("    addq %rsp, %rax");
-                    }
-                } else if (isWindows()) {
-                    // a field wider than a word: rax = address of its first byte, r14 = its offset inside that word (see extractWordsFromReversedBlock)
-                    raw("    mov r14, rbx");
-                    raw("    and r14, 7");
-                    raw("    shr rbx, 3");
-                    raw("    imul rbx, 8");
-                    raw("    mov rax, " + (totalWords * 8));
-                    raw("    sub rax, 8");
-                    raw("    sub rax, rbx");
-                    raw("    add rax, r14");
-                    raw("    add rax, rsp");
+                    raw("    movq %rbx, %rax");
+                    raw("    andq $-8, %rax");
+                    raw("    negq %rax");
+                    raw("    addq $" + ((totalWords - 1) * 8) + ", %rax");
+                    raw("    andq $7, %rbx");
+                    raw("    addq %rbx, %rax");
+                    raw("    addq %rsp, %rax");
+                    
                 } else {
                     raw("    movq %rbx, %r14");
                     raw("    andq $7, %r14");
@@ -3692,38 +3425,24 @@ public class X86Backend {
                     // A fixed array of at most 8 bytes: its bytes may straddle two of the block's (reversed) words, so they are not contiguous in
                     // memory. rax = address of the field's first byte, rbx = its offset within its word. Read the word it starts in and the next
                     // struct word (the next-lower address) -- only when the field really straddles, otherwise the same word again, so nothing below the pushed block is read -- and shift the pair together (shrd); bytes past the field are junk, as for any small array.
-                    if (isWindows()) {
-                        raw("    mov r14, rcx");
-                        raw("    mov rcx, rbx");
-                        raw("    shl rcx, 3");
-                        raw("    sub rax, rbx");
-                        raw("    lea r11, [rax-8]");
-                        raw("    cmp rbx, " + (8 - size));
-                        raw("    cmovbe r11, rax");   // no straddle: read the same word again, never the word below the block
-                        raw("    mov r11, [r11]");
-                        raw("    mov rax, [rax]");
-                        raw("    shrd rax, r11, cl");
-                        raw("    mov rcx, r14");
-                        raw("    add rsp, " + (totalWords * 8));
-                    } else {
-                        raw("    movq %rcx, %r14");
-                        raw("    movq %rbx, %rcx");
-                        raw("    shlq $3, %rcx");
-                        raw("    subq %rbx, %rax");
-                        raw("    leaq -8(%rax), %r11");
-                        raw("    cmpq $" + (8 - size) + ", %rbx");
-                        raw("    cmovbeq %rax, %r11");   // no straddle: read the same word again, never the word below the block
-                        raw("    movq (%r11), %r11");
-                        raw("    movq (%rax), %rax");
-                        raw("    shrdq %cl, %r11, %rax");
-                        raw("    movq %r14, %rcx");
-                        raw("    addq $" + (totalWords * 8) + ", %rsp");
-                    }
+                    raw("    movq %rcx, %r14");
+                    raw("    movq %rbx, %rcx");
+                    raw("    shlq $3, %rcx");
+                    raw("    subq %rbx, %rax");
+                    raw("    leaq -8(%rax), %r11");
+                    raw("    cmpq $" + (8 - size) + ", %rbx");
+                    raw("    cmovbeq %rax, %r11");   // no straddle: read the same word again, never the word below the block
+                    raw("    movq (%r11), %r11");
+                    raw("    movq (%rax), %rax");
+                    raw("    shrdq %cl, %r11, %rax");
+                    raw("    movq %r14, %rcx");
+                    raw("    addq $" + (totalWords * 8) + ", %rsp");
+                    
                     pushReg("rax");
                     lastValueBlockSize = -size;
                 } else if (size <= 8) {
                     loadSizedFromAddr("rax", "rax", size);
-                    raw(isWindows() ? ("    add rsp, " + (totalWords * 8)) : ("    addq $" + (totalWords * 8) + ", %rsp"));
+                    raw(("    addq $" + (totalWords * 8) + ", %rsp"));
                     pushReg("rax");
                 } else {
                     // A multi-word nested field (a struct- or array-typed
@@ -3784,13 +3503,9 @@ public class X86Backend {
                 int elemSize = (int) Long.parseLong(line.get(1).text);
                 popReg("rbx"); // index
                 popReg("rax"); // base address
-                if (isWindows()) {
-                    raw("    imul rbx, " + elemSize);
-                    raw("    add rax, rbx");
-                } else {
-                    raw("    imulq $" + elemSize + ", %rbx, %rbx");
-                    raw("    addq %rbx, %rax");
-                }
+                raw("    imulq $" + elemSize + ", %rbx, %rbx");
+                raw("    addq %rbx, %rax");
+                
                 pushReg("rax");
                 return;
             }
@@ -3840,34 +3555,24 @@ public class X86Backend {
                     // %rcx is both the shift-count register and an argument register (4th SysV, 1st win64): a finished earlier argument
                     // of the call being assembled may already sit in it (`printf(fmt, a, s[0], s[1], s[2])` popped s[0]/s[1] into their
                     // registers before this lookup runs), so save and restore it around the shift.
-                    if (isWindows()) {
-                        raw("    imul rbx, " + (elemSize * 8) + " ; index*elemSize, in bits");
-                        raw("    push rcx");
-                        raw("    mov rcx, rbx");
-                        raw("    shr rax, cl");
-                        raw("    pop rcx");
-                    } else {
-                        raw("    imulq $" + (elemSize * 8) + ", %rbx, %rbx"); // index*elemSize, in bits
-                        raw("    pushq %rcx");
-                        raw("    movq %rbx, %rcx");
-                        raw("    shrq %cl, %rax");
-                        raw("    popq %rcx");
-                    }
+                    raw("    imulq $" + (elemSize * 8) + ", %rbx, %rbx"); // index*elemSize, in bits
+                    raw("    pushq %rcx");
+                    raw("    movq %rbx, %rcx");
+                    raw("    shrq %cl, %rax");
+                    raw("    popq %rcx");
+                    
                     if (isOddSize(elemSize)) {
                         // 3, 5, 6, 7 bytes (a row of a `u8[3][2]`): keep exactly those bytes. (The 1-byte `movzbl` used to be applied here too,
                         // cutting a row down to its first element.)
                         int sh = 64 - elemSize * 8;
-                        raw(isWindows() ? ("    shl rax, " + sh) : ("    shlq $" + sh + ", %rax"));
-                        raw(isWindows() ? ("    shr rax, " + sh) : ("    shrq $" + sh + ", %rax"));
+                        raw(("    shlq $" + sh + ", %rax"));
+                        raw(("    shrq $" + sh + ", %rax"));
                     } else if (elemSize < 8) {
                         // `andq` takes only a sign-extended 32-bit immediate, so a 4-byte
                         // mask (0xFFFFFFFF) was rejected by the assembler; a zero-extending
                         // move does the same job for 1, 2 and 4 bytes.
-                        if (isWindows()) {
-                            raw(elemSize == 4 ? "    mov eax, eax" : elemSize == 2 ? "    movzx eax, ax" : "    movzx eax, al");
-                        } else {
-                            raw(elemSize == 4 ? "    movl %eax, %eax" : elemSize == 2 ? "    movzwl %ax, %eax" : "    movzbl %al, %eax");
-                        }
+                        raw(elemSize == 4 ? "    movl %eax, %eax" : elemSize == 2 ? "    movzwl %ax, %eax" : "    movzbl %al, %eax");
+                        
                     }
                     pushReg("rax");
                     if (resultIsSmallArray) {
@@ -3891,13 +3596,9 @@ public class X86Backend {
                     // not a guess.
                     popReg("rbx"); // index
                     popReg("rax"); // base address (a plain pointer value)
-                    if (isWindows()) {
-                        raw("    imul rbx, " + elemSize);
-                        raw("    add rax, rbx");
-                    } else {
-                        raw("    imulq $" + elemSize + ", %rbx, %rbx");
-                        raw("    addq %rbx, %rax");
-                    }
+                    raw("    imulq $" + elemSize + ", %rbx, %rbx");
+                    raw("    addq %rbx, %rax");
+                    
                     pushSizedOrBlockFromAddr("rax", elemSize);
                     if (resultIsSmallArray) {
                         lastValueBlockSize = -elemSize;
@@ -3908,11 +3609,8 @@ public class X86Backend {
                 }
                 long totalWords = (pendingBlockSize + 7) / 8;
                 popReg("rbx"); // index
-                if (isWindows()) {
-                    raw("    imul rbx, " + elemSize);
-                } else {
-                    raw("    imulq $" + elemSize + ", %rbx, %rbx");
-                }
+                raw("    imulq $" + elemSize + ", %rbx, %rbx");
+                
                 // rbx now holds the target element's byte offset from the
                 // array's own front (source-offset order). The pushed
                 // block's own *words* are reversed (word i-from-front
@@ -3977,55 +3675,32 @@ public class X86Backend {
                 // register in either ABI, and (unlike `%rdx`) never used
                 // to carry a live, not-yet-consumed value across separate
                 // LOOKUP_ARRAY invocations anywhere else in this file.
-                if (isWindows()) {
-                    raw("    mov r14, rbx");
-                    raw("    and r14, 7");
-                    raw("    shr rbx, 3");
-                    raw("    imul rbx, 8");
-                    raw("    mov rax, " + (totalWords * 8));
-                    raw("    sub rax, 8");
-                    raw("    sub rax, rbx");
-                    raw("    add rax, r14");
-                    raw("    add rax, rsp");
-                } else {
-                    raw("    movq %rbx, %r14");
-                    raw("    andq $7, %r14");
-                    raw("    shrq $3, %rbx");
-                    raw("    imulq $8, %rbx, %rbx");
-                    raw("    movq $" + (totalWords * 8) + ", %rax");
-                    raw("    subq $8, %rax");
-                    raw("    subq %rbx, %rax");
-                    raw("    addq %r14, %rax");
-                    raw("    addq %rsp, %rax");
-                }
+                raw("    movq %rbx, %r14");
+                raw("    andq $7, %r14");
+                raw("    shrq $3, %rbx");
+                raw("    imulq $8, %rbx, %rbx");
+                raw("    movq $" + (totalWords * 8) + ", %rax");
+                raw("    subq $8, %rax");
+                raw("    subq %rbx, %rax");
+                raw("    addq %r14, %rax");
+                raw("    addq %rsp, %rax");
+                
                 if (isOddSize(elemSize)) {
                     // A 3, 5, 6 or 7 byte element (a row of a `u16[3][2]`) can start in one source word and end in the next, and the words of
                     // the pushed block are in reverse order (word k+1 sits 8 bytes BELOW word k), so its bytes are not contiguous in memory and a
                     // plain load at `rax` reads the bytes above the block instead of the second word. Same shrd extraction as the multi-word case
                     // below, for one result word: `rax` = address of the element's first byte, `r14` = its offset inside the word (0..7).
-                    if (isWindows()) {
-                        raw("    mov r11, rax");
-                        raw("    sub r11, r14");
-                        raw("    shl r14, 3");
-                        raw("    mov r13, rcx");
-                        raw("    mov rcx, r14");
-                        raw("    mov rax, [r11]");
-                        raw("    mov r14, [r11-8]");
-                        raw("    shrd rax, r14, cl");
-                        raw("    mov rcx, r13");
-                        raw("    add rsp, " + (totalWords * 8));
-                    } else {
-                        raw("    movq %rax, %r11");
-                        raw("    subq %r14, %r11");
-                        raw("    shlq $3, %r14");
-                        raw("    movq %rcx, %r13");
-                        raw("    movq %r14, %rcx");
-                        raw("    movq (%r11), %rax");
-                        raw("    movq -8(%r11), %r14");
-                        raw("    shrdq %cl, %r14, %rax");
-                        raw("    movq %r13, %rcx");
-                        raw("    addq $" + (totalWords * 8) + ", %rsp");
-                    }
+                    raw("    movq %rax, %r11");
+                    raw("    subq %r14, %r11");
+                    raw("    shlq $3, %r14");
+                    raw("    movq %rcx, %r13");
+                    raw("    movq %r14, %rcx");
+                    raw("    movq (%r11), %rax");
+                    raw("    movq -8(%r11), %r14");
+                    raw("    shrdq %cl, %r14, %rax");
+                    raw("    movq %r13, %rcx");
+                    raw("    addq $" + (totalWords * 8) + ", %rsp");
+                    
                     pushReg("rax");
                     if (resultIsSmallArray) {
                         lastValueBlockSize = -elemSize;
@@ -4034,7 +3709,7 @@ public class X86Backend {
                     loadSizedFromAddr("rax", "rax", elemSize);
                     // discard the whole original block now that the one
                     // element we need is safely copied into rax.
-                    raw(isWindows() ? ("    add rsp, " + (totalWords * 8)) : ("    addq $" + (totalWords * 8) + ", %rsp"));
+                    raw(("    addq $" + (totalWords * 8) + ", %rsp"));
                     pushReg("rax");
                     if (resultIsSmallArray) {
                         lastValueBlockSize = -elemSize;
@@ -4065,15 +3740,10 @@ public class X86Backend {
                 int elemSize = (int) Long.parseLong(line.get(1).text);
                 popReg("rbx"); // index
                 popReg("rax"); // dynarray pointer
-                if (isWindows()) {
-                    raw("    imul rbx, " + elemSize);
-                    raw("    add rax, rbx");
-                    raw("    add rax, 16");
-                } else {
-                    raw("    imulq $" + elemSize + ", %rbx, %rbx");
-                    raw("    addq %rbx, %rax");
-                    raw("    addq $16, %rax");
-                }
+                raw("    imulq $" + elemSize + ", %rbx, %rbx");
+                raw("    addq %rbx, %rax");
+                raw("    addq $16, %rax");
+                
                 if (mnemonic.equals("LOOKUP_DYN_LHS")) {
                     pushReg("rax");
                 } else {
@@ -4113,7 +3783,7 @@ public class X86Backend {
                 // wasn't checked.
                 if (mnemonic.equals("STACK_LOCK")) {
                     long n = Long.parseLong(line.get(1).text);
-                    raw(isWindows() ? ("    sub rsp, " + n) : ("    subq $" + n + ", %rsp"));
+                    raw(("    subq $" + n + ", %rsp"));
                 }
                 return;
             }
@@ -4154,26 +3824,20 @@ public class X86Backend {
                     emitNewRepack(size, line);
                     return;
                 }
-                raw(isWindows() ? "    mov r12, rsp" : "    movq %rsp, %r12"); // r12: source address -- the construction's own tightly-packed image already sitting on the stack, callee-saved, survives the malloc call below
+                raw("    movq %rsp, %r12"); // r12: source address -- the construction's own tightly-packed image already sitting on the stack, callee-saved, survives the malloc call below
                 emitMallocCall(size);
-                raw(isWindows() ? "    mov r14, rax" : "    movq %rax, %r14"); // r14: the fresh buffer, also callee-saved
+                raw("    movq %rax, %r14"); // r14: the fresh buffer, also callee-saved
                 // A failed malloc leaves r14 null: skip the copy (it would fault on address 0); the bytecode's own null check throws.
                 String newDone = newInternalLabel("new_done");
-                raw(isWindows() ? "    test r14, r14" : "    testq %r14, %r14");
+                raw("    testq %r14, %r14");
                 raw("    jz " + newDone);
-                if (isWindows()) {
-                    raw("    mov rdi, r14");
-                    raw("    mov rsi, r12");
-                    raw("    mov rcx, " + size);
-                    raw("    rep movsb");
-                } else {
-                    raw("    movq %r14, %rdi");
-                    raw("    movq %r12, %rsi");
-                    raw("    movq $" + size + ", %rcx");
-                    raw("    rep movsb");
-                }
+                raw("    movq %r14, %rdi");
+                raw("    movq %r12, %rsi");
+                raw("    movq $" + size + ", %rcx");
+                raw("    rep movsb");
+                
                 raw(newDone + ":");
-                raw(isWindows() ? ("    add rsp, " + size) : ("    addq $" + size + ", %rsp"));
+                raw(("    addq $" + size + ", %rsp"));
                 pushReg("r14");
                 return;
             }
@@ -4182,33 +3846,21 @@ public class X86Backend {
                 // elements, so the size is only known at run time. Same null handling as CLONE.
                 long elemSize = Long.parseLong(line.get(1).text);
                 popReg("r12"); // source block start
-                if (isWindows()) {
-                    raw("    mov r15, [r12]");
-                    raw("    imul r15, r15, " + elemSize);
-                    raw("    add r15, 16");
-                    raw("    mov " + argReg(0) + ", r15");
-                } else {
-                    raw("    movq (%r12), %r15");
-                    raw("    imulq $" + elemSize + ", %r15, %r15");
-                    raw("    addq $16, %r15");
-                    raw("    movq %r15, %" + argReg(0));
-                }
+                raw("    movq (%r12), %r15");
+                raw("    imulq $" + elemSize + ", %r15, %r15");
+                raw("    addq $16, %r15");
+                raw("    movq %r15, %" + argReg(0));
+                
                 emitAlignedCall(() -> emitCallByName("malloc"));
-                raw(isWindows() ? "    mov r14, rax" : "    movq %rax, %r14");
+                raw("    movq %rax, %r14");
                 String cloneDynDone = newInternalLabel("clone_dyn_done");
-                raw(isWindows() ? "    test r14, r14" : "    testq %r14, %r14");
+                raw("    testq %r14, %r14");
                 raw("    jz " + cloneDynDone);
-                if (isWindows()) {
-                    raw("    mov rdi, r14");
-                    raw("    mov rsi, r12");
-                    raw("    mov rcx, r15");
-                    raw("    rep movsb");
-                } else {
-                    raw("    movq %r14, %rdi");
-                    raw("    movq %r12, %rsi");
-                    raw("    movq %r15, %rcx");
-                    raw("    rep movsb");
-                }
+                raw("    movq %r14, %rdi");
+                raw("    movq %r12, %rsi");
+                raw("    movq %r15, %rcx");
+                raw("    rep movsb");
+                
                 raw(cloneDynDone + ":");
                 pushReg("r14");
                 return;
@@ -4217,23 +3869,17 @@ public class X86Backend {
                 long size = Long.parseLong(line.get(1).text);
                 popReg("r12"); // source address (r12: callee-saved, survives the call below)
                 emitMallocCall(size);
-                raw(isWindows() ? "    mov r14, rax" : "    movq %rax, %r14"); // r14: new pointer, also callee-saved
+                raw("    movq %rax, %r14"); // r14: new pointer, also callee-saved
                 // A failed malloc leaves r14 null: skip the copy (it would fault on address 0) and push the null,
                 // which the bytecode's own null check right after CLONE turns into a throw.
                 String cloneDone = newInternalLabel("clone_done");
-                raw(isWindows() ? "    test r14, r14" : "    testq %r14, %r14");
+                raw("    testq %r14, %r14");
                 raw("    jz " + cloneDone);
-                if (isWindows()) {
-                    raw("    mov rdi, r14");
-                    raw("    mov rsi, r12");
-                    raw("    mov rcx, " + size);
-                    raw("    rep movsb");
-                } else {
-                    raw("    movq %r14, %rdi");
-                    raw("    movq %r12, %rsi");
-                    raw("    movq $" + size + ", %rcx");
-                    raw("    rep movsb");
-                }
+                raw("    movq %r14, %rdi");
+                raw("    movq %r12, %rsi");
+                raw("    movq $" + size + ", %rcx");
+                raw("    rep movsb");
+                
                 raw(cloneDone + ":");
                 pushReg("r14");
                 return;
@@ -4274,7 +3920,7 @@ public class X86Backend {
                     for (long i = 0; i < words; i++) {
                         loadSizedFromAddr("rax", "rbx", 8);
                         if (i < words - 1) {
-                            raw(isWindows() ? "    add rbx, 8" : "    addq $8, %rbx");
+                            raw("    addq $8, %rbx");
                         }
                         pushReg("rax");
                     }
@@ -4337,7 +3983,7 @@ public class X86Backend {
                 String kind = line.get(1).text;
                 String operand = line.get(2).text;
                 long discardBytes = pendingBlockSize > 8 ? ((pendingBlockSize + 7) / 8) * 8 : 8;
-                raw(isWindows() ? ("    add rsp, " + discardBytes) : ("    addq $" + discardBytes + ", %rsp")); // discard the dead pushed value
+                raw(("    addq $" + discardBytes + ", %rsp")); // discard the dead pushed value
                 if ((kind.equals("RAW") || kind.equals("AUTO")) && operand.startsWith("$")) {
                     leaMemToReg("rax", Long.parseLong(operand.substring(1)));
                     pushReg("rax");
@@ -4371,12 +4017,12 @@ public class X86Backend {
                 long elemWords = elemBytes / 8;
                 long dataBytes = count * elemBytes;
                 emitMallocCall(16 + dataBytes);
-                raw(isWindows() ? "    mov r12, rax" : "    movq %rax, %r12");
+                raw("    movq %rax, %r12");
                 // A failed malloc leaves r12 null: write nothing into it, drop the element words and push the null so the
                 // bytecode's own null check can throw.
                 String newDynNull = newInternalLabel("newdyn_null");
                 String newDynDone = newInternalLabel("newdyn_done");
-                raw(isWindows() ? "    test r12, r12" : "    testq %r12, %r12");
+                raw("    testq %r12, %r12");
                 raw("    jz " + newDynNull);
                 storeSizedToAddr_withOffsetImm("r12", 0, count, 8);
                 storeSizedToAddr_withOffsetImm("r12", 8, count, 8);
@@ -4384,17 +4030,14 @@ public class X86Backend {
                     for (long w = elemWords - 1; w >= 0; w--) {
                         popReg("rax");
                         long off = 16 + i * elemBytes + w * 8;
-                        if (isWindows()) {
-                            raw("    mov [r12" + signed(off) + "], rax");
-                        } else {
-                            raw("    movq %rax, " + off + "(%r12)");
-                        }
+                        raw("    movq %rax, " + off + "(%r12)");
+                        
                     }
                 }
                 raw("    jmp " + newDynDone);
                 raw(newDynNull + ":");
                 if (count > 0) {
-                    raw(isWindows() ? ("    add rsp, " + count * elemWords * 8) : ("    addq $" + count * elemWords * 8 + ", %rsp"));
+                    raw(("    addq $" + count * elemWords * 8 + ", %rsp"));
                 }
                 raw(newDynDone + ":");
                 pushReg("r12");
@@ -4410,26 +4053,23 @@ public class X86Backend {
                 long totalBytes = Long.parseLong(line.get(1).text);
                 long count = totalBytes / 8;
                 emitMallocCall(Math.max(totalBytes, 1));
-                raw(isWindows() ? "    mov r12, rax" : "    movq %rax, %r12");
+                raw("    movq %rax, %r12");
                 // Failed malloc: r12 stays null (see NEW_DYN); nothing is written.
                 String newUdynNull = newInternalLabel("newudyn_null");
                 String newUdynDone = newInternalLabel("newudyn_done");
-                raw(isWindows() ? "    test r12, r12" : "    testq %r12, %r12");
+                raw("    testq %r12, %r12");
                 raw("    jz " + newUdynNull);
                 for (long i = count - 1; i >= 0; i--) {
                     popReg("rax");
                     long off = i * 8;
-                    if (isWindows()) {
-                        raw("    mov [r12" + signed(off) + "], rax");
-                    } else {
-                        raw("    movq %rax, " + off + "(%r12)");
-                    }
+                    raw("    movq %rax, " + off + "(%r12)");
+                    
                 }
                 emitGtCall("gt_register", "r12");
                 raw("    jmp " + newUdynDone);
                 raw(newUdynNull + ":");
                 if (count > 0) {
-                    raw(isWindows() ? ("    add rsp, " + count * 8) : ("    addq $" + count * 8 + ", %rsp"));
+                    raw(("    addq $" + count * 8 + ", %rsp"));
                 }
                 raw(newUdynDone + ":");
                 pushReg("r12");
@@ -4453,61 +4093,38 @@ public class X86Backend {
                 // that; hardcoding "rdi" here (as this used to) is only
                 // right for `linux` and silently wrong for
                 // `windows_gnu` (AT&T syntax, win64 ABI).
-                if (isWindows()) {
-                    raw("    mov " + argReg(0) + ", r12");
-                } else {
-                    raw("    movq %r12, %" + argReg(0));
-                }
+                raw("    movq %r12, %" + argReg(0));
+                
                 emitAlignedCall(() -> emitCallByName("strlen"));
                 // rax now holds the string length.
-                raw(isWindows() ? "    mov r13, rax" : "    movq %rax, %r13"); // r13: length, callee-saved
-                if (isWindows()) {
-                    raw("    add rax, " + (ustr ? 1 : 16));
-                } else {
-                    raw("    addq $" + (ustr ? 1 : 16) + ", %rax");
-                }
-                if (isWindows()) {
-                    raw("    mov " + argReg(0) + ", rax");
-                } else {
-                    raw("    movq %rax, %" + argReg(0));
-                }
+                raw("    movq %rax, %r13"); // r13: length, callee-saved
+                raw("    addq $" + (ustr ? 1 : 16) + ", %rax");
+                
+                raw("    movq %rax, %" + argReg(0));
+                
                 emitAlignedCall(() -> emitCallByName("malloc"));
-                raw(isWindows() ? "    mov r14, rax" : "    movq %rax, %r14"); // r14: new block
+                raw("    movq %rax, %r14"); // r14: new block
                 if (ustr) {
                     String ustrDone = newInternalLabel("newustr_done");
-                    raw(isWindows() ? "    test r14, r14" : "    testq %r14, %r14");
+                    raw("    testq %r14, %r14");
                     raw("    jz " + ustrDone);
-                    if (isWindows()) {
-                        raw("    mov rdi, r14");
-                        raw("    mov rsi, r12");
-                        raw("    lea rcx, [r13+1]");
-                        raw("    rep movsb");
-                    } else {
-                        raw("    movq %r14, %rdi");
-                        raw("    movq %r12, %rsi");
-                        raw("    leaq 1(%r13), %rcx");
-                        raw("    rep movsb");
-                    }
+                    raw("    movq %r14, %rdi");
+                    raw("    movq %r12, %rsi");
+                    raw("    leaq 1(%r13), %rcx");
+                    raw("    rep movsb");
+                    
                     emitGtCall("gt_register", "r14");
                     raw(ustrDone + ":");
                     pushReg("r14");
                     return;
                 }
-                if (isWindows()) {
-                    raw("    mov [r14], r13");
-                    raw("    mov [r14+8], r13");
-                    raw("    lea rdi, [r14+16]");
-                    raw("    mov rsi, r12");
-                    raw("    mov rcx, r13");
-                    raw("    rep movsb");
-                } else {
-                    raw("    movq %r13, (%r14)");
-                    raw("    movq %r13, 8(%r14)");
-                    raw("    leaq 16(%r14), %rdi");
-                    raw("    movq %r12, %rsi");
-                    raw("    movq %r13, %rcx");
-                    raw("    rep movsb");
-                }
+                raw("    movq %r13, (%r14)");
+                raw("    movq %r13, 8(%r14)");
+                raw("    leaq 16(%r14), %rdi");
+                raw("    movq %r12, %rsi");
+                raw("    movq %r13, %rcx");
+                raw("    rep movsb");
+                
                 pushReg("r14");
                 return;
             }
@@ -4539,13 +4156,9 @@ public class X86Backend {
                 final int fillWords = (elemSize + 7) / 8;
                 final boolean wideFill = hasFill && elemSize > 8;
                 if (wideFill) {
-                    if (isWindows()) {
-                        raw("    mov r12, [rsp+" + (fillWords * 8) + "]");
-                        raw("    mov rax, [rsp+" + (fillWords * 8 + 8) + "]");
-                    } else {
-                        raw("    movq " + (fillWords * 8) + "(%rsp), %r12");
-                        raw("    movq " + (fillWords * 8 + 8) + "(%rsp), %rax");
-                    }
+                    raw("    movq " + (fillWords * 8) + "(%rsp), %r12");
+                    raw("    movq " + (fillWords * 8 + 8) + "(%rsp), %rax");
+                    
                 } else {
                     if (hasFill) {
                         popReg("r14"); // fill value
@@ -4577,43 +4190,28 @@ public class X86Backend {
                 // rdi/rsi in the AT&T branch, which is only right for
                 // `linux` and silently wrong for `windows_gnu` (AT&T
                 // syntax, win64 ABI).
-                if (isWindows()) {
-                    raw("    mov " + argReg(0) + ", rax"); // arg1 = old (block-start) pointer
-                    raw("    mov " + argReg(1) + ", r12");
-                    raw("    imul " + argReg(1) + ", " + elemSize);
-                    if (hasFill) {
-                        raw("    add " + argReg(1) + ", 16");
-                    } else {
-                        // never realloc to 0 bytes (that frees the block and returns NULL): round up to 1
-                        String nz = newInternalLabel("uresize_nz");
-                        raw("    test " + argReg(1) + ", " + argReg(1));
-                        raw("    jnz " + nz);
-                        raw("    mov " + argReg(1) + ", 1");
-                        raw(nz + ":");
-                    }
+                raw("    movq %rax, %" + argReg(0)); // arg1 = old (block-start) pointer
+                raw("    movq %r12, %" + argReg(1));
+                raw("    imulq $" + elemSize + ", %" + argReg(1) + ", %" + argReg(1));
+                if (hasFill) {
+                    raw("    addq $16, %" + argReg(1));
                 } else {
-                    raw("    movq %rax, %" + argReg(0)); // arg1 = old (block-start) pointer
-                    raw("    movq %r12, %" + argReg(1));
-                    raw("    imulq $" + elemSize + ", %" + argReg(1) + ", %" + argReg(1));
-                    if (hasFill) {
-                        raw("    addq $16, %" + argReg(1));
-                    } else {
-                        String nz = newInternalLabel("uresize_nz");
-                        raw("    testq %" + argReg(1) + ", %" + argReg(1));
-                        raw("    jnz " + nz);
-                        raw("    movq $1, %" + argReg(1));
-                        raw(nz + ":");
-                    }
+                    String nz = newInternalLabel("uresize_nz");
+                    raw("    testq %" + argReg(1) + ", %" + argReg(1));
+                    raw("    jnz " + nz);
+                    raw("    movq $1, %" + argReg(1));
+                    raw(nz + ":");
                 }
+                
                 // realloc(oldBlockPtr, newTotalBytes) -- args already
                 // staged into the ABI's own first two argument registers
                 // just above (rdi/rsi for SysV, rcx/rdx for win64).
                 emitAlignedCall(() -> emitCallByName("realloc"));
-                raw(isWindows() ? "    mov r15, rax" : "    movq %rax, %r15"); // r15: new block-start pointer
+                raw("    movq %rax, %r15"); // r15: new block-start pointer
                 // A failed realloc leaves r15 null (the old block stays valid): write nothing, skip the fill and the
                 // data-start offset, and push the null so the bytecode's own check can throw.
                 String resizeEnd = newInternalLabel("resize_end");
-                raw(isWindows() ? "    test r15, r15" : "    testq %r15, %r15");
+                raw("    testq %r15, %r15");
                 raw("    jz " + resizeEnd);
                 if (hasFill) {
                     storeSizedToAddr_reg("r15", 0, "r12", 8);
@@ -4628,37 +4226,24 @@ public class X86Backend {
                     String loop = newInternalLabel("resize_fill");
                     String end = resizeEnd;
                     raw(loop + ":");
-                    if (isWindows()) {
-                        raw("    cmp rbx, r12");
-                        raw("    jge " + end);
-                        raw("    mov rax, rbx");
-                        raw("    imul rax, " + elemSize);
-                        raw("    lea rax, [r15+rax+16]");
-                        if (wideFill) {
-                            emitResizeWideFillCopy(elemSize, fillWords);
-                        } else {
-                            storeSizedToAddr("r14", "rax", elemSize);
-                        }
-                        raw("    inc rbx");
+                    raw("    cmpq %r12, %rbx");
+                    raw("    jge " + end);
+                    raw("    movq %rbx, %rax");
+                    raw("    imulq $" + elemSize + ", %rax, %rax");
+                    raw("    leaq 16(%r15,%rax), %rax");
+                    if (wideFill) {
+                        emitResizeWideFillCopy(elemSize, fillWords);
                     } else {
-                        raw("    cmpq %r12, %rbx");
-                        raw("    jge " + end);
-                        raw("    movq %rbx, %rax");
-                        raw("    imulq $" + elemSize + ", %rax, %rax");
-                        raw("    leaq 16(%r15,%rax), %rax");
-                        if (wideFill) {
-                            emitResizeWideFillCopy(elemSize, fillWords);
-                        } else {
-                            storeSizedToAddr("r14", "rax", elemSize);
-                        }
-                        raw("    incq %rbx");
+                        storeSizedToAddr("r14", "rax", elemSize);
                     }
-                    raw(isWindows() ? "    jmp " + loop : "    jmp " + loop);
+                    raw("    incq %rbx");
+                    
+                    raw(("    jmp " + loop));
                     raw(end + ":");
                     emitResizeGtUpdate();
                     if (wideFill) {
                         long drop = fillWords * 8L + 16;
-                        raw(isWindows() ? "    add rsp, " + drop : "    addq $" + drop + ", %rsp");
+                        raw(("    addq $" + drop + ", %rsp"));
                     }
                 }
                 pushReg("r15");
@@ -4685,11 +4270,8 @@ public class X86Backend {
                 int size = (int) Long.parseLong(line.get(1).text);
                 popReg("rax"); // new value
                 popReg("rbx"); // address
-                if (isWindows()) {
-                    raw("    xchg [" + "rbx" + "], " + sizedRegWin("rax", size));
-                } else {
-                    raw("    xchg" + movSuffix(size) + " %" + sizedReg("rax", size) + ", (%rbx)");
-                }
+                raw("    xchg" + movSuffix(size) + " %" + sizedReg("rax", size) + ", (%rbx)");
+                
                 pushReg("rax");
                 return;
             }
@@ -4748,25 +4330,25 @@ public class X86Backend {
                 pushReg("rax"); // the surviving copy -- left alone, underneath the call
                 pushReg("rax"); // the throwaway copy -- this one becomes the argument
                 popReg("rax");
-                raw(isWindows() ? ("    mov " + argReg(0) + ", rax") : ("    movq %rax, %" + argReg(0)));
+                raw(("    movq %rax, %" + argReg(0)));
                 emitAlignedCall(() -> emitCallByName("gt_register"));
                 // gt_register returns false when the table could not grow (the pointer is then NOT registered): free the
                 // block and leave null in its place, exactly what a failed allocation leaves, so the allocation site's own
                 // null check takes the out-of-memory path. A null pointer registers as success (and stays null).
                 String regOk = newInternalLabel("gtreg_ok");
-                raw(isWindows() ? "    test al, al" : "    testb %al, %al");
+                raw("    testb %al, %al");
                 raw("    jnz " + regOk);
                 popReg("rax"); // the surviving copy
-                raw(isWindows() ? ("    mov " + argReg(0) + ", rax") : ("    movq %rax, %" + argReg(0)));
+                raw(("    movq %rax, %" + argReg(0)));
                 emitAlignedCall(() -> emitCallByName("free"));
-                raw(isWindows() ? "    xor rax, rax" : "    xorq %rax, %rax");
+                raw("    xorq %rax, %rax");
                 pushReg("rax");
                 raw(regOk + ":");
                 return;
             }
             case "GT_ALIVE_CHECK": {
                 popReg("rax"); // the pointer being checked
-                raw(isWindows() ? ("    mov " + argReg(0) + ", rax") : ("    movq %rax, %" + argReg(0)));
+                raw(("    movq %rax, %" + argReg(0)));
                 emitAlignedCall(() -> emitCallByName("gt_alive_check"));
                 pushReg("rax"); // its bool result
                 return;
@@ -4781,7 +4363,7 @@ public class X86Backend {
                 String operand = line.get(1).text;
                 if (operand.startsWith("$")) {
                     loadSizedFromFrame("rax", Long.parseLong(operand.substring(1)), 8);
-                    raw(isWindows() ? ("    mov " + argReg(0) + ", rax") : ("    movq %rax, %" + argReg(0)));
+                    raw(("    movq %rax, %" + argReg(0)));
                     emitAlignedCall(() -> emitCallByName("gt_destruct"));
                 } else {
                     comment("TODO(codegen): 'GT_DESTRUCT " + operand + "' (non-stack-offset operand) not yet implemented");
@@ -4816,7 +4398,7 @@ public class X86Backend {
                 // case above).
                 popReg("rax"); // the computed address itself
                 loadSizedFromAddr("rax", "rax", 8); // dereference: the owns pointer's own value
-                raw(isWindows() ? ("    mov " + argReg(0) + ", rax") : ("    movq %rax, %" + argReg(0)));
+                raw(("    movq %rax, %" + argReg(0)));
                 emitAlignedCall(() -> emitCallByName("gt_destruct"));
                 return;
             }
@@ -4886,7 +4468,7 @@ public class X86Backend {
                 // expects," confirmed directly.
                 String realFuncName = line.get(1).text;
                 popReg("rax"); // the pushed duration argument
-                raw(isWindows() ? ("    mov " + argReg(0) + ", rax") : ("    movq %rax, %" + argReg(0)));
+                raw(("    movq %rax, %" + argReg(0)));
                 emitAlignedCall(() -> emitCallByName(realFuncName));
                 pushReg("rax"); // the real C "sleep"'s own u64 result (remaining, unslept seconds)
                 return;
@@ -4919,7 +4501,7 @@ public class X86Backend {
                 // needed for codegen to call it by name) is the
                 // straightforward way to actually end the process here,
                 // with that exact distinct status.
-                raw(isWindows() ? ("    mov " + argReg(0) + ", 1") : ("    movq $1, %" + argReg(0)));
+                raw(("    movq $1, %" + argReg(0)));
                 emitAlignedCall(() -> emitCallByName("exit"));
                 return;
             }
@@ -4956,7 +4538,7 @@ public class X86Backend {
                 // back a thread's own real exit-value pointer -- see
                 // "stdlib/await_call.caspien"'s own "pthread_join(tid,
                 // null)") ever consumes it.
-                raw(isWindows() ? ("    mov " + argReg(0) + ", 0") : ("    movq $0, %" + argReg(0)));
+                raw(("    movq $0, %" + argReg(0)));
                 emitAlignedCall(() -> emitCallByName("pthread_exit"));
                 return;
             }
@@ -5033,26 +4615,17 @@ public class X86Backend {
                 if (carryMessage) {
                     movMemToReg("rax", -16);
                 }
-                if (isWindows()) {
-                    raw("    mov rsp, rbp");
-                } else {
-                    raw("    movq %rbp, %rsp");
-                }
+                raw("    movq %rbp, %rsp");
+                
                 popReg("rbp");
-                if (isWindows()) {
-                    raw("    add rsp, 8"); // discard the return address -- never resumed
-                } else {
-                    raw("    addq $8, %rsp");
-                }
+                raw("    addq $8, %rsp");
+                
                 if (carryMessage) {
                     movRegToMem("rax", -16); // the caller's gt_error_message slot
                 }
                 movMemToReg("rax", -8); // the caller's own gt_routine_address slot
-                if (isWindows()) {
-                    raw("    jmp rax");
-                } else {
-                    raw("    jmp *%rax");
-                }
+                raw("    jmp *%rax");
+                
                 return;
             }
             case "THROW": {
@@ -5227,7 +4800,7 @@ public class X86Backend {
                 if (floatResultInR10) {
                     // xmm0 was already restored for the enclosing call's
                     // argument 0 (see "CC_END"); the real result is in r10.
-                    raw(isWindows() ? "    mov rax, r10" : "    movq %r10, %rax");
+                    raw("    movq %r10, %rax");
                     floatResultInR10 = false;
                 } else {
                     movXmmToReg("xmm0", "rax");
@@ -5297,12 +4870,12 @@ public class X86Backend {
                 popReg("rax");
                 if (f64Check) {
                     // double: strip the sign bit (bit 63) by shifting it out, compare against the +-Inf exponent pattern 0x7ff0000000000000
-                    raw(isWindows() ? "    btr rax, 63" : "    btrq $63, %rax");
+                    raw("    btrq $63, %rax");
                     movImmToReg("rdx", 0x7ff0000000000000L);
-                    raw(isWindows() ? "    cmp rax, rdx" : "    cmpq %rdx, %rax");
+                    raw("    cmpq %rdx, %rax");
                 } else {
-                raw(isWindows() ? "    and eax, 2147483647" : "    andl $2147483647, %eax"); // strip the sign bit -> |bits|
-                raw(isWindows() ? "    cmp eax, 2139095040" : "    cmpl $2139095040, %eax"); // vs. the shared +-Inf/NaN exponent pattern
+                raw("    andl $2147483647, %eax"); // strip the sign bit -> |bits|
+                raw("    cmpl $2139095040, %eax"); // vs. the shared +-Inf/NaN exponent pattern
                 }
                 boolean firstCategory = true;
                 for (String category : categories) {
@@ -5310,15 +4883,11 @@ public class X86Backend {
                             : category.equals("infinite") ? "sete"
                             : "seta"; // "nan"
                     String reg = firstCategory ? "rax" : "rdx";
-                    if (isWindows()) {
-                        raw("    " + setcc + " " + sizedRegWin(reg, 1));
-                        raw("    movzx " + reg + ", " + sizedRegWin(reg, 1));
-                    } else {
-                        raw("    " + setcc + " %" + sizedReg(reg, 1));
-                        raw("    movzbq %" + sizedReg(reg, 1) + ", %" + reg);
-                    }
+                    raw("    " + setcc + " %" + sizedReg(reg, 1));
+                    raw("    movzbq %" + sizedReg(reg, 1) + ", %" + reg);
+                    
                     if (!firstCategory) {
-                        raw(isWindows() ? "    or rax, rdx" : "    orq %rdx, %rax");
+                        raw("    orq %rdx, %rax");
                     }
                     firstCategory = false;
                 }
@@ -5418,19 +4987,13 @@ public class X86Backend {
     }
 
     private void storeSizedToAddr_withOffsetImm(String baseReg64, long offset, long value, int size) {
-        if (isWindows()) {
-            raw("    mov qword ptr [" + baseReg64 + signed(offset) + "], " + value);
-        } else {
-            raw("    movq $" + value + ", " + offset + "(%" + baseReg64 + ")");
-        }
+        raw("    movq $" + value + ", " + offset + "(%" + baseReg64 + ")");
+        
     }
 
     private void storeSizedToAddr_reg(String baseReg64, long offset, String srcReg64, int size) {
-        if (isWindows()) {
-            raw("    mov [" + baseReg64 + signed(offset) + "], " + srcReg64);
-        } else {
-            raw("    movq %" + srcReg64 + ", " + offset + "(%" + baseReg64 + ")");
-        }
+        raw("    movq %" + srcReg64 + ", " + offset + "(%" + baseReg64 + ")");
+        
     }
 
     /**
@@ -5455,30 +5018,20 @@ public class X86Backend {
         if (twoWords) {
             popReg("rcx");
         }
-        if (isWindows()) {
-            raw("    mov rdx, rsp");
-            raw("    and rsp, -16");
-            raw("    sub rsp, 8");
-            raw("    mov [rsp], rdx");
-        } else {
-            raw("    movq %rsp, %rdx");
-            raw("    andq $-16, %rsp");
-            raw("    subq $8, %rsp");
-            raw("    movq %rdx, (%rsp)");
-        }
+        raw("    movq %rsp, %rdx");
+        raw("    andq $-16, %rsp");
+        raw("    subq $8, %rsp");
+        raw("    movq %rdx, (%rsp)");
+        
         if (twoWords) {
             pushReg("rcx");
         }
         pushReg("rax");
         emitCallByName(name);
         int argBytes = twoWords ? 16 : 8;
-        if (isWindows()) {
-            raw("    add rsp, " + argBytes);
-            raw("    mov rsp, [rsp]");
-        } else {
-            raw("    addq $" + argBytes + ", %rsp");
-            raw("    movq (%rsp), %rsp");
-        }
+        raw("    addq $" + argBytes + ", %rsp");
+        raw("    movq (%rsp), %rsp");
+        
     }
 
     /** Bytes pushed on top of RESIZE's wide fill block while its fill loop runs (the saved old block start). */
@@ -5487,7 +5040,7 @@ public class X86Backend {
     /** Push `reg`, pass it as the first argument to the ghost table function `fn`, restore `reg`. */
     private void emitGtCall(String fn, String reg) {
         pushReg(reg);
-        raw(isWindows() ? ("    mov " + argReg(0) + ", " + reg) : ("    movq %" + reg + ", %" + argReg(0)));
+        raw(("    movq %" + reg + ", %" + argReg(0)));
         emitAlignedCall(() -> emitCallByName(fn));
         popReg(reg);
     }
@@ -5502,9 +5055,9 @@ public class X86Backend {
         resizeExtraStack = 0;
         popReg("rbx");
         String skip = newInternalLabel("resize_gt_skip");
-        raw(isWindows() ? "    test r15, r15" : "    testq %r15, %r15");
+        raw("    testq %r15, %r15");
         raw("    jz " + skip);
-        raw(isWindows() ? "    cmp r15, rbx" : "    cmpq %rbx, %r15");
+        raw("    cmpq %rbx, %r15");
         raw("    je " + skip);
         emitGtCall("gt_moved", "rbx");
         emitGtCall("gt_register", "r15");
@@ -5522,21 +5075,15 @@ public class X86Backend {
         for (int k = 0; k < words; k++) {
             long srcOff = (long) (words - 1 - k) * 8 + resizeExtraStack;
             int n = Math.min(8, elemSize - 8 * k);
-            if (isWindows()) {
-                raw("    mov rdx, [rsp+" + srcOff + "]");
-            } else {
-                raw("    movq " + srcOff + "(%rsp), %rdx");
-            }
+            raw("    movq " + srcOff + "(%rsp), %rdx");
+            
             long dst = 8L * k;
             for (int b = 0; b < n;) {
                 int chunk = n - b >= 8 ? 8 : n - b >= 4 ? 4 : n - b >= 2 ? 2 : 1;
-                if (isWindows()) {
-                    raw("    mov " + (chunk == 8 ? "qword" : winPtrSize(chunk)) + " ptr [rax+" + (dst + b) + "], " + sizedReg("rdx", chunk));
-                } else {
-                    raw("    mov" + movSuffix(chunk) + " %" + sizedReg("rdx", chunk) + ", " + (dst + b) + "(%rax)");
-                }
+                raw("    mov" + movSuffix(chunk) + " %" + sizedReg("rdx", chunk) + ", " + (dst + b) + "(%rax)");
+                
                 if (b + chunk < n) {
-                    raw(isWindows() ? "    shr rdx, " + (chunk * 8) : "    shrq $" + (chunk * 8) + ", %rdx");
+                    raw(("    shrq $" + (chunk * 8) + ", %rdx"));
                 }
                 b += chunk;
             }
@@ -5555,11 +5102,8 @@ public class X86Backend {
         // wild/failed allocation surfaced downstream as a null-pointer
         // or wild-pointer fault (`NEW`'s own "rep movsb", most
         // visibly).
-        if (isWindows()) {
-            raw("    mov " + argReg(0) + ", " + size);
-        } else {
-            raw("    movq $" + size + ", %" + argReg(0));
-        }
+        raw("    movq $" + size + ", %" + argReg(0));
+        
         emitAlignedCall(() -> emitCallByName("malloc"));
     }
 
@@ -5647,11 +5191,11 @@ public class X86Backend {
     }
 
     private String rfRegText(String reg) {
-        return isWindows() ? reg : ("%" + reg);
+        return ("%" + reg);
     }
 
     private String rfMemText(long off) {
-        return isWindows() ? ("qword ptr [rbp" + signed(off) + "]") : (off + "(%rbp)");
+        return (off + "(%rbp)");
     }
 
     /** Source-operand text for a two-operand instruction; a 64-bit immediate that will not fit imm32 goes through the scratch register. */
@@ -5667,17 +5211,17 @@ public class X86Backend {
             movImmToReg(RF_SCRATCH, v);
             return rfRegText(RF_SCRATCH);
         }
-        return isWindows() ? String.valueOf(v) : ("$" + v);
+        return ("$" + v);
     }
 
     /** "op src, dst" in the active syntax (AT&T gets the q suffix and reversed operand order). */
     private void rfOp2(String op, String dstText, String srcText) {
-        raw(isWindows() ? ("    " + op + " " + dstText + ", " + srcText) : ("    " + op + "q " + srcText + ", " + dstText));
+        raw(("    " + op + "q " + srcText + ", " + dstText));
     }
 
     private void rfRegToReg(String dst, String src) {
         if (!dst.equals(src)) {
-            raw(isWindows() ? ("    mov " + dst + ", " + src) : ("    movq %" + src + ", %" + dst));
+            raw(("    movq %" + src + ", %" + dst));
         }
     }
 
@@ -5699,7 +5243,7 @@ public class X86Backend {
         } else if (rfIsImm(src)) {
             long v = rfImm(src);
             if (rfFitsImm32(v)) {
-                raw(isWindows() ? ("    mov qword ptr [rbp" + signed(off) + "], " + v) : ("    movq $" + v + ", " + off + "(%rbp)"));
+                raw(("    movq $" + v + ", " + off + "(%rbp)"));
             } else {
                 movImmToReg(RF_SCRATCH, v);
                 movRegToMem(RF_SCRATCH, off);
@@ -5727,7 +5271,7 @@ public class X86Backend {
             }
             if (wide && !op.equals("SAR")) {
                 // shifted out entirely
-                raw(isWindows() ? ("    xor " + sizedReg(d, 4) + ", " + sizedReg(d, 4)) : ("    xorl %" + sizedReg(d, 4) + ", %" + sizedReg(d, 4)));
+                raw(("    xorl %" + sizedReg(d, 4) + ", %" + sizedReg(d, 4)));
                 return;
             }
             if (wide) {
@@ -5740,7 +5284,7 @@ public class X86Backend {
             }
             if (c != 0) {
                 String sop = op.equals("SHL") ? "shl" : op.equals("SHR") ? "shr" : "sar";
-                raw(isWindows() ? ("    " + sop + " " + d + ", " + c) : ("    " + sop + "q $" + c + ", %" + d));
+                raw(("    " + sop + "q $" + c + ", %" + d));
             }
             if (!op.equals("SHR")) {
                 zeroExtendReg(d, size);
@@ -5834,11 +5378,8 @@ public class X86Backend {
                 if (size == 1) {
                     // Booleans: both operands are register-held 0/1 results; byte-wide, like the stack form.
                     String bReg = rfIsTemp(bTok) ? rfReg(bTok) : d;
-                    if (isWindows()) {
-                        raw("    " + o + " " + sizedReg(d, 1) + ", " + sizedReg(bReg, 1));
-                    } else {
-                        raw("    " + o + "b %" + sizedReg(bReg, 1) + ", %" + sizedReg(d, 1));
-                    }
+                    raw("    " + o + "b %" + sizedReg(bReg, 1) + ", %" + sizedReg(d, 1));
+                    
                 } else {
                     rfOp2(o, dText, bText);
                 }
@@ -5864,13 +5405,9 @@ public class X86Backend {
         }
         rfOp2("cmp", dText, bText);
         String d8 = sizedReg(d, 1);
-        if (isWindows()) {
-            raw("    " + setcc + " " + d8);
-            raw("    movzx " + d + ", " + d8);
-        } else {
-            raw("    " + setcc + " %" + d8);
-            raw("    movzbq %" + d8 + ", %" + d);
-        }
+        raw("    " + setcc + " %" + d8);
+        raw("    movzbq %" + d8 + ", %" + d);
+        
     }
 
     /** Jump to `label` when NOT (a op b), for an 8-byte compare; a and b are %t/%v registers, $off slots or #imm (never both #imm). */
@@ -5945,20 +5482,20 @@ public class X86Backend {
         }
         switch (op) {
             case "INC":
-                raw(isWindows() ? ("    inc " + d) : ("    incq %" + d));
+                raw(("    incq %" + d));
                 return;
             case "DEC":
-                raw(isWindows() ? ("    dec " + d) : ("    decq %" + d));
+                raw(("    decq %" + d));
                 return;
             case "NEG":
-                raw(isWindows() ? ("    neg " + d) : ("    negq %" + d));
+                raw(("    negq %" + d));
                 return;
             case "NOT":
-                raw(isWindows() ? ("    xor " + sizedReg(d, 1) + ", 1") : ("    xorb $1, %" + sizedReg(d, 1)));
+                raw(("    xorb $1, %" + sizedReg(d, 1)));
                 return;
             case "BNOT":
                 // bitwise complement cut back to the operand width (u8: ~0 = 255)
-                raw(isWindows() ? ("    not " + d) : ("    notq %" + d));
+                raw(("    notq %" + d));
                 zeroExtendReg(d, size);
                 return;
             default:
@@ -6021,14 +5558,9 @@ public class X86Backend {
         if (rfIsImm(srcTok)) {
             long v = rfTrunc(rfImm(srcTok), n);
             String mem;
-            if (isWindows()) {
-                String pfx = n == 1 ? "byte" : n == 2 ? "word" : n == 4 ? "dword" : "qword";
-                mem = areg == null ? (pfx + " ptr [rbp" + signed(rfSlot(addrTok)) + "]") : (pfx + " ptr [" + areg + "]");
-                raw("    mov " + mem + ", " + v);
-            } else {
-                mem = areg == null ? (rfSlot(addrTok) + "(%rbp)") : ("(%" + areg + ")");
-                raw("    mov" + movSuffix(n) + " $" + v + ", " + mem);
-            }
+            mem = areg == null ? (rfSlot(addrTok) + "(%rbp)") : ("(%" + areg + ")");
+            raw("    mov" + movSuffix(n) + " $" + v + ", " + mem);
+            
             return;
         }
         String reg = rfReg(srcTok);
@@ -6048,10 +5580,7 @@ public class X86Backend {
 
     private String rfMemOperand(String baseReg) {
         if (rfIdxReg == null) {
-            return isWindows() ? ("[" + baseReg + "]") : ("(%" + baseReg + ")");
-        }
-        if (isWindows()) {
-            return "[" + baseReg + "+" + rfIdxReg + "*" + rfIdxScale + (rfIdxDisp != 0 ? signed(rfIdxDisp) : "") + "]";
+            return ("(%" + baseReg + ")");
         }
         return (rfIdxDisp != 0 ? String.valueOf(rfIdxDisp) : "") + "(%" + baseReg + ",%" + rfIdxReg + "," + rfIdxScale + ")";
     }
@@ -6105,12 +5634,8 @@ public class X86Backend {
         try {
             if (rfIsImm(srcTok)) {
                 long v = rfTrunc(rfImm(srcTok), n);
-                if (isWindows()) {
-                    String pfx = n == 1 ? "byte" : n == 2 ? "word" : n == 4 ? "dword" : "qword";
-                    raw("    mov " + pfx + " ptr " + rfMemOperand(b) + ", " + v);
-                } else {
-                    raw("    mov" + movSuffix(n) + " $" + v + ", " + rfMemOperand(b));
-                }
+                raw("    mov" + movSuffix(n) + " $" + v + ", " + rfMemOperand(b));
+                
             } else {
                 storeSizedToAddr(rfReg(srcTok), b, n);
             }
@@ -6129,10 +5654,10 @@ public class X86Backend {
         rfIdxReg = rfReg(idxTok);
         rfIdxScale = scale;
         try {
-            String mem = isWindows() ? ((n == 8 ? "qword ptr " : "dword ptr ") + rfMemOperand(b)) : rfMemOperand(b);
+            String mem = (rfMemOperand(b));
             String mn = n == 8 ? "movsd" : "movss";
             String xmm = xvReg(xTok);
-            raw(isWindows() ? ("    " + mn + " " + xmm + ", " + mem) : ("    " + mn + " " + mem + ", %" + xmm));
+            raw(("    " + mn + " " + mem + ", %" + xmm));
         } finally {
             rfIdxReg = null;
             rfIdxDisp = 0;
@@ -6148,10 +5673,10 @@ public class X86Backend {
         rfIdxReg = rfReg(idxTok);
         rfIdxScale = scale;
         try {
-            String mem = isWindows() ? ((n == 8 ? "qword ptr " : "dword ptr ") + rfMemOperand(b)) : rfMemOperand(b);
+            String mem = (rfMemOperand(b));
             String mn = n == 8 ? "movsd" : "movss";
             String xmm = xvReg(xTok);
-            raw(isWindows() ? ("    " + mn + " " + mem + ", " + xmm) : ("    " + mn + " %" + xmm + ", " + mem));
+            raw(("    " + mn + " %" + xmm + ", " + mem));
         } finally {
             rfIdxReg = null;
             rfIdxDisp = 0;
@@ -6163,10 +5688,10 @@ public class X86Backend {
             return;
         }
         if (rfFitsImm32(v)) {
-            raw(isWindows() ? ("    add " + reg + ", " + v) : ("    addq $" + v + ", %" + reg));
+            raw(("    addq $" + v + ", %" + reg));
         } else {
             movImmToReg(RF_SCRATCH, v);
-            raw(isWindows() ? ("    add " + reg + ", " + RF_SCRATCH) : ("    addq %" + RF_SCRATCH + ", %" + reg));
+            raw(("    addq %" + RF_SCRATCH + ", %" + reg));
         }
     }
 
@@ -6218,18 +5743,16 @@ public class X86Backend {
         boolean fitsDisp = rfFitsImm32(extra);
         if (scale == 1 || scale == 2 || scale == 4 || scale == 8) {
             if (extra != 0 && fitsDisp) {
-                raw(isWindows() ? ("    lea " + d + ", [" + d + "+" + x + "*" + scale + (extra < 0 ? "-" + (-extra) : "+" + extra) + "]")
-                        : ("    leaq " + extra + "(%" + d + ",%" + x + "," + scale + "), %" + d));
+                raw(("    leaq " + extra + "(%" + d + ",%" + x + "," + scale + "), %" + d));
             } else {
-                raw(isWindows() ? ("    lea " + d + ", [" + d + "+" + x + "*" + scale + "]")
-                        : ("    leaq (%" + d + ",%" + x + "," + scale + "), %" + d));
+                raw(("    leaq (%" + d + ",%" + x + "," + scale + "), %" + d));
                 if (extra != 0) {
                     rfAddImm(d, extra);
                 }
             }
         } else {
-            raw(isWindows() ? ("    imul " + x + ", " + x + ", " + scale) : ("    imulq $" + scale + ", %" + x + ", %" + x));
-            raw(isWindows() ? ("    add " + d + ", " + x) : ("    addq %" + x + ", %" + d));
+            raw(("    imulq $" + scale + ", %" + x + ", %" + x));
+            raw(("    addq %" + x + ", %" + d));
             if (extra != 0) {
                 rfAddImm(d, extra);
             }
@@ -6247,17 +5770,17 @@ public class X86Backend {
 
     private void rfGprToXmm(String xmm, String gpr64, int n) {
         if (n == 4) {
-            raw(isWindows() ? ("    movd " + xmm + ", " + sizedReg(gpr64, 4)) : ("    movd %" + sizedReg(gpr64, 4) + ", %" + xmm));
+            raw(("    movd %" + sizedReg(gpr64, 4) + ", %" + xmm));
         } else {
-            raw(isWindows() ? ("    movq " + xmm + ", " + gpr64) : ("    movq %" + gpr64 + ", %" + xmm));
+            raw(("    movq %" + gpr64 + ", %" + xmm));
         }
     }
 
     private void rfXmmToGpr(String xmm, String gpr64, int n) {
         if (n == 4) {
-            raw(isWindows() ? ("    movd " + sizedReg(gpr64, 4) + ", " + xmm) : ("    movd %" + xmm + ", %" + sizedReg(gpr64, 4)));
+            raw(("    movd %" + xmm + ", %" + sizedReg(gpr64, 4)));
         } else {
-            raw(isWindows() ? ("    movq " + gpr64 + ", " + xmm) : ("    movq %" + xmm + ", %" + gpr64));
+            raw(("    movq %" + xmm + ", %" + gpr64));
         }
     }
 
@@ -6268,22 +5791,17 @@ public class X86Backend {
         } else if (rfIsTemp(tok)) {
             rfGprToXmm(xmm, rfReg(tok), n);
         } else if (rfIsImm(tok)) {
-            if (floatPoolOn()) {
-                long v = n == 4 ? (rfImm(tok) & 0xFFFFFFFFL) : rfImm(tok);
-                if (v == 0) {
-                    raw("    xorps %" + xmm + ", %" + xmm);
-                } else {
-                    raw("    mov" + (n == 4 ? "ss" : "sd") + " " + floatPoolMem(v, n) + ", %" + xmm);
-                }
+            long v = n == 4 ? (rfImm(tok) & 0xFFFFFFFFL) : rfImm(tok);
+            if (v == 0) {
+                raw("    xorps %" + xmm + ", %" + xmm);
             } else {
-                movImmToReg(RF_SCRATCH, rfImm(tok));
-                rfGprToXmm(xmm, RF_SCRATCH, n);
+                raw("    mov" + (n == 4 ? "ss" : "sd") + " " + floatPoolMem(v, n) + ", %" + xmm);
             }
+            
         } else {
             long off = rfSlot(tok);
             String sfx = n == 4 ? "ss" : "sd";
-            raw(isWindows() ? ("    mov" + sfx + " " + xmm + ", " + (n == 4 ? "dword" : "qword") + " ptr [rbp" + signed(off) + "]")
-                    : ("    mov" + sfx + " " + off + "(%rbp), %" + xmm));
+            raw(("    mov" + sfx + " " + off + "(%rbp), %" + xmm));
         }
     }
 
@@ -6347,11 +5865,6 @@ public class X86Backend {
         }
     }
 
-    /** True when float immediates go through the constant pool (the AT&T targets; the MASM path is unchanged). */
-    private boolean floatPoolOn() {
-        return !isWindows();
-    }
-
     /** The pool label for a float constant of width n (4 or 8 bytes), creating the entry on first use. */
     private String floatPoolLabel(long bits, int n) {
         long b = n == 4 ? (bits & 0xFFFFFFFFL) : bits;
@@ -6386,12 +5899,12 @@ public class X86Backend {
     }
 
     private String xText(String xmm) {
-        return isWindows() ? xmm : ("%" + xmm);
+        return ("%" + xmm);
     }
 
     private void rfMovaps(String dst, String src) {
         if (!dst.equals(src)) {
-            raw(isWindows() ? ("    movaps " + dst + ", " + src) : ("    movaps %" + src + ", %" + dst));
+            raw(("    movaps %" + src + ", %" + dst));
         }
     }
 
@@ -6399,26 +5912,26 @@ public class X86Backend {
     private String rfFloatMem(String addrTok, int n) {
         String ptr = n == 8 ? "qword ptr " : "dword ptr ";
         if (rfIsSlot(addrTok)) {
-            return isWindows() ? (ptr + "[rbp" + signed(rfSlot(addrTok)) + "]") : (rfSlot(addrTok) + "(%rbp)");
+            return (rfSlot(addrTok) + "(%rbp)");
         } else if (rfIsGlobal(addrTok)) {
             leaGlobalToReg(RF_SCRATCH, addrTok.substring(1));
-            return isWindows() ? ptr + "[" + RF_SCRATCH + "]" : ("(%" + RF_SCRATCH + ")");
+            return ("(%" + RF_SCRATCH + ")");
         }
-        return isWindows() ? (ptr + "[" + rfReg(addrTok) + "]") : ("(%" + rfReg(addrTok) + ")");
+        return ("(%" + rfReg(addrTok) + ")");
     }
 
     /** xmm register = the float (n = 4: f32, 8: f64) at addr. */
     private void rfLoadX(String xmm, String addrTok, int n) {
         String mem = rfFloatMem(addrTok, n);
         String mn = n == 8 ? "movsd" : "movss";
-        raw(isWindows() ? ("    " + mn + " " + xmm + ", " + mem) : ("    " + mn + " " + mem + ", %" + xmm));
+        raw(("    " + mn + " " + mem + ", %" + xmm));
     }
 
     /** the float in an xmm register stored at addr. */
     private void rfStoreX(String addrTok, String xmm, int n) {
         String mem = rfFloatMem(addrTok, n);
         String mn = n == 8 ? "movsd" : "movss";
-        raw(isWindows() ? ("    " + mn + " " + mem + ", " + xmm) : ("    " + mn + " %" + xmm + ", " + mem));
+        raw(("    " + mn + " %" + xmm + ", " + mem));
     }
 
     /** "R_FBINX OP n %xK a b": variable K = a OP b (n is always 4). */
@@ -6449,8 +5962,8 @@ public class X86Backend {
             bText = xText(xvReg(bTok));
         } else if (rfIsSlot(bTok)) {
             long off = rfSlot(bTok);
-            bText = isWindows() ? ((n == 4 ? "dword" : "qword") + " ptr [rbp" + signed(off) + "]") : (off + "(%rbp)");
-        } else if (floatPoolOn() && rfIsImm(bTok)) {
+            bText = (off + "(%rbp)");
+        } else if (rfIsImm(bTok)) {
             bText = floatPoolMem(rfImm(bTok), n);
         } else {
             rfLoadXmm(bTok, rfXmmB(), n);
@@ -6461,7 +5974,7 @@ public class X86Backend {
         } else {
             rfLoadXmm(aTok, work, n);
         }
-        raw(isWindows() ? ("    " + mn + sfx + " " + work + ", " + bText) : ("    " + mn + sfx + " " + bText + ", %" + work));
+        raw(("    " + mn + sfx + " " + bText + ", %" + work));
         rfMovaps(xd, work);
     }
 
@@ -6481,14 +5994,14 @@ public class X86Backend {
             bText = xText(xvReg(bTok));
         } else if (rfIsSlot(bTok)) {
             long off = rfSlot(bTok);
-            bText = isWindows() ? ((n == 4 ? "dword" : "qword") + " ptr [rbp" + signed(off) + "]") : (off + "(%rbp)");
-        } else if (floatPoolOn() && rfIsImm(bTok)) {
+            bText = (off + "(%rbp)");
+        } else if (rfIsImm(bTok)) {
             bText = floatPoolMem(rfImm(bTok), n);
         } else {
             rfLoadXmm(bTok, xb, n);
-            bText = isWindows() ? xb : ("%" + xb);
+            bText = ("%" + xb);
         }
-        String aText = isWindows() ? xa : ("%" + xa);
+        String aText = ("%" + xa);
         if (!compare) {
             String mn;
             switch (op) {
@@ -6498,11 +6011,11 @@ public class X86Backend {
                 case "DIV": mn = "div"; break;
                 default: throw new IllegalStateException("unknown R_FBIN operator '" + op + "'");
             }
-            raw(isWindows() ? ("    " + mn + sfx + " " + aText + ", " + bText) : ("    " + mn + sfx + " " + bText + ", " + aText));
+            raw(("    " + mn + sfx + " " + bText + ", " + aText));
             rfXmmToGpr(xa, d, n);
             return;
         }
-        raw(isWindows() ? ("    ucomi" + sfx + " " + aText + ", " + bText) : ("    ucomi" + sfx + " " + bText + ", " + aText));
+        raw(("    ucomi" + sfx + " " + bText + ", " + aText));
         String setcc;
         switch (op) {
             case "EQ": setcc = "sete"; break;
@@ -6518,13 +6031,9 @@ public class X86Backend {
 
     private void rfSetcc(String setcc, String d) {
         String d8 = sizedReg(d, 1);
-        if (isWindows()) {
-            raw("    " + setcc + " " + d8);
-            raw("    movzx " + d + ", " + d8);
-        } else {
-            raw("    " + setcc + " %" + d8);
-            raw("    movzbq %" + d8 + ", %" + d);
-        }
+        raw("    " + setcc + " %" + d8);
+        raw("    movzbq %" + d8 + ", %" + d);
+        
     }
 
     private void rfRmw(String op, String slotTok, String srcTok) {
@@ -6532,10 +6041,10 @@ public class X86Backend {
             String vr = rfReg(slotTok);
             switch (op) {
                 case "INC":
-                    raw(isWindows() ? ("    inc " + vr) : ("    incq %" + vr));
+                    raw(("    incq %" + vr));
                     return;
                 case "DEC":
-                    raw(isWindows() ? ("    dec " + vr) : ("    decq %" + vr));
+                    raw(("    decq %" + vr));
                     return;
                 case "ADD":
                 case "SUB": {
@@ -6555,10 +6064,10 @@ public class X86Backend {
         String mem = rfMemText(rfSlot(slotTok));
         switch (op) {
             case "INC":
-                raw(isWindows() ? ("    inc " + mem) : ("    incq " + mem));
+                raw(("    incq " + mem));
                 return;
             case "DEC":
-                raw(isWindows() ? ("    dec " + mem) : ("    decq " + mem));
+                raw(("    decq " + mem));
                 return;
             case "ADD":
             case "SUB": {
@@ -6581,11 +6090,8 @@ public class X86Backend {
     }
 
     private void movRegToRegRbpFromRsp() {
-        if (isWindows()) {
-            raw("    mov rbp, rsp");
-        } else {
-            raw("    movq %rsp, %rbp");
-        }
+        raw("    movq %rsp, %rbp");
+        
     }
 
     /**
@@ -6652,21 +6158,16 @@ public class X86Backend {
                 boolean x = r[1].equals("xmm");
                 cur += x ? 16 : 8;
                 String st, ld;
-                if (isWindows()) {
-                    String mem = "[rbp-" + cur + "]";
-                    st = x ? "    movups " + mem + ", " + r[0] : "    mov " + mem + ", " + r[0];
-                    ld = x ? "    movups " + r[0] + ", " + mem : "    mov " + r[0] + ", " + mem;
-                } else {
-                    String mem = "-" + cur + "(%rbp)";
-                    st = "    " + (x ? "movups" : "movq") + " %" + r[0] + ", " + mem;
-                    ld = "    " + (x ? "movups" : "movq") + " " + mem + ", %" + r[0];
-                }
+                String mem = "-" + cur + "(%rbp)";
+                st = "    " + (x ? "movups" : "movq") + " %" + r[0] + ", " + mem;
+                ld = "    " + (x ? "movups" : "movq") + " " + mem + ", %" + r[0];
+                
                 saves.append(st).append('\n');
                 restores.append(ld).append('\n');
             }
             long total = (cur + 15) & ~15L;
             frameBytes = csrAllocSum - csrAllocBytes + total;
-            String newSub = isWindows() ? ("    sub rsp, " + total + "\n") : ("    subq $" + total + ", %rsp\n");
+            String newSub = ("    subq $" + total + ", %rsp\n");
             if (!out.substring(csrAllocPos, csrAllocPos + csrAllocLine.length()).equals(csrAllocLine)) {
                 throw new RuntimeException("codegen internal error: ALLOC line moved in '" + currentFuncName + "'");
             }
@@ -6681,8 +6182,8 @@ public class X86Backend {
             from = i + restoreText.length();
         }
         String rspMarked = RSP_MARK + "\n";
-        String rspFix = frameBytes == 0 ? (isWindows() ? "    mov rsp, rbp\n" : "    movq %rbp, %rsp\n")
-                : (isWindows() ? "    lea rsp, [rbp-" + frameBytes + "]\n" : "    leaq -" + frameBytes + "(%rbp), %rsp\n");
+        String rspFix = frameBytes == 0 ? ("    movq %rbp, %rsp\n")
+                : (("    leaq -" + frameBytes + "(%rbp), %rsp\n"));
         from = csrFuncStart;
         while ((i = out.indexOf(rspMarked, from)) >= 0) {
             out.replace(i, i + rspMarked.length(), rspFix);
@@ -6693,11 +6194,8 @@ public class X86Backend {
 
     private void emitFunctionEpilogue() {
         raw(CSR_MARK);
-        if (isWindows()) {
-            raw("    mov rsp, rbp");
-        } else {
-            raw("    movq %rbp, %rsp");
-        }
+        raw("    movq %rbp, %rsp");
+        
         popReg("rbp");
         raw("    ret");
     }

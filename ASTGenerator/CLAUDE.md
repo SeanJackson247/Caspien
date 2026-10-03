@@ -47,7 +47,7 @@ Stages in `src/main/java/caspien/`:
 No framework. Fixtures: `examples/` in this folder (hand-written `.caspien`); names with `_error_test`/`_error` must FAIL to compile, others must compile; `_cg_test` also run end to end through the later stages. Run each through `Main`, compare pass/fail before/after a change. Runtime tests are in `/home/claude/caspien/tests/*.caspien` plus `*_check.sh` scripts; compile and run ONE program at a time per compiler tree (shared scratch files). The shipped config targets windows_gnu, so run sweeps in a Linux-configured scratch copy.
 
 ## Known open gaps
-- MASM (`windows`) output is invalid (see Codegen/CLAUDE.md); windows_gnu is verified under Wine.
+- windows_gnu is verified under Wine; there is no MASM target.
 
 ## Deliberate limits (not gaps)
 - The struct `.enum` form is an error (`x instanceof S.enum`; only an interface has `.enum`, used as `match x implements I.enum{..}`).
