@@ -1,0 +1,180 @@
+// A fixed array of structs that own memory (`Holder[2]`, as a local or as a struct member) is an owned slot: dropped element by
+// element at scope end, moved as a whole by a copy (the source can not be used afterwards), its elements moved in by a literal,
+// and an element written with `arr[i] = h` drops the old element first. Reading an element out by value is an error (use clone).
+// Checked through the ghost table's entry count (owning_array_check.sh runs this under valgrind).
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+struct World{@pub{
+	ticks: mut u64
+}}
+struct Holder{@pub{
+	w: owns some mut World
+}}
+struct Rack{@pub{
+	hs: mut Holder[2]
+	n: mut u64
+}}
+
+func live() mut u64{
+	let n = mut 0
+	unsafe assume{
+		assume match ghost_table.lockState : OPEN
+		n = mut ghost_table.len
+	}
+	return n
+}
+
+func check(name: static imut string, ok: imut bool) void{
+	unsafe extern{
+		if ok{ printf("PASS %s\n", name) }
+		else{ printf("FAIL %s\n", name) }
+	}
+}
+
+func localArray() mut u64{
+	?catch(e){ return 0 }
+	let w1 = mut ? new World{ticks= 4}
+	let w2 = mut ? new World{ticks= 5}
+	let h1 = mut Holder{w= w1}
+	let h2 = mut Holder{w= w2}
+	let arr = mut [h1, h2]
+	return arr[0].w.ticks * 10 + arr[1].w.ticks
+}
+
+func wholeMove() mut u64{
+	?catch(e){ return 0 }
+	let w1 = mut ? new World{ticks= 6}
+	let w2 = mut ? new World{ticks= 7}
+	let h1 = mut Holder{w= w1}
+	let h2 = mut Holder{w= w2}
+	let arr = mut [h1, h2]
+	let moved = mut arr
+	return moved[0].w.ticks * 10 + moved[1].w.ticks
+}
+
+func elementAssign() mut u64{
+	?catch(e){ return 0 }
+	let w1 = mut ? new World{ticks= 1}
+	let w2 = mut ? new World{ticks= 2}
+	let h1 = mut Holder{w= w1}
+	let h2 = mut Holder{w= w2}
+	let arr = mut [h1, h2]
+	let w3 = mut ? new World{ticks= 8}
+	let h3 = mut Holder{w= w3}
+	arr[1] = h3
+	return arr[0].w.ticks * 10 + arr[1].w.ticks
+}
+
+func memberArray() mut u64{
+	?catch(e){ return 0 }
+	let w1 = mut ? new World{ticks= 2}
+	let w2 = mut ? new World{ticks= 3}
+	let h1 = mut Holder{w= w1}
+	let h2 = mut Holder{w= w2}
+	let r = mut Rack{hs= [h1, h2], n= 9}
+	return r.hs[0].w.ticks * 100 + r.hs[1].w.ticks * 10 + r.n
+}
+
+func heapMember() mut u64{
+	?catch(e){ return 0 }
+	let w1 = mut ? new World{ticks= 3}
+	let w2 = mut ? new World{ticks= 4}
+	let h1 = mut Holder{w= w1}
+	let h2 = mut Holder{w= w2}
+	let p = mut ? new Rack{hs= [h1, h2], n= 1}
+	match Some(p){
+		return p.hs[0].w.ticks * 10 + p.hs[1].w.ticks
+	}
+	return 0
+}
+
+func memberOfDyn() mut u64{
+	?catch(e){ return 0 }
+	let w1 = mut ? new World{ticks= 1}
+	let w2 = mut ? new World{ticks= 2}
+	let w3 = mut ? new World{ticks= 3}
+	let w4 = mut ? new World{ticks= 4}
+	let r1 = mut Rack{hs= [Holder{w= w1}, Holder{w= w2}], n= 0}
+	let r2 = mut Rack{hs= [Holder{w= w3}, Holder{w= w4}], n= 0}
+	let d = mut ? dyn([r1, r2])
+	match 1 in d{
+		return d[1].hs[1].w.ticks
+	}
+	return 0
+}
+
+func cloned() mut u64{
+	?catch(e){ return 0 }
+	let w1 = mut ? new World{ticks= 5}
+	let w2 = mut ? new World{ticks= 6}
+	let p = mut ? new Rack{hs= [Holder{w= w1}, Holder{w= w2}], n= 0}
+	match Some(p){
+		let q = mut ? clone(p)
+		match Some(q){
+			q.hs[1].w.ticks = 60
+			return p.hs[1].w.ticks * 100 + q.hs[1].w.ticks
+		}
+	}
+	return 0
+}
+
+func inLoop() void{
+	?catch(e){ return }
+	for i in 0..4{
+		let w1 = mut ? new World{ticks= 1}
+		let w2 = mut ? new World{ticks= 2}
+		let arr = mut [Holder{w= w1}, Holder{w= w2}]
+	}
+}
+
+@throws
+func failing() void{
+	?catch(e){ throw e }
+	let w1 = mut ? new World{ticks= 3}
+	let w2 = mut ? new World{ticks= 4}
+	let arr = mut [Holder{w= w1}, Holder{w= w2}]
+	throw "boom"
+}
+
+func caught() mut u64{
+	try{
+		try failing() catch(e){
+			return 1
+		}
+	}
+	return 0
+}
+
+func main() void{
+	let base = mut live()
+	let a = mut localArray()
+	check("local array: value", a == 45)
+	check("local array: freed", live() == base)
+	let b = mut wholeMove()
+	check("whole move: value", b == 67)
+	check("whole move: freed", live() == base)
+	let c = mut elementAssign()
+	check("element assign: value", c == 18)
+	check("element assign: freed", live() == base)
+	let d = mut memberArray()
+	check("member array: value", d == 239)
+	check("member array: freed", live() == base)
+	let e = mut heapMember()
+	check("heap member array: value", e == 34)
+	check("heap member array: freed", live() == base)
+	let f = mut memberOfDyn()
+	check("array member in dyn element: value", f == 4)
+	check("array member in dyn element: freed", live() == base)
+	let g = mut cloned()
+	check("clone of struct with array member: value", g == 660)
+	check("clone of struct with array member: freed", live() == base)
+	inLoop()
+	check("loop: freed", live() == base)
+	let h = mut caught()
+	check("throw: caught", h == 1)
+	check("throw: freed", live() == base)
+}

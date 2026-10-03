@@ -3778,8 +3778,31 @@ public class BytecodeEmitter {
         return dot;
     }
 
+    /** A synthesized `base[i]` with a literal index, enough for `emitAssignTarget`/`LOOKUP_LHS`. */
+    private Token syntheticElement(Token base, int index, String elemCanonical) {
+        Token look = new Token(TokenType.OPERATOR, "LOOKUP", base.line, base.file);
+        Token idx = new Token(TokenType.INTEGER, Integer.toString(index), base.line, base.file);
+        idx.resolvedType = "imut_u64";
+        Token holder = new Token(TokenType.DELINEATOR, "[", base.line, base.file);
+        holder.childs.add(idx);
+        look.left = base;
+        look.right = holder;
+        look.resolvedType = elemCanonical;
+        return look;
+    }
+
     /** Nulls every owned member of the inline struct at `base` (recursing into inline owning members): what a move out of it, or its own drop, leaves behind. */
     private void emitInlineOwnsNullOut(Token base, String structName) {
+        if (checker.isFixedArrayTypeText(structName)) {
+            // A fixed array of inline owning structs: null every element's owned leaves (unrolled, the length is fixed).
+            String elemName = structName.substring(0, structName.lastIndexOf('['));
+            int count = Integer.parseInt(structName.substring(structName.lastIndexOf('[') + 1, structName.length() - 1));
+            String elemCanon = base.resolvedType.substring(0, base.resolvedType.lastIndexOf(structName)) + elemName;
+            for (int i = 0; i < count; i++) {
+                emitInlineOwnsNullOut(syntheticElement(base, i, elemCanon), elemName);
+            }
+            return;
+        }
         TypeChecker.StructInfo si = checker.getStructs().get(structName);
         for (Map.Entry<String, TypeChecker.TypeInfo> m : si.members.entrySet()) {
             if (m.getKey().equals("___type")) {

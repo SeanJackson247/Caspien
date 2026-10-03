@@ -1127,8 +1127,9 @@ public class TypeChecker {
         if ("owns".equals(t.storage)) {
             return true;
         }
-        StructInfo si = structs.get(t.baseType);
-        if (si == null || !visiting.add(t.baseType)) {
+        String elemBase = t.storage == null ? stripArrayDims(t.baseType) : t.baseType;
+        StructInfo si = structs.get(elemBase);
+        if (si == null || !visiting.add(elemBase)) {
             return false;
         }
         for (TypeInfo m : si.members.values()) {
@@ -1141,8 +1142,24 @@ public class TypeChecker {
 
     /** An inline (no storage keyword) struct value that owns memory through some member: it has to be dropped at scope end and moved, not copied. */
     boolean isInlineOwningStruct(TypeInfo t) {
-        return t != null && t.storage == null && t.baseType != null && structs.containsKey(t.baseType)
-                && elementTextOwnsMemory(t.baseType);
+        if (t == null || t.storage != null || t.baseType == null) {
+            return false;
+        }
+        String elem = stripArrayDims(t.baseType);
+        return structs.containsKey(elem) && elementTextOwnsMemory(elem);
+    }
+
+    /** `Holder[2][3]` -> `Holder`: a fixed array of inline owning structs is an owned slot too (dropped element by element, moved as a whole). */
+    String stripArrayDims(String baseType) {
+        while (isArrayType(baseType)) {
+            baseType = arrayElementType(baseType);
+        }
+        return baseType;
+    }
+
+    /** True for a fixed array type (`Holder[2]`). */
+    boolean isFixedArrayTypeText(String baseType) {
+        return baseType != null && isArrayType(baseType);
     }
 
     /** True when a dynarray element, given as the canonical text in a dynarray type (`Holder`, `owns_some_mut_World`), owns memory. */
@@ -11458,6 +11475,12 @@ public class TypeChecker {
                 throw new CompilerException("type", valueExpr.file, valueExpr.line,
                         "'deref(...)' would copy a '" + declaredType.baseType + "', which owns memory -- two owners of one block. "
                                 + "Use 'clone(...)', or move the owned members out one by one");
+            }
+            if (inner.type == TokenType.OPERATOR && "LOOKUP".equals(inner.text) && inner.left != null
+                    && inner.left.resolvedType != null && inner.left.resolvedType.endsWith("]")) {
+                throw new CompilerException("type", valueExpr.file, valueExpr.line,
+                        "reading '" + declaredType.baseType + "' out of a fixed array would copy a value that owns memory -- two owners "
+                                + "of one block. Use 'clone(...)' on the element, or move the owned members out one by one");
             }
             String key = slotKeyOf(inner);
             if (key != null) {

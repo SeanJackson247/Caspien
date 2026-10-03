@@ -2844,6 +2844,14 @@ public class AddressLoweringPass implements OptimizationPass {
             }
             int nextDot = remainder.indexOf('.');
             String segment = (nextDot < 0) ? remainder : remainder.substring(0, nextDot);
+            String arrayElem = t.fixedArrayElementType();
+            if (arrayElem != null && segment.matches("[0-9]+")) {
+                // A numeric segment into a fixed array ("name.hs.1.w", as the drop/clone glue passes write them): element stride * index.
+                address += Long.parseLong(segment) * sizes.sizeOf(arrayElem);
+                currentType = arrayElem;
+                remainder = (nextDot < 0) ? "" : remainder.substring(nextDot + 1);
+                continue;
+            }
             MemberLoc loc = memberLocOf(t.baseType, segment, sizes, structTable);
             if (loc == null) {
                 return null;

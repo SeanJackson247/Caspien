@@ -247,6 +247,15 @@ public class DropGlueGenerationPass implements OptimizationPass {
                         String targetType = resolveType(targetName, localTypes);
                         if (targetType != null) {
                             CanonicalType t = CanonicalType.parse(targetType);
+                            if (!t.isOwnsStorage() && t.storage == null && t.fixedArrayElementType() != null) {
+                                // A fixed array of inline owning structs: drop every element (unrolled, the length is fixed).
+                                int before = rewritten.size();
+                                emitValueDestruct(rewritten, targetName, targetType);
+                                if (rewritten.size() != before) {
+                                    changedAnyCallSite = true;
+                                    continue;
+                                }
+                            }
                             if (!t.isOwnsStorage() && t.storage == null && structTable.hasStruct(t.baseType)
                                     && structTable.isOwnsBearing(t.baseType)) {
                                 // An inline struct that owns memory (a local, or a member of one): there is no pointer to free,
@@ -511,6 +520,18 @@ public class DropGlueGenerationPass implements OptimizationPass {
                 boolean elemNeedsWork = elemT.isOwnsStorage()
                         || (structTable.hasStruct(elemT.baseType) && structTable.isOwnsBearing(elemT.baseType))
                         || CanonicalType.fixedArrayElementTypeOf(elemT.baseType) != null;
+                CanonicalType leafT = elemT;
+                while (CanonicalType.fixedArrayElementTypeOf(leafT.baseType) != null) {
+                    leafT = CanonicalType.parse(CanonicalType.fixedArrayElementTypeOf(leafT.baseType));
+                }
+                if (elemNeedsWork && !leafT.isOwnsStorage() && leafT.storage == null && structTable.hasStruct(leafT.baseType)
+                        && structTable.isOwnsBearing(leafT.baseType)) {
+                    // Elements are inline owning structs: address each one on the stack (LOOKUP_LHS chain) and call its drop routine.
+                    final String basePath = path;
+                    final String arrType = canonicalType;
+                    emitFixedArrayElementDrops(out, () -> emit(out, "ADDR " + basePath + " " + arrType), arrType, leafT.baseType);
+                    return;
+                }
                 if (elemNeedsWork) {
                     int count = t.fixedArrayLength();
                     for (int i = 0; i < count; i++) {
@@ -527,6 +548,29 @@ public class DropGlueGenerationPass implements OptimizationPass {
             // above, via emitOwnsMemberDestruct's own GT_LOOP emission.
             // A plain scalar/non-owns-bearing struct needs nothing at
             // all -- falls through with no bytecode emitted.
+        }
+
+        /** Calls the drop routine of `leafStruct` on every element of the fixed array whose address `emitBase` pushes (unrolled; nested dimensions recurse). */
+        private void emitFixedArrayElementDrops(List<List<BytecodeToken>> out, Runnable emitBase, String arrCanonical, String leafStruct) {
+            CanonicalType at = CanonicalType.parse(arrCanonical);
+            String elemCanonical = at.fixedArrayElementType();
+            int count = at.fixedArrayLength();
+            boolean elemIsArray = CanonicalType.fixedArrayElementTypeOf(CanonicalType.parse(elemCanonical).baseType) != null;
+            for (int i = 0; i < count; i++) {
+                final int idx = i;
+                Runnable elemBase = () -> {
+                    emitBase.run();
+                    emit(out, "PUSH " + idx + " mut_u64");
+                    emit(out, "LOOKUP_LHS " + arrCanonical + " mut_u64 " + elemCanonical);
+                };
+                if (elemIsArray) {
+                    emitFixedArrayElementDrops(out, elemBase, elemCanonical, leafStruct);
+                } else {
+                    elemBase.run();
+                    emit(out, "CALL " + routineNameFor(leafStruct));
+                    enqueue(leafStruct);
+                }
+            }
         }
 
         /**
