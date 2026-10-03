@@ -135,7 +135,7 @@ func nibble(v: mut u64) mut u8{
 // true when the 32 digest bytes at d, as lowercase hex, equal the 64 characters of `expected`
 func digestIs(d: raw imut u8, expected: static imut string) mut bool{
 	let ok = mut true
-	unsafe assume extern memcopy{
+	unsafe assume deref extern memcopy{
 		let exp = mut malloc(mut 65)
 		memcopy(exp, mut 64, expected)
 		for i in 0..32{
@@ -159,7 +159,7 @@ func digestIs(d: raw imut u8, expected: static imut string) mut bool{
 // the 4 digest bytes at d + 4k read as one big-endian word
 func beWord(d: raw imut u8, k: mut u64) mut u32{
 	let:<mut u32> r = mut 0
-	unsafe assume{
+	unsafe assume deref{
 		assume match Some(d+(4*k))
 		let b0 = mut deref(d + 4 * k) as u32
 		assume match Some(d+((4*k)+1))
@@ -243,7 +243,7 @@ func stateMatches(st: raw imut u32, which: mut u64, c: mut u64) mut bool{
 }
 func sameWords(a: raw imut u32, b: raw imut u32) mut bool{
 	let ok = mut true
-	unsafe assume{
+	unsafe assume deref{
 		for i in 0..8{
 			assume match Some(a+i)
 			assume match Some(b+i)
@@ -338,7 +338,7 @@ func main() void{
 		if c < nStream * 3{
 			if sel == 0{
 				for ci in 0..nChunk{
-					unsafe assume extern global loop{
+					unsafe assume deref extern global loop{
 						let n = mut 0
 						match c in patLen{
 							n = patLen[c] as u64

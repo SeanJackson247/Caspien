@@ -1,0 +1,15 @@
+// Must fail to compile: cloning from a `raw` pointer needs an `unsafe clone` block even when the pointer is proven alive.
+struct Pair{
+	@pub{ a: mut u64
+	b: mut u64 }
+}
+
+@throws
+func duplicate(src: raw some mut Pair) owns some mut Pair{
+	?catch(e){ throw e }
+	return ?clone(src)
+}
+
+func main() void{
+	let x = mut 1
+}

@@ -88,7 +88,7 @@ func sha256FreeState(state: raw mut u32) void{
 @pub
 func sha256Compress(state: raw mut u32, block: raw imut u8) void{
 	let:<mut u32[64]> w = mut [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-	unsafe assume global{
+	unsafe assume deref global{
 		for i in 0..16{
 			match i into w{
 				let p = mut (block + i * 4)
@@ -175,7 +175,7 @@ func sha256Compress(state: raw mut u32, block: raw imut u8) void{
 @pub
 func sha256CompressWords(state: raw mut u32, words: raw imut u32) void{
 	let:<mut u32[64]> w = mut [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-	unsafe assume global{
+	unsafe assume deref global{
 		for i in 0..16{
 			match i into w{
 				assume match Some(words+i)
@@ -253,7 +253,7 @@ func sha256CompressWords(state: raw mut u32, words: raw imut u32) void{
 /** Writes the 32-byte digest (the state words, big-endian, H0 first) of `state` to `digest`. */
 @pub
 func sha256Digest(state: raw imut u32, digest: raw mut u8) void{
-	unsafe assume memcopy raw{
+	unsafe assume deref memcopy raw{
 		for i in 0..8{
 			assume match Some(state+i)
 			let v = mut deref(state + i)

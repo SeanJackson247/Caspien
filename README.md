@@ -897,7 +897,10 @@ either proven it myself, or I am choosing to compile code without those guarante
 to find and easy to count. What needs it:
 
 - calling any C function (an `extern`),
-- making a `raw` pointer (`raw v`),
+- making a `raw` pointer (`raw v`), and dereferencing or cloning one (`deref(p)`, `clone(p)`): reading through a `raw`
+  pointer is unsafe even when it is proven alive, so it needs the `deref` or `clone` tag as well as the proof (a `match Some(p)` is a
+  real run-time check against the ghost table, and `raw` pointers into C memory or the stack are not in it,
+  so for those the proof is an `assume match Some(p)`),
 - `memcopy`,
 - inline assembly (`ASM`) and `assume match`,
 - a bare `loop{}`, and an `unsafe dyn` array,
@@ -910,7 +913,7 @@ in `unsafe` relaxes those checks.
 
 A statement-level `unsafe` block must say why it is unsafe, by naming the reasons after the keyword:
 `unsafe assume extern{`. The reasons are `extern` (a C call), `memcopy`, `raw` (making a `raw` pointer),
-`global`, `loop`, `udyn` (an unsafe dynarray), `assume` (`assume match`),
+`deref` and `clone` (dereferencing or cloning a `raw` pointer), `global`, `loop`, `udyn` (an unsafe dynarray), `assume` (`assume match`),
 `call` (calling a function pointer), `asm`, `async` (a pointer across an `@async` boundary), `guard` (using a
 `@guard` type without proving it locked) and `swap` (touching a `swap` mutex field outside `match @lock`). The
 compiler checks the list both ways: a block that needs a reason it does not name is an error, and so is a block
@@ -931,7 +934,7 @@ extern c_abs(mut s64) mut s64
 func main() void{
 	let count = mut 5
 	let bytes = mut (count * sizeof(u64))
-	unsafe assume extern memcopy raw{
+	unsafe assume deref extern memcopy raw{
 		let base = mut malloc(bytes)            // a `raw u8`
 		let p = mut (base as u64)               // now a `raw u64`: it steps by 8
 		let start = mut p
@@ -944,8 +947,8 @@ func main() void{
 		let q = mut start
 		let sum = mut 0
 		for i in 0..count{
-			assume match Some(q)
-			sum += deref(q)
+			assume match Some(q)                // vouch that q is alive: it points into C memory, so a real Some(q) would be false
+			sum += deref(q)                     // reading through a raw pointer needs the `deref` tag as well
 			q++
 		}
 		free(base)

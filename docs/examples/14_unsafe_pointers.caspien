@@ -13,7 +13,7 @@ extern atoi(static imut string) mut s64
 func main() void{
 	let count = mut 5
 	let bytes = mut (count * sizeof(u64))
-	unsafe assume extern memcopy raw{
+	unsafe assume deref extern memcopy raw{
 		let base = mut malloc(bytes)            // a `raw u8`
 		let p = mut (base as u64)               // widening the pointee makes it a `raw u64`: it now steps by 8
 		let start = mut p

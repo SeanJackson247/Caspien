@@ -11,7 +11,9 @@ func readAuto(p: auto imut u64) imut u64{
 	return deref(p)
 }
 func readSome(p: raw some imut u64) imut u64{
-	return deref(p)
+	unsafe deref{
+		return deref(p)
+	}
 }
 @throws
 func makeBox() owns some mut Box{

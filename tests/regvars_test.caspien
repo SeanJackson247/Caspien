@@ -192,7 +192,7 @@ func catchReturn() mut u64{
 
 // 7. a variable whose address is taken must stay in memory: the pointer read has to see every update
 func readThrough(p: raw imut u64) imut u64{
-	unsafe assume{
+	unsafe assume deref{
 		assume match Some(p)
 		return deref(p)
 	}

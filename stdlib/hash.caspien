@@ -34,7 +34,7 @@ import "libc.caspien"
 @pub
 func fnv1a64Bytes(p: raw imut u8, byteCount: mut u64) mut u64{
 	let h = mut 0xcbf29ce484222325
-	unsafe assume{
+	unsafe assume deref{
 		for i in 0..byteCount{
 			assume match Some(p+i)
 			let byteVal = mut deref(p + i) as u64

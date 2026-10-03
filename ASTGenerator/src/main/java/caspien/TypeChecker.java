@@ -1106,7 +1106,7 @@ public class TypeChecker {
 
     /** The reasons a statement-level `unsafe` block must name (`unsafe deref extern{`), each matching one rule that otherwise needs a proof or is refused in safe code. */
     static final Set<String> UNSAFE_TAGS = new java.util.LinkedHashSet<>(Arrays.asList(
-            "extern", "memcopy", "raw", "global", "loop", "udyn",
+            "extern", "memcopy", "raw", "deref", "clone", "global", "loop", "udyn",
             "assume", "call", "asm", "async", "guard", "swap"));
 
     /** One written `unsafe ...{` block: what it declares, and (unioned over every time it is checked, e.g. per generic instantiation) what it really used. */
@@ -13413,6 +13413,13 @@ public class TypeChecker {
                             + "'auto', 'some'-tagged, inside 'match Some(...)', or vouched for with "
                             + "'assume match Some(...)' in an 'unsafe assume' block [needs: assume match Some(" + exprHint(argExpr) + ")]");
         }
+        if ("raw".equals(argType.storage) && !unsafeBypass(scope, "deref")) {
+            // A 'raw' pointer may point anywhere (C memory, the stack, the middle of a block), so even a proven one
+            // is only as good as the programmer's word: reading through it is 'unsafe' on top of the alive proof.
+            throw new CompilerException("type", op.file, op.line,
+                    "'deref' of a 'raw' pointer is inherently unsafe -- it needs an 'unsafe deref' block (and the "
+                            + "alive proof as well: 'match Some(...)', or 'assume match Some(...)' in an 'unsafe assume' block)");
+        }
         return new TypeInfo(null, argType.mutability, argType.baseType, argType.aliasName);
     }
 
@@ -13447,6 +13454,13 @@ public class TypeChecker {
                     "'clone' of a pointer requires the pointer to be proven alive -- "
                             + "'auto', 'some'-tagged, inside 'match Some(...)', or vouched for with "
                             + "'assume match Some(...)' in an 'unsafe assume' block [needs: assume match Some(" + exprHint(argExpr) + ")]");
+        }
+        if ("raw".equals(argType.storage) && !unsafeBypass(scope, "clone")) {
+            // Same as 'deref': a 'raw' pointer's pointee is only as good as the programmer's word, so cloning from
+            // one is 'unsafe' on top of the alive proof.
+            throw new CompilerException("type", op.file, op.line,
+                    "'clone' of a 'raw' pointer is inherently unsafe -- it needs an 'unsafe clone' block (and the "
+                            + "alive proof as well: 'match Some(...)', or 'assume match Some(...)' in an 'unsafe assume' block)");
         }
         // A failed allocation throws, so what comes back is never null: `owns some`, like `new`.
         return argType.withStorage("owns").withSome(true); // keeps dynarray/array shape, mutability and alias

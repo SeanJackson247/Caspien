@@ -1,6 +1,6 @@
 import "../stdlib/libc.caspien"
 func rd(p: raw imut u64) imut u64{
-	unsafe assume{
+	unsafe assume deref{
 		assume match Some(p)
 		return deref(p)
 	}

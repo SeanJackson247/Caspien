@@ -1,0 +1,51 @@
+// clone of a `raw` pointer needs an `unsafe clone` block on top of the alive proof (here the `raw some` tag). The copy is a fresh
+// registered `owns some` that is independent of the source; the ghost table's entry count shows the copy is registered and freed.
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+
+struct Pair{
+	@pub{ a: mut u64
+	b: mut u64 }
+}
+
+func check(name: static imut string, ok: imut bool) void{
+	unsafe extern{
+		if ok{ printf("PASS %s\n", name) }
+		else{ printf("FAIL %s\n", name) }
+	}
+}
+
+func live() mut u64{
+	let n = mut 0
+	unsafe assume{
+		assume match ghost_table.lockState : OPEN
+		n = mut ghost_table.len
+	}
+	return n
+}
+
+@throws
+func duplicate(src: raw some mut Pair) owns some mut Pair{
+	?catch(e){ throw e }
+	unsafe clone{
+		return ?clone(src)
+	}
+}
+
+func main() void{
+	try{
+		?catch(e){ return }
+		let base = mut live()
+		let orig = mut ?new Pair{a= 7, b= 9}
+		let copy = mut ?duplicate(orig)
+		check("copy a", copy.a == 7)
+		check("copy b", copy.b == 9)
+		copy.a = 100
+		check("copy is independent", orig.a == 7 && copy.a == 100)
+		check("both registered", live() == base + 2)
+	}
+}
