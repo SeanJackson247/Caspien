@@ -215,6 +215,16 @@ public class CloneGenerationPass implements OptimizationPass {
 
                 for (int k = start; k <= end; k++) {
                     List<BytecodeToken> fl = lines.get(k);
+                    if (!fl.isEmpty() && fl.get(0).text.equals("CLONE_FILL") && fl.size() == 4) {
+                        // "CLONE_FILL arrLocal arrType fromLocal": after a growing `resize` of a dynarray whose elements own memory,
+                        // the new slots are bitwise copies of the fill value; each (from+1 .. end for an inline struct fill, which slot `from` keeps; from .. end for an `owns` pointer fill) is replaced by a deep clone.
+                        List<String> replacement = buildFillCloneLoop(fl.get(1).text, fl.get(2).text, fl.get(3).text);
+                        if (replacement != null) {
+                            rewritten.addAll(PARSER.parse(replacement, "<generated-clone-glue>"));
+                        }
+                        changedAnyCallSite = true;
+                        continue;
+                    }
                     if (!fl.isEmpty() && fl.get(0).text.equals("CLONE") && fl.size() == 3) {
                         String sourceType = fl.get(1).text;
                         List<String> replacement = tryRewriteClone(sourceType);
@@ -420,19 +430,64 @@ public class CloneGenerationPass implements OptimizationPass {
          */
         private List<String> buildValueCloneLoop(String srcType, String dynElem, String elemRoutine, String resultType) {
             List<String> lines = new ArrayList<>();
+            CanonicalType elemT = CanonicalType.parse(dynElem);
+            String dstType = "owns_mut_dynarray(" + dynElem + ")";
+            String doneLabel = newLabel("clone_loop_done");
+            String failLabel = newLabel("clone_loop_fail");
 
             String srcTemp = newTemp(lines, "clone_loop_src", srcType);
             lines.add("POP " + srcTemp + " " + srcType);
-
-            String dstType = "owns_mut_dynarray(" + dynElem + ")";
             String dstTemp = newTemp(lines, "clone_loop_dst", dstType);
+            String newTemp = newTemp(lines, "clone_loop_new", dstType);
+
+            // an empty array first; a failed allocation here has nothing to undo
             lines.add("NEW_DYN mut_dynarray(" + dynElem + ") 0");
+            String ndOk = newLabel("clone_loop_nd_ok");
+            lines.add("DUP_TOP");
+            lines.add("PUSH null " + dstType);
+            lines.add("EQ " + dstType + " " + dstType + " imut_bool");
+            lines.add("CMP");
+            lines.add("JMP " + ndOk);
+            lines.add("JMP " + doneLabel);
+            lines.add(ndOk + ":");
             lines.add("POP " + dstTemp + " " + dstType);
+
+            // Grow to the source length (new slots unfilled; each is written before it is counted as made). A failed grow
+            // leaves the old, empty block valid.
+            // (RESIZE needs a fill value: the source's first element, whose copies are overwritten before they count.)
+            String nonEmpty = newLabel("clone_loop_nonempty");
+            lines.add("PUSH " + srcTemp + " " + srcType);
+            lines.add("LEN");
+            lines.add("PUSH 0 indeterminate_u64");
+            lines.add("EQ indeterminate_u64 indeterminate_u64 imut_bool");
+            lines.add("CMP");
+            lines.add("JMP " + nonEmpty);
+            lines.add("PUSH " + dstTemp + " " + dstType);
+            lines.add("JMP " + doneLabel);
+            lines.add(nonEmpty + ":");
             lines.add("PUSH " + dstTemp + " " + dstType);
             lines.add("PUSH " + srcTemp + " " + srcType);
             lines.add("LEN");
-            lines.add("URESIZE " + dstType + " indeterminate_u64");
-            lines.add("POP " + dstTemp + " " + dstType); // resize may relocate -- never assume the "NEW_DYN ... 0" address survives
+            lines.add("PUSH " + srcTemp + " " + srcType);
+            lines.add("PUSH 0 indeterminate_u64");
+            lines.add("LOOKUP " + srcType + " indeterminate_u64 " + dynElem);
+            lines.add("RESIZE " + dstType + " indeterminate_u64 " + dynElem);
+            lines.add("POP " + newTemp + " " + dstType);
+            String rsOk = newLabel("clone_loop_rs_ok");
+            lines.add("PUSH " + newTemp + " " + dstType);
+            lines.add("PUSH null " + dstType);
+            lines.add("EQ " + dstType + " " + dstType + " imut_bool");
+            lines.add("CMP");
+            lines.add("JMP " + rsOk);
+            lines.add("PUSH " + dstTemp + " " + dstType);
+            lines.add("GT_REGISTER");
+            lines.add("POP " + dstTemp + " " + dstType);
+            lines.add("GT_DESTRUCT " + dstTemp);
+            lines.add("PUSH null " + dstType);
+            lines.add("JMP " + doneLabel);
+            lines.add(rsOk + ":");
+            lines.add("PUSH " + newTemp + " " + dstType);
+            lines.add("POP " + dstTemp + " " + dstType);
 
             String counter = newTemp(lines, "clone_loop_i", "mut_u64");
             lines.add("ADDR " + counter + " mut_u64");
@@ -449,44 +504,159 @@ public class CloneGenerationPass implements OptimizationPass {
             lines.add("CMP");
             lines.add("JMP " + endLabel);
 
-            // Destination slot address first (the same "push the
-            // destination, then the value, then ASSIGN" order every
-            // other assignment in this bytecode already uses), then
-            // this iteration's freshly cloned value, exactly per
-            // `elemRoutine`'s own tag contract (this pass's own header).
+            // The element routine clones the source element straight into the destination slot (destination address
+            // pushed first, source address second -- the callee reads them as stack words 1 and 0) and returns 1 on
+            // success, 0 when one of its nested allocations failed (it has already freed what it made).
             lines.add("PUSH " + dstTemp + " " + dstType);
             lines.add("PUSH " + counter + " mut_u64");
             lines.add("LOOKUP_LHS " + dstType + " mut_u64 " + dynElem);
-
-            CanonicalType elemT = CanonicalType.parse(dynElem);
-            if (elemRoutine.equals("NONE:PTR")) {
-                lines.add("PUSH " + srcTemp + " " + srcType);
-                lines.add("PUSH " + counter + " mut_u64");
-                lines.add("LOOKUP " + srcType + " mut_u64 " + dynElem);
-                lines.add("CLONE " + dynElem + " owns_mut_" + elemT.baseType);
-            } else if (elemRoutine.startsWith("PTR:")) {
-                lines.add("PUSH " + srcTemp + " " + srcType);
-                lines.add("PUSH " + counter + " mut_u64");
-                lines.add("LOOKUP " + srcType + " mut_u64 " + dynElem);
-                lines.add("CALL " + elemRoutine.substring("PTR:".length()));
-                lines.add("PUSH_RET owns_mut_" + elemT.baseType);
-            } else { // "VAL:name"
-                lines.add("PUSH " + srcTemp + " " + srcType);
-                lines.add("PUSH " + counter + " mut_u64");
-                lines.add("LOOKUP_LHS " + srcType + " mut_u64 " + dynElem);
-                lines.add("CALL " + elemRoutine.substring("VAL:".length()));
-                lines.add("PUSH_RET mut_" + elemT.baseType);
-            }
-            lines.add("ASSIGN " + dynElem + " " + dynElem + " " + dynElem);
+            lines.add("PUSH " + srcTemp + " " + srcType);
+            lines.add("PUSH " + counter + " mut_u64");
+            lines.add("LOOKUP_LHS " + srcType + " mut_u64 " + dynElem);
+            lines.add("CALL " + elemRoutine.substring("VAL:".length()));
+            lines.add("PUSH_RET imut_u64");
+            lines.add("PUSH 0 indeterminate_u64");
+            lines.add("EQ imut_u64 indeterminate_u64 imut_bool");
+            String elOk = newLabel("clone_loop_el_ok");
+            lines.add("CMP");
+            lines.add("JMP " + elOk);
+            lines.add("JMP " + failLabel);
+            lines.add(elOk + ":");
 
             lines.add("ADDR " + counter + " mut_u64");
             lines.add("PUSH " + counter + " mut_u64");
             lines.add("INC mut_u64 indeterminate_u64");
             lines.add("ASSIGN mut_u64 indeterminate_u64 indeterminate_u64");
             lines.add("JMP " + topLabel);
-            lines.add(endLabel + ":");
 
+            lines.add(endLabel + ":");
             lines.add("PUSH " + dstTemp + " " + dstType);
+            lines.add("JMP " + doneLabel);
+            // Element `counter` failed: cut the array down to the elements already made (the block keeps its length header),
+            // register it so the drop frees the block and each made element's owned memory, and return null.
+            lines.add(failLabel + ":");
+            lines.add("PUSH " + dstTemp + " " + dstType);
+            lines.add("PUSH " + counter + " mut_u64");
+            lines.add("PUSH " + srcTemp + " " + srcType);
+            lines.add("PUSH 0 indeterminate_u64");
+            lines.add("LOOKUP " + srcType + " indeterminate_u64 " + dynElem);
+            lines.add("RESIZE " + dstType + " mut_u64 " + dynElem);
+            lines.add("POP " + dstTemp + " " + dstType);
+            lines.add("PUSH " + dstTemp + " " + dstType);
+            lines.add("GT_REGISTER");
+            lines.add("POP " + dstTemp + " " + dstType);
+            lines.add("GT_DESTRUCT " + dstTemp);
+            lines.add("PUSH null " + dstType);
+            lines.add(doneLabel + ":");
+            return lines;
+        }
+
+        /**
+         * The loop behind `CLONE_FILL`. The array is the hidden local `arr`; on the first element that cannot be cloned the
+         * array is cut down to the slots made so far (dropping the not-yet-replaced aliases), destructed whole, and `arr` is set
+         * to null so the caller's ordinary null check throws. Nothing is emitted when the elements own nothing.
+         */
+        private List<String> buildFillCloneLoop(String arr, String arrType, String from) {
+            String dynElem = CanonicalType.dynArrayElementTypeOf(CanonicalType.parse(arrType).baseType);
+            if (dynElem == null) {
+                return null;
+            }
+            String elemRoutine = elementRoutineTagFor(dynElem);
+            if (elemRoutine.equals("NONE")) {
+                return null;
+            }
+            List<String> lines = new ArrayList<>();
+            CanonicalType elemT = CanonicalType.parse(dynElem);
+            String eType = "owns_mut_" + elemT.baseType;
+            String doneLabel = newLabel("clone_fill_done");
+            String failLabel = newLabel("clone_fill_fail");
+            String topLabel = newLabel("clone_fill");
+            // a failed RESIZE hands back null: nothing to fill
+            lines.add("PUSH " + arr + " " + arrType);
+            lines.add("PUSH null " + arrType);
+            lines.add("NEQ " + arrType + " " + arrType + " imut_bool");
+            lines.add("CMP");
+            lines.add("JMP " + doneLabel);
+            String counter = newTemp(lines, "clone_fill_i", "mut_u64");
+            lines.add("ADDR " + counter + " mut_u64");
+            lines.add("PUSH " + from + " mut_u64");
+            if (elemRoutine.startsWith("VAL:")) {
+                // an inline fill value is copied into slot `from` as it is (its owned memory now belongs to the array)
+                lines.add("INC mut_u64 indeterminate_u64");
+            }
+            // an `owns` pointer fill stays with the caller: every new slot, `from` included, gets its own clone
+            lines.add("ASSIGN mut_u64 indeterminate_u64 indeterminate_u64");
+            lines.add(topLabel + ":");
+            lines.add("PUSH " + counter + " mut_u64");
+            lines.add("PUSH " + arr + " " + arrType);
+            lines.add("LEN");
+            lines.add("LT mut_u64 indeterminate_u64 indeterminate_bool");
+            lines.add("CMP");
+            lines.add("JMP " + doneLabel);
+            if (elemRoutine.startsWith("VAL:")) {
+                lines.add("PUSH " + arr + " " + arrType);
+                lines.add("PUSH " + counter + " mut_u64");
+                lines.add("LOOKUP_LHS " + arrType + " mut_u64 " + dynElem);
+                lines.add("PUSH " + arr + " " + arrType);
+                lines.add("PUSH " + from + " mut_u64");
+                lines.add("LOOKUP_LHS " + arrType + " mut_u64 " + dynElem);
+                lines.add("CALL " + elemRoutine.substring("VAL:".length()));
+                lines.add("PUSH_RET imut_u64");
+                lines.add("PUSH 0 indeterminate_u64");
+                lines.add("EQ imut_u64 indeterminate_u64 imut_bool");
+                String elOk = newLabel("clone_fill_el_ok");
+                lines.add("CMP");
+                lines.add("JMP " + elOk);
+                lines.add("JMP " + failLabel);
+                lines.add(elOk + ":");
+            } else {
+                String elemTemp = newTemp(lines, "clone_fill_e", eType);
+                lines.add("PUSH " + arr + " " + arrType);
+                lines.add("PUSH " + from + " mut_u64");
+                lines.add("LOOKUP " + arrType + " mut_u64 " + dynElem);
+                if (elemRoutine.equals("NONE:PTR")) {
+                    lines.add("CLONE " + dynElem + " " + eType);
+                } else {
+                    lines.add("CALL " + elemRoutine.substring("PTR:".length()));
+                    lines.add("PUSH_RET " + eType);
+                }
+                String elOk = newLabel("clone_fill_el_ok");
+                lines.add("DUP_TOP");
+                lines.add("PUSH null " + eType);
+                lines.add("EQ " + eType + " " + eType + " imut_bool");
+                lines.add("CMP");
+                lines.add("JMP " + elOk);
+                lines.add("POP " + elemTemp + " " + eType);
+                lines.add("JMP " + failLabel);
+                lines.add(elOk + ":");
+                lines.add("GT_REGISTER");
+                lines.add("POP " + elemTemp + " " + eType);
+                lines.add("PUSH " + arr + " " + arrType);
+                lines.add("PUSH " + counter + " mut_u64");
+                lines.add("LOOKUP_LHS " + arrType + " mut_u64 " + dynElem);
+                lines.add("PUSH " + elemTemp + " " + eType);
+                lines.add("ASSIGN " + dynElem + " " + dynElem + " " + dynElem);
+            }
+            lines.add("ADDR " + counter + " mut_u64");
+            lines.add("PUSH " + counter + " mut_u64");
+            lines.add("INC mut_u64 indeterminate_u64");
+            lines.add("ASSIGN mut_u64 indeterminate_u64 indeterminate_u64");
+            lines.add("JMP " + topLabel);
+            lines.add(failLabel + ":");
+            // cut off the slots that still alias slot `from`, then free the array with everything made so far
+            lines.add("ADDR " + arr + " " + arrType);
+            lines.add("PUSH " + arr + " " + arrType);
+            lines.add("PUSH " + counter + " mut_u64");
+            lines.add("PUSH " + arr + " " + arrType);
+            lines.add("PUSH " + from + " mut_u64");
+            lines.add("LOOKUP " + arrType + " mut_u64 " + dynElem);
+            lines.add("RESIZE " + arrType + " mut_u64 " + dynElem);
+            lines.add("ASSIGN " + arrType + " " + arrType + " " + arrType);
+            lines.add("GT_DESTRUCT " + arr);
+            lines.add("ADDR " + arr + " " + arrType);
+            lines.add("PUSH null " + arrType);
+            lines.add("ASSIGN " + arrType + " " + arrType + " " + arrType);
+            lines.add(doneLabel + ":");
             return lines;
         }
 
@@ -836,17 +1006,31 @@ public class CloneGenerationPass implements OptimizationPass {
         private List<List<BytecodeToken>> generateValueCloneRoutine(String structName) {
             List<List<BytecodeToken>> out = new ArrayList<>();
             String paramType = "raw_imut_" + structName;
+            String dstParamType = "raw_mut_" + structName;
             emit(out, "FUNC_START " + valueRoutineNameFor(structName));
             emit(out, "FUNC_DECORATE @clone_glue");
-            emit(out, "RETURNS mut_" + structName);
-            String root = emitParamLoad(out, "src", paramType, structName);
-            CloneCtx ctx = new CloneCtx(null); // by-value result: a failed nested allocation stays a null member
+            emit(out, "RETURNS imut_u64");
+            String root = emitParamLoad(out, "src", paramType, structName); // the source address: stack word 0
+            emit(out, "ALLOC $ret_dest " + dstParamType);
+            emit(out, "ADDR $ret_dest " + dstParamType);
+            emit(out, "PUSH $24 " + dstParamType); // the destination address: stack word 1
+            emit(out, "ASSIGN " + dstParamType + " " + dstParamType + " " + dstParamType);
+            CloneCtx ctx = new CloneCtx(newLabel("clone_fail"));
             List<List<BytecodeToken>> phase1 = new ArrayList<>();
             emitCloneLeavesOfStruct(phase1, ctx, structName, root);
             emitTempDecls(out, ctx);
             out.addAll(phase1);
+            emit(out, "PUSH $ret_dest " + dstParamType);
             emitMemberPushSequence(out, structName, root, ctx);
-            emit(out, "RET mut_" + structName);
+            emit(out, "ASSIGN mut_" + structName + " indeterminate_" + structName + " mut_" + structName);
+            emit(out, "PUSH 1 imut_u64");
+            emit(out, "RET imut_u64");
+            emit(out, ctx.failLabel + ":");
+            for (String t : ctx.tempNames) {
+                emit(out, "GT_DESTRUCT " + t);
+            }
+            emit(out, "PUSH 0 imut_u64");
+            emit(out, "RET imut_u64");
             emit(out, "FUNC_END");
             return out;
         }

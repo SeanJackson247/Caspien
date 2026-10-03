@@ -4857,19 +4857,60 @@ public class BytecodeEmitter {
                     List<Token> resizeArgs = new ArrayList<>();
                     collectCommaArgs(op.right.childs.get(0), resizeArgs);
                     Token dynArrArg = resizeArgs.get(0);
-                    emitExpr(dynArrArg);
+                    boolean isUnsafeResize = dynArrArg.resolvedType.startsWith("owns_mut_unsafe_dynarray(");
+                    // A safe dynarray whose elements own memory: a shrink must drop the owns members of the elements it cuts
+                    // off. The array pointer and the new count are evaluated once into hidden locals, the elements at index
+                    // >= count are dropped (GT_DESTRUCT_TAIL, expanded by DropGlueGenerationPass), then the RESIZE runs on them.
+                    String tailArr = null;
+                    String tailCount = null;
+                    String tailOld = null;
+                    if (!isUnsafeResize && lateAllocs != null) {
+                        String dynType = dynArrArg.resolvedType;
+                        String elemText = dynType.substring(dynType.indexOf("dynarray(") + "dynarray(".length(), dynType.length() - 1);
+                        if (checker.elementTextOwnsMemory(elemText)) {
+                            Token countArg = resizeArgs.get(1);
+                            tailArr = declareHiddenLocal(dynType);
+                            line("ADDR " + tailArr + " " + dynType);
+                            emitExpr(dynArrArg);
+                            line("ASSIGN " + dynType + " " + dynType + " " + dynType);
+                            tailCount = declareHiddenLocal("mut_u64");
+                            line("ADDR " + tailCount + " mut_u64");
+                            emitExpr(countArg);
+                            line("ASSIGN mut_u64 " + countArg.resolvedType + " mut_u64");
+                            line("GT_DESTRUCT_TAIL " + tailArr + " " + dynType + " " + tailCount);
+                            tailOld = declareHiddenLocal("mut_u64");
+                            line("ADDR " + tailOld + " mut_u64");
+                            line("PUSH " + tailArr + " " + dynType);
+                            line("LEN");
+                            line("ASSIGN mut_u64 indeterminate_u64 mut_u64");
+                            line("PUSH " + tailArr + " " + dynType);
+                        }
+                    }
+                    if (tailArr == null) {
+                        emitExpr(dynArrArg);
+                    }
                     if (dynArrArg.isOwnershipMoveSource) {
                         emitOwnershipMoveNullOut(dynArrArg);
                     }
-                    boolean isUnsafeResize = dynArrArg.resolvedType.startsWith("owns_mut_unsafe_dynarray(");
                     StringBuilder resizeLine = new StringBuilder(isUnsafeResize ? "URESIZE " : "RESIZE ")
                             .append(dynArrArg.resolvedType);
                     for (int i = 1; i < resizeArgs.size(); i++) {
                         Token arg = resizeArgs.get(i);
-                        emitExpr(arg);
+                        if (i == 1 && tailCount != null) {
+                            line("PUSH " + tailCount + " mut_u64");
+                        } else {
+                            emitExpr(arg);
+                        }
                         resizeLine.append(' ').append(arg.resolvedType);
                     }
                     line(resizeLine.toString());
+                    if (tailOld != null) {
+                        // growing: the new slots are bitwise copies of the moved-in fill value; give each its own deep clone
+                        String filled = declareHiddenLocal(dynArrArg.resolvedType);
+                        line("POP " + filled + " " + dynArrArg.resolvedType);
+                        line("CLONE_FILL " + filled + " " + dynArrArg.resolvedType + " " + tailOld);
+                        line("PUSH " + filled + " " + dynArrArg.resolvedType);
+                    }
                     // UPDATE (throwing 'resize'): "new throws, but dyn
                     // and resize dont, they need to use the same pattern
                     // as new," confirmed directly -- the safe variant

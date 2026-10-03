@@ -1,0 +1,47 @@
+// Cloning dynarrays of owning elements, and growing one of owns pointers, under allocation failure. Run plainly it prints
+// "start / built / done 5 2 16"; dyn_owning_oom_check.sh runs it with a malloc shim that fails each allocation in turn and checks
+// that every failure inside a `clone` or `resize` is caught ("out of memory"), never crashes, and leaves no extra live allocation.
+// (The inline grow comes first, right after setup: an inline struct local is not dropped when a failure unwinds past it, so the
+// fill value is only balanced once the resize has taken it into the array.)
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+struct World{@pub{
+	ticks: mut u64
+}}
+struct Holder{@pub{
+	w: owns some mut World
+}}
+func main() void{
+	unsafe extern{ printf("start\n") }
+	try{
+		?catch(e){
+			unsafe extern{ printf("CAUGHT %s\n", e) }
+			return
+		}
+		let w1 = mut ?new World{ticks= 10}
+		let w2 = mut ?new World{ticks= 20}
+		let h1 = mut Holder{w= w1}
+		let h2 = mut Holder{w= w2}
+		let v = mut ?dyn([h1, h2])
+		let p1 = mut ?new World{ticks= 1}
+		let p2 = mut ?new World{ticks= 2}
+		let pv = mut ?dyn([p1, p2])
+		let pf = mut ?new World{ticks= 9}
+		let wf = mut ?new World{ticks= 7}
+		let hf = mut Holder{w= wf}
+		unsafe extern{ printf("built\n") }
+		v = ?resize(v, 5, hf)
+		let c = mut ?clone(v)
+		let pc = mut ?clone(pv)
+		pv = ?resize(pv, 4, pf)
+		let a = mut 0
+		let b = mut 0
+		match 4 in v{ a = v[4].w.ticks }
+		match 3 in pv{ b = pv[3].ticks }
+		unsafe extern{ printf("done %llu %llu %llu\n", len(c), len(pc), a + b) }
+	}
+}

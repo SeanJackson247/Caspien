@@ -4347,7 +4347,15 @@ public class X86Backend {
                 // values (top of stack = last-pushed = last element)
                 // into their slots.
                 long count = Long.parseLong(line.get(2).text);
-                long dataBytes = count * 8;
+                // An element wider than one word (an inline struct) is pushed as es/8 words, lowest offset first, so the
+                // element's highest word is on top; it is stored back at its natural offsets with the stride es.
+                long totalPushed = Long.parseLong(line.get(1).text);
+                long elemBytes = count > 0 && totalPushed / count > 8 ? totalPushed / count : 8;
+                if (elemBytes % 8 != 0) {
+                    throw new IllegalStateException("NEW_DYN: element size " + elemBytes + " is not a whole number of words");
+                }
+                long elemWords = elemBytes / 8;
+                long dataBytes = count * elemBytes;
                 emitMallocCall(16 + dataBytes);
                 raw(isWindows() ? "    mov r12, rax" : "    movq %rax, %r12");
                 // A failed malloc leaves r12 null: write nothing into it, drop the element words and push the null so the
@@ -4359,18 +4367,20 @@ public class X86Backend {
                 storeSizedToAddr_withOffsetImm("r12", 0, count, 8);
                 storeSizedToAddr_withOffsetImm("r12", 8, count, 8);
                 for (long i = count - 1; i >= 0; i--) {
-                    popReg("rax");
-                    long off = 16 + i * 8;
-                    if (isWindows()) {
-                        raw("    mov [r12" + signed(off) + "], rax");
-                    } else {
-                        raw("    movq %rax, " + off + "(%r12)");
+                    for (long w = elemWords - 1; w >= 0; w--) {
+                        popReg("rax");
+                        long off = 16 + i * elemBytes + w * 8;
+                        if (isWindows()) {
+                            raw("    mov [r12" + signed(off) + "], rax");
+                        } else {
+                            raw("    movq %rax, " + off + "(%r12)");
+                        }
                     }
                 }
                 raw("    jmp " + newDynDone);
                 raw(newDynNull + ":");
                 if (count > 0) {
-                    raw(isWindows() ? ("    add rsp, " + count * 8) : ("    addq $" + count * 8 + ", %rsp"));
+                    raw(isWindows() ? ("    add rsp, " + count * elemWords * 8) : ("    addq $" + count * elemWords * 8 + ", %rsp"));
                 }
                 raw(newDynDone + ":");
                 pushReg("r12");
@@ -5413,7 +5423,12 @@ public class X86Backend {
      * address, and rsp lands 16-aligned at the `call`.
      */
     private void emitDropGlueCall(String name) {
+        // `__clone_value_T(dst, src)` takes two words (dst pushed first, src on top): same dance with both words kept.
+        boolean twoWords = name.startsWith("__clone_value_");
         popReg("rax");
+        if (twoWords) {
+            popReg("rcx");
+        }
         if (isWindows()) {
             raw("    mov rdx, rsp");
             raw("    and rsp, -16");
@@ -5425,13 +5440,17 @@ public class X86Backend {
             raw("    subq $8, %rsp");
             raw("    movq %rdx, (%rsp)");
         }
+        if (twoWords) {
+            pushReg("rcx");
+        }
         pushReg("rax");
         emitCallByName(name);
+        int argBytes = twoWords ? 16 : 8;
         if (isWindows()) {
-            raw("    add rsp, 8");
+            raw("    add rsp, " + argBytes);
             raw("    mov rsp, [rsp]");
         } else {
-            raw("    addq $8, %rsp");
+            raw("    addq $" + argBytes + ", %rsp");
             raw("    movq (%rsp), %rsp");
         }
     }

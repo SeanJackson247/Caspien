@@ -852,6 +852,9 @@ lit = ? resize(lit, 1, zero)              // growing fills the new slots, shrink
 over the same array. Iterate a dynarray with `range(d)`: the bare form `for i in d` is accepted by the
 checker, but crashes at run time today.
 
+When the elements own memory (`owns` pointers, or structs with an `owns` member), shrinking frees what the cut-off
+elements owned, and growing gives each new slot its own deep copy of the fill value, never a shared pointer.
+
 An `unsafe dyn` array has no checks at all: no proofs, no `?` on `resize`, and no protection against an
 index past the end. It is for code that has proved the bounds in its own way.
 
@@ -913,7 +916,7 @@ in `unsafe` relaxes those checks.
 
 A statement-level `unsafe` block must say why it is unsafe, by naming the reasons after the keyword:
 `unsafe assume extern{`. The reasons are `extern` (a C call), `memcopy`, `raw` (making a `raw` pointer),
-`deref` and `clone` (dereferencing or cloning a `raw` pointer), `global`, `loop`, `udyn` (an unsafe dynarray), `assume` (`assume match`),
+`deref` and `clone` (dereferencing or cloning a `raw` pointer), `global`, `loop`, `udyn` (an unsafe dynarray of plain data) or `udyn:owns` (an unsafe dynarray whose elements own memory: the compiler only frees the block, so you destruct the elements yourself before shrinking or leaving scope), `assume` (`assume match`),
 `call` (calling a function pointer), `asm`, `async` (a pointer across an `@async` boundary), `guard` (using a
 `@guard` type without proving it locked) and `swap` (touching a `swap` mutex field outside `match @lock`). The
 compiler checks the list both ways: a block that needs a reason it does not name is an error, and so is a block

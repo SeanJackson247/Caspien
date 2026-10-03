@@ -220,6 +220,17 @@ public class DropGlueGenerationPass implements OptimizationPass {
 
                 for (int k = start; k <= end; k++) {
                     List<BytecodeToken> fl = lines.get(k);
+                    if (!fl.isEmpty() && fl.get(0).text.equals("GT_DESTRUCT_TAIL") && fl.size() >= 4) {
+                        // "GT_DESTRUCT_TAIL arrayLocal arrayType startLocal": a shrinking `resize` drops every element at
+                        // index >= startLocal (the owns members of each) before the block is cut down. The line itself is
+                        // replaced by the element-drop loop (nothing at all when the elements own nothing).
+                        String dynElem = CanonicalType.dynArrayElementTypeOf(CanonicalType.parse(fl.get(2).text).baseType);
+                        if (dynElem != null) {
+                            emitDynArrayElementDrop(rewritten, fl.get(1).text, fl.get(2).text, dynElem, fl.get(3).text);
+                        }
+                        changedAnyCallSite = true;
+                        continue;
+                    }
                     if (!fl.isEmpty() && fl.get(0).text.equals("GT_DESTRUCT") && fl.size() >= 2) {
                         String targetName = fl.get(1).text;
                         String targetType = resolveType(targetName, localTypes);
@@ -597,6 +608,12 @@ public class DropGlueGenerationPass implements OptimizationPass {
          */
         private void emitDynArrayElementDrop(List<List<BytecodeToken>> out, String path, String canonicalType,
                 String dynElem) {
+            emitDynArrayElementDrop(out, path, canonicalType, dynElem, null);
+        }
+
+        /** As above, walking from index `startLocal` (a `mut_u64` local) instead of 0 when it is non-null. */
+        private void emitDynArrayElementDrop(List<List<BytecodeToken>> out, String path, String canonicalType,
+                String dynElem, String startLocal) {
             CanonicalType elemT = CanonicalType.parse(dynElem);
             boolean elemIsOwnsPointer = elemT.isOwnsStorage();
             boolean elemIsInlineOwnsStruct = !elemIsOwnsPointer
@@ -607,7 +624,11 @@ public class DropGlueGenerationPass implements OptimizationPass {
 
             String counter = newTemp(out, "gt_loop_i", "mut_u64");
             emit(out, "ADDR " + counter + " mut_u64");
-            emit(out, "PUSH 0 indeterminate_u64");
+            if (startLocal == null) {
+                emit(out, "PUSH 0 indeterminate_u64");
+            } else {
+                emit(out, "PUSH " + startLocal + " mut_u64");
+            }
             emit(out, "ASSIGN mut_u64 mut_u64 mut_u64");
 
             String topLabel = newLabel("gt_loop");

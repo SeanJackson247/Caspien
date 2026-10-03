@@ -1836,7 +1836,14 @@ public class Parser {
                             // block declares (the TypeChecker validates them against what the block really needs).
                             unsafeTagList = new ArrayList<>();
                             for (int ti = 1; ti < unsafeBlockIdx; ti++) {
-                                unsafeTagList.add(tokens.get(ti).text);
+                                if (tokens.get(ti).text.equals(":") && !unsafeTagList.isEmpty() && ti + 1 < unsafeBlockIdx) {
+                                    // `udyn:owns`: a tag with a qualifier is one tag
+                                    int last = unsafeTagList.size() - 1;
+                                    unsafeTagList.set(last, unsafeTagList.get(last) + ":" + tokens.get(ti + 1).text);
+                                    ti++;
+                                } else {
+                                    unsafeTagList.add(tokens.get(ti).text);
+                                }
                             }
                         } else if (unsafeBlockIdx != 1) {
                             throw new CompilerException("parse", first.file, first.line,

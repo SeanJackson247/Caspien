@@ -1106,7 +1106,7 @@ public class TypeChecker {
 
     /** The reasons a statement-level `unsafe` block must name (`unsafe deref extern{`), each matching one rule that otherwise needs a proof or is refused in safe code. */
     static final Set<String> UNSAFE_TAGS = new java.util.LinkedHashSet<>(Arrays.asList(
-            "extern", "memcopy", "raw", "deref", "clone", "global", "loop", "udyn",
+            "extern", "memcopy", "raw", "deref", "clone", "global", "loop", "udyn", "udyn:owns",
             "assume", "call", "asm", "async", "guard", "swap"));
 
     /** One written `unsafe ...{` block: what it declares, and (unioned over every time it is checked, e.g. per generic instantiation) what it really used. */
@@ -1118,6 +1118,51 @@ public class TypeChecker {
     }
 
     private final Map<String, UnsafeBlockRecord> unsafeBlockRecords = new java.util.LinkedHashMap<>();
+
+    /** True when a value of type `t` holds memory it must free: an `owns` pointer, a dynarray, or an inline struct with such a member. */
+    private boolean typeOwnsMemory(TypeInfo t, Set<String> visiting) {
+        if (t == null) {
+            return false;
+        }
+        if ("owns".equals(t.storage)) {
+            return true;
+        }
+        StructInfo si = structs.get(t.baseType);
+        if (si == null || !visiting.add(t.baseType)) {
+            return false;
+        }
+        for (TypeInfo m : si.members.values()) {
+            if (typeOwnsMemory(m, visiting)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** True when a dynarray element, given as the canonical text in a dynarray type (`Holder`, `owns_some_mut_World`), owns memory. */
+    boolean elementTextOwnsMemory(String elemText) {
+        if (elemText.startsWith("owns_") || elemText.startsWith("dynarray(") || elemText.startsWith("unsafe_dynarray(")) {
+            return true;
+        }
+        StructInfo si = structs.get(elemText);
+        if (si == null) {
+            return false;
+        }
+        Set<String> visiting = new HashSet<>();
+        visiting.add(elemText);
+        for (TypeInfo m : si.members.values()) {
+            if (typeOwnsMemory(m, visiting)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** The unsafe tag an operation on this unsafe dynarray needs: `udyn:owns` when its elements own memory (the programmer destructs them by hand), else `udyn`. */
+    private String udynTag(TypeInfo unsafeDynArrayType) {
+        TypeInfo el = unsafeDynArrayType == null ? null : unsafeDynArrayType.unsafeDynArrayElementType;
+        return typeOwnsMemory(el, new HashSet<>()) ? "udyn:owns" : "udyn";
+    }
 
     /**
      * Called at every place where `unsafe` lets something through that safe code would refuse (or demand a proof for): true when
@@ -13216,7 +13261,7 @@ public class TypeChecker {
             // element base type exactly, the identical "fill value must
             // match the element type" check `resize`'s own 3-arg form
             // already makes.
-            if (!unsafeBypass(scope, "udyn")) {
+            if (!"unsafe".equals(scope.currentSafety)) {
                 throw new CompilerException("type", op.file, op.line,
                         "'len' with a terminator argument can only be used from within 'unsafe' code");
             }
@@ -13228,6 +13273,7 @@ public class TypeChecker {
                         "'len' with a terminator argument requires an 'unsafe dynarray', got '"
                                 + targetType.canonical() + "'");
             }
+            unsafeBypass(scope, udynTag(targetType));
             TypeInfo termType = resolveExprType(termExpr, scope, func);
             if (!termType.baseType.equals(targetType.unsafeDynArrayElementType.baseType)) {
                 throw new CompilerException("type", termExpr.file, termExpr.line,
@@ -13788,7 +13834,7 @@ public class TypeChecker {
      * is deliberately bypassed for the inner CALL node on this path.
      */
     private TypeInfo checkUnsafeDynWrapper(Token op, Scope scope, FuncInfo func) {
-        if (!unsafeBypass(scope, "udyn")) {
+        if (!"unsafe".equals(scope.currentSafety)) {
             throw new CompilerException("type", op.file, op.line,
                     "'unsafe dyn(...)' can only be used from within 'unsafe' code");
         }
@@ -13798,6 +13844,7 @@ public class TypeChecker {
                     "'unsafe' must directly wrap a 'dyn(...)' call, e.g. 'unsafe dyn([0,1,2,3])'");
         }
         TypeInfo result = checkDynBuiltinCore(op.left, scope, func, true);
+        unsafeBypass(scope, udynTag(result));
         op.left.resolvedType = result.canonical();
         return result;
     }
@@ -13859,7 +13906,7 @@ public class TypeChecker {
         // the potential for uninitialised memory, but its ok because it
         // is restricted to unsafe mode," confirmed directly.
         if (isUnsafeTarget) {
-            if (!unsafeBypass(scope, "udyn")) {
+            if (!unsafeBypass(scope, udynTag(dynArrType))) {
                 throw new CompilerException("type", op.file, op.line,
                         "'resize' on an 'unsafe dynarray' can only be used from within 'unsafe' code");
             }
@@ -15834,7 +15881,7 @@ public class TypeChecker {
             // unsafe dynarray's own '[]' is unconditionally permitted
             // once inside 'unsafe' code, the same unchecked-write
             // precedent a raw pointer already has.
-            if (!unsafeBypass(scope, "udyn")) {
+            if (!unsafeBypass(scope, udynTag(targetType))) {
                 throw new CompilerException("type", op.file, op.line,
                         "'[]' on an 'unsafe dynarray' can only be used from within 'unsafe' code -- it "
                                 + "has no bounds-proof mechanism at all, safe or otherwise");

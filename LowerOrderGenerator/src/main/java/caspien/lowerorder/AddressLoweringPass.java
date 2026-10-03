@@ -883,7 +883,9 @@ public class AddressLoweringPass implements OptimizationPass {
                 // ("PUSH $ret_dest raw_mut_S / classId / members / ASSIGN mut_S indeterminate_S mut_S"). The pointer value sits where an
                 // "ADDR v" would, so the store is the same repack.
                 List<BytecodeToken> nx = lines.get(k + 1);
-                if (nx.size() == 3 && nx.get(0).text.equals("PUSH") && nx.get(2).text.equals("imut_u64") && nx.get(1).text.matches("[0-9]+")) {
+                // (the type id is a literal, or -- in a generated clone routine -- read off the source copy's own `.___type`)
+                if (nx.size() == 3 && nx.get(0).text.equals("PUSH") && nx.get(2).text.equals("imut_u64")
+                        && (nx.get(1).text.matches("[0-9]+") || nx.get(1).text.endsWith(".___type"))) {
                     CanonicalType ct = CanonicalType.parse(l.get(2).text.substring(4));
                     if (ct.storage == null && structTable.layoutOf(ct.baseType) != null) {
                         pending.push("RVO:" + l.get(2).text.substring(4));

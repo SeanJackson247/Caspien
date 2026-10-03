@@ -1,0 +1,21 @@
+// An unsafe dynarray whose elements own memory needs the qualified tag `udyn:owns`; plain `udyn` is an error.
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+struct World{@pub{
+	ticks: mut u64
+}}
+struct Holder{@pub{
+	w: owns some mut World
+}}
+func main() void{
+	?catch(e){ return }
+	let w0 = mut ? new World{ticks= 5}
+	let h = mut Holder{w= w0}
+	unsafe udyn{
+		let a = mut unsafe dyn([h])
+	}
+}
