@@ -39,6 +39,7 @@ Stages in `src/main/java/caspien/`:
 - `ARG name type` lines sit right after `RETURNS`, before the ALLOCs; the optimizer's `ArgToAllocLoweringPass` turns them into slots. The emitter does no register/stack or offset decisions.
 - Calls: `CC_START conv` / `POP ARGn` / `CALL f` / `CC_END`; extern varargs emit `PROMOTE_F32_TO_F64`, `VARARGS_XMM_COUNT`, `DUP_TOP` as needed; nested calls rely on codegen saving loaded arg registers.
 - Unwinding: before every ordinary call stage `ADDR gt_routine_address / PUSH_LABEL <pad|@catch_N> / ASSIGN`; try-guarded calls stage the catch label directly (no pad). Landing pads sit behind a `JMP` before `FUNC_END`. `throw` emits inline `GT_DESTRUCT`s and lock releases then `EXIT` (main) / `EXIT_THREAD` (async) / `GT_UNWIND MSG` (message copied up one frame). Catch bodies are hoisted after the ALLOCs (`tryCatchLabels`, `collectTryBlockLabels`, `continueTargetLabels` precomputed per function). Function bodies without throw use the old `gt_routine` label/GT_UNWIND path.
+- Entry points: the user's `main` of a safe-args program, or of a program with an `@event_loop` function, is emitted as `__caspien_main` (the C-ABI `main` wrapper / the event loop is `main`). Never `__main`: the mingw CRT calls that symbol itself.
 - Structs: declaration is `STRUCT_START`, `STRUCT_MEMBER ___type` FIRST (hidden class id, u64 at offset 0, `Class` enum value; flat for all non-`@untyped` structs), user members, `STRUCT_PADDING n` gaps, `STRUCT_END`. Construction pushes class id first, then members, with `STACK_LOCK n` for gaps. `sizeof(Struct)` and `raw Struct` pointer scale are symbolic (`SIZEOF Name`, resolved by the Optimizer); primitives fold at once. `let static n = sizeof(S)` folds here and emits `STRUCT_PIN S`.
 - `owns` assignment through a pointer-reached target (`h.w = f(h.w)`, `a[i] = ...`, `isPointerCrossingOwnsTarget`): the right side is spilled to a hidden `$mvN` local first, then the old value is destructed via `DUP_TOP`/`GT_DESTRUCT_ADDR`, then the spilled value is stored. A throwing right side leaves the old value intact. Flat-name targets destruct after the right side (`lateDestruct`). Test: `tests/owns_assign_ptr_test.caspien` + `owns_assign_ptr_check.sh`.
 
@@ -46,7 +47,7 @@ Stages in `src/main/java/caspien/`:
 No framework. Fixtures: `examples/` in this folder (hand-written `.caspien`); names with `_error_test`/`_error` must FAIL to compile, others must compile; `_cg_test` also run end to end through the later stages. Run each through `Main`, compare pass/fail before/after a change. Runtime tests are in `/home/claude/caspien/tests/*.caspien` plus `*_check.sh` scripts; compile and run ONE program at a time per compiler tree (shared scratch files). The shipped config targets windows_gnu, so run sweeps in a Linux-configured scratch copy.
 
 ## Known open gaps
-- Windows/MASM largely unverified.
+- MASM (`windows`) output is invalid (see Codegen/CLAUDE.md); windows_gnu is verified under Wine.
 
 ## Deliberate limits (not gaps)
 - The struct `.enum` form is an error (`x instanceof S.enum`; only an interface has `.enum`, used as `match x implements I.enum{..}`).

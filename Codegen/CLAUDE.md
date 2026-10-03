@@ -10,8 +10,8 @@ Unknown mnemonics are NOT errors: they emit `# TODO(codegen): ...` in the asm (o
 
 ## Targets
 - `linux`: AT&T, SysV (rdi,rsi,rdx,rcx,r8,r9; xmm0-7; `%al` = xmm count for varargs). The only fully execution-verified target.
-- `windows_gnu`: AT&T, win64 ABI (rcx,rdx,r8,r9; 32-byte shadow space), mingw-w64. Assembles/links; run under Wine in older rounds, recent register-form/bitwise/pool work NOT run.
-- `windows` (MASM/Intel): `isWindows()` true ONLY here. Structurally present, never assembled with MASM; emitted text mixes NASM/MASM operand syntax; every Intel form is unexecuted. The float pool, `R_LDI/STI/LDXI/STXI` etc. have no/unexecuted Intel form.
+- `windows_gnu`: AT&T, win64 ABI (rcx,rdx,r8,r9; 32-byte shadow space), mingw-w64. Executed under Wine 9 (3 Oct, all optimizer configs, 111 programs: output equals Linux). Never name a generated symbol `__main`: the mingw CRT calls it before `main` (the user's main is emitted as `__caspien_main`; `tests/no_crt_main_symbol_check.sh`).
+- `windows` (MASM/Intel): `isWindows()` true ONLY here. Checked 3 Oct with UASM 2.53 (built from github Terraspace/UASM, `-win64 -coff`, prelude `.x64 / .model flat, fastcall`): 0 of 111 programs assemble. Defects seen: data labels written `name:` inside `.data` (use `name db ...`); memory operands `byte [..]`/`word [..]`/`dword [..]` without `ptr`; `movzx r64, dword [..]` and `movzx rax, eax` (not valid instructions); user symbols that are MASM reserved words (`db`, `c`, `a`...) need mangling; no `EXTERN` declarations for called C functions; stray `dq` in code; lines too long. Every Intel form is unexecuted. The float pool, `R_LDI/STI/LDXI/STXI` etc. have no/unexecuted Intel form.
 - Two flags: `isWindows()` = syntax (MASM only); `isWinAbi()` = win64 ABI (both Windows targets). Use `argReg(i)` for argument registers, never ad-hoc `isWindows()` (that bug hit windows_gnu before).
 
 ## Execution model
@@ -37,7 +37,7 @@ Callee-saved: `finishCalleeSaved` at `FUNC_END` scans the function text for rbx,
 - Register form: `R_MOV/BIN/UN/BRF/BRC/PUSH/PUSHA/LD/ST/LEA/RMW/SETV/ARG/ARGA/FARG/RET/RETF`; indexed access (global, frame-slot or register base: `disp(%base,%idx,scale)`) `R_LDI/R_STI` (ints) and `R_LDXI/R_STXI` (floats, scale = width); float `R_FBIN/FBINX/FCMP/XTOG/GTOX/LDX/STX/POPX/GETRETF/XVAR/XRELOAD/XMOV`. `R_BIN` ops: arithmetic, compares, BAND/BOR/BXOR, SHL/SHR/SAR. `R_BRC` emits cmp + the INVERSE-condition jump (immediate first operand is swapped with the condition mirrored; two slots go via r15). `R_LEA %t base idx scale [disp]` (SAFE dynarray header is 16 bytes: `[len][cap][elems]`; unsafe has none). Narrow loads zero-extend, narrow stores truncate, narrow `R_BIN` ADD/SUB/MUL results are NOT masked in the register. Float immediates come from a read-only pool (`.LFC<k>`, `.rodata`/`.rdata`, AT&T targets only, zero via `xorps`; MASM keeps `movabs`+`movq`).
 
 ## Known gaps and traps
-- MASM target unverified/probably not assemblable; windows_gnu not run since the register-form, bitwise, float-pool and indexed-access work.
+- MASM target does not assemble (see Targets); windows_gnu runs under Wine (3 Oct).
 - Struct-by-value parameters (above). `PUSH n ARGk` reads the whole register at entry; `argReg(idx)` falls back to `rax` out of range.
 - Original `PUSH` lines use rax/rbx as scratch, so a flush under a live temp must use `R_PUSH/R_PUSHA`. Inside a construction run, fields are stored below the current rsp: never `push`, `rep movsb` (rdi/rsi/rcx) or call helpers that touch the stack there (`pushBlockFromFrameConstructionAware` copies via rax).
 - `findRunStart` only knows PUSH/ATOMIC_PUSH/STACK_LOCK/nested NEW as construction-run members.

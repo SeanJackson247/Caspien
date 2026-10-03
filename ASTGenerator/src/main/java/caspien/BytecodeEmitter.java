@@ -821,7 +821,7 @@ public class BytecodeEmitter {
      * checking/emission pipeline at all), since nothing about this
      * wrapper was ever written as real source for TypeChecker to have
      * validated in the first place. `userMain` here is the *original*
-     * FuncInfo (already emitted under "__main" by the caller, just
+     * FuncInfo (already emitted under "__caspien_main" by the caller, just
      * before this runs) -- used only to read its own return type and
      * calling convention, never re-emitted itself.
      *
@@ -907,9 +907,9 @@ public class BytecodeEmitter {
         // Also staged with an empty destruct list -- "args" ownership is
         // moving into this exact call (`argsTok.isOwnershipMoveSource`),
         // so there is nothing left of this wrapper's own to destruct if
-        // it unwinds back out of "__main".
+        // it unwinds back out of "__caspien_main".
         stageCallSiteForUnwindNames(Collections.emptyList(), Collections.emptyList(), userMain.funcToken);
-        emitCallSequence(null, Arrays.asList(argsTok), () -> line("CALL __main"),
+        emitCallSequence(null, Arrays.asList(argsTok), () -> line("CALL __caspien_main"),
                 isVoid ? null : userMain.returnType.canonical(), userMain.callConvention);
         if (isVoid) {
             line("RET imut_void");
@@ -936,7 +936,7 @@ public class BytecodeEmitter {
     private void emitFunc(TypeChecker.FuncInfo info) {
         // "In the final emitted bytecode, dunder the main and have the
         // @event_loop function be the actual main," confirmed directly.
-        // 'main' itself is renamed to "__main" (this compiler's own
+        // 'main' itself is renamed to "__caspien_main" (this compiler's own
         // existing "__"-prefixed dundered-duplicate convention, already
         // used for the unrelated GT_DESTRUCT-suppression case just
         // below); the '@event_loop' function is emitted *as* "main" in
@@ -951,7 +951,7 @@ public class BytecodeEmitter {
                 return;
             }
             if (info.name.equals("main")) {
-                emitFuncUnderName(info, "__main", false, false);
+                emitFuncUnderName(info, "__caspien_main", false, false);
                 return;
             }
         } else if (info.name.equals("main") && "safe_args".equals(info.mainArgShape)) {
@@ -964,7 +964,7 @@ public class BytecodeEmitter {
             // C-ABI-shaped "main" the OS/C runtime actually calls,
             // which builds the safe, wrapped value and hands it to the
             // user's own (dundered) 'main'.
-            emitFuncUnderName(info, "__main", false, false);
+            emitFuncUnderName(info, "__caspien_main", false, false);
             emitSafeArgsMainWrapper(info);
             return;
         }
@@ -3232,7 +3232,7 @@ public class BytecodeEmitter {
         // dundering) identity `emitGtRoutineBody`'s own three-way
         // root/async/ordinary ending already keys off of, so a throw
         // inside a gt-decorated function's own dundered duplicate, or
-        // inside the real, dundered "main"/"__main" pair, resolves
+        // inside the real, dundered "main"/"__caspien_main" pair, resolves
         // exactly the same way that ending already does.
         List<String> destructNames = throwTok.destructOnExit != null ? throwTok.destructOnExit
                 : Collections.emptyList();
@@ -5858,7 +5858,7 @@ public class BytecodeEmitter {
         }
         // "dunder the main and have the @event_loop function be the
         // actual main," confirmed directly -- the real 'main' function
-        // is emitted under "__main" (see emitFunc), so any call
+        // is emitted under "__caspien_main" (see emitFunc), so any call
         // actually targeting it (its own type-checked resolvedCallTarget
         // is still plainly "main" -- TypeChecker has no reason to know
         // about this purely-emission-time rename) must be redirected
@@ -5866,7 +5866,7 @@ public class BytecodeEmitter {
         // moment, right before the mnemonic line is written" shape the
         // gt-suppression case just above already uses.
         if (mangledName.equals("main") && checker.getEventLoopFunc() != null) {
-            return "__main";
+            return "__caspien_main";
         }
         return mangledName;
     }
