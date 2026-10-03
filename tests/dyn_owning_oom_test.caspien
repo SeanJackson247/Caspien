@@ -1,8 +1,6 @@
-// Cloning dynarrays of owning elements, and growing one of owns pointers, under allocation failure. Run plainly it prints
+// Cloning and growing dynarrays of owning elements (inline structs and owns pointers) under allocation failure. Run plainly it prints
 // "start / built / done 5 2 16"; dyn_owning_oom_check.sh runs it with a malloc shim that fails each allocation in turn and checks
 // that every failure inside a `clone` or `resize` is caught ("out of memory"), never crashes, and leaves no extra live allocation.
-// (The inline grow comes first, right after setup: an inline struct local is not dropped when a failure unwinds past it, so the
-// fill value is only balanced once the resize has taken it into the array.)
 import "../stdlib/libc.caspien"
 import "../stdlib/gt_init.caspien"
 import "../stdlib/gt_register.caspien"

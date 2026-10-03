@@ -1689,7 +1689,12 @@ public class BytecodeEmitter {
             // without the repetition that makes a loop the case most
             // likely to actually hit it.
             TypeChecker.TypeInfo type = currentFuncInfo != null ? currentFuncInfo.ownsLocalTypes.get(name) : null;
-            if (type != null) {
+            if (type != null && checker.isInlineOwningStruct(type)) {
+                // an inline owning struct: its members were dropped by the GT_DESTRUCT above; leave them null
+                Token local = new Token(TokenType.VARREF, name, 0, "");
+                local.resolvedType = type.canonical();
+                emitInlineOwnsNullOut(local, type.baseType);
+            } else if (type != null) {
                 line("ADDR " + name + " " + type.canonical());
                 line("PUSH null " + type.canonical());
                 line("ASSIGN " + type.canonical() + " " + type.canonical() + " " + type.canonical());
@@ -3762,7 +3767,41 @@ public class BytecodeEmitter {
      * assembler needs to know it explicitly rather than discover it as
      * a hard-to-reproduce bug in a throwing program.
      */
+    /** A synthesized `base.member` access, enough for `emitAssignTarget`/`DOT_LHS`. */
+    private Token syntheticMember(Token base, String member, TypeChecker.TypeInfo memberType) {
+        Token dot = new Token(TokenType.OPERATOR, ".", base.line, base.file);
+        Token name = new Token(TokenType.VARREF, member, base.line, base.file);
+        name.resolvedType = memberType.canonical();
+        dot.left = base;
+        dot.right = name;
+        dot.resolvedType = memberType.canonical();
+        return dot;
+    }
+
+    /** Nulls every owned member of the inline struct at `base` (recursing into inline owning members): what a move out of it, or its own drop, leaves behind. */
+    private void emitInlineOwnsNullOut(Token base, String structName) {
+        TypeChecker.StructInfo si = checker.getStructs().get(structName);
+        for (Map.Entry<String, TypeChecker.TypeInfo> m : si.members.entrySet()) {
+            if (m.getKey().equals("___type")) {
+                continue;
+            }
+            TypeChecker.TypeInfo mt = m.getValue();
+            if ("owns".equals(mt.storage)) {
+                Token target = syntheticMember(base, m.getKey(), mt);
+                emitAssignTarget(target);
+                line("PUSH null " + mt.canonical());
+                line("ASSIGN " + mt.canonical() + " " + mt.canonical() + " " + mt.canonical());
+            } else if (checker.isInlineOwningStruct(mt)) {
+                emitInlineOwnsNullOut(syntheticMember(base, m.getKey(), mt), mt.baseType);
+            }
+        }
+    }
+
     private void emitOwnershipMoveNullOut(Token valueExpr) {
+        if (valueExpr.inlineOwnsStruct != null) {
+            emitInlineOwnsNullOut(unwrapMutWrappers(valueExpr), valueExpr.inlineOwnsStruct);
+            return;
+        }
         emitAssignTarget(valueExpr);
         line("PUSH null " + valueExpr.resolvedType);
         line("ASSIGN " + valueExpr.resolvedType + " " + valueExpr.resolvedType + " " + valueExpr.resolvedType);
@@ -3856,7 +3895,7 @@ public class BytecodeEmitter {
      */
     private boolean isFlatOwnsDestructTarget(Token target) {
         if (target.type == TokenType.KEYWORD || target.resolvedType == null
-                || !target.resolvedType.startsWith("owns")) {
+                || !(target.resolvedType.startsWith("owns") || target.inlineOwnsStruct != null)) {
             return false;
         }
         return target.type == TokenType.VARREF
@@ -3874,8 +3913,11 @@ public class BytecodeEmitter {
 
     private boolean emitDestructOldOwnedValue(Token target) {
         if (target.type == TokenType.KEYWORD || target.resolvedType == null
-                || !target.resolvedType.startsWith("owns")) {
+                || !(target.resolvedType.startsWith("owns") || target.inlineOwnsStruct != null)) {
             return false;
+        }
+        if (target.inlineOwnsStruct != null && !isFlatOwnsDestructTarget(target)) {
+            return false; // an inline owning struct reached through a pointer or an index: its old members are not dropped (known gap)
         }
         if (target.type == TokenType.VARREF) {
             requireGhostTableFunctionPresent("gt_destruct", target);

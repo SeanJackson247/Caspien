@@ -1139,6 +1139,12 @@ public class TypeChecker {
         return false;
     }
 
+    /** An inline (no storage keyword) struct value that owns memory through some member: it has to be dropped at scope end and moved, not copied. */
+    boolean isInlineOwningStruct(TypeInfo t) {
+        return t != null && t.storage == null && t.baseType != null && structs.containsKey(t.baseType)
+                && elementTextOwnsMemory(t.baseType);
+    }
+
     /** True when a dynarray element, given as the canonical text in a dynarray type (`Holder`, `owns_some_mut_World`), owns memory. */
     boolean elementTextOwnsMemory(String elemText) {
         if (elemText.startsWith("owns_") || elemText.startsWith("dynarray(") || elemText.startsWith("unsafe_dynarray(")) {
@@ -11433,6 +11439,34 @@ public class TypeChecker {
      * value came from (if any) is moved.
      */
     private void markMovedIfOwned(TypeInfo declaredType, Token valueExpr, Scope scope) {
+        if (isInlineOwningStruct(declaredType)) {
+            // Copying a struct that owns memory would leave two owners: the source slot gives its owned members up
+            // (nulled at run time, see BytecodeEmitter.emitOwnershipMoveNullOut) and can not be read afterwards.
+            Token inner = valueExpr;
+            while (true) {
+                if (inner.type == TokenType.DELINEATOR && inner.text.equals("(") && !inner.childs.isEmpty()) {
+                    inner = inner.childs.get(0);
+                } else if (inner.type == TokenType.OPERATOR && inner.unary && (inner.text.equals("mut") || inner.text.equals("imut"))
+                        && inner.left != null) {
+                    inner = inner.left; // `let h2 = mut h`: the value is under the mutability wrapper
+                } else {
+                    break;
+                }
+            }
+            if (inner.type == TokenType.OPERATOR && "CALL".equals(inner.text) && inner.left != null
+                    && inner.left.type == TokenType.VARREF && "deref".equals(inner.left.text)) {
+                throw new CompilerException("type", valueExpr.file, valueExpr.line,
+                        "'deref(...)' would copy a '" + declaredType.baseType + "', which owns memory -- two owners of one block. "
+                                + "Use 'clone(...)', or move the owned members out one by one");
+            }
+            String key = slotKeyOf(inner);
+            if (key != null) {
+                scope.movedSlots.add(key);
+                valueExpr.isOwnershipMoveSource = true;
+                valueExpr.inlineOwnsStruct = declaredType.baseType;
+            }
+            return;
+        }
         if ("owns".equals(declaredType.storage)) {
             String key = slotKeyOf(valueExpr);
             if (key != null) {
@@ -11566,7 +11600,7 @@ public class TypeChecker {
             // declaration order, so this exact scope knows what it owes
             // a GT_DESTRUCT for whenever control leaves it (naturally or
             // via an early 'return'/'break').
-            if ("owns".equals(rhsType.storage)) {
+            if ("owns".equals(rhsType.storage) || isInlineOwningStruct(rhsType)) {
                 scope.ownsDeclaredHere.add(nameTok.text);
                 func.ownsLocalTypes.put(nameTok.text, rhsType);
             }
@@ -11673,6 +11707,9 @@ public class TypeChecker {
             scope.movedSlots.remove(leftSlotKeyForRevival);
         }
         invalidateMatchPatternsForWrite(op.left, scope);
+        if (isInlineOwningStruct(leftType)) {
+            op.left.inlineOwnsStruct = leftType.baseType;
+        }
         markMovedIfOwned(leftType, op.right, scope);
         // Return the target's own type, not the assigned value's -- these
         // differ when the value was 'null' assigned into a pointer slot,
@@ -15569,7 +15606,7 @@ public class TypeChecker {
             }
         }
 
-        if ("owns".equals(establishedType.storage)) {
+        if ("owns".equals(establishedType.storage) || isInlineOwningStruct(establishedType)) {
             for (int i = 0; i < elements.size(); i++) {
                 markMovedIfOwned(establishedType, elements.get(i), scope);
             }

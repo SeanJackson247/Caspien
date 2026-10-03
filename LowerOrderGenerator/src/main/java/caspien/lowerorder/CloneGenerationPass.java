@@ -217,7 +217,7 @@ public class CloneGenerationPass implements OptimizationPass {
                     List<BytecodeToken> fl = lines.get(k);
                     if (!fl.isEmpty() && fl.get(0).text.equals("CLONE_FILL") && fl.size() == 4) {
                         // "CLONE_FILL arrLocal arrType fromLocal": after a growing `resize` of a dynarray whose elements own memory,
-                        // the new slots are bitwise copies of the fill value; each (from+1 .. end for an inline struct fill, which slot `from` keeps; from .. end for an `owns` pointer fill) is replaced by a deep clone.
+                        // the new slots are bitwise copies of the fill value (which stays with the caller); each, `from` .. end, is replaced by a deep clone.
                         List<String> replacement = buildFillCloneLoop(fl.get(1).text, fl.get(2).text, fl.get(3).text);
                         if (replacement != null) {
                             rewritten.addAll(PARSER.parse(replacement, "<generated-clone-glue>"));
@@ -580,11 +580,7 @@ public class CloneGenerationPass implements OptimizationPass {
             String counter = newTemp(lines, "clone_fill_i", "mut_u64");
             lines.add("ADDR " + counter + " mut_u64");
             lines.add("PUSH " + from + " mut_u64");
-            if (elemRoutine.startsWith("VAL:")) {
-                // an inline fill value is copied into slot `from` as it is (its owned memory now belongs to the array)
-                lines.add("INC mut_u64 indeterminate_u64");
-            }
-            // an `owns` pointer fill stays with the caller: every new slot, `from` included, gets its own clone
+            // the fill value stays with the caller: every new slot, `from` included, gets its own clone
             lines.add("ASSIGN mut_u64 indeterminate_u64 indeterminate_u64");
             lines.add(topLabel + ":");
             lines.add("PUSH " + counter + " mut_u64");

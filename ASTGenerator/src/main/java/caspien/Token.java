@@ -521,6 +521,8 @@ public class Token {
      * what `slotKeyOf` already exists to answer.
      */
     public boolean isOwnershipMoveSource;
+    /** Set (to the struct's name) with `isOwnershipMoveSource`, or on an assignment target, when the value is an inline struct that owns memory: moving it nulls every owned member, assigning over it drops the old members first. */
+    public String inlineOwnsStruct;
 
     /**
      * Set on an "INSTANTIATE" node by `TypeChecker.checkInstantiate`

@@ -236,6 +236,16 @@ public class DropGlueGenerationPass implements OptimizationPass {
                         String targetType = resolveType(targetName, localTypes);
                         if (targetType != null) {
                             CanonicalType t = CanonicalType.parse(targetType);
+                            if (!t.isOwnsStorage() && t.storage == null && structTable.hasStruct(t.baseType)
+                                    && structTable.isOwnsBearing(t.baseType)) {
+                                // An inline struct that owns memory (a local, or a member of one): there is no pointer to free,
+                                // only its members to drop. The routine takes the struct's address; the original line is replaced.
+                                emit(rewritten, "ADDR " + targetName + " " + targetType);
+                                emit(rewritten, "CALL " + routineNameFor(t.baseType));
+                                enqueue(t.baseType);
+                                changedAnyCallSite = true;
+                                continue;
+                            }
                             if (t.isOwnsStorage() && structTable.isOwnsBearing(t.baseType)) {
                                 // The local may already be null (moved out earlier, e.g. "x = f(x)"
                                 // destructs x after f took it), and reading a null dynarray's length

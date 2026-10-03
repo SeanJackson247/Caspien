@@ -1,0 +1,131 @@
+// A struct held inline (no `owns` in front of it) that owns memory through a member is dropped at scope end like any owns local,
+// and copying it moves the owned members: the source can not be used afterwards and gives them up, so there is never a second
+// owner. Checked through the ghost table's entry count (inline_owns_drop_check.sh runs this under valgrind).
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+struct World{@pub{
+	ticks: mut u64
+}}
+struct Holder{@pub{
+	w: owns some mut World
+}}
+struct Outer{@pub{
+	h: mut Holder
+	n: mut u64
+}}
+
+func live() mut u64{
+	let n = mut 0
+	unsafe assume{
+		assume match ghost_table.lockState : OPEN
+		n = mut ghost_table.len
+	}
+	return n
+}
+
+func check(name: static imut string, ok: imut bool) void{
+	unsafe extern{
+		if ok{ printf("PASS %s\n", name) }
+		else{ printf("FAIL %s\n", name) }
+	}
+}
+
+func plainLocal() void{
+	?catch(e){ return }
+	let w = mut ? new World{ticks= 5}
+	let h = mut Holder{w= w}
+	let t = mut 0
+	t = h.w.ticks
+}
+
+func copyIsMove() mut u64{
+	?catch(e){ return 0 }
+	let w = mut ? new World{ticks= 6}
+	let h = mut Holder{w= w}
+	let h2 = mut h
+	return h2.w.ticks
+}
+
+func assignOver() mut u64{
+	?catch(e){ return 0 }
+	let a = mut ? new World{ticks= 1}
+	let b = mut ? new World{ticks= 2}
+	let h = mut Holder{w= a}
+	let g = mut Holder{w= b}
+	h = g
+	return h.w.ticks
+}
+
+func nested() mut u64{
+	?catch(e){ return 0 }
+	let w = mut ? new World{ticks= 9}
+	let h = mut Holder{w= w}
+	let o = mut Outer{h= h, n= 4}
+	return o.h.w.ticks + o.n
+}
+
+@throws
+func build(t: mut u64) mut Holder{
+	?catch(e){ throw e }
+	let w = mut ? new World{ticks= t}
+	let h = mut Holder{w= w}
+	return h
+}
+
+func returned() mut u64{
+	?catch(e){ return 0 }
+	let h = mut ?build(21)
+	return h.w.ticks
+}
+
+func inLoop() void{
+	?catch(e){ return }
+	for i in 0..4{
+		let w = mut ? new World{ticks= 1}
+		let h = mut Holder{w= w}
+	}
+}
+
+@throws
+func failing() void{
+	?catch(e){ throw e }
+	let w = mut ? new World{ticks= 3}
+	let h = mut Holder{w= w}
+	throw "boom"
+}
+
+func caught() mut u64{
+	try{
+		try failing() catch(e){
+			return 1
+		}
+	}
+	return 0
+}
+
+func main() void{
+	let base = mut live()
+	plainLocal()
+	check("plain local freed", live() == base)
+	let a = mut copyIsMove()
+	check("copy is a move: value", a == 6)
+	check("copy is a move: freed", live() == base)
+	let b = mut assignOver()
+	check("assign over: value", b == 2)
+	check("assign over: freed", live() == base)
+	let c = mut nested()
+	check("nested: value", c == 13)
+	check("nested: freed", live() == base)
+	let d = mut returned()
+	check("returned: value", d == 21)
+	check("returned: freed", live() == base)
+	inLoop()
+	check("loop: freed", live() == base)
+	let e = mut caught()
+	check("throw: caught", e == 1)
+	check("throw: freed", live() == base)
+}

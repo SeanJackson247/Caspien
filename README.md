@@ -686,6 +686,11 @@ func readNode(n: ref mut Node) mut u64{
 
 Using a value after moving it is a compile error: `use of 'b' after its ownership was moved`.
 
+A struct held directly in a variable counts as an owner too when one of its members is `owns` (at any depth): it is
+dropped when its scope ends, and copying it (`let b = a`, `b = a`, putting it in another struct literal or a `dyn`
+literal) moves its owned members, so `a` can no longer be used. Copying one out of a pointer with `deref` is an error;
+use `clone` instead.
+
 #### Bounded loops and bounded recursion
 
 Every loop in safe code is a `for` over a range that is fixed when the loop starts. The counter cannot be

@@ -50,11 +50,14 @@ func inlinePart() void{
 	match 2 in v{ a2 = v[2].w.ticks }
 	check("inline ticks", a0 == 10 && a1 == 20 && a2 == 30)
 	check("inline entries", live() == base + 4)
-	// shrink: the cut-off elements' worlds are freed
-	v = ?resize(v, 1, h1)
+	// the literal took the holders: they are nulled out, and the worlds belong to the array now
+	// shrink: the cut-off elements' worlds are freed; the (unused) fill stays with its owner
+	let ws = mut ? new World{ticks= 3}
+	let hs = mut Holder{w= ws}
+	v = ?resize(v, 1, hs)
 	check("shrink len", len(v) == 1)
-	check("shrink entries", live() == base + 2)
-	// grow with a fresh fill: slot 1 takes it as it is, slots 2 and 3 are deep clones
+	check("shrink entries", live() == base + 3)
+	// grow: the fill stays with its owner, every new slot is a deep clone of it
 	let wf = mut ? new World{ticks= 7}
 	let hf = mut Holder{w= wf}
 	v = ?resize(v, 4, hf)
@@ -68,7 +71,7 @@ func inlinePart() void{
 	let b3 = mut 0
 	match 3 in v{ b3 = v[3].w.ticks }
 	check("grow ticks", b0 == 10 && b1 == 7 && b2 == 7 && b3 == 7)
-	check("grow entries", live() == base + 5)
+	check("grow entries", live() == base + 7)
 	match 3 in v{ v[3].w.ticks = 99 }
 	let d1 = mut 0
 	match 1 in v{ d1 = v[1].w.ticks }
@@ -76,10 +79,12 @@ func inlinePart() void{
 	match 2 in v{ d2 = v[2].w.ticks }
 	let d3 = mut 0
 	match 3 in v{ d3 = v[3].w.ticks }
-	check("grow independent", d1 == 7 && d2 == 7 && d3 == 99)
+	let df = mut 0
+	df = hf.w.ticks
+	check("grow independent", d1 == 7 && d2 == 7 && d3 == 99 && df == 7)
 	// deep clone
 	let c = mut ?clone(v)
-	check("clone entries", live() == base + 10)
+	check("clone entries", live() == base + 12)
 	match 0 in c{ c[0].w.ticks = 5 }
 	let e0 = mut 0
 	match 0 in v{ e0 = v[0].w.ticks }
