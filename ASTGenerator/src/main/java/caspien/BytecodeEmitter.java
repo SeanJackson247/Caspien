@@ -227,6 +227,12 @@ public class BytecodeEmitter {
     private TypeChecker checker;
     /** Stack of enclosing loops' end labels, innermost last; 'break' jumps to the top of this. */
     private final List<String> loopEndLabels = new ArrayList<>();
+    /**
+     * One entry per enclosing loop, parallel to `loopEndLabels`: where a loop-`continue` jumps. For a `loop` it is
+     * its start label; for a `for` it is a label right before the step, created on the first `continue` that
+     * needs it (so a program without one gets exactly the same labels and numbering as before).
+     */
+    private final List<String[]> loopContinueTargets = new ArrayList<>();
     /** Start labels of the enclosing 'match @lock' spin loops, innermost last: the target of a lock-retry 'continue'. */
     private final List<String> lockRetryLabels = new ArrayList<>();
 
@@ -2891,6 +2897,7 @@ public class BytecodeEmitter {
         String startLabel = newLabel("loop");
         String endLabel = newLabel("loop_end");
         loopEndLabels.add(endLabel);
+        loopContinueTargets.add(new String[] { startLabel });
         emitDecorators("LOOP_DECORATE", loopTok.decorators);
         emitPreLoopInit(loopTok.preLoopInit);
         line(startLabel + ":");
@@ -2905,6 +2912,7 @@ public class BytecodeEmitter {
         line("JMP " + startLabel);
         line(endLabel + ":");
         loopEndLabels.remove(loopEndLabels.size() - 1);
+        loopContinueTargets.remove(loopContinueTargets.size() - 1);
     }
 
     /**
@@ -2974,6 +2982,8 @@ public class BytecodeEmitter {
         String startLabel = newLabel("for");
         String endLabel = newLabel("for_end");
         loopEndLabels.add(endLabel);
+        String[] continueTarget = new String[] { null };
+        loopContinueTargets.add(continueTarget);
         emitDecorators("FOR_DECORATE", forTok.decorators);
         line(startLabel + ":");
         emitExpr(conditionIn);
@@ -2981,10 +2991,14 @@ public class BytecodeEmitter {
         line("JMP " + endLabel);
         emitBlock(forTok.childs);
         emitDestructList(forTok.destructOnExit, forTok);
+        if (continueTarget[0] != null) {
+            line(continueTarget[0] + ":");
+        }
         emitExpr(increment);
         line("JMP " + startLabel);
         line(endLabel + ":");
         loopEndLabels.remove(loopEndLabels.size() - 1);
+        loopContinueTargets.remove(loopContinueTargets.size() - 1);
     }
 
     private String rangeVarNameOf(Token rangeAssign) {
@@ -3035,6 +3049,21 @@ public class BytecodeEmitter {
      * bytecode generation ever runs.
      */
     private void emitContinue(Token continueTok) {
+        if (continueTok.isLoopContinue) {
+            // 'continue' in a user 'for'/'loop': unwind like 'break', then jump to the loop's step / start.
+            if (loopContinueTargets.isEmpty()) {
+                throw new IllegalStateException(
+                        "internal error: loop 'continue' reached bytecode gen outside any loop");
+            }
+            String[] target = loopContinueTargets.get(loopContinueTargets.size() - 1);
+            if (target[0] == null) {
+                target[0] = newLabel("for_cont");
+            }
+            emitDestructList(continueTok.destructOnExit, continueTok);
+            emitUnlockList(continueTok.unlockOnExit, continueTok);
+            line("JMP " + target[0]);
+            return;
+        }
         if (continueTok.isLockRetryContinue) {
             // 'continue' in the CLOSED case of a 'match @lock': retry the
             // acquire (the spin loop's start label, after any pre-loop

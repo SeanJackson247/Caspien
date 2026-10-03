@@ -1843,6 +1843,10 @@ public class TypeChecker {
      * own "continue" case.
      */
     private boolean insideCatchBody = false;
+    /** The innermost loop boundary at the point the catch body being checked starts (null if none). A `continue` inside the catch whose own loop boundary is still this one belongs to the catch (skip past the try block); a `continue` inside a loop opened within the catch belongs to that loop. */
+    private Scope catchEnclosingLoopBoundary = null;
+    /** Loop-body scopes of user-written `for`/`loop` statements (not the synthesized `match @lock` spin loop): the only scopes a loop `continue` may target. */
+    private final Set<Scope> userLoopScopes = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
 
     /** The spin-loop scope of the 'match @lock' CLOSED case currently being checked (null elsewhere, and while checking an OPEN case): a `continue` directly inside it retries the acquire. Save/restored around each 'match @lock'. */
     private Scope lockClosedLoopScope = null;
@@ -7805,6 +7809,7 @@ public class TypeChecker {
     /** `isDynArrayForLoopBody` is true only for a "for i in dynarrayExpr{...}" loop's own body specifically -- see Scope.insideDynArrayForLoopBody's own comment. */
     private Scope checkLinesAsLoopBody(List<Token> lines, Scope parentScope, FuncInfo func, boolean isDynArrayForLoopBody) {
         Scope scope = new Scope(parentScope, true, isDynArrayForLoopBody);
+        userLoopScopes.add(scope);
         checkLinesInScope(lines, scope, func, true);
         return scope;
     }
@@ -8252,6 +8257,20 @@ public class TypeChecker {
                     // loop's start. No lock is held there, so nothing is
                     // released; only owns locals declared inside the CLOSED
                     // body are destructed on the way.
+                    // 'continue' in a user-written 'for'/'loop' (innermost construct: not a catch body that
+                    // started inside the same loop) means "next iteration": same unwinding as 'break', but it
+                    // jumps to the loop's step (for) or start (loop) instead of its end.
+                    stmt.isLoopContinue = false;
+                    stmt.isLockRetryContinue = false;
+                    boolean continueBelongsToCatch = insideCatchBody
+                            && scope.loopBoundaryScope == catchEnclosingLoopBoundary;
+                    if (!continueBelongsToCatch && scope.loopBoundaryScope != null
+                            && userLoopScopes.contains(scope.loopBoundaryScope)) {
+                        stmt.isLoopContinue = true;
+                        stmt.destructOnExit = collectOwnsToDestruct(scope, scope.loopBoundaryScope, null);
+                        stmt.unlockOnExit = collectLockReleasesToBoundary(scope, scope.loopBoundaryScope);
+                        return;
+                    }
                     if (!insideCatchBody && lockClosedLoopScope != null
                             && scope.loopBoundaryScope == lockClosedLoopScope) {
                         stmt.isLockRetryContinue = true;
@@ -8261,8 +8280,9 @@ public class TypeChecker {
                     }
                     if (!insideCatchBody) {
                         throw new CompilerException("type", stmt.file, stmt.line,
-                                "'continue' can only be used inside a 'catch(e) { ... }' block, or directly in "
-                                        + "the 'CLOSED' case of a 'match @lock' (where it retries the acquire)");
+                                "'continue' can only be used inside a 'for' or 'loop' (next iteration), inside a "
+                                        + "'catch(e) { ... }' block, or directly in the 'CLOSED' case of a "
+                                        + "'match @lock' (where it retries the acquire)");
                     }
                     if (scope.tryBlockBoundaryScope == null) {
                         throw new CompilerException("type", stmt.file, stmt.line,
@@ -10805,11 +10825,14 @@ public class TypeChecker {
         // "nested loops both count" shape `insideLoop` itself already
         // has).
         boolean previousInsideCatchBody = insideCatchBody;
+        Scope previousCatchLoopBoundary = catchEnclosingLoopBoundary;
         insideCatchBody = true;
+        catchEnclosingLoopBoundary = scope.loopBoundaryScope;
         try {
             checkLines(tryTok.childs, catchBodyScope, func, insideLoop);
         } finally {
             insideCatchBody = previousInsideCatchBody;
+            catchEnclosingLoopBoundary = previousCatchLoopBoundary;
         }
         // No `tryTok.destructOnExit` is computed here any more (unlike an
         // ordinary block): that field exists to describe what still needs

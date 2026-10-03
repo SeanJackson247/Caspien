@@ -1037,6 +1037,9 @@ public class Token {
     /** Set only on a "continue" KEYWORD token written directly in the CLOSED case of a "match @lock": it means "retry the acquire", not the try-block `continue` of a catch body. */
     public boolean isLockRetryContinue;
 
+    /** Set only on a "continue" KEYWORD token whose innermost enclosing construct is a user-written `for`/`loop`: it means "next iteration" (jump to the loop's step / start), not the try-block or lock-retry `continue`. Re-set on every check. */
+    public boolean isLoopContinue;
+
     /**
      * "let:<FullType> name = expr" -- confirmed directly, refined
      * across a design conversation into: the raw token span of a

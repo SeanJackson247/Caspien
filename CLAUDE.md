@@ -23,6 +23,7 @@ Caspien: a systems language for auditable code (ownership storage `owns/ref/raw/
 - Structs are padded C-like; `sizeof` is symbolic until the Optimizer resolves it.
 - `throw`/`try`/`catch(e)`/`?`/`continue` are safe code; functions that throw need `@throws`; every call to one needs try/`?`. Message travels via `gt_error_message` (rbp-16) and `GT_UNWIND MSG`.
 - Integers: literals adapt to the slot type; `match x fits T`, `wrap:<T>`, `sat:<T>`; full bitwise builtins (`bits_and/or/xor/not/left/right`), one shift rule (count >= width gives 0 / sign fill).
+- `continue` = next iteration in a user `for`/`loop` (`isLoopContinue`; innermost construct wins: a catch body's own `continue` skips its try block, a loop opened inside the catch owns its `continue`, `match @lock` CLOSED retries, OPEN rejects). `for` gets a `@for_cont_N` label before the step only when a `continue` uses it.
 - `match @lock` on swap-mutex structs: every CLOSED path ends in `continue|break|return|throw`; lock released on throw unwinds.
 - Struct returns use RVO (hidden `$ret_dest`); legal only at `let` RHS, bare-variable assignment RHS, or `return f()`.
 - Generic impl methods are checked lazily; `DynamicArray<S>` for a struct uses the `...Ptr` twins.
@@ -38,7 +39,6 @@ Caspien: a systems language for auditable code (ownership storage `owns/ref/raw/
 - Benchmarks vs C -O2 (1 Oct): about 1.0-2.9x depending on program; naive stdlib String/HashMap paths are the slow ones. Details: `benchmarks/RESULTS.md`.
 
 ## Known open items
-- GAP: `continue` is rejected inside `for`/`loop` (only `catch` bodies and `match @lock` `CLOSED`); it should work there like other languages (next iteration). Not implemented.
 - Struct `extends`/`abstract` removed (committed `0345aaa`); flat `Class` enum; `instanceof` takes only a struct name, `implements` only an interface name. Status and open items: `TODO_REMOVE_STRUCT_EXTENDS.md`.
 - `clone(p)`: deep copy via generated `__clone_<T>` routines (each owns leaf cloned into a hidden local, registered, then the copy assembled; any failure `GT_DESTRUCT`s the locals and returns null, so no leak). Safe dynarrays clone with `CLONE_DYN` (runtime size) or, when elements are owns pointers, a generated loop. A dynarray of INLINE structs that own memory is not supported (`dyn([h])` itself crashes, pre-existing; the `VAL:` clone path is untested). `tests/clone_oom_check.sh` sweeps allocation failures. Possible optimisation (not done): the owns-element dynarray clone fills the new array with null via `RESIZE` so a failure can destruct it whole; a 0..i-1 rollback (destruct only the elements made, free the shell) with an unfilled grow would skip the fill, at the cost of a new codegen grow and a more intricate cleanup path.
 - TODO (own task, full regression): drop the emitter's alloc pre-pass (`collectHoistedAllocs`) and emit ALLOCs as the body is emitted, spliced in at function end like `declareHiddenLocal` already does; changes every program's HOB. Label pre-passes (try/catch, continue) must stay.

@@ -691,8 +691,7 @@ Using a value after moving it is a compile error: `use of 'b' after its ownershi
 Every loop in safe code is a `for` over a range that is fixed when the loop starts. The counter cannot be
 assigned, and the bounds are read once, so assigning the variable the range came from does not change how
 many times the loop runs. An empty range (`5..5`) and an inverted one
-(`7..3`) run zero times. `break` leaves a loop (see "Control flow" below), and `continue` is not a loop
-statement here: it is reserved for `catch` bodies and the `CLOSED` case of a lock.
+(`7..3`) run zero times. `break` leaves a loop and `continue` starts its next iteration (see "Control flow" below).
 
 ```rust
 let n = mut 5
@@ -731,17 +730,29 @@ for i in 0..3{
 A `break` inside `match @lock ... OPEN` releases the lock on the way out (see "Atomics, locks and threads").
 Using `break` outside a loop is an error.
 
-`continue` does **not** yet mean "next iteration" as it does in other languages. This is a known gap: a `for` or
-`loop` has no `continue` today (it should have one, with the usual meaning), so skip an iteration by wrapping
-the rest of the body in an `if`. `continue` exists in exactly two places, and means "go back and carry on" in
-each:
+`continue` in a `for` starts the next iteration (the counter still steps, and the bound is not re-read); in a
+`loop` it goes back to the top of the body. Like `break`, it frees the owns locals declared so far in the body,
+and it can sit inside any `if` or `match` within the loop:
+
+```rust
+let odd = mut 0
+for i in 0..10{
+	if i % 2 == 0{ continue }     // skip the even numbers
+	odd += i                      // 1 + 3 + 5 + 7 + 9 = 25
+}
+```
+
+`continue` has two older meanings, and the innermost construct around it decides which one applies:
 
 - at the end of a `catch(e){ ... }` handler it jumps to just past the enclosing `try{ ... }` block (see
-  "Errors"),
-- in the `CLOSED` case of a `match @lock` it retries the acquire.
+  "Errors"). If a loop is opened inside the handler, a `continue` in that loop belongs to that loop,
+- in the `CLOSED` case of a `match @lock` it retries the acquire. The `OPEN` case has no `continue`, since the
+  lock is held there.
 
-Anywhere else it is rejected: `'continue' can only be used inside a 'catch(e) { ... }' block, or directly in
-the 'CLOSED' case of a 'match @lock'`.
+Anywhere else it is rejected: `'continue' can only be used inside a 'for' or 'loop' (next iteration), inside a
+'catch(e) { ... }' block, or directly in the 'CLOSED' case of a 'match @lock'`. To get "next iteration" from
+inside a `catch` handler, wrap the loop body in a `try{ ... }` block: the handler's `continue` then lands at the
+end of the body.
 
 An `if` or `elseif` condition made with `&&` or `||` evaluates **both** sides, as it is plain logic on two
 values. To make the chain lazy, write `&&then` or `||then`. The right side then runs only when the left side
@@ -1474,7 +1485,7 @@ not proved. Costs inside that core are part of its contract, not of the safe-cod
 
 Known bugs that affect the guarantees are tracked in the `CLAUDE.md` files. One open example: reassigning
 an `owns` field reached through a pointer (`h.w = pass(h.w)`) still destructs the old value before the right
-side is evaluated. Another: `continue` is not accepted inside a `for` or `loop` (see "Control flow").
+side is evaluated.
 
 ---
 

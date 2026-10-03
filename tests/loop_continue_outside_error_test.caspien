@@ -1,0 +1,7 @@
+// Must fail to compile: `continue` outside any loop, catch body or CLOSED case.
+func main() void{
+	let x = mut 1
+	if x == 1{
+		continue
+	}
+}
