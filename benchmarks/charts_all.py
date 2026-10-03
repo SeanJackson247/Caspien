@@ -37,8 +37,8 @@ PROGS = [  # (dir, title, count label, naive prefix, [(column label, prefix)] fo
     ('helloworld', 'Hello World', 'N ignored (%s)', 'Caspien plain printf', [], 'print one line: measures start-up time, compile time and binary size'),
     ('json_serde', 'JSON serialise + parse', '%s records', 'Caspien naive (DynamicArray)', [('optimized safe', 'Caspien optimized safe'), ('optimized unsafe', 'Caspien optimized unsafe')], 'hand-written serialiser writes N records to one text buffer, a hand-written iterative parser reads them back; every language does the same work (no JSON library). Naive keeps the records in one stdlib DynamicArray<Rec>'),
 ]
-GROUP_NAME = {"caspien": "Caspien", "bare": "Bare metal (manual memory)", "native": "Native, GC / refcount / runtime", "vm": "VM (bytecode)",
-              "js": "JIT scripting / JavaScript", "luajit": "JIT scripting / JavaScript", "wasm": "WebAssembly"}
+GROUP_NAME = {"caspien": "Caspien", "bare": "Bare metal / native-compiled", "native": "Bare metal / native-compiled", "vm": "Compiled + interpreted (VM)",
+              "js": "Interpreted", "luajit": "Interpreted", "wasm": "Compiled + interpreted (VM)"}
 def _mix(h, t):
     r, g, b = (int(h[i:i + 2], 16) for i in (1, 3, 5))
     return "#%02x%02x%02x" % tuple(round(c + (255 - c) * t) for c in (r, g, b))
@@ -46,16 +46,14 @@ def _mix(h, t):
 _L = [("caspien", "Caspien", "#2e9e5b"),
       ("c", "C", "#d9453d"), ("cpp", "C++", "#ef7a6e"), ("rust", "Rust", "#a82a24"), ("go", "Go", "#f2a39a"), ("fortran", "Fortran", "#7d1f1a"),
       ("objc", "Objective-C", "#bd5e55"), ("odin", "Odin", "#e8745d"), ("zig", "Zig", "#c94a6a"), ("chapel", "Chapel", "#f5b8ae"),
-      ("ldc", "D (LDC)", "#c97a0e"), ("gdc", "D (GDC)", "#f0b44a"), ("nim", "Nim", "#a8780a"), ("crystal", "Crystal", "#e0a030"),
-      ("ocaml", "OCaml", "#f2cc7a"), ("swift", "Swift", "#e8651f"), ("codon", "Codon", "#8c6410"),
-      ("java", "Java", "#8a3fb8"), ("csharp", "C#", "#5f45c8"), ("kotlin", "Kotlin", "#b06ad8"),
-      ("node", "Node", "#2f6fd6"), ("bun", "Bun", "#7fb0f2"), ("luajit", "LuaJIT", "#1d4aa8"),
-      ("wasm", "WebAssembly", "#1b9a98")]
+      ("ldc", "D (LDC)", "#e0523f"), ("gdc", "D (GDC)", "#f08a7a"), ("nim", "Nim", "#b8322c"), ("crystal", "Crystal", "#d86a5a"),
+      ("ocaml", "OCaml", "#f7c4bb"), ("swift", "Swift", "#ca3a52"), ("codon", "Codon", "#96302a"),
+      ("java", "Java", "#7a3fb8"), ("csharp", "C#", "#5f45c8"), ("kotlin", "Kotlin", "#b06ad8"), ("wasm", "WebAssembly", "#9a7ee0"),
+      ("node", "Node", "#2f6fd6"), ("bun", "Bun", "#7fb0f2"), ("luajit", "LuaJIT", "#1d4aa8")]
 LANGS = [(k, n, c, _mix(c, 0.22)) for k, n, c in _L]
-LEGEND_GROUPS = [("caspien", "Caspien (pale hatched = optimisations off, solid = everything on)"),
-                 ("c", "Bare metal: C, C++, Rust, Go, Fortran, Objective-C, Odin, Zig, Chapel (reds and pinks)"),
-                 ("ldc", "Native with GC, refcounting or a runtime: D (LDC, GDC), Nim, Crystal, OCaml, Swift, Codon (ambers and oranges)"),
-                 ("java", "VM: Java, C#, Kotlin (purples)"), ("node", "JavaScript engines and LuaJIT (blues)"), ("wasm", "WebAssembly (teal)")]
+LEGEND_GROUPS = [("caspien", "Caspien (hatched = optimisations off / naive, solid = everything on)"),
+                 ("c", "Bare metal / native-compiled: C, C++, Rust, Go, Fortran, Objective-C, Odin, Zig, Chapel, D, Nim, Crystal, OCaml, Swift, Codon (reds)"),
+                 ("java", "Compiled and interpreted (VM): Java, C#, Kotlin, WebAssembly (purples)"), ("node", "Interpreted: Node, Bun, LuaJIT (blues)")]
 _LABEL_KEYS = [("C++", "cpp"), ("C#", "csharp"), ("C ", "c"), ("Chapel", "chapel"), ("Codon", "codon"), ("Crystal", "crystal"), ("D (LDC)", "ldc"),
                ("D (GDC)", "gdc"), ("Fortran", "fortran"), ("Kotlin", "kotlin"), ("Nim", "nim"), ("Objective-C", "objc"), ("OCaml", "ocaml"),
                ("Odin", "odin"), ("Rust", "rust"), ("Swift", "swift"), ("WebAssembly", "wasm"), ("Zig", "zig"), ("Go", "go"), ("Java", "java"),
@@ -318,7 +316,8 @@ NOTES = [
     "<b>Memory</b> is the peak resident size of the process (wait4). Garbage-collected runtimes size their heaps from the machine, so their peaks reflect policy as well as need.",
     "<b>Heap graph, binary trees, LRU:</b> Caspien rejects recursive structs on purpose, so its trees and lists are index-based; the other languages use pointers or references. Same work, not the same memory layout.",
     "<b>Sorting:</b> Caspien elements are u64, the others use 32-bit integers. <b>Linux only:</b> nothing was run on the Windows targets. <b>Noise:</b> a 2-core VM, timings vary by roughly 5&ndash;10% between runs; time is the fastest run.",
-    "<b>Colours</b> mark the language group; every row is also labelled with its language, so colour is never the only cue (a palette of 24 languages cannot be colour-blind-safe by colour alone).",
+    "<b>Re-run on 3 Oct 2026</b> after the @drop hook, file-system stdlib and compiler fixes: every program, every language, fastest of 3 runs, compile time the median of 2 builds, Linux 2-core VM, every output equal to the C reference.",
+    "<b>Colours</b>: green = Caspien (hatched = optimisations off / naive, solid = everything on), red = bare metal and natively compiled languages, purple = compiled and interpreted (JVM, .NET, WebAssembly), blue = interpreted (Node, Bun, LuaJIT); shades tell the languages apart; every row is also labelled with its language, so colour is never the only cue (a palette of 24 languages cannot be colour-blind-safe by colour alone).",
 ]
 notes_html = '<div class="metric" id="notes"><h2>Notes</h2><section><ul>%s</ul></section></div>' % "".join("<li>%s</li>" % n for n in NOTES)
 

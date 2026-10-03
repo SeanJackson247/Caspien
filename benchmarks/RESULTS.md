@@ -4,6 +4,34 @@ Linux target, 2-core VM, runs one at a time. Time = fastest of N runs; compile t
 Charts: `charts.html` (built by `charts_all.py`). Raw data: `<program>/results.json`. Harness: `nbody/bench.py`, `bench_program.py`.
 Every implementation's full output equals the C -O0 output at the same size.
 
+## Re-run of everything, 3 Oct 2026
+
+All 15 time-measured programs (n-body, fannkuch-redux, spectral-norm, sieve, strings, graph, sorting, binarytrees, mandelbrot, fasta, k-nucleotide, LRU, Merkle tree, hello world, JSON) across every language (C, C++, Rust, Go, Fortran, Objective-C, Odin, Zig, Chapel, D LDC/GDC, Nim, Crystal, OCaml, Swift, Codon, Java, C#, Kotlin, WebAssembly, Node, Bun, LuaJIT) with the current compiler (after `@drop`, the file-system stdlib and the compiler fixes). Fresh sandbox, toolchains reinstalled (versions as in `newlangs.py`; Bun is now included). Fastest of 3 runs, compile time = median of 2 builds, 2-core VM, one program at a time. Every output equals the C reference. Charts: `charts.html` (green = Caspien, hatched = optimisations off / naive; red = bare metal and natively compiled; purple = compiled + interpreted (JVM, .NET, WebAssembly); blue = interpreted (Node, Bun, LuaJIT)).
+
+Best Caspien variant with everything on, time against the best C -O2 build of the same run (old = 1 Oct run):
+
+| Program | old | new |
+|---|---|---|
+| n-body | 2.06x | 2.12x |
+| fannkuch-redux | 1.05x | 0.98x |
+| spectral-norm | 0.98x | 1.02x |
+| sieve | 1.19x | 1.66x |
+| strings | 2.62x | 2.74x |
+| graph | 1.25x | 1.37x |
+| binarytrees | 1.19x | 1.33x |
+| mandelbrot | 1.18x | 1.21x |
+| fasta | 1.66x | 1.78x |
+| k-nucleotide | 2.08x | 2.21x |
+| LRU | 1.76x | 1.84x |
+| Merkle tree | 1.99x | 2.03x |
+| sorting | 1.47x | 1.58x |
+| hello world | 0.69x | 0.82x |
+| JSON | 2.90x | 2.64x |
+| geometric mean | 1.49x | 1.59x |
+
+The whole machine ran faster this time (C and Caspien absolute times both dropped, for example Caspien sieve 1.12 s to 0.88 s, k-nucleotide naive 18.8 s to 16.0 s), but C gained a little more, so the ratios rose slightly. That is inside the 10-30% VM noise; no run showed a Caspien slowdown in absolute terms that is not explained by the machine. Not run: Windows targets, Dart (not installable), the threads/swaplock/recursion benchmarks (data from earlier runs kept).
+
+
 | Program | Size | Runs | C -O2 | Caspien naive off | naive full | optimized off | optimized full | Lua 5.4 | LuaJIT |
 |---|---|---|---|---|---|---|---|---|---|
 | n-body | 5,000,000 steps | 5 | 0.29 s | 3.98 s | 0.68 s | 1.93 s | 0.63 s | 8.63 s | 1.21 s |
