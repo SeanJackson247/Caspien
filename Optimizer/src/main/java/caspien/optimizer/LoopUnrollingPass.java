@@ -395,11 +395,9 @@ public class LoopUnrollingPass implements OptimizationPass {
     /** True when every mention of the loop variable in the body is a plain "PUSH var vt" that is not directly followed by ADDR_OF. */
     private static boolean onlyReadsVar(List<List<BytecodeToken>> body, Loop lp) {
         // Innermost loops only: substituting a literal into a body that holds another loop would give that loop literal bounds, and the
-        // nested full unrolling that follows multiplies the code (n-body: 2.5x the code, 1.7x slower).
+        // nested full unrolling that follows multiplies the code (n-body: 2.5x the code). Range proofs on the literal are folded away by ConstantFoldingPass (`IN`).
         for (List<BytecodeToken> l : body) {
             if (l.size() == 1 && (l.get(0).text.startsWith("@for_") || l.get(0).text.startsWith("@fu_"))) return false;
-            // A range proof (`match i in a` -> IN) on a literal would stay as a run-time check on constants and cost the register form.
-            if (!l.isEmpty() && l.get(0).text.equals("IN")) return false;
         }
         for (int k = 0; k < body.size(); k++) {
             List<BytecodeToken> l = body.get(k);

@@ -224,6 +224,23 @@ public class ConstantFoldingPass implements OptimizationPass {
                 }
                 return r;
             }
+            case "IN": {
+                // "x in lo..hi" with all three operands literals: `PUSH x`, `PUSH lo`, `PUSH hi`, then `IN xType rangeType boolType`. A range is half-open
+                // (start inclusive, end exclusive), the same meaning MembershipLoweringPass gives it. This is what a `match i in arr` proof becomes once a
+                // loop unroller has put a literal in place of `i`; folding it lets DeadControlFlowRemovalPass drop the always-taken test.
+                if (line.size() != 4 || n < 3) return null;
+                String rangeType = line.get(2).text;
+                if (!rangeType.contains("range(") || !"bool".equals(base(line.get(3).text))) return null;
+                Lit x = lit(out.get(n - 3)), lo = lit(out.get(n - 2)), hi = lit(out.get(n - 1));
+                if (x == null || lo == null || hi == null) return null;
+                if (!isInt(x.base) || !isInt(lo.base) || !isInt(hi.base) || !"u64".equals(base(line.get(1).text))) return null;
+                if (x.i.signum() < 0 || lo.i.signum() < 0 || hi.i.signum() < 0) return null;
+                boolean in = x.i.compareTo(lo.i) >= 0 && x.i.compareTo(hi.i) < 0;
+                out.remove(n - 1);
+                out.remove(n - 2);
+                out.remove(n - 3);
+                return push(line.get(0), in ? "true" : "false", line.get(3).text);
+            }
             default:
                 return null;
         }

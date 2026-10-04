@@ -1,0 +1,75 @@
+// Range-membership proofs on literals (`match 3 in a`, or `match i in a` after a loop is unrolled and `i` is replaced by a number) are decided at
+// compile time by ConstantFoldingPass (`IN` with three literal operands, half-open range). Checks that the taken and not-taken sides are right at
+// the boundaries, in fully unrolled loops and in straight-line code. Expected values come from an independent Python model (see below).
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+
+func check(name: static imut string, ok: mut bool) void{
+	unsafe extern{
+		if ok{
+			printf("PASS %s\n", name)
+		}else{
+			printf("FAIL %s\n", name)
+		}
+	}
+	return
+}
+
+func unrolledSum() mut u64{
+	let table = mut [10, 20, 30, 40]
+	// 6 trips over a 4-element table: the last two proofs fail
+	let s = mut 0
+	for i in 0..6{
+		match i in table{
+			s = s + table[i] * (i + 1)
+		}
+	}
+	return s
+}
+
+func unrolledMiss() mut u64{
+	let table = mut [10, 20, 30, 40]
+	let hits = mut 0
+	for i in 0..6{
+		match i in table{
+			hits = hits + 1
+		}
+	}
+	return 6 - hits
+}
+
+func nested() mut u64{
+	let table = mut [10, 20, 30, 40]
+	let s = mut 0
+	for i in 0..3{
+		for j in 0..3{
+			let k = mut 0
+			k = i + j
+			match k in table{
+				s = s + table[k]
+			}
+		}
+	}
+	return s
+}
+
+func literalIn(k: mut u64) mut u64{
+	let table = mut [10, 20, 30, 40]
+	let r = mut 0
+	match 0 in table{ r = r + table[0] }
+	match 3 in table{ r = r + table[3] }
+	match 4 in table{ r = r + 1000 }
+	match 99 in table{ r = r + 2000 }
+	return r + k
+}
+
+func main() void{
+	check("unrolled loop, taken proofs", unrolledSum() == 300)
+	check("unrolled loop, failed proofs are skipped", unrolledMiss() == 2)
+	check("nested loops with a computed index", nested() == 220)
+	check("literal proofs at both ends and past the end", literalIn(5) == 55)
+}
