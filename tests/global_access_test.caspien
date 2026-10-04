@@ -1,0 +1,68 @@
+// Globals (`let static`) of every width are read and written as one RIP-relative instruction (`mov sym(%rip), %r` / `mov %r, sym(%rip)`), no
+// `leaq sym(%rip), %r15` first. Integer results are PASS/FAIL lines (expected values from global_access_test.py); the two float results are printed
+// as `F32=` / `F64=` lines that global_access_check.sh compares with the same model; the check also counts the `leaq ...(%rip), %r15` left in the assembly.
+import "../stdlib/libc.caspien"
+
+let static:<mut u8> g8 = mut 200
+let static:<mut u16> g16 = mut 60000
+let static:<mut u32> g32 = mut 4000000000
+let static:<mut u64> g64 = mut 1099511627776
+let static:<mut f32> gf32 = mut 1.5
+let static:<mut f64> gf64 = mut 2.25
+let static arr = mut [1, 2, 3]
+
+func check(name: static imut string, ok: imut bool) void{
+	unsafe extern{
+		if ok{ printf("PASS %s\n", name) }
+		else{ printf("FAIL %s\n", name) }
+	}
+}
+
+func step(i: mut u64) void{
+	unsafe global{
+		g8 = wrap:<u8>(g8 + 7)
+		g16 = wrap:<u16>(g16 * 3 + 1)
+		g32 = wrap:<u32>(g32 * 5 + 3)
+		g64 = g64 * 7 + i
+	}
+}
+
+func main() void{
+	for i in 0..1000{
+		step(i)
+	}
+	unsafe global{
+		check("u8 global", g8 == 32)
+		check("u16 global", g16 == 33776)
+		check("u32 global", g32 == 471647432)
+		check("u64 global", g64 == 17331573808245507444)
+	}
+	unsafe assume global{
+		for i in 0..100{
+			assume match gf32 : finite
+			gf32 = gf32 * 1.5
+			assume match gf32 : finite
+			gf32 = gf32 + 0.25
+			assume match gf64 : finite
+			gf64 = gf64 * 1.25
+			assume match gf64 : finite
+			gf64 = gf64 + 0.5
+		}
+	}
+	unsafe extern global{ printf("F32=%.9e\nF64=%.17e\n", gf32 as f64, gf64) }
+	let sc = mut 0
+	unsafe global{
+		for i in 0..300{
+			let j = mut (i % 3)
+			let k = mut ((i + 1) % 3)
+			match j into arr{
+				arr[j] = arr[j] + i
+			}
+			match k in arr{
+				sc = sc + arr[k]
+			}
+		}
+		check("global array element 0", arr[0] == 14851)
+		check("global array sum", sc == 1485600)
+	}
+}

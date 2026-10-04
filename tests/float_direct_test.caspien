@@ -1,0 +1,96 @@
+// A float expression whose result goes into a float variable is computed in that variable's own register (no scratch xmm + movaps back),
+// unless the variable is read inside the expression. Mixed in one loop for f64 and f32; values are printed and compared with
+// float_direct_test.py by float_direct_check.sh (which also counts the `movaps` left in the loop).
+import "../stdlib/libc.caspien"
+
+func main() void{
+	unsafe assume extern{
+		let:<mut f64> p = mut 1.0
+		let:<mut f64> q = mut 2.0
+		let:<mut f64> r = mut 3.0
+		let:<mut f64> s = mut 4.0
+		let:<mut f32> a = mut 1.0
+		let:<mut f32> b = mut 2.0
+		let:<mut f32> c = mut 3.0
+		let:<mut f32> d = mut 4.0
+		for i in 0..200{
+			assume match q : finite
+			assume match r : finite
+			assume match q - r : finite
+			assume match q - r + 0.5 : finite
+			p = q - r + 0.5
+			assume match p : finite
+			assume match p * 0.5 : finite
+			assume match s : finite
+			assume match p * 0.5 + s : finite
+			q = p * 0.5 + s
+			assume match r : finite
+			assume match r * 0.75 : finite
+			assume match q : finite
+			assume match r * 0.75 + q : finite
+			r = r * 0.75 + q
+			assume match p : finite
+			assume match q : finite
+			assume match p + q : finite
+			assume match (p + q) * 0.25 : finite
+			assume match r : finite
+			assume match (p + q) * 0.25 - r : finite
+			s = (p + q) * 0.25 - r
+			assume match b : finite
+			assume match c : finite
+			assume match b - c : finite
+			assume match b - c + 0.5 : finite
+			a = b - c + 0.5
+			assume match a : finite
+			assume match a * 0.5 : finite
+			assume match d : finite
+			assume match a * 0.5 + d : finite
+			b = a * 0.5 + d
+			assume match c : finite
+			assume match c * 0.75 : finite
+			assume match b : finite
+			assume match c * 0.75 + b : finite
+			c = c * 0.75 + b
+			assume match a : finite
+			assume match b : finite
+			assume match a + b : finite
+			assume match (a + b) * 0.25 : finite
+			assume match c : finite
+			assume match (a + b) * 0.25 - c : finite
+			d = (a + b) * 0.25 - c
+			assume match r : finite
+			assume match r * 0.5 : finite
+			assume match s : finite
+			assume match r * 0.5 + s : finite
+			assume match q : finite
+			assume match q * (r * 0.5 + s) : finite
+			assume match q * (r * 0.5 + s) * 0.5 : finite
+			assume match q * (r * 0.5 + s) * 0.5 + 1.0 : finite
+			p = q * (r * 0.5 + s) * 0.5 + 1.0
+			assume match c : finite
+			assume match c * 0.5 : finite
+			assume match d : finite
+			assume match c * 0.5 + d : finite
+			assume match b : finite
+			assume match b * (c * 0.5 + d) : finite
+			assume match b * (c * 0.5 + d) * 0.5 : finite
+			assume match b * (c * 0.5 + d) * 0.5 + 1.0 : finite
+			a = b * (c * 0.5 + d) * 0.5 + 1.0
+			assume match q : finite
+			assume match 2.0 * q : finite
+			assume match s : finite
+			assume match 2.0 * q * s : finite
+			assume match 2.0 * q * s * 0.01 : finite
+			assume match 2.0 * q * s * 0.01 + 0.25 : finite
+			s = 2.0 * q * s * 0.01 + 0.25
+			assume match b : finite
+			assume match 2.0 * b : finite
+			assume match d : finite
+			assume match 2.0 * b * d : finite
+			assume match 2.0 * b * d * 0.01 : finite
+			assume match 2.0 * b * d * 0.01 + 0.25 : finite
+			d = 2.0 * b * d * 0.01 + 0.25
+		}
+		printf("F64=%.17e %.17e %.17e %.17e\nF32=%.9e %.9e %.9e %.9e\n", p, q, r, s, a as f64, b as f64, c as f64, d as f64)
+	}
+}

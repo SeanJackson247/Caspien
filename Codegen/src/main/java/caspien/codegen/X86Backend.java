@@ -1266,9 +1266,23 @@ public class X86Backend {
         
     }
 
+    /** The RIP-relative memory operand of a global (an alias into a parent block adds its fixed offset): `label+off(%rip)`. */
+    private String globalRipOperand(String globalName) {
+        if (globalAliasOffset.containsKey(globalName)) {
+            String parentLabel = mangleGlobalName(globalAliasParent.get(globalName));
+            long offset = globalAliasOffset.get(globalName);
+            return parentLabel + (offset != 0 ? "+" + offset : "") + "(%rip)";
+        }
+        return mangleGlobalName(globalName) + "(%rip)";
+    }
+
     private void movImmToReg(String reg, long imm) {
+        // 0 .. 0xFFFFFFFF: `movl $imm, %r32` (5-6 bytes, zero-extends, flags untouched) instead of a 10-byte movabs
+        if (imm >= 0 && imm <= 0xFFFFFFFFL && sizedReg(reg, 4) != reg) {
+            raw("    movl $" + imm + ", %" + sizedReg(reg, 4));
+            return;
+        }
         raw("    movq $" + imm + ", %" + reg);
-        
     }
 
     // ---- Size-aware register/memory helpers ------------------------------
@@ -2678,6 +2692,11 @@ public class X86Backend {
             case "R_BRC": {
                 // "R_BRC OP 8 a b @label" -- compare a with b and jump to the label when NOT (a OP b) (the fused form of
                 // R_BIN cmp + R_BRF, made by the LowerOrderGenerator's BranchFusionPass; the compare result never exists).
+                if (line.get(2).text.startsWith("F")) { // "R_BRC OP F4|F8 a b @label": float compare (ucomiss/ucomisd) + jump
+                    rfFloat(true, line.get(1).text, Integer.parseInt(line.get(2).text.substring(1)), null, line.get(3).text, line.get(4).text,
+                            mangleLabel(line.get(5).text));
+                    return;
+                }
                 rfBrc(line.get(1).text, line.get(3).text, line.get(4).text, mangleLabel(line.get(5).text));
                 return;
             }
@@ -5503,6 +5522,11 @@ public class X86Backend {
         if (!(rfIsTemp(aTok) && rfReg(aTok).equals(d))) {
             rfMov(dstTok, aTok);
         }
+        if (bText == null && op.equals("BAND") && size == 8 && rfIsImm(bTok) && rfImm(bTok) == 0xFFFFFFFFL) {
+            // x & 0xFFFFFFFF: a 32-bit self-move zero-extends (no 10-byte constant through the scratch register)
+            raw("    movl %" + sizedReg(d, 4) + ", %" + sizedReg(d, 4));
+            return;
+        }
         if (bText == null) {
             bText = rfSrc(bTok);
         }
@@ -5693,8 +5717,13 @@ public class X86Backend {
         if (rfIsSlot(srcTok)) {
             loadSizedFromFrame(d, rfSlot(srcTok), n);
         } else if (rfIsGlobal(srcTok)) {
-            leaGlobalToReg(d, srcTok.substring(1));
-            loadSizedFromAddr(d, d, n);
+            // one instruction, `mov sym+off(%rip), %d`, not `leaq sym(%rip), %d; mov (%d), %d`
+            rfMemOverride = globalRipOperand(srcTok.substring(1));
+            try {
+                loadSizedFromAddr(d, d, n);
+            } finally {
+                rfMemOverride = null;
+            }
         } else {
             loadSizedFromAddr(d, rfReg(srcTok), n);
         }
@@ -5710,7 +5739,10 @@ public class X86Backend {
 
     private void rfStore(int n, String addrTok, String srcTok) {
         String areg = null; // register holding the address; null = a frame slot
-        if (rfIsGlobal(addrTok)) {
+        String ripMem = null; // a global stored with one instruction, `mov %r, sym+off(%rip)`
+        if (rfIsGlobal(addrTok) && !isOddSize(n)) {
+            ripMem = globalRipOperand(addrTok.substring(1));
+        } else if (rfIsGlobal(addrTok)) {
             leaGlobalToReg(RF_SCRATCH, addrTok.substring(1));
             areg = RF_SCRATCH;
         } else if (!rfIsSlot(addrTok)) {
@@ -5719,13 +5751,15 @@ public class X86Backend {
         if (rfIsImm(srcTok)) {
             long v = rfTrunc(rfImm(srcTok), n);
             String mem;
-            mem = areg == null ? (rfSlot(addrTok) + "(%rbp)") : ("(%" + areg + ")");
+            mem = ripMem != null ? ripMem : areg == null ? (rfSlot(addrTok) + "(%rbp)") : ("(%" + areg + ")");
             raw("    mov" + movSuffix(n) + " $" + v + ", " + mem);
             
             return;
         }
         String reg = rfReg(srcTok);
-        if (areg == null) {
+        if (ripMem != null) {
+            raw("    mov" + movSuffix(n) + " %" + sizedReg(reg, n) + ", " + ripMem);
+        } else if (areg == null) {
             storeSizedToFrame(reg, rfSlot(addrTok), n);
         } else {
             storeSizedToAddr(reg, areg, n);
@@ -5739,7 +5773,13 @@ public class X86Backend {
     /** constant displacement added to the next indexed memory operand (a frame-slot base: `off(%rbp,%idx,scale)`) */
     private long rfIdxDisp = 0;
 
+    /** When set, the memory operand of the next sized load/store is this text (a RIP-relative global), whatever the address register. */
+    private String rfMemOverride = null;
+
     private String rfMemOperand(String baseReg) {
+        if (rfMemOverride != null) {
+            return rfMemOverride;
+        }
         if (rfIdxReg == null) {
             return ("(%" + baseReg + ")");
         }
@@ -6075,8 +6115,7 @@ public class X86Backend {
         if (rfIsSlot(addrTok)) {
             return (rfSlot(addrTok) + "(%rbp)");
         } else if (rfIsGlobal(addrTok)) {
-            leaGlobalToReg(RF_SCRATCH, addrTok.substring(1));
-            return ("(%" + RF_SCRATCH + ")");
+            return globalRipOperand(addrTok.substring(1));
         }
         return ("(%" + rfReg(addrTok) + ")");
     }
@@ -6140,7 +6179,12 @@ public class X86Backend {
     }
 
     private void rfFloat(boolean compare, String op, int n, String dstTok, String aTok, String bTok) {
-        String d = rfReg(dstTok);
+        rfFloat(compare, op, n, dstTok, aTok, bTok, null);
+    }
+
+    /** branchLabel != null (compare only, dstTok null): jump to it when NOT (a op b) instead of producing the 0/1 value. */
+    private void rfFloat(boolean compare, String op, int n, String dstTok, String aTok, String bTok, String branchLabel) {
+        String d = dstTok == null ? null : rfReg(dstTok);
         String xa = rfXmmA();
         String xb = rfXmmB();
         String sfx = n == 4 ? "ss" : "sd";
@@ -6177,6 +6221,20 @@ public class X86Backend {
             return;
         }
         raw(("    ucomi" + sfx + " " + bText + ", " + aText));
+        if (branchLabel != null) {
+            String jcc; // the jump taken when the comparison is false (same flags as the setcc below)
+            switch (op) {
+                case "EQ": jcc = "jne"; break;
+                case "NEQ": jcc = "je"; break;
+                case "LT": jcc = "jae"; break;
+                case "LT_EQ": jcc = "ja"; break;
+                case "GT_EQ": jcc = "jb"; break;
+                case "GT": jcc = "jbe"; break;
+                default: throw new IllegalStateException("unknown R_BRC float operator '" + op + "'");
+            }
+            raw("    " + jcc + " " + branchLabel);
+            return;
+        }
         String setcc;
         switch (op) {
             case "EQ": setcc = "sete"; break;

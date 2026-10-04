@@ -185,6 +185,7 @@ public class RegisterFormPass implements OptimizationPass {
         handlers.put("ZEXT", this::fuseZext);
         handlers.put("TRUNC", this::fuseTrunc);
         handlers.put("LOOKUP_ARRAY_LHS", this::fuseLookupArrayLhs);
+        handlers.put("LOOKUP_ARRAY", this::fuseLookupPtrRead);
         handlers.put("PUSH_FIELDNAME", this::fuseFieldName);
         handlers.put("DOT_LHS", this::fuseDotLhs);
         handlers.put("POP", this::fusePop);
@@ -897,6 +898,49 @@ public class RegisterFormPass implements OptimizationPass {
             return 0;
         }
         return emitLea(st, line, base, ix, scale, sz);
+    }
+
+    /**
+     * LOOKUP_ARRAY n (no flag token) read through a POINTER base -- an unsafe (headerless) dynarray or a string: the element is the n bytes at
+     * pointer + index*n, loaded zero-extended in one go (R_LEA + R_LD), like the safe dynarray read but with no header. The base is the pointer
+     * value (a frame slot or a temp); a fixed array pushed by value is never one of these (bigger ones are pushed as blocks, an 8-byte one carries
+     * the "t8" token, smaller ones are tagged), so only the plain two-token line is taken. Element types that are not 1/2/4/8 bytes stay stack form.
+     */
+    private int fuseLookupPtrRead(State st, List<BytecodeToken> line, List<List<BytecodeToken>> all, int idx) {
+        if (!is(line, 2)) {
+            return 0;
+        }
+        int n = parseSize(line.get(1).text);
+        if (!isWidth(n)) {
+            return 0;
+        }
+        if (idx + 1 < all.size()) {
+            List<BytecodeToken> nx = all.get(idx + 1);
+            String nm = nx.isEmpty() ? "" : nx.get(0).text;
+            // a following DOT takes a struct element apart; a following LOOKUP_ARRAY tagged "t8" indexes an 8-byte fixed array held by value
+            // (this element, pushed as one word); any other following lookup just uses this scalar as its index or its pointer
+            boolean nextTakesWhole = nm.startsWith("DOT") || (nm.equals("LOOKUP_ARRAY") && nx.size() > 2 && nx.get(2).text.equals("t8"));
+            if (nextTakesWhole) {
+                return 0;
+            }
+        }
+        int sz = st.stack.size();
+        if (sz < 2) {
+            return 0;
+        }
+        Entry ix = st.stack.get(sz - 1);
+        Entry base = st.stack.get(sz - 2);
+        if (!isValue(ix) || base.kind == Kind.A || !isAddress(base)) {
+            return 0;
+        }
+        int r = emitLea(st, line, base, ix, n, sz, 0);
+        if (r == 0) {
+            return 0;
+        }
+        Entry top = st.stack.remove(st.stack.size() - 1);
+        st.emit("R_LD", String.valueOf(n), "%t" + top.temp, "%t" + top.temp);
+        st.stack.add(loadedTemp(top.temp, n));
+        return r;
     }
 
     private int emitLea(State st, List<BytecodeToken> line, Entry base, Entry ix, int scale, int sz) {

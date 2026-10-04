@@ -62,7 +62,119 @@ public class FloatTempPass {
             out.add(line);
             i++;
         }
-        return out;
+        return coalesceIntoVariables(out);
+    }
+
+    /**
+     * Write a chain's result straight into the float variable it is finally assigned to.
+     * <pre>
+     *   R_FBINX SUB 8 %y0 %x3 %x2              R_FBINX SUB 8 %x1 %x3 %x2
+     *   R_FBINX ADD 8 %x1 %y0 %x5       -->    R_FBINX ADD 8 %x1 %x1 %x5      (no scratch register, no movaps back)
+     * </pre>
+     * Applies to a run of consecutive lines: a first producer (R_FBINX or R_LDX into %yK), zero or more R_FBINX "%yK = %yK op b",
+     * and a last R_FBINX "%xD = %yK op b". The variable %xD must not appear anywhere else in the run (so overwriting it early reads
+     * nothing stale), and %yK must not be read after the run before it is written again. Anything else stays as it was.
+     */
+    private static List<List<BytecodeToken>> coalesceIntoVariables(List<List<BytecodeToken>> lines) {
+        int n = lines.size();
+        List<List<BytecodeToken>> res = new ArrayList<>(lines);
+        for (int j = 0; j < n; j++) {
+            List<BytecodeToken> lj = res.get(j);
+            if (lj.size() != 6 || !lj.get(0).text.equals("R_FBINX") || !lj.get(3).text.startsWith("%x") || !lj.get(4).text.startsWith("%y")) {
+                continue;
+            }
+            String xd = lj.get(3).text;
+            String y = lj.get(4).text;
+            String w = lj.get(2).text;
+            if (lj.get(5).text.equals(xd) || lj.get(5).text.equals(y)) {
+                continue;
+            }
+            // walk back over "%y = %y op b" lines to the producer
+            int k = j - 1;
+            while (k >= 0 && res.get(k).size() == 6 && res.get(k).get(0).text.equals("R_FBINX") && res.get(k).get(3).text.equals(y)
+                    && res.get(k).get(4).text.equals(y) && res.get(k).get(2).text.equals(w)) {
+                k--;
+            }
+            if (k < 0) {
+                continue;
+            }
+            List<BytecodeToken> prod = res.get(k);
+            boolean prodBinx = prod.size() == 6 && prod.get(0).text.equals("R_FBINX") && prod.get(3).text.equals(y) && prod.get(2).text.equals(w);
+            // the producer must start the chain: it may not read %y itself (an earlier definition of it is still needed)
+            if (prodBinx && (prod.get(4).text.equals(y) || prod.get(5).text.equals(y))) {
+                continue;
+            }
+            boolean prodLd = prod.size() == 4 && prod.get(0).text.equals("R_LDX") && prod.get(2).text.equals(y) && prod.get(1).text.equals(w);
+            if (!prodBinx && !prodLd) {
+                continue;
+            }
+            boolean ok = true;
+            int swapAt = -1; // a "%y = %y op %xD" (op commutative) line: becomes "%xD = %xD op %y", the chain continues in %xD after it
+            for (int q = k; q < j && ok; q++) {
+                List<BytecodeToken> l = res.get(q);
+                int mentions = 0;
+                for (int a = 1; a < l.size(); a++) {
+                    if (l.get(a).text.equals(xd)) {
+                        mentions++;
+                    }
+                }
+                if (mentions == 0) {
+                    continue;
+                }
+                if (q == k && prodBinx && mentions == 1 && l.get(4).text.equals(xd)) {
+                    continue; // the producer reads %xD as its first source operand (it then updates the variable in place)
+                }
+                String op = l.get(1).text;
+                if (q > k && swapAt < 0 && mentions == 1 && l.size() == 6 && l.get(0).text.equals("R_FBINX") && l.get(3).text.equals(y)
+                        && l.get(4).text.equals(y) && l.get(5).text.equals(xd) && (op.equals("MUL") || op.equals("ADD"))) {
+                    swapAt = q;
+                    continue;
+                }
+                ok = false;
+            }
+            if (!ok) {
+                continue;
+            }
+            // %y must be dead after line j (until it is redefined)
+            for (int q = j + 1; q < n && ok; q++) {
+                List<BytecodeToken> l = res.get(q);
+                boolean mentions = false;
+                for (int a = 1; a < l.size(); a++) {
+                    if (l.get(a).text.equals(y)) {
+                        mentions = true;
+                    }
+                }
+                if (!mentions) {
+                    continue;
+                }
+                String mm = l.get(0).text;
+                boolean redef = (mm.equals("R_FBINX") && l.size() == 6 && l.get(3).text.equals(y) && !l.get(4).text.equals(y) && !l.get(5).text.equals(y))
+                        || (mm.equals("R_LDX") && l.size() == 4 && l.get(2).text.equals(y));
+                if (!redef) {
+                    ok = false;
+                }
+                break;
+            }
+            if (!ok) {
+                continue;
+            }
+            for (int q = swapAt >= 0 ? swapAt : k; q <= j; q++) {
+                List<BytecodeToken> l = res.get(q);
+                List<BytecodeToken> r = new ArrayList<>(l.size());
+                for (int a = 0; a < l.size(); a++) {
+                    BytecodeToken b = l.get(a);
+                    String tx = b.text;
+                    if (q == swapAt) {
+                        tx = a == 3 || a == 4 ? xd : a == 5 ? y : tx;
+                    } else if (tx.equals(y)) {
+                        tx = xd;
+                    }
+                    r.add(tx.equals(b.text) ? b : new BytecodeToken(tx, b.file, b.line, BytecodeToken.Kind.CODE));
+                }
+                res.set(q, r);
+            }
+        }
+        return res;
     }
 
     private static final Set<String> KNOWN_R = new HashSet<>(Arrays.asList(

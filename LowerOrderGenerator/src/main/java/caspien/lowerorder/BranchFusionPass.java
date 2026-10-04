@@ -13,6 +13,7 @@ import java.util.Set;
  *   R_BIN C1 8 %tX a b ; R_BIN C2 8 %tY c d ; R_BIN AND 1 %tR %tX %tY ; R_BRF %tR @L
  *                                                                       ->  R_BRC C1 8 a b @L ; R_BRC C2 8 c d @L
  *
+ * A float compare feeding a jump fuses the same way (`R_FCMP C n %tD a b ; R_BRF %tD @L` -> `R_BRC C Fn a b @L`, no setcc/movzbq/test).
  * "R_BRC C size a b @L" jumps to L when NOT (a C b). The second shape is the test of a `for` loop over a range
  * (start <= i and i < end); the two compares are pure reads, so evaluating the second only when the first held changes nothing.
  * Only 8-byte compares (narrow ones zero/sign-extend first and stay as they are), and only when the compare result temps are
@@ -47,6 +48,15 @@ public class BranchFusionPass {
                     }
                 }
             }
+            // shape 0: float compare + branch, `R_FCMP C n %tD a b ; R_BRF %tD @L` -> `R_BRC C Fn a b @L` (size "F4"/"F8" = a float compare)
+            if (i + 1 < lines.size() && isFcmp(l) && isBrf(lines.get(i + 1)) && t(lines.get(i + 1), 1).equals(t(l, 3)) && notBothImm(l)) {
+                List<BytecodeToken> n = brc(l, lines.get(i + 1));
+                BytecodeToken sz = l.get(2);
+                n.set(2, new BytecodeToken("F" + sz.text, sz.file, sz.line, sz.kind));
+                out.add(n);
+                i += 2;
+                continue;
+            }
             // shape 1
             if (i + 1 < lines.size() && isCmp(l) && isBrf(lines.get(i + 1)) && t(lines.get(i + 1), 1).equals(t(l, 3)) && notBothImm(l)) {
                 out.add(brc(l, lines.get(i + 1)));
@@ -65,6 +75,11 @@ public class BranchFusionPass {
 
     private static boolean isCmp(List<BytecodeToken> l) {
         return l.size() == 6 && t(l, 0).equals("R_BIN") && CMP.contains(t(l, 1)) && t(l, 2).equals("8") && t(l, 3).startsWith("%t");
+    }
+
+    private static boolean isFcmp(List<BytecodeToken> l) {
+        return l.size() == 6 && t(l, 0).equals("R_FCMP") && CMP.contains(t(l, 1)) && (t(l, 2).equals("4") || t(l, 2).equals("8"))
+                && t(l, 3).startsWith("%t");
     }
 
     private static boolean isAnd(List<BytecodeToken> l) {

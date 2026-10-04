@@ -1,0 +1,54 @@
+// Reads through unsafe (headerless) dynarrays are register-form: one lea + one load, any element width. Covers u8/u16/u32/u64 elements,
+// constant / variable / nested (a[b[i]]) indexes, reads used as conditions, in sums and compared with each other. The printed numbers are compared
+// with udyn_read_test.py (an independent model) by udyn_read_check.sh, which also requires no stack-form LOOKUP_ARRAY left in the low-order bytecode.
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+
+func main() void{
+	unsafe udyn{
+		let n = mut 100
+		let a8 = mut unsafe dyn:<u8>([])
+		a8 = resize(a8, n)
+		let a16 = mut unsafe dyn:<u16>([])
+		a16 = resize(a16, n)
+		let a32 = mut unsafe dyn:<u32>([])
+		a32 = resize(a32, n)
+		let a64 = mut unsafe dyn:<u64>([])
+		a64 = resize(a64, n)
+		let idx = mut unsafe dyn:<u64>([])
+		idx = resize(idx, n)
+		for i in 0..n{
+			a8[i] = wrap:<u8>(i * 37 + 11)
+			a16[i] = wrap:<u16>(i * 4099 + 7)
+			a32[i] = wrap:<u32>(i * 1000003 + 5)
+			a64[i] = i * 6364136223846793005 + 1442695040888963407
+			idx[i] = (i * 7 + 3) % 100
+		}
+		let s8 = mut 0
+		let s16 = mut 0
+		let s32 = mut 0
+		let s64 = mut 0
+		let sn = mut 0
+		let cnt = mut 0
+		let k = mut 5
+		for i in 0..n{
+			s8 = s8 + (a8[i] as u64)
+			s16 = s16 + (a16[i] as u64)
+			s32 = s32 + (a32[i] as u64)
+			s64 = bits_xor(s64, a64[i])
+			sn = sn + (a8[idx[i]] as u64) + (a16[idx[idx[i]]] as u64)
+			if (a32[i] as u64) > 2000000000{
+				cnt++
+			}
+			if a8[k] == a8[i]{
+				cnt = cnt + 100
+			}
+		}
+		s8 = s8 + (a8[99] as u64) + (a8[0] as u64) + (a8[k] as u64)
+		unsafe extern{ printf("%llu %llu %llu %llu %llu %llu\n", s8, s16, s32, s64, sn, cnt) }
+	}
+}

@@ -42,6 +42,7 @@ Caspien: a systems language for auditable code (ownership storage `owns/ref/raw/
 - Register-form, register variables (r13/r14/r12 callee-saved + r8-r10 in call-free regions), xmm float temps/variables, float constant pool, indexed addressing, range-end promotion, branch fusion, jump cleanup, strength reduction: always on in code, gated by `toolchain.config` switches.
 - Callee-saved registers are saved/restored per function (`finishCalleeSaved`).
 - Optimizer inliner handles throwing callees, owns-moves, `@lock` leaves.
+- 5 Oct instruction-selection round (RIP-relative globals, `movl` constants, float results into the variable register, fused float compare+branch, register-form unsafe-dynarray reads): unsafe variants 13-37% faster (strings/lru/knucleotide/merkle/sorting/fasta), nbody scalars -35%; the safe variants are now often SLOWER than the unsafe ones (base/length reloads per access).
 - Benchmarks vs C -O2 (1 Oct): about 1.0-2.9x depending on program; naive stdlib String/HashMap paths are the slow ones. Details: `benchmarks/RESULTS.md`.
 
 ## Known open items
