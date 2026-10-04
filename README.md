@@ -1794,34 +1794,47 @@ check scripts.
 
 ## 4. Performance
 
-Fourteen programs were timed against C, C++, Rust, Go, Java, Node and Bun on a 2-core Intel Xeon VM
-(1 October 2026). Every output matched the C reference. Times are seconds, fastest of two runs. "Caspien"
-is the fastest Caspien variant with all optimisations on; the stdlib column is the same program written
-with the standard library classes (`DynamicArray`, `HashMap`, `String`), and the last column is the best
-variant with optimisations off.
+Fourteen programs were timed against 23 other languages on a 2-core Intel Xeon VM (4 October 2026). Every output matched the C reference.
+Times are seconds, fastest of three runs. "Caspien" is the fastest Caspien variant with all optimisations on; the stdlib column is the same
+program written with the standard library classes (`DynamicArray`, `HashMap`, `String`), and the last column is the best variant with
+optimisations off, which is how the shipped `toolchain.config` builds.
+
+![Execution time over 13 programs, geometric mean relative to C -O2, every language](benchmarks/img/overview_time.svg)
 
 | Program | C -O2 (s) | Caspien (s) | Caspien vs C | stdlib-class version vs C | optimisations off vs C |
 |---|---|---|---|---|---|
-| mandelbrot | 1.58 | 1.68 | 1.06x | n/a | 5.0x |
-| sieve | 1.45 | 1.70 | 1.17x | 2.5x | 3.2x |
-| fannkuch-redux | 2.82 | 3.34 | 1.18x | 1.2x | 7.6x |
-| graph | 0.33 | 0.40 | 1.22x | 2.8x | 3.0x |
-| spectral-norm | 0.21 | 0.27 | 1.30x | 1.8x | 9.8x |
-| sorting | 1.28 | 1.98 | 1.55x | 3.6x | 4.6x |
-| merkle trees (real SHA-256) | 0.84 | 1.49 | 1.78x | 2.1x | 11.3x |
-| n-body | 0.32 | 0.62 | 1.97x | n/a | 9.7x |
-| binarytrees | 0.50 | 1.06 | 2.11x | 5.9x | 4.5x |
-| fasta | 0.86 | 1.82 | 2.12x | 3.7x | 5.7x |
-| lru cache | 0.56 | 1.35 | 2.42x | 15.7x | 9.7x |
-| k-nucleotide | 0.45 | 1.34 | 2.97x | 57.3x | 13.0x |
-| strings | 0.23 | 0.81 | 3.57x | 25.5x | 8.7x |
-| json_serde | 0.75 | 2.82 | 3.75x | 6.3x | 9.5x |
+| Binary trees | 0.49 | 0.44 | 0.90x | 2.8x | 2.6x |
+| Fannkuch-redux | 3.41 | 3.37 | 0.99x | 1.1x | 3.5x |
+| Spectral-norm | 0.23 | 0.23 | 1.01x | 1.4x | 5.4x |
+| Mandelbrot | 1.29 | 1.54 | 1.20x | n/a | 3.6x |
+| Heap graph search | 0.22 | 0.28 | 1.23x | 1.5x | 2.3x |
+| Sieve of Eratosthenes | 0.61 | 0.84 | 1.37x | 2.2x | 3.8x |
+| Sorting and searching | 1.33 | 1.99 | 1.49x | 2.0x | 2.6x |
+| FASTA generation | 0.95 | 1.44 | 1.51x | 1.8x | 3.2x |
+| LRU cache | 0.65 | 1.12 | 1.71x | 3.2x | 4.2x |
+| k-nucleotide (hash map) | 0.62 | 1.07 | 1.71x | 8.0x | 4.9x |
+| Merkle tree | 0.90 | 1.75 | 1.96x | 2.4x | 10.3x |
+| N-body | 0.28 | 0.57 | 2.04x | 2.4x | 6.2x |
+| JSON serialise + parse | 0.78 | 1.65 | 2.11x | 2.9x | 4.9x |
+| String manipulation | 0.23 | 0.53 | 2.32x | 12.1x | 4.8x |
 
-Geometric mean of time relative to C -O2 across the fourteen programs:
+Geometric mean of time relative to C -O2: Caspien 1.48x with all optimisations on (best variant per program), 2.62x for the stdlib-class
+versions, 4.11x with optimisations off.
 
-| C++ | Rust | Go | Java | **Caspien** | Bun | Node |
-|---|---|---|---|---|---|---|
-| 1.17x | 1.09x | 1.60x | 1.75x | **1.85x** | 2.38x | 2.60x |
+**Which charts are shown.** The overview above uses no selection: every language, over the same 13 programs. The three per-program charts
+below were not picked by hand. The rule is mechanical, not a judgement call: for each program take the ratio of Caspien's fastest
+all-optimisations-on variant to C -O2, and show the program with the lowest ratio, the median, and the highest.
+`python3 benchmarks/export_svgs.py` prints the ratios and the selection and rewrites the images. All 15 programs have a chart in
+[`benchmarks/img/`](benchmarks/img/), and the interactive version (hover text, sortable tables, memory, size and compile time) is
+[`benchmarks/charts.html`](https://SeanJackson247.github.io/Caspien/benchmarks/charts.html).
+
+Best for Caspien (binary trees, 0.90x of C), the median (FASTA, 1.51x), and the worst (string manipulation, 2.32x):
+
+![Execution time: binary trees](benchmarks/img/time_binarytrees.svg)
+![Execution time: FASTA generation](benchmarks/img/time_fasta.svg)
+![Execution time: string manipulation](benchmarks/img/time_strings.svg)
+
+The gold lines on each bar mark the best time minus and plus the typical run-to-run noise (the median of the three repeats minus the best).
 
 Peak memory is close to C: the geometric mean is 1.07x of C's, ranging from 0.77x to 1.96x. That is no
 surprise, because Caspien has no garbage collector and no runtime, allocates with `malloc`, and lays out

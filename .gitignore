@@ -1,0 +1,8 @@
+# Compiler scratch output, rewritten on every run
+/output/
+*/output.txt
+*/debug.txt
+# Written by Compiler from toolchain.config on every run
+ASTGenerator/fs.config
+ASTGenerator/platform.config
+__pycache__/
