@@ -1799,7 +1799,10 @@ Times are seconds, fastest of three runs. "Caspien" is the fastest Caspien varia
 program written with the standard library classes (`DynamicArray`, `HashMap`, `String`), and the last column is the best variant with
 optimisations off, which is how the shipped `toolchain.config` builds.
 
-![Execution time over 13 programs, geometric mean relative to C -O2, every language](benchmarks/img/overview_time.svg)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="benchmarks/img/overview_time-dark.svg">
+  <img alt="Execution time over 13 programs, geometric mean relative to C -O2, every language" src="benchmarks/img/overview_time.svg">
+</picture>
 
 | Program | C -O2 (s) | Caspien (s) | Caspien vs C | stdlib-class version vs C | optimisations off vs C |
 |---|---|---|---|---|---|
@@ -1830,9 +1833,18 @@ all-optimisations-on variant to C -O2, and show the program with the lowest rati
 
 Best for Caspien (binary trees, 0.90x of C), the median (FASTA, 1.51x), and the worst (string manipulation, 2.32x):
 
-![Execution time: binary trees](benchmarks/img/time_binarytrees.svg)
-![Execution time: FASTA generation](benchmarks/img/time_fasta.svg)
-![Execution time: string manipulation](benchmarks/img/time_strings.svg)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="benchmarks/img/time_binarytrees-dark.svg">
+  <img alt="Execution time: binary trees" src="benchmarks/img/time_binarytrees.svg">
+</picture>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="benchmarks/img/time_fasta-dark.svg">
+  <img alt="Execution time: FASTA generation" src="benchmarks/img/time_fasta.svg">
+</picture>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="benchmarks/img/time_strings-dark.svg">
+  <img alt="Execution time: string manipulation" src="benchmarks/img/time_strings.svg">
+</picture>
 
 The gold lines on each bar mark the best time minus and plus the typical run-to-run noise (the median of the three repeats minus the best).
 

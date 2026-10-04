@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Writes standalone SVG charts for the README into benchmarks/img/ (GitHub cannot run charts.html).
 
-  img/time_<program>.svg   execution time of every language on that program (all 15 programs, no selection)
-  img/overview_time.svg    geometric mean of (time / C -O2 time) over every program where both exist, every language and every Caspien variant
+  img/time_<program>.svg and time_<program>-dark.svg   execution time of every language on that program (all 15 programs, no selection)
+  img/overview_time.svg and overview_time-dark.svg   geometric mean of (time / C -O2 time) over every program where both exist, every language and every Caspien variant
 
 The programs the README features are chosen by a fixed rule, not by hand: for each program take the ratio of Caspien's fastest
 "everything on" variant to C -O2; the featured programs are the one with the lowest ratio, the median and the highest ratio.
@@ -18,14 +18,26 @@ chart, DATA, PROGS, LANGS, find, c_ref, fmt = (G[k] for k in ("chart", "DATA", "
 OVERVIEW_ROWS, CAS_VARIANTS, GROUP_NAME = G["OVERVIEW_ROWS"], G["CAS_VARIANTS"], G["GROUP_NAME"]
 
 FONT = 'font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif"'
+THEMES = {  # same values as the light and dark themes of charts.html
+    "light": dict(card="#ffffff", line="#d2d8cf", fg="#1d2320", muted="#5d665f", grid="#dfe3dc", off="#cfe9d9", lang=1, cas="#2e9e5b"),
+    "dark": dict(card="#1f2220", line="#3a413b", fg="#e8ece6", muted="#a1aaa2", grid="#343a35", off="#28402f", lang=3, cas=None),
+}
+THEME = "light"
+
+
+def pal():
+    t = dict(THEMES[THEME])
+    if t["cas"] is None: t["cas"] = next(L[3] for L in LANGS if L[0] == "caspien")
+    return t
 
 
 def style():
-    lang = "".join(".k-%s{--c:%s}" % (k, lc) for k, n, lc, dc in LANGS)
-    return ("<style>.grid{stroke:#dfe3dc;stroke-width:1}.noise{stroke:#e0a800;stroke-width:1.6}.tick{fill:#5d665f;font-size:11px}"
-            ".lbl{fill:#1d2320;font-size:12.5px}.val{fill:#1d2320;font-size:12px}.grp{fill:#5d665f;font-size:10.5px}.hit{fill:transparent}"
-            ".bar{fill:var(--c)}.bar.off{fill:url(#hatch);stroke:var(--c);stroke-width:1.2}.ttl{fill:#1d2320;font-size:15px;font-weight:600}"
-            ".sub{fill:#5d665f;font-size:11.5px}" + lang + "</style>")
+    t = pal()
+    lang = "".join(".k-%s{--c:%s}" % (L[0], L[t["lang"] if t["lang"] == 3 else 2]) for L in LANGS)
+    return ("<style>.grid{stroke:%(grid)s;stroke-width:1}.noise{stroke:#e0a800;stroke-width:1.6}.tick{fill:%(muted)s;font-size:11px}"
+            ".lbl{fill:%(fg)s;font-size:12.5px}.val{fill:%(fg)s;font-size:12px}.grp{fill:%(muted)s;font-size:10.5px}.hit{fill:transparent}"
+            ".bar{fill:var(--c)}.bar.off{fill:url(#hatch);stroke:var(--c);stroke-width:1.2}.ttl{fill:%(fg)s;font-size:15px;font-weight:600}"
+            ".sub{fill:%(muted)s;font-size:11.5px}" % t) + lang + "</style>"
 
 
 def wrap(inner_svg, title, sub, foot):
@@ -35,9 +47,9 @@ def wrap(inner_svg, title, sub, foot):
     body = re.sub(r' data-tip="[^"]*"', "", body)
     top, bot = 46, 44
     hatch = ('<defs><pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">'
-             '<rect width="6" height="6" fill="#cfe9d9"/><line x1="0" y1="0" x2="0" y2="6" stroke="#2e9e5b" stroke-width="2.4"/></pattern></defs>')
+             '<rect width="6" height="6" fill="%s"/><line x1="0" y1="0" x2="0" y2="6" stroke="%s" stroke-width="2.4"/></pattern></defs>' % (pal()["off"], pal()["cas"]))
     return ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 %d %d" width="%d" height="%d" %s>%s%s'
-            '<rect width="%d" height="%d" rx="8" fill="#ffffff" stroke="#d2d8cf"/>'
+            '<rect width="%d" height="%d" rx="8" fill="' + pal()["card"] + '" stroke="' + pal()["line"] + '"/>'
             '<text class="ttl" x="16" y="24">%s</text><text class="sub" x="16" y="40">%s</text><g transform="translate(0,%d)">%s</g>'
             '%s</svg>\n') % (
         w, h + top + bot, w, h + top + bot, FONT, style(), hatch, w, h + top + bot, html.escape(title), html.escape(sub), top, body,
@@ -123,9 +135,11 @@ def selection():
 
 
 if __name__ == "__main__":
-    for d, title, cnt, *_ in PROGS:
-        if d in DATA: open(os.path.join(OUT, "time_%s.svg" % d), "w").write(time_svg(d, title, cnt))
-    open(os.path.join(OUT, "overview_time.svg"), "w").write(overview_svg())
+    for THEME in ("light", "dark"):
+        suf = "" if THEME == "light" else "-dark"
+        for d, title, cnt, *_ in PROGS:
+            if d in DATA: open(os.path.join(OUT, "time_%s%s.svg" % (d, suf)), "w").write(time_svg(d, title, cnt))
+        open(os.path.join(OUT, "overview_time%s.svg" % suf), "w").write(overview_svg())
     sel = selection()
     print("Caspien fastest 'everything on' variant / C -O2, per program (low = faster than C):")
     for r, d, t, lab in sel: print("  %5.2fx  %-14s %s" % (r, d, lab))
