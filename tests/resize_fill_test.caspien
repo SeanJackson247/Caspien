@@ -1,0 +1,89 @@
+// `resize` fill of the new slots for element widths 1/2/4/8: a zero fill or a 1-byte element over 64+ bytes is one `rep stosb`, anything smaller or
+// non-zero runs the pointer loop. Each case grows (sometimes several times, sometimes shrinks first so spare capacity holds stale bytes) and prints
+// a position-weighted checksum of every element; resize_fill_test.py is the independent model.
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+
+func main() void{
+	?catch(e){
+		unsafe extern{ printf("FAIL uncaught: %s\n", e) }
+		return
+	}
+	let a8 = mut ? dyn:<u8>([])
+	let:<mut u8> fv1 = mut 7
+	a8 = ? resize(a8, 3, fv1)
+	let:<mut u8> fv2 = mut 5
+	a8 = ? resize(a8, 200, fv2)
+	let:<mut u8> fv3 = mut 1
+	a8 = ? resize(a8, 20, fv3)
+	let:<mut u8> fv4 = mut 0
+	a8 = ? resize(a8, 150, fv4)
+	let:<mut u8> fv5 = mut 3
+	a8 = ? resize(a8, 160, fv5)
+	let a16 = mut ? dyn:<u16>([])
+	let:<mut u16> fv6 = mut 7
+	a16 = ? resize(a16, 3, fv6)
+	let:<mut u16> fv7 = mut 0
+	a16 = ? resize(a16, 100, fv7)
+	let:<mut u16> fv8 = mut 4
+	a16 = ? resize(a16, 10, fv8)
+	let:<mut u16> fv9 = mut 0
+	a16 = ? resize(a16, 90, fv9)
+	let:<mut u16> fv10 = mut 777
+	a16 = ? resize(a16, 100, fv10)
+	let a32 = mut ? dyn:<u32>([])
+	let:<mut u32> fv11 = mut 7
+	a32 = ? resize(a32, 3, fv11)
+	let:<mut u32> fv12 = mut 0
+	a32 = ? resize(a32, 50, fv12)
+	let:<mut u32> fv13 = mut 2
+	a32 = ? resize(a32, 5, fv13)
+	let:<mut u32> fv14 = mut 0
+	a32 = ? resize(a32, 70, fv14)
+	let:<mut u32> fv15 = mut 100000
+	a32 = ? resize(a32, 75, fv15)
+	let a64 = mut ? dyn:<u64>([])
+	let:<mut u64> fv16 = mut 7
+	a64 = ? resize(a64, 3, fv16)
+	let:<mut u64> fv17 = mut 0
+	a64 = ? resize(a64, 40, fv17)
+	let:<mut u64> fv18 = mut 6
+	a64 = ? resize(a64, 4, fv18)
+	let:<mut u64> fv19 = mut 0
+	a64 = ? resize(a64, 60, fv19)
+	let:<mut u64> fv20 = mut 4294967296
+	a64 = ? resize(a64, 70, fv20)
+	let c8 = mut 0
+	let c16 = mut 0
+	let c32 = mut 0
+	let c64 = mut 0
+	let n8 = mut len(a8)
+	for i in 0..n8{
+		match i in a8{
+			c8 = c8 + (i + 1) * (a8[i] as u64)
+		}
+	}
+	let n16 = mut len(a16)
+	for i in 0..n16{
+		match i in a16{
+			c16 = c16 + (i + 1) * (a16[i] as u64)
+		}
+	}
+	let n32 = mut len(a32)
+	for i in 0..n32{
+		match i in a32{
+			c32 = c32 + (i + 1) * (a32[i] as u64)
+		}
+	}
+	let n64 = mut len(a64)
+	for i in 0..n64{
+		match i in a64{
+			c64 = c64 + (i + 1) * a64[i]
+		}
+	}
+	unsafe extern{ printf("%llu %llu %llu %llu %llu %llu %llu %llu\n", n8, c8, n16, c16, n32, c32, n64, c64) }
+}

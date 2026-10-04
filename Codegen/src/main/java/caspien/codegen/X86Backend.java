@@ -4356,6 +4356,52 @@ public class X86Backend {
                     // for (i = oldLen; i < newCount; i++) data[i] = fill;
                     String loop = newInternalLabel("resize_fill");
                     String end = resizeEnd;
+                    if (!wideFill && (elemSize == 1 || elemSize == 2 || elemSize == 4 || elemSize == 8)) {
+                        // A big fill of zero bytes (any zero element, or any 1-byte element) is one `rep stosb`; a small one, or any other
+                        // value, runs the pointer loop below (rdi/rcx/rdx are free here: the realloc call above already clobbered them).
+                        String generic = newInternalLabel("resize_fill_loop");
+                        raw("    cmpq %r12, %rbx");
+                        raw("    jge " + end);
+                        raw("    movq %r12, %rdx");
+                        raw("    subq %rbx, %rdx");
+                        if (elemSize > 1) {
+                            raw("    imulq $" + elemSize + ", %rdx, %rdx");
+                        }
+                        boolean useRep = !isWinAbi(); // rdi is callee-saved on win64: only the pointer loop there
+                        if (useRep) {
+                        raw("    cmpq $64, %rdx");
+                        raw("    jb " + generic);
+                        if (elemSize > 1) {
+                            raw("    test" + movSuffix(elemSize) + " %" + sizedReg("r14", elemSize) + ", %" + sizedReg("r14", elemSize));
+                            raw("    jnz " + generic);
+                            raw("    xorl %eax, %eax");
+                        } else {
+                            raw("    movq %r14, %rax");
+                        }
+                        raw("    movq %rbx, %rdi");
+                        if (elemSize > 1) {
+                            raw("    imulq $" + elemSize + ", %rdi, %rdi");
+                        }
+                        raw("    leaq 16(%r15,%rdi), %rdi");
+                        raw("    movq %rdx, %rcx");
+                        raw("    rep stosb");
+                        raw("    movq %r12, %rbx");
+                        raw("    jmp " + end);
+                        }
+                        raw(generic + ":");
+                        raw("    movq %rbx, %rax");
+                        if (elemSize > 1) {
+                            raw("    imulq $" + elemSize + ", %rax, %rax");
+                        }
+                        raw("    leaq 16(%r15,%rax), %rax");
+                        raw(loop + ":");
+                        storeSizedToAddr("r14", "rax", elemSize);
+                        raw("    addq $" + elemSize + ", %rax");
+                        raw("    incq %rbx");
+                        raw("    cmpq %r12, %rbx");
+                        raw("    jl " + loop);
+                        raw(end + ":");
+                    } else {
                     raw(loop + ":");
                     raw("    cmpq %r12, %rbx");
                     raw("    jge " + end);
@@ -4371,6 +4417,7 @@ public class X86Backend {
                     
                     raw(("    jmp " + loop));
                     raw(end + ":");
+                    }
                     emitResizeGtUpdate();
                     if (wideFill) {
                         long drop = fillWords * 8L + 16;
