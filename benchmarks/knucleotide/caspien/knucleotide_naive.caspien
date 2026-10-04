@@ -1,4 +1,4 @@
-// k-nucleotide benchmark, NAIVE variant: stdlib DynamicArray<u8>/<u64> for the sequence and the query tables, and the stdlib HashMap<u64> (stdlib/hash_map.caspien, which hashes each key through hashOf) for the k-mer counts.
+// k-nucleotide benchmark, NAIVE variant: stdlib DynamicArray<u8>/<u64> for the sequence and the query tables, and the stdlib HashMap<u64> (stdlib/hash_map.caspien, which hashes each key through insecure_hashOf) for the k-mer counts.
 // Same sequence, k-mers and output as knucleotide.c (read its header): N = KNUC_N bases from the benchmarks-game LCG, the packed 2-bit
 // k-mers for k = 1,2,3,4,6,12 are counted in a hash map, prints 18 numbers (6 distinct counts, then 12 k-mer counts).
 // HashMap has a FIXED capacity (no rehash), so it is created per k with capacity 2 x min(4^k, N-k+1, 139968) + 1.

@@ -1,7 +1,7 @@
 // Exercises every stdlib module. Run: java Compiler -i tests/stdlib_test.caspien output/stdlib_test && ./output/stdlib_test
 // Prints one PASS/FAIL line per check and a final tally; look for 'ALL STDLIB TESTS PASSED'.
 import "../stdlib/libc.caspien"
-import "../stdlib/hash.caspien"
+import "../stdlib/insecure_hash.caspien"
 import "../stdlib/dynamic_array.caspien"
 import "../stdlib/hash_map.caspien"
 import "../stdlib/string.caspien"
@@ -95,14 +95,14 @@ func testDynamicArray() mut u64{
 	return fails
 }
 
-// ---------------------------------------------------------------------- hashOf
+// ---------------------------------------------------------------------- insecure_hashOf
 func testHash() mut u64{
 	let fails = mut 0
-	let a = mut hashOf:<u64>(imut 42)
-	let b = mut hashOf:<u64>(imut 42)
-	let c = mut hashOf:<u64>(imut 43)
-	fails = mut (fails + check("hashOf: deterministic", a == b))
-	fails = mut (fails + check("hashOf: different inputs differ", a != c))
+	let a = mut insecure_hashOf:<u64>(imut 42)
+	let b = mut insecure_hashOf:<u64>(imut 42)
+	let c = mut insecure_hashOf:<u64>(imut 43)
+	fails = mut (fails + check("insecure_hashOf: deterministic", a == b))
+	fails = mut (fails + check("insecure_hashOf: different inputs differ", a != c))
 	return fails
 }
 

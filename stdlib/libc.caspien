@@ -16,11 +16,11 @@
 //     is already the pointer C's 'const char*' expects.
 //   - malloc/realloc/free operate on raw bytes ('raw u8') -- the
 //     single shared source for these three, imported by anything that
-//     needs real heap allocation (the ghost table, the generic 'hashOf'
+//     needs real heap allocation (the ghost table, the generic 'insecure_hashOf'
 //     byte-hasher, the SHA-256 streaming context) rather than each declaring its own independent
 //     copy, which would conflict the instant two such files were
 //     imported into the same program together (a real mistake caught
-//     exactly that way while building 'hashOf').
+//     exactly that way while building 'insecure_hashOf').
 //   - abort() genuinely never returns (it terminates the process) --
 //     this compiler's own "every path must return" check has no way
 //     to know that about an arbitrary extern, though, so a call to it

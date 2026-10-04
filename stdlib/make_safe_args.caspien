@@ -30,7 +30,7 @@ func make_safe_args(argc: imut s32, argv: raw mut raw mut char) owns some mut dy
 	// that way at all). argc is always non-negative in practice,
 	// so a zero-extending 4-byte 'memcopy' into an already-zeroed
 	// u64 local is exactly right -- the same "read raw bytes
-	// through a pointer" mechanism 'hash.caspien' already uses for
+	// through a pointer" mechanism 'insecure_hash.caspien' already uses for
 	// an unrelated reason.
 	let count = mut 0
 	unsafe memcopy raw{

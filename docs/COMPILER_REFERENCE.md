@@ -50,14 +50,14 @@ directory*, so keep your `.caspien` test files here at the root (next to
 included `hello.caspien` sample does -- or copy `stdlib/` next to wherever
 you keep your own test files instead.
 
-### Hashing in the standard library: `hash.caspien`, `sha256.caspien`
+### Hashing in the standard library: `insecure_hash.caspien`, `sha256.caspien`
 
-`stdlib/hash.caspien` is real 64-bit FNV-1a (offset basis `0xcbf29ce484222325`, prime `0x100000001b3`; for every byte `h = bits_xor(h, byte)`, then `h = h * prime`, wrapping):
+`stdlib/insecure_hash.caspien` is real 64-bit FNV-1a (offset basis `0xcbf29ce484222325`, prime `0x100000001b3`; for every byte `h = bits_xor(h, byte)`, then `h = h * prime`, wrapping):
 
-- `hashOf<T>(x: imut T) mut u64` hashes the raw bytes of a value of any non-struct type `T` (the signature and behaviour the stdlib `HashMap` has always used; `hashOf:<u32>(7)` is FNV-1a-64 of the bytes `07 00 00 00`). A struct `T` cannot be passed (a by-value struct parameter is illegal in this language).
-- `fnv1a64Bytes(p: raw imut u8, byteCount: mut u64) mut u64` is the same hash over a byte buffer (a string's characters, a struct's bytes copied out with `memcopy`). Published vectors (checked in `tests/fnv1a_test.caspien`): `""` -> `0xcbf29ce484222325`, `"a"` -> `0xaf63dc4c8601ec8c`, `"foobar"` -> `0x85944171f73967e8`.
+- `insecure_hashOf<T>(x: imut T) mut u64` hashes the raw bytes of a value of any non-struct type `T` (the signature and behaviour the stdlib `HashMap` has always used; `insecure_hashOf:<u32>(7)` is FNV-1a-64 of the bytes `07 00 00 00`). A struct `T` cannot be passed (a by-value struct parameter is illegal in this language).
+- `insecure_fnv1a64Bytes(p: raw imut u8, byteCount: mut u64) mut u64` is the same hash over a byte buffer (a string's characters, a struct's bytes copied out with `memcopy`). Published vectors (checked in `tests/fnv1a_test.caspien`): `""` -> `0xcbf29ce484222325`, `"a"` -> `0xaf63dc4c8601ec8c`, `"foobar"` -> `0x85944171f73967e8`.
 
-`stdlib/sha256.caspien` is a real SHA-256 (FIPS 180-4), pointer-based like `hash.caspien` (the pointers come from `unsafe` code):
+`stdlib/sha256.caspien` is a real SHA-256 (FIPS 180-4), pointer-based like `insecure_hash.caspien` (the pointers come from `unsafe` code):
 
 ```
 import "stdlib/libc.caspien"

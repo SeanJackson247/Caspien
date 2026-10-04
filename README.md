@@ -907,7 +907,8 @@ The standard library wraps these in classes, each in its own file under `stdlib/
   `firstIndexOf`, which returns -1 when the character is absent.
 - `HashMap<T>` (`new HashMap:<u64>(defaultKey, defaultValue, capacity)`) has `set`, `get` and `contains`.
   It has a fixed capacity and no remove.
-- `hash.caspien` (FNV-1a) and `sha256.caspien`, `process.caspien` (spawn a process and read or write its
+- `insecure_hash.caspien` (FNV-1a, for hash tables only: it is not a security primitive, hence the name) and
+  `sha256.caspien` (a real SHA-256), `process.caspien` (spawn a process and read or write its
   pipes), `sleep.caspien`, `par_call.caspien` / `await_call.caspien` (threads).
 
 ```rust
@@ -1684,7 +1685,7 @@ one function, so very large generated test programs are better split into severa
 ### 2.5 The standard library
 
 `stdlib/` holds ordinary Caspien source: `libc.caspien` (C bindings), `dynamic_array.caspien`,
-`hash_map.caspien`, `string.caspien`, `hash.caspien` (FNV-1a), `sha256.caspien`, `process.caspien`,
+`hash_map.caspien`, `string.caspien`, `insecure_hash.caspien` (FNV-1a), `sha256.caspien`, `process.caspien`,
 `fs.caspien` (files and directories, 2.6), `sleep.caspien`, the thread glue `par_call.caspien` and `await_call.caspien`, and the `gt_*` files that
 back ownership. The older reference documentation, including the full description of every optimisation
 pass, is in [`docs/COMPILER_REFERENCE.md`](docs/COMPILER_REFERENCE.md).
@@ -1848,22 +1849,28 @@ Best for Caspien (binary trees, 0.90x of C), the median (FASTA, 1.51x), and the 
 
 The gold lines on each bar mark the best time minus and plus the typical run-to-run noise (the median of the three repeats minus the best).
 
-Peak memory is close to C: the geometric mean is 1.07x of C's, ranging from 0.77x to 1.96x. That is no
+Peak memory is close to C: the geometric mean is 1.09x of C's, ranging from 0.76x to 1.96x. That is no
 surprise, because Caspien has no garbage collector and no runtime, allocates with `malloc`, and lays out
 structs and arrays as C does.
 
 **An honest reading.**
 
-- With optimisations on, Caspien lands between Go and the JavaScript engines, roughly level with Java. It
-  is within 1.3x of C on five of the fourteen programs, and 2.4x to 3.8x behind on four.
+- With optimisations on and the fastest hand-written variant of each program, Caspien lands between OCaml
+  and C# (1.48x of C in the geometric mean), behind Go and ahead of Java, Kotlin, Swift, Nim and the
+  JavaScript engines. It is within 1.3x of C on five of the fourteen programs, and 2.0x to 2.3x behind on
+  four. That figure picks Caspien's fastest variant per program, while every other language has a single
+  port, so it flatters Caspien somewhat; the standard library versions (2.62x, same programs) are the
+  fairer picture of ordinary code.
 - The gap to C and Rust is real. The compiler has no general register allocator, no vectorisation and no
   alias analysis, and every `ref` access pays for the liveness check described in section 1.4.
-- The optimisation switches matter more than any single trick. With them off, the same programs are 6.8x
-  slower than C on average, and they ship off. That is the biggest single improvement available to users
+- The optimisation switches matter more than any single trick. With them off, the same programs are 4.1x
+  slower than C on average (best variant of each), and they ship off. That is the biggest single improvement available to users
   today.
-- Code written against the standard library classes is much slower than code written against raw arrays
-  (about 5x on average, 57x for k-nucleotide). The classes pay for bounds proofs, wrapper calls and, in
-  `hashOf`, a heap allocation on each call. That is an engineering gap, not a design limit.
+- Code written against the standard library classes is slower than code written against raw arrays: 1.75x
+  on average over thirteen programs, but 3.1x for binary trees, 4.7x for k-nucleotide and 5.2x for
+  strings. The classes pay for bounds proofs and wrapper calls. The worst earlier gap, a heap allocation
+  on every call to `insecure_hashOf`, has been removed (k-nucleotide went from 57x slower than C to 8x). That is an
+  engineering gap, not a design limit.
 - The benchmark programs are not Caspien-specific. Twelve are taken from a public collection of
   programming benchmarks, and the other two were written to represent ordinary application work more
   closely than numeric kernels do. All of the ports, in every language including Caspien, were written by
@@ -1871,15 +1878,15 @@ structs and arrays as C does.
   Where Caspien deviates from the original shape (binarytrees, lru and json_serde use indices rather than
   recursive structs, which the language rejects), the difference is noted in `benchmarks/RESULTS.md`.
   None of them exercises the event-loop model.
-- Timing noise on this VM is about 30%, so differences under 1.3x between two rows are not meaningful.
+- Repeats within one run usually agree to about 3% (the gold lines on the charts), but separate runs on
+  this VM have differed by 10% to 30%, so differences under 1.3x between two rows are not meaningful.
   Java and the JavaScript engines include start-up and warm-up time.
-- Two outliers in the other languages are real and unrelated to Caspien: C++ and Go are slow on the lru
+- Two outliers in the other languages are real and unrelated to Caspien: C++, Go and Java are slow on the lru
   cache because of their built-in hash maps for that access pattern, and Java beats C on binarytrees
   because its allocator is faster than `malloc` and `free`.
 
-Planned work, in order of expected payoff: ship the optimiser on by default with a bounded inlining
-budget; make the standard library classes as fast as hand-written array code; native 32-bit and 8-bit
-arithmetic in register form; replace the linear liveness table with a hash table; inline `sqrt` and keep
-float constants in registers. The benchmark harnesses (`benchmarks/bench_suite.py`,
+Planned work, in order of expected payoff: ship the optimiser on by default (the inliner already has
+bounded growth budgets); make the standard library classes as fast as hand-written array code; native
+32-bit and 8-bit arithmetic in register form. The benchmark harnesses (`benchmarks/bench_suite.py`,
 `benchmarks/bench_program.py`, `benchmarks/nbody/bench.py`) rebuild and re-time everything, and
 [`benchmarks/RESULTS.md`](benchmarks/RESULTS.md) holds the earlier, more detailed measurements.

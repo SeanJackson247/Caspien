@@ -39,13 +39,13 @@
 // `DynamicArray<T>::get` already established for its own "there's no
 // safe generic value to fabricate for an arbitrary T" case.
 //
-// The slot for a key starts at `hashOf(key) % capacity` and is probed linearly. `hashOf` is real 64-bit FNV-1a over the key's bytes (see
-// `hash.caspien`; it used to be a multiplicative `h*33 + byte` hash), so the order in which keys land in slots differs from the old
+// The slot for a key starts at `insecure_hashOf(key) % capacity` and is probed linearly. `insecure_hashOf` is real 64-bit FNV-1a over the key's bytes (see
+// `insecure_hash.caspien`; it used to be a multiplicative `h*33 + byte` hash), so the order in which keys land in slots differs from the old
 // hash's, but the map's observable behaviour (set/get/contains/count) does not depend on it. A key type must be a non-struct type (the
-// `hashOf` parameter is a by-value `imut T`).
+// `insecure_hashOf` parameter is a by-value `imut T`).
 //
 // `HashMap` is built with its constructor, `new HashMap:<u64>(k, v, cap)`.
-import "hash.caspien"
+import "insecure_hash.caspien"
 
 @pub
 struct HashMapEntry<T>{@pub{
@@ -79,7 +79,7 @@ impl<T> HashMap<T>{
 	func set(_self: ref some mut self, key: mut T, value: mut T) void{
 		let cap = mut _self.capacity
 		match cap != 0{
-			let h = mut hashOf:<T>(imut key)
+			let h = mut insecure_hashOf:<T>(imut key)
 			let startIdx = mut (h % cap)
 			for steps in 0..cap{
 				let idx = mut (startIdx + steps)
@@ -108,7 +108,7 @@ impl<T> HashMap<T>{
 	func get(_self: ref some imut self, key: mut T, defaultValue: mut T) mut T{
 		let cap = mut _self.capacity
 		match cap != 0{
-			let h = mut hashOf:<T>(imut key)
+			let h = mut insecure_hashOf:<T>(imut key)
 			let startIdx = mut (h % cap)
 			for steps in 0..cap{
 				let idx = mut (startIdx + steps)
@@ -133,7 +133,7 @@ impl<T> HashMap<T>{
 	func contains(_self: ref some imut self, key: mut T) mut bool{
 		let cap = mut _self.capacity
 		match cap != 0{
-			let h = mut hashOf:<T>(imut key)
+			let h = mut insecure_hashOf:<T>(imut key)
 			let startIdx = mut (h % cap)
 			for steps in 0..cap{
 				let idx = mut (startIdx + steps)

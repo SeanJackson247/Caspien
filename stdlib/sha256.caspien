@@ -1,5 +1,5 @@
 // SHA-256 (FIPS 180-4), written in Caspien with the bitwise builtins (`bits_xor`, `bits_and`, `bits_not`, `bits_left`, `bits_right`, `bits_or`)
-// and native, wrapping `u32` arithmetic. Pointer-based, like `hash.caspien`: every function takes `raw` pointers (which only `unsafe` code can
+// and native, wrapping `u32` arithmetic. Pointer-based, like `insecure_hash.caspien`: every function takes `raw` pointers (which only `unsafe` code can
 // make: `malloc`, `raw x`; a string literal is not a byte pointer, copy it into a `malloc`'d buffer with `memcopy` first).
 //
 //   one shot      `sha256(data, byteCount, digest)`            -- `data`: `raw imut u8`, `digest`: `raw mut u8`, 32 bytes written
