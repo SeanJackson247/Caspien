@@ -1,0 +1,78 @@
+// String.concat and String.sub copy in bulk (one resize, then a copy loop) instead of one appendChar per character. Checks the edges the
+// per-character version handled implicitly: an empty argument, a `sub` whose end runs past the string (clamped), whose start is not before
+// its end, or whose start is at the end, and a long string built from many pieces. Expected values from a Python model (string_bulk_test.py).
+import "../stdlib/libc.caspien"
+import "../stdlib/dynamic_array.caspien"
+import "../stdlib/string.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+
+func check(name: static imut string, ok: imut bool) void{
+	unsafe extern{
+		if ok{ printf("PASS %s\n", name) }
+		else{ printf("FAIL %s\n", name) }
+	}
+}
+
+func code(c: mut char) mut u64{
+	if c == 'a'{ return 97 }
+	if c == 'b'{ return 98 }
+	if c == 'x'{ return 120 }
+	return 1000000
+}
+
+func main() void{
+	?catch(e){
+		unsafe extern{ printf("FAIL uncaught: %s\n", e) }
+		return
+	}
+	let s = mut ? new String()
+	for i in 0..1000{
+		? s.concat(s, "ab")
+	}
+	for i in 0..500{
+		? s.appendChar(s, mut 'x')
+	}
+	check("1000 concats + 500 appends: length", len(s.chars.backing) == 2500)
+	let w = mut 0
+	let n = mut len(s.chars.backing)
+	for i in 0..n{
+		let c = mut s.charAt(s, i)
+		w = w + code(c) * (i % 7 + 1)
+	}
+	check("long string: weighted checksum", w == 1019752)
+	let empty = mut ? new String()
+	? s.concat(s, empty)
+	check("concat of an empty String is a no-op", len(s.chars.backing) == 2500)
+	? s.concat(s, "")
+	check("concat of an empty literal is a no-op", len(s.chars.backing) == 2500)
+	let t = mut ? new String("hello")
+	let past = mut ? t.sub(t, mut 3, mut 99)
+	check("sub with end past the string is clamped: length", len(past.chars.backing) == 2)
+	check("sub with end past the string: first char", past.charAt(past, mut 0) == 'l')
+	let backwards = mut ? t.sub(t, mut 4, mut 2)
+	check("sub with start after end is empty", len(backwards.chars.backing) == 0)
+	let atEnd = mut ? t.sub(t, mut 5, mut 9)
+	check("sub starting at the end is empty", len(atEnd.chars.backing) == 0)
+	let whole = mut ? t.sub(t, mut 0, mut 5)
+	check("sub of the whole string", len(whole.chars.backing) == 5)
+	let u = mut ? s.sub(s, mut 1990, mut 2300)
+	let us = mut 0
+	let un = mut len(u.chars.backing)
+	for i in 0..un{
+		us = us + code(u.charAt(u, i))
+	}
+	check("sub(1990,2300) of the long string: length", un == 310)
+	check("sub(1990,2300) of the long string: sum", us == 36975)
+	? s.concat(s, s)
+	let d = mut 0
+	let dn = mut len(s.chars.backing)
+	for i in 0..dn{
+		d = d + code(s.charAt(s, i)) * (i % 5 + 1)
+	}
+	check("concat of itself: length", dn == 5000)
+	check("concat of itself: weighted checksum", d == 1530000)
+}

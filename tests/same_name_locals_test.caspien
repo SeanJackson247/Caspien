@@ -1,0 +1,36 @@
+// A name declared again in a sibling scope with a NARROWER type ("let key" as a u64 in one loop, as a u8 in the next) used to get a frame
+// slot sized for the LAST declaration only (AddressLoweringPass keeps one slot per name), so the first loop's 8-byte stores spilled into the
+// neighbouring slots. In some frame shapes that overwrote a loop counter and the loop never ended: tests/hashmap_growth_test.caspien (two
+// maps, `key` a u64 and then a u8) hung before the fix. This stdlib-free program checks the values only and passed before the fix as well,
+// because the damage depends on which slot happens to sit next to the shrunken one. Expected values from a Python model.
+import "../stdlib/libc.caspien"
+
+func check(name: static imut string, ok: imut bool) void{
+	unsafe extern{
+		if ok{ printf("PASS %s\n", name) }
+		else{ printf("FAIL %s\n", name) }
+	}
+}
+
+func main() void{
+	let total = mut 0
+	for i in 0..50000{
+		let key = mut ((i * 7919 + 13) % 1000003)
+		let other = mut 5
+		total = total + key + other
+	}
+	check("wide use of the name first", total == 24996304419)
+	let small = mut 0
+	for i in 0..10{
+		let:<mut u8> key = mut wrap:<u8>(i)
+		let:<mut u8> val = mut wrap:<u8>(i + 1)
+		small = small + key as u64 + val as u64
+	}
+	check("narrow redeclaration after it", small == 100)
+	let again = mut 0
+	for j in 0..3{
+		let key = mut (j + 4000000000)
+		again = again + key
+	}
+	check("wide redeclaration again", again == 12000000003)
+}

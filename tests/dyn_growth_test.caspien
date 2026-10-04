@@ -1,0 +1,118 @@
+// Safe dynarray growth: the header's capacity word makes `resize` (and so `pushBack`) amortised -- a growth past the capacity
+// reallocs to max(newCount, 2 x capacity), a resize that fits only rewrites the length, a resize leaving under a quarter of the
+// capacity in use reallocs down, and a clone's capacity is its length. Expected values come from a Python model
+// (dyn_growth_test.py). dyn_growth_check.sh counts the realloc calls under a shim and runs this under valgrind.
+import "../stdlib/libc.caspien"
+import "../stdlib/dynamic_array.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+
+func check(name: static imut string, ok: imut bool) void{
+	unsafe extern{
+		if ok{ printf("PASS %s\n", name) }
+		else{ printf("FAIL %s\n", name) }
+	}
+}
+
+func main() void{
+	?catch(e){
+		unsafe extern{ printf("FAIL uncaught: %s\n", e) }
+		return
+	}
+	// 1-3: 100000 pushBack calls, 99990 pops, 1000 more pushes
+	let d = mut ? new DynamicArray:<u64>()
+	for i in 0..100000{
+		? d.pushBack(d, i * 3 + 1)
+	}
+	check("pushBack x100000: length", len(d.backing) == 100000)
+	let s1 = mut 0
+	let n1 = mut len(d.backing)
+	for i in 0..n1{
+		match i in d.backing{
+			s1 = s1 + d.backing[i]
+		}
+	}
+	check("pushBack x100000: sum", s1 == 14999950000)
+	let k = mut 0
+	for i in 0..99990{
+		k = ? d.popBack(d, mut 0)
+	}
+	let s2 = mut 0
+	let n2 = mut len(d.backing)
+	for i in 0..n2{
+		match i in d.backing{
+			s2 = s2 + d.backing[i]
+		}
+	}
+	check("popBack x99990: sum of the 10 left", s2 == 145)
+	for i in 0..1000{
+		? d.pushBack(d, mut 7)
+	}
+	check("push after shrinking: length", len(d.backing) == 1010)
+	let s3 = mut 0
+	let n3 = mut len(d.backing)
+	for i in 0..n3{
+		match i in d.backing{
+			s3 = s3 + d.backing[i]
+		}
+	}
+	check("push after shrinking: sum", s3 == 7145)
+	// 4: grow to 64 (fill 9), shrink in place to 40, grow to 50 (fill 4): old slots 40..63 must not leak into the fill
+	let b = mut ? dyn([1, 2, 3, 4, 5, 6, 7, 8])
+	b = ? resize(b, 64, 9)
+	b = ? resize(b, 40, 0)
+	b = ? resize(b, 50, 4)
+	check("shrink in place then grow with fill: length", len(b) == 50)
+	let s4 = mut 0
+	let n4 = mut len(b)
+	for i in 0..n4{
+		match i in b{
+			s4 = s4 + b[i]
+		}
+	}
+	check("shrink in place then grow with fill: sum", s4 == 364)
+	// 5: a clone of an array with spare capacity, then grown
+	let c = mut ? dyn([1, 2, 3])
+	c = ? resize(c, 4, 5)
+	let c2 = mut ? clone(c)
+	c2 = ? resize(c2, 104, 8)
+	let s5 = mut 0
+	let n5 = mut len(c)
+	for i in 0..n5{
+		match i in c{
+			s5 = s5 + c[i]
+		}
+	}
+	check("clone: original untouched", s5 == 11)
+	check("clone grown: length", len(c2) == 104)
+	let s6 = mut 0
+	let n6 = mut len(c2)
+	for i in 0..n6{
+		match i in c2{
+			s6 = s6 + c2[i]
+		}
+	}
+	check("clone grown: sum", s6 == 811)
+	// 6: big shrink reallocs down, then grows again
+	let g = mut ? dyn([1, 2, 3])
+	g = ? resize(g, 200, 0)
+	for i in 0..200{
+		match i into g{
+			g[i] = i + 1
+		}
+	}
+	g = ? resize(g, 3, 0)
+	g = ? resize(g, 5, 2)
+	check("big shrink then grow: length", len(g) == 5)
+	let s7 = mut 0
+	let n7 = mut len(g)
+	for i in 0..n7{
+		match i in g{
+			s7 = s7 + g[i]
+		}
+	}
+	check("big shrink then grow: sum", s7 == 10)
+}

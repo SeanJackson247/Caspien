@@ -38,7 +38,7 @@ func main() void{
 	let count = mut len(list.backing)
 	unsafe extern{ printf("DynamicArray: sum=%llu popped=%llu len=%llu third=%llu\n", sum, popped, count, third) }
 
-	// HashMap<u64>: key and value share one type, the capacity is fixed when you build it
+	// HashMap<u64>: key and value share one type, the capacity you give is only the starting size (rounded up to a power of two); the map grows by itself
 	let data = mut [3, 1, 3, 3, 2, 1]
 	let counts = mut ? new HashMap:<u64>(mut 0, mut 0, mut 64)
 	for i in 0..6{

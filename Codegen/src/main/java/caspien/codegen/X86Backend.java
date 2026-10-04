@@ -3924,6 +3924,8 @@ public class X86Backend {
                 raw("    movq %r12, %rsi");
                 raw("    movq %r15, %rcx");
                 raw("    rep movsb");
+                raw("    movq (%r14), %rax"); // the copy holds exactly length elements: capacity = length
+                raw("    movq %rax, 8(%r14)");
                 
                 raw(cloneDynDone + ":");
                 pushReg("r14");
@@ -4268,8 +4270,36 @@ public class X86Backend {
                 // rdi/rsi in the AT&T branch, which is only right for
                 // `linux` and silently wrong for `windows_gnu` (AT&T
                 // syntax, win64 ABI).
+                // Safe form: the header's capacity word is honoured. A resize that fits the capacity just rewrites the length (no
+                // realloc, the block does not move, so the ghost table is untouched); one that does not fit grows to
+                // max(newCount, 2 * capacity), so a run of one-element growths costs O(1) amortised reallocs; one that leaves
+                // fewer than a quarter of the capacity in use reallocs down to exactly newCount. r15 carries the new
+                // capacity across the realloc call (callee-saved); the old block's header is never touched before the call.
+                String resizeGrow = newInternalLabel("resize_grow");
+                String resizeHdr = newInternalLabel("resize_hdr");
+                String resizeShrink = newInternalLabel("resize_shrink");
+                String resizeCall = newInternalLabel("resize_call");
+                if (hasFill) {
+                    raw("    movq 8(%rax), %rcx"); // rcx = old capacity
+                    raw("    cmpq %rcx, %r12");
+                    raw("    ja " + resizeGrow);
+                    raw("    leaq 0(,%r12,4), %rdx");
+                    raw("    cmpq %rcx, %rdx");
+                    raw("    jb " + resizeShrink); // newCount < capacity / 4: give the memory back
+                    raw("    movq %rax, %r15"); // fits: same block, capacity unchanged (rcx)
+                    raw("    jmp " + resizeHdr);
+                    raw(resizeShrink + ":");
+                    raw("    movq %r12, %r15"); // shrink to exactly newCount
+                    raw("    jmp " + resizeCall);
+                    raw(resizeGrow + ":");
+                    raw("    leaq (%rcx,%rcx), %rdx");
+                    raw("    cmpq %rdx, %r12");
+                    raw("    cmovaq %r12, %rdx"); // rdx = max(newCount, 2 * capacity)
+                    raw("    movq %rdx, %r15"); // r15 = new capacity
+                    raw(resizeCall + ":");
+                }
                 raw("    movq %rax, %" + argReg(0)); // arg1 = old (block-start) pointer
-                raw("    movq %r12, %" + argReg(1));
+                raw("    movq %" + (hasFill ? "r15" : "r12") + ", %" + argReg(1));
                 raw("    imulq $" + elemSize + ", %" + argReg(1) + ", %" + argReg(1));
                 if (hasFill) {
                     raw("    addq $16, %" + argReg(1));
@@ -4285,6 +4315,9 @@ public class X86Backend {
                 // staged into the ABI's own first two argument registers
                 // just above (rdi/rsi for SysV, rcx/rdx for win64).
                 emitAlignedCall(() -> emitCallByName("realloc"));
+                if (hasFill) {
+                    raw("    movq %r15, %rcx"); // rcx = the new capacity (saved in r15 across the call)
+                }
                 raw("    movq %rax, %r15"); // r15: new block-start pointer
                 // A failed realloc leaves r15 null (the old block stays valid): write nothing, skip the fill and the
                 // data-start offset, and push the null so the bytecode's own check can throw.
@@ -4292,8 +4325,9 @@ public class X86Backend {
                 raw("    testq %r15, %r15");
                 raw("    jz " + resizeEnd);
                 if (hasFill) {
-                    storeSizedToAddr_reg("r15", 0, "r12", 8);
-                    storeSizedToAddr_reg("r15", 8, "r12", 8);
+                    raw(resizeHdr + ":");
+                    storeSizedToAddr_reg("r15", 0, "r12", 8); // length = newCount
+                    storeSizedToAddr_reg("r15", 8, "rcx", 8); // capacity
                 }
                 if (!hasFill) {
                     raw(resizeEnd + ":");

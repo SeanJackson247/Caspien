@@ -60,7 +60,7 @@ run_case grow_inline 96 '		let w1 = mut ?new World{ticks= 10}
 		let wf = mut ?new World{ticks= 7}
 		let hf = mut Holder{w= wf}
 		v = ?resize(v, 5, hf)'
-run_case shrink_inline 48 '		let w1 = mut ?new World{ticks= 10}
+run_case shrink_inline 32 '		let w1 = mut ?new World{ticks= 10}
 		let w2 = mut ?new World{ticks= 20}
 		let h1 = mut Holder{w= w1}
 		let h2 = mut Holder{w= w2}
@@ -68,7 +68,7 @@ run_case shrink_inline 48 '		let w1 = mut ?new World{ticks= 10}
 		let wf = mut ?new World{ticks= 7}
 		let hf = mut Holder{w= wf}
 		v = ?resize(v, 5, hf)
-		v = ?resize(v, 2, hf)'
+		v = ?resize(v, 1, hf)'
 run_case grow_ptrs 48 '		let p1 = mut ?new World{ticks= 1}
 		let p2 = mut ?new World{ticks= 2}
 		let pv = mut ?dyn([p1, p2])

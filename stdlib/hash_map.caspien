@@ -39,67 +39,158 @@
 // `DynamicArray<T>::get` already established for its own "there's no
 // safe generic value to fabricate for an arbitrary T" case.
 //
-// The slot for a key starts at `insecure_hashOf(key) % capacity` and is probed linearly. `insecure_hashOf` is real 64-bit FNV-1a over the key's bytes (see
-// `insecure_hash.caspien`; it used to be a multiplicative `h*33 + byte` hash), so the order in which keys land in slots differs from the old
-// hash's, but the map's observable behaviour (set/get/contains/count) does not depend on it. A key type must be a non-struct type (the
-// `insecure_hashOf` parameter is a by-value `imut T`).
+// LAYOUT (rewritten for speed, 4 Oct 2026): the capacity is always a power of two (the constructor rounds the requested one up; 0 stays 0, a
+// degenerate map whose `set` is a no-op), so a slot index is `hash & (capacity - 1)` instead of a 64-bit division. A one-byte-per-slot control
+// array `ctrl` (0 = empty, 1 = used) sits beside `slots`: a probe reads the dense control bytes and only touches a 16-byte entry (key, value)
+// when the slot is used. The map GROWS: `set` doubles the capacity and re-inserts everything when one more key would pass 70% load, so the
+// capacity given to the constructor is only a starting size. If the growth cannot allocate (out of memory) `set` carries on in the old table
+// (a full table then silently ignores new keys, as the old fixed-capacity map did). The probe is linear.
+//
+// The key is hashed by `hashKey` below (one multiply and a xor-shift of the key's bytes, taken as one 64-bit word -- a key type is a
+// non-struct type of at most 8 bytes), not by the byte-wise FNV-1a of `insecure_hashOf`; the map's observable behaviour
+// (set/get/contains/count) does not depend on the hash.
 //
 // `HashMap` is built with its constructor, `new HashMap:<u64>(k, v, cap)`.
-import "insecure_hash.caspien"
+import "libc.caspien"
 
 @pub
 struct HashMapEntry<T>{@pub{
 	key: mut T
 	value: mut T
-	occupied: mut bool
 }}
 
 @pub
 struct HashMap<T>{@pub{
 	slots: owns some mut dynarray(mut HashMapEntry<T>)
+	ctrl: owns some mut dynarray(mut u8)
 	capacity: mut u64
 	count: mut u64
 }}
 
-/** `new HashMap:<T>(defaultKey, defaultValue, capacity)` -- `defaultKey`/`defaultValue` seed every initially-empty slot (never read as real data -- `occupied` starts `false` everywhere); there's no default-construction mechanism for an arbitrary T to fall back on instead. `capacity` is fixed for this map's entire lifetime -- see the file-level note on rehashing. `@throws`: the `dyn` and `resize` (out of memory) can fail; the caught error is simply re-thrown to the caller. */
+/** The slot-selection hash of `HashMap`: the key's bytes as one 64-bit word, multiplied by a odd constant (Fibonacci hashing), then the high half folded into the low half (the table index uses the LOW bits). Not collision-resistant, like `insecure_hashOf`. */
+func hashKey<T>(x: imut T) mut u64{
+	let byteCount = mut sizeof(T)
+	let:<mut u64> bits = mut 0
+	unsafe memcopy raw{
+		memcopy(raw bits, byteCount, raw x)
+	}
+	let h = mut (bits * 0x9E3779B97F4A7C15)
+	return bits_xor(h, bits_right(h, 32))
+}
+
+/** `new HashMap:<T>(defaultKey, defaultValue, capacity)` -- `defaultKey`/`defaultValue` seed every initially-empty slot (never read as real data; the control byte of each slot starts 0). `capacity` is the STARTING size, rounded up to a power of two (0 stays 0: a degenerate map that ignores every `set`); the map grows by itself. `@throws`: the allocations (out of memory) can fail; the caught error is simply re-thrown to the caller. */
 @pub
 @throws
 impl<T> constructor for HashMap<T>(defaultKey: mut T, defaultValue: mut T, capacity: mut u64) self{
 	?catch(e){ throw e }
-	let seed = mut HashMapEntry:<T>{key= defaultKey, value= defaultValue, occupied= mut false}
+	let cap = mut 0
+	match capacity != 0{
+		cap = 1
+		for i in 0..63{
+			if cap < capacity{
+				cap = cap * 2
+			}
+		}
+	}
+	let seed = mut HashMapEntry:<T>{key= defaultKey, value= defaultValue}
 	let slots = mut ? dyn:<HashMapEntry:<T>>([])
-	let grownSlots = mut ? resize(slots, capacity, seed)
-	return HashMap:<T>{slots= grownSlots, capacity= capacity, count= mut 0}
+	let grownSlots = mut ? resize(slots, cap, seed)
+	let ctrl = mut ? dyn:<u8>([])
+	let:<mut u8> unused = mut 0
+	let grownCtrl = mut ? resize(ctrl, cap, unused)
+	return HashMap:<T>{slots= grownSlots, ctrl= grownCtrl, capacity= cap, count= mut 0}
 }
 
 @pub
 impl<T> HashMap<T>{
-	/** Inserts, or updates the value if `key` is already present. `void`, so `match Some(_self){...}` with no `else` needs nothing further -- a null `_self` simply makes this a no-op. `cap` is captured once and proven nonzero (`u64` is unsigned, so `!=0` alone is sufficient -- see CLAUDE.md, "match") before either `%` below -- a map's own capacity is a caller-supplied `u64`, never provably nonzero at the type level, so this needs a genuine runtime proof, not just a literal-divisor exemption; a zero-capacity map (a genuinely degenerate construction) simply no-ops instead of dividing by it. */
+	/** Doubles the capacity and re-inserts every key. `@throws` only for the allocations, which all happen before the old table is touched, so a failure leaves the map exactly as it was. */
+	@throws
+	func grow(_self: ref some mut self) void{
+		?catch(e){ throw e }
+		let oldCap = mut _self.capacity
+		let newCap = mut (oldCap * 2)
+		let zero = mut 0
+		let:<mut u8> emptyCtrl = mut 0
+		match zero in _self.slots{
+			let seed = mut _self.slots[zero]
+			let fresh = mut ? dyn:<HashMapEntry:<T>>([])
+			let newSlots = mut ? resize(fresh, newCap, seed)
+			let freshCtrl = mut ? dyn:<u8>([])
+			let newCtrl = mut ? resize(freshCtrl, newCap, emptyCtrl)
+			let oldSlots = mut _self.slots
+			let oldCtrl = mut _self.ctrl
+			let mask = mut (newCap - 1)
+			for i in 0..oldCap{
+				match i in oldCtrl{
+					if oldCtrl[i] != 0{
+						match i in oldSlots{
+							let k = mut oldSlots[i].key
+							let v = mut oldSlots[i].value
+							let start = mut bits_and(hashKey:<T>(imut k), mask)
+							for steps in 0..newCap{
+								let idx = mut bits_and(start + steps, mask)
+								match idx into newCtrl{
+									if newCtrl[idx] == 0{
+										newCtrl[idx] = 1
+										match idx into newSlots{
+											newSlots[idx].key = k
+											newSlots[idx].value = v
+										}
+										break
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+			_self.slots = newSlots
+			_self.ctrl = newCtrl
+			_self.capacity = newCap
+		}
+	}
+
+	/** Probe-and-store without any growth: updates `key` if present, else takes the first empty slot of its probe run (nothing at all when the table is full). */
+	func insert(_self: ref some mut self, key: mut T, value: mut T) void{
+		let cap = mut _self.capacity
+		match cap != 0{
+			let mask = mut (cap - 1)
+			let startIdx = mut bits_and(hashKey:<T>(imut key), mask)
+			for steps in 0..cap{
+				let idx = mut bits_and(startIdx + steps, mask)
+				match idx into _self.ctrl{
+					if _self.ctrl[idx] == 0{
+						match idx into _self.slots{
+							_self.slots[idx].key = key
+							_self.slots[idx].value = value
+						}
+						_self.ctrl[idx] = 1
+						_self.count = mut (_self.count + 1)
+						break
+					}
+					match idx into _self.slots{
+						if _self.slots[idx].key == key{
+							_self.slots[idx].value = value
+							break
+						}
+					}
+				}
+			}
+		}
+	}
+
+	/** Inserts, or updates the value if `key` is already present. `void`, so `match Some(_self){...}` with no `else` needs nothing further -- a null `_self` simply makes this a no-op. A map of capacity 0 ignores every key. The table doubles first when one more key would pass 70% load; if that growth runs out of memory the key is inserted into the old table. */
 	@pub
 	func set(_self: ref some mut self, key: mut T, value: mut T) void{
 		let cap = mut _self.capacity
 		match cap != 0{
-			let h = mut insecure_hashOf:<T>(imut key)
-			let startIdx = mut (h % cap)
-			for steps in 0..cap{
-				let idx = mut (startIdx + steps)
-				if idx >= cap{
-					idx = idx - cap
-				}
-				match idx into _self.slots{
-					if !_self.slots[idx].occupied{
-						_self.slots[idx].key = key
-						_self.slots[idx].value = value
-						_self.slots[idx].occupied = true
-						_self.count = mut (_self.count + 1)
-						break
-					}
-					if _self.slots[idx].key == key{
-						_self.slots[idx].value = value
-						break
-					}
+			if (_self.count + 1) * 10 > cap * 7{
+				try _self.grow(_self) catch(e){
+					_self.insert(_self, key, value)
+					return
 				}
 			}
+			_self.insert(_self, key, value)
 		}
 	}
 
@@ -108,19 +199,18 @@ impl<T> HashMap<T>{
 	func get(_self: ref some imut self, key: mut T, defaultValue: mut T) mut T{
 		let cap = mut _self.capacity
 		match cap != 0{
-			let h = mut insecure_hashOf:<T>(imut key)
-			let startIdx = mut (h % cap)
+			let mask = mut (cap - 1)
+			let startIdx = mut bits_and(hashKey:<T>(imut key), mask)
 			for steps in 0..cap{
-				let idx = mut (startIdx + steps)
-				if idx >= cap{
-					idx = idx - cap
-				}
-				match idx in _self.slots{
-					if !_self.slots[idx].occupied{
+				let idx = mut bits_and(startIdx + steps, mask)
+				match idx in _self.ctrl{
+					if _self.ctrl[idx] == 0{
 						return defaultValue
 					}
-					if _self.slots[idx].key == key{
-						return _self.slots[idx].value
+					match idx in _self.slots{
+						if _self.slots[idx].key == key{
+							return _self.slots[idx].value
+						}
 					}
 				}
 			}
@@ -133,19 +223,18 @@ impl<T> HashMap<T>{
 	func contains(_self: ref some imut self, key: mut T) mut bool{
 		let cap = mut _self.capacity
 		match cap != 0{
-			let h = mut insecure_hashOf:<T>(imut key)
-			let startIdx = mut (h % cap)
+			let mask = mut (cap - 1)
+			let startIdx = mut bits_and(hashKey:<T>(imut key), mask)
 			for steps in 0..cap{
-				let idx = mut (startIdx + steps)
-				if idx >= cap{
-					idx = idx - cap
-				}
-				match idx in _self.slots{
-					if !_self.slots[idx].occupied{
+				let idx = mut bits_and(startIdx + steps, mask)
+				match idx in _self.ctrl{
+					if _self.ctrl[idx] == 0{
 						return mut false
 					}
-					if _self.slots[idx].key == key{
-						return mut true
+					match idx in _self.slots{
+						if _self.slots[idx].key == key{
+							return mut true
+						}
 					}
 				}
 			}

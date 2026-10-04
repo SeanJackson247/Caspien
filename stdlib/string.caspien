@@ -78,9 +78,20 @@ impl String{
 	func concat(_self: ref some mut self, other: ref some imut self) void{
 		?catch(e){ throw e }
 		let n = mut len(other.chars.backing)
-		for i in 0..n{
-			match i in other.chars.backing{
-				? _self.appendChar(_self, other.chars.backing[i])
+		let zero = mut 0
+		match zero in other.chars.backing{
+			let fillc = mut other.chars.backing[zero]
+			let old = mut len(_self.chars.backing)
+			let grown = mut ? resize(_self.chars.backing, mut (old + n), fillc)
+			_self.chars.backing = grown
+			for i in 0..n{
+				match i in other.chars.backing{
+					let ch = mut other.chars.backing[i]
+					let j = mut (old + i)
+					match j into _self.chars.backing{
+						_self.chars.backing[j] = ch
+					}
+				}
 			}
 		}
 	}
@@ -93,9 +104,20 @@ impl String{
 		?catch(e){ throw e }
 		let otherChars = mut ? dyn(other)
 		let n = mut len(otherChars)
-		for i in 0..n{
-			match i in otherChars{
-				? _self.appendChar(_self, otherChars[i])
+		let zero = mut 0
+		match zero in otherChars{
+			let fillc = mut otherChars[zero]
+			let old = mut len(_self.chars.backing)
+			let grown = mut ? resize(_self.chars.backing, mut (old + n), fillc)
+			_self.chars.backing = grown
+			for i in 0..n{
+				match i in otherChars{
+					let ch = mut otherChars[i]
+					let j = mut (old + i)
+					match j into _self.chars.backing{
+						_self.chars.backing[j] = ch
+					}
+				}
 			}
 		}
 	}
@@ -114,9 +136,26 @@ impl String{
 	func sub(_self: ref some imut self, start: mut u64, end: mut u64) owns some mut String{
 		?catch(e){ throw e }
 		let result = mut ? new String()
-		for i in start..end{
-			match i in _self.chars.backing{
-				? result.appendChar(result, _self.chars.backing[i])
+		let stop = mut end
+		let n = mut len(_self.chars.backing)
+		if stop > n{
+			stop = n
+		}
+		if stop > start{
+			let count = mut (stop - start)
+			match start in _self.chars.backing{
+				let fillc = mut _self.chars.backing[start]
+				let grown = mut ? resize(result.chars.backing, count, fillc)
+				result.chars.backing = grown
+				for k in 0..count{
+					let src = mut (start + k)
+					match src in _self.chars.backing{
+						let ch = mut _self.chars.backing[src]
+						match k into result.chars.backing{
+							result.chars.backing[k] = ch
+						}
+					}
+				}
 			}
 		}
 		return result

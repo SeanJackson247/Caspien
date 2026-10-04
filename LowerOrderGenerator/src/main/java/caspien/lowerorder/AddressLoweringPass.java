@@ -572,6 +572,17 @@ public class AddressLoweringPass implements OptimizationPass {
                 if (!fl.isEmpty() && fl.get(0).text.equals("ALLOC") && fl.size() >= 3) {
                     String varName = fl.get(1).text;
                     String varType = fl.get(2).text;
+                    // The same name declared again in a sibling scope ("let key" as a u64 in one loop, as a u8 in the next) has one
+                    // slot per NAME here, and every use of the name goes to the slot recorded last. A later, narrower declaration
+                    // must not shrink it: the earlier scope's wider stores would then spill into the neighbouring slots (a loop
+                    // counter, say). So a repeat reuses the existing slot when it is at least as big and as aligned, and takes a
+                    // fresh, bigger one otherwise.
+                    String earlierType = localTypes.get(varName);
+                    if (earlierType != null && sizes.sizeOf(earlierType) >= sizes.sizeOf(varType)
+                            && sizes.alignOf(earlierType) >= sizes.alignOf(varType)) {
+                        localTypes.put(varName, varType);
+                        continue;
+                    }
                     long align = sizes.alignOf(varType);
                     long remainder = cursor % align; // Java's `%`: dividend's sign, so this is in (-align, 0] for cursor <= 0
                     if (remainder != 0) {
