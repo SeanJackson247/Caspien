@@ -102,7 +102,7 @@ public class RegVarHintPass implements OptimizationPass {
                 if (leading) {
                     lastLeadingAlloc = k;
                 }
-            } else if (!(m.equals("FUNC_START") || m.equals("RETURNS") || m.equals("ARG") || m.equals("ALLOC_STATIC"))) {
+            } else if (!(m.equals("FUNC_START") || m.equals("FUNC_DECORATE") || m.equals("RETURNS") || m.equals("ARG") || m.equals("ALLOC_STATIC"))) {
                 leading = false;
             }
         }

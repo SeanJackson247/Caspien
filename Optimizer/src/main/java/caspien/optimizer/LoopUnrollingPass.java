@@ -325,9 +325,14 @@ public class LoopUnrollingPass implements OptimizationPass {
 
         if (full) {
             for (int k = lp.start; k <= lp.start + 6; k++) out.add(work.get(k));
+            // When the body only READS the induction variable (every mention is a plain "PUSH var type"), copy c gets the literal
+            // lo+c in its place and the increments between copies go: the variable is a constant in each copy, so the folding passes
+            // can see through "i * 8", "bits >> i" and the like. The variable is dead after the loop (it is scoped to it).
+            boolean subst = onlyReadsVar(body, lp);
             for (long c = 0; c < n; c++) {
-                out.addAll(c == 0 ? body : freshCopy(body));
-                if (c < n - 1) out.addAll(inc);
+                List<List<BytecodeToken>> copy = c == 0 ? body : freshCopy(body);
+                out.addAll(subst ? substVar(copy, lp, lp.lo + c) : copy);
+                if (!subst && c < n - 1) out.addAll(inc);
             }
             out.add(work.get(lp.endIdx));
         } else {
@@ -385,6 +390,39 @@ public class LoopUnrollingPass implements OptimizationPass {
         int added = out.size() - oldSize;
         grown.merge(fname, (long) Math.max(added, 0), Long::sum);
         return added;
+    }
+
+    /** True when every mention of the loop variable in the body is a plain "PUSH var vt" that is not directly followed by ADDR_OF. */
+    private static boolean onlyReadsVar(List<List<BytecodeToken>> body, Loop lp) {
+        for (int k = 0; k < body.size(); k++) {
+            List<BytecodeToken> l = body.get(k);
+            boolean mentions = false;
+            for (int t = 1; t < l.size(); t++) {
+                if (l.get(t).kind == BytecodeToken.Kind.CODE && l.get(t).text.equals(lp.var)) {
+                    mentions = true;
+                    if (t != 1) return false;
+                }
+            }
+            if (!mentions) continue;
+            if (!is(l, 3, "PUSH") || !l.get(2).text.equals(lp.varType)) return false;
+            if (k + 1 < body.size() && !body.get(k + 1).isEmpty() && body.get(k + 1).get(0).text.equals("ADDR_OF")) return false;
+        }
+        return true;
+    }
+
+    /** The body with every "PUSH var vt" turned into "PUSH value vt". */
+    private static List<List<BytecodeToken>> substVar(List<List<BytecodeToken>> body, Loop lp, long value) {
+        List<List<BytecodeToken>> out = new ArrayList<>(body.size());
+        for (List<BytecodeToken> l : body) {
+            if (is(l, 3, "PUSH") && l.get(1).text.equals(lp.var) && l.get(2).text.equals(lp.varType)) {
+                List<BytecodeToken> row = new ArrayList<>(l);
+                row.set(1, retext(l.get(1), Long.toString(value)));
+                out.add(row);
+            } else {
+                out.add(l);
+            }
+        }
+        return out;
     }
 
     private static List<BytecodeToken> label(BytecodeToken ref, String text) {

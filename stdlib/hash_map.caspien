@@ -56,7 +56,7 @@ struct HashMapEntry<T>{@pub{
 
 @pub
 struct HashMap<T>{@pub{
-	slots: owns some mut dynarray(imut HashMapEntry<T>)
+	slots: owns some mut dynarray(mut HashMapEntry<T>)
 	capacity: mut u64
 	count: mut u64
 }}
@@ -82,16 +82,20 @@ impl<T> HashMap<T>{
 			let h = mut hashOf:<T>(imut key)
 			let startIdx = mut (h % cap)
 			for steps in 0..cap{
-				let idx = mut ((startIdx + steps) % cap)
+				let idx = mut (startIdx + steps)
+				if idx >= cap{
+					idx = idx - cap
+				}
 				match idx into _self.slots{
-					let entry = mut _self.slots[idx]
-					if !entry.occupied{
-						_self.slots[idx] = mut HashMapEntry:<T>{key= key, value= value, occupied= mut true}
+					if !_self.slots[idx].occupied{
+						_self.slots[idx].key = key
+						_self.slots[idx].value = value
+						_self.slots[idx].occupied = true
 						_self.count = mut (_self.count + 1)
 						break
 					}
-					if entry.key == key{
-						_self.slots[idx] = mut HashMapEntry:<T>{key= key, value= value, occupied= mut true}
+					if _self.slots[idx].key == key{
+						_self.slots[idx].value = value
 						break
 					}
 				}
@@ -107,14 +111,16 @@ impl<T> HashMap<T>{
 			let h = mut hashOf:<T>(imut key)
 			let startIdx = mut (h % cap)
 			for steps in 0..cap{
-				let idx = mut ((startIdx + steps) % cap)
+				let idx = mut (startIdx + steps)
+				if idx >= cap{
+					idx = idx - cap
+				}
 				match idx in _self.slots{
-					let entry = mut _self.slots[idx]
-					if !entry.occupied{
+					if !_self.slots[idx].occupied{
 						return defaultValue
 					}
-					if entry.key == key{
-						return entry.value
+					if _self.slots[idx].key == key{
+						return _self.slots[idx].value
 					}
 				}
 			}
@@ -130,13 +136,15 @@ impl<T> HashMap<T>{
 			let h = mut hashOf:<T>(imut key)
 			let startIdx = mut (h % cap)
 			for steps in 0..cap{
-				let idx = mut ((startIdx + steps) % cap)
+				let idx = mut (startIdx + steps)
+				if idx >= cap{
+					idx = idx - cap
+				}
 				match idx in _self.slots{
-					let entry = mut _self.slots[idx]
-					if !entry.occupied{
+					if !_self.slots[idx].occupied{
 						return mut false
 					}
-					if entry.key == key{
+					if _self.slots[idx].key == key{
 						return mut true
 					}
 				}

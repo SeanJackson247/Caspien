@@ -1619,6 +1619,42 @@ public class X86Backend {
         
     }
 
+    /**
+     * The byte count of the MEMCOPY on the current line when it is a literal of at most 64 bytes, else -1. The line shape is
+     * "[dest expr] PUSH 8 <size> [src expr] MEMCOPY" where the source expression is one value ("PUSH 8 $x", optionally followed by
+     * "ADDR_OF ..."): walk back over the lines after the size push and require that they leave exactly one value.
+     */
+    private long memcopyConstantSize() {
+        int values = 0;
+        for (int back = 1; back <= 4; back++) {
+            int idx = currentLineIndex - back;
+            List<BytecodeToken> l = allLines == null || idx < 0 ? null : allLines.get(idx);
+            if (l == null || l.isEmpty()) {
+                return -1;
+            }
+            String m = l.get(0).text;
+            if (m.equals("ADDR_OF")) {
+                continue;
+            }
+            if (!m.equals("PUSH") || l.size() < 3) {
+                return -1;
+            }
+            String operand = l.get(2).text;
+            if (operand.matches("\\d+") && l.get(1).text.equals("8")) {
+                if (values != 1) {
+                    return -1;
+                }
+                long v = Long.parseLong(operand);
+                return v >= 1 && v <= 64 ? v : -1;
+            }
+            values++;
+            if (values > 1) {
+                return -1;
+            }
+        }
+        return -1;
+    }
+
     private static boolean isFloatLiteral(String s) {
         return s.matches("-?\\d+\\.\\d+([eE][+-]?\\d+)?");
     }
@@ -2622,6 +2658,11 @@ public class X86Backend {
                 rfBin(line.get(1).text, (int) Long.parseLong(line.get(2).text), line.get(3).text, line.get(4).text, line.get(5).text);
                 return;
             }
+            case "R_DIVC": {
+                // "R_DIVC DIV|MOD 8 %tD a #k" -- unsigned division / remainder by a constant, by multiplying with the reciprocal.
+                rfDivConst(line.get(1).text.equals("MOD"), line.get(3).text, line.get(4).text, rfImm(line.get(5).text));
+                return;
+            }
             case "R_UN": {
                 // "R_UN OP size %tD a" -- %tD = OP a.
                 rfUn(line.get(1).text, (int) Long.parseLong(line.get(2).text), line.get(3).text, line.get(4).text);
@@ -2770,6 +2811,27 @@ public class X86Backend {
             case "R_FBINX": {
                 // "R_FBINX OP 4 %xK a b" -- variable K = a OP b, computed in place when it can be.
                 rfFloatX(line.get(1).text, (int) Long.parseLong(line.get(2).text), line.get(3).text, line.get(4).text, line.get(5).text);
+                return;
+            }
+            case "R_FSQRT": {
+                // "R_FSQRT n DST SRC" -- DST = sqrt(SRC), both xmm-register operands (FloatIntrinsicPass).
+                int fn = (int) Long.parseLong(line.get(1).text);
+                String xd = xvReg(line.get(2).text);
+                String xs = xvReg(line.get(3).text);
+                raw("    sqrt" + (fn == 4 ? "ss" : "sd") + " %" + xs + ", %" + xd);
+                return;
+            }
+            case "R_POPV": {
+                // "R_POPV n %vK" -- integer variable K = the n-byte word on top of the real stack (what ASSIGN n n n stored through its address).
+                popReg("rax");
+                zeroExtendReg("rax", Integer.parseInt(line.get(1).text));
+                rfRegToReg(rfReg(line.get(2).text), "rax");
+                return;
+            }
+            case "R_GETRET": {
+                // "R_GETRET n %vK" -- integer variable K = the n-byte integer a just-finished call returned (what PUSH_RET_INT + ASSIGN did).
+                zeroExtendReg("rax", Integer.parseInt(line.get(1).text));
+                rfRegToReg(rfReg(line.get(2).text), "rax");
                 return;
             }
             case "R_POPX": {
@@ -3890,9 +3952,23 @@ public class X86Backend {
                 // immediately around every real MEMCOPY site this pass
                 // was checked against re-read their own variables
                 // separately afterward, confirmed directly).
+                long constSize = memcopyConstantSize();
                 popReg("rsi"); // src
                 popReg("rcx"); // size
                 popReg("rdi"); // dest
+                if (constSize >= 0) {
+                    // A small compile-time size (a char, an integer, a key being hashed) is copied with plain moves: `rep movsb` costs a
+                    // few dozen cycles of start-up however short the copy is. rax is free here (every sequence of this backend uses it as scratch).
+                    long pos = 0;
+                    while (pos < constSize) {
+                        long left = constSize - pos;
+                        int w = left >= 8 ? 8 : left >= 4 ? 4 : left >= 2 ? 2 : 1;
+                        raw("    mov" + movSuffix(w) + " " + pos + "(%rsi), %" + sizedReg("rax", w));
+                        raw("    mov" + movSuffix(w) + " %" + sizedReg("rax", w) + ", " + pos + "(%rdi)");
+                        pos += w;
+                    }
+                    return;
+                }
                 raw("    rep movsb");
                 return;
             }
@@ -5304,6 +5380,55 @@ public class X86Backend {
         }
         emitShiftCore(op, size, d);
         popReg("rcx");
+    }
+
+    /**
+     * %tD = a / k or a % k for an unsigned 64-bit a and a constant k >= 3 that is not a power of two, without a divide instruction
+     * (Granlund-Montgomery: t = mulhi(m, a); q = (t + ((a - t) >> 1)) >> (l - 1), with l = ceil(log2 k) and m = floor(2^64 (2^l - k) / k) + 1;
+     * the remainder is a - q*k). The dividend goes to the scratch register r15; rax (a live temp when %tD is another register) is
+     * parked in %tD for the duration and swapped back; rdx is clobbered, as by the stack form's divq.
+     */
+    private void rfDivConst(boolean mod, String dstTok, String aTok, long k) {
+        String d = rfReg(dstTok);
+        if (rfIsTemp(aTok)) {
+            rfRegToReg(RF_SCRATCH, rfReg(aTok));
+        } else if (rfIsImm(aTok)) {
+            movImmToReg(RF_SCRATCH, rfImm(aTok));
+        } else {
+            movMemToReg(RF_SCRATCH, rfSlot(aTok));
+        }
+        int l = 64 - Long.numberOfLeadingZeros(k - 1);
+        java.math.BigInteger two64 = java.math.BigInteger.ONE.shiftLeft(64);
+        java.math.BigInteger bk = new java.math.BigInteger(Long.toUnsignedString(k));
+        java.math.BigInteger m = java.math.BigInteger.ONE.shiftLeft(l).subtract(bk).shiftLeft(64).divide(bk).add(java.math.BigInteger.ONE);
+        long magic = m.mod(two64).longValue();
+        boolean inRax = d.equals("rax");
+        if (!inRax) {
+            raw("    xchgq %rax, %" + d);
+        }
+        movImmToReg("rax", magic);
+        raw("    mulq %" + RF_SCRATCH);
+        raw("    movq %" + RF_SCRATCH + ", %rax");
+        raw("    subq %rdx, %rax");
+        raw("    shrq $1, %rax");
+        raw("    addq %rdx, %rax");
+        if (l > 1) {
+            raw("    shrq $" + (l - 1) + ", %rax");
+        }
+        if (mod) {
+            movImmToReg("rdx", k);
+            raw("    imulq %rdx, %rax");
+            raw("    movq %" + RF_SCRATCH + ", %rdx");
+            raw("    subq %rax, %rdx");
+            if (inRax) {
+                raw("    movq %rdx, %rax");
+            } else {
+                raw("    movq %" + d + ", %rax");
+                raw("    movq %rdx, %" + d);
+            }
+        } else if (!inRax) {
+            raw("    xchgq %rax, %" + d);
+        }
     }
 
     private void rfBin(String op, int size, String dstTok, String aTok, String bTok) {

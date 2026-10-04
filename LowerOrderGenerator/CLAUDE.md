@@ -18,6 +18,7 @@ Run: `lowerordergenerator -i in.txt out.txt`. Needs `compiler.config` in the CWD
 9. `RangeWordSplitPass` (deferred-operands): 16-byte range constructions/copies -> two 8-byte moves + hints.
 10. `RegisterFormPass` (deferred-operands): operand-stack model -> `R_*` lines (below).
 11. `RegVarPromotionPass` (always runs; strips `REGHINT`/`REGVAR`; promotes only with both switches): renames hinted slots to `%v`/`%x` registers.
+    - Also promotes int slots filled by a call result (`PUSH_RET_INT` ... `ADDR..ASSIGN` pairs -> `R_GETRET`/`R_POPV`). `RegisterFormPass` has `fuseDivConst` (`DIV_INT`/`MOD_INT` by a literal -> `R_DIVC`, unsigned reciprocal multiply, Codegen `rfDivConst`) and `fuseLookupDyn` scalar-field fusion for struct dynarray elements; `FloatIntrinsicPass` turns a libm `sqrt` call into `R_FSQRT` (sqrtsd).
 12. `FloatTempPass` (float-temporaries-in-registers): float temp chains to `%y0..%y3`.
 13. `BranchFusionPass` (always, no-op without register form): `R_BIN cmp 8` + `R_BRF` -> `R_BRC C 8 a b @L` (jump when NOT(a C b)); `&&` of two compares -> two `R_BRC`.
 14. `JumpCleanupPass` (always; up to 8 rounds): dead jump after jump, jump to next label, `R_BRC C ..@L1; JMP @L2; @L1:` -> inverse `R_BRC`. In stack form a `JMP` right after bare `CMP` is the conditional jump (never treat as unconditional, `followsCmp`). Labels never deleted.

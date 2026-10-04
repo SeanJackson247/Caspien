@@ -80,7 +80,7 @@ public class RegVarPromotionPass {
     public static final int VOL_COUNT = 3;
 
     static final Set<String> VOL_SAFE = new HashSet<>(Arrays.asList(
-            "R_MOV", "R_LD", "R_ST", "R_BIN", "R_UN", "R_BRC", "R_BRF", "R_LEA", "R_RMW", "R_SETV", "R_LDX", "R_STX", "R_FBIN",
+            "R_MOV", "R_LD", "R_ST", "R_BIN", "R_UN", "R_DIVC", "R_POPV", "R_GETRET", "R_BRC", "R_BRF", "R_LEA", "R_RMW", "R_SETV", "R_LDX", "R_STX", "R_FBIN",
             "R_FBINX", "R_FCMP", "R_XTOG", "R_GTOX", "R_XMOV", "R_PUSH", "R_PUSHA", "R_XVAR", "R_RET", "R_RETF", "JMP", "CMP",
             "ALLOC", "FUNC_START", "FUNC_END"));
 
@@ -211,11 +211,11 @@ public class RegVarPromotionPass {
         java.util.Set<Integer> approvedAddr = new HashSet<>();
         for (int i = 0; i + 1 < fn.size(); i++) {
             List<BytecodeToken> l = fn.get(i);
-            if (!(l.size() == 3 && l.get(0).text.equals("ADDR") && (l.get(1).text.equals("4") || l.get(1).text.equals("8")) && l.get(2).text.startsWith("$"))) {
+            if (!(l.size() == 3 && l.get(0).text.equals("ADDR") && (l.get(1).text.equals("1") || l.get(1).text.equals("2") || l.get(1).text.equals("4") || l.get(1).text.equals("8")) && l.get(2).text.startsWith("$"))) {
                 continue;
             }
             Hint h = slotHint(hints, l.get(2).text);
-            if (h == null || !h.xmm || !l.get(1).text.equals(String.valueOf(h.size))) {
+            if (h == null || !l.get(1).text.equals(String.valueOf(h.size))) {
                 continue;
             }
             int c = 1;
@@ -257,7 +257,7 @@ public class RegVarPromotionPass {
             int retIdx = -1;
             if (j - 1 > i + 1 && fn.get(i + 1).get(0).text.equals("CC_START") && fn.get(j - 2).get(0).text.equals("CC_END")) {
                 List<BytecodeToken> ret = fn.get(j - 1);
-                if (ret.size() == 2 && ret.get(0).text.equals("PUSH_RET_FLOAT") && ret.get(1).text.equals(hw)) {
+                if (ret.size() == 2 && ret.get(0).text.equals(h.xmm ? "PUSH_RET_FLOAT" : "PUSH_RET_INT") && ret.get(1).text.equals(hw)) {
                     // the bracket that opens right after the ADDR must be the one that closes right before PUSH_RET_FLOAT
                     int depth = 0;
                     boolean whole = true;
@@ -348,6 +348,9 @@ public class RegVarPromotionPass {
         for (int[] pr : pairs) {
             Hint h = chosenX.get(pairSlot.get(pr[0]));
             if (h == null) {
+                h = chosenInt.get(pairSlot.get(pr[0]));
+            }
+            if (h == null) {
                 continue;
             }
             dropped.add(pr[0]);
@@ -366,11 +369,13 @@ public class RegVarPromotionPass {
             }
             BytecodeToken ref = l.isEmpty() ? null : l.get(0);
             if (retReplace.containsKey(idx)) {
-                res.add(mk(ref, "R_GETRETF", String.valueOf(retReplace.get(idx).size), "%x" + retReplace.get(idx).reg));
+                Hint rh = retReplace.get(idx);
+                res.add(rh.xmm ? mk(ref, "R_GETRETF", String.valueOf(rh.size), "%x" + rh.reg) : mk(ref, "R_GETRET", String.valueOf(rh.size), "%v" + rh.reg));
                 continue;
             }
             if (assignReplace.containsKey(idx)) {
-                res.add(mk(ref, "R_POPX", String.valueOf(assignReplace.get(idx).size), "%x" + assignReplace.get(idx).reg));
+                Hint ah = assignReplace.get(idx);
+                res.add(ah.xmm ? mk(ref, "R_POPX", String.valueOf(ah.size), "%x" + ah.reg) : mk(ref, "R_POPV", String.valueOf(ah.size), "%v" + ah.reg));
                 continue;
             }
             if (!chosenX.isEmpty() && jumpsToCatchLabel(l)) {
@@ -678,7 +683,12 @@ public class RegVarPromotionPass {
     /** stack-form mnemonics that may sit between "ADDR 4 $x" and its "ASSIGN 4 4 4" without touching the pushed address */
     private static final java.util.Set<String> VALUE_OPS = new HashSet<>(Arrays.asList(
             "PUSH", "PUSH_RET_FLOAT", "PUSH_RET_INT", "PUSH_LABEL", "ADD_FLOAT", "SUB_FLOAT", "MUL_FLOAT", "DIV_FLOAT",
-            "ADD_INT", "SUB_INT", "MUL_INT", "CC_START", "CC_END", "CALL", "VARARGS_XMM_COUNT", "PROMOTE_F32_TO_F64", "FCONV", "NEG_FLOAT"));
+            "ADD_INT", "SUB_INT", "MUL_INT", "CC_START", "CC_END", "CALL", "VARARGS_XMM_COUNT", "PROMOTE_F32_TO_F64", "FCONV", "NEG_FLOAT",
+            // pure stack operators of integer value computations (each pops only its own operands, pushes one result)
+            "DIV_INT", "MOD_INT", "SDIV_INT", "SMOD_INT", "SHL", "SHR", "SAR", "BITS_AND", "BITS_OR", "BITS_XOR", "BITS_NOT", "NEG", "NOT",
+            "INC_INT", "DEC_INT", "EQ_INT", "NEQ_INT", "LT_INT", "LT_EQ_INT", "GT_INT", "GT_EQ_INT", "SLT_INT", "SLT_EQ_INT", "SGT_INT",
+            "SGT_EQ_INT", "AND", "OR", "ZEXT", "TRUNC", "DEREF", "LEN", "LOOKUP_DYN", "LOOKUP_ARRAY", "DOT", "PUSH_FIELDNAME", "DOT_LHS",
+            "LOOKUP_DYN_LHS", "LOOKUP_ARRAY_LHS"));
 
     private static final java.util.Set<String> BLOCK_END = new HashSet<>(Arrays.asList(
             "JMP", "R_BRF", "R_RET", "R_RETF", "RET", "RET_FLOAT", "GT_UNWIND", "THROW", "CC_START", "CC_END", "CALL", "INVOKE", "FUNC_END"));
@@ -734,7 +744,7 @@ public class RegVarPromotionPass {
         switch (m) {
             case "R_LD": case "R_MOV": case "R_XTOG": return 2;
             case "R_LEA": return 1;
-            case "R_BIN": case "R_UN": case "R_FBIN": case "R_FCMP": return 3;
+            case "R_BIN": case "R_UN": case "R_FBIN": case "R_FCMP": case "R_DIVC": return 3;
             default: return -1;
         }
     }
@@ -773,6 +783,8 @@ public class RegVarPromotionPass {
                 return l.size() == 6 && (k == 4 || k == 5) && h.size == 8 && intOf(l.get(2).text) == 8;
             case "R_UN": // R_UN OP size %tD a
                 return l.size() == 5 && k == 4 && h.size == 8;
+            case "R_DIVC": // R_DIVC OP 8 %tD a #k -- the dividend only
+                return l.size() == 6 && k == 4 && h.size == 8;
             case "R_FBIN":
             case "R_FCMP": // R_FBIN OP size %tD a b -- an operand read straight from memory has the op's own width
                 return l.size() == 6 && (k == 4 || k == 5) && intOf(l.get(2).text) == h.size;

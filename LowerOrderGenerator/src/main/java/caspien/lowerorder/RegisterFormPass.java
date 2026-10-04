@@ -163,6 +163,8 @@ public class RegisterFormPass implements OptimizationPass {
         for (String m : BIN_OPS.keySet()) {
             handlers.put(m, this::fuseBinary);
         }
+        handlers.put("DIV_INT", this::fuseDivConst);
+        handlers.put("MOD_INT", this::fuseDivConst);
         handlers.put("INC_INT", this::fuseUnary);
         handlers.put("DEC_INT", this::fuseUnary);
         handlers.put("NEG", this::fuseUnary);
@@ -666,6 +668,48 @@ public class RegisterFormPass implements OptimizationPass {
         return 1;
     }
 
+    /**
+     * DIV_INT 8 / MOD_INT 8 by a literal that is not a power of two (those became a shift / a mask earlier): "R_DIVC DIV|MOD 8 %tD a #k",
+     * which the backend turns into a multiplication by the reciprocal. Only the unsigned 8-byte forms and a literal divisor of
+     * at least 3; any other division stays in the stack form.
+     */
+    private int fuseDivConst(State st, List<BytecodeToken> line, List<List<BytecodeToken>> all, int idx) {
+        if (!is(line, 2) || parseSize(line.get(1).text) != 8) {
+            return 0;
+        }
+        int sz = st.stack.size();
+        if (sz < 2) {
+            return 0;
+        }
+        Entry b = st.stack.get(sz - 1);
+        Entry a = st.stack.get(sz - 2);
+        if (b.kind != Kind.K || !isValue(a)) {
+            return 0;
+        }
+        Long k = parseIntLiteral(b.text);
+        if (k == null || k < 3 || (k & (k - 1)) == 0) {
+            return 0;
+        }
+        boolean loadA = needsLoad(a, 8);
+        boolean aReg = a.kind == Kind.T || loadA;
+        int need = (loadA ? 1 : 0) + (!aReg ? 1 : 0);
+        if (need > st.freeTemps()) {
+            return 0;
+        }
+        st.anchor = line.get(0);
+        st.risky = true;
+        if (loadA) {
+            loadInto(st, a);
+        }
+        String aOp = operandOf(a);
+        st.stack.remove(sz - 1);
+        st.stack.remove(sz - 2);
+        int dst = a.kind == Kind.T ? a.temp : st.allocTemp();
+        st.emit("R_DIVC", line.get(0).text.equals("DIV_INT") ? "DIV" : "MOD", "8", "%t" + dst, aOp, "#" + k);
+        st.stack.add(newTemp(dst, 8));
+        return 1;
+    }
+
     private int fuseUnary(State st, List<BytecodeToken> line, List<List<BytecodeToken>> all, int idx) {
         String mnemonic = line.get(0).text;
         boolean isNot = mnemonic.equals("NOT");
@@ -913,6 +957,31 @@ public class RegisterFormPass implements OptimizationPass {
         int n = parseSize(line.get(1).text);
         if (n <= 0) {
             return 0;
+        }
+        if (!lhs && idx + 2 < all.size()) {
+            // "LOOKUP_DYN n ; PUSH_FIELDNAME off w ; DOT w" -- one scalar field of an element: address = pointer + 16 + index*n + off, then
+            // load w bytes. (Without this the whole n-byte element was pushed and the field cut out of the pushed block.)
+            List<BytecodeToken> fl = all.get(idx + 1);
+            List<BytecodeToken> dl = all.get(idx + 2);
+            if (is(fl, 3) && fl.get(0).text.equals("PUSH_FIELDNAME") && is(dl, 2) && dl.get(0).text.equals("DOT")) {
+                Long off = parseIntLiteral(fl.get(1).text);
+                int fw = parseSize(fl.get(2).text);
+                int dw = parseSize(dl.get(1).text);
+                int sz2 = st.stack.size();
+                if (off != null && off >= 0 && fw == dw && isWidth(fw) && off + fw <= n && sz2 >= 2) {
+                    Entry ix2 = st.stack.get(sz2 - 1);
+                    Entry base2 = st.stack.get(sz2 - 2);
+                    if (isValue(ix2) && isAddress(base2)) {
+                        int r2 = emitLea(st, line, base2, ix2, n, sz2, 16 + off);
+                        if (r2 != 0) {
+                            Entry top2 = st.stack.remove(st.stack.size() - 1);
+                            st.emit("R_LD", String.valueOf(fw), "%t" + top2.temp, "%t" + top2.temp);
+                            st.stack.add(loadedTemp(top2.temp, fw));
+                            return 3;
+                        }
+                    }
+                }
+            }
         }
         if (!lhs) {
             if (!isWidth(n)) {

@@ -68,6 +68,8 @@ public class LowerOrderGenerator {
         lines = new RegVarPromotionPass(config.deferredOperands && config.variablesInRegisters, config.floatVariablesInRegisters).run(lines);
         // f32 temporaries in xmm registers (a no-op unless "float-temporaries-in-registers: on", which needs deferred-operands).
         lines = new FloatTempPass(config.deferredOperands && config.floatTemporariesInRegisters).run(lines);
+        // libm sqrt/sqrtf on xmm operands: one sqrtsd/sqrtss instead of a call with spills (needs the float registers).
+        lines = new FloatIntrinsicPass().run(lines);
         // A comparison that only feeds a jump compares and jumps (always on; a no-op without register-form lines).
         lines = new BranchFusionPass().run(lines);
         // Jump chains left by `if c { break }` and similar: dead jumps, jumps to the next label, conditional jump over a jump.

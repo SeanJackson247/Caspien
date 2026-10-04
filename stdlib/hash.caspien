@@ -48,13 +48,15 @@ func fnv1a64Bytes(p: raw imut u8, byteCount: mut u64) mut u64{
 @pub
 func hashOf<T>(x: imut T) mut u64{
 	let byteCount = mut sizeof(T)
-	let:<raw mut u8> buf = null
-	let h = mut 0
-	unsafe extern memcopy raw{
-		buf = mut malloc(byteCount)
-		memcopy(buf, byteCount, raw x)
-		h = fnv1a64Bytes(buf, byteCount)
-		free(buf)
+	let:<mut u64> bits = mut 0
+	unsafe memcopy raw{
+		memcopy(raw bits, byteCount, raw x)
+	}
+	let h = mut 0xcbf29ce484222325
+	for i in 0..byteCount{
+		let byteVal = mut bits_and(bits_right(bits, i * 8), 255)
+		h = bits_xor(h, byteVal)
+		h = h * 0x100000001b3
 	}
 	return h
 }
