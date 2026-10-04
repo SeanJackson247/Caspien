@@ -4,6 +4,27 @@ Linux target, 2-core VM, runs one at a time. Time = fastest of N runs; compile t
 Charts: `charts.html` (built by `charts_all.py`). Raw data: `<program>/results.json`. Harness: `nbody/bench.py`, `bench_program.py`.
 Every implementation's full output equals the C -O0 output at the same size.
 
+## Re-run after the speed work, 4 Oct 2026
+
+Every program and language re-run on the same VM (fastest of 3 runs, compile time the median of 2 builds, every output equal to the C reference), after: an allocation-free `hashOf` and a leaner stdlib `HashMap`, a scalar sqrt instruction, division and modulo by a literal as a multiply, small constant `memcopy` inlined, struct-field reads on dynarray elements fused, integer call results kept in registers, and loop-index substitution in fully unrolled innermost loops. `charts.html` now draws two gold lines on every execution-time bar at the best time minus and plus the typical run-to-run noise (the median of the three repeats minus the best one).
+
+Caspien rows that moved by more than 12% (all with the aggressive "full" configuration unless the row says "off"):
+
+| Program, variant | before | after |
+|---|---|---|
+| k-nucleotide naive (stdlib HashMap) | 16.00 s | 4.99 s (0.31x) |
+| LRU naive (DynamicArray + HashMap) | 5.15 s | 2.07 s (0.40x) |
+| Heap graph, struct nodes, safe | 0.58 s | 0.28 s (0.47x) |
+| Strings naive (String class) | 4.46 s | 2.74 s (0.61x); off 7.68 s -> 5.61 s |
+| Binary trees optimized safe | 0.62 s | 0.44 s (0.72x) |
+| JSON optimized safe / unsafe | 2.16 s / 1.89 s | 1.88 s / 1.65 s (0.87x) |
+
+Slower by 12-13%, all within the 10-30% noise of this VM and none repeated in a same-run comparison: fasta optimized safe (off), JSON naive and optimized safe (off), spectral-norm naive (full), strings optimized unsafe (off). Everything else is within noise. Executables are the same size or smaller (`knucleotide` optimized safe 56 KB -> 53 KB).
+
+One regression was found and fixed during this re-run (not in the numbers above): the first pass made the n-body "loop" variants 1.7x slower. Two causes: `sqrtsd` has a false dependency on its destination register (now cleared with `xorps` first), and substituting the loop index into bodies with range proofs left `match 2 in 0..5` as run-time checks on constants that the constant folder does not remove (`IN` is not folded). Substitution is now limited to innermost loops without range proofs. Making `IN` fold is the proper fix and is on the to-do list.
+
+Not verified: Windows (the new instructions have only been run on Linux and, for the check scripts, under Wine); the weak spots are unchanged (peak memory of LRU naive, size of the Merkle-tree programs, sorting).
+
 ## Re-run of everything, 3 Oct 2026
 
 All 15 time-measured programs (n-body, fannkuch-redux, spectral-norm, sieve, strings, graph, sorting, binarytrees, mandelbrot, fasta, k-nucleotide, LRU, Merkle tree, hello world, JSON) across every language (C, C++, Rust, Go, Fortran, Objective-C, Odin, Zig, Chapel, D LDC/GDC, Nim, Crystal, OCaml, Swift, Codon, Java, C#, Kotlin, WebAssembly, Node, Bun, LuaJIT) with the current compiler (after `@drop`, the file-system stdlib and the compiler fixes). Fresh sandbox, toolchains reinstalled (versions as in `newlangs.py`; Bun is now included). Fastest of 3 runs, compile time = median of 2 builds, 2-core VM, one program at a time. Every output equals the C reference. Charts: `charts.html` (green = Caspien, hatched = optimisations off / naive; red = bare metal and natively compiled; purple = compiled + interpreted (JVM, .NET, WebAssembly); blue = interpreted (Node, Bun, LuaJIT)).

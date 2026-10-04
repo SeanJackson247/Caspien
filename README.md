@@ -20,7 +20,10 @@ func main() void{
 ```
 
 > **Status.** Caspien is a research language and a working compiler, not a finished product. Section 1.4
-> says exactly which of the guarantees below are enforced today and which are still aspirations.
+> says exactly which of the guarantees below are enforced today and which are still aspirations. Both the language
+> and the compiler are unstable: syntax, semantics, the standard library and the compiler's command-line and
+> configuration interfaces may change without notice, and no stable version has been released. Reaching one is a
+> goal we are working towards.
 
 **Contents**
 

@@ -2818,6 +2818,8 @@ public class X86Backend {
                 int fn = (int) Long.parseLong(line.get(1).text);
                 String xd = xvReg(line.get(2).text);
                 String xs = xvReg(line.get(3).text);
+                // sqrtsd/sqrtss keep the upper bits of DST, so they depend on DST's old value; zeroing DST first (when it is not SRC) breaks that chain.
+                if (!xd.equals(xs)) raw("    xorps %" + xd + ", %" + xd);
                 raw("    sqrt" + (fn == 4 ? "ss" : "sd") + " %" + xs + ", %" + xd);
                 return;
             }

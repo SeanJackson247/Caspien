@@ -125,15 +125,25 @@ def chart(R, metric, title):
     for i, r in enumerate(rows):
         y = top + i * (BH + GAP); v = r[metric]
         w = max(sx(v), 1.5) if v > 0 else 1.5
+        ts = r.get("times") if metric == "time_s" else None
+        # typical noise = how much slower the median repeat is than the best one (the bar is the best of the repeats); one stray slow repeat does not move it
+        noise = (sorted(ts)[len(ts) // 2] - min(ts)) if ts and len(ts) > 2 else ((sum(ts) / len(ts) - min(ts)) if ts and len(ts) == 2 else 0)
+        spread = (max(ts) - min(ts)) if ts and len(ts) > 1 else 0
         cls = "k-" + r["key"] + (" off" if r["mode"] == "off" else "")
-        tip = "%s\n%s: %s\ngroup: %s%s" % (r["label"], title, fmt(metric, v), GROUP_NAME[r["kind"]],
+        tip = "%s\n%s: %s%s\ngroup: %s%s" % (r["label"], title, fmt(metric, v), (" (gold lines: ±%s = median repeat minus best; slowest repeat +%s)" % (fmt(metric, noise), fmt(metric, spread))) if spread else "", GROUP_NAME[r["kind"]],
                                            "" if r.get("ok", True) else "\nOUTPUT DIFFERS from the C reference")
         out.append('<g class="row" data-tip="%s">' % html.escape(tip, quote=True))
         out.append('<rect class="hit" x="0" y="%d" width="%d" height="%d"/>' % (y - GAP // 2, W, BH + GAP))
         out.append('<text class="lbl" x="%d" y="%.1f" text-anchor="end">%s</text>' % (LBL - 8, y + BH * 0.72, html.escape(r["label"])))
         out.append('<rect class="bar %s" x="%d" y="%d" width="%.1f" height="%d" rx="3"/>' % (cls, LBL, y, w, BH))
+        tx = w
+        if noise and noise > 0 and v > 0:  # two gold lines at the best time -/+ the typical noise (median repeat minus best)
+            for xv in (max(v - noise, 0), v + noise):
+                gx = LBL + min(max(sx(xv), 0), plot * 1.04)
+                out.append('<line class="noise" x1="%.1f" x2="%.1f" y1="%d" y2="%d"/>' % (gx, gx, y, y + BH))
+                tx = max(tx, gx - LBL)
         out.append('<text class="val" x="%.1f" y="%.1f">%s <tspan class="grp">%s</tspan></text>' % (
-            LBL + w + 6, y + BH * 0.72, html.escape(fmt(metric, v)), html.escape(GROUP_NAME[r["kind"]])))
+            LBL + tx + 6, y + BH * 0.72, html.escape(fmt(metric, v)), html.escape(GROUP_NAME[r["kind"]])))
         out.append('</g>')
     out.append('</svg>')
     return "\n".join(out)
@@ -316,7 +326,8 @@ NOTES = [
     "<b>Memory</b> is the peak resident size of the process (wait4). Garbage-collected runtimes size their heaps from the machine, so their peaks reflect policy as well as need.",
     "<b>Heap graph, binary trees, LRU:</b> Caspien rejects recursive structs on purpose, so its trees and lists are index-based; the other languages use pointers or references. Same work, not the same memory layout.",
     "<b>Sorting:</b> Caspien elements are u64, the others use 32-bit integers. <b>Linux only:</b> nothing was run on the Windows targets. <b>Noise:</b> a 2-core VM, timings vary by roughly 5&ndash;10% between runs; time is the fastest run.",
-    "<b>Re-run on 3 Oct 2026</b> after the @drop hook, file-system stdlib and compiler fixes: every program, every language, fastest of 3 runs, compile time the median of 2 builds, Linux 2-core VM, every output equal to the C reference.",
+    "<b>Re-run on 4 Oct 2026</b> after the allocation-free hashOf, leaner HashMap, constant-division, sqrt and loop-unrolling changes: every program, every language, fastest of 3 runs, compile time the median of 2 builds, Linux 2-core VM, every output equal to the C reference.",
+    "<b>Gold lines</b> (execution-time charts only; the other metrics are measured once per build): two lines at the best time minus and plus the typical run-to-run noise, defined as the median of the three repeats minus the best one. A single stray slow repeat (a JIT pause, a noisy neighbour) does not stretch them; the hover text also gives the slowest repeat. The value text sits to the right of the rightmost line.",
     "<b>Colours</b>: green = Caspien (hatched = optimisations off / naive, solid = everything on), red = bare metal and natively compiled languages, purple = compiled and interpreted (JVM, .NET, WebAssembly), blue = interpreted (Node, Bun, LuaJIT); shades tell the languages apart; every row is also labelled with its language, so colour is never the only cue (a palette of 24 languages cannot be colour-blind-safe by colour alone).",
 ]
 notes_html = '<div class="metric" id="notes"><h2>Notes</h2><section><ul>%s</ul></section></div>' % "".join("<li>%s</li>" % n for n in NOTES)
@@ -348,6 +359,7 @@ section{background:var(--card);border:1px solid var(--line);border-radius:10px;p
 .scroll{overflow-x:auto}
 svg{width:100%;min-width:640px;height:auto;display:block}
 .grid{stroke:var(--grid);stroke-width:1}
+.noise{stroke:#e0a800;stroke-width:1.6;pointer-events:none}
 .tick{fill:var(--muted);font-size:11px}
 .lbl{fill:var(--fg);font-size:12.5px}
 .val{fill:var(--fg);font-size:12px;font-variant-numeric:tabular-nums}
