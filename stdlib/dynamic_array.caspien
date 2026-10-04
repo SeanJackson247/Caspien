@@ -99,6 +99,7 @@ impl<T> DynamicArray<T>{
 	/** The caller must already hold a "match i in self.backing{...}" (or "for match i in self.backing{...}") proof, and must already have proven `_self` itself alive via "match Some(_self){...}" -- both required at the call site, neither checked here. */
 	@pub
 	@lock(match i in self.backing)
+	@inline
 	func get(_self: ref some imut self, i: imut u64) mut T{
 		return _self.backing[i]
 	}
@@ -106,6 +107,7 @@ impl<T> DynamicArray<T>{
 	/** The caller must already hold a "match i into self.backing{...}" write-authorization proof, and must already have proven `_self` itself alive. */
 	@pub
 	@lock(match i into self.backing)
+	@inline
 	func set(_self: ref some mut self, i: imut u64, x: mut T) void{
 		_self.backing[i] = x
 	}
@@ -192,6 +194,7 @@ impl<T> DynamicArray<T>{
 	/** Pointer twin of `set` (usable for a struct `T`): `_self.backing[i] = *x`. Same `@lock` proof requirement; `x` is an `auto` pointer to a local variable. */
 	@pub
 	@lock(match i into self.backing)
+	@inline
 	func setPtr(_self: ref some mut self, i: imut u64, x: auto mut T) void{
 		let value = mut deref(x)
 		_self.backing[i] = value

@@ -154,6 +154,7 @@ impl String{
 	 * become `@lock`-qualified exactly like `get`.
 	 */
 	@pub
+	@inline
 	func charAt(_self: ref some imut self, i: mut u64) mut char{
 		match i in _self.chars.backing{
 			return _self.chars.backing[i]
@@ -172,6 +173,7 @@ impl String{
 	 * simply a no-op (mirroring `charAt`, which returns '\0' out of range).
 	 */
 	@pub
+	@inline
 	func setCharAt(_self: ref some mut self, i: mut u64, c: mut char) void{
 		match i into _self.chars.backing{
 			_self.chars.set(_self.chars, i, c)

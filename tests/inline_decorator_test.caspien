@@ -1,0 +1,82 @@
+// `@inline` and `@dont(inline)` on a function. The results must be right however the compiler treated the calls (values from an independent
+// Python model: add3(4)=7, big(2)=158, twice(10)=16, noinl(7)=49, plain(5)=10, add3(5)+add3(6)=17);
+// tests/inline_decorator_check.sh checks which calls were inlined, the notes, and that `function-inlining: off` still honours `@inline`.
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+
+func check(name: static imut string, ok: mut bool) void{
+	unsafe extern{
+		if ok{
+			printf("PASS %s\n", name)
+		}else{
+			printf("FAIL %s\n", name)
+		}
+	}
+	return
+}
+
+@inline
+func add3(x: mut u64) mut u64{
+	return x + 3
+}
+
+// longer than every preset's callee limit except aggressive
+@inline
+func big(x: mut u64) mut u64{
+	let s = mut x
+	s = s + x * 1
+	s = s + x * 2
+	s = s + x * 3
+	s = s + x * 4
+	s = s + x * 5
+	s = s + x * 6
+	s = s + x * 7
+	s = s + x * 8
+	s = s + x * 9
+	s = s + x * 10
+	s = s + x * 11
+	s = s + x * 12
+	return s
+}
+
+@inline
+func twice(x: mut u64) mut u64{
+	let a = mut 0
+	a = add3(x)
+	return add3(a)
+}
+
+@dont(inline)
+func noinl(x: mut u64) mut u64{
+	return x * x
+}
+
+func plain(x: mut u64) mut u64{
+	return x * 2
+}
+
+func main() void{
+	// results are bound to variables first: a call inside another call's argument list is never inlined (an earlier argument already sits in a register)
+	let a = mut 0
+	let b = mut 0
+	let c = mut 0
+	let d = mut 0
+	let e = mut 0
+	let f = mut 0
+	a = add3(4)
+	b = big(2)
+	c = twice(10)
+	d = noinl(7)
+	e = plain(5)
+	f = add3(5) + add3(6)
+	check("@inline small", a == 7)
+	check("@inline longer than the preset limit", b == 158)
+	check("@inline calling @inline", c == 16)
+	check("@dont(inline)", d == 49)
+	check("undecorated", e == 10)
+	check("@inline inside an expression", f == 17)
+}

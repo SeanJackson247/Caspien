@@ -1354,7 +1354,7 @@ public class BytecodeEmitter {
             // mangledName already equals name here regardless).
             line("EXPORT");
         }
-        emitDecorators("FUNC_DECORATE", info.funcToken.decorators);
+        emitDecorators("FUNC_DECORATE", info.funcToken.decorators, true);
         line("RETURNS " + info.returnType.canonical());
         // "ARG name type" -- one bare declaration line per parameter, in
         // declared order, right after "RETURNS". Confirmed directly this
@@ -1587,7 +1587,9 @@ public class BytecodeEmitter {
                 }
                 sb.append(')');
             }
-            if (withPos && d.file != null && d.line > 0) {
+            boolean wantsPos = !mnemonic.equals("FUNC_DECORATE")
+                    || d.name.equals("inline") || (d.name.equals("dont") && d.args.size() == 1 && d.args.get(0).equals("inline"));
+            if (withPos && wantsPos && d.file != null && d.line > 0) {
                 sb.append(" \"").append(escapeForBytecode(d.file + ":" + d.line)).append('"');
             }
             line(mnemonic + " " + sb);

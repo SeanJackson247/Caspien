@@ -171,6 +171,7 @@ public class BytecodeOptimizer {
         } while (outerChanged);
 
         loopUnrolling.reportUnhonoured(lines);
+        functionInlining.reportForced(lines);
 
         lines = variableAllocationReordering.run(lines).lines;
 

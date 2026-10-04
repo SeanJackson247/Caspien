@@ -24,6 +24,7 @@ let static:<mut f64[5]> vz = mut [0.0, -0.02521836165988763, 0.00841576137658415
 let static:<mut f64[5]> mass = mut [39.47841760435743, 0.03769367487038949, 0.011286326131968767, 0.0017237240570597112, 0.0020336868699246304]
 
 // distance between two points given by their coordinate differences
+@inline
 func length(dx: mut f64, dy: mut f64, dz: mut f64) mut f64{
 	unsafe assume extern{
 		assume match dx : finite
@@ -38,6 +39,7 @@ func length(dx: mut f64, dy: mut f64, dz: mut f64) mut f64{
 }
 
 // squared speed of body i
+@inline
 func speedSquared(i: mut u64) mut f64{
 	unsafe assume global{
 		assume match i in vx
@@ -55,6 +57,7 @@ func speedSquared(i: mut u64) mut f64{
 }
 
 // kinetic energy of body i
+@inline
 func kinetic(i: mut u64) mut f64{
 	unsafe assume global{
 		assume match i in mass
@@ -66,6 +69,7 @@ func kinetic(i: mut u64) mut f64{
 }
 
 // gravitational potential energy of the pair (i, j)
+@inline
 func potential(i: mut u64, j: mut u64) mut f64{
 	unsafe assume global{
 		assume match i in x
@@ -92,6 +96,7 @@ func potential(i: mut u64, j: mut u64) mut f64{
 }
 
 // the velocity change the pair (i, j) causes in one time step of length dt
+@inline
 func attract(i: mut u64, j: mut u64, dt: mut f64) void{
 	unsafe assume global{
 		assume match i in x
@@ -146,6 +151,7 @@ func attract(i: mut u64, j: mut u64, dt: mut f64) void{
 }
 
 // move body i along its velocity for dt
+@inline
 func drift(i: mut u64, dt: mut f64) void{
 	unsafe assume global{
 		assume match i into x

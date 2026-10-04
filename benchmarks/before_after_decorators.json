@@ -1,0 +1,1326 @@
+{
+ "programs": {
+  "nbody": {
+   "Caspien natural f64 \u00b7 full": {
+    "before": {
+     "time_s": 0.6847843770001418,
+     "times": [
+      0.7006428429999687,
+      0.6847843770001418,
+      0.7197028189998491
+     ],
+     "compile_s": 1.7926841409998815,
+     "size_bytes": 30216,
+     "rss_kb": 2120,
+     "ok": true
+    },
+    "after": {
+     "time_s": 0.6234414989999095,
+     "times": [
+      0.6341184789998806,
+      0.6391131290001795,
+      0.6234414989999095
+     ],
+     "compile_s": 2.139702216999922,
+     "size_bytes": 30040,
+     "rss_kb": 1624,
+     "ok": true
+    }
+   },
+   "Caspien plain f64 \u00b7 full": {
+    "before": {
+     "time_s": 0.5736842850001267,
+     "times": [
+      0.5821489509999083,
+      0.5849962819997927,
+      0.5736842850001267
+     ],
+     "compile_s": 1.9245231900004,
+     "size_bytes": 25952,
+     "rss_kb": 1620,
+     "ok": true
+    },
+    "after": {
+     "time_s": 0.5849466409999877,
+     "times": [
+      0.5921559829998841,
+      0.5880725319998419,
+      0.5849466409999877
+     ],
+     "compile_s": 1.9313436030001867,
+     "size_bytes": 25952,
+     "rss_kb": 1620,
+     "ok": true
+    }
+   },
+   "Caspien loop f64 \u00b7 full": {
+    "before": {
+     "time_s": 0.578960244999962,
+     "times": [
+      0.578960244999962,
+      0.5827310879999459,
+      0.5855222579998554
+     ],
+     "compile_s": 2.0723107469998467,
+     "size_bytes": 35816,
+     "rss_kb": 1620,
+     "ok": true
+    },
+    "after": {
+     "time_s": 0.5947877670000707,
+     "times": [
+      0.6008599660003711,
+      0.6024772770001618,
+      0.5947877670000707
+     ],
+     "compile_s": 2.057151378999606,
+     "size_bytes": 35816,
+     "rss_kb": 1620,
+     "ok": true
+    }
+   },
+   "Caspien arr f64 \u00b7 full": {
+    "before": {
+     "time_s": 0.699730923000061,
+     "times": [
+      0.7226064739998037,
+      0.7327168459996756,
+      0.699730923000061
+     ],
+     "compile_s": 2.260748607000096,
+     "size_bytes": 32960,
+     "rss_kb": 2120,
+     "ok": true
+    },
+    "after": {
+     "time_s": 0.5828362470001593,
+     "times": [
+      0.5931255079999573,
+      0.5828362470001593,
+      0.5941930439998941
+     ],
+     "compile_s": 2.2667126559999815,
+     "size_bytes": 28864,
+     "rss_kb": 2124,
+     "ok": true
+    }
+   },
+   "Caspien scalars f64 \u00b7 full": {
+    "before": {
+     "time_s": 0.5748248459999559,
+     "times": [
+      0.5748248459999559,
+      0.5832289259997196,
+      0.5869529999999941
+     ],
+     "compile_s": 2.1518545050003013,
+     "size_bytes": 29576,
+     "rss_kb": 2128,
+     "ok": true
+    },
+    "after": {
+     "time_s": 0.5816921180003192,
+     "times": [
+      0.5846187030001602,
+      0.5816921180003192,
+      0.5836998439999661
+     ],
+     "compile_s": 1.962290586999643,
+     "size_bytes": 29576,
+     "rss_kb": 2108,
+     "ok": true
+    }
+   },
+   "Caspien plain f32 \u00b7 full": {
+    "before": {
+     "time_s": 0.604260130000057,
+     "times": [
+      0.618756674999986,
+      0.6115952790000847,
+      0.604260130000057
+     ],
+     "compile_s": 1.8973049309997805,
+     "size_bytes": 25864,
+     "rss_kb": 2100,
+     "ok": true
+    },
+    "after": {
+     "time_s": 0.6171992570002658,
+     "times": [
+      0.6171992570002658,
+      0.6229926739997609,
+      0.6186404699997183
+     ],
+     "compile_s": 1.6972103029997925,
+     "size_bytes": 25864,
+     "rss_kb": 2224,
+     "ok": true
+    }
+   },
+   "Caspien loop f32 \u00b7 full": {
+    "before": {
+     "time_s": 0.6217277589998957,
+     "times": [
+      0.6223002280003129,
+      0.6217277589998957,
+      0.6280592180000895
+     ],
+     "compile_s": 2.1099934710000525,
+     "size_bytes": 39824,
+     "rss_kb": 2100,
+     "ok": true
+    },
+    "after": {
+     "time_s": 0.6063605539998207,
+     "times": [
+      0.63946272999965,
+      0.6350402819998635,
+      0.6063605539998207
+     ],
+     "compile_s": 2.1056364660003055,
+     "size_bytes": 39824,
+     "rss_kb": 1996,
+     "ok": true
+    }
+   },
+   "Caspien arr f32 \u00b7 full": {
+    "before": {
+     "time_s": 0.6598309109999718,
+     "times": [
+      0.6948214620001636,
+      0.6721270359998925,
+      0.6598309109999718
+     ],
+     "compile_s": 1.9711622300001181,
+     "size_bytes": 32824,
+     "rss_kb": 2092,
+     "ok": true
+    },
+    "after": {
+     "time_s": 0.605171892999806,
+     "times": [
+      0.6315110079999613,
+      0.605171892999806,
+      0.6135796329999721
+     ],
+     "compile_s": 2.1790627529999256,
+     "size_bytes": 32824,
+     "rss_kb": 2124,
+     "ok": true
+    }
+   },
+   "Caspien scalars f32 \u00b7 full": {
+    "before": {
+     "time_s": 0.594105591999778,
+     "times": [
+      0.6105515129997912,
+      0.594105591999778,
+      0.6146994169998834
+     ],
+     "compile_s": 2.0377567200002886,
+     "size_bytes": 33544,
+     "rss_kb": 2232,
+     "ok": true
+    },
+    "after": {
+     "time_s": 0.6124674229999982,
+     "times": [
+      0.6225146010001481,
+      0.6124674229999982,
+      0.6126052749996234
+     ],
+     "compile_s": 1.957434456000101,
+     "size_bytes": 33544,
+     "rss_kb": 2100,
+     "ok": true
+    }
+   }
+  },
+  "fannkuchredux": {
+   "Caspien naive \u00b7 full": {
+    "before": {
+     "time_s": 3.641198271000121,
+     "times": [
+      3.641198271000121,
+      3.6645334289996754,
+      3.656432002999736
+     ],
+     "compile_s": 1.266861333000179,
+     "size_bytes": 17216,
+     "rss_kb": 1612,
+     "ok": true
+    },
+    "after": {
+     "time_s": 3.6490510250000625,
+     "times": [
+      3.6678061880002133,
+      3.6697747980001623,
+      3.6490510250000625
+     ],
+     "compile_s": 1.2287793279997459,
+     "size_bytes": 17216,
+     "rss_kb": 1612,
+     "ok": true
+    }
+   },
+   "Caspien optimized \u00b7 full": {
+    "before": {
+     "time_s": 3.381709509999837,
+     "times": [
+      3.4189767540001412,
+      3.381709509999837,
+      3.3903988980000577
+     ],
+     "compile_s": 1.1558333759999186,
+     "size_bytes": 17208,
+     "rss_kb": 1612,
+     "ok": true
+    },
+    "after": {
+     "time_s": 3.386139061999984,
+     "times": [
+      3.386139061999984,
+      3.4050340849998975,
+      3.408031461000064
+     ],
+     "compile_s": 1.3164578629998687,
+     "size_bytes": 17208,
+     "rss_kb": 1612,
+     "ok": true
+    }
+   }
+  },
+  "spectralnorm": {
+   "Caspien naive \u00b7 full": {
+    "before": {
+     "time_s": 0.3195890709998821,
+     "times": [
+      0.3195890709998821,
+      0.32821568500003195,
+      0.3219462909996764
+     ],
+     "compile_s": 3.3105688030000238,
+     "size_bytes": 78112,
+     "rss_kb": 2108,
+     "ok": true
+    },
+    "after": {
+     "time_s": 0.3224841539999943,
+     "times": [
+      0.3224841539999943,
+      0.351308784000139,
+      0.3310319960000925
+     ],
+     "compile_s": 3.398180759999832,
+     "size_bytes": 78112,
+     "rss_kb": 2160,
+     "ok": true
+    }
+   },
+   "Caspien optimized \u00b7 full": {
+    "before": {
+     "time_s": 0.2335680319997664,
+     "times": [
+      0.23403536600017105,
+      0.2335680319997664,
+      0.2366684339999665
+     ],
+     "compile_s": 3.155785853999987,
+     "size_bytes": 78112,
+     "rss_kb": 2156,
+     "ok": true
+    },
+    "after": {
+     "time_s": 0.23315178699976968,
+     "times": [
+      0.2358484800001861,
+      0.24015335100011725,
+      0.23315178699976968
+     ],
+     "compile_s": 3.1132546419999017,
+     "size_bytes": 78112,
+     "rss_kb": 2132,
+     "ok": true
+    }
+   }
+  },
+  "sieve": {
+   "Caspien naive (DynamicArray) \u00b7 full": {
+    "before": {
+     "time_s": 1.5703432369996335,
+     "times": [
+      1.5703432369996335,
+      1.58490324100012,
+      1.6163271719997283
+     ],
+     "compile_s": 1.9539518420001514,
+     "size_bytes": 29800,
+     "rss_kb": 99232,
+     "ok": true
+    },
+    "after": {
+     "time_s": 1.513289463000092,
+     "times": [
+      1.5281110870000703,
+      1.513289463000092,
+      1.5433258359998945
+     ],
+     "compile_s": 1.8197369949998574,
+     "size_bytes": 29800,
+     "rss_kb": 99232,
+     "ok": true
+    }
+   },
+   "Caspien optimized safe \u00b7 full": {
+    "before": {
+     "time_s": 0.8360325170001488,
+     "times": [
+      0.8360325170001488,
+      0.8748034550003467,
+      0.8953669760003322
+     ],
+     "compile_s": 1.7578730420000284,
+     "size_bytes": 28952,
+     "rss_kb": 99232,
+     "ok": true
+    },
+    "after": {
+     "time_s": 0.8941602519998924,
+     "times": [
+      0.9312838729997566,
+      0.8941602519998924,
+      0.9142532999999275
+     ],
+     "compile_s": 1.7681163050001487,
+     "size_bytes": 28952,
+     "rss_kb": 99232,
+     "ok": true
+    }
+   },
+   "Caspien optimized unsafe \u00b7 full": {
+    "before": {
+     "time_s": 0.9948514500001693,
+     "times": [
+      1.0963199210000312,
+      1.0039525110000795,
+      0.9948514500001693
+     ],
+     "compile_s": 1.7174331520000123,
+     "size_bytes": 28672,
+     "rss_kb": 99232,
+     "ok": true
+    },
+    "after": {
+     "time_s": 1.0288997420002488,
+     "times": [
+      1.068589890000112,
+      1.0288997420002488,
+      1.0443845079998937
+     ],
+     "compile_s": 1.6870122840000477,
+     "size_bytes": 28672,
+     "rss_kb": 99232,
+     "ok": true
+    }
+   }
+  },
+  "strings": {
+   "Caspien naive (String class) \u00b7 full": {
+    "before": {
+     "time_s": 2.815002328999981,
+     "times": [
+      2.815002328999981,
+      2.86185780400001,
+      2.950839582000299
+     ],
+     "compile_s": 2.4511873349997586,
+     "size_bytes": 54312,
+     "rss_kb": 61104,
+     "ok": true
+    },
+    "after": {
+     "time_s": 2.89862141399999,
+     "times": [
+      2.961040561000118,
+      2.9167640309997296,
+      2.89862141399999
+     ],
+     "compile_s": 2.3713299830001233,
+     "size_bytes": 54312,
+     "rss_kb": 61104,
+     "ok": true
+    }
+   },
+   "Caspien optimized safe \u00b7 full": {
+    "before": {
+     "time_s": 0.51631333000023,
+     "times": [
+      0.5204494310000882,
+      0.5185789110000769,
+      0.51631333000023
+     ],
+     "compile_s": 1.9591023990001304,
+     "size_bytes": 35904,
+     "rss_kb": 80420,
+     "ok": true
+    },
+    "after": {
+     "time_s": 0.5133668680000483,
+     "times": [
+      0.5250009810001757,
+      0.5351881269998557,
+      0.5133668680000483
+     ],
+     "compile_s": 2.149658514999828,
+     "size_bytes": 35904,
+     "rss_kb": 80420,
+     "ok": true
+    }
+   },
+   "Caspien optimized unsafe \u00b7 full": {
+    "before": {
+     "time_s": 0.6565995030000522,
+     "times": [
+      0.6565995030000522,
+      0.6567284300003848,
+      0.684810182000092
+     ],
+     "compile_s": 1.9752792670001327,
+     "size_bytes": 34368,
+     "rss_kb": 80420,
+     "ok": true
+    },
+    "after": {
+     "time_s": 0.6394927009996536,
+     "times": [
+      0.6880205829997976,
+      0.6727059429999827,
+      0.6394927009996536
+     ],
+     "compile_s": 1.9928796809999767,
+     "size_bytes": 34368,
+     "rss_kb": 80420,
+     "ok": true
+    }
+   }
+  },
+  "graph": {
+   "Caspien naive (DynamicArray) \u00b7 full": {
+    "before": {
+     "time_s": 0.3871215519998259,
+     "times": [
+      0.3925694980002845,
+      0.3871215519998259,
+      0.38869539799998165
+     ],
+     "compile_s": 2.068953588000113,
+     "size_bytes": 53112,
+     "rss_kb": 111024,
+     "ok": true
+    },
+    "after": {
+     "time_s": 0.3806036210003185,
+     "times": [
+      0.3806036210003185,
+      0.38734415599992644,
+      0.3919882529999086
+     ],
+     "compile_s": 2.3704801060002865,
+     "size_bytes": 53112,
+     "rss_kb": 111024,
+     "ok": true
+    }
+   },
+   "Caspien optimized safe \u00b7 full": {
+    "before": {
+     "time_s": 0.26415958699999464,
+     "times": [
+      0.2749259720003465,
+      0.26415958699999464,
+      0.2725288840001667
+     ],
+     "compile_s": 1.8241844350000065,
+     "size_bytes": 35504,
+     "rss_kb": 111012,
+     "ok": true
+    },
+    "after": {
+     "time_s": 0.28864761699969677,
+     "times": [
+      0.28864761699969677,
+      0.2905518630000188,
+      0.2910103369999888
+     ],
+     "compile_s": 1.9065850000001774,
+     "size_bytes": 35504,
+     "rss_kb": 111012,
+     "ok": true
+    }
+   },
+   "Caspien optimized unsafe \u00b7 full": {
+    "before": {
+     "time_s": 0.3352048100000502,
+     "times": [
+      0.3541875579999214,
+      0.3421189119999326,
+      0.3352048100000502
+     ],
+     "compile_s": 1.916879126999902,
+     "size_bytes": 33552,
+     "rss_kb": 111012,
+     "ok": true
+    },
+    "after": {
+     "time_s": 0.350188714000069,
+     "times": [
+      0.35606407800014495,
+      0.350188714000069,
+      0.35674466099999336
+     ],
+     "compile_s": 1.7672568519997185,
+     "size_bytes": 33552,
+     "rss_kb": 111012,
+     "ok": true
+    }
+   },
+   "Caspien struct nodes, safe \u00b7 full": {
+    "before": {
+     "time_s": 0.286017190000166,
+     "times": [
+      0.31700945300008243,
+      0.2910293959998853,
+      0.286017190000166
+     ],
+     "compile_s": 1.8228144750000865,
+     "size_bytes": 34296,
+     "rss_kb": 126628,
+     "ok": true
+    },
+    "after": {
+     "time_s": 0.3113623839999491,
+     "times": [
+      0.31503190200010067,
+      0.3113623839999491,
+      0.3119741499999691
+     ],
+     "compile_s": 2.0455574050001815,
+     "size_bytes": 34296,
+     "rss_kb": 126628,
+     "ok": true
+    }
+   },
+   "Caspien struct nodes, unsafe \u00b7 full": {
+    "before": {
+     "time_s": 0.5702951149996807,
+     "times": [
+      0.580062997999903,
+      0.5710933459999978,
+      0.5702951149996807
+     ],
+     "compile_s": 1.862900897000145,
+     "size_bytes": 33072,
+     "rss_kb": 126628,
+     "ok": true
+    },
+    "after": {
+     "time_s": 0.5639735099998688,
+     "times": [
+      0.5843077149997953,
+      0.5961973899998156,
+      0.5639735099998688
+     ],
+     "compile_s": 2.033756788000119,
+     "size_bytes": 33072,
+     "rss_kb": 126628,
+     "ok": true
+    }
+   }
+  },
+  "sorting": {
+   "Caspien naive (DynamicArray) \u00b7 full": {
+    "before": {
+     "time_s": 2.7155167549999533,
+     "times": [
+      2.732851402000051,
+      2.7155167549999533,
+      2.7634512219997305
+     ],
+     "compile_s": 2.9685137960000247,
+     "size_bytes": 125216,
+     "rss_kb": 79888,
+     "ok": true
+    },
+    "after": {
+     "time_s": 2.6887113239999962,
+     "times": [
+      2.6887113239999962,
+      2.750211824999951,
+      2.771972793999794
+     ],
+     "compile_s": 2.888005628999963,
+     "size_bytes": 125216,
+     "rss_kb": 79888,
+     "ok": true
+    }
+   },
+   "Caspien optimized safe \u00b7 full": {
+    "before": {
+     "time_s": 2.0119282969999404,
+     "times": [
+      2.0171021299997847,
+      2.0231744329998946,
+      2.0119282969999404
+     ],
+     "compile_s": 2.270439976000034,
+     "size_bytes": 54384,
+     "rss_kb": 79788,
+     "ok": true
+    },
+    "after": {
+     "time_s": 2.0575644430000466,
+     "times": [
+      2.0575644430000466,
+      2.0682249210003647,
+      2.065838583999721
+     ],
+     "compile_s": 2.389822549999735,
+     "size_bytes": 54384,
+     "rss_kb": 79788,
+     "ok": true
+    }
+   },
+   "Caspien optimized unsafe \u00b7 full": {
+    "before": {
+     "time_s": 2.4975810989999445,
+     "times": [
+      2.5546695490002094,
+      2.556433626999933,
+      2.4975810989999445
+     ],
+     "compile_s": 2.430748768000285,
+     "size_bytes": 53864,
+     "rss_kb": 79792,
+     "ok": true
+    },
+    "after": {
+     "time_s": 2.5029708009997194,
+     "times": [
+      2.538277488999938,
+      2.5029708009997194,
+      2.518633518000115
+     ],
+     "compile_s": 2.474224114000208,
+     "size_bytes": 53864,
+     "rss_kb": 79792,
+     "ok": true
+    }
+   }
+  },
+  "binarytrees": {
+   "Caspien naive (DynamicArray) \u00b7 full": {
+    "before": {
+     "time_s": 1.422888119000163,
+     "times": [
+      1.422888119000163,
+      1.4273118870000872,
+      1.446456539999872
+     ],
+     "compile_s": 2.6390743339998153,
+     "size_bytes": 77304,
+     "rss_kb": 13888,
+     "ok": true
+    },
+    "after": {
+     "time_s": 1.3967931520001002,
+     "times": [
+      1.440288148000036,
+      1.4150811479998993,
+      1.3967931520001002
+     ],
+     "compile_s": 2.725944618000085,
+     "size_bytes": 77304,
+     "rss_kb": 13888,
+     "ok": true
+    }
+   },
+   "Caspien optimized safe \u00b7 full": {
+    "before": {
+     "time_s": 0.4378228579998904,
+     "times": [
+      0.4461155540002437,
+      0.4407581340001343,
+      0.4378228579998904
+     ],
+     "compile_s": 2.290022266000051,
+     "size_bytes": 38624,
+     "rss_kb": 13860,
+     "ok": true
+    },
+    "after": {
+     "time_s": 0.44443109900021227,
+     "times": [
+      0.4493248339999809,
+      0.4455416770001648,
+      0.44443109900021227
+     ],
+     "compile_s": 2.2767857869998807,
+     "size_bytes": 38624,
+     "rss_kb": 13860,
+     "ok": true
+    }
+   },
+   "Caspien optimized unsafe \u00b7 full": {
+    "before": {
+     "time_s": 0.6722708620000049,
+     "times": [
+      0.6903569339997375,
+      0.731358932999683,
+      0.6722708620000049
+     ],
+     "compile_s": 1.914838841999881,
+     "size_bytes": 35104,
+     "rss_kb": 13860,
+     "ok": true
+    },
+    "after": {
+     "time_s": 0.6514271179999014,
+     "times": [
+      0.6960379619999912,
+      0.6514271179999014,
+      0.6896903159999965
+     ],
+     "compile_s": 2.2003555530000085,
+     "size_bytes": 35104,
+     "rss_kb": 13860,
+     "ok": true
+    }
+   }
+  },
+  "mandelbrot": {
+   "Caspien f64 scalars \u00b7 full": {
+    "before": {
+     "time_s": 1.5383778549999079,
+     "times": [
+      1.554273027000363,
+      1.5383778549999079,
+      1.5427029759998732
+     ],
+     "compile_s": 1.270481887999722,
+     "size_bytes": 16352,
+     "rss_kb": 1612,
+     "ok": true
+    },
+    "after": {
+     "time_s": 1.5337016819999008,
+     "times": [
+      1.5498027539997565,
+      1.548045249000097,
+      1.5337016819999008
+     ],
+     "compile_s": 1.1452624009998544,
+     "size_bytes": 16352,
+     "rss_kb": 1612,
+     "ok": true
+    }
+   }
+  },
+  "fasta": {
+   "Caspien naive (DynamicArray) \u00b7 full": {
+    "before": {
+     "time_s": 1.7303739009998935,
+     "times": [
+      1.7303739009998935,
+      1.746413377999943,
+      1.7986191829995732
+     ],
+     "compile_s": 3.8543112920001477,
+     "size_bytes": 143080,
+     "rss_kb": 81192,
+     "ok": true
+    },
+    "after": {
+     "time_s": 1.7293965670000944,
+     "times": [
+      1.7293965670000944,
+      1.8328816309999638,
+      1.748381868999786
+     ],
+     "compile_s": 3.5106982050001534,
+     "size_bytes": 143080,
+     "rss_kb": 81192,
+     "ok": true
+    }
+   },
+   "Caspien optimized safe \u00b7 full": {
+    "before": {
+     "time_s": 1.4096890599998915,
+     "times": [
+      1.4096890599998915,
+      1.427717772000051,
+      1.5494578590000856
+     ],
+     "compile_s": 2.9690202890001274,
+     "size_bytes": 99568,
+     "rss_kb": 81156,
+     "ok": true
+    },
+    "after": {
+     "time_s": 1.4051527619999433,
+     "times": [
+      1.4399100089999592,
+      1.4051527619999433,
+      1.4076871359998222
+     ],
+     "compile_s": 3.5858349590002945,
+     "size_bytes": 99568,
+     "rss_kb": 81156,
+     "ok": true
+    }
+   },
+   "Caspien optimized unsafe \u00b7 full": {
+    "before": {
+     "time_s": 1.7101536999998643,
+     "times": [
+      1.7186189610001747,
+      1.7101536999998643,
+      1.7388527889997931
+     ],
+     "compile_s": 2.4151975790000506,
+     "size_bytes": 64216,
+     "rss_kb": 81088,
+     "ok": true
+    },
+    "after": {
+     "time_s": 1.6768295679999028,
+     "times": [
+      1.6862492999998722,
+      1.7105077930000334,
+      1.6768295679999028
+     ],
+     "compile_s": 2.641178195000066,
+     "size_bytes": 64216,
+     "rss_kb": 81088,
+     "ok": true
+    }
+   }
+  },
+  "knucleotide": {
+   "Caspien naive (stdlib HashMap) \u00b7 full": {
+    "before": {
+     "time_s": 5.013288153999838,
+     "times": [
+      5.013288153999838,
+      5.021390495000105,
+      5.107826106000175
+     ],
+     "compile_s": 3.0121917239998766,
+     "size_bytes": 98880,
+     "rss_kb": 29792,
+     "ok": true
+    },
+    "after": {
+     "time_s": 4.978068905999862,
+     "times": [
+      4.978068905999862,
+      5.0797074469996915,
+      5.0365287310000895
+     ],
+     "compile_s": 3.197589281999626,
+     "size_bytes": 98880,
+     "rss_kb": 29792,
+     "ok": true
+    }
+   },
+   "Caspien optimized safe \u00b7 full": {
+    "before": {
+     "time_s": 1.0387536590001218,
+     "times": [
+      1.0657946069995887,
+      1.0387536590001218,
+      1.077664110999649
+     ],
+     "compile_s": 2.9111339359997146,
+     "size_bytes": 111448,
+     "rss_kb": 29380,
+     "ok": true
+    },
+    "after": {
+     "time_s": 1.019093260000318,
+     "times": [
+      1.0934070419998534,
+      1.040292301000136,
+      1.019093260000318
+     ],
+     "compile_s": 2.8972738699999354,
+     "size_bytes": 111448,
+     "rss_kb": 29380,
+     "ok": true
+    }
+   },
+   "Caspien optimized unsafe \u00b7 full": {
+    "before": {
+     "time_s": 1.4419398059999367,
+     "times": [
+      1.477563112000098,
+      1.4419398059999367,
+      1.4438841670003058
+     ],
+     "compile_s": 2.636832520000098,
+     "size_bytes": 94312,
+     "rss_kb": 29384,
+     "ok": true
+    },
+    "after": {
+     "time_s": 1.418187296999804,
+     "times": [
+      1.4720663349999086,
+      1.418187296999804,
+      1.4188769490001505
+     ],
+     "compile_s": 2.5507676890001676,
+     "size_bytes": 94312,
+     "rss_kb": 29384,
+     "ok": true
+    }
+   }
+  },
+  "lru": {
+   "Caspien naive (DynamicArray + HashMap) \u00b7 full": {
+    "before": {
+     "time_s": 2.2648692399998254,
+     "times": [
+      2.3227617769998687,
+      2.2685023249996448,
+      2.2648692399998254
+     ],
+     "compile_s": 2.3857340129998192,
+     "size_bytes": 77160,
+     "rss_kb": 75456,
+     "ok": true
+    },
+    "after": {
+     "time_s": 2.3274797010003567,
+     "times": [
+      2.3523168550000264,
+      2.3274797010003567,
+      2.409087540999735
+     ],
+     "compile_s": 2.559032082000158,
+     "size_bytes": 77160,
+     "rss_kb": 75456,
+     "ok": true
+    }
+   },
+   "Caspien optimized safe \u00b7 full": {
+    "before": {
+     "time_s": 1.1451072519998888,
+     "times": [
+      1.1612983859999986,
+      1.1451072519998888,
+      1.1825930729996799
+     ],
+     "compile_s": 2.0065758010000536,
+     "size_bytes": 42560,
+     "rss_kb": 16040,
+     "ok": true
+    },
+    "after": {
+     "time_s": 1.1122532990002583,
+     "times": [
+      1.122257804000128,
+      1.1122532990002583,
+      1.2142201500000738
+     ],
+     "compile_s": 2.215145417000258,
+     "size_bytes": 42560,
+     "rss_kb": 16040,
+     "ok": true
+    }
+   },
+   "Caspien optimized unsafe \u00b7 full": {
+    "before": {
+     "time_s": 1.2667597500003467,
+     "times": [
+      1.4148749430000862,
+      1.3271699779998016,
+      1.2667597500003467
+     ],
+     "compile_s": 2.2555741670003044,
+     "size_bytes": 35176,
+     "rss_kb": 16036,
+     "ok": true
+    },
+    "after": {
+     "time_s": 1.3389247939999223,
+     "times": [
+      1.3389247939999223,
+      1.3633984940001938,
+      1.3436086529995919
+     ],
+     "compile_s": 2.1102128749998883,
+     "size_bytes": 35176,
+     "rss_kb": 16036,
+     "ok": true
+    }
+   }
+  },
+  "merkletrees": {
+   "Caspien naive (DynamicArray) \u00b7 full": {
+    "before": {
+     "time_s": 2.139024900000095,
+     "times": [
+      2.139024900000095,
+      2.155855863999932,
+      2.1647663640001156
+     ],
+     "compile_s": 5.445849642000212,
+     "size_bytes": 245976,
+     "rss_kb": 11100,
+     "ok": true
+    },
+    "after": {
+     "time_s": 2.1583093469998857,
+     "times": [
+      2.1591037900002448,
+      2.1583093469998857,
+      2.1746579229998133
+     ],
+     "compile_s": 5.441252690000056,
+     "size_bytes": 245976,
+     "rss_kb": 11104,
+     "ok": true
+    }
+   },
+   "Caspien optimized safe \u00b7 full": {
+    "before": {
+     "time_s": 2.104136257000391,
+     "times": [
+      2.1202446470001632,
+      2.133578058999774,
+      2.104136257000391
+     ],
+     "compile_s": 5.228058815000168,
+     "size_bytes": 203104,
+     "rss_kb": 11128,
+     "ok": true
+    },
+    "after": {
+     "time_s": 2.09035688799986,
+     "times": [
+      2.1347354479999012,
+      2.09035688799986,
+      2.1008897860001525
+     ],
+     "compile_s": 5.301262137999856,
+     "size_bytes": 203104,
+     "rss_kb": 11128,
+     "ok": true
+    }
+   },
+   "Caspien optimized unsafe \u00b7 full": {
+    "before": {
+     "time_s": 1.7908295530000942,
+     "times": [
+      1.8335058239999853,
+      1.8284184529998129,
+      1.7908295530000942
+     ],
+     "compile_s": 3.811403394000081,
+     "size_bytes": 79864,
+     "rss_kb": 11012,
+     "ok": true
+    },
+    "after": {
+     "time_s": 1.7357667440001023,
+     "times": [
+      1.798669768000309,
+      1.7715910460001396,
+      1.7357667440001023
+     ],
+     "compile_s": 3.544161878000068,
+     "size_bytes": 79864,
+     "rss_kb": 11012,
+     "ok": true
+    }
+   }
+  },
+  "helloworld": {
+   "Caspien plain printf \u00b7 full": {
+    "before": {
+     "time_s": 0.0026373989999228797,
+     "times": [
+      0.0026373989999228797,
+      0.0026566319997982646,
+      0.0026753580000331567
+     ],
+     "compile_s": 1.5671016830001463,
+     "size_bytes": 22352,
+     "rss_kb": 1432,
+     "ok": true
+    },
+    "after": {
+     "time_s": 0.0024559319999752915,
+     "times": [
+      0.002764173999821651,
+      0.0025036410002030607,
+      0.0024559319999752915
+     ],
+     "compile_s": 1.8261935649998122,
+     "size_bytes": 22352,
+     "rss_kb": 1432,
+     "ok": true
+    }
+   }
+  },
+  "json_serde": {
+   "Caspien naive (DynamicArray) \u00b7 full": {
+    "before": {
+     "time_s": 2.2793977009996524,
+     "times": [
+      2.340197704000275,
+      2.2793977009996524,
+      2.399864028999673
+     ],
+     "compile_s": 2.81246539499989,
+     "size_bytes": 95784,
+     "rss_kb": 587596,
+     "ok": true
+    },
+    "after": {
+     "time_s": 2.307475049000004,
+     "times": [
+      2.368997004999983,
+      2.3400412249998226,
+      2.307475049000004
+     ],
+     "compile_s": 2.519550326999706,
+     "size_bytes": 95784,
+     "rss_kb": 587596,
+     "ok": true
+    }
+   },
+   "Caspien optimized safe \u00b7 full": {
+    "before": {
+     "time_s": 1.861804088000099,
+     "times": [
+      1.953939924000224,
+      1.861804088000099,
+      1.9621054580002237
+     ],
+     "compile_s": 2.1219409870000163,
+     "size_bytes": 43160,
+     "rss_kb": 587560,
+     "ok": true
+    },
+    "after": {
+     "time_s": 1.9499264080000103,
+     "times": [
+      1.9708391150002171,
+      1.9499264080000103,
+      1.9961377520003225
+     ],
+     "compile_s": 2.2302645650001978,
+     "size_bytes": 43160,
+     "rss_kb": 587560,
+     "ok": true
+    }
+   },
+   "Caspien optimized unsafe \u00b7 full": {
+    "before": {
+     "time_s": 1.6669615020000492,
+     "times": [
+      1.739832263000153,
+      1.6669615020000492,
+      1.7633913089998714
+     ],
+     "compile_s": 2.1973480189999464,
+     "size_bytes": 39608,
+     "rss_kb": 496168,
+     "ok": true
+    },
+    "after": {
+     "time_s": 1.6408433560000049,
+     "times": [
+      1.7165912959999332,
+      1.6408433560000049,
+      1.7499226079999062
+     ],
+     "compile_s": 2.1255288150000524,
+     "size_bytes": 39608,
+     "rss_kb": 496168,
+     "ok": true
+    }
+   }
+  }
+ },
+ "stdlib": {
+  "sorting (naive)": {
+   "off": {
+    "without": 4.735,
+    "with": 2.678
+   },
+   "conservative": {
+    "without": 4.869,
+    "with": 2.69
+   },
+   "aggressive": {
+    "without": 2.716,
+    "with": 2.683
+   }
+  },
+  "strings (naive)": {
+   "off": {
+    "without": 3.825,
+    "with": 3.395
+   },
+   "conservative": {
+    "without": 3.837,
+    "with": 3.451
+   },
+   "aggressive": {
+    "without": 2.881,
+    "with": 2.929
+   }
+  },
+  "json_serde (naive)": {
+   "off": {
+    "without": 4.261,
+    "with": 2.373
+   },
+   "conservative": {
+    "without": 4.388,
+    "with": 2.354
+   },
+   "aggressive": {
+    "without": 2.293,
+    "with": 2.291
+   }
+  },
+  "knucleotide (naive)": {
+   "conservative": {
+    "without": 7.491,
+    "with": 6.844
+   },
+   "aggressive": {
+    "without": 5.066,
+    "with": 5.003
+   }
+  },
+  "lru (naive)": {
+   "conservative": {
+    "without": 4.548,
+    "with": 2.738
+   },
+   "aggressive": {
+    "without": 2.232,
+    "with": 2.134
+   }
+  }
+ },
+ "meta": {
+  "when": "Measured 4 Oct 2026, one program at a time, before then after, back to back.",
+  "edits": "<ul>\n<li><b>Compiler:</b> <code>@inline</code> and <code>@dont(inline)</code> on a function. <code>@inline</code> inlines every call that is safe to inline, even with <code>function-inlining: off</code> and past the preset's size and growth limits; the safety rules (no <code>@async</code>, no recursion cycle, scalar parameters, ...) still apply. The optimizer reports what it did (<code>[note] file:line - @inline: f inlined at N call sites</code>) and warns about calls it could not inline.</li>\n<li><b>Benchmark programs:</b> <code>@inline</code> on the six helper functions of <code>nbody_natural_f64</code> (<code>length, speedSquared, kinetic, potential, attract, drift</code>) and on <code>advance</code> in <code>nbody_arr</code> and <code>nbody_arr_f64</code>. Nothing else: in every other optimised program the aggressive preset already inlines every call that matters (checked by listing the calls left in the optimised bytecode), and trying <code>@inline</code> where calls did remain (merkletrees) or <code>@unroll</code> (hand-unrolled by 4: 3%) gave nothing measurable.</li>\n<li><b>Stdlib:</b> <code>@inline</code> on <code>DynamicArray.get / set / setPtr</code> and <code>String.charAt / setCharAt</code>.</li></ul>",
+  "method": "<p>Quick benchmark, Caspien only, optimised builds (every optimisation on, <code>loop-unrolling: aggressive</code>, <code>function-inlining: aggressive</code>), best of 3 runs. For each program the old tree (commit <code>4fde78a</code>: old programs, old stdlib, old compiler) was measured first and the new tree straight after, so slow drift of the machine hits both. Outputs of every row match the C reference.</p>",
+  "caveats": "<ul>\n<li>Machine noise is 10&ndash;30% between measurements minutes apart (an earlier before/after taken 25 minutes apart showed sieve 39% slower with byte-identical assembly). Back-to-back pairing reduces it but does not remove it; rows inside the grey band are unchanged.</li>\n<li>Only the three marked n-body programs were edited. For the unedited ones I compared the generated assembly of the old and new compiler on sieve (safe, naive) and graph (safe): identical, so their movement is machine noise; I did not compare the rest.</li>\n<li>The stdlib chart uses best of 3 per preset, measured one after the other, not the full harness.</li>\n<li><code>@unroll</code> was not used in any program: nearly every hot loop has a variable bound, which the unroller cannot unroll, and unrolling a loop with literal bounds was worth about 2&ndash;3% (loop-unrolling aggressive vs off).</li>\n<li>Linux/x86-64 only; Windows and Wine were not measured.</li></ul>"
+ }
+}

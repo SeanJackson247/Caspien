@@ -267,6 +267,15 @@ Tests: `tests/inline_test.caspien` (45 checks, output identical off and on at ev
 Measured on the n-body written with small helper functions (`benchmarks/nbody/caspien/nbody_natural_f64.caspien`, 5M steps): 7.5 s with everything off, 2.0 s with unrolling and inlining on.
 See `benchmarks/nbody/RESULTS.md` and `charts.html` (from `bench.py` and `charts.py`) for the full comparison against C, C++, Rust, Go, Java, Node and Bun.
 
+#### Per-function control: `@inline`, `@dont(inline)`
+
+| written | effect |
+|---|---|
+| `@inline` | inline every call to this function that is safe to inline, even with `function-inlining: off`, past the preset's callee-size limit, depth and growth budgets |
+| `@dont(inline)` | never inline this function, whatever the preset says |
+
+`@inline` ignores the preset's size and growth limits only; the safety rules above still decide (no `@async`, no call cycle, scalar/pointer/`range` parameters, a call inside another call's argument list stays a call, ...). A chain of `@inline` functions needs one round per level (up to 8 rounds when no preset is on). The optimizer prints once, after it has settled, `[note] file:line - @inline: f inlined at N call sites`, and `[warning] file:line - @inline not honoured at N call sites of f (K inlined): <reason>` for a call that stayed a call. The standard library uses `@inline` on `DynamicArray.get/set/setPtr` and `String.charAt/setCharAt`. Measured (best of 3, naive programs that call them in inner loops): `function-inlining: off` or `conservative` 1.1x to 1.9x faster (sorting 4.7 s to 2.7 s, json_serde 4.3 s to 2.4 s, strings 3.8 s to 3.4 s), `aggressive` unchanged (it inlines them anyway). In the aggressive benchmark builds `@inline` helped only where the heuristic left hot calls: the helper functions of `nbody_natural_f64` (-9%) and `advance` in `nbody_arr` / `nbody_arr_f64` (-8% / -17%); in `merkletrees` it changed nothing measurable. Tests: `tests/inline_decorator_test.caspien` and `tests/inline_decorator_check.sh`; before/after chart `benchmarks/charts_decorators.html`.
+
 ### `dead-function-removal`
 
 Top-level switch in `===compiler.config===`, `dead-function-removal: on|off`, read by the Optimizer's `DeadFunctionRemovalPass` (shipped `off`; a missing key is off; any other

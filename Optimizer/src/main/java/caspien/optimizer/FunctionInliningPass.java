@@ -228,6 +228,11 @@ public class FunctionInliningPass implements OptimizationPass {
         Set<String> labels = new LinkedHashSet<>();
         int lines;
         String why = "";
+        /** @inline: inline every call site that is safe, whatever the preset's size and growth limits say. */
+        boolean forced;
+        /** @dont(inline): never. */
+        boolean dont;
+        String pos;
     }
 
     private static final Set<String> NAME_POS = new HashSet<>(Arrays.asList("PUSH", "ADDR", "GT_DESTRUCT", "ATOMIC_PUSH"));
@@ -382,10 +387,17 @@ public class FunctionInliningPass implements OptimizationPass {
                 continue;
             }
             if (m.equals("FUNC_DECORATE")) {
-                if (l.size() != 2 || !OK_DECORATORS.contains(l.get(1).text)) {
-                    c.why = "decorator " + tok(l, 1);
+                String dt = tok(l, 1);
+                boolean posOk = l.size() == 3 && l.get(2).kind == BytecodeToken.Kind.STRING;   // an optional "file:line" operand
+                if (!(l.size() == 2 || posOk) || !(OK_DECORATORS.contains(dt) || "@dont(inline)".equals(dt))) {
+                    c.why = "decorator " + dt;
                     ok = false;
+                } else if (dt.equals("@inline")) {
+                    c.forced = true;
+                } else if (dt.equals("@dont(inline)")) {
+                    c.dont = true;
                 }
+                if (posOk) c.pos = unq(l.get(2).text);
                 continue;
             }
             if (m.equals("RETURNS")) {
@@ -472,8 +484,16 @@ public class FunctionInliningPass implements OptimizationPass {
             c.why = "call cycle";
             ok = false;
         }
-        if (c.lines > cfg.maxCalleeLines) {
+        if (c.lines > cfg.maxCalleeLines && !c.forced) {
             c.why = "too long";
+            ok = false;
+        }
+        if (c.dont) {
+            c.why = "@dont(inline)";
+            ok = false;
+        }
+        if (!cfg.enabled && !c.forced) {
+            c.why = "inlining is off and the function is not marked @inline";
             ok = false;
         }
         for (String[] p : c.params) {
@@ -571,6 +591,8 @@ public class FunctionInliningPass implements OptimizationPass {
         }
         if (c.rets.size() != 1 || !c.rets.get(0).tail) c.controlFlow = true;
         c.eligible = ok;
+        if (c.forced && !ok) forcedWhy.put(c.name, c.why);
+        if (c.forced && c.pos != null) forcedPos.putIfAbsent(c.name, c.pos);
         if (!ok && System.getenv("CASPIEN_INLINE_WHY") != null) System.err.println("[inline] " + c.name + " refused: " + c.why);
         return c;
     }
@@ -580,12 +602,13 @@ public class FunctionInliningPass implements OptimizationPass {
 
     @Override
     public PassResult run(List<List<BytecodeToken>> lines) {
-        if (!cfg.enabled || roundsDone >= cfg.maxDepth) {
+        int maxRounds = cfg.enabled ? Math.max(cfg.maxDepth, anyInlineDecorator(lines) ? FORCED_ROUNDS : 0) : (anyInlineDecorator(lines) ? FORCED_ROUNDS : 0);
+        if (roundsDone >= maxRounds) {
             return new PassResult(lines, false);
         }
         List<List<BytecodeToken>> work = lines;
         boolean any = false;
-        while (roundsDone < cfg.maxDepth) {
+        while (roundsDone < maxRounds) {
             List<List<BytecodeToken>> next = round(work);
             if (next == null) break;
             work = next;
@@ -593,6 +616,55 @@ public class FunctionInliningPass implements OptimizationPass {
             roundsDone++;
         }
         return any ? new PassResult(work, true) : new PassResult(lines, false);
+    }
+
+    private static String unq(String t) {
+        return t.length() >= 2 && t.startsWith("\"") && t.endsWith("\"") ? t.substring(1, t.length() - 1) : t;
+    }
+
+    private final Map<String, Integer> forcedSites = new LinkedHashMap<>();
+    private final Map<String, String> forcedPos = new HashMap<>();
+    private final Map<String, String> forcedWhy = new HashMap<>();
+
+    /**
+     * Run once after the optimizer has settled: what @inline did. "[note] file:line - @inline: f inlined at K call sites"; a call to an
+     * @inline function that is still a call is a "[warning] ... @inline not honoured at N call sites: <reason>".
+     */
+    public void reportForced(List<List<BytecodeToken>> L) {
+        Map<String, Integer> remaining = new HashMap<>();
+        Map<String, String> pos = new LinkedHashMap<>(forcedPos);
+        for (int i = 0; i < L.size(); i++) {
+            List<BytecodeToken> l = L.get(i);
+            if (is(l, 2, "CALL")) remaining.merge(l.get(1).text, 1, Integer::sum);
+            if ("FUNC_DECORATE".equals(mn(l)) && l.size() == 3 && "@inline".equals(l.get(1).text)) {
+                // the nearest FUNC_START above names the function
+                int j = i;
+                while (j > 0 && !is(L.get(j), 2, "FUNC_START")) j--;
+                pos.putIfAbsent(L.get(j).get(1).text, unq(l.get(2).text));
+            }
+        }
+        for (Map.Entry<String, String> e : pos.entrySet()) {
+            String f = e.getKey();
+            int inl = forcedSites.getOrDefault(f, 0), rem = remaining.getOrDefault(f, 0);
+            String where = e.getValue() == null ? "" : e.getValue() + " - ";
+            String shown = f.contains("__") ? f.substring(0, f.indexOf("__")) : f;
+            if (inl > 0 && rem == 0) {
+                System.err.println("[note] " + where + "@inline: " + shown + " inlined at " + inl + " call site" + (inl == 1 ? "" : "s"));
+            } else if (rem > 0) {
+                System.err.println("[warning] " + where + "@inline not honoured at " + rem + " call site" + (rem == 1 ? "" : "s") + " of " + shown + " ("
+                        + inl + " inlined): " + forcedWhy.getOrDefault(f, "the call is somewhere inlined code cannot go: an enclosing expression with values pending, an argument that is not a scalar, ..."));
+            }
+        }
+    }
+
+    /** Rounds of inlining available to @inline functions (a chain of marked functions needs one round per level). */
+    private static final int FORCED_ROUNDS = 8;
+
+    private static boolean anyInlineDecorator(List<List<BytecodeToken>> lines) {
+        for (List<BytecodeToken> l : lines) {
+            if ("FUNC_DECORATE".equals(mn(l)) && l.size() >= 2 && "@inline".equals(l.get(1).text)) return true;
+        }
+        return false;
     }
 
     private final class Ctx {
@@ -887,8 +959,11 @@ public class FunctionInliningPass implements OptimizationPass {
         long est = (long) c.code.size() + c.allocs.size() + words + c.params.size() * 2L + 4;
         long cap = cfg.maxGrowth;
         if (cfg.growthFactor > 0) cap = Math.min(cap, Math.max(InlineConfig.GROWTH_FLOOR, cfg.growthFactor * origSize.getOrDefault(cx.caller, 1L)));
+        if (c.forced) {
+            cap = Long.MAX_VALUE;   // @inline: the size limits of the preset do not apply (only the safety rules above and below)
+        }
         if (grown.getOrDefault(cx.caller, 0L) + cx.added + est > cap) return false;
-        if (cfg.totalFactor > 0 && totalAdded + est > Math.max(InlineConfig.TOTAL_FLOOR, cfg.totalFactor * origProgram)) {
+        if (!c.forced && cfg.totalFactor > 0 && totalAdded + est > Math.max(InlineConfig.TOTAL_FLOOR, cfg.totalFactor * origProgram)) {
             if (System.getenv("CASPIEN_INLINE_WHY") != null) System.err.println("[inline] program growth budget reached: " + cx.caller + " keeps a call to " + c.name);
             return false;
         }
@@ -1001,6 +1076,10 @@ public class FunctionInliningPass implements OptimizationPass {
         totalAdded += blk.size() + newLocals;
         cx.changed = true;
         inlinedSites++;
+        if (c.forced) {
+            forcedSites.merge(c.name, 1, Integer::sum);
+            forcedPos.putIfAbsent(c.name, c.pos);
+        }
         return true;
     }
 

@@ -1,0 +1,382 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Caspien before and after @inline</title>
+<style>
+:root { --bg:#fbfaf7; --fg:#1f2328; --mute:#6b7280; --grid:#d9d6cf; --band:#ebe8e0; --fast:#2f7d4f; --slow:#c0562b; --flat:#9aa3ad; --card:#fff; --line:#e4e1da; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#16181b; --fg:#e8e6e1; --mute:#9aa0a8; --grid:#34383d; --band:#23262a; --fast:#58b57e; --slow:#e0805a; --flat:#6c7580; --card:#1d2024; --line:#2c3035; } }
+:root[data-theme="dark"] { --bg:#16181b; --fg:#e8e6e1; --mute:#9aa0a8; --grid:#34383d; --band:#23262a; --fast:#58b57e; --slow:#e0805a; --flat:#6c7580; --card:#1d2024; --line:#2c3035; }
+body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.55 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+main { max-width:1020px; margin:0 auto; padding:24px 16px 60px; }
+h1 { font-size:24px; margin:0 0 4px; } h2 { font-size:18px; margin:34px 0 8px; }
+p, li { max-width:78ch; } .mute { color:var(--mute); }
+.card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px 16px; margin:12px 0; }
+svg { width:100%; height:auto; display:block; }
+.grid { stroke:var(--grid); stroke-width:1; } .sep { stroke:var(--line); stroke-width:1; } .band { fill:var(--band); }
+.axis { fill:var(--mute); font-size:11px; } .lbl { fill:var(--fg); font-size:11.5px; } .prog { fill:var(--fg); font-size:12px; font-weight:600; } .val { fill:var(--mute); font-size:11px; }
+.bar-fast { fill:var(--fast); } .bar-slow { fill:var(--slow); } .bar-flat { fill:var(--flat); }
+table { border-collapse:collapse; width:100%; font-size:13px; } th,td { padding:4px 8px; border-bottom:1px solid var(--line); text-align:left; } .n { text-align:right; font-variant-numeric:tabular-nums; }
+.key span { display:inline-block; width:12px; height:12px; border-radius:2px; vertical-align:-1px; margin:0 4px 0 12px; }
+</style></head><body><main>
+<h1>Caspien before and after <code>@inline</code></h1>
+<div class="mute">Optimised Caspien programs, quick benchmark, 47 programs/variants. Measured 4 Oct 2026, one program at a time, before then after, back to back.</div>
+
+<h2>What changed</h2>
+<div class="card"><ul>
+<li><b>Compiler:</b> <code>@inline</code> and <code>@dont(inline)</code> on a function. <code>@inline</code> inlines every call that is safe to inline, even with <code>function-inlining: off</code> and past the preset's size and growth limits; the safety rules (no <code>@async</code>, no recursion cycle, scalar parameters, ...) still apply. The optimizer reports what it did (<code>[note] file:line - @inline: f inlined at N call sites</code>) and warns about calls it could not inline.</li>
+<li><b>Benchmark programs:</b> <code>@inline</code> on the six helper functions of <code>nbody_natural_f64</code> (<code>length, speedSquared, kinetic, potential, attract, drift</code>) and on <code>advance</code> in <code>nbody_arr</code> and <code>nbody_arr_f64</code>. Nothing else: in every other optimised program the aggressive preset already inlines every call that matters (checked by listing the calls left in the optimised bytecode), and trying <code>@inline</code> where calls did remain (merkletrees) or <code>@unroll</code> (hand-unrolled by 4: 3%) gave nothing measurable.</li>
+<li><b>Stdlib:</b> <code>@inline</code> on <code>DynamicArray.get / set / setPtr</code> and <code>String.charAt / setCharAt</code>.</li></ul></div>
+
+<h2>How it was measured</h2>
+<div class="card"><p>Quick benchmark, Caspien only, optimised builds (every optimisation on, <code>loop-unrolling: aggressive</code>, <code>function-inlining: aggressive</code>), best of 3 runs. For each program the old tree (commit <code>4fde78a</code>: old programs, old stdlib, old compiler) was measured first and the new tree straight after, so slow drift of the machine hits both. Outputs of every row match the C reference.</p></div>
+
+<h2>Run time per Caspien program, after versus before</h2>
+<p>Each bar is (after / before &minus; 1). The shaded band is &plusmn;5%, about the run-to-run noise. A bar is coloured only when it is outside the band
+and outside 1.5&times; that row's own run-to-run spread; grey bars are within noise. <span class="key"><span style="background:var(--fast)"></span>faster
+<span style="background:var(--slow)"></span>slower <span style="background:var(--flat)"></span>no measurable change
+&nbsp; &#9998; = the program source was edited (<code>@inline</code>); every other row is the same source and the same assembly, so its movement is noise.</span></p>
+<div class="card"><svg viewBox="0 0 980 987" role="img" aria-label="Change in run time per Caspien program, after versus before" xmlns="http://www.w3.org/2000/svg">
+<line x1="374.2" y1="46" x2="374.2" y2="957" class="grid"/>
+<text x="374.2" y="40" class="axis" text-anchor="middle">-20%</text>
+<line x1="434.6" y1="46" x2="434.6" y2="957" class="grid"/>
+<text x="434.6" y="40" class="axis" text-anchor="middle">-10%</text>
+<line x1="495.0" y1="46" x2="495.0" y2="957" class="grid"/>
+<text x="495.0" y="40" class="axis" text-anchor="middle">0</text>
+<line x1="555.4" y1="46" x2="555.4" y2="957" class="grid"/>
+<text x="555.4" y="40" class="axis" text-anchor="middle">+10%</text>
+<line x1="615.8" y1="46" x2="615.8" y2="957" class="grid"/>
+<text x="615.8" y="40" class="axis" text-anchor="middle">+20%</text>
+<rect x="464.8" y="46" width="60.4" height="911" class="band"/>
+<text x="385.0" y="14" class="axis" text-anchor="middle">&#8592; faster</text>
+<text x="605.0" y="14" class="axis" text-anchor="middle">slower &#8594;</text>
+<text x="6" y="67" class="prog">nbody</text>
+<text x="322" y="67" class="lbl"></text>
+<text x="324" y="67" class="lbl" text-anchor="end">✎ natural f64</text>
+<rect x="440.9" y="57" width="54.1" height="12" class="bar-fast"><title>nbody natural f64: 0.685 s before, 0.623 s after (-9.0%)</title></rect>
+<text x="436.9" y="68" class="val" text-anchor="end">-9.0%</text>
+<text x="322" y="86" class="lbl"></text>
+<text x="324" y="86" class="lbl" text-anchor="end">plain f64</text>
+<rect x="495.0" y="76" width="11.9" height="12" class="bar-flat"><title>nbody plain f64: 0.574 s before, 0.585 s after (+2.0%)</title></rect>
+<text x="510.9" y="87" class="val" text-anchor="start">+2.0%</text>
+<text x="322" y="105" class="lbl"></text>
+<text x="324" y="105" class="lbl" text-anchor="end">loop f64</text>
+<rect x="495.0" y="95" width="16.5" height="12" class="bar-flat"><title>nbody loop f64: 0.579 s before, 0.595 s after (+2.7%)</title></rect>
+<text x="515.5" y="106" class="val" text-anchor="start">+2.7%</text>
+<text x="322" y="124" class="lbl"></text>
+<text x="324" y="124" class="lbl" text-anchor="end">✎ arr f64</text>
+<rect x="394.1" y="114" width="100.9" height="12" class="bar-fast"><title>nbody arr f64: 0.700 s before, 0.583 s after (-16.7%)</title></rect>
+<text x="390.1" y="125" class="val" text-anchor="end">-16.7%</text>
+<text x="322" y="143" class="lbl"></text>
+<text x="324" y="143" class="lbl" text-anchor="end">scalars f64</text>
+<rect x="495.0" y="133" width="7.2" height="12" class="bar-flat"><title>nbody scalars f64: 0.575 s before, 0.582 s after (+1.2%)</title></rect>
+<text x="506.2" y="144" class="val" text-anchor="start">+1.2%</text>
+<text x="322" y="162" class="lbl"></text>
+<text x="324" y="162" class="lbl" text-anchor="end">plain f32</text>
+<rect x="495.0" y="152" width="12.9" height="12" class="bar-flat"><title>nbody plain f32: 0.604 s before, 0.617 s after (+2.1%)</title></rect>
+<text x="511.9" y="163" class="val" text-anchor="start">+2.1%</text>
+<text x="322" y="181" class="lbl"></text>
+<text x="324" y="181" class="lbl" text-anchor="end">loop f32</text>
+<rect x="480.1" y="171" width="14.9" height="12" class="bar-flat"><title>nbody loop f32: 0.622 s before, 0.606 s after (-2.5%)</title></rect>
+<text x="476.1" y="182" class="val" text-anchor="end">-2.5%</text>
+<text x="322" y="200" class="lbl"></text>
+<text x="324" y="200" class="lbl" text-anchor="end">✎ arr f32</text>
+<rect x="445.0" y="190" width="50.0" height="12" class="bar-fast"><title>nbody arr f32: 0.660 s before, 0.605 s after (-8.3%)</title></rect>
+<text x="441.0" y="201" class="val" text-anchor="end">-8.3%</text>
+<text x="322" y="219" class="lbl"></text>
+<text x="324" y="219" class="lbl" text-anchor="end">scalars f32</text>
+<rect x="495.0" y="209" width="18.7" height="12" class="bar-flat"><title>nbody scalars f32: 0.594 s before, 0.612 s after (+3.1%)</title></rect>
+<text x="517.7" y="220" class="val" text-anchor="start">+3.1%</text>
+<text x="6" y="238" class="prog">fannkuchredux</text>
+<line x1="0" y1="223" x2="980" y2="223" class="sep"/>
+<text x="322" y="238" class="lbl"></text>
+<text x="324" y="238" class="lbl" text-anchor="end">naive</text>
+<rect x="495.0" y="228" width="1.5" height="12" class="bar-flat"><title>fannkuchredux naive: 3.641 s before, 3.649 s after (+0.2%)</title></rect>
+<text x="500.3" y="239" class="val" text-anchor="start">+0.2%</text>
+<text x="322" y="257" class="lbl"></text>
+<text x="324" y="257" class="lbl" text-anchor="end">optimized</text>
+<rect x="495.0" y="247" width="1.5" height="12" class="bar-flat"><title>fannkuchredux optimized: 3.382 s before, 3.386 s after (+0.1%)</title></rect>
+<text x="499.8" y="258" class="val" text-anchor="start">+0.1%</text>
+<text x="6" y="276" class="prog">spectralnorm</text>
+<line x1="0" y1="261" x2="980" y2="261" class="sep"/>
+<text x="322" y="276" class="lbl"></text>
+<text x="324" y="276" class="lbl" text-anchor="end">naive</text>
+<rect x="495.0" y="266" width="5.5" height="12" class="bar-flat"><title>spectralnorm naive: 0.320 s before, 0.322 s after (+0.9%)</title></rect>
+<text x="504.5" y="277" class="val" text-anchor="start">+0.9%</text>
+<text x="322" y="295" class="lbl"></text>
+<text x="324" y="295" class="lbl" text-anchor="end">optimized</text>
+<rect x="493.9" y="285" width="1.5" height="12" class="bar-flat"><title>spectralnorm optimized: 0.234 s before, 0.233 s after (-0.2%)</title></rect>
+<text x="489.9" y="296" class="val" text-anchor="end">-0.2%</text>
+<text x="6" y="314" class="prog">sieve</text>
+<line x1="0" y1="299" x2="980" y2="299" class="sep"/>
+<text x="322" y="314" class="lbl"></text>
+<text x="324" y="314" class="lbl" text-anchor="end">naive (DynamicArray)</text>
+<rect x="473.1" y="304" width="21.9" height="12" class="bar-flat"><title>sieve naive (DynamicArray): 1.570 s before, 1.513 s after (-3.6%)</title></rect>
+<text x="469.1" y="315" class="val" text-anchor="end">-3.6%</text>
+<text x="322" y="333" class="lbl"></text>
+<text x="324" y="333" class="lbl" text-anchor="end">optimized safe</text>
+<rect x="495.0" y="323" width="42.0" height="12" class="bar-flat"><title>sieve optimized safe: 0.836 s before, 0.894 s after (+7.0%)</title></rect>
+<text x="541.0" y="334" class="val" text-anchor="start">+7.0%</text>
+<text x="322" y="352" class="lbl"></text>
+<text x="324" y="352" class="lbl" text-anchor="end">optimized unsafe</text>
+<rect x="495.0" y="342" width="20.7" height="12" class="bar-flat"><title>sieve optimized unsafe: 0.995 s before, 1.029 s after (+3.4%)</title></rect>
+<text x="519.7" y="353" class="val" text-anchor="start">+3.4%</text>
+<text x="6" y="371" class="prog">strings</text>
+<line x1="0" y1="356" x2="980" y2="356" class="sep"/>
+<text x="322" y="371" class="lbl"></text>
+<text x="324" y="371" class="lbl" text-anchor="end">naive (String class)</text>
+<rect x="495.0" y="361" width="17.9" height="12" class="bar-flat"><title>strings naive (String class): 2.815 s before, 2.899 s after (+3.0%)</title></rect>
+<text x="516.9" y="372" class="val" text-anchor="start">+3.0%</text>
+<text x="322" y="390" class="lbl"></text>
+<text x="324" y="390" class="lbl" text-anchor="end">optimized safe</text>
+<rect x="491.6" y="380" width="3.4" height="12" class="bar-flat"><title>strings optimized safe: 0.516 s before, 0.513 s after (-0.6%)</title></rect>
+<text x="487.6" y="391" class="val" text-anchor="end">-0.6%</text>
+<text x="322" y="409" class="lbl"></text>
+<text x="324" y="409" class="lbl" text-anchor="end">optimized unsafe</text>
+<rect x="479.3" y="399" width="15.7" height="12" class="bar-flat"><title>strings optimized unsafe: 0.657 s before, 0.639 s after (-2.6%)</title></rect>
+<text x="475.3" y="410" class="val" text-anchor="end">-2.6%</text>
+<text x="6" y="428" class="prog">graph</text>
+<line x1="0" y1="413" x2="980" y2="413" class="sep"/>
+<text x="322" y="428" class="lbl"></text>
+<text x="324" y="428" class="lbl" text-anchor="end">naive (DynamicArray)</text>
+<rect x="484.8" y="418" width="10.2" height="12" class="bar-flat"><title>graph naive (DynamicArray): 0.387 s before, 0.381 s after (-1.7%)</title></rect>
+<text x="480.8" y="429" class="val" text-anchor="end">-1.7%</text>
+<text x="322" y="447" class="lbl"></text>
+<text x="324" y="447" class="lbl" text-anchor="end">optimized safe</text>
+<rect x="495.0" y="437" width="56.0" height="12" class="bar-slow"><title>graph optimized safe: 0.264 s before, 0.289 s after (+9.3%)</title></rect>
+<text x="555.0" y="448" class="val" text-anchor="start">+9.3%</text>
+<text x="322" y="466" class="lbl"></text>
+<text x="324" y="466" class="lbl" text-anchor="end">optimized unsafe</text>
+<rect x="495.0" y="456" width="27.0" height="12" class="bar-flat"><title>graph optimized unsafe: 0.335 s before, 0.350 s after (+4.5%)</title></rect>
+<text x="526.0" y="467" class="val" text-anchor="start">+4.5%</text>
+<text x="322" y="485" class="lbl"></text>
+<text x="324" y="485" class="lbl" text-anchor="end">struct nodes, safe</text>
+<rect x="495.0" y="475" width="53.5" height="12" class="bar-slow"><title>graph struct nodes, safe: 0.286 s before, 0.311 s after (+8.9%)</title></rect>
+<text x="552.5" y="486" class="val" text-anchor="start">+8.9%</text>
+<text x="322" y="504" class="lbl"></text>
+<text x="324" y="504" class="lbl" text-anchor="end">struct nodes, unsafe</text>
+<rect x="488.3" y="494" width="6.7" height="12" class="bar-flat"><title>graph struct nodes, unsafe: 0.570 s before, 0.564 s after (-1.1%)</title></rect>
+<text x="484.3" y="505" class="val" text-anchor="end">-1.1%</text>
+<text x="6" y="523" class="prog">sorting</text>
+<line x1="0" y1="508" x2="980" y2="508" class="sep"/>
+<text x="322" y="523" class="lbl"></text>
+<text x="324" y="523" class="lbl" text-anchor="end">naive (DynamicArray)</text>
+<rect x="489.0" y="513" width="6.0" height="12" class="bar-flat"><title>sorting naive (DynamicArray): 2.716 s before, 2.689 s after (-1.0%)</title></rect>
+<text x="485.0" y="524" class="val" text-anchor="end">-1.0%</text>
+<text x="322" y="542" class="lbl"></text>
+<text x="324" y="542" class="lbl" text-anchor="end">optimized safe</text>
+<rect x="495.0" y="532" width="13.7" height="12" class="bar-flat"><title>sorting optimized safe: 2.012 s before, 2.058 s after (+2.3%)</title></rect>
+<text x="512.7" y="543" class="val" text-anchor="start">+2.3%</text>
+<text x="322" y="561" class="lbl"></text>
+<text x="324" y="561" class="lbl" text-anchor="end">optimized unsafe</text>
+<rect x="495.0" y="551" width="1.5" height="12" class="bar-flat"><title>sorting optimized unsafe: 2.498 s before, 2.503 s after (+0.2%)</title></rect>
+<text x="500.3" y="562" class="val" text-anchor="start">+0.2%</text>
+<text x="6" y="580" class="prog">binarytrees</text>
+<line x1="0" y1="565" x2="980" y2="565" class="sep"/>
+<text x="322" y="580" class="lbl"></text>
+<text x="324" y="580" class="lbl" text-anchor="end">naive (DynamicArray)</text>
+<rect x="483.9" y="570" width="11.1" height="12" class="bar-flat"><title>binarytrees naive (DynamicArray): 1.423 s before, 1.397 s after (-1.8%)</title></rect>
+<text x="479.9" y="581" class="val" text-anchor="end">-1.8%</text>
+<text x="322" y="599" class="lbl"></text>
+<text x="324" y="599" class="lbl" text-anchor="end">optimized safe</text>
+<rect x="495.0" y="589" width="9.1" height="12" class="bar-flat"><title>binarytrees optimized safe: 0.438 s before, 0.444 s after (+1.5%)</title></rect>
+<text x="508.1" y="600" class="val" text-anchor="start">+1.5%</text>
+<text x="322" y="618" class="lbl"></text>
+<text x="324" y="618" class="lbl" text-anchor="end">optimized unsafe</text>
+<rect x="476.3" y="608" width="18.7" height="12" class="bar-flat"><title>binarytrees optimized unsafe: 0.672 s before, 0.651 s after (-3.1%)</title></rect>
+<text x="472.3" y="619" class="val" text-anchor="end">-3.1%</text>
+<text x="6" y="637" class="prog">mandelbrot</text>
+<line x1="0" y1="622" x2="980" y2="622" class="sep"/>
+<text x="322" y="637" class="lbl"></text>
+<text x="324" y="637" class="lbl" text-anchor="end">f64 scalars</text>
+<rect x="493.2" y="627" width="1.8" height="12" class="bar-flat"><title>mandelbrot f64 scalars: 1.538 s before, 1.534 s after (-0.3%)</title></rect>
+<text x="489.2" y="638" class="val" text-anchor="end">-0.3%</text>
+<text x="6" y="656" class="prog">fasta</text>
+<line x1="0" y1="641" x2="980" y2="641" class="sep"/>
+<text x="322" y="656" class="lbl"></text>
+<text x="324" y="656" class="lbl" text-anchor="end">naive (DynamicArray)</text>
+<rect x="494.7" y="646" width="1.5" height="12" class="bar-flat"><title>fasta naive (DynamicArray): 1.730 s before, 1.729 s after (-0.1%)</title></rect>
+<text x="490.7" y="657" class="val" text-anchor="end">-0.1%</text>
+<text x="322" y="675" class="lbl"></text>
+<text x="324" y="675" class="lbl" text-anchor="end">optimized safe</text>
+<rect x="493.1" y="665" width="1.9" height="12" class="bar-flat"><title>fasta optimized safe: 1.410 s before, 1.405 s after (-0.3%)</title></rect>
+<text x="489.1" y="676" class="val" text-anchor="end">-0.3%</text>
+<text x="322" y="694" class="lbl"></text>
+<text x="324" y="694" class="lbl" text-anchor="end">optimized unsafe</text>
+<rect x="483.2" y="684" width="11.8" height="12" class="bar-flat"><title>fasta optimized unsafe: 1.710 s before, 1.677 s after (-1.9%)</title></rect>
+<text x="479.2" y="695" class="val" text-anchor="end">-1.9%</text>
+<text x="6" y="713" class="prog">knucleotide</text>
+<line x1="0" y1="698" x2="980" y2="698" class="sep"/>
+<text x="322" y="713" class="lbl"></text>
+<text x="324" y="713" class="lbl" text-anchor="end">naive (stdlib HashMap)</text>
+<rect x="490.8" y="703" width="4.2" height="12" class="bar-flat"><title>knucleotide naive (stdlib HashMap): 5.013 s before, 4.978 s after (-0.7%)</title></rect>
+<text x="486.8" y="714" class="val" text-anchor="end">-0.7%</text>
+<text x="322" y="732" class="lbl"></text>
+<text x="324" y="732" class="lbl" text-anchor="end">optimized safe</text>
+<rect x="483.6" y="722" width="11.4" height="12" class="bar-flat"><title>knucleotide optimized safe: 1.039 s before, 1.019 s after (-1.9%)</title></rect>
+<text x="479.6" y="733" class="val" text-anchor="end">-1.9%</text>
+<text x="322" y="751" class="lbl"></text>
+<text x="324" y="751" class="lbl" text-anchor="end">optimized unsafe</text>
+<rect x="485.1" y="741" width="9.9" height="12" class="bar-flat"><title>knucleotide optimized unsafe: 1.442 s before, 1.418 s after (-1.6%)</title></rect>
+<text x="481.1" y="752" class="val" text-anchor="end">-1.6%</text>
+<text x="6" y="770" class="prog">lru</text>
+<line x1="0" y1="755" x2="980" y2="755" class="sep"/>
+<text x="322" y="770" class="lbl"></text>
+<text x="324" y="770" class="lbl" text-anchor="end">naive (DynamicArray + HashMap)</text>
+<rect x="495.0" y="760" width="16.7" height="12" class="bar-flat"><title>lru naive (DynamicArray + HashMap): 2.265 s before, 2.327 s after (+2.8%)</title></rect>
+<text x="515.7" y="771" class="val" text-anchor="start">+2.8%</text>
+<text x="322" y="789" class="lbl"></text>
+<text x="324" y="789" class="lbl" text-anchor="end">optimized safe</text>
+<rect x="477.7" y="779" width="17.3" height="12" class="bar-flat"><title>lru optimized safe: 1.145 s before, 1.112 s after (-2.9%)</title></rect>
+<text x="473.7" y="790" class="val" text-anchor="end">-2.9%</text>
+<text x="322" y="808" class="lbl"></text>
+<text x="324" y="808" class="lbl" text-anchor="end">optimized unsafe</text>
+<rect x="495.0" y="798" width="34.4" height="12" class="bar-flat"><title>lru optimized unsafe: 1.267 s before, 1.339 s after (+5.7%)</title></rect>
+<text x="533.4" y="809" class="val" text-anchor="start">+5.7%</text>
+<text x="6" y="827" class="prog">merkletrees</text>
+<line x1="0" y1="812" x2="980" y2="812" class="sep"/>
+<text x="322" y="827" class="lbl"></text>
+<text x="324" y="827" class="lbl" text-anchor="end">naive (DynamicArray)</text>
+<rect x="495.0" y="817" width="5.4" height="12" class="bar-flat"><title>merkletrees naive (DynamicArray): 2.139 s before, 2.158 s after (+0.9%)</title></rect>
+<text x="504.4" y="828" class="val" text-anchor="start">+0.9%</text>
+<text x="322" y="846" class="lbl"></text>
+<text x="324" y="846" class="lbl" text-anchor="end">optimized safe</text>
+<rect x="491.0" y="836" width="4.0" height="12" class="bar-flat"><title>merkletrees optimized safe: 2.104 s before, 2.090 s after (-0.7%)</title></rect>
+<text x="487.0" y="847" class="val" text-anchor="end">-0.7%</text>
+<text x="322" y="865" class="lbl"></text>
+<text x="324" y="865" class="lbl" text-anchor="end">optimized unsafe</text>
+<rect x="476.4" y="855" width="18.6" height="12" class="bar-flat"><title>merkletrees optimized unsafe: 1.791 s before, 1.736 s after (-3.1%)</title></rect>
+<text x="472.4" y="866" class="val" text-anchor="end">-3.1%</text>
+<text x="6" y="884" class="prog">helloworld</text>
+<line x1="0" y1="869" x2="980" y2="869" class="sep"/>
+<text x="322" y="884" class="lbl"></text>
+<text x="324" y="884" class="lbl" text-anchor="end">plain printf</text>
+<rect x="453.4" y="874" width="41.6" height="12" class="bar-flat"><title>helloworld plain printf: 0.003 s before, 0.002 s after (-6.9%)</title></rect>
+<text x="449.4" y="885" class="val" text-anchor="end">-6.9%</text>
+<text x="6" y="903" class="prog">json_serde</text>
+<line x1="0" y1="888" x2="980" y2="888" class="sep"/>
+<text x="322" y="903" class="lbl"></text>
+<text x="324" y="903" class="lbl" text-anchor="end">naive (DynamicArray)</text>
+<rect x="495.0" y="893" width="7.4" height="12" class="bar-flat"><title>json_serde naive (DynamicArray): 2.279 s before, 2.307 s after (+1.2%)</title></rect>
+<text x="506.4" y="904" class="val" text-anchor="start">+1.2%</text>
+<text x="322" y="922" class="lbl"></text>
+<text x="324" y="922" class="lbl" text-anchor="end">optimized safe</text>
+<rect x="495.0" y="912" width="28.6" height="12" class="bar-flat"><title>json_serde optimized safe: 1.862 s before, 1.950 s after (+4.7%)</title></rect>
+<text x="527.6" y="923" class="val" text-anchor="start">+4.7%</text>
+<text x="322" y="941" class="lbl"></text>
+<text x="324" y="941" class="lbl" text-anchor="end">optimized unsafe</text>
+<rect x="485.5" y="931" width="9.5" height="12" class="bar-flat"><title>json_serde optimized unsafe: 1.667 s before, 1.641 s after (-1.6%)</title></rect>
+<text x="481.5" y="942" class="val" text-anchor="end">-1.6%</text>
+</svg></div>
+<p><b>5</b> of 47 rows moved outside the noise band.</p>
+
+<h2>The stdlib <code>@inline</code>, under the other inlining presets</h2>
+<p>The benchmark config uses <code>function-inlining: aggressive</code>, which already inlines everything the stdlib marks, so the benchmark rows above cannot show the stdlib
+change. Compiled with <code>off</code> or <code>conservative</code> (the shipped config is <code>off</code>) the naive programs, which call
+<code>DynamicArray.get/set</code> and <code>String.charAt/setCharAt</code> in their inner loops, get much faster.</p>
+<div class="card"><svg viewBox="0 0 980 327" role="img" aria-label="Run time with the stdlib @inline, relative to without, per inlining preset" xmlns="http://www.w3.org/2000/svg">
+<line x1="330.0" y1="46" x2="330.0" y2="313" class="grid"/><text x="330.0" y="38" class="axis" text-anchor="middle">0</text>
+<line x1="442.0" y1="46" x2="442.0" y2="313" class="grid"/><text x="442.0" y="38" class="axis" text-anchor="middle">0.25&#215;</text>
+<line x1="554.0" y1="46" x2="554.0" y2="313" class="grid"/><text x="554.0" y="38" class="axis" text-anchor="middle">0.50&#215;</text>
+<line x1="666.0" y1="46" x2="666.0" y2="313" class="grid"/><text x="666.0" y="38" class="axis" text-anchor="middle">0.75&#215;</text>
+<line x1="778.0" y1="46" x2="778.0" y2="313" class="grid"/><text x="778.0" y="38" class="axis" text-anchor="middle">1.00&#215;</text>
+<line x1="890.0" y1="46" x2="890.0" y2="313" class="grid"/><text x="890.0" y="38" class="axis" text-anchor="middle">1.25&#215;</text>
+<text x="6" y="14" class="axis">run time with the stdlib @inline, as a fraction of the run time without (1.00 = no change; lower is faster)</text>
+<text x="324" y="65" class="lbl" text-anchor="end">sorting (naive), inlining off</text>
+<rect x="330" y="55" width="253.4" height="12" class="bar-fast"><title>4.735 s without, 2.678 s with</title></rect>
+<text x="588.4" y="66" class="val">0.57&#215;  (4.74 s &#8594; 2.68 s)</text>
+<text x="324" y="84" class="lbl" text-anchor="end">sorting (naive), inlining conservative</text>
+<rect x="330" y="74" width="247.5" height="12" class="bar-fast"><title>4.869 s without, 2.690 s with</title></rect>
+<text x="582.5" y="85" class="val">0.55&#215;  (4.87 s &#8594; 2.69 s)</text>
+<text x="324" y="103" class="lbl" text-anchor="end">sorting (naive), inlining aggressive</text>
+<rect x="330" y="93" width="442.6" height="12" class="bar-flat"><title>2.716 s without, 2.683 s with</title></rect>
+<text x="777.6" y="104" class="val">0.99&#215;  (2.72 s &#8594; 2.68 s)</text>
+<text x="324" y="122" class="lbl" text-anchor="end">strings (naive), inlining off</text>
+<rect x="330" y="112" width="397.6" height="12" class="bar-fast"><title>3.825 s without, 3.395 s with</title></rect>
+<text x="732.6" y="123" class="val">0.89&#215;  (3.83 s &#8594; 3.40 s)</text>
+<text x="324" y="141" class="lbl" text-anchor="end">strings (naive), inlining conservative</text>
+<rect x="330" y="131" width="402.9" height="12" class="bar-fast"><title>3.837 s without, 3.451 s with</title></rect>
+<text x="737.9" y="142" class="val">0.90&#215;  (3.84 s &#8594; 3.45 s)</text>
+<text x="324" y="160" class="lbl" text-anchor="end">strings (naive), inlining aggressive</text>
+<rect x="330" y="150" width="455.5" height="12" class="bar-flat"><title>2.881 s without, 2.929 s with</title></rect>
+<text x="790.5" y="161" class="val">1.02&#215;  (2.88 s &#8594; 2.93 s)</text>
+<text x="324" y="179" class="lbl" text-anchor="end">json_serde (naive), inlining off</text>
+<rect x="330" y="169" width="249.5" height="12" class="bar-fast"><title>4.261 s without, 2.373 s with</title></rect>
+<text x="584.5" y="180" class="val">0.56&#215;  (4.26 s &#8594; 2.37 s)</text>
+<text x="324" y="198" class="lbl" text-anchor="end">json_serde (naive), inlining conservative</text>
+<rect x="330" y="188" width="240.3" height="12" class="bar-fast"><title>4.388 s without, 2.354 s with</title></rect>
+<text x="575.3" y="199" class="val">0.54&#215;  (4.39 s &#8594; 2.35 s)</text>
+<text x="324" y="217" class="lbl" text-anchor="end">json_serde (naive), inlining aggressive</text>
+<rect x="330" y="207" width="447.6" height="12" class="bar-flat"><title>2.293 s without, 2.291 s with</title></rect>
+<text x="782.6" y="218" class="val">1.00&#215;  (2.29 s &#8594; 2.29 s)</text>
+<text x="324" y="236" class="lbl" text-anchor="end">knucleotide (naive), inlining conservative</text>
+<rect x="330" y="226" width="409.3" height="12" class="bar-fast"><title>7.491 s without, 6.844 s with</title></rect>
+<text x="744.3" y="237" class="val">0.91&#215;  (7.49 s &#8594; 6.84 s)</text>
+<text x="324" y="255" class="lbl" text-anchor="end">knucleotide (naive), inlining aggressive</text>
+<rect x="330" y="245" width="442.4" height="12" class="bar-flat"><title>5.066 s without, 5.003 s with</title></rect>
+<text x="777.4" y="256" class="val">0.99&#215;  (5.07 s &#8594; 5.00 s)</text>
+<text x="324" y="274" class="lbl" text-anchor="end">lru (naive), inlining conservative</text>
+<rect x="330" y="264" width="269.7" height="12" class="bar-fast"><title>4.548 s without, 2.738 s with</title></rect>
+<text x="604.7" y="275" class="val">0.60&#215;  (4.55 s &#8594; 2.74 s)</text>
+<text x="324" y="293" class="lbl" text-anchor="end">lru (naive), inlining aggressive</text>
+<rect x="330" y="283" width="428.3" height="12" class="bar-flat"><title>2.232 s without, 2.134 s with</title></rect>
+<text x="763.3" y="294" class="val">0.96&#215;  (2.23 s &#8594; 2.13 s)</text>
+</svg></div>
+
+<h2>Caveats</h2>
+<div class="card"><ul>
+<li>Machine noise is 10&ndash;30% between measurements minutes apart (an earlier before/after taken 25 minutes apart showed sieve 39% slower with byte-identical assembly). Back-to-back pairing reduces it but does not remove it; rows inside the grey band are unchanged.</li>
+<li>Only the three marked n-body programs were edited. For the unedited ones I compared the generated assembly of the old and new compiler on sieve (safe, naive) and graph (safe): identical, so their movement is machine noise; I did not compare the rest.</li>
+<li>The stdlib chart uses best of 3 per preset, measured one after the other, not the full harness.</li>
+<li><code>@unroll</code> was not used in any program: nearly every hot loop has a variable bound, which the unroller cannot unroll, and unrolling a loop with literal bounds was worth about 2&ndash;3% (loop-unrolling aggressive vs off).</li>
+<li>Linux/x86-64 only; Windows and Wine were not measured.</li></ul></div>
+
+<h2>All rows</h2>
+<table><thead><tr><th>program</th><th>variant</th><th class="n">before s</th><th class="n">after s</th><th class="n">change</th><th class="n">size before</th><th class="n">size after</th></tr></thead><tbody>
+<tr><td>nbody</td><td>natural f64</td><td class="n">0.685</td><td class="n">0.623</td><td class="n">-9.0%</td><td class="n">30,216</td><td class="n">30,040</td></tr>
+<tr><td>nbody</td><td>plain f64</td><td class="n">0.574</td><td class="n">0.585</td><td class="n">+2.0%</td><td class="n">25,952</td><td class="n">25,952</td></tr>
+<tr><td>nbody</td><td>loop f64</td><td class="n">0.579</td><td class="n">0.595</td><td class="n">+2.7%</td><td class="n">35,816</td><td class="n">35,816</td></tr>
+<tr><td>nbody</td><td>arr f64</td><td class="n">0.700</td><td class="n">0.583</td><td class="n">-16.7%</td><td class="n">32,960</td><td class="n">28,864</td></tr>
+<tr><td>nbody</td><td>scalars f64</td><td class="n">0.575</td><td class="n">0.582</td><td class="n">+1.2%</td><td class="n">29,576</td><td class="n">29,576</td></tr>
+<tr><td>nbody</td><td>plain f32</td><td class="n">0.604</td><td class="n">0.617</td><td class="n">+2.1%</td><td class="n">25,864</td><td class="n">25,864</td></tr>
+<tr><td>nbody</td><td>loop f32</td><td class="n">0.622</td><td class="n">0.606</td><td class="n">-2.5%</td><td class="n">39,824</td><td class="n">39,824</td></tr>
+<tr><td>nbody</td><td>arr f32</td><td class="n">0.660</td><td class="n">0.605</td><td class="n">-8.3%</td><td class="n">32,824</td><td class="n">32,824</td></tr>
+<tr><td>nbody</td><td>scalars f32</td><td class="n">0.594</td><td class="n">0.612</td><td class="n">+3.1%</td><td class="n">33,544</td><td class="n">33,544</td></tr>
+<tr><td>fannkuchredux</td><td>naive</td><td class="n">3.641</td><td class="n">3.649</td><td class="n">+0.2%</td><td class="n">17,216</td><td class="n">17,216</td></tr>
+<tr><td>fannkuchredux</td><td>optimized</td><td class="n">3.382</td><td class="n">3.386</td><td class="n">+0.1%</td><td class="n">17,208</td><td class="n">17,208</td></tr>
+<tr><td>spectralnorm</td><td>naive</td><td class="n">0.320</td><td class="n">0.322</td><td class="n">+0.9%</td><td class="n">78,112</td><td class="n">78,112</td></tr>
+<tr><td>spectralnorm</td><td>optimized</td><td class="n">0.234</td><td class="n">0.233</td><td class="n">-0.2%</td><td class="n">78,112</td><td class="n">78,112</td></tr>
+<tr><td>sieve</td><td>naive (DynamicArray)</td><td class="n">1.570</td><td class="n">1.513</td><td class="n">-3.6%</td><td class="n">29,800</td><td class="n">29,800</td></tr>
+<tr><td>sieve</td><td>optimized safe</td><td class="n">0.836</td><td class="n">0.894</td><td class="n">+7.0%</td><td class="n">28,952</td><td class="n">28,952</td></tr>
+<tr><td>sieve</td><td>optimized unsafe</td><td class="n">0.995</td><td class="n">1.029</td><td class="n">+3.4%</td><td class="n">28,672</td><td class="n">28,672</td></tr>
+<tr><td>strings</td><td>naive (String class)</td><td class="n">2.815</td><td class="n">2.899</td><td class="n">+3.0%</td><td class="n">54,312</td><td class="n">54,312</td></tr>
+<tr><td>strings</td><td>optimized safe</td><td class="n">0.516</td><td class="n">0.513</td><td class="n">-0.6%</td><td class="n">35,904</td><td class="n">35,904</td></tr>
+<tr><td>strings</td><td>optimized unsafe</td><td class="n">0.657</td><td class="n">0.639</td><td class="n">-2.6%</td><td class="n">34,368</td><td class="n">34,368</td></tr>
+<tr><td>graph</td><td>naive (DynamicArray)</td><td class="n">0.387</td><td class="n">0.381</td><td class="n">-1.7%</td><td class="n">53,112</td><td class="n">53,112</td></tr>
+<tr><td>graph</td><td>optimized safe</td><td class="n">0.264</td><td class="n">0.289</td><td class="n">+9.3%</td><td class="n">35,504</td><td class="n">35,504</td></tr>
+<tr><td>graph</td><td>optimized unsafe</td><td class="n">0.335</td><td class="n">0.350</td><td class="n">+4.5%</td><td class="n">33,552</td><td class="n">33,552</td></tr>
+<tr><td>graph</td><td>struct nodes, safe</td><td class="n">0.286</td><td class="n">0.311</td><td class="n">+8.9%</td><td class="n">34,296</td><td class="n">34,296</td></tr>
+<tr><td>graph</td><td>struct nodes, unsafe</td><td class="n">0.570</td><td class="n">0.564</td><td class="n">-1.1%</td><td class="n">33,072</td><td class="n">33,072</td></tr>
+<tr><td>sorting</td><td>naive (DynamicArray)</td><td class="n">2.716</td><td class="n">2.689</td><td class="n">-1.0%</td><td class="n">125,216</td><td class="n">125,216</td></tr>
+<tr><td>sorting</td><td>optimized safe</td><td class="n">2.012</td><td class="n">2.058</td><td class="n">+2.3%</td><td class="n">54,384</td><td class="n">54,384</td></tr>
+<tr><td>sorting</td><td>optimized unsafe</td><td class="n">2.498</td><td class="n">2.503</td><td class="n">+0.2%</td><td class="n">53,864</td><td class="n">53,864</td></tr>
+<tr><td>binarytrees</td><td>naive (DynamicArray)</td><td class="n">1.423</td><td class="n">1.397</td><td class="n">-1.8%</td><td class="n">77,304</td><td class="n">77,304</td></tr>
+<tr><td>binarytrees</td><td>optimized safe</td><td class="n">0.438</td><td class="n">0.444</td><td class="n">+1.5%</td><td class="n">38,624</td><td class="n">38,624</td></tr>
+<tr><td>binarytrees</td><td>optimized unsafe</td><td class="n">0.672</td><td class="n">0.651</td><td class="n">-3.1%</td><td class="n">35,104</td><td class="n">35,104</td></tr>
+<tr><td>mandelbrot</td><td>f64 scalars</td><td class="n">1.538</td><td class="n">1.534</td><td class="n">-0.3%</td><td class="n">16,352</td><td class="n">16,352</td></tr>
+<tr><td>fasta</td><td>naive (DynamicArray)</td><td class="n">1.730</td><td class="n">1.729</td><td class="n">-0.1%</td><td class="n">143,080</td><td class="n">143,080</td></tr>
+<tr><td>fasta</td><td>optimized safe</td><td class="n">1.410</td><td class="n">1.405</td><td class="n">-0.3%</td><td class="n">99,568</td><td class="n">99,568</td></tr>
+<tr><td>fasta</td><td>optimized unsafe</td><td class="n">1.710</td><td class="n">1.677</td><td class="n">-1.9%</td><td class="n">64,216</td><td class="n">64,216</td></tr>
+<tr><td>knucleotide</td><td>naive (stdlib HashMap)</td><td class="n">5.013</td><td class="n">4.978</td><td class="n">-0.7%</td><td class="n">98,880</td><td class="n">98,880</td></tr>
+<tr><td>knucleotide</td><td>optimized safe</td><td class="n">1.039</td><td class="n">1.019</td><td class="n">-1.9%</td><td class="n">111,448</td><td class="n">111,448</td></tr>
+<tr><td>knucleotide</td><td>optimized unsafe</td><td class="n">1.442</td><td class="n">1.418</td><td class="n">-1.6%</td><td class="n">94,312</td><td class="n">94,312</td></tr>
+<tr><td>lru</td><td>naive (DynamicArray + HashMap)</td><td class="n">2.265</td><td class="n">2.327</td><td class="n">+2.8%</td><td class="n">77,160</td><td class="n">77,160</td></tr>
+<tr><td>lru</td><td>optimized safe</td><td class="n">1.145</td><td class="n">1.112</td><td class="n">-2.9%</td><td class="n">42,560</td><td class="n">42,560</td></tr>
+<tr><td>lru</td><td>optimized unsafe</td><td class="n">1.267</td><td class="n">1.339</td><td class="n">+5.7%</td><td class="n">35,176</td><td class="n">35,176</td></tr>
+<tr><td>merkletrees</td><td>naive (DynamicArray)</td><td class="n">2.139</td><td class="n">2.158</td><td class="n">+0.9%</td><td class="n">245,976</td><td class="n">245,976</td></tr>
+<tr><td>merkletrees</td><td>optimized safe</td><td class="n">2.104</td><td class="n">2.090</td><td class="n">-0.7%</td><td class="n">203,104</td><td class="n">203,104</td></tr>
+<tr><td>merkletrees</td><td>optimized unsafe</td><td class="n">1.791</td><td class="n">1.736</td><td class="n">-3.1%</td><td class="n">79,864</td><td class="n">79,864</td></tr>
+<tr><td>helloworld</td><td>plain printf</td><td class="n">0.003</td><td class="n">0.002</td><td class="n">-6.9%</td><td class="n">22,352</td><td class="n">22,352</td></tr>
+<tr><td>json_serde</td><td>naive (DynamicArray)</td><td class="n">2.279</td><td class="n">2.307</td><td class="n">+1.2%</td><td class="n">95,784</td><td class="n">95,784</td></tr>
+<tr><td>json_serde</td><td>optimized safe</td><td class="n">1.862</td><td class="n">1.950</td><td class="n">+4.7%</td><td class="n">43,160</td><td class="n">43,160</td></tr>
+<tr><td>json_serde</td><td>optimized unsafe</td><td class="n">1.667</td><td class="n">1.641</td><td class="n">-1.6%</td><td class="n">39,608</td><td class="n">39,608</td></tr>
+</tbody></table>
+</main></body></html>

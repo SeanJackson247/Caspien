@@ -1511,7 +1511,7 @@ is an error ("'@x' is not a valid decorator on a function"). This is the full se
 | `@non_exhaustive` | enum | its last variant is `default`; a `match` needs a `default` case only when some variant is not named (an error when all are) |
 | `@link_name(sym)` | `extern` | the C symbol, when the Caspien name differs |
 | `@call_convention(c)` | function, `extern` | choose a calling convention from `toolchain.config` |
-| `@inline` | function | accepted; the inliner decides (see section 2.4) |
+| `@inline`, `@dont(inline)` | function | inline every safe call to it even with inlining off / never inline it (see section 2.4 and `docs/COMPILER_REFERENCE.md`) |
 | `@reads(...)`, `@writes(...)` | function | accepted and shape-checked, not yet enforced |
 | `@with_tick`, `@tick`, `@event_loop` | function | the event-loop trio (end of the tour) |
 | `@make_safe_args` | function | builds the safe `main` arguments (`stdlib/make_safe_args.caspien`) |
