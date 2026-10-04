@@ -176,6 +176,28 @@ def find(R, prefix, mode):
             return r
 
 
+# ---- "memory-safe only" views: safe Caspien variants against implementations whose RUNTIME or COMPILER provides memory safety (no null dereference, no
+# double free, no out-of-bounds access in safe code). Nothing here depends on anybody reading the benchmark sources: a language is in because its runtime
+# enforces safety (JVM, .NET, Go, JavaScript engines, LuaJIT, OCaml, Swift, Crystal), and Rust is in for a program only if rustc accepts the port under
+# `-F unsafe_code` (rust_safe_check.py -> rust_safe.json); C# builds without AllowUnsafeBlocks, so the compiler already refuses `unsafe` there.
+SAFE_LANGS = {"rust", "go", "java", "csharp", "kotlin", "luajit", "node", "bun", "crystal", "swift", "ocaml"}
+try:
+    RUST_SAFE = json.load(open(os.path.join(HERE, "rust_safe.json")))
+except OSError:
+    RUST_SAFE = {}
+
+
+def port_unsafe(d, key):
+    """True when the compiler does not confirm the port: only Rust has such a check (rustc -F unsafe_code)."""
+    return key == "rust" and not RUST_SAFE.get(d, False)
+
+
+def safe_row(d, r):
+    if r["key"] == "caspien":
+        return "unsafe" not in r["label"]
+    return r["key"] in SAFE_LANGS and not port_unsafe(d, r["key"])
+
+
 def c_ref(R):
     for lab in ("C -O2", "C -O2 (free)"):
         r = next((r for r in R if r["label"] == lab), None)
@@ -236,7 +258,7 @@ CAS_VARIANTS = [("Caspien naive", lambda naive, opts: naive), ("Caspien optimize
                 ("Caspien optimized (unsafe)", lambda naive, opts: opts[1][1] if len(opts) > 1 else None)]
 
 
-def overview(DATA, metric):
+def overview(DATA, metric, safe=False):
     """One metric of every language on every program, plus the geometric mean of the ratio to C -O2 on the same program. Headers sort."""
     progs = [p for p in PROGS if p[0] in DATA]
     cols = [("Implementation", "text", False), ("Group", "text", False)] + [(p[1], "num", True) for p in progs] + [("Geomean vs C -O2", "num", True)]
@@ -245,6 +267,8 @@ def overview(DATA, metric):
         cs, ratios, nlow = [], [], 0
         for d, t, cnt, naive, opts, what in progs:
             R = DATA[d]["results"]; c2 = c_ref(R); r = getr(R, naive, opts)
+            if r and safe and not safe_row(d, r):
+                r = None
             if not r or not known(r, metric):
                 cs.append('<td class="n" data-v="">-</td>'); continue
             ratio = r[metric] / c2[metric] if c2 and c2[metric] > 0 and r[metric] > 0 else None
@@ -260,11 +284,15 @@ def overview(DATA, metric):
             i, html.escape(label), key, " off" if off else "", html.escape(label), group, group, "".join(cs)))
     i = 0
     for lab, key, cands in OVERVIEW_ROWS:
+        if safe and key not in SAFE_LANGS:
+            continue
         gname = GROUP_NAME[{"c": "bare", "cpp": "bare", "rust": "bare", "go": "bare", "fortran": "bare", "objc": "bare", "odin": "bare", "zig": "bare", "chapel": "bare",
                             "ldc": "native", "gdc": "native", "nim": "native", "crystal": "native", "ocaml": "native", "swift": "native", "codon": "native",
                             "java": "vm", "csharp": "vm", "kotlin": "vm", "node": "js", "bun": "js", "luajit": "luajit", "wasm": "wasm"}[key]]
         row(i, lab, key, gname, False, lambda R, naive, opts, cands=cands: next((r for c in cands for r in R if r["label"] == c), None)); i += 1
     for lab, pick in CAS_VARIANTS:
+        if safe and "unsafe" in lab:
+            continue
         for mode, mname in (("off", "optimisations off"), ("full", "everything on")):
             row(i, "%s, %s" % (lab, mname), "caspien", "Caspien", mode == "off",
                 lambda R, naive, opts, pick=pick, mode=mode: (lambda pre: find(R, pre, mode) if pre else None)(pick(naive, opts))); i += 1
@@ -299,11 +327,17 @@ for m in METRIC_ORDER:
     charts = []
     for d, title, cnt, naive, opts, what in progs:
         R = DATA[d]["results"]
-        charts.append('<section class="chart" id="%s-%s"><h3>%s <span class="nn">%s</span></h3><div class="scroll">%s</div></section>' % (
-            mid, d, html.escape(title), html.escape(cnt % "{:,}".format(DATA[d]["n"])), chart(R, m, mtitle + " – " + title)))
+        Rs = [r for r in R if safe_row(d, r)]
+        dropped = sorted({r["label"].split(" ")[0] for r in R if r["key"] in SAFE_LANGS and not safe_row(d, r) and r["key"] != "caspien"})
+        safe_note = ("Rust left out for this program: rustc rejects the port under -F unsafe_code. " if dropped else "")
+        charts.append('<section class="chart" id="%s-%s"><h3>%s <span class="nn">%s</span></h3><div class="scroll">%s</div>'
+                      '<h4>Same chart, memory-safe only <span class="nn">%ssafe Caspien variants against implementations whose runtime or compiler provides memory safety</span></h4><div class="scroll">%s</div></section>' % (
+            mid, d, html.escape(title), html.escape(cnt % "{:,}".format(DATA[d]["n"])), chart(R, m, mtitle + " – " + title),
+            html.escape(safe_note), chart(Rs, m, mtitle + " – " + title + " (memory-safe only)")))
     msecs.append('<div class="metric" id="%s"><h2>%s <span class="nn">%s</span></h2><section><h3>Every language on every program</h3><div class="scroll">%s</div></section>'
+                 '<section><h3>Memory-safe only <span class="nn">safe Caspien variants and memory-safe languages</span></h3><div class="scroll">%s</div></section>'
                  '<details class="charts" open><summary>Bar charts, one per program</summary><nav class="sub2">%s</nav>%s</details></div>' % (
-                     mid, mtitle, html.escape(mnote), overview(DATA, m),
+                     mid, mtitle, html.escape(mnote), overview(DATA, m), overview(DATA, m, safe=True),
                      "".join('<a href="#%s-%s">%s</a>' % (mid, d, html.escape(t)) for d, t, *_ in progs), "".join(charts)))
 nav += ['<a href="#caspien">Caspien variants</a>', '<a href="#recursion">Recursion</a>', '<a href="#programs">Programs</a>', '<a href="#allnumbers">All numbers</a>', '<a href="#notes">Notes</a>']
 cas_html = ('<div class="metric" id="caspien"><h2>Caspien variants <span class="nn">naive against optimized, optimisations off against everything on</span></h2>%s</div>' % "".join(
@@ -335,6 +369,7 @@ def recursion_section():
 rec_html = recursion_section()
 
 NOTES = [
+    "<b>Memory-safe views.</b> Every bar chart and every overview table is repeated with only (a) Caspien&rsquo;s safe variants (naive, optimized safe, struct nodes safe, and the programs that have no unsafe-dynarray variant at all; every Caspien program still uses <code>unsafe</code> blocks for libc calls and, in a few, globals) and (b) implementations whose runtime or compiler provides memory safety: Java, Kotlin (JVM), C# (.NET, built without AllowUnsafeBlocks), Go, Node and Bun (JavaScript engines), LuaJIT, OCaml, Swift, Crystal, and Rust &mdash; Rust only for programs that rustc accepts under <code>-F unsafe_code</code> (benchmarks/rust_safe_check.py; only the heap-graph port fails). That is a property of the implementation, not a judgement of the sources. Caveat, not a filter: some ports use their language&rsquo;s unchecked escape hatches (LuaJIT <code>ffi</code> buffers, OCaml <code>unsafe_get</code>, Swift <code>UnsafeMutablePointer</code>), which a runtime-level guarantee does not cover. Excluded as languages: C, C++, Objective-C, Fortran, Odin, Zig, Chapel, D, Nim, Codon and WebAssembly.",
     "<b>Toolchains added on 1 Oct 2026.</b> Fortran (gfortran), Objective-C (gcc + GNU libobjc, no Foundation), D (LDC and GDC), Nim 1.6 (refc), Crystal, OCaml (no flambda), Swift 6.0.3 (-O, static stdlib, Glibc only), Codon 0.17, Zig 0.16 (ReleaseFast: no safety checks), Odin (-o:speed, bounds checks on), Chapel 2.3 (--fast), C# (.NET 8, tiered JIT, PGO), Kotlin 2.0.21 (JVM), WebAssembly (the C program built with zig cc for wasm32-wasi, ahead-of-time compiled by wasmtime 25). All of them single-threaded, compiled with the normal release flags; every port reproduces the C program's output exactly (checked at every size that was run).",
     "<b>Dart is missing.</b> Its toolchain could not be downloaded: the sandbox network allowlist blocks the Dart SDK hosts. Nothing was substituted.",
     "<b>Ports are idiomatic, not identical.</b> Each port does the same work with the same algorithm and the same data-structure kind as the C, Rust, Go or Java program it follows, but uses its own language's containers where those exist (Dictionary, HashMap, associative arrays, Table); garbage-collected and reference-counted languages allocate nodes the way a programmer in that language would. Differences worth knowing are noted in the port files and in benchmarks/RESULTS.md.",
@@ -364,6 +399,8 @@ h1{font-size:26px;margin:0 0 4px;letter-spacing:-.01em}
 h2{font-size:22px;margin:36px 0 0;padding-top:8px;border-top:2px solid var(--line)}
 h2 .nn,h3 .nn{color:var(--muted);font-weight:400;font-size:15px;margin-left:8px}
 h3{font-size:16px;margin:0}
+h4{font-size:14px;margin:18px 0 0;padding-top:10px;border-top:1px dashed var(--line)}
+h4 .nn{color:var(--muted);font-weight:400;font-size:13px;margin-left:8px}
 .sub{color:var(--muted);margin:0 0 12px}
 nav{display:flex;flex-wrap:wrap;gap:6px 16px;margin:8px 0 12px;font-size:14px}
 nav a{color:var(--fg)}

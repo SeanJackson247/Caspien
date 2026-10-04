@@ -1,0 +1,19 @@
+{
+ "binarytrees": true,
+ "fannkuchredux": true,
+ "fasta": true,
+ "graph": false,
+ "helloworld": true,
+ "json_serde": true,
+ "knucleotide": true,
+ "lru": true,
+ "mandelbrot": true,
+ "merkletrees": true,
+ "nbody": true,
+ "sieve": true,
+ "sorting": true,
+ "spectralnorm": true,
+ "strings": true,
+ "swaplock": true,
+ "threads": true
+}
