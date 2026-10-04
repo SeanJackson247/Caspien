@@ -123,14 +123,31 @@ def add_mode_args(ap):
     ap.add_argument("--builds", type=int, help="builds per implementation for the compile time (default 1 quick, 3 full)")
     ap.add_argument("--no-build-cache", action="store_true", help="quick mode: rebuild the other languages' programs instead of reusing cached builds")
     ap.add_argument("--clear-build-cache", action="store_true", help="delete benchmarks/.build_cache first")
+    ap.add_argument("--caspien-only", action="store_true", help="measure only the optimised Caspien programs and merge them with the other languages' rows of the existing results.json; writes results.quick.json (--out to change)")
 
 
 def settings(a):
     m = MODES[a.mode]
     if a.clear_build_cache:
         shutil.rmtree(BUILD_CACHE, ignore_errors=True)
-    return dict(mode=a.mode, runs=a.runs or m["runs"], builds=a.builds or m["builds"], off=m["off"] or a.with_off, cutoff=m["cutoff"],
-                build_cache=(a.mode == "quick" and not a.no_build_cache))
+    return dict(mode=a.mode, runs=a.runs or m["runs"], builds=a.builds or m["builds"], off=m["off"] or a.with_off, cutoff=m["cutoff"] and not a.caspien_only,
+                build_cache=(a.mode == "quick" and not a.no_build_cache), caspien_only=a.caspien_only)
+
+
+def existing_rows(S, path, n):
+    """--caspien-only: the other implementations' rows from the existing results file (refuses a file made with a different N)."""
+    if not S["caspien_only"]:
+        return []
+    if not os.path.exists(path):
+        sys.exit("--caspien-only needs the existing results file %s" % path)
+    old = json.load(open(path))
+    if old.get("n") != n:
+        sys.exit("%s was measured with N=%s, this run uses N=%s: the other languages' rows would not be comparable (pass --n %s)" % (path, old.get("n"), n, old.get("n")))
+    return [r for r in old["results"] if r["group"] != "caspien"]
+
+
+def result_mode(S):
+    return "quick, Caspien only (other languages' rows from the existing results.json)" if S["caspien_only"] else S["mode"]
 
 
 def caspien_modes(S):
@@ -346,10 +363,12 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--n", type=int, default=5000000)
     add_mode_args(ap)
-    ap.add_argument("--out", default=os.path.join(HERE, "results.json"))
+    ap.add_argument("--out")
     ap.add_argument("--only", nargs="*", default=[])
     a = ap.parse_args()
     S = settings(a)
+    a.out = a.out or os.path.join(HERE, "results.quick.json" if S["caspien_only"] else "results.json")
+    old_rows = existing_rows(S, os.path.join(HERE, "results.json"), a.n)
     limits = {}
     N = str(a.n)
     W = tempfile.mkdtemp(prefix="nbody_bench_")
@@ -363,7 +382,7 @@ def main():
         return not a.only or any(s.lower() in label.lower() for s in a.only)
 
     def measure(label, group, lang, build_cmds, exe_cmd, size_bytes_fn, prec, note=""):
-        if not wanted(label):
+        if not wanted(label) or (S["caspien_only"] and group != "caspien"):
             return
         built = BC.compile(label, group, build_cmds, S["builds"])
         if built is None:
@@ -454,6 +473,7 @@ def main():
     import newlangs as NL
     for row in NL.rows("nbody", W, W, N):
         measure(row["label"], row["group"], row["lang"], row["build"], row["exe"], row["size"], "f64", row["note"])
+    results = old_rows + results
     # ---- correctness: same precision as the C program at the same N (C -O0, or C -O2 when -O0 was cut off) ----
     results.sort(key=lambda r: r["group"] == "caspien")   # Caspien rows last, as in the charts
     ref = {"f64": B_pick(results, ["C -O0", "C -O2"]), "f32": B_pick(results, ["C f32 -O0", "C f32 -O2"])}
@@ -466,7 +486,7 @@ def main():
                 r["ok"] = r["output"] == ref["f64"]          # double precision: identical to 9 digits
             else:                                            # f32 ports round differently (operation order): same to ~4 digits
                 r["ok"] = all(abs(float(x) - float(y)) < 5e-4 for x, y in zip(r["output"], ref["f32"]))
-    json.dump({"n": a.n, "mode": S["mode"], "runs": S["runs"], "builds": S["builds"], "cutoff_s": limits if S["cutoff"] else None, "results": results}, open(a.out, "w"), indent=1)
+    json.dump({"n": a.n, "mode": result_mode(S), "runs": S["runs"], "builds": S["builds"], "cutoff_s": limits if S["cutoff"] else None, "results": results}, open(a.out, "w"), indent=1)
     shutil.rmtree(W, ignore_errors=True)
     bad = [r["label"] for r in results if not r["ok"]]
     print("wrote", a.out, "| output differs from the same-precision C program:", bad or "none")

@@ -8,3 +8,5 @@ ASTGenerator/platform.config
 __pycache__/
 /.cache/
 /benchmarks/.build_cache/
+/benchmarks/*/results.quick.json
+/benchmarks/charts.quick.html

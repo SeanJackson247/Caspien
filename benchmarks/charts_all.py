@@ -15,7 +15,13 @@ off (pale, hatched) and with everything on (solid).
 import html, json, math, os, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-dst = sys.argv[1] if len(sys.argv) > 1 else os.path.join(HERE, "charts.html")
+_args = list(sys.argv[1:])
+RESULTS_NAME = "results.json"
+if "--results" in _args:   # e.g. --results results.quick.json (a --caspien-only run merged with the existing other-language rows)
+    _i = _args.index("--results")
+    RESULTS_NAME = _args[_i + 1]
+    del _args[_i:_i + 2]
+dst = _args[0] if _args else os.path.join(HERE, "charts.html")
 PROGS = [  # (dir, title, count label, naive prefix, [(column label, prefix)] for optimized rows, description)
     ("nbody", "N-body", "%s steps", "Caspien natural f64", [("optimized", "Caspien scalars f64")], "naive = small functions and plain loops; optimized = hand-unrolled scalar statics (f64)"),
     ("fannkuchredux", "Fannkuch-redux", "n = %s", "Caspien naive", [("optimized", "Caspien optimized")], "naive = helper functions; optimized = everything hand-inlined into main"),
@@ -267,7 +273,7 @@ def overview(DATA, metric):
             'C, C++ and Rust: the free build. A red value means the output differs from the C reference.</p>' % ("".join(th(*c) for c in cols), "".join(out)))
 
 
-DATA = {d: json.load(open(os.path.join(HERE, d, "results.json"))) for d, *_ in PROGS if os.path.exists(os.path.join(HERE, d, "results.json"))}
+DATA = {d: json.load(open(os.path.join(HERE, d, RESULTS_NAME))) for d, *_ in PROGS if os.path.exists(os.path.join(HERE, d, RESULTS_NAME))}
 for d, title, cnt, naive, opts, what in PROGS:
     if d not in DATA:
         continue

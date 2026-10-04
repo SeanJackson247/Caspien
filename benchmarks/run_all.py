@@ -7,6 +7,8 @@ Run every cross-language benchmark program, one after the other (never two at on
     python3 benchmarks/run_all.py --only sieve lru   # a subset
     python3 benchmarks/run_all.py --with-off         # quick, plus the optimisations-off Caspien builds
     python3 benchmarks/run_all.py --charts           # regenerate benchmarks/charts.html afterwards
+    python3 benchmarks/run_all.py --caspien-only --charts   # re-measure only optimised Caspien, merge with the existing other-language rows
+                                                      # (results.quick.json per program, charts.quick.html); published files are untouched
 
 quick (default)  Caspien: only the optimised ("full") builds, measured FIRST. Every other implementation then runs under a time limit
                  equal to the slowest optimised Caspien variant of that program (same precision, never below 0.1 s). One whose first run
@@ -36,6 +38,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--mode", choices=("quick", "full"), default="quick")
     ap.add_argument("--with-off", action="store_true")
+    ap.add_argument("--caspien-only", action="store_true", help="measure only optimised Caspien and merge with the other languages' rows of the existing results.json (writes results.quick.json)")
     ap.add_argument("--no-build-cache", action="store_true")
     ap.add_argument("--clear-build-cache", action="store_true", help="delete the cached builds once, before the first program")
     ap.add_argument("--runs", type=int)
@@ -43,7 +46,7 @@ def main():
     ap.add_argument("--only", nargs="*", default=[])
     ap.add_argument("--charts", action="store_true")
     a = ap.parse_args()
-    extra = ["--mode", a.mode] + (["--with-off"] if a.with_off else []) + (["--no-build-cache"] if a.no_build_cache else []) + (["--runs", str(a.runs)] if a.runs else []) + (["--builds", str(a.builds)] if a.builds else [])
+    extra = ["--mode", a.mode] + (["--with-off"] if a.with_off else []) + (["--caspien-only"] if a.caspien_only else []) + (["--no-build-cache"] if a.no_build_cache else []) + (["--runs", str(a.runs)] if a.runs else []) + (["--builds", str(a.builds)] if a.builds else [])
     progs = [p for p in ALL if not a.only or p in a.only]
     bad = [p for p in a.only if p not in ALL]
     if bad:
@@ -58,7 +61,7 @@ def main():
         rc = subprocess.call(command(p, extra))
         print("--- %s rc=%d %.0f s" % (p, rc, time.time() - t1), flush=True)
     if a.charts:
-        subprocess.call([sys.executable, os.path.join(HERE, "charts_all.py")])
+        subprocess.call([sys.executable, os.path.join(HERE, "charts_all.py")] + (["--results", "results.quick.json", os.path.join(HERE, "charts.quick.html")] if a.caspien_only else []))
     print("ALLDONE %s %.0f s" % (a.mode, time.time() - t0))
 
 

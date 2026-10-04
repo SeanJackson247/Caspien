@@ -65,7 +65,8 @@ def main():
     N = str(n)
     pdir = os.path.join(HERE, name)
     REF, CAS = os.path.join(pdir, "reference"), os.path.join(pdir, "caspien")
-    out_json = a.out or os.path.join(pdir, "results.json")
+    out_json = a.out or os.path.join(pdir, "results.quick.json" if S["caspien_only"] else "results.json")
+    old_rows = B.existing_rows(S, os.path.join(pdir, "results.json"), n)
     jc = P["java_class"]
     W = tempfile.mkdtemp(prefix=name + "_bench_")
     for f in os.listdir(REF):
@@ -80,7 +81,7 @@ def main():
         return not a.only or any(s.lower() in label.lower() for s in a.only)
 
     def measure(label, group, lang, build_cmds, exe_cmd, size_fn, note=""):
-        if not wanted(label):
+        if not wanted(label) or (S["caspien_only"] and group != "caspien"):
             return
         built = BC.compile(label, group, build_cmds, S["builds"])
         if built is None:
@@ -170,11 +171,12 @@ def main():
     # ---- the fifteen languages added on 1 Oct 2026 (benchmarks/newlangs.py has the build commands) ----
     for row in NL.rows(name, W, W, N):
         measure(row["label"], row["group"], row["lang"], row["build"], row["exe"], row["size"], row["note"])
+    results = old_rows + results
     results.sort(key=lambda r: r["group"] == "caspien")   # Caspien rows last, as in the charts
     ref = B.pick_reference(results, ["C -O0", "C -O2", "C -O2 (free)"])
     for r in results:
         r["ok"] = bool(r.get("cutoff")) or (ref is not None and r["output"] == ref)   # a cut-off row never produced output
-    json.dump({"program": name, "title": P["title"], "n": n, "mode": S["mode"], "runs": S["runs"], "builds": S["builds"], "cutoff_s": limits.get("") if S["cutoff"] else None, "results": results},
+    json.dump({"program": name, "title": P["title"], "n": n, "mode": B.result_mode(S), "runs": S["runs"], "builds": S["builds"], "cutoff_s": limits.get("") if S["cutoff"] else None, "results": results},
               open(out_json, "w"), indent=1)
     shutil.rmtree(W, ignore_errors=True)
     print("wrote", out_json, "| differs from the C reference:", [r["label"] for r in results if not r["ok"]] or "none", "| cut off:", sum(1 for r in results if r.get("cutoff")))
