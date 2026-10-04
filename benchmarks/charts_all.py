@@ -88,8 +88,17 @@ def fmt(metric, v):
     return "%d B" % v
 
 
+def known(r, metric):
+    """A cut-off row (killed at the slowest optimised Caspien time) has a time, a compile time and a size, but no peak memory."""
+    return not (r.get("cutoff") and metric == "rss_kb")
+
+
+def vtext(r, metric):
+    return ("> " if r.get("cutoff") and metric == "time_s" else "") + fmt(metric, r[metric])
+
+
 def chart(R, metric, title):
-    rows = sorted(R, key=lambda r: (r[metric], r["label"]))
+    rows = sorted([r for r in R if known(r, metric)], key=lambda r: (r[metric], r["label"]))
     vmax = max(r[metric] for r in rows) or 1
     vmin = min([r[metric] for r in rows if r[metric] > 0] or [1])
     W, LBL, RIGHT, BH, GAP, top = 900, 270, 190, 17, 6, 8
@@ -130,7 +139,7 @@ def chart(R, metric, title):
         noise = (sorted(ts)[len(ts) // 2] - min(ts)) if ts and len(ts) > 2 else ((sum(ts) / len(ts) - min(ts)) if ts and len(ts) == 2 else 0)
         spread = (max(ts) - min(ts)) if ts and len(ts) > 1 else 0
         cls = "k-" + r["key"] + (" off" if r["mode"] == "off" else "")
-        tip = "%s\n%s: %s%s\ngroup: %s%s" % (r["label"], title, fmt(metric, v), (" (gold lines: ±%s = median repeat minus best; slowest repeat +%s)" % (fmt(metric, noise), fmt(metric, spread))) if spread else "", GROUP_NAME[r["kind"]],
+        tip = "%s\n%s: %s%s\ngroup: %s%s" % (r["label"], title, vtext(r, metric) + (" -- killed there: would have taken longer than optimized Caspien" if r.get("cutoff") and metric == "time_s" else ""), (" (gold lines: ±%s = median repeat minus best; slowest repeat +%s)" % (fmt(metric, noise), fmt(metric, spread))) if spread else "", GROUP_NAME[r["kind"]],
                                            "" if r.get("ok", True) else "\nOUTPUT DIFFERS from the C reference")
         out.append('<g class="row" data-tip="%s">' % html.escape(tip, quote=True))
         out.append('<rect class="hit" x="0" y="%d" width="%d" height="%d"/>' % (y - GAP // 2, W, BH + GAP))
@@ -143,7 +152,7 @@ def chart(R, metric, title):
                 out.append('<line class="noise" x1="%.1f" x2="%.1f" y1="%d" y2="%d"/>' % (gx, gx, y, y + BH))
                 tx = max(tx, gx - LBL)
         out.append('<text class="val" x="%.1f" y="%.1f">%s <tspan class="grp">%s</tspan></text>' % (
-            LBL + tx + 6, y + BH * 0.72, html.escape(fmt(metric, v)), html.escape(GROUP_NAME[r["kind"]])))
+            LBL + tx + 6, y + BH * 0.72, html.escape(vtext(r, metric) + (" (cut off)" if r.get("cutoff") and metric == "time_s" else "")), html.escape(GROUP_NAME[r["kind"]])))
         out.append('</g>')
     out.append('</svg>')
     return "\n".join(out)
@@ -202,8 +211,8 @@ def table(R):
     for i, r in enumerate(sorted(R, key=lambda r: (r["kind"], r["label"]))):
         t.append('<tr data-i="%d"><td data-v="%s"><span class="sw k-%s%s"></span>%s</td><td data-v="%s">%s</td>%s%s%s%s<td class="mono" data-v="%s">%s</td><td data-v="%s">%s</td></tr>' % (
             i, html.escape(r["label"]), r["key"], " off" if r["mode"] == "off" else "", html.escape(r["label"]), GROUP_NAME[r["kind"]], GROUP_NAME[r["kind"]],
-            num(r["time_s"], fmt("time_s", r["time_s"])), num(r["rss_kb"], fmt("rss_kb", r["rss_kb"])), num(r["compile_s"], fmt("compile_s", r["compile_s"])), num(r["size_bytes"], fmt("size_bytes", r["size_bytes"])),
-            html.escape(" ".join(r["output"])), html.escape(" ".join(r["output"])), "yes" if r.get("ok") else "no", "yes" if r.get("ok") else "<b>no</b>"))
+            num(r["time_s"], vtext(r, "time_s") + (" (cut off)" if r.get("cutoff") else "")), num(r["rss_kb"] if known(r, "rss_kb") else None, fmt("rss_kb", r["rss_kb"]) if known(r, "rss_kb") else "-"), num(r["compile_s"], fmt("compile_s", r["compile_s"])), num(r["size_bytes"], fmt("size_bytes", r["size_bytes"])),
+            html.escape(" ".join(r["output"])), html.escape(" ".join(r["output"])), "yes" if r.get("ok") else "no", ("n/a (cut off)" if r.get("cutoff") else "yes") if r.get("ok") else "<b>no</b>"))
     t.append("</tbody></table>")
     return "\n".join(t)
 
@@ -227,16 +236,18 @@ def overview(DATA, metric):
     cols = [("Implementation", "text", False), ("Group", "text", False)] + [(p[1], "num", True) for p in progs] + [("Geomean vs C -O2", "num", True)]
     out = []
     def row(i, label, key, group, off, getr):
-        cs, ratios = [], []
+        cs, ratios, nlow = [], [], 0
         for d, t, cnt, naive, opts, what in progs:
             R = DATA[d]["results"]; c2 = c_ref(R); r = getr(R, naive, opts)
-            if not r:
+            if not r or not known(r, metric):
                 cs.append('<td class="n" data-v="">-</td>'); continue
             ratio = r[metric] / c2[metric] if c2 and c2[metric] > 0 and r[metric] > 0 else None
             if ratio: ratios.append(ratio)
-            cs.append(num(r[metric], fmt(metric, r[metric]), ("  <span class=\"grp\">%.1f×</span>" % ratio) if ratio else "", not r.get("ok", True)))
+            lower = r.get("cutoff") and metric == "time_s"   # killed at the limit: the true time is longer, so the ratio is a lower bound
+            nlow += 1 if lower and ratio else 0
+            cs.append(num(r[metric], vtext(r, metric), ("  <span class=\"grp\">%s%.1f×</span>" % ("&ge;" if lower else "", ratio)) if ratio else "", not r.get("ok", True)))
         gm = math.exp(sum(math.log(x) for x in ratios) / len(ratios)) if ratios else None
-        cs.append('<td class="n" data-v="%s"><b>%s</b></td>' % ("" if gm is None else "%.4f" % gm, "-" if gm is None else "%.2f×" % gm))
+        cs.append('<td class="n" data-v="%s"><b>%s</b></td>' % ("" if gm is None else "%.4f" % gm, "-" if gm is None else "%s%.2f×" % ("&ge;" if nlow else "", gm)))
         if all('data-v=""' in c for c in cs[:-1]):
             return
         out.append('<tr data-i="%d"><td data-v="%s"><span class="sw k-%s%s"></span>%s</td><td data-v="%s">%s</td>%s</tr>' % (
@@ -327,6 +338,7 @@ NOTES = [
     "<b>Heap graph, binary trees, LRU:</b> Caspien rejects recursive structs on purpose, so its trees and lists are index-based; the other languages use pointers or references. Same work, not the same memory layout.",
     "<b>Sorting:</b> Caspien elements are u64, the others use 32-bit integers. <b>Linux only:</b> nothing was run on the Windows targets. <b>Noise:</b> a 2-core VM, timings vary by roughly 5&ndash;10% between runs; time is the fastest run.",
     "<b>Re-run on 4 Oct 2026</b> after the allocation-free insecure_hashOf, leaner HashMap, constant-division, sqrt and loop-unrolling changes: every program, every language, fastest of 3 runs, compile time the median of 2 builds, Linux 2-core VM, every output equal to the C reference.",
+    "<b>Quick and full runs.</b> A <i>full</i> run builds every Caspien variant with optimisations off and on, repeats everything 5 times (compile time: median of 3 builds) and runs every language to completion. A <i>quick</i> run builds only the optimised Caspien variants, measures them first, and kills any other implementation whose first run reaches the slowest optimised Caspien time of that program (at least 0.1 s). Such a row is a full-colour bar at that limit, labelled &ldquo;&gt; limit (cut off)&rdquo;, meaning <i>would have taken longer than optimized Caspien</i>; it has no peak-memory figure, its ratios and the geometric mean are lower bounds (&ge;), and it has no output to compare. Quick files carry <code>mode</code> and <code>cutoff_s</code>.",
     "<b>Gold lines</b> (execution-time charts only; the other metrics are measured once per build): two lines at the best time minus and plus the typical run-to-run noise, defined as the median of the three repeats minus the best one. A single stray slow repeat (a JIT pause, a noisy neighbour) does not stretch them; the hover text also gives the slowest repeat. The value text sits to the right of the rightmost line.",
     "<b>Colours</b>: green = Caspien (hatched = optimisations off / naive, solid = everything on), red = bare metal and natively compiled languages, purple = compiled and interpreted (JVM, .NET, WebAssembly), blue = interpreted (Node, Bun, LuaJIT); shades tell the languages apart; every row is also labelled with its language, so colour is never the only cue (a palette of 24 languages cannot be colour-blind-safe by colour alone).",
 ]

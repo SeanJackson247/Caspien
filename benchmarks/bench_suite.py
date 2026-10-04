@@ -53,11 +53,12 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("program", choices=sorted(PROGRAMS))
     ap.add_argument("--n", type=int)
-    ap.add_argument("--runs", type=int, default=3)
-    ap.add_argument("--builds", type=int, default=1)
+    B.add_mode_args(ap)
     ap.add_argument("--out")
     ap.add_argument("--only", nargs="*", default=[])
     a = ap.parse_args()
+    S = B.settings(a)
+    limits = {}
     name = a.program
     P = PROGRAMS[name]
     n = a.n or P["n"]
@@ -81,29 +82,49 @@ def main():
         if not wanted(label):
             return
         ctimes = []
-        for _ in range(a.builds if build_cmds else 0):
+        for _ in range(S["builds"] if build_cmds else 0):
             t = 0.0
             for bc in build_cmds:
                 dt, _, rc, out = B.run(bc["cmd"], cwd=bc.get("cwd", W), env=bc.get("env"))
                 t += dt
                 if rc != 0:
-                    print("BUILD FAILED", label, out[-800:], file=sys.stderr)
+                    print("BUILD FAILED", label, out[-600:], file=sys.stderr)
                     return
             ctimes.append(t)
-        times, rss, outs = [], [], []
-        for _ in range(a.runs):
-            dt, kb, rc, out = B.run(exe_cmd, cwd=W, env=envn)
-            if rc != 0:
-                print("RUN FAILED", label, out[-300:], file=sys.stderr)
-                return
-            times.append(dt); rss.append(kb); outs.append(out.strip().split())
+        status, times, rss, outs, text = B.timed_runs(exe_cmd, W, envn, S, limits, "", group == "caspien")
+        if status == "fail":
+            print("RUN FAILED", label, text[-300:], file=sys.stderr)
+            return
+        if status == "cutoff":
+            r = B.cutoff_row(label, group, lang, "", note, B.median(ctimes), size_fn(), times[0])
+            results.append(r)
+            print("%-40s compile %6.2fs  CUT OFF at %.3fs (%s)" % (label, r["compile_s"], times[0], B.CUTOFF_NOTE), flush=True)
+            return
         r = {"label": label, "group": group, "lang": lang, "prec": "", "note": note, "compile_s": B.median(ctimes),
              "size_bytes": size_fn(), "time_s": min(times), "times": times, "rss_kb": B.median(rss), "output": outs[-1]}
+        B.note_caspien(limits, S, "", label, r["time_s"])
         results.append(r)
         print("%-40s compile %6.2fs  size %10d  time %8.3fs  rss %8d KB  %s" % (
             label, r["compile_s"], r["size_bytes"], r["time_s"], r["rss_kb"], " ".join(r["output"])[:50]), flush=True)
 
     mem = P["leak"]
+    # ---- Caspien (green) ----
+    if B.have("java") and B.have("gcc") and P["caspien"]:
+        ct = B.make_caspien_tree(ROOT)
+        base = open(os.path.join(ct, "toolchain.config")).read()
+        for src, kind, desc in P["caspien"]:
+            text = open(os.path.join(CAS, src + ".caspien")).read().replace("../../../stdlib/", "stdlib/")
+            for mode, kv in B.caspien_modes(S):
+                label = "Caspien %s · %s" % (kind, mode)
+                if not wanted(label):
+                    continue
+                open(os.path.join(ct, "toolchain.config"), "w").write(base)
+                B.patch_config(os.path.join(ct, "toolchain.config"), kv)
+                open(os.path.join(ct, "_bp.caspien"), "w").write(text)
+                exe = os.path.join(W, "cas_%s_%s" % (src, mode))
+                measure(label, "caspien", "Caspien", [{"cmd": ["java", "Compiler", "-i", "_bp.caspien", exe], "cwd": ct, "env": noj}],
+                        [exe], lambda e=exe: B.size_of(e), desc + "; optimisations " + mode)
+        shutil.rmtree(ct, ignore_errors=True)
     # ---- bare metal (red) ----
     if B.have("gcc"):
         for opt in ("-O0", "-O2"):
@@ -150,30 +171,14 @@ def main():
     # ---- the fifteen languages added on 1 Oct 2026 (benchmarks/newlangs.py has the build commands) ----
     for row in NL.rows(name, W, W, N):
         measure(row["label"], row["group"], row["lang"], row["build"], row["exe"], row["size"], row["note"])
-    # ---- Caspien (green) ----
-    if B.have("java") and B.have("gcc") and P["caspien"]:
-        ct = B.make_caspien_tree(ROOT)
-        base = open(os.path.join(ct, "toolchain.config")).read()
-        for src, kind, desc in P["caspien"]:
-            text = open(os.path.join(CAS, src + ".caspien")).read().replace("../../../stdlib/", "stdlib/")
-            for mode, kv in (("off", B.OFF), ("full", B.FULL)):
-                label = "Caspien %s · %s" % (kind, mode)
-                if not wanted(label):
-                    continue
-                open(os.path.join(ct, "toolchain.config"), "w").write(base)
-                B.patch_config(os.path.join(ct, "toolchain.config"), kv)
-                open(os.path.join(ct, "_bp.caspien"), "w").write(text)
-                exe = os.path.join(W, "cas_%s_%s" % (src, mode))
-                measure(label, "caspien", "Caspien", [{"cmd": ["java", "Compiler", "-i", "_bp.caspien", exe], "cwd": ct, "env": noj}],
-                        [exe], lambda e=exe: B.size_of(e), desc + "; optimisations " + mode)
-        shutil.rmtree(ct, ignore_errors=True)
-    ref = next((r["output"] for r in results if r["label"] == "C -O0"), None)
+    results.sort(key=lambda r: r["group"] == "caspien")   # Caspien rows last, as in the charts
+    ref = B.pick_reference(results, ["C -O0", "C -O2", "C -O2 (free)"])
     for r in results:
-        r["ok"] = ref is not None and r["output"] == ref
-    json.dump({"program": name, "title": P["title"], "n": n, "runs": a.runs, "builds": a.builds, "results": results},
+        r["ok"] = bool(r.get("cutoff")) or (ref is not None and r["output"] == ref)   # a cut-off row never produced output
+    json.dump({"program": name, "title": P["title"], "n": n, "mode": S["mode"], "runs": S["runs"], "builds": S["builds"], "cutoff_s": limits.get("") if S["cutoff"] else None, "results": results},
               open(out_json, "w"), indent=1)
     shutil.rmtree(W, ignore_errors=True)
-    print("wrote", out_json, "| differs from C -O0:", [r["label"] for r in results if not r["ok"]] or "none")
+    print("wrote", out_json, "| differs from the C reference:", [r["label"] for r in results if not r["ok"]] or "none", "| cut off:", sum(1 for r in results if r.get("cutoff")))
 
 
 if __name__ == "__main__":

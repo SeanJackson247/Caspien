@@ -16,7 +16,7 @@ aggressive setting plus register variables/temporaries). The shipped toolchain.c
 the tree is made with `target linux` and `default: sysv_x64`; the shipped file is not touched.
 Charts are made from the JSON by charts.py.
 """
-import argparse, json, os, re, shutil, statistics, subprocess, sys, tempfile, time
+import argparse, json, os, re, shutil, signal, statistics, subprocess, sys, tempfile, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
@@ -80,21 +80,94 @@ def launcher():
 
 
 def run(cmd, cwd=None, env=None, timeout=900):
-    """Run a command; returns (wall seconds, peak RSS in KB, exit code, output text)."""
+    """Run a command; returns (wall seconds, peak RSS in KB, exit code, output text). On timeout the whole process group is killed
+    (the launcher forks the program, so killing only the launcher would leave it running) and the result is (timeout, 0, 124, text)."""
     base = os.environ if env is None else env
     env = {k: v for k, v in base.items() if k != "JAVA_TOOL_OPTIONS"}   # even an empty value makes java print "Picked up ..."
     rf = tempfile.mktemp(prefix="rss")
     t0 = time.perf_counter()
+    p = subprocess.Popen([launcher(), rf] + list(cmd), cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True)
     try:
-        p = subprocess.run([launcher(), rf] + list(cmd), cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=timeout)
-    except subprocess.TimeoutExpired:   # a row that takes longer than `timeout` is reported as failed, it must not abort the whole run
-        return float(timeout), 0, 124, "TIMEOUT after %d s" % timeout
+        stdout, _ = p.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:   # a row that takes longer than `timeout` is reported as failed/cut off, it must not abort the whole run
+        try:
+            os.killpg(p.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        p.communicate()
+        return float(timeout), 0, 124, "TIMEOUT after %s s" % timeout
     t1 = time.perf_counter()
     try:
         kb = int(open(rf).read().strip()); os.unlink(rf)
     except Exception:
         kb = 0
-    return t1 - t0, kb, p.returncode, p.stdout.decode("utf-8", "replace")
+    return t1 - t0, kb, p.returncode, stdout.decode("utf-8", "replace")
+
+
+# ---- benchmark modes (shared by nbody/bench.py, bench_program.py, bench_suite.py; run_all.py runs every program) ----
+#   quick (default): Caspien builds only the optimised ("full") configuration and is measured FIRST. Every other implementation then runs
+#       with a time limit equal to the slowest optimised Caspien variant of that program (same precision); one whose first run reaches the
+#       limit is killed and recorded as "would have taken longer than optimized Caspien" (a full-colour bar at the limit, flagged `cutoff`).
+#       Fewer repeats and builds. `--with-off` also builds the optimisations-off Caspien variants.
+#   full: everything: off and optimised Caspien builds, no time limit, more repeats and builds.
+MODES = {"quick": dict(runs=3, builds=1, off=False, cutoff=True),
+         "full": dict(runs=5, builds=3, off=True, cutoff=False)}
+CUTOFF_NOTE = "would have taken longer than optimized Caspien"
+MIN_LIMIT = 0.1   # seconds: a program whose slowest optimised Caspien run is millisecond-scale (hello world) would otherwise be decided by process start-up noise
+
+
+def add_mode_args(ap):
+    ap.add_argument("--mode", choices=sorted(MODES), default="quick", help="quick (default): optimised Caspien only, slower competitors cut off; full: everything, no cutoff")
+    ap.add_argument("--with-off", action="store_true", help="quick mode: also build and measure the optimisations-off Caspien variants")
+    ap.add_argument("--runs", type=int, help="runs per implementation (default 3 quick, 5 full)")
+    ap.add_argument("--builds", type=int, help="builds per implementation for the compile time (default 1 quick, 3 full)")
+
+
+def settings(a):
+    m = MODES[a.mode]
+    return dict(mode=a.mode, runs=a.runs or m["runs"], builds=a.builds or m["builds"], off=m["off"] or a.with_off, cutoff=m["cutoff"])
+
+
+def caspien_modes(S):
+    """[(mode name, config dict)] to build for each Caspien source file."""
+    return ([("off", OFF)] if S["off"] else []) + [("full", FULL)]
+
+
+def note_caspien(limits, S, prec, label, t):
+    """Record the slowest optimised Caspien time per precision: the limit for everything measured afterwards."""
+    if S["cutoff"] and label.endswith("· full"):
+        limits[prec] = max(limits.get(prec, 0.0), t)
+
+
+def timed_runs(cmd, cwd, env, S, limits, prec, is_caspien):
+    """-> (status, times, rss, outs, text). status 'ok', 'fail' (non-zero exit) or 'cutoff' (first run reached the limit and was killed)."""
+    limit = None if is_caspien or not S["cutoff"] or prec not in limits else max(limits[prec], MIN_LIMIT)
+    times, rss, outs = [], [], []
+    for k in range(S["runs"]):
+        dt, kb, rc, out = run(cmd, cwd=cwd, env=env, timeout=limit if limit else 900)
+        if rc == 124 and limit:
+            if k == 0:
+                return "cutoff", [limit], [], [], out
+            break   # a later repeat slower than the limit: keep the faster ones already measured
+        if rc != 0:
+            return "fail", times, rss, outs, out
+        times.append(dt); rss.append(kb); outs.append(out.strip().split())
+    return "ok", times, rss, outs, ""
+
+
+def cutoff_row(label, group, lang, prec, note, compile_s, size, limit):
+    return {"label": label, "group": group, "lang": lang, "prec": prec, "note": (note + "; " if note else "") + CUTOFF_NOTE,
+            "compile_s": compile_s, "size_bytes": size, "time_s": limit, "times": [limit], "rss_kb": 0, "output": [], "cutoff": True}
+
+
+def pick_reference(results, labels):
+    """Output of the first label that finished (a cut-off row has no output)."""
+    for lab in labels:
+        r = next((r for r in results if r["label"] == lab and not r.get("cutoff")), None)
+        if r:
+            return r["output"]
+    r = next((r for r in results if not r.get("cutoff") and r["group"] != "caspien"), None)
+    return r["output"] if r else None
 
 
 def have(tool):
@@ -150,14 +223,19 @@ def median(xs):
     return statistics.median(xs) if xs else 0.0
 
 
+def B_pick(results, labels):
+    return pick_reference(results, labels)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--n", type=int, default=5000000)
-    ap.add_argument("--runs", type=int, default=5)
-    ap.add_argument("--builds", type=int, default=3)
+    add_mode_args(ap)
     ap.add_argument("--out", default=os.path.join(HERE, "results.json"))
     ap.add_argument("--only", nargs="*", default=[])
     a = ap.parse_args()
+    S = settings(a)
+    limits = {}
     N = str(a.n)
     W = tempfile.mkdtemp(prefix="nbody_bench_")
     for f in os.listdir(REF):
@@ -172,7 +250,7 @@ def main():
         if not wanted(label):
             return
         ctimes = []
-        for _ in range(a.builds if build_cmds else 0):
+        for _ in range(S["builds"] if build_cmds else 0):
             t = 0.0
             for bc in build_cmds:
                 dt, _, rc, out = run(bc["cmd"], cwd=bc.get("cwd", W), env=bc.get("env"))
@@ -181,24 +259,42 @@ def main():
                     print("BUILD FAILED", label, out[-500:], file=sys.stderr)
                     return
             ctimes.append(t)
-        times, rss, outs = [], [], []
-        for _ in range(a.runs):
-            dt, kb, rc, out = run(exe_cmd, cwd=W, env=envn)
-            if rc != 0:
-                print("RUN FAILED", label, out[-300:], file=sys.stderr)
-                return
-            times.append(dt)
-            rss.append(kb)
-            outs.append(out.strip().split())
+        status, times, rss, outs, text = timed_runs(exe_cmd, W, envn, S, limits, prec, group == "caspien")
+        if status == "fail":
+            print("RUN FAILED", label, text[-300:], file=sys.stderr)
+            return
+        if status == "cutoff":
+            res = cutoff_row(label, group, lang, prec, note, median(ctimes), size_bytes_fn(), times[0])
+            results.append(res)
+            print("%-34s compile %6.2fs  CUT OFF at %.3fs (%s)" % (label, res["compile_s"], times[0], CUTOFF_NOTE), flush=True)
+            return
         res = {
             "label": label, "group": group, "lang": lang, "prec": prec, "note": note,
             "compile_s": median(ctimes), "size_bytes": size_bytes_fn(), "time_s": min(times), "times": times,
             "rss_kb": median(rss), "output": outs[-1],
         }
+        note_caspien(limits, S, prec, label, res["time_s"])
         results.append(res)
         print("%-34s compile %6.2fs  size %10d  time %7.3fs  rss %8d KB  %s" % (
             label, res["compile_s"], res["size_bytes"], res["time_s"], res["rss_kb"], " ".join(res["output"])), flush=True)
 
+    # ---- Caspien (green): measured first, its slowest optimised time is the limit for every other implementation in quick mode ----
+    if have("java") and have("gcc"):
+        ct = make_caspien_tree(ROOT)
+        base = open(os.path.join(ct, "toolchain.config")).read()
+        for src, prec, desc in CASPIEN:
+            for mode, kv in caspien_modes(S):
+                label = "Caspien %s %s · %s" % ({"nbody": "scalars", "nbody_f64": "scalars"}.get(src, src.replace("nbody_", "").replace("_f64", "")), prec, mode)
+                if not wanted(label):
+                    continue
+                open(os.path.join(ct, "toolchain.config"), "w").write(base)
+                patch_config(os.path.join(ct, "toolchain.config"), kv)
+                shutil.copy(os.path.join(CAS, src + ".caspien"), os.path.join(ct, "_nb.caspien"))
+                exe = os.path.join(W, "cas_%s_%s" % (src, mode))
+                measure(label, "caspien", "Caspien", [{"cmd": ["java", "Compiler", "-i", "_nb.caspien", exe], "cwd": ct,
+                                                       "env": dict(os.environ, JAVA_TOOL_OPTIONS="")}],
+                        [exe], lambda e=exe: size_of(e), prec, desc + "; optimisations " + mode)
+        shutil.rmtree(ct, ignore_errors=True)
     # ---- bare metal (red) ----
     if have("gcc"):
         for opt, lab in (("-O0", "C -O0"), ("-O2", "C -O2")):
@@ -244,38 +340,19 @@ def main():
     import newlangs as NL
     for row in NL.rows("nbody", W, W, N):
         measure(row["label"], row["group"], row["lang"], row["build"], row["exe"], row["size"], "f64", row["note"])
-    # ---- Caspien (green) ----
-    if have("java") and have("gcc"):
-        ct = make_caspien_tree(ROOT)
-        base = open(os.path.join(ct, "toolchain.config")).read()
-        for src, prec, desc in CASPIEN:
-            for mode, kv in (("off", OFF), ("full", FULL)):
-                label = "Caspien %s %s · %s" % ({"nbody": "scalars", "nbody_f64": "scalars"}.get(src, src.replace("nbody_", "").replace("_f64", "")), prec, mode)
-                if not wanted(label):
-                    continue
-                open(os.path.join(ct, "toolchain.config"), "w").write(base)
-                patch_config(os.path.join(ct, "toolchain.config"), kv)
-                shutil.copy(os.path.join(CAS, src + ".caspien"), os.path.join(ct, "_nb.caspien"))
-                exe = os.path.join(W, "cas_%s_%s" % (src, mode))
-                measure(label, "caspien", "Caspien", [{"cmd": ["java", "Compiler", "-i", "_nb.caspien", exe], "cwd": ct,
-                                                       "env": dict(os.environ, JAVA_TOOL_OPTIONS="")}],
-                        [exe], lambda e=exe: size_of(e), prec, desc + "; optimisations " + mode)
-        shutil.rmtree(ct, ignore_errors=True)
-    # ---- correctness: same precision as the C program at the same N ----
-    ref = {}
-    for r in results:
-        if r["label"] == "C -O0":
-            ref["f64"] = r["output"]
-        if r["label"] == "C f32 -O0":
-            ref["f32"] = r["output"]
+    # ---- correctness: same precision as the C program at the same N (C -O0, or C -O2 when -O0 was cut off) ----
+    results.sort(key=lambda r: r["group"] == "caspien")   # Caspien rows last, as in the charts
+    ref = {"f64": B_pick(results, ["C -O0", "C -O2"]), "f32": B_pick(results, ["C f32 -O0", "C f32 -O2"])}
     for r in results:
         r["ok"] = False
-        if r["prec"] in ref and len(r["output"]) == 2 and len(ref[r["prec"]]) == 2:
+        if r.get("cutoff"):
+            r["ok"] = True      # killed before it produced output: nothing to differ
+        elif r["prec"] in ref and ref[r["prec"]] and len(r["output"]) == 2 and len(ref[r["prec"]]) == 2:
             if r["prec"] == "f64":
                 r["ok"] = r["output"] == ref["f64"]          # double precision: identical to 9 digits
             else:                                            # f32 ports round differently (operation order): same to ~4 digits
                 r["ok"] = all(abs(float(x) - float(y)) < 5e-4 for x, y in zip(r["output"], ref["f32"]))
-    json.dump({"n": a.n, "runs": a.runs, "builds": a.builds, "results": results}, open(a.out, "w"), indent=1)
+    json.dump({"n": a.n, "mode": S["mode"], "runs": S["runs"], "builds": S["builds"], "cutoff_s": limits if S["cutoff"] else None, "results": results}, open(a.out, "w"), indent=1)
     shutil.rmtree(W, ignore_errors=True)
     bad = [r["label"] for r in results if not r["ok"]]
     print("wrote", a.out, "| output differs from the same-precision C program:", bad or "none")

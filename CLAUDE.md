@@ -15,7 +15,7 @@ Caspien: a systems language for auditable code (ownership storage `owns/ref/raw/
 - Shipped `toolchain.config` targets **windows_gnu** with most optimizer switches off. To RUN programs, use a Linux-configured scratch copy (and "everything on" / "everything off" configs for sweeps). Never compile two programs at once in one compiler tree (shared scratch files).
 - Verify by running: new feature = new `tests/*.caspien` (print PASS/FAIL lines; expected values from an independent model/Python, not hand arithmetic) plus a sweep of all `tests/*.caspien` + `docs/examples` under several configs, old tree vs new tree identical. Say plainly what was NOT verified (Windows/Wine/MASM are normally unverified).
 - Tests named `*_error_test`/`*_error` must fail to compile; `*_check.sh` are hand-made-bytecode checks (env `LOB_CP` for a mutant classpath).
-- Benchmark VM noise is ~10-30%; use best of 3-5, same-run ratios.
+- Benchmark VM noise is ~10-30%; use best of 3-5, same-run ratios. `benchmarks/run_all.py` runs all programs: `quick` (default: optimised Caspien only, measured first; other languages killed at the slowest optimised Caspien time and listed as "would have taken longer than optimized Caspien") or `--mode full` (everything, no cutoff; use for published numbers).
 - Speak of "scheduled tasks", not triggers; keep README wording owner-approved (opening line: "Caspien is a systems programming language for code that has to be audited,").
 
 ## Language facts worth knowing (details in ASTGenerator/CLAUDE.md)
