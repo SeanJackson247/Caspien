@@ -1,0 +1,124 @@
+// `@unroll` / `@unroll(N)` / `@dont(unroll)` on a `for` statement. Each function computes a value that the PASS line compares with a result from an
+// independent Python model (sum of i*i for 0..8 = 140, and so on). The values must be right whether or not the compiler honoured the decorator;
+// tests/unroll_decorator_check.sh checks what the compiler said about each one (applied / kept rolled / not honoured).
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+
+func check(name: static imut string, ok: mut bool) void{
+	unsafe extern{
+		if ok{
+			printf("PASS %s\n", name)
+		}else{
+			printf("FAIL %s\n", name)
+		}
+	}
+	return
+}
+
+func fullSum() mut u64{
+	let s = mut 0
+	@unroll
+	for i in 0..8{
+		s = s + i * i
+	}
+	return s
+}
+
+func partial3() mut u64{
+	let s = mut 0
+	@unroll(3)
+	for i in 0..10{
+		s = s + i * 3 + 1
+	}
+	return s
+}
+
+func partial4() mut u64{
+	let s = mut 0
+	@unroll(4)
+	for i in 0..12{
+		s = s + i
+	}
+	return s
+}
+
+func nested() mut u64{
+	let s = mut 0
+	@unroll
+	for i in 0..4{
+		@unroll
+		for j in 0..3{
+			s = s + i * 10 + j
+		}
+	}
+	return s
+}
+
+func kept() mut u64{
+	let s = mut 0
+	@dont(unroll)
+	for i in 0..4{
+		s = s + i + 1
+	}
+	return s
+}
+
+func varBound(n: mut u64) mut u64{
+	let s = mut 0
+	@unroll
+	for i in 0..n{
+		s = s + i * 2
+	}
+	return s
+}
+
+func breaker() mut u64{
+	let s = mut 0
+	@unroll
+	for i in 0..8{
+		if i == 5{
+			break
+		}
+		s = s + i
+	}
+	return s
+}
+
+func proofLoop() mut u64{
+	let table = mut [5, 6, 7, 8]
+	let s = mut 0
+	@unroll
+	for i in 0..6{
+		match i in table{
+			s = s + table[i]
+		}
+	}
+	return s
+}
+
+func declLoop() mut u64{
+	let s = mut 0
+	@unroll
+	for i in 0..5{
+		let t = mut 0
+		t = i + 1
+		s = s + t * 2
+	}
+	return s
+}
+
+func main() void{
+	check("@unroll full", fullSum() == 140)
+	check("@unroll(3) with a remainder", partial3() == 145)
+	check("@unroll(4) without a remainder", partial4() == 66)
+	check("nested @unroll", nested() == 192)
+	check("@dont(unroll)", kept() == 10)
+	check("@unroll on a variable bound", varBound(5) == 20)
+	check("@unroll with break", breaker() == 10)
+	check("@unroll with range proofs", proofLoop() == 26)
+	check("@unroll on a body that declares a variable", declLoop() == 30)
+}

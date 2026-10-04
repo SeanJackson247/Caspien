@@ -555,12 +555,12 @@ public class Parser {
                 if (argTok.type == TokenType.STRING) {
                     args.add(argTok.literalValue);
                     argIsString.add(true);
-                } else if (isDecoratorWord(argTok)) {
-                    args.add(argTok.text);
+                } else if (isDecoratorWord(argTok) || argTok.type == TokenType.INTEGER) {
+                    args.add(argTok.text);   // a bare word, or a whole number (`@unroll(4)`)
                     argIsString.add(false);
                 } else {
                     throw new CompilerException("parse", argTok.file, argTok.line,
-                            "decorator arguments must be a string literal or a bare identifier, found '"
+                            "decorator arguments must be a string literal, a bare identifier or a whole number, found '"
                                     + argTok.text + "'");
                 }
             }

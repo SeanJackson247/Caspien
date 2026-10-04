@@ -40,6 +40,8 @@ final class CompilerCache {
     /** What a stage printed that a cache hit has to reproduce. */
     static final class StageLog {
         final List<String> warnings = new ArrayList<>();
+        /** "[note]" lines (what the optimizer did because the source asked for it); replayed on a hit like warnings. */
+        final List<String> notes = new ArrayList<>();
     }
 
     private final Path root;
@@ -183,6 +185,8 @@ final class CompilerCache {
             for (String line : Files.readAllLines(d.resolve("meta"), StandardCharsets.UTF_8)) {
                 if (line.startsWith("W\t")) {
                     log.warnings.add(line.substring(2));
+                } else if (line.startsWith("N\t")) {
+                    log.notes.add(line.substring(2));
                 }
             }
             Files.copy(data, outFile, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES);
@@ -205,6 +209,9 @@ final class CompilerCache {
             StringBuilder meta = new StringBuilder();
             for (String w : log.warnings) {
                 meta.append("W\t").append(w).append('\n');
+            }
+            for (String n : log.notes) {
+                meta.append("N\t").append(n).append('\n');
             }
             Files.writeString(tmp.resolve("meta"), meta.toString(), StandardCharsets.UTF_8);
             if (depsFile != null) {

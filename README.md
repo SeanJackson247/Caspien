@@ -1517,7 +1517,8 @@ is an error ("'@x' is not a valid decorator on a function"). This is the full se
 | `@make_safe_args` | function | builds the safe `main` arguments (`stdlib/make_safe_args.caspien`) |
 | `@gt_init`, `@gt_register`, `@gt_alive_check`, `@gt_destruct`, `@gt_moved` | function | the five ghost-table hooks the compiler calls (`stdlib/gt_*.caspien`) |
 | `@par_call`, `@await_call`, `@sleep` | function | the thread and sleep hooks behind `par`, `await` and `sleep` (`stdlib/`) |
-| `@par`, `@unroll` | `for` loop | accepted; they do not change the generated code today |
+| `@unroll`, `@unroll(N)`, `@dont(unroll)` | `for` loop | unroll this loop fully / by N / never, whatever the `loop-unrolling` preset says; the optimizer reports what it did (see `docs/COMPILER_REFERENCE.md`) |
+| `@par` | `for` loop | accepted; it does not change the generated code today |
 | `@unpadded` | struct | rejected: not supported |
 
 A few more things that surprise newcomers:

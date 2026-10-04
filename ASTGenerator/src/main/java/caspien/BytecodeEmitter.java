@@ -1566,6 +1566,11 @@ public class BytecodeEmitter {
      * (mnemonic + one space + the decorator's own written form).
      */
     private void emitDecorators(String mnemonic, List<Token.Decorator> decorators) {
+        emitDecorators(mnemonic, decorators, false);
+    }
+
+    /** withPos: append the decorator's source position as a quoted "file:line" operand (the optimizer reports on it). */
+    private void emitDecorators(String mnemonic, List<Token.Decorator> decorators, boolean withPos) {
         if (decorators == null) {
             return;
         }
@@ -1581,6 +1586,9 @@ public class BytecodeEmitter {
                     sb.append(d.argIsString.get(i) ? "\"" + escapeForBytecode(a) + "\"" : a);
                 }
                 sb.append(')');
+            }
+            if (withPos && d.file != null && d.line > 0) {
+                sb.append(" \"").append(escapeForBytecode(d.file + ":" + d.line)).append('"');
             }
             line(mnemonic + " " + sb);
         }
@@ -2976,7 +2984,7 @@ public class BytecodeEmitter {
         loopEndLabels.add(endLabel);
         String[] continueTarget = new String[] { null };
         loopContinueTargets.add(continueTarget);
-        emitDecorators("FOR_DECORATE", forTok.decorators);
+        emitDecorators("FOR_DECORATE", forTok.decorators, true);
         line(startLabel + ":");
         emitExpr(conditionIn);
         line("CMP");

@@ -344,6 +344,9 @@ public class Compiler {
             throws IOException, InterruptedException {
         CompilerCache.StageLog log = new CompilerCache.StageLog();
         if (cache.restore(stage, key, outputFile, checkDeps, log)) {
+            for (String n : log.notes) {
+                System.err.println(n);
+            }
             if (!diag.suppressWarnings()) {
                 for (String w : log.warnings) {
                     System.err.println(w);
@@ -822,6 +825,7 @@ public class Compiler {
 
         List<String> warnings = new ArrayList<>();
         List<String> infos = new ArrayList<>();
+        List<String> notes = new ArrayList<>();
         List<String> errors = new ArrayList<>();
         try (BufferedReader r = new BufferedReader(new InputStreamReader(proc.getErrorStream(), StandardCharsets.UTF_8))) {
             String line;
@@ -832,6 +836,8 @@ public class Compiler {
                     warnings.add(line);
                 } else if (line.startsWith("[info]")) {
                     infos.add(line);
+                } else if (line.startsWith("[note]")) {
+                    notes.add(line);
                 } else {
                     errors.add(line);
                 }
@@ -843,6 +849,9 @@ public class Compiler {
         for (String info : infos) {
             System.err.println(info);
         }
+        for (String note : notes) {
+            System.err.println(note);
+        }
         if (!diag.suppressWarnings()) {
             for (String w : warnings) {
                 System.err.println(w);
@@ -851,6 +860,7 @@ public class Compiler {
         diag.addWarnings(warnings.size());
         if (log != null) {
             log.warnings.addAll(warnings);
+            log.notes.addAll(notes);
         }
         if (exit != 0) {
             System.err.println("[error] " + stageName + " failed (exit " + exit + "):");

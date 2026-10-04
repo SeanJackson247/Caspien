@@ -170,6 +170,8 @@ public class BytecodeOptimizer {
             outerChanged |= r.changed;
         } while (outerChanged);
 
+        loopUnrolling.reportUnhonoured(lines);
+
         lines = variableAllocationReordering.run(lines).lines;
 
         // REGVAR hints (once, last): which scalar locals are worth a register. Names no register; see RegVarHintPass.

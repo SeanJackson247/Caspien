@@ -219,8 +219,10 @@ preset is off; a malformed value stops the compile).
 
 Only a `for` loop whose trip count is written in the loop's own bounds is unrolled: `for i in 0..8`, or `for e in a` over a fixed array.
 The pass does no constant propagation, folding or other analysis to find a bound, so `for i in 0..n`, `for j in j0..5` (a variable
-bound) and every `loop{}` are left exactly as they are. The loop variable stays a real variable in every copy (its increment is kept
-between copies); nothing is substituted. A loop of at most `full` trips is unrolled completely. A longer one with at least
+bound) and every `loop{}` are left exactly as they are. When a fully unrolled body only reads the loop variable, copy k gets the
+literal `lo + k` in its place and the increments go (so `i * 8` or `bits >> i` fold); otherwise the variable stays real and its increment is
+kept between copies. Not done for a body that holds another loop (its bounds would turn literal and the code multiplies); range proofs on the
+literal are folded away by constant folding (`IN`). A loop of at most `full` trips is unrolled completely. A longer one with at least
 2 x `factor` trips is unrolled `factor` times: the hidden range's high bound becomes `lo + floor(N/factor) * factor`, the body is
 repeated `factor` times, and the remaining `N mod factor` trips are copied after it. Inner loops go first; the outer loop is
 considered on a later round. A loop is skipped when its body declares storage or a function/struct/global/register hint, refers to its
@@ -232,6 +234,25 @@ time, no duplicate labels. Of the other programs in `tests/`, only `array_match_
 loop; their output is identical too. Unrolling by itself did not make the looping n-body programs measurably faster (N = 1e6, within
 timing noise): their hot inner loop has a variable bound, and turning the outer loop into straight-line code needs the constant
 propagation this pass deliberately does not do. Not covered: the Intel/MASM target, a fuzzer for this pass.
+
+#### Per-loop control: `@unroll`, `@unroll(N)`, `@dont(unroll)`
+
+A decorator on the `for` statement overrides the preset for that one loop and is honoured even with `loop-unrolling: off`:
+
+| written | effect |
+|---|---|
+| `@unroll` | unroll fully (any trip count), substitute the loop variable, also into a body that holds another loop |
+| `@unroll(N)` | N from 2 to 64: unroll by N (fully if the loop has at most N trips) |
+| `@dont(unroll)` | never unroll this loop, whatever the preset says |
+
+A forced unroll ignores the preset's trip, body-size and growth limits; its only limit is 20000 added lines per loop. It still needs a loop the
+pass can read (literal bounds after folding, no label of the body used from outside it). The optimizer says what it did, on stderr: `[note]
+file:line - @unroll: unrolled fully (8 iterations, +37 lines)`, and `[note] ... @dont(unroll): this loop is kept as a loop (the heuristic would
+have unrolled it)` when the preset would have unrolled it. A request that cannot be met is a `[warning] file:line - @unroll not honoured:
+<reason>` (variable bounds, a label used from outside, over the limit), printed once after the optimizer has settled, because a bound that is a
+variable early on can become a literal in a later round. Notes and warnings are replayed when the stage comes from the build cache. Only on a
+`for` statement (not function level); `@unroll` on `loop{}` is accepted and ignored. Tests: `tests/unroll_decorator_test.caspien` (9 values from a
+Python model) and `tests/unroll_decorator_check.sh` (messages, preset off and aggressive, cache replay, bad factors).
 
 ### `function-inlining`
 

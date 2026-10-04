@@ -5059,6 +5059,20 @@ public class TypeChecker {
                     throw new CompilerException("type", d.file, d.line, "'@fs_root' takes nothing (read-only) or 'rw'");
                 }
                 break;
+            case "unroll":
+                // "@unroll" (unroll fully) or "@unroll(N)" (partial unroll by factor N, 2..64)
+                if (d.args.size() > 1) {
+                    throw new CompilerException("type", d.file, d.line, "'@unroll' takes nothing or one factor, e.g. '@unroll(4)'");
+                }
+                if (d.args.size() == 1) {
+                    String a = d.args.get(0);
+                    boolean digits = !d.argIsString.get(0) && !a.isEmpty() && a.length() <= 3 && a.chars().allMatch(Character::isDigit);
+                    if (!digits || Integer.parseInt(a) < 2 || Integer.parseInt(a) > 64) {
+                        throw new CompilerException("type", d.file, d.line,
+                                "'@unroll(N)' needs a whole-number factor from 2 to 64, found '" + a + "'");
+                    }
+                }
+                break;
             case "reads":
             case "writes":
                 if (d.args.isEmpty()) {
