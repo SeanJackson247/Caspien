@@ -51,6 +51,7 @@ def main():
     W = tempfile.mkdtemp(prefix=a.program + "_bench_")
     for f in os.listdir(REF):
         shutil.copy(os.path.join(REF, f), W)
+    BC = B.BuildCache(W, S["build_cache"])
     results = []
     envn = dict(os.environ, JAVA_TOOL_OPTIONS="")
     envn[P["env"]] = N
@@ -62,28 +63,26 @@ def main():
     def measure(label, group, lang, build_cmds, exe_cmd, size_fn, note=""):
         if not wanted(label):
             return
-        ctimes = []
-        for _ in range(S["builds"] if build_cmds else 0):
-            t = 0.0
-            for bc in build_cmds:
-                dt, _, rc, out = B.run(bc["cmd"], cwd=bc.get("cwd", W), env=bc.get("env"))
-                t += dt
-                if rc != 0:
-                    print("BUILD FAILED", label, out[-600:], file=sys.stderr)
-                    return
-            ctimes.append(t)
+        built = BC.compile(label, group, build_cmds, S["builds"])
+        if built is None:
+            return
+        ctimes, reused = built
+        if reused:
+            note = (note + "; " if note else "") + "compile time reused from an earlier build (build cache)"
         status, times, rss, outs, text = B.timed_runs(exe_cmd, W, envn, S, limits, "f64", group == "caspien")
         if status == "fail":
             print("RUN FAILED", label, text[-300:], file=sys.stderr)
             return
         if status == "cutoff":
             r = B.cutoff_row(label, group, lang, "f64", note, B.median(ctimes), size_fn(), times[0])
+            r["compile_cached"] = reused
             results.append(r)
             print("%-40s compile %6.2fs  CUT OFF at %.3fs (%s)" % (label, r["compile_s"], times[0], B.CUTOFF_NOTE), flush=True)
             return
         r = {"label": label, "group": group, "lang": lang, "prec": "f64", "note": note, "compile_s": B.median(ctimes),
              "size_bytes": size_fn(), "time_s": min(times), "times": times, "rss_kb": B.median(rss), "output": outs[-1]}
         B.note_caspien(limits, S, "f64", label, r["time_s"])
+        r["compile_cached"] = reused
         results.append(r)
         print("%-40s compile %6.2fs  size %10d  time %8.3fs  rss %8d KB  %s" % (
             label, r["compile_s"], r["size_bytes"], r["time_s"], r["rss_kb"], " ".join(r["output"])[:50]), flush=True)

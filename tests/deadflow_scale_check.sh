@@ -6,7 +6,7 @@
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 export JAVA_TOOL_OPTIONS=
-tar -C "$ROOT" --exclude=.git -cf - . | tar -C "$W" -xf -
+tar -C "$ROOT" --exclude=.git --exclude=.cache -cf - . | tar -C "$W" -xf -
 cd "$W" || exit 1
 sed -i 's/^target .*/target linux/; s/^\( *\)default: win64/\1default: sysv_x64/; s/^constant-folding: .*/constant-folding: on/; s/^variable-elision: .*/variable-elision: on/; s/^dead-control-flow-removal: .*/dead-control-flow-removal: on/' toolchain.config
 python3 - <<'P'

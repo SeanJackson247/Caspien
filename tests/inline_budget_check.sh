@@ -6,7 +6,7 @@
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 export JAVA_TOOL_OPTIONS=
-tar -C "$ROOT" --exclude=.git -cf - . | tar -C "$W" -xf -
+tar -C "$ROOT" --exclude=.git --exclude=.cache -cf - . | tar -C "$W" -xf -
 cd "$W" || exit 1
 sed -i 's/^target .*/target linux/; s/^\( *\)default: win64/\1default: sysv_x64/; s/^function-inlining: .*/function-inlining: aggressive/' toolchain.config
 grep -q '^function-inlining: aggressive' toolchain.config || { echo "FAIL: no function-inlining key in toolchain.config"; exit 1; }

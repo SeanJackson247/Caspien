@@ -1104,10 +1104,11 @@ public class TypeChecker {
      */
     private enum TryBlockBoundaryMarker { MARK }
 
-    /** The reasons a statement-level `unsafe` block must name (`unsafe deref extern{`), each matching one rule that otherwise needs a proof or is refused in safe code. */
+    /** The reasons a statement-level `unsafe` block must name (`unsafe deref extern{`), each matching one rule that otherwise needs a proof or is refused in safe code.
+     *  `unaudited` is the catch-all: a block that names it (alone) is accepted whatever it needs, and says nothing about why; the stdlib may never use it. */
     static final Set<String> UNSAFE_TAGS = new java.util.LinkedHashSet<>(Arrays.asList(
             "extern", "memcopy", "raw", "deref", "clone", "global", "loop", "udyn", "udyn:owns",
-            "assume", "call", "asm", "async", "guard", "swap", "file"));
+            "assume", "call", "asm", "async", "guard", "swap", "file", "unaudited"));
 
     /** One written `unsafe ...{` block: what it declares, and (unioned over every time it is checked, e.g. per generic instantiation) what it really used. */
     private static class UnsafeBlockRecord {
@@ -8706,6 +8707,16 @@ public class TypeChecker {
         if (rec == null) {
             rec = new UnsafeBlockRecord(stmt);
             if (stmt.unsafeTags != null) {
+                if (stmt.unsafeTags.contains("unaudited")) {
+                    if (stmt.unsafeTags.size() != 1) {
+                        throw new CompilerException("type", stmt.file, stmt.line,
+                                "'unsafe unaudited' stands for every other tag; write it alone (or name the real reasons instead)");
+                    }
+                    if (isStdlibFile(stmt.file)) {
+                        throw new CompilerException("type", stmt.file, stmt.line,
+                                "'unsafe unaudited' is not allowed in the standard library: every unsafe block there must name its reasons");
+                    }
+                }
                 for (String tag : stmt.unsafeTags) {
                     if (!UNSAFE_TAGS.contains(tag) && System.getenv("CASPIEN_UNSAFE_REPORT") == null) {
                         throw new CompilerException("type", stmt.file, stmt.line,
@@ -8743,6 +8754,9 @@ public class TypeChecker {
             return;
         }
         for (UnsafeBlockRecord rec : unsafeBlockRecords.values()) {
+            if (rec.declared.contains("unaudited")) {
+                continue;   // vouches for everything, needed or not
+            }
             Set<String> missing = new java.util.TreeSet<>(rec.used);
             missing.removeAll(rec.declared);
             Set<String> unused = new java.util.TreeSet<>(rec.declared);

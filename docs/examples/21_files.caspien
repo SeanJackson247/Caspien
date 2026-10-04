@@ -1,0 +1,78 @@
+// Files and directories with stdlib/fs.caspien. A program works through an open `Dir` (a capability): names are single path components, `..` and
+// `/` are refused, symlinks are never followed, and `Dir` / `File` close themselves when they go out of scope. This example opens /tmp through
+// `Dir.rootAnyRW`, the unchecked way in (it needs `unsafe file`); a real program names its roots in the `===fs.config===` section of
+// toolchain.config and uses `Dir.rootRW("/literal/path")`, which the compiler checks (see the README, 2.6). It cleans up after itself.
+// Expected output:
+//   written: 13 bytes
+//   after append: 19 bytes
+//   after atomic replace: 4 bytes
+//   escape refused: 1
+//   cleaned up
+import "../../stdlib/libc.caspien"
+import "../../stdlib/gt_init.caspien"
+import "../../stdlib/gt_register.caspien"
+import "../../stdlib/gt_alive_check.caspien"
+import "../../stdlib/gt_destruct.caspien"
+import "../../stdlib/gt_moved.caspien"
+import "../../stdlib/fs.caspien"
+
+/** The size of a file, by reading it whole. */
+func sizeOf(d: ref some imut Dir, name: static imut string) mut u64{
+	?catch(e){ return 0 }
+	let f = mut ? File.open(d, name, Open.READ)
+	let n = mut 0
+	match Some(f){
+		let text = mut ? File.readAll(f)
+		match Some(text){ n = len(text.chars.backing) }
+	}
+	return n
+}
+
+/** 1 when opening `name` threw (the name was refused or the file is missing). */
+func refused(d: ref some imut Dir, name: static imut string) mut u64{
+	?catch(e){ return 1 }
+	let f = mut ? File.open(d, name, Open.READ)
+	return 0
+}
+
+func run(root: ref some imut Dir) void{
+	?catch(e){
+		unsafe extern{ printf("failed: %s\n", e) }
+		return
+	}
+	? Dir.make(root, "caspien_demo")
+	let d = mut ? Dir.sub(root, "caspien_demo")
+	match Some(d){
+		let f = mut ? File.open(d, "log.txt", Open.WRITE_NEW)   // WRITE_NEW fails if it exists
+		match Some(f){
+			? File.writeText(f, "hello, files\n")
+			? File.sync(f)
+		}
+		unsafe extern{ printf("written: %llu bytes\n", sizeOf(d, "log.txt")) }
+
+		let g = mut ? File.open(d, "log.txt", Open.APPEND)
+		match Some(g){ ? File.writeText(g, "again\n") }
+		unsafe extern{ printf("after append: %llu bytes\n", sizeOf(d, "log.txt")) }
+
+		// Replace a file atomically: write a hidden temp file, flush it, rename it over the name. Dropped without `commit`, it is deleted.
+		let t = mut ? File.tempFile(d, "log.txt")
+		match Some(t){
+			? File.writeText(t, "new\n")
+			? File.commit(t)
+		}
+		unsafe extern{ printf("after atomic replace: %llu bytes\n", sizeOf(d, "log.txt")) }
+
+		unsafe extern{ printf("escape refused: %llu\n", refused(d, "../etc/passwd")) }
+		? Dir.removeFile(d, "log.txt")
+	}
+	? Dir.removeDir(root, "caspien_demo")
+	unsafe extern{ printf("cleaned up\n") }
+}
+
+func main() void{
+	?catch(e){ return }
+	unsafe file{
+		let root = mut ? Dir.rootAnyRW("/tmp")
+		match Some(root){ run(root) }
+	}
+}

@@ -16,7 +16,7 @@ aggressive setting plus register variables/temporaries). The shipped toolchain.c
 the tree is made with `target linux` and `default: sysv_x64`; the shipped file is not touched.
 Charts are made from the JSON by charts.py.
 """
-import argparse, json, os, re, shutil, signal, statistics, subprocess, sys, tempfile, time
+import argparse, hashlib, json, os, re, shutil, signal, statistics, subprocess, sys, tarfile, tempfile, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
@@ -121,11 +121,16 @@ def add_mode_args(ap):
     ap.add_argument("--with-off", action="store_true", help="quick mode: also build and measure the optimisations-off Caspien variants")
     ap.add_argument("--runs", type=int, help="runs per implementation (default 3 quick, 5 full)")
     ap.add_argument("--builds", type=int, help="builds per implementation for the compile time (default 1 quick, 3 full)")
+    ap.add_argument("--no-build-cache", action="store_true", help="quick mode: rebuild the other languages' programs instead of reusing cached builds")
+    ap.add_argument("--clear-build-cache", action="store_true", help="delete benchmarks/.build_cache first")
 
 
 def settings(a):
     m = MODES[a.mode]
-    return dict(mode=a.mode, runs=a.runs or m["runs"], builds=a.builds or m["builds"], off=m["off"] or a.with_off, cutoff=m["cutoff"])
+    if a.clear_build_cache:
+        shutil.rmtree(BUILD_CACHE, ignore_errors=True)
+    return dict(mode=a.mode, runs=a.runs or m["runs"], builds=a.builds or m["builds"], off=m["off"] or a.with_off, cutoff=m["cutoff"],
+                build_cache=(a.mode == "quick" and not a.no_build_cache))
 
 
 def caspien_modes(S):
@@ -158,6 +163,116 @@ def timed_runs(cmd, cwd, env, S, limits, prec, is_caspien):
 def cutoff_row(label, group, lang, prec, note, compile_s, size, limit):
     return {"label": label, "group": group, "lang": lang, "prec": prec, "note": (note + "; " if note else "") + CUTOFF_NOTE,
             "compile_s": compile_s, "size_bytes": size, "time_s": limit, "times": [limit], "rss_kb": 0, "output": [], "cutoff": True}
+
+
+# ---- build cache for the other languages' programs (quick mode) --------------------------------------------------------------------------------
+# A build of a foreign-language program is reused when nothing it depends on changed: the program's source files, the build command, and the
+# compiler it runs (path, size, mtime). The files a build adds to the scratch folder (executables, class files, jars, a .NET output folder; not
+# the compilers' own cache folders) are stored as a tar.gz under benchmarks/.build_cache and unpacked again on a hit. The compile time stored
+# with the entry is reported again (the row's note says so), so quick mode shows the time of the build that made the artifact. Caspien's own
+# builds are never cached here: the compiler is what is being measured. The program is still run, and timed, every time. Full mode builds
+# everything from scratch.
+BUILD_CACHE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".build_cache")
+_SKIP_DIRS = ("cache", "obj", "dnhome", "emptyfeed")
+
+
+def _walk(root, skip=_SKIP_DIRS):
+    for dp, dns, fns in os.walk(root):
+        dns[:] = sorted(d for d in dns if not any(k in d.lower() for k in skip))
+        for f in sorted(fns):
+            p = os.path.join(dp, f)
+            if os.path.isfile(p) and not os.path.islink(p):
+                yield p
+
+
+def _hash_tree(root, skip=_SKIP_DIRS, scratch=None):
+    """Hash of names and contents; `scratch` (the per-run scratch folder) is replaced by a placeholder in the contents, because generated project files mention it."""
+    h = hashlib.sha256()
+    for p in _walk(root, skip):
+        h.update(os.path.relpath(p, root).encode()); h.update(b"\0")
+        with open(p, "rb") as f:
+            data = f.read()
+        if scratch:
+            data = data.replace(scratch.encode(), b"<W>")
+        h.update(hashlib.sha256(data).digest())
+    return h.hexdigest()
+
+
+def _snapshot(root):
+    return {os.path.relpath(p, root): (os.path.getsize(p), os.stat(p).st_mtime_ns) for p in _walk(root)}
+
+
+def _tool_identity(cmd0, env):
+    path = shutil.which(cmd0, path=(env or os.environ).get("PATH")) or cmd0
+    try:
+        st = os.stat(os.path.realpath(path))
+        return "%s %d %d" % (os.path.realpath(path), st.st_size, st.st_mtime_ns)
+    except OSError:
+        return path
+
+
+class BuildCache:
+    def __init__(self, W, enabled):
+        self.W = W
+        self.enabled = enabled
+        self.src = _hash_tree(W) if enabled else ""     # called right after the reference sources were copied in: everything in W is source
+        self.hits = self.misses = 0
+
+    def _key(self, build_cmds):
+        h = hashlib.sha256(self.src.encode())
+        for bc in build_cmds:
+            norm = lambda x: str(x).replace(self.W, "<W>")
+            h.update(("\n".join([norm(a) for a in bc["cmd"]]) + "\n" + norm(bc.get("cwd", self.W))).encode())
+            env = bc.get("env")
+            if env:
+                h.update(repr(sorted((k, norm(v)) for k, v in env.items() if os.environ.get(k) != v and k != "JAVA_TOOL_OPTIONS")).encode())
+            h.update(_tool_identity(bc["cmd"][0], env).encode())
+            cwd = bc.get("cwd", self.W)
+            if os.path.abspath(cwd) != os.path.abspath(self.W) and os.path.isdir(cwd):
+                h.update(_hash_tree(cwd, _SKIP_DIRS + ("out", "bin"), self.W).encode())    # generated project files (C#)
+        return h.hexdigest()
+
+    def compile(self, label, group, build_cmds, builds):
+        """Runs (or restores) the build commands. Returns (compile times, reused flag), or None when a build failed."""
+        if not build_cmds:
+            return [], False
+        key = self._key(build_cmds) if self.enabled and group != "caspien" else None
+        entry = os.path.join(BUILD_CACHE, key[:2], key) if key else None
+        if entry and os.path.isfile(entry + ".tar.gz") and os.path.isfile(entry + ".time"):
+            try:
+                with tarfile.open(entry + ".tar.gz") as t:
+                    t.extractall(self.W)
+                ct = float(open(entry + ".time").read())
+                self.hits += 1
+                return [ct], True
+            except (OSError, tarfile.TarError, ValueError):
+                pass
+        before = _snapshot(self.W) if key else None
+        ctimes = []
+        for _ in range(builds):
+            t = 0.0
+            for bc in build_cmds:
+                dt, _, rc, out = run(bc["cmd"], cwd=bc.get("cwd", self.W), env=bc.get("env"))
+                t += dt
+                if rc != 0:
+                    print("BUILD FAILED", label, out[-600:], file=sys.stderr)
+                    return None
+            ctimes.append(t)
+        if key:
+            self.misses += 1
+            try:
+                after = _snapshot(self.W)
+                new = [p for p, v in after.items() if before.get(p) != v]
+                os.makedirs(os.path.dirname(entry), exist_ok=True)
+                tmp = entry + ".part"
+                with tarfile.open(tmp, "w:gz") as t:
+                    for p in new:
+                        t.add(os.path.join(self.W, p), arcname=p)
+                os.replace(tmp, entry + ".tar.gz")
+                open(entry + ".time", "w").write(repr(median(ctimes)))
+            except OSError:
+                pass
+        return ctimes, False
 
 
 def pick_reference(results, labels):
@@ -240,6 +355,7 @@ def main():
     W = tempfile.mkdtemp(prefix="nbody_bench_")
     for f in os.listdir(REF):
         shutil.copy(os.path.join(REF, f), W)
+    BC = BuildCache(W, S["build_cache"])
     results = []
     envn = dict(os.environ, NBODY_N=N, JAVA_TOOL_OPTIONS="")
 
@@ -249,22 +365,19 @@ def main():
     def measure(label, group, lang, build_cmds, exe_cmd, size_bytes_fn, prec, note=""):
         if not wanted(label):
             return
-        ctimes = []
-        for _ in range(S["builds"] if build_cmds else 0):
-            t = 0.0
-            for bc in build_cmds:
-                dt, _, rc, out = run(bc["cmd"], cwd=bc.get("cwd", W), env=bc.get("env"))
-                t += dt
-                if rc != 0:
-                    print("BUILD FAILED", label, out[-500:], file=sys.stderr)
-                    return
-            ctimes.append(t)
+        built = BC.compile(label, group, build_cmds, S["builds"])
+        if built is None:
+            return
+        ctimes, reused = built
+        if reused:
+            note = (note + "; " if note else "") + "compile time reused from an earlier build (build cache)"
         status, times, rss, outs, text = timed_runs(exe_cmd, W, envn, S, limits, prec, group == "caspien")
         if status == "fail":
             print("RUN FAILED", label, text[-300:], file=sys.stderr)
             return
         if status == "cutoff":
             res = cutoff_row(label, group, lang, prec, note, median(ctimes), size_bytes_fn(), times[0])
+            res["compile_cached"] = reused
             results.append(res)
             print("%-34s compile %6.2fs  CUT OFF at %.3fs (%s)" % (label, res["compile_s"], times[0], CUTOFF_NOTE), flush=True)
             return
@@ -274,6 +387,7 @@ def main():
             "rss_kb": median(rss), "output": outs[-1],
         }
         note_caspien(limits, S, prec, label, res["time_s"])
+        res["compile_cached"] = reused
         results.append(res)
         print("%-34s compile %6.2fs  size %10d  time %7.3fs  rss %8d KB  %s" % (
             label, res["compile_s"], res["size_bytes"], res["time_s"], res["rss_kb"], " ".join(res["output"])), flush=True)

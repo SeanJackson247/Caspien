@@ -7,3 +7,4 @@ ASTGenerator/fs.config
 ASTGenerator/platform.config
 __pycache__/
 /.cache/
+/benchmarks/.build_cache/

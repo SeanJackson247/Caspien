@@ -1,0 +1,77 @@
+// The standard library in use: DynamicArray, HashMap, String and the (insecure) hash. Every method that reads or writes through `self`
+// takes the collection as `ref some`, so the caller has to have proven it is not null (here: it came out of `?`), and an index has to be
+// proven in bounds with `match i in x.backing`. Allocation can fail, so every constructor and every growing call goes through `?`.
+// Expected output:
+//   DynamicArray: sum=55 popped=25 len=5 third=100
+//   HashMap: threes=3 ones=2 twos=1 missing=999 distinct=3
+//   String: len=12 first=c l_at=8 prefix_len=7
+//   insecure_hashOf: same=1 different=1
+import "../../stdlib/libc.caspien"
+import "../../stdlib/gt_init.caspien"
+import "../../stdlib/gt_register.caspien"
+import "../../stdlib/gt_alive_check.caspien"
+import "../../stdlib/gt_destruct.caspien"
+import "../../stdlib/gt_moved.caspien"
+import "../../stdlib/dynamic_array.caspien"
+import "../../stdlib/hash_map.caspien"
+import "../../stdlib/string.caspien"
+import "../../stdlib/insecure_hash.caspien"
+
+func main() void{
+	?catch(e){ return }
+
+	// DynamicArray<u64>: [0, 1, 4, 9, 16, 25]
+	let list = mut ? new DynamicArray:<u64>()
+	for i in 0..6{
+		let v = mut (i * i)
+		? list.pushBack(list, v)
+	}
+	let sum = mut 0
+	for i in 0..6{
+		match i in list.backing{ sum += list.get(list, i) }
+	}
+	let popped = mut ? list.popBack(list, mut 999)      // the argument comes back if the array is empty
+	let two = mut 2
+	match two into list.backing{ list.set(list, two, mut 100) }   // `into` is the write proof, `in` the read proof
+	let third = mut 0
+	match two in list.backing{ third = list.get(list, two) }
+	let count = mut len(list.backing)
+	unsafe extern{ printf("DynamicArray: sum=%llu popped=%llu len=%llu third=%llu\n", sum, popped, count, third) }
+
+	// HashMap<u64>: key and value share one type, the capacity is fixed when you build it
+	let data = mut [3, 1, 3, 3, 2, 1]
+	let counts = mut ? new HashMap:<u64>(mut 0, mut 0, mut 64)
+	for i in 0..6{
+		match i in data{
+			let key = mut data[i]
+			let seen = mut counts.get(counts, key, mut 0)  // the last argument is the answer for a missing key
+			counts.set(counts, key, seen + 1)
+		}
+	}
+	let threes = mut counts.get(counts, mut 3, mut 999)
+	let ones = mut counts.get(counts, mut 1, mut 999)
+	let twos = mut counts.get(counts, mut 2, mut 999)
+	let missing = mut counts.get(counts, mut 9, mut 999)
+	unsafe extern{ printf("HashMap: threes=%llu ones=%llu twos=%llu missing=%llu distinct=%llu\n", threes, ones, twos, missing, counts.count) }
+
+	// String: a byte string with its own length, built from a literal
+	let s = mut ? new String("caspien")
+	? s.concat(s, " lang")
+	let slen = mut len(s.chars.backing)
+	let first = mut s.charAt(s, 0)
+	let l_at = mut s.firstIndexOf(s, 'l')               // -1 when absent
+	let prefix = mut ? s.sub(s, 0, 7)                   // a new String: "caspien"
+	let plen = mut 0
+	match Some(prefix){ plen = len(prefix.chars.backing) }
+	unsafe extern{ printf("String: len=%llu first=%c l_at=%lld prefix_len=%llu\n", slen, first, l_at, plen) }
+
+	// insecure_hashOf: 64-bit FNV-1a of the bytes of any non-struct value. For hash tables only, never for security.
+	let a = mut insecure_hashOf:<u64>(imut 42)
+	let b = mut insecure_hashOf:<u64>(imut 42)
+	let c = mut insecure_hashOf:<u64>(imut 43)
+	let same = mut 0
+	if a == b{ same = 1 }
+	let different = mut 0
+	if a != c{ different = 1 }
+	unsafe extern{ printf("insecure_hashOf: same=%llu different=%llu\n", same, different) }
+}

@@ -9,7 +9,7 @@ WINE=$(command -v wine64 || ls /usr/lib/wine/wine64 2>/dev/null)
 command -v x86_64-w64-mingw32-gcc >/dev/null && [ -n "$WINE" ] || { echo "SKIP fs_wine_check: needs x86_64-w64-mingw32-gcc and wine64"; exit 0; }
 W=$(mktemp -d); trap 'rm -rf "$W" /tmp/caspien_fs_test /tmp/caspien_fs_pol' EXIT
 export JAVA_TOOL_OPTIONS= WINEPREFIX="${WINEPREFIX:-/tmp/wpfx}" WINEDEBUG=-all DISPLAY=
-tar -C "$ROOT" --exclude=.git -cf - . | tar -C "$W" -xf -
+tar -C "$ROOT" --exclude=.git --exclude=.cache -cf - . | tar -C "$W" -xf -
 cd "$W" || exit 1
 sed -i 's/^target .*/target windows_gnu/; s/^\( *\)default: sysv_x64/\1default: win64/' toolchain.config
 cat >> toolchain.config <<'CFG'

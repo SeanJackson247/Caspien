@@ -28,7 +28,7 @@ func main() void{
 **Contents**
 
 1. [The language](#1-the-language): philosophy, a tour with examples, and an honest status report
-2. [Using the compiler](#2-using-the-compiler): building, running, targets, and every optimisation switch
+2. [Using the compiler](#2-using-the-compiler): building, running, targets, every optimisation switch, the standard library and the file system
 3. [How the compiler works](#3-how-the-compiler-works)
 4. [Performance](#4-performance): latest benchmark results and an honest comparison with other languages
 
@@ -108,6 +108,9 @@ hint only because GitHub has no Caspien highlighter.
 | [Composition](#composition-there-is-no-struct-inheritance), [interfaces](#interfaces), [dispatch](#generics-and-compile-time-dispatch) | [`11_types`](docs/examples/11_types.caspien) |
 | [`match`](#the-match-statement), [loops, bounded recursion](#bounded-loops-and-bounded-recursion) | [`12_match_and_loops`](docs/examples/12_match_and_loops.caspien) |
 | [Dynamic arrays and the standard library](#dynamic-arrays-and-the-standard-library) | [`13_dynamic_arrays`](docs/examples/13_dynamic_arrays.caspien) |
+| [The standard library](#25-the-standard-library): collections, strings, hashing | [`20_stdlib_tour`](docs/examples/20_stdlib_tour.caspien) |
+| [Files and directories](#26-files-and-directories) | [`21_files`](docs/examples/21_files.caspien) |
+| [Processes, threads, sleeping](#25-the-standard-library) | [`22_processes_threads_sleep`](docs/examples/22_processes_threads_sleep.caspien) |
 | [Raw pointers and C](#unsafe-and-raw-pointers) | [`14_unsafe_pointers`](docs/examples/14_unsafe_pointers.caspien) |
 | [Every `unsafe` tag](#unsafe-and-raw-pointers) | [`19_unsafe_tags`](docs/examples/19_unsafe_tags.caspien) |
 | [`extern`, `export`, linking your own C](#talking-to-c-extern-and-export) | [`docs/c_interop/`](docs/c_interop/) |
@@ -951,7 +954,7 @@ A statement-level `unsafe` block must say why it is unsafe, by naming the reason
 `call` (calling a function pointer), `asm`, `async` (a pointer across an `@async` boundary), `guard` (using a
 `@guard` type without proving it locked), `swap` (touching a `swap` mutex field outside `match @lock`) and `file` (opening a path the build's file policy has not vouched for, see 2.6). The
 compiler checks the list both ways: a block that needs a reason it does not name is an error, and so is a block
-that names one it does not need, so the line is also what you grep for. A bare `unsafe{}` is an error. (A
+that names one it does not need, so the line is also what you grep for. A bare `unsafe{}` is an error. The one exception is `unsafe unaudited{`: it stands for every tag at once and says nothing about why, for code nobody has audited yet. It is written alone, is just as easy to grep for, and the standard library may never use it (the compiler refuses it in any file under `stdlib/`). (A
 root-level `unsafe{}` that holds declarations is not a statement block and takes no list.)
 
 One example of every tag (each is compiled and run in `docs/examples/19_unsafe_tags.caspien`, which also
@@ -993,6 +996,7 @@ unsafe global guard{                                        // guard: a bare @lo
 	gate.unlock()
 }
 unsafe swap{ m.lockState swap St.CLOSED }                   // swap: touch a swap mutex's state field by hand
+unsafe unaudited{ counter = mut deref(pc) }                  // unaudited: any of the above, no reasons given (never in the stdlib)
 ```
 
 Passing, returning, casting and stepping a `raw` pointer is safe. `raw x` needs an addressable variable (or a
@@ -1553,8 +1557,10 @@ Inside `unsafe` the guarantees above are the programmer's responsibility. What e
 | `assume match` (a `deref` or `clone` of a pointer, a division or a float operation vouched for by hand), constructing a `raw` pointer, `memcopy` | Memory safety, division and float guarantees: the checker takes your word. |
 | `extern` calls | Everything: foreign code is outside the checker. |
 | Reading or writing statics and globals from non-atomic code | Data-race freedom. |
+| `unsafe unaudited{` | Whatever the block does, with the audit trail waived: it names no reasons, so it is the catch-all for code nobody has reviewed yet. Refused anywhere in the standard library. |
 
-The standard library is built on `unsafe` code (the ghost table, `memcopy`, the `pthread_*` calls). The
+The standard library is built on `unsafe` code (the ghost table, `memcopy`, the `pthread_*` calls), and every one of its
+`unsafe` blocks names exactly its reasons; `unsafe unaudited` never appears there and the compiler refuses it. The
 guarantee is therefore "safe user code on top of a small trusted `unsafe` core", and that core is tested,
 not proved. Costs inside that core are part of its contract, not of the safe-code guarantees. For example, the liveness check behind `match Some` is a lookup in the ghost table, an open-addressing hash set (expected O(1)) under a spin lock (the older linear-scan table is kept in `stdlib/gt_linear/`; import its `gt_*.caspien` files instead to use it), and `malloc` has no bound. A timing analysis would take such costs as stated inputs, as it would for any library.
 
@@ -1684,11 +1690,157 @@ one function, so very large generated test programs are better split into severa
 
 ### 2.5 The standard library
 
-`stdlib/` holds ordinary Caspien source: `libc.caspien` (C bindings), `dynamic_array.caspien`,
-`hash_map.caspien`, `string.caspien`, `insecure_hash.caspien` (FNV-1a), `sha256.caspien`, `process.caspien`,
-`fs.caspien` (files and directories, 2.6), `sleep.caspien`, the thread glue `par_call.caspien` and `await_call.caspien`, and the `gt_*` files that
-back ownership. The older reference documentation, including the full description of every optimisation
-pass, is in [`docs/COMPILER_REFERENCE.md`](docs/COMPILER_REFERENCE.md).
+`stdlib/` is ordinary Caspien source, imported by relative path. There is no prelude: a program imports exactly the files it uses.
+
+| File | What it gives you |
+|---|---|
+| `libc.caspien` | `extern` bindings for the C functions the rest builds on (`printf`, `malloc`, `memcpy`, `fgets`, ...). Calling one needs `unsafe extern{`. |
+| `dynamic_array.caspien` | `DynamicArray<T>`: `pushBack`, `popBack`, `pushFront`, `popFront`, `get`, `set`, and `...Ptr` twins for struct elements. |
+| `hash_map.caspien` | `HashMap<T>`: `set`, `get`, `contains`; open addressing, fixed capacity. |
+| `string.caspien` | `String`: a growable byte string with `concat`, `appendChar`, `sub`, `charAt`, `setCharAt`, `firstIndexOf`. |
+| `insecure_hash.caspien` | `insecure_hashOf<T>` and `insecure_fnv1a64Bytes`: FNV-1a, for hash tables only. |
+| `sha256.caspien` | SHA-256 (one-shot and streaming) on raw buffers. A real cryptographic hash, but a plain one: no constant-time or side-channel claims. |
+| `fs.caspien` | Files and directories, capability style (2.6). |
+| `process.caspien` | `spawn`, `StdOut.read`, `StdIn.write`, `closeProcess`. |
+| `sleep.caspien`, `par_call.caspien`, `await_call.caspien` | The glue behind the `sleep`, `par` and `await` keywords. |
+| `event_loop*.caspien`, `make_safe_args.caspien` | The program entry points (see "Program entry"). |
+| `guard.caspien` | The `Guard<T>` interface for lockable types. |
+| `gt_*.caspien`, `ghost_table.caspien` | The ghost table that tracks live allocations (below). |
+
+The older reference documentation, including the full description of every optimisation pass, is in
+[`docs/COMPILER_REFERENCE.md`](docs/COMPILER_REFERENCE.md).
+
+#### Anything that allocates imports the ghost table
+
+Every allocation (`new`, `dyn`, `clone`, a growing `resize`, `par`) is registered in a table of live
+allocations, which is how a `ref` can be checked for liveness at run time and how scope-end cleanup finds
+what to free. The table is five small files, and a program that allocates imports all of them next to
+`libc.caspien`:
+
+```rust
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+```
+
+The table is an open-addressing hash set (expected O(1)); `stdlib/gt_linear/` has the older linear-scan version
+(import its files instead, never mix the two).
+
+#### Collections, strings and hashing
+
+Allocation can fail, so every constructor and every growing call goes through `?` inside a `?catch` scope. A
+collection method takes the collection as `ref some`, so the caller must have proven it is not null (a value that
+came out of `?` already is), and an index must be proven in bounds with `match i in x.backing` (to read) or
+`match i into x.backing` (to write). The compiler then needs no checks inside the library. Compiled and run as
+[`docs/examples/20_stdlib_tour.caspien`](docs/examples/20_stdlib_tour.caspien):
+
+```rust
+?catch(e){ return }
+
+// DynamicArray<u64>: [0, 1, 4, 9, 16, 25]
+let list = mut ? new DynamicArray:<u64>()
+for i in 0..6{
+	let v = mut (i * i)
+	? list.pushBack(list, v)
+}
+let sum = mut 0
+for i in 0..6{
+	match i in list.backing{ sum += list.get(list, i) }          // 55
+}
+let popped = mut ? list.popBack(list, mut 999)                   // 25; the argument comes back if the array is empty
+let two = mut 2
+match two into list.backing{ list.set(list, two, mut 100) }      // `into` is the write proof, `in` the read proof
+
+// HashMap<u64>: key and value share one type, the capacity is fixed when you build it
+let counts = mut ? new HashMap:<u64>(mut 0, mut 0, mut 64)       // (default key, default value, capacity)
+let seen = mut counts.get(counts, mut 3, mut 0)                  // the last argument is the answer for a missing key
+counts.set(counts, mut 3, seen + 1)
+
+// String: a byte string with its own length
+let s = mut ? new String("caspien")
+? s.concat(s, " lang")                                           // "caspien lang"
+let l_at = mut s.firstIndexOf(s, 'l')                            // 8, or -1 when absent
+let prefix = mut ? s.sub(s, 0, 7)                                // a new String, "caspien"
+
+// insecure_hashOf: 64-bit FNV-1a of the bytes of any non-struct value
+let h = mut insecure_hashOf:<u64>(imut 42)
+```
+
+`DynamicArray<S>` for a struct `S` works through the `...Ptr` methods (`d.pushBackPtr(d, auto item)`): the
+language does not pass a struct by value as a plain parameter, so the by-value methods are simply unavailable for
+a struct element type, and calling one is a compile error that says so. `insecure_hashOf` and `insecure_fnv1a64Bytes` carry the `insecure_`
+prefix on purpose: FNV-1a is fast and well spread but anyone can construct collisions, so it is for hash tables and
+nothing else. `sha256.caspien` is the one real hash, and works on raw buffers
+(`sha256(data, byteCount, digest)`, or `sha256Begin/Update/Finish/Release` to stream); `tests/sha256_test.caspien` has
+every call shape, checked against Python's `hashlib`.
+
+#### Files
+
+`fs.caspien` is the only file I/O and is described in 2.6, with the build-time file policy that decides where a
+program may open things. Runnable end to end (create a directory, write, append, read back, replace a file
+atomically, show that a name outside the directory is refused, clean up) in
+[`docs/examples/21_files.caspien`](docs/examples/21_files.caspien).
+
+#### Processes, threads and sleeping
+
+```rust
+let p = mut ? spawn("echo hello from the child", imut ProcessMode.READ)
+let line = imut StdOut.read(p.stream)                 // one line, newline included
+let status = mut closeProcess(p)                      // waits for the child; its exit status
+
+let left = mut sleep(1)                               // a keyword; needs sleep.caspien. Returns the seconds left if interrupted
+let r = mut ? await triple(mut 14)                    // `triple` is an @async function: it runs on its own OS thread
+```
+
+All of it in [`docs/examples/22_processes_threads_sleep.caspien`](docs/examples/22_processes_threads_sleep.caspien);
+`par`, locks and atomics are in [`16_atomics_and_locks`](docs/examples/16_atomics_and_locks.caspien).
+
+#### What the compiler holds the library, and your code, to
+
+These are the rules that shape every use of the standard library. They are the language's guarantees (1.4) seen
+from the library's side.
+
+- **Every allocation can fail and says so.** `new`, `dyn`, `clone`, a growing `resize`, `par` and `await` throw on
+  failure and must be wrapped in `try` or `?`. Nothing allocates silently.
+- **Every index needs a proof,** even a literal one: `match i in a{ ... }` to read, `match i into a{ ... }` to write.
+  Library methods require the proof at the call (`@lock(match i in self.backing)`), so `get` and `set` have no
+  out-of-range case. A pointer to a collection must be proven non-null (`match Some(p)`, or arrive through `?`).
+- **No struct by value as a plain parameter.** Collections of structs go through `auto` pointers (`pushBackPtr`,
+  `setPtr`); a struct may be returned (the compiler builds it in the caller's slot), but only as a `let` initialiser,
+  the right-hand side of an assignment to a plain variable, or `return f()`.
+- **No recursion** except an `@recursive` tail call, and **no recursive structs** (a struct cannot reach itself through
+  any pointer kind). Trees and lists are index-based, as in the benchmarks.
+- **Ownership is single and checked.** Putting an `owns` value into a collection moves it; reading an owning struct
+  out of an element by value is a compile error (use `clone`); `clone` of anything that reaches a `@drop` type is an
+  error. Elements are freed when the collection is.
+- **A mutable global or static needs `unsafe global`** unless it is atomic or lock-protected; a `let static` takes
+  constants only.
+- **`unsafe` names its reasons.** Every `unsafe` block lists exactly the tags it needs (`extern`, `raw`, `deref`, `file`,
+  ...), and a missing or surplus tag is an error. The one exception is `unsafe unaudited{`, the catch-all that
+  satisfies any requirement and says nothing about why. It marks code nobody has audited yet, so it is easy to find in review, and the
+  standard library may never use it: the compiler refuses it in any file under `stdlib/`
+  (`tests/unaudited_stdlib_check.sh`). The library's own `unsafe` blocks (the ghost table, `memcopy`, `pthread_*`,
+  `popen`) all name their reasons.
+- **The file system is a capability, and a build-time policy** (2.6): names are single components, symlinks are never
+  followed, and the paths a program may open are limited by `fs-roots`.
+
+And the limits of the library itself, which are design choices today rather than guarantees:
+
+| Piece | Limit |
+|---|---|
+| `DynamicArray` | The backing store is resized to the exact length on every push and pop, so each is O(n). A raw `dyn` array, or `resize` in your own code, avoids it. |
+| `HashMap` | Fixed capacity chosen at construction; no growth, no removal. `set` of a new key into a full map does nothing. Key and value share one type, and the key type cannot be a struct. The hash is `insecure_hashOf`. |
+| `String` | Bytes (`char` is one byte): no Unicode awareness. Operations are simple loops over the buffer. |
+| `process` | One direction per handle (read the child's output or write to its input), one line per `StdOut.read`, and the read buffer is not freed. Commands go through the shell. |
+| `fs` | No directory listing, `stat`, `exists` or rename (other than `commit`), whole-file `readAll`, `/`-free names only. Windows is only tested under Wine. |
+| `sha256` | Raw pointers and `unsafe`, because it works on bytes in place. |
+| Threads | `par` starts a detached thread; there is no thread-pool and no cancellation. `match @lock` spins. |
+
+On the benchmarks, programs written with these classes run about 1.1x to 5.2x slower than the same program written with
+raw arrays (1.75x on the geometric mean, with string manipulation and the k-nucleotide hash map at the slow end), see section 4.
 
 ### 2.6 Files and directories
 
