@@ -55,9 +55,13 @@ public class Main {
         FsPolicy.current = FsPolicy.load("fs.config");
         FsPolicy.loadPlatform("platform.config");
         boolean fsReport = false;
+        boolean audit = false;
         for (int i = 3; i < args.length; i++) {
             if (args[i].equals("--fs-report")) {
                 fsReport = true;
+            }
+            if (args[i].equals("--audit")) {
+                audit = true;
             }
         }
         DepsLog.record(inputPath);
@@ -90,6 +94,23 @@ public class Main {
 
         TypeChecker typeChecker = new TypeChecker(config);
         typeChecker.check(expanded);
+
+        if (audit) {
+            java.util.List<String> srcs = new java.util.ArrayList<>();
+            for (String f : DepsLog.files()) {
+                if (f.endsWith(".caspien")) {
+                    srcs.add(f);
+                }
+            }
+            String report = AuditReport.build(srcs, Paths.get("..").toAbsolutePath().normalize(), typeChecker.unsafeTagsNeeded(),
+                    "1".equals(System.getenv("CASPIEN_AUDIT_NOSTDLIB")));
+            String target = System.getenv("CASPIEN_AUDIT_FILE");
+            if (target != null && !target.isEmpty()) {
+                Files.write(Paths.get(target), report.getBytes(StandardCharsets.UTF_8));
+            } else {
+                System.err.print(report);
+            }
+        }
 
         BytecodeEmitter bytecodeEmitter = new BytecodeEmitter();
         String bytecode = bytecodeEmitter.emit(expanded, typeChecker);

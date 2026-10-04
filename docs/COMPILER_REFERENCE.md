@@ -98,6 +98,10 @@ So a comment edit re-runs only the front end (the later stages see an identical 
 
     --no-cache      Do not read or write the build cache (see "Build cache").
     --cache-report  Print `[cache] <stage>: hit|miss` for every stage.
+    --audit [--audit-no-stdlib]
+                    Type-check only (nothing is built) and print every `unsafe` in what would be compiled: `file:line  unsafe <tags> {`, the
+                    numbered contents of the braces, `unsafe unaudited` blocks with the tags they actually need, other uses (`unsafe dyn(..)`),
+                    and a summary by tag. Sections: your code / standard library (`--audit-no-stdlib` hides the second).
     --clear-cache   Delete the build cache (alone, or together with a build).
 
     --no-warnings   Suppress warning output (they simply aren't printed;

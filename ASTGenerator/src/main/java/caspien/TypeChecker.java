@@ -1120,6 +1120,16 @@ public class TypeChecker {
 
     private final Map<String, UnsafeBlockRecord> unsafeBlockRecords = new java.util.LinkedHashMap<>();
 
+    /** For `--audit`: what every checked statement-level `unsafe` block really needed, keyed "absolute file:line" (unioned over generic instantiations). */
+    Map<String, java.util.Set<String>> unsafeTagsNeeded() {
+        Map<String, java.util.Set<String>> out = new java.util.HashMap<>();
+        for (UnsafeBlockRecord rec : unsafeBlockRecords.values()) {
+            String k = java.nio.file.Paths.get(rec.tok.file).toAbsolutePath().normalize() + ":" + rec.tok.line;
+            out.computeIfAbsent(k, x -> new java.util.TreeSet<>()).addAll(rec.used);
+        }
+        return out;
+    }
+
     /** True when a value of type `t` holds memory it must free: an `owns` pointer, a dynarray, or an inline struct with such a member. */
     private boolean typeOwnsMemory(TypeInfo t, Set<String> visiting) {
         if (t == null) {

@@ -27,6 +27,10 @@ final class DepsLog {
         record(Paths.get(p));
     }
 
+    static java.util.List<String> files() {
+        return new java.util.ArrayList<>(FILES);
+    }
+
     static void writeIfRequested() throws IOException {
         String target = System.getenv("CASPIEN_DEPS_FILE");
         if (target == null || target.isEmpty()) {

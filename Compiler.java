@@ -97,7 +97,7 @@ public class Compiler {
     }
 
     private static final String USAGE =
-            "Usage: java Compiler -i <input.caspien> <output> [--no-warnings] [--fs-report] [--asm | --lob | --hob] [--no-cache] [--cache-report] [--clear-cache]";
+            "Usage: java Compiler -i <input.caspien> <output> [--no-warnings] [--fs-report] [--asm | --lob | --hob] [--no-cache] [--cache-report] [--clear-cache]\n       java Compiler -i <input.caspien> --audit [--audit-no-stdlib]";
 
     private static class UsageError extends RuntimeException {
         UsageError(String message) {
@@ -114,6 +114,7 @@ public class Compiler {
         boolean fsReport = false;
         boolean stopAsm = false, stopLob = false, stopHob = false;
         boolean noCache = false, cacheReport = false, clearCache = false;
+        boolean audit = false, auditNoStdlib = false;
 
         for (int i = 0; i < args.length; i++) {
             String a = args[i];
@@ -138,6 +139,13 @@ public class Compiler {
                     break;
                 case "--hob":
                     stopHob = true;
+                    break;
+                case "--audit":
+                    audit = true;
+                    break;
+                case "--audit-no-stdlib":
+                    audit = true;
+                    auditNoStdlib = true;
                     break;
                 case "--no-cache":
                     noCache = true;
@@ -170,6 +178,9 @@ public class Compiler {
         }
         if (inputArg == null) {
             throw new UsageError("missing required -i <input.caspien>");
+        }
+        if (outputArg == null && audit) {
+            outputArg = "output/audit";   // an audit builds nothing; the front end's intermediate file goes here
         }
         if (outputArg == null) {
             throw new UsageError("missing required <output> path");
@@ -222,6 +233,21 @@ public class Compiler {
         String key1 = fsReport ? null : CompilerCache.sha("S1\n" + cache.classesHash(astGenDir) + "\n"
                 + CompilerCache.configView(compilerCfg, CompilerCache.OPT_KEYS, CompilerCache.REG_KEYS) + "\n--fs--\n" + fsCfg + "\n--target--\n" + target
                 + "\n--input--\n" + input);
+        if (audit) {
+            // --audit: run only the front end, uncached, and print what it found (every `unsafe`, with file, line and the text in the braces)
+            Path report = Files.createTempFile("caspien-audit", ".txt");
+            Map<String, String> env = new java.util.HashMap<>();
+            env.put("CASPIEN_AUDIT_FILE", report.toString());
+            if (auditNoStdlib) {
+                env.put("CASPIEN_AUDIT_NOSTDLIB", "1");
+            }
+            runJavaStage(astGenDir, "caspien.Main", input, hobOut, diag, "ASTGenerator", "--audit", env, null);
+            if (!diag.hasFatalError()) {
+                System.out.print(Files.readString(report, StandardCharsets.UTF_8));
+            }
+            Files.deleteIfExists(report);
+            return diag.exitCode();
+        }
         runStage(cache, "s1", key1, true, astGenDir, "caspien.Main", input, hobOut, diag, "ASTGenerator", fsReport ? "--fs-report" : null);
         if (diag.hasFatalError()) return diag.exitCode();
 
