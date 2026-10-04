@@ -6,3 +6,4 @@
 ASTGenerator/fs.config
 ASTGenerator/platform.config
 __pycache__/
+/.cache/

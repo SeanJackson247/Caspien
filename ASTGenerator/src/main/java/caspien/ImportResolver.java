@@ -85,6 +85,7 @@ public class ImportResolver {
         }
 
         String source;
+        DepsLog.record(resolvedPath);
         try {
             source = new String(Files.readAllBytes(resolvedPath), StandardCharsets.UTF_8);
         } catch (IOException e) {

@@ -80,7 +80,25 @@ func main() void{
 
 `tests/sha256_test.caspien` (168 checks, expected digests from Python `hashlib`) covers the FIPS vectors, one million `a`, lengths around every padding boundary, streaming with many chunk sizes against one-shot, and the block primitives in the shapes the Merkle benchmark uses. With `function-inlining: aggressive` every call site of `sha256` is a private copy of the hash, so a program should hash from a few places (the test is table-driven for that reason).
 
+## Build cache
+
+Every stage's result is cached in `.cache/` next to `Compiler.class` (override with the `CASPIEN_CACHE` environment variable; the folder is git-ignored and safe to delete). A stage's key is the SHA-256 of everything its output depends on, chained like a Merkle tree: the stage's own class files and Java version, the keys of the config it reads, and the hash of the previous stage's output.
+
+| Stage | Key |
+|---|---|
+| 1 front end | its classes, `compiler.config` without optimiser and register keys, `fs.config`, target, the input path; on lookup also the hash of every file the front end read (input, imports, ASM files; reported through `CASPIEN_DEPS_FILE`) |
+| 2 Optimizer | its classes, `compiler.config` without register keys, hash of stage 1's output |
+| 3 LowerOrderGenerator | its classes, `compiler.config` without optimiser keys, hash of stage 2's output |
+| 4 Codegen | its classes, `codegen.config`, hash of stage 3's output |
+| 5 as + gcc | target, `as`/`gcc` versions, hash of stage 4's output |
+
+So a comment edit re-runs only the front end (the later stages see an identical input), an optimiser switch re-runs stages 2-5, a register-form switch stages 3-5, and an unchanged program with unchanged compiler and config is served entirely from the cache. Only successful stages are stored; warnings are stored with the entry and printed again on a hit (progress lines are not). A compiler config key the cache does not know is kept in every stage's view, so a new key can cost a miss but never produce a stale hit. `--fs-report` builds bypass stage 1. Benchmarks build with `--no-cache` so compile times stay honest. `tests/cache_check.sh` covers hits, misses and invalidation, `tests/cache_views_check.py` the claim that each stage ignores the config keys left out of its view.
+
 ## Flags
+
+    --no-cache      Do not read or write the build cache (see "Build cache").
+    --cache-report  Print `[cache] <stage>: hit|miss` for every stage.
+    --clear-cache   Delete the build cache (alone, or together with a build).
 
     --no-warnings   Suppress warning output (they simply aren't printed;
                     this does not affect errors, which always print).

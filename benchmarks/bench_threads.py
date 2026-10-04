@@ -119,7 +119,7 @@ def main():
                 B.patch_config(os.path.join(ct, "toolchain.config"), kv)
                 shutil.copy(os.path.join(CAS, src + ".caspien"), os.path.join(srcdir, "_bp.caspien"))
                 exe = os.path.join(W, "cas_%s_%s" % (src, mode))
-                measure(label, "caspien", "Caspien", [{"cmd": ["java", "Compiler", "-i", "bench/t/c/_bp.caspien", exe], "cwd": ct, "env": noj}],
+                measure(label, "caspien", "Caspien", [{"cmd": ["java", "Compiler", "-i", "bench/t/c/_bp.caspien", exe, "--no-cache"], "cwd": ct, "env": noj}],
                         [exe], lambda e=exe: B.size_of(e), desc + "; optimisations " + mode)
         shutil.rmtree(ct, ignore_errors=True)
     ref = next((r["output"] for r in results if r["label"] == "C -O0"), None)

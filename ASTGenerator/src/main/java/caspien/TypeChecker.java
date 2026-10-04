@@ -8558,6 +8558,7 @@ public class TypeChecker {
         Path dir = Paths.get(t.file).toAbsolutePath().getParent();
         Path resolvedPath = (dir != null ? dir : Paths.get(".")).resolve(rawPath).normalize();
         String content;
+        DepsLog.record(resolvedPath);
         try {
             content = new String(Files.readAllBytes(resolvedPath), StandardCharsets.UTF_8);
         } catch (IOException e) {

@@ -97,7 +97,7 @@ public class Compiler {
     }
 
     private static final String USAGE =
-            "Usage: java Compiler -i <input.caspien> <output> [--no-warnings] [--fs-report] [--asm | --lob | --hob]";
+            "Usage: java Compiler -i <input.caspien> <output> [--no-warnings] [--fs-report] [--asm | --lob | --hob] [--no-cache] [--cache-report] [--clear-cache]";
 
     private static class UsageError extends RuntimeException {
         UsageError(String message) {
@@ -113,6 +113,7 @@ public class Compiler {
         boolean noWarnings = false;
         boolean fsReport = false;
         boolean stopAsm = false, stopLob = false, stopHob = false;
+        boolean noCache = false, cacheReport = false, clearCache = false;
 
         for (int i = 0; i < args.length; i++) {
             String a = args[i];
@@ -138,6 +139,15 @@ public class Compiler {
                 case "--hob":
                     stopHob = true;
                     break;
+                case "--no-cache":
+                    noCache = true;
+                    break;
+                case "--cache-report":
+                    cacheReport = true;
+                    break;
+                case "--clear-cache":
+                    clearCache = true;
+                    break;
                 default:
                     if (a.startsWith("-")) {
                         throw new UsageError("unknown flag: " + a);
@@ -149,6 +159,15 @@ public class Compiler {
             }
         }
 
+        Path cacheRoot = System.getenv("CASPIEN_CACHE") != null && !System.getenv("CASPIEN_CACHE").isEmpty()
+                ? Paths.get(System.getenv("CASPIEN_CACHE")).toAbsolutePath() : Paths.get("").toAbsolutePath().resolve(".cache");
+        if (clearCache) {
+            CompilerCache.clear(cacheRoot);
+            System.err.println("[info] cleared the build cache " + cacheRoot);
+            if (inputArg == null && outputArg == null) {
+                return 0;
+            }
+        }
         if (inputArg == null) {
             throw new UsageError("missing required -i <input.caspien>");
         }
@@ -188,10 +207,22 @@ public class Compiler {
         Path buildDir = null; // created lazily, only if an intermediate file is actually needed
 
         Diagnostics diag = new Diagnostics(noWarnings);
+        CompilerCache cache = new CompilerCache(cacheRoot, !noCache, cacheReport);
+
+        // Each stage's cache key is the hash of everything its output depends on (see CompilerCache); an unchanged stage is not run again.
+        String javaId = System.getProperty("java.version");
+        String compilerCfg = Files.readString(astGenDir.resolve("compiler.config"), StandardCharsets.UTF_8);
+        String codegenCfg = CompilerCache.configView(Files.readString(codegenDir.resolve("codegen.config"), StandardCharsets.UTF_8));
+        Path fsCfgPath = astGenDir.resolve("fs.config");
+        String fsCfg = Files.exists(fsCfgPath) ? CompilerCache.configView(Files.readString(fsCfgPath, StandardCharsets.UTF_8)) : "";
+        String target = readCodegenTarget(codegenDir);
 
         // ---- Stage 1: ASTGenerator (.caspien -> higher-order bytecode) ----
         Path hobOut = stopHob ? output : (buildDir = ensureBuildDir(buildDir, output)).resolve("1_ast_generator.hob.txt");
-        runJavaStage(astGenDir, "caspien.Main", input, hobOut, diag, "ASTGenerator", fsReport ? "--fs-report" : null);
+        String key1 = fsReport ? null : CompilerCache.sha("S1\n" + cache.classesHash(astGenDir) + "\n"
+                + CompilerCache.configView(compilerCfg, CompilerCache.OPT_KEYS, CompilerCache.REG_KEYS) + "\n--fs--\n" + fsCfg + "\n--target--\n" + target
+                + "\n--input--\n" + input);
+        runStage(cache, "s1", key1, true, astGenDir, "caspien.Main", input, hobOut, diag, "ASTGenerator", fsReport ? "--fs-report" : null);
         if (diag.hasFatalError()) return diag.exitCode();
 
         if (stopHob) {
@@ -202,12 +233,16 @@ public class Compiler {
         // ---- Stage 2: Optimizer (bytecode -> bytecode, shallow passes) ----
         buildDir = ensureBuildDir(buildDir, output);
         Path optOut = buildDir.resolve("2_optimizer.hob.txt");
-        runJavaStage(optimizerDir, "caspien.optimizer.Main", hobOut, optOut, diag, "Optimizer");
+        String key2 = CompilerCache.sha("S2\n" + cache.classesHash(optimizerDir) + "\n" + CompilerCache.configView(compilerCfg, CompilerCache.REG_KEYS)
+                + "\n--in--\n" + CompilerCache.fileHash(hobOut));
+        runStage(cache, "s2", key2, false, optimizerDir, "caspien.optimizer.Main", hobOut, optOut, diag, "Optimizer", null);
         if (diag.hasFatalError()) return diag.exitCode();
 
         // ---- Stage 3: LowerOrderGenerator (bytecode -> low-order bytecode) ----
         Path lobOut = stopLob ? output : buildDir.resolve("3_lower_order_generator.lob.txt");
-        runJavaStage(lowerOrderDir, "caspien.lowerorder.Main", optOut, lobOut, diag, "LowerOrderGenerator");
+        String key3 = CompilerCache.sha("S3\n" + cache.classesHash(lowerOrderDir) + "\n" + CompilerCache.configView(compilerCfg, CompilerCache.OPT_KEYS)
+                + "\n--in--\n" + CompilerCache.fileHash(optOut));
+        runStage(cache, "s3", key3, false, lowerOrderDir, "caspien.lowerorder.Main", optOut, lobOut, diag, "LowerOrderGenerator", null);
         if (diag.hasFatalError()) return diag.exitCode();
         if (stopLob) {
             printSummary(lobOut, "low-order bytecode", diag);
@@ -216,7 +251,8 @@ public class Compiler {
 
         // ---- Stage 4: Codegen (low-order bytecode -> assembly) ----
         Path asmOut = stopAsm ? output : buildDir.resolve("4_codegen.s");
-        runJavaStage(codegenDir, "caspien.codegen.Main", lobOut, asmOut, diag, "Codegen");
+        String key4 = CompilerCache.sha("S4\n" + cache.classesHash(codegenDir) + "\n" + codegenCfg + "\n--in--\n" + CompilerCache.fileHash(lobOut));
+        runStage(cache, "s4", key4, false, codegenDir, "caspien.codegen.Main", lobOut, asmOut, diag, "Codegen", null);
         if (diag.hasFatalError()) return diag.exitCode();
         scanCodegenTodos(asmOut, diag);
         if (stopAsm) {
@@ -225,12 +261,86 @@ public class Compiler {
         }
 
         // ---- Stage 5: assemble + link (real toolchain, chosen by codegen.config's own target) ----
-        String target = readCodegenTarget(codegenDir);
-        assembleAndLink(target, asmOut, output, buildDir, diag);
-        if (diag.hasFatalError()) return diag.exitCode();
+        String tools = toolIdentity(target);
+        String key5 = tools == null ? null : CompilerCache.sha("S5\n" + target + "\n" + tools + "\n--in--\n" + CompilerCache.fileHash(asmOut));
+        CompilerCache.StageLog log5 = new CompilerCache.StageLog();
+        if (cache.restore("s5", key5, output, false, log5)) {
+            cache.note("s5", true);
+        } else {
+            assembleAndLink(target, asmOut, output, buildDir, diag);
+            if (diag.hasFatalError()) return diag.exitCode();
+            cache.note("s5", false);
+            cache.store("s5", key5, output, log5, null);
+        }
 
         printSummary(output, "binary (" + target + ")", diag);
         return diag.exitCode();
+    }
+
+    /** The first line of `--version` of every tool stage 5 runs, or null when one cannot be identified (then stage 5 is not cached). */
+    private static String toolIdentity(String target) {
+        boolean hostIsWindows = System.getProperty("os.name", "").toLowerCase().contains("win");
+        List<String> tools;
+        if (target.equals("linux")) {
+            tools = List.of("as", "gcc");
+        } else if (target.equals("windows_gnu")) {
+            String compiler = hostIsWindows ? "gcc" : "x86_64-w64-mingw32-gcc";
+            if (!hostIsWindows && !commandExists(compiler)) {
+                compiler = "gcc";
+            }
+            tools = List.of(compiler);
+        } else {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder();
+        for (String t : tools) {
+            try {
+                Process p = new ProcessBuilder(t, "--version").redirectErrorStream(true).start();
+                String first;
+                try (BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream(), StandardCharsets.UTF_8))) {
+                    first = r.readLine();
+                    while (r.readLine() != null) { /* drain */ }
+                }
+                if (p.waitFor() != 0 || first == null) {
+                    return null;
+                }
+                sb.append(t).append('=').append(first).append('\n');
+            } catch (IOException | InterruptedException e) {
+                return null;
+            }
+        }
+        return sb.toString();
+    }
+
+    /** Serves a stage from the cache, or runs it and caches the result. */
+    private static void runStage(CompilerCache cache, String stage, String key, boolean checkDeps, Path componentDir, String mainClass,
+                                 Path inputFile, Path outputFile, Diagnostics diag, String stageName, String extraArg)
+            throws IOException, InterruptedException {
+        CompilerCache.StageLog log = new CompilerCache.StageLog();
+        if (cache.restore(stage, key, outputFile, checkDeps, log)) {
+            if (!diag.suppressWarnings()) {
+                for (String w : log.warnings) {
+                    System.err.println(w);
+                }
+            }
+            diag.addWarnings(log.warnings.size());
+            cache.note(stage, true);
+            return;
+        }
+        Path depsFile = null;
+        Map<String, String> env = null;
+        if (checkDeps && cache.enabled() && key != null) {
+            depsFile = Files.createTempFile("caspien-deps", ".txt");
+            env = Map.of("CASPIEN_DEPS_FILE", depsFile.toString());
+        }
+        runJavaStage(componentDir, mainClass, inputFile, outputFile, diag, stageName, extraArg, env, log);
+        cache.note(stage, false);
+        if (!diag.hasFatalError()) {
+            cache.store(stage, key, outputFile, log, depsFile);
+        }
+        if (depsFile != null) {
+            Files.deleteIfExists(depsFile);
+        }
     }
 
     private static Path ensureBuildDir(Path existing, Path output) throws IOException {
@@ -633,6 +743,12 @@ public class Compiler {
 
     private static void runJavaStage(Path componentDir, String mainClass, Path inputFile, Path outputFile,
                                       Diagnostics diag, String stageName, String extraArg) throws IOException, InterruptedException {
+        runJavaStage(componentDir, mainClass, inputFile, outputFile, diag, stageName, extraArg, null, null);
+    }
+
+    private static void runJavaStage(Path componentDir, String mainClass, Path inputFile, Path outputFile,
+                                      Diagnostics diag, String stageName, String extraArg, Map<String, String> env,
+                                      CompilerCache.StageLog log) throws IOException, InterruptedException {
         List<String> command = new ArrayList<>();
         command.add(javaLauncher());
         command.add("-cp");
@@ -644,7 +760,7 @@ public class Compiler {
         if (extraArg != null) {
             command.add(extraArg);
         }
-        runProcess(command, componentDir.toFile(), diag, stageName);
+        runProcess(command, componentDir.toFile(), diag, stageName, env, log);
     }
 
     /**
@@ -664,10 +780,14 @@ public class Compiler {
      * success isn't second-guessed here. Only a nonzero exit code is
      * ever fatal to the pipeline.
      */
-    private static void runProcess(List<String> command, File workDir, Diagnostics diag, String stageName)
+    private static void runProcess(List<String> command, File workDir, Diagnostics diag, String stageName,
+                                   Map<String, String> env, CompilerCache.StageLog log)
             throws IOException, InterruptedException {
         ProcessBuilder pb = new ProcessBuilder(command);
         pb.directory(workDir);
+        if (env != null) {
+            pb.environment().putAll(env);
+        }
         Process proc = pb.start();
 
         Thread stdoutDrain = new Thread(() -> drain(proc.getInputStream()));
@@ -703,6 +823,9 @@ public class Compiler {
             }
         }
         diag.addWarnings(warnings.size());
+        if (log != null) {
+            log.warnings.addAll(warnings);
+        }
         if (exit != 0) {
             System.err.println("[error] " + stageName + " failed (exit " + exit + "):");
             for (String e : errors) {

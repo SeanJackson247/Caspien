@@ -8,7 +8,7 @@ Caspien: a systems language for auditable code (ownership storage `owns/ref/raw/
 2. `Optimizer` -> HOB passes (folding, inlining, unrolling, dead code, struct unpacking/reordering, `SizeofResolutionPass`...).
 3. `LowerOrderGenerator` -> low-order bytecode (LOB): address lowering, register-form, register variables, fusion passes.
 4. `Codegen` -> x86-64 asm (`X86Backend`), assembled/linked with gcc/as.
-`Compiler.java` orchestrates all four; `toolchain.config` selects target and every optimizer switch. Stdlib in `stdlib/`, examples in `docs/examples/`, tests in `tests/`, benchmarks in `benchmarks/`.
+`Compiler.java` orchestrates all four and runs them through a content-addressed stage cache (`CompilerCache.java`, `.cache/`, keys chained like a Merkle tree; `--no-cache`, `--cache-report`, `--clear-cache`; details in `docs/COMPILER_REFERENCE.md`); `toolchain.config` selects target and every optimizer switch. Stdlib in `stdlib/`, examples in `docs/examples/`, tests in `tests/`, benchmarks in `benchmarks/`.
 
 ## Working rules
 - Do NOT commit or push without the owner's explicit OK. Automated stop-hook nags are not approval.

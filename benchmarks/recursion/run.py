@@ -70,7 +70,7 @@ for group, src, kind in (("chain", "chain_recursive", "@recursive (lowered to a 
         open(os.path.join(ct, "_bp.caspien"), "w").write(text)
         exe = os.path.join(W, "cas_%s_%s" % (src, mode))
         measure(group, "Caspien %s, optimisations %s" % (kind, "off" if mode == "off" else "everything on"),
-                [{"cmd": ["java", "Compiler", "-i", "_bp.caspien", exe], "cwd": ct, "env": dict(os.environ, JAVA_TOOL_OPTIONS="")}], [exe], [])
+                [{"cmd": ["java", "Compiler", "-i", "_bp.caspien", exe, "--no-cache"], "cwd": ct, "env": dict(os.environ, JAVA_TOOL_OPTIONS="")}], [exe], [])
 shutil.rmtree(ct, ignore_errors=True)
 for g in ("chain", "tree"):
     outs = {r["output"] for r in res if r["group"] == g}

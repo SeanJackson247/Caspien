@@ -60,6 +60,7 @@ public class Main {
                 fsReport = true;
             }
         }
+        DepsLog.record(inputPath);
         String source = new String(Files.readAllBytes(Paths.get(inputPath)), StandardCharsets.UTF_8);
 
         // "the target file should be stripped down to the base file
@@ -98,6 +99,7 @@ public class Main {
         }
         System.out.print(bytecode);
 
+        DepsLog.writeIfRequested();
         writeFile(outputPath, bytecode);
         writeFile("output.txt", bytecode);
 
