@@ -637,7 +637,7 @@ public class RegVarPromotionPass {
             if (l.isEmpty()) continue;
             String m = l.get(0).text;
             boolean usesRdx = m.equals("R_DIVC");
-            boolean usesRcx = m.equals("R_BIN") && l.size() > 5 && (l.get(1).text.equals("SHL") || l.get(1).text.equals("SHR") || l.get(1).text.equals("SAR"))
+            boolean usesRcx = m.equals("R_BIN") && l.size() > 5 && (l.get(1).text.equals("SHL") || l.get(1).text.equals("SHR") || l.get(1).text.equals("SAR") || l.get(1).text.equals("ROTL") || l.get(1).text.equals("ROTR"))
                     && !l.get(5).text.startsWith("#");
             if (!usesRdx && !usesRcx) continue;
             for (int v = 0; v < nh; v++) {
@@ -757,7 +757,7 @@ public class RegVarPromotionPass {
             "PUSH", "PUSH_RET_FLOAT", "PUSH_RET_INT", "PUSH_LABEL", "ADD_FLOAT", "SUB_FLOAT", "MUL_FLOAT", "DIV_FLOAT",
             "ADD_INT", "SUB_INT", "MUL_INT", "CC_START", "CC_END", "CALL", "VARARGS_XMM_COUNT", "PROMOTE_F32_TO_F64", "FCONV", "NEG_FLOAT",
             // pure stack operators of integer value computations (each pops only its own operands, pushes one result)
-            "DIV_INT", "MOD_INT", "SDIV_INT", "SMOD_INT", "SHL", "SHR", "SAR", "BITS_AND", "BITS_OR", "BITS_XOR", "BITS_NOT", "NEG", "NOT",
+            "DIV_INT", "MOD_INT", "SDIV_INT", "SMOD_INT", "SHL", "SHR", "SAR", "ROTL", "ROTR", "BITS_AND", "BITS_OR", "BITS_XOR", "BITS_NOT", "NEG", "NOT",
             "INC_INT", "DEC_INT", "EQ_INT", "NEQ_INT", "LT_INT", "LT_EQ_INT", "GT_INT", "GT_EQ_INT", "SLT_INT", "SLT_EQ_INT", "SGT_INT",
             "SGT_EQ_INT", "AND", "OR", "ZEXT", "TRUNC", "DEREF", "LEN", "LOOKUP_DYN", "LOOKUP_ARRAY", "DOT", "PUSH_FIELDNAME", "DOT_LHS",
             "LOOKUP_DYN_LHS", "LOOKUP_ARRAY_LHS"));

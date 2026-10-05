@@ -212,7 +212,7 @@ public class ConstantFoldingPass implements OptimizationPass {
                 if (r != null) out.remove(n - 1);
                 return r;
             }
-            case "ADD": case "SUB": case "MUL": case "DIV": case "MOD": case "SHL": case "SHR": case "BITS_OR": case "BITS_AND": case "BITS_XOR":
+            case "ADD": case "SUB": case "MUL": case "DIV": case "MOD": case "SHL": case "SHR": case "ROTL": case "ROTR": case "BITS_OR": case "BITS_AND": case "BITS_XOR":
             case "LT": case "LT_EQ": case "GT": case "GT_EQ": case "EQ": case "NEQ": case "AND": case "OR": {
                 if (line.size() != 4 || n < 2) return null;
                 Lit a = lit(out.get(n - 2)), b = lit(out.get(n - 1));
@@ -302,6 +302,15 @@ public class ConstantFoldingPass implements OptimizationPass {
             case "BITS_AND": r = ux.and(uy); break;
             case "BITS_OR": r = ux.or(uy); break;
             case "BITS_XOR": r = ux.xor(uy); break;
+            case "ROTL": case "ROTR": {
+                // the count is taken modulo the width (rol/ror); the pattern is rotated within the width
+                int c = uy.mod(BigInteger.valueOf(w)).intValue();
+                if (op.equals("ROTR")) {
+                    c = (w - c) % w;
+                }
+                r = ux.shiftLeft(c).or(ux.shiftRight(w - c)).and(mask);
+                break;
+            }
             case "SHL":
                 r = uy.compareTo(BigInteger.valueOf(w)) >= 0 ? BigInteger.ZERO : ux.shiftLeft(uy.intValue()).and(mask);
                 break;
@@ -363,7 +372,7 @@ public class ConstantFoldingPass implements OptimizationPass {
             if (badFloatResult(r)) return null;
             return push(at, floatText(r, single), res);
         }
-        if (isInt(lb) && (op.equals("BITS_AND") || op.equals("BITS_OR") || op.equals("BITS_XOR") || op.equals("SHL") || op.equals("SHR"))) {
+        if (isInt(lb) && (op.equals("BITS_AND") || op.equals("BITS_OR") || op.equals("BITS_XOR") || op.equals("SHL") || op.equals("SHR") || op.equals("ROTL") || op.equals("ROTR"))) {
             return push(at, foldBits(op, lb, a.i, b.i).toString(), res);
         }
         if (!isInt(lb) || width(lb) != 64) return null;

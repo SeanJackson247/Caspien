@@ -31,8 +31,9 @@ extern sha256MallocWords(mut u64) raw mut u32
 @link_name(free)
 extern sha256FreeWords(raw imut u32) void
 
+@inline
 func sha256Rotr(x: mut u32, n: mut u32) mut u32{
-	return bits_or(bits_right(x, n), bits_left(x, 32 - n))
+	return bits_rotr(x, n)
 }
 
 func sha256Put(p: raw mut u32, i: mut u64, v: mut u32) void{

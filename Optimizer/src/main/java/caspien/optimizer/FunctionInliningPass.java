@@ -115,13 +115,13 @@ public class FunctionInliningPass implements OptimizationPass {
             "ASM_START", "ASM_END", "RECURSIVE_CALL", "ALLOC_STATIC", "FUNC_START", "FUNC_END", "STRUCT_START", "GLOBAL", "REGVAR", "STRING",
             "EXTERN", "ENUM", "STRUCT_MEMBER", "STRUCT_END", "STRUCT_DECORATE", "STRUCT_PADDING"));
     private static final Set<String> BINARY = new HashSet<>(Arrays.asList("ADD", "SUB", "MUL", "DIV", "MOD", "AND", "OR", "EQ", "NEQ", "LT",
-            "GT", "LT_EQ", "GT_EQ", "SHL", "SHR", "BITS_OR", "BITS_AND", "BITS_XOR", "IN", "WITHIN", "LOOKUP", "LOOKUP_LHS", "DOT", "DOT_LHS"));
+            "GT", "LT_EQ", "GT_EQ", "SHL", "SHR", "ROTL", "ROTR", "BITS_OR", "BITS_AND", "BITS_XOR", "IN", "WITHIN", "LOOKUP", "LOOKUP_LHS", "DOT", "DOT_LHS"));
     private static final Set<String> UNARY = new HashSet<>(Arrays.asList("NEG", "NOT", "BITS_NOT", "SEXT", "ZEXT", "TRUNC", "FCONV", "DEREF", "ADDR_OF",
             "NEG_FLOAT", "LEN", "PROMOTE_F32_TO_F64"));
     private static final Set<String> PUSH1 = new HashSet<>(Arrays.asList("PUSH", "ADDR", "PUSH_FIELDNAME", "ATOMIC_PUSH"));
     /** What a plain scalar body may contain when other operands are live beneath the call. */
     private static final Set<String> SIMPLE = new HashSet<>(Arrays.asList("ALLOC", "ADDR", "PUSH", "ASSIGN", "ADD", "SUB", "MUL", "DIV", "MOD",
-            "AND", "OR", "EQ", "NEQ", "LT", "GT", "LT_EQ", "GT_EQ", "NEG", "NOT", "SEXT", "ZEXT", "TRUNC", "FCONV", "SHL", "SHR", "BITS_OR", "BITS_AND", "BITS_XOR", "BITS_NOT",
+            "AND", "OR", "EQ", "NEQ", "LT", "GT", "LT_EQ", "GT_EQ", "NEG", "NOT", "SEXT", "ZEXT", "TRUNC", "FCONV", "SHL", "SHR", "ROTL", "ROTR", "BITS_OR", "BITS_AND", "BITS_XOR", "BITS_NOT",
             "RET", "INC", "DEC"));
     private static final Set<String> BOUNDARY = new HashSet<>(Arrays.asList("ASSIGN", "ATOMIC_ASSIGN", "JMP", "CMP", "ALLOC", "ARG", "RETURNS",
             "FUNC_DECORATE", "FUNC_START", "CC_END", "CC_START", "GT_DESTRUCT", "RET", "POP"));

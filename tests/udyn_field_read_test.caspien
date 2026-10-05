@@ -1,0 +1,84 @@
+// Field reads of struct elements behind an unsafe (headerless) dynarray: `d[i].f` is one displacement load (index*size + offset), not a push of the whole
+// element. Element sizes 24 (u64 fields), 32 (mixed u8/u16/u32/u64 with padding) and 16 (two u64 after the class id is 24...), field widths 1/2/4/8,
+// constant and variable indexes, reads used as index, as operand, in a condition, and next to stores to the same element. Output compared with
+// udyn_field_read_test.py by udyn_field_read_check.sh (which also checks that the generated code no longer pushes whole elements).
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+
+struct Big{
+	@pub{ a: mut u64 }
+	@pub{ b: mut u64 }
+}
+
+struct Mixed{
+	@pub{ p: mut u8 }
+	@pub{ q: mut u32 }
+	@pub{ r: mut u64 }
+	@pub{ s: mut u16 }
+	@pub{ t: mut u8 }
+}
+
+func main() void{
+	unsafe extern udyn{
+		let n = mut 40
+		let big = mut unsafe dyn:<Big>([])
+		let mix = mut unsafe dyn:<Mixed>([])
+		big = resize(big, n)
+		mix = resize(mix, n)
+		for i in 0..n{
+			big[i].a = i * 7 + 3
+			big[i].b = i * i + 11
+			mix[i].p = wrap:<u8>(i * 13 + 5)
+			mix[i].q = wrap:<u32>(i * 100003 + 77)
+			mix[i].r = i * 1000000007 + 123456789
+			mix[i].s = wrap:<u16>(i * 977 + 9)
+			mix[i].t = wrap:<u8>(255 - i)
+		}
+		let sa = mut 0
+		let sb = mut 0
+		let sp = mut 0
+		let sq = mut 0
+		let sr = mut 0
+		let ss = mut 0
+		let st = mut 0
+		for i in 0..n{
+			sa = sa + big[i].a
+			sb = sb + big[i].b * 3
+			sp = sp + wrap:<u64>(mix[i].p)
+			sq = sq + wrap:<u64>(mix[i].q)
+			sr = sr + mix[i].r
+			ss = ss + wrap:<u64>(mix[i].s) * 5
+			st = st + wrap:<u64>(mix[i].t)
+		}
+		printf("S1 %llu %llu %llu %llu %llu %llu %llu\n", sa, sb, sp, sq, sr, ss, st)
+		// constant indexes
+		let k0 = mut (big[0].a + big[1].b + big[39].a)
+		let k1 = mut (wrap:<u64>(mix[3].p) + wrap:<u64>(mix[5].q) + mix[7].r + wrap:<u64>(mix[11].s) + wrap:<u64>(mix[13].t))
+		printf("S2 %llu %llu\n", k0, k1)
+		// a field read used as an index and in conditions; stores to neighbouring fields of the same element between reads
+		let chain = mut 0
+		let cur = mut 1
+		for i in 0..n{
+			let nxt = mut (big[cur].a % 40)
+			big[cur].b = big[cur].b + 1
+			if big[nxt].b % 2 == 0{
+				chain = chain + big[nxt].b
+			} else {
+				chain = chain + big[cur].a
+			}
+			cur = nxt
+		}
+		printf("S3 %llu %llu\n", chain, cur)
+		let mx = mut 0
+		for i in 0..n{
+			if wrap:<u64>(mix[i].t) > mx{
+				mx = wrap:<u64>(mix[i].t) + wrap:<u64>(mix[i].p)
+			}
+		}
+		printf("S4 %llu\n", mx)
+	}
+}

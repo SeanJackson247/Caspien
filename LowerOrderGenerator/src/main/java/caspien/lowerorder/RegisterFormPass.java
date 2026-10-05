@@ -137,6 +137,8 @@ public class RegisterFormPass implements OptimizationPass {
         BIN_OPS.put("SHL", "SHL");
         BIN_OPS.put("SHR", "SHR");
         BIN_OPS.put("SAR", "SAR");
+        BIN_OPS.put("ROTL", "ROTL");   // bits_rotl / bits_rotr: rol / ror, count modulo the width
+        BIN_OPS.put("ROTR", "ROTR");
         BIN_OPS.put("BITS_AND", "BAND");
         BIN_OPS.put("BITS_OR", "BOR");
         BIN_OPS.put("BITS_XOR", "BXOR");
@@ -260,7 +262,7 @@ public class RegisterFormPass implements OptimizationPass {
     private static boolean flushIsFaithful(List<BytecodeToken> line) {
         String m = line.get(0).text;
         return m.equals("CC_START") || m.endsWith("_FLOAT") || m.endsWith("_INT")
-                || m.equals("SHL") || m.equals("SHR") || m.equals("SAR") || m.startsWith("BITS_");
+                || m.equals("SHL") || m.equals("SHR") || m.equals("SAR") || m.equals("ROTL") || m.equals("ROTR") || m.startsWith("BITS_");
     }
 
     // ------------------------------------------------------------------
@@ -619,7 +621,7 @@ public class RegisterFormPass implements OptimizationPass {
         if (!isValue(a) || !isValue(b)) {
             return 0;
         }
-        if ((mnemonic.equals("SHL") || mnemonic.equals("SHR") || mnemonic.equals("SAR")) && b.kind == Kind.K && parseIntLiteral(b.text) == null) {
+        if ((mnemonic.equals("SHL") || mnemonic.equals("SHR") || mnemonic.equals("SAR") || mnemonic.equals("ROTL") || mnemonic.equals("ROTR")) && b.kind == Kind.K && parseIntLiteral(b.text) == null) {
             return 0; // a constant count the backend could not read as an immediate
         }
         if (logical && (a.kind != Kind.T || b.kind != Kind.T)) {
@@ -660,7 +662,7 @@ public class RegisterFormPass implements OptimizationPass {
             dst = st.allocTemp();
         }
         String bop = BIN_OPS.get(mnemonic);
-        boolean bits = bop.equals("SHL") || bop.equals("SHR") || bop.equals("SAR") || bop.equals("BAND") || bop.equals("BOR") || bop.equals("BXOR");
+        boolean bits = bop.equals("SHL") || bop.equals("SHR") || bop.equals("SAR") || bop.equals("ROTL") || bop.equals("ROTR") || bop.equals("BAND") || bop.equals("BOR") || bop.equals("BXOR");
         boolean arith = bits || bop.equals("ADD") || bop.equals("SUB") || bop.equals("MUL");
         st.emit("R_BIN", bop, line.get(1).text, "%t" + dst, aOp, bOp);
         Entry res = newTemp(dst, arith ? n : 1); // the width of the VALUE (a comparison or bool op yields one byte)
@@ -911,6 +913,31 @@ public class RegisterFormPass implements OptimizationPass {
             return 0;
         }
         int n = parseSize(line.get(1).text);
+        if (idx + 2 < all.size() && n > 0) {
+            // "LOOKUP_ARRAY n ; PUSH_FIELDNAME off w ; DOT w" -- one scalar field of a struct element behind a pointer (unsafe dynarray of structs):
+            // address = pointer + index*n + off, then load w bytes. (Without this the whole n-byte element was pushed and the field cut out of it.)
+            List<BytecodeToken> fl = all.get(idx + 1);
+            List<BytecodeToken> dl = all.get(idx + 2);
+            if (is(fl, 3) && fl.get(0).text.equals("PUSH_FIELDNAME") && is(dl, 2) && dl.get(0).text.equals("DOT")) {
+                Long off = parseIntLiteral(fl.get(1).text);
+                int fw = parseSize(fl.get(2).text);
+                int dw = parseSize(dl.get(1).text);
+                int sz2 = st.stack.size();
+                if (off != null && off >= 0 && fw == dw && isWidth(fw) && off + fw <= n && sz2 >= 2) {
+                    Entry ix2 = st.stack.get(sz2 - 1);
+                    Entry base2 = st.stack.get(sz2 - 2);
+                    if (isValue(ix2) && base2.kind != Kind.A && isAddress(base2)) {
+                        int r2 = emitLea(st, line, base2, ix2, n, sz2, off);
+                        if (r2 != 0) {
+                            Entry top2 = st.stack.remove(st.stack.size() - 1);
+                            st.emit("R_LD", String.valueOf(fw), "%t" + top2.temp, "%t" + top2.temp);
+                            st.stack.add(loadedTemp(top2.temp, fw));
+                            return 3;
+                        }
+                    }
+                }
+            }
+        }
         if (!isWidth(n)) {
             return 0;
         }

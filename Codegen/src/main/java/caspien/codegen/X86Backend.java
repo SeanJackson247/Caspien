@@ -3151,6 +3151,22 @@ public class X86Backend {
                 pushReg("rax");
                 return;
             }
+            case "ROTL":
+            case "ROTR": {
+                // bits_rotl / bits_rotr: rotate the low `size` bytes, count modulo the width (what rol/ror do: the hardware masks the count to 5 or 6
+                // bits, and a 1/2-byte rotate by (count mod 32) is the same as by (count mod width)). The value is zero-extended first so the
+                // untouched upper bits of a 1/2-byte sub-register stay zero.
+                int rsize = line.size() > 1 ? (int) Long.parseLong(line.get(1).text) : 8;
+                popReg("rbx"); // count
+                popReg("rax"); // value
+                zeroExtendReg("rax", rsize);
+                pushReg("rcx");
+                raw("    movq %rbx, %rcx");
+                raw("    " + (mnemonic.equals("ROTL") ? "rol" : "ror") + movSuffix(rsize) + " %cl, %" + sizedReg("rax", rsize));
+                popReg("rcx");
+                pushReg("rax");
+                return;
+            }
             case "BITS_OR":
             case "BITS_AND":
             case "BITS_XOR": {
@@ -5536,6 +5552,43 @@ public class X86Backend {
      * A constant count is resolved here at compile time (no %cl, no clamp unless it is >= 64); a variable count goes through %rcx,
      * which is an argument register that may be live, so it is saved and restored around the shift.
      */
+    /**
+     * %tD = rotate of the low `size` bytes of a by b (bits_rotl / bits_rotr): `rol`/`ror` on the sub-register of the destination, the count taken
+     * modulo the width (a constant count is reduced here; a variable count goes through %rcx, saved and restored like rfShift). The value is
+     * zero-extended first for 1/2-byte widths (the rotate leaves the upper bits of the sub-register alone); a 4-byte rotate zero-extends by itself.
+     */
+    private void rfRotate(String op, int size, String dstTok, String aTok, String bTok) {
+        String d = rfReg(dstTok);
+        boolean aIsD = rfIsTemp(aTok) && rfReg(aTok).equals(d);
+        String mn = op.equals("ROTL") ? "rol" : "ror";
+        if (rfIsImm(bTok)) {
+            long c = rfExtImm(rfImm(bTok), size, false) & (size * 8L - 1);
+            if (!aIsD) {
+                rfMov(dstTok, aTok);
+            }
+            if (c != 0) {
+                if (size < 4) {
+                    zeroExtendReg(d, size);
+                }
+                raw("    " + mn + movSuffix(size) + " $" + c + ", %" + sizedReg(d, size));
+            }
+            zeroExtendReg(d, size);
+            return;
+        }
+        pushReg("rcx");
+        if (rfIsTemp(bTok)) {
+            rfRegToReg("rcx", rfReg(bTok));
+        } else {
+            movMemToReg("rcx", rfSlot(bTok));
+        }
+        if (!aIsD) {
+            rfMov(dstTok, aTok);
+        }
+        zeroExtendReg(d, size);
+        raw("    " + mn + movSuffix(size) + " %cl, %" + sizedReg(d, size));
+        popReg("rcx");
+    }
+
     private void rfShift(String op, int size, String dstTok, String aTok, String bTok) {
         String d = rfReg(dstTok);
         boolean aIsD = rfIsTemp(aTok) && rfReg(aTok).equals(d);
@@ -5746,6 +5799,10 @@ public class X86Backend {
     private void rfBin(String op, int size, String dstTok, String aTok, String bTok) {
         if (op.equals("SHL") || op.equals("SHR") || op.equals("SAR")) {
             rfShift(op, size, dstTok, aTok, bTok);
+            return;
+        }
+        if (op.equals("ROTL") || op.equals("ROTR")) {
+            rfRotate(op, size, dstTok, aTok, bTok);
             return;
         }
         String d = rfReg(dstTok);

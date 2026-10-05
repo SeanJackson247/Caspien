@@ -518,7 +518,7 @@ benchmarks is small (see `benchmarks/nbody/RESULTS.md`). Only the AT&T forms hav
 
 ### Bitwise builtins and integer literals (always on)
 
-Language reference. All six builtins take integers and return the operand type; they need no `unsafe`.
+Language reference. All eight builtins take integers and return the operand type; they need no `unsafe`.
 
 | call | meaning |
 |---|---|
@@ -526,6 +526,7 @@ Language reference. All six builtins take integers and return the operand type; 
 | `bits_not(a)` | complement truncated to the operand's width: `bits_not(0)` is 255 for a `u8`, -1 for an `s8`, 18446744073709551615 for a `u64` |
 | `bits_left(a, n)` | `a << n`, bits shifted past the top are discarded |
 | `bits_right(a, n)` | `a >> n`: logical (zero fill) for unsigned types, arithmetic (sign fill) for signed types |
+| `bits_rotl(a, n)`, `bits_rotr(a, n)` | rotate the bit pattern of `a` left / right within its own width (`rol` / `ror`). Unlike a shift, the count is taken MODULO the width: `bits_rotl(x_u32, 32)` is `x`, `bits_rotl(x_u8, 9)` is `bits_rotl(x_u8, 1)`, a negative signed count rotates the other way. Same typing rules as the shifts (both operands the same integer type, a literal adapts); HOB `ROTL`/`ROTR`, register form `R_BIN ROTL\|ROTR`, constant-folded at every width |
 
 Types: the two operands of a binary builtin (and the count of a shift) must have the SAME integer type, except that a literal adapts exactly as in arithmetic: `bits_and(x_u8, 0xF0)` and `bits_left(x_u8, 3)` compile (the literal must fit the type of the other operand, otherwise "literal 300 does not fit in 'u8'"); two typed operands of different types are an error, as are floats, bools and strings. A call made only of literals is a `u64` (an `s64` when an operand is negative); typed limit constants (`u8Max`, `s16Min`, ...) give narrow typed operands in a constant expression.
 

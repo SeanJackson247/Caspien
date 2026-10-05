@@ -971,7 +971,7 @@ public class AddressLoweringPass implements OptimizationPass {
     }
 
     private static final Set<String> VALUE_BINARY_OPS = new HashSet<>(java.util.Arrays.asList(
-            "ADD", "SUB", "MUL", "DIV", "MOD", "SHL", "SHR", "BITS_OR", "BITS_AND", "BITS_XOR", "BITS_LEFT", "BITS_RIGHT",
+            "ADD", "SUB", "MUL", "DIV", "MOD", "SHL", "SHR", "ROTL", "ROTR", "BITS_OR", "BITS_AND", "BITS_XOR", "BITS_LEFT", "BITS_RIGHT",
             "AND", "OR", "EQ", "NEQ", "LT", "LT_EQ", "GT", "GT_EQ", "LOOKUP"));
     private static final Set<String> VALUE_UNARY_OPS = new HashSet<>(java.util.Arrays.asList("NEG", "NOT", "BITS_NOT", "TRUNC", "SEXT", "ZEXT", "FCONV"));
 
@@ -2144,7 +2144,7 @@ public class AddressLoweringPass implements OptimizationPass {
         // `rightType`/`returnType` are dropped.
         // (BITS_AND/BITS_XOR/BITS_NOT sit alongside BITS_OR: the same checkBitsBuiltin rules, the same lowering. A signed `SHR` becomes `SAR`.
         // The stack-form BITS_AND with ONE operand "BITS_AND 8" that StrengthReductionPass makes later is the same instruction at size 8.)
-        if ((mnemonic.equals("SHL") || mnemonic.equals("SHR") || mnemonic.equals("BITS_OR")
+        if ((mnemonic.equals("SHL") || mnemonic.equals("SHR") || mnemonic.equals("ROTL") || mnemonic.equals("ROTR") || mnemonic.equals("BITS_OR")
                 || mnemonic.equals("BITS_AND") || mnemonic.equals("BITS_XOR")) && line.size() == 4) {
             long size = sizes.sizeOf(line.get(1).text);
             // bits_right on a signed operand is an arithmetic shift (SAR); unsigned stays logical (SHR).

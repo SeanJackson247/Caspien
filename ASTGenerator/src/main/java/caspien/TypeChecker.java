@@ -78,7 +78,7 @@ public class TypeChecker {
     /** "sizeof(T)"/"len(...)"/"range(...)"/"deref(...)"/"clone(...)"/"call(...)"/"bits_left(...)"/"bits_right(...)"/"bits_or(...)"/"bits_and(...)"/"bits_xor(...)"/"bits_not(...)"/"memcopy(...)"/"dyn(...)"/"resize(...)" -- reserved, can't be shadowed by a user-declared function name. */
     private static final Set<String> BUILTIN_NAMES = new HashSet<>(Arrays.asList(
             "sizeof", "len", "range", "deref", "clone", "call",
-            "bits_left", "bits_right", "bits_or", "bits_and", "bits_xor", "bits_not", "memcopy", "dyn", "resize", "Some",
+            "bits_left", "bits_right", "bits_rotl", "bits_rotr", "bits_or", "bits_and", "bits_xor", "bits_not", "memcopy", "dyn", "resize", "Some",
             "insecure_rand", "wrap", "sat"
     ));
     /** "just for f32 types -- the state modifier," confirmed directly. Not lexer keywords -- recognized only contextually (type-annotation position ahead of "f32", or a match-on-f32's own case labels), the same way "default" is contextual rather than globally reserved. */
@@ -13219,7 +13219,7 @@ public class TypeChecker {
             case "deref": return checkDerefBuiltin(op, scope, func);
             case "clone": return checkCloneBuiltin(op, scope, func);
             case "call": return checkCallBuiltin(op, scope, func);
-            case "bits_left": case "bits_right": case "bits_or": case "bits_and": case "bits_xor": case "bits_not":
+            case "bits_left": case "bits_right": case "bits_rotl": case "bits_rotr": case "bits_or": case "bits_and": case "bits_xor": case "bits_not":
                 return checkBitsBuiltin(name, op, scope, func);
             case "memcopy": return checkMemcopyBuiltin(op, scope, func);
             case "dyn": return checkDynBuiltin(op, scope, func);

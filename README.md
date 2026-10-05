@@ -181,7 +181,8 @@ fixed arrays (`u64[5]`), ranges (`0..10`) and strings. A literal such as `5` is 
 lands in says otherwise, and a literal that does not fit is an error. `as` only widens within one
 signedness family. Narrowing needs a `fits` proof, `wrap` or `sat`. Hex, binary and underscore literals
 work (`0xFF_FF`, `0b1010`), and the bitwise builtins are `bits_and`, `bits_or`, `bits_xor`, `bits_not`,
-`bits_left` and `bits_right`, with one fully defined shift rule for every width.
+`bits_left`, `bits_right`, `bits_rotl` and `bits_rotr`, with one fully defined shift rule for every width
+(rotates take the count modulo the width).
 
 #### Functions, overloading and `@pure`
 
@@ -1455,6 +1456,7 @@ yours cannot reuse the name, and each is compiled directly instead of being call
 | `Some(p)` | proof condition: the pointer `p` is alive | only as a `match` condition (`Some(i) in arr` also proves the element alive) |
 | `wrap:<T>(x)`, `sat:<T>(x)` | convert an integer to `T` by keeping the low bits, or by clamping | total, no `unsafe`; `sat` needs a variable, field or literal |
 | `bits_and`, `bits_or`, `bits_xor`, `bits_not`, `bits_left`, `bits_right` | bitwise operations | one shift rule: a count of the width or more gives 0, or sign fill |
+| `bits_rotl(x, n)`, `bits_rotr(x, n)` | rotate the bits of `x` left or right within its own width | one `rol`/`ror`; the count is taken modulo the width (so a count of the width or more wraps instead of giving 0, and a negative signed count rotates the other way); any integer type, `n` the same type as `x` (a literal adapts) |
 | `dyn(...)`, `resize(d, n, fill)` | allocate and grow a dynamic array | can fail, so wrap in `try` or `?` (`unsafe dyn` forms exist) |
 | `memcopy(dest, n, src)` | copy `n` bytes between pointers | `unsafe` only |
 | `call(fp, ...)` | call through a function pointer | `unsafe` only; arity, argument types and result are checked against the pointer's signature |

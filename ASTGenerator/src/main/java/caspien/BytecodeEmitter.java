@@ -4754,7 +4754,7 @@ public class BytecodeEmitter {
                     line("BITS_NOT " + notArgs.get(0).resolvedType + " " + op.resolvedType);
                     return;
                 }
-                case "bits_left": case "bits_right": case "bits_or": case "bits_and": case "bits_xor": {
+                case "bits_left": case "bits_right": case "bits_rotl": case "bits_rotr": case "bits_or": case "bits_and": case "bits_xor": {
                     // "these compile to single instructions like other
                     // builtins," confirmed directly. Given the shape
                     // wasn't spelled out explicitly the way "call"'s
@@ -4775,6 +4775,8 @@ public class BytecodeEmitter {
                     switch (op.left.text) {
                         case "bits_left": bitsOpName = "SHL"; break;
                         case "bits_right": bitsOpName = "SHR"; break;
+                        case "bits_rotl": bitsOpName = "ROTL"; break;
+                        case "bits_rotr": bitsOpName = "ROTR"; break;
                         case "bits_and": bitsOpName = "BITS_AND"; break;
                         case "bits_xor": bitsOpName = "BITS_XOR"; break;
                         default: bitsOpName = "BITS_OR"; break;

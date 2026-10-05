@@ -1,0 +1,7 @@
+// bits_rotr with a u32 value and a u64 count must not compile (both sides the same integer type, like bits_right).
+import "../stdlib/libc.caspien"
+func main() void{
+	let:<mut u32> x = mut 7
+	let:<mut u64> k = mut 3
+	let:<mut u32> y = mut bits_rotr(x, k)
+}

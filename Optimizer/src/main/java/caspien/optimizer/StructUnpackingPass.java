@@ -46,7 +46,7 @@ public class StructUnpackingPass implements OptimizationPass {
     }
 
     private static final Set<String> BINARY = new HashSet<>(List.of(
-            "ADD", "SUB", "MUL", "DIV", "MOD", "SHL", "SHR", "BITS_OR", "BITS_AND", "BITS_XOR", "AND", "OR",
+            "ADD", "SUB", "MUL", "DIV", "MOD", "SHL", "SHR", "ROTL", "ROTR", "BITS_OR", "BITS_AND", "BITS_XOR", "AND", "OR",
             "EQ", "NEQ", "LT", "LT_EQ", "GT", "GT_EQ"));
     private static final Set<String> UNARY = new HashSet<>(List.of("NEG", "NOT", "BITS_NOT", "TRUNC", "SEXT", "ZEXT", "FCONV"));
 

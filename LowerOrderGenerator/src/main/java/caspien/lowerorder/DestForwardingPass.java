@@ -36,7 +36,7 @@ public class DestForwardingPass {
     private static final Set<String> STRAIGHT = Set.of("R_ST", "R_STI", "R_STD", "R_LDX", "R_STX", "R_FBINX", "R_XMOV", "R_GTOX",
             "R_FSQRT", "R_RMW", "R_LDXI", "R_STXI", "R_LDXD", "R_STXD");
     private static final Set<String> BIN_OPS = Set.of("ADD", "SUB", "MUL", "AND", "OR", "BAND", "BOR", "BXOR");
-    private static final Set<String> SHIFT_OPS = Set.of("SHL", "SHR", "SAR");
+    private static final Set<String> SHIFT_OPS = Set.of("SHL", "SHR", "SAR", "ROTL", "ROTR");
 
     public List<List<BytecodeToken>> run(List<List<BytecodeToken>> lines) {
         int n = lines.size();
