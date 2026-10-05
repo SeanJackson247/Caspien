@@ -2770,22 +2770,26 @@ public class X86Backend {
             }
             case "R_LDI": {
                 // "R_LDI n %tD &sym %vK scale" -- %tD = n bytes at sym + vK*scale (an R_LEA folded into the load that used it).
-                rfLoadIndexed((int) Long.parseLong(line.get(1).text), line.get(2).text, line.get(3).text, line.get(4).text, Long.parseLong(line.get(5).text));
+                rfLoadIndexed((int) Long.parseLong(line.get(1).text), line.get(2).text, line.get(3).text, line.get(4).text, Long.parseLong(line.get(5).text),
+                        line.size() > 6 ? Long.parseLong(line.get(6).text) : 0L);
                 return;
             }
             case "R_STI": {
                 // "R_STI n &sym %vK scale src" -- n bytes at sym + vK*scale = src (#imm or %tN).
-                rfStoreIndexed((int) Long.parseLong(line.get(1).text), line.get(2).text, line.get(3).text, Long.parseLong(line.get(4).text), line.get(5).text);
+                rfStoreIndexed((int) Long.parseLong(line.get(1).text), line.get(2).text, line.get(3).text, Long.parseLong(line.get(4).text), line.get(5).text,
+                        line.size() > 6 ? Long.parseLong(line.get(6).text) : 0L);
                 return;
             }
             case "R_LDXI": {
                 // "R_LDXI n %xK &sym %vK scale" -- variable K = the float (n = 4 or 8 bytes) at sym + vK*scale (an R_LEA folded into R_LDX).
-                rfLoadXIndexed(Integer.parseInt(line.get(1).text), line.get(2).text, line.get(3).text, line.get(4).text, Long.parseLong(line.get(5).text));
+                rfLoadXIndexed(Integer.parseInt(line.get(1).text), line.get(2).text, line.get(3).text, line.get(4).text, Long.parseLong(line.get(5).text),
+                        line.size() > 6 ? Long.parseLong(line.get(6).text) : 0L);
                 return;
             }
             case "R_STXI": {
                 // "R_STXI n &sym %vK scale %xK" -- the float in variable K stored at sym + vK*scale (an R_LEA folded into R_STX).
-                rfStoreXIndexed(Integer.parseInt(line.get(1).text), line.get(2).text, line.get(3).text, Long.parseLong(line.get(4).text), line.get(5).text);
+                rfStoreXIndexed(Integer.parseInt(line.get(1).text), line.get(2).text, line.get(3).text, Long.parseLong(line.get(4).text), line.get(5).text,
+                        line.size() > 6 ? Long.parseLong(line.get(6).text) : 0L);
                 return;
             }
             case "R_LEA": {
@@ -5899,7 +5903,7 @@ public class X86Backend {
         throw new IllegalStateException("malformed indexed base " + baseTok);
     }
 
-    private void rfLoadIndexed(int n, String dstTok, String baseTok, String idxTok, long scale) {
+    private void rfLoadIndexed(int n, String dstTok, String baseTok, String idxTok, long scale, long disp) {
         if (!(n == 1 || n == 2 || n == 4 || n == 8) || !rfIsVar(idxTok)
                 || !(scale == 1 || scale == 2 || scale == 4 || scale == 8)) {
             throw new IllegalStateException("malformed R_LDI");
@@ -5907,6 +5911,7 @@ public class X86Backend {
         String d = rfReg(dstTok);
         String x = rfReg(idxTok);
         String b = rfIndexedBase(baseTok, d);
+        rfIdxDisp += disp;
         rfIdxReg = x;
         rfIdxScale = scale;
         try {
@@ -5917,12 +5922,13 @@ public class X86Backend {
         }
     }
 
-    private void rfStoreIndexed(int n, String baseTok, String idxTok, long scale, String srcTok) {
+    private void rfStoreIndexed(int n, String baseTok, String idxTok, long scale, String srcTok, long disp) {
         if (!(n == 1 || n == 2 || n == 4 || n == 8) || !rfIsVar(idxTok)
                 || !(scale == 1 || scale == 2 || scale == 4 || scale == 8)) {
             throw new IllegalStateException("malformed R_STI");
         }
         String b = rfIndexedBase(baseTok, RF_SCRATCH);
+        rfIdxDisp += disp;
         rfIdxReg = rfReg(idxTok);
         rfIdxScale = scale;
         try {
@@ -5940,11 +5946,12 @@ public class X86Backend {
     }
 
     /** xmm register = the float at global + index*scale (R_LDXI): the base address goes through the scratch register. */
-    private void rfLoadXIndexed(int n, String xTok, String baseTok, String idxTok, long scale) {
+    private void rfLoadXIndexed(int n, String xTok, String baseTok, String idxTok, long scale, long disp) {
         if (!(n == 4 || n == 8) || scale != n || !rfIsVar(idxTok)) {
             throw new IllegalStateException("malformed R_LDXI");
         }
         String b = rfIndexedBase(baseTok, RF_SCRATCH);
+        rfIdxDisp += disp;
         rfIdxReg = rfReg(idxTok);
         rfIdxScale = scale;
         try {
@@ -5959,11 +5966,12 @@ public class X86Backend {
     }
 
     /** the float in an xmm register stored at base + index*scale (R_STXI). */
-    private void rfStoreXIndexed(int n, String baseTok, String idxTok, long scale, String xTok) {
+    private void rfStoreXIndexed(int n, String baseTok, String idxTok, long scale, String xTok, long disp) {
         if (!(n == 4 || n == 8) || scale != n || !rfIsVar(idxTok)) {
             throw new IllegalStateException("malformed R_STXI");
         }
         String b = rfIndexedBase(baseTok, RF_SCRATCH);
+        rfIdxDisp += disp;
         rfIdxReg = rfReg(idxTok);
         rfIdxScale = scale;
         try {

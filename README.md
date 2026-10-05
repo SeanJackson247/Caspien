@@ -1650,6 +1650,7 @@ and off.
 | `variables-in-registers` | on, off | Hot scalar locals live in registers. Needs `deferred-operands`. (shipped on) |
 | `float-variables-in-registers` | on, off | Hot float locals live in xmm registers. |
 | `float-temporaries-in-registers` | on, off | Float expression temporaries stay in xmm registers. |
+| `hoist-array-bases` | on, off | In loops where a safe dynarray variable is never reassigned, its pointer is copied once into a register candidate instead of being reloaded from the stack on every access. Needs `variables-in-registers`. |
 | `function-inlining` | off, conservative, balanced, aggressive | Replaces calls with the callee's body. Tunable with `inline-max-callee-lines`, `inline-max-depth`, `inline-max-growth`. |
 | `loop-unrolling` | off, conservative, balanced, aggressive | Unrolls `for` loops with literal bounds. Tunable with the `loop-unroll-*` keys. |
 | `constant-folding` | on, off | Folds operators whose operands are literals. |
@@ -1673,6 +1674,7 @@ deferred-operands: on
 variables-in-registers: on
 float-variables-in-registers: on
 float-temporaries-in-registers: on
+hoist-array-bases: on
 loop-unrolling: aggressive
 function-inlining: aggressive
 constant-folding: on

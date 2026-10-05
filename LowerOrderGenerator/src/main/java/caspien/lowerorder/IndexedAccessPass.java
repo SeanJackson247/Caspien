@@ -15,6 +15,7 @@ import java.util.Set;
  * (`leaq sym(%rip),%rax; leaq (%rax,%r13,8),%rax; movq (%rax),...` becomes `leaq sym(%rip),%rax; movq (%rax,%r13,8),...`:
  * RIP-relative addressing cannot carry an index register, so the base address still takes one lea.)
  * The float forms fuse the same way (`R_LDX n %xK|%yK %tX` -> `R_LDXI n %xK|%yK &sym %vK n`, `R_STX n %tX %xK|%yK` -> `R_STXI n &sym %vK n %xK|%yK`) with scale = access width (4 for f32, 8 for f64).
+ * An R_LEA with a displacement (6 tokens, e.g. the safe dynarray header offset 16) fuses the same way; the displacement becomes the last token of the fused line.
  * Only a base that is a global, a frame slot or a register holding a pointer, an index held in a variable register (%v), and an access whose width equals the element size (scale 1, 2, 4 or 8; tests/indexed_narrow_test covers 1, 2 and 4, tests/indexed_bases_test the frame and pointer bases). The lines
  * between the lea and its consumer must be known register-form mnemonics that neither mention %tX nor write the index register
  * (the index is read later than before), and %tX must be dead after the consumer (never read again before a pure redefinition,
@@ -78,7 +79,7 @@ public class IndexedAccessPass {
     }
 
     private static boolean isIndexedLea(List<BytecodeToken> l) {
-        if (l.size() != 5 || !t(l, 0).equals("R_LEA") || !t(l, 1).startsWith("%t") || !t(l, 3).startsWith("%v")) {
+        if ((l.size() != 5 && l.size() != 6) || !t(l, 0).equals("R_LEA") || !t(l, 1).startsWith("%t") || !t(l, 3).startsWith("%v")) {
             return false;
         }
         // base: a global, a frame slot, or a register (temp or variable) holding a pointer
@@ -105,6 +106,7 @@ public class IndexedAccessPass {
             n.add(lea.get(2));
             n.add(lea.get(3));
             n.add(lea.get(4));
+            addDisp(n, lea);
             return n;
         }
         if (t(l, 0).equals("R_STX") && t(l, 1).equals(t(lea, 4)) && t(l, 2).equals(x) && isXmm(t(l, 3))) {
@@ -114,6 +116,7 @@ public class IndexedAccessPass {
             n.add(lea.get(3));
             n.add(lea.get(4));
             n.add(l.get(3));
+            addDisp(n, lea);
             return n;
         }
         // integer element: the access width equals the element size (scale 1, 2, 4 or 8)
@@ -127,6 +130,7 @@ public class IndexedAccessPass {
             n.add(lea.get(2));
             n.add(lea.get(3));
             n.add(lea.get(4));
+            addDisp(n, lea);
             return n;
         }
         if (t(l, 0).equals("R_ST") && t(l, 2).equals(x) && !t(l, 3).equals(x)
@@ -137,9 +141,17 @@ public class IndexedAccessPass {
             n.add(lea.get(3));
             n.add(lea.get(4));
             n.add(l.get(3));
+            addDisp(n, lea);
             return n;
         }
         return null;
+    }
+
+    /** the lea's displacement (6th token, e.g. the 16-byte safe dynarray header) rides along as the fused line's last token */
+    private static void addDisp(List<BytecodeToken> n, List<BytecodeToken> lea) {
+        if (lea.size() == 6) {
+            n.add(lea.get(5));
+        }
     }
 
     private static boolean isXmm(String tok) {

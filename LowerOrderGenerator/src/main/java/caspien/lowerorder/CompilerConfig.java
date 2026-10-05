@@ -83,6 +83,8 @@ public class CompilerConfig {
     public boolean floatVariablesInRegisters = false;
     /** Optional top-level 'float-temporaries-in-registers: on|off' (default off; needs deferred-operands: on): f32 expression temporaries stay in xmm registers instead of round-tripping through general registers. */
     public boolean floatTemporariesInRegisters = false;
+    /** Optional top-level 'hoist-array-bases: on|off' (default off; needs variables-in-registers: on): LoopHoistPass copies loop-invariant array base pointers into register candidates. */
+    public boolean hoistArrayBases = false;
 
     public CallingConvention getDefault() {
         return callingConventions.get(defaultConvention);
@@ -132,6 +134,15 @@ public class CompilerConfig {
                     throw configErr(path, lineNo, "'deferred-operands' must be 'on' or 'off', found '" + v + "'");
                 }
                 config.deferredOperands = v.equals("on");
+                continue;
+            }
+            if (startsWithLiteral(trimmed, "hoist-array-bases:")) {
+                // Optional switch: LoopHoistPass (LowerOrderGenerator); parsed here so every stage that reads compiler.config accepts it. Absent = off.
+                String v = unquoteOrBare(trimmed.substring("hoist-array-bases:".length()).trim());
+                if (!v.equals("on") && !v.equals("off")) {
+                    throw configErr(path, lineNo, "'hoist-array-bases' must be 'on' or 'off', found '" + v + "'");
+                }
+                config.hoistArrayBases = v.equals("on");
                 continue;
             }
             if (startsWithLiteral(trimmed, "float-temporaries-in-registers:")) {

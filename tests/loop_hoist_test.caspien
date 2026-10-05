@@ -1,0 +1,257 @@
+// LoopHoistPass (hoist-array-bases): safe dynarray accesses in loops. Some loops keep the array pointer invariant (the pass copies it
+// into a register candidate), others break every condition: `resize` in the loop, a reassignment of the variable in the loop,
+// a variable declared inside the loop body, more arrays than registers, a call in the loop, `continue`/`break`, narrow elements.
+// Expected values come from tests/loop_hoist_test.py (an independent model); tests/loop_hoist_check.sh compares and also checks that the
+// pass really hoisted (a loop-invariant copy lives in a register) and left the broken-invariant loops alone.
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+
+let static g3 = mut 3
+let static g4 = mut 4
+let static g5 = mut 5
+let static g8 = mut 8
+let static g16 = mut 16
+let static g30 = mut 30
+let static g40 = mut 40
+let static g64 = mut 64
+let static g256 = mut 256
+let static g300 = mut 300
+let static g512 = mut 512
+let static g1024 = mut 1024
+
+func out(name: static imut string, v: imut u64) void{
+	unsafe extern{ printf("%s %llu\n", name, v) }
+}
+
+func mix(x: imut u64) u64{
+	return bits_and(x * 2654435761 + 12345, 16777215)
+}
+
+func main() void{
+	?catch(e){
+		unsafe extern{ printf("FAIL uncaught: %s\n", e) }
+		return
+	}
+	let n3 = mut 0
+	let n4 = mut 0
+	let n5 = mut 0
+	let n8 = mut 0
+	let n16 = mut 0
+	let n30 = mut 0
+	let n40 = mut 0
+	let n64 = mut 0
+	let n256 = mut 0
+	let n300 = mut 0
+	let n512 = mut 0
+	let n1024 = mut 0
+	unsafe global{
+		n3 = g3
+		n4 = g4
+		n5 = g5
+		n8 = g8
+		n16 = g16
+		n30 = g30
+		n40 = g40
+		n64 = g64
+		n256 = g256
+		n300 = g300
+		n512 = g512
+		n1024 = g1024
+	}
+	let:<mut u64> zero = mut 0
+	let a = mut ? dyn:<u64>([])
+	a = ? resize(a, 1024, zero)
+	let b = mut ? dyn:<u64>([])
+	b = ? resize(b, 1024, zero)
+	// (every loop bound comes from a mutable global, so no unrolling or folding can remove a loop)
+	// S1: two arrays, one read through a scattered index, one written, then summed
+	for i in 0..n1024{
+		match i into a{ a[i] = bits_and(i * 7 + 3, 4095) }
+	}
+	for i in 0..n1024{
+		let j = mut bits_and(i * 31, 1023)
+		let x = mut 0
+		match j in a{ x = a[j] }
+		match i into b{ b[i] = x + i }
+	}
+	let s1 = mut 0
+	for i in 0..n1024{
+		match i in b{ s1 += b[i] }
+	}
+	out("S1", s1)
+	// S2: `resize` inside the loop (the array moves and grows every iteration); the inner loop reads through the new pointer
+	let c = mut ? dyn:<u64>([])
+	c = ? resize(c, 1, zero)
+	let s2 = mut 0
+	for k in 0..n40{
+		let sz = mut (k + 2)
+		let:<mut u64> fv = mut (k + 1)
+		c = ? resize(c, sz, fv)
+		for j in 0..sz{
+			match j in c{ s2 += c[j] * (j + 1) }
+		}
+	}
+	out("S2", s2)
+	// S3: grow far, shrink far (the block is reallocated down), in turn; reads after each reassignment
+	let d = mut ? dyn:<u64>([])
+	d = ? resize(d, 2, zero)
+	let s3 = mut 0
+	for k in 0..n30{
+		let sz = mut 3
+		if bits_and(k, 1) == 0{
+			sz = 400
+		}
+		let:<mut u64> fv = mut (k + 5)
+		d = ? resize(d, sz, fv)
+		for j in 0..sz{
+			match j into d{ d[j] = d[j] + j }
+		}
+		for j in 0..sz{
+			match j in d{ s3 += d[j] }
+		}
+	}
+	out("S3", s3)
+	// S4: nested loops, the outer-invariant arrays are read in the inner loop, one of them written there
+	let p = mut ? dyn:<u64>([])
+	p = ? resize(p, 1024, zero)
+	let q = mut ? dyn:<u64>([])
+	q = ? resize(q, 1024, zero)
+	for i in 0..n1024{
+		match i into p{ p[i] = bits_and(i * 13 + 1, 255) }
+	}
+	for r in 0..n3{
+		for i in 0..n64{
+			for j in 0..n16{
+				let t = mut (i * 16 + j)
+				let t5 = mut bits_and(t * 5, 1023)
+				let u = mut 0
+				let v = mut 0
+				match t in p{ u = p[t] }
+				match t5 in p{ v = p[t5] }
+				match t in q{ u = u * 3 + v + q[t] }
+				match t into q{ q[t] = u }
+			}
+		}
+	}
+	let s4 = mut 0
+	for i in 0..n1024{
+		match i in q{ s4 += q[i] }
+	}
+	out("S4", s4)
+	// S5: a call in the loop (the hoisted pointer must survive it)
+	let ea = mut ? dyn:<u64>([])
+	ea = ? resize(ea, 512, zero)
+	for i in 0..n512{
+		match i into ea{ ea[i] = bits_and(i * 5 + 1, 1023) }
+	}
+	let s5 = mut 0
+	for i in 0..n512{
+		let x = mut 0
+		match i in ea{ x = ea[i] }
+		let y = mut mix(x + i)
+		match i into ea{ ea[i] = y }
+		match i in ea{ s5 += ea[i] }
+	}
+	out("S5", s5)
+	// S6: continue and break in the loop
+	let s6 = mut 0
+	for i in 0..n1024{
+		if bits_and(i, 3) == 0{
+			continue
+		}
+		if i > 900{
+			break
+		}
+		match i in a{ s6 += a[i] }
+		match i in b{ s6 += b[i] }
+	}
+	out("S6", s6)
+	// S7: the array variable is declared inside the outer loop body (the same slot is reused by every iteration)
+	let s7 = mut 0
+	for k in 0..n8{
+		let t = mut ? dyn:<u64>([])
+		let:<mut u64> fv = mut k
+		let cnt = mut (16 + k)
+		t = ? resize(t, cnt, fv)
+		for j in 0..cnt{
+			match j into t{ t[j] = j * k + 1 }
+		}
+		for j in 0..cnt{
+			match j in t{ s7 += t[j] }
+		}
+	}
+	out("S7", s7)
+	// S8: more arrays than variable registers in one loop
+	let a1 = mut ? dyn:<u64>([])
+	a1 = ? resize(a1, 256, zero)
+	let a2 = mut ? dyn:<u64>([])
+	a2 = ? resize(a2, 256, zero)
+	let a3 = mut ? dyn:<u64>([])
+	a3 = ? resize(a3, 256, zero)
+	let a4 = mut ? dyn:<u64>([])
+	a4 = ? resize(a4, 256, zero)
+	let a5 = mut ? dyn:<u64>([])
+	a5 = ? resize(a5, 256, zero)
+	for i in 0..n256{
+		match i into a1{ a1[i] = i + 1 }
+		match i into a2{ a2[i] = i * 2 }
+		match i into a3{ a3[i] = i * 3 + 7 }
+		match i into a4{ a4[i] = bits_and(i * 11, 255) }
+		match i into a5{ a5[i] = 255 - i }
+	}
+	let s8 = mut 0
+	for r in 0..n4{
+		for i in 0..n256{
+			let x1 = mut 0
+			let x2 = mut 0
+			let x3 = mut 0
+			let x4 = mut 0
+			let x5 = mut 0
+			match i in a1{ x1 = a1[i] }
+			match i in a2{ x2 = a2[i] }
+			match i in a3{ x3 = a3[i] }
+			match i in a4{ x4 = a4[i] }
+			match i in a5{ x5 = a5[i] }
+			s8 += x1 + x2 * 2 + x3 * 3 + x4 * 4 + x5 * 5 + r
+		}
+	}
+	out("S8", s8)
+	// S9: narrow elements (u8, u32) through a hoisted pointer, reads and writes
+	let h = mut ? dyn:<u8>([])
+	let:<mut u8> hz = mut 0
+	h = ? resize(h, 300, hz)
+	let w = mut ? dyn:<u32>([])
+	let:<mut u32> wz = mut 0
+	w = ? resize(w, 300, wz)
+	for i in 0..n300{
+		match i into h{ h[i] = wrap:<u8>(bits_and(i * 7, 255)) }
+		match i into w{ w[i] = wrap:<u32>(i * 100003) }
+	}
+	let s9 = mut 0
+	for r in 0..n5{
+		for i in 0..n300{
+			match i in h{ s9 += h[i] as u64 }
+			match i in w{ s9 += w[i] as u64 }
+			match i into h{ h[i] = wrap:<u8>(bits_and(i + r, 255)) }
+		}
+	}
+	out("S9", s9)
+	// S10: a clone is modified in a loop, the original must not change
+	let cl = mut ? clone(a)
+	for i in 0..n1024{
+		match i in cl{
+			let nv = mut (cl[i] + 1)
+			match i into cl{ cl[i] = nv }
+		}
+	}
+	let s10 = mut 0
+	for i in 0..n1024{
+		match i in a{ s10 += a[i] }
+		match i in cl{ s10 += cl[i] * 2 }
+	}
+	out("S10", s10)
+}
