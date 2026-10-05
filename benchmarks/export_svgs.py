@@ -139,7 +139,10 @@ if __name__ == "__main__":
         suf = "" if THEME == "light" else "-dark"
         for d, title, cnt, *_ in PROGS:
             if d in DATA: open(os.path.join(OUT, "time_%s%s.svg" % (d, suf)), "w").write(time_svg(d, title, cnt))
-        open(os.path.join(OUT, "overview_time%s.svg" % suf), "w").write(overview_svg())
+        try:
+            open(os.path.join(OUT, "overview_time%s.svg" % suf), "w").write(overview_svg())
+        except ZeroDivisionError:   # a quick run has no optimisations-off rows: the overview (not used by the README) cannot be drawn
+            print("overview_time%s.svg skipped (no optimisations-off rows in these results)" % suf)
     sel = selection()
     print("Caspien fastest 'everything on' variant / C -O2, per program (low = faster than C):")
     for r, d, t, lab in sel: print("  %5.2fx  %-14s %s" % (r, d, lab))

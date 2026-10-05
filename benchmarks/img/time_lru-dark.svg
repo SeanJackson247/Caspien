@@ -1,12 +1,12 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 883" width="900" height="883" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif"><style>.grid{stroke:#343a35;stroke-width:1}.noise{stroke:#e0a800;stroke-width:1.6}.tick{fill:#a1aaa2;font-size:11px}.lbl{fill:#e8ece6;font-size:12.5px}.val{fill:#e8ece6;font-size:12px}.grp{fill:#a1aaa2;font-size:10.5px}.hit{fill:transparent}.bar{fill:var(--c)}.bar.off{fill:url(#hatch);stroke:var(--c);stroke-width:1.2}.ttl{fill:#e8ece6;font-size:15px;font-weight:600}.sub{fill:#a1aaa2;font-size:11.5px}.k-caspien{--c:#5cb37f}.k-c{--c:#e16e68}.k-cpp{--c:#f3978e}.k-rust{--c:#bb5954}.k-go{--c:#f5b7b0}.k-fortran{--c:#9a504c}.k-objc{--c:#cc817a}.k-odin{--c:#ed9381}.k-zig{--c:#d5728b}.k-chapel{--c:#f7c8c0}.k-ldc{--c:#e77869}.k-gdc{--c:#f3a497}.k-nim{--c:#c85f5a}.k-crystal{--c:#e18b7e}.k-ocaml{--c:#f9d1ca}.k-swift{--c:#d66578}.k-codon{--c:#ad5e59}.k-java{--c:#9769c8}.k-csharp{--c:#826ed4}.k-kotlin{--c:#c18be1}.k-wasm{--c:#b09ae7}.k-node{--c:#5d8fdf}.k-bun{--c:#9bc1f5}.k-luajit{--c:#4f72bb}</style><defs><pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#28402f"/><line x1="0" y1="0" x2="0" y2="6" stroke="#5cb37f" stroke-width="2.4"/></pattern></defs><rect width="900" height="883" rx="8" fill="#1f2220" stroke="#3a413b"/><text class="ttl" x="16" y="24">Execution time: LRU cache</text><text class="sub" x="16" y="40">20,000,000 operations  |  fastest of 3 runs, Linux 2-core VM; every output equals the C reference</text><g transform="translate(0,46)">
-<line class="grid" x1="270.0" x2="270.0" y1="6" y2="771"/>
-<text class="tick" x="270.0" y="785" text-anchor="middle">0</text>
-<line class="grid" x1="416.7" x2="416.7" y1="6" y2="771"/>
-<text class="tick" x="416.7" y="785" text-anchor="middle">5</text>
-<line class="grid" x1="563.3" x2="563.3" y1="6" y2="771"/>
-<text class="tick" x="563.3" y="785" text-anchor="middle">10</text>
-<line class="grid" x1="710.0" x2="710.0" y1="6" y2="771"/>
-<text class="tick" x="710.0" y="785" text-anchor="middle">15</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 906" width="900" height="906" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif"><style>.grid{stroke:#343a35;stroke-width:1}.noise{stroke:#e0a800;stroke-width:1.6}.tick{fill:#a1aaa2;font-size:11px}.lbl{fill:#e8ece6;font-size:12.5px}.val{fill:#e8ece6;font-size:12px}.grp{fill:#a1aaa2;font-size:10.5px}.hit{fill:transparent}.bar{fill:var(--c)}.bar.off{fill:url(#hatch);stroke:var(--c);stroke-width:1.2}.ttl{fill:#e8ece6;font-size:15px;font-weight:600}.sub{fill:#a1aaa2;font-size:11.5px}.k-caspien{--c:#5cb37f}.k-c{--c:#e16e68}.k-cpp{--c:#f3978e}.k-rust{--c:#bb5954}.k-go{--c:#f5b7b0}.k-fortran{--c:#9a504c}.k-objc{--c:#cc817a}.k-odin{--c:#ed9381}.k-zig{--c:#d5728b}.k-chapel{--c:#f7c8c0}.k-ldc{--c:#e77869}.k-gdc{--c:#f3a497}.k-nim{--c:#c85f5a}.k-crystal{--c:#e18b7e}.k-ocaml{--c:#f9d1ca}.k-swift{--c:#d66578}.k-codon{--c:#ad5e59}.k-java{--c:#9769c8}.k-csharp{--c:#826ed4}.k-kotlin{--c:#c18be1}.k-wasm{--c:#b09ae7}.k-node{--c:#5d8fdf}.k-bun{--c:#9bc1f5}.k-luajit{--c:#4f72bb}</style><defs><pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#28402f"/><line x1="0" y1="0" x2="0" y2="6" stroke="#5cb37f" stroke-width="2.4"/></pattern></defs><rect width="900" height="906" rx="8" fill="#1f2220" stroke="#3a413b"/><text class="ttl" x="16" y="24">Execution time: LRU cache</text><text class="sub" x="16" y="40">20,000,000 operations  |  fastest of 5 runs, Linux 2-core VM; every output equals the C reference</text><g transform="translate(0,46)">
+<line class="grid" x1="270.0" x2="270.0" y1="6" y2="794"/>
+<text class="tick" x="270.0" y="808" text-anchor="middle">0</text>
+<line class="grid" x1="416.7" x2="416.7" y1="6" y2="794"/>
+<text class="tick" x="416.7" y="808" text-anchor="middle">5</text>
+<line class="grid" x1="563.3" x2="563.3" y1="6" y2="794"/>
+<text class="tick" x="563.3" y="808" text-anchor="middle">10</text>
+<line class="grid" x1="710.0" x2="710.0" y1="6" y2="794"/>
+<text class="tick" x="710.0" y="808" text-anchor="middle">15</text>
 <g class="row">
 
 <text class="lbl" x="262" y="20.2" text-anchor="end">Zig</text>
@@ -81,67 +81,67 @@
 </g>
 <g class="row">
 
-<text class="lbl" x="262" y="227.2" text-anchor="end">Fortran</text>
-<rect class="bar k-fortran" x="270" y="215" width="23.1" height="17" rx="3"/>
-<line class="noise" x1="292.9" x2="292.9" y1="215" y2="232"/>
-<line class="noise" x1="293.3" x2="293.3" y1="215" y2="232"/>
-<text class="val" x="299.3" y="227.2">0.79 s <tspan class="grp">Bare metal / native-compiled</tspan></text>
+<text class="lbl" x="262" y="227.2" text-anchor="end">Caspien optimized unsafe · full</text>
+<rect class="bar k-caspien" x="270" y="215" width="22.8" height="17" rx="3"/>
+<line class="noise" x1="292.1" x2="292.1" y1="215" y2="232"/>
+<line class="noise" x1="293.5" x2="293.5" y1="215" y2="232"/>
+<text class="val" x="299.5" y="227.2">0.78 s <tspan class="grp">Caspien</tspan></text>
 </g>
 <g class="row">
 
-<text class="lbl" x="262" y="250.2" text-anchor="end">Crystal</text>
-<rect class="bar k-crystal" x="270" y="238" width="25.7" height="17" rx="3"/>
-<line class="noise" x1="295.0" x2="295.0" y1="238" y2="255"/>
-<line class="noise" x1="296.4" x2="296.4" y1="238" y2="255"/>
-<text class="val" x="302.4" y="250.2">0.88 s <tspan class="grp">Bare metal / native-compiled</tspan></text>
+<text class="lbl" x="262" y="250.2" text-anchor="end">Fortran</text>
+<rect class="bar k-fortran" x="270" y="238" width="23.1" height="17" rx="3"/>
+<line class="noise" x1="292.9" x2="292.9" y1="238" y2="255"/>
+<line class="noise" x1="293.3" x2="293.3" y1="238" y2="255"/>
+<text class="val" x="299.3" y="250.2">0.79 s <tspan class="grp">Bare metal / native-compiled</tspan></text>
 </g>
 <g class="row">
 
-<text class="lbl" x="262" y="273.2" text-anchor="end">Objective-C</text>
-<rect class="bar k-objc" x="270" y="261" width="28.2" height="17" rx="3"/>
-<line class="noise" x1="297.6" x2="297.6" y1="261" y2="278"/>
-<line class="noise" x1="298.9" x2="298.9" y1="261" y2="278"/>
-<text class="val" x="304.9" y="273.2">0.96 s <tspan class="grp">Bare metal / native-compiled</tspan></text>
+<text class="lbl" x="262" y="273.2" text-anchor="end">Crystal</text>
+<rect class="bar k-crystal" x="270" y="261" width="25.7" height="17" rx="3"/>
+<line class="noise" x1="295.0" x2="295.0" y1="261" y2="278"/>
+<line class="noise" x1="296.4" x2="296.4" y1="261" y2="278"/>
+<text class="val" x="302.4" y="273.2">0.88 s <tspan class="grp">Bare metal / native-compiled</tspan></text>
 </g>
 <g class="row">
 
-<text class="lbl" x="262" y="296.2" text-anchor="end">C -O0</text>
-<rect class="bar k-c" x="270" y="284" width="30.4" height="17" rx="3"/>
-<line class="noise" x1="299.4" x2="299.4" y1="284" y2="301"/>
-<line class="noise" x1="301.3" x2="301.3" y1="284" y2="301"/>
-<text class="val" x="307.3" y="296.2">1.04 s <tspan class="grp">Bare metal / native-compiled</tspan></text>
+<text class="lbl" x="262" y="296.2" text-anchor="end">Caspien optimized safe · full</text>
+<rect class="bar k-caspien" x="270" y="284" width="27.1" height="17" rx="3"/>
+<line class="noise" x1="296.4" x2="296.4" y1="284" y2="301"/>
+<line class="noise" x1="297.8" x2="297.8" y1="284" y2="301"/>
+<text class="val" x="303.8" y="296.2">0.92 s <tspan class="grp">Caspien</tspan></text>
 </g>
 <g class="row">
 
-<text class="lbl" x="262" y="319.2" text-anchor="end">Codon</text>
-<rect class="bar k-codon" x="270" y="307" width="31.8" height="17" rx="3"/>
-<line class="noise" x1="301.5" x2="301.5" y1="307" y2="324"/>
-<line class="noise" x1="302.1" x2="302.1" y1="307" y2="324"/>
-<text class="val" x="308.1" y="319.2">1.08 s <tspan class="grp">Bare metal / native-compiled</tspan></text>
+<text class="lbl" x="262" y="319.2" text-anchor="end">Objective-C</text>
+<rect class="bar k-objc" x="270" y="307" width="28.2" height="17" rx="3"/>
+<line class="noise" x1="297.6" x2="297.6" y1="307" y2="324"/>
+<line class="noise" x1="298.9" x2="298.9" y1="307" y2="324"/>
+<text class="val" x="304.9" y="319.2">0.96 s <tspan class="grp">Bare metal / native-compiled</tspan></text>
 </g>
 <g class="row">
 
-<text class="lbl" x="262" y="342.2" text-anchor="end">Caspien optimized safe · full</text>
-<rect class="bar k-caspien" x="270" y="330" width="32.8" height="17" rx="3"/>
-<line class="noise" x1="302.1" x2="302.1" y1="330" y2="347"/>
-<line class="noise" x1="303.5" x2="303.5" y1="330" y2="347"/>
-<text class="val" x="309.5" y="342.2">1.12 s <tspan class="grp">Caspien</tspan></text>
+<text class="lbl" x="262" y="342.2" text-anchor="end">C -O0</text>
+<rect class="bar k-c" x="270" y="330" width="30.4" height="17" rx="3"/>
+<line class="noise" x1="299.4" x2="299.4" y1="330" y2="347"/>
+<line class="noise" x1="301.3" x2="301.3" y1="330" y2="347"/>
+<text class="val" x="307.3" y="342.2">1.04 s <tspan class="grp">Bare metal / native-compiled</tspan></text>
 </g>
 <g class="row">
 
-<text class="lbl" x="262" y="365.2" text-anchor="end">OCaml</text>
-<rect class="bar k-ocaml" x="270" y="353" width="38.0" height="17" rx="3"/>
-<line class="noise" x1="307.4" x2="307.4" y1="353" y2="370"/>
-<line class="noise" x1="308.6" x2="308.6" y1="353" y2="370"/>
-<text class="val" x="314.6" y="365.2">1.30 s <tspan class="grp">Bare metal / native-compiled</tspan></text>
+<text class="lbl" x="262" y="365.2" text-anchor="end">Codon</text>
+<rect class="bar k-codon" x="270" y="353" width="31.8" height="17" rx="3"/>
+<line class="noise" x1="301.5" x2="301.5" y1="353" y2="370"/>
+<line class="noise" x1="302.1" x2="302.1" y1="353" y2="370"/>
+<text class="val" x="308.1" y="365.2">1.08 s <tspan class="grp">Bare metal / native-compiled</tspan></text>
 </g>
 <g class="row">
 
-<text class="lbl" x="262" y="388.2" text-anchor="end">Caspien optimized unsafe · full</text>
-<rect class="bar k-caspien" x="270" y="376" width="39.3" height="17" rx="3"/>
-<line class="noise" x1="309.3" x2="309.3" y1="376" y2="393"/>
-<line class="noise" x1="309.3" x2="309.3" y1="376" y2="393"/>
-<text class="val" x="315.3" y="388.2">1.34 s <tspan class="grp">Caspien</tspan></text>
+<text class="lbl" x="262" y="388.2" text-anchor="end">OCaml</text>
+<rect class="bar k-ocaml" x="270" y="376" width="38.0" height="17" rx="3"/>
+<line class="noise" x1="307.4" x2="307.4" y1="376" y2="393"/>
+<line class="noise" x1="308.6" x2="308.6" y1="376" y2="393"/>
+<text class="val" x="314.6" y="388.2">1.30 s <tspan class="grp">Bare metal / native-compiled</tspan></text>
 </g>
 <g class="row">
 
@@ -161,35 +161,35 @@
 </g>
 <g class="row">
 
-<text class="lbl" x="262" y="457.2" text-anchor="end">LuaJIT</text>
-<rect class="bar k-luajit" x="270" y="445" width="54.1" height="17" rx="3"/>
-<line class="noise" x1="323.2" x2="323.2" y1="445" y2="462"/>
-<line class="noise" x1="325.0" x2="325.0" y1="445" y2="462"/>
-<text class="val" x="331.0" y="457.2">1.84 s <tspan class="grp">Interpreted</tspan></text>
+<text class="lbl" x="262" y="457.2" text-anchor="end">Caspien naive (DynamicArray + HashMap) · full</text>
+<rect class="bar k-caspien" x="270" y="445" width="50.9" height="17" rx="3"/>
+<line class="noise" x1="319.2" x2="319.2" y1="445" y2="462"/>
+<line class="noise" x1="322.7" x2="322.7" y1="445" y2="462"/>
+<text class="val" x="328.7" y="457.2">1.74 s <tspan class="grp">Caspien</tspan></text>
 </g>
 <g class="row">
 
-<text class="lbl" x="262" y="480.2" text-anchor="end">C++ -O2 (leak)</text>
-<rect class="bar k-cpp" x="270" y="468" width="54.7" height="17" rx="3"/>
-<line class="noise" x1="324.1" x2="324.1" y1="468" y2="485"/>
-<line class="noise" x1="325.4" x2="325.4" y1="468" y2="485"/>
-<text class="val" x="331.4" y="480.2">1.87 s <tspan class="grp">Bare metal / native-compiled</tspan></text>
+<text class="lbl" x="262" y="480.2" text-anchor="end">LuaJIT</text>
+<rect class="bar k-luajit" x="270" y="468" width="54.1" height="17" rx="3"/>
+<line class="noise" x1="323.2" x2="323.2" y1="468" y2="485"/>
+<line class="noise" x1="325.0" x2="325.0" y1="468" y2="485"/>
+<text class="val" x="331.0" y="480.2">1.84 s <tspan class="grp">Interpreted</tspan></text>
 </g>
 <g class="row">
 
-<text class="lbl" x="262" y="503.2" text-anchor="end">C#</text>
-<rect class="bar k-csharp" x="270" y="491" width="58.6" height="17" rx="3"/>
-<line class="noise" x1="327.3" x2="327.3" y1="491" y2="508"/>
-<line class="noise" x1="330.0" x2="330.0" y1="491" y2="508"/>
-<text class="val" x="336.0" y="503.2">2.00 s <tspan class="grp">Compiled + interpreted (VM)</tspan></text>
+<text class="lbl" x="262" y="503.2" text-anchor="end">C++ -O2 (leak)</text>
+<rect class="bar k-cpp" x="270" y="491" width="54.7" height="17" rx="3"/>
+<line class="noise" x1="324.1" x2="324.1" y1="491" y2="508"/>
+<line class="noise" x1="325.4" x2="325.4" y1="491" y2="508"/>
+<text class="val" x="331.4" y="503.2">1.87 s <tspan class="grp">Bare metal / native-compiled</tspan></text>
 </g>
 <g class="row">
 
-<text class="lbl" x="262" y="526.2" text-anchor="end">Caspien naive (DynamicArray + HashMap) · full</text>
-<rect class="bar k-caspien" x="270" y="514" width="60.7" height="17" rx="3"/>
-<line class="noise" x1="328.5" x2="328.5" y1="514" y2="531"/>
-<line class="noise" x1="332.8" x2="332.8" y1="514" y2="531"/>
-<text class="val" x="338.8" y="526.2">2.07 s <tspan class="grp">Caspien</tspan></text>
+<text class="lbl" x="262" y="526.2" text-anchor="end">C#</text>
+<rect class="bar k-csharp" x="270" y="514" width="58.6" height="17" rx="3"/>
+<line class="noise" x1="327.3" x2="327.3" y1="514" y2="531"/>
+<line class="noise" x1="330.0" x2="330.0" y1="514" y2="531"/>
+<text class="val" x="336.0" y="526.2">2.00 s <tspan class="grp">Compiled + interpreted (VM)</tspan></text>
 </g>
 <g class="row">
 
@@ -225,50 +225,58 @@
 </g>
 <g class="row">
 
-<text class="lbl" x="262" y="641.2" text-anchor="end">Caspien optimized unsafe · off</text>
-<rect class="bar k-caspien off" x="270" y="629" width="80.5" height="17" rx="3"/>
-<line class="noise" x1="350.3" x2="350.3" y1="629" y2="646"/>
-<line class="noise" x1="350.6" x2="350.6" y1="629" y2="646"/>
-<text class="val" x="356.6" y="641.2">2.74 s <tspan class="grp">Caspien</tspan></text>
+<text class="lbl" x="262" y="641.2" text-anchor="end">Java</text>
+<rect class="bar k-java" x="270" y="629" width="80.9" height="17" rx="3"/>
+<line class="noise" x1="350.8" x2="350.8" y1="629" y2="646"/>
+<line class="noise" x1="351.1" x2="351.1" y1="629" y2="646"/>
+<text class="val" x="357.1" y="641.2">2.76 s <tspan class="grp">Compiled + interpreted (VM)</tspan></text>
 </g>
 <g class="row">
 
-<text class="lbl" x="262" y="664.2" text-anchor="end">Java</text>
-<rect class="bar k-java" x="270" y="652" width="80.9" height="17" rx="3"/>
-<line class="noise" x1="350.8" x2="350.8" y1="652" y2="669"/>
-<line class="noise" x1="351.1" x2="351.1" y1="652" y2="669"/>
-<text class="val" x="357.1" y="664.2">2.76 s <tspan class="grp">Compiled + interpreted (VM)</tspan></text>
+<text class="lbl" x="262" y="664.2" text-anchor="end">Caspien naive, ref in stdlib · full</text>
+<rect class="bar k-caspien" x="270" y="652" width="115.6" height="17" rx="3"/>
+<line class="noise" x1="378.4" x2="378.4" y1="652" y2="669"/>
+<line class="noise" x1="392.8" x2="392.8" y1="652" y2="669"/>
+<text class="val" x="398.8" y="664.2">3.94 s <tspan class="grp">Caspien</tspan></text>
 </g>
 <g class="row">
 
-<text class="lbl" x="262" y="687.2" text-anchor="end">Caspien optimized safe · off</text>
-<rect class="bar k-caspien off" x="270" y="675" width="95.3" height="17" rx="3"/>
-<line class="noise" x1="364.0" x2="364.0" y1="675" y2="692"/>
-<line class="noise" x1="366.6" x2="366.6" y1="675" y2="692"/>
-<text class="val" x="372.6" y="687.2">3.25 s <tspan class="grp">Caspien</tspan></text>
+<text class="lbl" x="262" y="687.2" text-anchor="end">Caspien ref naive · full</text>
+<rect class="bar k-caspien" x="270" y="675" width="139.2" height="17" rx="3"/>
+<line class="noise" x1="393.0" x2="393.0" y1="675" y2="692"/>
+<line class="noise" x1="425.4" x2="425.4" y1="675" y2="692"/>
+<text class="val" x="431.4" y="687.2">4.75 s <tspan class="grp">Caspien</tspan></text>
 </g>
 <g class="row">
 
-<text class="lbl" x="262" y="710.2" text-anchor="end">Caspien naive (DynamicArray + HashMap) · off</text>
-<rect class="bar k-caspien off" x="270" y="698" width="208.3" height="17" rx="3"/>
-<line class="noise" x1="466.6" x2="466.6" y1="698" y2="715"/>
-<line class="noise" x1="490.0" x2="490.0" y1="698" y2="715"/>
-<text class="val" x="496.0" y="710.2">7.10 s <tspan class="grp">Caspien</tspan></text>
+<text class="lbl" x="262" y="710.2" text-anchor="end">Caspien ref safe · full</text>
+<rect class="bar k-caspien" x="270" y="698" width="145.1" height="17" rx="3"/>
+<line class="noise" x1="409.5" x2="409.5" y1="698" y2="715"/>
+<line class="noise" x1="420.6" x2="420.6" y1="698" y2="715"/>
+<text class="val" x="426.6" y="710.2">4.95 s <tspan class="grp">Caspien</tspan></text>
 </g>
 <g class="row">
 
-<text class="lbl" x="262" y="733.2" text-anchor="end">Node</text>
-<rect class="bar k-node" x="270" y="721" width="331.6" height="17" rx="3"/>
-<line class="noise" x1="589.2" x2="589.2" y1="721" y2="738"/>
-<line class="noise" x1="613.9" x2="613.9" y1="721" y2="738"/>
-<text class="val" x="619.9" y="733.2">11.30 s <tspan class="grp">Interpreted</tspan></text>
+<text class="lbl" x="262" y="733.2" text-anchor="end">Caspien ref unsafe · full</text>
+<rect class="bar k-caspien" x="270" y="721" width="145.6" height="17" rx="3"/>
+<line class="noise" x1="407.7" x2="407.7" y1="721" y2="738"/>
+<line class="noise" x1="423.6" x2="423.6" y1="721" y2="738"/>
+<text class="val" x="429.6" y="733.2">4.96 s <tspan class="grp">Caspien</tspan></text>
 </g>
 <g class="row">
 
-<text class="lbl" x="262" y="756.2" text-anchor="end">Bun</text>
-<rect class="bar k-bun" x="270" y="744" width="373.7" height="17" rx="3"/>
-<line class="noise" x1="630.5" x2="630.5" y1="744" y2="761"/>
-<line class="noise" x1="656.9" x2="656.9" y1="744" y2="761"/>
-<text class="val" x="662.9" y="756.2">12.74 s <tspan class="grp">Interpreted</tspan></text>
+<text class="lbl" x="262" y="756.2" text-anchor="end">Node</text>
+<rect class="bar k-node" x="270" y="744" width="331.6" height="17" rx="3"/>
+<line class="noise" x1="589.2" x2="589.2" y1="744" y2="761"/>
+<line class="noise" x1="613.9" x2="613.9" y1="744" y2="761"/>
+<text class="val" x="619.9" y="756.2">11.30 s <tspan class="grp">Interpreted</tspan></text>
 </g>
-</g><text class="sub" x="16" y="857">Green = Caspien (hatched = optimisations off), red = native, purple = JVM/.NET/Wasm, blue = interpreted.</text><text class="sub" x="16" y="871">Gold lines: best time -/+ typical run-to-run noise (median repeat minus best).</text></svg>
+<g class="row">
+
+<text class="lbl" x="262" y="779.2" text-anchor="end">Bun</text>
+<rect class="bar k-bun" x="270" y="767" width="373.7" height="17" rx="3"/>
+<line class="noise" x1="630.5" x2="630.5" y1="767" y2="784"/>
+<line class="noise" x1="656.9" x2="656.9" y1="767" y2="784"/>
+<text class="val" x="662.9" y="779.2">12.74 s <tspan class="grp">Interpreted</tspan></text>
+</g>
+</g><text class="sub" x="16" y="880">Green = Caspien (hatched = optimisations off), red = native, purple = JVM/.NET/Wasm, blue = interpreted.</text><text class="sub" x="16" y="894">Gold lines: best time -/+ typical run-to-run noise (median repeat minus best).</text></svg>
