@@ -51,7 +51,7 @@ public class Main {
         BytecodeParser parser = new BytecodeParser();
         List<List<BytecodeToken>> parsed = parser.parse(rawLines, inputPath);
 
-        X86Backend backend = new X86Backend(config.target);
+        X86Backend backend = new X86Backend(config.target, config.bmi2);
         String assembly = backend.generate(parsed);
 
         System.out.print(assembly);

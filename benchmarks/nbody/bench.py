@@ -33,7 +33,7 @@ FULL = {
     "deferred-operands": "on", "variables-in-registers": "on", "float-variables-in-registers": "on",
     "float-temporaries-in-registers": "on", "loop-unrolling": "aggressive", "function-inlining": "aggressive",
     "constant-folding": "on", "variable-elision": "on", "variable-shifting": "on", "struct-unpacking": "on",
-    "dead-control-flow-removal": "on", "dead-function-removal": "on", "unused-declaration-removal": "on",
+    "dead-control-flow-removal": "on", "dead-function-removal": "on", "unused-declaration-removal": "on", "bmi2": "on",
 }
 # (source file, precision, description)
 CASPIEN = [
@@ -331,7 +331,7 @@ def java_runtime_size():
 def patch_config(path, kv):
     text = open(path).read()
     for k, v in kv.items():
-        text, n = re.subn(r"^%s:.*$" % re.escape(k), "%s: %s" % (k, v), text, flags=re.M)
+        text, n = re.subn(r"^%s(:?) .*$" % re.escape(k), lambda m, k=k, v=v: "%s%s %s" % (k, m.group(1), v), text, flags=re.M)
         if n == 0:
             raise SystemExit("config key %s not found in %s" % (k, path))
     open(path, "w").write(text)

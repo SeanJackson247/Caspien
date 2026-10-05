@@ -33,9 +33,12 @@ public class CodegenConfig {
     }
 
     public final Target target;
+    /** `bmi2 on`: variable shifts use shlx/shrx (needs a BMI2 CPU: Intel Haswell 2013+, AMD Excavator/Zen+). Off by default. */
+    public final boolean bmi2;
 
-    private CodegenConfig(Target target) {
+    private CodegenConfig(Target target, boolean bmi2) {
         this.target = target;
+        this.bmi2 = bmi2;
     }
 
     public static CodegenConfig load(String path) {
@@ -47,6 +50,7 @@ public class CodegenConfig {
                     "required config file '" + path + "' could not be read: " + e.getMessage());
         }
         Target target = null;
+        boolean bmi2 = false;
         for (int i = 0; i < lines.size(); i++) {
             String raw = lines.get(i).trim();
             if (raw.isEmpty() || raw.startsWith("#")) {
@@ -70,6 +74,14 @@ public class CodegenConfig {
                     throw new CodegenException("config", path, i + 1,
                             "unknown target '" + value + "' -- expected 'windows_gnu' or 'linux'");
                 }
+            } else if (key.equals("bmi2")) {
+                if (value.equalsIgnoreCase("on")) {
+                    bmi2 = true;
+                } else if (value.equalsIgnoreCase("off")) {
+                    bmi2 = false;
+                } else {
+                    throw new CodegenException("config", path, i + 1, "bmi2 must be 'on' or 'off', got '" + value + "'");
+                }
             } else {
                 throw new CodegenException("config", path, i + 1, "unknown config key '" + key + "'");
             }
@@ -77,6 +89,6 @@ public class CodegenConfig {
         if (target == null) {
             throw new CodegenException("config", path, 0, "missing required 'target' key");
         }
-        return new CodegenConfig(target);
+        return new CodegenConfig(target, bmi2);
     }
 }

@@ -944,8 +944,15 @@ public class X86Backend {
         }
     }
 
+    private final boolean bmi2;
+
     public X86Backend(CodegenConfig.Target target) {
+        this(target, false);
+    }
+
+    public X86Backend(CodegenConfig.Target target, boolean bmi2) {
         this.target = target;
+        this.bmi2 = bmi2;
     }
 
     /** True for the Windows target (windows_gnu: GNU as + mingw-w64): gates win64 ABI choices (argument registers, 32-byte shadow space, no SysV varargs %al convention). The assembly syntax is AT&T on every target. */
@@ -1345,6 +1352,24 @@ public class X86Backend {
         raw("    sbbq %rcx, %rcx");
         raw("    andq %rcx, %" + v);
         
+        if (left) {
+            zeroExtendReg(v, size);
+        }
+    }
+
+    /**
+     * BMI2 form of a variable SHL/SHR (same meaning as emitShiftCore: a count >= 64 gives 0): `shlx/shrx` take the count from any register (no
+     * %rcx save/restore), then the same compare-and-mask removes a count >= 64. `cnt` holds the zero-extended count and is overwritten (the mask).
+     */
+    private void emitShiftBmi2(String op, int size, String v, String cnt) {
+        boolean left = op.equals("SHL");
+        if (!left) {
+            zeroExtendReg(v, size);
+        }
+        raw("    " + (left ? "shlxq" : "shrxq") + " %" + cnt + ", %" + v + ", %" + v);
+        raw("    cmpq $64, %" + cnt);
+        raw("    sbbq %" + cnt + ", %" + cnt);
+        raw("    andq %" + cnt + ", %" + v);
         if (left) {
             zeroExtendReg(v, size);
         }
@@ -3049,6 +3074,12 @@ public class X86Backend {
                 int ssize = line.size() > 1 ? (int) Long.parseLong(line.get(1).text) : 8;
                 popReg("rbx"); // shift count
                 popReg("rax"); // value
+                if (bmi2 && !mnemonic.equals("SAR")) {
+                    zeroExtendReg("rbx", ssize);
+                    emitShiftBmi2(mnemonic, ssize, "rax", "rbx");
+                    pushReg("rax");
+                    return;
+                }
                 // %rcx is the shift-count register but also an argument register: save it around the shift (see LOOKUP_ARRAY's small-array path).
                 pushReg("rcx");
                 raw("    movq %rbx, %rcx");
@@ -5467,6 +5498,21 @@ public class X86Backend {
             if (!op.equals("SHR")) {
                 zeroExtendReg(d, size);
             }
+            return;
+        }
+        if (bmi2 && !op.equals("SAR")) {
+            // BMI2: the count goes into the scratch register (b may sit in d's own register, which the move of `a` below overwrites); no %rcx traffic.
+            // rfMov into a temp never touches the scratch register, so the count survives it.
+            if (rfIsTemp(bTok)) {
+                rfRegToReg(RF_SCRATCH, rfReg(bTok));
+            } else {
+                movMemToReg(RF_SCRATCH, rfSlot(bTok));
+            }
+            zeroExtendReg(RF_SCRATCH, size);
+            if (!aIsD) {
+                rfMov(dstTok, aTok);
+            }
+            emitShiftBmi2(op, size, d, RF_SCRATCH);
             return;
         }
         // variable count: it goes into %rcx first (b may sit in d's own register, which the move of `a` below overwrites)
