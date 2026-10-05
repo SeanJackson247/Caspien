@@ -1,0 +1,73 @@
+// Struct fields read and written through a pointer: FieldDisplacementPass fuses `R_LEA %t base #k scale` + R_LD/R_ST/R_LDX/R_STX into the
+// displacement forms R_LDD/R_STD/R_LDXD/R_STXD. Fields of width 1, 2, 4, 8 (and f32/f64), at several offsets, read and written through a `ref`
+// parameter (pointer in a variable register or a temp), plus a store of an immediate and of a computed value. Expected output: field_disp_test.py.
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+
+struct Rec{@pub{
+	a: mut u64
+	b: mut u8
+	c: mut u16
+	d: mut u32
+	e: mut f64
+	f: mut f32
+	g: mut u64
+}}
+
+func show(tag: static imut string, r: ref some mut Rec) void{
+	unsafe extern{
+		printf("%s %llu %u %u %u %.3f %.3f %llu\n", tag, r.a, r.b as u32, r.c as u32, r.d, r.e, r.f as f64, r.g)
+	}
+}
+
+@dont(inline)
+func update(r: ref some mut Rec, k: mut u64) void{
+	r.a = r.a * 3 + k
+	r.b = wrap:<u8>(r.b as u64 + k)
+	r.c = wrap:<u16>(r.c as u64 * 5 + k)
+	r.d = wrap:<u32>(r.d as u64 + 4000000000)
+	unsafe assume{
+		assume match r.e : finite
+		assume match r.e * 1.5 : finite
+		assume match r.e * 1.5 + 0.25 : finite
+		r.e = r.e * 1.5 + 0.25
+		assume match r.f : finite
+		assume match r.f + 2.5 : finite
+		r.f = r.f + 2.5
+	}
+	r.g = r.g + r.a
+}
+
+@dont(inline)
+func consts(r: ref some mut Rec) void{
+	r.b = 200
+	r.c = 60000
+	r.d = 4294967295
+	r.g = 77
+}
+
+@dont(inline)
+func sum(r: ref some mut Rec) mut u64{
+	return r.a + r.b as u64 + r.c as u64 + r.d as u64 + r.g
+}
+
+func body() void{
+	?catch(e){ return }
+	let r = mut ? new Rec{a= 7, b= 250, c= 65000, d= 123456789, e= 2.0, f= 0.5, g= 11}
+	show("start", r)
+	for i in 0..4{
+		update(r, i + 1)
+		show("upd", r)
+	}
+	consts(r)
+	show("consts", r)
+	unsafe extern{ printf("sum %llu\n", sum(r)) }
+}
+
+func main() void{
+	body()
+}

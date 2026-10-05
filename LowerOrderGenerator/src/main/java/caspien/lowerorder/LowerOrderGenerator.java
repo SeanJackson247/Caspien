@@ -68,7 +68,7 @@ public class LowerOrderGenerator {
         LoopHoistPass loopHoist = new LoopHoistPass(config.deferredOperands && config.variablesInRegisters && config.hoistArrayBases);
         lines = loopHoist.run(lines);
         // Always run: strips the REGHINT lines, and promotes variables only when both switches are on.
-        lines = new RegVarPromotionPass(config.deferredOperands && config.variablesInRegisters, config.floatVariablesInRegisters, config.variablesInAllocFunctions).run(lines);
+        lines = new RegVarPromotionPass(config.deferredOperands && config.variablesInRegisters, config.floatVariablesInRegisters, config.variablesInAllocFunctions, config.variablesInArgRegisters).run(lines);
         lines = loopHoist.finish(lines);
         // f32 temporaries in xmm registers (a no-op unless "float-temporaries-in-registers: on", which needs deferred-operands).
         lines = new FloatTempPass(config.deferredOperands && config.floatTemporariesInRegisters).run(lines);
@@ -80,6 +80,10 @@ public class LowerOrderGenerator {
         lines = new JumpCleanupPass().run(lines);
         // A global array element addressed by a variable register: one lea fewer (R_LEA + R_LD/R_ST -> R_LDI/R_STI).
         lines = new IndexedAccessPass().run(lines);
+        // The safe dynarray length load folds into the bounds compare (R_BRCM; last, only the backend reads it).
+        lines = new LengthCompareFusionPass(config.deferredOperands && config.fuseLengthCompare).run(lines);
+        // A field access through a pointer in a register is one instruction with a displacement (R_LEA #k + R_LD/R_ST -> R_LDD/R_STD; last, only the backend reads it).
+        lines = new FieldDisplacementPass().run(lines);
         return lines;
     }
 }

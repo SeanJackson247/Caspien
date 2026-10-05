@@ -1,0 +1,269 @@
+// LengthCompareFusionPass (fuse-length-compare): the bounds check of a safe dynarray access compares the index with the length word read from
+// memory (R_BRCM, `cmpq (%base), %idx`). Probes inside and outside the array, arrays whose length changes between probes (resize), two arrays of
+// different lengths probed alternately (a mixed-up base or length shows), narrow elements, reads and writes. Expected values come from
+// tests/length_fuse_test.py (an independent model); tests/length_fuse_check.sh compares and checks the fused instruction is really used.
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+
+let static g20 = mut 20
+let static g100 = mut 100
+let static g150 = mut 150
+let static g300 = mut 300
+let static g64 = mut 64
+
+func out(name: static imut string, v: imut u64) void{
+	unsafe extern{ printf("%s %llu\n", name, v) }
+}
+
+@dont(inline)
+func t1() void{
+	?catch(e){
+		unsafe extern{ printf("FAIL uncaught: %s\n", e) }
+		return
+	}
+	let n20 = mut 0
+	let n100 = mut 0
+	let n150 = mut 0
+	let n300 = mut 0
+	let n64 = mut 0
+	unsafe global{
+		n20 = g20
+		n100 = g100
+		n150 = g150
+		n300 = g300
+		n64 = g64
+	}
+	let:<mut u64> zero = mut 0
+	let a = mut ? dyn:<u64>([])
+	a = ? resize(a, 100, zero)
+	for i in 0..n100{
+		match i into a{ a[i] = i * 3 + 1 }
+	}
+	// T1: probes 0..149 of a 100-element array: 100 hits, 50 misses
+	let s1 = mut 0
+	let m1 = mut 0
+	for i in 0..n150{
+		let hit = mut 0
+		match i in a{
+			hit = 1
+			s1 += a[i]
+		}
+		if hit == 0{
+			m1 += 1
+		}
+	}
+	out("T1 sum", s1)
+	out("T1 miss", m1)
+}
+
+@dont(inline)
+func t2() void{
+	?catch(e){
+		unsafe extern{ printf("FAIL uncaught: %s\n", e) }
+		return
+	}
+	let n20 = mut 0
+	let n100 = mut 0
+	let n150 = mut 0
+	let n300 = mut 0
+	let n64 = mut 0
+	unsafe global{
+		n20 = g20
+		n100 = g100
+		n150 = g150
+		n300 = g300
+		n64 = g64
+	}
+	let:<mut u64> zero = mut 0
+	// T2: the length changes between probe rounds (grow, shrink, grow); every round probes 0..149
+	let b = mut ? dyn:<u64>([])
+	b = ? resize(b, 10, zero)
+	let s2 = mut 0
+	let m2 = mut 0
+	for r in 0..n20{
+		let:<mut u64> fv = mut (r + 1)
+		let sz = mut 10
+		if bits_and(r, 3) == 1{
+			sz = 120
+		}
+		if bits_and(r, 3) == 2{
+			sz = 35
+		}
+		if bits_and(r, 3) == 3{
+			sz = 149
+		}
+		b = ? resize(b, sz, fv)
+		for i in 0..n150{
+			let hit = mut 0
+			match i in b{
+				hit = 1
+				s2 += b[i] + i
+			}
+			if hit == 0{
+				m2 += 1
+			}
+		}
+	}
+	out("T2 sum", s2)
+	out("T2 miss", m2)
+}
+
+@dont(inline)
+func t3() void{
+	?catch(e){
+		unsafe extern{ printf("FAIL uncaught: %s\n", e) }
+		return
+	}
+	let n20 = mut 0
+	let n100 = mut 0
+	let n150 = mut 0
+	let n300 = mut 0
+	let n64 = mut 0
+	unsafe global{
+		n20 = g20
+		n100 = g100
+		n150 = g150
+		n300 = g300
+		n64 = g64
+	}
+	let:<mut u64> zero = mut 0
+	// T3: two arrays of different lengths probed alternately, reads and writes
+	let c = mut ? dyn:<u64>([])
+	c = ? resize(c, 64, zero)
+	let d = mut ? dyn:<u64>([])
+	d = ? resize(d, 300, zero)
+	let s3 = mut 0
+	let m3 = mut 0
+	for i in 0..n300{
+		let hc = mut 0
+		match i into c{
+			hc = 1
+			c[i] = i * 7 + 2
+		}
+		if hc == 0{
+			m3 += 1
+		}
+		let hd = mut 0
+		match i into d{
+			hd = 1
+			d[i] = i + 5
+		}
+		if hd == 0{
+			m3 += 1000
+		}
+		match i in c{ s3 += c[i] }
+		match i in d{ s3 += d[i] * 2 }
+	}
+	out("T3 sum", s3)
+	out("T3 miss", m3)
+}
+
+@dont(inline)
+func t4() void{
+	?catch(e){
+		unsafe extern{ printf("FAIL uncaught: %s\n", e) }
+		return
+	}
+	let n20 = mut 0
+	let n100 = mut 0
+	let n150 = mut 0
+	let n300 = mut 0
+	let n64 = mut 0
+	unsafe global{
+		n20 = g20
+		n100 = g100
+		n150 = g150
+		n300 = g300
+		n64 = g64
+	}
+	let:<mut u64> zero = mut 0
+	// T4: narrow elements (u8, u32), probes past the end
+	let h = mut ? dyn:<u8>([])
+	let:<mut u8> hz = mut 0
+	h = ? resize(h, 64, hz)
+	let w = mut ? dyn:<u32>([])
+	let:<mut u32> wz = mut 0
+	w = ? resize(w, 20, wz)
+	let s4 = mut 0
+	let m4 = mut 0
+	for i in 0..n100{
+		let hh = mut 0
+		match i into h{
+			hh = 1
+			h[i] = wrap:<u8>(bits_and(i * 5, 255))
+		}
+		if hh == 0{
+			m4 += 1
+		}
+		let hw = mut 0
+		match i into w{
+			hw = 1
+			w[i] = wrap:<u32>(i * 100003)
+		}
+		if hw == 0{
+			m4 += 1000
+		}
+	}
+	for i in 0..n100{
+		match i in h{ s4 += h[i] as u64 }
+		match i in w{ s4 += w[i] as u64 }
+	}
+	out("T4 sum", s4)
+	out("T4 miss", m4)
+}
+
+@dont(inline)
+func t5() void{
+	?catch(e){
+		unsafe extern{ printf("FAIL uncaught: %s\n", e) }
+		return
+	}
+	let n20 = mut 0
+	let n100 = mut 0
+	let n150 = mut 0
+	let n300 = mut 0
+	let n64 = mut 0
+	unsafe global{
+		n20 = g20
+		n100 = g100
+		n150 = g150
+		n300 = g300
+		n64 = g64
+	}
+	let:<mut u64> zero = mut 0
+	let a = mut ? dyn:<u64>([])
+	a = ? resize(a, 100, zero)
+	for i in 0..n100{
+		match i into a{ a[i] = i * 3 + 1 }
+	}
+	// T5: a nested loop probing with an index computed from both loop variables (index sometimes beyond the array)
+	let s5 = mut 0
+	let m5 = mut 0
+	for r in 0..n20{
+		for i in 0..n64{
+			let j = mut (r * 8 + i)
+			let hit = mut 0
+			match j in a{
+				hit = 1
+				s5 += a[j]
+			}
+			if hit == 0{
+				m5 += 1
+			}
+		}
+	}
+	out("T5 sum", s5)
+	out("T5 miss", m5)
+}
+
+func main() void{
+	t1()
+	t2()
+	t3()
+	t4()
+	t5()
+}

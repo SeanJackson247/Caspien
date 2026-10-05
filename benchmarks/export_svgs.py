@@ -12,7 +12,7 @@ import os, sys, math, html, re, runpy, tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, "img")
 os.makedirs(OUT, exist_ok=True)
-sys.argv = [sys.argv[0], os.path.join(tempfile.mkdtemp(), "unused.html")]  # charts_all.py writes its page to argv[1]; we only want its functions
+sys.argv = [sys.argv[0]] + (["--results", os.environ["CHART_RESULTS"]] if os.environ.get("CHART_RESULTS") else []) + [os.path.join(tempfile.mkdtemp(), "unused.html")]  # charts_all.py writes its page to argv[1]; we only want its functions
 G = runpy.run_path(os.path.join(HERE, "charts_all.py"))
 chart, DATA, PROGS, LANGS, find, c_ref, fmt = (G[k] for k in ("chart", "DATA", "PROGS", "LANGS", "find", "c_ref", "fmt"))
 OVERVIEW_ROWS, CAS_VARIANTS, GROUP_NAME = G["OVERVIEW_ROWS"], G["CAS_VARIANTS"], G["GROUP_NAME"]

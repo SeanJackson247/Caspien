@@ -2745,6 +2745,12 @@ public class X86Backend {
                 rfBrc(line.get(1).text, line.get(3).text, line.get(4).text, mangleLabel(line.get(5).text));
                 return;
             }
+            case "R_BRCM": {
+                // "R_BRCM OP 8 a %base @label" -- R_BRC whose second operand is the 8-byte word AT the address in %base (made by the
+                // LowerOrderGenerator's LengthCompareFusionPass from `R_LD 8 %t %base ; R_BRC OP 8 a %t @label`).
+                rfBrcMem(line.get(1).text, line.get(3).text, line.get(4).text, mangleLabel(line.get(5).text));
+                return;
+            }
             case "R_PUSH": {
                 // "R_PUSH 8 src" -- materialise an operand (%tN, $off or #imm) on the real stack. Goes through
                 // pushReg so the stack-delta tracker sees it; memory/immediate sources use the spare scratch.
@@ -2810,6 +2816,26 @@ public class X86Backend {
                 // "R_STXI n &sym %vK scale %xK" -- the float in variable K stored at sym + vK*scale (an R_LEA folded into R_STX).
                 rfStoreXIndexed(Integer.parseInt(line.get(1).text), line.get(2).text, line.get(3).text, Long.parseLong(line.get(4).text), line.get(5).text,
                         line.size() > 6 ? Long.parseLong(line.get(6).text) : 0L);
+                return;
+            }
+            case "R_LDD": {
+                // "R_LDD n %tD %base disp" -- %tD = n bytes at base + disp, zero-extended (an `R_LEA %t base #k 1` folded into the load: a field read).
+                rfLoadDisp((int) Long.parseLong(line.get(1).text), line.get(2).text, line.get(3).text, Long.parseLong(line.get(4).text));
+                return;
+            }
+            case "R_STD": {
+                // "R_STD n %base disp src" -- n bytes at base + disp = src (#imm or %tN): a field write.
+                rfStoreDisp((int) Long.parseLong(line.get(1).text), line.get(2).text, Long.parseLong(line.get(3).text), line.get(4).text);
+                return;
+            }
+            case "R_LDXD": {
+                // "R_LDXD n %xK %base disp" -- variable K = the float (n = 4 or 8 bytes) at base + disp.
+                rfLoadXDisp(xvReg(line.get(2).text), line.get(3).text, Long.parseLong(line.get(4).text), Integer.parseInt(line.get(1).text));
+                return;
+            }
+            case "R_STXD": {
+                // "R_STXD n %base disp %xK" -- the float in variable K stored at base + disp.
+                rfStoreXDisp(line.get(2).text, Long.parseLong(line.get(3).text), xvReg(line.get(4).text), Integer.parseInt(line.get(1).text));
                 return;
             }
             case "R_LEA": {
@@ -5366,8 +5392,9 @@ public class X86Backend {
     private static final String RF_SCRATCH = "r15";
     /** %v0..%v2: promoted variables (RegVarPromotionPass), callee-saved, so finishCalleeSaved saves/restores them like any other.
      *  %v3..%v5 (r8, r9, r10) are caller-saved: the promotion only puts a variable there that is never live across a call or any
-     *  line that could clobber them. */
-    private static final String[] RF_VAR_REGS = { "r13", "r14", "r12", "r8", "r9", "r10" };
+     *  line that could clobber them. %v6, %v7 (rsi, rdi: SysV argument registers 1 and 0; callee-saved on win64, where
+     *  finishCalleeSaved saves them when the text mentions them) follow the same rule and are never live inside a call's argument bracket. */
+    private static final String[] RF_VAR_REGS = { "r13", "r14", "r12", "r8", "r9", "r10", "rsi", "rdi" };
     /** set when this function uses a %vN; checked against rfClobberSeen at FUNC_END */
     private boolean rfVarUsed = false;
     /** bit i set when this function uses %vi (i < 3: r13, r14, r12), see finishCalleeSaved / V1314_SAVE */
@@ -5715,23 +5742,45 @@ public class X86Backend {
         
     }
 
-    /** Jump to `label` when NOT (a op b), for an 8-byte compare; a and b are %t/%v registers, $off slots or #imm (never both #imm). */
-    private void rfBrc(String op, String aTok, String bTok, String label) {
-        String cc; // the jump taken when the comparison is false
+    /** The conditional jump taken when `a OP b` is false (unsigned and signed compares; shared by R_BRC and R_BRCM). */
+    private static String rfFalseJump(String op) {
         switch (op) {
-            case "EQ": cc = "jne"; break;
-            case "NEQ": cc = "je"; break;
-            case "LT": cc = "jae"; break;
-            case "LT_EQ": cc = "ja"; break;
-            case "GT": cc = "jbe"; break;
-            case "GT_EQ": cc = "jb"; break;
-            case "SLT": cc = "jge"; break;
-            case "SLT_EQ": cc = "jg"; break;
-            case "SGT": cc = "jle"; break;
-            case "SGT_EQ": cc = "jl"; break;
+            case "EQ": return "jne";
+            case "NEQ": return "je";
+            case "LT": return "jae";
+            case "LT_EQ": return "ja";
+            case "GT": return "jbe";
+            case "GT_EQ": return "jb";
+            case "SLT": return "jge";
+            case "SLT_EQ": return "jg";
+            case "SGT": return "jle";
+            case "SGT_EQ": return "jl";
             default:
                 throw new IllegalStateException("unknown R_BRC operator '" + op + "'");
         }
+    }
+
+    /**
+     * R_BRCM: jump to `label` when NOT (a op [base]), where [base] is the 8-byte word at the address held in the register `base`
+     * (the safe dynarray length word: `cmpq (%base), %a`). `a` is a %t/%v register or a frame slot.
+     */
+    private void rfBrcMem(String op, String aTok, String baseTok, String label) {
+        String cc = rfFalseJump(op);
+        String aText;
+        if (rfIsSlot(aTok)) {
+            rfMov("%s", aTok); // cmp takes one memory operand: a frame-slot index goes through the scratch register
+            aText = rfRegText(RF_SCRATCH);
+        } else {
+            aText = rfRegText(rfReg(aTok));
+        }
+        String bText = "(" + rfRegText(rfReg(baseTok)) + ")";
+        rfOp2("cmp", aText, bText);
+        raw("    " + cc + " " + label);
+    }
+
+    /** Jump to `label` when NOT (a op b), for an 8-byte compare; a and b are %t/%v registers, $off slots or #imm (never both #imm). */
+    private void rfBrc(String op, String aTok, String bTok, String label) {
+        String cc = rfFalseJump(op); // the jump taken when the comparison is false
         if (rfIsImm(aTok)) {
             // "cmp imm, x" does not exist: swap the operands and mirror the condition.
             String t = aTok;
@@ -5847,6 +5896,41 @@ public class X86Backend {
         } else {
             loadSizedFromAddr(d, rfReg(srcTok), n);
         }
+    }
+
+    /** "(disp)(%base)" memory text for a register base plus a constant displacement */
+    private String rfDispMem(String baseTok, long disp) {
+        return (disp != 0 ? String.valueOf(disp) : "") + "(%" + rfReg(baseTok) + ")";
+    }
+
+    /** %tD = n bytes (1, 2, 4 or 8) at base + disp, zero-extended */
+    private void rfLoadDisp(int n, String dstTok, String baseTok, long disp) {
+        String d = rfReg(dstTok);
+        String prev = rfMemOverride;
+        rfMemOverride = rfDispMem(baseTok, disp);
+        try {
+            loadSizedFromAddr(d, d, n);
+        } finally {
+            rfMemOverride = prev;
+        }
+    }
+
+    /** n bytes (1, 2, 4 or 8) at base + disp = src (#imm or a register) */
+    private void rfStoreDisp(int n, String baseTok, long disp, String srcTok) {
+        String mem = rfDispMem(baseTok, disp);
+        if (rfIsImm(srcTok)) {
+            raw("    mov" + movSuffix(n) + " $" + rfTrunc(rfImm(srcTok), n) + ", " + mem);
+            return;
+        }
+        raw("    mov" + movSuffix(n) + " %" + sizedReg(rfReg(srcTok), n) + ", " + mem);
+    }
+
+    private void rfLoadXDisp(String xmm, String baseTok, long disp, int n) {
+        raw("    " + (n == 8 ? "movsd" : "movss") + " " + rfDispMem(baseTok, disp) + ", %" + xmm);
+    }
+
+    private void rfStoreXDisp(String baseTok, long disp, String xmm, int n) {
+        raw("    " + (n == 8 ? "movsd" : "movss") + " %" + xmm + ", " + rfDispMem(baseTok, disp));
     }
 
     private static long rfTrunc(long v, int n) {

@@ -227,6 +227,8 @@ public class FunctionInliningPass implements OptimizationPass {
         Set<String> globals = new HashSet<>();
         Set<String> labels = new LinkedHashSet<>();
         int lines;
+        /** number of `CALL name` lines in the program at the start of this round */
+        int calls;
         String why = "";
         /** @inline: inline every call site that is safe, whatever the preset's size and growth limits say. */
         boolean forced;
@@ -728,6 +730,11 @@ public class FunctionInliningPass implements OptimizationPass {
             Callee c = analyse(L, f[0], f[1], cyclic);
             callees.put(c.name, c);
         }
+        Map<String, Integer> callCount = new HashMap<>();
+        for (List<BytecodeToken> l : L) {
+            if (is(l, 2, "CALL")) callCount.merge(l.get(1).text, 1, Integer::sum);
+        }
+        for (Callee c : callees.values()) c.calls = callCount.getOrDefault(c.name, 0);
 
         List<List<BytecodeToken>> out = new ArrayList<>(L.size());
         boolean changed = false;
@@ -965,6 +972,11 @@ public class FunctionInliningPass implements OptimizationPass {
         if (grown.getOrDefault(cx.caller, 0L) + cx.added + est > cap) return false;
         if (!c.forced && cfg.totalFactor > 0 && totalAdded + est > Math.max(InlineConfig.TOTAL_FLOOR, cfg.totalFactor * origProgram)) {
             if (System.getenv("CASPIEN_INLINE_WHY") != null) System.err.println("[inline] program growth budget reached: " + cx.caller + " keeps a call to " + c.name);
+            return false;
+        }
+        // A big callee with several call sites would be copied into each of them; measured to lose more than it gains (see InlineConfig).
+        if (!c.forced && cfg.maxMultiCalleeLines > 0 && c.lines > cfg.maxMultiCalleeLines && c.calls > 1) {
+            if (System.getenv("CASPIEN_INLINE_WHY") != null) System.err.println("[inline] " + c.name + " (" + c.lines + " lines, " + c.calls + " call sites) stays a call in " + cx.caller);
             return false;
         }
         // A callee with a catch of its own is entered by a real unwind with whatever the statement had pushed at the call still on the

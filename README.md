@@ -1569,12 +1569,10 @@ not proved. Costs inside that core are part of its contract, not of the safe-cod
 
 | Property | Enforced today | Open |
 |---|---|---|
-| **Soundness of the checker** | About 70 runtime regression programs in [`tests/`](tests), generated tests with expected values from independent Python models, and shell checks for the optimiser passes. | There is no formal proof, mechanised or otherwise. The checker is about 19,000 lines of Java, and "the compiler accepts it" is evidence, not proof. The large corpus of compile-error fixtures is kept outside this repository. |
+| **Soundness of the checker** | About 160 runtime regression programs and 60 shell checks in [`tests/`](tests), generated tests with expected values from independent Python models, and shell checks for the optimiser passes. | There is no formal proof, mechanised or otherwise. The checker is about 19,000 lines of Java, and "the compiler accepts it" is evidence, not proof. The large corpus of compile-error fixtures is kept outside this repository. |
 | **Platforms** | Linux x86-64 is the tested target. | The Windows (`windows_gnu`) output is built with mingw-w64 and the test suite has been run under Wine on Linux; it has not been run on a real Windows machine. |
 
-Known bugs that affect the guarantees are tracked in the `CLAUDE.md` files. One open example: reassigning
-an `owns` field reached through a pointer (`h.w = pass(h.w)`) still destructs the old value before the right
-side is evaluated.
+Known bugs that affect the guarantees are tracked in the `CLAUDE.md` files.
 
 ---
 
@@ -1652,7 +1650,9 @@ and off.
 | `float-temporaries-in-registers` | on, off | Float expression temporaries stay in xmm registers. |
 | `hoist-array-bases` | on, off | In loops where a safe dynarray variable is never reassigned, its pointer is copied once into a register candidate instead of being reloaded from the stack on every access. Needs `variables-in-registers`. |
 | `variables-in-alloc-functions` | on, off | Functions that allocate or resize (`new`, `dyn`, `resize`, `clone`) may keep variables in the callee-saved registers r12-r14 (saved and restored around those instructions). Needs `variables-in-registers`. |
-| `function-inlining` | off, conservative, balanced, aggressive | Replaces calls with the callee's body. Tunable with `inline-max-callee-lines`, `inline-max-depth`, `inline-max-growth`. |
+| `variables-in-arg-registers` | on, off | Lets variables whose live range has no call and does not touch the argument registers also use rsi and rdi (two more variable registers). Needs `variables-in-registers`. |
+| `fuse-length-compare` | on, off | Folds the length load of a safe dynarray bounds check into the compare (`cmpq (%rax), %r9`) and reuses the loaded array pointer for the element access. Needs `deferred-operands: on`. |
+| `function-inlining` | off, conservative, balanced, aggressive | Replaces calls with the callee's body. Tunable with `inline-max-callee-lines`, `inline-max-depth`, `inline-max-growth`, `inline-max-multi-callee-lines` (a big callee with several call sites stays a call). |
 | `loop-unrolling` | off, conservative, balanced, aggressive | Unrolls `for` loops with literal bounds. Tunable with the `loop-unroll-*` keys. |
 | `constant-folding` | on, off | Folds operators whose operands are literals. |
 | `variable-elision` | on, off | Replaces a variable assigned once to a literal with the literal. |
@@ -1666,7 +1666,7 @@ and off.
 
 A larger group of improvements has no switch and is always on: strength reduction (division and modulo by
 a power of two become shifts), compare-and-branch fusion, jump cleanup, a float constant pool, indexed
-addressing for arrays, and fusion of the bounds-proof test into the loop.
+addressing for arrays, field access through a pointer as a single displacement instruction, and fusion of the bounds-proof test into the loop.
 
 The "everything on" configuration used for the benchmarks in section 4 is:
 
@@ -1677,6 +1677,8 @@ float-variables-in-registers: on
 float-temporaries-in-registers: on
 hoist-array-bases: on
 variables-in-alloc-functions: on
+variables-in-arg-registers: on
+fuse-length-compare: on
 loop-unrolling: aggressive
 function-inlining: aggressive
 constant-folding: on
@@ -1688,8 +1690,8 @@ dead-function-removal: on
 unused-declaration-removal: on
 ```
 
-Two cautions. First, `function-inlining: aggressive` has no growth limit, and a program that calls one
-large function from hundreds of places can exhaust the optimiser's heap. Use `balanced`, or raise the
+Two cautions. First, `function-inlining: aggressive` has no fixed callee-size or depth limit (it is bounded only by the relative budgets: a caller may grow to at most 30 times its original size, the whole program to at most 10 times), so a program that calls one
+large function from hundreds of places can still make the optimiser slow or exhaust its heap. Use `balanced`, or raise the
 limit with `JAVA_TOOL_OPTIONS=-Xmx8g`. Second, compile time grows with the number of foldable branches in
 one function, so very large generated test programs are better split into several files.
 
@@ -1944,7 +1946,7 @@ register form, keep the hottest scalar variables in registers, and fuse comparis
 It handles both calling conventions, preserves callee-saved registers, implements the
 unwinding behind `throw`, and calls the system's C library for allocation and threads.
 
-Roughly 60,000 lines of Java make up the four stages. The per-stage `CLAUDE.md` files record the design
+Roughly 63,000 lines of Java make up the four stages. The per-stage `CLAUDE.md` files record the design
 decisions, the bugs found and how each change was verified, and `tests/` holds the runtime programs and
 check scripts.
 
@@ -1957,9 +1959,45 @@ Times are seconds, fastest of three runs. "Caspien" is the fastest Caspien varia
 program written with the standard library classes (`DynamicArray`, `HashMap`, `String`), and the last column is the best variant with
 optimisations off, which is how the shipped `toolchain.config` builds.
 
+**Summary charts.** Each bar is the geometric mean, over the programs where both exist, of a language's figure divided by the reference's
+on the same program (lower is better, 1x = the reference). For each of the four metrics there are two charts: every language against C -O2,
+and only the memory-safe implementations (Caspien without its unsafe-dynarray variants, runtime-safe languages, and Rust where rustc accepts the
+port under `-F unsafe_code`) against Rust, free build. Compile time and executable size use a log axis. These charts come from the 5 October
+quick run: the Caspien rows were re-measured that day with the optimised builds only (so there are no optimisations-off bars), and the other
+languages' rows are from the earlier full run, so a ratio mixes two runs and carries the VM noise described below. A time marked `>=` was cut off
+in the quick run and is a lower bound.
+
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="benchmarks/img/overview_time-dark.svg">
-  <img alt="Execution time over 13 programs, geometric mean relative to C -O2, every language" src="benchmarks/img/overview_time.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="benchmarks/img/summary_time_s_vs_c-dark.svg">
+  <img alt="Execution time, geometric mean relative to C -O2, every language" src="benchmarks/img/summary_time_s_vs_c.svg">
+</picture>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="benchmarks/img/summary_time_s_safe_vs_rust-dark.svg">
+  <img alt="Execution time, geometric mean relative to Rust (free build), memory-safe implementations only" src="benchmarks/img/summary_time_s_safe_vs_rust.svg">
+</picture>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="benchmarks/img/summary_rss_kb_vs_c-dark.svg">
+  <img alt="Peak memory, geometric mean relative to C -O2, every language" src="benchmarks/img/summary_rss_kb_vs_c.svg">
+</picture>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="benchmarks/img/summary_rss_kb_safe_vs_rust-dark.svg">
+  <img alt="Peak memory, geometric mean relative to Rust (free build), memory-safe implementations only" src="benchmarks/img/summary_rss_kb_safe_vs_rust.svg">
+</picture>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="benchmarks/img/summary_compile_s_vs_c-dark.svg">
+  <img alt="Compile time, geometric mean relative to C -O2, every language" src="benchmarks/img/summary_compile_s_vs_c.svg">
+</picture>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="benchmarks/img/summary_compile_s_safe_vs_rust-dark.svg">
+  <img alt="Compile time, geometric mean relative to Rust (free build), memory-safe implementations only" src="benchmarks/img/summary_compile_s_safe_vs_rust.svg">
+</picture>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="benchmarks/img/summary_size_bytes_vs_c-dark.svg">
+  <img alt="Executable size, geometric mean relative to C -O2, every language" src="benchmarks/img/summary_size_bytes_vs_c.svg">
+</picture>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="benchmarks/img/summary_size_bytes_safe_vs_rust-dark.svg">
+  <img alt="Executable size, geometric mean relative to Rust (free build), memory-safe implementations only" src="benchmarks/img/summary_size_bytes_safe_vs_rust.svg">
 </picture>
 
 | Program | C -O2 (s) | Caspien (s) | Caspien vs C | stdlib-class version vs C | optimisations off vs C |
@@ -1979,13 +2017,13 @@ optimisations off, which is how the shipped `toolchain.config` builds.
 | JSON serialise + parse | 0.78 | 1.65 | 2.11x | 2.9x | 4.9x |
 | String manipulation | 0.23 | 0.53 | 2.32x | 12.1x | 4.8x |
 
-Geometric mean of time relative to C -O2: Caspien 1.48x with all optimisations on (best variant per program), 2.62x for the stdlib-class
+Table and figures below are from the 4 October full run (the summary charts above are newer, see their note). Geometric mean of time relative to C -O2: Caspien 1.48x with all optimisations on (best variant per program), 2.62x for the stdlib-class
 versions, 4.11x with optimisations off.
 
-**Which charts are shown.** The overview above uses no selection: every language, over the same 13 programs. The three per-program charts
+**Which charts are shown.** The summary charts above use no selection: every language, every program where both rows exist. The three per-program charts
 below were not picked by hand. The rule is mechanical, not a judgement call: for each program take the ratio of Caspien's fastest
 all-optimisations-on variant to C -O2, and show the program with the lowest ratio, the median, and the highest.
-`python3 benchmarks/export_svgs.py` prints the ratios and the selection and rewrites the images. All 15 programs have a chart in
+`python3 benchmarks/export_svgs.py` prints the ratios and the selection and rewrites the per-program images; `CHART_RESULTS=results.quick.json python3 benchmarks/export_summary_svgs.py benchmarks/img` rewrites the summary charts. All 15 programs have a chart in
 [`benchmarks/img/`](benchmarks/img/), and the interactive version (hover text, sortable tables, memory, size and compile time) is
 [`benchmarks/charts.html`](https://SeanJackson247.github.io/Caspien/benchmarks/charts.html).
 
@@ -2006,7 +2044,7 @@ Best for Caspien (binary trees, 0.90x of C), the median (FASTA, 1.51x), and the 
 
 The gold lines on each bar mark the best time minus and plus the typical run-to-run noise (the median of the three repeats minus the best).
 
-Peak memory is close to C: the geometric mean is 1.09x of C's, ranging from 0.76x to 1.96x. That is no
+Peak memory is close to C: in the summary chart the Caspien variants sit at 1.10x to 1.16x of C's geometric mean (the 4 October run measured 1.09x, ranging from 0.76x to 1.96x per program). That is no
 surprise, because Caspien has no garbage collector and no runtime, allocates with `malloc`, and lays out
 structs and arrays as C does.
 

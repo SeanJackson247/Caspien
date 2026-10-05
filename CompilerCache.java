@@ -35,7 +35,7 @@ final class CompilerCache {
             "variable-shifting:", "struct-unpacking:", "dead-control-flow-removal:", "dead-function-removal:", "unused-declaration-removal:",
             "variable-allocation-reordering:", "struct-member-reordering:"};
     /** compiler.config keys read only by the LowerOrderGenerator (the front end parses them but never uses them; the Optimizer does not read them). */
-    static final String[] REG_KEYS = {"deferred-operands:", "variables-in-registers:", "float-variables-in-registers:", "float-temporaries-in-registers:", "hoist-array-bases:", "variables-in-alloc-functions:"};
+    static final String[] REG_KEYS = {"deferred-operands:", "variables-in-registers:", "float-variables-in-registers:", "float-temporaries-in-registers:", "hoist-array-bases:", "variables-in-alloc-functions:", "fuse-length-compare:", "variables-in-arg-registers:"};
 
     /** What a stage printed that a cache hit has to reproduce. */
     static final class StageLog {

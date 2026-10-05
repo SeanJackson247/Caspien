@@ -19,7 +19,7 @@ try:
     open("tc.allon", "w").write(open("toolchain.config").read())
     OPT = ["loop-unrolling:", "loop-unroll-", "function-inlining:", "inline-max-", "constant-folding:", "variable-elision:", "variable-shifting:", "struct-unpacking:",
            "dead-control-flow-removal:", "dead-function-removal:", "unused-declaration-removal:", "variable-allocation-reordering:", "struct-member-reordering:"]
-    REG = ["deferred-operands:", "variables-in-registers:", "float-variables-in-registers:", "float-temporaries-in-registers:", "hoist-array-bases:", "variables-in-alloc-functions:"]
+    REG = ["deferred-operands:", "variables-in-registers:", "float-variables-in-registers:", "float-temporaries-in-registers:", "hoist-array-bases:", "variables-in-alloc-functions:", "fuse-length-compare:", "variables-in-arg-registers:"]
     base = open("tc.allon").read()
     def flip(text, prefixes, extra=""):
         out = []

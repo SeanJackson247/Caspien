@@ -26,14 +26,14 @@ public class IndexedAccessPass {
     private static final int MAX_GAP = 40;
 
     /** position of the register a mnemonic writes (-1: writes none) */
-    private static final Map<String, Integer> DEST = Map.ofEntries(
+    static final Map<String, Integer> DEST = Map.ofEntries(
             Map.entry("R_MOV", 2), Map.entry("R_LD", 2), Map.entry("R_LDI", 2), Map.entry("R_BIN", 3), Map.entry("R_UN", 3),
             Map.entry("R_LEA", 1), Map.entry("R_SETV", 2), Map.entry("R_RMW", 3), Map.entry("R_ST", -1), Map.entry("R_STI", -1),
             // float forms: only R_FBIN, R_FCMP and R_XTOG write a general register (a temp); the rest write xmm registers or memory
             Map.entry("R_FBIN", 3), Map.entry("R_FCMP", 3), Map.entry("R_XTOG", 2), Map.entry("R_GTOX", -1), Map.entry("R_LDX", -1),
             Map.entry("R_STX", -1), Map.entry("R_FBINX", -1), Map.entry("R_XMOV", -1), Map.entry("R_LDXI", -1), Map.entry("R_STXI", -1));
 
-    private static final Set<String> PURE_DEF = Set.of("R_MOV", "R_LD", "R_LDI", "R_LEA", "R_BIN", "R_UN", "R_FBIN", "R_FCMP", "R_XTOG");
+    static final Set<String> PURE_DEF = Set.of("R_MOV", "R_LD", "R_LDI", "R_LEA", "R_BIN", "R_UN", "R_FBIN", "R_FCMP", "R_XTOG");
 
     public List<List<BytecodeToken>> run(List<List<BytecodeToken>> lines) {
         int n = lines.size();
@@ -163,7 +163,7 @@ public class IndexedAccessPass {
     }
 
     /** a line that may sit between the lea and its consumer: known mnemonic, does not write the index register */
-    private static boolean passable(List<BytecodeToken> l, String idx) {
+    static boolean passable(List<BytecodeToken> l, String idx) {
         Integer d = DEST.get(t(l, 0));
         if (d == null) {
             return false;
@@ -171,7 +171,7 @@ public class IndexedAccessPass {
         return d < 0 || d >= l.size() || !t(l, d).equals(idx);
     }
 
-    private static boolean mentions(List<BytecodeToken> l, String tok) {
+    static boolean mentions(List<BytecodeToken> l, String tok) {
         for (int k = 1; k < l.size(); k++) {
             if (t(l, k).equals(tok)) {
                 return true;
@@ -181,7 +181,7 @@ public class IndexedAccessPass {
     }
 
     /** x is dead from line `from` on; selfDefined: the consumer itself redefines x */
-    private static boolean deadAfter(List<List<BytecodeToken>> cur, boolean[] gone, int from, String x, boolean selfDefined) {
+    static boolean deadAfter(List<List<BytecodeToken>> cur, boolean[] gone, int from, String x, boolean selfDefined) {
         if (selfDefined) {
             return true;
         }

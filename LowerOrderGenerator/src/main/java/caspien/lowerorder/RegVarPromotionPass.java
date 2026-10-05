@@ -77,7 +77,9 @@ public class RegVarPromotionPass {
      * variables want registers than the callee-saved ones provide.
      */
     public static final int VOL_FIRST = 3;
-    public static final int VOL_COUNT = 3;
+    public static final int VOL_COUNT = 5;
+    /** how many of the VOL_COUNT registers are the always-available r8-r10 (the first three); the last two (%v6, %v7 = rsi, rdi, SysV argument registers 1 and 0) need the argRegs switch */
+    static final int VOL_BASE = 3;
 
     static final Set<String> VOL_SAFE = new HashSet<>(Arrays.asList(
             "R_MOV", "R_LD", "R_ST", "R_BIN", "R_UN", "R_DIVC", "R_POPV", "R_GETRET", "R_BRC", "R_BRF", "R_LEA", "R_RMW", "R_SETV", "R_LDX", "R_STX", "R_FBIN",
@@ -91,6 +93,8 @@ public class RegVarPromotionPass {
 
     private final boolean enabled;
     private final boolean floatEnabled;
+    /** `variables-in-arg-registers: on`: rsi and rdi may also hold variables (call-free ranges that never touch an argument bracket) */
+    private final boolean argRegs;
     /** functions with scratch-using instructions (NEW, RESIZE, DOT, ...) may keep variables in r12-r14: the backend saves them around those lines */
     private final boolean allocFunctions;
 
@@ -106,6 +110,14 @@ public class RegVarPromotionPass {
         this.enabled = enabled;
         this.floatEnabled = enabled && floatEnabled;
         this.allocFunctions = enabled && allocFunctions;
+        this.argRegs = false;
+    }
+
+    public RegVarPromotionPass(boolean enabled, boolean floatEnabled, boolean allocFunctions, boolean argRegs) {
+        this.enabled = enabled;
+        this.floatEnabled = enabled && floatEnabled;
+        this.allocFunctions = enabled && allocFunctions;
+        this.argRegs = enabled && argRegs;
     }
 
     static final class Hint {
@@ -120,6 +132,8 @@ public class RegVarPromotionPass {
         boolean xmm;
         /** may live in a caller-saved register (r8/r9/r10): never live across or at a line that could clobber them */
         boolean volOk;
+        /** may live in rsi/rdi: volOk, and never mentioned inside a call's argument bracket (CC_START .. CC_END), where those registers are being filled */
+        boolean argSafe;
     }
 
     public List<List<BytecodeToken>> run(List<List<BytecodeToken>> lines) {
@@ -561,7 +575,7 @@ public class RegVarPromotionPass {
             }
         }
         // which candidates may use the caller-saved registers
-        boolean[] volRegOk = {true, true, true};   // r8, r9, r10
+        boolean[] volRegOk = {true, true, true, argRegs, argRegs};   // r8, r9, r10, rsi, rdi
         for (List<BytecodeToken> l : fn) {
             if (l.isEmpty()) continue;
             String m = l.get(0).text;
@@ -587,6 +601,24 @@ public class RegVarPromotionPass {
             }
         }
         for (int v = 0; v < nh; v++) all.get(v).volOk = volOk[v];
+        // rsi/rdi: the call-argument registers, filled while a call bracket is open; a variable mentioned anywhere in a bracket stays out of them
+        boolean[] argSafe = new boolean[nh];
+        java.util.Arrays.fill(argSafe, argRegs);
+        if (argRegs) {
+            int depth = 0;
+            for (int i = 0; i < n; i++) {
+                List<BytecodeToken> l = fn.get(i);
+                String m = l.isEmpty() ? "" : l.get(0).text;
+                if (m.equals("CC_START")) depth++;
+                if (depth > 0) {
+                    for (int v = 0; v < nh; v++) {
+                        if (in[i].get(v) || out[i].get(v) || def[i].get(v)) argSafe[v] = false;
+                    }
+                }
+                if (m.equals("CC_END") && depth > 0) depth--;
+            }
+        }
+        for (int v = 0; v < nh; v++) all.get(v).argSafe = argSafe[v];
         // colour, heaviest first, per register file
         colourInt(all, intCands, adj, idOf, intLimit, volRegOk);
         colour(all, xCands, adj, idOf, XVAR_COUNT, true);
@@ -604,7 +636,7 @@ public class RegVarPromotionPass {
             }
             List<Integer> order = new ArrayList<>();
             if (h.volOk) {
-                for (int r = 0; r < VOL_COUNT; r++) if (volRegOk[r]) order.add(VOL_FIRST + r);
+                for (int r = 0; r < VOL_COUNT; r++) if (volRegOk[r] && (r < VOL_BASE || h.argSafe)) order.add(VOL_FIRST + r);
             }
             for (int r = 0; r < intLimit; r++) order.add(r);
             for (int r : order) {

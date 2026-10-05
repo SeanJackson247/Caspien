@@ -19,6 +19,10 @@ import java.util.List;
  *   inline-max-growth: N           at most N added bytecode lines per function, over the whole run
  *   inline-max-growth-factor: N    also at most N times the function's original size (but never below 2000 lines); 0 = no such limit
  *   inline-max-total-factor: N     at most N times the original program size added over all functions (but never below 50000 lines); 0 = none
+ *   inline-max-multi-callee-lines: N  a callee longer than N lines is inlined only when the whole program calls it from exactly one
+ *                                  place (so inlining adds no code); with several call sites it stays a call (default 1000, 0 = no such
+ *                                  rule). Measured: inlining a ~1100-line hash function into a large `main` at three sites made
+ *                                  the merkle benchmark 34% slower (register pressure, code size).
  *                                  When a limit is reached the call is simply left as a call (never an error).
  *
  * The preset supplies all three numbers; any of the three keys after it overrides just that number. The keys do nothing while the preset is
@@ -35,6 +39,9 @@ public final class InlineConfig {
     public long growthFactor = 0;
     /** Program-wide cap on added lines as a multiple of the original program size (0 = none); never below TOTAL_FLOOR lines. */
     public long totalFactor = 0;
+    /** A callee longer than this is inlined only if it has a single call site in the program (0 = no such rule). */
+    public int maxMultiCalleeLines = 0;
+    public static final int DEFAULT_MULTI_CALLEE_LINES = 1000;
     public static final long GROWTH_FLOOR = 2000, TOTAL_FLOOR = 50_000;
 
     public static InlineConfig disabled() {
@@ -58,6 +65,7 @@ public final class InlineConfig {
         String preset = "off";
         Integer calleeLines = null, depth = null;
         Long growth = null, gfactor = null, tfactor = null;
+        Integer multiLines = null;
         for (int n = 0; n < lines.size(); n++) {
             String raw = lines.get(n);
             int hash = raw.indexOf('#');
@@ -96,6 +104,9 @@ public final class InlineConfig {
                 case "inline-max-growth-factor":
                     gfactor = number(path, n, key, val);
                     break;
+                case "inline-max-multi-callee-lines":
+                    multiLines = (int) Math.min(number(path, n, key, val), Integer.MAX_VALUE);
+                    break;
                 case "inline-max-total-factor":
                     tfactor = number(path, n, key, val);
                     break;
@@ -121,6 +132,8 @@ public final class InlineConfig {
                 return c; // off: the numbers are ignored
         }
         c.enabled = true;
+        c.maxMultiCalleeLines = DEFAULT_MULTI_CALLEE_LINES;
+        if (multiLines != null) c.maxMultiCalleeLines = multiLines;
         if (calleeLines != null) c.maxCalleeLines = calleeLines;
         if (depth != null) c.maxDepth = depth;
         if (growth != null) c.maxGrowth = growth;
@@ -157,6 +170,6 @@ public final class InlineConfig {
     @Override
     public String toString() {
         return enabled ? "function-inlining " + preset + " (callee<=" + maxCalleeLines + " lines, depth " + maxDepth + ", growth<="
-                + maxGrowth + ", x" + growthFactor + " per function, x" + totalFactor + " per program)" : "function-inlining off";
+                + maxGrowth + ", x" + growthFactor + " per function, x" + totalFactor + " per program, multi-site callee<=" + maxMultiCalleeLines + " lines)" : "function-inlining off";
     }
 }

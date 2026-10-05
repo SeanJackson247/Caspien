@@ -87,6 +87,10 @@ public class CompilerConfig {
     public boolean hoistArrayBases = false;
     /** Optional top-level 'variables-in-alloc-functions: on|off' (default off; needs variables-in-registers: on): functions that contain NEW/RESIZE/CLONE/DOT/LOOKUP_ARRAY may keep variables in r12-r14 (the backend saves them around those instructions). */
     public boolean variablesInAllocFunctions = false;
+    /** Optional top-level 'fuse-length-compare: on|off' (default off; needs deferred-operands: on): LengthCompareFusionPass folds the safe dynarray length load into the bounds compare (R_BRCM). */
+    public boolean fuseLengthCompare = false;
+    /** Optional top-level 'variables-in-arg-registers: on|off' (default off; needs variables-in-registers: on): rsi and rdi may hold variables in call-free live ranges (RegVarPromotionPass %v6, %v7). */
+    public boolean variablesInArgRegisters = false;
 
     public CallingConvention getDefault() {
         return callingConventions.get(defaultConvention);
@@ -145,6 +149,24 @@ public class CompilerConfig {
                     throw configErr(path, lineNo, "'variables-in-alloc-functions' must be 'on' or 'off', found '" + v + "'");
                 }
                 config.variablesInAllocFunctions = v.equals("on");
+                continue;
+            }
+            if (startsWithLiteral(trimmed, "variables-in-arg-registers:")) {
+                // Optional switch: RegVarPromotionPass (LowerOrderGenerator); parsed here so every stage that reads compiler.config accepts it. Absent = off.
+                String v = unquoteOrBare(trimmed.substring("variables-in-arg-registers:".length()).trim());
+                if (!v.equals("on") && !v.equals("off")) {
+                    throw configErr(path, lineNo, "'variables-in-arg-registers' must be 'on' or 'off', found '" + v + "'");
+                }
+                config.variablesInArgRegisters = v.equals("on");
+                continue;
+            }
+            if (startsWithLiteral(trimmed, "fuse-length-compare:")) {
+                // Optional switch: LengthCompareFusionPass (LowerOrderGenerator); parsed here so every stage that reads compiler.config accepts it. Absent = off.
+                String v = unquoteOrBare(trimmed.substring("fuse-length-compare:".length()).trim());
+                if (!v.equals("on") && !v.equals("off")) {
+                    throw configErr(path, lineNo, "'fuse-length-compare' must be 'on' or 'off', found '" + v + "'");
+                }
+                config.fuseLengthCompare = v.equals("on");
                 continue;
             }
             if (startsWithLiteral(trimmed, "hoist-array-bases:")) {
