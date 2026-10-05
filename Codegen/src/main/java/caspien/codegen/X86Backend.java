@@ -2742,6 +2742,11 @@ public class X86Backend {
                             mangleLabel(line.get(5).text));
                     return;
                 }
+                int brcSize = (int) Long.parseLong(line.get(2).text);
+                if (brcSize < 8) {
+                    rfBrcNarrow(line.get(1).text, brcSize, line.get(3).text, line.get(4).text, mangleLabel(line.get(5).text));
+                    return;
+                }
                 rfBrc(line.get(1).text, line.get(3).text, line.get(4).text, mangleLabel(line.get(5).text));
                 return;
             }
@@ -5694,6 +5699,9 @@ public class X86Backend {
                 rfOp2("sub", dText, bText);
                 return;
             case "MUL":
+                if (bText.startsWith("$") && rfMulByConst(d, Long.parseLong(bText.substring(1)))) {
+                    return;
+                }
                 rfOp2("imul", dText, bText);
                 return;
             case "BAND":
@@ -5742,6 +5750,35 @@ public class X86Backend {
         
     }
 
+    /**
+     * `d *= k` for a constant k as shifts and adds instead of an `imul` (3 cycles of latency; the shifts are 1 + 1): a power of two is one
+     * `shl`, 3, 5 and 9 are one `lea`, 2^n + 1 and 2^n - 1 are `mov scratch; shl; add|sub scratch` (so `x * 31` is `(x << 5) - x`). The low 64 bits
+     * are the same as the imul's, which is all a register holds (narrow products are never masked there anyway). Returns false for any other k.
+     */
+    private boolean rfMulByConst(String d, long k) {
+        if (k < 2 || k > (1L << 31)) {
+            return false;
+        }
+        String r = "%" + d;
+        if (Long.bitCount(k) == 1) {
+            raw("    shlq $" + Long.numberOfTrailingZeros(k) + ", " + r);
+            return true;
+        }
+        if (k == 3 || k == 5 || k == 9) {
+            raw("    leaq (" + r + "," + r + "," + (k - 1) + "), " + r);
+            return true;
+        }
+        boolean plus = Long.bitCount(k - 1) == 1;
+        if (!plus && Long.bitCount(k + 1) != 1) {
+            return false;
+        }
+        int sh = Long.numberOfTrailingZeros(plus ? k - 1 : k + 1);
+        raw("    movq " + r + ", %" + RF_SCRATCH);
+        raw("    shlq $" + sh + ", " + r);
+        raw("    " + (plus ? "addq" : "subq") + " %" + RF_SCRATCH + ", " + r);
+        return true;
+    }
+
     /** The conditional jump taken when `a OP b` is false (unsigned and signed compares; shared by R_BRC and R_BRCM). */
     private static String rfFalseJump(String op) {
         switch (op) {
@@ -5779,6 +5816,45 @@ public class X86Backend {
     }
 
     /** Jump to `label` when NOT (a op b), for an 8-byte compare; a and b are %t/%v registers, $off slots or #imm (never both #imm). */
+    /** the jump condition after swapping the two compared operands (a < b is b > a) */
+    private static String rfMirrorJump(String cc) {
+        switch (cc) {
+            case "jae": return "jbe";
+            case "ja": return "jb";
+            case "jbe": return "jae";
+            case "jb": return "ja";
+            case "jge": return "jle";
+            case "jg": return "jl";
+            case "jle": return "jge";
+            case "jl": return "jg";
+            default: return cc; // je / jne are symmetric
+        }
+    }
+
+    /**
+     * R_BRC of a 1, 2 or 4 byte compare: one sized cmp (cmpb/cmpw/cmpl) of the low bytes of two registers or a register and an immediate,
+     * then the jump taken when the comparison is false. Unsigned operators use the unsigned conditions and S* the signed ones, which on a
+     * sized cmp look at exactly the low `size` bytes (what the unfused R_BIN did by extending both operands first). Frame-slot operands are
+     * never fused (BranchFusionPass).
+     */
+    private void rfBrcNarrow(String op, int size, String aTok, String bTok, String label) {
+        String cc = rfFalseJump(op);
+        if (rfIsImm(aTok)) {
+            String t = aTok;
+            aTok = bTok;
+            bTok = t;
+            cc = rfMirrorJump(cc);
+        }
+        if (!rfIsTemp(aTok) || !(rfIsTemp(bTok) || rfIsImm(bTok))) {
+            throw new IllegalStateException("narrow R_BRC needs register or immediate operands: " + aTok + " " + bTok);
+        }
+        String suffix = size == 1 ? "b" : size == 2 ? "w" : "l";
+        String aText = "%" + sizedReg(rfReg(aTok), size);
+        String bText = rfIsImm(bTok) ? "$" + rfTrunc(rfImm(bTok), size) : "%" + sizedReg(rfReg(bTok), size);
+        raw("    cmp" + suffix + " " + bText + ", " + aText);
+        raw("    " + cc + " " + label);
+    }
+
     private void rfBrc(String op, String aTok, String bTok, String label) {
         String cc = rfFalseJump(op); // the jump taken when the comparison is false
         if (rfIsImm(aTok)) {
@@ -5786,17 +5862,7 @@ public class X86Backend {
             String t = aTok;
             aTok = bTok;
             bTok = t;
-            switch (cc) {
-                case "jae": cc = "jbe"; break;
-                case "ja": cc = "jb"; break;
-                case "jbe": cc = "jae"; break;
-                case "jb": cc = "ja"; break;
-                case "jge": cc = "jle"; break;
-                case "jg": cc = "jl"; break;
-                case "jle": cc = "jge"; break;
-                case "jl": cc = "jg"; break;
-                default: break; // je / jne are symmetric
-            }
+            cc = rfMirrorJump(cc);
         }
         String aText;
         if (rfIsTemp(aTok)) {

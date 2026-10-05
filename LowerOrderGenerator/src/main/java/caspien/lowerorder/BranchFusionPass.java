@@ -16,7 +16,8 @@ import java.util.Set;
  * A float compare feeding a jump fuses the same way (`R_FCMP C n %tD a b ; R_BRF %tD @L` -> `R_BRC C Fn a b @L`, no setcc/movzbq/test).
  * "R_BRC C size a b @L" jumps to L when NOT (a C b). The second shape is the test of a `for` loop over a range
  * (start <= i and i < end); the two compares are pure reads, so evaluating the second only when the first held changes nothing.
- * Only 8-byte compares (narrow ones zero/sign-extend first and stay as they are), and only when the compare result temps are
+ * 8-byte compares, and 1/2/4-byte compares whose operands are registers or immediates (the backend emits a sized `cmpb/cmpw/cmpl`, which looks at the low bytes only,
+ * exactly what the unfused narrow compare did after extending its operands; a frame-slot operand stays unfused), and only when the compare result temps are
  * dead afterwards, which the register-form model guarantees (a temp is never live across a jump or label). Runs after
  * RegVarPromotionPass and FloatTempPass so neither needs to know the new line.
  */
@@ -74,7 +75,15 @@ public class BranchFusionPass {
     }
 
     private static boolean isCmp(List<BytecodeToken> l) {
-        return l.size() == 6 && t(l, 0).equals("R_BIN") && CMP.contains(t(l, 1)) && t(l, 2).equals("8") && t(l, 3).startsWith("%t");
+        if (l.size() != 6 || !t(l, 0).equals("R_BIN") || !CMP.contains(t(l, 1)) || !t(l, 3).startsWith("%t")) {
+            return false;
+        }
+        String sz = t(l, 2);
+        if (sz.equals("8")) {
+            return true;
+        }
+        // a narrow compare looks at the low `size` bytes only; the backend emits a sized cmp, which needs register or immediate operands
+        return (sz.equals("1") || sz.equals("2") || sz.equals("4")) && !t(l, 4).startsWith("$") && !t(l, 5).startsWith("$");
     }
 
     private static boolean isFcmp(List<BytecodeToken> l) {

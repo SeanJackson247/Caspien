@@ -82,6 +82,11 @@ public class CodegenConfig {
                 } else {
                     throw new CodegenException("config", path, i + 1, "bmi2 must be 'on' or 'off', got '" + value + "'");
                 }
+            } else if (key.equals("jcc-padding")) {
+                // read by the Compiler (it adds an option to the assembler call); Codegen only validates it
+                if (!value.equalsIgnoreCase("on") && !value.equalsIgnoreCase("off")) {
+                    throw new CodegenException("config", path, i + 1, "jcc-padding must be 'on' or 'off', got '" + value + "'");
+                }
             } else {
                 throw new CodegenException("config", path, i + 1, "unknown config key '" + key + "'");
             }

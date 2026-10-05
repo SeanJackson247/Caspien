@@ -33,7 +33,7 @@ FULL = {
     "deferred-operands": "on", "variables-in-registers": "on", "float-variables-in-registers": "on",
     "float-temporaries-in-registers": "on", "hoist-array-bases": "on", "variables-in-alloc-functions": "on", "fuse-length-compare": "on", "variables-in-arg-registers": "on", "loop-unrolling": "aggressive", "function-inlining": "aggressive",
     "constant-folding": "on", "variable-elision": "on", "variable-shifting": "on", "struct-unpacking": "on",
-    "dead-control-flow-removal": "on", "dead-function-removal": "on", "unused-declaration-removal": "on", "bmi2": "on",
+    "dead-control-flow-removal": "on", "dead-function-removal": "on", "unused-declaration-removal": "on", "bmi2": "on", "jcc-padding": "on",
 }
 # (source file, precision, description)
 CASPIEN = [

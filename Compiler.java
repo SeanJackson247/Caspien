@@ -227,6 +227,7 @@ public class Compiler {
         Path fsCfgPath = astGenDir.resolve("fs.config");
         String fsCfg = Files.exists(fsCfgPath) ? CompilerCache.configView(Files.readString(fsCfgPath, StandardCharsets.UTF_8)) : "";
         String target = readCodegenTarget(codegenDir);
+        boolean jccPadding = readCodegenFlag(codegenDir, "jcc-padding") && assemblerSupportsJccPadding(target);
 
         // ---- Stage 1: ASTGenerator (.caspien -> higher-order bytecode) ----
         Path hobOut = stopHob ? output : (buildDir = ensureBuildDir(buildDir, output)).resolve("1_ast_generator.hob.txt");
@@ -288,12 +289,12 @@ public class Compiler {
 
         // ---- Stage 5: assemble + link (real toolchain, chosen by codegen.config's own target) ----
         String tools = toolIdentity(target);
-        String key5 = tools == null ? null : CompilerCache.sha("S5\n" + target + "\n" + tools + "\n--in--\n" + CompilerCache.fileHash(asmOut));
+        String key5 = tools == null ? null : CompilerCache.sha("S5\n" + target + (jccPadding ? "\njcc" : "") + "\n" + tools + "\n--in--\n" + CompilerCache.fileHash(asmOut));
         CompilerCache.StageLog log5 = new CompilerCache.StageLog();
         if (cache.restore("s5", key5, output, false, log5)) {
             cache.note("s5", true);
         } else {
-            assembleAndLink(target, asmOut, output, buildDir, diag);
+            assembleAndLink(target, asmOut, output, buildDir, diag, jccPadding);
             if (diag.hasFatalError()) return diag.exitCode();
             cache.note("s5", false);
             cache.store("s5", key5, output, log5, null);
@@ -743,6 +744,46 @@ public class Compiler {
         return text;
     }
 
+    /** GNU as option that pads branches so none crosses or ends on a 32-byte boundary (the Intel Skylake-family JCC erratum workaround; binutils 2.34+) */
+    private static final String JCC_PADDING_FLAG = "-mbranches-within-32B-boundaries";
+
+    /** `key on|off` in codegen.config (default off) */
+    private static boolean readCodegenFlag(Path codegenDir, String key) throws IOException {
+        for (String line : Files.readAllLines(codegenDir.resolve("codegen.config"), StandardCharsets.UTF_8)) {
+            String t = line.trim();
+            if (t.isEmpty() || t.startsWith("#")) continue;
+            String[] parts = t.split("\\s+", 2);
+            if (parts.length == 2 && parts[0].equals(key)) {
+                return parts[1].trim().equalsIgnoreCase("on");
+            }
+        }
+        return false;
+    }
+
+    /** true when the assembler this target uses accepts the JCC padding option; otherwise a warning is printed and the option is left out */
+    private static boolean assemblerSupportsJccPadding(String target) {
+        boolean hostIsWindows = System.getProperty("os.name", "").toLowerCase().contains("win");
+        String tool = "as";
+        if (target.equals("windows_gnu")) {
+            tool = hostIsWindows ? "as" : "x86_64-w64-mingw32-as";
+            if (!hostIsWindows && !commandExists(tool)) {
+                tool = "as";
+            }
+        }
+        try {
+            Process p = new ProcessBuilder(tool, JCC_PADDING_FLAG, "--version").redirectErrorStream(true).start();
+            drain(p.getInputStream());
+            if (p.waitFor() == 0) {
+                return true;
+            }
+        } catch (IOException | InterruptedException e) {
+            // fall through to the warning
+        }
+        System.err.println("[warn] codegen.config says 'jcc-padding on', but '" + tool + "' does not accept " + JCC_PADDING_FLAG
+                + " (binutils 2.34 or newer); building without it");
+        return false;
+    }
+
     private static String readCodegenTarget(Path codegenDir) throws IOException {
         for (String line : Files.readAllLines(codegenDir.resolve("codegen.config"), StandardCharsets.UTF_8)) {
             String t = line.trim();
@@ -926,13 +967,18 @@ public class Compiler {
      * toolchain proper, since none of the four pipeline projects do
      * their own assembling.
      */
-    private static void assembleAndLink(String target, Path asmFile, Path output, Path buildDir, Diagnostics diag)
+    private static void assembleAndLink(String target, Path asmFile, Path output, Path buildDir, Diagnostics diag, boolean jccPadding)
             throws IOException, InterruptedException {
         boolean hostIsWindows = System.getProperty("os.name", "").toLowerCase().contains("win");
         switch (target) {
             case "linux": {
                 Path obj = buildDir.resolve("out.o");
-                runToolProcess(List.of("as", "--64", asmFile.toString(), "-o", obj.toString()), diag, "as");
+                List<String> asCmd = new ArrayList<>(List.of("as", "--64"));
+                if (jccPadding) {
+                    asCmd.add(JCC_PADDING_FLAG);
+                }
+                asCmd.addAll(List.of(asmFile.toString(), "-o", obj.toString()));
+                runToolProcess(asCmd, diag, "as");
                 if (diag.hasFatalError()) return;
                 runToolProcess(List.of("gcc", obj.toString(), "-o", output.toString(), "-no-pie", "-pthread", "-lm"), diag,
                         "gcc");
@@ -965,8 +1011,12 @@ public class Compiler {
                 // (e.g. hello.caspien) links and runs identically either
                 // way, so this is a strict improvement with no downside for
                 // that case.
-                runToolProcess(List.of(compiler, asmFile.toString(), "-o", output.toString(), "-m64", "-pthread",
-                        "-static", "-lm", "-lntdll"), diag, compiler);
+                List<String> ccCmd = new ArrayList<>(List.of(compiler, asmFile.toString(), "-o", output.toString(), "-m64", "-pthread",
+                        "-static", "-lm", "-lntdll"));
+                if (jccPadding) {
+                    ccCmd.add("-Wa," + JCC_PADDING_FLAG);
+                }
+                runToolProcess(ccCmd, diag, compiler);
                 return;
             }
             default:
