@@ -1,0 +1,130 @@
+// Variable registers beyond r8-r10: with variables-in-arg-registers rsi, rdi, rdx and rcx also hold variables in call-free ranges (RegVarPromotionPass
+// %v6..%v9). Twelve live u64 variables in a loop that mixes constant divides and modulo (which use rdx), variable-count shifts (rcx), multiplies and
+// xors; then the same variables live across a call (printf), which keeps them out of the volatile registers. Wrapping u64 arithmetic; the output is
+// compared with arg_regs_more_test.py by arg_regs_more_check.sh in three configs.
+import "../stdlib/libc.caspien"
+
+@dont(inline)
+func pressure(rounds: mut u64) mut u64{
+	let a0 = mut 14
+	let a1 = mut 933
+	let a2 = mut 852
+	let a3 = mut 771
+	let a4 = mut 690
+	let a5 = mut 609
+	let a6 = mut 528
+	let a7 = mut 447
+	let a8 = mut 366
+	let a9 = mut 285
+	let a10 = mut 204
+	let a11 = mut 123
+	for r in 0..rounds{
+		a0 = a0 + a1 * 3 + (a5 % 10)
+		a1 = a1 + a2 * 4 + (a6 % 7)
+		a2 = a2 + a3 * 5 + (a7 % 1000)
+		a3 = a3 + a4 * 6 + (a8 % 6)
+		a4 = a4 + a5 * 7 + (a9 % 13)
+		a5 = a5 + a6 * 8 + (a10 % 24)
+		a6 = a6 + a7 * 9 + (a11 % 10)
+		a7 = a7 + a8 * 10 + (a0 % 7)
+		a8 = a8 + a9 * 11 + (a1 % 1000)
+		a9 = a9 + a10 * 12 + (a2 % 6)
+		a10 = a10 + a11 * 13 + (a3 % 13)
+		a11 = a11 + a0 * 14 + (a4 % 24)
+		a0 = bits_xor(a0, bits_left(a3, (a2 % 7) + 1))
+		a0 = bits_and(a0, 4294967295) + bits_right(a3, (a1 % 5) + 1) + (a4 / 3)
+		a1 = bits_xor(a1, bits_left(a4, (a3 % 7) + 1))
+		a1 = bits_and(a1, 4294967295) + bits_right(a4, (a2 % 5) + 1) + (a5 / 10)
+		a2 = bits_xor(a2, bits_left(a5, (a4 % 7) + 1))
+		a2 = bits_and(a2, 4294967295) + bits_right(a5, (a3 % 5) + 1) + (a6 / 12)
+		a3 = bits_xor(a3, bits_left(a6, (a5 % 7) + 1))
+		a3 = bits_and(a3, 4294967295) + bits_right(a6, (a4 % 5) + 1) + (a7 / 100)
+		a4 = bits_xor(a4, bits_left(a7, (a6 % 7) + 1))
+		a4 = bits_and(a4, 4294967295) + bits_right(a7, (a5 % 5) + 1) + (a8 / 6)
+		a5 = bits_xor(a5, bits_left(a8, (a7 % 7) + 1))
+		a5 = bits_and(a5, 4294967295) + bits_right(a8, (a6 % 5) + 1) + (a9 / 20)
+		a6 = bits_xor(a6, bits_left(a9, (a8 % 7) + 1))
+		a6 = bits_and(a6, 4294967295) + bits_right(a9, (a7 % 5) + 1) + (a10 / 3)
+		a7 = bits_xor(a7, bits_left(a10, (a9 % 7) + 1))
+		a7 = bits_and(a7, 4294967295) + bits_right(a10, (a8 % 5) + 1) + (a11 / 10)
+		a8 = bits_xor(a8, bits_left(a11, (a10 % 7) + 1))
+		a8 = bits_and(a8, 4294967295) + bits_right(a11, (a9 % 5) + 1) + (a0 / 12)
+		a9 = bits_xor(a9, bits_left(a0, (a11 % 7) + 1))
+		a9 = bits_and(a9, 4294967295) + bits_right(a0, (a10 % 5) + 1) + (a1 / 100)
+		a10 = bits_xor(a10, bits_left(a1, (a0 % 7) + 1))
+		a10 = bits_and(a10, 4294967295) + bits_right(a1, (a11 % 5) + 1) + (a2 / 6)
+		a11 = bits_xor(a11, bits_left(a2, (a1 % 7) + 1))
+		a11 = bits_and(a11, 4294967295) + bits_right(a2, (a0 % 5) + 1) + (a3 / 20)
+	}
+	let s = mut 0
+	s = s + a0
+	s = s + a1
+	s = s + a2
+	s = s + a3
+	s = s + a4
+	s = s + a5
+	s = s + a6
+	s = s + a7
+	s = s + a8
+	s = s + a9
+	s = s + a10
+	s = s + a11
+	return s
+}
+
+@dont(inline)
+func across(rounds: mut u64) mut u64{
+	let a0 = mut 14
+	let a1 = mut 933
+	let a2 = mut 852
+	let a3 = mut 771
+	let a4 = mut 690
+	let a5 = mut 609
+	let a6 = mut 528
+	let a7 = mut 447
+	let a8 = mut 366
+	let a9 = mut 285
+	let a10 = mut 204
+	let a11 = mut 123
+	for r in 0..rounds{
+		a0 = a0 + a1 * 3 + (a5 % 10)
+		a1 = a1 + a2 * 4 + (a6 % 7)
+		a2 = a2 + a3 * 5 + (a7 % 1000)
+		a3 = a3 + a4 * 6 + (a8 % 6)
+		a4 = a4 + a5 * 7 + (a9 % 13)
+		a5 = a5 + a6 * 8 + (a10 % 24)
+		a6 = a6 + a7 * 9 + (a11 % 10)
+		a7 = a7 + a8 * 10 + (a0 % 7)
+		a8 = a8 + a9 * 11 + (a1 % 1000)
+		a9 = a9 + a10 * 12 + (a2 % 6)
+		a10 = a10 + a11 * 13 + (a3 % 13)
+		a11 = a11 + a0 * 14 + (a4 % 24)
+		unsafe extern{ printf("") }
+		a0 = bits_xor(a0, bits_left(a3, (a2 % 7) + 1))
+		a0 = bits_and(a0, 4294967295) + bits_right(a3, (a1 % 5) + 1) + (a4 / 3)
+		a1 = bits_xor(a1, bits_left(a4, (a3 % 7) + 1))
+		a1 = bits_and(a1, 4294967295) + bits_right(a4, (a2 % 5) + 1) + (a5 / 10)
+		a2 = bits_xor(a2, bits_left(a5, (a4 % 7) + 1))
+		a2 = bits_and(a2, 4294967295) + bits_right(a5, (a3 % 5) + 1) + (a6 / 12)
+	}
+	let s = mut 0
+	s = bits_xor(s, a0)
+	s = bits_xor(s, a1)
+	s = bits_xor(s, a2)
+	s = bits_xor(s, a3)
+	s = bits_xor(s, a4)
+	s = bits_xor(s, a5)
+	s = bits_xor(s, a6)
+	s = bits_xor(s, a7)
+	s = bits_xor(s, a8)
+	s = bits_xor(s, a9)
+	s = bits_xor(s, a10)
+	s = bits_xor(s, a11)
+	return s
+}
+
+func main() void{
+	let x = pressure(40)
+	let y = across(25)
+	unsafe extern{ printf("%llu %llu\n", x, y) }
+}

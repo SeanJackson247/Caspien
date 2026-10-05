@@ -1,0 +1,98 @@
+// DestForwardingPass: a value computed into a temporary and copied into a variable register is computed there directly, and dead initialisations of
+// variable registers go. Covers loads of u8/u16/u32/u64 unsafe dynarray elements into variables (with a dead `= 0` first), copy chains, subtract / shift /
+// add / xor / and / multiply whose destination variable is also an operand (x = y - x), shifts by constants, a variable read between initialisation
+// and assignment (the init must stay), and a value kept across a conditional branch. Output compared with dest_forward_test.py by dest_forward_check.sh.
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+
+func main() void{
+	unsafe udyn{
+		let n = mut 200
+		let a8 = mut unsafe dyn:<u8>([])
+		a8 = resize(a8, n)
+		let a16 = mut unsafe dyn:<u16>([])
+		a16 = resize(a16, n)
+		let a32 = mut unsafe dyn:<u32>([])
+		a32 = resize(a32, n)
+		let a64 = mut unsafe dyn:<u64>([])
+		a64 = resize(a64, n)
+		for i in 0..n{
+			a8[i] = wrap:<u8>(i * 37 + 11)
+			a16[i] = wrap:<u16>(i * 4099 + 7)
+			a32[i] = wrap:<u32>(i * 1000003 + 5)
+			a64[i] = (i * 7919 + 13) % 100003
+		}
+		let s1 = mut 0
+		let s2 = mut 0
+		let s3 = mut 0
+		let s4 = mut 0
+		for i in 0..n{
+			let v8 = mut 0
+			let v16 = mut 0
+			let v32 = mut 0
+			let v64 = mut 0
+			v8 = a8[i] as u64
+			v16 = a16[i] as u64
+			v32 = a32[i] as u64
+			v64 = a64[i]
+			s1 = s1 + v8 + v16
+			s2 = s2 + (v32 % 1000003) + v64
+		}
+		for i in 1..n{
+			let lo = mut 0
+			let hi = mut 0
+			lo = a64[i - 1]
+			hi = a64[i]
+			let d = mut 0
+			d = hi
+			let e = mut 0
+			e = lo
+			d = e - d
+			if hi > lo{
+				d = hi - lo
+			}
+			s3 = s3 + d % 1000
+			let m = mut 0
+			m = (lo + hi) / 2
+			m = m / 2
+			s4 = s4 + m
+		}
+		let x = mut 5
+		let y = mut 11
+		let z = mut 3
+		let acc = mut 0
+		for i in 0..n{
+			x = a64[i]
+			y = x - y
+			if y > 100000{
+				y = y - 100000
+			}
+			z = bits_right(x + y, 1)
+			z = z - 1
+			x = z
+			z = x * 3
+			let w = mut 0
+			w = x
+			acc = acc + w + z + (y % 7)
+			acc = bits_xor(acc, z)
+			acc = bits_and(acc, 4294967295)
+		}
+		let t = mut 0
+		let u = mut 9
+		for i in 0..n{
+			t = a64[i]
+			u = t + u
+			t = a32[i] as u64
+			u = bits_xor(u, t)
+			if u > 1000000000{
+				u = u - 999999999
+			}
+		}
+		unsafe extern{ printf("%llu %llu %llu %llu\n", s1, s2, s3, s4) }
+		unsafe extern{ printf("%llu %llu %llu %llu %llu\n", x, y, z, acc, u) }
+	}
+}

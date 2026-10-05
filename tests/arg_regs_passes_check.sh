@@ -57,13 +57,13 @@ public class DrvA {
     static boolean has(List<String> o, String line) { return o.contains(line); }
 
     public static void main(String[] a) {
-        // A1: eight variables live at once, no call: with the switch on all eight get distinct registers (two of them rsi/rdi = %v6/%v7)
+        // A1: eight variables live at once, no call: with the switch on all eight get distinct registers (four of them rsi/rdi/rdx/rcx = %v6..%v9: the first seven take the volatile registers, heaviest first)
         {
             List<String> o = run(hints() + " ; " + defs(0, 8) + " ; " + uses(0, 8));
             int[] r = {reg(o, 101), reg(o, 102), reg(o, 103), reg(o, 104), reg(o, 105), reg(o, 106), reg(o, 107), reg(o, 108)};
-            chk("switch on, call-free: eight live variables, eight distinct registers", distinct(r) && allIn(0, 7, r), o.toString());
+            chk("switch on, call-free: eight live variables, eight distinct registers", distinct(r) && allIn(0, 9, r), o.toString());
             int hi = 0; for (int x : r) if (x >= 6) hi++;
-            chk("switch on, call-free: two of them sit in %v6/%v7", hi == 2, o.toString());
+            chk("switch on, call-free: four of them sit in %v6..%v9", hi == 4, o.toString());
         }
         // A2: the switch off: only six registers, the lightest two stay in memory
         {
@@ -92,7 +92,7 @@ public class DrvA {
         {
             List<String> o = run(hints() + " ; " + defs(0, 8) + " ; " + uses(0, 8) + " ; CALL g");
             int[] r = {reg(o, 101), reg(o, 102), reg(o, 103), reg(o, 104), reg(o, 105), reg(o, 106), reg(o, 107), reg(o, 108)};
-            chk("all dead before the call: eight registers", distinct(r) && allIn(0, 7, r), o.toString());
+            chk("all dead before the call: eight registers", distinct(r) && allIn(0, 9, r), o.toString());
         }
         // A6: a non-whitelisted line (here CC_START with a CALL) while two variables are live: they are not given rsi/rdi
         {
@@ -100,6 +100,21 @@ public class DrvA {
             chk("live across a call at the end: %v6/%v7 not used", reg(o, 107) < 6 && reg(o, 108) < 6, o.toString());
         }
         System.out.println(bad == 0 ? "ALL ARG REGS PASS CHECKS PASSED" : (bad + " FAILED"));
+        // A6: rdx / rcx (%v8 / %v9): a variable live at a constant divide never sits in rdx, one live at a variable-count shift never in rcx
+        {
+            List<String> o = run(hints() + " ; " + defs(0, 8) + " ; R_DIVC DIV %t0 %t1 #10 ; " + uses(0, 8));
+            int[] r = {reg(o, 101), reg(o, 102), reg(o, 103), reg(o, 104), reg(o, 105), reg(o, 106), reg(o, 107), reg(o, 108)};
+            boolean noV8 = true; for (int x : r) if (x == 8) noV8 = false;
+            chk("live at a constant divide: nothing in %v8 (rdx)", noV8 && distinct(r) && allIn(0, 9, r), o.toString());
+            List<String> o2 = run(hints() + " ; " + defs(0, 8) + " ; R_BIN SHL 8 %t0 %t0 $-8 ; " + uses(0, 8));
+            int[] r2 = {reg(o2, 101), reg(o2, 102), reg(o2, 103), reg(o2, 104), reg(o2, 105), reg(o2, 106), reg(o2, 107), reg(o2, 108)};
+            boolean noV9 = true; for (int x : r2) if (x == 9) noV9 = false;
+            chk("live at a variable-count shift: nothing in %v9 (rcx)", noV9 && distinct(r2) && allIn(0, 9, r2), o2.toString());
+            List<String> o3 = run(hints() + " ; " + defs(0, 8) + " ; R_BIN SHL 8 %t0 %t0 #3 ; " + uses(0, 8));
+            int[] r3 = {reg(o3, 101), reg(o3, 102), reg(o3, 103), reg(o3, 104), reg(o3, 105), reg(o3, 106), reg(o3, 107), reg(o3, 108)};
+            boolean hasV9 = false; for (int x : r3) if (x == 9) hasV9 = true;
+            chk("a shift by a constant leaves rcx free", hasV9, o3.toString());
+        }
         System.exit(bad == 0 ? 0 : 1);
     }
 }

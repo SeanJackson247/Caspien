@@ -1275,12 +1275,19 @@ public class X86Backend {
 
     /** The RIP-relative memory operand of a global (an alias into a parent block adds its fixed offset): `label+off(%rip)`. */
     private String globalRipOperand(String globalName) {
+        // "sym+N" (GlobalConstAddrPass: a global array element at a constant index) is the global plus N bytes
+        long extra = 0;
+        int plus = globalName.indexOf('+');
+        if (plus > 0) {
+            extra = Long.parseLong(globalName.substring(plus + 1));
+            globalName = globalName.substring(0, plus);
+        }
         if (globalAliasOffset.containsKey(globalName)) {
             String parentLabel = mangleGlobalName(globalAliasParent.get(globalName));
-            long offset = globalAliasOffset.get(globalName);
+            long offset = globalAliasOffset.get(globalName) + extra;
             return parentLabel + (offset != 0 ? "+" + offset : "") + "(%rip)";
         }
-        return mangleGlobalName(globalName) + "(%rip)";
+        return mangleGlobalName(globalName) + (extra != 0 ? "+" + extra : "") + "(%rip)";
     }
 
     private void movImmToReg(String reg, long imm) {
@@ -5398,8 +5405,9 @@ public class X86Backend {
     /** %v0..%v2: promoted variables (RegVarPromotionPass), callee-saved, so finishCalleeSaved saves/restores them like any other.
      *  %v3..%v5 (r8, r9, r10) are caller-saved: the promotion only puts a variable there that is never live across a call or any
      *  line that could clobber them. %v6, %v7 (rsi, rdi: SysV argument registers 1 and 0; callee-saved on win64, where
-     *  finishCalleeSaved saves them when the text mentions them) follow the same rule and are never live inside a call's argument bracket. */
-    private static final String[] RF_VAR_REGS = { "r13", "r14", "r12", "r8", "r9", "r10", "rsi", "rdi" };
+     *  finishCalleeSaved saves them when the text mentions them) follow the same rule and are never live inside a call's argument bracket.
+     *  %v8, %v9 (rdx, rcx: SysV argument registers 2 and 3, SysV only) too, and are never live at a constant divide (rdx) / variable-count shift (rcx). */
+    private static final String[] RF_VAR_REGS = { "r13", "r14", "r12", "r8", "r9", "r10", "rsi", "rdi", "rdx", "rcx" };
     /** set when this function uses a %vN; checked against rfClobberSeen at FUNC_END */
     private boolean rfVarUsed = false;
     /** bit i set when this function uses %vi (i < 3: r13, r14, r12), see finishCalleeSaved / V1314_SAVE */
@@ -5597,6 +5605,34 @@ public class X86Backend {
      */
     private void rfDivConst(boolean mod, String dstTok, String aTok, long k) {
         String d = rfReg(dstTok);
+        long[] ms0 = divMagicSimple(k);
+        if (ms0 != null && !mod) {
+            // a plain quotient needs no copy of the dividend: it goes straight into rdx (shifted by the pre-shift), before rax is parked in d
+            if (rfIsTemp(aTok)) {
+                rfRegToReg("rdx", rfReg(aTok));
+            } else if (rfIsImm(aTok)) {
+                movImmToReg("rdx", rfImm(aTok));
+            } else {
+                movMemToReg("rdx", rfSlot(aTok));
+            }
+            if (ms0[0] > 0) {
+                raw("    shrq $" + ms0[0] + ", %rdx");
+            }
+            boolean inRax0 = d.equals("rax");
+            if (!inRax0) {
+                raw("    xchgq %rax, %" + d);
+            }
+            movImmToReg("rax", ms0[1]);
+            raw("    mulq %rdx");
+            if (ms0[2] > 0) {
+                raw("    shrq $" + ms0[2] + ", %rdx");
+            }
+            raw("    movq %rdx, %rax");
+            if (!inRax0) {
+                raw("    xchgq %rax, %" + d);
+            }
+            return;
+        }
         if (rfIsTemp(aTok)) {
             rfRegToReg(RF_SCRATCH, rfReg(aTok));
         } else if (rfIsImm(aTok)) {
@@ -5604,12 +5640,48 @@ public class X86Backend {
         } else {
             movMemToReg(RF_SCRATCH, rfSlot(aTok));
         }
+        boolean inRax = d.equals("rax");
+        long[] ms = divMagicSimple(k);
+        if (ms != null) {
+            // q = mulhi(a >> pre, magic) >> post, no fix-up: the dividend a is kept in r15, the shifted copy goes to rdx (mulq may read the register it overwrites)
+            int pre = (int) ms[0];
+            int post = (int) ms[2];
+            if (!inRax) {
+                raw("    xchgq %rax, %" + d);
+            }
+            String src = RF_SCRATCH;
+            if (pre > 0) {
+                raw("    movq %" + RF_SCRATCH + ", %rdx");
+                raw("    shrq $" + pre + ", %rdx");
+                src = "rdx";
+            }
+            movImmToReg("rax", ms[1]);
+            raw("    mulq %" + src);
+            if (post > 0) {
+                raw("    shrq $" + post + ", %rdx");
+            }
+            if (mod) {
+                if (rfFitsImm32(k)) {
+                    raw("    imulq $" + k + ", %rdx, %rax");
+                } else {
+                    movImmToReg("rax", k);
+                    raw("    imulq %rdx, %rax");
+                }
+                raw("    subq %rax, %" + RF_SCRATCH);
+                raw("    movq %" + RF_SCRATCH + ", %rax");
+            } else {
+                raw("    movq %rdx, %rax");
+            }
+            if (!inRax) {
+                raw("    xchgq %rax, %" + d);
+            }
+            return;
+        }
         int l = 64 - Long.numberOfLeadingZeros(k - 1);
         java.math.BigInteger two64 = java.math.BigInteger.ONE.shiftLeft(64);
         java.math.BigInteger bk = new java.math.BigInteger(Long.toUnsignedString(k));
         java.math.BigInteger m = java.math.BigInteger.ONE.shiftLeft(l).subtract(bk).shiftLeft(64).divide(bk).add(java.math.BigInteger.ONE);
         long magic = m.mod(two64).longValue();
-        boolean inRax = d.equals("rax");
         if (!inRax) {
             raw("    xchgq %rax, %" + d);
         }
@@ -5638,6 +5710,39 @@ public class X86Backend {
         }
     }
 
+    /**
+     * Single-multiply unsigned division by k (not a power of two, k >= 3): {pre, magic, post} with q = mulhi(a >> pre, magic) >> post for every
+     * 64-bit a, or null when no 64-bit magic number exists (the add-fix-up form is used then). Granlund-Montgomery Theorem 4.2: for x < 2^N and
+     * m = ceil(2^(N+l) / k'), m*k' - 2^(N+l) <= 2^l gives floor(x*m / 2^(N+l)) = floor(x / k'). An even k first drops its trailing zero bits
+     * from the dividend (a >> pre, N = 64 - pre, k' = k >> pre), which makes a 64-bit magic number likely; pre = 0 is tried as well. The smallest
+     * l >= pre with m < 2^64 that meets the condition is taken; post = N + l - 64 = l - pre.
+     */
+    static long[] divMagicSimple(long k) {
+        java.math.BigInteger bk0 = new java.math.BigInteger(Long.toUnsignedString(k));
+        int tz = Long.numberOfTrailingZeros(k);
+        int[] pres = tz > 0 ? new int[] {tz, 0} : new int[] {0};
+        java.math.BigInteger limit = java.math.BigInteger.ONE.shiftLeft(64);
+        for (int pre : pres) {
+            java.math.BigInteger kk = bk0.shiftRight(pre);
+            if (kk.compareTo(java.math.BigInteger.ONE) <= 0) {
+                continue;
+            }
+            int n = 64 - pre;
+            for (int l = pre; l <= 64; l++) {
+                java.math.BigInteger p = java.math.BigInteger.ONE.shiftLeft(n + l);
+                java.math.BigInteger m = p.add(kk).subtract(java.math.BigInteger.ONE).divide(kk);
+                if (m.compareTo(limit) >= 0) {
+                    break;
+                }
+                java.math.BigInteger e = m.multiply(kk).subtract(p);
+                if (e.compareTo(java.math.BigInteger.ONE.shiftLeft(l)) <= 0) {
+                    return new long[] {pre, m.longValue(), l - pre};
+                }
+            }
+        }
+        return null;
+    }
+
     private void rfBin(String op, int size, String dstTok, String aTok, String bTok) {
         if (op.equals("SHL") || op.equals("SHR") || op.equals("SAR")) {
             rfShift(op, size, dstTok, aTok, bTok);
@@ -5646,6 +5751,21 @@ public class X86Backend {
         String d = rfReg(dstTok);
         boolean commutative = op.equals("ADD") || op.equals("MUL") || op.equals("AND") || op.equals("OR")
                 || op.equals("BAND") || op.equals("BOR") || op.equals("BXOR") || op.equals("EQ") || op.equals("NEQ");
+        if ((op.equals("ADD") || op.equals("MUL") || op.equals("BAND") || op.equals("BOR") || op.equals("BXOR")) && rfIsImm(aTok) && !rfIsImm(bTok)) {
+            // a constant on the left of a commutative operation: swap, so the constant forms (shift / lea / add imm / sized imm) apply
+            String sw = aTok;
+            aTok = bTok;
+            bTok = sw;
+        }
+        if (op.equals("MUL") && rfIsImm(bTok) && !rfIsImm(aTok) && rfMulByBigConst(d, aTok, rfImm(bTok))) {
+            return;
+        }
+        if (op.equals("MUL") && size == 8 && rfIsImm(bTok) && !rfIsImm(aTok) && rfFitsImm32(rfImm(bTok)) && !mulByConstShape(rfImm(bTok))
+                && !(rfIsTemp(aTok) && rfReg(aTok).equals(d)) && !(rfIsTemp(bTok) && rfReg(bTok).equals(d))) {
+            // d = a * imm32 in one instruction (imul r64, r/m64, imm32) instead of `mov a, d; imul imm, d`
+            raw("    imulq $" + rfImm(bTok) + ", " + (rfIsTemp(aTok) ? rfRegText(rfReg(aTok)) : rfMemText(rfSlot(aTok))) + ", " + rfRegText(d));
+            return;
+        }
         String bText = null;
         if (rfIsTemp(bTok) && rfReg(bTok).equals(d) && !(rfIsTemp(aTok) && rfReg(aTok).equals(d))) {
             // The destination register is b's own register: a plain "d = a; d op= b" would overwrite b first.
@@ -5748,6 +5868,45 @@ public class X86Backend {
         raw("    " + setcc + " %" + d8);
         raw("    movzbq %" + d8 + ", %" + d);
         
+    }
+
+    /** the constants rfMulByConst turns into shifts / lea / shift+add (kept in step with it) */
+    private static boolean mulByConstShape(long k) {
+        if (k < 2 || k > (1L << 31)) {
+            return false;
+        }
+        return Long.bitCount(k) == 1 || k == 3 || k == 5 || k == 9 || Long.bitCount(k - 1) == 1 || Long.bitCount(k + 1) == 1;
+    }
+
+    /**
+     * `d = a * k` for k = 2^n + 1 or 2^n - 1 above 2^31 (too big for an imm32 imul: it would take a 10-byte `movabs` plus a 3-cycle `imul`), as
+     * `mov a, d; shl n, d; add|sub a, d` (a is read again, so a == d goes through the scratch register). The low 64 bits equal the imul's.
+     * Returns false (nothing emitted) for any other k.
+     */
+    private boolean rfMulByBigConst(String d, String aTok, long k) {
+        if (k <= (1L << 31)) {
+            return false;
+        }
+        boolean plus = Long.bitCount(k - 1) == 1;
+        if (!plus && Long.bitCount(k + 1) != 1) {
+            return false;
+        }
+        int sh = Long.numberOfTrailingZeros(plus ? k - 1 : k + 1);
+        String mn = plus ? "addq" : "subq";
+        if (rfIsTemp(aTok) && rfReg(aTok).equals(d)) {
+            raw("    movq %" + d + ", %" + RF_SCRATCH);
+            raw("    shlq $" + sh + ", %" + d);
+            raw("    " + mn + " %" + RF_SCRATCH + ", %" + d);
+        } else if (rfIsTemp(aTok)) {
+            rfRegToReg(d, rfReg(aTok));
+            raw("    shlq $" + sh + ", %" + d);
+            raw("    " + mn + " %" + rfReg(aTok) + ", %" + d);
+        } else {
+            movMemToReg(d, rfSlot(aTok));
+            raw("    shlq $" + sh + ", %" + d);
+            raw("    " + mn + " " + rfMemText(rfSlot(aTok)) + ", %" + d);
+        }
+        return true;
     }
 
     /**
@@ -6294,7 +6453,7 @@ public class X86Backend {
     private final java.util.Map<Integer, Integer> xvWidth = new java.util.TreeMap<>();
 
     private static boolean rfIsXvar(String tok) {
-        return tok.startsWith("%x") || tok.startsWith("%y");
+        return tok.startsWith("%x") || tok.startsWith("%y") || tok.startsWith("%z");
     }
 
     /** float temporaries %y0..%y3 (FloatTempPass): SysV xmm4-7, win64 xmm12-15 (win64 keeps them; a temp is never live across a call anyway). */
@@ -6310,6 +6469,12 @@ public class X86Backend {
 
     private String xvReg(String tok) {
         int k = Integer.parseInt(tok.substring(2));
+        if (tok.startsWith("%z")) { // StaticFloatCachePass: xmm0-3, only inside call-free loops
+            if (k < 0 || k >= 4) {
+                throw new IllegalStateException("float cache register " + tok + " out of range");
+            }
+            return "xmm" + k;
+        }
         if (tok.startsWith("%y")) {
             if (k < 0 || k >= YT_COUNT) {
                 throw new IllegalStateException("float temporary register " + tok + " out of range");
@@ -6409,6 +6574,14 @@ public class X86Backend {
     }
 
     /** "R_FBINX OP n %xK a b": variable K = a OP b (n is always 4). */
+    /** For `a * b` where exactly one operand is the immediate 2.0 (f64 or f32 bits per n): the other operand token, else null. */
+    private String rfTimesTwoOperand(int n, String aTok, String bTok) {
+        long two = n == 8 ? 0x4000000000000000L : 0x40000000L;
+        if (rfIsImm(aTok) && (n == 8 ? rfImm(aTok) : (rfImm(aTok) & 0xFFFFFFFFL)) == two && !rfIsImm(bTok)) return bTok;
+        if (rfIsImm(bTok) && (n == 8 ? rfImm(bTok) : (rfImm(bTok) & 0xFFFFFFFFL)) == two && !rfIsImm(aTok)) return aTok;
+        return null;
+    }
+
     private void rfFloatX(String op, int n, String dstTok, String aTok, String bTok) {
         String xd = xvReg(dstTok);
         String mn;
@@ -6420,6 +6593,19 @@ public class X86Backend {
             default: throw new IllegalStateException("unknown R_FBINX operator '" + op + "'");
         }
         String sfx = n == 4 ? "ss" : "sd";
+        if (op.equals("MUL")) {
+            // x * 2.0 is exactly x + x in IEEE-754 (zero sign, infinities, NaN included) and an add is shorter than a multiply on the usual critical chain
+            String other = rfTimesTwoOperand(n, aTok, bTok);
+            if (other != null) {
+                if (rfIsXvar(other)) {
+                    rfMovaps(xd, xvReg(other));
+                } else {
+                    rfLoadXmm(other, xd, n);
+                }
+                raw(("    add" + sfx + " %" + xd + ", %" + xd));
+                return;
+            }
+        }
         boolean commutative = op.equals("ADD") || op.equals("MUL");
         boolean bIsDst = rfIsXvar(bTok) && xvReg(bTok).equals(xd);
         boolean aIsDst = rfIsXvar(aTok) && xvReg(aTok).equals(xd);
@@ -6460,6 +6646,15 @@ public class X86Backend {
     private void rfFloat(boolean compare, String op, int n, String dstTok, String aTok, String bTok, String branchLabel) {
         String d = dstTok == null ? null : rfReg(dstTok);
         String xa = rfXmmA();
+        if (!compare && op.equals("MUL")) {
+            String other = rfTimesTwoOperand(n, aTok, bTok);
+            if (other != null) {
+                rfLoadXmm(other, xa, n);
+                raw("    add" + (n == 4 ? "ss" : "sd") + " %" + xa + ", %" + xa);
+                rfXmmToGpr(xa, d, n);
+                return;
+            }
+        }
         String xb = rfXmmB();
         String sfx = n == 4 ? "ss" : "sd";
         boolean aDirect = compare && rfIsXvar(aTok); // a compare never modifies a: read the variable's register in place

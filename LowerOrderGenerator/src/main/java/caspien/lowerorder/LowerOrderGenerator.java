@@ -74,16 +74,22 @@ public class LowerOrderGenerator {
         lines = new FloatTempPass(config.deferredOperands && config.floatTemporariesInRegisters).run(lines);
         // libm sqrt/sqrtf on xmm operands: one sqrtsd/sqrtss instead of a call with spills (needs the float registers).
         lines = new FloatIntrinsicPass().run(lines);
+        // Read-only float statics in spare xmm registers (%z0..%z3 = xmm0-3, unused %x) for call-free loops (needs float variables).
+        lines = new StaticFloatCachePass(config.deferredOperands && config.variablesInRegisters && config.floatVariablesInRegisters).run(lines);
         // A comparison that only feeds a jump compares and jumps (always on; a no-op without register-form lines).
         lines = new BranchFusionPass().run(lines);
         // Jump chains left by `if c { break }` and similar: dead jumps, jumps to the next label, conditional jump over a jump.
         lines = new JumpCleanupPass().run(lines);
         // A global array element addressed by a variable register: one lea fewer (R_LEA + R_LD/R_ST -> R_LDI/R_STI).
         lines = new IndexedAccessPass().run(lines);
+        // A global array element at a constant index: one RIP-relative load/store (R_LEA &sym #k + R_LD/R_ST/R_LDX/R_STX -> `&sym+N` operand).
+        lines = new GlobalConstAddrPass().run(lines);
         // The safe dynarray length load folds into the bounds compare (R_BRCM; last, only the backend reads it).
         lines = new LengthCompareFusionPass(config.deferredOperands && config.fuseLengthCompare).run(lines);
         // A field access through a pointer in a register is one instruction with a displacement (R_LEA #k + R_LD/R_ST -> R_LDD/R_STD; last, only the backend reads it).
         lines = new FieldDisplacementPass().run(lines);
+        // A value computed into a temporary and copied into a variable register on the next line is computed there instead; dead initialisations of variable registers go (always on, last).
+        lines = new DestForwardingPass().run(lines);
         return lines;
     }
 }

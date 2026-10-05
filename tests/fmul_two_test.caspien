@@ -1,0 +1,64 @@
+// x * 2.0 and 2.0 * x are emitted as x + x (exact in IEEE-754). Covers f64 and f32, both operand orders, destination = operand and a different
+// destination, operands in float variables (registers) and in frame slots/statics, negative values and tiny/huge-but-finite magnitudes.
+// Output compared with fmul_two_test.py by fmul_two_check.sh (which also checks that no `mulsd`/`mulss` by the constant 2.0 is left).
+import "../stdlib/libc.caspien"
+
+let static:<mut f64> gd = mut 0.3
+let static:<mut f32> gf = mut 0.3
+
+func main() void{
+	unsafe assume extern global{
+		let:<mut f64> a = mut 1.25
+		let:<mut f64> b = mut -3.5
+		let:<mut f64> c = mut 0.0
+		let:<mut f32> x = mut 1.25
+		let:<mut f32> y = mut -3.5
+		let:<mut f32> z = mut 0.0
+		let:<mut f64> acc = mut 0.0
+		let:<mut f32> accf = mut 0.0
+		for i in 0..100{
+			assume match a : finite
+			assume match 2.0 * a : finite
+			c = 2.0 * a
+			assume match b : finite
+			assume match b * 2.0 : finite
+			a = b * 2.0
+			assume match c : finite
+			assume match c * 2.0 : finite
+			assume match c * 2.0 * 0.375 : finite
+			assume match c * 2.0 * 0.375 - 1.0 : finite
+			b = c * 2.0 * 0.375 - 1.0
+			assume match gd : finite
+			assume match gd * 2.0 : finite
+			assume match acc : finite
+			assume match gd * 2.0 + acc : finite
+			acc = gd * 2.0 + acc
+			assume match b : finite
+			assume match b * 0.5 : finite
+			assume match b * 0.5 + 0.1 : finite
+			gd = b * 0.5 + 0.1
+			assume match x : finite
+			assume match 2.0 * x : finite
+			z = 2.0 * x
+			assume match y : finite
+			assume match y * 2.0 : finite
+			x = y * 2.0
+			assume match z : finite
+			assume match z * 2.0 : finite
+			assume match z * 2.0 * 0.375 : finite
+			assume match z * 2.0 * 0.375 - 1.0 : finite
+			y = z * 2.0 * 0.375 - 1.0
+			assume match gf : finite
+			assume match gf * 2.0 : finite
+			assume match accf : finite
+			assume match gf * 2.0 + accf : finite
+			accf = gf * 2.0 + accf
+			assume match y : finite
+			assume match y * 0.5 : finite
+			assume match y * 0.5 + 0.1 : finite
+			gf = y * 0.5 + 0.1
+		}
+		printf("F64=%.17e %.17e %.17e %.17e %.17e\n", a, b, c, acc, gd)
+		printf("F32=%.9e %.9e %.9e %.9e %.9e\n", x, y, z, accf, gf)
+	}
+}

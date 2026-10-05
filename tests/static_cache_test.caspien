@@ -1,0 +1,235 @@
+// StaticFloatCachePass: read-only float statics are loaded once before a call-free loop into spare xmm registers. Cases: f64 and f32 statics
+// read several times, more cached statics than registers (8), a static that the loop writes (must not be cached), a static changed by a
+// called function (the loop has a call: must see the new value), nested loops, a libm sqrt loop (the intrinsic keeps it call-free),
+// two loops after one another reusing the registers, and an early return out of a cached loop.
+// Output compared with static_cache_test.py by static_cache_check.sh (which also checks in the everything-on build that the pass fired).
+import "../stdlib/libc.caspien"
+
+extern sqrt(mut f64) mut f64
+
+let static:<mut f64> ka = mut 1.5
+let static:<mut f64> kb = mut 0.25
+let static:<mut f64> kc = mut -0.75
+let static:<mut f32> fa = mut 1.5
+let static:<mut f32> fb = mut 0.25
+let static:<mut f64> m0 = mut 0.5
+let static:<mut f64> m1 = mut 0.25
+let static:<mut f64> m2 = mut 0.125
+let static:<mut f64> m3 = mut 0.75
+let static:<mut f64> m4 = mut 0.375
+let static:<mut f64> m5 = mut 0.625
+let static:<mut f64> m6 = mut 0.875
+let static:<mut f64> m7 = mut 0.0625
+let static:<mut f64> wr = mut 0.0
+let static:<mut u64> cnt = mut 0
+
+func bump() void{
+	unsafe assume global{
+		assume match ka : finite
+		assume match ka + 1.0 : finite
+		ka = ka + 1.0
+	}
+	return
+}
+
+func early(n: mut u64) mut f64{
+	unsafe assume global{
+		let:<mut f64> s = mut 0.0
+		for i in 0..n{
+			assume match s : finite
+			assume match kb : finite
+			assume match kc : finite
+			assume match kb * kc : finite
+			assume match s + kb * kc : finite
+			s = s + kb * kc
+			if i == 3{
+				assume match s : finite
+				assume match s * kb : finite
+				return s * kb
+			}
+		}
+		return s
+	}
+}
+
+func main() void{
+	unsafe assume extern global{
+		cnt = mut 1
+		let n5 = mut (cnt * 5)
+		let n6 = mut (cnt * 6)
+		let n7 = mut (cnt * 7)
+		let n10 = mut (cnt * 10)
+		let n20 = mut (cnt * 20)
+		let n25 = mut (cnt * 25)
+		let n30 = mut (cnt * 30)
+		let n40 = mut (cnt * 40)
+		let:<mut f64> s = mut 0.0
+		for i in 0..n40{
+			assume match s : finite
+			assume match s * 0.5 : finite
+			assume match ka : finite
+			assume match kb : finite
+			assume match ka * kb : finite
+			assume match s * 0.5 + ka * kb : finite
+			assume match kc : finite
+			assume match ka * kc : finite
+			assume match s * 0.5 + ka * kb + ka * kc : finite
+			s = s * 0.5 + ka * kb + ka * kc
+		}
+		printf("A=%.17e\n", s)
+
+		let:<mut f32> t = mut 0.0
+		for i in 0..n40{
+			assume match t : finite
+			assume match t * 0.5 : finite
+			assume match fa : finite
+			assume match fb : finite
+			assume match fa * fb : finite
+			assume match t * 0.5 + fa * fb : finite
+			assume match fa * fa : finite
+			assume match t * 0.5 + fa * fb + fa * fa : finite
+			t = t * 0.5 + fa * fb + fa * fa
+		}
+		printf("B=%.9e\n", t)
+
+		let:<mut f64> u = mut 0.0
+		for i in 0..n30{
+			assume match m0 : finite
+			assume match m1 : finite
+			assume match m2 : finite
+			assume match m3 : finite
+			assume match m4 : finite
+			assume match m5 : finite
+			assume match m6 : finite
+			assume match m7 : finite
+			assume match m0 * m1 : finite
+			assume match m2 * m3 : finite
+			assume match m4 * m5 : finite
+			assume match m6 * m7 : finite
+			assume match m0 * m7 : finite
+			assume match m1 * m6 : finite
+			assume match m2 * m5 : finite
+			assume match m3 * m4 : finite
+			assume match m0 * m1 + m2 * m3 : finite
+			assume match m4 * m5 + m6 * m7 : finite
+			assume match m0 * m7 + m1 * m6 : finite
+			assume match m2 * m5 + m3 * m4 : finite
+			assume match u : finite
+			assume match u * 0.5 : finite
+			let g1 = mut (m0 * m1 + m2 * m3)
+			assume match g1 : finite
+			assume match u * 0.5 + g1 : finite
+			u = u * 0.5 + g1
+			let g2 = mut (m4 * m5 + m6 * m7)
+			assume match g2 : finite
+			assume match u : finite
+			assume match u + g2 : finite
+			u = u + g2
+			let g3 = mut (m0 * m7 + m1 * m6)
+			assume match g3 : finite
+			assume match u : finite
+			assume match u + g3 : finite
+			u = u + g3
+			let g4 = mut (m2 * m5 + m3 * m4)
+			assume match g4 : finite
+			assume match u : finite
+			assume match u + g4 : finite
+			u = u + g4
+		}
+		printf("C=%.17e\n", u)
+
+		let:<mut f64> v = mut 0.0
+		for i in 0..n25{
+			assume match wr : finite
+			assume match ka : finite
+			assume match wr + ka : finite
+			wr = wr + ka
+			assume match wr : finite
+			assume match wr * ka : finite
+			assume match v : finite
+			assume match v + wr * ka : finite
+			assume match kb : finite
+			assume match wr * kb : finite
+			assume match v + wr * ka + wr * kb : finite
+			v = v + wr * ka + wr * kb
+		}
+		printf("D=%.17e %.17e\n", v, wr)
+
+		let:<mut f64> w = mut 0.0
+		for i in 0..n6{
+			bump()
+			assume match w : finite
+			assume match ka : finite
+			assume match kb : finite
+			assume match ka * kb : finite
+			assume match w + ka * kb : finite
+			assume match kc : finite
+			assume match ka * kc : finite
+			assume match w + ka * kb + ka * kc : finite
+			w = w + ka * kb + ka * kc
+		}
+		printf("E=%.17e %.17e\n", w, ka)
+
+		let:<mut f64> x = mut 0.0
+		for i in 0..n5{
+			for j in 0..n7{
+				assume match x : finite
+				assume match kb : finite
+				assume match kc : finite
+				assume match kb * kc : finite
+				assume match x + kb * kc : finite
+				assume match kb * kb : finite
+				assume match x + kb * kc + kb * kb : finite
+				x = x + kb * kc + kb * kb
+			}
+			assume match x : finite
+			assume match x * 0.5 : finite
+			assume match kc : finite
+			assume match kc * kc : finite
+			assume match x * 0.5 + kc * kc : finite
+			x = x * 0.5 + kc * kc
+		}
+		printf("F=%.17e\n", x)
+
+		let:<mut f64> y = mut 0.0
+		for i in 0..n20{
+			assume match kb : finite
+			assume match kc : finite
+			assume match kb * kb : finite
+			assume match kc * kc : finite
+			assume match kb * kb + kc * kc : finite
+			assume match y : finite
+			let r = mut sqrt(kb * kb + kc * kc)
+			assume match r : finite
+			assume match y + r : finite
+			assume match y + r + kb : finite
+			y = y + r + kb
+		}
+		printf("G=%.17e\n", y)
+
+		let:<mut f64> p = mut 0.0
+		for i in 0..n10{
+			assume match p : finite
+			assume match kb : finite
+			assume match kc : finite
+			assume match p + kb : finite
+			assume match p + kb + kc : finite
+			p = p + kb + kc
+		}
+		for i in 0..n10{
+			assume match p : finite
+			assume match m0 : finite
+			assume match m1 : finite
+			assume match p * m0 : finite
+			assume match p * m0 + m1 : finite
+			assume match m1 * m1 : finite
+			assume match p * m0 + m1 + m1 * m1 : finite
+			p = p * m0 + m1 + m1 * m1
+		}
+		printf("H=%.17e\n", p)
+
+		let e1 = early(10)
+		let e2 = early(2)
+		printf("I=%.17e %.17e\n", e1, e2)
+	}
+}

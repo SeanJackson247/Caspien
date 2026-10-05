@@ -1,0 +1,94 @@
+// GlobalConstAddrPass: a global array element at a constant index becomes one RIP-relative access (`mov W+72(%rip), %reg`). Covers u8/u16/u32/u64 and
+// f32/f64 global arrays: constant-index reads, writes (also of constants and of computed values), reads of just-written elements, the first and last element,
+// a mix with variable-index accesses of the same array, and elements read at runtime-dependent loop counts (so the optimiser cannot fold them away).
+// Output compared with global_const_addr_test.py by global_const_addr_check.sh (which also requires `sym+N(%rip)` operands in the assembly).
+import "../stdlib/libc.caspien"
+
+let static:<mut u8[8]> a8 = mut [3, 250, 17, 99, 128, 1, 0, 77]
+let static:<mut u16[8]> a16 = mut [65000, 2, 300, 4000, 5, 60000, 7, 8]
+let static:<mut u32[8]> a32 = mut [4000000000, 5, 3000000000, 1, 99, 123456789, 42, 7]
+let static:<mut u64[8]> a64 = mut [10000000000, 2, 30000000000, 4, 5, 6, 7, 800000000000]
+let static:<mut f64[6]> f64s = mut [1.5, 2.25, -3.0, 0.125, 8.0, -0.5]
+let static:<mut f32[6]> f32s = mut [1.5, 2.25, -3.0, 0.125, 8.0, -0.5]
+let static:<mut u64> cnt = mut 0
+
+func main() void{
+	unsafe assume global{
+		cnt = mut 1
+		let rounds = mut (cnt * 25)
+		let s8 = mut 0
+		let s16 = mut 0
+		let s32 = mut 0
+		let s64 = mut 0
+		for r in 0..rounds{
+			s8 = s8 + (a8[0] as u64) + (a8[1] as u64) * 2 + (a8[7] as u64)
+			s16 = s16 + (a16[0] as u64) + (a16[5] as u64) + (a16[7] as u64)
+			s32 = s32 + (a32[0] as u64) + (a32[2] as u64) + (a32[7] as u64)
+			s64 = s64 + a64[0] + a64[7] + a64[3]
+			a8[2] = wrap:<u8>(r * 3 + 1)
+			a8[3] = a8[2]
+			a16[1] = wrap:<u16>(r * 700 + 5)
+			a16[2] = a16[1]
+			a32[1] = wrap:<u32>(r * 100000007 + 9)
+			a32[3] = a32[1]
+			a64[1] = r * 1000003 + 11
+			a64[4] = a64[1]
+			a8[4] = 200
+			a16[4] = 40000
+			a32[4] = 3999999999
+			a64[5] = 123456789012
+			s8 = s8 + (a8[2] as u64) + (a8[3] as u64) + (a8[4] as u64)
+			s16 = s16 + (a16[1] as u64) + (a16[2] as u64) + (a16[4] as u64)
+			s32 = s32 + (a32[1] as u64) + (a32[3] as u64) + (a32[4] as u64)
+			s64 = s64 + a64[1] + a64[4] + a64[5]
+		}
+		let k = mut 3
+		let sv = mut 0
+		for i in 0..rounds{
+			match k in a8{
+				match k into a64{
+					sv = sv + (a8[k] as u64) + (a8[6] as u64) + a64[k] + a64[2]
+					a64[k] = a64[k] + 1
+				}
+			}
+			a8[6] = a8[6] + 1
+		}
+		let:<mut f64> fa = mut 0.0
+		let:<mut f32> fb = mut 0.0
+		for r in 0..rounds{
+			assume match fa : finite
+			assume match f64s[0] : finite
+			assume match f64s[3] : finite
+			assume match f64s[0] * f64s[3] : finite
+			assume match fa + f64s[0] * f64s[3] : finite
+			fa = fa + f64s[0] * f64s[3]
+			assume match fa : finite
+			assume match fa * 0.001 : finite
+			f64s[1] = fa * 0.001
+			f64s[2] = f64s[1]
+			assume match f64s[2] : finite
+			assume match f64s[4] : finite
+			assume match f64s[2] * f64s[4] : finite
+			assume match fa + f64s[2] * f64s[4] : finite
+			fa = fa + f64s[2] * f64s[4]
+			assume match fb : finite
+			assume match f32s[0] : finite
+			assume match f32s[3] : finite
+			assume match f32s[0] * f32s[3] : finite
+			assume match fb + f32s[0] * f32s[3] : finite
+			fb = fb + f32s[0] * f32s[3]
+			assume match fb : finite
+			assume match fb * 0.001 : finite
+			f32s[1] = fb * 0.001
+			f32s[2] = f32s[1]
+			assume match f32s[2] : finite
+			assume match f32s[4] : finite
+			assume match f32s[2] * f32s[4] : finite
+			assume match fb + f32s[2] * f32s[4] : finite
+			fb = fb + f32s[2] * f32s[4]
+		}
+		unsafe extern global{ printf("K %.17e %.17e %.17e %.9e %.9e %.9e\n", fa, f64s[1], f64s[2], fb, f32s[1], f32s[2]) }
+		unsafe extern{ printf("I %llu %llu %llu %llu %llu\n", s8, s16, s32, s64, sv) }
+		unsafe extern global{ printf("J %llu %llu %llu %llu %llu %llu\n", a8[2] as u64, a16[2] as u64, a32[3] as u64, a8[6] as u64, a64[3], a64[4]) }
+	}
+}

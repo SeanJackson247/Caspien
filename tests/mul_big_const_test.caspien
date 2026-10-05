@@ -1,0 +1,41 @@
+// Multiplication by a constant above 2^31 of the form 2^n + 1 / 2^n - 1 (Codegen's rfMulByBigConst: mov, shl, add|sub instead of movabs + imul), a
+// constant on the left of a product (swapped by rfBin), and the destination being the operand (x = x * K). u64 wrapping products. Expected
+// output: mul_big_const_test.py (independent Python model); mul_big_const_check.sh compares it in three configs.
+import "../stdlib/libc.caspien"
+
+@dont(inline)
+func run() void{
+	let a = mut 0
+	let b = mut 0
+	let c = mut 0
+	let d = mut 0
+	let e = mut 0
+	let f = mut 0
+	let g = mut 0
+	for i in 0..300{
+		let x = mut (i * 1099511628211 + 14695981039346656037)
+		let y = mut (i * 6364136223846793005 + 1442695040888963407)
+		a = a + x * 4294967297
+		b = b + x * 4294967295
+		c = c + x * 1099511627777
+		d = d + x * 1099511627775
+		e = e + x * 4611686018427387905
+		f = f + x * 9223372036854775807
+		g = g + x * 2147483649
+		let z = mut y
+		z = z * 4294967297
+		a = a + z
+		z = y
+		z = 4294967295 * z
+		b = b + z
+		let w = mut (3 * x)
+		c = c + w + 2 * y
+		w = 4294967297 * x
+		d = d + w
+	}
+	unsafe extern{ printf("%llu %llu %llu %llu %llu %llu %llu\n", a, b, c, d, e, f, g) }
+}
+
+func main() void{
+	run()
+}

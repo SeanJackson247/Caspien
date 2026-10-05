@@ -77,8 +77,8 @@ public class RegVarPromotionPass {
      * variables want registers than the callee-saved ones provide.
      */
     public static final int VOL_FIRST = 3;
-    public static final int VOL_COUNT = 5;
-    /** how many of the VOL_COUNT registers are the always-available r8-r10 (the first three); the last two (%v6, %v7 = rsi, rdi, SysV argument registers 1 and 0) need the argRegs switch */
+    public static final int VOL_COUNT = 7;
+    /** how many of the VOL_COUNT registers are the always-available r8-r10 (the first three); the rest (%v6, %v7 = rsi, rdi, SysV argument registers 1 and 0; %v8, %v9 = rdx, rcx, SysV argument registers 2 and 3, SysV only) need the argRegs switch */
     static final int VOL_BASE = 3;
 
     static final Set<String> VOL_SAFE = new HashSet<>(Arrays.asList(
@@ -134,6 +134,10 @@ public class RegVarPromotionPass {
         boolean volOk;
         /** may live in rsi/rdi: volOk, and never mentioned inside a call's argument bracket (CC_START .. CC_END), where those registers are being filled */
         boolean argSafe;
+        /** may live in rdx: never live at or across a constant divide (R_DIVC clobbers rdx) */
+        boolean rdxOk;
+        /** may live in rcx: never live at or across a variable-count shift (the shift saves and uses rcx as the count) */
+        boolean rcxOk;
     }
 
     public List<List<BytecodeToken>> run(List<List<BytecodeToken>> lines) {
@@ -575,7 +579,11 @@ public class RegVarPromotionPass {
             }
         }
         // which candidates may use the caller-saved registers
-        boolean[] volRegOk = {true, true, true, argRegs, argRegs};   // r8, r9, r10, rsi, rdi
+        boolean sysv = true;
+        for (List<BytecodeToken> l : fn) {
+            if (!l.isEmpty() && l.get(0).text.equals("CC_START") && l.size() > 1 && !l.get(1).text.equals("sysv_x64")) sysv = false;
+        }
+        boolean[] volRegOk = {true, true, true, argRegs, argRegs, argRegs && sysv, argRegs && sysv};   // r8, r9, r10, rsi, rdi, rdx, rcx
         for (List<BytecodeToken> l : fn) {
             if (l.isEmpty()) continue;
             String m = l.get(0).text;
@@ -619,6 +627,30 @@ public class RegVarPromotionPass {
             }
         }
         for (int v = 0; v < nh; v++) all.get(v).argSafe = argSafe[v];
+        // rdx / rcx: kept out of variables live at the lines whose backend code uses them (constant divide: rdx; variable-count shift: rcx)
+        boolean[] rdxOk = new boolean[nh];
+        boolean[] rcxOk = new boolean[nh];
+        java.util.Arrays.fill(rdxOk, true);
+        java.util.Arrays.fill(rcxOk, true);
+        for (int i = 0; i < n; i++) {
+            List<BytecodeToken> l = fn.get(i);
+            if (l.isEmpty()) continue;
+            String m = l.get(0).text;
+            boolean usesRdx = m.equals("R_DIVC");
+            boolean usesRcx = m.equals("R_BIN") && l.size() > 5 && (l.get(1).text.equals("SHL") || l.get(1).text.equals("SHR") || l.get(1).text.equals("SAR"))
+                    && !l.get(5).text.startsWith("#");
+            if (!usesRdx && !usesRcx) continue;
+            for (int v = 0; v < nh; v++) {
+                if (in[i].get(v) || out[i].get(v) || def[i].get(v)) {
+                    if (usesRdx) rdxOk[v] = false;
+                    if (usesRcx) rcxOk[v] = false;
+                }
+            }
+        }
+        for (int v = 0; v < nh; v++) {
+            all.get(v).rdxOk = rdxOk[v];
+            all.get(v).rcxOk = rcxOk[v];
+        }
         // colour, heaviest first, per register file
         colourInt(all, intCands, adj, idOf, intLimit, volRegOk);
         colour(all, xCands, adj, idOf, XVAR_COUNT, true);
@@ -636,7 +668,7 @@ public class RegVarPromotionPass {
             }
             List<Integer> order = new ArrayList<>();
             if (h.volOk) {
-                for (int r = 0; r < VOL_COUNT; r++) if (volRegOk[r] && (r < VOL_BASE || h.argSafe)) order.add(VOL_FIRST + r);
+                for (int r = 0; r < VOL_COUNT; r++) if (volRegOk[r] && (r < VOL_BASE || h.argSafe) && !(r == 5 && !h.rdxOk) && !(r == 6 && !h.rcxOk)) order.add(VOL_FIRST + r);
             }
             for (int r = 0; r < intLimit; r++) order.add(r);
             for (int r : order) {
