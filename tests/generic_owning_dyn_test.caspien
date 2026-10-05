@@ -1,0 +1,79 @@
+// A dynarray whose element is a GENERIC struct with an `owns` member (its monomorphised name has an underscore: Slot_u64): growing resize
+// (null fill slots cloned), clone of the whole array, shrinking resize (cut-off elements dropped) and scope-end drop. Prints one line per
+// step; expected values are in generic_owning_dyn_test.py. Run through generic_owning_dyn_check.sh (valgrind: no leak, no error).
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+
+struct Box<T>{@pub{ v: mut T }}
+struct Slot<T>{@pub{ n: owns mut Box<T> }}
+
+func live() mut u64{
+	let n = mut 0
+	unsafe assume{
+		assume match ghost_table.lockState : OPEN
+		n = mut ghost_table.len
+	}
+	return n
+}
+
+func part() void{
+	?catch(e){ return }
+	let base = mut live()
+	let d = mut ? dyn([Slot:<u64>{n= null}])
+	d = ? resize(d, 10, Slot:<u64>{n= null})
+	for i in 0..10{
+		let b = mut ? new Box:<u64>{v= i * i}
+		match i into d{
+			d[i].n = b
+		}
+	}
+	let s_a = mut 0
+	for i in 0..10{
+		match i in d{
+			match Some(d[i].n){
+				s_a += d[i].n.v
+			}
+		}
+	}
+	unsafe extern{ printf("filled %llu %llu\n", s_a, live() - base) }
+	d = ? resize(d, 40, Slot:<u64>{n= null})
+	let s_b = mut 0
+	for i in 0..40{
+		match i in d{
+			match Some(d[i].n){
+				s_b += d[i].n.v
+			}
+		}
+	}
+	unsafe extern{ printf("grown %llu %llu\n", s_b, live() - base) }
+	let c = mut ? clone(d)
+	let s_c = mut 0
+	for i in 0..40{
+		match i in c{
+			match Some(c[i].n){
+				s_c += c[i].n.v
+			}
+		}
+	}
+	unsafe extern{ printf("cloned %llu %llu\n", s_c, live() - base) }
+	d = ? resize(d, 5, Slot:<u64>{n= null})
+	let s_d = mut 0
+	for i in 0..5{
+		match i in d{
+			match Some(d[i].n){
+				s_d += d[i].n.v
+			}
+		}
+	}
+	unsafe extern{ printf("shrunk %llu %llu\n", s_d, live() - base) }
+}
+
+func main() void{
+	let base = mut live()
+	part()
+	unsafe extern{ printf("leak %llu\n", live() - base) }
+}

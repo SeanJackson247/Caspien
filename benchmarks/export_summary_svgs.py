@@ -12,6 +12,8 @@ import export_svgs as E
 G = E.G
 DATA, PROGS, find, c_ref, known = E.DATA, E.PROGS, E.find, E.c_ref, G["known"]
 safe_row, SAFE_LANGS, OVERVIEW_ROWS, CAS_VARIANTS = G["safe_row"], G["SAFE_LANGS"], E.OVERVIEW_ROWS, E.CAS_VARIANTS
+REF_ROWS = [("Caspien ref naive", "Caspien ref naive"), ("Caspien ref safe", "Caspien ref safe"), ("Caspien ref unsafe", "Caspien ref unsafe"),
+            ("Caspien naive, ref HashMap", "Caspien naive, ref in stdlib")]
 METRICS = [("time_s", "Execution time"), ("rss_kb", "Peak memory"), ("compile_s", "Compile time"), ("size_bytes", "Executable size")]
 
 
@@ -30,6 +32,10 @@ def rows_for(metric, safe, refget):
         for mode in ("off", "full"):
             cands.append(("%s, %s" % (lab, "everything on" if mode == "full" else "optimisations off"), "caspien", mode,
                           lambda R, naive, opts, pick=pick, mode=mode: (lambda p: find(R, p, mode) if p else None)(pick(naive, opts))))
+    # the `ref` variants exist on a few programs only (graph, binarytrees, lru; the ref-in-stdlib one on lru and knucleotide): quick runs measure just "full"
+    for lab, prefix in REF_ROWS:
+        if safe and "unsafe" in lab: continue
+        cands.append((lab, "caspien", "full", lambda R, naive, opts, prefix=prefix: find(R, prefix, "full")))
     out = []
     for lab, key, mode, getr in cands:
         ratios, low = [], False
@@ -39,7 +45,8 @@ def rows_for(metric, safe, refget):
             if not (r and ref and known(r, metric) and known(ref, metric) and r[metric] > 0 and ref[metric] > 0): continue
             ratios.append(r[metric] / ref[metric])
             low = low or bool(r.get("cutoff") and metric == "time_s")
-        if len(ratios) >= 3:
+        if len(ratios) >= (2 if lab in dict(REF_ROWS) else 3):
+            if lab in dict(REF_ROWS): lab = "%s [%d programs]" % (lab, len(ratios))
             out.append((lab, key, mode, math.exp(sum(map(math.log, ratios)) / len(ratios)), len(ratios), low))
     return sorted(out, key=lambda r: r[3])
 

@@ -7025,6 +7025,8 @@ public class TypeChecker {
      * element type before being treated as an edge, the same as any
      * other member. Standard DFS cycle detection, mirroring
      * `checkNoRecursion`'s own `detectIndirectCycle` shape exactly.
+     * Exception (owner's request, 5 Oct): a plain nullable `ref` member is not an edge, so a struct may hold `ref` links to
+     * its own type (lists, trees, graphs); `ref some`, `owns`, `raw`, `auto`, plain and `static` members still are.
      */
     private void validateNoRecursiveStructs() {
         Set<String> visited = new HashSet<>();
@@ -7041,6 +7043,10 @@ public class TypeChecker {
         onStack.add(structName);
         StructInfo info = structs.get(structName);
         for (Map.Entry<String, TypeInfo> member : info.members.entrySet()) {
+            TypeInfo memberType = member.getValue();
+            if ("ref".equals(memberType.storage) && !memberType.isSome) {
+                continue; // a plain (nullable) `ref` member may point back at its own struct: a borrow never owns, drops or clones what it points at
+            }
             String memberBaseType = member.getValue().baseType;
             String referencedStruct = isArrayType(memberBaseType) ? arrayElementType(memberBaseType) : memberBaseType;
             if (!structs.containsKey(referencedStruct)) {
@@ -8262,6 +8268,17 @@ public class TypeChecker {
             }
             StructInfo si = structs.get(leftType.baseType);
             return si == null ? null : si.members.get(node.right.text);
+        }
+        if (node.type == TokenType.OPERATOR && node.text.equals("LOOKUP") && node.left != null) {
+            // "x[i]": the element type of a safe dynarray or fixed array, so `ref x[i].member` can see an `owns` member of an element
+            TypeInfo arrType = lookupDeclaredTypeStructurally(node.left, scope);
+            if (arrType == null) {
+                return null;
+            }
+            if (arrType.dynArrayElementType != null) {
+                return arrType.dynArrayElementType;
+            }
+            return arrType.arrayElementType;
         }
         return null;
     }
@@ -18776,9 +18793,7 @@ public class TypeChecker {
             // fresh literal, 'raw'/'auto'/'static' sources -- has no such
             // backing and is still rejected, for the same reason it
             // always was.
-            String operandSlotKey = slotKeyOf(op.left);
-            TypeInfo operandDeclaredType = (operandSlotKey != null)
-                    ? lookupDeclaredTypeStructurally(op.left, scope) : null;
+            TypeInfo operandDeclaredType = lookupDeclaredTypeStructurally(op.left, scope);
             if (operandDeclaredType == null || !"owns".equals(operandDeclaredType.storage)) {
                 throw new CompilerException("type", op.file, op.line,
                         "'ref' can only be constructed from an existing 'owns'-typed value -- this "

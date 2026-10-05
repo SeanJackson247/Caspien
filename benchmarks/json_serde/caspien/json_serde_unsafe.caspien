@@ -1,5 +1,5 @@
 // JSON serialise + parse benchmark (JSON_SERDE_N records), UNSAFE variant: unsafe dynarrays (u8 buffers and one dynarray of Rec structs), no bounds checks.
-// Same hand-written serialiser, index-based iterative parser (no recursion: a recursive struct is rejected on purpose) and checksum as json_serde.c.
+// Same hand-written serialiser, index-based iterative parser (no recursion, no tree of nodes: the data is flat) and checksum as json_serde.c.
 // Records are Rec structs (one dynarray of Rec; names and tags live in u8 pools). Prints: records textlen checksum.
 import "../../../stdlib/libc.caspien"
 import "../../../stdlib/gt_init.caspien"

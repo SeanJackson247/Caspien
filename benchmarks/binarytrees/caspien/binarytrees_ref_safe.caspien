@@ -1,0 +1,360 @@
+// Binary trees (BINARYTREES_N = max depth), REF SAFE variant: the node pool and both work stacks are safe dynarrays, every access under a bounds proof (match i in/into).
+// Prints one line: stretch-tree check, then for d = 4,6,..,N the summed check of 2^(N-d+4) trees of depth d, then the long-lived tree check
+// (check = number of nodes reached by walking the tree), exactly as binarytrees.c and the index-based variants.
+//
+// REF VARIANT: every node is its own heap object (`new Node`, registered in the ghost table) whose `l`/`r` are plain `ref` members of the
+// same struct (a self-referential struct: allowed for `ref`, never for `ref some`/`owns`/`raw`/`auto`). Ownership lives in a pool of
+// Holder{n: owns} slots; a tree is built node by node (children linked with `ref pool[i].n`), walked through the refs with an explicit
+// stack of refs (each deref under a `match Some` alive proof, no recursion), and freed by dropping its pool slots (`pool[i].n = null`).
+// The pool is filled by a bump index that is reset after each tree is freed (the long-lived tree keeps its slots).
+import "../../../stdlib/libc.caspien"
+import "../../../stdlib/gt_init.caspien"
+import "../../../stdlib/gt_register.caspien"
+import "../../../stdlib/gt_alive_check.caspien"
+import "../../../stdlib/gt_destruct.caspien"
+import "../../../stdlib/gt_moved.caspien"
+
+extern getenv(static imut string) static imut string
+extern atol(static imut string) mut u64
+
+struct Node{@pub{
+	l: ref mut Node
+	r: ref mut Node
+}}
+struct Holder{@pub{ n: owns mut Node }}
+struct QRef{@pub{ n: ref mut Node }}
+
+func main() void{
+	?catch(e){ return }
+	unsafe extern loop{
+		let maxd = mut 0
+		maxd = atol(getenv("BINARYTREES_N"))
+		if maxd < 6{
+			maxd = 6
+		}
+		let cap = mut 1
+		let lim = mut (maxd + 2)
+		for i in 0..lim{
+			cap = cap * 2
+		}
+		cap += 2
+		let pool = mut ? dyn([Holder{n= null}])
+		pool = ? resize(pool, cap, Holder{n= null})
+		let stack = mut ? dyn:<u64>([])
+		let:<mut u64> zero = mut 0
+		stack = ? resize(stack, 128, zero)
+		let rstack = mut ? dyn([QRef{n= null}])
+		rstack = ? resize(rstack, 128, QRef{n= null})
+		let top = mut 0
+		let fbase = mut 0
+		let llbase = mut 0
+		let sp = mut 0
+		let e = mut 0
+		let id = mut 0
+		let dp = mut 0
+		let ca = mut 0
+		let cb = mut 0
+		let cnt = mut 0
+		let root = mut 0
+		let llroot = mut 0
+		let sum = mut 0
+		let d = mut 4
+		let iters = mut 0
+		let:<ref mut Node> cur = mut null
+		// stretch tree: build, check, free
+		let sd = mut (maxd + 1)
+		fbase = top
+		root = top
+		top += 1
+		let nn1 = mut ? new Node{l= null, r= null}
+		match root into pool{
+			pool[root].n = nn1
+		}
+		sp = 0
+		match sp into stack{
+			stack[sp] = root * 64 + sd
+		}
+		sp += 1
+		loop{
+			if sp == 0{
+				break
+			}
+			sp -= 1
+			match sp in stack{
+				e = stack[sp]
+			}
+			id = e / 64
+			dp = e % 64
+			if dp > 0{
+				ca = top
+				top += 1
+				let nn2 = mut ? new Node{l= null, r= null}
+				match ca into pool{
+					pool[ca].n = nn2
+				}
+				cb = top
+				top += 1
+				let nn3 = mut ? new Node{l= null, r= null}
+				match cb into pool{
+					pool[cb].n = nn3
+				}
+				match id in pool{
+					match ca in pool{
+						match cb in pool{
+							match Some(pool[id].n){
+								pool[id].n.l = ref pool[ca].n
+								pool[id].n.r = ref pool[cb].n
+							}
+						}
+					}
+				}
+				match sp into stack{
+					stack[sp] = ca * 64 + (dp - 1)
+				}
+				sp += 1
+				match sp into stack{
+					stack[sp] = cb * 64 + (dp - 1)
+				}
+				sp += 1
+			}
+		}
+		cnt = 0
+		sp = 0
+		match root in pool{
+			match sp into rstack{
+				rstack[sp].n = ref pool[root].n
+			}
+			sp += 1
+		}
+		loop{
+			if sp == 0{
+				break
+			}
+			sp -= 1
+			match sp in rstack{
+				cur = rstack[sp].n
+			}
+			match Some(cur){
+				cnt += 1
+				let nl = mut cur.l
+				let nr = mut cur.r
+				match sp into rstack{
+					rstack[sp].n = nl
+				}
+				sp += 1
+				match sp into rstack{
+					rstack[sp].n = nr
+				}
+				sp += 1
+			}
+		}
+		printf("%llu", cnt)
+		for i in fbase..top{
+			match i into pool{
+				pool[i].n = null
+			}
+		}
+		top = fbase
+		// long-lived tree: kept until the end
+		fbase = top
+		llroot = top
+		top += 1
+		let nn4 = mut ? new Node{l= null, r= null}
+		match llroot into pool{
+			pool[llroot].n = nn4
+		}
+		sp = 0
+		match sp into stack{
+			stack[sp] = llroot * 64 + maxd
+		}
+		sp += 1
+		loop{
+			if sp == 0{
+				break
+			}
+			sp -= 1
+			match sp in stack{
+				e = stack[sp]
+			}
+			id = e / 64
+			dp = e % 64
+			if dp > 0{
+				ca = top
+				top += 1
+				let nn5 = mut ? new Node{l= null, r= null}
+				match ca into pool{
+					pool[ca].n = nn5
+				}
+				cb = top
+				top += 1
+				let nn6 = mut ? new Node{l= null, r= null}
+				match cb into pool{
+					pool[cb].n = nn6
+				}
+				match id in pool{
+					match ca in pool{
+						match cb in pool{
+							match Some(pool[id].n){
+								pool[id].n.l = ref pool[ca].n
+								pool[id].n.r = ref pool[cb].n
+							}
+						}
+					}
+				}
+				match sp into stack{
+					stack[sp] = ca * 64 + (dp - 1)
+				}
+				sp += 1
+				match sp into stack{
+					stack[sp] = cb * 64 + (dp - 1)
+				}
+				sp += 1
+			}
+		}
+		llbase = fbase
+		loop{
+			if d > maxd{
+				break
+			}
+			iters = 1
+			let sh = mut ((maxd - d) + 4)
+			for k in 0..sh{
+				iters = iters * 2
+			}
+			sum = 0
+			for it in 0..iters{
+				fbase = top
+				root = top
+				top += 1
+				let nn7 = mut ? new Node{l= null, r= null}
+				match root into pool{
+					pool[root].n = nn7
+				}
+				sp = 0
+				match sp into stack{
+					stack[sp] = root * 64 + d
+				}
+				sp += 1
+				loop{
+					if sp == 0{
+						break
+					}
+					sp -= 1
+					match sp in stack{
+						e = stack[sp]
+					}
+					id = e / 64
+					dp = e % 64
+					if dp > 0{
+						ca = top
+						top += 1
+						let nn8 = mut ? new Node{l= null, r= null}
+						match ca into pool{
+							pool[ca].n = nn8
+						}
+						cb = top
+						top += 1
+						let nn9 = mut ? new Node{l= null, r= null}
+						match cb into pool{
+							pool[cb].n = nn9
+						}
+						match id in pool{
+							match ca in pool{
+								match cb in pool{
+									match Some(pool[id].n){
+										pool[id].n.l = ref pool[ca].n
+										pool[id].n.r = ref pool[cb].n
+									}
+								}
+							}
+						}
+						match sp into stack{
+							stack[sp] = ca * 64 + (dp - 1)
+						}
+						sp += 1
+						match sp into stack{
+							stack[sp] = cb * 64 + (dp - 1)
+						}
+						sp += 1
+					}
+				}
+				cnt = 0
+				sp = 0
+				match root in pool{
+					match sp into rstack{
+						rstack[sp].n = ref pool[root].n
+					}
+					sp += 1
+				}
+				loop{
+					if sp == 0{
+						break
+					}
+					sp -= 1
+					match sp in rstack{
+						cur = rstack[sp].n
+					}
+					match Some(cur){
+						cnt += 1
+						let nl = mut cur.l
+						let nr = mut cur.r
+						match sp into rstack{
+							rstack[sp].n = nl
+						}
+						sp += 1
+						match sp into rstack{
+							rstack[sp].n = nr
+						}
+						sp += 1
+					}
+				}
+				sum += cnt
+				for i in fbase..top{
+					match i into pool{
+						pool[i].n = null
+					}
+				}
+				top = fbase
+			}
+			printf(" %llu", sum)
+			d += 2
+		}
+		cnt = 0
+		sp = 0
+		match llroot in pool{
+			match sp into rstack{
+				rstack[sp].n = ref pool[llroot].n
+			}
+			sp += 1
+		}
+		loop{
+			if sp == 0{
+				break
+			}
+			sp -= 1
+			match sp in rstack{
+				cur = rstack[sp].n
+			}
+			match Some(cur){
+				cnt += 1
+				let nl = mut cur.l
+				let nr = mut cur.r
+				match sp into rstack{
+					rstack[sp].n = nl
+				}
+				sp += 1
+				match sp into rstack{
+					rstack[sp].n = nr
+				}
+				sp += 1
+			}
+		}
+		printf(" %llu\n", cnt)
+		for i in llbase..top{
+			match i into pool{
+				pool[i].n = null
+			}
+		}
+		top = llbase
+	}
+}

@@ -10,7 +10,7 @@ import "../../../stdlib/gt_moved.caspien"
 extern getenv(static imut string) static imut string
 extern atol(static imut string) mut u64
 
-// One node = value, BFS distance and four outgoing edges (indices of other nodes: a recursive struct is rejected, so no node pointers).
+// One node = value, BFS distance and four outgoing edges (indices of other nodes; graph_ref_* has real `ref` node links).
 struct Node{
 	@pub{ value: mut u64 }
 	@pub{ dist: mut u64 }

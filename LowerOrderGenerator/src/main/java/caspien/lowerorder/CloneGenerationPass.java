@@ -766,6 +766,20 @@ public class CloneGenerationPass implements OptimizationPass {
                 ctx.tempTypes.add(ownsType);
                 ctx.tempOfPath.put(path, temp);
                 emit(out, "PUSH " + path + " " + canonicalType);
+                // A null `owns` member (plain `owns` is nullable) has nothing to copy: its clone is null too, and that is NOT a failed
+                // allocation. The temp is zero at entry, so the null case just stores the null and carries on.
+                String nonNull = newLabel("clone_leaf_nonnull");
+                String leafDone = newLabel("clone_leaf_done");
+                emit(out, "DUP_TOP");
+                emit(out, "PUSH null " + ownsType);
+                emit(out, "EQ " + ownsType + " " + ownsType + " imut_bool");
+                emit(out, "CMP");
+                emit(out, "JMP " + nonNull);        // a JMP right after CMP is taken when the compare is FALSE (not null)
+                emit(out, "JMP " + nonNull + "_null");
+                emit(out, nonNull + "_null:");
+                emit(out, "POP " + temp + " " + ownsType);
+                emit(out, "JMP " + leafDone);
+                emit(out, nonNull + ":");
                 List<String> recurse = structTable.isOwnsBearing(t.baseType)
                         ? ownsBearingCloneInstructions(canonicalType) : null;
                 if (recurse != null) {
@@ -777,6 +791,7 @@ public class CloneGenerationPass implements OptimizationPass {
                     emit(out, "CLONE " + canonicalType + " " + ownsType);
                 }
                 emitCheckRegisterStore(out, ctx, ownsType, temp);
+                emit(out, leafDone + ":");
                 return;
             }
 

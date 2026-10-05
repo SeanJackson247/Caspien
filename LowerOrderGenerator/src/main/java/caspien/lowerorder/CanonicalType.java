@@ -31,6 +31,7 @@ import java.util.Set;
  */
 public class CanonicalType {
 
+    private static final Set<String> MUTABILITY_KEYWORDS = Set.of("mut", "imut", "indeterminate");
     private static final Set<String> STORAGE_KEYWORDS =
             new HashSet<>(Arrays.asList("owns", "ref", "raw", "auto", "static"));
 
@@ -99,11 +100,12 @@ public class CanonicalType {
         int secondUnderscore = rest.indexOf('_');
         String mutability;
         String baseType;
-        if (secondUnderscore > 0) {
+        if (secondUnderscore > 0 && MUTABILITY_KEYWORDS.contains(rest.substring(0, secondUnderscore))) {
             mutability = rest.substring(0, secondUnderscore);
             baseType = rest.substring(secondUnderscore + 1);
         } else {
-            // Doesn't match "mutability_basetype" at all -- fall back to
+            // Doesn't match "mutability_basetype" at all (also a bare generic struct name such as `Holder_u64`, which a dynarray's element-type text
+            // carries without storage or mutability) -- fall back to
             // treating the whole remainder as the base type rather than
             // guessing at a split that isn't there.
             mutability = null;

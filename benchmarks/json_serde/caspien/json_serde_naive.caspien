@@ -1,5 +1,5 @@
 // JSON serialise + parse benchmark (JSON_SERDE_N records), NAIVE variant: the stdlib DynamicArray<u8> for text/names/tags and ONE stdlib DynamicArray<Rec> for the parsed records (setPtr of a local Rec to store, get into a local to read), all under bounds proofs.
-// Same hand-written serialiser, index-based iterative parser (no recursion: a recursive struct is rejected on purpose) and checksum as json_serde.c.
+// Same hand-written serialiser, index-based iterative parser (no recursion, no tree of nodes: the data is flat) and checksum as json_serde.c.
 // Records are Rec structs in one DynamicArray<Rec> (copied through a Rec local; names and tags live in u8 pools). Prints: records textlen checksum.
 import "../../../stdlib/libc.caspien"
 import "../../../stdlib/dynamic_array.caspien"

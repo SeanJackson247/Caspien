@@ -157,7 +157,7 @@ def caspien_modes(S):
 
 def note_caspien(limits, S, prec, label, t):
     """Record the slowest optimised Caspien time per precision: the limit for everything measured afterwards."""
-    if S["cutoff"] and label.endswith("· full"):
+    if S["cutoff"] and label.endswith("· full") and " ref " not in label + " " and "ref in stdlib" not in label:   # the ref (alive-checked) variants are far slower and must not raise the cutoff
         limits[prec] = max(limits.get(prec, 0.0), t)
 
 

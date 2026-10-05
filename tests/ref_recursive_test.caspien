@@ -1,0 +1,305 @@
+// A struct may hold plain `ref` links to its own type (never `ref some`, `owns`, `raw`, `auto` or plain inline: those stay errors, see
+// ref_recursive_*_error_test). Nodes are owned by a dynarray of Holder{n: owns} and linked with `ref v[i].n`. Prints one line per shape;
+// the expected output is in ref_recursive_test.py (an independent Python model); ref_recursive_check.sh compares and runs valgrind.
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+
+struct Node{@pub{
+	value: mut u64
+	next: ref mut Node
+}}
+struct Tree{@pub{
+	value: mut u64
+	l: ref mut Tree
+	r: ref mut Tree
+}}
+struct Gnode{@pub{
+	value: mut u64
+	e0: ref mut Gnode
+	e1: ref mut Gnode
+	e2: ref mut Gnode
+}}
+struct Ping{@pub{
+	v: mut u64
+	peer: ref mut Pong
+}}
+struct Pong{@pub{
+	w: mut u64
+	peer: ref mut Ping
+}}
+struct Link<T>{@pub{
+	value: mut T
+	next: ref mut Link<T>
+}}
+struct NodeHolder{@pub{ n: owns mut Node }}
+struct TreeHolder{@pub{ n: owns mut Tree }}
+struct GHolder{@pub{ n: owns mut Gnode }}
+
+func live() mut u64{
+	let n = mut 0
+	unsafe assume{
+		assume match ghost_table.lockState : OPEN
+		n = mut ghost_table.len
+	}
+	return n
+}
+
+// ---- list ----
+func sumList(h: ref mut Node) mut u64{
+	let s = mut 0
+	let cur = mut h
+	for j in 0..1000{
+		match Some(cur){
+			s += cur.value
+			cur = cur.next
+		}
+		else{
+			break
+		}
+	}
+	return s
+}
+func countList(h: ref mut Node) mut u64{
+	let c = mut 0
+	let cur = mut h
+	for j in 0..1000{
+		match Some(cur){
+			c += 1
+			cur = cur.next
+		}
+		else{
+			break
+		}
+	}
+	return c
+}
+
+func listPart() void{
+	?catch(e){ return }
+	let base = mut live()
+	let v = mut ? dyn([NodeHolder{n= null}])
+	v = ? resize(v, 100, NodeHolder{n= null})
+	for i in 0..100{
+		let nn = mut ? new Node{value= i * 3 + 1, next= null}
+		if i > 0{
+			let k = mut (i - 1)
+			match k in v{
+				match Some(v[k].n){
+					v[k].n.next = ref nn
+				}
+			}
+		}
+		match i in v{
+			v[i].n = nn
+		}
+	}
+	let total = mut 0
+	let cnt = mut 0
+	match 0 in v{
+		total = sumList(ref v[0].n)
+		cnt = countList(ref v[0].n)
+	}
+	unsafe extern{ printf("list %llu %llu %llu\n", total, cnt, live() - base) }
+	// clone of the array: every node is cloned, the copy's links still point at the originals
+	let w = mut ? clone(v)
+	unsafe extern{ printf("clone %llu\n", live() - base) }
+}
+
+// ---- tree: node i has children 2i+1 and 2i+2 (heap order), 63 nodes ----
+func walk(root: ref mut Tree, code: mut u64, depth: mut u64) mut u64{
+	let cur = mut root
+	let sum = mut 0
+	for d in 0..depth{
+		match Some(cur){
+			sum += cur.value
+			let bit = mut (bits_and(bits_right(code, d), 1))
+			let nl = mut cur.l
+			let nr = mut cur.r
+			if bit == 0{
+				cur = nl
+			}
+			else{
+				cur = nr
+			}
+		}
+	}
+	match Some(cur){
+		sum += cur.value
+	}
+	return sum
+}
+
+func treePart() void{
+	?catch(e){ return }
+	let v = mut ? dyn([TreeHolder{n= null}])
+	v = ? resize(v, 63, TreeHolder{n= null})
+	// bottom-up: a node is linked to its children (already stored in v) before it is stored itself
+	for j in 0..63{
+		let i = mut (62 - j)
+		let nn = mut ? new Tree{value= i * 7 + 2, l= null, r= null}
+		if i < 31{
+			let a = mut (2 * i + 1)
+			let b = mut (2 * i + 2)
+			match a in v{
+				match b in v{
+					nn.l = ref v[a].n
+					nn.r = ref v[b].n
+				}
+			}
+		}
+		match i in v{
+			v[i].n = nn
+		}
+	}
+	let total = mut 0
+	for code in 0..32{
+		match 0 in v{
+			total += walk(ref v[0].n, code, 5)
+		}
+	}
+	unsafe extern{ printf("tree %llu\n", total) }
+}
+
+func walkGraph(start: ref mut Gnode) mut u64{
+	let sum = mut 0
+	let cur = mut start
+	for step in 0..400{
+		match Some(cur){
+			sum += cur.value
+			let k = mut (step % 3)
+			let n0 = mut cur.e0
+			let n1 = mut cur.e1
+			let n2 = mut cur.e2
+			if k == 0{
+				cur = n0
+			}
+			elseif k == 1{
+				cur = n1
+			}
+			else{
+				cur = n2
+			}
+		}
+	}
+	return sum
+}
+
+// ---- graph: 50 nodes, 3 pseudo-random edges each, a 400-step walk ----
+func graphPart() void{
+	?catch(e){ return }
+	let v = mut ? dyn([GHolder{n= null}])
+	v = ? resize(v, 50, GHolder{n= null})
+	for i in 0..50{
+		let nn = mut ? new Gnode{value= i * 11 + 5, e0= null, e1= null, e2= null}
+		match i in v{
+			v[i].n = nn
+		}
+	}
+	let x = mut 12345
+	for i in 0..50{
+		x = bits_and(x * 1664525 + 1013904223, 0xFFFFFFFF)
+		let a = mut (x % 50)
+		x = bits_and(x * 1664525 + 1013904223, 0xFFFFFFFF)
+		let b = mut (x % 50)
+		x = bits_and(x * 1664525 + 1013904223, 0xFFFFFFFF)
+		let c = mut (x % 50)
+		match i in v{
+			match a in v{
+				match b in v{
+					match c in v{
+						match Some(v[i].n){
+							v[i].n.e0 = ref v[a].n
+							v[i].n.e1 = ref v[b].n
+							v[i].n.e2 = ref v[c].n
+						}
+					}
+				}
+			}
+		}
+	}
+	let sum = mut 0
+	match 0 in v{
+		sum = walkGraph(ref v[0].n)
+	}
+	unsafe extern{ printf("graph %llu\n", sum) }
+}
+
+// ---- two structs pointing at each other ----
+func pingPart() void{
+	?catch(e){ return }
+	let a = mut ? new Ping{v= 3, peer= null}
+	let b = mut ? new Pong{w= 5, peer= null}
+	match Some(a){
+		a.peer = ref b
+	}
+	match Some(b){
+		b.peer = ref a
+	}
+	let s = mut 0
+	match Some(a){
+		match Some(a.peer){
+			s += a.peer.w
+			match Some(a.peer.peer){
+				s += a.peer.peer.v
+			}
+		}
+	}
+	unsafe extern{ printf("ping %llu\n", s) }
+}
+
+// ---- generic struct linking to itself ----
+func linkPart() void{
+	?catch(e){ return }
+	let a = mut ? new Link:<u64>{value= 40, next= null}
+	let b = mut ? new Link:<u64>{value= 2, next= null}
+	match Some(a){
+		a.next = ref b
+	}
+	let s = mut 0
+	match Some(a){
+		s += a.value
+		match Some(a.next){
+			s += a.next.value
+		}
+	}
+	unsafe extern{ printf("link %llu\n", s) }
+}
+
+// ---- a ref whose target was freed is skipped by the liveness check ----
+func danglePart() void{
+	?catch(e){ return }
+	let a = mut ? new Node{value= 9, next= null}
+	let seen = mut 0
+	for k in 0..1{
+		let b = mut ? new Node{value= 100, next= null}
+		match Some(a){
+			a.next = ref b
+		}
+		match Some(a){
+			match Some(a.next){
+				seen += a.next.value
+			}
+		}
+	}
+	match Some(a){
+		match Some(a.next){
+			seen += a.next.value
+		}
+	}
+	unsafe extern{ printf("dangle %llu\n", seen) }
+}
+
+func main() void{
+	let base = mut live()
+	listPart()
+	treePart()
+	graphPart()
+	pingPart()
+	linkPart()
+	danglePart()
+	unsafe extern{ printf("leak %llu\n", live() - base) }
+}

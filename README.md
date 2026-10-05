@@ -1823,8 +1823,9 @@ from the library's side.
 - **No struct by value as a plain parameter.** Collections of structs go through `auto` pointers (`pushBackPtr`,
   `setPtr`); a struct may be returned (the compiler builds it in the caller's slot), but only as a `let` initialiser,
   the right-hand side of an assignment to a plain variable, or `return f()`.
-- **No recursion** except an `@recursive` tail call, and **no recursive structs** (a struct cannot reach itself through
-  any pointer kind). Trees and lists are index-based, as in the benchmarks.
+- **No recursion** except an `@recursive` tail call, and **no recursive structs except through a plain nullable `ref`**
+  (a struct may hold `ref` links to its own type, never `ref some`, `owns`, `raw` or `auto`, so a node never owns another
+  node; every access goes through a `match Some` alive proof). The benchmarks have index-based and `ref`-linked versions.
 - **Ownership is single and checked.** Putting an `owns` value into a collection moves it; reading an owning struct
   out of an element by value is a compile error (use `clone`); `clone` of anything that reaches a `@drop` type is an
   error. Elements are freed when the collection is.
@@ -2077,8 +2078,8 @@ structs and arrays as C does.
   programming benchmarks, and the other two were written to represent ordinary application work more
   closely than numeric kernels do. All of the ports, in every language including Caspien, were written by
   Claude, an LLM, working from the original programs; the language's author made no choices about them.
-  Where Caspien deviates from the original shape (binarytrees, lru and json_serde use indices rather than
-  recursive structs, which the language rejects), the difference is noted in `benchmarks/RESULTS.md`.
+  Where Caspien deviates from the original shape (graph, binarytrees and lru use indices by default and also have
+  `ref`-linked variants; json_serde works on flat data), the difference is noted in `benchmarks/RESULTS.md`.
   None of them exercises the event-loop model.
 - Repeats within one run usually agree to about 3% (the gold lines on the charts), but separate runs on
   this VM have differed by 10% to 30%, so differences under 1.3x between two rows are not meaningful.

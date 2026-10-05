@@ -1,0 +1,141 @@
+// Heap graph benchmark (GRAPH_N nodes), REF variant of graph_safe: every node is its own heap object (owned by an arena dynarray of
+// Holder{n: owns}) and the four edges of a node are plain `ref` members pointing at other nodes of the same struct (a self-referential
+// struct, allowed since `ref` may be null). BFS walks the refs directly (each deref is under a `match Some` alive proof) with a queue of refs.
+// Same algorithm, same random numbers and same output as graph_safe. Prints: reachable maxdepth needledist valuesum.
+import "../../../stdlib/libc.caspien"
+import "../../../stdlib/gt_init.caspien"
+import "../../../stdlib/gt_register.caspien"
+import "../../../stdlib/gt_alive_check.caspien"
+import "../../../stdlib/gt_destruct.caspien"
+import "../../../stdlib/gt_moved.caspien"
+
+extern getenv(static imut string) static imut string
+extern atol(static imut string) mut u64
+
+struct GNode{@pub{
+	value: mut u64
+	dist: mut u64
+	e0: ref mut GNode
+	e1: ref mut GNode
+	e2: ref mut GNode
+	e3: ref mut GNode
+}}
+struct Holder{@pub{ n: owns mut GNode }}
+struct QRef{@pub{ n: ref mut GNode }}
+
+func main() void{
+	?catch(e){ return }
+	unsafe assume extern loop{
+		let n = mut 0
+		n = atol(getenv("GRAPH_N"))
+		let arena = mut ? dyn([Holder{n= null}])
+		arena = ? resize(arena, n, Holder{n= null})
+		let queue = mut ? dyn([QRef{n= null}])
+		queue = ? resize(queue, n, QRef{n= null})
+		let x = mut 12345
+		for i in 0..n{
+			x = bits_and(x * 1664525 + 1013904223, 0xFFFFFFFF)
+			let nn = mut ? new GNode{value= x % 16777216, dist= 0, e0= null, e1= null, e2= null, e3= null}
+			match i into arena{
+				arena[i].n = nn
+			}
+		}
+		let needle = mut (n * 7 / 10)
+		match needle in arena{
+			match Some(arena[needle].n){
+				arena[needle].n.value = 0xFFFFFFFF
+			}
+		}
+		for i in 0..n{
+			x = bits_and(x * 1664525 + 1013904223, 0xFFFFFFFF)
+			assume match n != 0
+			let r1 = mut (x % n)
+			x = bits_and(x * 1664525 + 1013904223, 0xFFFFFFFF)
+			let r2 = mut (x % n)
+			x = bits_and(x * 1664525 + 1013904223, 0xFFFFFFFF)
+			let r3 = mut (x % n)
+			let nxt = mut ((i + 1) % n)
+			match i in arena{
+				match nxt in arena{
+					match r1 in arena{
+						match r2 in arena{
+							match r3 in arena{
+								match Some(arena[i].n){
+									arena[i].n.e0 = ref arena[nxt].n
+									arena[i].n.e1 = ref arena[r1].n
+									arena[i].n.e2 = ref arena[r2].n
+									arena[i].n.e3 = ref arena[r3].n
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+		let head = mut 0
+		let tail = mut 0
+		let zi = mut 0
+		match zi in arena{
+			match Some(arena[zi].n){
+				arena[zi].n.dist = 1
+			}
+			match zi into queue{
+				queue[zi].n = ref arena[zi].n
+			}
+		}
+		tail += 1
+		let maxdist = mut 1
+		let needledist = mut 0
+		let sum = mut 0
+		loop{
+			if head >= tail{
+				break
+			}
+			let:<ref mut GNode> cur = mut null
+			match head in queue{
+				cur = queue[head].n
+			}
+			head += 1
+			match Some(cur){
+				let du = mut cur.dist
+				let vu = mut cur.value
+				sum += vu
+				if vu == 0xFFFFFFFF{
+					needledist = du
+				}
+				if du > maxdist{
+					maxdist = du
+				}
+				let n0 = mut cur.e0
+				let n1 = mut cur.e1
+				let n2 = mut cur.e2
+				let n3 = mut cur.e3
+				for k in 0..4{
+					let nb = mut n0
+					if k == 1{
+						nb = n1
+					}
+					elseif k == 2{
+						nb = n2
+					}
+					elseif k == 3{
+						nb = n3
+					}
+					match Some(nb){
+						if nb.dist == 0{
+							nb.dist = du + 1
+							match tail into queue{
+								queue[tail].n = nb
+							}
+							tail += 1
+						}
+					}
+				}
+			}
+		}
+		let total = mut (bits_and(sum, 0xFFFFFFFF))
+		let md = mut (maxdist - 1)
+		let nd = mut (needledist - 1)
+		printf("%llu %llu %llu %llu\n", tail, md, nd, total)
+	}
+}
