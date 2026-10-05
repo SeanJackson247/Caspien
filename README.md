@@ -909,7 +909,7 @@ The standard library wraps these in classes, each in its own file under `stdlib/
 - `String` (`new String("hello")`) has `appendChar`, `concat`, `charAt`, `setCharAt`, `sub` and
   `firstIndexOf`, which returns -1 when the character is absent.
 - `HashMap<T>` (`new HashMap:<u64>(defaultKey, defaultValue, capacity)`) has `set`, `get` and `contains`.
-  It has a fixed capacity and no remove.
+  The capacity is the starting size (rounded up to a power of two; 0 means every `set` is ignored); the table doubles when it is 70% full. There is no remove.
 - `insecure_hash.caspien` (FNV-1a, for hash tables only: it is not a security primitive, hence the name) and
   `sha256.caspien` (a real SHA-256), `process.caspien` (spawn a process and read or write its
   pipes), `sleep.caspien`, `par_call.caspien` / `await_call.caspien` (threads).
@@ -1697,7 +1697,7 @@ one function, so very large generated test programs are better split into severa
 |---|---|
 | `libc.caspien` | `extern` bindings for the C functions the rest builds on (`printf`, `malloc`, `memcpy`, `fgets`, ...). Calling one needs `unsafe extern{`. |
 | `dynamic_array.caspien` | `DynamicArray<T>`: `pushBack`, `popBack`, `pushFront`, `popFront`, `get`, `set`, and `...Ptr` twins for struct elements. |
-| `hash_map.caspien` | `HashMap<T>`: `set`, `get`, `contains`; open addressing, fixed capacity. |
+| `hash_map.caspien` | `HashMap<T>`: `set`, `get`, `contains`; open addressing, starting capacity rounded up to a power of two, grows by doubling at 70% load. |
 | `string.caspien` | `String`: a growable byte string with `concat`, `appendChar`, `sub`, `charAt`, `setCharAt`, `firstIndexOf`. |
 | `insecure_hash.caspien` | `insecure_hashOf<T>` and `insecure_fnv1a64Bytes`: FNV-1a, for hash tables only. |
 | `sha256.caspien` | SHA-256 (one-shot and streaming) on raw buffers. A real cryptographic hash, but a plain one: no constant-time or side-channel claims. |
@@ -1755,7 +1755,7 @@ let popped = mut ? list.popBack(list, mut 999)                   // 25; the argu
 let two = mut 2
 match two into list.backing{ list.set(list, two, mut 100) }      // `into` is the write proof, `in` the read proof
 
-// HashMap<u64>: key and value share one type, the capacity is fixed when you build it
+// HashMap<u64>: key and value share one type, the capacity is only the starting size (the table grows by doubling)
 let counts = mut ? new HashMap:<u64>(mut 0, mut 0, mut 64)       // (default key, default value, capacity)
 let seen = mut counts.get(counts, mut 3, mut 0)                  // the last argument is the answer for a missing key
 counts.set(counts, mut 3, seen + 1)
@@ -1833,7 +1833,7 @@ And the limits of the library itself, which are design choices today rather than
 | Piece | Limit |
 |---|---|
 | `DynamicArray` | The backing store is resized to the exact length on every push and pop, so each is O(n). A raw `dyn` array, or `resize` in your own code, avoids it. |
-| `HashMap` | Fixed capacity chosen at construction; no growth, no removal. `set` of a new key into a full map does nothing. Key and value share one type, and the key type cannot be a struct. The hash is `insecure_hashOf`. |
+| `HashMap` | Starting capacity chosen at construction (rounded up to a power of two); the table doubles when it is 70% full, and if that growth runs out of memory `set` carries on in the old table. A capacity of 0 ignores every `set`. No removal. Key and value share one type, and the key type cannot be a struct. The hash is one multiply and an xor-shift of the key's bits, not `insecure_hashOf`. |
 | `String` | Bytes (`char` is one byte): no Unicode awareness. Operations are simple loops over the buffer. |
 | `process` | One direction per handle (read the child's output or write to its input), one line per `StdOut.read`, and the read buffer is not freed. Commands go through the shell. |
 | `fs` | No directory listing, `stat`, `exists` or rename (other than `commit`), whole-file `readAll`, `/`-free names only. Windows is only tested under Wine. |
