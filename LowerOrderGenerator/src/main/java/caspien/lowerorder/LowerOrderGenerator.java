@@ -68,7 +68,7 @@ public class LowerOrderGenerator {
         LoopHoistPass loopHoist = new LoopHoistPass(config.deferredOperands && config.variablesInRegisters && config.hoistArrayBases);
         lines = loopHoist.run(lines);
         // Always run: strips the REGHINT lines, and promotes variables only when both switches are on.
-        lines = new RegVarPromotionPass(config.deferredOperands && config.variablesInRegisters, config.floatVariablesInRegisters).run(lines);
+        lines = new RegVarPromotionPass(config.deferredOperands && config.variablesInRegisters, config.floatVariablesInRegisters, config.variablesInAllocFunctions).run(lines);
         lines = loopHoist.finish(lines);
         // f32 temporaries in xmm registers (a no-op unless "float-temporaries-in-registers: on", which needs deferred-operands).
         lines = new FloatTempPass(config.deferredOperands && config.floatTemporariesInRegisters).run(lines);

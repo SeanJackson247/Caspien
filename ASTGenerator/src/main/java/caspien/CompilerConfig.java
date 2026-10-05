@@ -72,6 +72,8 @@ public class CompilerConfig {
     public boolean floatTemporariesInRegisters = false;
     /** Optional top-level 'hoist-array-bases: on|off' (default off; needs variables-in-registers: on): LoopHoistPass copies loop-invariant array base pointers into register candidates. */
     public boolean hoistArrayBases = false;
+    /** Optional top-level 'variables-in-alloc-functions: on|off' (default off; needs variables-in-registers: on): functions that contain NEW/RESIZE/CLONE/DOT/LOOKUP_ARRAY may keep variables in r12-r14 (the backend saves them around those instructions). */
+    public boolean variablesInAllocFunctions = false;
 
     public CallingConvention getDefault() {
         return callingConventions.get(defaultConvention);
@@ -124,6 +126,15 @@ public class CompilerConfig {
                     throw configErr(path, lineNo, "'deferred-operands' must be 'on' or 'off', found '" + v + "'");
                 }
                 config.deferredOperands = v.equals("on");
+                continue;
+            }
+            if (startsWithLiteral(trimmed, "variables-in-alloc-functions:")) {
+                // Optional switch: RegVarPromotionPass may use r12-r14 in functions with scratch-using instructions; parsed here so every stage accepts it. Absent = off.
+                String v = unquoteOrBare(trimmed.substring("variables-in-alloc-functions:".length()).trim());
+                if (!v.equals("on") && !v.equals("off")) {
+                    throw configErr(path, lineNo, "'variables-in-alloc-functions' must be 'on' or 'off', found '" + v + "'");
+                }
+                config.variablesInAllocFunctions = v.equals("on");
                 continue;
             }
             if (startsWithLiteral(trimmed, "hoist-array-bases:")) {

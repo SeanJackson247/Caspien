@@ -1,0 +1,94 @@
+// variables-in-alloc-functions: a function that allocates (new, dyn, resize, clone) or reads struct fields / array elements through
+// instructions that use r12-r14 as backend scratch may still keep hot variables in r12-r14; the backend saves and restores them around those
+// instructions. Every loop below keeps several hot variables (counters, accumulators) live ACROSS such instructions, so a value lost
+// by a missing save/restore changes a checksum. Expected values come from tests/alloc_vars_test.py (an independent model);
+// tests/alloc_vars_check.sh compares them with the output of the program and checks that variables really sit in r12-r14 in these functions.
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+
+let static gN = mut 200
+let static gM = mut 7
+
+struct Triple{
+	@pub{ a: mut u64
+	b: mut u64
+	c: mut u64 }
+}
+
+func out(name: static imut string, v: imut u64) void{
+	unsafe extern{ printf("%s %llu\n", name, v) }
+}
+
+// new + wide struct fields in a loop, accumulators live across the allocation
+func partNew(n: imut u64) mut u64{
+	?catch(e){ return 0 }
+	let s1 = mut 0
+	let s2 = mut 1
+	let s3 = mut 2
+	for i in 0..n{
+		let t = mut ? new Triple{a= i, b= i * 2, c= i * 3}
+		s1 += t.a + t.b * 2 + t.c * 3
+		s2 = bits_and(s2 * 31 + t.c, 1048575)
+		t.b = s3 + i
+		s3 = bits_and(s3 + t.b, 65535)
+	}
+	return s1 + s2 * 7 + s3 * 13
+}
+
+// resize (growing and shrinking) + clone + element reads, several variables live across them
+func partDyn(n: imut u64, m: imut u64) mut u64{
+	?catch(e){ return 0 }
+	let acc = mut 0
+	let mix = mut 5
+	let cnt = mut 0
+	let d = mut ? dyn:<u64>([])
+	let:<mut u64> z = mut 0
+	d = ? resize(d, 2, z)
+	for i in 0..n{
+		let sz = mut (2 + bits_and(i * 5, 15))
+		let:<mut u64> fv = mut (i + 1)
+		d = ? resize(d, sz, fv)
+		let cl = mut ? clone(d)
+		let k = mut 0
+		for j in 0..sz{
+			match j in cl{ k += cl[j] * (j + 1) }
+		}
+		match 0 into d{ d[0] = k }
+		acc += k
+		mix = bits_and(mix * 33 + k, 4194303)
+		cnt += sz
+	}
+	return acc + mix * 3 + cnt * 11 + m
+}
+
+// a dyn literal and a fixed array indexed by a variable in a loop
+func partArr(n: imut u64) mut u64{
+	?catch(e){ return 0 }
+	let fa = mut [3, 5, 7, 9, 11, 13, 15, 17]
+	let s = mut 0
+	let x = mut 1
+	for i in 0..n{
+		let lit = mut ? dyn([i, i + 1, i + 2])
+		let q = mut bits_and(i * 3, 7)
+		match q in fa{ s += fa[q] }
+		match 1 in lit{ s += lit[1] }
+		x = bits_and(x * 17 + s, 1048575)
+	}
+	return s + x * 5
+}
+
+func main() void{
+	let n = mut 0
+	let m = mut 0
+	unsafe global{
+		n = gN
+		m = gM
+	}
+	out("A", partNew(n))
+	out("B", partDyn(n, m))
+	out("C", partArr(n))
+}

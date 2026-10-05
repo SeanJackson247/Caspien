@@ -2195,7 +2195,26 @@ public class X86Backend {
 
     // ---- Main per-line dispatch --------------------------------------------
 
+    /**
+     * Instructions whose code uses r12/r13/r14 as scratch (NEW*, CLONE*, RESIZE*, DOT, LOOKUP_ARRAY) are bracketed by two marks;
+     * finishCalleeSaved turns them into saves/restores of the variable registers (%v0..%v2 = r13, r14, r12) of the functions that
+     * actually keep a variable there, and deletes them from every other function (whose text is then exactly what it was without marks).
+     */
+    private static final String V1314_SAVE = "@@V1314S@@";
+    private static final String V1314_REST = "@@V1314R@@";
+
     private void emitLine(List<BytecodeToken> line) {
+        if (!line.isEmpty() && currentLineIndex > asmSkipUntilIndex && line.size() >= 1 && !(line.size() == 1 && line.get(0).text.endsWith(":"))
+                && RF_R13_R14_USERS.contains(line.get(0).text) && !line.get(0).text.equals("ASM_START") && csrFuncStart >= 0) {
+            raw(V1314_SAVE);
+            emitLineInner(line);
+            raw(V1314_REST);
+            return;
+        }
+        emitLineInner(line);
+    }
+
+    private void emitLineInner(List<BytecodeToken> line) {
         if (line.isEmpty()) {
             return;
         }
@@ -2229,14 +2248,15 @@ public class X86Backend {
         lastValueBlockSize = 0;
 
         String mnemonic = first;
-        if (RF_R13_R14_USERS.contains(mnemonic)) {
-            rfClobberSeen = true;
+        if (mnemonic.equals("ASM_START")) {
+            rfClobberSeen = true; // inline assembly may use anything; the other scratch users are bracketed by V1314 marks
         }
         switch (mnemonic) {
             case "FUNC_START": {
                 String name = line.get(1).text;
                 currentFuncName = name;
                 rfVarUsed = false;
+                rfVarMask = 0;
                 rfClobberSeen = false;
                 xvHome.clear();
                 xvWidth.clear();
@@ -5350,6 +5370,8 @@ public class X86Backend {
     private static final String[] RF_VAR_REGS = { "r13", "r14", "r12", "r8", "r9", "r10" };
     /** set when this function uses a %vN; checked against rfClobberSeen at FUNC_END */
     private boolean rfVarUsed = false;
+    /** bit i set when this function uses %vi (i < 3: r13, r14, r12), see finishCalleeSaved / V1314_SAVE */
+    private int rfVarMask = 0;
     /** set when this function has an instruction whose code uses r13/r14 internally (see RegVarPromotionPass.R13_R14_USERS) */
     private boolean rfClobberSeen = false;
     private static final java.util.Set<String> RF_R13_R14_USERS = new java.util.HashSet<>(java.util.Arrays.asList(
@@ -5362,6 +5384,7 @@ public class X86Backend {
         if (tok.startsWith("%v")) {
             int vi = Integer.parseInt(tok.substring(2));
             if (vi < 3) {
+                rfVarMask |= 1 << vi;
                 rfVarUsed = true; // %v3..%v5 are r8/r9/r10: caller-saved, no save/restore, no clash with the r13/r14 scratch uses
             }
             return RF_VAR_REGS[vi];
@@ -6433,6 +6456,64 @@ public class X86Backend {
      * ALLOC by their save area (kept a multiple of 16), stores them right after it, and turns every CSR_MARK (one per
      * exit path, including GT_UNWIND) into the matching restores. A function that touches none is left as it was.
      */
+    /** frame slot of the saved copy of r13, r14, r12 (null: the function keeps no variable there) */
+    private final String[] vSlots = new String[3];
+
+    /**
+     * Expands every V1314 mark pair: a variable register is saved and restored around an instruction only when the instruction's own code
+     * mentions that register (most scratch users touch none of them); pairs that need nothing disappear.
+     */
+    private int varMarksNeeded(int start) {
+        String[] regs = {"r13", "r14", "r12"};
+        String sm = V1314_SAVE + "\n";
+        String rm = V1314_REST + "\n";
+        int mask = 0;
+        int from = start;
+        int i;
+        while ((i = out.indexOf(sm, from)) >= 0) {
+            int segStart = i + sm.length();
+            int j = out.indexOf(rm, segStart);
+            if (j < 0) {
+                break;
+            }
+            String seg = out.substring(segStart, j);
+            for (int vi = 0; vi < 3; vi++) {
+                if (java.util.regex.Pattern.compile("(?<![A-Za-z0-9_])" + regs[vi] + "[dwb]?(?![A-Za-z0-9_])").matcher(seg).find()) {
+                    mask |= 1 << vi;
+                }
+            }
+            from = j + rm.length();
+        }
+        return mask;
+    }
+
+    private void expandVarMarks(int start) {
+        String[] regs = {"r13", "r14", "r12"};
+        String sm = V1314_SAVE + "\n";
+        String rm = V1314_REST + "\n";
+        int from = start;
+        int i;
+        while ((i = out.indexOf(sm, from)) >= 0) {
+            int segStart = i + sm.length();
+            int j = out.indexOf(rm, segStart);
+            if (j < 0) {
+                throw new RuntimeException("codegen internal error: unbalanced register-save marks in '" + currentFuncName + "'");
+            }
+            String seg = out.substring(segStart, j);
+            StringBuilder sv = new StringBuilder();
+            StringBuilder rs = new StringBuilder();
+            for (int vi = 0; vi < 3; vi++) {
+                if (vSlots[vi] != null && java.util.regex.Pattern.compile("(?<![A-Za-z0-9_])" + regs[vi] + "[dwb]?(?![A-Za-z0-9_])").matcher(seg).find()) {
+                    sv.append("    movq %").append(regs[vi]).append(", ").append(vSlots[vi]).append("\n");
+                    rs.append("    movq ").append(vSlots[vi]).append(", %").append(regs[vi]).append("\n");
+                }
+            }
+            out.replace(j, j + rm.length(), rs.toString());
+            out.replace(i, i + sm.length(), sv.toString());
+            from = i + sv.length();
+        }
+    }
+
     private void finishCalleeSaved() {
         if (csrFuncStart < 0) {
             return;
@@ -6457,6 +6538,7 @@ public class X86Backend {
             }
         }
         String restoreText = "";
+        java.util.Arrays.fill(vSlots, null);
         if (!regs.isEmpty()) {
             if (csrAllocPos < 0) {
                 // no locals at all (no ALLOC line): make the frame ourselves, right after the prologue
@@ -6485,6 +6567,15 @@ public class X86Backend {
                 saves.append(st).append('\n');
                 restores.append(ld).append('\n');
             }
+            // r13/r14/r12 variables are saved to frame slots around the scratch users (see V1314_SAVE)
+            java.util.Arrays.fill(vSlots, null);
+            int needMask = varMarksNeeded(csrFuncStart);
+            for (int vi = 0; vi < 3; vi++) {
+                if ((rfVarMask & needMask & (1 << vi)) != 0) {
+                    cur += 8;
+                    vSlots[vi] = "-" + cur + "(%rbp)";
+                }
+            }
             long total = (cur + 15) & ~15L;
             frameBytes = csrAllocSum - csrAllocBytes + total;
             String newSub = ("    subq $" + total + ", %rsp\n");
@@ -6494,6 +6585,7 @@ public class X86Backend {
             out.replace(csrAllocPos, csrAllocPos + csrAllocLine.length(), newSub + saves);
             restoreText = restores.toString();
         }
+        expandVarMarks(csrFuncStart);
         int from = csrFuncStart;
         String marked = CSR_MARK + "\n";
         int i;

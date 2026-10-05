@@ -91,14 +91,21 @@ public class RegVarPromotionPass {
 
     private final boolean enabled;
     private final boolean floatEnabled;
+    /** functions with scratch-using instructions (NEW, RESIZE, DOT, ...) may keep variables in r12-r14: the backend saves them around those lines */
+    private final boolean allocFunctions;
 
     public RegVarPromotionPass(boolean enabled) {
         this(enabled, false);
     }
 
     public RegVarPromotionPass(boolean enabled, boolean floatEnabled) {
+        this(enabled, floatEnabled, false);
+    }
+
+    public RegVarPromotionPass(boolean enabled, boolean floatEnabled, boolean allocFunctions) {
         this.enabled = enabled;
         this.floatEnabled = enabled && floatEnabled;
+        this.allocFunctions = enabled && allocFunctions;
     }
 
     static final class Hint {
@@ -312,8 +319,9 @@ public class RegVarPromotionPass {
         java.util.Comparator<Hint> byWeight = (a, b) -> a.weight != b.weight ? Long.compare(b.weight, a.weight) : Long.compare(a.off, b.off);
         intCands.sort(byWeight);
         xCands.sort(byWeight);
-        int intLimit = blocked ? 0 : VAR_COUNT;
-        if (!blocked && !usesTemp3(fn)) {
+        boolean noCallee = blocked && !allocFunctions;
+        int intLimit = noCallee ? 0 : VAR_COUNT;
+        if (!noCallee && !usesTemp3(fn)) {
             intLimit = VAR_COUNT_MAX;
         }
         if (intCands.size() > intLimit || xCands.size() > XVAR_COUNT) {

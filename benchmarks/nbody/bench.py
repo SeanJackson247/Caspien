@@ -25,13 +25,13 @@ CAS = os.path.join(HERE, "caspien")
 
 OFF = {
     "deferred-operands": "off", "variables-in-registers": "off", "float-variables-in-registers": "off",
-    "float-temporaries-in-registers": "off", "hoist-array-bases": "off", "loop-unrolling": "off", "function-inlining": "off", "constant-folding": "off",
+    "float-temporaries-in-registers": "off", "hoist-array-bases": "off", "variables-in-alloc-functions": "off", "loop-unrolling": "off", "function-inlining": "off", "constant-folding": "off",
     "variable-elision": "off", "variable-shifting": "off", "struct-unpacking": "off", "dead-control-flow-removal": "off",
     "dead-function-removal": "off", "unused-declaration-removal": "off",
 }
 FULL = {
     "deferred-operands": "on", "variables-in-registers": "on", "float-variables-in-registers": "on",
-    "float-temporaries-in-registers": "on", "hoist-array-bases": "on", "loop-unrolling": "aggressive", "function-inlining": "aggressive",
+    "float-temporaries-in-registers": "on", "hoist-array-bases": "on", "variables-in-alloc-functions": "on", "loop-unrolling": "aggressive", "function-inlining": "aggressive",
     "constant-folding": "on", "variable-elision": "on", "variable-shifting": "on", "struct-unpacking": "on",
     "dead-control-flow-removal": "on", "dead-function-removal": "on", "unused-declaration-removal": "on", "bmi2": "on",
 }
