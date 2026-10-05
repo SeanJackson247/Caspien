@@ -1,0 +1,388 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Caspien round before and after</title><style>
+:root{--bg:#fbfaf7;--fg:#1f2328;--mute:#6b7280;--grid:#d9d6cf;--fast:#2f7d4f;--slow:#c0562b;--flat:#9aa3ad;--before:#c9c4ba;--card:#fff;--line:#e4e1da}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#16181b;--fg:#e8e6e1;--mute:#9aa0a8;--grid:#34383d;--fast:#58b57e;--slow:#e0805a;--flat:#6c7580;--before:#4a4f55;--card:#1d2024;--line:#2c3035}}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.55 system-ui,sans-serif}main{max-width:960px;margin:0 auto;padding:24px 16px 60px}
+h1{font-size:24px;margin:0 0 4px}h3{font-size:16px;margin:26px 0 6px}.mute{color:var(--mute);font-weight:400;font-size:13px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px}svg{width:100%;height:auto;display:block}
+.grid{stroke:var(--grid)}.axis,.val{fill:var(--mute);font-size:11px}.lbl{fill:var(--fg);font-size:11.5px}
+.before{fill:var(--before)}.fast{fill:var(--fast)}.slow{fill:var(--slow)}.flat{fill:var(--flat)}.all{opacity:.75}
+</style></head><body><main>
+<h1>Caspien: this round, before and after</h1>
+<div class="mute">Optimised Caspien, same machine, old tree vs new tree measured back to back per program (best of 5). Overall geometric mean of after/before over 58 variants: <b>-5.0%</b>. Grey = before, coloured = after (green faster, red slower, grey within &plusmn;4% noise). Linux only.</div>
+<h3>Aggregate: geometric mean of after/before per program</h3><div class="card"><svg viewBox="0 0 900 422" role="img" aria-label="aggregate change per program">
+<line x1="280.0" y1="30" x2="280.0" y2="412" class="grid"/><text x="280.0" y="22" class="axis" text-anchor="middle">-20%</text>
+<line x1="390.0" y1="30" x2="390.0" y2="412" class="grid"/><text x="390.0" y="22" class="axis" text-anchor="middle">-10%</text>
+<line x1="500.0" y1="30" x2="500.0" y2="412" class="grid"/><text x="500.0" y="22" class="axis" text-anchor="middle">+0%</text>
+<line x1="610.0" y1="30" x2="610.0" y2="412" class="grid"/><text x="610.0" y="22" class="axis" text-anchor="middle">+10%</text>
+<line x1="720.0" y1="30" x2="720.0" y2="412" class="grid"/><text x="720.0" y="22" class="axis" text-anchor="middle">+20%</text>
+<text x="162" y="53" class="lbl" text-anchor="end">nbody</text>
+<rect x="340.0" y="42" width="160.0" height="14" class="fast"/>
+<text x="336.0" y="54" class="val" text-anchor="end">-15.2%</text>
+<text x="162" y="75" class="lbl" text-anchor="end">fannkuchredux</text>
+<rect x="447.0" y="64" width="53.0" height="14" class="fast"/>
+<text x="443.0" y="76" class="val" text-anchor="end">-4.8%</text>
+<text x="162" y="97" class="lbl" text-anchor="end">spectralnorm</text>
+<rect x="499.7" y="86" width="1.5" height="14" class="flat"/>
+<text x="495.7" y="98" class="val" text-anchor="end">-0.0%</text>
+<text x="162" y="119" class="lbl" text-anchor="end">sieve</text>
+<rect x="500.0" y="108" width="124.8" height="14" class="slow"/>
+<text x="628.8" y="120" class="val" text-anchor="start">+11.3%</text>
+<text x="162" y="141" class="lbl" text-anchor="end">strings</text>
+<rect x="487.1" y="130" width="12.9" height="14" class="flat"/>
+<text x="483.1" y="142" class="val" text-anchor="end">-1.2%</text>
+<text x="162" y="163" class="lbl" text-anchor="end">graph</text>
+<rect x="489.9" y="152" width="10.1" height="14" class="flat"/>
+<text x="485.9" y="164" class="val" text-anchor="end">-0.9%</text>
+<text x="162" y="185" class="lbl" text-anchor="end">sorting</text>
+<rect x="450.7" y="174" width="49.3" height="14" class="fast"/>
+<text x="446.7" y="186" class="val" text-anchor="end">-4.5%</text>
+<text x="162" y="207" class="lbl" text-anchor="end">binarytrees</text>
+<rect x="481.4" y="196" width="18.6" height="14" class="flat"/>
+<text x="477.4" y="208" class="val" text-anchor="end">-1.7%</text>
+<text x="162" y="229" class="lbl" text-anchor="end">mandelbrot</text>
+<rect x="370.3" y="218" width="129.7" height="14" class="fast"/>
+<text x="366.3" y="230" class="val" text-anchor="end">-11.8%</text>
+<text x="162" y="251" class="lbl" text-anchor="end">fasta</text>
+<rect x="431.1" y="240" width="68.9" height="14" class="fast"/>
+<text x="427.1" y="252" class="val" text-anchor="end">-6.3%</text>
+<text x="162" y="273" class="lbl" text-anchor="end">knucleotide</text>
+<rect x="421.0" y="262" width="79.0" height="14" class="fast"/>
+<text x="417.0" y="274" class="val" text-anchor="end">-7.2%</text>
+<text x="162" y="295" class="lbl" text-anchor="end">lru</text>
+<rect x="493.8" y="284" width="6.2" height="14" class="flat"/>
+<text x="489.8" y="296" class="val" text-anchor="end">-0.6%</text>
+<text x="162" y="317" class="lbl" text-anchor="end">merkletrees</text>
+<rect x="340.0" y="306" width="160.0" height="14" class="fast"/>
+<text x="336.0" y="318" class="val" text-anchor="end">-18.3%</text>
+<text x="162" y="339" class="lbl" text-anchor="end">helloworld</text>
+<rect x="500.0" y="328" width="65.8" height="14" class="slow"/>
+<text x="569.8" y="340" class="val" text-anchor="start">+6.0%</text>
+<text x="162" y="361" class="lbl" text-anchor="end">json_serde</text>
+<rect x="436.1" y="350" width="63.9" height="14" class="fast"/>
+<text x="432.1" y="362" class="val" text-anchor="end">-5.8%</text>
+<text x="162" y="383" class="lbl" text-anchor="end">ALL (58 variants)</text>
+<rect x="444.7" y="372" width="55.3" height="14" class="fast all"/>
+<text x="440.7" y="384" class="val" text-anchor="end">-5.0%</text>
+</svg></div>
+<h3>nbody <span class="mute">geomean after/before 0.848 (-15.2%)</span></h3><div class="card"><svg viewBox="0 0 900 342" role="img" aria-label="nbody before and after">
+<text x="222" y="32" class="lbl" text-anchor="end">natural f64</text>
+<rect x="230" y="14" width="440.7" height="13" class="before"><title>before 0.607 s</title></rect>
+<text x="675.7" y="25" class="val">0.607 s</text>
+<rect x="230" y="29" width="399.2" height="13" class="fast"><title>after 0.550 s</title></rect>
+<text x="634.2" y="40" class="val">0.550 s (-9.4%)</text>
+<text x="222" y="68" class="lbl" text-anchor="end">plain f64</text>
+<rect x="230" y="50" width="423.7" height="13" class="before"><title>before 0.583 s</title></rect>
+<text x="658.7" y="61" class="val">0.583 s</text>
+<rect x="230" y="65" width="374.3" height="13" class="fast"><title>after 0.515 s</title></rect>
+<text x="609.3" y="76" class="val">0.515 s (-11.7%)</text>
+<text x="222" y="104" class="lbl" text-anchor="end">loop f64</text>
+<rect x="230" y="86" width="403.1" height="13" class="before"><title>before 0.555 s</title></rect>
+<text x="638.1" y="97" class="val">0.555 s</text>
+<rect x="230" y="101" width="381.3" height="13" class="fast"><title>after 0.525 s</title></rect>
+<text x="616.3" y="112" class="val">0.525 s (-5.4%)</text>
+<text x="222" y="140" class="lbl" text-anchor="end">arr f64</text>
+<rect x="230" y="122" width="410.5" height="13" class="before"><title>before 0.565 s</title></rect>
+<text x="645.5" y="133" class="val">0.565 s</text>
+<rect x="230" y="137" width="242.2" height="13" class="fast"><title>after 0.333 s</title></rect>
+<text x="477.2" y="148" class="val">0.333 s (-41.0%)</text>
+<text x="222" y="176" class="lbl" text-anchor="end">scalars f64</text>
+<rect x="230" y="158" width="241.9" height="13" class="before"><title>before 0.333 s</title></rect>
+<text x="476.9" y="169" class="val">0.333 s</text>
+<rect x="230" y="173" width="236.3" height="13" class="flat"><title>after 0.325 s</title></rect>
+<text x="471.3" y="184" class="val">0.325 s (-2.3%)</text>
+<text x="222" y="212" class="lbl" text-anchor="end">plain f32</text>
+<rect x="230" y="194" width="433.6" height="13" class="before"><title>before 0.597 s</title></rect>
+<text x="668.6" y="205" class="val">0.597 s</text>
+<rect x="230" y="209" width="392.8" height="13" class="fast"><title>after 0.541 s</title></rect>
+<text x="627.8" y="220" class="val">0.541 s (-9.4%)</text>
+<text x="222" y="248" class="lbl" text-anchor="end">loop f32</text>
+<rect x="230" y="230" width="437.0" height="13" class="before"><title>before 0.602 s</title></rect>
+<text x="672.0" y="241" class="val">0.602 s</text>
+<rect x="230" y="245" width="393.1" height="13" class="fast"><title>after 0.541 s</title></rect>
+<text x="628.1" y="256" class="val">0.541 s (-10.0%)</text>
+<text x="222" y="284" class="lbl" text-anchor="end">arr f32</text>
+<rect x="230" y="266" width="427.2" height="13" class="before"><title>before 0.588 s</title></rect>
+<text x="662.2" y="277" class="val">0.588 s</text>
+<rect x="230" y="281" width="261.1" height="13" class="fast"><title>after 0.359 s</title></rect>
+<text x="496.1" y="292" class="val">0.359 s (-38.9%)</text>
+<text x="222" y="320" class="lbl" text-anchor="end">scalars f32</text>
+<rect x="230" y="302" width="257.8" height="13" class="before"><title>before 0.355 s</title></rect>
+<text x="492.8" y="313" class="val">0.355 s</text>
+<rect x="230" y="317" width="270.0" height="13" class="slow"><title>after 0.372 s</title></rect>
+<text x="505.0" y="328" class="val">0.372 s (+4.8%)</text>
+</svg></div>
+<h3>fannkuchredux <span class="mute">geomean after/before 0.952 (-4.8%)</span></h3><div class="card"><svg viewBox="0 0 900 90" role="img" aria-label="fannkuchredux before and after">
+<text x="222" y="32" class="lbl" text-anchor="end">naive</text>
+<rect x="230" y="14" width="440.7" height="13" class="before"><title>before 3.474 s</title></rect>
+<text x="675.7" y="25" class="val">3.474 s</text>
+<rect x="230" y="29" width="416.6" height="13" class="fast"><title>after 3.284 s</title></rect>
+<text x="651.6" y="40" class="val">3.284 s (-5.5%)</text>
+<text x="222" y="68" class="lbl" text-anchor="end">optimized</text>
+<rect x="230" y="50" width="426.4" height="13" class="before"><title>before 3.361 s</title></rect>
+<text x="661.4" y="61" class="val">3.361 s</text>
+<rect x="230" y="65" width="408.6" height="13" class="fast"><title>after 3.221 s</title></rect>
+<text x="643.6" y="76" class="val">3.221 s (-4.2%)</text>
+</svg></div>
+<h3>spectralnorm <span class="mute">geomean after/before 1.000 (-0.0%)</span></h3><div class="card"><svg viewBox="0 0 900 90" role="img" aria-label="spectralnorm before and after">
+<text x="222" y="32" class="lbl" text-anchor="end">naive</text>
+<rect x="230" y="14" width="439.4" height="13" class="before"><title>before 0.311 s</title></rect>
+<text x="674.4" y="25" class="val">0.311 s</text>
+<rect x="230" y="29" width="440.7" height="13" class="flat"><title>after 0.312 s</title></rect>
+<text x="675.7" y="40" class="val">0.312 s (+0.3%)</text>
+<text x="222" y="68" class="lbl" text-anchor="end">optimized</text>
+<rect x="230" y="50" width="316.3" height="13" class="before"><title>before 0.224 s</title></rect>
+<text x="551.3" y="61" class="val">0.224 s</text>
+<rect x="230" y="65" width="315.2" height="13" class="flat"><title>after 0.223 s</title></rect>
+<text x="550.2" y="76" class="val">0.223 s (-0.3%)</text>
+</svg></div>
+<h3>sieve <span class="mute">geomean after/before 1.113 (+11.3%)</span></h3><div class="card"><svg viewBox="0 0 900 126" role="img" aria-label="sieve before and after">
+<text x="222" y="32" class="lbl" text-anchor="end">naive (DynamicArray)</text>
+<rect x="230" y="14" width="440.7" height="13" class="before"><title>before 1.478 s</title></rect>
+<text x="675.7" y="25" class="val">1.478 s</text>
+<rect x="230" y="29" width="419.4" height="13" class="fast"><title>after 1.407 s</title></rect>
+<text x="654.4" y="40" class="val">1.407 s (-4.8%)</text>
+<text x="222" y="68" class="lbl" text-anchor="end">optimized safe</text>
+<rect x="230" y="50" width="197.0" height="13" class="before"><title>before 0.661 s</title></rect>
+<text x="432.0" y="61" class="val">0.661 s</text>
+<rect x="230" y="65" width="222.0" height="13" class="slow"><title>after 0.745 s</title></rect>
+<text x="457.0" y="76" class="val">0.745 s (+12.7%)</text>
+<text x="222" y="104" class="lbl" text-anchor="end">optimized unsafe</text>
+<rect x="230" y="86" width="187.9" height="13" class="before"><title>before 0.630 s</title></rect>
+<text x="422.9" y="97" class="val">0.630 s</text>
+<rect x="230" y="101" width="241.8" height="13" class="slow"><title>after 0.811 s</title></rect>
+<text x="476.8" y="112" class="val">0.811 s (+28.7%)</text>
+</svg></div>
+<h3>strings <span class="mute">geomean after/before 0.988 (-1.2%)</span></h3><div class="card"><svg viewBox="0 0 900 126" role="img" aria-label="strings before and after">
+<text x="222" y="32" class="lbl" text-anchor="end">naive (String class)</text>
+<rect x="230" y="14" width="430.3" height="13" class="before"><title>before 2.460 s</title></rect>
+<text x="665.3" y="25" class="val">2.460 s</text>
+<rect x="230" y="29" width="440.7" height="13" class="flat"><title>after 2.519 s</title></rect>
+<text x="675.7" y="40" class="val">2.519 s (+2.4%)</text>
+<text x="222" y="68" class="lbl" text-anchor="end">optimized safe</text>
+<rect x="230" y="50" width="61.7" height="13" class="before"><title>before 0.353 s</title></rect>
+<text x="296.7" y="61" class="val">0.353 s</text>
+<rect x="230" y="65" width="60.0" height="13" class="flat"><title>after 0.343 s</title></rect>
+<text x="295.0" y="76" class="val">0.343 s (-2.9%)</text>
+<text x="222" y="104" class="lbl" text-anchor="end">optimized unsafe</text>
+<rect x="230" y="86" width="57.0" height="13" class="before"><title>before 0.326 s</title></rect>
+<text x="292.0" y="97" class="val">0.326 s</text>
+<rect x="230" y="101" width="55.3" height="13" class="flat"><title>after 0.316 s</title></rect>
+<text x="290.3" y="112" class="val">0.316 s (-2.9%)</text>
+</svg></div>
+<h3>graph <span class="mute">geomean after/before 0.991 (-0.9%)</span></h3><div class="card"><svg viewBox="0 0 900 306" role="img" aria-label="graph before and after">
+<text x="222" y="32" class="lbl" text-anchor="end">naive (DynamicArray)</text>
+<rect x="230" y="14" width="89.8" height="13" class="before"><title>before 0.332 s</title></rect>
+<text x="324.8" y="25" class="val">0.332 s</text>
+<rect x="230" y="29" width="92.8" height="13" class="flat"><title>after 0.343 s</title></rect>
+<text x="327.8" y="40" class="val">0.343 s (+3.3%)</text>
+<text x="222" y="68" class="lbl" text-anchor="end">optimized safe</text>
+<rect x="230" y="50" width="57.9" height="13" class="before"><title>before 0.214 s</title></rect>
+<text x="292.9" y="61" class="val">0.214 s</text>
+<rect x="230" y="65" width="58.6" height="13" class="flat"><title>after 0.216 s</title></rect>
+<text x="293.6" y="76" class="val">0.216 s (+1.1%)</text>
+<text x="222" y="104" class="lbl" text-anchor="end">optimized unsafe</text>
+<rect x="230" y="86" width="49.8" height="13" class="before"><title>before 0.184 s</title></rect>
+<text x="284.8" y="97" class="val">0.184 s</text>
+<rect x="230" y="101" width="49.7" height="13" class="flat"><title>after 0.184 s</title></rect>
+<text x="284.7" y="112" class="val">0.184 s (-0.2%)</text>
+<text x="222" y="140" class="lbl" text-anchor="end">struct nodes, safe</text>
+<rect x="230" y="122" width="77.3" height="13" class="before"><title>before 0.285 s</title></rect>
+<text x="312.3" y="133" class="val">0.285 s</text>
+<rect x="230" y="137" width="71.0" height="13" class="fast"><title>after 0.262 s</title></rect>
+<text x="306.0" y="148" class="val">0.262 s (-8.1%)</text>
+<text x="222" y="176" class="lbl" text-anchor="end">struct nodes, unsafe</text>
+<rect x="230" y="158" width="156.6" height="13" class="before"><title>before 0.578 s</title></rect>
+<text x="391.6" y="169" class="val">0.578 s</text>
+<rect x="230" y="173" width="151.0" height="13" class="flat"><title>after 0.557 s</title></rect>
+<text x="386.0" y="184" class="val">0.557 s (-3.6%)</text>
+<text x="222" y="212" class="lbl" text-anchor="end">ref naive</text>
+<rect x="230" y="194" width="407.6" height="13" class="before"><title>before 1.505 s</title></rect>
+<text x="642.6" y="205" class="val">1.505 s</text>
+<rect x="230" y="209" width="427.2" height="13" class="slow"><title>after 1.577 s</title></rect>
+<text x="662.2" y="220" class="val">1.577 s (+4.8%)</text>
+<text x="222" y="248" class="lbl" text-anchor="end">ref safe</text>
+<rect x="230" y="230" width="423.4" height="13" class="before"><title>before 1.563 s</title></rect>
+<text x="658.4" y="241" class="val">1.563 s</text>
+<rect x="230" y="245" width="420.6" height="13" class="flat"><title>after 1.553 s</title></rect>
+<text x="655.6" y="256" class="val">1.553 s (-0.7%)</text>
+<text x="222" y="284" class="lbl" text-anchor="end">ref unsafe</text>
+<rect x="230" y="266" width="440.7" height="13" class="before"><title>before 1.627 s</title></rect>
+<text x="675.7" y="277" class="val">1.627 s</text>
+<rect x="230" y="281" width="425.4" height="13" class="flat"><title>after 1.571 s</title></rect>
+<text x="660.4" y="292" class="val">1.571 s (-3.5%)</text>
+</svg></div>
+<h3>sorting <span class="mute">geomean after/before 0.955 (-4.5%)</span></h3><div class="card"><svg viewBox="0 0 900 126" role="img" aria-label="sorting before and after">
+<text x="222" y="32" class="lbl" text-anchor="end">naive (DynamicArray)</text>
+<rect x="230" y="14" width="440.7" height="13" class="before"><title>before 2.336 s</title></rect>
+<text x="675.7" y="25" class="val">2.336 s</text>
+<rect x="230" y="29" width="429.0" height="13" class="flat"><title>after 2.274 s</title></rect>
+<text x="664.0" y="40" class="val">2.274 s (-2.7%)</text>
+<text x="222" y="68" class="lbl" text-anchor="end">optimized safe</text>
+<rect x="230" y="50" width="322.6" height="13" class="before"><title>before 1.710 s</title></rect>
+<text x="557.6" y="61" class="val">1.710 s</text>
+<rect x="230" y="65" width="308.4" height="13" class="fast"><title>after 1.635 s</title></rect>
+<text x="543.4" y="76" class="val">1.635 s (-4.4%)</text>
+<text x="222" y="104" class="lbl" text-anchor="end">optimized unsafe</text>
+<rect x="230" y="86" width="296.6" height="13" class="before"><title>before 1.572 s</title></rect>
+<text x="531.6" y="97" class="val">1.572 s</text>
+<rect x="230" y="101" width="277.8" height="13" class="fast"><title>after 1.472 s</title></rect>
+<text x="512.8" y="112" class="val">1.472 s (-6.4%)</text>
+</svg></div>
+<h3>binarytrees <span class="mute">geomean after/before 0.983 (-1.7%)</span></h3><div class="card"><svg viewBox="0 0 900 234" role="img" aria-label="binarytrees before and after">
+<text x="222" y="32" class="lbl" text-anchor="end">naive (DynamicArray)</text>
+<rect x="230" y="14" width="139.0" height="13" class="before"><title>before 1.277 s</title></rect>
+<text x="374.0" y="25" class="val">1.277 s</text>
+<rect x="230" y="29" width="138.5" height="13" class="flat"><title>after 1.272 s</title></rect>
+<text x="373.5" y="40" class="val">1.272 s (-0.4%)</text>
+<text x="222" y="68" class="lbl" text-anchor="end">optimized safe</text>
+<rect x="230" y="50" width="35.2" height="13" class="before"><title>before 0.323 s</title></rect>
+<text x="270.2" y="61" class="val">0.323 s</text>
+<rect x="230" y="65" width="33.6" height="13" class="fast"><title>after 0.309 s</title></rect>
+<text x="268.6" y="76" class="val">0.309 s (-4.5%)</text>
+<text x="222" y="104" class="lbl" text-anchor="end">optimized unsafe</text>
+<rect x="230" y="86" width="50.2" height="13" class="before"><title>before 0.461 s</title></rect>
+<text x="285.2" y="97" class="val">0.461 s</text>
+<rect x="230" y="101" width="47.3" height="13" class="fast"><title>after 0.434 s</title></rect>
+<text x="282.3" y="112" class="val">0.434 s (-5.8%)</text>
+<text x="222" y="140" class="lbl" text-anchor="end">ref naive</text>
+<rect x="230" y="122" width="428.2" height="13" class="before"><title>before 3.934 s</title></rect>
+<text x="663.2" y="133" class="val">3.934 s</text>
+<rect x="230" y="137" width="440.7" height="13" class="flat"><title>after 4.049 s</title></rect>
+<text x="675.7" y="148" class="val">4.049 s (+2.9%)</text>
+<text x="222" y="176" class="lbl" text-anchor="end">ref safe</text>
+<rect x="230" y="158" width="388.1" height="13" class="before"><title>before 3.566 s</title></rect>
+<text x="623.1" y="169" class="val">3.566 s</text>
+<rect x="230" y="173" width="386.4" height="13" class="flat"><title>after 3.551 s</title></rect>
+<text x="621.4" y="184" class="val">3.551 s (-0.4%)</text>
+<text x="222" y="212" class="lbl" text-anchor="end">ref unsafe</text>
+<rect x="230" y="194" width="410.1" height="13" class="before"><title>before 3.768 s</title></rect>
+<text x="645.1" y="205" class="val">3.768 s</text>
+<rect x="230" y="209" width="403.3" height="13" class="flat"><title>after 3.705 s</title></rect>
+<text x="638.3" y="220" class="val">3.705 s (-1.7%)</text>
+</svg></div>
+<h3>mandelbrot <span class="mute">geomean after/before 0.882 (-11.8%)</span></h3><div class="card"><svg viewBox="0 0 900 54" role="img" aria-label="mandelbrot before and after">
+<text x="222" y="32" class="lbl" text-anchor="end">f64 scalars</text>
+<rect x="230" y="14" width="440.7" height="13" class="before"><title>before 1.432 s</title></rect>
+<text x="675.7" y="25" class="val">1.432 s</text>
+<rect x="230" y="29" width="388.7" height="13" class="fast"><title>after 1.264 s</title></rect>
+<text x="623.7" y="40" class="val">1.264 s (-11.8%)</text>
+</svg></div>
+<h3>fasta <span class="mute">geomean after/before 0.937 (-6.3%)</span></h3><div class="card"><svg viewBox="0 0 900 126" role="img" aria-label="fasta before and after">
+<text x="222" y="32" class="lbl" text-anchor="end">naive (DynamicArray)</text>
+<rect x="230" y="14" width="440.7" height="13" class="before"><title>before 1.529 s</title></rect>
+<text x="675.7" y="25" class="val">1.529 s</text>
+<rect x="230" y="29" width="402.6" height="13" class="fast"><title>after 1.397 s</title></rect>
+<text x="637.6" y="40" class="val">1.397 s (-8.6%)</text>
+<text x="222" y="68" class="lbl" text-anchor="end">optimized safe</text>
+<rect x="230" y="50" width="352.1" height="13" class="before"><title>before 1.222 s</title></rect>
+<text x="587.1" y="61" class="val">1.222 s</text>
+<rect x="230" y="65" width="330.2" height="13" class="fast"><title>after 1.146 s</title></rect>
+<text x="565.2" y="76" class="val">1.146 s (-6.2%)</text>
+<text x="222" y="104" class="lbl" text-anchor="end">optimized unsafe</text>
+<rect x="230" y="86" width="338.5" height="13" class="before"><title>before 1.175 s</title></rect>
+<text x="573.5" y="97" class="val">1.175 s</text>
+<rect x="230" y="101" width="325.5" height="13" class="flat"><title>after 1.129 s</title></rect>
+<text x="560.5" y="112" class="val">1.129 s (-3.9%)</text>
+</svg></div>
+<h3>knucleotide <span class="mute">geomean after/before 0.928 (-7.2%)</span></h3><div class="card"><svg viewBox="0 0 900 162" role="img" aria-label="knucleotide before and after">
+<text x="222" y="32" class="lbl" text-anchor="end">naive (stdlib HashMap)</text>
+<rect x="230" y="14" width="143.9" height="13" class="before"><title>before 2.442 s</title></rect>
+<text x="378.9" y="25" class="val">2.442 s</text>
+<rect x="230" y="29" width="136.6" height="13" class="fast"><title>after 2.317 s</title></rect>
+<text x="371.6" y="40" class="val">2.317 s (-5.1%)</text>
+<text x="222" y="68" class="lbl" text-anchor="end">optimized safe</text>
+<rect x="230" y="50" width="49.0" height="13" class="before"><title>before 0.831 s</title></rect>
+<text x="284.0" y="61" class="val">0.831 s</text>
+<rect x="230" y="65" width="44.4" height="13" class="fast"><title>after 0.753 s</title></rect>
+<text x="279.4" y="76" class="val">0.753 s (-9.4%)</text>
+<text x="222" y="104" class="lbl" text-anchor="end">optimized unsafe</text>
+<rect x="230" y="86" width="46.9" height="13" class="before"><title>before 0.796 s</title></rect>
+<text x="281.9" y="97" class="val">0.796 s</text>
+<rect x="230" y="101" width="41.1" height="13" class="fast"><title>after 0.697 s</title></rect>
+<text x="276.1" y="112" class="val">0.697 s (-12.5%)</text>
+<text x="222" y="140" class="lbl" text-anchor="end">naive, ref in stdlib</text>
+<rect x="230" y="122" width="440.7" height="13" class="before"><title>before 7.477 s</title></rect>
+<text x="675.7" y="133" class="val">7.477 s</text>
+<rect x="230" y="137" width="434.7" height="13" class="flat"><title>after 7.377 s</title></rect>
+<text x="669.7" y="148" class="val">7.377 s (-1.3%)</text>
+</svg></div>
+<h3>lru <span class="mute">geomean after/before 0.994 (-0.6%)</span></h3><div class="card"><svg viewBox="0 0 900 270" role="img" aria-label="lru before and after">
+<text x="222" y="32" class="lbl" text-anchor="end">naive (DynamicArray + HashMap)</text>
+<rect x="230" y="14" width="147.9" height="13" class="before"><title>before 1.747 s</title></rect>
+<text x="382.9" y="25" class="val">1.747 s</text>
+<rect x="230" y="29" width="147.0" height="13" class="flat"><title>after 1.736 s</title></rect>
+<text x="382.0" y="40" class="val">1.736 s (-0.6%)</text>
+<text x="222" y="68" class="lbl" text-anchor="end">optimized safe</text>
+<rect x="230" y="50" width="75.0" height="13" class="before"><title>before 0.886 s</title></rect>
+<text x="310.0" y="61" class="val">0.886 s</text>
+<rect x="230" y="65" width="78.2" height="13" class="slow"><title>after 0.923 s</title></rect>
+<text x="313.2" y="76" class="val">0.923 s (+4.2%)</text>
+<text x="222" y="104" class="lbl" text-anchor="end">optimized unsafe</text>
+<rect x="230" y="86" width="68.4" height="13" class="before"><title>before 0.808 s</title></rect>
+<text x="303.4" y="97" class="val">0.808 s</text>
+<rect x="230" y="101" width="65.9" height="13" class="flat"><title>after 0.778 s</title></rect>
+<text x="300.9" y="112" class="val">0.778 s (-3.7%)</text>
+<text x="222" y="140" class="lbl" text-anchor="end">ref naive</text>
+<rect x="230" y="122" width="407.0" height="13" class="before"><title>before 4.807 s</title></rect>
+<text x="642.0" y="133" class="val">4.807 s</text>
+<rect x="230" y="137" width="401.9" height="13" class="flat"><title>after 4.746 s</title></rect>
+<text x="636.9" y="148" class="val">4.746 s (-1.3%)</text>
+<text x="222" y="176" class="lbl" text-anchor="end">ref safe</text>
+<rect x="230" y="158" width="419.4" height="13" class="before"><title>before 4.953 s</title></rect>
+<text x="654.4" y="169" class="val">4.953 s</text>
+<rect x="230" y="173" width="418.8" height="13" class="flat"><title>after 4.945 s</title></rect>
+<text x="653.8" y="184" class="val">4.945 s (-0.2%)</text>
+<text x="222" y="212" class="lbl" text-anchor="end">ref unsafe</text>
+<rect x="230" y="194" width="440.7" height="13" class="before"><title>before 5.204 s</title></rect>
+<text x="675.7" y="205" class="val">5.204 s</text>
+<rect x="230" y="209" width="420.4" height="13" class="fast"><title>after 4.964 s</title></rect>
+<text x="655.4" y="220" class="val">4.964 s (-4.6%)</text>
+<text x="222" y="248" class="lbl" text-anchor="end">naive, ref in stdlib</text>
+<rect x="230" y="230" width="325.8" height="13" class="before"><title>before 3.848 s</title></rect>
+<text x="560.8" y="241" class="val">3.848 s</text>
+<rect x="230" y="245" width="333.7" height="13" class="flat"><title>after 3.941 s</title></rect>
+<text x="568.7" y="256" class="val">3.941 s (+2.4%)</text>
+</svg></div>
+<h3>merkletrees <span class="mute">geomean after/before 0.817 (-18.3%)</span></h3><div class="card"><svg viewBox="0 0 900 126" role="img" aria-label="merkletrees before and after">
+<text x="222" y="32" class="lbl" text-anchor="end">naive (DynamicArray)</text>
+<rect x="230" y="14" width="440.7" height="13" class="before"><title>before 1.242 s</title></rect>
+<text x="675.7" y="25" class="val">1.242 s</text>
+<rect x="230" y="29" width="353.8" height="13" class="fast"><title>after 0.997 s</title></rect>
+<text x="588.8" y="40" class="val">0.997 s (-19.7%)</text>
+<text x="222" y="68" class="lbl" text-anchor="end">optimized safe</text>
+<rect x="230" y="50" width="423.5" height="13" class="before"><title>before 1.194 s</title></rect>
+<text x="658.5" y="61" class="val">1.194 s</text>
+<rect x="230" y="65" width="345.5" height="13" class="fast"><title>after 0.974 s</title></rect>
+<text x="580.5" y="76" class="val">0.974 s (-18.4%)</text>
+<text x="222" y="104" class="lbl" text-anchor="end">optimized unsafe</text>
+<rect x="230" y="86" width="406.6" height="13" class="before"><title>before 1.146 s</title></rect>
+<text x="641.6" y="97" class="val">1.146 s</text>
+<rect x="230" y="101" width="338.2" height="13" class="fast"><title>after 0.953 s</title></rect>
+<text x="573.2" y="112" class="val">0.953 s (-16.8%)</text>
+</svg></div>
+<h3>helloworld <span class="mute">geomean after/before 1.060 (+6.0%)</span></h3><div class="card"><svg viewBox="0 0 900 54" role="img" aria-label="helloworld before and after">
+<text x="222" y="32" class="lbl" text-anchor="end">plain printf</text>
+<rect x="230" y="14" width="415.8" height="13" class="before"><title>before 0.002 s</title></rect>
+<text x="650.8" y="25" class="val">0.002 s</text>
+<rect x="230" y="29" width="440.7" height="13" class="slow"><title>after 0.002 s</title></rect>
+<text x="675.7" y="40" class="val">0.002 s (+6.0%)</text>
+</svg></div>
+<h3>json_serde <span class="mute">geomean after/before 0.942 (-5.8%)</span></h3><div class="card"><svg viewBox="0 0 900 126" role="img" aria-label="json_serde before and after">
+<text x="222" y="32" class="lbl" text-anchor="end">naive (DynamicArray)</text>
+<rect x="230" y="14" width="440.7" height="13" class="before"><title>before 1.629 s</title></rect>
+<text x="675.7" y="25" class="val">1.629 s</text>
+<rect x="230" y="29" width="422.7" height="13" class="fast"><title>after 1.562 s</title></rect>
+<text x="657.7" y="40" class="val">1.562 s (-4.1%)</text>
+<text x="222" y="68" class="lbl" text-anchor="end">optimized safe</text>
+<rect x="230" y="50" width="326.5" height="13" class="before"><title>before 1.207 s</title></rect>
+<text x="561.5" y="61" class="val">1.207 s</text>
+<rect x="230" y="65" width="315.6" height="13" class="flat"><title>after 1.166 s</title></rect>
+<text x="550.6" y="76" class="val">1.166 s (-3.3%)</text>
+<text x="222" y="104" class="lbl" text-anchor="end">optimized unsafe</text>
+<rect x="230" y="86" width="294.6" height="13" class="before"><title>before 1.089 s</title></rect>
+<text x="529.6" y="97" class="val">1.089 s</text>
+<rect x="230" y="101" width="265.5" height="13" class="fast"><title>after 0.981 s</title></rect>
+<text x="500.5" y="112" class="val">0.981 s (-9.9%)</text>
+</svg></div>
+</main></body></html>

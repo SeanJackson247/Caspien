@@ -1969,7 +1969,7 @@ optimisations off, which is how the shipped `toolchain.config` builds.
 on the same program (lower is better, 1x = the reference). For each of the four metrics there are two charts: every language against C -O2,
 and only the memory-safe implementations (Caspien without its unsafe-dynarray variants, runtime-safe languages, and Rust where rustc accepts the
 port under `-F unsafe_code`) against Rust, free build. Compile time and executable size use a log axis. These charts come from the 5 October
-quick run: the Caspien rows were re-measured that day with the optimised builds only (so there are no optimisations-off bars), and the other
+quick run, taken after that day's register and peephole round: the Caspien rows were re-measured that day with the optimised builds only (so there are no optimisations-off bars), and the other
 languages' rows are from the earlier full run, so a ratio mixes two runs and carries the VM noise described below. A time marked `>=` was cut off
 in the quick run and is a lower bound.
 
