@@ -214,9 +214,10 @@ no overload of 'f' matches argument types (f32)
 
 **`@pure`** marks a function with no side effects. It is not the same as referentially transparent: a `@pure`
 function may read through a pointer argument, so the same call can return different results as the
-pointee changes, and it may call the built-in `insecure_rand()`, which is side-effect-free but
-non-deterministic. The checker enforces it call by call (it is not transitive, so each function in a chain
-carries the decorator):
+pointee changes, and it may call the built-in `insecure_rand()` or allocate (`new`, `dyn`, `resize`, `clone`),
+which are side-effect-free but non-deterministic (the result depends on state the arguments do not determine,
+and running out of memory is part of the program's semantics). The checker enforces it call by call (it is not
+transitive, so each function in a chain carries the decorator):
 
 ```rust
 @pure
@@ -231,15 +232,45 @@ func hyp(a: mut u64, b: mut u64) mut u64{
 ```
 
 A `@pure` function may call only other `@pure` functions. It may not call an extern or a function pointer,
-read a `mut` global, write through any pointer, or `throw`, and `unsafe` does not lift any of that. Local
-variables, arithmetic and loops are fine, and an `imut` global may be read. Because `new` can throw, it is
-effectively unavailable in a `@pure` function.
+read a `mut` global, write through any pointer, `throw`, contain an `unsafe` block (so no `asm`, `memcopy`,
+`swap` or unsafe dynarrays), use `match @lock` (acquiring the lock writes the mutex and blocks), or start or wait
+on a thread (`par`, `await`, `@par` loops). Local variables, arithmetic and `for` loops are fine.
 
 ```
 'f' is '@pure' and can only call other '@pure' functions -- 'impure' is not
 'f' is '@pure' and cannot read 'G' -- it is a mutable global/static variable
 'f' is '@pure' and cannot mutate through a pointer -- ...
 'f' is '@pure' and cannot 'throw' -- an unconditional program termination can never be verified at compile time
+'f' is '@pure' and cannot use an 'unsafe' block -- unsafe code can do anything the compiler cannot check, so purity could not be guaranteed
+'f' is '@pure' and cannot use 'match @lock' -- acquiring the lock writes the mutex and blocks (a retry loop on shared state)
+```
+
+**`@pure(rt)`** is referentially transparent: the same arguments always give the same result. It has every
+`@pure` rule above plus: no value of a pointer type (`ref`, `raw`, `owns`, `auto`, `static`) or dynamic array
+anywhere (parameters, return type, locals, expressions), so it cannot read memory the arguments do not
+determine; no globals or statics; no allocation (`new`, `dyn`, `resize`, `clone`), no `deref`, no
+`insecure_rand()`; and it may call only other `@pure(rt)` functions. Safe code has no unbounded loop, so every
+loop in an `rt` function is a `for` range or a `@recursive` bounded loop and the function always terminates.
+**`@non(deterministic)`** marks a function whose result may differ for equal arguments (a `@pure` function can
+carry it); a `@pure(rt)` function cannot call one, and `@pure(rt)` and `@non(deterministic)` cannot be combined
+on one function.
+
+```rust
+@pure(rt)
+func poly(x: mut u64) mut u64{
+	let s = mut 7
+	for i in 0..8{ s = s * 31 + x + i }
+	return s
+}
+@pure
+@non(deterministic)
+func roll() mut u64{ return insecure_rand() }
+```
+
+```
+'f' is '@pure(rt)' and can only call other '@pure(rt)' functions -- 'g' is only '@pure'
+'f' is '@pure(rt)' (referentially transparent) and cannot use 'new' -- allocation depends on heap state (it can fail), so the result is not a function of the arguments
+'f' is '@pure(rt)' (referentially transparent) and cannot have a pointer or dynamic array ('ref_some_mut_W') as parameter 'p' -- it may not read memory through pointers
 ```
 
 `@reads` and `@writes` (each takes one or more of `all`, `self`, `others`, `globals`) are accepted and

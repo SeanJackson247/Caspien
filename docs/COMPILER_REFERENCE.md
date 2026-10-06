@@ -284,7 +284,7 @@ value stops the compile). It runs after dead control flow removal in the outer l
 The program is left completely alone when it contains an `INVOKE` (a call through a function pointer: `call(fp, ...)`, unsafe code only, the target is not known statically) or has no
 `main` (a library). Otherwise a function is kept when it is reachable from a root through `CALL`/`RECURSIVE_CALL` or through any other line that names it as an operand (so a function
 whose address is taken, `PUSH f static_imut_func(..)`, counts as used, as do the trampolines the compiler builds for `par`). Roots: `main`; `gt_init`, `gt_register`, `gt_alive_check`,
-`gt_destruct` (the backend calls these by fixed name with no `CALL` in the bytecode); any function carrying a decorator other than `@pub`, `@throws`, `@recursive`, `@pure`; and any function named
+`gt_destruct` (the backend calls these by fixed name with no `CALL` in the bytecode); any function carrying a decorator other than `@pub`, `@throws`, `@recursive`, `@pure`, `@pure(rt)`, `@non(deterministic)`; and any function named
 on a line outside every function. Note this is reachability from the roots, slightly stronger than "is there a call site": two functions that only call each other, or one that only calls
 itself, are removed too. Only whole `FUNC_START`..`FUNC_END` blocks are deleted. A Hello World drops from 9 functions to 6 (the plain `gtSlotAt`, `gtReadSlot`, `gtWriteSlot` are only ever
 called through their `__` duplicates); `stdlib_test` from 62 to 54.

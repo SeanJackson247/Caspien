@@ -1,0 +1,13 @@
+// a '@pure' function cannot contain an 'unsafe' block: this must NOT compile.
+@pure
+func f(x: mut u64) mut u64{
+	let n = mut 0
+	unsafe loop{
+		loop{
+			n += 1
+			if n == 5{ break }
+		}
+	}
+	return x + n
+}
+func main() void{ }

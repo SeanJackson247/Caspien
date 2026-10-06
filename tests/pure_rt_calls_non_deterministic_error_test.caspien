@@ -1,0 +1,7 @@
+// a '@pure(rt)' function cannot call a '@non(deterministic)' function: this must NOT compile.
+@pure
+@non(deterministic)
+func g() mut u64{ return insecure_rand() }
+@pure(rt)
+func f() mut u64{ return g() }
+func main() void{ }

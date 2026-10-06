@@ -1,0 +1,4 @@
+// '@pure' takes nothing or 'rt': this must NOT compile.
+@pure(fast)
+func f(x: mut u64) mut u64{ return x }
+func main() void{ }

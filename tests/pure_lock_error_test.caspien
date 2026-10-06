@@ -1,0 +1,17 @@
+// a '@pure' function cannot use 'match @lock' (acquiring writes the mutex and blocks): this must NOT compile.
+enum St{ OPEN, CLOSED }
+struct Mtx{@pub{
+	swap lockState: atomic mut St
+	n: mut u64
+}}
+@pure
+func f() mut u64{
+	let m = mut Mtx{lockState= St.OPEN, n= mut 0}
+	let free = mut 0
+	match @lock m{
+		OPEN:{ free = 1 }
+		CLOSED:{ break }
+	}
+	return free
+}
+func main() void{ }

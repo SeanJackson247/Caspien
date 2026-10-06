@@ -4767,6 +4767,11 @@ public class TypeChecker {
      * unconditionally, never gated on scope.currentSafety.
      */
     private void requirePureDoesNotReadMutableStatic(TypeInfo t, String name, FuncInfo func, Token at) {
+        if (isPureRtFunc(func)) {
+            throw new CompilerException("type", at.file, at.line,
+                    "'" + func.name + "' is '@pure(rt)' and cannot read '" + name
+                            + "' -- a global/static variable is memory the arguments do not determine");
+        }
         if (isPureFunc(func) && "mut".equals(t.mutability)) {
             throw new CompilerException("type", at.file, at.line,
                     "'" + func.name + "' is '@pure' and cannot read '" + name
@@ -4813,7 +4818,7 @@ public class TypeChecker {
     private static final Set<String> FUNC_BASE_DECORATORS = new HashSet<>(Arrays.asList(
             "pure", "recursive", "inline", "call_convention", "reads", "writes",
             "gt_init", "gt_alive_check", "gt_destruct", "gt_register", "gt_moved", "par_call", "await_call", "sleep",
-            "lock", "unlock", "async", "pub", "with_tick", "tick", "event_loop", "make_safe_args", "throws", "drop", "fs_root", "fs_unsafe"));
+            "lock", "unlock", "async", "pub", "with_tick", "tick", "event_loop", "make_safe_args", "throws", "drop", "fs_root", "fs_unsafe", "non"));
     /** `@drop` marks a struct's cleanup function: the drop glue calls it with the struct's address just before the struct (an `owns` value) is freed, so a handle type can close what it holds. It takes exactly one parameter, `ref some mut S` for a struct S, returns void and does not throw. */
     private void requireDropHookShape(Token t, FuncInfo info, List<Token> returnTypeTokens) {
         TypeInfo p = info.paramTypes.size() == 1 ? info.paramTypes.get(0) : null;
@@ -4938,7 +4943,45 @@ public class TypeChecker {
     }
 
     private boolean isPureFunc(FuncInfo f) {
-        return f != null && getDecorator(f.funcToken.decorators, "pure") != null;
+        return f != null && f.funcToken != null && getDecorator(f.funcToken.decorators, "pure") != null;
+    }
+
+    /** `@pure(rt)`: referentially transparent (the argument was validated to be exactly `rt`). */
+    private boolean isPureRtFunc(FuncInfo f) {
+        if (f == null || f.funcToken == null) {
+            return false;
+        }
+        Token.Decorator d = getDecorator(f.funcToken.decorators, "pure");
+        return d != null && !d.args.isEmpty();
+    }
+
+    private static String pureKind(boolean rt) {
+        return rt ? "@pure(rt)" : "@pure";
+    }
+
+    /** Things a plain `@pure` function (and therefore a `@pure(rt)` one) may not do: unsafe code, the `match @lock` spin lock, threads. Compiler-synthesized unsafe blocks never reach this. */
+    private void requireNotPure(FuncInfo func, Token at, String what, String why) {
+        if (isPureFunc(func)) {
+            throw new CompilerException("type", at.file, at.line,
+                    "'" + func.name + "' is '" + pureKind(isPureRtFunc(func)) + "' and cannot use " + what + " -- " + why);
+        }
+    }
+
+    /** Things only a `@pure(rt)` function may not do: allocation, randomness, reading through a pointer. A plain `@pure` function may (they are non-deterministic, not side effects). */
+    private void requireNotPureRt(FuncInfo func, Token at, String what, String why) {
+        if (isPureRtFunc(func)) {
+            throw new CompilerException("type", at.file, at.line,
+                    "'" + func.name + "' is '@pure(rt)' (referentially transparent) and cannot use " + what + " -- " + why);
+        }
+    }
+
+    /** A `@pure(rt)` function never holds a pointer: no `ref`/`raw`/`owns`/`auto`/`static` typed value and no dynarray (reading through one depends on memory the arguments do not determine). */
+    private void requirePureRtNoPointer(TypeInfo t, Token at, FuncInfo func, String where) {
+        if (t != null && (t.storage != null || t.dynArrayElementType != null)) {
+            throw new CompilerException("type", at.file, at.line,
+                    "'" + func.name + "' is '@pure(rt)' (referentially transparent) and cannot have a pointer or dynamic array ('"
+                            + t.canonical() + "') " + where + " -- it may not read memory through pointers");
+        }
     }
 
     /**
@@ -4956,8 +4999,13 @@ public class TypeChecker {
     private void requirePureCalleeIfPure(FuncInfo caller, FuncInfo callee, Token at) {
         if (isPureFunc(caller) && !isPureFunc(callee)) {
             throw new CompilerException("type", at.file, at.line,
-                    "'" + caller.name + "' is '@pure' and can only call other '@pure' functions -- '"
+                    "'" + caller.name + "' is '" + pureKind(isPureRtFunc(caller)) + "' and can only call other '@pure' functions -- '"
                             + callee.name + "' is not");
+        }
+        if (isPureRtFunc(caller) && !isPureRtFunc(callee)) {
+            throw new CompilerException("type", at.file, at.line,
+                    "'" + caller.name + "' is '@pure(rt)' and can only call other '@pure(rt)' functions -- '"
+                            + callee.name + "' is only '@pure'" + (callee.funcToken != null && getDecorator(callee.funcToken.decorators, "non") != null ? " and '@non(deterministic)'" : ""));
         }
     }
 
@@ -4996,6 +5044,12 @@ public class TypeChecker {
                         "'@" + d.name + "' is not a valid decorator on " + contextDesc);
             }
             validateDecoratorArgShape(d);
+        }
+        Token.Decorator pureDec = getDecorator(decorators, "pure");
+        Token.Decorator nonDec = getDecorator(decorators, "non");
+        if (pureDec != null && !pureDec.args.isEmpty() && nonDec != null) {
+            throw new CompilerException("type", nonDec.file, nonDec.line,
+                    "'@pure(rt)' (referentially transparent) cannot also be '@non(deterministic)'");
         }
     }
 
@@ -5052,6 +5106,17 @@ public class TypeChecker {
                     throw new CompilerException("type", d.file, d.line,
                             "'@link_name' takes a bare name, not a string -- '@link_name(sleep)', not "
                                     + "'@link_name(\"sleep\")'");
+                }
+                break;
+            case "pure":
+                // "@pure" (side-effect free) or "@pure(rt)" (referentially transparent: also no pointer reads, no statics, no allocation, no non-determinism)
+                if (d.args.size() > 1 || (d.args.size() == 1 && (d.argIsString.get(0) || !d.args.get(0).equals("rt")))) {
+                    throw new CompilerException("type", d.file, d.line, "'@pure' takes nothing or 'rt' ('@pure(rt)', referentially transparent)");
+                }
+                break;
+            case "non":
+                if (d.args.size() != 1 || d.argIsString.get(0) || !d.args.get(0).equals("deterministic")) {
+                    throw new CompilerException("type", d.file, d.line, "'@non' takes exactly 'deterministic': '@non(deterministic)'");
                 }
                 break;
             case "fs_root":
@@ -7167,6 +7232,12 @@ public class TypeChecker {
     }
 
     private void checkFunctionBody(FuncInfo func) {
+        if (isPureRtFunc(func)) {
+            for (int i = 0; i < func.paramTypes.size(); i++) {
+                requirePureRtNoPointer(func.paramTypes.get(i), func.funcToken, func, "as parameter '" + func.paramNames.get(i) + "'");
+            }
+            requirePureRtNoPointer(func.returnType, func.funcToken, func, "as its return type");
+        }
         Scope scope = new Scope(null, func.safetyTag);
         for (int i = 0; i < func.paramNames.size(); i++) {
             scope.vars.put(func.paramNames.get(i), func.paramTypes.get(i));
@@ -8342,6 +8413,9 @@ public class TypeChecker {
                     return;
                 case "for":
                     validateDecorators(stmt.decorators, LOOP_DECORATORS, "a 'for' statement");
+                    if (getDecorator(stmt.decorators, "par") != null) {
+                        requireNotPure(func, stmt, "a '@par' loop", "it runs iterations on other threads");
+                    }
                     checkForLoop(stmt, scope, func);
                     return;
                 case "match":
@@ -8397,6 +8471,9 @@ public class TypeChecker {
                     }
                     Scope safetyBlockScope = new Scope(scope, stmt.text);
                     if (stmt.text.equals("unsafe")) {
+                        if (!stmt.synthesizedUnsafe) {
+                            requireNotPure(func, stmt, "an 'unsafe' block", "unsafe code can do anything the compiler cannot check, so purity could not be guaranteed");
+                        }
                         safetyBlockScope.unsafeBlock = recordUnsafeBlock(stmt);
                     }
                     checkLinesInScope(stmt.childs, safetyBlockScope, func, insideLoop);
@@ -11102,6 +11179,9 @@ public class TypeChecker {
     private TypeInfo resolveExprType(Token node, Scope scope, FuncInfo func) {
         TypeInfo result = resolveExprTypeInner(node, scope, func);
         node.resolvedType = result.canonical();
+        if (func != null && isPureRtFunc(func)) {
+            requirePureRtNoPointer(result, node, func, "in an expression");
+        }
         return result;
     }
 
@@ -13225,7 +13305,7 @@ public class TypeChecker {
             case "dyn": return checkDynBuiltin(op, scope, func);
             case "resize": return checkResizeBuiltin(op, scope, func);
             case "Some": return checkSomeBuiltin(op, scope, func);
-            case "insecure_rand": return checkInsecureRandBuiltin(op);
+            case "insecure_rand": requireNotPureRt(func, op, "'insecure_rand'", "it is non-deterministic"); return checkInsecureRandBuiltin(op);
             case "wrap": case "sat": return checkConvertBuiltin(name, op, scope, func);
             default: throw new IllegalStateException("unreachable: '" + name + "' not in BUILTIN_NAMES");
         }
@@ -13662,6 +13742,7 @@ public class TypeChecker {
      * more targeted form, not a blocker on this one.
      */
     private TypeInfo checkDerefBuiltin(Token op, Scope scope, FuncInfo func) {
+        requireNotPureRt(func, op, "'deref'", "it reads memory through a pointer");
         Token argExpr = collectSingleBuiltinArg(op, "deref", scope, func).get(0);
         TypeInfo argType = resolveExprType(argExpr, scope, func);
         if (argType.storage == null) {
@@ -13694,6 +13775,7 @@ public class TypeChecker {
      * base type and mutability preserved, storage becomes 'owns'.
      */
     private TypeInfo checkCloneBuiltin(Token op, Scope scope, FuncInfo func) {
+        requireNotPureRt(func, op, "'clone'", "allocation depends on heap state (it can fail), so the result is not a function of the arguments");
         // `clone` allocates a fresh heap copy and registers it with the ghost table, exactly as `new` does, so it
         // can fail the same way and needs the same try/catch (or `?`) discipline, and it makes the same demands of
         // the program (ghost table functions, the throw machinery).
@@ -13947,6 +14029,7 @@ public class TypeChecker {
      * recoverable from the already-emitted element pushes).
      */
     private TypeInfo checkDynBuiltin(Token op, Scope scope, FuncInfo func) {
+        requireNotPureRt(func, op, "'dyn'", "allocation depends on heap state (it can fail), so the result is not a function of the arguments");
         return checkDynBuiltinCore(op, scope, func, false);
     }
 
@@ -14095,6 +14178,7 @@ public class TypeChecker {
      * is deliberately bypassed for the inner CALL node on this path.
      */
     private TypeInfo checkUnsafeDynWrapper(Token op, Scope scope, FuncInfo func) {
+        requireNotPure(func, op, "'unsafe dyn(...)'", "unsafe code can do anything the compiler cannot check, so purity could not be guaranteed");
         if (!"unsafe".equals(scope.currentSafety)) {
             throw new CompilerException("type", op.file, op.line,
                     "'unsafe dyn(...)' can only be used from within 'unsafe' code");
@@ -14124,6 +14208,7 @@ public class TypeChecker {
      * fully type-checked operation, never raw memory manipulation.
      */
     private TypeInfo checkResizeBuiltin(Token op, Scope scope, FuncInfo func) {
+        requireNotPureRt(func, op, "'resize'", "allocation depends on heap state (it can fail), so the result is not a function of the arguments");
         // "We need to be barred from resizing (even indirectly thru
         // another function) the dynarray in a for loop," confirmed
         // directly -- a direct "resize(...)" call inside such a loop's
@@ -15042,6 +15127,7 @@ public class TypeChecker {
      * already established.
      */
     private void checkLockMatchStatement(Token stmt, Scope scope, FuncInfo func, boolean insideLoop) {
+        requireNotPure(func, stmt, "'match @lock'", "acquiring the lock writes the mutex and blocks (a retry loop on shared state)");
         Token receiver = stmt.sub.get(0);
         TypeInfo receiverType = resolveExprType(receiver, scope, func);
         StructInfo structInfo = structs.get(receiverType.baseType);
@@ -17522,6 +17608,7 @@ public class TypeChecker {
      * later, same as if 'new' had simply succeeded.
      */
     private TypeInfo checkNew(Token op, Scope scope, FuncInfo func) {
+        requireNotPureRt(func, op, "'new'", "allocation depends on heap state (it can fail), so the result is not a function of the arguments");
         usesOwnsRefDynNew = true;
         usesThrow = true;
         if (!isValueConstructingExpr(op.left)) {
@@ -17693,6 +17780,7 @@ public class TypeChecker {
      * here and in `checkPar` separately.
      */
     private TypeInfo checkAwait(Token op, Scope scope, FuncInfo func) {
+        requireNotPure(func, op, "'await'", "it waits on another thread");
         if (op.left.type != TokenType.OPERATOR || !op.left.text.equals("CALL")) {
             throw new CompilerException("type", op.left.file, op.left.line,
                     "'await' must directly wrap a function call, e.g. 'await foo(...)'");
@@ -18477,6 +18565,7 @@ public class TypeChecker {
      * here the way an ordinary/await call's return value is.
      */
     private TypeInfo checkPar(Token op, Scope scope, FuncInfo func) {
+        requireNotPure(func, op, "'par'", "it starts another thread");
         if (op.left.type != TokenType.OPERATOR || !op.left.text.equals("CALL")) {
             throw new CompilerException("type", op.left.file, op.left.line,
                     "'par' must directly wrap a function call, e.g. 'par foo(...)'");

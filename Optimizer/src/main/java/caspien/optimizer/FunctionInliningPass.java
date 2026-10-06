@@ -110,7 +110,7 @@ public class FunctionInliningPass implements OptimizationPass {
         return true;
     }
 
-    private static final Set<String> OK_DECORATORS = new HashSet<>(Arrays.asList("@pub", "@pure", "@recursive", "@inline", "@throws", "@lock"));
+    private static final Set<String> OK_DECORATORS = new HashSet<>(Arrays.asList("@pub", "@pure", "@pure(rt)", "@non(deterministic)", "@recursive", "@inline", "@throws", "@lock"));
     private static final Set<String> EXCLUDED = new HashSet<>(Arrays.asList("EXIT", "EXIT_THREAD",
             "ASM_START", "ASM_END", "RECURSIVE_CALL", "ALLOC_STATIC", "FUNC_START", "FUNC_END", "STRUCT_START", "GLOBAL", "REGVAR", "STRING",
             "EXTERN", "ENUM", "STRUCT_MEMBER", "STRUCT_END", "STRUCT_DECORATE", "STRUCT_PADDING"));

@@ -34,7 +34,7 @@ impl constructor for P(n: mut u64) self{ return P{a= n} }
 impl constructor for P(s: static imut string) self{ return P{a= 99} }
 
 // @pure functions may only call other @pure functions, touch no mutable global,
-// write through no pointer, and never throw.
+// write through no pointer, contain no `unsafe` block, and never throw.
 @pure
 func sq(x: mut u64) mut u64{ return x * x }
 @pure
@@ -43,9 +43,8 @@ func hyp(a: mut u64, b: mut u64) mut u64{
 	let t = mut sq(b)
 	return s + t
 }
-let static LIMIT = imut 10
 @pure
-func plusLimit(x: mut u64) mut u64{ unsafe global{ return x + LIMIT } }
+func plusLimit(x: mut u64) mut u64{ return x + 10 }
 
 struct Box<T>{@pub{ v: mut T }}
 impl<T> Box<T>{

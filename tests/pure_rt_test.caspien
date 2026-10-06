@@ -1,0 +1,72 @@
+// @pure(rt) (referentially transparent): scalars in, scalar out, loops that are `for` ranges, calls only to other @pure(rt) functions. A plain @pure
+// function may allocate and use insecure_rand() (non-deterministic, not a side effect), and a @pure function may be marked @non(deterministic), which
+// a @pure(rt) function may not call (pure_rt_calls_* error tests). Values are compared with pure_rt_test.py by pure_rt_check.sh; the output must be
+// the same in every optimizer configuration.
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+
+@pure(rt)
+func poly(x: mut u64) mut u64{
+	let s = mut 7
+	for i in 0..8{
+		s = s * 31 + x + i
+	}
+	return s
+}
+
+@pure(rt)
+func collatzish(x: mut u64) mut u64{
+	let v = mut x
+	for i in 0..40{
+		if bits_and(v, 1) == 1{
+			v = v * 3 + 1
+		} else{
+			v = bits_right(v, 1)
+		}
+	}
+	return v
+}
+
+@pure(rt)
+func mix(a: mut u64, b: mut u64) mut u64{
+	let p = mut poly(a)
+	let q = mut collatzish(b)
+	return bits_xor(p, bits_rotl(q, 13))
+}
+
+@pure(rt)
+func isEven(x: mut u64) mut bool{ return bits_and(x, 1) == 0 }
+
+struct W{@pub{ t: mut u64 }}
+
+// a plain @pure function may allocate: non-deterministic, not a side effect
+@pure
+func allocSum(n: mut u64) mut u64{
+	?catch(e){ return 0 }
+	let w = mut ?new W{t= n}
+	return w.t + 1
+}
+
+@pure
+@non(deterministic)
+func roll() mut u64{ return insecure_rand() }
+
+@pure
+func useRoll() mut u64{
+	let r = mut roll()
+	return r - r + 5
+}
+
+func main() void{
+	let m = mut mix(3, 27)
+	let c = mut collatzish(97)
+	let p = mut poly(12345)
+	let e = mut isEven(10)
+	let a = mut allocSum(41)
+	let u = mut useRoll()
+	unsafe extern{ printf("%llu %llu %llu %llu %llu %llu\n", m, c, p, e, a, u) }
+}
