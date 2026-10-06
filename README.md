@@ -1591,7 +1591,7 @@ what the checker enforces in safe code, then what `unsafe` gives up.
 | Property | Enforced today | Open (still safe code) |
 |---|---|---|
 | **Termination** | Direct and mutual recursion rejected; `@recursive` only as a tail call on a shrinking range, lowered to a bounded `for`; every `for` bound fixed at loop entry; counter immutable; no `loop{}` and no `call()` (both need `unsafe`). | `match @lock` spins until it acquires the lock, so it can wait forever under contention. `await` blocks on another thread. So safe code is not strictly total. |
-| **Bounded execution time** | Termination is guaranteed (above), and every `for` is bounded by its range, so each loop is finite. Safe code has no unbounded loop and an acyclic call graph, which is what makes a static bound possible. | `--audit` prints a worst-case execution cost per function in ABSTRACT GAS: every bytecode operation has a fixed price (a table in `docs/COMPILER_REFERENCE.md`, independent of the machine, the optimiser switches and the target), a branch costs its dearer side, a `try` counts its catch bodies, a call costs the callee's worst case, and a `for` with literal bounds is `bound * (header + worst iteration)`, exactly (checked against an independent path-search model, `tests/gas_check.sh`). A `loop{}`, a `for` with a variable bound (this includes the range argument of a `@recursive` function) or an indirect call makes the function UNBOUNDED, shown as `>= N` with the reason. A call that passes values the caller knows (literals, locals computed from them, its own parameters, a range such as `0..10`) is costed with those values, so `sumTo(5)` has a bound even though `sumTo(n)` alone has none; values the analysis cannot follow (a call result, a variable changed in a loop or a branch) leave the call unbounded. External calls, inline assembly, `memcopy` sizes and waiting (`sleep`, `yield`, `match @lock`, `await`) get a fixed price and are listed as not modelled. The same report adds a stack-depth estimate (longest call chain over per-function frame estimates, never below the real frame, inlining not modelled) and the most heap bytes one run can request (every allocation at its full size, exact where the allocating loops and the sizes are literal, `>=` with the reason otherwise; frees are not credited here), with the number of allocation operations alongside, and the peak live heap: the most bytes alive at the same time, with frees credited where the analysis can prove them (never below the real peak; checked against the allocator by `tests/heap_live_check.sh` and `tests/heap_live_sweep_check.py`). Time in seconds is not computed. |
+| **Bounded execution time** | Termination is guaranteed (above), and every `for` is bounded by its range, so each loop is finite. Safe code has no unbounded loop and an acyclic call graph, which is what makes a static bound possible. | `--audit` prints a worst-case execution cost per function in ABSTRACT GAS: every bytecode operation has a fixed price (a table in `docs/COMPILER_REFERENCE.md`, independent of the machine, the optimiser switches and the target), a branch costs its dearer side, a `try` counts its catch bodies, a call costs the callee's worst case, and a `for` with literal bounds is `bound * (header + worst iteration)`, exactly (checked against an independent path-search model, `tests/gas_check.sh`). Every figure is classed with one word: **bounded** (the exact worst case), **finite** (always ends, but the bound is not known: a `for` over a run-time range, which includes the range argument of a `@recursive` function; the reason names what the bound depends on, e.g. `depends on `n``), **unbounded** (a `loop{}` that a `break`, `return` or `throw` can leave, but no static bound), **non-terminating** (a `loop{}` nothing can leave, e.g. an event loop; **can diverge** when only some paths reach one) or **unknown** (something the audit cannot analyse, e.g. an indirect call). Anything but bounded is printed as `>= N`, a lower bound, with the reasons; a caller takes the worst class among what it calls. A call that passes values the caller knows (literals, locals computed from them, its own parameters, a range such as `0..10`) is costed with those values, so `sumTo(5)` is bounded even though `sumTo(n)` alone is only finite; values the analysis cannot follow (a call result, a variable changed in a loop or a branch) leave the call finite. External calls, inline assembly, `memcopy` sizes and waiting (`sleep`, `yield`, `match @lock`, `await`) get a fixed price and are listed as not modelled. The same report adds a stack-depth estimate (longest call chain over per-function frame estimates, never below the real frame, inlining not modelled) and the most heap bytes one run can request (every allocation at its full size, exact where the allocating loops and the sizes are literal, `>=` with the reason otherwise; frees are not credited here), with the number of allocation operations alongside, and the peak live heap: the most bytes alive at the same time, with frees credited where the analysis can prove them (never below the real peak; checked against the allocator by `tests/heap_live_check.sh` and `tests/heap_live_sweep_check.py`). Time in seconds is not computed. |
 
 | **Memory safety** | Single ownership with compile-time move checking; array and dynarray indexes proven in bounds; dereferencing a pointer needs a liveness proof. | Liveness of a `ref` is checked at *run time* against a table of live allocations, so a dangling `ref` is skipped rather than rejected at compile time. |
 | **No runtime exceptions** | Division, float operations, narrowing, indexing and null access all need proofs; arithmetic wraps; failures are declared (`@throws`) and handled. | Allocation failure is reported (as a thrown error), not prevented. A throw out of the `OPEN` case of `match @lock` releases the lock before unwinding, like a `return` does (`tests/lock_unwind_test.caspien` prints `PASS`). |
@@ -1681,10 +1681,57 @@ section ends with `# summary:` lines, so `java Compiler -i main.caspien --audit 
 | Section | What it tells you |
 |---|---|
 | `unsafe audit` | Every `unsafe` block, split into *your code* and the *standard library*, each with its file, line, tags and contents, then counts per tag and the number of `unsafe unaudited` blocks. |
-| `worst-case execution cost` | Abstract gas per function, callees included (a fixed price per operation, independent of machine and optimiser). `>= N` with a reason means unbounded (`loop{}`, variable `for` bound, indirect call); operations that are not modelled (external calls, inline assembly, waiting) are listed. |
+| `worst-case execution cost` | Abstract gas per function, callees included (a fixed price per operation, independent of machine and optimiser). The word after the figure is `bounded`, `finite`, `unbounded`, `non-terminating`, `can diverge` or `unknown` (see "Bounded execution time"); anything but `bounded` is `>= N` with the reasons; operations that are not modelled (external calls, inline assembly, waiting) are listed. |
 | `stack depth` | An estimate of the stack bytes safe code needs, per function, and the deepest call path from the entry. `par` threads and event-loop `@tick` / `@with_tick` slices are listed as separate roots, never the event loop itself. |
 | `heap memory` | The most bytes one run can request from the allocator, with the number of allocation operations. Frees are not credited. |
 | `peak live heap` | The most bytes alive at once, with frees credited where they are certain, plus `leaves` (bytes still live when the function returns, such as a block it hands back). Never below the real peak, but not always exact. |
+
+An example. For this program:
+
+```
+func sumTo(n: mut u64) mut u64{
+	let s = mut 0
+	for i in 0..n{ s += i }
+	return s
+}
+
+func main() void{
+	let a = mut sumTo(10)
+	unsafe extern{ printf("%llu\n", a) }
+}
+```
+
+`--audit` prints (comment lines and the `unsafe` listing shortened):
+
+```
+# summary: 1 unsafe blocks (1 in your code, 0 in the standard library) and 0 other uses of the keyword, in 1 files
+# blocks naming each tag: extern=1
+
+# worst-case execution cost (abstract gas; ...)
+  main (entry)                       231  bounded
+      not modelled: external call printf
+  sumTo                              >= 32  finite: `for` runs a number of times only known at run time: depends on `n`
+# summary: main costs 231 gas in the worst case (bounded), 2 functions reachable
+
+# stack depth (an estimate ...)
+  main (entry)                       232 bytes  bounded
+      deepest path: main (96) > sumTo (136)
+      not counted: stack used by external calls (printf)
+  sumTo                              136 bytes  bounded
+# summary: main needs 232 bytes of stack (bounded) for safe code, 0 thread entries
+
+# heap memory (...)
+  main (entry)                       0 bytes  (0 allocation operations)  bounded
+# summary: main requests at most 0 bytes of heap (bounded) in at most 0 allocation operations
+
+# peak live heap (...)
+  main (entry)                       peak 0 bytes  (leaves 0)  bounded
+# summary: main has at most 0 bytes of heap live at once (bounded)
+```
+
+`sumTo` on its own is only *finite*: it always ends, but its loop count depends on `n`, so the figure (`>= 32`) is a lower bound and
+the line names `n`. `main` is *bounded*, because it calls `sumTo` with the literal `10`, so that call is costed with that value.
+The other classes (`unbounded`, `non-terminating`, `can diverge`, `unknown`) are explained under "Bounded execution time" above.
 
 The figures are bounds computed from the bytecode, not measurements. Direct calls to C's `malloc` through an `extern`, stack
 used by C functions and the values of call arguments in loop bounds are not counted. `CASPIEN_AUDIT_ALL=1` in the environment

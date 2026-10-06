@@ -580,9 +580,10 @@ hardware, optimiser switches or target. Rules:
 - A function's cost is that of its most expensive path. A conditional jump takes the dearer side; every unwind pad or `catch` staged for a call is a possible
   continuation, so catch bodies count.
 - A `for` over literal bounds `a..b` costs `(b-a)` iterations of the worst iteration plus the final header test (a `break` or `return` inside is
-  taken at the dearest iteration). Any other loop is UNBOUNDED: `loop{}`, a `for` whose bound is a variable or argument (including the range
-  argument of a `@recursive` function), and an indirect call. The figure is then a lower bound (one iteration) printed as `>= N` with the reason; a
-  caller of an unbounded function is unbounded, EXCEPT where the call passes values the caller knows: for a callee that is unbounded on its own the call is costed again
+  taken at the dearest iteration). Any other loop is classed (every line ends in one word, `>= N` and the reasons follow when it is not `bounded`): **finite** = a `for` whose bound is a variable or argument
+  (including the range argument of a `@recursive` function; always ends, the reason says `depends on `n``); **unbounded** = a `loop{}` with a reachable `break`, `return` or `throw` (a call that can throw counts) but no static bound;
+  **non-terminating** = a `loop{}` with none of those, on every path from the function start; **can diverge** = the same loop on some paths only, or a call to such a function that is not on every path; **unknown** = an indirect call (`INVOKE`) or recursion the audit cannot follow. The figure is then a lower bound (one iteration) printed as `>= N`; a
+  caller takes the worst class of its callees (bounded < finite < unknown < unbounded < can diverge < non-terminating), EXCEPT where the call passes values the caller knows: for a callee that is unbounded on its own the call is costed again
   with the parameter values it passes (`runEvals`, one specialised copy per distinct set of values), so `sumTo(5)` costs a 5-iteration loop. Values are known when they are
   literals, variables read through straight-line code to their last write (`valueAt`: no label in between, so every path runs through that write), parameters that are never written
   (or the caller's own parameters, forwarded), variables written once at the top of a function, and `ADD SUB MUL INC DEC` of those (64-bit, results kept below 2^63; narrower types give
@@ -596,12 +597,12 @@ hardware, optimiser switches or target. Rules:
   argument slot rounded up to 8 + an allowance of 64 bytes plus 8 per 24 lines of the function body for temporaries and register saves; depth = frame + the deepest callee.
   It is an ESTIMATE, calibrated so that it is never below the real frame of the compiled function (`tests/stack_check.sh` compares it with the prologue of the generated
   assembly under the shipped and an everything-on config, inlining and unrolling off). The call structure is that of the source: when the optimiser inlines a function
-  the real frames merge and the estimate does not follow. External calls (their own stack use), and indirect calls (`INVOKE`, listed as UNBOUNDED) are not counted. A thread
+  the real frames merge and the estimate does not follow. External calls (their own stack use), and indirect calls (`INVOKE`, listed as unknown) are not counted. A thread
   started with `par` runs on its own stack: each `__trampoline_*` is listed as a thread entry with its own deepest path.
 - **Heap memory** (`# heap memory`): the most bytes one run can request from the allocator, per function with its callees, with the number of allocation operations in
   brackets. Sizes: `new T` = the struct size (hidden class id and padding included); a safe dynarray = 16 (header) + elements * element size (`dyn([..])` literal count, `dyn("text")`
   text length, `resize` with a literal count: the whole new block); an unsafe dynarray = elements * element size (at least 1); `clone` = the block plus every owned block below it.
-  A size only known at run time (a `resize` to a variable count, a clone of a dynarray, `dyn` of a non-literal text) adds its fixed part and marks the function UNBOUNDED with the
+  A size only known at run time (a `resize` to a variable count, a clone of a dynarray, `dyn` of a non-literal text) adds its fixed part and marks the function finite (`>=`) with the
   reason (`>= N bytes`); so does a loop that allocates and has a non-literal bound (one that allocates nothing does not). Frees are NOT credited in this section, so for code that allocates and frees
   in a loop the figure is the total requested, an upper bound on the peak live heap rather than the peak itself (the next bullet credits them). Not counted: the ghost table's own growth, the allocator's per-block
   overhead and rounding, library `malloc`s outside Caspien code.
@@ -623,10 +624,10 @@ hardware, optimiser switches or target. Rules:
   memory is read out (a move), written (a replacement), or reached through a reference given to another function, and no tracked slot has its address taken; otherwise only the owner's own
   bytes are credited. A caller credits a callee's freed owned parameter with its deep part only when both functions are `deepOk`. A catch
   block / landing pad is analysed separately for each edge that enters it (what is live differs per edge), and the callee that unwinds also frees the arguments moved into it. Paths that
-  end in a throw or exit add to the peak but leave nothing for the caller. A loop whose body grows the live heap and has a non-literal bound is UNBOUNDED (`>=`), one that frees what it allocates
+  end in a throw or exit add to the peak but leave nothing for the caller. A loop whose body grows the live heap and has a non-literal bound is finite (`>=`), one that frees what it allocates
   is not. Threads are separate roots; a `par` thread's blocks are not added to its starter's figure.
 
 Tests: `tests/gas_check.sh` compares gas, heap bytes, allocation count and stack of every function in 25 programs (including the slice lines of `09_event_loop`) (`tests/gas_test.caspien`, `tests/heap_gas_test.caspien`, the docs examples) with
 `tests/gas_model.py`, an exhaustive path search over the bytecode (heap: the same path search with the byte cost of each allocation worked out separately in the model; unbounded iff the figure changes when the loop bound goes from 1 to 2 or a size is not a literal);
-`tests/audit_args_check.sh` covers the call-site values: `tests/audit_args_test.caspien` (every function equal to the model, `main` bounded in all sections, its peak live heap equal to the allocator's) and `tests/audit_args_unknown_test.caspien` (call results and variables changed in a loop or branch keep `main` UNBOUNDED). `tests/gas_model.py` is a concrete interpreter over the bytecode for that (it executes the integer assignments along each path and passes the argument values to the callee); an UNBOUNDED report line is only compared as a lower bound, a bounded one must equal the model exactly.
+`tests/audit_args_check.sh` covers the call-site values: `tests/audit_args_test.caspien` (every function equal to the model, `main` bounded in all sections, its peak live heap equal to the allocator's) and `tests/audit_args_unknown_test.caspien` (call results and variables changed in a loop or branch keep `main` finite); `tests/audit_class_check.sh` holds the expected class of every case in `tests/audit_class_test.caspien` (bounded, finite, three kinds of `loop{}`, can diverge, non-terminating, unknown). `tests/gas_model.py` is a concrete interpreter over the bytecode for that (it executes the integer assignments along each path and passes the argument values to the callee); an UNBOUNDED report line is only compared as a lower bound, a bounded one must equal the model exactly.
 `tests/stack_check.sh` calibrates the frame estimate against real frames. `tests/heap_live_check.sh` checks the peak live heap against the real allocator: one variant of `tests/heap_live_test.caspien` per allocation shape is run under `tests/alloc_shim.c` (peak of live bytes, `PEAK=`) and must equal the audit; `tests/heap_live_sweep_check.py` runs every test and example program under the shim and requires its measured peak never to exceed the audited figure for `main`. `CASPIEN_AUDIT_ALL=1` lifts the 40-line limit of each section.

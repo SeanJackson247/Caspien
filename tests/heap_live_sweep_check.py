@@ -30,7 +30,7 @@ for f in files:
     if c.returncode != 0:
         continue
     a = subprocess.run(["java", "-cp", ".", "Compiler", "-i", rel, "--audit"], cwd=R.SCRATCH, env=R.ENV, capture_output=True, text=True, timeout=600)
-    m = re.search(r"# summary: \S+ has at most (\d+) bytes of heap live at once\n", a.stdout)
+    m = re.search(r"# summary: \S+ has at most (\d+) bytes of heap live at once \(bounded\)\n", a.stdout)
     if not m:
         skipped += 1
         continue

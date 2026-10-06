@@ -19,7 +19,7 @@ import java.util.Set;
  * <li>branches take the dearer side; a `try` makes every throwing call site a possible jump to its catch block (and a call a possible jump to
  *     its unwind pad), so the catch bodies count on the worst path;</li>
  * <li>a `for` loop whose range has literal bounds costs bound * (header + worst iteration) + the final header test, exactly; any other
- *     loop (`loop {}`, a range with a variable bound, which includes the range argument of a `@recursive` function) is UNBOUNDED, and the
+ *     loop (`loop {}`, a range with a variable bound, which includes the range argument of a `@recursive` function) is not bounded (classed finite / unbounded / non-terminating / unknown, see `tag`), and the
  *     figure shown is then a lower bound (one iteration) tagged with the reason;</li>
  * <li>a call costs {@link #CALL_COST} plus the callee's worst case; unbounded callees make the caller unbounded;</li>
  * <li>external calls, inline assembly, indirect calls, `memcopy` sizes, sleeping and thread operations are charged a fixed amount and listed as
@@ -320,7 +320,7 @@ final class GasReport {
                     continue;
                 }
                 if (!lp.isFor) {
-                    lp.why = "unbounded `loop` (" + lab + ")";
+                    lp.why = null;      // classified in solveLoop (needs to know whether the body can leave the loop)
                 } else {
                     String type = null;
                     for (int i = lp.head + 1; i < lp.back && i < lp.head + 6; i++) {
@@ -346,7 +346,14 @@ final class GasReport {
                     }
                     lp.count = c;
                     if (c == null) {
-                        lp.why = "`for` bound is not a literal (" + (type == null ? lab : type) + ")";
+                        String dep = null;
+                        if (type != null && type.indexOf(',') > 0 && type.endsWith(")")) {
+                            String hi = type.substring(type.lastIndexOf(',') + 1, type.length() - 1).replaceFirst("^(imut_|mut_)", "");
+                            if (hi.matches("[A-Za-z_][A-Za-z_0-9.]*")) {
+                                dep = hi;
+                            }
+                        }
+                        lp.why = R(FIN, "`for` runs a number of times only known at run time" + (dep != null ? ": depends on `" + dep + "`" : " (" + (type == null ? lab : type) + ")"));
                     }
                 }
                 loops.put(lp.head, lp);
@@ -368,8 +375,14 @@ final class GasReport {
                 n = lp.count;
             } else {
                 // a count or a live-heap figure does not depend on the bound of a loop that does not grow it
+                String why = lp.why;
+                if (!lp.isFor) {
+                    boolean exit = !brk.neg || !ret.neg;     // a reachable `break`, `return` or `throw` (also from a call that can throw) inside the body
+                    why = exit ? R(UNB, "`loop` with no static bound, it can leave through `break`/`return`/`throw` (" + labelOf(lp) + ")")
+                            : R(runsFirst(f, lp.head) ? NONT : DIV, "`loop` with no `break`, `return` or `throw` that leaves it (" + labelOf(lp) + ")");
+                }
                 if (mt == GAS || (!cont.neg && cont.n.signum() > 0)) {
-                    f.ub[mt].add(lp.why);
+                    f.ub[mt].add(why);
                 }
                 n = BigInteger.ONE;        // lower bound: one iteration
             }
@@ -390,6 +403,10 @@ final class GasReport {
             }
             lp.done = true;
             lp.computing = false;
+        }
+
+        String labelOf(Loop lp) {
+            return ln[lp.head].substring(0, ln[lp.head].length() - 1);
         }
 
         Val headerCost(Loop lp) {
@@ -614,7 +631,7 @@ final class GasReport {
                     f.notModelled.add("thread operation");
                     break;
                 case "INVOKE":
-                    f.ub[mt].add("indirect call (INVOKE)");
+                    f.ub[mt].add(R(UNK, "indirect call (INVOKE), the callee is not known"));
                     break;
                 default:
                     break;
@@ -719,7 +736,7 @@ final class GasReport {
         for (Fn r : (eventMode ? slices : List.of(entry))) {
             Set<String> eub = r.ub[GAS];
             sb.append("# summary: ").append(r.name).append(" costs ").append(eub.isEmpty() ? "" : "at least ").append(r.val[GAS]).append(" gas")
-                    .append(eub.isEmpty() ? " in the worst case" : " (no upper bound: " + eub.size() + " reason" + (eub.size() == 1 ? "" : "s") + " above)").append(", ")
+                    .append(eub.isEmpty() ? " in the worst case (bounded)" : " (" + wordOf(worstOf(eub)) + ": " + eub.size() + " reason" + (eub.size() == 1 ? "" : "s") + " above)").append(", ")
                     .append(reach.size()).append(" functions reachable\n");
         }
 
@@ -758,7 +775,7 @@ final class GasReport {
             String label = rootLabel.apply(n);
             String val = (why.isEmpty() ? "" : ">= ") + depth.get(n) + " bytes";
             res.stackByFunction.put(n, (why.isEmpty() ? "" : ">=") + depth.get(n));
-            sb.append(String.format("  %-34s %s%s%n", label, val, why.isEmpty() ? "" : "  UNBOUNDED: " + String.join("; ", why)));
+            sb.append(String.format("  %-34s %s  %s%n", label, val, tag(why)));
             if (isRoot) {
                 StringBuilder path = new StringBuilder("      deepest path: ");
                 if (eventMode && pinned.contains(n)) {
@@ -788,7 +805,7 @@ final class GasReport {
         long threadRoots = roots.stream().filter(r -> r.name.startsWith("__trampoline_")).count();
         for (Fn r : (eventMode ? slices : List.of(entry))) {
             sb.append("# summary: ").append(r.name).append(" needs ").append(sub.get(r.name).isEmpty() ? "" : "at least ").append(depth.get(r.name))
-                    .append(" bytes of stack").append(sub.get(r.name).isEmpty() ? "" : " (no upper bound)").append(" for safe code, ")
+                    .append(" bytes of stack").append(sub.get(r.name).isEmpty() ? " (bounded)" : " (" + wordOf(worstOf(sub.get(r.name))) + ")").append(" for safe code, ")
                     .append(threadRoots).append(" thread entr").append(threadRoots == 1 ? "y" : "ies").append("\n");
         }
 
@@ -811,12 +828,12 @@ final class GasReport {
             res.countByFunction.put(n, (f.ub[COUNT].isEmpty() ? "" : ">=") + f.val[COUNT]);
             sb.append(String.format("  %-34s %s  (%s%d allocation operation%s)%s%n", rootLabel.apply(n).replace(" (thread entry)", ""), val,
                     f.ub[COUNT].isEmpty() ? "" : ">= ", f.val[COUNT], f.val[COUNT].equals(BigInteger.ONE) ? "" : "s",
-                    f.ub[HEAP].isEmpty() ? "" : "  UNBOUNDED: " + String.join("; ", f.ub[HEAP])));
+                    "  " + tag(f.ub[HEAP])));
         }
         for (Fn r : (eventMode ? slices : List.of(entry))) {
             Set<String> hub = r.ub[HEAP];
             sb.append("# summary: ").append(r.name).append(" requests ").append(hub.isEmpty() ? "at most " : "at least ").append(r.val[HEAP]).append(" bytes of heap")
-                    .append(hub.isEmpty() ? "" : " (no upper bound)").append(" in ").append(r.ub[COUNT].isEmpty() ? "at most " : "at least ").append(r.val[COUNT]).append(" allocation operations\n");
+                    .append(hub.isEmpty() ? " (bounded)" : " (" + wordOf(worstOf(hub)) + ")").append(" in ").append(r.ub[COUNT].isEmpty() ? "at most " : "at least ").append(r.val[COUNT]).append(" allocation operations\n");
         }
         sb.append("\n# peak live heap (the most bytes that can be live at the same time during one run: frees are credited where they certainly release a block that this function or a callee\n")
                 .append("#   made, and every `resize` counts as a moving realloc, the old and the new block live together; a block moved into a struct member, a path-dependent slot or code the\n")
@@ -834,11 +851,11 @@ final class GasReport {
                 continue;
             }
             sb.append(String.format("  %-34s peak %s%s bytes  (leaves %s%s)%s%n", rootLabel.apply(n).replace(" (thread entry)", ""), f.ub[LIVE].isEmpty() ? "" : ">= ", f.livePeak,
-                    f.ub[LIVE].isEmpty() ? "" : ">= ", f.val[LIVE].max(BigInteger.ZERO), f.ub[LIVE].isEmpty() ? "" : "  UNBOUNDED: " + String.join("; ", f.ub[LIVE])));
+                    f.ub[LIVE].isEmpty() ? "" : ">= ", f.val[LIVE].max(BigInteger.ZERO), "  " + tag(f.ub[LIVE])));
         }
         for (Fn r : (eventMode ? slices : List.of(entry))) {
-            sb.append("# summary: ").append(r.name).append(" has at most ").append(r.ub[LIVE].isEmpty() ? "" : "(at least) ").append(r.livePeak).append(" bytes of heap live at once")
-                    .append(r.ub[LIVE].isEmpty() ? "" : " (no upper bound)").append("\n");
+            sb.append("# summary: ").append(r.name).append(r.ub[LIVE].isEmpty() ? " has at most " : " has at least ").append(r.livePeak).append(" bytes of heap live at once")
+                    .append(r.ub[LIVE].isEmpty() ? " (bounded)" : " (" + wordOf(worstOf(r.ub[LIVE])) + ")").append("\n");
         }
         if (eventMode) {
             StringBuilder top = new StringBuilder();
@@ -878,7 +895,7 @@ final class GasReport {
             if (shown++ >= CAP && !pinned.contains(n)) {
                 continue;
             }
-            sb.append(String.format("  %-34s %s%s%n", label.apply(n).replace(" (thread entry)", n.startsWith("__trampoline_") ? " (thread entry)" : ""), val, ub.isEmpty() ? "" : "  UNBOUNDED: " + String.join("; ", ub)));
+            sb.append(String.format("  %-34s %s  %s%n", label.apply(n).replace(" (thread entry)", n.startsWith("__trampoline_") ? " (thread entry)" : ""), val, tag(ub)));
             if (!f.notModelled.isEmpty()) {
                 sb.append("      not modelled: ").append(String.join("; ", f.notModelled)).append("\n");
             }
@@ -967,7 +984,7 @@ final class GasReport {
             }
             if (stack.contains(c)) {
                 for (int m = 0; m < NMET; m++) {
-                    callUb[m].add("recursion through " + c);
+                    callUb[m].add(R(UNK, "recursion through " + c));
                 }
                 continue;
             }
@@ -989,7 +1006,7 @@ final class GasReport {
             f.calleeAt.put(i, use);
             for (int m = 0; m < NMET; m++) {
                 if (!use.ub[m].isEmpty()) {
-                    callUb[m].add("calls " + c + " (unbounded)");
+                    callUb[m].add(callReason(c, use.ub[m], runsFirst(f, i)));
                 }
             }
         }
@@ -1928,6 +1945,59 @@ final class GasReport {
     }
 
     /** Bytes requested by the allocation operation at line idx (a lower bound plus an UNBOUNDED reason when the size is only known at run time). */
+    // ---- terminology: every reason string starts with one digit, its class ----------------------------------------------------------------
+    static final int FIN = 1, UNK = 2, UNB = 3, DIV = 4, NONT = 5;
+
+    static String R(int cls, String text) {
+        return (char) ('0' + cls) + text;
+    }
+
+    static int worstOf(Set<String> reasons) {
+        int w = 0;
+        for (String r : reasons) {
+            w = Math.max(w, r.charAt(0) - '0');
+        }
+        return w;
+    }
+
+    static String wordOf(int cls) {
+        switch (cls) {
+            case FIN: return "finite";
+            case UNK: return "unknown";
+            case UNB: return "unbounded";
+            case DIV: return "can diverge";
+            case NONT: return "non-terminating";
+            default: return "bounded";
+        }
+    }
+
+    /** The reason a caller inherits from a callee: the callee's worst class (a callee that never ends only makes the caller able to diverge). */
+    static String callReason(String callee, Set<String> calleeReasons, boolean onEveryPath) {
+        int w = worstOf(calleeReasons);
+        return R(w == NONT && !onEveryPath ? DIV : w, "calls " + callee + " (" + wordOf(w) + ")");
+    }
+
+    /** `bounded`, or the worst class followed by the reasons (those of a milder class carry their own word). */
+    static String tag(Set<String> reasons) {
+        if (reasons.isEmpty()) {
+            return "bounded";
+        }
+        int w = worstOf(reasons);
+        StringBuilder sb = new StringBuilder(wordOf(w)).append(": ");
+        boolean first = true;
+        List<String> sorted = new ArrayList<>(reasons);
+        sorted.sort((a, b) -> Integer.compare(b.charAt(0), a.charAt(0)));      // worst class first (stable)
+        for (String r : sorted) {
+            if (!first) {
+                sb.append("; ");
+            }
+            first = false;
+            int c = r.charAt(0) - '0';
+            sb.append(c == w ? "" : "(" + wordOf(c) + ") ").append(r.substring(1));
+        }
+        return sb.toString();
+    }
+
     private static void unb(Fn f, String why) {
         f.ub[HEAP].add(why);
         f.ub[LIVE].add(why);
@@ -1959,7 +2029,7 @@ final class GasReport {
                 String id = idx > 0 && ln[idx - 1].startsWith("PUSH string_id") ? ln[idx - 1].split(" ")[1] : null;
                 Integer len = id == null ? null : stringLength(id);
                 if (len == null) {
-                    unb(f, "text length of a `dyn(...)` is not a literal");
+                    unb(f, R(FIN, "text length of a `dyn(...)` is not a literal"));
                     return BigInteger.valueOf(DYN_HEADER);
                 }
                 return BigInteger.valueOf(o.equals("NEW_FROM_STRING") && !p[1].contains("unsafe_dynarray") ? DYN_HEADER + len : Math.max(1, len + 1));
@@ -1969,7 +2039,7 @@ final class GasReport {
                 long es = e == null ? 8 : (sizeOf(e) + 7) / 8 * 8;
                 BigInteger n = scalarAt(f, idx - 2);          // source, count, fill: the count is the second-last single push
                 if (n == null || !ln[idx - 1].startsWith("PUSH ")) {
-                    unb(f, "`resize` count is not a literal");
+                    unb(f, R(FIN, "`resize` count is not a literal"));
                     return BigInteger.valueOf(DYN_HEADER);
                 }
                 return BigInteger.valueOf(DYN_HEADER).add(BigInteger.valueOf(es).multiply(n));
@@ -1979,7 +2049,7 @@ final class GasReport {
                 long es = e == null ? 8 : (sizeOf(e) + 7) / 8 * 8;
                 BigInteger n = scalarAt(f, idx - 1);
                 if (n == null) {
-                    unb(f, "unsafe `resize` count is not a literal");
+                    unb(f, R(FIN, "unsafe `resize` count is not a literal"));
                     return BigInteger.ONE;
                 }
                 return BigInteger.valueOf(es).multiply(n).max(BigInteger.ONE);
@@ -1988,13 +2058,13 @@ final class GasReport {
                 String pt = pointee(p[1]);
                 BigInteger d = pt == null || p[1].contains("dynarray") ? null : deepBytes(pt, 0);
                 if (d == null) {
-                    unb(f, "`clone` of a block whose size is only known at run time");
+                    unb(f, R(FIN, "`clone` of a block whose size is only known at run time"));
                     return BigInteger.valueOf(DYN_HEADER);
                 }
                 return d;
             }
             default:
-                unb(f, "`" + o.toLowerCase() + "` size is only known at run time");
+                unb(f, R(FIN, "`" + o.toLowerCase() + "` size is only known at run time"));
                 return BigInteger.valueOf(DYN_HEADER);
         }
     }
@@ -2063,13 +2133,13 @@ final class GasReport {
                 continue;
             }
             if (path.contains(c)) {
-                w.add("recursion through " + c);
+                w.add(R(UNK, "recursion through " + c));
                 continue;
             }
             frame.putIfAbsent(c, frameBytes(cf));
             long d = stackDepth(c, frame, depth, via, why, path);
             if (!why.get(c).isEmpty()) {
-                w.add("calls " + c + " (unbounded)");
+                w.add(callReason(c, why.get(c), false));
             }
             if (d > best || bestVia == null) {
                 best = d;
@@ -2078,7 +2148,7 @@ final class GasReport {
         }
         for (int i = f.start; i < f.end; i++) {
             if (op(ln[i]).equals("INVOKE")) {
-                w.add("indirect call (INVOKE)");
+                w.add(R(UNK, "indirect call (INVOKE), the callee is not known"));
             }
         }
         path.remove(path.size() - 1);

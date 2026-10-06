@@ -1,7 +1,7 @@
 #!/bin/bash
 # (needs java, python3) `--audit` worst-case gas report: tests/gas_test.caspien and every docs/examples program are audited and the figure of every
 # reachable function is compared with tests/gas_model.py (exhaustive path search over the emitted bytecode). Functions that contain a `loop{}`
-# (or call one) are only checked for being flagged UNBOUNDED (stack depth is still compared); a function with a non-literal `for` bound must show ">=" and the reason.
+# (or call one) are only checked for being flagged not bounded (stack depth is still compared); a function with a non-literal `for` bound must show ">=" and the reason.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 export JAVA_TOOL_OPTIONS=
@@ -24,14 +24,15 @@ heap_sec = audit.split("# heap memory", 1)[1]
 def parse(sec, unit):
     rep = {}
     for l in sec.splitlines():
-        m = re.match(r"  (\S+?)( \((?:entry|thread entry)\))?\s+(>= )?(\d+)%s(  \(\d+ allocation sites? in its own code\))?(  UNBOUNDED: (.*))?$" % unit, l)
+        m = re.match(r"  (\S+?)( \((?:entry|thread entry)\))?\s+(>= )?(\d+)%s(  \(\d+ allocation sites? in its own code\))?  (bounded|finite|unknown|unbounded|can diverge|non-terminating)(: .*)?$" % unit, l)
         if m: rep[m.group(1)] = (m.group(3) is not None, int(m.group(4)))
+        if m: assert (m.group(3) is not None) == (m.group(6) != "bounded"), "word and >= disagree: " + l
     return rep
 gas, stack = parse(gas_sec, ""), parse(stack_sec, " bytes")
-# heap lines: `  name  [>= ]N bytes  ([>= ]K allocation operation(s))  [UNBOUNDED: ...]`
+# heap lines: `  name  [>= ]N bytes  ([>= ]K allocation operation(s))  <word>[: reasons]`
 heapb, heapc = {}, {}
 for l in heap_sec.splitlines():
-    m = re.match(r"  (\S+?)( \(entry\))?\s+(>= )?(\d+) bytes  \((>= )?(\d+) allocation operations?\)(  UNBOUNDED: (.*))?$", l)
+    m = re.match(r"  (\S+?)( \(entry\))?\s+(>= )?(\d+) bytes  \((>= )?(\d+) allocation operations?\)  (bounded|finite|unknown|unbounded|can diverge|non-terminating)(: .*)?$", l)
     if m:
         heapb[m.group(1)] = (m.group(3) is not None, int(m.group(4)))
         heapc[m.group(1)] = (m.group(5) is not None, int(m.group(6)))
@@ -44,7 +45,7 @@ for n, (ub, v) in gas.items():
     mg, fl, mh, mhu, mb, mbu, ms, msu = model[n]
     if "skip" in fl: continue
     if "loop" in fl:
-        if not ub: print("FAIL: %s in %s contains a loop but is not UNBOUNDED" % (n, prog)); sys.exit(1)
+        if not ub: print("FAIL: %s in %s contains a loop but is reported bounded" % (n, prog)); sys.exit(1)
     else:
         # a bound the report claims must be the model's exact worst case (and the model must find nothing unknown); an UNBOUNDED figure is a lower
         # bound and must not exceed what the model finds
@@ -66,14 +67,14 @@ print("ok %-40s %d functions" % (prog, len(gas)))
 PY
   checked=$((checked+1))
 done
-grep -q "UNBOUNDED" $W/audit.txt >/dev/null
+grep -qE "unbounded|finite|non-terminating" $W/audit.txt >/dev/null
 CASPIEN_AUDIT_FILE=$W/audit.txt java -cp out caspien.Main -i ../tests/gas_test.caspien $W/g.hob --audit >/dev/null 2>&1
 CASPIEN_AUDIT_ALL=1 CASPIEN_AUDIT_FILE=$W/audit2.txt java -cp out caspien.Main -i ../tests/heap_gas_test.caspien $W/h.hob --audit >/dev/null 2>&1
-for want in "heap_nested  *288 bytes  .18 allocation operations" "heap_loop  *80 bytes  .5 alloc" "heap_branch  *32 bytes  .2 alloc" "heap_dyn  *104 bytes  .2 alloc" "heap_one  *16 bytes  .1 allocation operation" "heap_unbounded  *>= 16 bytes  .>= 1 .*UNBOUNDED" "heap_runtime  *>= 48 bytes  .2 allocation operations.*.resize. count is not a literal"; do
+for want in "heap_nested  *288 bytes  .18 allocation operations" "heap_loop  *80 bytes  .5 alloc" "heap_branch  *32 bytes  .2 alloc" "heap_dyn  *104 bytes  .2 alloc" "heap_one  *16 bytes  .1 allocation operation" "heap_unbounded  *>= 16 bytes  .>= 1 .*(finite|unbounded)" "heap_runtime  *>= 48 bytes  .2 allocation operations.*.resize. count is not a literal"; do
   grep -qE "$want" $W/audit2.txt || { echo "FAIL: heap report lacks a line matching: $want"; exit 1; }
 done
 grep -qE "heap_quiet" <(sed -n '/# heap memory/,$p' $W/audit2.txt) && { echo "FAIL: heap_quiet (no allocation) is listed in the heap section"; exit 1; }
-for want in "gas_loops  *595$" "gas_branch  *37$" "gas_leaf  *8$" "gas_unbounded  *>= .*UNBOUNDED: .for. bound is not a literal" "gas_forever  *>= .*UNBOUNDED: unbounded .loop."; do
+for want in "gas_loops  *595  bounded$" "gas_branch  *37  bounded$" "gas_leaf  *8  bounded$" "gas_unbounded  *>= .*finite: .for. runs a number of times only known at run time" "gas_forever  *>= [0-9]+  unbounded: .loop. with no static bound"; do
   grep -qE "$want" $W/audit.txt || { echo "FAIL: audit lacks a line matching: $want"; exit 1; }
 done
 # event loop: the report lists the @with_tick and @tick slices (figures from the model: slice stack = its own estimate + the event loop's frame) and NOT the event loop itself
@@ -89,7 +90,7 @@ for fn, kind in (("__caspien_main", "@with_tick"), ("tick", "@tick")):
     want = r"  %s \(slice: %s\) +gas %d +stack %d bytes +heap %d bytes \(%d allocation operations?\)" % (fn, kind, g, st, hb, h)
     if not re.search(want, rep): print("FAIL: event-loop slice line for", fn, "does not match the model:", want); sys.exit(1)
 if re.search(r"^  main\b", rep, flags=re.M): print("FAIL: the event loop (main) is listed"); sys.exit(1)
-if "UNBOUNDED" in rep.split("# worst-case execution cost", 1)[1]: print("FAIL: an event-loop program shows UNBOUNDED"); sys.exit(1)
+if re.search(r"(finite|unknown|unbounded|can diverge|non-terminating):", rep.split("# worst-case execution cost", 1)[1]): print("FAIL: an event-loop program shows an unbounded class"); sys.exit(1)
 PY
 checked=$((checked+1))
 echo "PASS gas_check: $checked programs, every function's worst-case gas, heap bytes and allocation count and stack estimate equal the path-search model"
