@@ -77,7 +77,7 @@ confused with:
 - **Termination is not bounded time.** A nested bounded loop with large bounds can run for years. A
   scheduler that must meet deadlines also needs a worst-case execution time per slice. Caspien proves the
   first guarantee and `--audit` reports the second in abstract gas units (a fixed cost per operation, not
-  seconds), exact for literal loop bounds and classed finite, unbounded, non-terminating or unknown otherwise (see "Termination guarantees" below).
+  seconds), exact for literal loop bounds and classed finite, unbounded, non-terminating or unknown otherwise (see "Termination" below).
   The shape of the language makes it tractable: loop bounds are ordinary range values, and an acyclic call
   graph gives a static bound on stack depth (estimated by `--audit`).
 - **"Total" is relative to the primitives.** The guarantee is conditional on the escape hatches. A C
@@ -1579,14 +1579,29 @@ A few more things that surprise newcomers:
   above for arguments and event loops.
 - Method calls use a colon (`acct:deposit(50)`) or pass the receiver explicitly (`acct.deposit(acct, 50)`).
 
-### 1.4 Termination guarantees
+### 1.4 Termination
 
 **A safe program terminates, unless it is written as an event loop, and then it runs forever only through that declared event loop.** There is no other way
 for safe code to run without end. This is the "run-to-completion total slice" model of section 1.1: the program is a flat loop whose every iteration (a
-slice) is guaranteed to finish, and the loop is the only unbounded construct, in a small place that can be found and audited. The rest of this section is what
-that rests on, and what you give up when you step outside it.
+slice) is guaranteed to finish, and the loop is the only unbounded construct, in a small place that can be found and audited.
 
-**1. Why safe code ends.** Nothing in safe code can run for an unbounded number of steps:
+**Every function has a termination class.** The compiler works out the class of each function from the program itself, the way it works out a type: nothing is
+annotated and nothing is taken on trust. Two classes are guarantees that the function terminates. The other four say that no such guarantee is given, and why.
+`--audit` prints the class of every function (see "Auditing a target: `--audit`").
+
+| Class | Terminates? | Meaning | Example |
+|---|---|---|---|
+| `bounded` | Yes, guaranteed | It ends, and the figure is the exact worst-case cost. | A `for` over a literal range. |
+| `finite` | Yes, guaranteed | It ends, but the cost bound is not determined, so the figure is a lower bound (`>= N`) and the reason names what the bound depends on. | `for i in 0..n` where `n` is a parameter. |
+| `unbounded` | Not guaranteed | A `loop{}` with no static bound, but a `break`, `return` or `throw` can leave it (a call that can throw counts). | `loop{ ... if done{ break } }` |
+| `non-terminating` | Never | A `loop{}` that nothing can leave, and every run of the function reaches it. | The loop of an event loop. |
+| `can diverge` | Not on every run | Some runs never end and others do: a never-ending loop, or a call to a function that never ends, sits on only some paths. | `if n == 0{ forever() }  return n` ends unless `n == 0`. |
+| `unknown` | No claim | The analysis cannot follow it. | An indirect call (`call(fp, ..)`), or recursion it cannot follow. |
+
+A caller has the worst class among what it calls, in the order bounded, finite, unknown, unbounded, can diverge, non-terminating, so a function is only
+`bounded` or `finite` when everything it can reach is. Anything but `bounded` is printed as `>= N`, a lower bound, with the reasons.
+
+**Safe code is `bounded` or `finite` by construction.** The rules that give this are enforced by the compiler:
 
 - Every loop is a `for` over a range that is fixed when the loop starts; the counter cannot be assigned and the bounds are read once.
 - Direct and mutual recursion are rejected. The one exception, `@recursive`, is a tail call on a range that shrinks on every call, and the compiler lowers it to
@@ -1596,41 +1611,25 @@ that rests on, and what you give up when you step outside it.
   through a function pointer.
 
 So a program without an event loop always reaches the end of `main`, and every slice of a program with one always returns. The two operations that wait on
-something outside the program's own computation are the exceptions to this: `match @lock` spins until the lock is free, and `await` blocks on another thread.
+something outside the program's own computation are the exceptions: `match @lock` spins until the lock is free, and `await` blocks on another thread.
+The other four classes appear only where `unsafe` is reachable, in your code or in the trusted standard library (the lock and thread code in
+`16_atomics_and_locks` shows `unbounded`, for example). `--audit` lists every `unsafe` block, and gives each of these a fixed price and a "not modelled" note:
+external calls, inline assembly, `memcopy` sizes and waiting (`sleep`, `yield`, `match @lock`, `await`).
 
-**2. The event loop is the one declared way to run forever.** A program that has to keep running declares one `@event_loop` function, the only place outside
-`unsafe` where a bare `loop{}` is allowed, with `@with_tick` / `@tick` handlers (see "Program entry" below). The loop calls the handlers over and over, and each call
-runs to completion before the next one starts. It can still be left, by `break` or a thrown error. The audit analyses the slices and never lists the loop itself.
+**The event loop is the one declared way to run forever.** A program that has to keep running declares one `@event_loop` function, the only place outside
+`unsafe` where a bare `loop{}` is allowed, with `@with_tick` / `@tick` handlers (see "Program entry" below). The loop calls the handlers over and over, and
+each call runs to completion before the next one starts. It can still be left, by `break` or a thrown error. The audit classifies the slices and never lists the loop.
 
-**3. Termination is not bounded time.** A nested bounded loop with large bounds can still run for years, and a scheduler that must meet deadlines needs a
-worst-case time per slice. `--audit` therefore also computes a worst-case execution cost per function in *abstract gas*: every bytecode operation has a
-fixed price (table in `docs/COMPILER_REFERENCE.md`, independent of the machine, the optimiser switches and the target), a branch costs its dearer side, a `try`
-counts its catch bodies, a call costs the callee's worst case, and a `for` with literal bounds costs `bound * (header + worst iteration)`, exactly (checked
-against an independent path-search model, `tests/gas_check.sh`). Time in seconds is not computed. The same report gives a stack-depth estimate, the most heap
-bytes one run can request, and the peak live heap (see "Auditing a target: `--audit`").
+**Termination is not bounded time.** A nested bounded loop with large bounds can still run for years, and a scheduler that must meet deadlines needs a
+worst-case time per slice. That is what `bounded` carries: a worst-case execution cost in *abstract gas*. Every bytecode operation has a fixed price (table in
+`docs/COMPILER_REFERENCE.md`, independent of the machine, the optimiser switches and the target), a branch costs its dearer side, a `try` counts its catch
+bodies, a call costs the callee's worst case, and a `for` with literal bounds costs `bound * (header + worst iteration)`, exactly (checked against an
+independent path-search model, `tests/gas_check.sh`). Time in seconds is not computed. The same report gives a stack-depth estimate, the most heap bytes one run
+can request, and the peak live heap.
 
-**4. The audit says how sure it is.** Every figure ends in one of six words, so "I could not calculate a bound" is never confused with "there is no bound":
-
-| Word | Meaning | Example |
-|---|---|---|
-| `bounded` | The figure is the exact worst case. | A `for` over a literal range. |
-| `finite` | It always ends, but the audit cannot say how long, so the figure is a lower bound (`>= N`) and the reason names what the bound depends on. | `for i in 0..n` where `n` is a parameter. |
-| `unbounded` | A `loop{}` with no static bound, but a `break`, `return` or `throw` can leave it (a call that can throw counts). | `loop{ ... if done{ break } }` |
-| `non-terminating` | A `loop{}` that nothing can leave, and every run of the function reaches it. | The loop of an event loop. |
-| `can diverge` | Some runs never end and others do: a never-ending loop, or a call to a function that never ends, sits on only some paths. | `if n == 0{ forever() }  return n` ends unless `n == 0`. |
-| `unknown` | The audit cannot analyse it. | An indirect call (`call(fp, ..)`), or recursion it cannot follow. |
-
-A caller takes the worst class among what it calls, in the order bounded, finite, unknown, unbounded, can diverge, non-terminating. Anything but `bounded` is
-printed as `>= N`, a lower bound, with the reasons. Plain safe code only produces `bounded` and `finite`; the other words appear when an `unsafe` loop is reachable, in your own code
-or in the trusted standard library (the lock and thread code in `16_atomics_and_locks` shows `unbounded`, for example). In an event-loop program the slices are the roots of the report and the loop itself is not listed.
-
-**5. Values the caller knows are used.** A call that passes values the caller knows (literals, locals computed from them, its own parameters, a range such
-as `0..10`) is costed with those values, so `sumTo(5)` is `bounded` even though `sumTo(n)` alone is only `finite`. Values the analysis cannot follow (a call
-result, a variable changed in a loop or a branch) leave the call `finite`.
-
-**6. What `unsafe` gives up, and where you find it.** An `unsafe loop{}` gives up totality, and `call(fp, ...)` gives up totality and the call graph (the
-recursion check only follows direct calls). `--audit` lists every `unsafe` block. External calls, inline assembly, `memcopy` sizes and waiting (`sleep`,
-`yield`, `match @lock`, `await`) get a fixed price and are listed as *not modelled*: the audit says so rather than guessing.
+**Values the caller knows are used.** A call that passes values the caller knows (literals, locals computed from them, its own parameters, a range such as
+`0..10`) is costed with those values, so `sumTo(5)` is `bounded` even though `sumTo(n)` alone is only `finite`. Values the analysis cannot follow (a call result, a
+variable changed in a loop or a branch) leave the call `finite`.
 
 ### 1.5 Where the project stands against the ideal
 
@@ -1643,8 +1642,8 @@ what the checker enforces in safe code, then what `unsafe` gives up.
 
 | Property | Enforced today | Open (still safe code) |
 |---|---|---|
-| **Termination** | Direct and mutual recursion rejected; `@recursive` only as a tail call on a shrinking range, lowered to a bounded `for`; every `for` bound fixed at loop entry; counter immutable; no `loop{}` and no `call()` (both need `unsafe`). See "Termination guarantees" (1.4). | `match @lock` spins until it acquires the lock, so it can wait forever under contention. `await` blocks on another thread. So safe code is not strictly total. |
-| **Bounded execution time** | Every `for` is bounded by its range and the call graph is acyclic, so a static bound is possible. | `--audit` prints a worst-case cost in abstract gas per function, classed bounded / finite / unbounded / non-terminating / can diverge / unknown, plus stack, heap and peak live heap; see "Termination guarantees" (1.4). Time in seconds is not computed. |
+| **Termination** | Direct and mutual recursion rejected; `@recursive` only as a tail call on a shrinking range, lowered to a bounded `for`; every `for` bound fixed at loop entry; counter immutable; no `loop{}` and no `call()` (both need `unsafe`). See "Termination" (1.4). | `match @lock` spins until it acquires the lock, so it can wait forever under contention. `await` blocks on another thread. So safe code is not strictly total. |
+| **Bounded execution time** | Every `for` is bounded by its range and the call graph is acyclic, so a static bound is possible. | `--audit` prints a worst-case cost in abstract gas per function, classed bounded / finite / unbounded / non-terminating / can diverge / unknown, plus stack, heap and peak live heap; see "Termination" (1.4). Time in seconds is not computed. |
 
 | **Memory safety** | Single ownership with compile-time move checking; array and dynarray indexes proven in bounds; dereferencing a pointer needs a liveness proof. | Liveness of a `ref` is checked at *run time* against a table of live allocations, so a dangling `ref` is skipped rather than rejected at compile time. |
 | **No runtime exceptions** | Division, float operations, narrowing, indexing and null access all need proofs; arithmetic wraps; failures are declared (`@throws`) and handled. | Allocation failure is reported (as a thrown error), not prevented. A throw out of the `OPEN` case of `match @lock` releases the lock before unwinding, like a `return` does (`tests/lock_unwind_test.caspien` prints `PASS`). |
@@ -1784,7 +1783,7 @@ func main() void{
 
 `sumTo` on its own is only *finite*: it always ends, but its loop count depends on `n`, so the figure (`>= 32`) is a lower bound and
 the line names `n`. `main` is *bounded*, because it calls `sumTo` with the literal `10`, so that call is costed with that value.
-Every figure ends in one of six words (`bounded`, `finite`, `unbounded`, `non-terminating`, `can diverge`, `unknown`), explained in "Termination guarantees" (1.4).
+Every figure ends in one of six words (`bounded`, `finite`, `unbounded`, `non-terminating`, `can diverge`, `unknown`), explained in "Termination" (1.4).
 
 The figures are bounds computed from the bytecode, not measurements. Direct calls to C's `malloc` through an `extern` and stack
 used by C functions are not counted. `CASPIEN_AUDIT_ALL=1` in the environment
