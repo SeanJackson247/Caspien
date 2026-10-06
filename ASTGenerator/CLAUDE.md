@@ -13,6 +13,7 @@ Stages in `src/main/java/caspien/`:
 - `ImportResolver` (paths relative to the IMPORTING file), `DupExpander`, `GenericsExpander` (monomorphisation; also `dyn:<T>`, `wrap:<T>`, `sat:<T>`, `recv.method:<U>` keep `genericArgs`).
 - `TypeChecker` (~15k lines, known debt): all semantic rules, move/proof tracking, synthesises async trampolines/handle structs, lowers `@recursive` to a bounded loop.
 - `BytecodeEmitter`: walks the checked tree, emits HOB.
+- `GasReport`: `--audit` worst-case gas section, computed from the emitted HOB text (loops found by `@for_N`/`@loop_N` label pairs, literal `for` bounds from the `$for_range` type); cost table in `docs/COMPILER_REFERENCE.md`; test `tests/gas_check.sh`.
 - `CompilerConfig`, `CompilerException` (every fatal error).
 
 ## Language rules a maintainer must know

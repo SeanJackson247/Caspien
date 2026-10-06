@@ -95,6 +95,7 @@ public class Main {
         TypeChecker typeChecker = new TypeChecker(config);
         typeChecker.check(expanded);
 
+        String auditReport = null;
         if (audit) {
             java.util.List<String> srcs = new java.util.ArrayList<>();
             for (String f : DepsLog.files()) {
@@ -104,6 +105,14 @@ public class Main {
             }
             String report = AuditReport.build(srcs, Paths.get("..").toAbsolutePath().normalize(), typeChecker.unsafeTagsNeeded(),
                     "1".equals(System.getenv("CASPIEN_AUDIT_NOSTDLIB")));
+            auditReport = report;
+        }
+
+        BytecodeEmitter bytecodeEmitter = new BytecodeEmitter();
+        String bytecode = bytecodeEmitter.emit(expanded, typeChecker);
+
+        if (audit) {
+            String report = auditReport + GasReport.build(bytecode).text;
             String target = System.getenv("CASPIEN_AUDIT_FILE");
             if (target != null && !target.isEmpty()) {
                 Files.write(Paths.get(target), report.getBytes(StandardCharsets.UTF_8));
@@ -111,9 +120,6 @@ public class Main {
                 System.err.print(report);
             }
         }
-
-        BytecodeEmitter bytecodeEmitter = new BytecodeEmitter();
-        String bytecode = bytecodeEmitter.emit(expanded, typeChecker);
 
         if (fsReport) {
             typeChecker.printFsReport(System.err);

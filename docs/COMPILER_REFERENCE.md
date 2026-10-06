@@ -102,6 +102,7 @@ So a comment edit re-runs only the front end (the later stages see an identical 
                     Type-check only (nothing is built) and print every `unsafe` in what would be compiled: `file:line  unsafe <tags> {`, the
                     numbered contents of the braces, `unsafe unaudited` blocks with the tags they actually need, other uses (`unsafe dyn(..)`),
                     and a summary by tag. Sections: your code / standard library (`--audit-no-stdlib` hides the second).
+                    Then a worst-case execution cost section (abstract gas, see "Worst-case gas" below).
     --clear-cache   Delete the build cache (alone, or together with a build).
 
     --no-warnings   Suppress warning output (they simply aren't printed;
@@ -556,3 +557,24 @@ and run a real "Hello World!" end-to-end in the sandbox:
 
 `target windows` (MASM) itself remains unverified -- there's no MASM
 toolchain in this sandbox to test against.
+
+## Worst-case gas (`--audit`)
+
+`--audit` ends with a section listing, for the entry point (`main`) and every function reachable from it, the worst-case execution cost in abstract
+gas, computed from the emitted high-order bytecode before any optimiser pass (`ASTGenerator/.../GasReport.java`). The figure does not depend on
+hardware, optimiser switches or target. Rules:
+
+- Each operation costs a fixed number of units. 0: declarations and calling-convention markers (`ALLOC`, `ARG`, `RETURNS`, `FUNC_*`, `STRUCT_*`, `CC_START`,
+  `CC_END`, `PUSH_LABEL`, ...). 2: `DEREF`, `LOOKUP`, `LOOKUP_LHS`, `DOT`, `LEN`. 3: `MUL`. 20: `DIV`, `MOD`, `MEMCOPY`, `GT_REGISTER`, `GT_ALIVE_CHECK`.
+  30: `GT_DESTRUCT*`, `GT_MOVED`. 50: `EXTERN_CALL`. 100: `NEW`, `NEW_DYN`, `NEW_UDYN`, `NEW_FROM_*`, `RESIZE`, `URESIZE`, `CLONE*`, `GT_INIT`.
+  10: `THROW`, `EXIT*`, atomics, `STACK_LOCK`, `SLEEP`, `YIELD`, `INVOKE`. `CALL` costs 5 plus the callee's worst case. Everything else (pushes, stores,
+  arithmetic, comparisons, jumps) costs 1.
+- A function's cost is that of its most expensive path. A conditional jump takes the dearer side; every unwind pad or `catch` staged for a call is a possible
+  continuation, so catch bodies count.
+- A `for` over literal bounds `a..b` costs `(b-a)` iterations of the worst iteration plus the final header test (a `break` or `return` inside is
+  taken at the dearest iteration). Any other loop is UNBOUNDED: `loop{}`, a `for` whose bound is a variable or argument (including the range
+  argument of a `@recursive` function), and an indirect call. The figure is then a lower bound (one iteration) printed as `>= N` with the reason; a
+  caller of an unbounded function is unbounded. Argument values at call sites are not tracked.
+- External calls, inline assembly, `memcopy` sizes and waiting operations get the fixed price above and are listed as "not modelled".
+- Stack depth and heap allocation counts are not computed. Test: `tests/gas_check.sh` (compares every function of `tests/gas_test.caspien` and the docs
+  examples with `tests/gas_model.py`, an exhaustive path search over the bytecode), `tests/gas_test.caspien` (runs).

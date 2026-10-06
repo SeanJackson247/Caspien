@@ -1,0 +1,102 @@
+// Worst-case gas report (`--audit`): the functions below have known loop bounds, branches, calls and a try/catch; tests/gas_check.sh compares
+// the report with tests/gas_model.py (a path-enumerating model that runs the control flow of the emitted bytecode). `gas_unbounded` has a
+// variable bound and `gas_forever` a `loop`, both must be reported as unbounded.
+import "../stdlib/libc.caspien"
+
+func gas_leaf(x: imut u64) mut u64{
+	return x * x + 1
+}
+
+func gas_loops() mut u64{
+	let s = mut 0
+	for i in 0..10{
+		s += gas_leaf(i)
+	}
+	for k in 0..3{
+		for m in 0..4{
+			s += 1
+		}
+	}
+	return s
+}
+
+func gas_branch(x: imut u64) mut u64{
+	let r = mut 0
+	if x > 5{
+		r = x * 3 + gas_leaf(x)
+	} else{
+		r = x + 1
+	}
+	return r
+}
+
+func gas_branch_loop() mut u64{
+	let t = mut 0
+	for i in 0..6{
+		if i > 2{
+			t += gas_branch(i)
+		} else{
+			t += 1
+		}
+	}
+	return t
+}
+
+func gas_empty() void{
+	for i in 0..0{
+		let z = mut i
+	}
+}
+
+@throws
+func gas_thrower(x: mut u64) mut u64{
+	if x == 0{ throw "zero" }
+	return x
+}
+
+func gas_try(x: mut u64) mut u64{
+	let total = mut 0
+	try{
+		?catch(e){
+			unsafe extern{ printf("caught %s\n", e) }
+			continue
+		}
+		let v = mut ? gas_thrower(x)
+		total += v
+	}
+	return total
+}
+
+func gas_unbounded(n: mut u64) mut u64{
+	let s = mut 0
+	for i in 0..n{
+		s += i
+	}
+	return s
+}
+
+func gas_forever(n: mut u64) mut u64{
+	let s = mut 0
+	unsafe loop{
+		loop{
+			s += 1
+			if s > n{ break }
+		}
+	}
+	return s
+}
+
+func main() void{
+	let a = mut gas_loops()
+	let b = mut gas_branch(7)
+	let c = mut gas_branch_loop()
+	gas_empty()
+	let d = mut gas_try(3)
+	let e = mut gas_unbounded(4)
+	let f = mut gas_forever(2)
+	if a == 307 && b == 71 && c == 18 && d == 3 && e == 6 && f == 3{
+		unsafe extern{ printf("PASS gas_test\n") }
+	} else{
+		unsafe extern{ printf("FAIL gas_test %llu %llu %llu %llu %llu %llu\n", a, b, c, d, e, f) }
+	}
+}

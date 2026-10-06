@@ -76,8 +76,10 @@ confused with:
 
 - **Termination is not bounded time.** A nested bounded loop with large bounds can run for years. A
   scheduler that must meet deadlines also needs a worst-case execution time per slice. Caspien proves the
-  first guarantee and does not yet compute the second. The shape of the language does make it tractable:
-  loop bounds are ordinary range values, and an acyclic call graph gives a static bound on stack depth.
+  first guarantee and `--audit` reports the second in abstract gas units (a fixed cost per operation, not
+  seconds), exact for literal loop bounds and marked unbounded otherwise (see "Bounded execution time" below).
+  The shape of the language makes it tractable: loop bounds are ordinary range values, and an acyclic call
+  graph gives a static bound on stack depth (not computed yet).
 - **"Total" is relative to the primitives.** The guarantee is conditional on the escape hatches. A C
   function called from `unsafe`, or an `unsafe loop{}`, can do anything.
 
@@ -1575,7 +1577,8 @@ what the checker enforces in safe code, then what `unsafe` gives up.
 | Property | Enforced today | Open (still safe code) |
 |---|---|---|
 | **Termination** | Direct and mutual recursion rejected; `@recursive` only as a tail call on a shrinking range, lowered to a bounded `for`; every `for` bound fixed at loop entry; counter immutable; no `loop{}` and no `call()` (both need `unsafe`). | `match @lock` spins until it acquires the lock, so it can wait forever under contention. `await` blocks on another thread. So safe code is not strictly total. |
-| **Bounded execution time** | Termination is guaranteed (above), and every `for` is bounded by its range, so each loop is finite. Safe code has no unbounded loop and an acyclic call graph, which is what makes a static bound possible. | The compiler does not yet compute a worst-case execution time, so "terminates" is not yet "time-bounded". This needs tooling, not a language change: tighter loop ranges for precision (a runtime-valued bound is only limited by its type, so a bare worst case is useless), per-primitive costs for the trusted core, and a wait model for `match @lock` and `await`, the only places safe code waits on another thread. |
+| **Bounded execution time** | Termination is guaranteed (above), and every `for` is bounded by its range, so each loop is finite. Safe code has no unbounded loop and an acyclic call graph, which is what makes a static bound possible. | `--audit` prints a worst-case execution cost per function in ABSTRACT GAS: every bytecode operation has a fixed price (a table in `docs/COMPILER_REFERENCE.md`, independent of the machine, the optimiser switches and the target), a branch costs its dearer side, a `try` counts its catch bodies, a call costs the callee's worst case, and a `for` with literal bounds is `bound * (header + worst iteration)`, exactly (checked against an independent path-search model, `tests/gas_check.sh`). A `loop{}`, a `for` with a variable bound (this includes the range argument of a `@recursive` function) or an indirect call makes the function UNBOUNDED, shown as `>= N` with the reason. Callers' argument values are not tracked, and external calls, inline assembly, `memcopy` sizes and waiting (`sleep`, `yield`, `match @lock`, `await`) get a fixed price and are listed as not modelled. Stack depth, heap allocations and time in seconds are not computed. |
+
 | **Memory safety** | Single ownership with compile-time move checking; array and dynarray indexes proven in bounds; dereferencing a pointer needs a liveness proof. | Liveness of a `ref` is checked at *run time* against a table of live allocations, so a dangling `ref` is skipped rather than rejected at compile time. |
 | **No runtime exceptions** | Division, float operations, narrowing, indexing and null access all need proofs; arithmetic wraps; failures are declared (`@throws`) and handled. | Allocation failure is reported (as a thrown error), not prevented. A throw out of the `OPEN` case of `match @lock` releases the lock before unwinding, like a `return` does (`tests/lock_unwind_test.caspien` prints `PASS`). |
 | **The single event loop** | `@with_tick` / `@tick` / `@event_loop` give a potentially non-terminating program (`docs/examples/09_event_loop.caspien`). | All three stdlib loops (no arguments, C arguments, safe arguments) have been run. The example is run by hand and is not in `tests/`. `par`/`await` add real threads, which is a deliberate departure from a single loop. |
