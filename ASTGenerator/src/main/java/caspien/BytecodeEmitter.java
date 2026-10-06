@@ -1839,18 +1839,23 @@ public class BytecodeEmitter {
             // below, matching `emitInstantiate`'s own "pushed first"
             // ordering, though nothing downstream actually depends on
             // this particular ordering the way a real stack push would.
-            if (structInfo.classId != null) {
-                line(mnemonic + " " + name + ".___type imut_u64 " + structInfo.classId);
-            }
             Map<String, Token> valueByMember = new HashMap<>();
             for (Token lineTok : unwrapped.right.childs) {
                 Token assignNode = lineTok.childs.get(0);
                 valueByMember.put(assignNode.left.text, assignNode.right);
             }
-            for (String memberName : structInfo.members.keySet()) {
-                Token memberValue = valueByMember.get(memberName);
-                String memberType = structInfo.members.get(memberName).canonical();
-                emitStaticAlloc(mnemonic, name + "." + memberName, memberType, memberValue);
+            // Walk the struct's real layout (hidden ___type first, members in order, padding gaps). The backend places each
+            // dotted "name.member" line at the running sum of the sizes before it, so the padding gaps must be lines too
+            // ("name.$padN"); without them every member after a gap (a bool followed by a u64, say) was read at the wrong offset.
+            int padCount = 0;
+            for (StructLayoutEntry entry : computeStructLayout(structInfo).entries) {
+                if (entry.paddingBytes > 0) {
+                    line(mnemonic + " " + name + ".$pad" + (padCount++) + " imut_u8[" + entry.paddingBytes + "]");
+                } else if (entry.memberName.equals("___type")) {
+                    line(mnemonic + " " + name + ".___type imut_u64 " + structInfo.classId);
+                } else {
+                    emitStaticAlloc(mnemonic, name + "." + entry.memberName, entry.canonicalType, valueByMember.get(entry.memberName));
+                }
             }
             return;
         }
