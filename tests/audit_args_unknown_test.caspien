@@ -1,0 +1,48 @@
+// `--audit` with argument values, the cases that must STAY unbounded: the callee's argument is a function result (unknown to the analysis), or a variable
+// changed inside a loop. tests/audit_args_check.sh requires `main` to be UNBOUNDED with the reason, and no figure above the model's.
+import "../stdlib/libc.caspien"
+
+func sumTo(n: imut u64) mut u64{
+	let s = mut 0
+	for i in 0..n{
+		s += i
+	}
+	return s
+}
+
+func opaque(x: imut u64) mut u64{
+	return x * 3
+}
+
+func viaResult(n: imut u64) mut u64{
+	let k = mut opaque(n)
+	return sumTo(k)
+}
+
+func viaLoop(n: imut u64) mut u64{
+	let k = mut 0
+	k += n
+	let t = mut 0
+	for i in 0..3{
+		k += i
+		t += sumTo(k)
+	}
+	return t
+}
+
+// the bound depends on a branch: not known without knowing which way it goes
+func viaBranch(c: imut u64, n: imut u64) mut u64{
+	let k = mut 0
+	k += n
+	if c > 1{
+		k = 9
+	}
+	return sumTo(k)
+}
+
+func main() void{
+	let a = mut viaResult(2)
+	let b = mut viaLoop(2)
+	let d = mut viaBranch(3, 2)
+	unsafe extern{ printf("%llu %llu %llu\n", a, b, d) }
+}

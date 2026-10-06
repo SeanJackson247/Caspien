@@ -4,6 +4,7 @@ import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.TreeMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -44,6 +45,8 @@ final class GasReport {
         final Map<Integer, Integer> edgeCall = new HashMap<>();                       // LIVE: PUSH_LABEL line -> the call that may unwind through it (its moved-in arguments are freed on that path too)
         final Map<String, Object> padEvals = new HashMap<>();                         // credit-map signature -> Eval (kept untyped here: Eval is an inner class)
         long retLo;                                                                   // bytes of the owned block it returns (certain lower bound)
+        long retDeep;                                                                 // bytes of the blocks owned through members of the block it returns (certain lower bound)
+        boolean deepOk;                                                               // members that own memory are never moved out, replaced or shared by reference here: a destruct frees the whole tree it was built with
         boolean[] paramFreed = new boolean[0];                                        // per ARG: every exit path destructs that owned parameter
         @SuppressWarnings("unchecked")
         final Set<String>[] ub = new Set[]{new LinkedHashSet<String>(), new LinkedHashSet<String>(), new LinkedHashSet<String>(), new LinkedHashSet<String>()};   // unbounded reasons per metric
@@ -54,6 +57,49 @@ final class GasReport {
         boolean done;
         boolean throwsDecorated;
         final Set<String> deco = new HashSet<>();   // FUNC_DECORATE names (@event_loop, @with_tick, @tick, ...)
+        Map<String, V> args = new HashMap<>();                                        // parameter values this solve assumes (empty = none known): a specialisation per call context
+        final Map<Integer, Fn> calleeAt = new HashMap<>();                            // CALL line -> the (possibly specialised) callee whose figures that call uses
+
+        /** A copy that shares the analysis results independent of argument values (credits, labels) and gets its own figures. */
+        Fn specialised() {
+            Fn c = new Fn();
+            c.name = name;
+            c.start = start;
+            c.end = end;
+            c.labels = labels;
+            c.credit.putAll(credit);
+            c.okLabelAlloc.putAll(okLabelAlloc);
+            c.edgeCredit.putAll(edgeCredit);
+            c.edgeCall.putAll(edgeCall);
+            c.retLo = retLo;
+            c.retDeep = retDeep;
+            c.deepOk = deepOk;
+            c.paramFreed = paramFreed;
+            c.sites = sites;
+            c.notModelled = notModelled;
+            c.calls = calls;
+            c.throwsDecorated = throwsDecorated;
+            c.deco.addAll(deco);
+            return c;
+        }
+    }
+
+    /** A value known at analysis time: a scalar, or the range a..b. */
+    private static final class V {
+        final BigInteger a, b;
+        final boolean range;
+        V(BigInteger a, BigInteger b, boolean range) {
+            this.a = a;
+            this.b = b;
+            this.range = range;
+        }
+        static V sc(BigInteger x) {
+            return new V(x, null, false);
+        }
+        @Override
+        public String toString() {
+            return range ? a + ".." + b : a.toString();
+        }
     }
 
     private final String[] ln;                // trimmed non-empty lines
@@ -294,6 +340,9 @@ final class GasReport {
                                 c = new BigInteger(hi).subtract(new BigInteger(lo)).max(BigInteger.ZERO);
                             }
                         }
+                    }
+                    if (c == null && type != null && f.args != null) {
+                        c = rangeCount(f, lp, type);
                     }
                     lp.count = c;
                     if (c == null) {
@@ -538,7 +587,10 @@ final class GasReport {
             switch (o) {
                 case "CALL": {
                     f.calls.add(arg(line));
-                    Fn cf = fns.get(arg(line));
+                    Fn cf = f.calleeAt.get(idx);
+                    if (cf == null) {
+                        cf = fns.get(arg(line));
+                    }
                     if (cf != null && cf.val[mt] != null) {
                         if (mt == LIVE) {
                             // the callee's net is what it leaves live; the arguments it frees (known by the caller) are credited here
@@ -857,8 +909,6 @@ final class GasReport {
             return;
         }
         stack.add(f.name);
-        @SuppressWarnings("unchecked")
-        Set<String>[] callUb = new Set[]{new LinkedHashSet<String>(), new LinkedHashSet<String>(), new LinkedHashSet<String>(), new LinkedHashSet<String>()};
         for (int i = f.start; i < f.end; i++) {
             String o = op(ln[i]);
             if (isAlloc(o)) {
@@ -874,15 +924,71 @@ final class GasReport {
                 f.notModelled.add("call to " + c + " (no body)");
                 continue;
             }
+            if (!stack.contains(c)) {
+                solve(cf, stack);
+            }
+        }
+        mapOkLabels(f);
+        analyzeCredits(f);
+        runEvals(f, new HashMap<>(), stack);
+        f.done = true;
+        stack.remove(stack.size() - 1);
+    }
+
+    private final Map<String, Fn> specs = new HashMap<>();
+    private static final int MAX_SPECS = 4000;
+
+    private static boolean unboundedAnywhere(Fn f) {
+        for (int m = 0; m < NMET; m++) {
+            if (!f.ub[m].isEmpty()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * The figures of f under the parameter values `args` (empty = nothing known): picks for every call the callee to use (a callee that is
+     * unbounded without argument values is solved again with the values this call passes, when they are known), then walks the paths.
+     */
+    private void runEvals(Fn f, Map<String, V> args, List<String> stack) {
+        f.args = args;
+        f.calleeAt.clear();
+        @SuppressWarnings("unchecked")
+        Set<String>[] callUb = new Set[]{new LinkedHashSet<String>(), new LinkedHashSet<String>(), new LinkedHashSet<String>(), new LinkedHashSet<String>()};
+        for (int i = f.start; i < f.end; i++) {
+            if (!op(ln[i]).equals("CALL")) {
+                continue;
+            }
+            String c = arg(ln[i]);
+            Fn cf = fns.get(c);
+            if (cf == null) {
+                continue;
+            }
             if (stack.contains(c)) {
                 for (int m = 0; m < NMET; m++) {
                     callUb[m].add("recursion through " + c);
                 }
                 continue;
             }
-            solve(cf, stack);
+            Fn use = cf;
+            if (unboundedAnywhere(cf) && specs.size() < MAX_SPECS) {
+                Map<String, V> cc = callArgs(f, i, args, cf);
+                if (!cc.isEmpty()) {
+                    String key = c + "|" + new TreeMap<>(cc);
+                    use = specs.get(key);
+                    if (use == null) {
+                        use = cf.specialised();
+                        specs.put(key, use);
+                        stack.add(c);
+                        runEvals(use, cc, stack);
+                        stack.remove(stack.size() - 1);
+                    }
+                }
+            }
+            f.calleeAt.put(i, use);
             for (int m = 0; m < NMET; m++) {
-                if (!cf.ub[m].isEmpty()) {
+                if (!use.ub[m].isEmpty()) {
                     callUb[m].add("calls " + c + " (unbounded)");
                 }
             }
@@ -890,8 +996,6 @@ final class GasReport {
         for (int m = 0; m < NMET; m++) {
             f.ub[m].clear();
         }
-        mapOkLabels(f);
-        analyzeCredits(f);
         for (int m = 0; m < NMET; m++) {
             Val v = new Eval(f, m).walk(f.start + 1, -1, ALL);
             f.val[m] = v.neg || v.n.compareTo(BigInteger.TEN.pow(20).negate()) < 0 ? BigInteger.ZERO : v.n;
@@ -900,8 +1004,302 @@ final class GasReport {
             }
             f.ub[m].addAll(callUb[m]);
         }
-        f.done = true;
-        stack.remove(stack.size() - 1);
+    }
+
+    // ---- values known from call sites ---------------------------------------------------------------------------------------------------
+
+    private static boolean small(BigInteger x) {
+        return x.signum() >= 0 && x.compareTo(BigInteger.ONE.shiftLeft(63)) < 0;
+    }
+
+    private static boolean narrowType(String[] p) {
+        for (int k = 1; k < p.length; k++) {
+            if (p[k].matches(".*[us](8|16|32)")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Evaluates the reverse-Polish lines from..to-1 (PUSH of a literal / variable / range field, ADD SUB MUL INC DEC) as seen at line `at`; null when anything else shows up. */
+    private List<V> evalSeg(Fn f, int from, int to, int at, int depth) {
+        List<V> st = new ArrayList<>();
+        for (int i = from; i < to; i++) {
+            String[] p = ln[i].split(" ");
+            switch (p[0]) {
+                case "PUSH": {
+                    if (p.length < 2) {
+                        return null;
+                    }
+                    String t = p[1];
+                    if (t.matches("\\d+")) {
+                        st.add(V.sc(new BigInteger(t)));
+                        break;
+                    }
+                    String base = t, field = null;
+                    if (t.endsWith(".start") || t.endsWith(".end")) {
+                        int d = t.lastIndexOf('.');
+                        base = t.substring(0, d);
+                        field = t.substring(d + 1);
+                    }
+                    V v = valueAt(f, base, at, depth + 1);
+                    if (v == null) {
+                        return null;
+                    }
+                    if (field == null) {
+                        st.add(v);
+                    } else if (v.range) {
+                        st.add(V.sc(field.equals("start") ? v.a : v.b));
+                    } else {
+                        return null;
+                    }
+                    break;
+                }
+                case "ADD": case "SUB": case "MUL": {
+                    if (st.size() < 2 || narrowType(p)) {
+                        return null;
+                    }
+                    V y = st.remove(st.size() - 1), x = st.remove(st.size() - 1);
+                    if (x.range || y.range) {
+                        return null;
+                    }
+                    BigInteger r = p[0].equals("ADD") ? x.a.add(y.a) : p[0].equals("SUB") ? x.a.subtract(y.a) : x.a.multiply(y.a);
+                    if (!small(r)) {
+                        return null;
+                    }
+                    st.add(V.sc(r));
+                    break;
+                }
+                case "INC": case "DEC": {
+                    if (st.isEmpty() || narrowType(p) || st.get(st.size() - 1).range) {
+                        return null;
+                    }
+                    BigInteger r = st.remove(st.size() - 1).a.add(BigInteger.valueOf(p[0].equals("INC") ? 1 : -1));
+                    if (!small(r)) {
+                        return null;
+                    }
+                    st.add(V.sc(r));
+                    break;
+                }
+                default:
+                    return null;
+            }
+        }
+        return st;
+    }
+
+    private boolean addressTaken(Fn f, String var) {
+        for (int i = f.start; i < f.end; i++) {
+            if (ln[i].startsWith("ADDR_OF ")) {
+                for (String t : ln[i].split(" ")) {
+                    if (t.equals(var)) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * The value variable `var` certainly has when control reaches line `at`: found by walking back through straight-line code (no label in between,
+     * so every path to `at` runs through what is read) to its last write, or to the parameter declaration (then the value the caller passes).
+     * null = not known. A variable whose address is taken anywhere is never known.
+     */
+    private V valueAt(Fn f, String var, int at, int depth) {
+        if (depth > 60 || addressTaken(f, var)) {
+            return null;
+        }
+        V stable = stableValue(f, var, at, depth);
+        if (stable != null) {
+            return stable;
+        }
+        for (int i = at - 1; i > f.start; i--) {
+            String line = ln[i];
+            if (isLabel(line)) {
+                return null;
+            }
+            String[] p = line.split(" ");
+            if (p[0].equals("ADDR") && p.length >= 2 && p[1].equals(var)) {
+                int j = i + 1;
+                while (j < f.end && !ln[j].startsWith("ASSIGN ")) {
+                    if (isLabel(ln[j])) {
+                        return null;
+                    }
+                    j++;
+                }
+                if (j >= f.end) {
+                    return null;
+                }
+                List<V> st = evalSeg(f, i + 1, j, i, depth);
+                if (st == null) {
+                    return null;
+                }
+                if (p.length >= 3 && p[2].contains("range")) {
+                    if (st.size() == 2 && !st.get(0).range && !st.get(1).range) {
+                        return new V(st.get(0).a, st.get(1).a, true);
+                    }
+                    return st.size() == 1 && st.get(0).range ? st.get(0) : null;
+                }
+                return st.size() == 1 && !st.get(0).range ? st.get(0) : null;
+            }
+            if (p[0].equals("ARG") && p.length >= 2 && p[1].equals(var)) {
+                return f.args.get(var);
+            }
+            if (!p[0].equals("PUSH") && !p[0].equals("ADDR") && !p[0].equals("ASSIGN") && !p[0].equals("ALLOC")) {
+                for (int k = 1; k < p.length; k++) {
+                    if (p[k].equals(var)) {
+                        return null;
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * A variable that is written once only (or a parameter that is never written but copied into its own slot at the top) has that one value for the
+     * rest of the function, labels or not: a parameter's value, or the value of its single write when that write is straight-line code from the start
+     * of the function (no label before it, so it runs exactly once, before everything that follows).
+     */
+    private V stableValue(Fn f, String var, int at, int depth) {
+        int write = -1, writes = 0;
+        boolean param = false;
+        for (int i = f.start + 1; i < f.end; i++) {
+            String line = ln[i];
+            if (line.startsWith("ARG ") && line.split(" ")[1].equals(var)) {
+                param = true;
+            }
+            if (line.startsWith("ADDR ") && line.split(" ")[1].equals(var)) {
+                boolean selfCopy = param && i + 2 < f.end && ln[i + 1].startsWith("PUSH " + var + " ") && ln[i + 2].startsWith("ASSIGN ");
+                if (!selfCopy) {
+                    writes++;
+                    write = i;
+                }
+            }
+        }
+        if (param && writes == 0) {
+            return f.args.get(var);
+        }
+        if (!param && writes == 1 && write < at && runsFirst(f, write)) {
+            int j = write + 1;
+            while (j < f.end && !ln[j].startsWith("ASSIGN ")) {
+                j++;
+            }
+            List<V> st = evalSeg(f, write + 1, j, write, depth);
+            if (st == null) {
+                return null;
+            }
+            String[] p = ln[write].split(" ");
+            if (p.length >= 3 && p[2].contains("range")) {
+                if (st.size() == 2 && !st.get(0).range && !st.get(1).range) {
+                    return new V(st.get(0).a, st.get(1).a, true);
+                }
+                return st.size() == 1 && st.get(0).range ? st.get(0) : null;
+            }
+            return st.size() == 1 && !st.get(0).range ? st.get(0) : null;
+        }
+        return null;
+    }
+
+    /** True when line `w` is reached on every path from the function start and only once: nothing before it jumps (but the old landing-pad skip) or is a label (but the landing pads). */
+    private boolean runsFirst(Fn f, int w) {
+        for (int i = f.start + 1; i < w; i++) {
+            String line = ln[i];
+            if (isLabel(line)) {
+                if (!line.startsWith("gt_routine__") && !line.startsWith("end_of_gt_routine__")) {
+                    return false;
+                }
+            } else if (op(line).equals("JMP") && !arg(line).startsWith("end_of_gt_routine__")) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private BigInteger scalarAt(Fn f, int idx) {
+        List<V> st = evalSeg(f, idx, idx + 1, idx, 0);
+        return st != null && st.size() == 1 && !st.get(0).range ? st.get(0).a : null;
+    }
+
+    /** Iteration count of a `for` whose range is not literal in its type: the range the hidden `$for_range_N` variable was built from, when known here. */
+    private BigInteger rangeCount(Fn f, Loop lp, String type) {
+        String name = null;
+        for (int i = lp.head + 1; i < lp.back && i < lp.head + 6; i++) {
+            if (ln[i].startsWith("PUSH $for_range_")) {
+                name = ln[i].split(" ")[1];
+                break;
+            }
+        }
+        if (name == null) {
+            return null;
+        }
+        V v = valueAt(f, name, lp.head, 0);
+        return v != null && v.range ? v.b.subtract(v.a).max(BigInteger.ZERO) : null;
+    }
+
+    /** The parameter values call line `callLine` of `caller` passes to `callee` (only those known), or empty. */
+    private Map<String, V> callArgs(Fn caller, int callLine, Map<String, V> callerArgs, Fn callee) {
+        Map<String, V> out = new HashMap<>();
+        int cs = callLine - 1, depth = 0;
+        while (cs >= caller.start) {
+            String o = op(ln[cs]);
+            if (o.equals("CC_END")) {
+                depth++;
+            } else if (o.equals("CC_START")) {
+                if (depth == 0) {
+                    break;
+                }
+                depth--;
+            }
+            cs--;
+        }
+        if (cs < caller.start) {
+            return out;
+        }
+        List<V> slots = new ArrayList<>();
+        int segStart = cs + 1, d = 0;
+        for (int i = cs + 1; i < callLine; i++) {
+            String o = op(ln[i]);
+            if (o.equals("CC_START")) {
+                d++;
+            } else if (o.equals("CC_END")) {
+                d--;
+            } else if (d == 0 && ln[i].startsWith("POP ARG")) {
+                List<V> st = evalSeg(caller, segStart, i, i, 0);
+                slots.add(st != null && st.size() == 1 && !st.get(0).range ? st.get(0) : null);
+                segStart = i + 1;
+            }
+        }
+        List<String[]> params = new ArrayList<>();
+        for (int i = callee.start; i < callee.end; i++) {
+            if (ln[i].startsWith("ARG ")) {
+                params.add(ln[i].split(" "));
+            } else if (ln[i].startsWith("ALLOC ")) {
+                break;
+            }
+        }
+        int need = 0;
+        for (String[] pr : params) {
+            need += pr.length >= 3 && pr[2].matches("(imut_|mut_)?range") ? 2 : 1;
+        }
+        if (need != slots.size()) {
+            return out;
+        }
+        int k = 0;
+        for (String[] pr : params) {
+            boolean rng = pr.length >= 3 && pr[2].matches("(imut_|mut_)?range");
+            V x = slots.get(k++);
+            if (rng) {
+                V y = slots.get(k++);
+                if (x != null && y != null) {
+                    out.put(pr[1], new V(x.a, y.a, true));
+                }
+            } else if (x != null) {
+                out.put(pr[1], x);
+            }
+        }
+        return out;
     }
 
     // ---- freed bytes (the credits of the live-heap figure) ------------------------------------------------------------------------------
@@ -909,15 +1307,17 @@ final class GasReport {
     /** Forward state of the credit analysis: per owned slot the bytes of the block it certainly holds (absent = unknown / null / moved), and the owned parameters certainly destructed. */
     private static final class St {
         final Map<String, Long> lo = new HashMap<>();
+        final Map<String, Long> deep = new HashMap<>();      // per slot: bytes of the blocks moved into the members of what it holds (certain; counted only when the function is deepOk)
         final Set<String> dead = new HashSet<>();
         St copy() {
             St c = new St();
             c.lo.putAll(lo);
+            c.deep.putAll(deep);
             c.dead.addAll(dead);
             return c;
         }
         boolean same(St o) {
-            return lo.equals(o.lo) && dead.equals(o.dead);
+            return lo.equals(o.lo) && deep.equals(o.deep) && dead.equals(o.dead);
         }
         /** Must-join: a slot keeps its bytes only when every path agrees on at least them (the minimum). */
         static St join(St a, St b) {
@@ -926,6 +1326,12 @@ final class GasReport {
                 Long o = b.lo.get(e.getKey());
                 if (o != null) {
                     r.lo.put(e.getKey(), Math.min(o, e.getValue()));
+                }
+            }
+            for (Map.Entry<String, Long> e : a.deep.entrySet()) {
+                Long o = b.deep.get(e.getKey());
+                if (o != null) {
+                    r.deep.put(e.getKey(), Math.min(o, e.getValue()));
                 }
             }
             r.dead.addAll(a.dead);
@@ -1000,6 +1406,20 @@ final class GasReport {
         }
         f.paramFreed = new boolean[params.size()];
         f.retLo = 0;
+        f.retDeep = 0;
+        if (structSize == null) {
+            parseStructs();
+        }
+        for (int i = f.start; i < f.end; i++) {
+            if (ln[i].startsWith("ALLOC ")) {
+                String[] p = ln[i].split(" ");
+                String st = p.length >= 3 ? p[2].replaceFirst("^((mut|imut|indeterminate)_)+", "") : "";
+                if (p.length >= 3 && !p[2].startsWith("owns_") && ownsStructs.contains(st)) {
+                    slotType.put(p[1], "inline_" + st);     // a struct held directly that owns memory: dropped like an owner at scope end
+                }
+            }
+        }
+        f.deepOk = deepOk(f, slotType);
         if (slotType.isEmpty()) {
             return;
         }
@@ -1020,7 +1440,7 @@ final class GasReport {
         boolean[] freed = new boolean[params.size()];
         java.util.Arrays.fill(freed, true);
         boolean anyExit = false;
-        long retMin = Long.MAX_VALUE;
+        long retMin = Long.MAX_VALUE, retDeepMin = Long.MAX_VALUE;
         for (int i = f.start + 1; i < f.end; i++) {
             St s = in[i];
             if (s == null) {
@@ -1035,6 +1455,8 @@ final class GasReport {
                 if (o.equals("RET") && retType.startsWith("owns_")) {
                     long v = i > 0 && ln[i - 1].startsWith("PUSH ") && slotType.containsKey(arg(ln[i - 1])) ? s.lo.getOrDefault(arg(ln[i - 1]), 0L) : 0L;
                     retMin = Math.min(retMin, v);
+                    long dv = i > 0 && ln[i - 1].startsWith("PUSH ") && slotType.containsKey(arg(ln[i - 1])) ? s.deep.getOrDefault(arg(ln[i - 1]), 0L) : 0L;
+                    retDeepMin = Math.min(retDeepMin, dv);
                 }
             }
         }
@@ -1042,6 +1464,7 @@ final class GasReport {
             f.paramFreed = freed;
         }
         f.retLo = retMin == Long.MAX_VALUE ? 0 : retMin;
+        f.retDeep = retDeepMin == Long.MAX_VALUE ? 0 : retDeepMin;
         // Catch blocks and landing pads are shared by every call that may unwind to them, so the join above knows little about what is live when one
         // is entered. Each entry edge gets the credits of the pad analysed from the state at that edge alone (cloned context).
         Map<String, Map<Integer, Long>> bySig = new HashMap<>();
@@ -1089,7 +1512,7 @@ final class GasReport {
             if (i >= f.end) {
                 continue;
             }
-            St out = transferCredit(f, i, in[i], slotType, lhs);
+            St out = transferCredit(f, i, in[i], slotType, lhs, in);
             for (int t : successors(f, i)) {
                 if (t >= f.end || t < 0) {
                     continue;
@@ -1120,7 +1543,7 @@ final class GasReport {
             String o = op(ln[i]);
             long cr = 0;
             if (o.equals("GT_DESTRUCT") && ln[i].split(" ").length == 2) {
-                cr = s.lo.getOrDefault(arg(ln[i]), 0L);
+                cr = s.lo.getOrDefault(arg(ln[i]), 0L) + (f.deepOk ? s.deep.getOrDefault(arg(ln[i]), 0L) : 0L);
             } else if ((o.equals("RESIZE") || o.equals("URESIZE")) && i >= 3) {
                 int srcAt = o.equals("RESIZE") ? i - 3 : i - 2;
                 boolean simple = ln[i - 1].startsWith("PUSH ") && (o.equals("URESIZE") || ln[i - 2].startsWith("PUSH ")) && ln[srcAt].startsWith("PUSH ");
@@ -1150,7 +1573,7 @@ final class GasReport {
                             }
                             String y = arg(ln[k - 1]);
                             if (idx < cf.paramFreed.length && cf.paramFreed[idx] && slotType.containsKey(y) && in[k - 1] != null) {
-                                cr += in[k - 1].lo.getOrDefault(y, 0L);
+                                cr += in[k - 1].lo.getOrDefault(y, 0L) + (f.deepOk && cf.deepOk ? in[k - 1].deep.getOrDefault(y, 0L) : 0L);
                             }
                         }
                     }
@@ -1194,15 +1617,16 @@ final class GasReport {
         return r;
     }
 
-    private St transferCredit(Fn f, int i, St s, Map<String, String> slotType, Map<Integer, Integer> lhs) {
+    private St transferCredit(Fn f, int i, St s, Map<String, String> slotType, Map<Integer, Integer> lhs, St[] in) {
         String line = ln[i], o = op(line);
         if (o.equals("GT_DESTRUCT") && line.split(" ").length == 2 && slotType.containsKey(arg(line))) {
             St r = s.copy();
             r.lo.remove(arg(line));
+            r.deep.remove(arg(line));
             r.dead.add(arg(line));
             return r;
         }
-        if (!o.equals("ASSIGN") || !firstType(line).startsWith("owns_") || !lhs.containsKey(i)) {
+        if (!o.equals("ASSIGN") || !lhs.containsKey(i)) {
             return s;
         }
         int a = lhs.get(i);
@@ -1210,18 +1634,36 @@ final class GasReport {
         if (!slotType.containsKey(x)) {
             return s;
         }
+        boolean inline = slotType.get(x).startsWith("inline_");
+        if (!inline && !firstType(line).startsWith("owns_")) {
+            return s;
+        }
         St r = s.copy();
-        long def = 0;
+        long def = 0, deep = 0;
         int w = i - a - 1;
+        if (in[a] != null) {
+            // blocks moved into the members of the value being built: owned slots pushed between the ADDR and here that no longer hold their block (the null-out ran)
+            for (int k = a + 1; k < i; k++) {
+                if (ln[k].startsWith("PUSH ") && slotType.containsKey(arg(ln[k])) && !s.lo.containsKey(arg(ln[k])) && !s.deep.containsKey(arg(ln[k]))) {
+                    String c = arg(ln[k]);
+                    if (in[a].lo.containsKey(c) || in[a].deep.containsKey(c)) {
+                        deep += in[a].lo.getOrDefault(c, 0L) + in[a].deep.getOrDefault(c, 0L);
+                    }
+                }
+            }
+        }
         if (w == 1 && ln[a + 1].startsWith("PUSH null")) {
             def = 0;
         } else if (w == 1 && ln[a + 1].startsWith("PUSH ") && slotType.containsKey(arg(ln[a + 1]))) {
             String y = arg(ln[a + 1]);
             def = r.lo.getOrDefault(y, 0L);
+            deep = r.deep.getOrDefault(y, 0L);
             r.lo.remove(y);                      // a move: the source no longer holds the block
+            r.deep.remove(y);
         } else if (i - 3 > a && op(ln[i - 1]).equals("PUSH_RET") && op(ln[i - 2]).equals("CC_END") && op(ln[i - 3]).equals("CALL")) {
             Fn cf = fns.get(arg(ln[i - 3]));
             def = cf == null ? 0 : cf.retLo;
+            deep = cf == null || !cf.deepOk ? 0 : cf.retDeep;
         } else {
             int j = -1;
             for (int k = i - 1; k > a; k--) {
@@ -1241,18 +1683,89 @@ final class GasReport {
                 def = allocBytes(j, f).longValue();
             }
         }
-        if (def > 0) {
+        if (inline) {
+            def = 0;
+        }
+        if (def > 0 || (inline && deep > 0)) {
             r.lo.put(x, def);
+            r.deep.put(x, deep);
         } else {
             r.lo.remove(x);
+            r.deep.remove(x);
+        }
+        if (inline && r.deep.containsKey(x) && !r.lo.containsKey(x)) {
+            r.lo.put(x, 0L);
         }
         return r;
+    }
+
+    /**
+     * True when nothing in f can make a destruct free less (or more) than the blocks its owner was built with: no member that owns memory is read out
+     * (a move), written (a replacement) or reached through a reference passed to another function, and no tracked slot has its address taken. The
+     * `name.member = null` statements right after a `GT_DESTRUCT name` are the drop glue clearing what was just freed and do not count.
+     */
+    private boolean deepOk(Fn f, Map<String, String> slotType) {
+        Set<Integer> idiom = new HashSet<>();
+        for (int i = f.start + 1; i < f.end; i++) {
+            if (op(ln[i]).equals("GT_DESTRUCT") && ln[i].split(" ").length == 2) {
+                String name = arg(ln[i]);
+                int k = i + 1;
+                while (k < f.end && ln[k].startsWith("ADDR " + name + " ")) {
+                    int j = k;
+                    while (j < f.end && !ln[j].startsWith("ASSIGN ")) {
+                        j++;
+                    }
+                    for (int m = k; m <= j && m < f.end; m++) {
+                        idiom.add(m);
+                    }
+                    k = j + 1;
+                }
+            }
+        }
+        for (int i = f.start + 1; i < f.end; i++) {
+            if (idiom.contains(i)) {
+                continue;
+            }
+            String[] p = ln[i].split(" ");
+            if (p.length < 2) {
+                continue;
+            }
+            switch (p[0]) {
+                case "PUSH_FIELDNAME":
+                    if (ownsMemberNames.contains(p[1])) {
+                        return false;
+                    }
+                    break;
+                case "PUSH": case "ADDR": {
+                    int d = p[1].lastIndexOf('.');
+                    if (d > 0 && ownsMemberNames.contains(p[1].substring(d + 1))) {
+                        return false;
+                    }
+                    if (p[0].equals("PUSH") && slotType.containsKey(p[1]) && i + 1 < f.end && ln[i + 1].startsWith("POP ARG") && !addrType(ln[i + 1]).startsWith("owns_")) {
+                        return false;   // handed to a function by reference: it may move a member out or replace it
+                    }
+                    break;
+                }
+                case "ADDR_OF":
+                    for (String t : p) {
+                        if (slotType.containsKey(t)) {
+                            return false;
+                        }
+                    }
+                    break;
+                default:
+                    break;
+            }
+        }
+        return true;
     }
 
     // ---- stack depth -------------------------------------------------------------------------------------------------------------------
 
     private Map<String, Long> structSize;
     private Map<String, List<String>> structMembers = new HashMap<>();
+    private final Set<String> ownsMemberNames = new HashSet<>();     // names of struct members that own memory (any struct)
+    private final Set<String> ownsStructs = new HashSet<>();         // structs with such a member
     private Map<String, Long> sizeCache = new HashMap<>();
 
     private void parseStructs() {
@@ -1267,6 +1780,10 @@ final class GasReport {
             } else if (cur != null && l.startsWith("STRUCT_MEMBER ")) {
                 String[] p = l.split(" ");
                 structMembers.get(cur).add(p[p.length - 1]);
+                if (p[p.length - 1].contains("owns_")) {
+                    ownsMemberNames.add(p[1]);
+                    ownsStructs.add(cur);
+                }
                 total += (sizeOf(p[p.length - 1]) + 7) / 8 * 8;
             } else if (cur != null && l.startsWith("STRUCT_PADDING ")) {
                 total += Long.parseLong(l.substring(15).trim());
@@ -1450,7 +1967,7 @@ final class GasReport {
             case "RESIZE": {
                 String e = dynElem(p[1]);
                 long es = e == null ? 8 : (sizeOf(e) + 7) / 8 * 8;
-                BigInteger n = literalAt(idx - 2);          // source, count, fill: the count is the second-last single push
+                BigInteger n = scalarAt(f, idx - 2);          // source, count, fill: the count is the second-last single push
                 if (n == null || !ln[idx - 1].startsWith("PUSH ")) {
                     unb(f, "`resize` count is not a literal");
                     return BigInteger.valueOf(DYN_HEADER);
@@ -1460,7 +1977,7 @@ final class GasReport {
             case "URESIZE": {
                 String e = dynElem(p[1]);
                 long es = e == null ? 8 : (sizeOf(e) + 7) / 8 * 8;
-                BigInteger n = literalAt(idx - 1);
+                BigInteger n = scalarAt(f, idx - 1);
                 if (n == null) {
                     unb(f, "unsafe `resize` count is not a literal");
                     return BigInteger.ONE;

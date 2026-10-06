@@ -149,6 +149,127 @@ func sc_calls_in_loop() mut u64{
 	return t + keep.value
 }
 
+struct Outer{@pub{
+	bx: owns mut Box
+}}
+
+// ---- blocks owned through struct members: the owner's free releases them too -------------------------------------------------------------------------
+
+// leaves nothing: Node 16 + Box 16 peak, both freed at the end
+func sc_box_once() mut u64{
+	?catch(e){ return 0 }
+	let inner = mut ?new Node{value= 9}
+	let b = mut ?new Box{n= inner}
+	return 1
+}
+
+// exact 32: the member block is credited with its owner, so the second round reuses what the first freed
+func sc_mem_seq() mut u64{
+	let t = mut 0
+	t += sc_box_once()
+	t += sc_box_once()
+	return t
+}
+
+// a Box held directly in a variable: dropping it frees the Node moved into it
+func sc_inline_once() mut u64{
+	?catch(e){ return 0 }
+	let inner = mut ?new Node{value= 9}
+	let b = mut Box{n= inner}
+	return 1
+}
+
+// exact 16
+func sc_mem_inline_seq() mut u64{
+	let t = mut 0
+	t += sc_inline_once()
+	t += sc_inline_once()
+	return t
+}
+
+// three levels: Node 16 + Box 16 + Outer 16
+func sc_three_once() mut u64{
+	?catch(e){ return 0 }
+	let inner = mut ?new Node{value= 9}
+	let b = mut ?new Box{n= inner}
+	let o = mut ?new Outer{bx= b}
+	return 1
+}
+
+// exact 48
+func sc_mem_three_seq() mut u64{
+	let t = mut 0
+	t += sc_three_once()
+	t += sc_three_once()
+	return t
+}
+
+func eatBox(b: owns some mut Box) mut u64{
+	return 1
+}
+
+// exact 32: the callee frees the Box and with it the Node
+func sc_mem_param() mut u64{
+	?catch(e){ return 0 }
+	let t = mut 0
+	let i1 = mut ?new Node{value= 1}
+	let b1 = mut ?new Box{n= i1}
+	t += eatBox(b1)
+	let i2 = mut ?new Node{value= 2}
+	let b2 = mut ?new Box{n= i2}
+	t += eatBox(b2)
+	return t
+}
+
+@throws
+func makeBox() owns some mut Box{
+	?catch(e){ throw e }
+	let inner = mut ?new Node{value= 9}
+	let b = mut ?new Box{n= inner}
+	return b
+}
+
+func returned_once() mut u64{
+	?catch(e){ return 0 }
+	let b = mut ?makeBox()
+	return 1
+}
+
+// exact 32: the returned Box carries its Node; freed by the caller
+func sc_mem_returned_seq() mut u64{
+	let t = mut 0
+	t += returned_once()
+	t += returned_once()
+	return t
+}
+
+// the member is moved out: the free of the Box no longer releases it, so nothing may be credited for it (the audit is an upper bound: >=)
+func sc_mem_moved_out() mut u64{
+	?catch(e){ return 0 }
+	let t = mut 0
+	for i in 0..2{
+		let inner = mut ?new Node{value= 9}
+		let b = mut ?new Box{n= inner}
+		let z = mut b.n
+		t += 1
+	}
+	return t
+}
+
+// the member is replaced through the pointer (the old Node is freed, a new one is stored): upper bound again
+func sc_mem_replaced() mut u64{
+	?catch(e){ return 0 }
+	let t = mut 0
+	for i in 0..2{
+		let inner = mut ?new Node{value= 9}
+		let b = mut ?new Box{n= inner}
+		let n2 = mut ?new Node{value= 1}
+		b.n = n2
+		t += 1
+	}
+	return t
+}
+
 func main() void{
 	let r = mut 0
 	r += sc_one()
@@ -165,6 +286,13 @@ func main() void{
 	r += sc_throwing(1)
 	r += sc_throwing(9)
 	r += sc_calls_in_loop()
+	r += sc_mem_seq()
+	r += sc_mem_inline_seq()
+	r += sc_mem_three_seq()
+	r += sc_mem_param()
+	r += sc_mem_returned_seq()
+	r += sc_mem_moved_out()
+	r += sc_mem_replaced()
 	unsafe extern{
 		if r > 0{ printf("PASS heap_live_test\n") } else{ printf("FAIL heap_live_test\n") }
 	}

@@ -8,7 +8,7 @@ export JAVA_TOOL_OPTIONS=
 tar -C "$ROOT" --exclude=.git --exclude=.cache -cf - . | tar -C "$W" -xf -
 cd "$W/ASTGenerator" || exit 1
 checked=0
-for f in ../tests/gas_test.caspien ../tests/heap_gas_test.caspien ../docs/examples/*.caspien ../tests/perf_codegen_test.caspien; do
+for f in ../tests/gas_test.caspien ../tests/heap_gas_test.caspien ../tests/audit_args_test.caspien ../tests/audit_args_unknown_test.caspien ../docs/examples/*.caspien ../tests/perf_codegen_test.caspien; do
   [ "$(basename $f)" = 09_event_loop.caspien ] && continue
   CASPIEN_AUDIT_ALL=1 CASPIEN_AUDIT_FILE=$W/audit.txt java -cp out caspien.Main -i $f $W/g.hob --audit >/dev/null 2>&1 || { echo "FAIL: compile/audit $f"; exit 1; }
   python3 ../tests/gas_model.py $W/g.hob > $W/model.txt
@@ -46,13 +46,20 @@ for n, (ub, v) in gas.items():
     if "loop" in fl:
         if not ub: print("FAIL: %s in %s contains a loop but is not UNBOUNDED" % (n, prog)); sys.exit(1)
     else:
-        if ub != ("var" in fl): print("FAIL: %s in %s: unbounded=%s, model flags %s" % (n, prog, ub, fl)); sys.exit(1)
-        if v != mg: print("FAIL: gas of %s in %s: report %d, model %d" % (n, prog, v, mg)); sys.exit(1)
-        # heap: absent from the list = exactly 0 and bounded
-        hub, hv = heapc.get(n, (False, 0))
-        if hub != mhu or hv != mh: print("FAIL: allocation count of %s in %s: report %s%d, model %s%d" % (n, prog, ">=" if hub else "", hv, ">=" if mhu else "", mh)); sys.exit(1)
+        # a bound the report claims must be the model's exact worst case (and the model must find nothing unknown); an UNBOUNDED figure is a lower
+        # bound and must not exceed what the model finds
+        hub, hv = heapc.get(n, (False, 0))   # heap: absent from the list = exactly 0 and bounded
         bub, bv = heapb.get(n, (False, 0))
-        if bub != mbu or bv != mb: print("FAIL: heap bytes of %s in %s: report %s%d, model %s%d" % (n, prog, ">=" if bub else "", bv, ">=" if mbu else "", mb)); sys.exit(1)
+        if not ub:
+            if "var" in fl: print("FAIL: %s in %s is bounded in the report but the model finds an unknown loop bound" % (n, prog)); sys.exit(1)
+            if v != mg: print("FAIL: gas of %s in %s: report %d, model %d" % (n, prog, v, mg)); sys.exit(1)
+        elif v > mg: print("FAIL: lower bound of %s in %s is above the model's figure" % (n, prog)); sys.exit(1)
+        if not hub:
+            if mhu or hv != mh: print("FAIL: allocation count of %s in %s: report %d, model %s%d" % (n, prog, hv, ">=" if mhu else "", mh)); sys.exit(1)
+        elif hv > mh: print("FAIL: allocation count lower bound of %s in %s above the model" % (n, prog)); sys.exit(1)
+        if not bub:
+            if mbu or bv != mb: print("FAIL: heap bytes of %s in %s: report %d, model %s%d" % (n, prog, bv, ">=" if mbu else "", mb)); sys.exit(1)
+        elif bv > mb: print("FAIL: heap bytes lower bound of %s in %s above the model" % (n, prog)); sys.exit(1)
     sub, sv = stack[n]
     if sub != msu or sv != ms: print("FAIL: stack of %s in %s: report %s%d, model %s%d" % (n, prog, ">=" if sub else "", sv, ">=" if msu else "", ms)); sys.exit(1)
 print("ok %-40s %d functions" % (prog, len(gas)))

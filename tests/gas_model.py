@@ -65,64 +65,182 @@ class Budget(Exception):
     pass
 
 
-def worst(fn, gas, flags, cost=op_cost, varn=1):
+LIM = 1 << 63
+
+
+def tokval(tok, env):
+    """Value of a pushed token under the variable values `env` (None = unknown)."""
+    if tok.isdigit():
+        return int(tok)
+    if tok.endswith(".start") or tok.endswith(".end"):
+        base, _, fld = tok.rpartition(".")
+        v = env.get(base)
+        return v[0 if fld == "start" else 1] if isinstance(v, tuple) else None
+    return env.get(tok)
+
+
+def params_of(fn):
+    out = []
+    for l in fn["lines"]:
+        if l.startswith("ARG "):
+            p = l.split()
+            out.append((p[1], bool(re.fullmatch(r"(imut_|mut_)?range", p[2]))))
+        elif l.startswith("ALLOC "):
+            break
+    return out
+
+
+def bind(fn, slots):
+    """Parameter values of a call: the slot values (in the order they were popped) laid over the callee's parameters (a range takes two slots)."""
+    ps = params_of(fn)
+    if sum(2 if r else 1 for _, r in ps) != len(slots):
+        return ()
+    out, k = [], 0
+    for name, r in ps:
+        if r:
+            lo, hi = slots[k], slots[k + 1]
+            k += 2
+            if isinstance(lo, int) and isinstance(hi, int):
+                out.append((name, (lo, hi)))
+        else:
+            v = slots[k]
+            k += 1
+            if isinstance(v, int):
+                out.append((name, v))
+    return tuple(sorted(out))
+
+
+NARROW = re.compile(r".*[us](8|16|32)$")
+
+
+def worst(fn, callee, flags, cost, varn=1, args=()):
+    """Most expensive execution by exhaustive search. The search also executes the integer assignments it passes (a concrete interpreter over the
+    bytecode: literals, variables, ADD SUB MUL INC DEC; everything else is unknown) so that the bound of a `for` whose range is not literal in its type
+    is read from the values the path really has, starting from the parameter values `args`. callee(name, slots) -> that callee's figure under those
+    argument values; cost(op, pc, env) -> the price of one operation."""
     L, labels = fn["lines"], fn["labels"]
-    bounds = loop_bounds(fn)
-    for lab, n in bounds.items():
-        if n is None:
-            flags.add("var")
-            bounds[lab] = varn   # lower bound: `varn` iterations
+    static = loop_bounds(fn)
     if any(re.fullmatch(r"@loop_\d+", lab) for lab in labels):
         flags.add("loop")
-    exit_of = {int(re.search(r"\d+", lab).group()) + 1: lab for lab in bounds}   # for_end_<n+1> belongs to for_<n>
+    taken = {t for l in L if l.startswith("ADDR_OF ") for t in l.split()[1:]}
     memo = {}
 
-    def run(pc, counters):
-        key = (pc, counters)
+    def run(pc, counters, env):
+        key = (pc, counters, env)
         if key in memo: return memo[key]
-        if len(memo) > 200000: raise Budget()
+        if len(memo) > 300000: raise Budget()
         memo[key] = 0   # cycle guard (only `loop` bodies can cycle; they are excluded from comparison)
         cnt = dict(counters)
+        e = dict(env)
+        stk, frames, pend, poisoned = [], [], None, False
+
+        def pop():
+            return stk.pop() if stk else None
+
         total = 0
         while True:
             if pc >= len(L): break
             l = L[pc]
-            op = l.split()[0]
+            p = l.split()
+            op = p[0]
             if l.startswith("@"):
                 pc += 1
                 continue
             if op == "CALL":
-                g = gas.get(l.split()[1])
-                total += (cost("CALL", pc) if cost.__code__.co_argcount == 2 else cost("CALL")) + (g or 0)
+                slots = frames[-1] if frames else []
+                total += cost("CALL", pc, e) + callee(p[1], slots)
                 pc += 1
                 continue
-            total += cost(op, pc) if cost.__code__.co_argcount == 2 else cost(op)
+            total += cost(op, pc, e)
+            # ---- the interpreter part
+            if op == "PUSH":
+                stk.append(tokval(p[1], e))
+            elif op in ("ADD", "SUB", "MUL"):
+                y, x = pop(), pop()
+                r = None
+                if isinstance(x, int) and isinstance(y, int) and not any(NARROW.match(t) for t in p[1:]):
+                    r = x + y if op == "ADD" else x - y if op == "SUB" else x * y
+                    r = r if 0 <= r < LIM else None
+                stk.append(r)
+            elif op in ("INC", "DEC"):
+                x = pop()
+                r = None
+                if isinstance(x, int) and not any(NARROW.match(t) for t in p[1:]):
+                    r = x + (1 if op == "INC" else -1)
+                    r = r if 0 <= r < LIM else None
+                stk.append(r)
+            elif op == "ADDR":
+                pend, stk, poisoned = p[1], [], False
+            elif op == "ASSIGN":
+                if pend is not None:
+                    v = None
+                    if not poisoned:
+                        if len(stk) == 2 and all(isinstance(t, int) for t in stk):
+                            v = tuple(stk)
+                        elif len(stk) == 1 and stk[0] is not None:
+                            v = stk[0]
+                    if v is None or pend in taken: e.pop(pend, None)
+                    else: e[pend] = v
+                pend, stk, poisoned = None, [], False
+            elif op == "CC_START":
+                frames.append([])
+            elif op == "CC_END":
+                if frames: frames.pop()
+            elif op == "POP" and p[1].startswith("ARG"):
+                v = pop()
+                if frames: frames[-1].append(v)
+            elif op == "PUSH_RET":
+                stk.append(None)
+            elif op in ("CMP", "JMP", "RET", "PUSH_LABEL", "GT_DESTRUCT", "GT_REGISTER", "ALLOC", "ARG", "RETURNS", "FUNC_DECORATE", "CC_START", "CC_END"):
+                pass
+            else:
+                if pend is not None: poisoned = True
+                stk.clear()
+                stk.append(None)
             if op in ("RET", "THROW", "EXIT", "EXIT_THREAD"):
                 break
             if op == "PUSH_LABEL":
-                tgt = l.split()[1]
+                tgt = p[1]
                 if tgt in labels and not re.match(r"@(for|loop)", tgt):
-                    alt = run(labels[tgt], tuple(sorted(cnt.items())))
-                    rest = run(pc + 1, tuple(sorted(cnt.items())))
+                    alt = run(labels[tgt], tuple(sorted(cnt.items())), tuple(sorted(e.items())))
+                    rest = run(pc + 1, tuple(sorted(cnt.items())), tuple(sorted(e.items())))
                     total += max(alt, rest)
                     break
             if op == "JMP":
-                tgt = l.split()[1]
+                tgt = p[1]
                 cond = pc > 0 and L[pc - 1] == "CMP"
                 m = re.fullmatch(r"@for_end_(\d+)", tgt)
-                if cond and m and ("@for_%d" % (int(m.group(1)) - 1)) in bounds:
+                if cond and m and ("@for_%d" % (int(m.group(1)) - 1)) in static:
                     head = "@for_%d" % (int(m.group(1)) - 1)
+                    lim = static[head]
+                    if lim is None:
+                        lk = head + "#"
+                        if lk in cnt:
+                            lim = cnt[lk]
+                        else:
+                            rv = None
+                            for j in range(labels[head] + 1, min(labels[head] + 6, len(L))):
+                                if L[j].startswith("PUSH $for_range_"):
+                                    rv = e.get(L[j].split()[1])
+                                    break
+                            if isinstance(rv, tuple):
+                                lim = max(0, rv[1] - rv[0])
+                            else:
+                                flags.add("var")
+                                lim = varn   # lower bound: `varn` iterations
+                            cnt[lk] = lim
                     c = cnt.get(head, 0)
-                    if c < bounds[head]:
+                    if c < lim:
                         cnt[head] = c + 1
                         pc += 1
                     else:
                         cnt[head] = 0
+                        cnt.pop(head + "#", None)
                         pc = labels[tgt]
                     continue
                 if cond:
-                    a = run(labels[tgt], tuple(sorted(cnt.items())))
-                    b = run(pc + 1, tuple(sorted(cnt.items())))
+                    a = run(labels[tgt], tuple(sorted(cnt.items())), tuple(sorted(e.items())))
+                    b = run(pc + 1, tuple(sorted(cnt.items())), tuple(sorted(e.items())))
                     total += max(a, b)
                     break
                 pc = labels[tgt]
@@ -131,14 +249,18 @@ def worst(fn, gas, flags, cost=op_cost, varn=1):
         memo[key] = total
         return total
 
-    return run(0, ())
+    return run(0, (), tuple(sorted(args)))
 
 
 ALLOC_OPS = set("NEW NEW_DYN NEW_UDYN NEW_FROM_STRING NEW_FROM_USTRING RESIZE URESIZE CLONE CLONE_DYN".split())
 
 
-def heap_cost(op):
+def heap_cost(op, pc=None, env=None):
     return 1 if op in ALLOC_OPS else 0
+
+
+def gas_cost(op, pc=None, env=None):
+    return op_cost(op)
 
 
 def struct_sizes(path):
@@ -241,39 +363,42 @@ def unescape_len(text):
 
 
 def bytes_cost_fn(fn, sizes, members, strs, unk):
-    """Returns cost(op) usable by worst(): needs the line, so worst() is given the whole function and a per-index cost map instead."""
+    """Returns cost(op, pc, env): the bytes an allocation operation requests, the size read from the values the path has when a count is a variable."""
     L = fn["lines"]
-    out = {}
-    for i, l in enumerate(L):
-        p = l.split()
-        if not p or p[0] not in ALLOC_OPS: continue
+    el = lambda t: -(-(size_of(dyn_elem(t), sizes) if dyn_elem(t) else 8) // 8) * 8
+
+    def cost(op, pc, env):
+        if op not in ALLOC_OPS:
+            return 0
+        p = L[pc].split()
         o = p[0]
-        el = lambda t: -(-(size_of(dyn_elem(t), sizes) if dyn_elem(t) else 8) // 8) * 8
-        lit = lambda j: int(L[j].split()[1]) if j >= 0 and L[j].startswith("PUSH ") and L[j].split()[1].isdigit() else None
-        if o == "NEW": c = -(-size_of(p[1], sizes) // 8) * 8
-        elif o == "NEW_DYN": c = 16 + el(p[1]) * int(p[-1])
-        elif o == "NEW_UDYN": c = max(1, el(p[1]) * int(p[-1]))
-        elif o in ("NEW_FROM_STRING", "NEW_FROM_USTRING"):
-            sid = L[i - 1].split()[1] if i > 0 and L[i - 1].startswith("PUSH string_id") else None
+        tok = lambda j: (L[j].split()[1] if j >= 0 and L[j].startswith("PUSH ") else None)
+        val = lambda j: (tokval(tok(j), env) if tok(j) is not None else None)
+        if o == "NEW": return -(-size_of(p[1], sizes) // 8) * 8
+        if o == "NEW_DYN": return 16 + el(p[1]) * int(p[-1])
+        if o == "NEW_UDYN": return max(1, el(p[1]) * int(p[-1]))
+        if o in ("NEW_FROM_STRING", "NEW_FROM_USTRING"):
+            sid = L[pc - 1].split()[1] if pc > 0 and L[pc - 1].startswith("PUSH string_id") else None
             n = unescape_len(strs[sid]) if sid in strs else None
-            if n is None: unk.add(i); c = 16
-            else: c = 16 + n if o == "NEW_FROM_STRING" else max(1, n + 1)
-        elif o == "RESIZE":
-            n = lit(i - 2)
-            if n is None or not L[i - 1].startswith("PUSH "): unk.add(i); c = 16
-            else: c = 16 + el(p[1]) * n
-        elif o == "URESIZE":
-            n = lit(i - 1)
-            if n is None: unk.add(i); c = 1
-            else: c = max(1, el(p[1]) * n)
-        elif o == "CLONE":
+            if n is None: unk.add(pc); return 16
+            return 16 + n if o == "NEW_FROM_STRING" and "unsafe_dynarray" not in p[1] else max(1, n + 1)
+        if o == "RESIZE":
+            n = val(pc - 2)
+            if not isinstance(n, int) or tok(pc - 1) is None: unk.add(pc); return 16
+            return 16 + el(p[1]) * n
+        if o == "URESIZE":
+            n = val(pc - 1)
+            if not isinstance(n, int): unk.add(pc); return 1
+            return max(1, el(p[1]) * n)
+        if o == "CLONE":
             pt = pointee(p[1])
             c = None if pt is None or "dynarray" in p[1] else deep(pt, sizes, members)
-            if c is None: unk.add(i); c = 16
-        else:
-            unk.add(i); c = 16
-        out[i] = c
-    return out
+            if c is None: unk.add(pc); return 16
+            return c
+        unk.add(pc)
+        return 16
+
+    return cost
 
 
 def main():
@@ -281,38 +406,56 @@ def main():
     sizes = struct_sizes(sys.argv[1])
     members = members_of(sys.argv[1])
     strs = strings_of(sys.argv[1])
-    gas, flags, heap1, heap2, by1, by2, unkb = {}, {}, {}, {}, {}, {}, {}
+    R, active = {}, set()
+    ZEROREC = {"gas": 0, "h1": 0, "h2": 0, "b1": 0, "b2": 0, "flags": set(), "unk": False}
 
-    def solve(n, stack=()):
-        if n in gas: return
-        if n in stack: return
+    def solve(n, args=()):
+        key = (n, args)
+        if key in R: return R[key]
+        if key in active: return ZEROREC
+        active.add(key)
         f = fns[n]
-        fl = set()
-        ub = False
-        for l in f["lines"]:
-            if l.startswith("CALL "):
-                c = l.split()[1]
-                if c in fns:
-                    solve(c, stack + (n,))
-                    fl |= flags.get(c, set())
-                    ub = ub or unkb.get(c, False)
-        flags[n] = fl
-        unk = set()
-        costmap = bytes_cost_fn(f, sizes, members, strs, unk)
-        bcost = lambda op, pc: costmap.get(pc, 0) if op in ALLOC_OPS else 0
+        fl, unk = set(), set()
+        bcost = bytes_cost_fn(f, sizes, members, strs, unk)
+        children_unk = [False]
+
+        def sub(metric):
+            def callee(c, slots):
+                if c not in fns: return 0
+                base = solve(c, ())
+                rec = base
+                if (base["flags"] or base["unk"]) and len(R) < 3000:
+                    rec = solve(c, bind(fns[c], slots))
+                if metric == "gas": fl.update(rec["flags"])
+                if metric == "b1" and rec["unk"]: children_unk[0] = True
+                return rec[metric]
+            return callee
+        rec = dict(ZEROREC)
         try:
-            gas[n] = worst(f, gas, fl)
-            heap1[n] = worst(f, heap1, set(), heap_cost, 1)
-            heap2[n] = worst(f, heap2, set(), heap_cost, 2)
-            by1[n] = worst(f, by1, set(), bcost, 1)
-            by2[n] = worst(f, by2, set(), bcost, 2)
+            rec["gas"] = worst(f, sub("gas"), fl, gas_cost, 1, args)
+            rec["h1"] = worst(f, sub("h1"), set(), heap_cost, 1, args)
+            rec["h2"] = worst(f, sub("h2"), set(), heap_cost, 2, args)
+            rec["b1"] = worst(f, sub("b1"), set(), bcost, 1, args)
+            rec["b2"] = worst(f, sub("b2"), set(), bcost, 2, args)
         except Budget:
             fl.add("skip")
-            gas[n] = heap1[n] = heap2[n] = by1[n] = by2[n] = 0
-        unkb[n] = ub or bool(unk)
+            rec.update(gas=0, h1=0, h2=0, b1=0, b2=0)
+        rec["flags"] = fl
+        rec["unk"] = bool(unk) or children_unk[0]
+        R[key] = rec
+        active.discard(key)
+        return rec
 
+    base = {}
     for n in fns:
-        solve(n)
+        base[n] = solve(n, ())
+    gas = {n: base[n]["gas"] for n in fns}
+    flags = {n: base[n]["flags"] for n in fns}
+    heap1 = {n: base[n]["h1"] for n in fns}
+    heap2 = {n: base[n]["h2"] for n in fns}
+    by1 = {n: base[n]["b1"] for n in fns}
+    by2 = {n: base[n]["b2"] for n in fns}
+    unkb = {n: base[n]["unk"] for n in fns}
     # stack depth: longest call chain over the frame estimates
     depth, unb = {}, {}
 

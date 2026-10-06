@@ -582,7 +582,12 @@ hardware, optimiser switches or target. Rules:
 - A `for` over literal bounds `a..b` costs `(b-a)` iterations of the worst iteration plus the final header test (a `break` or `return` inside is
   taken at the dearest iteration). Any other loop is UNBOUNDED: `loop{}`, a `for` whose bound is a variable or argument (including the range
   argument of a `@recursive` function), and an indirect call. The figure is then a lower bound (one iteration) printed as `>= N` with the reason; a
-  caller of an unbounded function is unbounded. Argument values at call sites are not tracked.
+  caller of an unbounded function is unbounded, EXCEPT where the call passes values the caller knows: for a callee that is unbounded on its own the call is costed again
+  with the parameter values it passes (`runEvals`, one specialised copy per distinct set of values), so `sumTo(5)` costs a 5-iteration loop. Values are known when they are
+  literals, variables read through straight-line code to their last write (`valueAt`: no label in between, so every path runs through that write), parameters that are never written
+  (or the caller's own parameters, forwarded), variables written once at the top of a function, and `ADD SUB MUL INC DEC` of those (64-bit, results kept below 2^63; narrower types give
+  up). A range argument (`0..10`, the range of a `@recursive` call) gives its `hi - lo`. Anything else stays unbounded: a call result, a variable changed in a branch or loop, a
+  variable whose address is taken. The same values size `resize` counts for the heap sections. The function on its own is still listed unbounded.
 - External calls, inline assembly, `memcopy` sizes and waiting operations get the fixed price above and are listed as "not modelled".
 
 `--audit` then prints two more sections computed from the same bytecode:
@@ -611,12 +616,17 @@ hardware, optimiser switches or target. Rules:
   check: a failed allocation holds no block); every `resize` counts as a moving realloc, so the peak sees the old and the new block together. Frees are credited by a must-analysis over the
   function (`analyzeCredits`): an owned local or parameter assigned from an allocation of known size, from another owned slot (a move) or from a call that returns an owned block of known size
   releases exactly those bytes at its `GT_DESTRUCT`, at a `resize` of it, or when it is moved into a callee that destructs that parameter on every exit path (the caller credits the bytes it
-  knows; the callee credits nothing for a parameter). Every path reaching a free must agree on the block (join = minimum), so a block moved on one path only, moved into a struct member (the
-  struct's own free credits only the struct, not what it owns) or handed to code that is not followed is NOT credited: the figure stays an upper bound, and `leaves` can be too high. A catch
+  knows; the callee credits nothing for a parameter). Every path reaching a free must agree on the block (join = minimum), so a block moved on one path only or handed to code that is not followed is NOT credited: the figure
+  stays an upper bound, and `leaves` can be too high. A block moved into a member of a struct (`new Box{n= inner}`, or an inline `Box{n= inner}` that owns memory) is credited
+  together with its owner: the state keeps a second number per slot (`deep`, the bytes owned through members, from the moved-in slots at the moment of the move; a callee's returned
+  block brings its own), and a destruct of the owner credits both. That holds only in a function where nothing can make the free release something else (`deepOk`): no member that owns
+  memory is read out (a move), written (a replacement), or reached through a reference given to another function, and no tracked slot has its address taken; otherwise only the owner's own
+  bytes are credited. A caller credits a callee's freed owned parameter with its deep part only when both functions are `deepOk`. A catch
   block / landing pad is analysed separately for each edge that enters it (what is live differs per edge), and the callee that unwinds also frees the arguments moved into it. Paths that
   end in a throw or exit add to the peak but leave nothing for the caller. A loop whose body grows the live heap and has a non-literal bound is UNBOUNDED (`>=`), one that frees what it allocates
   is not. Threads are separate roots; a `par` thread's blocks are not added to its starter's figure.
 
 Tests: `tests/gas_check.sh` compares gas, heap bytes, allocation count and stack of every function in 25 programs (including the slice lines of `09_event_loop`) (`tests/gas_test.caspien`, `tests/heap_gas_test.caspien`, the docs examples) with
 `tests/gas_model.py`, an exhaustive path search over the bytecode (heap: the same path search with the byte cost of each allocation worked out separately in the model; unbounded iff the figure changes when the loop bound goes from 1 to 2 or a size is not a literal);
+`tests/audit_args_check.sh` covers the call-site values: `tests/audit_args_test.caspien` (every function equal to the model, `main` bounded in all sections, its peak live heap equal to the allocator's) and `tests/audit_args_unknown_test.caspien` (call results and variables changed in a loop or branch keep `main` UNBOUNDED). `tests/gas_model.py` is a concrete interpreter over the bytecode for that (it executes the integer assignments along each path and passes the argument values to the callee); an UNBOUNDED report line is only compared as a lower bound, a bounded one must equal the model exactly.
 `tests/stack_check.sh` calibrates the frame estimate against real frames. `tests/heap_live_check.sh` checks the peak live heap against the real allocator: one variant of `tests/heap_live_test.caspien` per allocation shape is run under `tests/alloc_shim.c` (peak of live bytes, `PEAK=`) and must equal the audit; `tests/heap_live_sweep_check.py` runs every test and example program under the shim and requires its measured peak never to exceed the audited figure for `main`. `CASPIEN_AUDIT_ALL=1` lifts the 40-line limit of each section.
