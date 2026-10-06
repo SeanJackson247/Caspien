@@ -1,0 +1,179 @@
+// An owns local that is moved on SOME paths only must still be freed on the paths that did not move it (a move nulls the slot,
+// so the scope-exit destruct is a no-op where it was moved). Each function allocates one Node and moves it away only when
+// `c > 3`; the ghost table's own entry count must be back to its starting value after the call for both outcomes (a leaked block
+// stays registered). Valgrind alone cannot see this: the table keeps every registered block reachable (see cond_move_check.sh).
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+
+struct Node{@pub{
+	value: mut u64
+}}
+
+func live() mut u64{
+	let n = mut 0
+	unsafe assume{
+		assume match ghost_table.lockState : OPEN
+		n = mut ghost_table.len
+	}
+	return n
+}
+
+func check(name: static imut string, ok: imut bool) void{
+	unsafe extern{
+		if ok{ printf("PASS %s\n", name) }
+		else{ printf("FAIL %s\n", name) }
+	}
+}
+
+func take(n: owns some mut Node) mut u64{
+	return n.value
+}
+
+// the moving branch returns
+func moveReturn(c: mut u64) mut u64{
+	?catch(e){ return 0 }
+	let n = mut ?new Node{value= 7}
+	if c > 3{
+		return take(mut n)
+	}
+	return 2
+}
+
+// the moving branch falls through
+func moveFall(c: mut u64) mut u64{
+	?catch(e){ return 0 }
+	let n = mut ?new Node{value= 7}
+	let r = mut 2
+	if c > 3{
+		r = take(mut n)
+	}
+	return r
+}
+
+// only one arm of if/else moves
+func moveOneArm(c: mut u64) mut u64{
+	?catch(e){ return 0 }
+	let n = mut ?new Node{value= 7}
+	let r = mut 0
+	if c > 3{
+		r = take(mut n)
+	}
+	else{
+		r = 3
+	}
+	return r
+}
+
+// every arm moves: definitely moved, nothing left to free
+func moveAll(c: mut u64) mut u64{
+	?catch(e){ return 0 }
+	let n = mut ?new Node{value= 7}
+	let r = mut 0
+	if c > 3{
+		r = take(mut n)
+	}
+	else{
+		r = take(mut n) + 1
+	}
+	return r
+}
+
+// moved in a nested if only
+func moveNested(c: mut u64) mut u64{
+	?catch(e){ return 0 }
+	let n = mut ?new Node{value= 7}
+	let r = mut 1
+	if c > 1{
+		if c > 3{
+			r = take(mut n)
+		}
+	}
+	return r
+}
+
+// an if/elseif chain with no else: the "nothing taken" path keeps the block
+func moveChain(c: mut u64) mut u64{
+	?catch(e){ return 0 }
+	let n = mut ?new Node{value= 7}
+	let r = mut 1
+	if c > 3{
+		r = take(mut n)
+	}
+	elseif c > 1{
+		r = 4
+	}
+	return r
+}
+
+// partly moved, then the slot is given a new block: the old one (when still there) must not leak
+func moveRevive(c: mut u64) mut u64{
+	?catch(e){ return 0 }
+	let n = mut ?new Node{value= 7}
+	let r = mut 1
+	if c > 3{
+		r = take(mut n)
+	}
+	n = mut ?new Node{value= 9}
+	return r + n.value
+}
+
+func run(name: static imut string, expect: mut u64, got: mut u64, before: mut u64) void{
+	let after = mut live()
+	check(name, got == expect && after == before)
+}
+
+func main() imut s32{
+	let b0 = mut live()
+	let g0 = mut moveReturn(5)
+	run("moveReturn moved", 7, g0, b0)
+	let b1 = mut live()
+	let g1 = mut moveReturn(0)
+	run("moveReturn kept", 2, g1, b1)
+	let b2 = mut live()
+	let g2 = mut moveFall(5)
+	run("moveFall moved", 7, g2, b2)
+	let b3 = mut live()
+	let g3 = mut moveFall(0)
+	run("moveFall kept", 2, g3, b3)
+	let b4 = mut live()
+	let g4 = mut moveOneArm(5)
+	run("moveOneArm moved", 7, g4, b4)
+	let b5 = mut live()
+	let g5 = mut moveOneArm(0)
+	run("moveOneArm kept", 3, g5, b5)
+	let b6 = mut live()
+	let g6 = mut moveAll(5)
+	run("moveAll a", 7, g6, b6)
+	let b7 = mut live()
+	let g7 = mut moveAll(0)
+	run("moveAll b", 8, g7, b7)
+	let b8 = mut live()
+	let g8 = mut moveNested(5)
+	run("moveNested moved", 7, g8, b8)
+	let b9 = mut live()
+	let g9 = mut moveNested(2)
+	run("moveNested outer", 1, g9, b9)
+	let b10 = mut live()
+	let g10 = mut moveNested(0)
+	run("moveNested none", 1, g10, b10)
+	let b11 = mut live()
+	let g11 = mut moveChain(5)
+	run("moveChain moved", 7, g11, b11)
+	let b12 = mut live()
+	let g12 = mut moveChain(2)
+	run("moveChain elseif", 4, g12, b12)
+	let b13 = mut live()
+	let g13 = mut moveChain(0)
+	run("moveChain none", 1, g13, b13)
+	let b14 = mut live()
+	let g14 = mut moveRevive(5)
+	run("moveRevive moved", 16, g14, b14)
+	let b15 = mut live()
+	let g15 = mut moveRevive(0)
+	run("moveRevive kept", 10, g15, b15)
+	return 0
+}

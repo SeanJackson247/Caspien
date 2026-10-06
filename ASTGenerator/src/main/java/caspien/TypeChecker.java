@@ -8128,12 +8128,57 @@ public class TypeChecker {
         return slice;
     }
 
+
+    /**
+     * Slots moved on SOME of the paths reaching a merge point but not all of them. `movedSlots` stays a union (a
+     * later read of such a slot is still "use after move"), but a move nulls the slot, so the scope-exit destruct
+     * of a partly moved slot is still emitted: it frees the block on the paths that did not move it and does
+     * nothing (null) on the paths that did. Without it the not-moved path leaked.
+     */
+    private final Set<String> partlyMovedSlots = new HashSet<>();
+
+    private boolean chainHasElse(Token first) {
+        Token last = first;
+        while (last.right != null) {
+            last = last.right;
+        }
+        return last.sub.isEmpty();
+    }
+
+    /**
+     * Replaces the pre-branch moved set with the union of the branches (the use-after-move rule) and records which
+     * of those slots are not moved on every path that reaches the merge. `survivors` are the moved sets of the
+     * branches that fall through (a branch that always returns/throws/breaks never reaches the merge);
+     * `implicitPath` adds the "no branch taken" path of a chain without an else.
+     */
+    private void finishBranchMerge(Set<String> preState, Set<String> union, List<Set<String>> survivors,
+            boolean implicitPath) {
+        List<Set<String>> paths = new ArrayList<>(survivors);
+        if (implicitPath) {
+            paths.add(new HashSet<>(preState));
+        }
+        preState.clear();
+        preState.addAll(union);
+        if (paths.isEmpty()) {
+            return;
+        }
+        Set<String> all = new HashSet<>(paths.get(0));
+        for (Set<String> p : paths) {
+            all.retainAll(p);
+        }
+        for (String m : union) {
+            if (!all.contains(m)) {
+                partlyMovedSlots.add(m);
+            }
+        }
+    }
+
     private List<String> collectOwnsToDestruct(Scope from, Scope boundary, String preservedSlotKey) {
         List<String> result = new ArrayList<>();
         for (Scope s = from; s != null; s = s.parent) {
             for (int i = s.ownsDeclaredHere.size() - 1; i >= 0; i--) {
                 String name = s.ownsDeclaredHere.get(i);
-                if (s.movedSlots.contains(name) || name.equals(preservedSlotKey)) {
+                if ((s.movedSlots.contains(name) && !partlyMovedSlots.contains(name)) || name.equals(preservedSlotKey)) {
                     continue;
                 }
                 result.add(name);
@@ -9034,6 +9079,7 @@ public class TypeChecker {
     private void checkMatchChain(Token matchTok, Scope scope, FuncInfo func, boolean insideLoop) {
         Set<String> preState = scope.movedSlots;
         Set<String> union = new HashSet<>();
+        List<Set<String>> survivorMoves = new ArrayList<>();
         for (Token branch = matchTok; branch != null; branch = branch.right) {
             List<Token.MatchPattern> patterns = new ArrayList<>();
             boolean isBaseCaseMatch = false;
@@ -9056,9 +9102,9 @@ public class TypeChecker {
             // here.
             branch.destructOnExit = collectNaturalEndDestruct(branch.childs, branchScope, branchScope);
             union.addAll(branchMoved);
+            if (!closedCaseTerminates(branch.childs)) { survivorMoves.add(branchMoved); }
         }
-        preState.clear();
-        preState.addAll(union);
+        finishBranchMerge(preState, union, survivorMoves, !chainHasElse(matchTok));
     }
 
     /**
@@ -9158,6 +9204,7 @@ public class TypeChecker {
         Set<String> covered = new HashSet<>();
         Set<String> preState = scope.movedSlots;
         Set<String> union = new HashSet<>();
+        List<Set<String>> survivorMoves = new ArrayList<>();
         String conditionSlotKey = slotKeyOf(conditionExpr);
         for (Token caseTok : matchTok.childs) {
             List<Token> labels = caseTok.sub;
@@ -9200,6 +9247,7 @@ public class TypeChecker {
             checkLinesInScope(caseTok.childs, branchScope, func, insideLoop);
             caseTok.destructOnExit = collectNaturalEndDestruct(caseTok.childs, branchScope, branchScope);
             union.addAll(branchMoved);
+            if (!closedCaseTerminates(caseTok.childs)) { survivorMoves.add(branchMoved); }
         }
         List<String> missing = new ArrayList<>();
         for (String state : required) {
@@ -9212,8 +9260,7 @@ public class TypeChecker {
                     "match on '" + conditionType.canonical() + "' isn't exhaustive -- missing: "
                             + String.join(", ", missing));
         }
-        preState.clear();
-        preState.addAll(union);
+        finishBranchMerge(preState, union, survivorMoves, false);
         lowerFloatMatchToIfChain(matchTok, conditionExpr, scope, func);
     }
 
@@ -9309,6 +9356,7 @@ public class TypeChecker {
         boolean sawDefault = false;
         Set<String> preState = scope.movedSlots;
         Set<String> union = new HashSet<>();
+        List<Set<String>> survivorMoves = new ArrayList<>();
         for (int i = 0; i < matchTok.childs.size(); i++) {
             Token caseTok = matchTok.childs.get(i);
             List<Token> labels = caseTok.sub;
@@ -9382,6 +9430,7 @@ public class TypeChecker {
             checkLinesInScope(caseTok.childs, branchScope, func, insideLoop);
             caseTok.destructOnExit = collectNaturalEndDestruct(caseTok.childs, branchScope, branchScope);
             union.addAll(branchMoved);
+            if (!closedCaseTerminates(caseTok.childs)) { survivorMoves.add(branchMoved); }
         }
         List<String> missing = new ArrayList<>();
         for (String variant : enumInfo.variants) {
@@ -9405,8 +9454,7 @@ public class TypeChecker {
                     "match on '" + enumInfo.name + "' isn't exhaustive -- missing: "
                             + String.join(", ", missing));
         }
-        preState.clear();
-        preState.addAll(union);
+        finishBranchMerge(preState, union, survivorMoves, false);
         // "I want it to compile as tho it were an if c/else if/else
         // chain, always ending as if else even for a non-default
         // terminating block," confirmed directly -- done *here*,
@@ -9599,6 +9647,7 @@ public class TypeChecker {
         Set<String> covered = new HashSet<>();
         Set<String> preState = scope.movedSlots;
         Set<String> union = new HashSet<>();
+        List<Set<String>> survivorMoves = new ArrayList<>();
         String xSlotKey = slotKeyOf(xExpr);
         for (Token caseTok : matchTok.childs) {
             List<Token> labels = caseTok.sub;
@@ -9650,6 +9699,7 @@ public class TypeChecker {
             checkLinesInScope(caseTok.childs, branchScope, func, insideLoop);
             caseTok.destructOnExit = collectNaturalEndDestruct(caseTok.childs, branchScope, branchScope);
             union.addAll(branchMoved);
+            if (!closedCaseTerminates(caseTok.childs)) { survivorMoves.add(branchMoved); }
         }
         List<String> missing = new ArrayList<>();
         for (String member : required) {
@@ -9661,8 +9711,7 @@ public class TypeChecker {
             throw new CompilerException("type", matchTok.file, matchTok.line,
                     "match on '" + ownerName + ".enum' isn't exhaustive -- missing: " + String.join(", ", missing));
         }
-        preState.clear();
-        preState.addAll(union);
+        finishBranchMerge(preState, union, survivorMoves, false);
         lowerEnumForMatchToIfChain(matchTok, xExpr, scope, func);
     }
 
@@ -10234,6 +10283,7 @@ public class TypeChecker {
     private void checkIfChain(Token ifTok, Scope scope, FuncInfo func, boolean insideLoop) {
         Set<String> preState = scope.movedSlots;
         Set<String> union = new HashSet<>();
+        List<Set<String>> survivorMoves = new ArrayList<>();
         for (Token branch = ifTok; branch != null; branch = branch.right) {
             if (!branch.sub.isEmpty()) {
                 Token condNode = branch.sub.get(0);
@@ -10262,9 +10312,9 @@ public class TypeChecker {
             // locals are destructed here, nothing beyond it.
             branch.destructOnExit = collectNaturalEndDestruct(branch.childs, branchBodyScope, branchBodyScope);
             union.addAll(branchMoved);
+            if (!closedCaseTerminates(branch.childs)) { survivorMoves.add(branchMoved); }
         }
-        preState.clear();
-        preState.addAll(union);
+        finishBranchMerge(preState, union, survivorMoves, !chainHasElse(ifTok));
     }
 
     /**
@@ -11835,6 +11885,7 @@ public class TypeChecker {
                     scope.constNames.add(nameTok.text);
                 }
                 scope.movedSlots.remove(nameTok.text);
+            partlyMovedSlots.remove(nameTok.text);
                 op.left.resolvedType = rhsType.canonical();
                 return rhsType;
             }
@@ -11913,6 +11964,7 @@ public class TypeChecker {
             // name as moved -- caught by testing a loop with genuinely
             // no cross-iteration hazard, not just the hazardous case).
             scope.movedSlots.remove(nameTok.text);
+            partlyMovedSlots.remove(nameTok.text);
             op.left.resolvedType = rhsType.canonical();
             markMovedIfOwned(rhsType, op.right, scope);
             return rhsType;
@@ -11927,6 +11979,7 @@ public class TypeChecker {
         String leftSlotKeyForRevival = slotKeyOf(op.left);
         if (leftSlotKeyForRevival != null) {
             scope.movedSlots.remove(leftSlotKeyForRevival);
+            partlyMovedSlots.remove(leftSlotKeyForRevival);
         }
         TypeInfo leftType = resolveExprType(op.left, scope, func);
         // A bare "EnumName.Variant" literal is always 'imut', unconditionally
@@ -12004,6 +12057,7 @@ public class TypeChecker {
         // evaluation.
         if (leftSlotKeyForRevival != null) {
             scope.movedSlots.remove(leftSlotKeyForRevival);
+            partlyMovedSlots.remove(leftSlotKeyForRevival);
         }
         invalidateMatchPatternsForWrite(op.left, scope);
         if (isInlineOwningStruct(leftType)) {
