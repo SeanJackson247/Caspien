@@ -1595,7 +1595,7 @@ annotated and nothing is taken on trust. Two classes are guarantees that the fun
 | `finite` | Yes, guaranteed | It ends, but the cost bound is not determined, so the figure is a lower bound (`>= N`) and the reason names what the bound depends on. | `for i in 0..n` where `n` is a parameter. |
 | `unbounded` | Possible, not guaranteed | A `loop{}` with no static bound, but a `break`, `return` or `throw` can leave it (a call that can throw counts). | `loop{ ... if done{ break } }` |
 | `non-terminating` | Never | A `loop{}` that nothing can leave, and every run of the function reaches it. | The loop of an event loop. |
-| `can diverge` | Not on every run | Some runs never end and others do: a never-ending loop, or a call to a function that never ends, sits on only some paths. | `if n == 0{ forever() }  return n` ends unless `n == 0`. |
+| `can diverge` | Not on every run | Some runs never end and others do: some execution paths are non-terminating or unbounded, while others are finite or bounded. | `if n == 0{ forever() }  return n` ends unless `n == 0`. |
 | `unknown` | No claim | The analysis cannot follow it. | An indirect call (`call(fp, ..)`), or recursion it cannot follow. |
 
 A caller has the worst class among what it calls, in the order bounded, finite, unknown, unbounded, can diverge, non-terminating, so a function is only
