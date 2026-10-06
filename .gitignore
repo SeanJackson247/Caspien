@@ -10,3 +10,4 @@ __pycache__/
 /benchmarks/.build_cache/
 /benchmarks/*/results.quick.json
 /benchmarks/charts.quick.html
+.leaks.log

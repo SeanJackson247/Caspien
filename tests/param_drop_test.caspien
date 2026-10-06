@@ -1,0 +1,73 @@
+// An owns PARAMETER that the function does not move on must be dropped like an owns local: the generated drop (elements of an owned
+// dynarray, the owns members of a struct) used to run only for locals, because the drop-glue pass resolved a destruct's type through
+// ALLOC lines and a parameter was still an `ARG` line at that point. Only the outer block was freed; the inner blocks stayed in the
+// ghost table (every `main(args)` program leaked its argv copies). Checked through the ghost table's entry count, which returns to
+// its starting value after each call (valgrind cannot see this: the table keeps the blocks reachable, see param_drop_check.sh).
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+
+struct Node{@pub{
+	value: mut u64
+}}
+
+struct Holder{@pub{
+	n: owns mut Node
+}}
+
+func live() mut u64{
+	let n = mut 0
+	unsafe assume{
+		assume match ghost_table.lockState : OPEN
+		n = mut ghost_table.len
+	}
+	return n
+}
+
+func check(name: static imut string, ok: imut bool) void{
+	unsafe extern{
+		if ok{ printf("PASS %s\n", name) }
+		else{ printf("FAIL %s\n", name) }
+	}
+}
+
+func dropNested(x: owns some mut dynarray(owns mut dynarray(mut char))) void{
+}
+
+func dropHolder(h: owns some mut Holder) void{
+}
+
+func useThenDrop(x: owns some mut dynarray(owns mut dynarray(mut char))) mut u64{
+	return len(x)
+}
+
+func passOn(x: owns some mut dynarray(owns mut dynarray(mut char))) void{
+	dropNested(mut x)
+}
+
+@throws
+func build() owns some mut dynarray(owns mut dynarray(mut char)){
+	?catch(e){ throw e }
+	let outer = mut ?dyn([dyn([mut 'x']), dyn([mut 'y'])])
+	return outer
+}
+
+func main() void{
+	?catch(e){ return }
+	let b0 = mut live()
+	let t1 = mut ?build()
+	dropNested(mut t1)
+	check("owned dynarray of dynarrays dropped by the callee", live() == b0)
+	let h = mut ?new Holder{n= new Node{value= 3}}
+	dropHolder(mut h)
+	check("owned struct with an owns member dropped by the callee", live() == b0)
+	let t2 = mut ?build()
+	let n1 = mut useThenDrop(mut t2)
+	check("parameter read, then dropped", n1 == 2 && live() == b0)
+	let t3 = mut ?build()
+	passOn(mut t3)
+	check("parameter moved on, dropped once", live() == b0)
+}

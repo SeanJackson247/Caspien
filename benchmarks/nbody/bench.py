@@ -124,6 +124,7 @@ def add_mode_args(ap):
     ap.add_argument("--no-build-cache", action="store_true", help="quick mode: rebuild the other languages' programs instead of reusing cached builds")
     ap.add_argument("--clear-build-cache", action="store_true", help="delete benchmarks/.build_cache first")
     ap.add_argument("--caspien-only", action="store_true", help="measure only the optimised Caspien programs and merge them with the other languages' rows of the existing results.json; writes results.quick.json (--out to change)")
+    ap.add_argument("--no-leak-check", action="store_true", help="skip the one extra, untimed run of every Caspien program under tests/alloc_shim.c that reports blocks still registered in the ghost table at exit")
 
 
 def settings(a):
@@ -131,7 +132,7 @@ def settings(a):
     if a.clear_build_cache:
         shutil.rmtree(BUILD_CACHE, ignore_errors=True)
     return dict(mode=a.mode, runs=a.runs or m["runs"], builds=a.builds or m["builds"], off=m["off"] or a.with_off, cutoff=m["cutoff"] and not a.caspien_only,
-                build_cache=(a.mode == "quick" and not a.no_build_cache), caspien_only=a.caspien_only)
+                build_cache=(a.mode == "quick" and not a.no_build_cache), caspien_only=a.caspien_only, leak_check=not a.no_leak_check)
 
 
 def existing_rows(S, path, n):
@@ -177,6 +178,35 @@ def note_caspien(limits, S, prec, label, t):
         limits[prec] = max(limits.get(prec, 0.0), t)
 
 
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+LEAK_LOG = os.environ.get("BENCH_LEAK_LOG", os.path.join(REPO_ROOT, ".leaks.log"))
+
+
+def gt_leak(cmd, cwd, env):
+    """Runs a Caspien benchmark binary ONCE more (untimed) under tests/alloc_shim.c and returns the number of blocks still registered in its
+    ghost table at exit (0 = it freed everything; None = no table or the check could not run). Valgrind cannot see these leaks: the table
+    keeps every registered block reachable."""
+    root = REPO_ROOT
+    src = os.path.join(root, "tests", "alloc_shim.c")
+    so = os.path.join(root, ".cache", "alloc_shim.so")
+    try:
+        os.makedirs(os.path.dirname(so), exist_ok=True)
+        if not os.path.exists(so) or os.path.getmtime(so) < os.path.getmtime(src):
+            subprocess.run(["gcc", "-shared", "-fPIC", "-o", so, src, "-ldl"], check=True, capture_output=True)
+        exe = cmd[0] if os.path.isabs(cmd[0]) else os.path.join(cwd or ".", cmd[0])
+        nm = subprocess.run(["nm", exe], capture_output=True, text=True).stdout
+        m = re.search(r"^([0-9a-f]+) [DdBb] ghost_table$", nm, flags=re.M)
+        if not m:
+            return None
+        e = {k: v for k, v in (os.environ if env is None else env).items() if k != "JAVA_TOOL_OPTIONS"}
+        e.update(LD_PRELOAD=so, GT_ADDR=m.group(1), GT_EXE=os.path.abspath(exe))
+        r = subprocess.run(list(cmd), cwd=cwd, env=e, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, timeout=1800)
+        g = re.search(r"GT_LEN=(\d+)", r.stderr)
+        return int(g.group(1)) if g else None
+    except Exception:
+        return None
+
+
 def timed_runs(cmd, cwd, env, S, limits, prec, is_caspien):
     """-> (status, times, rss, outs, text). status 'ok', 'fail' (non-zero exit) or 'cutoff' (first run reached the limit and was killed)."""
     limit = None if is_caspien or not S["cutoff"] or prec not in limits else max(limits[prec], MIN_LIMIT)
@@ -190,6 +220,13 @@ def timed_runs(cmd, cwd, env, S, limits, prec, is_caspien):
         if rc != 0:
             return "fail", times, rss, outs, out
         times.append(dt); rss.append(kb); outs.append(out.strip().split())
+    if is_caspien and S.get("leak_check", True):
+        leaked = gt_leak(cmd, cwd, env)
+        if leaked:
+            msg = "LEAK %s: %d block(s) still registered in the ghost table at exit" % (os.path.basename(cmd[0]), leaked)
+            print("!! " + msg, flush=True)
+            with open(LEAK_LOG, "a") as f:
+                f.write(msg + "\n")
     return "ok", times, rss, outs, ""
 
 

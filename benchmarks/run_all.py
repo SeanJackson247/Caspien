@@ -5,6 +5,8 @@ Run every cross-language benchmark program, one after the other (never two at on
     python3 benchmarks/run_all.py                    # quick (default)
     python3 benchmarks/run_all.py --mode full        # the full thing
     python3 benchmarks/run_all.py --only sieve lru   # a subset
+    (every Caspien program also runs once, untimed, under tests/alloc_shim.c: blocks still registered in its ghost table at exit are
+     reported as "LEAK" and make run_all exit 1; --no-leak-check skips that)
     python3 benchmarks/run_all.py --with-off         # quick, plus the optimisations-off Caspien builds
     python3 benchmarks/run_all.py --charts           # regenerate benchmarks/charts.html afterwards
     python3 benchmarks/run_all.py --caspien-only --charts   # re-measure only optimised Caspien, merge with the existing other-language rows
@@ -45,8 +47,9 @@ def main():
     ap.add_argument("--builds", type=int)
     ap.add_argument("--only", nargs="*", default=[])
     ap.add_argument("--charts", action="store_true")
+    ap.add_argument("--no-leak-check", action="store_true", help="skip the untimed leak-check run of every Caspien program")
     a = ap.parse_args()
-    extra = ["--mode", a.mode] + (["--with-off"] if a.with_off else []) + (["--caspien-only"] if a.caspien_only else []) + (["--no-build-cache"] if a.no_build_cache else []) + (["--runs", str(a.runs)] if a.runs else []) + (["--builds", str(a.builds)] if a.builds else [])
+    extra = ["--mode", a.mode] + (["--with-off"] if a.with_off else []) + (["--caspien-only"] if a.caspien_only else []) + (["--no-build-cache"] if a.no_build_cache else []) + (["--runs", str(a.runs)] if a.runs else []) + (["--builds", str(a.builds)] if a.builds else []) + (["--no-leak-check"] if a.no_leak_check else [])
     progs = [p for p in ALL if not a.only or p in a.only]
     bad = [p for p in a.only if p not in ALL]
     if bad:
@@ -55,6 +58,10 @@ def main():
         import shutil
         shutil.rmtree(os.path.join(HERE, ".build_cache"), ignore_errors=True)
     t0 = time.time()
+    leak_log = os.path.join(HERE, "..", ".leaks.log")
+    os.environ["BENCH_LEAK_LOG"] = leak_log
+    if os.path.exists(leak_log):
+        os.remove(leak_log)
     for p in progs:
         t1 = time.time()
         print("=== %s (%s) %s" % (p, a.mode, time.strftime("%H:%M:%S")), flush=True)
@@ -62,7 +69,14 @@ def main():
         print("--- %s rc=%d %.0f s" % (p, rc, time.time() - t1), flush=True)
     if a.charts:
         subprocess.call([sys.executable, os.path.join(HERE, "charts_all.py")] + (["--results", "results.quick.json", os.path.join(HERE, "charts.quick.html")] if a.caspien_only else []))
+    leaks = open(leak_log).read().split("\n") if os.path.exists(leak_log) else []
+    leaks = [l for l in leaks if l]
+    print("LEAK CHECK: %s" % ("every Caspien program freed everything it allocated" if not leaks else "%d program(s) left blocks registered at exit:" % len(leaks)))
+    for l in leaks:
+        print("   " + l)
     print("ALLDONE %s %.0f s" % (a.mode, time.time() - t0))
+    if leaks:
+        sys.exit(1)
 
 
 if __name__ == "__main__":

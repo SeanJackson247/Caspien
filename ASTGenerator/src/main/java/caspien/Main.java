@@ -56,12 +56,16 @@ public class Main {
         FsPolicy.loadPlatform("platform.config");
         boolean fsReport = false;
         boolean audit = false;
+        boolean viz = false;
         for (int i = 3; i < args.length; i++) {
             if (args[i].equals("--fs-report")) {
                 fsReport = true;
             }
             if (args[i].equals("--audit")) {
                 audit = true;
+            }
+            if (args[i].equals("--viz")) {
+                viz = true;
             }
         }
         DepsLog.record(inputPath);
@@ -119,6 +123,19 @@ public class Main {
             } else {
                 System.err.print(report);
             }
+        }
+
+        if (viz) {
+            String target = System.getenv("CASPIEN_VIZ_FILE");
+            if (target == null || target.isEmpty()) {
+                target = "viz.html";
+            }
+            String page = GasReport.viz(bytecode, displayFile);
+            if (page == null) {
+                System.err.println("[error] --viz: the program has no main function to draw");
+                System.exit(1);
+            }
+            Files.write(Paths.get(target), page.getBytes(StandardCharsets.UTF_8));
         }
 
         if (fsReport) {

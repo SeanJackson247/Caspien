@@ -67,10 +67,10 @@ func testDynamicArray() mut u64{
 		fails = mut (fails + check("DynamicArray: [0] == 10 after pops", d.get(d, i0) == 10))
 	}
 
-	let e = mut ? new DynamicArray:<u64>()
-	let dflt = mut ? e.popBack(e, mut 77)
+	let empty = mut ? new DynamicArray:<u64>()
+	let dflt = mut ? empty.popBack(empty, mut 77)
 	fails = mut (fails + check("DynamicArray: popBack on empty -> default", dflt == 77))
-	let dflt2 = mut ? e.popFront(e, mut 88)
+	let dflt2 = mut ? empty.popFront(empty, mut 88)
 	fails = mut (fails + check("DynamicArray: popFront on empty -> default", dflt2 == 88))
 
 	let s = mut ? new DynamicArray:<u64>(mut 7)

@@ -551,6 +551,55 @@ public class BytecodeEmitter {
         throw new IllegalStateException("no FuncInfo for '" + name + "'");
     }
 
+    /**
+     * A name may be declared again in a sibling scope with another type (the slot is shared and sized for the widest use, see
+     * tests/same_name_locals_test), EXCEPT when one of the types needs a generated drop (owned memory inside it): the drop-glue pass resolves `GT_DESTRUCT name`
+     * through one name -> type map, so with two different types behind one name the destruct of the other one ran the wrong drop
+     * (a catch parameter `e` plus a local `e` that owns a DynamicArray leaked its elements; an owned Node and an owned Holder
+     * under one name dropped through the wrong layout). Rename one of them.
+     */
+    private void requireOneOwnsTypePerSlotName(TypeChecker.FuncInfo info, String allocLines) {
+        Map<String, String> seen = new HashMap<>();
+        for (String l : allocLines.split("\n")) {
+            if (!l.startsWith("ALLOC ")) {
+                continue;
+            }
+            String[] parts = l.split(" ", 3);
+            if (parts.length < 3) {
+                continue;
+            }
+            String before = seen.putIfAbsent(parts[1], parts[2]);
+            if (before != null && !before.equals(parts[2]) && (dropNeedsGlue(before) || dropNeedsGlue(parts[2]))) {
+                throw new CompilerException("type", info.funcToken.file, info.funcToken.line,
+                        "the name '" + parts[1] + "' is declared with two different types in this function ('" + before + "' and '"
+                                + parts[2] + "') and one of them needs more than a plain free when it is dropped -- a name shared by sibling scopes (a catch parameter "
+                                + "counts) must have one owning type, so rename one of them");
+            }
+        }
+    }
+
+    /** True when destructing a local of this canonical type needs generated drop glue: an owned dynarray whose elements own memory, or an (owned or inline) struct with an owning member. */
+    private boolean dropNeedsGlue(String type) {
+        String t = type;
+        boolean stripped = true;
+        while (stripped) {
+            stripped = false;
+            for (String pre : new String[] {"owns_", "some_", "mut_", "imut_", "indeterminate_"}) {
+                if (t.startsWith(pre)) {
+                    t = t.substring(pre.length());
+                    stripped = true;
+                }
+            }
+        }
+        if (t.startsWith("dynarray(") && t.endsWith(")")) {
+            return checker.elementTextOwnsMemory(t.substring("dynarray(".length(), t.length() - 1));
+        }
+        if (t.startsWith("unsafe_dynarray(")) {
+            return false;
+        }
+        return checker.elementTextOwnsMemory(t) && !t.startsWith("dynarray(");
+    }
+
     private void line(String s) {
         out.append(s).append('\n');
     }
@@ -1422,9 +1471,11 @@ public class BytecodeEmitter {
             r.run();
         }
         emitGtRoutineAlloc(info, emittedName, gtSuppressed);
+        final int allocScanStart = out.length();
         for (Runnable r : ordinaryAllocs) {
             r.run();
         }
+        requireOneOwnsTypePerSlotName(info, out.substring(allocScanStart));
         // Locals discovered while emitting the body (see `declareHiddenLocal`) get their ALLOC lines spliced in right here once the
         // body is done: a variable cannot be used before it is declared, so no pre-pass is needed to find them.
         final int savedLateAllocPos = lateAllocPos;

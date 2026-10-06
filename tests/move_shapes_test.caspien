@@ -1,0 +1,208 @@
+// Ownership slots that are moved on SOME paths only, in every control-flow shape: a loop that moves and breaks, a loop-local moved in some
+// iterations, a throwing callee that received the value, `match @lock`, a `match cond{}` with no else, a try block. After every call the
+// ghost table's entry count must be back to its starting value, whichever way the call went (a leaked block stays registered; valgrind cannot
+// see that, see move_shapes_check.sh and tests/cond_move_test for the plain if/else shapes).
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+
+enum St{ OPEN, CLOSED }
+
+struct Mtx{@pub{
+	swap lockState: atomic mut St
+	n: mut u64
+}}
+
+struct Node{@pub{
+	value: mut u64
+}}
+
+let static m = mut Mtx{lockState= St.OPEN, n= mut 0}
+
+func live() mut u64{
+	let n = mut 0
+	unsafe assume{
+		assume match ghost_table.lockState : OPEN
+		n = mut ghost_table.len
+	}
+	return n
+}
+
+func check(name: static imut string, ok: imut bool) void{
+	unsafe extern{
+		if ok{ printf("PASS %s\n", name) }
+		else{ printf("FAIL %s\n", name) }
+	}
+}
+
+func take(n: owns some mut Node) mut u64{
+	return n.value
+}
+
+@throws
+func thrower(n: owns some mut Node, c: mut u64) mut u64{
+	if c > 3{
+		throw "boom"
+	}
+	return n.value
+}
+
+// the owner lives outside the loop; one iteration moves it and leaves the loop
+func loopBreak(c: mut u64) mut u64{
+	?catch(e){ return 0 }
+	let n = mut ?new Node{value= 7}
+	let r = mut 1
+	for i in 0..3{
+		if i == c{
+			r = take(mut n)
+			break
+		}
+	}
+	return r
+}
+
+// the owner is declared inside the loop; some iterations move it
+func loopLocal(c: mut u64) mut u64{
+	?catch(e){ return 0 }
+	let r = mut 0
+	for i in 0..3{
+		let n = mut ?new Node{value= 5}
+		if i == c{
+			r = r + take(mut n)
+		}
+		else{
+			r = r + 1
+		}
+	}
+	return r
+}
+
+// the callee takes the value and may throw; the catch path must not leak it
+func throwing(c: mut u64) mut u64{
+	?catch(e){ return 99 }
+	let n = mut ?new Node{value= 7}
+	let r = mut ?thrower(mut n, c)
+	return r
+}
+
+// the same through an explicit try...catch
+func throwingTry(c: mut u64) mut u64{
+	?catch(oom){ return 97 }
+	let n = mut ?new Node{value= 7}
+	let r = mut try thrower(mut n, c) catch(err){ return 98 }
+	return r
+}
+
+// moved in the OPEN case of match @lock
+func lockMove(c: mut u64) mut u64{
+	?catch(e){ return 0 }
+	let n = mut ?new Node{value= 7}
+	let r = mut 1
+	match @lock m{
+		OPEN:{
+			if c > 3{
+				r = take(mut n)
+			}
+		}
+		CLOSED:{ continue }
+	}
+	return r
+}
+
+// returned out of the OPEN case
+func lockReturn(c: mut u64) mut u64{
+	?catch(e){ return 0 }
+	let n = mut ?new Node{value= 7}
+	match @lock m{
+		OPEN:{
+			if c > 3{
+				return take(mut n)
+			}
+		}
+		CLOSED:{ continue }
+	}
+	return 2
+}
+
+// a value match with no else
+func matchNoElse(c: mut u64) mut u64{
+	?catch(e){ return 0 }
+	let n = mut ?new Node{value= 7}
+	let r = mut 1
+	match c > 0{
+		r = take(mut n)
+	}
+	return r
+}
+
+// moved inside a plain try block
+func tryBlock(c: mut u64) mut u64{
+	?catch(oom){ return 97 }
+	let n = mut ?new Node{value= 7}
+	let r = mut 1
+	try{
+		?catch(e){ continue }
+		let q = mut ?thrower(mut n, c)
+		r = q
+	}
+	return r
+}
+
+func run(name: static imut string, expect: mut u64, got: mut u64, before: mut u64) void{
+	let after = mut live()
+	check(name, got == expect && after == before)
+}
+
+func main() void{
+	let b0 = mut live()
+	let g0 = mut loopBreak(1)
+	run("loopBreak moved", 7, g0, b0)
+	let b1 = mut live()
+	let g1 = mut loopBreak(9)
+	run("loopBreak never moved", 1, g1, b1)
+	let b2 = mut live()
+	let g2 = mut loopLocal(1)
+	run("loopLocal", 7, g2, b2)
+	let b3 = mut live()
+	let g3 = mut loopLocal(9)
+	run("loopLocal none", 3, g3, b3)
+	let b4 = mut live()
+	let g4 = mut throwing(1)
+	run("throwing callee, no throw", 7, g4, b4)
+	let b5 = mut live()
+	let g5 = mut throwing(5)
+	run("throwing callee, throws", 99, g5, b5)
+	let b6 = mut live()
+	let g6 = mut throwingTry(1)
+	run("try catch, no throw", 7, g6, b6)
+	let b7 = mut live()
+	let g7 = mut throwingTry(5)
+	run("try catch, throws", 98, g7, b7)
+	let b8 = mut live()
+	let g8 = mut lockMove(5)
+	run("match @lock moved", 7, g8, b8)
+	let b9 = mut live()
+	let g9 = mut lockMove(0)
+	run("match @lock kept", 1, g9, b9)
+	let b10 = mut live()
+	let g10 = mut lockReturn(5)
+	run("match @lock return moved", 7, g10, b10)
+	let b11 = mut live()
+	let g11 = mut lockReturn(0)
+	run("match @lock return kept", 2, g11, b11)
+	let b12 = mut live()
+	let g12 = mut matchNoElse(5)
+	run("match without else moved", 7, g12, b12)
+	let b13 = mut live()
+	let g13 = mut matchNoElse(0)
+	run("match without else kept", 1, g13, b13)
+	let b14 = mut live()
+	let g14 = mut tryBlock(1)
+	run("try block, no throw", 7, g14, b14)
+	let b15 = mut live()
+	let g15 = mut tryBlock(5)
+	run("try block, throws", 1, g15, b15)
+}

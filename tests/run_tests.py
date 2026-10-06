@@ -13,6 +13,11 @@ stage cache (.cache/stages), so an unchanged program with an unchanged compiler 
 under the SHA-256 of the produced binary (.cache/tests): a binary byte-identical to one already tested is not run again, whatever changed
 around it. Change the compiler and every binary that changes is re-run; one that comes out identical is not.
 
+Leak check: every program also runs under tests/alloc_shim.c (LD_PRELOAD), which reads the program's own ghost table at exit
+(`GT_LEN`, the address comes from `nm`): a block still registered at exit was never freed. Valgrind cannot see that kind of leak, the table
+keeps every registered block reachable. A passing program with GT_LEN > 0 FAILS unless tests/leak_allow.txt lists it (`name max_blocks
+# reason`, for programs that leak on purpose). `--no-leak-check` turns it off.
+
 Verdicts: a program passes when it compiles, exits 0 and prints no line starting with FAIL (and, when its header has `// Expected output:`,
 prints exactly that). `*_error_test` / `*_error` programs pass when they do NOT compile and the compiler reports an error rather than crashing.
 Skipped (they need a harness of their own, see the matching *_check.sh): fs_test, fs_policy_*, 09_event_loop, non_exhaustive_*.
@@ -77,12 +82,40 @@ def sha(path):
     return hashlib.sha256(open(path, "rb").read()).hexdigest()
 
 
+def build_shim():
+    """tests/alloc_shim.c as a preload library under .cache (rebuilt when the source changes)."""
+    src = os.path.join(ROOT, "tests", "alloc_shim.c"); so = os.path.join(CACHE, "alloc_shim.so")
+    if not os.path.exists(so) or os.path.getmtime(so) < os.path.getmtime(src):
+        subprocess.run(["gcc", "-shared", "-fPIC", "-o", so, src, "-ldl"], check=True)
+    return so
+
+
+def leak_allow():
+    """name -> number of blocks a program is allowed to leave registered (tests/leak_allow.txt)."""
+    out = {}
+    path = os.path.join(ROOT, "tests", "leak_allow.txt")
+    if os.path.exists(path):
+        for line in open(path):
+            line = line.split("#")[0].split()
+            if len(line) >= 2:
+                out[line[0]] = int(line[1])
+    return out
+
+
+def gt_address(exe):
+    """Address of the program's `ghost_table` global (None when it has none: no owns/new/dyn)."""
+    r = subprocess.run(["nm", exe], capture_output=True, text=True)
+    m = re.search(r"^([0-9a-f]+) [DdBb] ghost_table$", r.stdout, flags=re.M)
+    return m.group(1) if m else None
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--configs", default="shipped,allon")
     ap.add_argument("--only", nargs="*", default=[])
     ap.add_argument("--rerun", action="store_true")
     ap.add_argument("--checks", action="store_true")
+    ap.add_argument("--no-leak-check", action="store_true", help="do not run programs under the allocation shim")
     ap.add_argument("--clear", action="store_true", help="delete .cache (stages, verdicts, scratch tree) first")
     a = ap.parse_args()
     if a.clear:
@@ -91,6 +124,8 @@ def main():
     sync()
     P = presets()
     os.makedirs(VERDICTS, exist_ok=True)
+    shim = None if a.no_leak_check else build_shim()
+    allow = leak_allow()
     files = sorted(glob.glob(os.path.join(SCRATCH, "tests", "*.caspien")) + glob.glob(os.path.join(SCRATCH, "docs", "examples", "*.caspien")))
     t0 = time.time(); total_fail = 0
     for cfg in a.configs.split(","):
@@ -122,11 +157,17 @@ def main():
             if expected_output(f):
                 key = hashlib.sha256((key + "|" + "\n".join(expected_output(f))).encode()).hexdigest()
             vp = os.path.join(VERDICTS, key + ".json")
-            if not a.rerun and os.path.exists(vp):
+            if not a.rerun and os.path.exists(vp) and (shim is None or "gt" in json.load(open(vp))):
                 v = json.load(open(vp)); reused += 1
             else:
                 try:
-                    r = subprocess.run([exe], cwd=SCRATCH, env=ENV, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=60, errors="replace")
+                    renv = ENV
+                    gaddr = gt_address(exe) if shim else None
+                    if shim:
+                        renv = dict(ENV, LD_PRELOAD=shim)
+                        if gaddr:
+                            renv["GT_ADDR"] = gaddr; renv["GT_EXE"] = exe
+                    r = subprocess.run([exe], cwd=SCRATCH, env=renv, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=60, errors="replace")
                     lines = r.stdout.rstrip("\n").split("\n")
                     why = ""
                     if r.returncode != 0:
@@ -136,10 +177,15 @@ def main():
                     elif expected_output(f) and [l.rstrip() for l in lines] != expected_output(f):
                         why = "output differs from the `Expected output:` header"
                     v = {"pass": not why, "why": why}
+                    if shim:
+                        m = re.search(r"GT_LEN=(\d+)", r.stderr)
+                        v["gt"] = int(m.group(1)) if m else 0   # blocks still registered at exit (0 also when there is no table)
                 except subprocess.TimeoutExpired:
                     v = {"pass": False, "why": "timeout (60 s)"}
                 json.dump(v, open(vp, "w"))
-            if v["pass"]:
+            if v["pass"] and v.get("gt", 0) > allow.get(name, 0):
+                failed.append((name, "leak: %d block(s) still registered in the ghost table at exit%s" % (v["gt"], " (allowed %d)" % allow[name] if name in allow else "")))
+            elif v["pass"]:
                 ok += 1
             else:
                 failed.append((name, v["why"]))

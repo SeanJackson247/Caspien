@@ -1,0 +1,108 @@
+// `--audit` heap section: bytes requested per function (callees included) and the number of allocation operations, exact where the loop bounds and sizes are
+// literals, `>=` with a reason otherwise. tests/gas_check.sh compares the report with tests/gas_model.py and also checks the numbers written in the comments below.
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+
+struct Node{@pub{
+	value: mut u64
+}}
+
+// 1 allocation
+func heap_one() mut u64{
+	?catch(e){ return 0 }
+	let n = mut ?new Node{value= 7}
+	return n.value
+}
+
+// 5 allocations
+func heap_loop() mut u64{
+	?catch(e){ return 0 }
+	let t = mut 0
+	for i in 0..5{
+		let n = mut ?new Node{value= i}
+		t += n.value
+	}
+	return t
+}
+
+// 3 * 4 + 1 + 5 = 18
+func heap_nested() mut u64{
+	let t = mut 0
+	for i in 0..3{
+		for j in 0..4{
+			t += heap_one()
+		}
+	}
+	t += heap_one()
+	t += heap_loop()
+	return t
+}
+
+// at most 2
+func heap_branch(x: mut u64) mut u64{
+	?catch(e){ return 0 }
+	let r = mut 0
+	if x > 3{
+		let a = mut ?new Node{value= 1}
+		let b = mut ?new Node{value= 2}
+		r = a.value + b.value
+	} else{
+		let a = mut ?new Node{value= 3}
+		r = a.value
+	}
+	return r
+}
+
+// 2: a dynarray and its resize
+func heap_dyn() mut u64{
+	?catch(e){ return 0 }
+	let d = mut ?dyn([1, 2, 3])
+	d = ?resize(d, 6, 0)
+	return 3
+}
+
+// unbounded: allocates inside a loop bounded by an argument
+func heap_unbounded(n: mut u64) mut u64{
+	?catch(e){ return 0 }
+	let t = mut 0
+	for i in 0..n{
+		let a = mut ?new Node{value= i}
+		t += a.value
+	}
+	return t
+}
+
+// size only known at run time: bytes are a lower bound (the 16-byte header), UNBOUNDED with the reason; the operation count stays exact
+func heap_runtime(n: mut u64) mut u64{
+	?catch(e){ return 0 }
+	let d = mut ?dyn([1, 2])
+	d = ?resize(d, n, 0)
+	return 1
+}
+
+// exact 0: an argument-bounded loop that never allocates does not make the count unbounded
+func heap_quiet(n: mut u64) mut u64{
+	let t = mut 0
+	for i in 0..n{
+		t += i
+	}
+	return t
+}
+
+func main() void{
+	let a = mut heap_nested()
+	let b = mut heap_branch(5)
+	let c = mut heap_dyn()
+	let d = mut heap_unbounded(3)
+	let e = mut heap_quiet(4)
+	let g = mut heap_runtime(5)
+	if a == 101 && b == 3 && c == 3 && d == 3 && e == 6 && g == 1{
+		unsafe extern{ printf("PASS heap_gas_test\n") }
+	} else{
+		unsafe extern{ printf("FAIL heap_gas_test %llu %llu %llu %llu %llu %llu\n", a, b, c, d, e, g) }
+	}
+}

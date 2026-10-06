@@ -1,0 +1,35 @@
+// Must NOT compile: one name declared with two different types, one of which needs a generated drop (an owned Holder with an owns
+// member), in sibling scopes. The drop-glue pass keys types by name, so the destruct of the other declaration ran the wrong drop.
+// (Same name with scalar types stays legal: tests/same_name_locals_test.)
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+
+struct Node{@pub{
+	value: mut u64
+}}
+
+struct Holder{@pub{
+	n: owns mut Node
+}}
+
+func f(c: mut u64) mut u64{
+	?catch(e){ return 0 }
+	let r = mut 0
+	if c > 3{
+		let a = mut ?new Node{value= 1}
+		r = a.value
+	}
+	else{
+		let a = mut ?new Holder{n= new Node{value= 2}}
+		r = 2
+	}
+	return r
+}
+
+func main() void{
+	let x = mut f(5)
+}

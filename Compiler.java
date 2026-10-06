@@ -97,7 +97,7 @@ public class Compiler {
     }
 
     private static final String USAGE =
-            "Usage: java Compiler -i <input.caspien> <output> [--no-warnings] [--fs-report] [--asm | --lob | --hob] [--no-cache] [--cache-report] [--clear-cache]\n       java Compiler -i <input.caspien> --audit [--audit-no-stdlib]";
+            "Usage: java Compiler -i <input.caspien> <output> [--no-warnings] [--fs-report] [--asm | --lob | --hob] [--no-cache] [--cache-report] [--clear-cache]\n       java Compiler -i <input.caspien> --audit [--audit-no-stdlib]\n       java Compiler -i <input.caspien> --viz [out.html]";
 
     private static class UsageError extends RuntimeException {
         UsageError(String message) {
@@ -114,7 +114,7 @@ public class Compiler {
         boolean fsReport = false;
         boolean stopAsm = false, stopLob = false, stopHob = false;
         boolean noCache = false, cacheReport = false, clearCache = false;
-        boolean audit = false, auditNoStdlib = false;
+        boolean audit = false, auditNoStdlib = false, viz = false;
 
         for (int i = 0; i < args.length; i++) {
             String a = args[i];
@@ -142,6 +142,9 @@ public class Compiler {
                     break;
                 case "--audit":
                     audit = true;
+                    break;
+                case "--viz":
+                    viz = true;
                     break;
                 case "--audit-no-stdlib":
                     audit = true;
@@ -178,6 +181,13 @@ public class Compiler {
         }
         if (inputArg == null) {
             throw new UsageError("missing required -i <input.caspien>");
+        }
+        Path vizHtml = null;
+        if (viz) {
+            // --viz builds nothing, like --audit: the optional output path is the HTML page (default output/<input name>.html)
+            String base = Path.of(inputArg).getFileName().toString().replaceFirst("\\.caspien$", "");
+            vizHtml = Path.of(outputArg != null ? outputArg : "output/" + base + ".html");
+            outputArg = "output/viz";   // the front end's intermediate file
         }
         if (outputArg == null && audit) {
             outputArg = "output/audit";   // an audit builds nothing; the front end's intermediate file goes here
@@ -234,6 +244,18 @@ public class Compiler {
         String key1 = fsReport ? null : CompilerCache.sha("S1\n" + cache.classesHash(astGenDir) + "\n"
                 + CompilerCache.configView(compilerCfg, CompilerCache.OPT_KEYS, CompilerCache.REG_KEYS) + "\n--fs--\n" + fsCfg + "\n--target--\n" + target
                 + "\n--input--\n" + input);
+        if (viz) {
+            Map<String, String> env = new java.util.HashMap<>();
+            if (vizHtml.getParent() != null) {
+                Files.createDirectories(vizHtml.getParent());
+            }
+            env.put("CASPIEN_VIZ_FILE", vizHtml.toAbsolutePath().toString());
+            runJavaStage(astGenDir, "caspien.Main", input, hobOut, diag, "ASTGenerator", "--viz", env, null);
+            if (!diag.hasFatalError()) {
+                System.out.println("[info] wrote " + vizHtml);
+            }
+            return diag.exitCode();
+        }
         if (audit) {
             // --audit: run only the front end, uncached, and print what it found (every `unsafe`, with file, line and the text in the braces)
             Path report = Files.createTempFile("caspien-audit", ".txt");

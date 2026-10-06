@@ -213,7 +213,9 @@ public class DropGlueGenerationPass implements OptimizationPass {
                 Map<String, String> localTypes = new HashMap<>();
                 for (int k = start; k <= end; k++) {
                     List<BytecodeToken> fl = lines.get(k);
-                    if (!fl.isEmpty() && fl.get(0).text.equals("ALLOC") && fl.size() >= 3) {
+                    if (!fl.isEmpty() && (fl.get(0).text.equals("ALLOC") || fl.get(0).text.equals("ARG")) && fl.size() >= 3) {
+                        // `ARG name type` too: this pass runs BEFORE ArgToAllocLoweringPass, so a parameter is still an ARG line here;
+                        // without it an owned parameter's destruct was a bare free (its owns members / elements leaked).
                         localTypes.put(fl.get(1).text, fl.get(2).text);
                     }
                 }

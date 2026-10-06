@@ -558,6 +558,14 @@ and run a real "Hello World!" end-to-end in the sandbox:
 `target windows` (MASM) itself remains unverified -- there's no MASM
 toolchain in this sandbox to test against.
 
+## Visualizer (`--viz`)
+
+`java Compiler -i prog.caspien --viz [out.html]` builds nothing (like `--audit`) and writes one HTML page, `output/<name>.html` by default: a single full-page
+canvas on a black background. The entry function (`main`, or the `@with_tick` main) is a white circle in the exact centre; the functions it calls directly
+(those with a body, in source order) sit evenly spaced on a white ring around it, each joined to the centre by a white line. A circle's AREA is proportional to
+the function's worst-case stack depth in bytes (the figure of the `# stack depth` section: its frame plus the deepest callee), one scale for all circles, shrunk
+when needed so circles do not touch the centre circle or each other. Nothing else is drawn yet (no labels, no deeper calls). Code: `GasReport.viz`; test `tests/viz_check.sh`.
+
 ## Worst-case gas (`--audit`)
 
 `--audit` ends with a section listing, for the entry point (`main`) and every function reachable from it, the worst-case execution cost in abstract
@@ -576,5 +584,27 @@ hardware, optimiser switches or target. Rules:
   argument of a `@recursive` function), and an indirect call. The figure is then a lower bound (one iteration) printed as `>= N` with the reason; a
   caller of an unbounded function is unbounded. Argument values at call sites are not tracked.
 - External calls, inline assembly, `memcopy` sizes and waiting operations get the fixed price above and are listed as "not modelled".
-- Stack depth and heap allocation counts are not computed. Test: `tests/gas_check.sh` (compares every function of `tests/gas_test.caspien` and the docs
-  examples with `tests/gas_model.py`, an exhaustive path search over the bytecode), `tests/gas_test.caspien` (runs).
+
+`--audit` then prints two more sections computed from the same bytecode:
+
+- **Stack depth** (`# stack depth`): the largest stack a call chain needs, in bytes. Frame of a function = 16 (return address and saved frame pointer) + every local and
+  argument slot rounded up to 8 + an allowance of 64 bytes plus 8 per 24 lines of the function body for temporaries and register saves; depth = frame + the deepest callee.
+  It is an ESTIMATE, calibrated so that it is never below the real frame of the compiled function (`tests/stack_check.sh` compares it with the prologue of the generated
+  assembly under the shipped and an everything-on config, inlining and unrolling off). The call structure is that of the source: when the optimiser inlines a function
+  the real frames merge and the estimate does not follow. External calls (their own stack use), and indirect calls (`INVOKE`, listed as UNBOUNDED) are not counted. A thread
+  started with `par` runs on its own stack: each `__trampoline_*` is listed as a thread entry with its own deepest path.
+- **Heap memory** (`# heap memory`): the most bytes one run can request from the allocator, per function with its callees, with the number of allocation operations in
+  brackets. Sizes: `new T` = the struct size (hidden class id and padding included); a safe dynarray = 16 (header) + elements * element size (`dyn([..])` literal count, `dyn("text")`
+  text length, `resize` with a literal count: the whole new block); an unsafe dynarray = elements * element size (at least 1); `clone` = the block plus every owned block below it.
+  A size only known at run time (a `resize` to a variable count, a clone of a dynarray, `dyn` of a non-literal text) adds its fixed part and marks the function UNBOUNDED with the
+  reason (`>= N bytes`); so does a loop that allocates and has a non-literal bound (one that allocates nothing does not). Frees are NOT credited, so for code that allocates and frees
+  in a loop the figure is the total requested, an upper bound on the peak live heap rather than the peak itself. Not counted: the ghost table's own growth, the allocator's per-block
+  overhead and rounding, library `malloc`s outside Caspien code.
+
+- **Event loops**: in a program with an `@event_loop` function the loop itself is boilerplate whose `loop{}` is unbounded by design, so it is NOT analysed or listed. The roots of
+  every section are the slices instead: the `@with_tick` `main` and the `@tick` function (header `# event loop:` with one line per slice: gas, stack, heap). A slice's stack figure
+  includes the event loop's own frame, which it runs below. A tick's heap figure is per call.
+
+Tests: `tests/gas_check.sh` compares gas, heap bytes, allocation count and stack of every function in 25 programs (including the slice lines of `09_event_loop`) (`tests/gas_test.caspien`, `tests/heap_gas_test.caspien`, the docs examples) with
+`tests/gas_model.py`, an exhaustive path search over the bytecode (heap: the same path search with the byte cost of each allocation worked out separately in the model; unbounded iff the figure changes when the loop bound goes from 1 to 2 or a size is not a literal);
+`tests/stack_check.sh` calibrates the frame estimate against real frames. `CASPIEN_AUDIT_ALL=1` lifts the 40-line limit of each section.
