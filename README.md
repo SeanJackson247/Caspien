@@ -60,9 +60,9 @@ Four properties make a handler total:
    primitive recursive computation, which is a strict subset of what a Turing machine computes. A
    handler can run for a very long time, but it cannot fail to stop.
 2. **Memory safety by ownership.** Every heap value has exactly one `owns` pointer. Moving it invalidates
-   the old name at compile time. Borrowed pointers (`ref`) can be null or dangling, so their members are
-   reachable only inside `match Some(...)`, which checks that the target is alive. Array and dynarray
-   indexes must be proven in bounds before use.
+   the old name at compile time. A `ref` is a pointer that does not own: it can be null or stale, so its
+   members are reachable only inside `match Some(...)`, which checks at run time that the target is alive.
+   Array and dynarray indexes must be proven in bounds before use.
 3. **No runtime exceptions.** Division requires a proof that the divisor is not zero. Float arithmetic
    requires a proof that the operand is finite. Narrowing an integer requires either a proof that it fits
    or an explicit `wrap` or `sat`. Integer arithmetic wraps and never traps. The only non-local control
@@ -304,7 +304,7 @@ impl Account{
 enum Shape{ CIRCLE, SQUARE, TRIANGLE }
 ```
 
-The receiver type `ref some mut self` is a non-null borrowed pointer to the value (see *Ownership and
+The receiver type `ref some mut self` is a non-null pointer to the value that does not own it (see *Ownership and
 pointers*), and the examples build the value with `new`, which allocates it on the heap (`?` handles an
 allocation failure; see *Errors*).
 
@@ -700,11 +700,25 @@ Caspien has five kinds of pointer, and the kind says who is responsible for the 
 
 | Kind | Meaning |
 |---|---|
-| `owns` | the single owner of a heap value. Moving it invalidates the old name at compile time, and the value is freed when its owner goes out of scope |
-| `ref` | a borrow of an `owns` value. It can be null or dangling, so its members are reachable only inside `match Some(...)`, which checks that the target is alive |
-| `auto` | the address of a live local variable, never null, and so usable without a check |
-| `static` | a pointer to static storage. A string literal is a `static imut string` |
-| `raw` | a C-style pointer. Making and dereferencing one needs `unsafe` |
+| `owns` | responsible for a heap value: it frees it (and makes it unreachable) when its scope ends. Assigning or passing it **moves** that responsibility to the new slot and the old name is dead at compile time. It may hold null (a moved-from slot is null); freeing null does nothing |
+| `ref` | points at a heap value but is not responsible for it, and does take part in the ownership model: its members are reachable only inside `match Some(...)`, which checks at run time that a live allocation is registered at that address. It can be null, or point at something freed long ago, and then the block is skipped |
+| `auto` | the address of a live local variable, never null, and so usable without a check (it points at no heap memory, so it needs no responsibility) |
+| `static` | a pointer to static storage. A string literal is a `static imut string` (likewise no heap, no responsibility) |
+| `raw` | a C-style pointer outside the model: nothing is checked and nothing is freed. Making and dereferencing one needs `unsafe` |
+
+Every pointer slot either has responsibility for its target or it does not; that is the whole model, and memory safety
+comes from each kind behaving as its kind says. There is no borrowing in the sense Rust uses the word, where something is
+lent and has to come back: ownership that is moved is simply gone from the caller, and nothing in the contract returns it.
+
+```rust
+func steals(s2: owns mut String){ }       // s2 is now responsible for the String
+...
+steals(s)                                  // s no longer owns it: using `s` after this line is a compile error
+```
+
+`steals` may return the same `String`, but nothing requires it to. There are also no lifetime annotations, because a `ref`
+has no lifetime in its type to annotate: it says only "I do not own this, check me before use", and the check is done at run
+time.
 
 `new` allocates, and it can fail, so it goes through `?`. A pointer that might be absent is declared `owns
 some` (never null) or plain `owns` (possibly null), and a `some` pointer needs no check.
@@ -1511,8 +1525,8 @@ out the per-type copying.
   function `@throws` if the handler rethrows.
 - Bind every value with `mut` or `imut` before storing it, and bind a computed value to a `let` before
   passing it to `raw`, `auto` or `swap`. C function arguments need no binding.
-- Choose the pointer kind by who owns the value: `owns` for the single owner, `ref` for a borrow checked by
-  `match Some`, `auto` for a local, and `raw` only at the boundary with C.
+- Choose the pointer kind by who owns the value: `owns` for the single owner, `ref` for a pointer that does not own,
+  checked by `match Some`, `auto` for a local, and `raw` only at the boundary with C.
 - Use an interface when callers should not care about the concrete type, a bounded generic when the type is
   known at compile time, and composition (a struct member) to share members.
 - Put shared mutable state behind a lock and flags behind an atomic. Keep a `CLOSED` case honest: say
@@ -1577,7 +1591,7 @@ what the checker enforces in safe code, then what `unsafe` gives up.
 | Property | Enforced today | Open (still safe code) |
 |---|---|---|
 | **Termination** | Direct and mutual recursion rejected; `@recursive` only as a tail call on a shrinking range, lowered to a bounded `for`; every `for` bound fixed at loop entry; counter immutable; no `loop{}` and no `call()` (both need `unsafe`). | `match @lock` spins until it acquires the lock, so it can wait forever under contention. `await` blocks on another thread. So safe code is not strictly total. |
-| **Bounded execution time** | Termination is guaranteed (above), and every `for` is bounded by its range, so each loop is finite. Safe code has no unbounded loop and an acyclic call graph, which is what makes a static bound possible. | `--audit` prints a worst-case execution cost per function in ABSTRACT GAS: every bytecode operation has a fixed price (a table in `docs/COMPILER_REFERENCE.md`, independent of the machine, the optimiser switches and the target), a branch costs its dearer side, a `try` counts its catch bodies, a call costs the callee's worst case, and a `for` with literal bounds is `bound * (header + worst iteration)`, exactly (checked against an independent path-search model, `tests/gas_check.sh`). A `loop{}`, a `for` with a variable bound (this includes the range argument of a `@recursive` function) or an indirect call makes the function UNBOUNDED, shown as `>= N` with the reason. Callers' argument values are not tracked, and external calls, inline assembly, `memcopy` sizes and waiting (`sleep`, `yield`, `match @lock`, `await`) get a fixed price and are listed as not modelled. The same report adds a stack-depth estimate (longest call chain over per-function frame estimates, never below the real frame, inlining not modelled) and the most heap bytes one run can request (every allocation at its full size, exact where the allocating loops and the sizes are literal, `>=` with the reason otherwise; frees are not credited, so it bounds the peak live heap but can exceed it), with the number of allocation operations alongside. Time in seconds is not computed. |
+| **Bounded execution time** | Termination is guaranteed (above), and every `for` is bounded by its range, so each loop is finite. Safe code has no unbounded loop and an acyclic call graph, which is what makes a static bound possible. | `--audit` prints a worst-case execution cost per function in ABSTRACT GAS: every bytecode operation has a fixed price (a table in `docs/COMPILER_REFERENCE.md`, independent of the machine, the optimiser switches and the target), a branch costs its dearer side, a `try` counts its catch bodies, a call costs the callee's worst case, and a `for` with literal bounds is `bound * (header + worst iteration)`, exactly (checked against an independent path-search model, `tests/gas_check.sh`). A `loop{}`, a `for` with a variable bound (this includes the range argument of a `@recursive` function) or an indirect call makes the function UNBOUNDED, shown as `>= N` with the reason. Callers' argument values are not tracked, and external calls, inline assembly, `memcopy` sizes and waiting (`sleep`, `yield`, `match @lock`, `await`) get a fixed price and are listed as not modelled. The same report adds a stack-depth estimate (longest call chain over per-function frame estimates, never below the real frame, inlining not modelled) and the most heap bytes one run can request (every allocation at its full size, exact where the allocating loops and the sizes are literal, `>=` with the reason otherwise; frees are not credited here), with the number of allocation operations alongside, and the peak live heap: the most bytes alive at the same time, with frees credited where the analysis can prove them (never below the real peak; checked against the allocator by `tests/heap_live_check.sh` and `tests/heap_live_sweep_check.py`). Time in seconds is not computed. |
 
 | **Memory safety** | Single ownership with compile-time move checking; array and dynarray indexes proven in bounds; dereferencing a pointer needs a liveness proof. | Liveness of a `ref` is checked at *run time* against a table of live allocations, so a dangling `ref` is skipped rather than rejected at compile time. |
 | **No runtime exceptions** | Division, float operations, narrowing, indexing and null access all need proofs; arithmetic wraps; failures are declared (`@throws`) and handled. | Allocation failure is reported (as a thrown error), not prevented. A throw out of the `OPEN` case of `match @lock` releases the lock before unwinding, like a `return` does (`tests/lock_unwind_test.caspien` prints `PASS`). |
@@ -1649,9 +1663,32 @@ like `import "../stdlib/libc.caspien"`.
 | `--asm` | Stop after code generation. The output file is x86-64 assembly. |
 | `--no-warnings` | Hide warnings (errors are always shown). |
 | `--fs-report` | Print every file-system root the program opens and every `unsafe file` use, next to the build's file policy (see 2.6). |
+| `--audit` | Do not build anything: print what the compiler can say about the compilation target (see *Auditing a target*). |
+| `--viz [out.html]` | Do not build anything: write an HTML page that draws the entry function and its direct callees as circles sized by worst-case stack depth. |
 
 The intermediate files of every stage are also kept under `output/.build/`, which is the easiest way to see
 what the compiler did to a program.
+
+#### Auditing a target: `--audit`
+
+```
+java Compiler -i main.caspien --audit
+```
+
+Nothing is compiled or run; the front end reads the program and everything it imports and prints one report on stdout. Each
+section ends with `# summary:` lines, so `java Compiler -i main.caspien --audit | grep '^# summary'` gives the short version.
+
+| Section | What it tells you |
+|---|---|
+| `unsafe audit` | Every `unsafe` block, split into *your code* and the *standard library*, each with its file, line, tags and contents, then counts per tag and the number of `unsafe unaudited` blocks. |
+| `worst-case execution cost` | Abstract gas per function, callees included (a fixed price per operation, independent of machine and optimiser). `>= N` with a reason means unbounded (`loop{}`, variable `for` bound, indirect call); operations that are not modelled (external calls, inline assembly, waiting) are listed. |
+| `stack depth` | An estimate of the stack bytes safe code needs, per function, and the deepest call path from the entry. `par` threads and event-loop `@tick` / `@with_tick` slices are listed as separate roots, never the event loop itself. |
+| `heap memory` | The most bytes one run can request from the allocator, with the number of allocation operations. Frees are not credited. |
+| `peak live heap` | The most bytes alive at once, with frees credited where they are certain, plus `leaves` (bytes still live when the function returns, such as a block it hands back). Never below the real peak, but not always exact. |
+
+The figures are bounds computed from the bytecode, not measurements. Direct calls to C's `malloc` through an `extern`, stack
+used by C functions and the values of call arguments in loop bounds are not counted. `CASPIEN_AUDIT_ALL=1` in the environment
+lifts the 40-line limit on each section; the cost table and the exact rules are in `docs/COMPILER_REFERENCE.md`.
 
 ### 2.3 Choosing a target
 
