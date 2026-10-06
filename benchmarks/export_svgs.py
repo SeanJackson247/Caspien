@@ -88,9 +88,9 @@ def geomeans():
         g = gm(lambda R, naive, opts, cands=cands: next((r for c in cands for r in R if r["label"] == c), None))
         if g: rows.append((lab, key, "", g, len(common)))
     for lab, pick in CAS_VARIANTS[:2]:  # naive and optimized safe; the unsafe variants exist on only some programs, see the per-program charts
-        for mode in ("off", "full"):
+        for mode in ("off", "full", "specific"):
             g = gm(lambda R, naive, opts, pick=pick, mode=mode: find(R, pick(naive, opts), mode))
-            if g: rows.append(("%s, %s" % (lab, "everything on" if mode == "full" else "optimisations off"), "caspien", mode, g, len(common)))
+            if g: rows.append(("%s, %s" % (lab, {"off": "optimisations off", "full": "everything on", "specific": "tuned per program"}[mode]), "caspien", mode, g, len(common)))
     return sorted(rows, key=lambda r: r[3])
 
 
@@ -126,7 +126,7 @@ def selection():
     for d, t, cnt, naive, opts, what in PROGS:
         if d not in DATA or d == "helloworld": continue
         R = DATA[d]["results"]; c2 = c_ref(R)
-        c = [r for r in R if r["label"].startswith("Caspien") and r["label"].endswith("· full") and r.get("ok", True)]
+        c = [r for r in R if r["label"].startswith("Caspien") and (r["label"].endswith("· full") or r["label"].endswith("· specific")) and r.get("ok", True)]
         if not c or not c2: continue
         b = min(c, key=lambda r: r["time_s"])
         out.append((b["time_s"] / c2["time_s"], d, t, b["label"]))

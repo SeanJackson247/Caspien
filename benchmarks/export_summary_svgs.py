@@ -29,8 +29,8 @@ def rows_for(metric, safe, refget):
         cands.append((lab, key, "", lambda R, naive, opts, cs=cs: next((r for c in cs for r in R if r["label"] == c), None)))
     for lab, pick in CAS_VARIANTS:
         if safe and "unsafe" in lab: continue
-        for mode in ("off", "full"):
-            cands.append(("%s, %s" % (lab, "everything on" if mode == "full" else "optimisations off"), "caspien", mode,
+        for mode in ("off", "full", "specific"):
+            cands.append(("%s, %s" % (lab, {"off": "optimisations off", "full": "everything on", "specific": "tuned per program"}[mode]), "caspien", mode,
                           lambda R, naive, opts, pick=pick, mode=mode: (lambda p: find(R, p, mode) if p else None)(pick(naive, opts))))
     # the `ref` variants exist on a few programs only (graph, binarytrees, lru; the ref-in-stdlib one on lru and knucleotide): quick runs measure just "full"
     for lab, prefix in REF_ROWS:

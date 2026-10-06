@@ -170,10 +170,16 @@ METRIC_ORDER = ["time_s", "compile_s", "rss_kb", "size_bytes"]
 MET = {m[0]: m for m in METRICS}
 
 
+MODE_NAME = {"off": "optimisations off", "full": "everything on", "specific": "tuned per program"}
+
+
 def find(R, prefix, mode):
+    """The row "<prefix> · <mode>". "specific" (everything on + the per-program switches of benchmarks/specific.json) falls back to "full" for a program that has no overrides."""
     for r in R:
         if r["label"] == "%s · %s" % (prefix, mode):
             return r
+    if mode == "specific":
+        return find(R, prefix, "full")
 
 
 # ---- "memory-safe only" views: safe Caspien variants against implementations whose RUNTIME or COMPILER provides memory safety (no null dereference, no
@@ -211,7 +217,7 @@ def summary(R, naive, opts):
     t = ['<table class="sortable"><thead><tr>' + "".join(th(h, ty, n) for h, ty, n in (("Caspien version", "text", False), ("Optimisations", "text", False), ("Time", "num", True), ("Memory", "num", True), ("Compile", "num", True), ("Size", "num", True), ("Time vs C -O2", "num", True))) + '</tr></thead><tbody>']
     i = 0
     for kind, prefix in [("naive", naive)] + opts:
-        for mode, mname in (("off", "off"), ("full", "everything on")):
+        for mode, mname in (("off", "off"), ("full", "everything on"), ("specific", "tuned per program")):
             r = find(R, prefix, mode)
             if not r:
                 continue
@@ -293,7 +299,7 @@ def overview(DATA, metric, safe=False):
     for lab, pick in CAS_VARIANTS:
         if safe and "unsafe" in lab:
             continue
-        for mode, mname in (("off", "optimisations off"), ("full", "everything on")):
+        for mode, mname in (("off", "optimisations off"), ("full", "everything on"), ("specific", "tuned per program")):
             row(i, "%s, %s" % (lab, mname), "caspien", "Caspien", mode == "off",
                 lambda R, naive, opts, pick=pick, mode=mode: (lambda pre: find(R, pre, mode) if pre else None)(pick(naive, opts))); i += 1
     return ('<table class="sortable ov"><thead><tr>%s</tr></thead><tbody>%s</tbody></table><p class="note"><button type="button" class="reset">Reset order</button> '
@@ -310,7 +316,7 @@ for d, title, cnt, naive, opts, what in PROGS:
     for r in data["results"]:
         r["kind"] = "caspien" if r["label"].startswith("Caspien") else r["group"]
         r["key"] = lang_key(r)
-        r["mode"] = "off" if r["label"].endswith("· off") else ("full" if r["label"].endswith("· full") else "")
+        r["mode"] = "off" if r["label"].endswith("· off") else ("full" if r["label"].endswith("· full") else ("specific" if r["label"].endswith("· specific") else ""))
 progs = [p for p in PROGS if p[0] in DATA]
 
 # ---- programs table

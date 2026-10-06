@@ -117,7 +117,7 @@ def main():
         base = open(os.path.join(ct, "toolchain.config")).read()
         for src, kind, desc in P["caspien"]:
             text = open(os.path.join(CAS, src + ".caspien")).read().replace("../../../stdlib/", "stdlib/")
-            for mode, kv in B.caspien_modes(S):
+            for mode, kv in B.caspien_modes(S, a.program):
                 label = "Caspien %s · %s" % (kind, mode)
                 if not wanted(label):
                     continue

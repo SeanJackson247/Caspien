@@ -150,9 +150,25 @@ def result_mode(S):
     return "quick, Caspien only (other languages' rows from the existing results.json)" if S["caspien_only"] else S["mode"]
 
 
-def caspien_modes(S):
-    """[(mode name, config dict)] to build for each Caspien source file."""
-    return ([("off", OFF)] if S["off"] else []) + [("full", FULL)]
+def specific_overrides(prog):
+    """The per-program switch overrides of the "specific" build: env BENCH_SPECIFIC_JSON (a JSON object, used by tune_specific.py) or benchmarks/specific.json[prog]."""
+    env = os.environ.get("BENCH_SPECIFIC_JSON")
+    if env is not None:
+        return json.loads(env)
+    try:
+        return json.load(open(os.path.join(HERE, "..", "specific.json"))).get(prog, {})
+    except (OSError, ValueError):
+        return {}
+
+
+def caspien_modes(S, prog=None):
+    """[(mode name, config dict)] to build for each Caspien source file: "off" (with --with-off / full mode), "full" (everything on, one config for
+    every program) and, when the program has overrides in benchmarks/specific.json, "specific" (full + that program's tuned switches, e.g. jcc-padding off)."""
+    modes = ([("off", OFF)] if S["off"] else []) + [("full", FULL)]
+    ov = specific_overrides(prog) if prog else {}
+    if ov:
+        modes.append(("specific", dict(FULL, **ov)))
+    return modes
 
 
 def note_caspien(limits, S, prec, label, t):
@@ -416,7 +432,7 @@ def main():
         ct = make_caspien_tree(ROOT)
         base = open(os.path.join(ct, "toolchain.config")).read()
         for src, prec, desc in CASPIEN:
-            for mode, kv in caspien_modes(S):
+            for mode, kv in caspien_modes(S, "nbody"):
                 label = "Caspien %s %s · %s" % ({"nbody": "scalars", "nbody_f64": "scalars"}.get(src, src.replace("nbody_", "").replace("_f64", "")), prec, mode)
                 if not wanted(label):
                     continue
