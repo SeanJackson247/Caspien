@@ -26,10 +26,10 @@
 <g class="row">
 
 <text class="lbl" x="262" y="66.2" text-anchor="end">Caspien plain printf · full</text>
-<rect class="bar k-caspien" x="270" y="54" width="17.3" height="17" rx="3"/>
-<line class="noise" x1="286.7" x2="286.7" y1="54" y2="71"/>
-<line class="noise" x1="287.9" x2="287.9" y1="54" y2="71"/>
-<text class="val" x="293.9" y="66.2">0.002 s <tspan class="grp">Caspien</tspan></text>
+<rect class="bar k-caspien" x="270" y="54" width="16.6" height="17" rx="3"/>
+<line class="noise" x1="286.1" x2="286.1" y1="54" y2="71"/>
+<line class="noise" x1="287.1" x2="287.1" y1="54" y2="71"/>
+<text class="val" x="293.1" y="66.2">0.002 s <tspan class="grp">Caspien</tspan></text>
 </g>
 <g class="row">
 

@@ -1962,7 +1962,7 @@ check scripts.
 
 ## 4. Performance
 
-Fourteen programs were timed against 23 other languages on a 2-core Intel Xeon VM (the other languages and the optimisations-off column: 4 October 2026 full run; the Caspien columns: 5 October 2026 quick run, after that day's compiler rounds). Every output matched the C reference.
+Fourteen programs were timed against 23 other languages on a 2-core Intel Xeon VM (the other languages and the optimisations-off column: 4 October 2026 full run; the Caspien columns: 6 October 2026 quick run, after the 5 October compiler rounds). Every output matched the C reference.
 Times are seconds, fastest of three runs. "Caspien" is the fastest Caspien variant with all optimisations on; the stdlib column is the same
 program written with the standard library classes (`DynamicArray`, `HashMap`, `String`), and the last column is the best variant with
 optimisations off, which is how the shipped `toolchain.config` builds.
@@ -1970,10 +1970,12 @@ optimisations off, which is how the shipped `toolchain.config` builds.
 **Summary charts.** Each bar is the geometric mean, over the programs where both exist, of a language's figure divided by the reference's
 on the same program (lower is better, 1x = the reference). For each of the four metrics there are two charts: every language against C -O2,
 and only the memory-safe implementations (Caspien without its unsafe-dynarray variants, runtime-safe languages, and Rust where rustc accepts the
-port under `-F unsafe_code`) against Rust, free build. Compile time and executable size use a log axis. These charts come from the 5 October
-quick run, taken after that day's register and peephole round: the Caspien rows were re-measured that day with the optimised builds only (so there are no optimisations-off bars), and the other
+port under `-F unsafe_code`) against Rust, free build. Compile time and executable size use a log axis. These charts come from the 6 October
+quick run, taken after the 5 October register and peephole rounds: the Caspien rows were re-measured with the optimised builds only (so there are no optimisations-off bars), and the other
 languages' rows are from the earlier full run, so a ratio mixes two runs and carries the VM noise described below. A time marked `>=` was cut off
-in the quick run and is a lower bound.
+in the quick run and is a lower bound. Each Caspien variant has two bars, "everything on" and "tuned per program" (everything on plus the per-program
+switch overrides of `benchmarks/specific.json`); today the only override is `jcc-padding: off` for the sieve, so the two bars are
+identical except where that program enters the mean, and the tuned bar is never worse.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="benchmarks/img/summary_time_s_vs_c-dark.svg">
@@ -2010,23 +2012,23 @@ in the quick run and is a lower bound.
 
 | Program | C -O2 (s) | Caspien (s) | Caspien vs C | stdlib-class version vs C | optimisations off vs C |
 |---|---|---|---|---|---|
-| Binary trees | 0.49 | 0.31 | 0.63x | 2.6x | 2.6x |
-| Heap graph search | 0.22 | 0.18 | 0.82x | 1.5x | 2.3x |
-| Fannkuch-redux | 3.41 | 3.22 | 0.94x | 1.0x | 3.5x |
-| Spectral-norm | 0.23 | 0.22 | 0.97x | 1.4x | 5.4x |
-| Mandelbrot | 1.29 | 1.26 | 0.98x | n/a | 3.6x |
-| Merkle tree | 0.90 | 0.95 | 1.07x | 1.1x | 10.3x |
-| Sorting and searching | 1.33 | 1.47 | 1.10x | 1.7x | 2.6x |
-| k-nucleotide (hash map) | 0.62 | 0.70 | 1.12x | 3.7x | 4.9x |
-| N-body | 0.28 | 0.33 | 1.17x | 2.0x | 6.2x |
-| FASTA generation | 0.95 | 1.13 | 1.19x | 1.5x | 3.2x |
-| LRU cache | 0.65 | 0.78 | 1.19x | 2.7x | 4.2x |
-| Sieve of Eratosthenes | 0.61 | 0.74 | 1.22x | 2.3x | 3.8x |
-| JSON serialise + parse | 0.78 | 0.98 | 1.26x | 2.0x | 4.9x |
-| String manipulation | 0.23 | 0.32 | 1.39x | 11.1x | 4.8x |
+| Binary trees | 0.49 | 0.24 | 0.49x | 2.5x | 2.6x |
+| Heap graph search | 0.22 | 0.17 | 0.78x | 1.3x | 2.3x |
+| Sieve of Eratosthenes | 0.61 | 0.52 | 0.84x | 2.0x | 3.8x |
+| Fannkuch-redux | 3.41 | 3.00 | 0.88x | 0.9x | 3.5x |
+| Spectral-norm | 0.23 | 0.21 | 0.90x | 1.3x | 5.4x |
+| Mandelbrot | 1.29 | 1.19 | 0.93x | n/a | 3.6x |
+| Sorting and searching | 1.33 | 1.35 | 1.01x | 1.6x | 2.6x |
+| Merkle tree | 0.90 | 0.93 | 1.04x | 1.1x | 10.3x |
+| N-body | 0.28 | 0.31 | 1.11x | 2.0x | 6.2x |
+| k-nucleotide (hash map) | 0.62 | 0.71 | 1.14x | 3.6x | 4.9x |
+| FASTA generation | 0.95 | 1.10 | 1.15x | 1.5x | 3.2x |
+| LRU cache | 0.65 | 0.78 | 1.19x | 2.3x | 4.2x |
+| JSON serialise + parse | 0.78 | 0.95 | 1.22x | 2.0x | 4.9x |
+| String manipulation | 0.23 | 0.31 | 1.36x | 10.4x | 4.8x |
 
-Table and figures below: C and the optimisations-off column from the 4 October full run, the Caspien columns from the 5 October quick run (the summary charts above come from the same data). Geometric mean of time relative to C -O2: Caspien 1.06x with all optimisations on (best variant per program), 2.09x for the stdlib-class
-versions, 4.11x with optimisations off (4 October).
+Table and figures below: C and the optimisations-off column from the 4 October full run, the Caspien columns from the 6 October quick run (the summary charts above come from the same data; the sieve row is its tuned-per-program build). Geometric mean of time relative to C -O2: Caspien 0.98x with all optimisations on (best variant per program), 1.97x for the stdlib-class
+versions (thirteen programs, Mandelbrot has none), 4.11x with optimisations off (4 October).
 
 **Which charts are shown.** The summary charts above use no selection: every language, every program where both rows exist. The three per-program charts
 below were not picked by hand. The rule is mechanical, not a judgement call: for each program take the ratio of Caspien's fastest
@@ -2035,15 +2037,15 @@ all-optimisations-on variant to C -O2, and show the program with the lowest rati
 [`benchmarks/img/`](benchmarks/img/), and the interactive version (hover text, sortable tables, memory, size and compile time) is
 [`benchmarks/charts.html`](https://SeanJackson247.github.io/Caspien/benchmarks/charts.html).
 
-Best for Caspien (binary trees, 0.63x of C), the median (k-nucleotide, 1.12x), and the worst (string manipulation, 1.39x):
+Best for Caspien (binary trees, 0.49x of C), the median (Merkle tree, 1.04x), and the worst (string manipulation, 1.36x):
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="benchmarks/img/time_binarytrees-dark.svg">
   <img alt="Execution time: binary trees" src="benchmarks/img/time_binarytrees.svg">
 </picture>
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="benchmarks/img/time_knucleotide-dark.svg">
-  <img alt="Execution time: k-nucleotide" src="benchmarks/img/time_knucleotide.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="benchmarks/img/time_merkletrees-dark.svg">
+  <img alt="Execution time: Merkle tree" src="benchmarks/img/time_merkletrees.svg">
 </picture>
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="benchmarks/img/time_strings-dark.svg">
@@ -2052,19 +2054,20 @@ Best for Caspien (binary trees, 0.63x of C), the median (k-nucleotide, 1.12x), a
 
 The gold lines on each bar mark the best time minus and plus the typical run-to-run noise (the median of the three repeats minus the best).
 
-Peak memory is close to C: in the summary chart the Caspien variants sit at 1.10x to 1.16x of C's geometric mean (best variant per program in the 5 October run: 1.07x, ranging from 0.76x to 1.96x per program). That is no
+Peak memory is close to C: in the summary chart the Caspien variants sit at 1.10x to 1.16x of C's geometric mean (best variant per program in the 6 October run: 1.07x, ranging from 0.76x to 1.96x per program). That is no
 surprise, because Caspien has no garbage collector and no runtime, allocates with `malloc`, and lays out
 structs and arrays as C does.
 
 **An honest reading.**
 
-- With optimisations on and the fastest hand-written variant of each program, Caspien reaches 1.06x of C in the
-  geometric mean (5 October quick run; the summary chart's per-variant bars are 1.12x for the unsafe and 1.13x
-  for the safe variants). That is level with Rust (1.06x) and behind only Zig, C, Chapel and Fortran, and it is
-  ahead of C++ -O2 (1.17x), Crystal, Go, OCaml, C#, Java, Kotlin, Swift, Nim and the JavaScript engines in the same
-  chart. It is within 1.3x of C on thirteen of the fourteen programs; the worst is string manipulation at 1.39x.
+- With optimisations on and the fastest hand-written variant of each program, Caspien reaches 0.98x of C in the
+  geometric mean (6 October quick run; the summary chart's per-variant bars are 0.99x for the unsafe and 1.04x
+  for the safe variants). That is level with C -O2 and ahead of Rust (1.06x), C++ -O2 (1.12x), Fortran, Chapel, D, Odin, Crystal, Go,
+  OCaml, C#, Java, Kotlin, Swift, Nim and the JavaScript engines in the same chart; only Zig (0.95x) is ahead. Against Rust
+  on the memory-safe implementations the safe Caspien variants are at 0.97x. It is within 1.3x of C on thirteen of the
+  fourteen programs; the worst is string manipulation at 1.36x.
   That figure picks Caspien's fastest variant per program, while every other language has a single port, so it
-  flatters Caspien somewhat; the standard library versions (2.09x, same programs) are the fairer picture of
+  flatters Caspien somewhat; the standard library versions (1.97x, same programs) are the fairer picture of
   ordinary code. The other languages' figures are from the earlier full run, so these ratios mix two runs and
   carry the VM noise described below.
 - The gap to C and Rust is real. The compiler has no general register allocator (hot scalar variables are
@@ -2074,9 +2077,9 @@ structs and arrays as C does.
 - The optimisation switches matter more than any single trick. With them off, the same programs are 4.1x
   slower than C on average (best variant of each), and they ship off. That is the biggest single improvement available to users
   today.
-- Code written against the standard library classes is slower than code written against raw arrays: 1.75x
-  on average over thirteen programs, but 3.1x for binary trees, 4.7x for k-nucleotide and 5.2x for
-  strings. The classes pay for bounds proofs and wrapper calls. The worst earlier gap, a heap allocation
+- Code written against the standard library classes is slower than code written against raw arrays: about 2.0x
+  on average over thirteen programs, but about 5x for binary trees, 3x for k-nucleotide and 7.6x for
+  strings (stdlib-class version against the fastest variant of the same program). The classes pay for bounds proofs and wrapper calls. The worst earlier gap, a heap allocation
   on every call to `insecure_hashOf`, has been removed (k-nucleotide went from 57x slower than C to 8x). That is an
   engineering gap, not a design limit.
 - The benchmark programs are not Caspien-specific. Twelve are taken from a public collection of

@@ -10,10 +10,10 @@
 <g class="row">
 
 <text class="lbl" x="262" y="20.2" text-anchor="end">Caspien f64 scalars · full</text>
-<rect class="bar k-caspien" x="270" y="8" width="185.3" height="17" rx="3"/>
-<line class="noise" x1="452.0" x2="452.0" y1="8" y2="25"/>
-<line class="noise" x1="458.6" x2="458.6" y1="8" y2="25"/>
-<text class="val" x="464.6" y="20.2">1.26 s <tspan class="grp">Caspien</tspan></text>
+<rect class="bar k-caspien" x="270" y="8" width="175.0" height="17" rx="3"/>
+<line class="noise" x1="436.1" x2="436.1" y1="8" y2="25"/>
+<line class="noise" x1="454.0" x2="454.0" y1="8" y2="25"/>
+<text class="val" x="460.0" y="20.2">1.19 s <tspan class="grp">Caspien</tspan></text>
 </g>
 <g class="row">
 
