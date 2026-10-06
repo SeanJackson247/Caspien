@@ -1688,7 +1688,7 @@ section ends with `# summary:` lines, so `java Compiler -i main.caspien --audit 
 
 An example. For this program:
 
-```
+```rust
 func sumTo(n: mut u64) mut u64{
 	let s = mut 0
 	for i in 0..n{ s += i }
@@ -1703,7 +1703,7 @@ func main() void{
 
 `--audit` prints (comment lines and the `unsafe` listing shortened):
 
-```
+```md
 # summary: 1 unsafe blocks (1 in your code, 0 in the standard library) and 0 other uses of the keyword, in 1 files
 # blocks naming each tag: extern=1
 
