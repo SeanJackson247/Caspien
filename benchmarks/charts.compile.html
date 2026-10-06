@@ -1,0 +1,213 @@
+<!doctype html><meta charset=utf-8><title>Compile times</title><style>:root{--bg:#fff;--fg:#1d2430;--mut:#6b7686;--cas:#2e9e5b;--oth:#c0504d;--line:#e3e7ee}@media(prefers-color-scheme:dark){:root{--bg:#14181f;--fg:#e6e9ef;--mut:#9aa5b4;--cas:#4cc47f;--oth:#e07a76;--line:#2a313c}}body{background:var(--bg);color:var(--fg);font:14px system-ui,sans-serif;margin:0;padding:16px;max-width:980px}h1{font-size:20px}h2{font-size:15px;margin:22px 0 6px}.r{display:grid;grid-template-columns:230px 1fr 64px;gap:8px;align-items:center;margin:2px 0}.b{height:14px;border-radius:2px}.c{background:var(--cas)}.o{background:var(--oth);opacity:.8}.n{color:var(--mut);font-size:12px;text-align:right}.l{font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}p{color:var(--mut);max-width:70ch}</style>
+<h1>Compile times</h1><p>Caspien: every benchmark program compiled now with all optimisations on, no stage cache, median of 3 builds (seconds, whole compiler run: front end, optimiser, lowering, codegen, gcc). Red bars: the other languages' compile times as stored from the last full run (not re-measured). Nothing was run.</p>
+<h2>binarytrees</h2>
+<div class=r><div class=l>Caspien binarytrees_naive</div><div><div class="b c" style="width:14.0%"></div></div><div class=n>2.64 s</div></div>
+<div class=r><div class=l>Caspien binarytrees_ref_naive</div><div><div class="b c" style="width:13.2%"></div></div><div class=n>2.50 s</div></div>
+<div class=r><div class=l>Caspien binarytrees_ref_safe</div><div><div class="b c" style="width:12.0%"></div></div><div class=n>2.27 s</div></div>
+<div class=r><div class=l>Caspien binarytrees_ref_unsafe</div><div><div class="b c" style="width:11.3%"></div></div><div class=n>2.14 s</div></div>
+<div class=r><div class=l>Caspien binarytrees_safe</div><div><div class="b c" style="width:11.1%"></div></div><div class=n>2.10 s</div></div>
+<div class=r><div class=l>Caspien binarytrees_unsafe</div><div><div class="b c" style="width:10.6%"></div></div><div class=n>2.01 s</div></div>
+<div class=r><div class=l>C -O2 (free) (stored)</div><div><div class="b o" style="width:0.9%"></div></div><div class=n>0.16 s</div></div>
+<div class=r><div class=l>C -O2 (leak) (stored)</div><div><div class="b o" style="width:0.7%"></div></div><div class=n>0.12 s</div></div>
+<div class=r><div class=l>C++ -O2 (free) (stored)</div><div><div class="b o" style="width:1.0%"></div></div><div class=n>0.20 s</div></div>
+<div class=r><div class=l>C++ -O2 (leak) (stored)</div><div><div class="b o" style="width:0.8%"></div></div><div class=n>0.14 s</div></div>
+<div class=r><div class=l>Rust -O (free) (stored)</div><div><div class="b o" style="width:1.1%"></div></div><div class=n>0.21 s</div></div>
+<div class=r><div class=l>Rust -O (leak) (stored)</div><div><div class="b o" style="width:1.0%"></div></div><div class=n>0.19 s</div></div>
+<div class=r><div class=l>Go (stored)</div><div><div class="b o" style="width:14.8%"></div></div><div class=n>2.79 s</div></div>
+<div class=r><div class=l>Odin (stored)</div><div><div class="b o" style="width:13.5%"></div></div><div class=n>2.54 s</div></div>
+<div class=r><div class=l>Zig (stored)</div><div><div class="b o" style="width:100.0%"></div></div><div class=n>18.90 s</div></div>
+<h2>fannkuchredux</h2>
+<div class=r><div class=l>Caspien fannkuch_naive</div><div><div class="b c" style="width:6.8%"></div></div><div class=n>1.29 s</div></div>
+<div class=r><div class=l>Caspien fannkuch_opt</div><div><div class="b c" style="width:6.6%"></div></div><div class=n>1.25 s</div></div>
+<div class=r><div class=l>C -O2 (stored)</div><div><div class="b o" style="width:0.3%"></div></div><div class=n>0.07 s</div></div>
+<div class=r><div class=l>C++ -O2 (stored)</div><div><div class="b o" style="width:0.4%"></div></div><div class=n>0.08 s</div></div>
+<div class=r><div class=l>Rust -O (stored)</div><div><div class="b o" style="width:1.1%"></div></div><div class=n>0.21 s</div></div>
+<div class=r><div class=l>Go (stored)</div><div><div class="b o" style="width:14.9%"></div></div><div class=n>2.81 s</div></div>
+<div class=r><div class=l>Odin (stored)</div><div><div class="b o" style="width:14.0%"></div></div><div class=n>2.64 s</div></div>
+<div class=r><div class=l>Zig (stored)</div><div><div class="b o" style="width:96.5%"></div></div><div class=n>18.23 s</div></div>
+<h2>fasta</h2>
+<div class=r><div class=l>Caspien fasta_naive</div><div><div class="b c" style="width:20.5%"></div></div><div class=n>3.87 s</div></div>
+<div class=r><div class=l>Caspien fasta_safe</div><div><div class="b c" style="width:15.4%"></div></div><div class=n>2.91 s</div></div>
+<div class=r><div class=l>Caspien fasta_unsafe</div><div><div class="b c" style="width:14.7%"></div></div><div class=n>2.77 s</div></div>
+<div class=r><div class=l>C -O2 (free) (stored)</div><div><div class="b o" style="width:0.4%"></div></div><div class=n>0.07 s</div></div>
+<div class=r><div class=l>C -O2 (leak) (stored)</div><div><div class="b o" style="width:0.4%"></div></div><div class=n>0.08 s</div></div>
+<div class=r><div class=l>C++ -O2 (free) (stored)</div><div><div class="b o" style="width:1.2%"></div></div><div class=n>0.23 s</div></div>
+<div class=r><div class=l>C++ -O2 (leak) (stored)</div><div><div class="b o" style="width:1.1%"></div></div><div class=n>0.20 s</div></div>
+<div class=r><div class=l>Rust -O (free) (stored)</div><div><div class="b o" style="width:1.0%"></div></div><div class=n>0.20 s</div></div>
+<div class=r><div class=l>Rust -O (leak) (stored)</div><div><div class="b o" style="width:1.1%"></div></div><div class=n>0.20 s</div></div>
+<div class=r><div class=l>Go (stored)</div><div><div class="b o" style="width:14.8%"></div></div><div class=n>2.80 s</div></div>
+<div class=r><div class=l>Odin (stored)</div><div><div class="b o" style="width:13.8%"></div></div><div class=n>2.61 s</div></div>
+<div class=r><div class=l>Zig (stored)</div><div><div class="b o" style="width:98.3%"></div></div><div class=n>18.57 s</div></div>
+<h2>graph</h2>
+<div class=r><div class=l>Caspien graph_naive</div><div><div class="b c" style="width:11.5%"></div></div><div class=n>2.18 s</div></div>
+<div class=r><div class=l>Caspien graph_ref_naive</div><div><div class="b c" style="width:11.4%"></div></div><div class=n>2.15 s</div></div>
+<div class=r><div class=l>Caspien graph_ref_safe</div><div><div class="b c" style="width:11.3%"></div></div><div class=n>2.13 s</div></div>
+<div class=r><div class=l>Caspien graph_ref_unsafe</div><div><div class="b c" style="width:10.8%"></div></div><div class=n>2.03 s</div></div>
+<div class=r><div class=l>Caspien graph_safe</div><div><div class="b c" style="width:11.2%"></div></div><div class=n>2.11 s</div></div>
+<div class=r><div class=l>Caspien graph_struct_safe</div><div><div class="b c" style="width:10.4%"></div></div><div class=n>1.96 s</div></div>
+<div class=r><div class=l>Caspien graph_struct_unsafe</div><div><div class="b c" style="width:9.8%"></div></div><div class=n>1.86 s</div></div>
+<div class=r><div class=l>Caspien graph_unsafe</div><div><div class="b c" style="width:10.3%"></div></div><div class=n>1.94 s</div></div>
+<div class=r><div class=l>C -O2 (free) (stored)</div><div><div class="b o" style="width:0.3%"></div></div><div class=n>0.06 s</div></div>
+<div class=r><div class=l>C -O2 (leak) (stored)</div><div><div class="b o" style="width:0.3%"></div></div><div class=n>0.06 s</div></div>
+<div class=r><div class=l>C++ -O2 (free) (stored)</div><div><div class="b o" style="width:1.6%"></div></div><div class=n>0.30 s</div></div>
+<div class=r><div class=l>C++ -O2 (leak) (stored)</div><div><div class="b o" style="width:1.4%"></div></div><div class=n>0.27 s</div></div>
+<div class=r><div class=l>Rust -O (free) (stored)</div><div><div class="b o" style="width:1.2%"></div></div><div class=n>0.22 s</div></div>
+<div class=r><div class=l>Rust -O (leak) (stored)</div><div><div class="b o" style="width:1.1%"></div></div><div class=n>0.21 s</div></div>
+<div class=r><div class=l>Go (stored)</div><div><div class="b o" style="width:14.6%"></div></div><div class=n>2.76 s</div></div>
+<div class=r><div class=l>Odin (stored)</div><div><div class="b o" style="width:14.1%"></div></div><div class=n>2.67 s</div></div>
+<div class=r><div class=l>Zig (stored)</div><div><div class="b o" style="width:96.9%"></div></div><div class=n>18.30 s</div></div>
+<h2>helloworld</h2>
+<div class=r><div class=l>Caspien helloworld</div><div><div class="b c" style="width:9.3%"></div></div><div class=n>1.76 s</div></div>
+<div class=r><div class=l>C -O2 (stored)</div><div><div class="b o" style="width:0.2%"></div></div><div class=n>0.04 s</div></div>
+<div class=r><div class=l>C++ -O2 (stored)</div><div><div class="b o" style="width:0.3%"></div></div><div class=n>0.05 s</div></div>
+<div class=r><div class=l>Rust -O (stored)</div><div><div class="b o" style="width:0.5%"></div></div><div class=n>0.10 s</div></div>
+<div class=r><div class=l>Go (stored)</div><div><div class="b o" style="width:15.3%"></div></div><div class=n>2.89 s</div></div>
+<div class=r><div class=l>Odin (stored)</div><div><div class="b o" style="width:4.7%"></div></div><div class=n>0.89 s</div></div>
+<div class=r><div class=l>Zig (stored)</div><div><div class="b o" style="width:96.3%"></div></div><div class=n>18.19 s</div></div>
+<h2>json_serde</h2>
+<div class=r><div class=l>Caspien json_serde_naive</div><div><div class="b c" style="width:13.8%"></div></div><div class=n>2.60 s</div></div>
+<div class=r><div class=l>Caspien json_serde_safe</div><div><div class="b c" style="width:12.6%"></div></div><div class=n>2.38 s</div></div>
+<div class=r><div class=l>Caspien json_serde_unsafe</div><div><div class="b c" style="width:12.0%"></div></div><div class=n>2.27 s</div></div>
+<div class=r><div class=l>C -O2 (free) (stored)</div><div><div class="b o" style="width:0.7%"></div></div><div class=n>0.13 s</div></div>
+<div class=r><div class=l>C -O2 (leak) (stored)</div><div><div class="b o" style="width:0.7%"></div></div><div class=n>0.12 s</div></div>
+<div class=r><div class=l>C++ -O2 (free) (stored)</div><div><div class="b o" style="width:1.9%"></div></div><div class=n>0.36 s</div></div>
+<div class=r><div class=l>C++ -O2 (leak) (stored)</div><div><div class="b o" style="width:1.5%"></div></div><div class=n>0.28 s</div></div>
+<div class=r><div class=l>Rust -O (free) (stored)</div><div><div class="b o" style="width:4.3%"></div></div><div class=n>0.81 s</div></div>
+<div class=r><div class=l>Rust -O (leak) (stored)</div><div><div class="b o" style="width:1.6%"></div></div><div class=n>0.31 s</div></div>
+<div class=r><div class=l>Go (stored)</div><div><div class="b o" style="width:16.1%"></div></div><div class=n>3.04 s</div></div>
+<div class=r><div class=l>Odin (stored)</div><div><div class="b o" style="width:16.6%"></div></div><div class=n>3.14 s</div></div>
+<div class=r><div class=l>Zig (stored)</div><div><div class="b o" style="width:99.8%"></div></div><div class=n>18.86 s</div></div>
+<h2>knucleotide</h2>
+<div class=r><div class=l>Caspien knucleotide_naive</div><div><div class="b c" style="width:15.7%"></div></div><div class=n>2.96 s</div></div>
+<div class=r><div class=l>Caspien knucleotide_naive_refstd</div><div><div class="b c" style="width:16.5%"></div></div><div class=n>3.11 s</div></div>
+<div class=r><div class=l>Caspien knucleotide_safe</div><div><div class="b c" style="width:14.5%"></div></div><div class=n>2.73 s</div></div>
+<div class=r><div class=l>Caspien knucleotide_unsafe</div><div><div class="b c" style="width:15.2%"></div></div><div class=n>2.87 s</div></div>
+<div class=r><div class=l>C -O2 (free) (stored)</div><div><div class="b o" style="width:0.5%"></div></div><div class=n>0.09 s</div></div>
+<div class=r><div class=l>C -O2 (leak) (stored)</div><div><div class="b o" style="width:0.5%"></div></div><div class=n>0.09 s</div></div>
+<div class=r><div class=l>C++ -O2 (free) (stored)</div><div><div class="b o" style="width:4.7%"></div></div><div class=n>0.89 s</div></div>
+<div class=r><div class=l>C++ -O2 (leak) (stored)</div><div><div class="b o" style="width:1.7%"></div></div><div class=n>0.31 s</div></div>
+<div class=r><div class=l>Rust -O (free) (stored)</div><div><div class="b o" style="width:29.9%"></div></div><div class=n>5.66 s</div></div>
+<div class=r><div class=l>Rust -O (leak) (stored)</div><div><div class="b o" style="width:1.7%"></div></div><div class=n>0.32 s</div></div>
+<div class=r><div class=l>Go (stored)</div><div><div class="b o" style="width:18.9%"></div></div><div class=n>3.57 s</div></div>
+<div class=r><div class=l>Odin (stored)</div><div><div class="b o" style="width:24.6%"></div></div><div class=n>4.66 s</div></div>
+<div class=r><div class=l>Zig (stored)</div><div><div class="b o" style="width:97.9%"></div></div><div class=n>18.50 s</div></div>
+<h2>lru</h2>
+<div class=r><div class=l>Caspien lru_naive</div><div><div class="b c" style="width:13.6%"></div></div><div class=n>2.58 s</div></div>
+<div class=r><div class=l>Caspien lru_naive_refstd</div><div><div class="b c" style="width:12.9%"></div></div><div class=n>2.44 s</div></div>
+<div class=r><div class=l>Caspien lru_ref_naive</div><div><div class="b c" style="width:11.4%"></div></div><div class=n>2.15 s</div></div>
+<div class=r><div class=l>Caspien lru_ref_safe</div><div><div class="b c" style="width:10.5%"></div></div><div class=n>1.98 s</div></div>
+<div class=r><div class=l>Caspien lru_ref_unsafe</div><div><div class="b c" style="width:10.5%"></div></div><div class=n>1.99 s</div></div>
+<div class=r><div class=l>Caspien lru_safe</div><div><div class="b c" style="width:10.9%"></div></div><div class=n>2.06 s</div></div>
+<div class=r><div class=l>Caspien lru_unsafe</div><div><div class="b c" style="width:10.3%"></div></div><div class=n>1.94 s</div></div>
+<div class=r><div class=l>C -O2 (free) (stored)</div><div><div class="b o" style="width:0.4%"></div></div><div class=n>0.08 s</div></div>
+<div class=r><div class=l>C -O2 (leak) (stored)</div><div><div class="b o" style="width:0.4%"></div></div><div class=n>0.08 s</div></div>
+<div class=r><div class=l>C++ -O2 (free) (stored)</div><div><div class="b o" style="width:1.8%"></div></div><div class=n>0.33 s</div></div>
+<div class=r><div class=l>C++ -O2 (leak) (stored)</div><div><div class="b o" style="width:1.8%"></div></div><div class=n>0.33 s</div></div>
+<div class=r><div class=l>Rust -O (free) (stored)</div><div><div class="b o" style="width:1.2%"></div></div><div class=n>0.23 s</div></div>
+<div class=r><div class=l>Rust -O (leak) (stored)</div><div><div class="b o" style="width:1.1%"></div></div><div class=n>0.21 s</div></div>
+<div class=r><div class=l>Go (stored)</div><div><div class="b o" style="width:15.1%"></div></div><div class=n>2.86 s</div></div>
+<div class=r><div class=l>Odin (stored)</div><div><div class="b o" style="width:13.9%"></div></div><div class=n>2.62 s</div></div>
+<div class=r><div class=l>Zig (stored)</div><div><div class="b o" style="width:98.2%"></div></div><div class=n>18.56 s</div></div>
+<h2>mandelbrot</h2>
+<div class=r><div class=l>Caspien mandelbrot</div><div><div class="b c" style="width:6.1%"></div></div><div class=n>1.15 s</div></div>
+<div class=r><div class=l>C -O2 (stored)</div><div><div class="b o" style="width:0.3%"></div></div><div class=n>0.06 s</div></div>
+<div class=r><div class=l>C++ -O2 (stored)</div><div><div class="b o" style="width:0.4%"></div></div><div class=n>0.07 s</div></div>
+<div class=r><div class=l>Rust -O (stored)</div><div><div class="b o" style="width:0.9%"></div></div><div class=n>0.18 s</div></div>
+<div class=r><div class=l>Go (stored)</div><div><div class="b o" style="width:14.8%"></div></div><div class=n>2.80 s</div></div>
+<div class=r><div class=l>Odin (stored)</div><div><div class="b o" style="width:13.7%"></div></div><div class=n>2.58 s</div></div>
+<div class=r><div class=l>Zig (stored)</div><div><div class="b o" style="width:97.7%"></div></div><div class=n>18.45 s</div></div>
+<h2>merkletrees</h2>
+<div class=r><div class=l>Caspien merkletrees_naive</div><div><div class="b c" style="width:20.3%"></div></div><div class=n>3.84 s</div></div>
+<div class=r><div class=l>Caspien merkletrees_safe</div><div><div class="b c" style="width:19.9%"></div></div><div class=n>3.77 s</div></div>
+<div class=r><div class=l>Caspien merkletrees_unsafe</div><div><div class="b c" style="width:19.8%"></div></div><div class=n>3.75 s</div></div>
+<div class=r><div class=l>C -O2 (free) (stored)</div><div><div class="b o" style="width:0.6%"></div></div><div class=n>0.11 s</div></div>
+<div class=r><div class=l>C -O2 (leak) (stored)</div><div><div class="b o" style="width:0.6%"></div></div><div class=n>0.12 s</div></div>
+<div class=r><div class=l>C++ -O2 (free) (stored)</div><div><div class="b o" style="width:1.4%"></div></div><div class=n>0.27 s</div></div>
+<div class=r><div class=l>C++ -O2 (leak) (stored)</div><div><div class="b o" style="width:1.2%"></div></div><div class=n>0.23 s</div></div>
+<div class=r><div class=l>Rust -O (free) (stored)</div><div><div class="b o" style="width:1.4%"></div></div><div class=n>0.26 s</div></div>
+<div class=r><div class=l>Rust -O (leak) (stored)</div><div><div class="b o" style="width:1.3%"></div></div><div class=n>0.25 s</div></div>
+<div class=r><div class=l>Go (stored)</div><div><div class="b o" style="width:15.0%"></div></div><div class=n>2.84 s</div></div>
+<div class=r><div class=l>Odin (stored)</div><div><div class="b o" style="width:13.9%"></div></div><div class=n>2.63 s</div></div>
+<div class=r><div class=l>Zig (stored)</div><div><div class="b o" style="width:98.1%"></div></div><div class=n>18.53 s</div></div>
+<h2>nbody</h2>
+<div class=r><div class=l>Caspien nbody</div><div><div class="b c" style="width:10.5%"></div></div><div class=n>1.98 s</div></div>
+<div class=r><div class=l>Caspien nbody_arr</div><div><div class="b c" style="width:11.2%"></div></div><div class=n>2.11 s</div></div>
+<div class=r><div class=l>Caspien nbody_arr_f64</div><div><div class="b c" style="width:11.0%"></div></div><div class=n>2.08 s</div></div>
+<div class=r><div class=l>Caspien nbody_f64</div><div><div class="b c" style="width:11.0%"></div></div><div class=n>2.08 s</div></div>
+<div class=r><div class=l>Caspien nbody_loop</div><div><div class="b c" style="width:10.0%"></div></div><div class=n>1.89 s</div></div>
+<div class=r><div class=l>Caspien nbody_loop_f64</div><div><div class="b c" style="width:10.7%"></div></div><div class=n>2.03 s</div></div>
+<div class=r><div class=l>Caspien nbody_natural_f64</div><div><div class="b c" style="width:10.3%"></div></div><div class=n>1.95 s</div></div>
+<div class=r><div class=l>Caspien nbody_plain</div><div><div class="b c" style="width:9.6%"></div></div><div class=n>1.81 s</div></div>
+<div class=r><div class=l>Caspien nbody_plain_f64</div><div><div class="b c" style="width:9.6%"></div></div><div class=n>1.82 s</div></div>
+<div class=r><div class=l>C -O2 (stored)</div><div><div class="b o" style="width:0.4%"></div></div><div class=n>0.08 s</div></div>
+<div class=r><div class=l>C++ -O2 (stored)</div><div><div class="b o" style="width:1.1%"></div></div><div class=n>0.21 s</div></div>
+<div class=r><div class=l>Rust -O (stored)</div><div><div class="b o" style="width:1.5%"></div></div><div class=n>0.28 s</div></div>
+<div class=r><div class=l>Go (stored)</div><div><div class="b o" style="width:15.2%"></div></div><div class=n>2.87 s</div></div>
+<div class=r><div class=l>Odin (stored)</div><div><div class="b o" style="width:13.7%"></div></div><div class=n>2.59 s</div></div>
+<div class=r><div class=l>Zig (stored)</div><div><div class="b o" style="width:98.0%"></div></div><div class=n>18.52 s</div></div>
+<h2>recursion</h2>
+<div class=r><div class=l>Caspien chain_loop</div><div><div class="b c" style="width:6.0%"></div></div><div class=n>1.14 s</div></div>
+<div class=r><div class=l>Caspien chain_recursive</div><div><div class="b c" style="width:9.6%"></div></div><div class=n>1.81 s</div></div>
+<div class=r><div class=l>Caspien tree_stack</div><div><div class="b c" style="width:9.7%"></div></div><div class=n>1.84 s</div></div>
+<h2>sieve</h2>
+<div class=r><div class=l>Caspien sieve_naive</div><div><div class="b c" style="width:9.7%"></div></div><div class=n>1.82 s</div></div>
+<div class=r><div class=l>Caspien sieve_safe</div><div><div class="b c" style="width:10.0%"></div></div><div class=n>1.89 s</div></div>
+<div class=r><div class=l>Caspien sieve_unsafe</div><div><div class="b c" style="width:9.9%"></div></div><div class=n>1.86 s</div></div>
+<div class=r><div class=l>C -O2 (free) (stored)</div><div><div class="b o" style="width:0.3%"></div></div><div class=n>0.06 s</div></div>
+<div class=r><div class=l>C -O2 (leak) (stored)</div><div><div class="b o" style="width:0.3%"></div></div><div class=n>0.05 s</div></div>
+<div class=r><div class=l>C++ -O2 (free) (stored)</div><div><div class="b o" style="width:1.0%"></div></div><div class=n>0.20 s</div></div>
+<div class=r><div class=l>C++ -O2 (leak) (stored)</div><div><div class="b o" style="width:1.0%"></div></div><div class=n>0.19 s</div></div>
+<div class=r><div class=l>Rust -O (free) (stored)</div><div><div class="b o" style="width:0.9%"></div></div><div class=n>0.17 s</div></div>
+<div class=r><div class=l>Rust -O (leak) (stored)</div><div><div class="b o" style="width:0.9%"></div></div><div class=n>0.17 s</div></div>
+<div class=r><div class=l>Go (stored)</div><div><div class="b o" style="width:14.9%"></div></div><div class=n>2.82 s</div></div>
+<div class=r><div class=l>Odin (stored)</div><div><div class="b o" style="width:13.6%"></div></div><div class=n>2.58 s</div></div>
+<div class=r><div class=l>Zig (stored)</div><div><div class="b o" style="width:97.6%"></div></div><div class=n>18.45 s</div></div>
+<h2>sorting</h2>
+<div class=r><div class=l>Caspien sorting_naive</div><div><div class="b c" style="width:15.6%"></div></div><div class=n>2.95 s</div></div>
+<div class=r><div class=l>Caspien sorting_safe</div><div><div class="b c" style="width:11.7%"></div></div><div class=n>2.21 s</div></div>
+<div class=r><div class=l>Caspien sorting_unsafe</div><div><div class="b c" style="width:12.4%"></div></div><div class=n>2.35 s</div></div>
+<div class=r><div class=l>C -O2 (free) (stored)</div><div><div class="b o" style="width:0.6%"></div></div><div class=n>0.12 s</div></div>
+<div class=r><div class=l>C -O2 (leak) (stored)</div><div><div class="b o" style="width:0.6%"></div></div><div class=n>0.12 s</div></div>
+<div class=r><div class=l>C++ -O2 (free) (stored)</div><div><div class="b o" style="width:1.0%"></div></div><div class=n>0.19 s</div></div>
+<div class=r><div class=l>C++ -O2 (leak) (stored)</div><div><div class="b o" style="width:1.0%"></div></div><div class=n>0.18 s</div></div>
+<div class=r><div class=l>Rust -O (free) (stored)</div><div><div class="b o" style="width:1.6%"></div></div><div class=n>0.31 s</div></div>
+<div class=r><div class=l>Rust -O (leak) (stored)</div><div><div class="b o" style="width:1.6%"></div></div><div class=n>0.30 s</div></div>
+<div class=r><div class=l>Go (stored)</div><div><div class="b o" style="width:15.1%"></div></div><div class=n>2.85 s</div></div>
+<div class=r><div class=l>Odin (stored)</div><div><div class="b o" style="width:14.5%"></div></div><div class=n>2.73 s</div></div>
+<div class=r><div class=l>Zig (stored)</div><div><div class="b o" style="width:97.9%"></div></div><div class=n>18.51 s</div></div>
+<h2>spectralnorm</h2>
+<div class=r><div class=l>Caspien spectralnorm_naive</div><div><div class="b c" style="width:17.5%"></div></div><div class=n>3.31 s</div></div>
+<div class=r><div class=l>Caspien spectralnorm_opt</div><div><div class="b c" style="width:16.5%"></div></div><div class=n>3.12 s</div></div>
+<div class=r><div class=l>C -O2 (stored)</div><div><div class="b o" style="width:0.4%"></div></div><div class=n>0.08 s</div></div>
+<div class=r><div class=l>C++ -O2 (stored)</div><div><div class="b o" style="width:1.0%"></div></div><div class=n>0.20 s</div></div>
+<div class=r><div class=l>Rust -O (stored)</div><div><div class="b o" style="width:1.1%"></div></div><div class=n>0.20 s</div></div>
+<div class=r><div class=l>Go (stored)</div><div><div class="b o" style="width:15.1%"></div></div><div class=n>2.85 s</div></div>
+<div class=r><div class=l>Odin (stored)</div><div><div class="b o" style="width:13.7%"></div></div><div class=n>2.59 s</div></div>
+<div class=r><div class=l>Zig (stored)</div><div><div class="b o" style="width:99.4%"></div></div><div class=n>18.78 s</div></div>
+<h2>strings</h2>
+<div class=r><div class=l>Caspien strings_naive</div><div><div class="b c" style="width:12.5%"></div></div><div class=n>2.36 s</div></div>
+<div class=r><div class=l>Caspien strings_safe</div><div><div class="b c" style="width:9.7%"></div></div><div class=n>1.84 s</div></div>
+<div class=r><div class=l>Caspien strings_unsafe</div><div><div class="b c" style="width:10.2%"></div></div><div class=n>1.94 s</div></div>
+<div class=r><div class=l>C -O2 (free) (stored)</div><div><div class="b o" style="width:0.4%"></div></div><div class=n>0.08 s</div></div>
+<div class=r><div class=l>C -O2 (leak) (stored)</div><div><div class="b o" style="width:0.4%"></div></div><div class=n>0.08 s</div></div>
+<div class=r><div class=l>C++ -O2 (free) (stored)</div><div><div class="b o" style="width:1.5%"></div></div><div class=n>0.29 s</div></div>
+<div class=r><div class=l>C++ -O2 (leak) (stored)</div><div><div class="b o" style="width:1.5%"></div></div><div class=n>0.29 s</div></div>
+<div class=r><div class=l>Rust -O (free) (stored)</div><div><div class="b o" style="width:1.2%"></div></div><div class=n>0.22 s</div></div>
+<div class=r><div class=l>Rust -O (leak) (stored)</div><div><div class="b o" style="width:1.1%"></div></div><div class=n>0.21 s</div></div>
+<div class=r><div class=l>Go (stored)</div><div><div class="b o" style="width:14.6%"></div></div><div class=n>2.76 s</div></div>
+<div class=r><div class=l>Odin (stored)</div><div><div class="b o" style="width:13.9%"></div></div><div class=n>2.62 s</div></div>
+<div class=r><div class=l>Zig (stored)</div><div><div class="b o" style="width:97.4%"></div></div><div class=n>18.40 s</div></div>
+<h2>swaplock</h2>
+<div class=r><div class=l>Caspien swaplock_naive</div><div><div class="b c" style="width:12.1%"></div></div><div class=n>2.29 s</div></div>
+<div class=r><div class=l>Caspien swaplock_opt</div><div><div class="b c" style="width:11.6%"></div></div><div class=n>2.18 s</div></div>
+<div class=r><div class=l>C -O2 (stored)</div><div><div class="b o" style="width:0.3%"></div></div><div class=n>0.06 s</div></div>
+<div class=r><div class=l>C++ -O2 (stored)</div><div><div class="b o" style="width:1.2%"></div></div><div class=n>0.23 s</div></div>
+<div class=r><div class=l>Rust -O (stored)</div><div><div class="b o" style="width:1.9%"></div></div><div class=n>0.35 s</div></div>
+<div class=r><div class=l>Go (stored)</div><div><div class="b o" style="width:15.7%"></div></div><div class=n>2.96 s</div></div>
+<h2>threads</h2>
+<div class=r><div class=l>Caspien threads_naive</div><div><div class="b c" style="width:28.3%"></div></div><div class=n>5.36 s</div></div>
+<div class=r><div class=l>Caspien threads_opt</div><div><div class="b c" style="width:27.9%"></div></div><div class=n>5.27 s</div></div>
+<div class=r><div class=l>C -O2 (stored)</div><div><div class="b o" style="width:0.3%"></div></div><div class=n>0.06 s</div></div>
+<div class=r><div class=l>C++ -O2 (stored)</div><div><div class="b o" style="width:1.3%"></div></div><div class=n>0.25 s</div></div>
+<div class=r><div class=l>Rust -O (stored)</div><div><div class="b o" style="width:2.4%"></div></div><div class=n>0.46 s</div></div>
+<div class=r><div class=l>Go (stored)</div><div><div class="b o" style="width:16.1%"></div></div><div class=n>3.04 s</div></div>
