@@ -1,5 +1,5 @@
 // One `unsafe` block for every tag, each naming exactly the reasons it needs (a missing or extra tag is a compile error).
-// Tags: extern memcopy raw deref clone global loop udyn udyn:owns assume call asm async guard swap (and `unaudited`, the catch-all, at the end)
+// Tags: extern memcopy raw deref clone global loop udyn udyn:owns assume call asm async guard atomic (and `unaudited`, the catch-all, at the end)
 // Expected output:
 //   extern: 5
 //   raw+memcopy+deref+assume: 7 7
@@ -12,7 +12,7 @@
 //   asm: 42
 //   async: 6
 //   guard: held=0 total=11
-//   swap: 2
+//   atomic: 2
 //   unaudited: 6
 import "../../stdlib/libc.caspien"
 import "../../stdlib/gt_init.caspien"
@@ -46,7 +46,7 @@ extern answer() mut u64
 // `global`: a mutable static that is not atomic or lock-protected.
 let static counter = mut 0
 
-// `swap`: a swap mutex struct; its state field may only be touched outside `match @lock` with the `swap` tag.
+// `atomic`: a swap mutex struct; its state field (like any atomic) may only be touched outside `match @lock` with the `atomic` tag.
 enum St{ OPEN, CLOSED }
 struct Mtx{@pub{
 	swap lockState: atomic mut St
@@ -175,18 +175,18 @@ func main() void{
 	}
 
 	let m = mut Mtx{lockState= St.OPEN, n= mut 0}
-	unsafe swap{ m.lockState swap St.CLOSED }          // close the mutex by hand, outside `match @lock`
+	unsafe atomic{ m.lockState swap St.CLOSED }          // close the mutex by hand, outside `match @lock`
 	let free = mut 0
 	match @lock m{
 		OPEN:{ free = 1 }
 		CLOSED:{ break }
 	}
-	unsafe swap{ m.lockState swap St.OPEN }
+	unsafe atomic{ m.lockState swap St.OPEN }
 	match @lock m{
 		OPEN:{ free = free + 2 }
 		CLOSED:{ break }
 	}
-	unsafe extern{ printf("swap: %llu\n", free) }
+	unsafe extern{ printf("atomic: %llu\n", free) }
 
 	// `unaudited` stands for every other tag: this block needs extern, global, raw and deref, and names none of them. It says "nobody has
 	// checked why this is unsafe", so it is a grep target for review, and the standard library may never use it.

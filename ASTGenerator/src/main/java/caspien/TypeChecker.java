@@ -1108,7 +1108,7 @@ public class TypeChecker {
      *  `unaudited` is the catch-all: a block that names it (alone) is accepted whatever it needs, and says nothing about why; the stdlib may never use it. */
     static final Set<String> UNSAFE_TAGS = new java.util.LinkedHashSet<>(Arrays.asList(
             "extern", "memcopy", "raw", "deref", "clone", "global", "loop", "udyn", "udyn:owns",
-            "assume", "call", "asm", "async", "guard", "swap", "file", "unaudited"));
+            "assume", "call", "asm", "async", "guard", "atomic", "file", "unaudited"));
 
     /** One written `unsafe ...{` block: what it declares, and (unioned over every time it is checked, e.g. per generic instantiation) what it really used. */
     private static class UnsafeBlockRecord {
@@ -4747,11 +4747,21 @@ public class TypeChecker {
      * `match @lock` statement).
      */
     private void requireGuardOrUnsafe(TypeInfo t, String name, Scope scope, Token at) {
-        if (!isSwapLockStructType(t) && !t.isAtomic && !unsafeBypass(scope, "global")) {
+        if (t.isAtomic) {
+            // an atomic primitive shared between threads: reading, writing or swapping it is one atomic step, but whether a program built from
+            // such steps is correct is not something the compiler can check, so every access is an audited `unsafe atomic{...}` use; the only
+            // safe way to share mutable state is a struct with a `swap` lock, touched through its own `match @lock`
+            if (!unsafeBypass(scope, "atomic")) {
+                throw new CompilerException("type", at.file, at.line,
+                        "'" + name + "' is an atomic -- outside a lock it can only be read, written or swapped from 'unsafe atomic{...}' code; "
+                                + "shared state in safe code belongs in a struct with a 'swap'-tagged mutex-state field, touched through 'match @lock'");
+            }
+            return;
+        }
+        if (!isSwapLockStructType(t) && !unsafeBypass(scope, "global")) {
             throw new CompilerException("type", at.file, at.line,
-                    "'" + name + "' is a global/static variable -- in safe code, only an atomic primitive or "
-                            + "a struct with a 'swap'-tagged atomic mutex-state field (touched through its "
-                            + "own 'match @lock') can be accessed without 'unsafe' code; '@guard' alone no "
+                    "'" + name + "' is a global/static variable -- in safe code, only a struct with a 'swap'-tagged atomic mutex-state "
+                            + "field (touched through its own 'match @lock') can be accessed without 'unsafe' code; '@guard' alone no "
                             + "longer grants that exemption");
         }
     }
@@ -17126,12 +17136,12 @@ public class TypeChecker {
         if (!memberName.equals(structInfo.swapFieldName)) {
             return;
         }
-        if (op.isCompilerSynthesizedSwapAccess || unsafeBypass(scope, "swap")) {
+        if (op.isCompilerSynthesizedSwapAccess || unsafeBypass(scope, "atomic")) {
             return;
         }
         throw new CompilerException("type", op.file, op.line,
                 "'" + memberName + "' is a 'swap'-tagged atomic mutex-state field -- it can only be read or "
-                        + "written through its own 'match @lock' statement, or from 'unsafe' code");
+                        + "written through its own 'match @lock' statement, or from 'unsafe atomic{...}' code");
     }
 
     private TypeInfo checkDot(Token op, Scope scope, FuncInfo func) {

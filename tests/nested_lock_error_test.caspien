@@ -1,0 +1,24 @@
+// Must NOT compile: a lock taken while another lock is held (here the same lock; nested locks are banned).
+import "../stdlib/libc.caspien"
+
+enum Gate{ OPEN, CLOSED }
+
+@lock(match self.gate : OPEN)
+struct Counter{@pub{
+	swap gate: atomic mut Gate
+	n: mut u64
+}}
+
+let static counter = mut Counter{gate= Gate.OPEN, n= mut 0}
+
+func main() void{
+	match @lock counter{
+		OPEN:{
+			match @lock counter{
+				OPEN:{ counter.n += 1 }
+				CLOSED:{ break }
+			}
+		}
+		CLOSED:{ break }
+	}
+}

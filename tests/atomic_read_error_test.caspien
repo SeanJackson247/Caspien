@@ -1,0 +1,9 @@
+// Must NOT compile: reading an atomic in safe code (every atomic use outside a lock needs `unsafe atomic{...}`).
+import "../stdlib/libc.caspien"
+
+let static flag = mut atomic 0
+
+func main() void{
+	let x = mut flag
+	unsafe extern{ printf("%llu\n", x) }
+}

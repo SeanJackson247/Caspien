@@ -263,6 +263,9 @@ public class BytecodeEmitter {
         Map<String, TypeChecker.StructInfo> structs = checker.getStructs();
         Map<String, TypeChecker.EnumInfo> enums = checker.getEnums();
         computeGtReachableFunctions();
+        Set<String> lockExempt = new HashSet<>(gtReachableMangledNames);
+        lockExempt.addAll(gtDecoratedFuncMangledNames);
+        LockNestingCheck.run(checker, lockExempt);
 
         // Globals first, all of them, regardless of where in the file
         // they were declared -- confirmed directly by example (every

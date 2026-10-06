@@ -15,6 +15,9 @@ import "../../stdlib/await_call.caspien"
 // An atomic lives in a global or a `let static`. Reads and plain writes are single instructions.
 // `swap` exchanges and returns the old value. `+=`, `++` and computed right-hand sides are rejected,
 // because a read-modify-write is not one atomic step. (`swap` is an exchange, not a compare-and-swap.)
+// Every use of an atomic outside a lock is `unsafe atomic{...}`: the compiler cannot check that a program built
+// from separate atomic steps is correct, so each use is marked for review. Shared state that is not a bare flag
+// belongs in a lock struct (below), touched through `match @lock`.
 let static flag = mut atomic 0
 let static doneA = mut atomic false
 let static doneB = mut atomic false
@@ -47,37 +50,78 @@ impl default match @lock Counter{
 	}
 }
 
+let static held = mut atomic false
+let static release = mut atomic false
+let static doneH = mut atomic false
+
+// Takes the lock and keeps it until main has seen it refuse, then lets go.
+@async
+func holder() void{
+	match @lock counter{
+		OPEN:{
+			unsafe atomic{ held = true }
+			for i in 0..100000000{
+				let r = mut false
+				unsafe atomic{ r = mut release }
+				if r{ break }
+				yield
+			}
+		}
+		CLOSED:{ continue }
+	}
+	unsafe atomic{ doneH = true }
+}
+
 @async
 func workerA() void{
 	for i in 0..100000{ bump() }
-	doneA = true
+	unsafe atomic{ doneA = true }
 }
 @async
 func workerB() void{
 	for i in 0..100000{ bump() }
-	doneB = true
+	unsafe atomic{ doneB = true }
 }
 @async
 func triple(x: mut u64) mut u64{ return x * 3 }
 
 func main() void{
 	?catch(e){ return }
-	let old = mut (flag swap 5)
-	let again = mut (flag swap 7)
-	let cur = mut flag
-	flag = 9
-	unsafe extern{ printf("swap: old=%llu again=%llu cur=%llu now=%llu\n", old, again, cur, flag) }
+	let old = mut 0
+	let again = mut 0
+	let cur = mut 0
+	let now = mut 0
+	unsafe atomic{
+		old = mut (flag swap 5)
+		again = mut (flag swap 7)
+		cur = mut flag
+		flag = 9
+		now = mut flag
+	}
+	unsafe extern{ printf("swap: old=%llu again=%llu cur=%llu now=%llu\n", old, again, cur, now) }
 
 	unsafe extern{ printf("backoff: ") }
+	? par holder()                               // a thread that holds `counter` until `release` is set
+	for i in 0..100000000{
+		let h = mut false
+		unsafe atomic{ h = mut held }
+		if h{ break }
+		yield
+	}
 	match @lock counter{
-		OPEN:{
-			counter.n += 1
-			match @lock counter{                 // already held, so this can only see CLOSED
-				OPEN:{ counter.n += 100 }
-				CLOSED:default(3)                // run the policy with limit 3
-			}
-		}
-		CLOSED:{ break }
+		OPEN:{ counter.n += 100 }
+		CLOSED:default(3)                        // held by the other thread: run the policy, limit 3
+	}
+	unsafe atomic{ release = true }
+	for i in 0..100000000{
+		let d = mut false
+		unsafe atomic{ d = mut doneH }
+		if d{ break }
+		yield
+	}
+	match @lock counter{
+		OPEN:{ counter.n += 1 }
+		CLOSED:{ continue }
 	}
 	match @lock counter{
 		OPEN:{
@@ -91,8 +135,12 @@ func main() void{
 	? par workerA()
 	? par workerB()
 	for i in 0..100000000{
-		let a = mut doneA
-		let b = mut doneB
+		let a = mut false
+		let b = mut false
+		unsafe atomic{
+			a = mut doneA
+			b = mut doneB
+		}
 		if a && b{ break }
 		yield
 	}

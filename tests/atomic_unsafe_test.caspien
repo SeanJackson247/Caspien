@@ -1,0 +1,38 @@
+// An atomic is read, written and swapped only inside `unsafe atomic{...}`; a lock struct next to it is used from safe code.
+// Expected: PASS atomic_unsafe_test
+import "../stdlib/libc.caspien"
+
+enum Gate{ OPEN, CLOSED }
+
+@lock(match self.gate : OPEN)
+struct Counter{@pub{
+	swap gate: atomic mut Gate
+	n: mut u64
+}}
+
+let static flag = mut atomic 0
+let static counter = mut Counter{gate= Gate.OPEN, n= mut 0}
+
+func main() void{
+	let old = mut 0
+	let cur = mut 0
+	unsafe atomic{
+		old = mut (flag swap 5)
+		flag = 9
+		cur = mut flag
+	}
+	match @lock counter{
+		OPEN:{ counter.n += 3 }
+		CLOSED:{ continue }
+	}
+	let n = mut 0
+	match @lock counter{
+		OPEN:{ n = counter.n }
+		CLOSED:{ continue }
+	}
+	if old == 0 && cur == 9 && n == 3{
+		unsafe extern{ printf("PASS atomic_unsafe_test\n") }
+	} else{
+		unsafe extern{ printf("FAIL atomic_unsafe_test %llu %llu %llu\n", old, cur, n) }
+	}
+}

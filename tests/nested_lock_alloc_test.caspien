@@ -1,0 +1,60 @@
+// The ban on nested locks exempts the ghost table's own lock: allocation, `match Some` and drops inside a held lock still work, and two locks taken one
+// after the other (not nested) are fine. Expected: PASS nested_lock_alloc_test
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+
+enum Gate{ OPEN, CLOSED }
+
+@lock(match self.gate : OPEN)
+struct Counter{@pub{
+	swap gate: atomic mut Gate
+	n: mut u64
+}}
+
+struct Cell{@pub{
+	v: mut u64
+}}
+
+let static a = mut Counter{gate= Gate.OPEN, n= mut 0}
+let static b = mut Counter{gate= Gate.OPEN, n= mut 0}
+
+func work(x: mut u64) mut u64{
+	?catch(e){ return 0 }
+	let c = mut ? new Cell{v= x}              // allocation inside a held lock (ghost table lock)
+	let d = mut ? dyn([x, x + 1])             // a dynarray too
+	let r = mut 0
+	match Some(c){ r += c.v }                 // liveness check
+	match 1 in d{ r += d[1] }
+	return r                                  // c and d are dropped here, still inside the lock
+}
+
+func main() void{
+	?catch(e){ return }
+	match @lock a{
+		OPEN:{ a.n = work(10) }
+		CLOSED:{ break }
+	}
+	match @lock b{
+		OPEN:{ b.n = work(20) }
+		CLOSED:{ break }
+	}
+	let ra = mut 0
+	let rb = mut 0
+	match @lock a{
+		OPEN:{ ra = a.n }
+		CLOSED:{ break }
+	}
+	match @lock b{
+		OPEN:{ rb = b.n }
+		CLOSED:{ break }
+	}
+	if ra == 21 && rb == 41{
+		unsafe extern{ printf("PASS nested_lock_alloc_test\n") }
+	} else{
+		unsafe extern{ printf("FAIL nested_lock_alloc_test %llu %llu\n", ra, rb) }
+	}
+}

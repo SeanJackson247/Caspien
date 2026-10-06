@@ -27,7 +27,8 @@ let static k = mut atomic 0
 
 @async
 func worker(id: mut u64) void{
-	let rounds = mut k
+	let rounds = mut 0
+	unsafe atomic{ rounds = mut k }
 	for i in 0..rounds{
 		match @lock shared{
 			OPEN:{
@@ -46,7 +47,7 @@ func main() void{
 	}
 	let rounds = mut 0
 	unsafe extern{ rounds = atol(getenv("SWAPLOCK_K")) }
-	k = rounds
+	unsafe atomic{ k = rounds }
 	? par worker(mut 0)
 	? par worker(mut 1)
 	? par worker(mut 2)

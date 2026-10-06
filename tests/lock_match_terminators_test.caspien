@@ -24,7 +24,7 @@ func localTest() void{
 // continue = retry: three failed attempts, then the lock is freed and the fourth succeeds
 func retryTest() void{
 	let static m = mut Mtx{lockState= St.OPEN, n= mut 0}
-	unsafe swap{ m.lockState swap St.CLOSED }
+	unsafe atomic{ m.lockState swap St.CLOSED }
 	let tries = mut 0
 	match @lock m{
 		OPEN:{
@@ -33,7 +33,7 @@ func retryTest() void{
 		CLOSED:{
 			tries++
 			if tries == 3{
-				unsafe swap{ m.lockState swap St.OPEN }
+				unsafe atomic{ m.lockState swap St.OPEN }
 			}
 			continue
 		}
@@ -43,7 +43,7 @@ func retryTest() void{
 // break = give up: the lock is never taken, execution continues after the match
 func giveUpTest() void{
 	let static m = mut Mtx{lockState= St.OPEN, n= mut 0}
-	unsafe swap{ m.lockState swap St.CLOSED }
+	unsafe atomic{ m.lockState swap St.CLOSED }
 	match @lock m{
 		OPEN:{
 			unsafe extern{ printf("giveup: WRONG, got lock\n") }
@@ -58,7 +58,7 @@ func giveUpTest() void{
 // return from CLOSED
 func returnTest() mut u64{
 	let static m = mut Mtx{lockState= St.OPEN, n= mut 0}
-	unsafe swap{ m.lockState swap St.CLOSED }
+	unsafe atomic{ m.lockState swap St.CLOSED }
 	match @lock m{
 		OPEN:{
 			return 1
@@ -73,7 +73,7 @@ func returnTest() mut u64{
 // mixed paths: each branch ends in a different terminator
 func mixedTest() mut u64{
 	let static m = mut Mtx{lockState= St.OPEN, n= mut 7}
-	unsafe swap{ m.lockState swap St.CLOSED }
+	unsafe atomic{ m.lockState swap St.CLOSED }
 	let k = mut 0
 	match @lock m{
 		OPEN:{

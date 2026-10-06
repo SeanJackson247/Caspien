@@ -235,7 +235,7 @@ func hyp(a: mut u64, b: mut u64) mut u64{
 
 A `@pure` function may call only other `@pure` functions. It may not call an extern or a function pointer,
 read a `mut` global, write through any pointer, `throw`, contain an `unsafe` block (so no `asm`, `memcopy`,
-`swap` or unsafe dynarrays), use `match @lock` (acquiring the lock writes the mutex and blocks), or start or wait
+`atomic` or unsafe dynarrays), use `match @lock` (acquiring the lock writes the mutex and blocks), or start or wait
 on a thread (`par`, `await`, `@par` loops). Local variables, arithmetic and `for` loops are fine.
 
 ```
@@ -1000,7 +1000,7 @@ A statement-level `unsafe` block must say why it is unsafe, by naming the reason
 `unsafe assume extern{`. The reasons are `extern` (a C call), `memcopy`, `raw` (making a `raw` pointer),
 `deref` and `clone` (dereferencing or cloning a `raw` pointer), `global`, `loop`, `udyn` (an unsafe dynarray of plain data) or `udyn:owns` (an unsafe dynarray whose elements own memory: the compiler only frees the block, so you destruct the elements yourself before shrinking or leaving scope), `assume` (`assume match`),
 `call` (calling a function pointer), `asm`, `async` (a pointer across an `@async` boundary), `guard` (using a
-`@guard` type without proving it locked), `swap` (touching a `swap` mutex field outside `match @lock`) and `file` (opening a path the build's file policy has not vouched for, see 2.6). The
+`@guard` type without proving it locked), `atomic` (using an atomic, or touching a `swap` mutex field, outside `match @lock`) and `file` (opening a path the build's file policy has not vouched for, see 2.6). The
 compiler checks the list both ways: a block that needs a reason it does not name is an error, and so is a block
 that names one it does not need, so the line is also what you grep for. A bare `unsafe{}` is an error. The one exception is `unsafe unaudited{`: it stands for every tag at once and says nothing about why, for code nobody has audited yet. It is written alone, is just as easy to grep for, and the standard library may never use it (the compiler refuses it in any file under `stdlib/`). (A
 root-level `unsafe{}` that holds declarations is not a statement block and takes no list.)
@@ -1043,7 +1043,7 @@ unsafe global guard{                                        // guard: a bare @lo
 	counter += 8
 	gate.unlock()
 }
-unsafe swap{ m.lockState swap St.CLOSED }                   // swap: touch a swap mutex's state field by hand
+unsafe atomic{ m.lockState swap St.CLOSED }                   // atomic: touch an atomic by hand: a swap mutex's state field, or a bare atomic variable
 unsafe unaudited{ counter = mut deref(pc) }                  // unaudited: any of the above, no reasons given (never in the stdlib)
 ```
 
@@ -1323,15 +1323,21 @@ call to 'f', which is decorated '@throws', must be wrapped in 'try ... catch { .
 #### Atomics, locks and threads
 
 **Atomics.** `atomic` makes a global or `let static` integer, `bool` or `char` that threads may share
-(floats and pointers cannot be atomic). Safe code reads and writes it without `unsafe`, and each read or
-plain write is one instruction. `swap` exchanges a new value for the old one and returns the old:
+(floats and pointers cannot be atomic). Each read or plain write is one instruction, and `swap` exchanges a
+new value for the old one and returns the old. **Every use of an atomic outside a lock is `unsafe atomic{...}`**:
+a program built from separate atomic steps can be wrong in ways the compiler cannot check, so each use is marked
+for review, and shared state in safe code belongs in a lock (below).
 
 ```rust
 let static flag = mut atomic 0
 
-let old = mut (flag swap 5)       // old = 0, flag = 5
-let cur = mut flag                // a plain read
-flag = 9                          // a plain write
+let old = mut 0
+let cur = mut 0
+unsafe atomic{
+	old = mut (flag swap 5)       // old = 0, flag = 5
+	cur = mut flag                // a plain read
+	flag = 9                      // a plain write
+}
 ```
 
 `swap`, and `=`, accept only a variable, a literal or an `Enum.Variant` on the right. `+=`, `++` and a
@@ -1339,6 +1345,11 @@ computed right side (`c = c + 1`, `c swap (c + 1)`) are rejected, because a read
 atomic step and the compiler will not let it look like one. Binding the computed value to a `let` first
 satisfies the rule and is still a race. `swap` is an exchange and not a compare-and-swap, so an atomic is for
 flags and hand-offs. A shared counter belongs in a lock.
+
+**What the guarantee is.** Atomics and locks give *data-race freedom*: every shared access is atomic or under a lock, so there are no torn values and no
+undefined behaviour. They do not give freedom from *race conditions* or from deadlock, which are properties of what the program does with them: two
+critical sections that read and then write a value lose updates just as two atomic steps do. What the language does is make every place where threads
+share state visible: a lock struct touched through `match @lock`, or an `unsafe atomic{...}` block that `--audit` lists. Locks cannot be nested (see below).
 
 **Locks.** A spin lock is the `swap` form of the locked structs described under *Locks and proofs on your own
 types*: a struct field written `swap`, of an enum with exactly the variants `OPEN` and `CLOSED`, and it must be
@@ -1369,6 +1380,13 @@ the end of the block, `return`, `break`, or a `throw`. `CLOSED` is where the loc
 else, and it must end every path in `continue` (retry), `break` (give up and carry on without the lock),
 `return` or `throw`. Falling off the end is an error. Outside `OPEN`, touching `n` is rejected:
 `'n' requires a 'match c.gate{...}' proof first ... or take the lock: 'match @lock c{ ... }'`.
+
+**Locks cannot be nested.** While a lock is held (the `OPEN` case of `match @lock`, or the body of a `lock x{}` block) nothing may take another one,
+neither in the same function nor in any function it calls, however deep: the compiler rejects it and names the call chain. The lock records no owner, so taking
+the same lock again can never succeed, and two different locks taken in opposite orders by two threads deadlock; the language has no lock order, so there is no
+safe nesting to allow. Take locks one after the other, or put what must change together under one lock. The one exemption is the standard library's own lock
+inside the ghost table, which every allocation, `match Some` and drop takes: it is always innermost and never calls your code, so `new`, `dyn` and friends work
+inside a held lock. A `call()` through a function pointer is not followed (it is `unsafe`).
 
 A policy gives the `CLOSED` case a backoff. It is declared once for the type, and `tries` counts attempts
 from 1:
@@ -1420,7 +1438,7 @@ for i in 0..100000000{
 let r = mut h:resolve()
 ```
 
-Threads share data only through atomics and locks: `16_atomics_and_locks` runs two threads that each take
+Safe code shares data between threads only through locks (an atomic flag needs `unsafe atomic{}`): `16_atomics_and_locks` runs two threads that each take
 a lock 100,000 times and ends with the exact count, and uses an atomic flag per worker to know that they
 finished.
 
