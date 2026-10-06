@@ -597,14 +597,26 @@ hardware, optimiser switches or target. Rules:
   brackets. Sizes: `new T` = the struct size (hidden class id and padding included); a safe dynarray = 16 (header) + elements * element size (`dyn([..])` literal count, `dyn("text")`
   text length, `resize` with a literal count: the whole new block); an unsafe dynarray = elements * element size (at least 1); `clone` = the block plus every owned block below it.
   A size only known at run time (a `resize` to a variable count, a clone of a dynarray, `dyn` of a non-literal text) adds its fixed part and marks the function UNBOUNDED with the
-  reason (`>= N bytes`); so does a loop that allocates and has a non-literal bound (one that allocates nothing does not). Frees are NOT credited, so for code that allocates and frees
-  in a loop the figure is the total requested, an upper bound on the peak live heap rather than the peak itself. Not counted: the ghost table's own growth, the allocator's per-block
+  reason (`>= N bytes`); so does a loop that allocates and has a non-literal bound (one that allocates nothing does not). Frees are NOT credited in this section, so for code that allocates and frees
+  in a loop the figure is the total requested, an upper bound on the peak live heap rather than the peak itself (the next bullet credits them). Not counted: the ghost table's own growth, the allocator's per-block
   overhead and rounding, library `malloc`s outside Caspien code.
 
 - **Event loops**: in a program with an `@event_loop` function the loop itself is boilerplate whose `loop{}` is unbounded by design, so it is NOT analysed or listed. The roots of
   every section are the slices instead: the `@with_tick` `main` and the `@tick` function (header `# event loop:` with one line per slice: gas, stack, heap). A slice's stack figure
   includes the event loop's own frame, which it runs below. A tick's heap figure is per call.
 
+- **Peak live heap** (`# peak live heap`): the most bytes that can be live at the same time during one run, per function with its callees, and `leaves` = the bytes still live
+  when it returns (a block it hands back, or one it cannot show was freed). Computed on the same path walk with a pair (net change, peak) per path (sequence: peak = max(a.peak,
+  a.net + b.peak); a loop of N iterations: peak = (N-1) * net + the body's peak; a branch: componentwise maximum). Allocations are charged when they succeed (the label after the null
+  check: a failed allocation holds no block); every `resize` counts as a moving realloc, so the peak sees the old and the new block together. Frees are credited by a must-analysis over the
+  function (`analyzeCredits`): an owned local or parameter assigned from an allocation of known size, from another owned slot (a move) or from a call that returns an owned block of known size
+  releases exactly those bytes at its `GT_DESTRUCT`, at a `resize` of it, or when it is moved into a callee that destructs that parameter on every exit path (the caller credits the bytes it
+  knows; the callee credits nothing for a parameter). Every path reaching a free must agree on the block (join = minimum), so a block moved on one path only, moved into a struct member (the
+  struct's own free credits only the struct, not what it owns) or handed to code that is not followed is NOT credited: the figure stays an upper bound, and `leaves` can be too high. A catch
+  block / landing pad is analysed separately for each edge that enters it (what is live differs per edge), and the callee that unwinds also frees the arguments moved into it. Paths that
+  end in a throw or exit add to the peak but leave nothing for the caller. A loop whose body grows the live heap and has a non-literal bound is UNBOUNDED (`>=`), one that frees what it allocates
+  is not. Threads are separate roots; a `par` thread's blocks are not added to its starter's figure.
+
 Tests: `tests/gas_check.sh` compares gas, heap bytes, allocation count and stack of every function in 25 programs (including the slice lines of `09_event_loop`) (`tests/gas_test.caspien`, `tests/heap_gas_test.caspien`, the docs examples) with
 `tests/gas_model.py`, an exhaustive path search over the bytecode (heap: the same path search with the byte cost of each allocation worked out separately in the model; unbounded iff the figure changes when the loop bound goes from 1 to 2 or a size is not a literal);
-`tests/stack_check.sh` calibrates the frame estimate against real frames. `CASPIEN_AUDIT_ALL=1` lifts the 40-line limit of each section.
+`tests/stack_check.sh` calibrates the frame estimate against real frames. `tests/heap_live_check.sh` checks the peak live heap against the real allocator: one variant of `tests/heap_live_test.caspien` per allocation shape is run under `tests/alloc_shim.c` (peak of live bytes, `PEAK=`) and must equal the audit; `tests/heap_live_sweep_check.py` runs every test and example program under the shim and requires its measured peak never to exceed the audited figure for `main`. `CASPIEN_AUDIT_ALL=1` lifts the 40-line limit of each section.
