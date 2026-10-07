@@ -1032,12 +1032,17 @@ public class X86Backend {
                 String name = line.get(1).text;
                 long size = Long.parseLong(line.get(2).text);
                 int dot = name.lastIndexOf('.');
-                if (dot >= 0 && plainGlobalNames.contains(name.substring(0, dot)) && !globalAliasOffset.containsKey(name)) {
-                    String parent = name.substring(0, dot);
-                    long offset = parentRunningOffset.getOrDefault(parent, 0L);
+                String direct = dot >= 0 ? name.substring(0, dot) : null;
+                // A nested member ("b.0.x" of a static array of structs) has an already-aliased direct parent ("b.0"): it lives in the ROOT
+                // global at (parent's offset + running offset inside the parent). Before, only a plain parent was aliased, so the members of
+                // every struct element kept their own stray storage and the array itself was emitted zeroed.
+                if (direct != null && (plainGlobalNames.contains(direct) || globalAliasOffset.containsKey(direct)) && !globalAliasOffset.containsKey(name)) {
+                    boolean nested = globalAliasOffset.containsKey(direct);
+                    String parent = nested ? globalAliasParent.get(direct) : direct;
+                    long offset = (nested ? globalAliasOffset.get(direct) : 0L) + parentRunningOffset.getOrDefault(direct, 0L);
                     globalAliasOffset.put(name, offset);
                     globalAliasParent.put(name, parent);
-                    parentRunningOffset.put(parent, offset + size);
+                    parentRunningOffset.put(direct, parentRunningOffset.getOrDefault(direct, 0L) + size);
                     if (line.size() >= 4) {
                         // The element's own initial value (a static array
                         // literal's elements arrive as "GLOBAL a.0 4 1.5" ...)
