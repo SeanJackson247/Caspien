@@ -2260,6 +2260,18 @@ public class X86Backend {
         // PUSH, e.g. an index or a field offset).
         long pendingBlockSize = lastValueBlockSize;
         lastValueBlockSize = 0;
+        // A pending value tag survives ONE intervening PUSH of a word (the index of `PUSH arr; PUSH idx; LOOKUP_ARRAY`), not two: in
+        // `z + d[i].a` the small `PUSH 4 z` before `PUSH 8 d; PUSH 8 i` used to tag the pointer lookup as an in-register small array (a float
+        // sum silently kept its old value with the register-form passes off). A word PUSH that passed a tag on is remembered; a second
+        // PUSH right after it drops the tag.
+        if (first.equals("PUSH") && line.size() > 1 && line.get(1).text.matches("\\d+")) {
+            if (pendingBlockSize != 0 && pushedWordWithTag) {
+                pendingBlockSize = 0;
+            }
+            pushedWordWithTag = pendingBlockSize != 0 && line.get(1).text.equals("8");
+        } else {
+            pushedWordWithTag = false;
+        }
 
         String mnemonic = first;
         if (mnemonic.equals("ASM_START")) {
@@ -3600,15 +3612,30 @@ public class X86Backend {
                 // value's own total byte size.
                 int size = (int) Long.parseLong(line.get(1).text);
                 if (pendingBlockSize <= 0) {
-                    // Never observed in any fixture this pass was
-                    // checked against (every real DOT read this pass was
-                    // checked against was chained after a pushed value,
-                    // never a bare address) -- flagged rather than
-                    // guessed at.
-                    comment("TODO(codegen): DOT with no preceding pushed value not yet implemented -- pushing 0 as a placeholder");
-                    popReg("rbx"); // discard field offset
-                    movImmToReg("rax", 0);
+                    // The containing value is a struct of at most 8 bytes held BY VALUE in one natural-order word (tagged negative by PUSH / DEREF,
+                    // or untagged: an element read through a pointer base is just loaded): the field is a shift and a mask, no address. (This used to fall into the placeholder below, which
+                    // silently read 0: `d[i].a0` on an unsafe dynarray of a 3-byte struct with the register-form passes off.)
+                    boolean fieldIsSmallArrayV = line.size() > 2 && line.get(2).text.equals("ra");
+                    popReg("rbx"); // field offset in bytes
+                    popReg("rax"); // the whole value
+                    raw("    pushq %rcx");   // %rcx is the shift count and may hold an already-popped call argument
+                    raw("    movq %rbx, %rcx");
+                    raw("    shlq $3, %rcx");
+                    raw("    shrq %cl, %rax");
+                    raw("    popq %rcx");
+                    if (size < 8) {
+                        if (isOddSize(size)) {
+                            int sh = 64 - size * 8;
+                            raw("    shlq $" + sh + ", %rax");
+                            raw("    shrq $" + sh + ", %rax");
+                        } else {
+                            raw(size == 4 ? "    movl %eax, %eax" : size == 2 ? "    movzwl %ax, %eax" : "    movzbl %al, %eax");
+                        }
+                    }
                     pushReg("rax");
+                    if (fieldIsSmallArrayV) {
+                        lastValueBlockSize = -size;
+                    }
                     return;
                 }
                 long totalWords = (pendingBlockSize + 7) / 8;
@@ -5421,6 +5448,7 @@ public class X86Backend {
     private boolean lastWasCmp = false;
     /** See the "value-block" handling threaded through PUSH/LOOKUP_ARRAY/DOT: the byte size of a multi-word value most recently pushed *by value* (as opposed to by address), still sitting on top of the real stack, for a following LOOKUP_ARRAY/DOT to extract a sub-range from -- 0 means "no pending value-block; use the ordinary address-based path." */
     private long lastValueBlockSize = 0;
+    private boolean pushedWordWithTag = false; // the previous line was an 8-byte PUSH that passed a pending value tag on (see the line emitter prologue)
     private String currentFuncName;
     private int internalLabelCounter = 0;
 
@@ -6396,17 +6424,37 @@ public class X86Backend {
         throw new IllegalStateException("malformed indexed base " + baseTok);
     }
 
+    private static boolean rfHwScale(long s) {
+        return s == 1 || s == 2 || s == 4 || s == 8;
+    }
+
+    /**
+     * Index register + scale of an indexed access. A hardware scale (1/2/4/8) is used as it is; any other stride (a struct element: 24, 56 ...)
+     * is multiplied into the scratch register first (`imulq $scale, %idx, %r15`, the variable is not touched) and the operand becomes
+     * `disp(%base,%r15,1)`. The base of such an access must not be a global (a global base address already needs the scratch register).
+     */
+    private void rfSetIndex(String baseTok, String idxTok, long scale) {
+        if (rfHwScale(scale)) {
+            rfIdxReg = rfReg(idxTok);
+            rfIdxScale = scale;
+            return;
+        }
+        if (rfIsGlobal(baseTok) || scale <= 0 || !rfFitsImm32(scale)) {
+            throw new IllegalStateException("malformed indexed access (stride " + scale + ", base " + baseTok + ")");
+        }
+        raw("    imulq $" + scale + ", %" + rfReg(idxTok) + ", %" + RF_SCRATCH);
+        rfIdxReg = RF_SCRATCH;
+        rfIdxScale = 1;
+    }
+
     private void rfLoadIndexed(int n, String dstTok, String baseTok, String idxTok, long scale, long disp) {
-        if (!(n == 1 || n == 2 || n == 4 || n == 8) || !rfIsVar(idxTok)
-                || !(scale == 1 || scale == 2 || scale == 4 || scale == 8)) {
+        if (!(n == 1 || n == 2 || n == 4 || n == 8) || !rfIsVar(idxTok)) {
             throw new IllegalStateException("malformed R_LDI");
         }
         String d = rfReg(dstTok);
-        String x = rfReg(idxTok);
         String b = rfIndexedBase(baseTok, d);
         rfIdxDisp += disp;
-        rfIdxReg = x;
-        rfIdxScale = scale;
+        rfSetIndex(baseTok, idxTok, scale);
         try {
             loadSizedFromAddr(d, b, n);
         } finally {
@@ -6416,14 +6464,12 @@ public class X86Backend {
     }
 
     private void rfStoreIndexed(int n, String baseTok, String idxTok, long scale, String srcTok, long disp) {
-        if (!(n == 1 || n == 2 || n == 4 || n == 8) || !rfIsVar(idxTok)
-                || !(scale == 1 || scale == 2 || scale == 4 || scale == 8)) {
+        if (!(n == 1 || n == 2 || n == 4 || n == 8) || !rfIsVar(idxTok)) {
             throw new IllegalStateException("malformed R_STI");
         }
         String b = rfIndexedBase(baseTok, RF_SCRATCH);
         rfIdxDisp += disp;
-        rfIdxReg = rfReg(idxTok);
-        rfIdxScale = scale;
+        rfSetIndex(baseTok, idxTok, scale);
         try {
             if (rfIsImm(srcTok)) {
                 long v = rfTrunc(rfImm(srcTok), n);
@@ -6440,13 +6486,12 @@ public class X86Backend {
 
     /** xmm register = the float at global + index*scale (R_LDXI): the base address goes through the scratch register. */
     private void rfLoadXIndexed(int n, String xTok, String baseTok, String idxTok, long scale, long disp) {
-        if (!(n == 4 || n == 8) || scale != n || !rfIsVar(idxTok)) {
+        if (!(n == 4 || n == 8) || (rfHwScale(scale) && scale != n) || !rfIsVar(idxTok)) {
             throw new IllegalStateException("malformed R_LDXI");
         }
         String b = rfIndexedBase(baseTok, RF_SCRATCH);
         rfIdxDisp += disp;
-        rfIdxReg = rfReg(idxTok);
-        rfIdxScale = scale;
+        rfSetIndex(baseTok, idxTok, scale);
         try {
             String mem = (rfMemOperand(b));
             String mn = n == 8 ? "movsd" : "movss";
@@ -6460,13 +6505,12 @@ public class X86Backend {
 
     /** the float in an xmm register stored at base + index*scale (R_STXI). */
     private void rfStoreXIndexed(int n, String baseTok, String idxTok, long scale, String xTok, long disp) {
-        if (!(n == 4 || n == 8) || scale != n || !rfIsVar(idxTok)) {
+        if (!(n == 4 || n == 8) || (rfHwScale(scale) && scale != n) || !rfIsVar(idxTok)) {
             throw new IllegalStateException("malformed R_STXI");
         }
         String b = rfIndexedBase(baseTok, RF_SCRATCH);
         rfIdxDisp += disp;
-        rfIdxReg = rfReg(idxTok);
-        rfIdxScale = scale;
+        rfSetIndex(baseTok, idxTok, scale);
         try {
             String mem = (rfMemOperand(b));
             String mn = n == 8 ? "movsd" : "movss";

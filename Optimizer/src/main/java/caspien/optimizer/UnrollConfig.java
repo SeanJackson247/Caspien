@@ -18,6 +18,9 @@ import java.util.List;
  *   loop-unroll-full-max-trips: N         fully unroll a loop of at most N known iterations (0 = never full)
  *   loop-unroll-max-body-lines: N         never copy a loop body longer than N bytecode lines
  *   loop-unroll-max-growth: N             at most N added bytecode lines per function, over the whole run
+ *   loop-unroll-nested: on | off          a fully unrolled loop whose body holds another loop still gets its induction variable replaced by
+ *                                         the literal in each copy (default off): the inner loop's bounds then fold to literals and the
+ *                                         usual budgets decide whether it unrolls too; array indexes become constant displacements
  *
  * The preset supplies all four numbers; any of the four keys after it overrides just that number. The four
  * keys do nothing while the preset is off. A malformed value stops the compile (never silently ignored).
@@ -30,6 +33,8 @@ public final class UnrollConfig {
     public int fullMaxTrips = 0;
     public int maxBodyLines = 0;
     public long maxGrowth = 0;
+    /** substitute the induction variable into a body that holds a nested loop (acts only with the preset on; an @unroll loop does it regardless) */
+    public boolean nested = false;
 
     public static UnrollConfig disabled() {
         return new UnrollConfig();
@@ -52,6 +57,7 @@ public final class UnrollConfig {
         String preset = "off";
         Integer factor = null, fullTrips = null, bodyLines = null;
         Long growth = null;
+        boolean nestedOn = false;
         for (int n = 0; n < lines.size(); n++) {
             String raw = lines.get(n);
             int hash = raw.indexOf('#');
@@ -90,6 +96,12 @@ public final class UnrollConfig {
                 case "loop-unroll-max-growth":
                     growth = number(path, n, key, val);
                     break;
+                case "loop-unroll-nested":
+                    if (!val.equals("on") && !val.equals("off")) {
+                        throw bad(path, n, "'loop-unroll-nested' must be 'on' or 'off', found '" + val + "'");
+                    }
+                    nestedOn = val.equals("on");
+                    break;
                 default:
                     break;
             }
@@ -110,6 +122,7 @@ public final class UnrollConfig {
                 return c; // off: the four numbers are ignored
         }
         c.enabled = true;
+        c.nested = nestedOn;
         if (factor != null) c.factor = factor;
         if (fullTrips != null) c.fullMaxTrips = fullTrips;
         if (bodyLines != null) c.maxBodyLines = bodyLines;

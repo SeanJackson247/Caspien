@@ -425,7 +425,7 @@ public class LoopUnrollingPass implements OptimizationPass {
             // When the body only READS the induction variable (every mention is a plain "PUSH var type"), copy c gets the literal
             // lo+c in its place and the increments between copies go: the variable is a constant in each copy, so the folding passes
             // can see through "i * 8", "bits >> i" and the like. The variable is dead after the loop (it is scoped to it).
-            boolean subst = onlyReadsVar(body, lp, lp.forced);
+            boolean subst = onlyReadsVar(body, lp, lp.forced || cfg.nested);
             for (long c = 0; c < n; c++) {
                 List<List<BytecodeToken>> copy = c == 0 ? body : freshCopy(body);
                 out.addAll(subst ? substVar(copy, lp, lp.lo + c) : copy);
@@ -538,8 +538,8 @@ public class LoopUnrollingPass implements OptimizationPass {
 
     /** True when every mention of the loop variable in the body is a plain "PUSH var vt" that is not directly followed by ADDR_OF. */
     private static boolean onlyReadsVar(List<List<BytecodeToken>> body, Loop lp, boolean nestedOk) {
-        // Innermost loops only: substituting a literal into a body that holds another loop would give that loop literal bounds, and the
-        // nested full unrolling that follows multiplies the code (n-body: 2.5x the code). Range proofs on the literal are folded away by ConstantFoldingPass (`IN`).
+        // Innermost loops only unless `nestedOk` (@unroll, or `loop-unroll-nested: on`): substituting a literal into a body that holds another loop
+        // gives that loop literal bounds, and the nested full unrolling that follows multiplies the code (n-body: 2.5x the code). Range proofs on the literal are folded away by ConstantFoldingPass (`IN`).
         for (List<BytecodeToken> l : body) {
             if (!nestedOk && l.size() == 1 && (l.get(0).text.startsWith("@for_") || l.get(0).text.startsWith("@fu_"))) return false;
         }

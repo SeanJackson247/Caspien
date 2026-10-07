@@ -1859,6 +1859,7 @@ and off.
 | `conditional-move` | on, off | Conditional moves: a simple select (`if c { x = k }` or `if c { x = a } else { x = b }` on a register variable) becomes a compare and a `cmov` instead of a branch. Needs `deferred-operands: on`. |
 | `function-inlining` | off, conservative, balanced, aggressive | Replaces calls with the callee's body. Tunable with `inline-max-callee-lines`, `inline-max-depth`, `inline-max-growth`, `inline-max-multi-callee-lines` (a big callee with several call sites stays a call). |
 | `loop-unrolling` | off, conservative, balanced, aggressive | Unrolls `for` loops with literal bounds. Tunable with the `loop-unroll-*` keys. |
+| `loop-unroll-nested` | on, off | A fully unrolled loop whose body holds another loop gets its loop variable replaced by the literal in each copy (as `@unroll` does), so the inner loop's bounds and the array indexes fold to constants. |
 | `constant-folding` | on, off | Folds operators whose operands are literals. |
 | `variable-elision` | on, off | Replaces a variable assigned once to a literal with the literal. |
 | `variable-shifting` | on, off | Gives each reassignment its own variable so elision can apply. |
@@ -1893,6 +1894,7 @@ loop-rotation: on
 copy-forward: on
 conditional-move: on
 loop-unrolling: aggressive
+loop-unroll-nested: on
 function-inlining: aggressive
 constant-folding: on
 variable-elision: on

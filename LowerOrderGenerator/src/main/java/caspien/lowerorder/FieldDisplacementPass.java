@@ -82,7 +82,8 @@ public class FieldDisplacementPass {
             long k = Long.parseLong(t(l, 3).substring(1));
             long scale = Long.parseLong(t(l, 4));
             long extra = l.size() == 6 ? Long.parseLong(t(l, 5)) : 0L;
-            if (!(scale == 1 || scale == 2 || scale == 4 || scale == 8)) {
+            // the index is an immediate, so the stride only multiplies it (any positive stride: a struct element of 24, 56 ... bytes)
+            if (scale <= 0 || k < 0 || k > Integer.MAX_VALUE) {
                 return Long.MIN_VALUE;
             }
             long d = k * scale + extra;

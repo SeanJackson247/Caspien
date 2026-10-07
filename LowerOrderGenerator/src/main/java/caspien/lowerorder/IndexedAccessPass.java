@@ -88,7 +88,28 @@ public class IndexedAccessPass {
             return false;
         }
         String s = t(l, 4);
+        if (isHwScale(s)) {
+            return true;
+        }
+        // any other stride (a struct element: 56, 24, 32 ...): the backend multiplies the index into the scratch register, so the base must not
+        // need that register itself (no global) and the displacement must fit
+        return !b.startsWith("&") && isPositiveInt(s) && Long.parseLong(s) <= Integer.MAX_VALUE;
+    }
+
+    private static boolean isHwScale(String s) {
         return s.equals("8") || s.equals("4") || s.equals("2") || s.equals("1");
+    }
+
+    private static boolean isPositiveInt(String s) {
+        if (s.isEmpty() || s.length() > 10) {
+            return false;
+        }
+        for (int i = 0; i < s.length(); i++) {
+            if (s.charAt(i) < '0' || s.charAt(i) > '9') {
+                return false;
+            }
+        }
+        return Long.parseLong(s) > 0;
     }
 
     /** the fused line for consumer l of the address in x, or null */
@@ -99,7 +120,7 @@ public class IndexedAccessPass {
         BytecodeToken h = l.get(0);
         List<BytecodeToken> n = new ArrayList<>();
         // float element (f32: scale 4, f64: scale 8): the access width must equal the scale
-        if (t(l, 0).equals("R_LDX") && t(l, 1).equals(t(lea, 4)) && isXmm(t(l, 2)) && t(l, 3).equals(x)) {
+        if (t(l, 0).equals("R_LDX") && floatWidthOk(t(l, 1), t(lea, 4)) && isXmm(t(l, 2)) && t(l, 3).equals(x)) {
             n.add(new BytecodeToken("R_LDXI", h.file, h.line, h.kind));
             n.add(l.get(1));
             n.add(l.get(2));
@@ -109,7 +130,7 @@ public class IndexedAccessPass {
             addDisp(n, lea);
             return n;
         }
-        if (t(l, 0).equals("R_STX") && t(l, 1).equals(t(lea, 4)) && t(l, 2).equals(x) && isXmm(t(l, 3))) {
+        if (t(l, 0).equals("R_STX") && floatWidthOk(t(l, 1), t(lea, 4)) && t(l, 2).equals(x) && isXmm(t(l, 3))) {
             n.add(new BytecodeToken("R_STXI", h.file, h.line, h.kind));
             n.add(l.get(1));
             n.add(lea.get(2));
@@ -120,7 +141,7 @@ public class IndexedAccessPass {
             return n;
         }
         // integer element: the access width equals the element size (scale 1, 2, 4 or 8)
-        if (!okSize(t(l, 1)) || !t(l, 1).equals(t(lea, 4))) {
+        if (!okSize(t(l, 1)) || (isHwScale(t(lea, 4)) && !t(l, 1).equals(t(lea, 4)))) {
             return null;
         }
         if (t(l, 0).equals("R_LD") && t(l, 2).startsWith("%t") && t(l, 3).equals(x)) {
@@ -152,6 +173,11 @@ public class IndexedAccessPass {
         if (lea.size() == 6) {
             n.add(lea.get(5));
         }
+    }
+
+    /** float access of width w (4 or 8) at a stride: hardware strides keep the old rule (width == stride); other strides take either width */
+    private static boolean floatWidthOk(String w, String scale) {
+        return isHwScale(scale) ? w.equals(scale) : (w.equals("4") || w.equals("8"));
     }
 
     private static boolean isXmm(String tok) {

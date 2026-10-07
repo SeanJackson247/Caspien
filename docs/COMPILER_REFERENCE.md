@@ -210,7 +210,7 @@ variables also on, nbody_plain reaches 0.34 s and nbody_loop 0.57 s. Verified on
 Top-level keys in `===compiler.config===`, read by the Optimizer's `LoopUnrollingPass` (shipped `off`; a missing key is off):
 `loop-unrolling: off|conservative|balanced|aggressive`, plus optional `loop-unroll-factor`, `loop-unroll-full-max-trips`,
 `loop-unroll-max-body-lines`, `loop-unroll-max-growth` (whole numbers; they override one number of the preset and do nothing while the
-preset is off; a malformed value stops the compile).
+preset is off; a malformed value stops the compile). `loop-unroll-nested: on|off` (shipped off): a fully unrolled loop whose body holds another loop gets its loop variable replaced by the literal in each copy, as `@unroll` does (the inner loop's bounds and `a[i].f` indexes then fold to constants).
 
 | preset | factor | full unroll if trips <= | body lines <= | added lines per function <= |
 |---|---|---|---|---|

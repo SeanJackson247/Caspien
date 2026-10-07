@@ -1,0 +1,124 @@
+// A struct of at most 8 bytes read by value through an unsafe dynarray element (`d[i].a0`: a DOT on a one-word value) and a small value pushed
+// ahead of a pointer lookup (`z + d[i].a`): both used to compile to wrong code (0 / a stale sum) when the register-form passes were off.
+// Expected values: independent Python model (sums over i in 0..9; f32 sums rounded to f32 at every step).
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+
+@untyped
+struct Tri8{@pub{
+	a0: mut u8
+	a1: mut u8
+	a2: mut u8
+}}
+
+@untyped
+struct Duo16{@pub{
+	b0: mut u16
+}}
+
+@untyped
+struct Flt3{@pub{
+	c0: mut f32
+	c1: mut f32
+	c2: mut f32
+}}
+
+func check(name: static imut string, got: mut u64, want: mut u64) void{
+	unsafe extern{
+		if got == want{
+			printf("PASS %s\n", name)
+		}else{
+			printf("FAIL %s got %llu want %llu\n", name, got, want)
+		}
+	}
+	return
+}
+
+func checkf32(name: static imut string, got: mut f32, want: mut f32) void{
+	unsafe assume extern{
+		assume match got : finite
+		assume match want : finite
+		if got == want{
+			printf("PASS %s\n", name)
+		}else{
+			printf("FAIL %s\n", name)
+		}
+	}
+	return
+}
+
+@dont(inline)
+func tri8() mut u64{
+	unsafe udyn{
+		let d = mut unsafe dyn:<Tri8>([])
+		d = resize(d, 9)
+		@dont(unroll)
+		for i in 0..9{
+			d[i].a0 = wrap:<u8>(i * 37 + 5)
+			d[i].a1 = wrap:<u8>(i * 37 + 16)
+			d[i].a2 = wrap:<u8>(i * 5 + 3)
+		}
+		let s = mut 0
+		@dont(unroll)
+		for i in 0..9{
+			s = s + (d[i].a0 as u64) * 1
+			s = s + (d[i].a1 as u64) * 2
+			s = s + (d[i].a2 as u64) * 3
+		}
+		return s
+	}
+}
+
+@dont(inline)
+func duo16() mut u64{
+	unsafe udyn{
+		let d = mut unsafe dyn:<Duo16>([])
+		d = resize(d, 9)
+		@dont(unroll)
+		for i in 0..9{
+			d[i].b0 = wrap:<u16>(i * 37 + 5)
+		}
+		let s = mut 0
+		@dont(unroll)
+		for i in 0..9{
+			s = s + (d[i].b0 as u64)
+		}
+		return s
+	}
+}
+
+@dont(inline)
+func flt3() mut f32{
+	unsafe assume udyn{
+		let d = mut unsafe dyn:<Flt3>([])
+		d = resize(d, 9)
+		let:<mut f32> y = mut 0.0
+		@dont(unroll)
+		for i in 0..9{
+			assume match y : finite
+			assume match y+1.0 : finite
+			y = y + 1.0
+			d[i].c1 = y
+		}
+		let:<mut f32> z = mut 9.5
+		@dont(unroll)
+		for i in 0..9{
+			assume match d[i].c1 : finite
+			assume match z : finite
+			assume match z+d[i].c1 : finite
+			z = z + d[i].c1
+		}
+		return z
+	}
+}
+
+func main() void{
+	check("tri8_dot_read", tri8(), 3414)
+	check("duo16_dot_read", duo16(), 1377)
+	checkf32("small_value_before_pointer_lookup", flt3(), 54.5)
+	return
+}

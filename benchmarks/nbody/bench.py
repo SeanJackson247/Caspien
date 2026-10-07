@@ -25,13 +25,13 @@ CAS = os.path.join(HERE, "caspien")
 
 OFF = {
     "deferred-operands": "off", "variables-in-registers": "off", "float-variables-in-registers": "off",
-    "float-temporaries-in-registers": "off", "hoist-array-bases": "off", "variables-in-alloc-functions": "off", "fuse-length-compare": "off", "variables-in-arg-registers": "off", "loop-rotation": "off", "copy-forward": "off", "conditional-move": "off", "loop-unrolling": "off", "function-inlining": "off", "constant-folding": "off",
+    "float-temporaries-in-registers": "off", "hoist-array-bases": "off", "variables-in-alloc-functions": "off", "fuse-length-compare": "off", "variables-in-arg-registers": "off", "loop-rotation": "off", "copy-forward": "off", "conditional-move": "off", "loop-unrolling": "off", "loop-unroll-nested": "off", "function-inlining": "off", "constant-folding": "off",
     "variable-elision": "off", "variable-shifting": "off", "struct-unpacking": "off", "dead-control-flow-removal": "off",
     "dead-function-removal": "off", "unused-declaration-removal": "off",
 }
 FULL = {
     "deferred-operands": "on", "variables-in-registers": "on", "float-variables-in-registers": "on",
-    "float-temporaries-in-registers": "on", "hoist-array-bases": "on", "variables-in-alloc-functions": "on", "fuse-length-compare": "on", "variables-in-arg-registers": "on", "loop-rotation": "on", "copy-forward": "on", "conditional-move": "on", "loop-unrolling": "aggressive", "function-inlining": "aggressive",
+    "float-temporaries-in-registers": "on", "hoist-array-bases": "on", "variables-in-alloc-functions": "on", "fuse-length-compare": "on", "variables-in-arg-registers": "on", "loop-rotation": "on", "copy-forward": "on", "conditional-move": "on", "loop-unrolling": "aggressive", "loop-unroll-nested": "on", "function-inlining": "aggressive",
     "constant-folding": "on", "variable-elision": "on", "variable-shifting": "on", "struct-unpacking": "on",
     "dead-control-flow-removal": "on", "dead-function-removal": "on", "unused-declaration-removal": "on", "bmi2": "on", "avx": "off", "jcc-padding": "on",
 }
