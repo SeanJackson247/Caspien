@@ -35,7 +35,7 @@ func worker(id: mut u64) void{
 				shared.count += 1
 				shared.sum += id + (i % 7)
 			}
-			CLOSED:{ continue }
+			CLOSED:default(1000000000)
 		}
 	}
 }
@@ -89,7 +89,7 @@ func main() void{
 				c = shared.count
 				s = shared.sum
 			}
-			CLOSED:{ continue }
+			CLOSED:default(1000000000)
 		}
 		if c == want{
 			unsafe extern{ printf("count=%llu sum=%llu\n", c, s) }

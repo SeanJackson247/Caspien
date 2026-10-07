@@ -1,0 +1,92 @@
+// Every `match @lock` retry in safe code is bounded by the compiler. The gate is closed by hand (`unsafe atomic`) to stand for a holder that never lets go.
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+
+enum Gate{ OPEN, CLOSED }
+
+@lock(match self.gate : OPEN)
+struct Box{@pub{
+	swap gate: atomic mut Gate
+	n: mut u64
+}}
+let static box = mut Box{gate= Gate.OPEN, n= mut 0}
+
+// a lock type with no policy: CLOSED:default(n) is the built-in "retry n times, then give up"
+@lock(match self.gate : OPEN)
+struct Plain{@pub{
+	swap gate: atomic mut Gate
+	n: mut u64
+}}
+let static plain = mut Plain{gate= Gate.OPEN, n= mut 0}
+let static last = mut atomic 0
+
+// A policy that never gives up by itself: it records the attempt number and always asks to retry. The compiler still stops it at its limit.
+impl default match @lock Box{
+	CLOSED:(tries:imut u64, limit:imut u64)=>{
+		let t = mut (tries + 0)
+		unsafe atomic{ last = t }
+		continue
+	}
+}
+
+func check(name: static imut string, ok: mut bool) void{
+	if ok{
+		unsafe extern{ printf("PASS %s\n", name) }
+	} else {
+		unsafe extern{ printf("FAIL %s\n", name) }
+	}
+}
+
+func main() void{
+	unsafe atomic{ box.gate = Gate.CLOSED }       // a holder that never releases
+
+	// 1. a policy that always retries is stopped at its limit: the body ran for attempts 1..7, then the compiler gave up
+	let got = mut false
+	match @lock box{
+		OPEN:{ got = mut true }
+		CLOSED:default(7)
+	}
+	let seen = mut 0
+	unsafe atomic{ seen = mut last }
+	check("policy retry stopped at its limit (last attempt 7)", seen == 7)
+	check("policy gave up without the lock", got == false)
+
+	// 2a. a type with no policy: the built-in default(n) retries n times, then gives up
+	unsafe atomic{ plain.gate = Gate.CLOSED }
+	let gotPlain = mut false
+	match @lock plain{
+		OPEN:{ gotPlain = mut true }
+		CLOSED:default(5)
+	}
+	check("built-in default(5) gave up without the lock", gotPlain == false)
+	unsafe atomic{ plain.gate = Gate.OPEN }
+	match @lock plain{
+		OPEN:{ gotPlain = mut true }
+		CLOSED:default(5)
+	}
+	check("built-in default(5) takes an open lock", gotPlain)
+
+	// 2b. a try-lock form: a single attempt
+	let got2 = mut false
+	match @lock box{
+		OPEN:{ got2 = mut true }
+		CLOSED:{ break }                           // no continue: a single attempt, then give up
+	}
+	check("try-lock form gives up at once", got2 == false)
+
+	// 3. the lock is still usable once opened: the same code takes it
+	unsafe atomic{ box.gate = Gate.OPEN }
+	let got3 = mut false
+	match @lock box{
+		OPEN:{
+			box.n += 1
+			got3 = mut true
+		}
+		CLOSED:default(7)
+	}
+	check("open lock is taken", got3)
+}

@@ -1370,7 +1370,7 @@ let static counter = mut Counter{gate= Gate.OPEN, n= mut 0}
 func bump() void{
 	match @lock counter{
 		OPEN:{ counter.n += 1 }       // the lock is held here, and released when the block ends
-		CLOSED:{ continue }           // someone else holds it: retry
+		CLOSED:default(1000000)       // someone else holds it: retry up to a million times, then give up
 	}
 }
 ```
@@ -1378,8 +1378,19 @@ func bump() void{
 `match @lock` spins on an atomic exchange. `OPEN` runs with the lock held and releases it on every way out:
 the end of the block, `return`, `break`, or a `throw`. `CLOSED` is where the lock was taken by someone
 else, and it must end every path in `continue` (retry), `break` (give up and carry on without the lock),
-`return` or `throw`. Falling off the end is an error. Outside `OPEN`, touching `n` is rejected:
+`return` or `throw` (in safe code the retry is written `CLOSED:default(n)`, below). Falling off the end is an error. Outside `OPEN`, touching `n` is rejected:
 `'n' requires a 'match c.gate{...}' proof first ... or take the lock: 'match @lock c{ ... }'`.
+
+**A retry must say how many times.** In safe code a `CLOSED` case cannot retry on its own: a hand-written `CLOSED:{ continue }` is a compile error, because it would
+spin without a limit. Write `CLOSED:default(n)`: retry up to `n` times, then give up with a `break`. The program then carries on after the `match` without the
+lock, so code after a `match @lock` must not assume the work was done. A `CLOSED` that only gives up (`break`, `return`, `throw`) is a single attempt and
+is fine as written. Logic that belongs in the retry (a message, a backoff, a yield) goes in a policy, below. The ghost table's own lock, inside the standard
+library's allocator, keeps its endless retry, because an allocation cannot be given up on.
+
+**Nothing waits inside a critical section.** While a lock is held, nothing may `yield`, `sleep`, `par` or `await`, in the same function or in any
+function it calls: the compiler rejects it and names the call chain. A holder that waited could be waiting for a thread that needs the very lock it
+holds, which is a deadlock. With this rule a lock holder only runs code that depends on no other thread, so it always lets go. (External calls and
+`unsafe` loops inside a lock are marked `unsafe` and are not judged.)
 
 **Locks cannot be nested.** While a lock is held (the `OPEN` case of `match @lock`, or the body of a `lock x{}` block) nothing may take another one,
 neither in the same function nor in any function it calls, however deep: the compiler rejects it and names the call chain. The lock records no owner, so taking
@@ -1389,7 +1400,8 @@ inside the ghost table, which every allocation, `match Some` and drop takes: it 
 inside a held lock. A `call()` through a function pointer is not followed (it is `unsafe`).
 
 A policy gives the `CLOSED` case a backoff. It is declared once for the type, and `tries` counts attempts
-from 1:
+from 1. The compiler stops the policy at its `limit` (the second parameter, a `u64`) whatever the policy does, so a policy can only shape the
+retries, never make them endless. With no policy declared for the type, `CLOSED:default(n)` is the plain version: retry `n` times, then give up.
 
 ```rust
 impl default match @lock Counter{
@@ -1629,7 +1641,8 @@ A caller has the worst class among what it calls, in the order bounded, finite, 
   through a function pointer.
 
 So a program without an event loop always reaches the end of `main`, and every slice of a program with one always returns. The two operations that wait on
-something outside the program's own computation are the exceptions: `match @lock` spins until the lock is free, and `await` blocks on another thread.
+something outside the program's own computation are the exceptions: `match @lock` retries until the lock is free or its attempt limit `n` is reached (see *Atomics, locks and threads*), and `await` blocks on another thread.
+`--audit` does not yet read that limit, so a function with a `match @lock` still shows `unbounded`.
 The other four classes appear only where `unsafe` is reachable, in your code or in the trusted standard library (the lock and thread code in
 `16_atomics_and_locks` shows `unbounded`, for example). `--audit` lists every `unsafe` block, and gives each of these a fixed price and a "not modelled" note:
 external calls, inline assembly, `memcopy` sizes and waiting (`sleep`, `yield`, `match @lock`, `await`).
@@ -2039,7 +2052,7 @@ And the limits of the library itself, which are design choices today rather than
 | `process` | One direction per handle (read the child's output or write to its input), one line per `StdOut.read`, and the read buffer is not freed. Commands go through the shell. |
 | `fs` | No directory listing, `stat`, `exists` or rename (other than `commit`), whole-file `readAll`, `/`-free names only. Windows is only tested under Wine. |
 | `sha256` | Raw pointers and `unsafe`, because it works on bytes in place. |
-| Threads | `par` starts a detached thread; there is no thread-pool and no cancellation. `match @lock` spins. |
+| Threads | `par` starts a detached thread; there is no thread-pool and no cancellation. `match @lock` spins up to its attempt limit, then gives up. |
 
 On the benchmarks, programs written with these classes run about 1.1x to 5.2x slower than the same program written with
 raw arrays (1.75x on the geometric mean, with string manipulation and the k-nucleotide hash map at the slow end), see section 4.

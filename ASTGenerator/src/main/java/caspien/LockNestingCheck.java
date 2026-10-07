@@ -11,11 +11,16 @@ import java.util.*;
  * It is always the innermost lock, held briefly, and that code never calls user code, so it cannot be part of a cycle. Calls into `@gt_*` are made by the
  * code generator and never appear as call tokens, and functions reachable from the `@gt_*` functions are skipped here, so they are exempt by construction.
  * A `call()` through a function pointer is not followed (it is `unsafe call`, the programmer vouches for it).
+ *
+ * Second rule, same walk: nothing may WAIT while a lock is held (`yield`, `sleep`, `par`, `await`, directly or through any function it calls). A lock holder
+ * then only runs code that depends on no other thread, so it always lets go, and a thread spinning on the lock is waiting on code that cannot be waiting on
+ * anything. (Externs and `unsafe` loops are not judged: they are already marked `unsafe` and the programmer vouches for them.)
  */
 final class LockNestingCheck {
     private static final class Info {
         final TypeChecker.FuncInfo fn;
         boolean acquires;                                         // takes a lock directly
+        String waitKind;                                          // first waiting operation in the body ("yield", "sleep", "par", "await"), null if none
         final Set<String> callees = new LinkedHashSet<>();         // every resolved call target in the body
         final List<Token> heldCalls = new ArrayList<>();           // calls made while a lock is held
         Info(TypeChecker.FuncInfo fn) {
@@ -94,6 +99,16 @@ final class LockNestingCheck {
             }
             return;
         }
+        String waitKind = waitKindOf(t);
+        if (waitKind != null) {
+            if (held) {
+                throw new CompilerException("type", t.file, t.line, "'" + waitKind + "' while a lock is held -- nothing may wait inside a critical section (the thread waited for "
+                        + "may need this very lock, and a lock holder must always let go); release the lock first");
+            }
+            if (in.waitKind == null) {
+                in.waitKind = waitKind;
+            }
+        }
         if (t.resolvedCallTarget != null) {
             in.callees.add(t.resolvedCallTarget);
             if (held) {
@@ -101,6 +116,20 @@ final class LockNestingCheck {
             }
         }
         walkChildren(t, held, in);
+    }
+
+    /** "yield", "sleep", "par" or "await" when `t` is that operation, else null. */
+    private static String waitKindOf(Token t) {
+        if (t.type == TokenType.KEYWORD && t.text.equals("yield")) {
+            return "yield";
+        }
+        if (t.type == TokenType.OPERATOR && (t.text.equals("par") || t.text.equals("await"))) {
+            return t.text;
+        }
+        if (t.type == TokenType.OPERATOR && t.text.equals("CALL") && t.left != null && t.left.type == TokenType.KEYWORD && t.left.text.equals("sleep")) {
+            return "sleep";
+        }
+        return null;
     }
 
     private void walkChildren(Token t, boolean held, Info in) {
@@ -145,9 +174,33 @@ final class LockNestingCheck {
         return null;
     }
 
+    /** The calls a function makes down to a function that waits, shortest first; null when none does. */
+    private List<String> pathToWait(String from, Set<String> seen) {
+        Info in = byName.get(from);
+        if (in == null || !seen.add(from)) {
+            return null;
+        }
+        if (in.waitKind != null) {
+            return new ArrayList<>(List.of(from));
+        }
+        for (String c : in.callees) {
+            List<String> p = pathToWait(c, seen);
+            if (p != null) {
+                p.add(0, from);
+                return p;
+            }
+        }
+        return null;
+    }
+
     private void check() {
         for (Info in : byName.values()) {
             for (Token call : in.heldCalls) {
+                List<String> w = pathToWait(call.resolvedCallTarget, new HashSet<>());
+                if (w != null) {
+                    throw new CompilerException("type", call.file, call.line, "'" + call.resolvedCallTarget + "' is called while a lock is held, and it waits ('"
+                            + byName.get(w.get(w.size() - 1)).waitKind + "'" + (w.size() > 1 ? ", through " + String.join(" > ", w) : "") + ") -- nothing may wait inside a critical section");
+                }
                 List<String> p = pathToLock(call.resolvedCallTarget, new HashSet<>());
                 if (p != null) {
                     throw new CompilerException("type", call.file, call.line, "'" + call.resolvedCallTarget + "' is called while a lock is held, and it takes a lock"

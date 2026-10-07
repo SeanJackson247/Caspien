@@ -23,9 +23,7 @@ func bump() mut u64{
 			c.n += 1
 			return c.n
 		}
-		CLOSED:{
-			continue        // retry the acquire. `break` gives up, `return` and `throw` leave.
-		}
+		CLOSED:default(1000000)   // retry the acquire up to a million times, then give up. `break` gives up at once, `return` and `throw` leave.
 	}
 	return 0
 }

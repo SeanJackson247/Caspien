@@ -17,24 +17,21 @@ func holdAndThrow() void{
 		OPEN:{
 			throw "boom"
 		}
-		CLOSED:{ continue }
+		CLOSED:default(1000000000)
 	}
 }
 
 func reacquire() void{
-	let tries = mut 0
+	let got = mut false
 	match @lock m{
 		OPEN:{
+			got = mut true
 			unsafe extern{ printf("PASS: lock was released by the throw\n") }
 		}
-		CLOSED:{
-			tries++
-			if tries == 1000{
-				unsafe extern{ printf("FAIL: lock still held after the throw\n") }
-				break
-			}
-			continue
-		}
+		CLOSED:default(1000)
+	}
+	if !got{
+		unsafe extern{ printf("FAIL: lock still held after the throw\n") }
 	}
 }
 

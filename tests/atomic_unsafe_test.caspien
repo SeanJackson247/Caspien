@@ -23,12 +23,12 @@ func main() void{
 	}
 	match @lock counter{
 		OPEN:{ counter.n += 3 }
-		CLOSED:{ continue }
+		CLOSED:default(1000000000)
 	}
 	let n = mut 0
 	match @lock counter{
 		OPEN:{ n = counter.n }
-		CLOSED:{ continue }
+		CLOSED:default(1000000000)
 	}
 	if old == 0 && cur == 9 && n == 3{
 		unsafe extern{ printf("PASS atomic_unsafe_test\n") }

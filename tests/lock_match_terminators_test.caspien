@@ -1,4 +1,4 @@
-// 'match @lock': every non-target (CLOSED) path must end in 'continue' (retry the acquire),
+// 'match @lock': every non-target (CLOSED) path must end in 'continue' (retry the acquire, which safe code writes as CLOSED:default(n)),
 // 'break' (give up without the lock), 'return' or 'throw'. Falling off the end is a compile error.
 import "../stdlib/libc.caspien"
 
@@ -9,6 +9,25 @@ struct Mtx{@pub{
 	n: mut u64
 }}
 
+// a second lock type whose policy opens the (held) lock on the third failed attempt, to show a retry that succeeds
+struct RMtx{@pub{
+	swap lockState: atomic mut St
+	n: mut u64
+}}
+let static rm = mut RMtx{lockState= St.OPEN, n= mut 0}
+let static failed = mut atomic 0
+
+impl default match @lock RMtx{
+	CLOSED:(tries:imut u64, limit:imut u64)=>{
+		let t = mut (tries + 0)
+		unsafe atomic{ failed = t }
+		if tries == 3{
+			unsafe atomic{ rm.lockState swap St.OPEN }
+		}
+		continue
+	}
+}
+
 // a swap-mutex struct held in a plain local (used to segfault: the lock field's value was used as its address)
 func localTest() void{
 	let m = mut Mtx{lockState= St.OPEN, n= mut 0}
@@ -17,26 +36,20 @@ func localTest() void{
 			m.n += 1
 			unsafe extern{ printf("local: got lock n=%llu\n", m.n) }
 		}
-		CLOSED:{ continue }
+		CLOSED:default(1000000000)
 	}
 }
 
-// continue = retry: three failed attempts, then the lock is freed and the fourth succeeds
+// retry (through the policy): three failed attempts, then the policy frees the lock and the fourth attempt succeeds
 func retryTest() void{
-	let static m = mut Mtx{lockState= St.OPEN, n= mut 0}
-	unsafe atomic{ m.lockState swap St.CLOSED }
-	let tries = mut 0
-	match @lock m{
+	unsafe atomic{ rm.lockState swap St.CLOSED }
+	match @lock rm{
 		OPEN:{
-			unsafe extern{ printf("retry: got lock after %llu failed attempts\n", tries) }
+			let f = mut 0
+			unsafe atomic{ f = mut failed }
+			unsafe extern{ printf("retry: got lock after %llu failed attempts\n", f) }
 		}
-		CLOSED:{
-			tries++
-			if tries == 3{
-				unsafe atomic{ m.lockState swap St.OPEN }
-			}
-			continue
-		}
+		CLOSED:default(10)
 	}
 }
 
@@ -82,10 +95,10 @@ func mixedTest() mut u64{
 		CLOSED:{
 			k++
 			if k == 1{
-				continue
+				return 9
 			}
 			else{
-				return 9
+				break
 			}
 		}
 	}

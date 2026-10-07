@@ -1,0 +1,25 @@
+// a function that waits (yield) called while a lock is held is an error, even through another call
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+import "../stdlib/par_call.caspien"
+import "../stdlib/await_call.caspien"
+enum Gate{ OPEN, CLOSED }
+@lock(match self.gate : OPEN)
+struct Box{@pub{ swap gate: atomic mut Gate
+	n: mut u64 }}
+let static box = mut Box{gate= Gate.OPEN, n= mut 0}
+
+func pause() void{ yield }
+func helper() void{ pause() }
+func main() void{
+	match @lock box{
+		OPEN:{
+			helper()
+		}
+		CLOSED:default(10)
+	}
+}

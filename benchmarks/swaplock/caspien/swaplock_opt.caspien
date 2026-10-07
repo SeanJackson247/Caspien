@@ -25,7 +25,7 @@ struct Shared{@pub{
 let static shared = mut Shared{gate= Gate.OPEN, count= mut 0, sum= mut 0}
 let static k = mut atomic 0
 
-// A backoff policy replaces the CLOSED body of every `match @lock Shared`: spin a little, then give up the time slice.
+// A backoff policy replaces the CLOSED body of every `match @lock Shared`: spin a little, then give up the time slice. The limit (1e9 attempts) is the compiler's bound on the spin; it is far above what two threads ever need.
 impl default match @lock Shared{
 	CLOSED:(tries:imut u64, limit:imut u64)=>{
 		if tries % 16 == 0{ yield }
@@ -43,7 +43,7 @@ func worker(id: mut u64) void{
 				shared.count += 1
 				shared.sum += id + (i % 7)
 			}
-			CLOSED:default(16)
+			CLOSED:default(1000000000)
 		}
 	}
 }
@@ -97,7 +97,7 @@ func main() void{
 				c = shared.count
 				s = shared.sum
 			}
-			CLOSED:default(16)
+			CLOSED:default(1000000000)
 		}
 		if c == want{
 			unsafe extern{ printf("count=%llu sum=%llu\n", c, s) }

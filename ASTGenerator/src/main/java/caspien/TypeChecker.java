@@ -1929,6 +1929,7 @@ public class TypeChecker {
 
     /** The spin-loop scope of the 'match @lock' CLOSED case currently being checked (null elsewhere, and while checking an OPEN case): a `continue` directly inside it retries the acquire. Save/restored around each 'match @lock'. */
     private Scope lockClosedLoopScope = null;
+    private int lockRetryContinuesSeen = 0;      // every `continue` that retries a `match @lock` acquire
 
     /** True only while `closedCaseTerminates` runs: makes `statementDefinitelyReturns` count a 'break' as a terminator. */
     private boolean breakCountsAsTerminator = false;
@@ -8611,6 +8612,7 @@ public class TypeChecker {
                     if (!insideCatchBody && lockClosedLoopScope != null
                             && scope.loopBoundaryScope == lockClosedLoopScope) {
                         stmt.isLockRetryContinue = true;
+                        lockRetryContinuesSeen++;
                         stmt.destructOnExit = collectOwnsToDestruct(scope, lockClosedLoopScope, null);
                         stmt.unlockOnExit = collectLockReleasesToBoundary(scope, lockClosedLoopScope);
                         return;
@@ -15339,10 +15341,17 @@ public class TypeChecker {
         Set<String> closedBranchMoved = new HashSet<>(preState);
         Scope closedBodyScope = new Scope(closedParentScope, closedBranchMoved, scope.activeMatchPatterns, false);
         lockClosedLoopScope = loopBodyScope;
+        int retriesBefore = lockRetryContinuesSeen;
         try {
             checkLinesInScope(closedCase.childs, closedBodyScope, func, true);
         } finally {
             lockClosedLoopScope = savedLockClosedScope;
+        }
+        if (substitution == null && lockRetryContinuesSeen > retriesBefore && !isGhostTableFunction(func)) {
+            throw new CompilerException("type", closedCase.file, closedCase.line,
+                    "a 'match @lock' that retries must say how many times: a bare 'CLOSED:{ ... continue }' would spin without a limit, which safe code does not allow -- "
+                            + "write 'CLOSED:default(n)' (retry up to n times, then give up with a 'break'), or give the type an 'impl default match @lock' policy, or give up at once "
+                            + "with 'break'/'return'/'throw'");
         }
         if (!closedCaseTerminates(closedCase.childs)) {
             throw new CompilerException("type", closedCase.file, closedCase.line,
@@ -15488,9 +15497,37 @@ public class TypeChecker {
         }
         DefaultLockMatchPolicy policy = structInfo.defaultLockMatchPolicy;
         if (policy == null) {
-            throw new CompilerException("type", defaultRef.file, defaultRef.line,
-                    "'" + structInfo.name + "' has no registered 'impl default match @lock' policy for "
-                            + "'CLOSED:default' to refer to");
+            // No policy registered: the built-in one. `CLOSED:default(n)` retries up to n times (attempt numbers 1..n), then gives up with a `break`.
+            if (defaultRef.type != TokenType.OPERATOR || !defaultRef.text.equals("CALL")) {
+                throw new CompilerException("type", defaultRef.file, defaultRef.line,
+                        "'" + structInfo.name + "' has no registered 'impl default match @lock' policy, so 'CLOSED:default' needs its attempt limit: "
+                                + "write 'CLOSED:default(n)' (retry up to n times, then give up)");
+            }
+            List<Token> builtinArgs = new ArrayList<>();
+            Token builtinArgsDelineator = defaultRef.right;
+            if (!builtinArgsDelineator.childs.isEmpty()) {
+                collectCommaArgs(builtinArgsDelineator.childs.get(0), builtinArgs);
+            }
+            if (builtinArgs.size() != 1) {
+                throw new CompilerException("type", defaultRef.file, defaultRef.line,
+                        "'CLOSED:default(...)' with no registered 'impl default match @lock' policy takes exactly one argument, the attempt limit -- got " + builtinArgs.size());
+            }
+            TypeInfo limitType = resolveExprType(builtinArgs.get(0), scope, func);
+            if (!typesCompatible(new TypeInfo(null, "imut", "u64"), limitType)) {
+                throw new CompilerException("type", builtinArgs.get(0).file, builtinArgs.get(0).line,
+                        "the attempt limit of 'CLOSED:default(...)' must be a u64, got '" + limitType.canonical() + "'");
+            }
+            Scope builtinScope = new Scope(loopBodyScope);
+            List<Token> builtinInit = new ArrayList<>();
+            builtinInit.add(buildCheckedLetAssign("$lm_tries",
+                    wrapWithMutability(new Token(TokenType.INTEGER, "0", defaultRef.line, defaultRef.file), "mut"), builtinScope, func));
+            builtinInit.add(buildCheckedLetAssign("$lm_limit", wrapWithMutability(builtinArgs.get(0), "imut"), builtinScope, func));
+            List<Token> builtinBody = new ArrayList<>();
+            builtinBody.add(wrapAsCheckedLine(buildTriesIncrement(defaultRef)));
+            builtinBody.add(wrapAsCheckedLine(buildGiveUpCheck(defaultRef, new Token(TokenType.VARREF, "$lm_limit", defaultRef.line, defaultRef.file))));
+            builtinBody.add(wrapAsCheckedLine(new Token(TokenType.KEYWORD, "continue", defaultRef.line, defaultRef.file)));
+            closedCase.childs = builtinBody;
+            return new DefaultPolicySubstitution(builtinInit, builtinScope);
         }
         List<Token> callArgNodes = new ArrayList<>();
         if (defaultRef.type == TokenType.OPERATOR && defaultRef.text.equals("CALL")) {
@@ -15559,6 +15596,13 @@ public class TypeChecker {
         triesRebindAssign.right = wrapWithMutability(
                 new Token(TokenType.VARREF, triesLocalName, defaultRef.line, defaultRef.file), "imut");
         substitutedChilds.add(wrapAsCheckedLine(triesRebindAssign));
+        // The compiler, not the policy, enforces the bound: after the counter is bumped, `if $lm_tries > <limit>{ break }` gives up. The limit is the
+        // policy's second parameter when that is a u64 ("tries, limit"), else LOCK_SPIN_LIMIT. A policy that gives up earlier (`if tries >= limit{ break }`)
+        // still does; the body runs for attempts 1..limit.
+        Token limitExpr = policyParams.size() >= 2 && "u64".equals(policyParams.get(1).type.baseType)
+                ? new Token(TokenType.VARREF, policyParams.get(1).name, defaultRef.line, defaultRef.file)
+                : new Token(TokenType.INTEGER, String.valueOf(LOCK_SPIN_LIMIT), defaultRef.line, defaultRef.file);
+        substitutedChilds.add(wrapAsCheckedLine(buildGiveUpCheck(defaultRef, limitExpr)));
 
         substitutedChilds.addAll(clonedBodyLines);
         // The policy body keeps its old meaning "falling off the end
@@ -15571,6 +15615,43 @@ public class TypeChecker {
         closedCase.childs = substitutedChilds;
 
         return new DefaultPolicySubstitution(preLoopInit, preLoopScope);
+    }
+
+    /** The attempt limit used when a registered `impl default match @lock` policy has no u64 `limit` parameter. */
+    static final long LOCK_SPIN_LIMIT = 1_000_000_000L;
+
+    /** True for the `@gt_*` functions (the ghost table's own lock code), which keep an unbounded spin. */
+    private boolean isGhostTableFunction(FuncInfo func) {
+        if (func == null || func.funcToken == null || func.funcToken.decorators == null) {
+            return false;
+        }
+        for (String d : new String[] { "gt_init", "gt_alive_check", "gt_destruct", "gt_register", "gt_moved" }) {
+            if (getDecorator(func.funcToken.decorators, d) != null) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** `$lm_tries++` */
+    private Token buildTriesIncrement(Token at) {
+        Token inc = new Token(TokenType.OPERATOR, "++", at.line, at.file);
+        inc.unary = true;
+        inc.left = new Token(TokenType.VARREF, "$lm_tries", at.line, at.file);
+        return inc;
+    }
+
+    /** `if $lm_tries > limit{ break }` -- raw, checked later with the rest of the CLOSED body. */
+    private Token buildGiveUpCheck(Token at, Token limit) {
+        Token cmp = new Token(TokenType.OPERATOR, ">", at.line, at.file);
+        cmp.left = new Token(TokenType.VARREF, "$lm_tries", at.line, at.file);
+        cmp.right = limit;
+        Token ifTok = new Token(TokenType.KEYWORD, "if", at.line, at.file);
+        ifTok.sub = new ArrayList<>();
+        ifTok.sub.add(cmp);
+        ifTok.childs = new ArrayList<>();
+        ifTok.childs.add(wrapAsCheckedLine(new Token(TokenType.KEYWORD, "break", at.line, at.file)));
+        return ifTok;
     }
 
     /** Wraps `expr` in a "mut"/"imut" prefix operator, raw and unresolved -- used only to force a freshly-built synthesized value's own indeterminate mutability concrete before it's bound to a "let". */
