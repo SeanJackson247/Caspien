@@ -176,3 +176,25 @@ Caspien now has `f64`. The four programs were ported to it (`benchmarks/nbody/ca
 
 f64 does not make anything faster here: it costs 2-20% more than f32 (divide and sqrt are slower in double, and doubles move 8 bytes per access). What it buys is
 precision and agreement with the reference output. The gap to C is code quality (no array-index hoisting, only two integer variable registers, calls stay on the stack), not the float type.
+
+## Array-of-structs variants (7 Oct)
+
+`caspien/gen_aos.py` generates three f64 programs with the reference C program's layout (one 56-byte `Body{x,y,z,vx,vy,vz,mass}` per planet, loops `i`, `j = i+1..4`,
+then the position update): `nbody_aos_safe_f64` (safe heap dynarray, `match i in bodies` bounds proofs), `nbody_aos_unsafe_f64` (headerless `unsafe dyn`, no index proofs)
+and `nbody_aos_static_f64` (static `Body[5]`; not in the benchmark list: element access pushes the whole array, about 20x slower). All print the same energies as the others.
+5e6 steps, best of 7 interleaved runs, Linux 2-core VM (noise 10-30%):
+
+| Program | time | executed instructions per step (100k-step callgrind) |
+|---|---|---|
+| C -O2, GCC vectoriser on (reference nbody.c, array of structs) | 0.218 s | 604 |
+| C -O2, `-fno-tree-vectorize` | 0.205 s | 658 |
+| nbody_f64 (35 scalar globals, unrolled) | 0.236 s | 711 |
+| nbody_arr_f64 (arrays, literal indices, unrolled) | 0.239 s | |
+| nbody_plain_f64 (struct of arrays, loops, `assume` proofs) | 0.357 s | 1026 |
+| nbody_loop_f64 (struct of arrays, loops, `match` proofs) | 0.384 s | |
+| nbody_aos_unsafe_f64 | 0.432 s | 1752 |
+| nbody_aos_safe_f64 | 0.450 s | 1898 |
+
+The executed-instruction column is the reliable one (the wall times of the two C builds swap places between runs). GCC's vectoriser saves 8% of instructions on the
+array-of-structs C. The Caspien array-of-structs programs execute 2.5x the instructions of the scalar one; the cause is the address arithmetic of each field access
+(base reloaded from its stack slot, `imul $56`, add, add displacement, then the load), not the lack of vector instructions.

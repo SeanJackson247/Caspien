@@ -42,6 +42,8 @@ CASPIEN = [
     ("nbody_loop_f64", "f64", "looped nested match"),
     ("nbody_arr_f64", "f64", "hand-unrolled, arrays"),
     ("nbody_f64", "f64", "hand-unrolled, scalars"),
+    ("nbody_aos_safe_f64", "f64", "array of structs, safe dynarray"),
+    ("nbody_aos_unsafe_f64", "f64", "array of structs, unsafe dynarray"),
     ("nbody_plain", "f32", "plain loops"),
     ("nbody_loop", "f32", "looped nested match"),
     ("nbody_arr", "f32", "hand-unrolled, arrays"),
