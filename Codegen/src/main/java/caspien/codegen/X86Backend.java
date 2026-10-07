@@ -1194,6 +1194,67 @@ public class X86Backend {
     private void raw(String text) {
         currentSink().append(text).append('\n');
         trackStackDelta(text);
+        if (strideKeySink != null) {
+            strideKeyAfter(text);
+        }
+    }
+
+    // ---- common subexpression: the stride multiply `imulq $stride, %idx, %r15` of an indexed access (rfSetIndex) ----
+    // After the multiply r15 holds idx*stride. A following access with the same index register and stride reuses it when every line emitted in
+    // between is a plain data move / float arithmetic whose destination is neither r15 nor (any alias of) the index register, in the same sink.
+    // Anything else (label, jump, call, lea, integer arithmetic ..., a buffer append) forgets it. Flags: only the skipped imul would have set them.
+    private int strideCseHits = 0;
+    private StringBuilder strideKeySink = null;
+    private String strideKeyIdx = null;
+    private long strideKeyScale = 0;
+    private static final java.util.Set<String> STRIDE_KEEP_OPS = new java.util.HashSet<>(java.util.Arrays.asList(
+            "movq", "movl", "movw", "movb", "movzbq", "movzwq", "movzbl", "movzwl", "movslq", "movsbq", "movswq", "movsbl", "movswl",
+            "movsd", "movss", "movd", "movaps", "movapd", "addsd", "addss", "subsd", "subss", "mulsd", "mulss", "divsd", "divss",
+            "addq", "subq", "addl", "subl", "leaq", "andq", "orq", "xorq", "shlq", "shrq", "sarq", "incq", "decq", "negq", "notq",
+            "sqrtsd", "sqrtss", "ucomisd", "ucomiss", "comisd", "comiss", "cvtss2sd", "cvtsd2ss", "xorps", "xorpd", "andps", "andpd"));
+
+    private void strideKeyAfter(String text) {
+        String t = text.trim();
+        int sp = t.indexOf(' ');
+        String op = sp < 0 ? t : t.substring(0, sp);
+        if (t.indexOf('\n') >= 0 || t.endsWith(":") || !STRIDE_KEEP_OPS.contains(op)) {
+            strideKeySink = null;
+            return;
+        }
+        // destination = the last operand outside parentheses
+        int depth = 0, cut = -1;
+        for (int i = 0; i < t.length(); i++) {
+            char c = t.charAt(i);
+            if (c == '(') depth++;
+            else if (c == ')') depth--;
+            else if (c == ',' && depth == 0) cut = i;
+        }
+        String dest = (cut < 0 ? t.substring(sp < 0 ? t.length() : sp) : t.substring(cut + 1)).trim();
+        if (!dest.startsWith("%")) {
+            return;                       // a memory destination (a store) or an immediate-only form: no register changes
+        }
+        if (dest.startsWith("%xmm")) {
+            return;
+        }
+        if (regAliasOf(dest.substring(1), RF_SCRATCH) || regAliasOf(dest.substring(1), strideKeyIdx)) {
+            strideKeySink = null;
+        }
+    }
+
+    /** whether the register spelling `r` (rax, eax, ax, al, r13d, r13b ...) names (part of) the 64-bit register `full` */
+    private static boolean regAliasOf(String r, String full) {
+        if (r.equals(full)) {
+            return true;
+        }
+        if (full.matches("r\\d+")) {
+            return r.equals(full + "d") || r.equals(full + "w") || r.equals(full + "b");
+        }
+        String base = full.substring(1);     // rax -> ax, rsi -> si
+        if (full.equals("rax") || full.equals("rbx") || full.equals("rcx") || full.equals("rdx")) {
+            String l = base.substring(0, 1);
+            return r.equals("e" + base) || r.equals(base) || r.equals(l + "l") || r.equals(l + "h");
+        }
+        return r.equals("e" + base) || r.equals(base) || r.equals(base + "l");
     }
 
     /**
@@ -5284,6 +5345,7 @@ public class X86Backend {
                 argTrackDeltaStack.pop();
                 loadedArgRegsStack.pop();
                 currentSink().append(finished);
+                strideKeySink = null;
                 // Restore the enclosing call's already-loaded argument
                 // registers (saved at this call's "CC_START"), in reverse
                 // order. rax (an integer result) is never touched; r11 is
@@ -6442,7 +6504,15 @@ public class X86Backend {
         if (rfIsGlobal(baseTok) || scale <= 0 || !rfFitsImm32(scale)) {
             throw new IllegalStateException("malformed indexed access (stride " + scale + ", base " + baseTok + ")");
         }
-        raw("    imulq $" + scale + ", %" + rfReg(idxTok) + ", %" + RF_SCRATCH);
+        String ir = rfReg(idxTok);
+        if (strideKeySink == null || strideKeySink != currentSink() || strideKeyScale != scale || !ir.equals(strideKeyIdx)) {
+            raw("    imulq $" + scale + ", %" + ir + ", %" + RF_SCRATCH);
+            strideKeySink = currentSink();
+            strideKeyIdx = ir;
+            strideKeyScale = scale;
+        } else {
+            strideCseHits++;
+        }
         rfIdxReg = RF_SCRATCH;
         rfIdxScale = 1;
     }
