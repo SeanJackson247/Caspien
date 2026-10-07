@@ -77,6 +77,8 @@ def proof(w, mode, idx, arr="bodies"):
     if mode == "udyn": return 0
     w.open(f"match {idx} in {arr}"); return 1
 
+J0_COUNT = 0
+
 def body_blocks(w, mode, kind):
     """kind: 'advance' | 'energy' | 'mom'. Emits the nested loops (indent by the caller) for one mode (static|safe|udyn)."""
     rng = (lambda v: f"for {v} in bodies") if mode == "static" else (lambda v: f"for {v} in 0..5")
@@ -84,8 +86,11 @@ def body_blocks(w, mode, kind):
     if kind == "energy": w(*energy_i("i"))
     if kind == "mom": w(*mom("i"))
     if kind in ("advance", "energy"):
-        w("let j0 = mut (i + 1)")
-        w.open("for j in j0..5"); m = proof(w, mode, "j")
+        global J0_COUNT
+        J0_COUNT += 1
+        j0 = f"j0_{J0_COUNT}"   # one name per loop: the optimizer's variable analysis (and the nested unroll's per-copy renaming) wants each local declared once
+        w(f"let {j0} = mut (i + 1)")
+        w.open(f"for j in {j0}..5"); m = proof(w, mode, "j")
         w(*(pair("i", "j") if kind == "advance" else energy_ij("i", "j")))
         for _ in range(m): w.close()
         w.close()

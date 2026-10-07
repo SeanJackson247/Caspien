@@ -66,8 +66,8 @@ func main() void{
 			assume match 0.5*bodies[i].mass : finite
 			assume match ((bodies[i].vx*bodies[i].vx)+(bodies[i].vy*bodies[i].vy))+(bodies[i].vz*bodies[i].vz) : finite
 			e += 0.5 * bodies[i].mass * (bodies[i].vx * bodies[i].vx + bodies[i].vy * bodies[i].vy + bodies[i].vz * bodies[i].vz)
-			let j0 = mut (i + 1)
-			for j in j0..5{
+			let j0_6 = mut (i + 1)
+			for j in j0_6..5{
 				assume match bodies[i].x : finite
 				assume match bodies[j].x : finite
 				let dx = mut (bodies[i].x - bodies[j].x)
@@ -94,8 +94,8 @@ func main() void{
 		printf("%.9f\n", e)
 		for s in 0..n{
 			for i in 0..5{
-				let j0 = mut (i + 1)
-				for j in j0..5{
+				let j0_7 = mut (i + 1)
+				for j in j0_7..5{
 					assume match bodies[i].x : finite
 					assume match bodies[j].x : finite
 					let dx = mut (bodies[i].x - bodies[j].x)
@@ -158,8 +158,8 @@ func main() void{
 			assume match 0.5*bodies[i].mass : finite
 			assume match ((bodies[i].vx*bodies[i].vx)+(bodies[i].vy*bodies[i].vy))+(bodies[i].vz*bodies[i].vz) : finite
 			e += 0.5 * bodies[i].mass * (bodies[i].vx * bodies[i].vx + bodies[i].vy * bodies[i].vy + bodies[i].vz * bodies[i].vz)
-			let j0 = mut (i + 1)
-			for j in j0..5{
+			let j0_8 = mut (i + 1)
+			for j in j0_8..5{
 				assume match bodies[i].x : finite
 				assume match bodies[j].x : finite
 				let dx = mut (bodies[i].x - bodies[j].x)

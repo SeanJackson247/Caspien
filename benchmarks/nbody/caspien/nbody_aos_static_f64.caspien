@@ -27,8 +27,8 @@ func advance(dt: mut f64) void{
 	unsafe assume extern global{
 		for i in bodies{
 			match i in bodies{
-				let j0 = mut (i + 1)
-				for j in j0..5{
+				let j0_1 = mut (i + 1)
+				for j in j0_1..5{
 					match j in bodies{
 						assume match bodies[i].x : finite
 						assume match bodies[j].x : finite
@@ -103,8 +103,8 @@ func energy() mut f64{
 				assume match 0.5*bodies[i].mass : finite
 				assume match ((bodies[i].vx*bodies[i].vx)+(bodies[i].vy*bodies[i].vy))+(bodies[i].vz*bodies[i].vz) : finite
 				e += 0.5 * bodies[i].mass * (bodies[i].vx * bodies[i].vx + bodies[i].vy * bodies[i].vy + bodies[i].vz * bodies[i].vz)
-				let j0 = mut (i + 1)
-				for j in j0..5{
+				let j0_2 = mut (i + 1)
+				for j in j0_2..5{
 					match j in bodies{
 						assume match bodies[i].x : finite
 						assume match bodies[j].x : finite

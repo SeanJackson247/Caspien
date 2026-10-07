@@ -42,6 +42,13 @@ F("indexed", ["unsafe udyn{", "\tlet a = mut unsafe dyn:<u64>([])", "\ta = resiz
   [f"\ta[{k}] = {v}" for k, v in enumerate(vals)] +
   ["\tlet s = mut 0", "\tfor i in 0..8{", "\t\tlet j0 = mut (i + 1)", "\t\tfor j in j0..8{", "\t\t\ts = s + a[i] * a[j]", "\t\t}", "\t}", "\treturn s", "}"],
   sum(vals[i] * vals[j] for i in range(8) for j in range(i + 1, 8)))
+F("locals", ["let s = mut 0", "for i in 0..4{", "\tlet j0 = mut (i + 1)", "\tlet t = mut (i * 3)", "\tfor j in j0..4{", "\t\ts = s + t + j", "\t}", "}", "return s"],
+  sum(i * 3 + j for i in range(4) for j in range(i + 1, 4)))
+F("samename", ["let s = mut 0", "for i in 0..3{", "\tlet j0 = mut (i + 1)", "\tfor j in j0..3{", "\t\ts = s + i * 10 + j", "\t}", "}",
+  "for i in 0..3{", "\tlet j0 = mut (i + 2)", "\tfor j in j0..4{", "\t\ts = s + i * 100 + j", "\t}", "}", "return s"],
+  sum(i * 10 + j for i in range(3) for j in range(i + 1, 3)) + sum(i * 100 + j for i in range(3) for j in range(i + 2, 4)))
+F("carry", ["let s = mut 0", "let last = mut 0", "for i in 0..4{", "\tlet j0 = mut (i + 1)", "\tfor j in j0..4{", "\t\ts = s + j", "\t}", "\tlast = i * 5 + 1", "}", "return s * 1000 + last"],
+  sum(j for i in range(4) for j in range(i + 1, 4)) * 1000 + 3 * 5 + 1)
 for name, body, want in funcs:
     w(f"func {name}() mut u64{{")
     for l in body: w("\t" + l)

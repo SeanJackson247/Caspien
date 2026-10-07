@@ -122,6 +122,48 @@ func indexed() mut u64{
 	}
 }
 
+func locals() mut u64{
+	let s = mut 0
+	for i in 0..4{
+		let j0 = mut (i + 1)
+		let t = mut (i * 3)
+		for j in j0..4{
+			s = s + t + j
+		}
+	}
+	return s
+}
+
+func samename() mut u64{
+	let s = mut 0
+	for i in 0..3{
+		let j0 = mut (i + 1)
+		for j in j0..3{
+			s = s + i * 10 + j
+		}
+	}
+	for i in 0..3{
+		let j0 = mut (i + 2)
+		for j in j0..4{
+			s = s + i * 100 + j
+		}
+	}
+	return s
+}
+
+func carry() mut u64{
+	let s = mut 0
+	let last = mut 0
+	for i in 0..4{
+		let j0 = mut (i + 1)
+		for j in j0..4{
+			s = s + j
+		}
+		last = i * 5 + 1
+	}
+	return s * 1000 + last
+}
+
 func main() void{
 	check("rect", rect(), 192)
 	check("tri", tri(), 35)
@@ -131,5 +173,8 @@ func main() void{
 	check("condition", condition(), 106)
 	check("breaks", breaks(), 60)
 	check("indexed", indexed(), 394)
+	check("locals", locals(), 26)
+	check("samename", samename(), 123)
+	check("carry", carry(), 14016)
 	return
 }

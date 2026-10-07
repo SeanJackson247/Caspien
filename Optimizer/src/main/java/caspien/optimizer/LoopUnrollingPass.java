@@ -146,7 +146,7 @@ public class LoopUnrollingPass implements OptimizationPass {
         String loS = inner.substring(0, comma), hiS = inner.substring(comma + 1);
         if (!allDigits(loS) || !allDigits(hiS)) return null;
         long lo = Long.parseLong(loS), hi = Long.parseLong(hiS);
-        if (hi <= lo) return null;
+        if (hi < lo) return null;   // hi == lo: an empty range, removed by a full unroll of zero copies
         List<BytecodeToken> p1 = L.get(s + 1), p2 = L.get(s + 2), as = L.get(s + 3);
         if (!is(p1, 3, "PUSH") || !p1.get(1).text.equals(loS)) return null;
         if (!is(p2, 3, "PUSH") || !p2.get(1).text.equals(hiS)) return null;
@@ -329,6 +329,7 @@ public class LoopUnrollingPass implements OptimizationPass {
                     delta += added;
                 }
             }
+            delta += flushAllocs(work, fnStart);
             i = fnEnd + delta + 1;
             if (i <= fnStart) i = fnStart + 1;
         }
@@ -426,8 +427,10 @@ public class LoopUnrollingPass implements OptimizationPass {
             // lo+c in its place and the increments between copies go: the variable is a constant in each copy, so the folding passes
             // can see through "i * 8", "bits >> i" and the like. The variable is dead after the loop (it is scoped to it).
             boolean subst = onlyReadsVar(body, lp, lp.forced || cfg.nested);
+            List<String> locals = subst ? bodyLocals(work, lp) : new ArrayList<>();
             for (long c = 0; c < n; c++) {
                 List<List<BytecodeToken>> copy = c == 0 ? body : freshCopy(body);
+                if (c > 0 && !locals.isEmpty()) copy = renameLocals(work, lp, copy, locals);
                 out.addAll(subst ? substVar(copy, lp, lp.lo + c) : copy);
                 if (!subst && c < n - 1) out.addAll(inc);
             }
@@ -557,6 +560,151 @@ public class LoopUnrollingPass implements OptimizationPass {
             if (k + 1 < body.size() && !body.get(k + 1).isEmpty() && body.get(k + 1).get(0).text.equals("ADDR_OF")) return false;
         }
         return true;
+    }
+
+    // ---- per-copy locals of a fully unrolled body that holds an inner loop ----------------------------------------------------------------
+    // Every copy of the body would declare the same locals (`let j0 = mut (i + 1)`, the hidden `$for_range_N` of an inner `for`): one slot assigned
+    // once per copy, so VariableElision (once-assigned literal) refused them and the inner loops of the later copies kept variable bounds. Copies 1..n-1
+    // get their own slots (`name__uK`, new ALLOC lines queued in `pendingAllocs`, inserted after the original ALLOC once the function is done).
+
+    /** [function start, function end] around line idx of work */
+    private static int[] functionOf(List<List<BytecodeToken>> work, int idx) {
+        int s = idx;
+        while (s > 0 && !is(work.get(s), 2, "FUNC_START")) s--;
+        int e = idx;
+        while (e < work.size() && !(work.get(e).size() >= 1 && work.get(e).get(0).text.equals("FUNC_END"))) e++;
+        return new int[] {s, e};
+    }
+
+    /** whether token text `t` names variable `name`: the name itself, `name.field`, or a bound of a range type (`imut_range(0,imut_name)`) */
+    private static boolean namesVar(String t, String name) {
+        if (t.equals(name) || t.startsWith(name + ".")) return true;
+        int open = t.indexOf("range(");
+        if (open < 0 || !t.endsWith(")")) return false;
+        String inner = t.substring(open + 6, t.length() - 1);
+        int comma = inner.indexOf(',');
+        if (comma < 0) return false;
+        return boundIs(inner.substring(0, comma), name) || boundIs(inner.substring(comma + 1), name);
+    }
+
+    private static boolean boundIs(String b, String name) {
+        String nm = b.startsWith("imut_") ? b.substring(5) : b.startsWith("mut_") ? b.substring(4) : b;
+        return nm.equals(name);
+    }
+
+    private static String renameTok(String t, Map<String, String> map) {
+        String r = map.get(t);
+        if (r != null) return r;
+        int dot = t.indexOf('.');
+        if (dot > 0) {
+            r = map.get(t.substring(0, dot));
+            if (r != null && !t.contains("range(")) return r + t.substring(dot);
+        }
+        int open = t.indexOf("range(");
+        if (open >= 0 && t.endsWith(")")) {
+            String inner = t.substring(open + 6, t.length() - 1);
+            int comma = inner.indexOf(',');
+            if (comma > 0) {
+                String lo = renameBound(inner.substring(0, comma), map), hi = renameBound(inner.substring(comma + 1), map);
+                return t.substring(0, open + 6) + lo + "," + hi + ")";
+            }
+        }
+        return t;
+    }
+
+    private static String renameBound(String b, Map<String, String> map) {
+        String pre = b.startsWith("imut_") ? "imut_" : b.startsWith("mut_") ? "mut_" : "";
+        String r = map.get(b.substring(pre.length()));
+        return r == null ? b : pre + r;
+    }
+
+    /** Locals declared in the body: ALLOC'd in this function, mentioned only inside the body span, body holding an inner loop. */
+    private List<String> bodyLocals(List<List<BytecodeToken>> work, Loop lp) {
+        List<String> res = new ArrayList<>();
+        boolean nested = false;
+        for (int k = lp.bodyStart; k < lp.incStart && !nested; k++) {
+            for (BytecodeToken t : work.get(k)) {
+                if (t.text.startsWith("$for_range_")) {
+                    nested = true;
+                    break;
+                }
+            }
+        }
+        if (!nested) return res;
+        int[] f = functionOf(work, lp.start);
+        for (int a = f[0]; a <= f[1]; a++) {
+            List<BytecodeToken> l = work.get(a);
+            if (!is(l, 3, "ALLOC")) continue;
+            String name = l.get(1).text;
+            if (name.equals(lp.var) || name.equals(lp.rangeName) || name.equals("gt_routine_address") || name.equals("gt_error_message")) continue;
+            boolean inside = false, outside = false;
+            for (int k = f[0]; k <= f[1] && !outside; k++) {
+                if (k == a || is(work.get(k), 3, "ALLOC")) continue;   // other ALLOC lines only spell the name in a range type; they are renamed with their variable
+                boolean in = k >= lp.bodyStart && k < lp.incStart;
+                List<BytecodeToken> row = work.get(k);
+                for (int t = 1; t < row.size(); t++) {
+                    if (row.get(t).kind != BytecodeToken.Kind.CODE || !namesVar(row.get(t).text, name)) continue;
+                    if (in) inside = true; else { outside = true; break; }
+                }
+            }
+            if (inside && !outside) res.add(name);
+        }
+        return res;
+    }
+
+    /** `copy` with the given locals renamed to fresh names; queues the matching ALLOC lines. */
+    private List<List<BytecodeToken>> renameLocals(List<List<BytecodeToken>> work, Loop lp, List<List<BytecodeToken>> copy, List<String> locals) {
+        Map<String, String> map = new HashMap<>();
+        int[] f = functionOf(work, lp.start);
+        for (String nm : locals) {
+            map.put(nm, nm + "__u" + (nextLabel++));
+        }
+        for (int a = f[0]; a <= f[1]; a++) {
+            List<BytecodeToken> l = work.get(a);
+            if (is(l, 3, "ALLOC") && map.containsKey(l.get(1).text)) {
+                List<BytecodeToken> na = new ArrayList<>(l);
+                na.set(1, retext(l.get(1), map.get(l.get(1).text)));
+                na.set(2, retext(l.get(2), renameTok(l.get(2).text, map)));
+                pendingAllocs.add(new Object[] {l, na});
+            }
+        }
+        List<List<BytecodeToken>> out = new ArrayList<>(copy.size());
+        for (List<BytecodeToken> l : copy) {
+            List<BytecodeToken> row = null;
+            for (int t = 1; t < l.size(); t++) {
+                BytecodeToken tok = l.get(t);
+                if (tok.kind != BytecodeToken.Kind.CODE) continue;
+                String r = renameTok(tok.text, map);
+                if (!r.equals(tok.text)) {
+                    if (row == null) row = new ArrayList<>(l);
+                    row.set(t, retext(tok, r));
+                }
+            }
+            out.add(row == null ? l : row);
+        }
+        return out;
+    }
+
+    private final List<Object[]> pendingAllocs = new ArrayList<>();
+
+    /** inserts the queued ALLOC lines after their originals (by identity); returns how many lines were added */
+    private int flushAllocs(List<List<BytecodeToken>> work, int fnStart) {
+        int added = 0;
+        for (Object[] pa : pendingAllocs) {
+            @SuppressWarnings("unchecked")
+            List<BytecodeToken> orig = (List<BytecodeToken>) pa[0];
+            @SuppressWarnings("unchecked")
+            List<BytecodeToken> na = (List<BytecodeToken>) pa[1];
+            for (int k = fnStart; k < work.size(); k++) {
+                if (work.get(k) == orig) {
+                    work.add(k + 1, na);
+                    added++;
+                    break;
+                }
+            }
+        }
+        pendingAllocs.clear();
+        return added;
     }
 
     /** The body with every "PUSH var vt" turned into "PUSH value vt". */
