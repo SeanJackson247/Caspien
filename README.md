@@ -2267,9 +2267,14 @@ structs and arrays as C does.
   That figure picks Caspien's fastest variant per program, while every other language has a single port, so it
   flatters Caspien somewhat; the standard library versions (2.23x, same programs) are the fairer picture of
   ordinary code.
-- The gap to C and Rust is real. The compiler has no general register allocator (hot scalar variables are
-  coloured over about 6 to 8 registers by liveness, with no spilling or live-range splitting, so everything
-  else stays in a stack slot), no vectorisation and no alias analysis, and every `match Some` on a `ref`
+- The gap to C and Rust is real. The compiler has no general register allocator. The optimiser marks the
+  hottest scalar variables of a function, and those are coloured by liveness over a small fixed register set: two or three
+  callee-saved registers (r13, r14, and r12 where the function does not use it), r8 to r10 and, with
+  `variables-in-arg-registers`, rsi, rdi, rdx and rcx, the last seven only in stretches without calls, plus six xmm
+  registers for floats. A variable that finds no free register stays in its stack slot: there is no live-range
+  splitting (the one exception is `hoist-array-bases`, which keeps a copy of a dynarray pointer in a register for the
+  length of a loop) and no spill code beyond saving float variables around calls. There is also no vectorisation and
+  no alias analysis (the loop passes use a simple 'nothing in the loop writes this slot' test), and every `match Some` on a `ref`
   pays for the ghost-table liveness lookup described in section 1.5 (expected O(1)).
 - The optimisation switches matter more than any single trick. With them off, the same programs are 4.2x
   slower than C on average (best variant of each), and they ship off. That is the biggest single improvement available to users
