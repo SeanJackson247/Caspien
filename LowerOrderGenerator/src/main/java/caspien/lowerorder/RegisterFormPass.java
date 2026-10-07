@@ -672,12 +672,16 @@ public class RegisterFormPass implements OptimizationPass {
     }
 
     /**
-     * DIV_INT 8 / MOD_INT 8 by a literal that is not a power of two (those became a shift / a mask earlier): "R_DIVC DIV|MOD 8 %tD a #k",
+     * DIV_INT n / MOD_INT n (n = 1, 2, 4, 8) by a literal that is not a power of two (those became a shift / a mask earlier): "R_DIVC DIV|MOD n %tD a #k",
      * which the backend turns into a multiplication by the reciprocal. Only the unsigned 8-byte forms and a literal divisor of
      * at least 3; any other division stays in the stack form.
      */
     private int fuseDivConst(State st, List<BytecodeToken> line, List<List<BytecodeToken>> all, int idx) {
-        if (!is(line, 2) || parseSize(line.get(1).text) != 8) {
+        if (!is(line, 2)) {
+            return 0;
+        }
+        int n = parseSize(line.get(1).text);
+        if (n != 8 && n != 4 && n != 2 && n != 1) {
             return 0;
         }
         int sz = st.stack.size();
@@ -693,7 +697,7 @@ public class RegisterFormPass implements OptimizationPass {
         if (k == null || k < 3 || (k & (k - 1)) == 0) {
             return 0;
         }
-        boolean loadA = needsLoad(a, 8);
+        boolean loadA = needsLoad(a, n);
         boolean aReg = a.kind == Kind.T || loadA;
         int need = (loadA ? 1 : 0) + (!aReg ? 1 : 0);
         if (need > st.freeTemps()) {
@@ -708,8 +712,8 @@ public class RegisterFormPass implements OptimizationPass {
         st.stack.remove(sz - 1);
         st.stack.remove(sz - 2);
         int dst = a.kind == Kind.T ? a.temp : st.allocTemp();
-        st.emit("R_DIVC", line.get(0).text.equals("DIV_INT") ? "DIV" : "MOD", "8", "%t" + dst, aOp, "#" + k);
-        st.stack.add(newTemp(dst, 8));
+        st.emit("R_DIVC", line.get(0).text.equals("DIV_INT") ? "DIV" : "MOD", String.valueOf(n), "%t" + dst, aOp, "#" + k);
+        st.stack.add(newTemp(dst, n));
         return 1;
     }
 

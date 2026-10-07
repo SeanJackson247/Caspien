@@ -90,6 +90,10 @@ public class LowerOrderGenerator {
         lines = new FieldDisplacementPass().run(lines);
         // A value computed into a temporary and copied into a variable register on the next line is computed there instead; dead initialisations of variable registers go (always on, last).
         lines = new DestForwardingPass().run(lines);
+        // The exit test of a for/loop is copied to the bottom: one conditional jump per iteration (`loop-rotation: on`; last, the copy is final register form).
+        lines = new ConditionalMovePass(config.deferredOperands && config.conditionalMove).run(lines);
+        lines = new CopyForwardPass(config.deferredOperands && config.copyForward).run(lines);
+        lines = new LoopRotationPass(config.deferredOperands && config.loopRotation).run(lines);
         return lines;
     }
 }

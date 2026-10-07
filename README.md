@@ -1854,6 +1854,9 @@ and off.
 | `variables-in-alloc-functions` | on, off | Functions that allocate or resize (`new`, `dyn`, `resize`, `clone`) may keep variables in the callee-saved registers r12-r14 (saved and restored around those instructions). Needs `variables-in-registers`. |
 | `variables-in-arg-registers` | on, off | Lets variables whose live range has no call and does not touch the argument registers also use rsi and rdi (two more variable registers). Needs `variables-in-registers`. |
 | `fuse-length-compare` | on, off | Folds the length load of a safe dynarray bounds check into the compare (`cmpq (%rax), %r9`) and reuses the loaded array pointer for the element access. Needs `deferred-operands: on`. |
+| `loop-rotation` | on, off | Rotates loops: the exit test is copied to the bottom, so each iteration runs one conditional jump instead of a conditional and an unconditional one. Needs `deferred-operands: on`. |
+| `copy-forward` | on, off | Copy forwarding: a temporary that only holds a copy of a register variable is replaced by the variable in its reads and the copy move is deleted. Needs `deferred-operands: on`. |
+| `conditional-move` | on, off | Conditional moves: a simple select (`if c { x = k }` or `if c { x = a } else { x = b }` on a register variable) becomes a compare and a `cmov` instead of a branch. Needs `deferred-operands: on`. |
 | `function-inlining` | off, conservative, balanced, aggressive | Replaces calls with the callee's body. Tunable with `inline-max-callee-lines`, `inline-max-depth`, `inline-max-growth`, `inline-max-multi-callee-lines` (a big callee with several call sites stays a call). |
 | `loop-unrolling` | off, conservative, balanced, aggressive | Unrolls `for` loops with literal bounds. Tunable with the `loop-unroll-*` keys. |
 | `constant-folding` | on, off | Folds operators whose operands are literals. |
@@ -1886,6 +1889,9 @@ hoist-array-bases: on
 variables-in-alloc-functions: on
 variables-in-arg-registers: on
 fuse-length-compare: on
+loop-rotation: on
+copy-forward: on
+conditional-move: on
 loop-unrolling: aggressive
 function-inlining: aggressive
 constant-folding: on

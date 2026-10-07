@@ -144,6 +144,10 @@ public class DestForwardingPass {
         return true;
     }
 
+    static boolean deadAfterPublic(List<List<BytecodeToken>> cur, boolean[] gone, int from, String x) {
+        return deadAfter(cur, gone, from, x);
+    }
+
     private static boolean pureRedefinition(List<BytecodeToken> l, String x) {
         int d = destIndex(l);
         if (d < 0 || !t(l, d).equals(x) || !(t(l, 0).equals("R_MOV") || t(l, 0).equals("R_LD") || t(l, 0).equals("R_LDI")

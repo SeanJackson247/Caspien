@@ -91,6 +91,12 @@ public class CompilerConfig {
     public boolean fuseLengthCompare = false;
     /** Optional top-level 'variables-in-arg-registers: on|off' (default off; needs variables-in-registers: on): rsi and rdi may hold variables in call-free live ranges (RegVarPromotionPass %v6, %v7). */
     public boolean variablesInArgRegisters = false;
+    /** Optional top-level 'conditional-move: on|off' (default off): ConditionalMovePass turns a compare-and-branch around a move of a register variable (one arm or two) into a cmov. Needs deferred-operands. */
+    public boolean conditionalMove = false;
+    /** Optional top-level 'copy-forward: on|off' (default off): CopyForwardPass replaces the reads of a temporary that only holds a copy of a promoted variable by the variable itself and deletes the copy. */
+    public boolean copyForward = false;
+    /** Optional top-level 'loop-rotation: on|off' (default off): LoopRotationPass copies the exit test of a for/loop to the bottom of the loop (one conditional jump per iteration instead of a conditional plus an unconditional one). */
+    public boolean loopRotation = false;
 
     public CallingConvention getDefault() {
         return callingConventions.get(defaultConvention);
@@ -158,6 +164,30 @@ public class CompilerConfig {
                     throw configErr(path, lineNo, "'variables-in-arg-registers' must be 'on' or 'off', found '" + v + "'");
                 }
                 config.variablesInArgRegisters = v.equals("on");
+                continue;
+            }
+            if (startsWithLiteral(trimmed, "loop-rotation:")) {
+                String v = unquoteOrBare(trimmed.substring("loop-rotation:".length()).trim());
+                if (!v.equals("on") && !v.equals("off")) {
+                    throw configErr(path, lineNo, "'loop-rotation' must be 'on' or 'off', found '" + v + "'");
+                }
+                config.loopRotation = v.equals("on");
+                continue;
+            }
+            if (startsWithLiteral(trimmed, "copy-forward:")) {
+                String v = unquoteOrBare(trimmed.substring("copy-forward:".length()).trim());
+                if (!v.equals("on") && !v.equals("off")) {
+                    throw configErr(path, lineNo, "'copy-forward' must be 'on' or 'off', found '" + v + "'");
+                }
+                config.copyForward = v.equals("on");
+                continue;
+            }
+            if (startsWithLiteral(trimmed, "conditional-move:")) {
+                String v = unquoteOrBare(trimmed.substring("conditional-move:".length()).trim());
+                if (!v.equals("on") && !v.equals("off")) {
+                    throw configErr(path, lineNo, "'conditional-move' must be 'on' or 'off', found '" + v + "'");
+                }
+                config.conditionalMove = v.equals("on");
                 continue;
             }
             if (startsWithLiteral(trimmed, "fuse-length-compare:")) {

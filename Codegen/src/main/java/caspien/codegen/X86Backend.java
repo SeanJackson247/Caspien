@@ -2726,7 +2726,7 @@ public class X86Backend {
             }
             case "R_DIVC": {
                 // "R_DIVC DIV|MOD 8 %tD a #k" -- unsigned division / remainder by a constant, by multiplying with the reciprocal.
-                rfDivConst(line.get(1).text.equals("MOD"), line.get(3).text, line.get(4).text, rfImm(line.get(5).text));
+                rfDivConst(line.get(1).text.equals("MOD"), (int) Long.parseLong(line.get(2).text), line.get(3).text, line.get(4).text, rfImm(line.get(5).text));
                 return;
             }
             case "R_UN": {
@@ -2755,6 +2755,10 @@ public class X86Backend {
                     return;
                 }
                 rfBrc(line.get(1).text, line.get(3).text, line.get(4).text, mangleLabel(line.get(5).text));
+                return;
+            }
+            case "R_CMOV": {
+                rfCmov(line);
                 return;
             }
             case "R_BRCM": {
@@ -2788,11 +2792,17 @@ public class X86Backend {
                 String src = line.get(3).text;
                 if (rfIsImm(src)) {
                     movImmToReg(vr, rfExtImm(rfImm(src), n, false));
+                } else if (n == 4 || n == 2 || n == 1) {
+                    // one instruction: movl / movzwl / movzbl from the source's sub-register straight into the 32-bit destination
+                    // (writing a 32-bit register clears bits 32..63), instead of a 64-bit copy followed by an in-place zero-extension
+                    String sr = rfReg(src);
+                    if (n == 4) {
+                        raw("    movl %" + sizedReg(sr, 4) + ", %" + sizedReg(vr, 4));
+                    } else {
+                        raw("    movz" + movSuffix(n) + "l %" + sizedReg(sr, n) + ", %" + sizedReg(vr, 4));
+                    }
                 } else {
                     rfRegToReg(vr, rfReg(src));
-                    if (n < 8) {
-                        zeroExtendReg(vr, n);
-                    }
                 }
                 return;
             }
@@ -3118,8 +3128,15 @@ public class X86Backend {
                 popReg("rax");
                 zeroExtendReg("rax", dsize);
                 zeroExtendReg("rbx", dsize);
-                raw("    xorq %rdx, %rdx");
-                raw("    divq %rbx");
+                if (dsize <= 4) {
+                    // both operands were zero-extended from at most 32 bits: the 32-bit divide gives the same quotient and remainder,
+                    // several times faster than divq on most x86 cores (a divl clears the upper halves of rax and rdx itself)
+                    raw("    xorl %edx, %edx");
+                    raw("    divl %ebx");
+                } else {
+                    raw("    xorq %rdx, %rdx");
+                    raw("    divq %rbx");
+                }
                 
                 pushReg(mnemonic.equals("DIV_INT") ? "rax" : "rdx");
                 return;
@@ -5656,7 +5673,7 @@ public class X86Backend {
      * the remainder is a - q*k). The dividend goes to the scratch register r15; rax (a live temp when %tD is another register) is
      * parked in %tD for the duration and swapped back; rdx is clobbered, as by the stack form's divq.
      */
-    private void rfDivConst(boolean mod, String dstTok, String aTok, long k) {
+    private void rfDivConst(boolean mod, int size, String dstTok, String aTok, long k) {
         String d = rfReg(dstTok);
         long[] ms0 = divMagicSimple(k);
         if (ms0 != null && !mod) {
@@ -5664,9 +5681,12 @@ public class X86Backend {
             if (rfIsTemp(aTok)) {
                 rfRegToReg("rdx", rfReg(aTok));
             } else if (rfIsImm(aTok)) {
-                movImmToReg("rdx", rfImm(aTok));
+                movImmToReg("rdx", rfExtImm(rfImm(aTok), size, false));
             } else {
                 movMemToReg("rdx", rfSlot(aTok));
+            }
+            if (size < 8 && !rfIsImm(aTok)) {
+                zeroExtendReg("rdx", size);   // a narrow dividend: only its low `size` bytes count (the register may hold more)
             }
             if (ms0[0] > 0) {
                 raw("    shrq $" + ms0[0] + ", %rdx");
@@ -5689,9 +5709,12 @@ public class X86Backend {
         if (rfIsTemp(aTok)) {
             rfRegToReg(RF_SCRATCH, rfReg(aTok));
         } else if (rfIsImm(aTok)) {
-            movImmToReg(RF_SCRATCH, rfImm(aTok));
+            movImmToReg(RF_SCRATCH, rfExtImm(rfImm(aTok), size, false));
         } else {
             movMemToReg(RF_SCRATCH, rfSlot(aTok));
+        }
+        if (size < 8 && !rfIsImm(aTok)) {
+            zeroExtendReg(RF_SCRATCH, size);
         }
         boolean inRax = d.equals("rax");
         long[] ms = divMagicSimple(k);
@@ -5847,6 +5870,17 @@ public class X86Backend {
             if (rfIsImm(bTok)) {
                 bTok = "#" + rfExtImm(rfImm(bTok), size, signedCmp);
             }
+        }
+        if (bText == null && op.equals("BAND") && size == 8 && rfIsImm(bTok) && rfIsTemp(aTok) && !rfReg(aTok).equals(d)
+                && (rfImm(bTok) == 0xFFFFFFFFL || rfImm(bTok) == 0xFFFFL || rfImm(bTok) == 0xFFL)) {
+            // x & 0xFF / 0xFFFF / 0xFFFFFFFF into another register: one zero-extending move instead of a copy and a mask
+            long mk = rfImm(bTok);
+            if (mk == 0xFFFFFFFFL) {
+                raw("    movl %" + sizedReg(rfReg(aTok), 4) + ", %" + sizedReg(d, 4));
+            } else {
+                raw("    movz" + (mk == 0xFFL ? "b" : "w") + "l %" + sizedReg(rfReg(aTok), mk == 0xFFL ? 1 : 2) + ", %" + sizedReg(d, 4));
+            }
+            return;
         }
         if (!(rfIsTemp(aTok) && rfReg(aTok).equals(d))) {
             rfMov(dstTok, aTok);
@@ -6053,7 +6087,7 @@ public class X86Backend {
      * sized cmp look at exactly the low `size` bytes (what the unfused R_BIN did by extending both operands first). Frame-slot operands are
      * never fused (BranchFusionPass).
      */
-    private void rfBrcNarrow(String op, int size, String aTok, String bTok, String label) {
+    private String rfBrcNarrow(String op, int size, String aTok, String bTok, String label) {
         String cc = rfFalseJump(op);
         if (rfIsImm(aTok)) {
             String t = aTok;
@@ -6068,10 +6102,13 @@ public class X86Backend {
         String aText = "%" + sizedReg(rfReg(aTok), size);
         String bText = rfIsImm(bTok) ? "$" + rfTrunc(rfImm(bTok), size) : "%" + sizedReg(rfReg(bTok), size);
         raw("    cmp" + suffix + " " + bText + ", " + aText);
-        raw("    " + cc + " " + label);
+        if (label != null) {
+            raw("    " + cc + " " + label);
+        }
+        return cc;
     }
 
-    private void rfBrc(String op, String aTok, String bTok, String label) {
+    private String rfBrc(String op, String aTok, String bTok, String label) {
         String cc = rfFalseJump(op); // the jump taken when the comparison is false
         if (rfIsImm(aTok)) {
             // "cmp imm, x" does not exist: swap the operands and mirror the condition.
@@ -6092,7 +6129,67 @@ public class X86Backend {
         }
         String bText = rfSrc(bTok); // a huge immediate goes through the scratch register (a is then never in it: a slot stays in memory)
         rfOp2("cmp", aText, bText);
-        raw("    " + cc + " " + label);
+        if (label != null) {
+            raw("    " + cc + " " + label);
+        }
+        return cc;
+    }
+
+    /** the condition-code suffix that is TRUE exactly when the false-jump `jcc` is not taken ("jne" -> "e") */
+    private static String rfTrueSuffix(String falseJump) {
+        switch (falseJump) {
+            case "jne": return "e";
+            case "je": return "ne";
+            case "jae": return "b";
+            case "jb": return "ae";
+            case "ja": return "be";
+            case "jbe": return "a";
+            case "jge": return "l";
+            case "jl": return "ge";
+            case "jg": return "le";
+            case "jle": return "g";
+            default:
+                throw new IllegalStateException("unknown condition '" + falseJump + "'");
+        }
+    }
+
+    /** `mov imm, reg` that leaves the flags alone (never the xor idiom) */
+    private void rfMovImmKeepFlags(String reg, long v) {
+        if (v >= 0 && v <= 0xFFFFFFFFL) {
+            raw("    movl $" + v + ", %" + sizedReg(reg, 4));
+        } else if (rfFitsImm32(v)) {
+            raw("    movq $" + v + ", %" + reg);
+        } else {
+            raw("    movabsq $" + v + ", %" + reg);
+        }
+    }
+
+    /**
+     * "R_CMOV OP n a b %vK X [Y]" -- the select made by the LowerOrderGenerator's ConditionalMovePass: %vK = (a OP b) ? X : Y (Y absent = %vK keeps its
+     * value). X and Y are a register or an immediate (already cut to the variable's width). One compare, then `mov Y` (flags untouched) and `cmovCC X`.
+     */
+    private void rfCmov(List<BytecodeToken> line) {
+        String op = line.get(1).text;
+        int size = (int) Long.parseLong(line.get(2).text);
+        String a = line.get(3).text, b = line.get(4).text, v = line.get(5).text, x = line.get(6).text;
+        String y = line.size() > 7 ? line.get(7).text : null;
+        String dst = rfReg(v);
+        String cc = size < 8 ? rfBrcNarrow(op, size, a, b, null) : rfBrc(op, a, b, null);
+        if (y != null && !y.equals(v)) {
+            if (rfIsImm(y)) {
+                rfMovImmKeepFlags(dst, rfImm(y));
+            } else {
+                rfRegToReg(dst, rfReg(y));
+            }
+        }
+        String xr;
+        if (rfIsImm(x)) {
+            rfMovImmKeepFlags(RF_SCRATCH, rfImm(x));
+            xr = RF_SCRATCH;
+        } else {
+            xr = rfReg(x);
+        }
+        raw("    cmov" + rfTrueSuffix(cc) + "q %" + xr + ", %" + dst);
     }
 
     private static long rfExtImm(long v, int size, boolean signed) {
@@ -6410,9 +6507,15 @@ public class X86Backend {
             return;
         }
         String x;
+        boolean prescaled = false;
         if (rfIsTemp(idxTok)) {
             x = rfReg(idxTok);
-            if (rfIsVar(idxTok) && !(scale == 1 || scale == 2 || scale == 4 || scale == 8)) {
+            if (!(scale == 1 || scale == 2 || scale == 4 || scale == 8) && rfFitsImm32(scale)) {
+                // scale * idx in one 3-operand imul into the scratch register (no copy first, never in place on a variable)
+                raw(("    imulq $" + scale + ", %" + x + ", %" + RF_SCRATCH));
+                x = RF_SCRATCH;
+                prescaled = true;
+            } else if (rfIsVar(idxTok) && !(scale == 1 || scale == 2 || scale == 4 || scale == 8)) {
                 rfRegToReg(RF_SCRATCH, x); // the multiply below works in place; never on a variable
                 x = RF_SCRATCH;
             }
@@ -6442,7 +6545,9 @@ public class X86Backend {
                 }
             }
         } else {
-            raw(("    imulq $" + scale + ", %" + x + ", %" + x));
+            if (!prescaled) {
+                raw(("    imulq $" + scale + ", %" + x + ", %" + x));
+            }
             raw(("    addq %" + x + ", %" + d));
             if (extra != 0) {
                 rfAddImm(d, extra);
