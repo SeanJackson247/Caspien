@@ -35,10 +35,13 @@ public class CodegenConfig {
     public final Target target;
     /** `bmi2 on`: variable shifts use shlx/shrx (needs a BMI2 CPU: Intel Haswell 2013+, AMD Excavator/Zen+). Off by default. */
     public final boolean bmi2;
+    /** `avx on`: scalar float arithmetic on register variables uses the 3-operand VEX forms (vaddsd ...), which need no copy of the first operand (Sandy Bridge 2011+, AMD Bulldozer+). Off by default. */
+    public final boolean avx;
 
-    private CodegenConfig(Target target, boolean bmi2) {
+    private CodegenConfig(Target target, boolean bmi2, boolean avx) {
         this.target = target;
         this.bmi2 = bmi2;
+        this.avx = avx;
     }
 
     public static CodegenConfig load(String path) {
@@ -51,6 +54,7 @@ public class CodegenConfig {
         }
         Target target = null;
         boolean bmi2 = false;
+        boolean avx = false;
         for (int i = 0; i < lines.size(); i++) {
             String raw = lines.get(i).trim();
             if (raw.isEmpty() || raw.startsWith("#")) {
@@ -82,6 +86,11 @@ public class CodegenConfig {
                 } else {
                     throw new CodegenException("config", path, i + 1, "bmi2 must be 'on' or 'off', got '" + value + "'");
                 }
+            } else if (key.equals("avx")) {
+                if (!value.equalsIgnoreCase("on") && !value.equalsIgnoreCase("off")) {
+                    throw new CodegenException("config", path, i + 1, "avx must be 'on' or 'off', got '" + value + "'");
+                }
+                avx = value.equalsIgnoreCase("on");
             } else if (key.equals("jcc-padding")) {
                 // read by the Compiler (it adds an option to the assembler call); Codegen only validates it
                 if (!value.equalsIgnoreCase("on") && !value.equalsIgnoreCase("off")) {
@@ -94,6 +103,6 @@ public class CodegenConfig {
         if (target == null) {
             throw new CodegenException("config", path, 0, "missing required 'target' key");
         }
-        return new CodegenConfig(target, bmi2);
+        return new CodegenConfig(target, bmi2, avx);
     }
 }

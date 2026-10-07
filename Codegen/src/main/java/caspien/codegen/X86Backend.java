@@ -945,6 +945,8 @@ public class X86Backend {
     }
 
     private final boolean bmi2;
+    /** `avx on`: R_FBINX uses VEX 3-operand scalar forms */
+    public boolean avx;
 
     public X86Backend(CodegenConfig.Target target) {
         this(target, false);
@@ -6767,6 +6769,29 @@ public class X86Backend {
                 raw(("    add" + sfx + " %" + xd + ", %" + xd));
                 return;
             }
+        }
+        if (avx) {
+            // VEX three-operand form: xd = a op b with no copy of a into the destination first (b may be the destination's own register)
+            String ra;
+            if (rfIsXvar(aTok)) {
+                ra = xvReg(aTok);
+            } else {
+                ra = (rfIsXvar(bTok) && xvReg(bTok).equals(xd)) ? rfXmmA() : xd;
+                rfLoadXmm(aTok, ra, n);
+            }
+            String vb;
+            if (rfIsXvar(bTok)) {
+                vb = xText(xvReg(bTok));
+            } else if (rfIsSlot(bTok)) {
+                vb = (rfSlot(bTok) + "(%rbp)");
+            } else if (rfIsImm(bTok)) {
+                vb = floatPoolMem(rfImm(bTok), n);
+            } else {
+                rfLoadXmm(bTok, rfXmmB(), n);
+                vb = xText(rfXmmB());
+            }
+            raw(("    v" + mn + sfx + " " + vb + ", %" + ra + ", %" + xd));
+            return;
         }
         boolean commutative = op.equals("ADD") || op.equals("MUL");
         boolean bIsDst = rfIsXvar(bTok) && xvReg(bTok).equals(xd);

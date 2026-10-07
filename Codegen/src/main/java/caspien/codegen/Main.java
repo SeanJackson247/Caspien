@@ -52,6 +52,7 @@ public class Main {
         List<List<BytecodeToken>> parsed = parser.parse(rawLines, inputPath);
 
         X86Backend backend = new X86Backend(config.target, config.bmi2);
+        backend.avx = config.avx;
         String assembly = backend.generate(parsed);
 
         System.out.print(assembly);

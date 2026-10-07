@@ -1874,7 +1874,7 @@ a power of two become shifts), compare-and-branch fusion, jump cleanup, a float 
 addressing for arrays, field access through a pointer as a single displacement instruction, fusion of the bounds-proof test into the loop,
 compare-and-branch on 8, 16 and 32-bit values without widening them first, and multiplication by a constant as shifts, adds and `lea`.
 
-Two more switches, both shipped off, live in the `===codegen.config===` section: `bmi2` (variable shifts use `shlx`/`shrx`; needs a BMI2 CPU) and
+Three more switches, all shipped off, live in the `===codegen.config===` section: `bmi2` (variable shifts use `shlx`/`shrx`; needs a BMI2 CPU), `avx` (scalar float arithmetic uses the three-operand VEX forms, which removes the register copies; needs an AVX CPU; fewer instructions but no measured speed-up) and
 `jcc-padding` (the assembler pads branches so none crosses or ends on a 32-byte boundary, which on Intel Skylake-family CPUs keeps a tight loop
 from losing several percent just because code elsewhere moved it; needs binutils 2.34 or newer, otherwise it is ignored with a warning).
 
