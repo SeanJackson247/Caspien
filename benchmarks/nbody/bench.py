@@ -477,9 +477,11 @@ def main():
                     continue
                 open(os.path.join(ct, "toolchain.config"), "w").write(base)
                 patch_config(os.path.join(ct, "toolchain.config"), kv)
-                shutil.copy(os.path.join(CAS, src + ".caspien"), os.path.join(ct, "_nb.caspien"))
+                # placed at the same depth as in the repo, so a variant's `../../../stdlib/..` imports (the AoS ones) resolve
+                os.makedirs(os.path.join(ct, "benchmarks", "nbody", "caspien"), exist_ok=True)
+                shutil.copy(os.path.join(CAS, src + ".caspien"), os.path.join(ct, "benchmarks", "nbody", "caspien", "_nb.caspien"))
                 exe = os.path.join(W, "cas_%s_%s" % (src, mode))
-                measure(label, "caspien", "Caspien", [{"cmd": ["java", "Compiler", "-i", "_nb.caspien", exe, "--no-cache"], "cwd": ct,
+                measure(label, "caspien", "Caspien", [{"cmd": ["java", "Compiler", "-i", "benchmarks/nbody/caspien/_nb.caspien", exe, "--no-cache"], "cwd": ct,
                                                        "env": dict(os.environ, JAVA_TOOL_OPTIONS="")}],
                         [exe], lambda e=exe: size_of(e), prec, desc + "; optimisations " + mode)
         shutil.rmtree(ct, ignore_errors=True)
