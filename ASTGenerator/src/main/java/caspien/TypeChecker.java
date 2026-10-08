@@ -4892,7 +4892,7 @@ public class TypeChecker {
     /** Valid on any func-shaped token (top-level func, interface default method, or impl method) regardless of context; @default/@overrides/@realizes are validated separately, per-context, since which of those (if any) is *required* depends on where the func sits. */
     private static final Set<String> FUNC_BASE_DECORATORS = new HashSet<>(Arrays.asList(
             "pure", "recursive", "inline", "call_convention", "reads", "writes",
-            "gt_init", "gt_alive_check", "gt_destruct", "gt_register", "gt_moved", "par_call", "await_call", "sleep",
+            "gt_init", "gt_alive_check", "gt_destruct", "gt_register", "gt_moved", "gt_ref_id", "gt_ref_resolve", "par_call", "await_call", "sleep",
             "lock", "unlock", "async", "pub", "with_tick", "tick", "event_loop", "make_safe_args", "throws", "drop", "fs_root", "fs_unsafe", "non"));
     /** `@drop` marks a struct's cleanup function: the drop glue calls it with the struct's address just before the struct (an `owns` value) is freed, so a handle type can close what it holds. It takes exactly one parameter, `ref some mut S` for a struct S, returns void and does not throw. */
     private void requireDropHookShape(Token t, FuncInfo info, List<Token> returnTypeTokens) {
@@ -5632,6 +5632,16 @@ public class TypeChecker {
         // (a plain "one function per decorator name" registry, not
         // specific to the ghost table concept despite its name) rather
         // than a parallel mechanism, since the shape is identical.
+        // "@gt_ref_id" (address -> 64-bit id, 0 when null/dead) and "@gt_ref_resolve" (id -> address, null when dead):
+        // the nullable `ref` representation hooks (stdlib/gt_id).
+        if (getDecorator(t.decorators, "gt_ref_id") != null) {
+            requireGtRefSignature(t, info, "gt_ref_id", true);
+            registerGhostTableFunction(t, info, "gt_ref_id");
+        }
+        if (getDecorator(t.decorators, "gt_ref_resolve") != null) {
+            requireGtRefSignature(t, info, "gt_ref_resolve", false);
+            registerGhostTableFunction(t, info, "gt_ref_resolve");
+        }
         if (getDecorator(t.decorators, "par_call") != null) {
             requireAsyncGlueSignature(t, info, "par_call");
             registerGhostTableFunction(t, info, "par_call");
@@ -5805,7 +5815,7 @@ public class TypeChecker {
      * don't need (or want) their name forced.
      */
     private void forceGhostTableFunctionNames() {
-        for (String decoratorName : Arrays.asList("gt_init", "gt_alive_check", "gt_destruct", "gt_register", "gt_moved")) {
+        for (String decoratorName : Arrays.asList("gt_init", "gt_alive_check", "gt_destruct", "gt_register", "gt_moved", "gt_ref_id", "gt_ref_resolve")) {
             FuncInfo decorated = ghostTableFunctions.get(decoratorName);
             if (decorated == null) {
                 continue;
@@ -5856,6 +5866,25 @@ public class TypeChecker {
             throw new CompilerException("type", t.file, t.line,
                     "'@" + decoratorName + "' requires a return type of '" + expectedReturnBaseType + "', got '"
                             + info.returnType.canonical() + "'");
+        }
+    }
+
+    /** `@gt_ref_id`: `func(ptr: raw u8) u64`; `@gt_ref_resolve`: `func(id: u64) raw u8`. */
+    private void requireGtRefSignature(Token t, FuncInfo info, String decoratorName, boolean idOfPointer) {
+        boolean ok = info.paramTypes.size() == 1;
+        if (ok) {
+            TypeInfo p = info.paramTypes.get(0);
+            TypeInfo r = info.returnType;
+            if (idOfPointer) {
+                ok = "raw".equals(p.storage) && p.baseType.equals("u8") && r.storage == null && r.baseType.equals("u64");
+            } else {
+                ok = p.storage == null && p.baseType.equals("u64") && "raw".equals(r.storage) && r.baseType.equals("u8");
+            }
+        }
+        if (!ok) {
+            throw new CompilerException("type", t.file, t.line, idOfPointer
+                    ? "'@gt_ref_id' must have the shape 'func f(ptr: raw u8) u64'"
+                    : "'@gt_ref_resolve' must have the shape 'func f(id: u64) raw u8'");
         }
     }
 
@@ -7041,7 +7070,7 @@ public class TypeChecker {
      */
     private void validateNoThrowReachableFromGhostTableFunctions() {
         List<FuncInfo> gtFuncs = new ArrayList<>();
-        for (String decoratorName : Arrays.asList("gt_init", "gt_alive_check", "gt_destruct", "gt_register", "gt_moved")) {
+        for (String decoratorName : Arrays.asList("gt_init", "gt_alive_check", "gt_destruct", "gt_register", "gt_moved", "gt_ref_id", "gt_ref_resolve")) {
             FuncInfo f = ghostTableFunctions.get(decoratorName);
             if (f != null) {
                 gtFuncs.add(f);
@@ -10138,7 +10167,10 @@ public class TypeChecker {
                 ProofKills.suppressReads--;
             }
             Token argExpr = collectSingleBuiltinArg(node, "Some", scope, func).get(0);
-            out.add(new Token.MatchPattern(proofKeyOf(argExpr), "alive", null));
+            node.someProofKey = proofKeyOf(argExpr);
+            Token.MatchPattern someProof = new Token.MatchPattern(proofKeyOf(argExpr), "alive", null);
+            someProof.onId = node.someOnRef;
+            out.add(someProof);
             return;
         }
         // "we must update the match statement to no longer take a
@@ -10232,7 +10264,11 @@ public class TypeChecker {
                     "'Some(...)' requires the element type to be a pointer, got '" + elemType.canonical()
                             + "'");
         }
-        out.add(new Token.MatchPattern(slotKeyOf(lookupNode), "alive", null));
+        Token.MatchPattern elemProof = new Token.MatchPattern(slotKeyOf(lookupNode), "alive", null);
+        out.add(elemProof);
+        lookupNode.someOnRef = "ref".equals(elemType.storage) && !elemType.isSome;
+        elemProof.onId = lookupNode.someOnRef;
+        lookupNode.someProofKey = slotKeyOf(lookupNode);
         // Handed to BytecodeEmitter so it can emit the real
         // "GT_ALIVE_CHECK" for this exact, already-resolved lookup
         // directly, rather than re-deriving/re-unwrapping the target a
@@ -11046,7 +11082,7 @@ public class TypeChecker {
         // actually emitted anywhere -- confirmed directly by building
         // this exact case and inspecting the real, invalid bytecode it
         // produced before this check existed.
-        for (String decoratorName : Arrays.asList("gt_init", "gt_alive_check", "gt_destruct", "gt_register", "gt_moved")) {
+        for (String decoratorName : Arrays.asList("gt_init", "gt_alive_check", "gt_destruct", "gt_register", "gt_moved", "gt_ref_id", "gt_ref_resolve")) {
             if (getDecorator(func.funcToken.decorators, decoratorName) != null) {
                 throw new CompilerException("type", throwTok.file, throwTok.line,
                         "'throw' cannot be used inside '@" + decoratorName + "' -- a ghost-table function "
@@ -13126,7 +13162,34 @@ public class TypeChecker {
         }
         requireProvenFloatState(op.left, leftType, scope, op);
         requireProvenFloatState(op.right, rightType, scope, op);
+        if (op.text.equals("==") || op.text.equals("!=")) {
+            normalizeRefComparison(op, leftType, rightType);
+        }
         return new TypeInfo(null, "indeterminate", "bool");
+    }
+
+    /**
+     * A nullable `ref` is an id and every other pointer an address, so `==`/`!=` between the two kinds first converts one side: an address
+     * compared with a nullable `ref` becomes an id (GT_REF_ID, equal objects have equal ids); a `raw` pointer compared with one makes the id
+     * an address (GT_REF_RESOLVE). A `null` literal is 0 in both forms and needs nothing.
+     */
+    private void normalizeRefComparison(Token op, TypeInfo leftType, TypeInfo rightType) {
+        boolean leftId = "ref".equals(leftType.storage) && !leftType.isSome;
+        boolean rightId = "ref".equals(rightType.storage) && !rightType.isSome;
+        if (leftId == rightId || leftType.baseType.equals("null") || rightType.baseType.equals("null")) {
+            return;
+        }
+        Token idSide = leftId ? op.left : op.right;
+        Token addrSide = leftId ? op.right : op.left;
+        TypeInfo addrType = leftId ? rightType : leftType;
+        if (addrType.storage == null) {
+            return;
+        }
+        if ("raw".equals(addrType.storage)) {
+            idSide.refToRaw = true;
+        } else {
+            addrSide.refToId = true;
+        }
     }
 
     private TypeInfo checkCall(Token op, Scope scope, FuncInfo func, boolean eligibleForRvoHere) {
@@ -13541,6 +13604,7 @@ public class TypeChecker {
             throw new CompilerException("type", argExpr.file, argExpr.line,
                     "'Some' requires a pointer, got '" + argType.canonical() + "'");
         }
+        op.someOnRef = "ref".equals(argType.storage) && !argType.isSome;
         return new TypeInfo(null, "indeterminate", "bool");
     }
 
@@ -15789,7 +15853,7 @@ public class TypeChecker {
         if (func == null || func.funcToken == null || func.funcToken.decorators == null) {
             return false;
         }
-        for (String d : new String[] { "gt_init", "gt_alive_check", "gt_destruct", "gt_register", "gt_moved" }) {
+        for (String d : new String[] { "gt_init", "gt_alive_check", "gt_destruct", "gt_register", "gt_moved", "gt_ref_id", "gt_ref_resolve" }) {
             if (getDecorator(func.funcToken.decorators, d) != null) {
                 return true;
             }
@@ -17214,6 +17278,13 @@ public class TypeChecker {
             return false;
         }
         ProofKills.use(targetExpr, cands, key);
+        for (Token.MatchPattern c : cands) {
+            if (c.onId) {
+                targetExpr.refProofIsId = true;   // the proof is on a nullable `ref` (an id): the emitter reads the proof's address
+                break;
+            }
+        }
+        targetExpr.refProofKey = key;   // a nullable `ref` subject is read from the proof's address slot (BytecodeEmitter)
         return true;
     }
 
@@ -19255,7 +19326,11 @@ public class TypeChecker {
         // declared 'mut' at all, blocking both reassignment and '++'
         // (both require a 'mut' target) even in 'unsafe' code with a
         // legitimate reason to advance a raw pointer through memory.
-        return operandType.withMutability("indeterminate").withStorage(storage);
+        TypeInfo prefixResult = operandType.withMutability("indeterminate").withStorage(storage);
+        if (storage.equals("ref") && !prefixResult.isSome) {
+            op.refToId = true;   // `ref x` of a nullable owner is a nullable `ref`: an id, not the address
+        }
+        return prefixResult;
     }
 
     /** True for a VARREF, or a '.' chain of member accesses rooted in one -- the things 'auto' can validly point to. */
@@ -19746,6 +19821,7 @@ public class TypeChecker {
     private void retagLiteralArgs(List<TypeInfo> paramTypes, List<TypeInfo> argTypes, List<Token> argNodes) {
         for (int i = 0; i < argTypes.size() && i < paramTypes.size(); i++) {
             TypeInfo a = argTypes.get(i);
+            markRefConversion(paramTypes.get(i), a, argNodes.get(i));
             if ((a.literalValue != null || a.literalElements != null || a.floatLiteral) && literalAdapts(paramTypes.get(i), a) && argNodes.get(i) != null) {
                 adaptLiteral(argNodes.get(i), paramTypes.get(i));
             }
@@ -19934,11 +20010,32 @@ public class TypeChecker {
         }
     }
 
+    /**
+     * A nullable `ref` (storage `ref`, not `some`) is stored as a 64-bit id; a `ref some`, a proven binding and an `owns` value are addresses.
+     * Where an address-valued expression is accepted by a nullable `ref` slot the emitter converts it (GT_REF_ID); where a nullable `ref`
+     * is accepted by a `raw` slot it is resolved to its current address (GT_REF_RESOLVE; null when dead). Called only for the finally chosen
+     * parameter/target, never for a rejected overload candidate.
+     */
+    private void markRefConversion(TypeInfo expected, TypeInfo actual, Token expr) {
+        if (expr == null || expected == null || actual == null || actual.storage == null || expected.storage == null) {
+            return;
+        }
+        boolean actualNullableRef = "ref".equals(actual.storage) && !actual.isSome;
+        if ("ref".equals(expected.storage) && !expected.isSome) {
+            if (!actualNullableRef && ("ref".equals(actual.storage) || "owns".equals(actual.storage))) {
+                expr.refToId = true;
+            }
+        } else if ("raw".equals(expected.storage) && actualNullableRef) {
+            expr.refToRaw = true;
+        }
+    }
+
     /** `typesCompatible`, plus the retagging `adaptLiteral` a literal that adapted needs. Use wherever the argument expression is in hand. */
     private boolean acceptsAdaptingLiteral(TypeInfo expected, TypeInfo actual, Token expr) {
         if (!typesCompatible(expected, actual)) {
             return false;
         }
+        markRefConversion(expected, actual, expr);
         if ((actual.literalValue != null || actual.literalElements != null || actual.floatLiteral) && literalAdapts(expected, actual)) {
             adaptLiteral(expr, expected);
         }

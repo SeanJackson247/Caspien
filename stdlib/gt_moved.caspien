@@ -1,5 +1,6 @@
-// The real "@gt_moved" -- unregisters `ptr` WITHOUT freeing it (the block lives on at a new address, see `resize`). It never shrinks the table,
-// so the gt_register(new) that follows it can not need to grow: this removal freed the slot that registration takes.
+// The "@gt_moved" of the id table -- unregisters `ptr` WITHOUT freeing it (the block lives on at a new address, see `resize`), dropping its id:
+// an id names an object at one address, so a moved block's old id is dead afterwards, exactly as a plain ref to the old address was. It never
+// shrinks T1, so the gt_register(new) that follows can not need to grow.
 import "ghost_table.caspien"
 
 @gt_moved
@@ -8,9 +9,16 @@ func gt_moved(ptr: raw imut u8) void{
 	if ptr != null{
 		match @lock ghost_table{
 			OPEN:{
-				let at = mut gtFind(ghost_table.base, ghost_table.capacity, ptr)
+				let addr = mut gtAddrOf(ptr)
+				let at = mut gtT1Find(ghost_table.base, ghost_table.capacity, addr)
 				if at != ghost_table.capacity{
-					gtRemoveAt(ghost_table.base, ghost_table.capacity, at)
+					let stored = mut gtLoad(ghost_table.base, at)
+					if bits_and(stored, 1) == 1{
+						gtUnlinkId(ghost_table.refBase, ghost_table.refCap, ghost_table.idBase, ghost_table.idCap, addr)
+						ghost_table.refLen = mut (ghost_table.refLen - 1)
+						ghost_table.idLen = mut (ghost_table.idLen - 1)
+					}
+					gtT1RemoveAt(ghost_table.base, ghost_table.capacity, at)
 					ghost_table.len = mut (ghost_table.len - 1)
 				}
 			}

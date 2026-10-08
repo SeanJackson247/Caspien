@@ -1,0 +1,265 @@
+// Nullable `ref` values are 64-bit ids (ghost table design E): a ref to a freed object stays dead even when a later allocation reuses the
+// address (no ABA), refs compare by object, and address-valued refs (`ref some`, owners, proven bindings) convert at the boundaries.
+// Expected output (model: ref_id_test.py):
+// PASS aba old refs alive 0
+// PASS aba new refs alive 2000
+// PASS aba value sum 2001000
+// PASS stale before reuse 0
+// PASS stale after reuse 0
+// PASS equal same object 1
+// PASS equal other object 0
+// PASS equal null 1
+// PASS equal some vs ref 1
+// PASS equal after free 1
+// PASS chain sum 5050
+// PASS chain via functions 5050
+// PASS alive before shrink 50
+// PASS dead after shrink 0
+// PASS raw conversion 1
+// PASS leak 0
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+struct Node{@pub{
+	value: mut u64
+	next: ref mut Node
+}}
+struct Box{@pub{
+	p: ref mut Node
+	q: ref mut Node
+}}
+struct Holder{@pub{ n: owns mut Node }}
+
+func live() mut u64{
+	let n = mut 0
+	unsafe assume{
+		assume match ghost_table.lockState : OPEN
+		n = mut ghost_table.len
+	}
+	return n
+}
+func report(name: static imut string, got: mut u64) void{
+	unsafe extern{ printf("PASS %s %llu\n", name, got) }
+}
+
+func consume(n: owns mut Node) void{ }
+func valueOf(n: ref some mut Node) mut u64{
+	return n.value
+}
+func asRef(n: ref some mut Node) ref mut Node{
+	return n
+}
+func nextOf(n: ref some mut Node) ref mut Node{
+	return n.next
+}
+func passThrough(r: ref mut Node) ref mut Node{
+	return r
+}
+func valueVia(r: ref mut Node) mut u64{
+	let out = mut 0
+	match Some(r){
+		out = valueOf(r)
+	}
+	return out
+}
+func sameObject(a: ref mut Node, b: ref mut Node) mut u64{
+	if a == b{
+		return 1
+	}
+	return 0
+}
+func sameRaw(a: raw mut Node, b: raw mut Node) mut u64{
+	if a == b{
+		if a != null{
+			return 1
+		}
+	}
+	return 0
+}
+
+func abaPart() void{
+	?catch(e){ return }
+	let oldAlive = mut 0
+	let newAlive = mut 0
+	let sum = mut 0
+	let b = mut Box{p= null, q= null}
+	for i in 0..2000{
+		// each round's node is freed at the end of the round; the next round's allocation usually gets the same address back
+		let t = mut ?new Node{value= i + 1, next= null}
+		match Some(b.p){
+			oldAlive += 1
+		}
+		b.p = ref t
+		match Some(b.p){
+			newAlive += 1
+			sum += b.p.value
+		}
+	}
+	report("aba old refs alive", oldAlive)
+	report("aba new refs alive", newAlive)
+	report("aba value sum", sum)
+}
+
+// the probe of fatrefplan_prooffix.md 1.1: a stale ref must stay dead after its address is handed out again
+func stalePart() void{
+	?catch(e){ return }
+	let stale = mut passThrough(null)
+	let a = mut ?new Node{value= 111, next= null}
+	stale = ref a
+	consume(a)
+	let before = mut 0
+	match Some(stale){
+		before = stale.value + 1
+	}
+	let b = mut ?new Node{value= 222, next= null}
+	let after = mut 0
+	match Some(stale){
+		after = stale.value + 1
+	}
+	report("stale before reuse", before)
+	report("stale after reuse", after)
+}
+
+func equalPart() void{
+	?catch(e){ return }
+	let x = mut ?new Node{value= 7, next= null}
+	let y = mut ?new Node{value= 8, next= null}
+	let rx1 = mut asRef(ref x)
+	let rx2 = mut asRef(ref x)
+	let ry = mut asRef(ref y)
+	report("equal same object", sameObject(rx1, rx2))
+	report("equal other object", sameObject(rx1, ry))
+	let nul = mut asRef(ref x)
+	nul = null
+	let nul2 = mut passThrough(nul)
+	report("equal null", sameObject(nul, nul2))
+	// an owner compared with a nullable ref and a ref some compared with one
+	let same = mut 0
+	let sx = imut ref x
+	if sx == rx1{
+		same = 1
+	}
+	report("equal some vs ref", same)
+	consume(x)
+	let after = mut 0
+	if rx1 == rx2{
+		after = 1
+	}
+	report("equal after free", after)
+}
+
+func chainPart() void{
+	?catch(e){ return }
+	let v = mut ? dyn([Holder{n= null}])
+	v = ? resize(v, 100, Holder{n= null})
+	for i in 0..100{
+		let nn = mut ? new Node{value= i + 1, next= null}
+		if i > 0{
+			let k = mut (i - 1)
+			match k in v{
+				match Some(v[k].n){
+					v[k].n.next = ref nn
+				}
+			}
+		}
+		match i in v{
+			v[i].n = nn
+		}
+	}
+	let head = mut passThrough(null)
+	match 0 in v{
+		head = ref v[0].n
+	}
+	let total = mut 0
+	let cur = mut head
+	for j in 0..1000{
+		match Some(cur){
+			total += cur.value
+			cur = cur.next
+		}
+		else{
+			break
+		}
+	}
+	report("chain sum", total)
+	let total2 = mut 0
+	let cur2 = mut head
+	for j in 0..1000{
+		match Some(cur2){
+			total2 += valueVia(cur2)
+			let nx = mut nextOf(cur2)
+			cur2 = nx
+		}
+		else{
+			break
+		}
+	}
+	report("chain via functions", total2)
+}
+
+func shrinkPart() void{
+	?catch(e){ return }
+	let v = mut ? dyn([Holder{n= null}])
+	v = ? resize(v, 50, Holder{n= null})
+	let boxes = mut ? dyn([Box{p= null, q= null}])
+	boxes = ? resize(boxes, 50, Box{p= null, q= null})
+	for i in 0..50{
+		let nn = mut ? new Node{value= i, next= null}
+		match i in boxes{
+			match i in v{
+				boxes[i].p = ref nn
+				v[i].n = nn
+			}
+		}
+	}
+	let alive = mut 0
+	for i in 0..50{
+		match i in boxes{
+			match Some(boxes[i].p){
+				alive += 1
+			}
+		}
+	}
+	report("alive before shrink", alive)
+	v = ? resize(v, 0, Holder{n= null})
+	let dead = mut 0
+	for i in 0..50{
+		match i in boxes{
+			match Some(boxes[i].p){
+				dead += 1
+			}
+		}
+	}
+	report("dead after shrink", dead)
+}
+
+func rawPart() void{
+	?catch(e){ return }
+	let x = mut ?new Node{value= 3, next= null}
+	let y = mut ?new Node{value= 4, next= null}
+	let r = mut ref x
+	let dead = mut passThrough(null)
+	let ok = mut 0
+	if sameRaw(r, ref x) == 1{
+		if sameRaw(r, ref y) == 0{
+			if sameRaw(dead, dead) == 0{
+				ok = 1
+			}
+		}
+	}
+	report("raw conversion", ok)
+}
+
+func main() void{
+	let base = mut live()
+	abaPart()
+	stalePart()
+	equalPart()
+	chainPart()
+	shrinkPart()
+	rawPart()
+	report("leak", live() - base)
+}

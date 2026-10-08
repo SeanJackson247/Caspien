@@ -4752,6 +4752,20 @@ public class X86Backend {
                 pushReg("rax"); // its bool result
                 return;
             }
+            case "GT_REF_ID": {
+                popReg("rax"); // an address (ref some / owns) being stored into a nullable ref
+                raw(("    movq %rax, %" + argReg(0)));
+                emitAlignedCall(() -> emitCallByName("gt_ref_id"));
+                pushReg("rax"); // its 64-bit id (0 for null / dead)
+                return;
+            }
+            case "GT_REF_RESOLVE": {
+                popReg("rax"); // an id
+                raw(("    movq %rax, %" + argReg(0)));
+                emitAlignedCall(() -> emitCallByName("gt_ref_resolve"));
+                pushReg("rax"); // the object's address, null when it is no longer registered
+                return;
+            }
             case "GT_DESTRUCT": {
                 // Operand is an immediate stack offset, not a popped
                 // value -- "GT_DESTRUCT $-240" -- read the pointer

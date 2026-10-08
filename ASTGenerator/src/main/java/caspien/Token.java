@@ -836,6 +836,23 @@ public class Token {
     public Token someIndexElementExpr;
 
     /**
+     * Nullable `ref` values are 64-bit ids (ghost table `gt_ref_id`), `ref some` values and every proven binding are addresses.
+     * Set by TypeChecker, acted on by BytecodeEmitter.emitExpr:
+     * `refToId`: the expression yields an address (`ref some`, `owns`, or `ref x` of an owns value) that is stored where a nullable `ref` is expected: append GT_REF_ID.
+     * `refToRaw`: the expression is a nullable `ref` (an id) used where a `raw` pointer is expected: append GT_REF_RESOLVE.
+     * `refProofKey`: the expression is the subject of an alive proof (key of the covering `match Some`); a nullable `ref` is then read from the proof's hidden address slot instead of being an id.
+     * `someOnRef`: a `Some(x)` call (or the index-element lookup of a `Some(i) in` match) whose subject is a nullable `ref`: resolve the id instead of probing an address.
+     */
+    public boolean refToId;
+    public boolean refToRaw;
+    public String refProofKey;
+    /** With `refProofKey`: the proven subject is a nullable `ref` (an id), so the emitter reads the proof's address (or resolves the id inline when the proof was only assumed). */
+    public boolean refProofIsId;
+    public boolean someOnRef;
+    /** On a `Some(x)` call (or the index-element lookup of `Some(i) in`) that is a match condition: the proof key under which the resolved address is kept. */
+    public String someProofKey;
+
+    /**
      * "The compiler just needs to store these assertions about its type
      * system" -- confirmed directly. One entry per leaf condition in a
      * "match" statement's (possibly "and"-chained) condition, set by
@@ -899,6 +916,8 @@ public class Token {
          * lock qualifier for.
          */
         public final List<String> provenVariants;
+        /** "alive" only: the proof is on a nullable `ref` slot (an id), so a use of the subject reads the proof's address slot / resolves the id. */
+        public boolean onId;
         public MatchPattern(String slotKey, String kind, String targetName) {
             this(slotKey, kind, targetName, (String) null);
         }

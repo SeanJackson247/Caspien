@@ -1,0 +1,25 @@
+// The address the id `id` names, or null when its object is no longer registered (or `id` is 0 or was never issued). One probe of T3.
+// This is what `match Some(r)` on a nullable `ref` calls (`GT_REF_RESOLVE`); the address it returns is kept in a hidden slot the match body reads.
+import "ghost_table.caspien"
+
+@gt_ref_resolve
+@pub
+func gt_ref_resolve(id: mut u64) raw mut u8{
+	let:<raw mut u8> result = null
+	if id != 0{
+		match @lock ghost_table{
+			OPEN:{
+				if ghost_table.idCap != 0{
+					let ib = mut gtT16Find(ghost_table.idBase, ghost_table.idCap, id, 1)
+					if ib != ghost_table.idCap{
+						result = mut gtPtrOf(gtLoad(ghost_table.idBase, ib * 2 + 1))
+					}
+				}
+			}
+			CLOSED:{
+			continue
+		}
+		}
+	}
+	return result
+}

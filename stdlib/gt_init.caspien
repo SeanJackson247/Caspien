@@ -1,5 +1,5 @@
-// The real "@gt_init" -- performs the ghost table's first allocation: 8 empty buckets (64 bytes). Every other gt_* function assumes this has
-// already run. If that malloc fails it prints a message and exits (no unwinding is possible this early).
+// The "@gt_init" of the id table -- the first allocation of T1: 8 empty buckets (64 bytes). T2/T3 are allocated at the first id. If the malloc
+// fails it prints a message and exits (no unwinding is possible this early).
 import "ghost_table.caspien"
 
 extern exit(imut u32) void

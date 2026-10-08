@@ -144,8 +144,8 @@ func main() void{
 
 - A file is a list of declarations: `import`, `func`, `struct`, `enum`, `interface`, `impl`, `extern`,
   `let static`. Imports are resolved relative to the importing file.
-- Every program that uses `new`, `owns` or `ref` requires the four `gt_*` decorated functions (`@gt_init`,
-  `@gt_register`, `@gt_alive_check`, `@gt_destruct` and `@gt_moved`) to be defined in the final compilation unit. Basic
+- Every program that uses `new`, `owns` or `ref` requires the `gt_*` decorated functions (`@gt_init`,
+  `@gt_register`, `@gt_alive_check`, `@gt_destruct`, `@gt_moved`, and for a nullable `ref` also `@gt_ref_id` and `@gt_ref_resolve`, which `gt_alive_check.caspien` imports) to be defined in the final compilation unit. Basic
   defaults are available in `stdlib/`, and the examples import them. They implement the runtime registry
   that tracks which heap values are alive, and they are ordinary Caspien source, not compiler magic.
   `libc.caspien` declares the C functions, and calling any C function, `printf` included, needs an `unsafe`
@@ -618,7 +618,7 @@ A `ref some` parameter (including `self`) is alive when the function is entered,
 local, and the same rules end that proof inside the function. An `unsafe` block ends proofs where the block ends, and
 `unsafe`, an unknown call target or an `extern` free end every proof; an assignment, `resize` or owning parameter ends
 only proofs of references whose target type that free can reach by ownership (freeing an `Other` cannot end a proof
-about a `Node`). A `ref` stored in a struct member is proven by `match Some(h.p)` and held to the same rules (the error names the path). Not covered yet: a freed address that is reused. The standard
+about a `Node`). A `ref` stored in a struct member is proven by `match Some(h.p)` and held to the same rules (the error names the path). A plain `ref` is a 64-bit id issued by the ghost table, not an address, so a freed object's ref stays dead even when `malloc` hands the same address to a new object; `ref some` and the binding inside `match Some` are the address. The standard
 library is held to the rule like any other code: a helper with an `unsafe` block ends proofs at its call sites.
 
 #### Locks and proofs on your own types
@@ -1612,7 +1612,7 @@ is an error ("'@x' is not a valid decorator on a function"). This is the full se
 | `@reads(...)`, `@writes(...)` | function | accepted and shape-checked, not yet enforced |
 | `@with_tick`, `@tick`, `@event_loop` | function | the event-loop trio (end of the tour) |
 | `@make_safe_args` | function | builds the safe `main` arguments (`stdlib/make_safe_args.caspien`) |
-| `@gt_init`, `@gt_register`, `@gt_alive_check`, `@gt_destruct`, `@gt_moved` | function | the five ghost-table hooks the compiler calls (`stdlib/gt_*.caspien`) |
+| `@gt_init`, `@gt_register`, `@gt_alive_check`, `@gt_destruct`, `@gt_moved`, `@gt_ref_id`, `@gt_ref_resolve` | function | the ghost-table hooks the compiler calls (`stdlib/gt_*.caspien`) |
 | `@par_call`, `@await_call`, `@sleep` | function | the thread and sleep hooks behind `par`, `await` and `sleep` (`stdlib/`) |
 | `@unroll`, `@unroll(N)`, `@dont(unroll)` | `for` loop | unroll this loop fully / by N / never, whatever the `loop-unrolling` preset says; the optimizer reports what it did (see `docs/COMPILER_REFERENCE.md`) |
 | `@par` | `for` loop | accepted; it does not change the generated code today |
@@ -1713,7 +1713,7 @@ Inside `unsafe` the guarantees above are the programmer's responsibility. What e
 The standard library is built on `unsafe` code (the ghost table, `memcopy`, the `pthread_*` calls), and every one of its
 `unsafe` blocks names exactly its reasons; `unsafe unaudited` never appears there and the compiler refuses it. The
 guarantee is therefore "safe user code on top of a small trusted `unsafe` core", and that core is tested,
-not proved. Costs inside that core are part of its contract, not of the safe-code guarantees. For example, the liveness check behind `match Some` is a lookup in the ghost table, an open-addressing hash set (expected O(1)) under a spin lock (the older linear-scan table is kept in `stdlib/gt_linear/`; import its `gt_*.caspien` files instead to use it), and `malloc` has no bound. A timing analysis would take such costs as stated inputs, as it would for any library.
+not proved. Costs inside that core are part of its contract, not of the safe-code guarantees. For example, the liveness check behind `match Some` is a lookup in the ghost table, an open-addressing hash set (expected O(1)) under a spin lock (the id-less set is kept in `stdlib/gt_set/` and the older linear-scan table in `stdlib/gt_linear/`; import one folder's `gt_*.caspien` files instead to use it), and `malloc` has no bound. A timing analysis would take such costs as stated inputs, as it would for any library.
 
 #### Beyond the language
 
@@ -1966,8 +1966,9 @@ import "../stdlib/gt_destruct.caspien"
 import "../stdlib/gt_moved.caspien"
 ```
 
-The table is an open-addressing hash set (expected O(1)); `stdlib/gt_linear/` has the older linear-scan version
-(import its files instead, never mix the two).
+The table is an open-addressing hash set (expected O(1)) that also issues lazy 64-bit ids for nullable `ref`s;
+`stdlib/gt_set/` is the same set without ids and `stdlib/gt_linear/` the older linear-scan version
+(import one folder's files, never mix; only the default folder supports a nullable `ref`).
 
 #### Collections, strings and hashing
 

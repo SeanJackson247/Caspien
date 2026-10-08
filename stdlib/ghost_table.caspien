@@ -1,19 +1,17 @@
-// The ghost table: the set of every live allocation's address, kept as an open-addressing hash set (linear probing, backward-shift deletion,
-// no tombstones), so register, alive_check, destruct and moved cost O(1) expected. The older linear-scan table is kept in stdlib/gt_linear/
-// (same symbols, import its files instead of these to use it).
+// The ghost table (default; design E of benchmarks/gt_id/README.md): a hash set of every live allocation's address plus lazily issued 64-bit ids for nullable `ref`s.
+// The earlier id-less hash set is in stdlib/gt_set/, the linear-scan one in stdlib/gt_linear/ (same symbols; import ONE set of gt_*.caspien files, never mix; they lack @gt_ref_id/@gt_ref_resolve, so a program using a nullable `ref` needs this set).
 //
-// Layout: `base` is an array of `capacity` 8-byte buckets, `capacity` is a power of two, an empty bucket holds null (null is never
-// registered), and `len` counts the stored addresses. The table grows (capacity doubles, every address is rehashed into a fresh array) when
-// len + 1 would exceed half of the capacity, so the table is never full and every probe sequence ends at an empty bucket. A failed grow
-// leaves the old table untouched and gt_register returns false. gt_destruct shrinks (halves) when len drops below an eighth of the
-// capacity; a failed shrink is ignored. gt_moved never shrinks, so the gt_register(new) that follows it in `resize` cannot need to grow.
-// The address is hashed after dropping its 4 low bits (malloc blocks are 16-byte aligned) and mixed with its own upper bits.
+// Three open-addressing tables (linear probing, backward-shift deletion, power-of-two capacity, load <= 1/2):
+//   T1  `base`/`capacity`/`len`: every live allocation's address, 8-byte buckets, 0 = empty. Bit 0 of a stored address is a TAG: 1 = "this object
+//       was given an id" (malloc blocks are 16-byte aligned, so bit 0 of a real address is free). A program that never takes an id pays the old cost.
+//   T2  `refBase`/`refCap`/`refLen`: address -> id for the tagged objects, 16-byte entries {address, id}, hashed by address.
+//   T3  `idBase`/`idCap`/`idLen`: id -> address, 16-byte entries {id, address}, hashed by id (multiplicative; a plain `id & mask` clusters badly).
+// An id is 1, 2, 3, ... from `nextId`, assigned at the first `gt_ref_id(address)` and never reused (64 bits), so a freed object's id can never name a
+// later object at the same address. Unregistering an object (gt_destruct / gt_moved) removes its T2 and T3 entries.
+// T2/T3 are allocated at the first id (8 entries), double at half load and never shrink; T1 grows and shrinks as before.
 //
-// The lock is a real 'swap'-tagged atomic mutex-state field, touched through 'match @lock'. Every function that reads or writes the fields
-// does so through the `ghost_table` global by name, and the helpers below take plain parameters and never touch it.
-//
-// Every pointer in this file is `raw`, never `owns`: an `owns` local would need an automatic GT_DESTRUCT, which can never be generated in the
-// ghost table's own reachable set (see CLAUDE.md, "Ghost table instruction suppression, and dundered duplicates").
+// The lock is the same 'swap' atomic mutex state as before; every function takes it through 'match @lock' and the helpers below take plain
+// parameters and never touch `ghost_table`. Every pointer here is `raw`, never `owns` (see stdlib/ghost_table.caspien).
 import "libc.caspien"
 
 enum GhostTableLockState{ OPEN, CLOSED }
@@ -25,12 +23,19 @@ struct GhostTable{@pub{
 	base: raw mut u8
 	len: mut u64
 	capacity: mut u64
+	refBase: raw mut u8
+	refCap: mut u64
+	refLen: mut u64
+	idBase: raw mut u8
+	idCap: mut u64
+	idLen: mut u64
+	nextId: mut u64
 }}
 
 @pub
-let static ghost_table = mut GhostTable{base= null, len= mut 0, capacity= mut 0, lockState= GhostTableLockState.OPEN}
+let static ghost_table = mut GhostTable{base= null, len= mut 0, capacity= mut 0, refBase= null, refCap= mut 0, refLen= mut 0, idBase= null, idCap= mut 0, idLen= mut 0, nextId= mut 0, lockState= GhostTableLockState.OPEN}
 
-/** The pointer to bucket `index` of the array at `base`: one pointer addition (the pointee is widened to 8 bytes by `as u64`), O(1). Nothing is read or written through it here. */
+/** The pointer to 8-byte slot `index` of the array at `base`. */
 @pub
 func gtSlotAt(base: raw mut u8, index: mut u64) raw mut u64{
 	let slot = mut (base as u64)
@@ -38,55 +43,90 @@ func gtSlotAt(base: raw mut u8, index: mut u64) raw mut u64{
 	return at
 }
 
-/** Reads the 8-byte address stored at `slot` (via 'memcopy' into a fresh local). */
+/** Reads 8-byte slot `index`. */
 @pub
-func gtReadSlot(slot: raw imut u64) raw mut u8{
-	let:<raw mut u8> val = null
+func gtLoad(base: raw mut u8, index: mut u64) mut u64{
+	let:<mut u64> val = mut 0
+	let slot = mut gtSlotAt(base, index)
 	unsafe memcopy raw{
 		memcopy(raw val, mut 8, slot)
 	}
 	return val
 }
 
-/** Writes `val`'s 8-byte address value into `slot` (the write-side mirror of gtReadSlot). */
+/** Writes 8-byte slot `index`. */
 @pub
-func gtWriteSlot(slot: raw imut u64, val: raw imut u8) void{
+func gtStore(base: raw mut u8, index: mut u64, value: mut u64) void{
+	let:<mut u64> val = mut value
+	let slot = mut gtSlotAt(base, index)
 	unsafe memcopy raw{
 		memcopy(slot, mut 8, raw val)
 	}
 }
 
-/** The home bucket of `ptr` in a table with `mask + 1` buckets. */
+/** The address of `ptr` as a number (tag bit clear for a real address). */
 @pub
-func gtHash(ptr: raw imut u8, mask: mut u64) mut u64{
+func gtAddrOf(ptr: raw imut u8) mut u64{
 	let:<raw imut u8> zero = null
 	let diff = mut (ptr - zero)
-	let addr = mut wrap:<u64>(diff)
+	return wrap:<u64>(diff)
+}
+
+/** The pointer for the number `addr`. */
+@pub
+func gtPtrOf(addr: mut u64) raw mut u8{
+	let:<raw mut u8> zero = null
+	let p = mut (zero + addr)
+	return p
+}
+
+/** Home bucket of an address (the tag bit and the 4 alignment bits are dropped before hashing). */
+@pub
+func gtHashAddr(addr: mut u64, mask: mut u64) mut u64{
 	let h = mut bits_right(addr, 4)
 	h = mut bits_xor(h, bits_right(h, 11))
 	return bits_and(h, mask)
 }
 
-/** Writes null into every one of the `cap` buckets. */
+/** Home bucket of an id (Fibonacci hashing, high half). */
 @pub
-func gtClear(base: raw mut u8, cap: mut u64) void{
-	for i in 0..cap{
-		gtWriteSlot(gtSlotAt(base, i), null)
+func gtHashId(id: mut u64, mask: mut u64) mut u64{
+	let m = mut (id * 0x9E3779B97F4A7C15)
+	return bits_and(bits_right(m, 32), mask)
+}
+
+/** mode 0: hash by address, mode 1: hash by id. */
+@pub
+func gtHashFor(mode: mut u64, key: mut u64, mask: mut u64) mut u64{
+	if mode == 0{
+		return gtHashAddr(key, mask)
+	}
+	return gtHashId(key, mask)
+}
+
+/** Zeroes `slots` 8-byte slots. */
+@pub
+func gtClear(base: raw mut u8, slots: mut u64) void{
+	for i in 0..slots{
+		gtStore(base, i, 0)
 	}
 }
 
-/** The bucket index holding `ptr`, or `cap` when it is not stored. `cap` is a power of two and the table always has an empty bucket, so the probe ends. */
+// ---- T1: tagged addresses, one 8-byte bucket each ----
+
+/** Bucket holding `addr` (compared without the tag bit), or `cap` when absent. */
 @pub
-func gtFind(base: raw mut u8, cap: mut u64, ptr: raw imut u8) mut u64{
+func gtT1Find(base: raw mut u8, cap: mut u64, addr: mut u64) mut u64{
 	let mask = mut (cap - 1)
-	let i = mut gtHash(ptr, mask)
+	let i = mut gtHashAddr(addr, mask)
+	let want = mut bits_right(addr, 1)
 	let result = mut cap
 	for step in 0..cap{
-		let v = mut gtReadSlot(gtSlotAt(base, i))
-		if v == null{
+		let v = mut gtLoad(base, i)
+		if v == 0{
 			break
 		}
-		if v == ptr{
+		if bits_right(v, 1) == want{
 			result = mut i
 			break
 		}
@@ -95,45 +135,45 @@ func gtFind(base: raw mut u8, cap: mut u64, ptr: raw imut u8) mut u64{
 	return result
 }
 
-/** Stores `ptr` in the first empty bucket on its probe sequence. The caller guarantees `ptr` is not stored yet and an empty bucket exists. */
+/** Stores `value` (an address, possibly tagged) in the first empty bucket of its probe sequence; the caller guarantees room and absence. */
 @pub
-func gtInsert(base: raw mut u8, cap: mut u64, ptr: raw imut u8) void{
+func gtT1Insert(base: raw mut u8, cap: mut u64, value: mut u64) void{
 	let mask = mut (cap - 1)
-	let i = mut gtHash(ptr, mask)
+	let i = mut gtHashAddr(value, mask)
 	for step in 0..cap{
-		let v = mut gtReadSlot(gtSlotAt(base, i))
-		if v == null{
-			gtWriteSlot(gtSlotAt(base, i), ptr)
+		let v = mut gtLoad(base, i)
+		if v == 0{
+			gtStore(base, i, value)
 			break
 		}
 		i = mut bits_and(i + 1, mask)
 	}
 }
 
-/** Inserts every address stored in the old array into the (cleared) new array. */
+/** Moves every stored value of the old array (tags kept) into the cleared new array. */
 @pub
-func gtRehash(oldBase: raw mut u8, oldCap: mut u64, newBase: raw mut u8, newCap: mut u64) void{
+func gtT1Rehash(oldBase: raw mut u8, oldCap: mut u64, newBase: raw mut u8, newCap: mut u64) void{
 	for i in 0..oldCap{
-		let v = mut gtReadSlot(gtSlotAt(oldBase, i))
-		if v != null{
-			gtInsert(newBase, newCap, v)
+		let v = mut gtLoad(oldBase, i)
+		if v != 0{
+			gtT1Insert(newBase, newCap, v)
 		}
 	}
 }
 
-/** Empties bucket `hole` and closes the gap (backward-shift deletion): each following stored address whose home is not between the hole and itself moves back into the hole. */
+/** Empties bucket `start` and closes the gap (backward-shift deletion). */
 @pub
-func gtRemoveAt(base: raw mut u8, cap: mut u64, start: mut u64) void{
+func gtT1RemoveAt(base: raw mut u8, cap: mut u64, start: mut u64) void{
 	let mask = mut (cap - 1)
 	let hole = mut start
 	let j = mut start
 	for step in 0..cap{
 		j = mut bits_and(j + 1, mask)
-		let v = mut gtReadSlot(gtSlotAt(base, j))
-		if v == null{
+		let v = mut gtLoad(base, j)
+		if v == 0{
 			break
 		}
-		let home = mut gtHash(v, mask)
+		let home = mut gtHashAddr(v, mask)
 		let between = mut false
 		if hole <= j{
 			if hole < home && home <= j{
@@ -146,9 +186,137 @@ func gtRemoveAt(base: raw mut u8, cap: mut u64, start: mut u64) void{
 			}
 		}
 		if !between{
-			gtWriteSlot(gtSlotAt(base, hole), v)
+			gtStore(base, hole, v)
 			hole = mut j
 		}
 	}
-	gtWriteSlot(gtSlotAt(base, hole), null)
+	gtStore(base, hole, 0)
+}
+
+// ---- T2 / T3: 16-byte entries {key, value}; key 0 = empty ----
+
+/** Entry holding `key`, or `cap` when absent. Entry i lives in 8-byte slots 2i (key) and 2i+1 (value). */
+@pub
+func gtT16Find(base: raw mut u8, cap: mut u64, key: mut u64, mode: mut u64) mut u64{
+	let mask = mut (cap - 1)
+	let i = mut gtHashFor(mode, key, mask)
+	let result = mut cap
+	for step in 0..cap{
+		let v = mut gtLoad(base, i * 2)
+		if v == 0{
+			break
+		}
+		if v == key{
+			result = mut i
+			break
+		}
+		i = mut bits_and(i + 1, mask)
+	}
+	return result
+}
+
+/** Stores {key, value} in the first empty entry of its probe sequence; the caller guarantees room and absence. */
+@pub
+func gtT16Insert(base: raw mut u8, cap: mut u64, key: mut u64, value: mut u64, mode: mut u64) void{
+	let mask = mut (cap - 1)
+	let i = mut gtHashFor(mode, key, mask)
+	for step in 0..cap{
+		let v = mut gtLoad(base, i * 2)
+		if v == 0{
+			gtStore(base, i * 2, key)
+			gtStore(base, i * 2 + 1, value)
+			break
+		}
+		i = mut bits_and(i + 1, mask)
+	}
+}
+
+/** Moves every entry of the old array into the cleared new array. */
+@pub
+func gtT16Rehash(oldBase: raw mut u8, oldCap: mut u64, newBase: raw mut u8, newCap: mut u64, mode: mut u64) void{
+	for i in 0..oldCap{
+		let k = mut gtLoad(oldBase, i * 2)
+		if k != 0{
+			let value = mut gtLoad(oldBase, i * 2 + 1)
+			gtT16Insert(newBase, newCap, k, value, mode)
+		}
+	}
+}
+
+/** Empties entry `start` and closes the gap (backward-shift deletion). */
+@pub
+func gtT16RemoveAt(base: raw mut u8, cap: mut u64, start: mut u64, mode: mut u64) void{
+	let mask = mut (cap - 1)
+	let hole = mut start
+	let j = mut start
+	for step in 0..cap{
+		j = mut bits_and(j + 1, mask)
+		let k = mut gtLoad(base, j * 2)
+		if k == 0{
+			break
+		}
+		let home = mut gtHashFor(mode, k, mask)
+		let between = mut false
+		if hole <= j{
+			if hole < home && home <= j{
+				between = mut true
+			}
+		}
+		else{
+			if hole < home || home <= j{
+				between = mut true
+			}
+		}
+		if !between{
+			let value = mut gtLoad(base, j * 2 + 1)
+			gtStore(base, hole * 2, k)
+			gtStore(base, hole * 2 + 1, value)
+			hole = mut j
+		}
+	}
+	gtStore(base, hole * 2, 0)
+	gtStore(base, hole * 2 + 1, 0)
+}
+
+/** The capacity a 16-byte-entry table has after growing from `cap` (the first allocation has 8 entries). */
+@pub
+func gtNewCap16(cap: mut u64) mut u64{
+	if cap == 0{
+		return 8
+	}
+	return cap * 2
+}
+
+/** Allocates a table for `gtNewCap16(cap)` entries, moves everything over and frees the old array. Null (nothing changed) when malloc fails. */
+@pub
+func gtGrown16(base: raw mut u8, cap: mut u64, mode: mut u64) raw mut u8{
+	let newCap = mut gtNewCap16(cap)
+	let:<raw mut u8> newBase = null
+	unsafe extern{
+		newBase = mut realloc(null, newCap * 16)
+	}
+	if newBase != null{
+		gtClear(newBase, newCap * 2)
+		if cap != 0{
+			gtT16Rehash(base, cap, newBase, newCap, mode)
+			unsafe extern{
+				free(base)
+			}
+		}
+	}
+	return newBase
+}
+
+/** Removes the T2 and T3 entries of the object at `addr` (it had an id). The caller decrements refLen and idLen. */
+@pub
+func gtUnlinkId(refBase: raw mut u8, refCap: mut u64, idBase: raw mut u8, idCap: mut u64, addr: mut u64) void{
+	let ia = mut gtT16Find(refBase, refCap, addr, 0)
+	if ia != refCap{
+		let id = mut gtLoad(refBase, ia * 2 + 1)
+		gtT16RemoveAt(refBase, refCap, ia, 0)
+		let ib = mut gtT16Find(idBase, idCap, id, 1)
+		if ib != idCap{
+			gtT16RemoveAt(idBase, idCap, ib, 1)
+		}
+	}
 }

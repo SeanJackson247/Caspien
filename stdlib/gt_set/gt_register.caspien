@@ -1,0 +1,48 @@
+// The real "@gt_register" -- registers a raw pointer. Returns true when the pointer is registered afterwards (null and an already present
+// pointer need nothing and count as success), false when the table could not grow: then the pointer is NOT registered and the table is exactly
+// as it was (the old array is kept). The caller (GT_REGISTER in the backend) frees the block and reports the usual out-of-memory error.
+// The table grows (capacity doubles, fresh array from realloc(null, ..), rehash, old array freed) when len + 1 would exceed half the capacity.
+import "ghost_table.caspien"
+
+@gt_register
+@pub
+func gt_register(ptr: raw imut u8) imut bool{
+	if ptr == null{
+		return imut true
+	}
+	let ok = mut true
+	match @lock ghost_table{
+		OPEN:{
+			let at = mut gtFind(ghost_table.base, ghost_table.capacity, ptr)
+			if at == ghost_table.capacity{
+				if (ghost_table.len + 1) * 2 > ghost_table.capacity{
+					let newCapacity = mut (ghost_table.capacity * 2)
+					let:<raw mut u8> newBase = null
+					unsafe extern{
+						newBase = mut realloc(null, newCapacity * 8)
+					}
+					if newBase == null{
+						ok = mut false
+					}
+					else{
+						gtClear(newBase, newCapacity)
+						gtRehash(ghost_table.base, ghost_table.capacity, newBase, newCapacity)
+						unsafe extern{
+							free(ghost_table.base)
+						}
+						ghost_table.base = mut newBase
+						ghost_table.capacity = mut newCapacity
+					}
+				}
+				if ok{
+					gtInsert(ghost_table.base, ghost_table.capacity, ptr)
+					ghost_table.len = mut (ghost_table.len + 1)
+				}
+			}
+		}
+		CLOSED:{
+			continue
+		}
+	}
+	return imut ok
+}

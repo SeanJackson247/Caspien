@@ -320,3 +320,7 @@ Reading: the `ref` versions cost 5-12x over their index versions (7.6x graph, 11
 
 ## 5 Oct register/peephole round (paired quick run, best of 5, FULL config, new/old time; Linux VM, noise ±4%)
 nbody_f64 0.96, mandelbrot 0.86, spectralnorm_opt 0.99, fannkuch_opt 0.95, strings 0.94/0.97 (safe/unsafe), graph 0.96/0.98, sorting 0.98/0.92, binarytrees 0.99/1.01, fasta 0.94/0.94, knucleotide 0.93/0.92, lru 1.02/0.95, merkletrees 0.81/0.80, json_serde 0.91/0.92. sieve_safe 1.03 and sieve_unsafe 1.04 are inside its code-placement noise (bimodal). Not run on Windows/Wine.
+
+## 8 Oct 2026: nullable `ref` = 64-bit id (ghost table design E), paired old-vs-new (`benchmarks/gt_id/paired_ref.py`, FULL config, best of 3, alternating runs, Linux VM)
+Outputs identical in every case. Programs that never take a nullable `ref` are unchanged: knucleotide naive/safe 1.02/1.01x, lru naive/safe 0.97/0.99x, binarytrees naive/safe 1.00/0.98x, fasta naive 0.99x, merkletrees naive 0.98x (new/old time).
+Programs with nullable refs are slower, the price of closing address reuse (ABA): binarytrees ref 2.8-3.3x, graph ref 3.2-3.3x, lru ref 1.7-2.0x, lru naive ref-in-stdlib 1.6x, knucleotide naive ref-in-stdlib 1.25x. Cause: the first `ref x` of each object inserts into two extra hash tables, every `match Some` resolves an id, freeing an object with an id costs 4-5x. A full `run_all.py --mode full` is in the charts; comparing it with the committed numbers is noisy (nbody, which never allocates, shows +10-20% from VM drift), so only the paired ratios count.

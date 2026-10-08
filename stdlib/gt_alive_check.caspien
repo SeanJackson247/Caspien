@@ -1,5 +1,7 @@
-// The real "@gt_alive_check" -- true when `ptr` is currently registered (exact address match). O(1) expected: one hash probe sequence.
+// The "@gt_alive_check" of the id table -- true when `ptr` is currently registered (exact address match; the id tag bit is ignored).
 import "ghost_table.caspien"
+import "gt_ref_id.caspien"
+import "gt_ref_resolve.caspien"
 
 @gt_alive_check
 @pub
@@ -10,7 +12,7 @@ func gt_alive_check(ptr: raw imut u8) imut bool{
 	let found = mut false
 	match @lock ghost_table{
 		OPEN:{
-			let at = mut gtFind(ghost_table.base, ghost_table.capacity, ptr)
+			let at = mut gtT1Find(ghost_table.base, ghost_table.capacity, gtAddrOf(ptr))
 			if at != ghost_table.capacity{
 				found = mut true
 			}

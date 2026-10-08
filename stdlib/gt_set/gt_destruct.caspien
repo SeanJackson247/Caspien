@@ -1,0 +1,41 @@
+// The real "@gt_destruct" -- unregisters `ptr` and frees it (nothing happens for null or an unregistered pointer). When the table falls below an
+// eighth of its capacity it is halved into a fresh array; a failed shrink is ignored and the old array is kept.
+import "ghost_table.caspien"
+
+@gt_destruct
+@pub
+func gt_destruct(ptr: raw imut u8) void{
+	if ptr != null{
+		match @lock ghost_table{
+			OPEN:{
+				let at = mut gtFind(ghost_table.base, ghost_table.capacity, ptr)
+				if at != ghost_table.capacity{
+					gtRemoveAt(ghost_table.base, ghost_table.capacity, at)
+					ghost_table.len = mut (ghost_table.len - 1)
+					if ghost_table.capacity > 8 && ghost_table.len * 8 < ghost_table.capacity{
+						let newCapacity = mut (ghost_table.capacity / 2)
+						let:<raw mut u8> newBase = null
+						unsafe extern{
+							newBase = mut realloc(null, newCapacity * 8)
+						}
+						if newBase != null{
+							gtClear(newBase, newCapacity)
+							gtRehash(ghost_table.base, ghost_table.capacity, newBase, newCapacity)
+							unsafe extern{
+								free(ghost_table.base)
+							}
+							ghost_table.base = mut newBase
+							ghost_table.capacity = mut newCapacity
+						}
+					}
+					unsafe extern{
+						free(ptr)
+					}
+				}
+			}
+			CLOSED:{
+				continue
+			}
+		}
+	}
+}

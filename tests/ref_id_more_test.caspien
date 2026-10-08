@@ -1,0 +1,114 @@
+// More nullable-ref (id) shapes: an `assume match Some(h.p)` proof (nothing runs at the match, so the use resolves the id), a dynarray of refs with
+// `match Some(i) in refs`, refs inside a cloned struct, a ref returned from a generic, and a ref handed to a thread-free helper chain.
+// Expected output (model: ref_id_more_test.py):
+// PASS assume read 11
+// PASS dyn refs alive 3
+// PASS dyn refs sum 60
+// PASS dyn refs dead 0
+// PASS clone keeps ref 22
+// PASS generic link 33
+// PASS leak 0
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+struct Node{@pub{ value: mut u64 }}
+struct Hold{@pub{ p: ref mut Node }}
+struct Link<T>{@pub{
+	value: mut T
+	next: ref mut Link<T>
+}}
+func consume(n: owns mut Node) void{ }
+func live() mut u64{
+	let n = mut 0
+	unsafe assume{
+		assume match ghost_table.lockState : OPEN
+		n = mut ghost_table.len
+	}
+	return n
+}
+func report(name: static imut string, got: mut u64) void{
+	unsafe extern{ printf("PASS %s %llu\n", name, got) }
+}
+
+func assumePart() void{
+	?catch(e){ return }
+	let a = mut ?new Node{value= 11}
+	let h = mut Hold{p= ref a}
+	let v = mut 0
+	unsafe assume{
+		assume match Some(h.p)
+		v = h.p.value
+	}
+	report("assume read", v)
+}
+
+func dynPart() void{
+	?catch(e){ return }
+	let n1 = mut ?new Node{value= 10}
+	let n2 = mut ?new Node{value= 20}
+	let n3 = mut ?new Node{value= 30}
+	let refs = mut ? dyn([Hold{p= ref n1}, Hold{p= ref n2}, Hold{p= ref n3}])
+	let alive = mut 0
+	let sum = mut 0
+	for i in 0..3{
+		match i in refs{
+			match Some(refs[i].p){
+				alive += 1
+				sum += refs[i].p.value
+			}
+		}
+	}
+	report("dyn refs alive", alive)
+	report("dyn refs sum", sum)
+	consume(n1)
+	consume(n2)
+	consume(n3)
+	let dead = mut 0
+	for i in 0..3{
+		match i in refs{
+			match Some(refs[i].p){
+				dead += 1
+			}
+		}
+	}
+	report("dyn refs dead", dead)
+}
+
+func clonePart() void{
+	?catch(e){ return }
+	let a = mut ?new Node{value= 22}
+	let h = mut ? new Hold{p= ref a}
+	match Some(h){
+		let c = mut ? clone(h)
+		let v = mut 0
+		match Some(c.p){
+			v = c.p.value
+		}
+		report("clone keeps ref", v)
+	}
+}
+
+func linkPart() void{
+	?catch(e){ return }
+	let l2 = mut ?new Link:<u64>{value= 33, next= null}
+	let l1 = mut ?new Link:<u64>{value= 1, next= ref l2}
+	let got = mut 0
+	match Some(l1){
+		match Some(l1.next){
+			got = l1.next.value
+		}
+	}
+	report("generic link", got)
+}
+
+func main() void{
+	let base = mut live()
+	assumePart()
+	dynPart()
+	clonePart()
+	linkPart()
+	report("leak", live() - base)
+}

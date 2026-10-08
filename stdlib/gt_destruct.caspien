@@ -1,5 +1,5 @@
-// The real "@gt_destruct" -- unregisters `ptr` and frees it (nothing happens for null or an unregistered pointer). When the table falls below an
-// eighth of its capacity it is halved into a fresh array; a failed shrink is ignored and the old array is kept.
+// The "@gt_destruct" of the id table -- unregisters `ptr` (dropping its id, if it ever had one) and frees it (nothing happens for null or an
+// unregistered pointer). T1 is halved when it falls below an eighth of its capacity (a failed shrink is ignored). T2/T3 never shrink.
 import "ghost_table.caspien"
 
 @gt_destruct
@@ -8,9 +8,16 @@ func gt_destruct(ptr: raw imut u8) void{
 	if ptr != null{
 		match @lock ghost_table{
 			OPEN:{
-				let at = mut gtFind(ghost_table.base, ghost_table.capacity, ptr)
+				let addr = mut gtAddrOf(ptr)
+				let at = mut gtT1Find(ghost_table.base, ghost_table.capacity, addr)
 				if at != ghost_table.capacity{
-					gtRemoveAt(ghost_table.base, ghost_table.capacity, at)
+					let stored = mut gtLoad(ghost_table.base, at)
+					if bits_and(stored, 1) == 1{
+						gtUnlinkId(ghost_table.refBase, ghost_table.refCap, ghost_table.idBase, ghost_table.idCap, addr)
+						ghost_table.refLen = mut (ghost_table.refLen - 1)
+						ghost_table.idLen = mut (ghost_table.idLen - 1)
+					}
+					gtT1RemoveAt(ghost_table.base, ghost_table.capacity, at)
 					ghost_table.len = mut (ghost_table.len - 1)
 					if ghost_table.capacity > 8 && ghost_table.len * 8 < ghost_table.capacity{
 						let newCapacity = mut (ghost_table.capacity / 2)
@@ -20,7 +27,7 @@ func gt_destruct(ptr: raw imut u8) void{
 						}
 						if newBase != null{
 							gtClear(newBase, newCapacity)
-							gtRehash(ghost_table.base, ghost_table.capacity, newBase, newCapacity)
+							gtT1Rehash(ghost_table.base, ghost_table.capacity, newBase, newCapacity)
 							unsafe extern{
 								free(ghost_table.base)
 							}

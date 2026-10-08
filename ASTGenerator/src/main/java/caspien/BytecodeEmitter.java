@@ -408,7 +408,7 @@ public class BytecodeEmitter {
      */
     private void computeGtReachableFunctions() {
         Deque<String> queue = new ArrayDeque<>();
-        for (String decoratorName : Arrays.asList("gt_init", "gt_alive_check", "gt_destruct", "gt_register", "gt_moved")) {
+        for (String decoratorName : Arrays.asList("gt_init", "gt_alive_check", "gt_destruct", "gt_register", "gt_moved", "gt_ref_id", "gt_ref_resolve")) {
             TypeChecker.FuncInfo info = checker.getGhostTableFunction(decoratorName);
             if (info == null) {
                 continue;
@@ -1484,6 +1484,8 @@ public class BytecodeEmitter {
         // body is done: a variable cannot be used before it is declared, so no pre-pass is needed to find them.
         final int savedLateAllocPos = lateAllocPos;
         final List<String> savedLateAllocs = lateAllocs;
+        final Map<String, String> savedRefAddrSlots = refAddrSlots;
+        refAddrSlots = new HashMap<>();
         lateAllocPos = out.length();
         lateAllocs = new ArrayList<>();
         emitGtRoutineBody(info, emittedName, gtSuppressed);
@@ -1518,6 +1520,7 @@ public class BytecodeEmitter {
         }
         lateAllocPos = savedLateAllocPos;
         lateAllocs = savedLateAllocs;
+        refAddrSlots = savedRefAddrSlots;
         currentFuncMangledName = null;
         currentFuncInfo = null;
         inGtSuppressedContext = previousGtContext;
@@ -2849,9 +2852,13 @@ public class BytecodeEmitter {
                                 + "from one, and ghost-table instructions can never be generated "
                                 + "in that whole reachable set");
             }
-            requireGhostTableFunctionPresent("gt_alive_check", node);
-            emitExpr(node.someIndexElementExpr);
-            line("GT_ALIVE_CHECK");
+            if (node.someIndexElementExpr.someOnRef) {
+                emitSomeOnRef(node.someIndexElementExpr, node.someIndexElementExpr, node.someIndexElementExpr.someProofKey);
+            } else {
+                requireGhostTableFunctionPresent("gt_alive_check", node);
+                emitExpr(node.someIndexElementExpr);
+                line("GT_ALIVE_CHECK");
+            }
             line("AND " + node.resolvedType + " indeterminate_bool " + node.resolvedType);
             return;
         }
@@ -3329,7 +3336,71 @@ public class BytecodeEmitter {
 
     // ---- expressions ------------------------------------------------------
 
+    /**
+     * Nullable `ref` values are 64-bit ids, `ref some` values and proven bindings are addresses (see Token.refToId). This wrapper
+     * applies the three marks the TypeChecker left on an expression: a nullable `ref` that is the subject of an alive proof is read from
+     * the proof's hidden address slot; an address stored where a nullable `ref` is expected becomes an id (GT_REF_ID); a nullable `ref`
+     * handed to a `raw` slot is resolved to its current address (GT_REF_RESOLVE, null when dead).
+     */
     private void emitExpr(Token node) {
+        if (node.refProofIsId && node.refProofKey != null) {
+            String slot = refAddrSlots.get(node.refProofKey);
+            if (slot != null) {
+                line("PUSH " + slot + " " + node.resolvedType);
+                return;
+            }
+            // proven by `assume match` (nothing ran, no address slot): resolve the id here
+            emitExprCore(node);
+            requireRefHook("gt_ref_resolve", node);
+            line("GT_REF_RESOLVE " + node.resolvedType);   // like every instruction, it names the type it leaves (a following PUSH_FIELDNAME reads the struct from it)
+            return;
+        }
+        emitExprCore(node);
+        if (node.refToId) {
+            requireRefHook("gt_ref_id", node);
+            line("GT_REF_ID");
+        } else if (node.refToRaw) {
+            requireRefHook("gt_ref_resolve", node);
+            line("GT_REF_RESOLVE " + node.resolvedType);
+        }
+    }
+
+    /** Proof key -> hidden local holding the address a `match Some(<nullable ref>)` resolved (valid for the function being emitted). */
+    private Map<String, String> refAddrSlots = new HashMap<>();
+
+    private void requireRefHook(String decorator, Token at) {
+        if (inGtSuppressedContext) {
+            throw new CompilerException("type", at.file, at.line,
+                    "a nullable 'ref' (which needs '@" + decorator + "') can't be used here -- this function is a ghost-table-decorated "
+                            + "function, or is reachable from one, and ghost-table instructions can never be generated in that whole reachable set");
+        }
+        requireGhostTableFunctionPresent(decorator, at);
+    }
+
+    /**
+     * `Some(x)` on a nullable `ref` (an id): resolve it into the proof's hidden address slot (one slot per proof key and function), then
+     * test that address against null. The match body reads the slot instead of the id (emitExpr, Token.refProofKey).
+     */
+    private void emitSomeOnRef(Token someCall, Token subject, String proofKey) {
+        requireRefHook("gt_ref_resolve", someCall);
+        String type = subject.resolvedType;
+        String slot = proofKey == null ? null : refAddrSlots.get(proofKey);
+        if (slot == null) {
+            slot = declareHiddenLocal(type);
+            if (proofKey != null) {
+                refAddrSlots.put(proofKey, slot);
+            }
+        }
+        line("ADDR " + slot + " " + type);
+        emitExpr(subject);
+        line("GT_REF_RESOLVE " + type);
+        line("ASSIGN " + type + " " + type + " " + type);
+        line("PUSH " + slot + " " + type);
+        line("PUSH null null");
+        line("NEQ " + type + " null indeterminate_bool");
+    }
+
+    private void emitExprCore(Token node) {
         switch (node.type) {
             case STRING:
             case CHAR:
@@ -4779,6 +4850,10 @@ public class BytecodeEmitter {
                                         + "function is a ghost-table-decorated function, or is reachable "
                                         + "from one, and ghost-table instructions can never be generated "
                                         + "in that whole reachable set");
+                    }
+                    if (op.someOnRef) {
+                        emitSomeOnRef(op, singleBuiltinArg(op), op.someProofKey);
+                        return;
                     }
                     requireGhostTableFunctionPresent("gt_alive_check", op);
                     emitExpr(singleBuiltinArg(op));

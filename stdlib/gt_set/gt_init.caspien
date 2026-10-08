@@ -1,0 +1,31 @@
+// The real "@gt_init" -- performs the ghost table's first allocation: 8 empty buckets (64 bytes). Every other gt_* function assumes this has
+// already run. If that malloc fails it prints a message and exits (no unwinding is possible this early).
+import "ghost_table.caspien"
+
+extern exit(imut u32) void
+
+@gt_init
+@pub
+func gt_init() void{
+	match @lock ghost_table{
+		OPEN:{
+			let:<raw mut u8> newBase = null
+			unsafe extern{
+				newBase = mut malloc(mut 64)
+			}
+			if newBase == null{
+				unsafe extern{
+					printf("out of memory: cannot create the ghost table\n")
+					exit(1)
+				}
+			}
+			gtClear(newBase, 8)
+			ghost_table.base = mut newBase
+			ghost_table.len = mut 0
+			ghost_table.capacity = mut 8
+		}
+		CLOSED:{
+			continue
+		}
+	}
+}

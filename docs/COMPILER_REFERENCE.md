@@ -573,7 +573,7 @@ gas, computed from the emitted high-order bytecode before any optimiser pass (`A
 hardware, optimiser switches or target. Rules:
 
 - Each operation costs a fixed number of units. 0: declarations and calling-convention markers (`ALLOC`, `ARG`, `RETURNS`, `FUNC_*`, `STRUCT_*`, `CC_START`,
-  `CC_END`, `PUSH_LABEL`, ...). 2: `DEREF`, `LOOKUP`, `LOOKUP_LHS`, `DOT`, `LEN`. 3: `MUL`. 20: `DIV`, `MOD`, `MEMCOPY`, `GT_REGISTER`, `GT_ALIVE_CHECK`.
+  `CC_END`, `PUSH_LABEL`, ...). 2: `DEREF`, `LOOKUP`, `LOOKUP_LHS`, `DOT`, `LEN`. 3: `MUL`. 20: `DIV`, `MOD`, `MEMCOPY`, `GT_REGISTER`, `GT_ALIVE_CHECK`, `GT_REF_ID`, `GT_REF_RESOLVE`.
   30: `GT_DESTRUCT*`, `GT_MOVED`. 50: `EXTERN_CALL`. 100: `NEW`, `NEW_DYN`, `NEW_UDYN`, `NEW_FROM_*`, `RESIZE`, `URESIZE`, `CLONE*`, `GT_INIT`.
   10: `THROW`, `EXIT*`, atomics, `STACK_LOCK`, `SLEEP`, `YIELD`, `INVOKE`. `CALL` costs 5 plus the callee's worst case. Everything else (pushes, stores,
   arithmetic, comparisons, jumps) costs 1.

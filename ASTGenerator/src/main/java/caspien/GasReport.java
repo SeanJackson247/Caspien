@@ -179,7 +179,7 @@ final class GasReport {
             case "THROW": case "EXIT": case "EXIT_THREAD": case "ATOMIC_SWAP": case "ATOMIC_ASSIGN": case "ATOMIC_PUSH": case "STACK_LOCK":
             case "SLEEP": case "YIELD": case "INVOKE":
                 return 10;
-            case "MEMCOPY": case "GT_REGISTER": case "GT_ALIVE_CHECK":
+            case "MEMCOPY": case "GT_REGISTER": case "GT_ALIVE_CHECK": case "GT_REF_ID": case "GT_REF_RESOLVE":
                 return 20;
             case "GT_DESTRUCT": case "GT_DESTRUCT_ADDR": case "GT_DESTRUCT_TAIL": case "GT_MOVED":
                 return 30;

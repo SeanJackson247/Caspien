@@ -1,7 +1,6 @@
-// The real "@gt_register" -- registers a raw pointer. Returns true when the pointer is registered afterwards (null and an already present
-// pointer need nothing and count as success), false when the table could not grow: then the pointer is NOT registered and the table is exactly
-// as it was (the old array is kept). The caller (GT_REGISTER in the backend) frees the block and reports the usual out-of-memory error.
-// The table grows (capacity doubles, fresh array from realloc(null, ..), rehash, old array freed) when len + 1 would exceed half the capacity.
+// The "@gt_register" of the id table -- registers a raw pointer (as an untagged T1 entry). Returns true when the pointer is registered afterwards
+// (null and an already present pointer need nothing and count as success), false when T1 could not grow: then the pointer is NOT registered
+// and the table is exactly as it was. Growth: capacity doubles at len + 1 > capacity / 2 (fresh array, rehash keeping tags, old array freed).
 import "ghost_table.caspien"
 
 @gt_register
@@ -13,7 +12,8 @@ func gt_register(ptr: raw imut u8) imut bool{
 	let ok = mut true
 	match @lock ghost_table{
 		OPEN:{
-			let at = mut gtFind(ghost_table.base, ghost_table.capacity, ptr)
+			let addr = mut gtAddrOf(ptr)
+			let at = mut gtT1Find(ghost_table.base, ghost_table.capacity, addr)
 			if at == ghost_table.capacity{
 				if (ghost_table.len + 1) * 2 > ghost_table.capacity{
 					let newCapacity = mut (ghost_table.capacity * 2)
@@ -26,7 +26,7 @@ func gt_register(ptr: raw imut u8) imut bool{
 					}
 					else{
 						gtClear(newBase, newCapacity)
-						gtRehash(ghost_table.base, ghost_table.capacity, newBase, newCapacity)
+						gtT1Rehash(ghost_table.base, ghost_table.capacity, newBase, newCapacity)
 						unsafe extern{
 							free(ghost_table.base)
 						}
@@ -35,7 +35,7 @@ func gt_register(ptr: raw imut u8) imut bool{
 					}
 				}
 				if ok{
-					gtInsert(ghost_table.base, ghost_table.capacity, ptr)
+					gtT1Insert(ghost_table.base, ghost_table.capacity, addr)
 					ghost_table.len = mut (ghost_table.len + 1)
 				}
 			}
