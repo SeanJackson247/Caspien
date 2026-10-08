@@ -84,25 +84,29 @@ impl<T> HashMap<T>{
 		let mask = mut (newCap - 1)
 		let used = mut _self.count
 		for i in 0..used{
-			match i in _self.owners{
-				let node = mut ref _self.owners[i].n
-				match Some(node){
-					let k = mut node.key
-					let h = mut bits_and(hashKey:<T>(imut k), mask)
-					// hashKey contains an `unsafe` block, which ends the proof from `match Some(node)` above: match again
+			// hashKey contains an `unsafe` block, which ends the entry proof for _self (and for `node`) at every iteration: match again
+			match Some(_self){
+				match i in _self.owners{
+					let node = mut ref _self.owners[i].n
 					match Some(node){
-						match h in newHeads{
-							node.next = newHeads[h].n
-						}
-						match h into newHeads{
-							newHeads[h].n = node
+						let k = mut node.key
+						let h = mut bits_and(hashKey:<T>(imut k), mask)
+						match Some(node){
+							match h in newHeads{
+								node.next = newHeads[h].n
+							}
+							match h into newHeads{
+								newHeads[h].n = node
+							}
 						}
 					}
 				}
 			}
 		}
-		_self.heads = newHeads
-		_self.capacity = newCap
+		match Some(_self){
+			_self.heads = newHeads
+			_self.capacity = newCap
+		}
 	}
 
 	/** Inserts, or updates the value if `key` is already present. A map of capacity 0 ignores every key; the table doubles first when one more key would pass 70% load (an out-of-memory growth is swallowed, then a full table ignores new keys). */
@@ -113,50 +117,56 @@ impl<T> HashMap<T>{
 		match cap != 0{
 			let mask = mut (cap - 1)
 			let h = mut bits_and(hashKey:<T>(imut key), mask)
-			let nilHead = mut HashMapHead:<T>{n= null}
-			let cur = mut nilHead.n
-			let limit = mut (_self.count + 1)
-			match h in _self.heads{
-				cur = _self.heads[h].n
-			}
-			for steps in 0..limit{
-				match Some(cur){
-					let ck = mut cur.key
-					let nx = mut cur.next
-					if ck == key{
-						cur.value = value
+			match Some(_self){      // hashKey's `unsafe` ended the entry proof: match again
+				let nilHead = mut HashMapHead:<T>{n= null}
+				let cur = mut nilHead.n
+				let limit = mut (_self.count + 1)
+				match h in _self.heads{
+					cur = _self.heads[h].n
+				}
+				for steps in 0..limit{
+					match Some(cur){
+						let ck = mut cur.key
+						let nx = mut cur.next
+						if ck == key{
+							cur.value = value
+							return
+						}
+						cur = nx
+					}
+					else{
+						break
+					}
+				}
+				if (_self.count + 1) * 10 > cap * 7{
+					? _self.grow(_self)
+					match Some(_self){
+						cap = mut _self.capacity
+						mask = mut (cap - 1)
+						h = mut bits_and(hashKey:<T>(imut key), mask)
+					}
+				}
+				match Some(_self){      // so did grow
+					if _self.count >= cap{
 						return
 					}
-					cur = nx
-				}
-				else{
-					break
-				}
-			}
-			if (_self.count + 1) * 10 > cap * 7{
-				? _self.grow(_self)
-				cap = mut _self.capacity
-				mask = mut (cap - 1)
-				h = mut bits_and(hashKey:<T>(imut key), mask)
-			}
-			if _self.count >= cap{
-				return
-			}
-			let idx = mut _self.count
-			let hd = mut nilHead.n
-			match h in _self.heads{
-				hd = _self.heads[h].n
-			}
-			let nn = mut ? new HashMapNode:<T>{key= key, value= value, next= hd}
-			match idx into _self.owners{
-				_self.owners[idx].n = nn
-			}
-			match idx in _self.owners{
-				match h into _self.heads{
-					_self.heads[h].n = ref _self.owners[idx].n
+					let idx = mut _self.count
+					let hd = mut nilHead.n
+					match h in _self.heads{
+						hd = _self.heads[h].n
+					}
+					let nn = mut ? new HashMapNode:<T>{key= key, value= value, next= hd}
+					match idx into _self.owners{
+						_self.owners[idx].n = nn
+					}
+					match idx in _self.owners{
+						match h into _self.heads{
+							_self.heads[h].n = ref _self.owners[idx].n
+						}
+					}
+					_self.count = mut (_self.count + 1)
 				}
 			}
-			_self.count = mut (_self.count + 1)
 		}
 	}
 
@@ -167,23 +177,25 @@ impl<T> HashMap<T>{
 		match cap != 0{
 			let mask = mut (cap - 1)
 			let h = mut bits_and(hashKey:<T>(imut key), mask)
-			let nilHead = mut HashMapHead:<T>{n= null}
-			let cur = mut nilHead.n
-			let limit = mut (_self.count + 1)
-			match h in _self.heads{
-				cur = _self.heads[h].n
-			}
-			for steps in 0..limit{
-				match Some(cur){
-					let ck = mut cur.key
-					let nx = mut cur.next
-					if ck == key{
-						return cur.value
-					}
-					cur = nx
+			match Some(_self){      // hashKey's `unsafe` ended the entry proof: match again
+				let nilHead = mut HashMapHead:<T>{n= null}
+				let cur = mut nilHead.n
+				let limit = mut (_self.count + 1)
+				match h in _self.heads{
+					cur = _self.heads[h].n
 				}
-				else{
-					break
+				for steps in 0..limit{
+					match Some(cur){
+						let ck = mut cur.key
+						let nx = mut cur.next
+						if ck == key{
+							return cur.value
+						}
+						cur = nx
+					}
+					else{
+						break
+					}
 				}
 			}
 		}
@@ -196,23 +208,25 @@ impl<T> HashMap<T>{
 		match cap != 0{
 			let mask = mut (cap - 1)
 			let h = mut bits_and(hashKey:<T>(imut key), mask)
-			let nilHead = mut HashMapHead:<T>{n= null}
-			let cur = mut nilHead.n
-			let limit = mut (_self.count + 1)
-			match h in _self.heads{
-				cur = _self.heads[h].n
-			}
-			for steps in 0..limit{
-				match Some(cur){
-					let ck = mut cur.key
-					let nx = mut cur.next
-					if ck == key{
-						return mut true
-					}
-					cur = nx
+			match Some(_self){      // hashKey's `unsafe` ended the entry proof: match again
+				let nilHead = mut HashMapHead:<T>{n= null}
+				let cur = mut nilHead.n
+				let limit = mut (_self.count + 1)
+				match h in _self.heads{
+					cur = _self.heads[h].n
 				}
-				else{
-					break
+				for steps in 0..limit{
+					match Some(cur){
+						let ck = mut cur.key
+						let nx = mut cur.next
+						if ck == key{
+							return mut true
+						}
+						cur = nx
+					}
+					else{
+						break
+					}
 				}
 			}
 		}

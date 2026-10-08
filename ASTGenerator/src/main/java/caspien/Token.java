@@ -882,6 +882,8 @@ public class Token {
         public boolean invalidated = false;
         /** Loop nesting depth at which this proof was made (set by ProofKills.stamp); -1 until stamped. */
         public int loopDepth = -1;
+        /** Struct type name of the object a `ref some` proof points at (null = unknown: any destroying event ends it). */
+        public String pointee = null;
         /**
          * For "enum_field_variants" only (a real "match receiver.field
          * {...}" case block's own proof, `targetName` holding "field")

@@ -41,31 +41,34 @@ func run(root: ref some imut Dir) void{
 		return
 	}
 	? Dir.make(root, "caspien_demo")
-	let d = mut ? Dir.sub(root, "caspien_demo")
-	match Some(d){
-		let f = mut ? File.open(d, "log.txt", Open.WRITE_NEW)   // WRITE_NEW fails if it exists
-		match Some(f){
-			? File.writeText(f, "hello, files\n")
-			? File.sync(f)
+	// Dir.make contains `unsafe`, which ends the proof that `root` is alive: match it again before each further use
+	match Some(root){
+		let d = mut ? Dir.sub(root, "caspien_demo")
+		match Some(d){
+			let f = mut ? File.open(d, "log.txt", Open.WRITE_NEW)   // WRITE_NEW fails if it exists
+			match Some(f){
+				? File.writeText(f, "hello, files\n")
+				? File.sync(f)
+			}
+			unsafe extern{ printf("written: %llu bytes\n", sizeOf(d, "log.txt")) }
+
+			let g = mut ? File.open(d, "log.txt", Open.APPEND)
+			match Some(g){ ? File.writeText(g, "again\n") }
+			unsafe extern{ printf("after append: %llu bytes\n", sizeOf(d, "log.txt")) }
+
+			// Replace a file atomically: write a hidden temp file, flush it, rename it over the name. Dropped without `commit`, it is deleted.
+			let t = mut ? File.tempFile(d, "log.txt")
+			match Some(t){
+				? File.writeText(t, "new\n")
+				? File.commit(t)
+			}
+			unsafe extern{ printf("after atomic replace: %llu bytes\n", sizeOf(d, "log.txt")) }
+
+			unsafe extern{ printf("escape refused: %llu\n", refused(d, "../etc/passwd")) }
+			? Dir.removeFile(d, "log.txt")
 		}
-		unsafe extern{ printf("written: %llu bytes\n", sizeOf(d, "log.txt")) }
-
-		let g = mut ? File.open(d, "log.txt", Open.APPEND)
-		match Some(g){ ? File.writeText(g, "again\n") }
-		unsafe extern{ printf("after append: %llu bytes\n", sizeOf(d, "log.txt")) }
-
-		// Replace a file atomically: write a hidden temp file, flush it, rename it over the name. Dropped without `commit`, it is deleted.
-		let t = mut ? File.tempFile(d, "log.txt")
-		match Some(t){
-			? File.writeText(t, "new\n")
-			? File.commit(t)
-		}
-		unsafe extern{ printf("after atomic replace: %llu bytes\n", sizeOf(d, "log.txt")) }
-
-		unsafe extern{ printf("escape refused: %llu\n", refused(d, "../etc/passwd")) }
-		? Dir.removeFile(d, "log.txt")
 	}
-	? Dir.removeDir(root, "caspien_demo")
+	match Some(root){ ? Dir.removeDir(root, "caspien_demo") }
 	unsafe extern{ printf("cleaned up\n") }
 }
 

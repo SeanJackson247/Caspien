@@ -69,13 +69,17 @@ func dirClose(d: ref some mut Dir) void{
 
 @drop
 func fileClose(f: ref some mut File) void{
-	fsOsClose(f.h)
-	if f.pending == 1{
-		fsOsRemoveRaw(f.dirh, f.tmp)
+	let h = mut f.h
+	let pending = mut f.pending
+	let dirh = mut f.dirh
+	let tmp = mut f.tmp
+	fsOsClose(h)
+	if pending == 1{
+		fsOsRemoveRaw(dirh, tmp)
 		unsafe extern{
-			fsFree(f.tmp)
+			fsFree(tmp)
 		}
-		fsOsClose(f.dirh)
+		fsOsClose(dirh)
 	}
 }
 
@@ -293,12 +297,19 @@ impl Dir{
 	static func sub(d: ref some imut Dir, name: static imut string) owns some mut Dir{
 		?catch(e){ throw e }
 		? fsCheckName(name)
-		let:<mut s64> h = mut fsOsSub(d.h, name)
-		if h < 0{
-			throw "fs: cannot open directory"
+		match Some(d){      // fsCheckName contains `unsafe`, which ended the proof that `d` is alive
+			let dh = mut d.h
+			let dw = mut d.writable
+			let:<mut s64> h = mut fsOsSub(dh, name)
+			if h < 0{
+				throw "fs: cannot open directory"
+			}
+			let r = mut ? new Dir{h= h, writable= dw}
+			return r
 		}
-		let r = mut ? new Dir{h= h, writable= d.writable}
-		return r
+		else{
+			throw "fs: directory is not alive"
+		}
 	}
 
 	@pub
@@ -306,9 +317,11 @@ impl Dir{
 	static func make(d: ref some imut Dir, name: static imut string) void{
 		?catch(e){ throw e }
 		? fsCheckName(name)
-		? fsNeedWritable(d)
-		if fsOsMkdir(d.h, name) < 0{
-			throw "fs: cannot create directory"
+		match Some(d){      // fsCheckName contains `unsafe`, which ended the proof that `d` is alive
+			? fsNeedWritable(d)
+			if fsOsMkdir(d.h, name) < 0{
+				throw "fs: cannot create directory"
+			}
 		}
 	}
 
@@ -317,9 +330,11 @@ impl Dir{
 	static func removeFile(d: ref some imut Dir, name: static imut string) void{
 		?catch(e){ throw e }
 		? fsCheckName(name)
-		? fsNeedWritable(d)
-		if fsOsRemove(d.h, name, 0) < 0{
-			throw "fs: cannot remove file"
+		match Some(d){      // fsCheckName contains `unsafe`, which ended the proof that `d` is alive
+			? fsNeedWritable(d)
+			if fsOsRemove(d.h, name, 0) < 0{
+				throw "fs: cannot remove file"
+			}
 		}
 	}
 
@@ -328,9 +343,11 @@ impl Dir{
 	static func removeDir(d: ref some imut Dir, name: static imut string) void{
 		?catch(e){ throw e }
 		? fsCheckName(name)
-		? fsNeedWritable(d)
-		if fsOsRemove(d.h, name, 1) < 0{
-			throw "fs: cannot remove directory"
+		match Some(d){      // fsCheckName contains `unsafe`, which ended the proof that `d` is alive
+			? fsNeedWritable(d)
+			if fsOsRemove(d.h, name, 1) < 0{
+				throw "fs: cannot remove directory"
+			}
 		}
 	}
 }
@@ -342,23 +359,28 @@ impl File{
 	static func open(d: ref some imut Dir, name: static imut string, mode: imut Open) owns some mut File{
 		?catch(e){ throw e }
 		? fsCheckName(name)
-		let:<mut u64> m = mut 0
-		match mode{
-			READ:{ m = 0 }
-			WRITE_NEW:{ m = 1 }
-			WRITE_TRUNC:{ m = 2 }
-			APPEND:{ m = 3 }
+		match Some(d){      // fsCheckName contains `unsafe`, which ended the proof that `d` is alive
+			let:<mut u64> m = mut 0
+			match mode{
+				READ:{ m = 0 }
+				WRITE_NEW:{ m = 1 }
+				WRITE_TRUNC:{ m = 2 }
+				APPEND:{ m = 3 }
+			}
+			if m != 0{
+				? fsNeedWritable(d)
+			}
+			let:<mut s64> h = mut fsOsOpen(d.h, name, m)
+			if h < 0{
+				throw "fs: cannot open file"
+			}
+			let:<raw mut char> none = mut null
+			let f = mut ? new File{h= h, dirh= -1, pending= 0, tmp= none, finalName= name}
+			return f
 		}
-		if m != 0{
-			? fsNeedWritable(d)
+		else{
+			throw "fs: directory is not alive"
 		}
-		let:<mut s64> h = mut fsOsOpen(d.h, name, m)
-		if h < 0{
-			throw "fs: cannot open file"
-		}
-		let:<raw mut char> none = mut null
-		let f = mut ? new File{h= h, dirh= -1, pending= 0, tmp= none, finalName= name}
-		return f
 	}
 
 	/** Starts replacing `name`: returns a hidden temp file in `d` (created exclusively); `File.commit` flushes it and renames it over `name`. Dropped without a commit, the temp file is deleted and `name` is untouched. */
@@ -367,30 +389,36 @@ impl File{
 	static func tempFile(d: ref some imut Dir, name: static imut string) owns some mut File{
 		?catch(e){ throw e }
 		? fsCheckName(name)
-		? fsNeedWritable(d)
-		let:<raw mut char> buf = mut null
-		let:<mut s64> h = mut -1
-		unsafe extern{
-			buf = fsMalloc(300)
-		}
-		for n in 0..100{
+		match Some(d){      // fsCheckName contains `unsafe`, which ended the proof that `d` is alive
+			? fsNeedWritable(d)
+			let dirHandle = mut d.h      // read now: the `unsafe` blocks below end the proof that `d` is alive
+			let:<raw mut char> buf = mut null
+			let:<mut s64> h = mut -1
 			unsafe extern{
-				fsSnprintf(buf, 300, imut ".tmp.%llu.%s", n, name)
+				buf = fsMalloc(300)
 			}
-			h = fsOsCreateNewRaw(d.h, buf)
-			if h >= 0{
-				break
+			for n in 0..100{
+				unsafe extern{
+					fsSnprintf(buf, 300, imut ".tmp.%llu.%s", n, name)
+				}
+				h = fsOsCreateNewRaw(dirHandle, buf)
+				if h >= 0{
+					break
+				}
 			}
+			if h < 0{
+				unsafe extern{
+					fsFree(buf)
+				}
+				throw "fs: cannot create temp file"
+			}
+			let:<mut s64> dh = mut fsOsDup(dirHandle)
+			let f = mut ? new File{h= h, dirh= dh, pending= 1, tmp= buf, finalName= name}
+			return f
 		}
-		if h < 0{
-			unsafe extern{
-				fsFree(buf)
-			}
-			throw "fs: cannot create temp file"
+		else{
+			throw "fs: directory is not alive"
 		}
-		let:<mut s64> dh = mut fsOsDup(d.h)
-		let f = mut ? new File{h= h, dirh= dh, pending= 1, tmp= buf, finalName= name}
-		return f
 	}
 
 	/** Flushes a temp file and renames it over its final name; afterwards the file is an ordinary open file (still writable, no longer pending). */
@@ -400,28 +428,36 @@ impl File{
 		if f.pending != 1{
 			throw "fs: not a temp file"
 		}
-		if fsOsSync(f.h) < 0{
+		let fh = mut f.h      // fields are read before the calls: their `unsafe` blocks end the proof that `f` is alive
+		let dirh = mut f.dirh
+		let tmp = mut f.tmp
+		if fsOsSync(fh) < 0{
 			throw "fs: flush failed"
 		}
-		if fsOsRenameOver(f.dirh, f.h, f.tmp, f.finalName) < 0{
-			throw "fs: rename failed"
+		match Some(f){
+			if fsOsRenameOver(dirh, fh, tmp, f.finalName) < 0{
+				throw "fs: rename failed"
+			}
 		}
 		unsafe extern{
-			fsFree(f.tmp)
+			fsFree(tmp)
 		}
-		fsOsClose(f.dirh)
-		f.pending = 0
+		fsOsClose(dirh)
+		match Some(f){
+			f.pending = 0
+		}
 	}
 
 	/** Writes all of `text` (its characters, no terminator). */
 	@pub
 	@throws
 	static func writeText(f: ref some imut File, text: static imut string) void{
+		let fh = mut f.h      // read first: the `unsafe` block ends the proof that `f` is alive
 		let n = mut 0
 		unsafe extern{
 			n = strlen(text)
 		}
-		let:<mut s64> wrote = mut fsOsWrite(f.h, text, n)
+		let:<mut s64> wrote = mut fsOsWrite(fh, text, n)
 		if wrap:<u64>(wrote) != n{
 			throw "fs: short write"
 		}
@@ -441,13 +477,14 @@ impl File{
 	static func readAll(f: ref some imut File) owns some mut String{
 		?catch(e){ throw e }
 		let out = mut ? new String()
+		let fh = mut f.h      // read first: the `unsafe` blocks end the proof that `f` is alive
 		let:<raw mut char> buf = mut null
 		unsafe extern{
 			buf = fsMalloc(4096)
 		}
 		let failed = mut 0
 		for chunk in 0..1048576{
-			let:<mut s64> got = mut fsOsRead(f.h, buf, 4096)
+			let:<mut s64> got = mut fsOsRead(fh, buf, 4096)
 			if got < 0{
 				failed = 1
 				break

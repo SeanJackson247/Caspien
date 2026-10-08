@@ -1,0 +1,75 @@
+// Legal uses of `ref some` parameters and `self` around things that free or are unsafe.
+// Expected output (values worked out in ref_param_kill_test.py):
+// PASS read before unsafe 10
+// PASS rematch after unsafe 11
+// PASS unrelated type freed 5
+// PASS self rematch 3
+// PASS local resize 4
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+struct Node{@pub{ value: mut u64 }}
+struct Other{@pub{ x: mut u64 }}
+struct Bag{@pub{ k: mut u64 }}
+func consumeOther(o: owns mut Other) void{ }
+func report(name: static imut string, got: mut u64) void{
+	unsafe extern{ printf("PASS %s %llu\n", name, got) }
+}
+func readFirst(r: ref some mut Node) mut u64{
+	let v = mut r.value
+	unsafe extern{ printf("") }
+	return v
+}
+func rematch(r: ref some mut Node) mut u64{
+	unsafe extern{ printf("") }
+	let out = mut 0
+	match Some(r){ out = r.value + 1 }
+	return out
+}
+func unrelated(r: ref some mut Node, o: owns mut Other) mut u64{
+	consumeOther(o)
+	return r.value
+}
+struct Counter{@pub{ n: mut u64 }}
+@pub
+impl Counter{
+	@pub
+	func bump(_self: ref some mut self) void{
+		unsafe extern{ printf("") }
+		match Some(_self){ _self.n = mut (_self.n + 1) }
+	}
+}
+func grow(b: ref some mut Bag) mut u64{
+	?catch(e){ return 0 }
+	let fresh = mut ? dyn:<u64>([])
+	let bigger = mut ? resize(fresh, 4, 0)
+	b.k = mut (b.k + len(bigger))
+	return b.k
+}
+func main() void{
+	?catch(e){ return }
+	let a = mut ?new Node{value= 10}
+	let ra = mut ref a
+	report("read before unsafe", readFirst(ra))
+	ra = mut ref a      // readFirst has an unsafe block: take the ref again
+	report("rematch after unsafe", rematch(ra))
+	let n = mut ?new Node{value= 5}
+	let o = mut ?new Other{x= 1}
+	let rn = mut ref n
+	report("unrelated type freed", unrelated(rn, o))
+	let c = mut ?new Counter{n= 0}
+	let rc = mut ref c
+	rc.bump(rc)
+	rc = mut ref c
+	rc.bump(rc)
+	rc = mut ref c
+	rc.bump(rc)
+	rc = mut ref c
+	report("self rematch", rc.n)
+	let bag = mut ?new Bag{k= 0}
+	let rb = mut ref bag
+	report("local resize", grow(rb))
+}

@@ -1178,6 +1178,41 @@ public class TypeChecker {
         return false;
     }
 
+    /** Struct name a `ref` points at, for ProofKills (null when it is not a plain struct: then any destroying event ends the proof). */
+    String pointeeOf(TypeInfo t) {
+        if (t == null || t.baseType == null) {
+            return null;
+        }
+        String b = stripArrayDims(t.baseType);
+        return structs.containsKey(b) ? b : null;
+    }
+
+    /** Names of the types an object of type t can contain by ownership (itself, owned members, inline members, transitively); null = unknown. */
+    Set<String> destroyedTypes(TypeInfo t) {
+        if (t == null || t.baseType == null) {
+            return null;
+        }
+        Set<String> out = new HashSet<>();
+        collectDestroyed(t, out);
+        return out;
+    }
+
+    private void collectDestroyed(TypeInfo t, Set<String> out) {
+        if (t == null || t.baseType == null || (t.storage != null && !"owns".equals(t.storage))) {
+            return;
+        }
+        String b = stripArrayDims(t.baseType);
+        if (!out.add(b)) {
+            return;
+        }
+        StructInfo si = structs.get(b);
+        if (si != null) {
+            for (TypeInfo m : si.members.values()) {
+                collectDestroyed(m, out);
+            }
+        }
+    }
+
     /** An inline (no storage keyword) struct value that owns memory through some member: it has to be dropped at scope end and moved, not copied. */
     boolean isInlineOwningStruct(TypeInfo t) {
         if (t == null || t.storage != null || t.baseType == null) {
@@ -7292,6 +7327,10 @@ public class TypeChecker {
         }
         Scope scope = new Scope(null, func.safetyTag);
         for (int i = 0; i < func.paramNames.size(); i++) {
+            TypeInfo paramType = func.paramTypes.get(i);
+            if ("ref".equals(paramType.storage) && paramType.isSome) {
+                ProofKills.implicit(func.paramNames.get(i), pointeeOf(paramType));   // the caller guarantees it is alive at entry
+            }
             scope.vars.put(func.paramNames.get(i), func.paramTypes.get(i));
             // "By the parameter being owns, it guarantees the func will
             // do this [destruct it]. The only exception is if it is
@@ -8577,12 +8616,15 @@ public class TypeChecker {
                             requireNotPure(func, stmt, "an 'unsafe' block", "unsafe code can do anything the compiler cannot check, so purity could not be guaranteed");
                         }
                         safetyBlockScope.unsafeBlock = recordUnsafeBlock(stmt);
+                    }
+                    checkLinesInScope(stmt.childs, safetyBlockScope, func, insideLoop);
+                    if (stmt.text.equals("unsafe")) {
+                        // The block ends the proofs that were active before it. Uses inside it are the programmer's responsibility, as everywhere in `unsafe`.
                         boolean assumeOnly = stmt.unsafeTags != null && stmt.unsafeTags.size() == 1 && stmt.unsafeTags.contains("assume");
                         if (!stmt.synthesizedUnsafe && !assumeOnly) {
                             ProofKills.kill(scope.activeMatchPatterns, stmt, "an 'unsafe' block");
                         }
                     }
-                    checkLinesInScope(stmt.childs, safetyBlockScope, func, insideLoop);
                     // Same reasoning as an 'if' branch or match block --
                     // an 'unsafe'/'safe' block's own natural end isn't a
                     // function/loop boundary either.
@@ -10089,7 +10131,12 @@ public class TypeChecker {
             // x's own slot, the identical "ordinary expression there,
             // plus a proof recorded here" split "in"/"instanceof"
             // already have.
-            resolveExprType(node, scope, func);
+            ProofKills.suppressReads++;       // the alive check itself reads the pointer; that read is what renews the proof
+            try {
+                resolveExprType(node, scope, func);
+            } finally {
+                ProofKills.suppressReads--;
+            }
             Token argExpr = collectSingleBuiltinArg(node, "Some", scope, func).get(0);
             out.add(new Token.MatchPattern(proofKeyOf(argExpr), "alive", null));
             return;
@@ -11921,6 +11968,17 @@ public class TypeChecker {
         }
     }
 
+    /** `v.f`, `v.f[i].g` ...: the variable v when `t` is a member/index path rooted at a bare variable (at least one step), else null. */
+    private static String memberPathRoot(Token t) {
+        Token cur = t;
+        int steps = 0;
+        while (cur != null && cur.type == TokenType.OPERATOR && (".".equals(cur.text) || "LOOKUP".equals(cur.text)) && cur.left != null) {
+            cur = cur.left;
+            steps++;
+        }
+        return steps > 0 && cur != null && cur.type == TokenType.VARREF ? cur.text : null;
+    }
+
     /** The bare variable on the left of the assignment being checked: assigning to it is not a read of it. */
     private Token assignTargetVar = null;
 
@@ -12025,7 +12083,7 @@ public class TypeChecker {
             }
             scope.declare(nameTok.text, rhsType, nameTok);
             if ("ref".equals(rhsType.storage) && rhsType.isSome) {
-                ProofKills.implicit(nameTok.text);
+                ProofKills.implicit(nameTok.text, pointeeOf(rhsType));
             }
             if (op.left.isConst) {
                 scope.constNames.add(nameTok.text);
@@ -12152,10 +12210,10 @@ public class TypeChecker {
         }
         invalidateMatchPatternsForWrite(op.left, scope);
         if ("ref".equals(leftType.storage) && leftType.isSome && op.left.type == TokenType.VARREF) {
-            ProofKills.implicit(op.left.text);
+            ProofKills.implicit(op.left.text, pointeeOf(leftType));
         }
         if (typeOwnsMemory(leftType, new HashSet<>())) {
-            ProofKills.kill(scope.activeMatchPatterns, op, "an assignment over a slot that owns memory (the old value is freed)");
+            ProofKills.kill(scope.activeMatchPatterns, op, "an assignment over a slot that owns memory (the old value is freed)", memberPathRoot(op.left), destroyedTypes(leftType));
         }
         if (isInlineOwningStruct(leftType)) {
             op.left.inlineOwnsStruct = leftType.baseType;
@@ -14370,7 +14428,12 @@ public class TypeChecker {
     private TypeInfo checkResizeBuiltin(Token op, Scope scope, FuncInfo func) {
         TypeInfo result;
         result = checkResizeBuiltinInner(op, scope, func);
-        ProofKills.kill(scope.activeMatchPatterns, op, "'resize' (the block may move or shrink, freeing what was in it)");
+        List<Token> resizeArgs = new ArrayList<>();
+        if (op.right != null && op.right.childs != null && !op.right.childs.isEmpty()) {
+            collectCommaArgs(op.right.childs.get(0), resizeArgs);
+        }
+        ProofKills.kill(scope.activeMatchPatterns, op, "'resize' (the block may move or shrink, freeing what was in it)",
+                resizeArgs.isEmpty() ? null : memberPathRoot(resizeArgs.get(0)), destroyedTypes(result));
         return result;
     }
 

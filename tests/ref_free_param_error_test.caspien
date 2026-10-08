@@ -1,0 +1,21 @@
+// A `ref some` parameter is alive when the function is entered; calling something that frees an object of its type ends that.
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+struct Node{@pub{ value: mut u64 }}
+func consume(n: owns mut Node) void{ }
+func touch(r: ref some mut Node, victim: owns mut Node) mut u64{
+	let before = mut r.value
+	consume(victim)
+	return before + r.value
+}
+func main() void{
+	?catch(e){ return }
+	let a = mut ?new Node{value= 1}
+	let b = mut ?new Node{value= 2}
+	let r = mut ref a
+	let x = mut touch(r, b)
+}
