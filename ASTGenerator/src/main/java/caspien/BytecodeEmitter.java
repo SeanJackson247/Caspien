@@ -266,6 +266,7 @@ public class BytecodeEmitter {
         Set<String> lockExempt = new HashSet<>(gtReachableMangledNames);
         lockExempt.addAll(gtDecoratedFuncMangledNames);
         LockNestingCheck.run(checker, lockExempt);
+        checker.checkProofKills();
 
         // Globals first, all of them, regardless of where in the file
         // they were declared -- confirmed directly by example (every

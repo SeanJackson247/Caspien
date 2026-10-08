@@ -45,9 +45,10 @@ func main() void{
 	let hit = mut 0
 	match k in r{ hit = 1 }
 	check("match k in ref dyn", hit, 1)
+	let r2 = mut ref d      // `check` prints (an unsafe block), so the first `ref d` is no longer proven alive: make a fresh one
 	let far = mut 4
 	let miss = mut 0
-	match far in r{ miss = 1 }
+	match far in r2{ miss = 1 }
 	else{ miss = 2 }
 	check("match far in ref dyn", miss, 2)
 

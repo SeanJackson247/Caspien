@@ -1,0 +1,69 @@
+// Legal uses of refs around things that free: the analysis behind ref_free_*_error_test must not reject these.
+// Expected output:
+// PASS use then free 111
+// PASS fresh ref after free 5
+// PASS renewed ref 7
+// PASS harmless call between 113
+// PASS loop with fresh ref each turn 10
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+struct Node{@pub{ value: mut u64 }}
+func consume(n: owns mut Node) void{ }
+func addOne(x: mut u64) mut u64{
+	return x + 1
+}
+func report(name: static imut string, got: mut u64) void{
+	unsafe extern{ printf("PASS %s %llu\n", name, got) }
+}
+func main() void{
+	?catch(e){ return }
+	// 1: the free comes after the last use of the ref
+	let a = mut ?new Node{value= 111}
+	let r = mut ref a
+	let seen1 = mut 0
+	match Some(r){
+		seen1 = r.value
+		consume(a)
+	}
+	// 2: a new owner and a new ref after the free
+	let b = mut ?new Node{value= 5}
+	let r2 = mut ref b
+	let seen2 = mut 0
+	match Some(r2){
+		seen2 = r2.value
+	}
+	// 3: the owner is replaced (the old node is freed); the ref is made again before it is used
+	b = mut ?new Node{value= 7}
+	r2 = mut ref b
+	let seen3 = mut 0
+	match Some(r2){
+		seen3 = r2.value
+	}
+	// 4: a call that frees nothing between two uses
+	let c = mut ?new Node{value= 111}
+	let r3 = mut ref c
+	let seen4 = mut 0
+	match Some(r3){
+		let one = mut addOne(r3.value)
+		seen4 = r3.value + one - 110
+	}
+	// 5: a loop that frees the owner each turn and takes a fresh ref each turn
+	let d = mut ?new Node{value= 1}
+	let seen5 = mut 0
+	for i in 0..3{
+		let r4 = mut ref d
+		match Some(r4){
+			seen5 += r4.value
+		}
+		d = mut ?new Node{value= 4 + i}
+	}
+	report("use then free", seen1)
+	report("fresh ref after free", seen2)
+	report("renewed ref", seen3)
+	report("harmless call between", seen4)
+	report("loop with fresh ref each turn", seen5)
+}

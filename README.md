@@ -603,6 +603,20 @@ Two details of bounds proofs. A *literal* index into a fixed array needs no proo
 against the length), but any index into a dynarray needs one, because its length exists only at run time.
 And a proof is tied to one array: indexing two arrays inside one loop takes two nested matches.
 
+A liveness proof ends where something may free the object. `match Some(r){...}` checks once, at the top, so a
+body that frees what `r` refers to must not use `r` afterwards, and the same holds for a `ref` that is `ref some`
+from the moment it is made (`let r = ref a` of an `owns some` owner). What ends a proof: an `unsafe` block
+(`unsafe assume{` excepted), assigning over a slot that owns memory, `resize`, `par`, `await`, moving an owner into
+`new`/`dyn`, and a call to any function that does one of these or takes an owning parameter. A later use is a compile
+error that names the call; match again (or take a new `ref`) after the free:
+
+```
+'r' is used after something that may free the object it refers to: the call to consume: it takes an owning parameter, which it may drop (f.caspien:19)
+```
+
+Not covered yet: a callee's own `ref some` parameters (including `self`), and refs stored in struct members. The
+standard library is held to the rule like any other code: a helper with an `unsafe` block ends proofs at its call sites.
+
 #### Locks and proofs on your own types
 
 `@lock` on a struct turns one member into a **discriminant** and makes every other member unreadable until a
@@ -1675,7 +1689,7 @@ what the checker enforces in safe code, then what `unsafe` gives up.
 |---|---|---|
 | **Termination** | Direct and mutual recursion rejected; `@recursive` only as a tail call on a shrinking range, lowered to a bounded `for`; every `for` bound fixed at loop entry; counter immutable; no `loop{}` and no `call()` (both need `unsafe`). See "Termination" (1.4). | `match @lock` waits for another thread, but in safe code only through `CLOSED:default(n)`: at most `n` attempts, then a `break`, so the wait is counted. The counted wait is still not a time bound, and `--audit` does not read `n` yet. `await` blocks on another thread. So safe code is not strictly total. |
 | **Bounded execution time** | Every `for` is bounded by its range and the call graph is acyclic, so a static bound is possible. | `--audit` prints a worst-case cost in abstract gas per function, classed bounded / finite / unbounded / non-terminating / can diverge / unknown, plus stack, heap and peak live heap; see "Termination" (1.4). Time in seconds is not computed. |
-| **Memory safety** | Single ownership with compile-time move checking; array and dynarray indexes proven in bounds; dereferencing a pointer needs a liveness proof. | Liveness of a `ref` is checked at *run time* against a table of live allocations, so a dangling `ref` is skipped rather than rejected at compile time. That check is not yet sound in two ways, both reproduced with probe programs and written up in [`fatrefplan_prooffix.md`](fatrefplan_prooffix.md) (a design, nothing in it is implemented): a freed address that `malloc` hands out again makes a stale `ref` look alive and point at the new object, and an owner freed *inside* a `match Some` body is still dereferenced afterwards (the check runs once, at the top). Both are gaps in the safe-code guarantee. |
+| **Memory safety** | Single ownership with compile-time move checking; array and dynarray indexes proven in bounds; dereferencing a pointer needs a liveness proof. | Liveness of a `ref` is checked at *run time* against a table of live allocations, so a dangling `ref` is skipped rather than rejected at compile time. A `ref` is also not tied to one allocation: a freed address that `malloc` hands out again makes a stale `ref` look alive and point at the new object (reproduced, designed but not implemented in [`fatrefplan_prooffix.md`](fatrefplan_prooffix.md)), which is a gap in the safe-code guarantee. A proof does end where something frees (see "Proofs instead of runtime checks"), except inside a callee for its own `ref some` parameters. |
 | **No runtime exceptions** | Division, float operations, narrowing, indexing and null access all need proofs; arithmetic wraps; failures are declared (`@throws`) and handled. | Allocation failure is reported (as a thrown error), not prevented. A throw out of the `OPEN` case of `match @lock` releases the lock before unwinding, like a `return` does (`tests/lock_unwind_test.caspien` prints `PASS`). |
 | **The single event loop** | `@with_tick` / `@tick` / `@event_loop` give a potentially non-terminating program (`docs/examples/09_event_loop.caspien`). | All three stdlib loops (no arguments, C arguments, safe arguments) have been run. The example is run by hand and is not in `tests/`. `par`/`await` add real threads, which is a deliberate departure from a single loop. |
 

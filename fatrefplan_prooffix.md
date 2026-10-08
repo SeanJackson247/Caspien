@@ -1,6 +1,6 @@
 # Fat refs and proof invalidation: design (research document)
 
-Status: **research / design only. Nothing in this file is implemented.** Written 7 Oct 2026 from a review of the repository
+Status: **research / design.** UPDATE 8 Oct 2026: step 1 of section 8 (kill analysis, defect 1.2) is IMPLEMENTED (`ASTGenerator/.../ProofKills.java`, tests `ref_free_*_error_test`, `ref_proof_kill_test`); owner decisions: no `@no_destroy` (stdlib helpers with `unsafe` end proofs like anything else), `unsafe assume{` blocks are not kills; finding: a `ref` made from an `owns some` owner is `ref some`, so no `match Some` was needed at all in probe 1.2, and the implementation also covers `ref some` locals (not `ref some` parameters/`self`/members). Fat refs and ids (defect 1.1, steps 2-3) are NOT implemented; owner is weighing a thin 8-byte `ref` = unique 64-bit id resolved through the ghost table against the fat `{addr, id}` form. The text below is the original design. Written 7 Oct 2026 from a review of the repository
 at `b7eaa4c` plus two probe programs compiled and run against it. Nothing in the compiler, stdlib or tests was changed.
 
 Two defects in the `ref` model, and the design that closes them:

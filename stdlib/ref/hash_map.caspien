@@ -89,11 +89,14 @@ impl<T> HashMap<T>{
 				match Some(node){
 					let k = mut node.key
 					let h = mut bits_and(hashKey:<T>(imut k), mask)
-					match h in newHeads{
-						node.next = newHeads[h].n
-					}
-					match h into newHeads{
-						newHeads[h].n = node
+					// hashKey contains an `unsafe` block, which ends the proof from `match Some(node)` above: match again
+					match Some(node){
+						match h in newHeads{
+							node.next = newHeads[h].n
+						}
+						match h into newHeads{
+							newHeads[h].n = node
+						}
 					}
 				}
 			}

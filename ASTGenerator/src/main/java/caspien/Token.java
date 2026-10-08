@@ -880,6 +880,8 @@ public class Token {
          * own guarded body.
          */
         public boolean invalidated = false;
+        /** Loop nesting depth at which this proof was made (set by ProofKills.stamp); -1 until stamped. */
+        public int loopDepth = -1;
         /**
          * For "enum_field_variants" only (a real "match receiver.field
          * {...}" case block's own proof, `targetName` holding "field")

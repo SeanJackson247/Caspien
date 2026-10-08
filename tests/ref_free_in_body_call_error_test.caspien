@@ -1,0 +1,22 @@
+// Same, but the free happens two calls deep (viaCall -> consume).
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+struct Node{@pub{ value: mut u64 }}
+func consume(n: owns mut Node) void{ }
+func viaCall(n: owns mut Node) void{
+	consume(n)
+}
+func main() void{
+	?catch(e){ return }
+	let a = mut ?new Node{value= 111}
+	let r = mut ref a
+	let seen = mut 0
+	match Some(r){
+		viaCall(a)
+		seen = r.value
+	}
+}

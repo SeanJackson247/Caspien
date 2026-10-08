@@ -1,0 +1,24 @@
+// The use comes before the free in the source but runs after it on the next iteration of a loop inside the body.
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+struct Node{@pub{ value: mut u64 }}
+func consume(n: owns mut Node) void{ }
+func viaCall(n: owns mut Node) void{
+	consume(n)
+}
+func main() void{
+	?catch(e){ return }
+	let a = mut ?new Node{value= 111}
+	let r = mut ref a
+	let seen = mut 0
+	match Some(r){
+		for i in 0..2{
+			seen = r.value
+			a = mut ?new Node{value= 5}
+		}
+	}
+}

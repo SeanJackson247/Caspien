@@ -161,14 +161,23 @@ func sha256Compress(state: raw mut u32, block: raw imut u8) void{
 			}
 			}
 		}
-		sha256Put(state, 0, deref(state) + a)
-		sha256Put(state, 1, deref(state + 1) + b)
-		sha256Put(state, 2, deref(state + 2) + c)
-		sha256Put(state, 3, deref(state + 3) + d)
-		sha256Put(state, 4, deref(state + 4) + e)
-		sha256Put(state, 5, deref(state + 5) + f)
-		sha256Put(state, 6, deref(state + 6) + g)
-		sha256Put(state, 7, deref(state + 7) + h)
+		// read all eight words first: sha256Put contains an `unsafe` block, which ends the proofs the reads rely on
+		let s0 = mut (deref(state) + a)
+		let s1 = mut (deref(state + 1) + b)
+		let s2 = mut (deref(state + 2) + c)
+		let s3 = mut (deref(state + 3) + d)
+		let s4 = mut (deref(state + 4) + e)
+		let s5 = mut (deref(state + 5) + f)
+		let s6 = mut (deref(state + 6) + g)
+		let s7 = mut (deref(state + 7) + h)
+		sha256Put(state, 0, s0)
+		sha256Put(state, 1, s1)
+		sha256Put(state, 2, s2)
+		sha256Put(state, 3, s3)
+		sha256Put(state, 4, s4)
+		sha256Put(state, 5, s5)
+		sha256Put(state, 6, s6)
+		sha256Put(state, 7, s7)
 	}
 }
 
@@ -240,14 +249,23 @@ func sha256CompressWords(state: raw mut u32, words: raw imut u32) void{
 			}
 			}
 		}
-		sha256Put(state, 0, deref(state) + a)
-		sha256Put(state, 1, deref(state + 1) + b)
-		sha256Put(state, 2, deref(state + 2) + c)
-		sha256Put(state, 3, deref(state + 3) + d)
-		sha256Put(state, 4, deref(state + 4) + e)
-		sha256Put(state, 5, deref(state + 5) + f)
-		sha256Put(state, 6, deref(state + 6) + g)
-		sha256Put(state, 7, deref(state + 7) + h)
+		// read all eight words first: sha256Put contains an `unsafe` block, which ends the proofs the reads rely on
+		let s0 = mut (deref(state) + a)
+		let s1 = mut (deref(state + 1) + b)
+		let s2 = mut (deref(state + 2) + c)
+		let s3 = mut (deref(state + 3) + d)
+		let s4 = mut (deref(state + 4) + e)
+		let s5 = mut (deref(state + 5) + f)
+		let s6 = mut (deref(state + 6) + g)
+		let s7 = mut (deref(state + 7) + h)
+		sha256Put(state, 0, s0)
+		sha256Put(state, 1, s1)
+		sha256Put(state, 2, s2)
+		sha256Put(state, 3, s3)
+		sha256Put(state, 4, s4)
+		sha256Put(state, 5, s5)
+		sha256Put(state, 6, s6)
+		sha256Put(state, 7, s7)
 	}
 }
 

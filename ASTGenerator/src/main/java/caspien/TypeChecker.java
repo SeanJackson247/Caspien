@@ -61,6 +61,33 @@ public class TypeChecker {
 
     public TypeChecker(CompilerConfig config) {
         this.config = config;
+        ProofKills.reset();
+    }
+
+    /** For ProofKills.check: every function the program defines, and the link names of its externs. */
+    void checkProofKills() {
+        List<FuncInfo> all = new ArrayList<>();
+        for (List<FuncInfo> l : functions.values()) {
+            all.addAll(l);
+        }
+        for (List<ImplInfo> l : implsByConcreteType.values()) {
+            for (ImplInfo impl : l) {
+                all.addAll(impl.methods.values());
+                all.addAll(impl.staticMethods.values());
+                all.addAll(impl.genericMethodInstances.values());
+            }
+        }
+        for (LibraryInfo lib : libraries.values()) {
+            for (List<FuncInfo> l : lib.ownFunctions.values()) {
+                all.addAll(l);
+            }
+        }
+        Set<String> ext = new HashSet<>();
+        for (ExternInfo e : externs.values()) {
+            ext.add(e.linkName);
+            ext.add(e.name);
+        }
+        ProofKills.check(this, all, ext);
     }
 
     /** For BytecodeEmitter: the loaded compiler.config this whole compilation is using. */
@@ -1467,6 +1494,7 @@ public class TypeChecker {
             this.movedSlots = (parent != null) ? parent.movedSlots : new HashSet<>();
             this.currentSafety = (parent != null) ? parent.currentSafety : "indeterminate";
             this.activeMatchPatterns = extendedMatchPatterns;
+            ProofKills.stamp(extendedMatchPatterns);
             this.suspendsSelfRecursion = (parent != null && parent.suspendsSelfRecursion) || suspendsSelfRecursionOverride;
             this.lockedGuardSlots = (parent != null) ? parent.lockedGuardSlots : new HashSet<>();
             this.functionRootScope = (parent != null) ? parent.functionRootScope : this;
@@ -1494,6 +1522,7 @@ public class TypeChecker {
             this.movedSlots = movedSlotsOverride;
             this.currentSafety = (parent != null) ? parent.currentSafety : "indeterminate";
             this.activeMatchPatterns = extendedMatchPatterns;
+            ProofKills.stamp(extendedMatchPatterns);
             this.suspendsSelfRecursion = (parent != null && parent.suspendsSelfRecursion) || suspendsSelfRecursionOverride;
             this.lockedGuardSlots = (parent != null) ? parent.lockedGuardSlots : new HashSet<>();
             this.functionRootScope = (parent != null) ? parent.functionRootScope : this;
@@ -7243,6 +7272,18 @@ public class TypeChecker {
     }
 
     private void checkFunctionBody(FuncInfo func) {
+        List<Integer> savedLoops = ProofKills.saveLoops();
+        ProofKills.clearLoops();
+        ProofKills.enterFunction(func);
+        try {
+            checkFunctionBodyInner(func);
+        } finally {
+            ProofKills.exitFunction();
+            ProofKills.restoreLoops(savedLoops);
+        }
+    }
+
+    private void checkFunctionBodyInner(FuncInfo func) {
         if (isPureRtFunc(func)) {
             for (int i = 0; i < func.paramTypes.size(); i++) {
                 requirePureRtNoPointer(func.paramTypes.get(i), func.funcToken, func, "as parameter '" + func.paramNames.get(i) + "'");
@@ -8089,7 +8130,12 @@ public class TypeChecker {
     private Scope checkLinesAsLoopBody(List<Token> lines, Scope parentScope, FuncInfo func, boolean isDynArrayForLoopBody) {
         Scope scope = new Scope(parentScope, true, isDynArrayForLoopBody);
         userLoopScopes.add(scope);
-        checkLinesInScope(lines, scope, func, true);
+        ProofKills.enterLoop();
+        try {
+            checkLinesInScope(lines, scope, func, true);
+        } finally {
+            ProofKills.exitLoop();
+        }
         return scope;
     }
 
@@ -8531,6 +8577,10 @@ public class TypeChecker {
                             requireNotPure(func, stmt, "an 'unsafe' block", "unsafe code can do anything the compiler cannot check, so purity could not be guaranteed");
                         }
                         safetyBlockScope.unsafeBlock = recordUnsafeBlock(stmt);
+                        boolean assumeOnly = stmt.unsafeTags != null && stmt.unsafeTags.size() == 1 && stmt.unsafeTags.contains("assume");
+                        if (!stmt.synthesizedUnsafe && !assumeOnly) {
+                            ProofKills.kill(scope.activeMatchPatterns, stmt, "an 'unsafe' block");
+                        }
                     }
                     checkLinesInScope(stmt.childs, safetyBlockScope, func, insideLoop);
                     // Same reasoning as an 'if' branch or match block --
@@ -9070,7 +9120,8 @@ public class TypeChecker {
             return;
         }
         for (Token.MatchPattern p : newPatterns) {
-            boolean alreadyActive = scope.activeMatchPatterns.stream().anyMatch(existing -> matchPatternsEqual(p, existing));
+            // an alive proof that has seen a possibly destroying event since it was made may be stale: matching again is how it is renewed
+            boolean alreadyActive = scope.activeMatchPatterns.stream().anyMatch(existing -> matchPatternsEqual(p, existing) && !ProofKills.hasEvents(existing));
             if (!alreadyActive) {
                 return; // at least one genuinely new assertion -- not redundant
             }
@@ -11240,6 +11291,9 @@ public class TypeChecker {
 
     private TypeInfo resolveExprType(Token node, Scope scope, FuncInfo func) {
         TypeInfo result = resolveExprTypeInner(node, scope, func);
+        if (node.resolvedCallTarget != null && node.type == TokenType.OPERATOR && "CALL".equals(node.text)) {
+            ProofKills.call(scope.activeMatchPatterns, node, node.resolvedCallTarget);
+        }
         node.resolvedType = result.canonical();
         if (func != null && isPureRtFunc(func)) {
             requirePureRtNoPointer(result, node, func, "in an expression");
@@ -11319,6 +11373,9 @@ public class TypeChecker {
                 }
                 TypeInfo t = scope.lookup(node.text);
                 if (t != null) {
+                    if ("ref".equals(t.storage) && t.isSome && node != assignTargetVar) {
+                        ProofKills.refSomeRead(node, scope.activeMatchPatterns);
+                    }
                     if (scope.isStatic(node.text)) {
                         requireGuardOrUnsafe(t, node.text, scope, node);
                         requirePureDoesNotReadMutableStatic(t, node.text, func, node);
@@ -11776,7 +11833,17 @@ public class TypeChecker {
         }
     }
 
+    /** > 0 while the operands of a `new` / `dyn` are being checked: an owner moved in there is freed if the allocation fails, so it ends alive proofs. */
+    private int newDynDepth = 0;
+
     private void markMovedIfOwned(TypeInfo declaredType, Token valueExpr, Scope scope) {
+        markMovedIfOwnedInner(declaredType, valueExpr, scope);
+        if (newDynDepth > 0 && valueExpr.isOwnershipMoveSource) {
+            ProofKills.kill(scope.activeMatchPatterns, valueExpr, "moving an owner into 'new' or 'dyn' (it is freed if the allocation fails)");
+        }
+    }
+
+    private void markMovedIfOwnedInner(TypeInfo declaredType, Token valueExpr, Scope scope) {
         if (isInlineOwningStruct(declaredType)) {
             // Copying a struct that owns memory would leave two owners: the source slot gives its owned members up
             // (nulled at run time, see BytecodeEmitter.emitOwnershipMoveNullOut) and can not be read afterwards.
@@ -11853,6 +11920,9 @@ public class TypeChecker {
                             + "proven-alive struct pointer, or with 'memcopy' in 'unsafe' code");
         }
     }
+
+    /** The bare variable on the left of the assignment being checked: assigning to it is not a read of it. */
+    private Token assignTargetVar = null;
 
     private TypeInfo checkAssign(Token op, Scope scope, FuncInfo func) {
         rejectDerefAsWriteTarget(op.left, "an assignment");
@@ -11954,6 +12024,9 @@ public class TypeChecker {
                 rhsType = rhsType.withAtomic(false);
             }
             scope.declare(nameTok.text, rhsType, nameTok);
+            if ("ref".equals(rhsType.storage) && rhsType.isSome) {
+                ProofKills.implicit(nameTok.text);
+            }
             if (op.left.isConst) {
                 scope.constNames.add(nameTok.text);
             }
@@ -11993,7 +12066,13 @@ public class TypeChecker {
             scope.movedSlots.remove(leftSlotKeyForRevival);
             partlyMovedSlots.remove(leftSlotKeyForRevival);
         }
-        TypeInfo leftType = resolveExprType(op.left, scope, func);
+        assignTargetVar = op.left;
+        TypeInfo leftType;
+        try {
+            leftType = resolveExprType(op.left, scope, func);
+        } finally {
+            assignTargetVar = null;
+        }
         // A bare "EnumName.Variant" literal is always 'imut', unconditionally
         // -- never coercible to a concretely-'mut' target via the ordinary
         // typesCompatible lattice, even though the value is perfectly
@@ -12072,6 +12151,12 @@ public class TypeChecker {
             partlyMovedSlots.remove(leftSlotKeyForRevival);
         }
         invalidateMatchPatternsForWrite(op.left, scope);
+        if ("ref".equals(leftType.storage) && leftType.isSome && op.left.type == TokenType.VARREF) {
+            ProofKills.implicit(op.left.text);
+        }
+        if (typeOwnsMemory(leftType, new HashSet<>())) {
+            ProofKills.kill(scope.activeMatchPatterns, op, "an assignment over a slot that owns memory (the old value is freed)");
+        }
         if (isInlineOwningStruct(leftType)) {
             op.left.inlineOwnsStruct = leftType.baseType;
         }
@@ -14134,6 +14219,15 @@ public class TypeChecker {
      * `throw` itself).
      */
     private TypeInfo checkDynBuiltinCore(Token op, Scope scope, FuncInfo func, boolean isUnsafe) {
+        newDynDepth++;
+        try {
+            return checkDynBuiltinCoreInner(op, scope, func, isUnsafe);
+        } finally {
+            newDynDepth--;
+        }
+    }
+
+    private TypeInfo checkDynBuiltinCoreInner(Token op, Scope scope, FuncInfo func, boolean isUnsafe) {
         usesOwnsRefDynNew = true;
         if (!isUnsafe) {
             usesThrow = true;
@@ -14274,6 +14368,13 @@ public class TypeChecker {
      * fully type-checked operation, never raw memory manipulation.
      */
     private TypeInfo checkResizeBuiltin(Token op, Scope scope, FuncInfo func) {
+        TypeInfo result;
+        result = checkResizeBuiltinInner(op, scope, func);
+        ProofKills.kill(scope.activeMatchPatterns, op, "'resize' (the block may move or shrink, freeing what was in it)");
+        return result;
+    }
+
+    private TypeInfo checkResizeBuiltinInner(Token op, Scope scope, FuncInfo func) {
         requireNotPureRt(func, op, "'resize'", "allocation depends on heap state (it can fail), so the result is not a function of the arguments");
         // "We need to be barred from resizing (even indirectly thru
         // another function) the dynarray in a for loop," confirmed
@@ -17037,12 +17138,20 @@ public class TypeChecker {
         if (key == null) {
             return false;
         }
+        List<Token.MatchPattern> cands = null;
         for (Token.MatchPattern p : scope.activeMatchPatterns) {
             if (!p.invalidated && p.kind.equals("alive") && key.equals(p.slotKey)) {
-                return true;
+                if (cands == null) {
+                    cands = new ArrayList<>();
+                }
+                cands.add(p);
             }
         }
-        return false;
+        if (cands == null) {
+            return false;
+        }
+        ProofKills.use(targetExpr, cands);
+        return true;
     }
 
     /** "match rht!=0 and lft!=0{ return lft/rht }" -- the division-safety counterpart of isProvenAlive just above, identical shape. */
@@ -17753,6 +17862,17 @@ public class TypeChecker {
      * later, same as if 'new' had simply succeeded.
      */
     private TypeInfo checkNew(Token op, Scope scope, FuncInfo func) {
+        TypeInfo result;
+        newDynDepth++;
+        try {
+            result = checkNewInner(op, scope, func);
+        } finally {
+            newDynDepth--;
+        }
+        return result;
+    }
+
+    private TypeInfo checkNewInner(Token op, Scope scope, FuncInfo func) {
         requireNotPureRt(func, op, "'new'", "allocation depends on heap state (it can fail), so the result is not a function of the arguments");
         usesOwnsRefDynNew = true;
         usesThrow = true;
@@ -17925,6 +18045,13 @@ public class TypeChecker {
      * here and in `checkPar` separately.
      */
     private TypeInfo checkAwait(Token op, Scope scope, FuncInfo func) {
+        TypeInfo result;
+        result = checkAwaitInner(op, scope, func);
+        ProofKills.kill(scope.activeMatchPatterns, op, "'await' (another thread runs)");
+        return result;
+    }
+
+    private TypeInfo checkAwaitInner(Token op, Scope scope, FuncInfo func) {
         requireNotPure(func, op, "'await'", "it waits on another thread");
         if (op.left.type != TokenType.OPERATOR || !op.left.text.equals("CALL")) {
             throw new CompilerException("type", op.left.file, op.left.line,
@@ -18710,6 +18837,13 @@ public class TypeChecker {
      * here the way an ordinary/await call's return value is.
      */
     private TypeInfo checkPar(Token op, Scope scope, FuncInfo func) {
+        TypeInfo result;
+        result = checkParInner(op, scope, func);
+        ProofKills.kill(scope.activeMatchPatterns, op, "'par' (another thread starts)");
+        return result;
+    }
+
+    private TypeInfo checkParInner(Token op, Scope scope, FuncInfo func) {
         requireNotPure(func, op, "'par'", "it starts another thread");
         if (op.left.type != TokenType.OPERATOR || !op.left.text.equals("CALL")) {
             throw new CompilerException("type", op.left.file, op.left.line,
