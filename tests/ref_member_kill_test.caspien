@@ -1,0 +1,37 @@
+// Legal uses of refs stored in struct members around frees.
+// Expected output (model: ref_member_kill_test.py):
+// PASS read then free 111
+// PASS member re-pointed 5
+// PASS dead member skipped 0
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+struct Node{@pub{ value: mut u64 }}
+struct Hold{@pub{ p: ref mut Node }}
+func consume(n: owns mut Node) void{ }
+func report(name: static imut string, got: mut u64) void{
+	unsafe extern{ printf("PASS %s %llu\n", name, got) }
+}
+func main() void{
+	?catch(e){ return }
+	let a = mut ?new Node{value= 111}
+	let h = mut Hold{p= ref a}
+	let s1 = mut 0
+	match Some(h.p){
+		s1 = h.p.value
+		consume(a)
+	}
+	report("read then free", s1)
+	let b = mut ?new Node{value= 5}
+	h.p = ref b
+	let s2 = mut 0
+	match Some(h.p){ s2 = h.p.value }
+	report("member re-pointed", s2)
+	consume(b)
+	let s3 = mut 0
+	match Some(h.p){ s3 = h.p.value + 1000 }
+	report("dead member skipped", s3)
+}

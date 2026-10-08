@@ -17213,7 +17213,7 @@ public class TypeChecker {
         if (cands == null) {
             return false;
         }
-        ProofKills.use(targetExpr, cands);
+        ProofKills.use(targetExpr, cands, key);
         return true;
     }
 

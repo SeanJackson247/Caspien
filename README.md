@@ -618,7 +618,7 @@ A `ref some` parameter (including `self`) is alive when the function is entered,
 local, and the same rules end that proof inside the function. An `unsafe` block ends proofs where the block ends, and
 `unsafe`, an unknown call target or an `extern` free end every proof; an assignment, `resize` or owning parameter ends
 only proofs of references whose target type that free can reach by ownership (freeing an `Other` cannot end a proof
-about a `Node`). Not covered yet: refs stored in struct members, and a freed address that is reused. The standard
+about a `Node`). A `ref` stored in a struct member is proven by `match Some(h.p)` and held to the same rules (the error names the path). Not covered yet: a freed address that is reused. The standard
 library is held to the rule like any other code: a helper with an `unsafe` block ends proofs at its call sites.
 
 #### Locks and proofs on your own types

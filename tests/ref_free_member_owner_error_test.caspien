@@ -1,0 +1,20 @@
+// Same, through an owned holder that is replaced inside the body (the old holder, and the proof about its member, are gone).
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+struct Node{@pub{ value: mut u64 }}
+struct Hold{@pub{ p: ref mut Node }}
+func consume(n: owns mut Node) void{ }
+func main() void{
+	?catch(e){ return }
+	let a = mut ?new Node{value= 1}
+	let h = mut ?new Hold{p= ref a}
+	let s = mut 0
+	match Some(h.p){
+		h = mut ?new Hold{p= null}
+		s = h.p.value
+	}
+}

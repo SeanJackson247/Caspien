@@ -45,7 +45,9 @@ final class ProofKills {
         final int[] loops;
         final Token at;
         final List<Token.MatchPattern> cands;
-        Use(int seq, int[] loops, Token at, List<Token.MatchPattern> cands) {
+        final String name;       // what to call the reference in the error (a member path like "h.p"), null = the token's text
+        Use(int seq, int[] loops, Token at, List<Token.MatchPattern> cands, String name) {
+            this.name = name;
             this.seq = seq;
             this.loops = loops;
             this.at = at;
@@ -206,7 +208,11 @@ final class ProofKills {
     }
 
     static void use(Token at, List<Token.MatchPattern> cands) {
-        uses.add(new Use(++seq, snapshot(), at, cands));
+        use(at, cands, null);
+    }
+
+    static void use(Token at, List<Token.MatchPattern> cands, String name) {
+        uses.add(new Use(++seq, snapshot(), at, cands, name));
     }
 
     /** A direct destroying event in the function being checked. */
@@ -381,7 +387,7 @@ final class ProofKills {
                 }
             }
             if (!ok) {
-                String name = u.at.text != null ? u.at.text : "the reference";
+                String name = u.name != null ? u.name : u.at.text != null ? u.at.text : "the reference";
                 throw new CompilerException("type", u.at.file, u.at.line,
                         "'" + name + "' is used after something that may free the object it refers to: " + reason + " (" + last.at.file + ":" + last.at.line
                                 + "). The reference was alive when it was made or matched; that ended there. Match it again after the free, or restructure so nothing frees in between");

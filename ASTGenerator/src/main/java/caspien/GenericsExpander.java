@@ -1080,6 +1080,25 @@ public class GenericsExpander {
         // than the mangled concrete one.
         copy.isConstructorDecl = src.isConstructorDecl;
         copy.constructorConcreteName = src.constructorConcreteName;
+        // An eighth batch of the same class of gap, found 8 Oct 2026 while tracing why `unsafe assume{ assume match Some(node){ ... } }` made a generic
+        // hash-map method silently lose its whole body: every flag the Parser/Lexer sets on a token and that the clone did not carry. `hasBlock` is the
+        // one that bit (a block-form `assume` became the no-block form, so its statements were never emitted); `isTryBlock` (a plain `try { }` block
+        // became a try/catch shape), `isStatic`/`isConst` (`let static` / `let const` inside a generic body), the case/for match flags, explicit enum
+        // and range numbers, inline asm text and the literal radix/forced type were lost the same way.
+        copy.hasBlock = src.hasBlock;
+        copy.isTryBlock = src.isTryBlock;
+        copy.assumeFieldVariants = src.assumeFieldVariants == null ? null : new ArrayList<>(src.assumeFieldVariants);
+        copy.isCaseMatch = src.isCaseMatch;
+        copy.isForMatch = src.isForMatch;
+        copy.isStatic = src.isStatic;
+        copy.isConst = src.isConst;
+        copy.explicitEnumValue = src.explicitEnumValue;
+        copy.explicitRangeStart = src.explicitRangeStart;
+        copy.explicitRangeEnd = src.explicitRangeEnd;
+        copy.asmBlockText = src.asmBlockText;
+        copy.asmFilePath = src.asmFilePath;
+        copy.forcedLiteralType = src.forcedLiteralType;
+        copy.radixLiteral = src.radixLiteral;
         return copy;
     }
 }
