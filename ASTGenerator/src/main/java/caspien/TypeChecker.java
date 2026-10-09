@@ -3098,11 +3098,13 @@ public class TypeChecker {
             // yet).
             validateLockEnumClause(lockDecorator, info, name);
             // A lock protects what the struct holds, not what a reference inside it points to: a `ref` handed out through the lock
-            // can be used by two threads at once with nothing between them (a data race in safe code). The struct owns its data.
+            // can be used by two threads at once with nothing between them (a data race in safe code); `auto` is the same hole (a pointer to the
+            // creator's local). The struct owns its data.
             for (Map.Entry<String, TypeInfo> member : info.members.entrySet()) {
-                if ("ref".equals(member.getValue().storage)) {
+                String store = member.getValue().storage;
+                if ("ref".equals(store) || "auto".equals(store)) {
                     throw new CompilerException("type", info.declTok.file, info.declTok.line,
-                            "'" + name + "' is decorated '@lock(...)', so its member '" + member.getKey() + "' cannot be a 'ref' ("
+                            "'" + name + "' is decorated '@lock(...)', so its member '" + member.getKey() + "' cannot be '" + store + "' ("
                                     + member.getValue().canonical() + "): a reference taken out of the lock would reach data the lock does not protect. "
                                     + "Make the struct own its data ('owns') and refer to items by index inside the lock");
                 }
