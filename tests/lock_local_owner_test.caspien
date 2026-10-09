@@ -1,0 +1,76 @@
+// `match @lock h{ OPEN:{..} }` on a LOCAL `owns` struct: the exit from the OPEN body must destroy only the owns locals declared inside that body,
+// never `h` itself (it used to be freed and nulled before the lock release wrote through it). Also checks an owns local inside the OPEN body and
+// that nothing leaks (run_tests.py leak check).
+// Expected output (model: lock_local_owner_test.py):
+// PASS sum of squares 55
+// PASS count 5
+// PASS inner owns local 21
+// PASS handle usable after the lock 55
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+
+enum Gate{ OPEN, CLOSED }
+
+@lock(match self.gate : OPEN)
+struct Acc{@pub{
+	swap gate: atomic mut Gate
+	count: mut u64
+	sum: mut u64
+}}
+
+struct Cell{@pub{ v: mut u64 }}
+
+func report(name: static imut string, got: mut u64) void{
+	unsafe extern{ printf("PASS %s %llu\n", name, got) }
+}
+
+func main() void{
+	?catch(e){ return }
+	let h = mut ? new Acc{gate= Gate.OPEN, count= 0, sum= 0}
+
+	// the last use of h sits inside the OPEN body
+	for i in 0..5{
+		let k = mut (i + 1)
+		match @lock h{
+			OPEN:{
+				h.count = h.count + 1
+				h.sum = h.sum + k * k
+			}
+			CLOSED:default(1000)
+		}
+	}
+
+	let total = mut 0
+	let n = mut 0
+	match @lock h{
+		OPEN:{
+			total = h.sum
+			n = h.count
+		}
+		CLOSED:default(1000)
+	}
+	report("sum of squares", total)
+	report("count", n)
+
+	// an owns local declared inside the OPEN body is destroyed at that exit; h must survive it
+	let inner = mut 0
+	match @lock h{
+		OPEN:{
+			let c = mut ? new Cell{v= 21}
+			inner = c.v
+		}
+		CLOSED:default(1000)
+	}
+	report("inner owns local", inner)
+
+	let again = mut 0
+	match @lock h{
+		OPEN:{ again = h.sum }
+		CLOSED:default(1000)
+	}
+	report("handle usable after the lock", again)
+}

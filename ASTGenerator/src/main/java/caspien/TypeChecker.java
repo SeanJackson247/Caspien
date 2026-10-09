@@ -15610,7 +15610,10 @@ public class TypeChecker {
         // its own unlockOnExit (via collectLockReleasesToBoundary)
         // already, automatically includes `releaseAssign`.
         Token breakTok = new Token(TokenType.KEYWORD, "break", stmt.line, stmt.file);
-        breakTok.destructOnExit = collectOwnsToDestruct(openBodyScope, scope, null);
+        // Only the owns locals declared INSIDE the OPEN body die at this exit (stop at the spin loop's own boundary scope, like a
+        // user-written `break` does). Walking on to `scope` also destroyed the enclosing function's owns locals (e.g. the matched
+        // handle itself) before the lock release below wrote through them.
+        breakTok.destructOnExit = collectOwnsToDestruct(openBodyScope, loopBodyScope, null);
         breakTok.unlockOnExit = collectLockReleasesToBoundary(openBodyScope, scope);
         List<Token> openBranchChilds = new ArrayList<>(openCase.childs);
         openBranchChilds.add(wrapAsCheckedLine(breakTok));
