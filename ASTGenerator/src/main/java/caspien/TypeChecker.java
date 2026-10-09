@@ -3097,6 +3097,16 @@ public class TypeChecker {
             // not during collection, when member types aren't resolved
             // yet).
             validateLockEnumClause(lockDecorator, info, name);
+            // A lock protects what the struct holds, not what a reference inside it points to: a `ref` handed out through the lock
+            // can be used by two threads at once with nothing between them (a data race in safe code). The struct owns its data.
+            for (Map.Entry<String, TypeInfo> member : info.members.entrySet()) {
+                if ("ref".equals(member.getValue().storage)) {
+                    throw new CompilerException("type", info.declTok.file, info.declTok.line,
+                            "'" + name + "' is decorated '@lock(...)', so its member '" + member.getKey() + "' cannot be a 'ref' ("
+                                    + member.getValue().canonical() + "): a reference taken out of the lock would reach data the lock does not protect. "
+                                    + "Make the struct own its data ('owns') and refer to items by index inside the lock");
+                }
+            }
             // "when a struct is decorated with @lock, then its first
             // member must be the lock in question" -- confirmed directly.
             // info.members is the ordered list of declared members; the

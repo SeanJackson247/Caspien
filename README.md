@@ -1435,6 +1435,8 @@ match @lock counter{
 }
 ```
 
+A lock struct cannot have a `ref` member: a reference taken out of the lock would reach data the lock does not protect. Let the struct own its data (`owns`) and refer to items by index inside the lock.
+
 A method can require the lock too: `@lock(match self.gate : OPEN)` on a method means the caller must already
 be inside the matching `match @lock`, and the standard library uses the same decorator on
 `DynamicArray.get` and `set` to demand an index proof (`@lock(match i in self.backing)`). For a lock that
