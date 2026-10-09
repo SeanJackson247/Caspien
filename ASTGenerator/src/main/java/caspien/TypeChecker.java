@@ -19661,6 +19661,16 @@ public class TypeChecker {
                     "'static' can only be applied to a string literal, a char literal, or a reference to "
                             + "a 'let static' variable or global");
         }
+        if (storage.equals("static") && op.left.type == TokenType.VARREF) {
+            // `static x` of a struct-typed global is lowered as a copy of the struct into an 8-byte pointer slot (stack corruption, or a
+            // garbage pointer): a struct static is reached by its own name (a swap-lock static under `match @lock`), never by a pointer.
+            TypeInfo staticOperand = scope.lookup(op.left.text) != null ? scope.lookup(op.left.text) : globals.get(op.left.text);
+            if (staticOperand != null && staticOperand.baseType != null && structs.containsKey(stripArrayDims(staticOperand.baseType))) {
+                throw new CompilerException("type", op.left.file, op.left.line,
+                        "'static " + op.left.text + "' is not supported: '" + op.left.text + "' is a struct, and a struct static is reached "
+                                + "by its own name (a swap-lock static under 'match @lock'), not through a pointer");
+            }
+        }
         if (storage.equals("auto") && !isAddressableLvalue(op.left)) {
             throw new CompilerException("type", op.left.file, op.left.line,
                     "'auto' requires an addressable variable (or a struct member access chain rooted "
@@ -19682,6 +19692,13 @@ public class TypeChecker {
             }
         }
         TypeInfo operandType = resolveExprType(op.left, scope, func);
+        if (storage.equals("auto") && operandType.storage != null && !"static".equals(operandType.storage)) {
+            // `auto c` of a variable that is itself a pointer (`owns`/`ref`/`raw`/`auto`) was typed as a pointer to the pointee but produced the
+            // address of the VARIABLE, so writes through it landed in the neighbouring stack slots (9 Oct demo: `auto c.n += 1` left c.n at 41).
+            throw new CompilerException("type", op.left.file, op.left.line,
+                    "'auto' cannot be applied to '" + (op.left.text == null ? "this expression" : op.left.text) + "', which is already a pointer ("
+                            + operandType.canonical() + "): use the pointer itself, or 'ref' for a borrow of an owned value");
+        }
         // "raw x"/"ref x"/"auto x"/"static x" is a freshly-constructed
         // value (the address itself), same as a literal, a struct
         // literal, or "new EXPR" -- and, like those, defaults to
