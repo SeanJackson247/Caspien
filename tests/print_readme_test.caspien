@@ -1,0 +1,87 @@
+// The README's print examples: hello world, break/continue output, lazy chains with a noisy helper, errors and try{} with printed handlers.
+// Output is compared with print_readme_model.py by print_check.sh.
+import "../stdlib/print.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+
+struct Point{@pub{
+	x: mut u64
+	y: mut u64
+}}
+
+func noisy(name: static imut string, r: mut bool) mut bool{
+	print("  called ")
+	println(name)
+	return r
+}
+
+@throws
+func parse(x: mut u64) mut u64{
+	if x > 100{ throw "too big" }
+	return x
+}
+
+@throws
+func middle(x: mut u64) mut u64{
+	?catch(e){
+		print("middle: saw '")
+		print(e)
+		println("', passing it on")
+		throw e
+	}
+	let p = mut ? new Point{x= mut x, y= mut 1}
+	let v = mut ? parse(x)
+	return v + 1
+}
+
+@throws
+func top(x: mut u64) mut u64{
+	?catch(e){ throw "top: request rejected" }
+	let v = mut ? middle(x)
+	return v * 2
+}
+
+func run(x: mut u64) void{
+	try{
+		let r = try top(x) catch(e){
+			print("run(")
+			print(x)
+			print("): caught '")
+			print(e)
+			println("'")
+			continue
+		}
+		print("run(")
+		print(x)
+		print("): ok, r=")
+		println(r)
+	}
+	print("run(")
+	print(x)
+	println("): done")
+}
+
+func main() void{
+	println("Hello World!")
+	for i in 0..6{
+		if i == 4{ break }
+		print("i=")
+		println(i)
+	}
+	for i in 0..3{
+		for j in 0..3{
+			if j == 1{ break }
+			print("i=")
+			print(i)
+			print(" j=")
+			println(j)
+		}
+	}
+	if noisy("a", false) && noisy("b", true){ println("both") }
+	if noisy("a", false) &&then noisy("b", true){ println("both lazy") }
+	run(5)
+	run(500)
+}

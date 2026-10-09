@@ -6,15 +6,13 @@ out-of-bounds indexing, null dereference, division by zero and unproven floating
 It compiles to native x86-64 code through a four-stage compiler written in Java.
 
 ```rust
-import "stdlib/libc.caspien"
+import "stdlib/print.caspien"
 import "stdlib/gt_init.caspien"
 import "stdlib/gt_destruct.caspien"
 import "stdlib/gt_moved.caspien"
 
 func main() void{
-	unsafe extern{
-		printf("Hello World!\n")
-	}
+	println("Hello World!")
 	return
 }
 ```
@@ -124,7 +122,7 @@ hint only because GitHub has no Caspien highlighter.
 #### The shape of a program
 
 ```rust
-import "stdlib/libc.caspien"
+import "stdlib/print.caspien"
 import "stdlib/gt_init.caspien"
 import "stdlib/gt_register.caspien"
 import "stdlib/gt_alive_check.caspien"
@@ -138,7 +136,7 @@ func answer() mut u64{
 
 func main() void{
 	let a = mut answer()
-	unsafe extern{ printf("%llu\n", a) }
+	println(a)
 }
 ```
 
@@ -149,7 +147,8 @@ func main() void{
   defaults are available in `stdlib/`, and the examples import them. They implement the runtime registry
   that tracks which heap values are alive, and they are ordinary Caspien source, not compiler magic.
   `libc.caspien` declares the C functions, and calling any C function, `printf` included, needs an `unsafe`
-  block.
+  block. To print without writing `unsafe`, import `stdlib/print.caspien` (and `print_string.caspien` for a `String`):
+  `print(x)` and `println(x)` take text, every integer size, `f32`/`f64`, `bool` and `char`.
 - Blocks use braces and statements need no semicolons. A `@decorator` goes on **its own line** above the
   declaration it changes. Several decorators are several lines. `@pub @realizes func f()` on one line is a
   parse error.
@@ -816,12 +815,16 @@ any number of `if` or `match` blocks within that loop, and it is the only way to
 ```rust
 for i in 0..6{
 	if i == 4{ break }           // prints i=0..3, then leaves the loop
-	unsafe extern{ printf("i=%llu\n", i) }
+	print("i=")
+	println(i)
 }
 for i in 0..3{
 	for j in 0..3{
 		if j == 1{ break }       // leaves the inner loop only: prints j=0 once per i
-		unsafe extern{ printf("i=%llu j=%llu\n", i, j) }
+		print("i=")
+		print(i)
+		print(" j=")
+		println(j)
 	}
 }
 ```
@@ -862,7 +865,8 @@ links can be mixed:
 
 ```rust
 func noisy(name: static imut string, r: mut bool) mut bool{
-	unsafe extern{ printf("  called %s\n", name) }
+	print("  called ")
+	println(name)
 	return r
 }
 
@@ -1183,10 +1187,11 @@ func add(a: mut u64, b: mut u64) mut u64{ return a + b }
 export add                                     // C sees `unsigned long add(unsigned long, unsigned long)`
 
 func main() void{
+	let r = mut 0
 	unsafe extern{
-		let r = mut c_apply(mut 40, mut 2)     // helper.c: return add(a, b) * 2;
-		printf("%llu\n", r)                    // 84
+		r = mut c_apply(mut 40, mut 2)         // helper.c: return add(a, b) * 2;
 	}
+	println(r)                                 // 84
 }
 ```
 
@@ -1291,7 +1296,9 @@ func parse(x: mut u64) mut u64{
 @throws
 func middle(x: mut u64) mut u64{
 	?catch(e){
-		unsafe extern{ printf("middle: saw '%s', passing it on\n", e) }
+		print("middle: saw '")
+		print(e)
+		println("', passing it on")
 		throw e                                  // re-throw the same message
 	}
 	let p = mut ? new Point{x= mut x, y= mut 1}  // freed during the unwind
@@ -1315,12 +1322,21 @@ that compiles to nothing, and it must contain at least one real `try`. Its only 
 func run(x: mut u64) void{
 	try{
 		let r = try top(x) catch(e){
-			unsafe extern{ printf("run(%llu): caught '%s'\n", x, e) }
+			print("run(")
+			print(x)
+			print("): caught '")
+			print(e)
+			println("'")
 			continue                 // jump to just past the enclosing try{} block
 		}
-		unsafe extern{ printf("run(%llu): ok, r=%llu\n", x, r) }
+		print("run(")
+		print(x)
+		print("): ok, r=")
+		println(r)
 	}
-	unsafe extern{ printf("run(%llu): done\n", x) }
+	print("run(")
+	print(x)
+	println("): done")
 }
 ```
 
@@ -1818,28 +1834,34 @@ func sumTo(n: mut u64) mut u64{
 
 func main() void{
 	let a = mut sumTo(10)
-	unsafe extern{ printf("%llu\n", a) }
+	println(a)
 }
 ```
 
-`--audit` prints (comment lines and the `unsafe` listing shortened):
+`--audit` prints (comment lines and the `unsafe` listing shortened; the `unsafe` blocks counted are `print`'s own, in the standard library):
 
 ```md
-# summary: 1 unsafe blocks (1 in your code, 0 in the standard library) and 0 other uses of the keyword, in 1 files
-# blocks naming each tag: extern=1
+# summary: 22 unsafe blocks (0 in your code, 22 in the standard library) and 0 other uses of the keyword, in 4 files
+# blocks naming each tag: extern=20 memcopy=2 raw=2
 
 # worst-case execution cost (abstract gas; ...)
-  main (entry)                       231  bounded
+  main (entry)                       306  bounded
+  println__sig_imut_u64              122  bounded
+  print__sig_imut_u64                55  bounded
       not modelled: external call printf
+  printNewline                       54  bounded
+      not modelled: external call putchar
   sumTo                              >= 32  finite: `for` runs a number of times only known at run time: depends on `n`
-# summary: main costs 231 gas in the worst case (bounded), 2 functions reachable
+# summary: main costs 306 gas in the worst case (bounded), 5 functions reachable
 
 # stack depth (an estimate ...)
-  main (entry)                       232 bytes  bounded
-      deepest path: main (96) > sumTo (136)
-      not counted: stack used by external calls (printf)
+  main (entry)                       288 bytes  bounded
+      deepest path: main (96) > println__sig_imut_u64 (96) > print__sig_imut_u64 (96)
+  println__sig_imut_u64              192 bytes  bounded
   sumTo                              136 bytes  bounded
-# summary: main needs 232 bytes of stack (bounded) for safe code, 0 thread entries
+  print__sig_imut_u64                96 bytes  bounded
+  printNewline                       88 bytes  bounded
+# summary: main needs 288 bytes of stack (bounded) for safe code, 0 thread entries
 
 # heap memory (...)
   main (entry)                       0 bytes  (0 allocation operations)  bounded
@@ -1956,6 +1978,8 @@ one function, so very large generated test programs are better split into severa
 | File | What it gives you |
 |---|---|
 | `libc.caspien` | `extern` bindings for the C functions the rest builds on (`printf`, `malloc`, `memcpy`, `fgets`, ...). Calling one needs `unsafe extern{`. |
+| `print.caspien` | `print(x)` and `println(x)` for text, `u8`..`u64`, `s8`..`s64`, `f32`/`f64` (`%g`), `bool` (`true`/`false`) and `char`: each wraps one libc call, so the caller needs no `unsafe`. Output goes to stdout. |
+| `print_string.caspien` | `print(s)` / `println(s)` for a `String` (a plain `ref`; null prints nothing). A separate file because `String` allocates, so it needs the `gt_*` runtime. |
 | `dynamic_array.caspien` | `DynamicArray<T>`: `pushBack`, `popBack`, `pushFront`, `popFront`, `get`, `set`, and `...Ptr` twins for struct elements. |
 | `hash_map.caspien` | `HashMap<T>`: `set`, `get`, `contains`; open addressing, starting capacity rounded up to a power of two, grows by doubling at 70% load. |
 | `string.caspien` | `String`: a growable byte string with `concat`, `appendChar`, `sub`, `charAt`, `setCharAt`, `firstIndexOf`. |

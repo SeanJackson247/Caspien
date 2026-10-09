@@ -1,0 +1,34 @@
+// print / println for a String (see print.caspien for the other types). Separate file because String allocates, so any program that
+// imports it must define the `gt_*` runtime functions; a program that only prints text and numbers imports print.caspien alone.
+// A String is written one character at a time with `putchar`.
+import "print.caspien"
+import "string.caspien"
+
+// The parameter is a plain (nullable) `ref`, not `ref some`: every character goes out through an `unsafe extern` call, and an extern call
+// ends the alive proof of a `ref some` parameter, so the String is re-matched on each character instead. A null prints nothing.
+@pub
+func print(s: ref imut String) void{
+	let n = mut 0
+	match Some(s){
+		n = len(s.chars.backing)
+	}
+	for k in 0..n{
+		match Some(s){
+			match k in s.chars.backing{
+				let c = mut s.chars.backing[k]
+				unsafe extern{
+					put_char(c)
+				}
+			}
+		}
+	}
+	return
+}
+
+@pub
+func println(x: ref imut String) void{
+	print(x)
+	printNewline()
+	return
+}
+

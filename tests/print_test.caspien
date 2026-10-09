@@ -1,0 +1,85 @@
+// print / println from stdlib/print.caspien: every overload, called from safe code (no `unsafe` in this file).
+// The program prints lines that a Python model (print_model.py) compares with; run by print_check.sh.
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+import "../stdlib/print.caspien"
+import "../stdlib/print_string.caspien"
+
+func w_u8(x: imut u8) void{
+	println(x)
+	return
+}
+
+func w_u16(x: imut u16) void{
+	println(x)
+	return
+}
+
+func w_u32(x: imut u32) void{
+	println(x)
+	return
+}
+
+func w_u64(x: imut u64) void{
+	println(x)
+	return
+}
+
+func w_s8(x: imut s8) void{
+	println(x)
+	return
+}
+
+func w_s16(x: imut s16) void{
+	println(x)
+	return
+}
+
+func w_s32(x: imut s32) void{
+	println(x)
+	return
+}
+
+func w_s64(x: imut s64) void{
+	println(x)
+	return
+}
+
+func w_f32(x: imut f32) void{
+	println(x)
+	return
+}
+
+func w_f64(x: imut f64) void{
+	println(x)
+	return
+}
+
+func main() imut s32{
+	?catch(e){ return 1 }
+	print("text|")
+	println("line")
+	let s = mut ? new String("a String")
+	print(s)
+	print("|")
+	println(s)
+	w_u8(200)
+	w_u16(65000)
+	w_u32(4000000000)
+	w_u64(18446744073709551615)
+	w_s8(-100)
+	w_s16(-30000)
+	w_s32(-2000000000)
+	w_s64(-9223372036854775807)
+	w_f32(1.5)
+	w_f64(0.1)
+	println(true)
+	println(false)
+	println('Z')
+	println(7)
+	return 0
+}
