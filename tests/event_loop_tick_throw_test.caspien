@@ -1,0 +1,37 @@
+// A '@tick' (or 'main') that throws ends the event loop: the stdlib 'start' writes "event loop stopped: <message>" to stderr and the
+// program exits with status 1 (checked by event_loop_throw_check.sh, which also compares live allocations at exit under tests/alloc_shim.c).
+// 'tick' prints one line per call, so stdout shows how many ticks ran.
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+import "../stdlib/event_loop.caspien"
+
+extern fflush(raw mut u8) void
+
+struct World{@pub{
+	ticks: mut u64
+}}
+
+@with_tick
+@throws
+func main() owns some mut World{
+	?catch(e){ throw e }
+	return ? new World{ticks= 0}
+}
+
+@tick
+@throws
+func tick(w: owns some mut World) owns some mut World{
+	w.ticks += 1
+	unsafe extern{
+		printf("tick %llu\n", w.ticks)
+		fflush(null)
+	}
+	if w.ticks == 3{
+		throw "tick gave up"
+	}
+	return w
+}

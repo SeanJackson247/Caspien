@@ -1,7 +1,9 @@
 package caspien;
 
 import java.math.BigInteger;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.TreeMap;
@@ -859,13 +861,36 @@ final class GasReport {
         }
         if (eventMode) {
             StringBuilder top = new StringBuilder();
-            top.append("\n# event loop: the @event_loop function (emitted as `").append(loopFnF.name).append("`) only schedules the slices; its loop{} has no bound by design and it is NOT analysed.\n")
+            top.append("\n# event loop: the @event_loop function (emitted as `").append(loopFnF.name).append("`) only schedules the slices; it is NOT walked; its termination class is read off the tick (below).\n")
                     .append("#   Worst case of one run of each slice, to completion (stack includes the event loop's own ").append(loopFrame).append("-byte frame; a tick's heap figure is per call):\n");
             for (Fn sl : slices) {
                 boolean g = sl.ub[GAS].isEmpty(), h = sl.ub[HEAP].isEmpty(), st = sub.get(sl.name).isEmpty();
                 top.append(String.format("  %-34s gas %s%s   stack %s%d bytes   heap %s%s bytes (%s%s allocation operation%s), peak live %s%s bytes%n", rootLabel.apply(sl.name),
                         g ? "" : ">= ", sl.val[GAS], st ? "" : ">= ", depth.get(sl.name), h ? "" : ">= ", sl.val[HEAP],
                         sl.ub[COUNT].isEmpty() ? "" : ">= ", sl.val[COUNT], sl.val[COUNT].equals(BigInteger.ONE) ? "" : "s", sl.ub[LIVE].isEmpty() ? "" : ">= ", sl.livePeak));
+            }
+            Fn tickFn = null, mainFn = null;
+            for (Fn sl : slices) {
+                if (sl.deco.contains("@tick")) {
+                    tickFn = sl;
+                } else if (sl.deco.contains("@with_tick")) {
+                    mainFn = sl;
+                }
+            }
+            if (tickFn != null) {
+                // The loop itself is not walked; how it can end is decided by the tick (the loop ends only when the tick, or `main` before it, throws).
+                top.append("#   The loop ends only when ").append(tickFn.name).append(" throws, so its termination class follows the tick:\n");
+                if (!tickFn.deco.contains("@throws")) {
+                    top.append("#     loop: non-terminating (").append(tickFn.name).append(" never throws, the loop has no exit)\n");
+                } else if (canReturn(tickFn)) {
+                    top.append("#     loop: unbounded (").append(tickFn.name).append(" throws on some paths: the loop runs until a tick throws, and no bound on the number of ticks is known)\n");
+                } else {
+                    top.append("#     loop: bounded (").append(tickFn.name).append(" throws on every path: the loop ends with the first tick, exactly one tick runs)\n");
+                }
+            }
+            if (mainFn != null && mainFn.deco.contains("@throws")) {
+                top.append("#   ").append(mainFn.name).append(canReturn(mainFn) ? " may throw before the loop starts (the program then ends with no tick)\n"
+                        : " throws on every path: the loop is never entered\n");
             }
             sb.insert(0, top);
         }
@@ -1601,6 +1626,24 @@ final class GasReport {
             }
         }
         return out;
+    }
+
+    /** Whether some path from the function's entry reaches a normal `RET` (false = every path ends in a throw / unwind, or never ends). */
+    private boolean canReturn(Fn f) {
+        Set<Integer> seen = new HashSet<>();
+        Deque<Integer> work = new ArrayDeque<>();
+        work.add(f.start + 1);
+        while (!work.isEmpty()) {
+            int i = work.poll();
+            if (i <= f.start || i >= f.end || !seen.add(i)) {
+                continue;
+            }
+            if (op(ln[i]).equals("RET")) {
+                return true;
+            }
+            work.addAll(successors(f, i));
+        }
+        return false;
     }
 
     private List<Integer> successors(Fn f, int i) {

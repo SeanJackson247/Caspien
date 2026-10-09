@@ -1,7 +1,8 @@
+import "event_loop_fail.caspien"
 // NOTE: 'main' here must be '@throws' (a '@with_tick' main builds heap state, which can fail),
-// so the call is wrapped with '?'. If 'main' throws, this function simply returns.
+// so the call is wrapped with '?'. If 'main' or the '@tick' function throws, the message goes to stderr and the program exits non-zero.
 // "@event_loop... func start()void{ let state = main() loop{
-// state = tick(state) } }," confirmed directly -- the reusable stdlib
+// state = ? tick(state) } }," confirmed directly -- the reusable stdlib
 // version of the user's own exact example. "That's all it does for
 // now," confirmed directly -- deliberately minimal, nothing beyond
 // this.
@@ -16,10 +17,14 @@
 // generic, shared stdlib code rather than something every
 // '@with_tick' program has to hand-write for itself.
 @event_loop
+@throws
 func start() void{
-	?catch(e){ return }
+	?catch(e){
+		eventLoopReport(e)
+		throw e
+	}
 	let state = mut ? main()
 	loop{
-		state = tick(state)
+		state = ? tick(state)
 	}
 }

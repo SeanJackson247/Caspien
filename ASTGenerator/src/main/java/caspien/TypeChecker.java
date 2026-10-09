@@ -13534,6 +13534,15 @@ public class TypeChecker {
             if (!tickFuncs.isEmpty()) {
                 funcName = tickFuncs.get(0).name;
                 wasEventLoopRedirect = true;
+                // '@tick' may or may not be '@throws': the stdlib loop
+                // always writes `? tick(state)`, and the wrap is kept
+                // only when this program's tick can throw, so the
+                // ordinary two-way rule (a call is wrapped iff the
+                // callee is '@throws') still holds for the resolved
+                // call and no pointless catch path exists.
+                if (!tickFuncs.get(0).isThrows) {
+                    op.insideTry = false;
+                }
             }
         }
         if (BUILTIN_NAMES.contains(funcName)) {

@@ -68,6 +68,7 @@ extern printf(static imut string,...) void
 extern putchar(mut u64) mut u64
 extern getchar() mut u64
 extern strlen(static imut string) mut u64
+extern write(mut u64, static imut string, mut u64) mut u64
 extern malloc(mut u64) raw mut u8
 extern realloc(raw mut u8, mut u64) raw mut u8
 extern free(raw imut u8) void

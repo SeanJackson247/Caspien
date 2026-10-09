@@ -1517,17 +1517,23 @@ a heap struct. `@tick` marks a function that takes the state and returns it. `@e
 entry point, which calls `main` once and then calls `tick` until the loop ends. It is the only function allowed a bare
 `loop{}` outside `unsafe`.
 
+`@tick` may also be `@throws` (for example when it allocates). The loop then ends when a tick throws: the stdlib loop writes
+`event loop stopped: <message>` to stderr and the program exits with status 1. A failing `main` ends it the same way. The auditor reads the
+loop's termination class off the tick: no `@throws` is `non-terminating`, a tick that throws on some paths is `unbounded`, and one that throws on every
+path is `bounded` (exactly one tick runs).
+
 ```rust
 struct World{@pub{
 	ticks: mut u64
 }}
 
 @event_loop
+@throws
 func start() void{
-	?catch(e){ return }
+	?catch(e){ throw e }
 	let state = mut ? main()
 	loop{
-		state = tick(state)
+		state = ? tick(state)
 	}
 }
 
@@ -1657,7 +1663,7 @@ annotated and nothing is taken on trust. Two classes are guarantees that the fun
 | `bounded` | Yes, guaranteed | It ends, and the figure is the exact worst-case cost. | A `for` over a literal range. |
 | `finite` | Yes, guaranteed | It ends, but the cost bound is not determined, so the figure is a lower bound (`>= N`) and the reason names what the bound depends on. | `for i in 0..n` where `n` is a parameter. |
 | `unbounded` | Possible, not guaranteed | A `loop{}` with no static bound, but a `break`, `return` or `throw` can leave it (a call that can throw counts). | `loop{ ... if done{ break } }` |
-| `non-terminating` | Never | A `loop{}` that nothing can leave, and every run of the function reaches it. | The loop of an event loop. |
+| `non-terminating` | Never | A `loop{}` that nothing can leave, and every run of the function reaches it. | The loop of an event loop whose `@tick` never throws. |
 | `can diverge` | Not on every run | Some runs never end and others do: some execution paths are non-terminating or unbounded, while others are finite or bounded. | `if n == 0{ forever() }  return n` ends unless `n == 0`. |
 | `unknown` | No claim | The analysis cannot follow it. | An indirect call (`call(fp, ..)`), or recursion it cannot follow. |
 

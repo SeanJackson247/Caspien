@@ -93,4 +93,11 @@ if re.search(r"^  main\b", rep, flags=re.M): print("FAIL: the event loop (main) 
 if re.search(r"(finite|unknown|unbounded|can diverge|non-terminating):", rep.split("# worst-case execution cost", 1)[1]): print("FAIL: an event-loop program shows an unbounded class"); sys.exit(1)
 PY
 checked=$((checked+1))
+# event-loop termination class follows the tick: no @throws -> non-terminating, throws on some paths -> unbounded, on every path -> bounded
+for pair in "09_event_loop.caspien:docs/examples:loop: non-terminating" "event_loop_tick_throw_test.caspien:tests:loop: unbounded" "event_loop_tick_always_throw_test.caspien:tests:loop: bounded"; do
+  f=${pair%%:*}; rest=${pair#*:}; d=${rest%%:*}; want=${rest#*:}
+  CASPIEN_AUDIT_ALL=1 CASPIEN_AUDIT_FILE=$W/cls.txt java -cp out caspien.Main -i ../$d/$f $W/c.hob --audit >/dev/null 2>&1 || { echo "FAIL: audit $f"; exit 1; }
+  grep -qF "#     $want (" $W/cls.txt || { echo "FAIL: $f should report '$want'"; exit 1; }
+done
+checked=$((checked+1))
 echo "PASS gas_check: $checked programs, every function's worst-case gas, heap bytes and allocation count and stack estimate equal the path-search model"

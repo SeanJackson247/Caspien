@@ -607,7 +607,7 @@ hardware, optimiser switches or target. Rules:
   in a loop the figure is the total requested, an upper bound on the peak live heap rather than the peak itself (the next bullet credits them). Not counted: the ghost table's own growth, the allocator's per-block
   overhead and rounding, library `malloc`s outside Caspien code.
 
-- **Event loops**: in a program with an `@event_loop` function the loop itself is boilerplate whose `loop{}` is unbounded by design, so it is NOT analysed or listed. The roots of
+- **Event loops**: in a program with an `@event_loop` function the loop itself is not walked or listed as a root; its termination class is read off the `@tick` function instead (header line `loop: ...`): no `@throws` = non-terminating, throws on some paths = unbounded, throws on every path = bounded (one tick). A `@throws` `main` is noted as able to end the program before the loop starts. The roots of
   every section are the slices instead: the `@with_tick` `main` and the `@tick` function (header `# event loop:` with one line per slice: gas, stack, heap). A slice's stack figure
   includes the event loop's own frame, which it runs below. A tick's heap figure is per call.
 

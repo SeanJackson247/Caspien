@@ -20,7 +20,7 @@ keeps every registered block reachable. A passing program with GT_LEN > 0 FAILS 
 
 Verdicts: a program passes when it compiles, exits 0 and prints no line starting with FAIL (and, when its header has `// Expected output:`,
 prints exactly that). `*_error_test` / `*_error` programs pass when they do NOT compile and the compiler reports an error rather than crashing.
-Skipped (they need a harness of their own, see the matching *_check.sh): fs_test, fs_policy_*, 09_event_loop, non_exhaustive_*.
+Skipped (they need a harness of their own, see the matching *_check.sh): fs_test, fs_policy_*, 09_event_loop, event_loop_*_throw_test, non_exhaustive_*.
 Programs are compiled one after the other: a compiler tree has shared scratch files. Linux, java, gcc.
 """
 import argparse, glob, hashlib, json, os, re, shutil, subprocess, sys, time
@@ -33,7 +33,7 @@ CACHE = os.path.join(ROOT, ".cache")
 SCRATCH = os.path.join(CACHE, "scratch")
 VERDICTS = os.path.join(CACHE, "tests")
 COPY = ["ASTGenerator", "Optimizer", "LowerOrderGenerator", "Codegen", "stdlib", "tests", "docs/examples", "docs/c_interop"]
-SKIP = re.compile(r"^(fs_test|fs_policy_.*|09_event_loop|non_exhaustive_.*)$")
+SKIP = re.compile(r"^(fs_test|fs_policy_.*|09_event_loop|event_loop_.*_throw_test|non_exhaustive_.*)$")
 ENV = dict(os.environ, JAVA_TOOL_OPTIONS="", CASPIEN_CACHE=os.path.join(CACHE, "stages"))
 ENV.pop("JAVA_TOOL_OPTIONS")
 

@@ -1,5 +1,6 @@
+import "event_loop_fail.caspien"
 // NOTE: 'main' here must be '@throws' (a '@with_tick' main builds heap state, which can fail),
-// so the call is wrapped with '?'. If 'main' throws, this function simply returns.
+// so the call is wrapped with '?'. If 'main' or the '@tick' function throws, the message goes to stderr and the program exits non-zero.
 // The C-ABI-args counterpart of "event_loop.caspien" -- for a program
 // whose own '@with_tick' 'main' takes the raw '(imut s32, raw mut raw
 // mut char)' shape ("wire the arguments thru the event loop if they
@@ -17,10 +18,14 @@
 // existing "'@event_loop' may only be used once" check already rules
 // out importing more than one.
 @event_loop
+@throws
 func start(argc: imut s32, argv: raw mut raw mut char) void{
-	?catch(e){ return }
+	?catch(e){
+		eventLoopReport(e)
+		throw e
+	}
 	let state = mut ? main(argc, argv)
 	loop{
-		state = tick(state)
+		state = ? tick(state)
 	}
 }
