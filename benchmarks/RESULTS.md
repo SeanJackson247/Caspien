@@ -4,6 +4,16 @@ Linux target, 2-core VM, runs one at a time. Time = fastest of N runs; compile t
 Charts: `charts.html` (built by `charts_all.py`). Raw data: `<program>/results.json`. Harness: `nbody/bench.py`, `bench_program.py`.
 Every implementation's full output equals the C -O0 output at the same size.
 
+## Full run 8-9 Oct 2026 (ids for nullable `ref`, benchmark programs audited)
+
+Compiler `559434c` plus: `assume match Some` resolves a nullable ref once, alive proofs survive `unsafe` blocks that cannot free, stdlib `HashMap` without the re-matches. Two full runs (the second 3 h long) and a lru/k-nucleotide re-run after the HashMap fix; leak check clean, every output matches C.
+- Geometric mean of time vs C -O2: best Caspien variant 1.03x (unsafe 1.03-1.04, safe 1.10-1.11), stdlib-class 2.01x, optimisations off 4.03x. Rust 1.06x.
+- Programs without nullable `ref` were not slowed by the id table (paired 0.97-1.02x).
+- `ref` variants (graph, binarytrees, lru): graph 4.4-4.9 s, binarytrees 9.3-10.3 s, lru 9.3-10.2 s (index twins 0.18, 0.23, 0.87 s); 15-21x C, 4.5x memory. `assume match` in the ref_unsafe variants gained 9% (graph), 22% (binarytrees), 0% (lru): id creation and resolve dominate.
+- Regression found while writing the README: from `b9b578c` to the HashMap fix the stdlib `HashMap` paid an alive probe per call (k-nucleotide naive 2.2 s -> 8.8 s, lru naive 2.0 -> 3.6 s); fixed (2.3 s / 1.8 s again).
+- Benchmark sources fixed in this round: `*_ref_unsafe` use `assume match`; `sorting_unsafe` no zero-fill; `strings_naive` real upper-casing; dead lets removed in knucleotide variants; `json_serde_unsafe` direct reads. `tests/bench_unsafe_check.py` guards the unsafe variants.
+- Not verified: Windows/Wine.
+
 ## Re-run after the speed work, 4 Oct 2026
 
 Every program and language re-run on the same VM (fastest of 3 runs, compile time the median of 2 builds, every output equal to the C reference), after: an allocation-free `insecure_hashOf` and a leaner stdlib `HashMap`, a scalar sqrt instruction, division and modulo by a literal as a multiply, small constant `memcopy` inlined, struct-field reads on dynarray elements fused, integer call results kept in registers, and loop-index substitution in fully unrolled innermost loops. `charts.html` now draws two gold lines on every execution-time bar at the best time minus and plus the typical run-to-run noise (the median of the three repeats minus the best one).

@@ -1,0 +1,22 @@
+// An `unsafe` block with the `extern` reason can free anything, so it still ends a ref some parameter's proof: the use after the helper is an error.
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+struct Node{@pub{ value: mut u64 }}
+func noisy() void{
+	unsafe extern{ printf("") }
+}
+func useAfter(r: ref some mut Node) mut u64{
+	noisy()
+	return r.value
+}
+func main() void{
+	?catch(e){ return }
+	let n = mut ?new Node{value= 1}
+	match Some(n){
+		let x = mut useAfter(n)
+	}
+}

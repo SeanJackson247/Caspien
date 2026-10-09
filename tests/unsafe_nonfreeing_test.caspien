@@ -1,0 +1,50 @@
+// An `unsafe` block whose reasons cannot free anything (memcopy, raw, deref, clone, global, loop, atomic, guard, assume) keeps the alive proofs; a ref some
+// parameter stays proven after a helper that only does `unsafe memcopy raw`. Blocks with extern/call/asm/udyn/async/file/unaudited still end them
+// (unsafe_extern_kills_error_test, ref_free_unsafe_error_test).
+// Expected output (model: unsafe_nonfreeing_test.py):
+// PASS param after memcopy 1000
+// PASS two helpers 2998
+// PASS match after memcopy 42
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+struct Node{@pub{ value: mut u64 }}
+func report(name: static imut string, got: mut u64) void{
+	unsafe extern{ printf("PASS %s %llu\n", name, got) }
+}
+func bits(x: imut u64) mut u64{
+	let:<mut u64> out = mut 0
+	unsafe memcopy raw{
+		memcopy(raw out, 8, raw x)
+	}
+	return out
+}
+func useAfter(r: ref some mut Node) mut u64{
+	let a = mut bits(r.value)
+	let b = mut r.value
+	return a + b - r.value
+}
+func twice(r: ref some mut Node) mut u64{
+	let a = mut bits(r.value)
+	let b = mut bits(r.value + 1)
+	return a + b + r.value
+}
+func main() void{
+	?catch(e){ return }
+	let n = mut ?new Node{value= 1000}
+	match Some(n){
+		report("param after memcopy", useAfter(n))
+	}
+	let m = mut ?new Node{value= 999}
+	match Some(m){
+		report("two helpers", twice(m) - 0)
+	}
+	let k = mut ?new Node{value= 42}
+	match Some(k){
+		let c = mut bits(k.value)
+		report("match after memcopy", c + k.value - 42)
+	}
+}

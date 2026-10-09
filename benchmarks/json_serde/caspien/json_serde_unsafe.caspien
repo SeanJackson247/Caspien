@@ -385,22 +385,20 @@ func main() void{
 		}
 		let h = mut 7
 		for i in 0..count{
-			let r = mut zr
-			r = recs[i]
-			h = bits_and(h * 31 + r.id, 0xFFFFFFFF)
-			h = bits_and(h * 31 + r.score, 0xFFFFFFFF)
-			h = bits_and(h * 31 + r.name_len, 0xFFFFFFFF)
-			let nlen = mut r.name_len
+			h = bits_and(h * 31 + recs[i].id, 0xFFFFFFFF)
+			h = bits_and(h * 31 + recs[i].score, 0xFFFFFFFF)
+			h = bits_and(h * 31 + recs[i].name_len, 0xFFFFFFFF)
+			let nlen = mut recs[i].name_len
 			for k in 0..nlen{
-				let ni = mut (r.name_off + k)
+				let ni = mut (recs[i].name_off + k)
 				let nb = mut 0
 				nb = names[ni] as u64
 				h = bits_and(h * 31 + nb, 0xFFFFFFFF)
 			}
-			h = bits_and(h * 31 + r.tag_cnt, 0xFFFFFFFF)
-			let tcnt = mut r.tag_cnt
+			h = bits_and(h * 31 + recs[i].tag_cnt, 0xFFFFFFFF)
+			let tcnt = mut recs[i].tag_cnt
 			for k in 0..tcnt{
-				let ti = mut (r.tag_off + k)
+				let ti = mut (recs[i].tag_off + k)
 				let tb = mut 0
 				tb = tags[ti] as u64
 				h = bits_and(h * 31 + tb, 0xFFFFFFFF)

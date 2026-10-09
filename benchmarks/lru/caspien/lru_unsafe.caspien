@@ -18,7 +18,6 @@ func main() void{
 	unsafe assume extern loop udyn{
 		let n = mut 0
 		n = atol(getenv("LRU_N"))
-		let:<mut u64> zero = mut 0
 		let none = mut 0xFFFFFFFF
 		let key = mut unsafe dyn:<u64>([])
 		let val = mut unsafe dyn:<u64>([])

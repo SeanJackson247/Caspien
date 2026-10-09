@@ -2037,7 +2037,16 @@ final class GasReport {
             case "RESIZE": {
                 String e = dynElem(p[1]);
                 long es = e == null ? 8 : (sizeOf(e) + 7) / 8 * 8;
-                BigInteger n = scalarAt(f, idx - 2);          // source, count, fill: the count is the second-last single push
+                // source, count, fill: the count is the push right after the source. A scalar fill is one push, but a struct fill (`Holder{n= null}`) is several
+                // (class id, members), so the count is found from the source push (the push of the dynarray itself), not counted back from the instruction.
+                int cntAt = idx - 2;
+                for (int k = idx - 1; k > f.start && k >= idx - 12; k--) {
+                    if (ln[k].startsWith("PUSH ") && ln[k].endsWith(" " + p[1]) && ln[k + 1].startsWith("PUSH ")) {
+                        cntAt = k + 1;
+                        break;
+                    }
+                }
+                BigInteger n = scalarAt(f, cntAt);
                 if (n == null || !ln[idx - 1].startsWith("PUSH ")) {
                     unb(f, R(FIN, "`resize` count is not a literal"));
                     return BigInteger.valueOf(DYN_HEADER);

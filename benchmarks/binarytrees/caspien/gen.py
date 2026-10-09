@@ -85,8 +85,8 @@ def program(kind):
 // Prints one line: stretch-tree check, then for d = 4,6,..,N the summed check of 2^(N-d+4) trees of depth d, then the long-lived tree check
 // (check = number of nodes reached by walking the tree), exactly as binarytrees.c.
 //
-// DIFFERENCES FROM THE REFERENCE (pointer nodes, recursive make/check/free): This is the INDEX-BASED version (the binarytrees_ref_* variants link real heap nodes with `ref` members instead); Caspien only supports
-// structurally-decreasing recursion, so the tree is INDEX-BASED: nodes live in one pool (a dynarray of Node{{l, r}} structs, children are pool
+// DIFFERENCES FROM THE REFERENCE (pointer nodes, recursive make/check/free): This is the INDEX-BASED version (the binarytrees_ref_* variants link real heap nodes with `ref` members instead). Caspien only supports
+// structurally-decreasing recursion, so the tree is built without recursion: nodes live in one pool (a dynarray of Node{{l, r}} structs, children are pool
 // indices, 0 = null), allocated from a free list (a freed node is chained through its `l` field) or by bumping `top`. make/check/free are
 // iterative with an explicit work stack (entries pack node*64 + depth for the build). Allocation and freeing are real: every tree is
 // built node by node, walked, then every node is returned to the free list. The pool never grows (capacity 2^(N+2)+2 covers the stretch tree).{extra}

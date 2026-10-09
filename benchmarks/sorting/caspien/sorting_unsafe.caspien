@@ -17,7 +17,6 @@ func main() void{
 		n = atol(getenv("SORT_N"))
 		let n1 = mut (n + 1)
 		let sz = mut (n + 1)
-		let:<mut u64> zero = mut 0
 		let orig = mut unsafe dyn:<u64>([])
 		orig = resize(orig, sz)
 		let a = mut unsafe dyn:<u64>([])
@@ -30,24 +29,6 @@ func main() void{
 		tmp = resize(tmp, sz)
 		let stk = mut unsafe dyn:<u64>([])
 		stk = resize(stk, 256)
-		for i in 0..sz{
-			orig[i] = 0
-		}
-		for i in 0..sz{
-			a[i] = 0
-		}
-		for i in 0..sz{
-			b[i] = 0
-		}
-		for i in 0..sz{
-			d[i] = 0
-		}
-		for i in 0..sz{
-			tmp[i] = 0
-		}
-		for i in 0..256{
-			stk[i] = 0
-		}
 		let x = mut 12345
 		for i in 1..sz{
 			x = bits_and(x * 1664525 + 1013904223, 0xFFFFFFFF)

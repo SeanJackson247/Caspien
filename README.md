@@ -1693,7 +1693,7 @@ what the checker enforces in safe code, then what `unsafe` gives up.
 |---|---|---|
 | **Termination** | Direct and mutual recursion rejected; `@recursive` only as a tail call on a shrinking range, lowered to a bounded `for`; every `for` bound fixed at loop entry; counter immutable; no `loop{}` and no `call()` (both need `unsafe`). See "Termination" (1.4). | `match @lock` waits for another thread, but in safe code only through `CLOSED:default(n)`: at most `n` attempts, then a `break`, so the wait is counted. The counted wait is still not a time bound, and `--audit` does not read `n` yet. `await` blocks on another thread. So safe code is not strictly total. |
 | **Bounded execution time** | Every `for` is bounded by its range and the call graph is acyclic, so a static bound is possible. | `--audit` prints a worst-case cost in abstract gas per function, classed bounded / finite / unbounded / non-terminating / can diverge / unknown, plus stack, heap and peak live heap; see "Termination" (1.4). Time in seconds is not computed. |
-| **Memory safety** | Single ownership with compile-time move checking; array and dynarray indexes proven in bounds; dereferencing a pointer needs a liveness proof. | Liveness of a `ref` is checked at *run time* against a table of live allocations, so a dangling `ref` is skipped rather than rejected at compile time. A `ref` is also not tied to one allocation: a freed address that `malloc` hands out again makes a stale `ref` look alive and point at the new object (reproduced, designed but not implemented in [`fatrefplan_prooffix.md`](fatrefplan_prooffix.md)), which is a gap in the safe-code guarantee. A proof does end where something frees (see "Proofs instead of runtime checks"), except inside a callee for its own `ref some` parameters. |
+| **Memory safety** | Single ownership with compile-time move checking; array and dynarray indexes proven in bounds; dereferencing a pointer needs a liveness proof. | Liveness of a `ref` is checked at *run time* against the ghost table of live allocations, so a dangling `ref` is skipped rather than rejected at compile time. A plain (nullable) `ref` is a 64-bit id issued by the table, never reused, so a stale `ref` stays dead even when `malloc` hands the same address to a new object (`tests/ref_id_test.caspien` reproduces the old reuse problem and checks it is closed; design in [`fatrefplan_prooffix.md`](fatrefplan_prooffix.md)). A proof ends where something frees (see "Proofs instead of runtime checks") (a `ref some` parameter is proven alive at entry and loses the proof the same way). The price is speed: the three benchmark programs written with nullable `ref` links run about 11x to 40x slower than their index-based twins, and 15x to 21x slower than C (section 4), and `unsafe` code can still hold a `raw` pointer past a free. |
 | **No runtime exceptions** | Division, float operations, narrowing, indexing and null access all need proofs; arithmetic wraps; failures are declared (`@throws`) and handled. | Allocation failure is reported (as a thrown error), not prevented. A throw out of the `OPEN` case of `match @lock` releases the lock before unwinding, like a `return` does (`tests/lock_unwind_test.caspien` prints `PASS`). |
 | **The single event loop** | `@with_tick` / `@tick` / `@event_loop` give a potentially non-terminating program (`docs/examples/09_event_loop.caspien`). | All three stdlib loops (no arguments, C arguments, safe arguments) have been run. The example is run by hand and is not in `tests/`. `par`/`await` add real threads, which is a deliberate departure from a single loop. |
 
@@ -2081,8 +2081,8 @@ And the limits of the library itself, which are design choices today rather than
 | `sha256` | Raw pointers and `unsafe`, because it works on bytes in place. |
 | Threads | `par` starts a detached thread; there is no thread-pool and no cancellation. `match @lock` spins up to its attempt limit, then gives up. |
 
-On the benchmarks, programs written with these classes run about 1.0x to 8.8x slower than the same program written with
-raw arrays (2.0x on the geometric mean, with string manipulation and the k-nucleotide hash map at the slow end), see section 4.
+On the benchmarks, programs written with these classes run about 1.0x to 9.2x slower than the same program written with
+raw arrays (1.9x on the geometric mean, with string manipulation and the k-nucleotide hash map at the slow end), see section 4.
 
 ### 2.6 Files and directories
 
@@ -2189,7 +2189,7 @@ check scripts.
 
 ## 4. Performance
 
-Fourteen programs were timed against 23 other languages on a 2-core Intel Xeon VM (one full run of every language and every build configuration, 8 October 2026, the compiler at commit `99e8764`). Every output matched the C reference.
+Fourteen programs were timed against 23 other languages on a 2-core Intel Xeon VM (one full run of every language and every build configuration on 8 to 9 October 2026, the compiler at commit `559434c` plus the uncommitted fixes described below; the lru and k-nucleotide rows were re-measured after a stdlib fix). Every output matched the C reference.
 Times are seconds, fastest of three runs. "Caspien" is the fastest Caspien variant with all optimisations on; the stdlib column is the same
 program written with the standard library classes (`DynamicArray`, `HashMap`, `String`), and the last column is the best variant with
 optimisations off, which is how the shipped `toolchain.config` builds.
@@ -2197,7 +2197,7 @@ optimisations off, which is how the shipped `toolchain.config` builds.
 **Summary charts.** Each bar is the geometric mean, over the programs where both exist, of a language's figure divided by the reference's
 on the same program (lower is better, 1x = the reference). For each of the four metrics there are two charts: every language against C -O2,
 and only the memory-safe implementations (Caspien without its unsafe-dynarray variants, runtime-safe languages, and Rust where rustc accepts the
-port under `-F unsafe_code`) against Rust, free build. Compile time and executable size use a log axis. These charts come from the 8 October full run, in which every language and every Caspien configuration (including optimisations off) was measured in the same session, so a ratio no longer mixes two runs; it still carries the VM noise described below. Each Caspien variant has two bars, "everything on" and "tuned per program" (everything on plus the per-program
+port under `-F unsafe_code`) against Rust, free build. Compile time and executable size use a log axis. These charts come from the 8 to 9 October full run, in which every language and every Caspien configuration (including optimisations off) was measured in the same session, so a ratio no longer mixes two runs; it still carries the VM noise described below. Each Caspien variant has two bars, "everything on" and "tuned per program" (everything on plus the per-program
 switch overrides of `benchmarks/specific.json`); today the only override is `jcc-padding: off` for the sieve, so the two bars are
 identical except where that program enters the mean, and the tuned bar is never worse.
 
@@ -2236,23 +2236,23 @@ identical except where that program enters the mean, and the tuned bar is never 
 
 | Program | C -O2 (s) | Caspien (s) | Caspien vs C | stdlib-class version vs C | optimisations off vs C |
 |---|---|---|---|---|---|
-| Binary trees | 0.37 | 0.25 | 0.66x | 2.7x | 3.0x |
-| Heap graph search | 0.20 | 0.17 | 0.86x | 1.7x | 2.5x |
-| Mandelbrot | 0.96 | 0.90 | 0.93x | n/a | 3.9x |
-| Fannkuch-redux | 2.61 | 2.51 | 0.96x | 1.1x | 4.1x |
-| Spectral-norm | 0.20 | 0.20 | 0.99x | 1.4x | 5.3x |
-| Sieve of Eratosthenes | 0.68 | 0.71 | 1.04x | 2.8x | 4.4x |
-| Merkle tree | 0.65 | 0.72 | 1.11x | 1.1x | 11.0x |
-| N-body | 0.24 | 0.27 | 1.13x | 1.5x | 6.0x |
-| LRU cache | 0.76 | 0.87 | 1.15x | 2.6x | 4.2x |
-| FASTA generation | 0.78 | 0.91 | 1.16x | 1.3x | 3.0x |
-| JSON serialise + parse | 0.71 | 0.83 | 1.17x | 2.0x | 4.7x |
-| Sorting and searching | 1.12 | 1.40 | 1.24x | 1.9x | 2.5x |
-| String manipulation | 0.20 | 0.25 | 1.27x | 11.2x | 4.7x |
-| k-nucleotide (hash map) | 0.43 | 0.59 | 1.37x | 4.7x | 6.2x |
+| Binary trees | 0.44 | 0.23 | 0.52x | 2.8x | 2.4x |
+| Heap graph search | 0.22 | 0.18 | 0.80x | 1.3x | 2.2x |
+| Sieve of Eratosthenes | 0.57 | 0.53 | 0.94x | 1.8x | 3.9x |
+| Mandelbrot | 1.22 | 1.18 | 0.96x | n/a | 3.4x |
+| Spectral-norm | 0.22 | 0.22 | 1.00x | 1.4x | 5.3x |
+| Fannkuch-redux | 3.31 | 3.31 | 1.00x | 1.1x | 3.5x |
+| Merkle tree | 0.87 | 0.93 | 1.07x | 1.1x | 10.5x |
+| k-nucleotide (hash map) | 0.61 | 0.68 | 1.13x | 3.7x | 5.0x |
+| Sorting and searching | 1.17 | 1.35 | 1.15x | 1.7x | 2.6x |
+| N-body | 0.25 | 0.30 | 1.18x | 1.6x | 6.2x |
+| FASTA generation | 0.93 | 1.12 | 1.20x | 1.5x | 3.1x |
+| JSON serialise + parse | 0.78 | 0.97 | 1.25x | 1.9x | 4.9x |
+| String manipulation | 0.23 | 0.28 | 1.26x | 11.5x | 4.3x |
+| LRU cache | 0.65 | 0.87 | 1.33x | 2.7x | 4.2x |
 
-Table and figures below: all columns from the 8 October full run (the summary charts above come from the same data; the sieve row is its tuned-per-program build). Geometric mean of time relative to C -O2: Caspien 1.06x with all optimisations on (best variant per program), 2.17x for the stdlib-class
-versions (thirteen programs, Mandelbrot has none), 4.32x with optimisations off. The 7 October run gave 1.06x, 2.23x and 4.23x. The geometric mean barely moved, but individual C times changed by up to 30% between the two runs (binary trees 0.48 s then, 0.37 s now), which is the VM noise described below, so compare ratios within one run, not seconds across runs.
+Table and figures below: all columns from the 8 to 9 October full run (the summary charts above come from the same data; the sieve row is its tuned-per-program build). Geometric mean of time relative to C -O2: Caspien 1.03x with all optimisations on (best variant per program), 2.01x for the stdlib-class
+versions (thirteen programs, Mandelbrot has none), 4.03x with optimisations off. The previous published run (8 October) gave 1.06x, 2.17x and 4.32x. The geometric mean barely moved, but individual C times changed by up to 30% between the two runs (binary trees 0.48 s then, 0.37 s now), which is the VM noise described below, so compare ratios within one run, not seconds across runs.
 
 **Which charts are shown.** The summary charts above use no selection: every language, every program where both rows exist. The three per-program charts
 below were not picked by hand. The rule is mechanical, not a judgement call: for each program take the ratio of Caspien's fastest
@@ -2261,38 +2261,38 @@ all-optimisations-on variant to C -O2, and show the program with the lowest rati
 [`benchmarks/img/`](benchmarks/img/), and the interactive version (hover text, sortable tables, memory, size and compile time) is
 [`benchmarks/charts.html`](https://SeanJackson247.github.io/Caspien/benchmarks/charts.html).
 
-Best for Caspien (binary trees, 0.66x of C), the median (N-body, 1.13x), and the worst (k-nucleotide, 1.37x):
+Best for Caspien (binary trees, 0.52x of C), the median (k-nucleotide, 1.13x), and the worst (LRU cache, 1.33x):
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="benchmarks/img/time_binarytrees-dark.svg">
   <img alt="Execution time: binary trees" src="benchmarks/img/time_binarytrees.svg">
 </picture>
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="benchmarks/img/time_nbody-dark.svg">
-  <img alt="Execution time: N-body" src="benchmarks/img/time_nbody.svg">
-</picture>
-<picture>
   <source media="(prefers-color-scheme: dark)" srcset="benchmarks/img/time_knucleotide-dark.svg">
   <img alt="Execution time: k-nucleotide" src="benchmarks/img/time_knucleotide.svg">
+</picture>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="benchmarks/img/time_lru-dark.svg">
+  <img alt="Execution time: LRU cache" src="benchmarks/img/time_lru.svg">
 </picture>
 
 The gold lines on each bar mark the best time minus and plus the typical run-to-run noise (the median of the three repeats minus the best).
 
-Peak memory is close to C: in the summary chart the Caspien variants sit at 1.10x to 1.11x of C's geometric mean for the array versions and 1.20x for the stdlib-class versions (best variant per program in the 8 October run: 1.08x, ranging from 0.76x to 1.96x per program). That is no
+Peak memory is close to C: in the summary chart the Caspien variants sit at 1.10x to 1.11x of C's geometric mean for the array versions and 1.22x for the stdlib-class versions. That is no
 surprise, because Caspien has no garbage collector and no runtime, allocates with `malloc`, and lays out
-structs and arrays as C does.
+structs and arrays as C does. The exception is the `ref` variants (below): they sit at 4.5x to 4.6x of C, because every object a `ref` points to also gets entries in the id tables.
 
 **An honest reading.**
 
 - With optimisations on and the fastest hand-written variant of each program, Caspien reaches 1.06x of C in the
-  geometric mean (8 October full run; the summary chart's per-variant bars are 1.08x to 1.10x for the unsafe and 1.16x to 1.17x
-  for the safe variants). Rust is 1.10x in the same chart, so Caspien's best variants are level with it or slightly ahead (a difference
-  too small to mean anything on this VM), and ahead of D, Odin, C++ -O2 (1.23x), Go (1.43x), OCaml, C#, Java (1.70x), Kotlin,
-  Swift, Nim and the JavaScript engines; Zig (0.97x), Chapel (1.01x) and Fortran (1.04x) are ahead. Against Rust on the
-  memory-safe implementations the safe Caspien variants are at 1.04x to 1.05x. It is within 1.3x of C on thirteen of the fourteen
-  programs; the worst is k-nucleotide at 1.37x, then string manipulation (1.27x) and sorting (1.24x).
+  geometric mean (8 to 9 October full run; the summary chart's per-variant bars are 1.03x to 1.04x for the unsafe and 1.10x to 1.11x
+  for the safe variants). Rust is 1.06x in the same chart, so Caspien's best variants are level with it or slightly ahead (a difference
+  too small to mean anything on this VM), and ahead of Odin, D, C++ -O2 (1.18x), Go (1.41x), OCaml, C#, Java (1.64x), Kotlin,
+  Swift, Nim and the JavaScript engines; Zig (0.95x) and Chapel (1.01x) are ahead, Fortran (1.05x) is level. Against Rust on the
+  memory-safe implementations the safe Caspien variants are at 1.04x. It is within 1.35x of C on all fourteen
+  programs; the worst are the LRU cache (1.33x), string manipulation (1.26x) and JSON (1.25x).
   That figure picks Caspien's fastest variant per program, while every other language has a single port, so it
-  flatters Caspien somewhat; the standard library versions (2.17x, same programs) are the fairer picture of
+  flatters Caspien somewhat; the standard library versions (2.01x, same programs) are the fairer picture of
   ordinary code.
 - The gap to C and Rust is real. The compiler has no general register allocator. The optimiser marks the
   hottest scalar variables of a function, and those are coloured by liveness over a small fixed register set: two or three
@@ -2303,14 +2303,25 @@ structs and arrays as C does.
   length of a loop) and no spill code beyond saving float variables around calls. There is also no vectorisation and
   no alias analysis (the loop passes use a simple 'nothing in the loop writes this slot' test), and every `match Some` on a `ref`
   pays for the ghost-table liveness lookup described in section 1.5 (expected O(1)).
-- The optimisation switches matter more than any single trick. With them off, the same programs are 4.3x
+- The optimisation switches matter more than any single trick. With them off, the same programs are 4.0x
   slower than C on average (best variant of each), and they ship off. That is the biggest single improvement available to users
   today.
-- Code written against the standard library classes is slower than code written against raw arrays: about 2.0x
-  on average over thirteen programs, but about 4.2x for binary trees, 3.4x for k-nucleotide and 8.8x for
+- Code written against the standard library classes is slower than code written against raw arrays: about 1.9x
+  on average over thirteen programs, but about 5.4x for binary trees, 3.3x for k-nucleotide and 9.2x for
   strings (stdlib-class version against the fastest variant of the same program). The classes pay for bounds proofs and wrapper calls. The worst earlier gap, a heap allocation
-  on every call to `insecure_hashOf`, has been removed (k-nucleotide went from 57x slower than C to 8x). That is an
-  engineering gap, not a design limit.
+  on every call to `insecure_hashOf`, has been removed (k-nucleotide went from 57x slower than C to 3.7x). That is an
+  engineering gap, not a design limit. (One of the numbers above briefly regressed: for a day the stdlib `HashMap` re-matched `self`
+  after every call to its `unsafe memcopy` hash helper, which made k-nucleotide's stdlib version 4x slower. The checker now keeps
+  proofs across `unsafe` blocks whose reasons cannot free anything, and the re-matches are gone.)
+- **Nullable `ref` is the expensive pointer.** A plain `ref` is a 64-bit id that the ghost table resolves to an address, so a
+  `match Some` costs a table lookup, storing an address into a `ref` creates the id (first time) and freeing an object that has an id
+  touches three tables. That buys what the old address-valued `ref` could not give: a stale `ref` never looks alive again after
+  `malloc` reuses its address. The price, measured on the three programs that have `ref`-linked variants (graph, binarytrees, lru):
+  4.4 to 10.2 s against 0.18 to 0.87 s for the index versions, i.e. 15x to 21x slower than C and 11x to 40x slower than the
+  index twins, and 4.5x the memory. The stdlib `HashMap` built on `ref` nodes (`stdlib/ref/hash_map.caspien`) is 12x to 19x slower than C. Use
+  indices or `ref some`/`owns` where speed matters; the `ref` variants exist to keep the safe-pointer story honest, not to win
+  benchmarks. Two further optimisations are written down but not built (no id for types no `ref` is ever taken to; skipping a repeated
+  `match Some`), and in the `unsafe` variants `assume match Some` already resolves the id once without a test.
 - The benchmark programs are not Caspien-specific. Twelve are taken from a public collection of
   programming benchmarks, and the other two were written to represent ordinary application work more
   closely than numeric kernels do. All of the ports, in every language including Caspien, were written by

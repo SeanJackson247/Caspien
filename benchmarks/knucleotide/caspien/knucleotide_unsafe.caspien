@@ -12,12 +12,9 @@ extern getenv(static imut string) static imut string
 extern atol(static imut string) mut u64
 
 func main() void{
-	?catch(e){ return }
 	unsafe extern loop udyn{
 		let n = mut 0
 		n = atol(getenv("KNUC_N"))
-		let:<mut u8> zb = mut 0
-		let:<mut u64> zw = mut 0
 		let seq = mut unsafe dyn:<u8>([])
 		seq = resize(seq, (n + 1))
 		let qk = mut unsafe dyn:<u64>([])
@@ -137,7 +134,6 @@ func main() void{
 				maxd = 139968
 			}
 			let two = mut (2 * maxd)
-			let sh = mut (64 - 2 * k)
 			let nd = mut 0
 			let key = mut 0
 			let kmask = mut (64 - 2 * k)

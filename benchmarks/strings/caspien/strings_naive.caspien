@@ -113,16 +113,21 @@ func main() void{
 		for i in 0..m{
 			hrep = bits_and(hrep * 31 + code(rep.charAt(rep, i)), 0xFFFFFFFF)
 		}
-		// upper case, in place
+		// upper case into a fresh String (like the reference: every result buffer is its own allocation)
+		let up = mut ? new String()
+		let spc = mut chr(32)
 		for i in 0..n{
 			let c = mut code(text.charAt(text, i))
 			if c != 32{
-				text.setCharAt(text, i, chr(c - 32))
+				? up.appendChar(up, chr(c - 32))
+			}
+			else{
+				? up.appendChar(up, spc)
 			}
 		}
 		let hup = mut 7
 		for i in 0..n{
-			hup = bits_and(hup * 31 + code(text.charAt(text, i)), 0xFFFFFFFF)
+			hup = bits_and(hup * 31 + code(up.charAt(up, i)), 0xFFFFFFFF)
 		}
 		printf("%llu %llu %llu %llu %llu %llu %llu\n", words, longest, abc, hrev, m, hrep, hup)
 	}

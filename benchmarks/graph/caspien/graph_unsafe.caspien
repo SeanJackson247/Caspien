@@ -20,7 +20,6 @@ func main() void{
 		let dist = mut unsafe dyn:<u64>([])
 		let edges = mut unsafe dyn:<u64>([])
 		let queue = mut unsafe dyn:<u64>([])
-		let:<mut u64> zero = mut 0
 		let en = mut (n * 4)
 		value = resize(value, n)
 		dist = resize(dist, n)

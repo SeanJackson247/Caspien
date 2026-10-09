@@ -59,6 +59,10 @@ public class TypeChecker {
      */
     private final CompilerConfig config;
 
+    /** `unsafe` reasons that cannot free memory by themselves; a block with only these keeps the alive proofs (see the 'unsafe' statement case). */
+    private static final Set<String> NON_FREEING_UNSAFE_TAGS = new HashSet<>(Arrays.asList(
+            "memcopy", "raw", "deref", "clone", "global", "loop", "atomic", "guard", "assume"));
+
     public TypeChecker(CompilerConfig config) {
         this.config = config;
         ProofKills.reset();
@@ -8649,7 +8653,11 @@ public class TypeChecker {
                     checkLinesInScope(stmt.childs, safetyBlockScope, func, insideLoop);
                     if (stmt.text.equals("unsafe")) {
                         // The block ends the proofs that were active before it. Uses inside it are the programmer's responsibility, as everywhere in `unsafe`.
-                        boolean assumeOnly = stmt.unsafeTags != null && stmt.unsafeTags.size() == 1 && stmt.unsafeTags.contains("assume");
+                        // A block whose reasons are all of the kinds that cannot free anything by themselves (the checker sees every `resize`, owns assignment and call
+                        // inside it as its own event) leaves the proofs alone: `memcopy`, `raw`, `deref`, `clone`, `global`, `loop`, `atomic`, `guard`, `assume`.
+                        // `extern`, `call`, `asm`, `udyn`, `udyn:owns`, `async`, `file`, `unaudited` (or no tag list at all) may free, so they still end every proof.
+                        boolean assumeOnly = stmt.unsafeTags != null && !stmt.unsafeTags.isEmpty()
+                                && NON_FREEING_UNSAFE_TAGS.containsAll(stmt.unsafeTags);
                         if (!stmt.synthesizedUnsafe && !assumeOnly) {
                             ProofKills.kill(scope.activeMatchPatterns, stmt, "an 'unsafe' block");
                         }

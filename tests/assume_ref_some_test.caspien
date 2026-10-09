@@ -1,0 +1,108 @@
+// `assume match Some(r)` on a nullable `ref` (an id) resolves the id ONCE, like a real `match Some(r)`: every later use of r in the scope reads the
+// resolved address. Checked: results equal the model (assume_ref_some_test.py), and (assume_ref_some_check.sh) the function that uses r five times
+// after the assume has exactly one GT_REF_RESOLVE in its bytecode.
+// Expected output (model: assume_ref_some_test.py):
+// PASS assume uses 150
+// PASS assume loop 4950
+// PASS assume bounds 4950
+// PASS assume element 21
+// PASS match equals assume 1
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+struct Node{@pub{
+	value: mut u64
+	next: ref mut Node
+}}
+struct Holder{@pub{ n: owns mut Node }}
+
+func report(name: static imut string, got: mut u64) void{
+	unsafe extern{ printf("PASS %s %llu\n", name, got) }
+}
+
+// five uses of r after one assume: value 30 -> 30*5
+func fiveUses(r: ref mut Node) mut u64{
+	let out = mut 0
+	unsafe assume{
+		assume match Some(r)
+		out = r.value + r.value + r.value + r.value + r.value
+	}
+	return out
+}
+
+func viaMatch(r: ref mut Node) mut u64{
+	let out = mut 0
+	match Some(r){
+		out = r.value + r.value + r.value + r.value + r.value
+	}
+	return out
+}
+
+func main() void{
+	?catch(e){ return }
+	let a = mut ?new Node{value= 30, next= null}
+	let ra = mut ref a
+	report("assume uses", fiveUses(ra))
+	// a list of 100 nodes walked by assume (every next is known to be set except the last)
+	let v = mut ? dyn([Holder{n= null}])
+	v = ? resize(v, 100, Holder{n= null})
+	for i in 0..100{
+		let nn = mut ? new Node{value= i, next= null}
+		match i in v{
+			v[i].n = nn
+		}
+	}
+	unsafe assume{
+		for i in 0..99{
+			let j = mut (i + 1)
+			assume match i in v
+			assume match j in v
+			assume match Some(v[i].n)
+			v[i].n.next = ref v[j].n
+		}
+	}
+	let:<ref mut Node> head = mut null
+	match 0 in v{
+		head = ref v[0].n
+	}
+	let cur = mut head
+	let total = mut 0
+	for j in 0..99{
+		unsafe assume{
+			assume match Some(cur)
+			total += cur.value
+			cur = cur.next
+		}
+	}
+	// the node 99 is the last; add it with a real match
+	match Some(cur){
+		total += cur.value
+	}
+	report("assume loop", total)
+	let t2 = mut 0
+	for i in 0..100{
+		unsafe assume{
+			assume match i in v
+			assume match Some(v[i].n)
+			t2 += v[i].n.value
+		}
+	}
+	report("assume bounds", t2)
+	let el = mut 0
+	unsafe assume{
+		let k3 = mut 3
+		assume match k3 in v
+		assume match Some(v[k3].n)
+		el = v[k3].n.value + v[k3].n.value + v[k3].n.value + v[k3].n.value + v[k3].n.value + v[k3].n.value + v[k3].n.value
+	}
+	report("assume element", el)
+	let same = mut 0
+	let rb = mut ref a
+	if fiveUses(rb) == viaMatch(rb){
+		same = 1
+	}
+	report("match equals assume", same)
+}

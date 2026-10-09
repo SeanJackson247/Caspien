@@ -149,12 +149,6 @@ func main() void{
 		match qi into qv.backing{
 			qv.set(qv, qi, first12)
 		}
-		let capmax = mut 2
-		let maxd12 = mut 139968
-		if n < maxd12{
-			maxd12 = n
-		}
-		let tw = mut (2 * maxd12)
 		let nq = mut 0
 		for ki in 0..6{
 			let k = mut 1
@@ -186,7 +180,6 @@ func main() void{
 				maxd = 139968
 			}
 			let two = mut (2 * maxd)
-			let sh = mut (64 - 2 * k)
 			let nd = mut 0
 			let key = mut 0
 			let kmask = mut (64 - 2 * k)

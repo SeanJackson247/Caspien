@@ -26,7 +26,7 @@ struct QRef{@pub{ n: ref mut Node }}
 
 func main() void{
 	?catch(e){ return }
-	unsafe extern loop udyn{
+	unsafe assume extern loop udyn{
 		let maxd = mut 0
 		maxd = atol(getenv("BINARYTREES_N"))
 		if maxd < 6{
@@ -66,9 +66,8 @@ func main() void{
 		root = top
 		top += 1
 		let nn1 = mut ? new Node{l= null, r= null}
-		match root into pool{
-			pool[root].n = nn1
-		}
+		assume match root into pool
+		pool[root].n = nn1
 		sp = 0
 		stack[sp] = root * 64 + sd
 		sp += 1
@@ -84,25 +83,19 @@ func main() void{
 				ca = top
 				top += 1
 				let nn2 = mut ? new Node{l= null, r= null}
-				match ca into pool{
-					pool[ca].n = nn2
-				}
+				assume match ca into pool
+				pool[ca].n = nn2
 				cb = top
 				top += 1
 				let nn3 = mut ? new Node{l= null, r= null}
-				match cb into pool{
-					pool[cb].n = nn3
-				}
-				match id in pool{
-					match ca in pool{
-						match cb in pool{
-							match Some(pool[id].n){
-								pool[id].n.l = ref pool[ca].n
-								pool[id].n.r = ref pool[cb].n
-							}
-						}
-					}
-				}
+				assume match cb into pool
+				pool[cb].n = nn3
+				assume match id in pool
+				assume match ca in pool
+				assume match cb in pool
+				assume match Some(pool[id].n)
+				pool[id].n.l = ref pool[ca].n
+				pool[id].n.r = ref pool[cb].n
 				stack[sp] = ca * 64 + (dp - 1)
 				sp += 1
 				stack[sp] = cb * 64 + (dp - 1)
@@ -111,10 +104,9 @@ func main() void{
 		}
 		cnt = 0
 		sp = 0
-		match root in pool{
-			rstack[sp].n = ref pool[root].n
-			sp += 1
-		}
+		assume match root in pool
+		rstack[sp].n = ref pool[root].n
+		sp += 1
 		loop{
 			if sp == 0{
 				break
@@ -133,9 +125,8 @@ func main() void{
 		}
 		printf("%llu", cnt)
 		for i in fbase..top{
-			match i into pool{
-				pool[i].n = null
-			}
+			assume match i into pool
+			pool[i].n = null
 		}
 		top = fbase
 		// long-lived tree: kept until the end
@@ -143,9 +134,8 @@ func main() void{
 		llroot = top
 		top += 1
 		let nn4 = mut ? new Node{l= null, r= null}
-		match llroot into pool{
-			pool[llroot].n = nn4
-		}
+		assume match llroot into pool
+		pool[llroot].n = nn4
 		sp = 0
 		stack[sp] = llroot * 64 + maxd
 		sp += 1
@@ -161,25 +151,19 @@ func main() void{
 				ca = top
 				top += 1
 				let nn5 = mut ? new Node{l= null, r= null}
-				match ca into pool{
-					pool[ca].n = nn5
-				}
+				assume match ca into pool
+				pool[ca].n = nn5
 				cb = top
 				top += 1
 				let nn6 = mut ? new Node{l= null, r= null}
-				match cb into pool{
-					pool[cb].n = nn6
-				}
-				match id in pool{
-					match ca in pool{
-						match cb in pool{
-							match Some(pool[id].n){
-								pool[id].n.l = ref pool[ca].n
-								pool[id].n.r = ref pool[cb].n
-							}
-						}
-					}
-				}
+				assume match cb into pool
+				pool[cb].n = nn6
+				assume match id in pool
+				assume match ca in pool
+				assume match cb in pool
+				assume match Some(pool[id].n)
+				pool[id].n.l = ref pool[ca].n
+				pool[id].n.r = ref pool[cb].n
 				stack[sp] = ca * 64 + (dp - 1)
 				sp += 1
 				stack[sp] = cb * 64 + (dp - 1)
@@ -202,9 +186,8 @@ func main() void{
 				root = top
 				top += 1
 				let nn7 = mut ? new Node{l= null, r= null}
-				match root into pool{
-					pool[root].n = nn7
-				}
+				assume match root into pool
+				pool[root].n = nn7
 				sp = 0
 				stack[sp] = root * 64 + d
 				sp += 1
@@ -220,25 +203,19 @@ func main() void{
 						ca = top
 						top += 1
 						let nn8 = mut ? new Node{l= null, r= null}
-						match ca into pool{
-							pool[ca].n = nn8
-						}
+						assume match ca into pool
+						pool[ca].n = nn8
 						cb = top
 						top += 1
 						let nn9 = mut ? new Node{l= null, r= null}
-						match cb into pool{
-							pool[cb].n = nn9
-						}
-						match id in pool{
-							match ca in pool{
-								match cb in pool{
-									match Some(pool[id].n){
-										pool[id].n.l = ref pool[ca].n
-										pool[id].n.r = ref pool[cb].n
-									}
-								}
-							}
-						}
+						assume match cb into pool
+						pool[cb].n = nn9
+						assume match id in pool
+						assume match ca in pool
+						assume match cb in pool
+						assume match Some(pool[id].n)
+						pool[id].n.l = ref pool[ca].n
+						pool[id].n.r = ref pool[cb].n
 						stack[sp] = ca * 64 + (dp - 1)
 						sp += 1
 						stack[sp] = cb * 64 + (dp - 1)
@@ -247,10 +224,9 @@ func main() void{
 				}
 				cnt = 0
 				sp = 0
-				match root in pool{
-					rstack[sp].n = ref pool[root].n
-					sp += 1
-				}
+				assume match root in pool
+				rstack[sp].n = ref pool[root].n
+				sp += 1
 				loop{
 					if sp == 0{
 						break
@@ -269,9 +245,8 @@ func main() void{
 				}
 				sum += cnt
 				for i in fbase..top{
-					match i into pool{
-						pool[i].n = null
-					}
+					assume match i into pool
+					pool[i].n = null
 				}
 				top = fbase
 			}
@@ -280,10 +255,9 @@ func main() void{
 		}
 		cnt = 0
 		sp = 0
-		match llroot in pool{
-			rstack[sp].n = ref pool[llroot].n
-			sp += 1
-		}
+		assume match llroot in pool
+		rstack[sp].n = ref pool[llroot].n
+		sp += 1
 		loop{
 			if sp == 0{
 				break
@@ -302,9 +276,8 @@ func main() void{
 		}
 		printf(" %llu\n", cnt)
 		for i in llbase..top{
-			match i into pool{
-				pool[i].n = null
-			}
+			assume match i into pool
+			pool[i].n = null
 		}
 		top = llbase
 	}

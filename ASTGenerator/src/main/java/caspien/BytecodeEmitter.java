@@ -2637,6 +2637,8 @@ public class BytecodeEmitter {
                     if (stmt.hasBlock) {
                         emitBlock(stmt.childs);
                         emitDestructList(stmt.destructOnExit, stmt);
+                    } else if (stmt.assumeFieldVariants == null && stmt.sub != null && !stmt.sub.isEmpty()) {
+                        emitAssumeResolves(stmt.sub.get(0));   // a nullable ref proven by `assume match Some(..)`: resolve it once
                     }
                     return;
                 case "return":
@@ -3382,6 +3384,33 @@ public class BytecodeEmitter {
      * test that address against null. The match body reads the slot instead of the id (emitExpr, Token.refProofKey).
      */
     private void emitSomeOnRef(Token someCall, Token subject, String proofKey) {
+        emitSomeOnRef(someCall, subject, proofKey, true);
+    }
+
+    /**
+     * `assume match Some(r)` / `assume match <index> in v and Some(v[i].r)` on a nullable `ref`: the same one-time resolve into the proof's
+     * address slot as a real `match Some`, but no null test and no branch (the programmer vouches), so the uses after it read the slot
+     * instead of resolving the id again at every use.
+     */
+    private void emitAssumeResolves(Token c) {
+        if (c == null) {
+            return;
+        }
+        if (c.someOnRef && c.someProofKey != null) {
+            emitSomeOnRef(c, singleBuiltinArg(c), c.someProofKey, false);
+        } else if (c.someIndexElementExpr != null && c.someIndexElementExpr.someOnRef) {
+            emitSomeOnRef(c.someIndexElementExpr, c.someIndexElementExpr, c.someIndexElementExpr.someProofKey, false);
+        }
+        emitAssumeResolves(c.left);
+        emitAssumeResolves(c.right);
+        if (c.sub != null) {
+            for (Token t : c.sub) {
+                emitAssumeResolves(t);
+            }
+        }
+    }
+
+    private void emitSomeOnRef(Token someCall, Token subject, String proofKey, boolean test) {
         requireRefHook("gt_ref_resolve", someCall);
         String type = subject.resolvedType;
         String slot = proofKey == null ? null : refAddrSlots.get(proofKey);
@@ -3395,9 +3424,11 @@ public class BytecodeEmitter {
         emitExpr(subject);
         line("GT_REF_RESOLVE " + type);
         line("ASSIGN " + type + " " + type + " " + type);
-        line("PUSH " + slot + " " + type);
-        line("PUSH null null");
-        line("NEQ " + type + " null indeterminate_bool");
+        if (test) {
+            line("PUSH " + slot + " " + type);
+            line("PUSH null null");
+            line("NEQ " + type + " null indeterminate_bool");
+        }
     }
 
     private void emitExprCore(Token node) {

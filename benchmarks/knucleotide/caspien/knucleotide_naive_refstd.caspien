@@ -187,7 +187,6 @@ func main() void{
 				maxd = 139968
 			}
 			let two = mut (2 * maxd)
-			let sh = mut (64 - 2 * k)
 			let nd = mut 0
 			let key = mut 0
 			let kmask = mut (64 - 2 * k)

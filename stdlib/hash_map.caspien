@@ -144,12 +144,9 @@ impl<T> HashMap<T>{
 					}
 				}
 			}
-			// hashKey's `unsafe` memcopy ended the entry proof for _self: match it again
-			match Some(_self){
-				_self.slots = newSlots
-				_self.ctrl = newCtrl
-				_self.capacity = newCap
-			}
+			_self.slots = newSlots
+			_self.ctrl = newCtrl
+			_self.capacity = newCap
 		}
 	}
 
@@ -159,24 +156,22 @@ impl<T> HashMap<T>{
 		match cap != 0{
 			let mask = mut (cap - 1)
 			let startIdx = mut bits_and(hashKey:<T>(imut key), mask)
-			match Some(_self){      // hashKey's `unsafe` ended the entry proof: match again
-				for steps in 0..cap{
-					let idx = mut bits_and(startIdx + steps, mask)
-					match idx into _self.ctrl{
-						if _self.ctrl[idx] == 0{
-							match idx into _self.slots{
-								_self.slots[idx].key = key
-								_self.slots[idx].value = value
-							}
-							_self.ctrl[idx] = 1
-							_self.count = mut (_self.count + 1)
-							break
-						}
+			for steps in 0..cap{
+				let idx = mut bits_and(startIdx + steps, mask)
+				match idx into _self.ctrl{
+					if _self.ctrl[idx] == 0{
 						match idx into _self.slots{
-							if _self.slots[idx].key == key{
-								_self.slots[idx].value = value
-								break
-							}
+							_self.slots[idx].key = key
+							_self.slots[idx].value = value
+						}
+						_self.ctrl[idx] = 1
+						_self.count = mut (_self.count + 1)
+						break
+					}
+					match idx into _self.slots{
+						if _self.slots[idx].key == key{
+							_self.slots[idx].value = value
+							break
 						}
 					}
 				}
@@ -191,15 +186,11 @@ impl<T> HashMap<T>{
 		match cap != 0{
 			if (_self.count + 1) * 10 > cap * 7{
 				try _self.grow(_self) catch(e){
-					match Some(_self){      // grow frees and may contain `unsafe`: match again
-						_self.insert(_self, key, value)
-					}
+					_self.insert(_self, key, value)
 					return
 				}
 			}
-			match Some(_self){
-				_self.insert(_self, key, value)
-			}
+			_self.insert(_self, key, value)
 		}
 	}
 
@@ -210,17 +201,15 @@ impl<T> HashMap<T>{
 		match cap != 0{
 			let mask = mut (cap - 1)
 			let startIdx = mut bits_and(hashKey:<T>(imut key), mask)
-			match Some(_self){
-				for steps in 0..cap{
-					let idx = mut bits_and(startIdx + steps, mask)
-					match idx in _self.ctrl{
-						if _self.ctrl[idx] == 0{
-							return defaultValue
-						}
-						match idx in _self.slots{
-							if _self.slots[idx].key == key{
-								return _self.slots[idx].value
-							}
+			for steps in 0..cap{
+				let idx = mut bits_and(startIdx + steps, mask)
+				match idx in _self.ctrl{
+					if _self.ctrl[idx] == 0{
+						return defaultValue
+					}
+					match idx in _self.slots{
+						if _self.slots[idx].key == key{
+							return _self.slots[idx].value
 						}
 					}
 				}
@@ -236,17 +225,15 @@ impl<T> HashMap<T>{
 		match cap != 0{
 			let mask = mut (cap - 1)
 			let startIdx = mut bits_and(hashKey:<T>(imut key), mask)
-			match Some(_self){
-				for steps in 0..cap{
-					let idx = mut bits_and(startIdx + steps, mask)
-					match idx in _self.ctrl{
-						if _self.ctrl[idx] == 0{
-							return mut false
-						}
-						match idx in _self.slots{
-							if _self.slots[idx].key == key{
-								return mut true
-							}
+			for steps in 0..cap{
+				let idx = mut bits_and(startIdx + steps, mask)
+				match idx in _self.ctrl{
+					if _self.ctrl[idx] == 0{
+						return mut false
+					}
+					match idx in _self.slots{
+						if _self.slots[idx].key == key{
+							return mut true
 						}
 					}
 				}

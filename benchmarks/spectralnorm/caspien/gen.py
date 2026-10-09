@@ -5,10 +5,10 @@ import sys, os
 N = int(sys.argv[1]); out = sys.argv[2] if len(sys.argv) > 2 else os.path.dirname(os.path.abspath(__file__))
 ONES = ", ".join(["1.0"] * N)
 ZEROS = ", ".join(["0.0"] * N)
-HDR = f'''// spectral-norm (Computer Language Benchmarks Game), single threaded, N = {N}; same algorithm and operation order as the reference C
+HDR = f'''// spectral-norm (Computer Language Benchmarks Game), single threaded, N = {N}; same results as the reference C
 // program (spectralnorm.c): ten rounds of v = AtA u, u = AtA v, then sqrt(vBv / vv), printed with %0.9f.
 //
-// DIFFERENCES FROM THE C PROGRAM (forced by the current language, none is an optimisation):
+// DIFFERENCES FROM THE C PROGRAM (the incremental denominator above is the one deliberate optimisation; the rest are forced by the current language):
 //  * u, v and t are `let static` f64[{N}] arrays (an array cannot be a parameter, a `let static` array needs a literal initialiser), so
 //    the capacity is fixed at {N} (the run size n comes from SPECTRAL_N, n <= {N}; the loop bounds are runtime values), and the matrix-vector routines are written out once per array pair (t = A u, v = At t, t = A v, u = At t).
 //  * there is no int-to-float cast, so every loop keeps an f64 mirror of its integer index (`fi += 1.0`); both are exact.
