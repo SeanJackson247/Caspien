@@ -23,16 +23,24 @@ func main() void{
 		}
 		let a = mut ? await triple(mut 14)
 		let h = mut ? par triple(mut 14)
+		let b = mut 0
 		for i in 0..100000000{
 			let ready = mut false
-			match h.state{
-				READY:{ ready = true }
-				default:{ ready = false }
+			match @lock h{
+				OPEN:{
+					match h.state{
+						READY:{
+							ready = true
+							b = h.resolve(h)
+						}
+						default:{ ready = false }
+					}
+				}
+				CLOSED:default(1000)
 			}
 			if ready{ break }
 			yield
 		}
-		let b = mut h.resolve(h)
 		unsafe extern{ printf("await=%llu par=%llu\n", a, b) }
 	}
 }

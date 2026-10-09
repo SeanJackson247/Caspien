@@ -23,18 +23,25 @@
 // "threadId" field offsets.
 import "libc.caspien"
 
+// `tidOut` receives the started thread's id when it points at a handle's `threadId` member: that thread stays joinable (the handle's drop
+// hook joins it, so a handle is never freed under a running thread). With null (the hidden handle of a void `par`) the thread is detached.
 @par_call
 @pub
-func par_call(fn: raw imut u8, handle: raw mut u8) imut bool{
+func par_call(fn: raw imut u8, handle: raw mut u8, tidOut: raw mut u64) imut bool{
 	let tid = mut 0
 	let:<mut u32> rc = mut 0
 	unsafe extern raw{
 		rc = mut pthread_create(raw tid, null, fn, handle)
 	}
 	if rc == 0{
-		// Nothing ever joins a `par` thread: detach it so its stack and thread block are released when it ends.
-		unsafe extern{
-			pthread_detach(tid)
+		if tidOut == null{
+			unsafe extern{
+				pthread_detach(tid)
+			}
+		} else {
+			unsafe memcopy raw{
+				memcopy(tidOut, 8, raw tid)
+			}
 		}
 	}
 	let ok = imut (rc == 0)

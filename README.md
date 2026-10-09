@@ -1445,8 +1445,12 @@ is not a spin lock, `@guard` marks a generic interface with one `@lock` and one 
 **Threads.** An `@async` function takes at most one parameter, which must fit in a register, and can only
 be called with `par` or `await`. Each call runs on its own OS thread. `await f(x)` blocks and returns the
 result. `par f(x)` starts the thread and returns at once. For a function that returns a value, `par` gives
-a handle with a `state` (`PENDING`, `RUNNING` or `READY`), a `result` and a method `resolve()`.
-`resolve()` does not wait, so poll `state` for `READY` first. A void function gives no handle. `yield` gives
+a handle, and the handle is a lock: the thread publishes its `result` and sets `state` (`PENDING`, `RUNNING` or
+`READY`) while holding it, and you read `state` and call `resolve()` only inside `match @lock h{ OPEN:{ ... } }`,
+so a read can never see a half-written result. Reading them outside the lock does not compile, and neither
+does a handle that is never matched with `match @lock`. `resolve()` does not wait, so poll for `READY`. When a
+handle goes out of scope the program waits for its thread first (the handle's drop hook joins it), so a handle
+is never freed under a running thread. A void function gives no handle. `yield` gives
 up the rest of the time slice, and `sleep(n)` (from `stdlib/sleep.caspien`) sleeps for `n` seconds.
 
 ```rust
@@ -1456,16 +1460,24 @@ func triple(x: mut u64) mut u64{ return x * 3 }
 let answer = mut ? await triple(mut 14)             // 42
 
 let h = mut ? par triple(mut 14)
+let r = mut 0
 for i in 0..100000000{
 	let ready = mut false
-	match h.state{
-		READY:{ ready = true }
-		default:{ ready = false }
+	match @lock h{
+		OPEN:{
+			match h.state{
+				READY:{
+					ready = true
+					r = h:resolve()
+				}
+				default:{ ready = false }
+			}
+		}
+		CLOSED:default(1000)
 	}
 	if ready{ break }
 	yield
 }
-let r = mut h:resolve()
 ```
 
 Safe code shares data between threads only through locks (an atomic flag needs `unsafe atomic{}`): `16_atomics_and_locks` runs two threads that each take

@@ -5855,6 +5855,9 @@ public class BytecodeEmitter {
                 case "threadId":
                     line("PUSH 0 " + entry.canonicalType);
                     break;
+                case "gate":
+                    line("PUSH AsyncGate.OPEN " + entry.canonicalType);
+                    break;
                 default:
                     throw new IllegalStateException(
                             "unexpected AsyncHandle_T member '" + entry.memberName + "'");
@@ -5895,6 +5898,18 @@ public class BytecodeEmitter {
         line("POP ARG0 " + trampolineFuncPtrType);
         line("PUSH " + tempName + " " + handleCanonical);
         line("POP ARG1 " + handleCanonical);
+        if (!isAwait) {
+            // par_call also receives where to store the thread id: the handle's own threadId (so the handle's drop hook can join
+            // the thread), or null for the hidden fire-and-forget handle (its thread is detached).
+            if (handleStructInfo.members.containsKey("gate")) {
+                line("PUSH " + tempName + " " + handleCanonical);
+                line("PUSH_FIELDNAME threadId mut_u64");
+                line("DOT_LHS " + handleCanonical + " mut_u64 mut_u64");
+            } else {
+                line("PUSH null raw_mut_u64");
+            }
+            line("POP ARG2 raw_mut_u64");
+        }
         line("CALL " + glueInfo.mangledName);
         line("CC_END " + glueInfo.callConvention);
         // The glue returns false when pthread_create failed: nothing runs the trampoline, so nothing else will ever free

@@ -5720,10 +5720,21 @@ public class TypeChecker {
      * to a bare address at this boundary), returning void.
      */
     private void requireAsyncGlueSignature(Token t, FuncInfo info, String decoratorName) {
-        if (info.paramTypes.size() != 2) {
+        boolean isPar = decoratorName.equals("par_call");
+        if (info.paramTypes.size() != (isPar ? 3 : 2)) {
             throw new CompilerException("type", t.file, t.line,
-                    "'@" + decoratorName + "' requires exactly 2 parameters (a trampoline function pointer "
-                            + "and a handle pointer), got " + info.paramTypes.size());
+                    "'@" + decoratorName + "' requires exactly " + (isPar ? "3 parameters (a trampoline function pointer, "
+                            + "a handle pointer and a 'raw mut u64' that receives the thread id, or null)"
+                            : "2 parameters (a trampoline function pointer and a handle pointer)")
+                            + ", got " + info.paramTypes.size());
+        }
+        if (isPar) {
+            TypeInfo tidParam = info.paramTypes.get(2);
+            if (!"raw".equals(tidParam.storage) || !tidParam.baseType.equals("u64")) {
+                throw new CompilerException("type", t.file, t.line,
+                        "'@par_call's third parameter (where the started thread's id is stored, or null) must be "
+                                + "'raw mut u64', got '" + tidParam.canonical() + "'");
+            }
         }
         TypeInfo fnParam = info.paramTypes.get(0);
         if (!"raw".equals(fnParam.storage) || !fnParam.baseType.equals("u8")) {
@@ -7339,7 +7350,36 @@ public class TypeChecker {
         return result;
     }
 
+    /** Per function being checked: `par` handle locals (name -> declaring token), names a `match @lock` was taken on, and owns slots ever moved (must-match rule for locked `par` handles). */
+    private Map<String, Token> fnHandleDecls = new LinkedHashMap<>();
+    private Set<String> fnLockMatched = new HashSet<>();
+    private Set<String> fnEverMoved = new HashSet<>();
+
+    private boolean isLockedAsyncHandle(TypeInfo t) {
+        if (t == null || !"owns".equals(t.storage) || t.baseType == null || !t.baseType.startsWith("AsyncHandle")) {
+            return false;
+        }
+        StructInfo si = structs.get(t.baseType);
+        return si != null && "gate".equals(si.swapFieldName);
+    }
+
     private void checkFunctionBody(FuncInfo func) {
+        Map<String, Token> savedDecls = fnHandleDecls;
+        Set<String> savedMatched = fnLockMatched;
+        Set<String> savedMoved = fnEverMoved;
+        fnHandleDecls = new LinkedHashMap<>();
+        fnLockMatched = new HashSet<>();
+        fnEverMoved = new HashSet<>();
+        try {
+            checkFunctionBodyWithHandles(func);
+        } finally {
+            fnHandleDecls = savedDecls;
+            fnLockMatched = savedMatched;
+            fnEverMoved = savedMoved;
+        }
+    }
+
+    private void checkFunctionBodyWithHandles(FuncInfo func) {
         List<Integer> savedLoops = ProofKills.saveLoops();
         ProofKills.clearLoops();
         ProofKills.enterFunction(func);
@@ -7348,6 +7388,13 @@ public class TypeChecker {
         } finally {
             ProofKills.exitFunction();
             ProofKills.restoreLoops(savedLoops);
+        }
+        for (Map.Entry<String, Token> e : fnHandleDecls.entrySet()) {
+            if (!fnLockMatched.contains(e.getKey()) && !fnEverMoved.contains(e.getKey())) {
+                throw new CompilerException("type", e.getValue().file, e.getValue().line,
+                        "the 'par' handle '" + e.getKey() + "' is never looked at: take its lock with 'match @lock " + e.getKey()
+                                + "{ OPEN:{ ... } CLOSED:default(n) }' (read 'state' and ':resolve()' inside OPEN), or pass it on to something that does");
+            }
         }
     }
 
@@ -11028,6 +11075,9 @@ public class TypeChecker {
         // exempted from destruction here, since ownership is passing to
         // the caller, not ending.
         String preservedSlotKey = slotKeyOf(returnTok.sub.get(0));
+        if (preservedSlotKey != null) {
+            fnEverMoved.add(preservedSlotKey);
+        }
         returnTok.destructOnExit = collectOwnsToDestruct(scope, scope.functionRootScope, preservedSlotKey);
         returnTok.unlockOnExit = collectLockReleasesToBoundary(scope, scope.functionRootScope);
     }
@@ -11990,6 +12040,7 @@ public class TypeChecker {
             if (key != null) {
                 requireNotMovedAlready(key, valueExpr, scope);
                 scope.movedSlots.add(key);
+                fnEverMoved.add(key);
                 valueExpr.isOwnershipMoveSource = true;
             }
         }
@@ -12140,6 +12191,9 @@ public class TypeChecker {
             if ("owns".equals(rhsType.storage) || isInlineOwningStruct(rhsType)) {
                 scope.ownsDeclaredHere.add(nameTok.text);
                 func.ownsLocalTypes.put(nameTok.text, rhsType);
+                if (isLockedAsyncHandle(rhsType) && !synthesizingGlueBody) {
+                    fnHandleDecls.putIfAbsent(nameTok.text, nameTok);
+                }
             }
             // A fresh 'let' always introduces a brand-new binding --
             // confirmed directly ("we are tracking owns values and
@@ -15432,6 +15486,10 @@ public class TypeChecker {
         requireNotPure(func, stmt, "'match @lock'", "acquiring the lock writes the mutex and blocks (a retry loop on shared state)");
         Token receiver = stmt.sub.get(0);
         TypeInfo receiverType = resolveExprType(receiver, scope, func);
+        String matchedSlotKey = slotKeyOf(receiver);
+        if (matchedSlotKey != null) {
+            fnLockMatched.add(matchedSlotKey);
+        }
         StructInfo structInfo = structs.get(receiverType.baseType);
         if (structInfo == null || structInfo.swapFieldName == null) {
             throw new CompilerException("type", stmt.file, stmt.line,
@@ -15583,7 +15641,7 @@ public class TypeChecker {
         } finally {
             lockClosedLoopScope = savedLockClosedScope;
         }
-        if (substitution == null && lockRetryContinuesSeen > retriesBefore && !isGhostTableFunction(func)) {
+        if (substitution == null && lockRetryContinuesSeen > retriesBefore && !isGhostTableFunction(func) && !synthesizingGlueBody) {
             throw new CompilerException("type", closedCase.file, closedCase.line,
                     "a 'match @lock' that retries must say how many times: a bare 'CLOSED:{ ... continue }' would spin without a limit, which safe code does not allow -- "
                             + "write 'CLOSED:default(n)' (retry up to n times, then give up with a 'break'), or give the type an 'impl default match @lock' policy, or give up at once "
@@ -16109,7 +16167,7 @@ public class TypeChecker {
      */
     private void requireStructLockProof(StructInfo structInfo, String memberName, Token receiverNode, Scope scope,
             Token at) {
-        if (structInfo.lockFieldName == null || memberName.equals(structInfo.lockFieldName)) {
+        if (structInfo.lockFieldName == null || memberName.equals(structInfo.lockFieldName) || synthesizingGlueBody) {
             return;
         }
         String slotKey = slotKeyOf(receiverNode);
@@ -18262,7 +18320,8 @@ public class TypeChecker {
         FuncInfo asyncFuncInfo = findTopLevelAsyncFuncInfo(callTok);
         TypeInfo paramType = asyncFuncInfo.paramTypes.isEmpty() ? null : asyncFuncInfo.paramTypes.get(0);
         boolean isVoid = calleeReturnType.baseType.equals("void");
-        TypeInfo handleType = getOrCreateAsyncHandleType(isVoid ? null : calleeReturnType, paramType, callTok);
+        TypeInfo handleType = getOrCreateAsyncHandleType(isVoid ? null : calleeReturnType, paramType, callTok,
+                "PAR".equals(callTok.asyncCallKind));
         callTok.asyncHandleStructName = handleType.baseType;
         callTok.asyncHandleCanonicalType = handleType.canonical();
         // A void "@async" function's hidden handle is never exposed to
@@ -18282,11 +18341,15 @@ public class TypeChecker {
         // so the caller-side GT_DESTRUCT BytecodeEmitter emits right
         // after it returns is always safe, void or not.
         boolean selfDestructHidden = isVoid && "PAR".equals(callTok.asyncCallKind);
+        boolean lockedHandle = !isVoid && "PAR".equals(callTok.asyncCallKind);
         String trampolineName = "__trampoline_" + asyncFuncInfo.mangledName
-                + (selfDestructHidden ? "__par_fire_and_forget" : "");
+                + (selfDestructHidden ? "__par_fire_and_forget" : lockedHandle ? "__par_locked" : "");
         callTok.asyncTrampolineName = trampolineName;
         synthesizeAsyncTrampoline(asyncFuncInfo, handleType, paramType, isVoid ? null : calleeReturnType,
-                trampolineName, selfDestructHidden);
+                trampolineName, selfDestructHidden, lockedHandle);
+        if (lockedHandle) {
+            synthesizeAsyncDropHook(handleType.baseType, asyncFuncInfo.funcToken.file);
+        }
         return handleType;
     }
 
@@ -18356,6 +18419,21 @@ public class TypeChecker {
         enumTok.sub.add(nameTok);
         enumTok.childs = new ArrayList<>();
         appendSynthesizedRootToken(enumTok);
+    }
+
+    private boolean asyncGateEnumEnsured;
+
+    /** The two-variant (OPEN, CLOSED) enum behind the swap-mutex `gate` member of a `par` handle (see getOrCreateAsyncHandleType). */
+    private void ensureAsyncGateEnum() {
+        if (asyncGateEnumEnsured) {
+            return;
+        }
+        asyncGateEnumEnsured = true;
+        EnumInfo info = new EnumInfo("AsyncGate");
+        info.variants.add("OPEN");
+        info.variants.add("CLOSED");
+        enums.put("AsyncGate", info);
+        appendSynthesizedEnumRootToken("AsyncGate");
     }
 
     /** Wraps `t` in a LINE token (the shape every entry in `rootLinesRef` already has -- `emit()`'s own root walk reads `lineTok.childs.get(0)`) and appends it to the live root-list object BytecodeEmitter will later walk. */
@@ -18820,9 +18898,13 @@ public class TypeChecker {
      * field's own type has to vary per parameter type at all, unlike
      * "state"/"threadId".
      */
-    private TypeInfo getOrCreateAsyncHandleType(TypeInfo resultType, TypeInfo paramType, Token at) {
+    private TypeInfo getOrCreateAsyncHandleType(TypeInfo resultType, TypeInfo paramType, Token at, boolean locked) {
         boolean hidden = resultType == null;
-        String key = (hidden ? "void" : resultType.canonical()) + "|" + (paramType == null ? "none" : paramType.canonical());
+        // A handle that `par` hands to the caller (non-void) is a real swap-lock struct: `gate` first, every other member behind
+        // `match @lock`. `await`'s handle is compiler-internal (joined before anyone reads it) and stays a plain struct.
+        locked = locked && !hidden;
+        String key = (hidden ? "void" : resultType.canonical()) + "|" + (paramType == null ? "none" : paramType.canonical())
+                + (locked ? "|par" : "");
         TypeInfo cached = asyncHandleTypesByResultCanonical.get(key);
         if (cached != null) {
             return cached;
@@ -18850,6 +18932,14 @@ public class TypeChecker {
         String structName = "AsyncHandle" + Integer.toHexString(key.hashCode() & 0xFFFFFFF);
 
         StructInfo si = new StructInfo(structName);
+        if (locked) {
+            ensureAsyncGateEnum();
+            si.members.put("gate", new TypeInfo(null, "mut", "AsyncGate").withAtomic(true));
+            si.publicMembers.add("gate");
+            si.lockFieldName = "gate";
+            si.lockVariants = new ArrayList<>(List.of("OPEN"));
+            si.swapFieldName = "gate";
+        }
         if (!hidden) {
             ensureAsyncStateEnum();
             si.members.put("state", new TypeInfo(null, "mut", "AsyncState"));
@@ -18921,6 +19011,12 @@ public class TypeChecker {
             bodyLine.childs.add(returnTok);
             Token methodTok = new Token(TokenType.KEYWORD, "func", at.line, at.file);
             methodTok.decorators = new ArrayList<>();
+            if (locked) {
+                Token.Decorator lockDec = new Token.Decorator("lock", new ArrayList<>(), new ArrayList<>(), at.line, at.file);
+                lockDec.lockFieldName = "gate";
+                lockDec.lockVariants = new ArrayList<>(List.of("OPEN"));
+                methodTok.decorators.add(lockDec);
+            }
             methodTok.childs = new ArrayList<>();
             methodTok.childs.add(bodyLine);
 
@@ -18950,6 +19046,9 @@ public class TypeChecker {
             // synthesis first.
             implInfo.isPublic = true;
             implInfo.methods.put("resolve", resolveFunc);
+            if (locked) {
+                resolveFunc.enclosingImpl = implInfo; // lets the method's own `@lock(match self.gate : OPEN)` grant its body the proof
+            }
             implsByConcreteType.computeIfAbsent(structName, k -> new ArrayList<>()).add(implInfo);
 
             Token implTok = new Token(TokenType.KEYWORD, "impl", at.line, at.file);
@@ -19007,6 +19106,9 @@ public class TypeChecker {
         op.left.resolvedType = result.canonical();
         return result;
     }
+
+    /** True while the body of a compiler-written par/await glue function (trampoline, drop hook) is being checked: such code is trusted, so it may touch a locked handle's members outside `match @lock` and retry the writer's lock without a bound. */
+    private boolean synthesizingGlueBody;
 
     /** Memoizes which "@async" functions already have a synthesized trampoline (one per function, never per call site or per handle type -- see synthesizeAsyncTrampoline's own doc comment). */
     private final Set<String> asyncTrampolinesSynthesized = new HashSet<>();
@@ -19075,7 +19177,7 @@ public class TypeChecker {
      * into `check()` itself.
      */
     private void synthesizeAsyncTrampoline(FuncInfo asyncFuncInfo, TypeInfo handleType, TypeInfo paramType,
-            TypeInfo resultTypeOrNull, String trampolineName, boolean selfDestructHidden) {
+            TypeInfo resultTypeOrNull, String trampolineName, boolean selfDestructHidden, boolean lockedHandle) {
         if (!asyncTrampolinesSynthesized.add(trampolineName)) {
             return; // already synthesized (either ordinarily, or for this exact self-destructing shape)
         }
@@ -19128,7 +19230,18 @@ public class TypeChecker {
                     .append("> handlePtr = handlePlain\n");
         }
         String callExpr = asyncFuncInfo.name + "(" + (hasParam ? "handlePtr.value" : "") + ")";
-        if (hasResult) {
+        if (hasResult && lockedHandle) {
+            // The caller may be polling the handle: publish result and state together while holding its lock (a reader holds the
+            // lock for a few instructions only, so this retry is short; compiler-written code may retry without a bound).
+            src.append("\t\tlet realResult = mut ").append(callExpr).append("\n");
+            src.append("\t\tmatch @lock handlePtr{\n");
+            src.append("\t\t\tOPEN:{\n");
+            src.append("\t\t\t\thandlePtr.result = realResult\n");
+            src.append("\t\t\t\thandlePtr.state = AsyncState.READY\n");
+            src.append("\t\t\t}\n");
+            src.append("\t\t\tCLOSED:{ continue }\n");
+            src.append("\t\t}\n");
+        } else if (hasResult) {
             src.append("\t\tlet realResult = mut ").append(callExpr).append("\n");
             src.append("\t\thandlePtr.result = realResult\n");
             src.append("\t\thandlePtr.state = AsyncState.READY\n");
@@ -19193,7 +19306,59 @@ public class TypeChecker {
         trampolineInfo.declOrder = Integer.MAX_VALUE;
         trampolineInfo.isPublic = false;
         functions.computeIfAbsent(trampolineInfo.name, k -> new ArrayList<>()).add(trampolineInfo);
-        checkFunctionBody(trampolineInfo);
+        boolean savedGlue = synthesizingGlueBody;
+        synthesizingGlueBody = true;
+        try {
+            checkFunctionBody(trampolineInfo);
+        } finally {
+            synthesizingGlueBody = savedGlue;
+        }
+        appendSynthesizedRootToken(funcTok);
+    }
+
+    private final Set<String> asyncDropHooksSynthesized = new HashSet<>();
+
+    /**
+     * The `@drop` hook of a `par` handle: when the handle is dropped (scope end, throw unwind, a destruct after a failed start), wait for
+     * its thread by joining it, so the handle's memory never goes away under a running thread. `threadId` is 0 when no thread was started
+     * (pthread_create failed), then there is nothing to join. Written as Caspien source like the trampoline; trusted glue code.
+     */
+    private void synthesizeAsyncDropHook(String handleStructName, String file) {
+        if (!asyncDropHooksSynthesized.add(handleStructName)) {
+            return;
+        }
+        String hookName = "__join_" + handleStructName;
+        StringBuilder src = new StringBuilder();
+        src.append("@drop\n");
+        src.append("func ").append(hookName).append("(r: ref some mut ").append(handleStructName).append(") void{\n");
+        src.append("\tunsafe extern{\n");
+        src.append("\t\tlet tid = mut r.threadId\n");
+        src.append("\t\tif tid != 0{\n");
+        src.append("\t\t\tpthread_join(tid, null)\n");
+        src.append("\t\t}\n");
+        src.append("\t}\n");
+        src.append("}\n");
+        Lexer lexer = new Lexer(src.toString(), file, file);
+        List<Token> tokens = lexer.tokenize();
+        Parser parser = new Parser();
+        List<Token> parsed = parser.parse(tokens);
+        new RpnConverter().convertLines(parsed);
+        new TreeBuilder().buildLines(parsed);
+        Token funcTok = parsed.get(0).childs.get(0);
+        markSynthesizedUnsafe(funcTok);
+        FuncInfo hookInfo = new FuncInfo();
+        hookInfo.funcToken = funcTok;
+        buildFuncInfo(funcTok, hookInfo);
+        hookInfo.declOrder = Integer.MAX_VALUE;
+        hookInfo.isPublic = false;
+        functions.computeIfAbsent(hookInfo.name, k -> new ArrayList<>()).add(hookInfo);
+        boolean savedGlue = synthesizingGlueBody;
+        synthesizingGlueBody = true;
+        try {
+            checkFunctionBody(hookInfo);
+        } finally {
+            synthesizingGlueBody = savedGlue;
+        }
         appendSynthesizedRootToken(funcTok);
     }
 

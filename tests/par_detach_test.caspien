@@ -22,16 +22,24 @@ func main() void{
 	let good = mut 0
 	for n in 0..40{
 		let h = mut ? par triple(mut n)
+		let r = mut 0
 		for i in 0..100000000{
 			let ready = mut false
-			match h.state{
-				READY:{ ready = true }
-				default:{ ready = false }
+			match @lock h{
+				OPEN:{
+					match h.state{
+						READY:{
+							ready = true
+							r = h.resolve(h)
+						}
+						default:{ ready = false }
+					}
+				}
+				CLOSED:default(1000)
 			}
 			if ready{ break }
 			yield
 		}
-		let r = mut h.resolve(h)
 		if r == n * 3{ good = good + 1 }
 	}
 	if good == 40{
