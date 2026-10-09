@@ -2207,6 +2207,7 @@ public class TypeChecker {
         validateNoRefSomeStructMembers();
         validateNoRecursiveStructs();
         validateLockGuardExclusivity();
+        validateNoPointersInLockStructs();
         validateMainFunction();
         validateUnsafeBlockTags();
     }
@@ -3097,18 +3098,6 @@ public class TypeChecker {
             // not during collection, when member types aren't resolved
             // yet).
             validateLockEnumClause(lockDecorator, info, name);
-            // A lock protects what the struct holds, not what a reference inside it points to: a `ref` handed out through the lock
-            // can be used by two threads at once with nothing between them (a data race in safe code); `auto` is the same hole (a pointer to the
-            // creator's local). The struct owns its data.
-            for (Map.Entry<String, TypeInfo> member : info.members.entrySet()) {
-                String store = member.getValue().storage;
-                if ("ref".equals(store) || "auto".equals(store)) {
-                    throw new CompilerException("type", info.declTok.file, info.declTok.line,
-                            "'" + name + "' is decorated '@lock(...)', so its member '" + member.getKey() + "' cannot be '" + store + "' ("
-                                    + member.getValue().canonical() + "): a reference taken out of the lock would reach data the lock does not protect. "
-                                    + "Make the struct own its data ('owns') and refer to items by index inside the lock");
-                }
-            }
             // "when a struct is decorated with @lock, then its first
             // member must be the lock in question" -- confirmed directly.
             // info.members is the ordered list of declared members; the
@@ -7224,6 +7213,70 @@ public class TypeChecker {
      * Exception (owner's request, 5 Oct): a plain nullable `ref` member is not an edge, so a struct may hold `ref` links to
      * its own type (lists, trees, graphs); `ref some`, `owns`, `raw`, `auto`, plain and `static` members still are.
      */
+    /**
+     * A lock protects what the struct holds, not what a reference inside it points to: a `ref` or `auto` handed out through the lock
+     * can be used by two threads at once with nothing between them (a data race in safe code). So no `ref`/`auto` may appear anywhere
+     * inside a `@lock` struct: not as a member, not in a nested struct, not in a fixed or dynamic array of them, not behind an `owns`
+     * member. Checked once every struct is flattened (nested structs may be declared after the lock struct).
+     */
+    private void validateNoPointersInLockStructs() {
+        for (Map.Entry<String, StructInfo> entry : structs.entrySet()) {
+            StructInfo info = entry.getValue();
+            if (info.lockFieldName == null) {
+                continue;
+            }
+            Set<String> visiting = new HashSet<>();
+            visiting.add(entry.getKey());
+            for (Map.Entry<String, TypeInfo> member : info.members.entrySet()) {
+                String found = findLockForbiddenPointer(member.getValue(), entry.getKey() + "." + member.getKey(), visiting);
+                if (found != null) {
+                    throw new CompilerException("type", info.declTok.file, info.declTok.line,
+                            "'" + entry.getKey() + "' is decorated '@lock(...)', so it cannot contain a 'ref' or 'auto' anywhere inside it, "
+                                    + "but '" + found + "' is one: a reference taken out of the lock would reach data the lock does not protect. "
+                                    + "Make the struct own its data ('owns') and refer to items by index inside the lock");
+                }
+            }
+        }
+    }
+
+    /** The path of the first `ref`/`auto` reachable from `t` (through nested structs, fixed arrays, dynarrays and `owns` pointees), or null. */
+    private String findLockForbiddenPointer(TypeInfo t, String path, Set<String> visiting) {
+        if (t == null) {
+            return null;
+        }
+        if ("ref".equals(t.storage) || "auto".equals(t.storage)) {
+            return path + " (" + t.canonical() + ")";
+        }
+        String base = t.baseType;
+        if (base == null) {
+            return null;
+        }
+        base = stripArrayDims(base);
+        if (base.startsWith("dynarray(") || base.startsWith("unsafe_dynarray(")) {
+            int open = base.indexOf('(');
+            int close = base.lastIndexOf(')');
+            if (close > open) {
+                return findLockForbiddenPointer(TypeInfo.parseDynArrayElementText(base.substring(open + 1, close)), path + "[]", visiting);
+            }
+            return null;
+        }
+        StructInfo inner = structs.get(base);
+        if (inner == null || !visiting.add(base)) {
+            return null;
+        }
+        try {
+            for (Map.Entry<String, TypeInfo> member : inner.members.entrySet()) {
+                String found = findLockForbiddenPointer(member.getValue(), path + "." + member.getKey(), visiting);
+                if (found != null) {
+                    return found;
+                }
+            }
+        } finally {
+            visiting.remove(base);
+        }
+        return null;
+    }
+
     private void validateNoRecursiveStructs() {
         Set<String> visited = new HashSet<>();
         Set<String> onStack = new HashSet<>();

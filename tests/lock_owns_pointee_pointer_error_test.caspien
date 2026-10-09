@@ -1,0 +1,17 @@
+// A lock struct may not own a struct that holds a ref.
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+enum Gate{ OPEN, CLOSED }
+struct Counter{@pub{ n: mut u64 }}
+struct Holder{@pub{ p: ref mut Counter }}
+@lock(match self.gate : OPEN)
+struct Slot{@pub{
+	swap gate: atomic mut Gate
+	h: owns mut Holder
+}}
+func main() void{
+}
