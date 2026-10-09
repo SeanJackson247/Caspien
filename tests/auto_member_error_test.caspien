@@ -1,0 +1,11 @@
+// A struct member cannot be an `auto` (the struct could outlive the frame it points into).
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+struct Counter{@pub{ n: mut u64 }}
+struct Holder{@pub{ p: auto mut Counter }}
+func main() void{
+}

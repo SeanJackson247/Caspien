@@ -2205,6 +2205,7 @@ public class TypeChecker {
         validateNoThrowReachableFromGhostTableFunctions();
         validateNoGuardTypeMisuse();
         validateNoRefSomeStructMembers();
+        validateNoAutoStructMembers();
         validateNoRecursiveStructs();
         validateLockGuardExclusivity();
         validateNoPointersInLockStructs();
@@ -7179,6 +7180,75 @@ public class TypeChecker {
      * uses, run once, here, after every struct has been fully
      * collected (ordering in the source never matters).
      */
+    /** True when `t` is an `auto`, or an array / dynarray of them (a pointer to a stack slot that cannot outlive its frame). */
+    private boolean typeHoldsAuto(TypeInfo t) {
+        if (t == null) {
+            return false;
+        }
+        if ("auto".equals(t.storage)) {
+            return true;
+        }
+        if (t.arrayElementType != null && typeHoldsAuto(t.arrayElementType)) {
+            return true;
+        }
+        if (t.dynArrayElementType != null && typeHoldsAuto(t.dynArrayElementType)) {
+            return true;
+        }
+        String base = t.baseType;
+        if (base == null) {
+            return false;
+        }
+        base = stripArrayDims(base);
+        if (base.startsWith("dynarray(") || base.startsWith("unsafe_dynarray(")) {
+            int open = base.indexOf('(');
+            int close = base.lastIndexOf(')');
+            return close > open && typeHoldsAuto(parseDynArrayElementTextForCheck(base.substring(open + 1, close)));
+        }
+        return false;
+    }
+
+    private TypeInfo parseDynArrayElementTextForCheck(String text) {
+        return text.startsWith("auto_") ? new TypeInfo("auto", "indeterminate", text.substring(5)) : new TypeInfo(null, "indeterminate", text);
+    }
+
+    /**
+     * `auto` points into a stack frame, so it must not be stored anywhere that can outlive that frame: a struct member (the struct can be
+     * returned, moved to the heap, or handed to another function that keeps it) is refused, and a function cannot return one
+     * (see `requireNoAutoReturn`). An `auto` parameter or local is fine.
+     */
+    private void validateNoAutoStructMembers() {
+        for (StructInfo si : structs.values()) {
+            for (Map.Entry<String, TypeInfo> member : si.members.entrySet()) {
+                if (typeHoldsAuto(member.getValue())) {
+                    throw new CompilerException("type", si.declTok.file, si.declTok.line,
+                            "'" + si.name + "'s member '" + member.getKey() + "' is an 'auto' pointer (" + member.getValue().canonical()
+                                    + ") -- an 'auto' points into a stack frame and cannot be stored in a struct, which could outlive it. "
+                                    + "Use 'ref' to an owned value instead");
+                }
+            }
+        }
+    }
+
+    /** A container (array / dynarray) of `auto`: a callee could push its own local's address into a longer-lived container. */
+    private void requireNoAutoContainer(TypeInfo t, Token where, String what) {
+        if (t != null && !"auto".equals(t.storage) && typeHoldsAuto(t)) {
+            throw new CompilerException("type", where.file, where.line,
+                    what + " has the type '" + t.canonical() + "', a container of 'auto' pointers: an 'auto' points into a stack frame, "
+                            + "and a callee could store its own local's address into a container that outlives it");
+        }
+    }
+
+    private void requireNoAutoReturn(FuncInfo f) {
+        for (int pi = 0; pi < f.paramTypes.size(); pi++) {
+            requireNoAutoContainer(f.paramTypes.get(pi), f.funcToken, "parameter '" + f.paramNames.get(pi) + "' of '" + f.name + "'");
+        }
+        if (typeHoldsAuto(f.returnType)) {
+            throw new CompilerException("type", f.funcToken.file, f.funcToken.line,
+                    "'" + f.name + "' returns an 'auto' pointer (" + f.returnType.canonical() + ") -- it would point into the stack frame "
+                            + "of the function that is returning. Return a 'ref' to an owned value, or the value itself");
+        }
+    }
+
     private void validateNoRefSomeStructMembers() {
         for (StructInfo si : structs.values()) {
             for (Map.Entry<String, TypeInfo> member : si.members.entrySet()) {
@@ -7421,6 +7491,7 @@ public class TypeChecker {
     }
 
     private void validateGuardTypeNotUsedInSignature(FuncInfo f) {
+        requireNoAutoReturn(f);
         if (isGuardType(f.returnType)) {
             throw new CompilerException("type", f.funcToken.file, f.funcToken.line,
                     "'" + f.name + "' returns '" + f.returnType.baseType + "', which implements a "
@@ -12377,6 +12448,7 @@ public class TypeChecker {
             scope.movedSlots.remove(nameTok.text);
             partlyMovedSlots.remove(nameTok.text);
             op.left.resolvedType = rhsType.canonical();
+            requireNoAutoContainer(rhsType, nameTok, "'" + nameTok.text + "'");
             markMovedIfOwned(rhsType, op.right, scope);
             return rhsType;
         }
