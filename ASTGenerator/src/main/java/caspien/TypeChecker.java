@@ -7217,7 +7217,7 @@ public class TypeChecker {
      * A lock protects what the struct holds, not what a reference inside it points to: a `ref` or `auto` handed out through the lock
      * can be used by two threads at once with nothing between them (a data race in safe code). So no `ref`/`auto` may appear anywhere
      * inside a `@lock` struct: not as a member, not in a nested struct, not in a fixed or dynamic array of them, not behind an `owns`
-     * member. Checked once every struct is flattened (nested structs may be declared after the lock struct).
+     * member, and not in any struct that implements an interface-typed member's interface. Checked once every struct is flattened (nested structs may be declared after the lock struct).
      */
     private void validateNoPointersInLockStructs() {
         for (Map.Entry<String, StructInfo> entry : structs.entrySet()) {
@@ -7257,6 +7257,21 @@ public class TypeChecker {
             int close = base.lastIndexOf(')');
             if (close > open) {
                 return findLockForbiddenPointer(TypeInfo.parseDynArrayElementText(base.substring(open + 1, close)), path + "[]", visiting);
+            }
+            return null;
+        }
+        if (interfaces.containsKey(base)) {
+            // an interface-typed value can hold any implementer, so every struct that implements it counts (whole program)
+            for (List<ImplInfo> implList : implsByConcreteType.values()) {
+                for (ImplInfo impl : implList) {
+                    if (base.equals(impl.interfaceName)) {
+                        String found = findLockForbiddenPointer(new TypeInfo(null, "imut", impl.concreteName),
+                                path + "<" + impl.concreteName + ">", visiting);
+                        if (found != null) {
+                            return found;
+                        }
+                    }
+                }
             }
             return null;
         }
