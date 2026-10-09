@@ -1979,7 +1979,7 @@ one function, so very large generated test programs are better split into severa
 |---|---|
 | `libc.caspien` | `extern` bindings for the C functions the rest builds on (`printf`, `malloc`, `memcpy`, `fgets`, ...). Calling one needs `unsafe extern{`. |
 | `print.caspien` | `print(x)` and `println(x)` for text, `u8`..`u64`, `s8`..`s64`, `f32`/`f64` (`%g`), `bool` (`true`/`false`) and `char`: each wraps one libc call, so the caller needs no `unsafe`. Output goes to stdout. |
-| `print_string.caspien` | `print(s)` / `println(s)` for a `String` (a plain `ref`; null prints nothing). A separate file because `String` allocates, so it needs the `gt_*` runtime. |
+| `print_string.caspien` | `print(s)` / `println(s)` for a `String` (a plain `ref`; null prints `null`). A separate file because `String` allocates, so it needs the `gt_*` runtime. |
 | `dynamic_array.caspien` | `DynamicArray<T>`: `pushBack`, `popBack`, `pushFront`, `popFront`, `get`, `set`, and `...Ptr` twins for struct elements. |
 | `hash_map.caspien` | `HashMap<T>`: `set`, `get`, `contains`; open addressing, starting capacity rounded up to a power of two, grows by doubling at 70% load. |
 | `string.caspien` | `String`: a growable byte string with `concat`, `appendChar`, `sub`, `charAt`, `setCharAt`, `firstIndexOf`. |

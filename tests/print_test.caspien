@@ -81,5 +81,7 @@ func main() imut s32{
 	println(false)
 	println('Z')
 	println(7)
+	let:<ref imut String> none = null
+	println(none)
 	return 0
 }
