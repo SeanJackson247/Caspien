@@ -7214,6 +7214,96 @@ public class TypeChecker {
      * its own type (lists, trees, graphs); `ref some`, `owns`, `raw`, `auto`, plain and `static` members still are.
      */
     /**
+     * Whether the assignment target `a.b.c` / `a.items[i]` lies inside a swap-lock struct: some step of the path reads a member
+     * of a struct that has a `swap` mutex field.
+     */
+    private TypeInfo declaredTypeIncludingGlobals(Token node, Scope scope) {
+        if (node.type == TokenType.VARREF && scope.lookup(node.text) == null) {
+            return globals.get(node.text);
+        }
+        if (node.type == TokenType.OPERATOR && ".".equals(node.text) && node.right != null && node.right.type == TokenType.VARREF) {
+            TypeInfo l = declaredTypeIncludingGlobals(node.left, scope);
+            StructInfo si = l == null ? null : structs.get(l.baseType);
+            return si == null ? null : si.members.get(node.right.text);
+        }
+        return lookupDeclaredTypeStructurally(node, scope);
+    }
+
+    private boolean assignsInsideSwapLockStruct(Token target, Scope scope) {
+        Token cur = target;
+        while (cur != null && cur.type == TokenType.OPERATOR && (".".equals(cur.text) || "LOOKUP".equals(cur.text)) && cur.left != null) {
+            if (".".equals(cur.text)) {
+                TypeInfo holder = declaredTypeIncludingGlobals(cur.left, scope);
+                if (holder != null && holder.baseType != null) {
+                    StructInfo si = structs.get(holder.baseType);
+                    if (si != null && si.swapFieldName != null) {
+                        return true;
+                    }
+                }
+            }
+            cur = cur.left;
+        }
+        return false;
+    }
+
+    /**
+     * An owning value that enters a swap-lock struct must be a fresh allocation: `null`, `new ...`, `dyn(...)` or `clone(...)`, with
+     * no owned variable moved into it. A variable moved in could still have `ref`s taken before the move (ids stay valid), and a
+     * thread using such a ref would reach the data with no lock (a data race in safe code). Use `clone(x)` to copy an existing value in.
+     */
+    private void requireFreshIntoSwapLock(Token rhs, String verb, String targetText) {
+        Token v = rhs;
+        while (true) {
+            if (v.type == TokenType.DELINEATOR && "(".equals(v.text) && !v.childs.isEmpty()) {
+                v = v.childs.get(0);
+            } else if (v.type == TokenType.OPERATOR && v.unary && ("mut".equals(v.text) || "imut".equals(v.text)) && v.left != null) {
+                v = v.left;
+            } else if (v.type == TokenType.KEYWORD && "try".equals(v.text) && !v.isTryBlock && v.sub != null && !v.sub.isEmpty()) {
+                v = v.sub.get(0);
+            } else {
+                break;
+            }
+        }
+        boolean fresh = v.type == TokenType.NULL
+                || (v.type == TokenType.OPERATOR && v.unary && "new".equals(v.text))
+                || (v.type == TokenType.OPERATOR && "CALL".equals(v.text) && v.left != null && v.left.type == TokenType.VARREF
+                        && ("dyn".equals(v.left.text) || "clone".equals(v.left.text)));
+        if (!fresh || containsMoveSource(v)) {
+            throw new CompilerException("type", rhs.file, rhs.line,
+                    "a value " + verb + " the lock struct ('" + targetText + "') must be a fresh allocation: 'null', 'new ...', 'dyn(...)' or "
+                            + "'clone(...)', with no owned variable moved into it. A 'ref' taken before the move would still reach the data "
+                            + "without the lock. Copy an existing value in with 'clone(x)'");
+        }
+    }
+
+    private boolean containsMoveSource(Token t) {
+        if (t == null) {
+            return false;
+        }
+        if (t.isOwnershipMoveSource) {
+            return true;
+        }
+        if (containsMoveSource(t.left) || containsMoveSource(t.right)) {
+            return true;
+        }
+        if (t.childs != null) {
+            for (Token c : t.childs) {
+                if (containsMoveSource(c)) {
+                    return true;
+                }
+            }
+        }
+        if (t.sub != null) {
+            for (Token c : t.sub) {
+                if (containsMoveSource(c)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
      * A lock protects what the struct holds, not what a reference inside it points to: a `ref` or `auto` handed out through the lock
      * can be used by two threads at once with nothing between them (a data race in safe code). So no `ref`/`auto` may appear anywhere
      * inside a `@lock` struct: not as a member, not in a nested struct, not in a fixed or dynamic array of them, not behind an `owns`
@@ -12397,6 +12487,9 @@ public class TypeChecker {
             op.left.inlineOwnsStruct = leftType.baseType;
         }
         markMovedIfOwned(leftType, op.right, scope);
+        if (typeOwnsMemory(leftType, new HashSet<>()) && assignsInsideSwapLockStruct(op.left, scope)) {
+            requireFreshIntoSwapLock(op.right, "assigned into", String.valueOf(memberPathRoot(op.left)));
+        }
         // Return the target's own type, not the assigned value's -- these
         // differ when the value was 'null' assigned into a pointer slot,
         // and the target's real type is what should propagate from here.
@@ -17820,6 +17913,9 @@ public class TypeChecker {
             assignNode.resolvedType = declaredType.canonical();
             assignNode.left.resolvedType = declaredType.canonical();
             markMovedIfOwned(declaredType, assignNode.right, scope);
+            if (structInfo.swapFieldName != null && typeOwnsMemory(declaredType, new HashSet<>())) {
+                requireFreshIntoSwapLock(assignNode.right, "used to build", structName);
+            }
             if (memberName.equals(structInfo.lockFieldName)) {
                 lockFieldValueNode = assignNode.right;
             }

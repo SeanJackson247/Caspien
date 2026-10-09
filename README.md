@@ -1436,6 +1436,7 @@ match @lock counter{
 ```
 
 A lock struct cannot contain a `ref` or `auto` anywhere inside it (direct members, nested structs, arrays, dynamic arrays, behind `owns`): a reference taken out of the lock would reach data the lock does not protect. Let the struct own its data (`owns`) and refer to items by index inside the lock.
+An `owns` value that goes into a swap-lock struct (a member, a nested member, an element, or a struct-literal field) must be a fresh allocation: `null`, `new ...`, `dyn(...)` or `clone(...)`, with no owned variable moved into it. A `ref` taken before a move would stay valid and reach the data without the lock. To put an existing value in, write `slot.item = ? clone(x)`.
 
 A method can require the lock too: `@lock(match self.gate : OPEN)` on a method means the caller must already
 be inside the matching `match @lock`, and the standard library uses the same decorator on

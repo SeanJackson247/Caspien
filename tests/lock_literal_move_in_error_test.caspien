@@ -1,0 +1,19 @@
+// A swap-lock struct literal may not move an owned variable into an owns member either (same hole as assignment).
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+enum Gate{ OPEN, CLOSED }
+struct Counter{@pub{ n: mut u64 }}
+@lock(match self.gate : OPEN)
+struct Slot{@pub{
+	swap gate: atomic mut Gate
+	owned: owns mut Counter
+}}
+func main() void{
+	?catch(e){ return }
+	let c = mut ? new Counter{n= 7}
+	let s = mut ? new Slot{gate= Gate.OPEN, owned= c}
+}

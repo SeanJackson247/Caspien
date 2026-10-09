@@ -1,0 +1,30 @@
+// A variable moved into a `new` that is stored in a swap-lock struct is the same hole.
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+enum Gate{ OPEN, CLOSED }
+struct Counter{@pub{ n: mut u64 }}
+struct Wrap{@pub{ c: owns mut Counter }}
+@lock(match self.gate : OPEN)
+struct Slot{@pub{
+	swap gate: atomic mut Gate
+	owned: owns mut Counter
+	wrap: owns mut Wrap
+}}
+let static slot = mut Slot{gate= Gate.OPEN, owned= null, wrap= null}
+@throws
+func make() owns some mut Counter{
+	?catch(e){ throw e }
+	return ? new Counter{n= 1}
+}
+func main() void{
+	?catch(e){ return }
+	let c = mut ? new Counter{n= 7}
+	match @lock slot{
+		OPEN:{ slot.wrap = ? new Wrap{c= c} }
+		CLOSED:default(1000)
+	}
+}

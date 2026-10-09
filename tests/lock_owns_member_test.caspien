@@ -1,7 +1,9 @@
-// A lock struct may own what it protects: an owns member moved in and out under the lock (nothing keeps an alias).
+// A lock struct may own what it protects. Only a fresh allocation goes in (`clone(c)`, `new ...`, `null`), so no earlier `ref` can alias it;
+// the value can be moved back out under the lock.
 // Expected output (model: lock_owns_member_test.py):
 // PASS moved in and out 7
 // PASS slot empty again 0
+// PASS fresh new inside 9
 import "../stdlib/libc.caspien"
 import "../stdlib/gt_init.caspien"
 import "../stdlib/gt_register.caspien"
@@ -23,7 +25,7 @@ func main() void{
 	?catch(e){ return }
 	let c = mut ? new Counter{n= 7}
 	match @lock slot{
-		OPEN:{ slot.owned = mut c }
+		OPEN:{ slot.owned = ? clone(c) }          // a copy goes in; c stays here
 		CLOSED:default(1000)
 	}
 	let back = mut 0
@@ -39,4 +41,15 @@ func main() void{
 	}
 	report("moved in and out", back)
 	report("slot empty again", 0)
+
+	let fresh = mut 0
+	match @lock slot{
+		OPEN:{
+			slot.owned = ? new Counter{n= 9}
+			match Some(slot.owned){ fresh = slot.owned.n }
+			taken = mut slot.owned          // out again, so the local frees it (a static never drops what it owns)
+		}
+		CLOSED:default(1000)
+	}
+	report("fresh new inside", fresh)
 }
