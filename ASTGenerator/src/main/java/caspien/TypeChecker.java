@@ -19666,6 +19666,21 @@ public class TypeChecker {
                     "'auto' requires an addressable variable (or a struct member access chain rooted "
                             + "in one), not a literal or a freshly-computed value");
         }
+        if (storage.equals("auto")) {
+            // `auto` is a pointer to the CALLER's stack slot. A static or global lives for the whole program and is shared between
+            // threads, so a pointer to it (or into a swap-lock static's members) would carry shared memory out of its lock.
+            Token root = op.left;
+            while (root != null && ((root.type == TokenType.OPERATOR && ".".equals(root.text) && root.left != null)
+                    || (root.type == TokenType.DELINEATOR && "(".equals(root.text) && !root.childs.isEmpty()))) {
+                root = root.type == TokenType.OPERATOR ? root.left : root.childs.get(0);
+            }
+            if (root != null && root.type == TokenType.VARREF
+                    && (scope.isStatic(root.text) || (scope.lookup(root.text) == null && globals.containsKey(root.text)))) {
+                throw new CompilerException("type", op.left.file, op.left.line,
+                        "'auto' cannot point at the static or global '" + root.text + "': it is shared memory, and a pointer to it "
+                                + "would reach it without its lock. Take the value inside the lock instead");
+            }
+        }
         TypeInfo operandType = resolveExprType(op.left, scope, func);
         // "raw x"/"ref x"/"auto x"/"static x" is a freshly-constructed
         // value (the address itself), same as a literal, a struct

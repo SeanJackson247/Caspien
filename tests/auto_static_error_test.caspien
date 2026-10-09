@@ -1,0 +1,24 @@
+// `auto` may not point at a static or into a swap-lock static: the pointer would carry shared memory out of its lock (it also miscompiled).
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+enum Gate{ OPEN, CLOSED }
+struct Counter{@pub{ n: mut u64 }}
+@lock(match self.gate : OPEN)
+struct Slot{@pub{
+	swap gate: atomic mut Gate
+	inner: mut Counter
+}}
+let static slot = mut Slot{gate= Gate.OPEN, inner= mut Counter{n= 0}}
+func main() void{
+	match @lock slot{
+		OPEN:{
+			let mine = mut auto slot.inner
+			mine.n = mine.n + 1
+		}
+		CLOSED:default(1000)
+	}
+}
