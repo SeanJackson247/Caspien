@@ -635,7 +635,6 @@ public class GenericsExpander {
 
         Token clone = deepClone(template);
         clone.sub.set(0, renamedCopy(clone.sub.get(0), mangled));
-        clone.wasGenericTemplate = true;
         clone.pendingGenericBoundChecks = buildPendingBoundChecks(template, argNames);
         clone.typeParams = null;
         clone.typeParamBounds = null;

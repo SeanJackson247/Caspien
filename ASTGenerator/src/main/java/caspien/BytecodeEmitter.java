@@ -2726,17 +2726,6 @@ public class BytecodeEmitter {
                 case "match":
                     emitMatchChain(stmt);
                     return;
-                case "lock":
-                    // "lock EXPR{...}" -- EXPR.lock() / body / EXPR.
-                    // unlock(), with the unlock() call also guaranteed
-                    // on every return/break inside the body (each
-                    // already carries its own unlockOnExit, emitted at
-                    // its own emitReturn/emitBreak site).
-                    emitExpr(stmt.lockAcquireCall);
-                    emitBlock(stmt.childs);
-                    emitDestructList(stmt.destructOnExit, stmt);
-                    emitUnlockList(stmt.unlockOnExit, stmt);
-                    return;
                 case "unsafe":
                 case "safe":
                     // "These blocks are not reflected in the bytecode

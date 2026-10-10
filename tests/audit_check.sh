@@ -16,7 +16,7 @@ grep -q 'unsafe unaudited {   UNAUDITED; it actually needs: assume deref extern 
 grep -q '^stdlib/gt/gt_init.caspien:[0-9]*  unsafe extern {' a.txt || fail "stdlib blocks not listed"
 grep -q 'not a block): let a = mut unsafe dyn' a.txt || fail "unsafe dyn expression not listed"
 grep -q '^# unaudited blocks: 1' a.txt || fail "summary: unaudited count"
-grep -q '^## your code: 25 blocks, 2 other uses' a.txt || fail "summary: your code count"
+grep -q '^## your code: 22 blocks, 2 other uses' a.txt || fail "summary: your code count"
 java Compiler -i docs/examples/19_unsafe_tags.caspien --audit-no-stdlib >b.txt 2>/dev/null || fail "--audit-no-stdlib"
 grep -q '^## standard library: 16 blocks, 0 other uses (not listed' b.txt || fail "stdlib section should be counted but not listed"
 grep -q '^stdlib/' b.txt && fail "--audit-no-stdlib listed stdlib blocks"

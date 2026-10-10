@@ -1762,21 +1762,8 @@ public class Parser {
             }
 
             if (isLockStatementStart(tokens)) {
-                // "lock EXPR{...}" / "match @lock EXPR{...}" -- "lock"
-                // is deliberately never a reserved KEYWORD at the lexer
-                // level (unlike "atomic"), since it already collides
-                // heavily with the pre-existing, ordinary "@guard"
-                // method-call spelling (".lock()"/".unlock()", a real
-                // function named "lock" declared via "func lock(...)",
-                // an interface's own bare "lock(params) returnType;"
-                // signature) -- reserving it outright broke every one
-                // of those. Detected purely structurally instead, the
-                // identical "no type information needed" reasoning
-                // "match"'s own case-match form already relies on: a
-                // bare VARREF "lock" immediately followed by anything
-                // other than "(" (which would mean an ordinary call to
-                // a variable/function actually named "lock"), ending in
-                // a trailing "{" block.
+                // "match @lock EXPR{...}" (a plain "lock EXPR{...}" is rejected inside isLockStatementStart). "lock" is
+                // deliberately never a reserved KEYWORD at the lexer level; the form is detected structurally.
                 int[] consumed = new int[1];
                 Token gathered = gatherLockStatement(lines, i, consumed);
                 result.add(wrapAsLine(gathered));
@@ -2505,29 +2492,27 @@ public class Parser {
                     "'lock match' has been renamed -- write 'match @lock EXPR{...}'");
         }
         Token last = tokens.get(tokens.size() - 1);
-        return last.type == TokenType.DELINEATOR && last.text.equals("{");
+        if (last.type == TokenType.DELINEATOR && last.text.equals("{")) {
+            throw new CompilerException("parse", first.file, first.line,
+                    "the 'lock x{...}' statement has been removed (with '@guard'); use 'match @lock x{...}', "
+                            + "or an owned value whose '@drop' hook unlocks");
+        }
+        return false;
     }
 
     private Token gatherLockStatement(List<Token> lines, int startIndex, int[] consumedOut) {
         List<Token> lockTokens = lines.get(startIndex).childs;
         Token lockTok = lockTokens.get(0);
         Token blockTok = requireTrailingBlock(lockTokens, lockTok);
-        boolean isLockMatch = lockTok.type == TokenType.KEYWORD && lockTok.text.equals("match");
-        int conditionStart = isLockMatch ? 3 : 1;
+        int conditionStart = 3;
         List<Token> condition = new ArrayList<>(lockTokens.subList(conditionStart, lockTokens.indexOf(blockTok)));
 
         Token gathered = new Token(TokenType.KEYWORD, "lock", lockTok.line, lockTok.file);
         gathered.sub = condition;
         gathered.decorators = lockTok.decorators;
         gathered.pinnedComments = lockTok.pinnedComments;
-
-        if (isLockMatch) {
-            gathered.isCaseMatch = true;
-            gathered.childs = gatherMatchCases(blockTok.childs, true);
-        } else {
-            blockTok.childs = gatherKeywordBlocks(blockTok.childs, false);
-            gathered.childs = blockTok.childs;
-        }
+        gathered.isCaseMatch = true;
+        gathered.childs = gatherMatchCases(blockTok.childs, true);
         consumedOut[0] = 1;
         return gathered;
     }

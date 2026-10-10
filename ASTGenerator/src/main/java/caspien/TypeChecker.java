@@ -61,7 +61,7 @@ public class TypeChecker {
 
     /** `unsafe` reasons that cannot free memory by themselves; a block with only these keeps the alive proofs (see the 'unsafe' statement case). */
     private static final Set<String> NON_FREEING_UNSAFE_TAGS = new HashSet<>(Arrays.asList(
-            "memcopy", "raw", "deref", "clone", "global", "loop", "atomic", "guard", "assume"));
+            "memcopy", "raw", "deref", "clone", "global", "loop", "atomic", "assume"));
 
     public TypeChecker(CompilerConfig config) {
         this.config = config;
@@ -1139,7 +1139,7 @@ public class TypeChecker {
      *  `unaudited` is the catch-all: a block that names it (alone) is accepted whatever it needs, and says nothing about why; the stdlib may never use it. */
     static final Set<String> UNSAFE_TAGS = new java.util.LinkedHashSet<>(Arrays.asList(
             "extern", "memcopy", "raw", "deref", "clone", "global", "loop", "udyn", "udyn:owns",
-            "assume", "call", "asm", "async", "guard", "atomic", "file", "unaudited"));
+            "assume", "call", "asm", "async", "atomic", "file", "unaudited"));
 
     /** One written `unsafe ...{` block: what it declares, and (unioned over every time it is checked, e.g. per generic instantiation) what it really used. */
     private static class UnsafeBlockRecord {
@@ -1431,23 +1431,10 @@ public class TypeChecker {
          */
         final boolean suspendsSelfRecursion;
         /**
-         * "@lock ... @unlock ... enforce that access to the internal
-         * type only happens between lock and unlock," confirmed
-         * directly -- function-bound, confirmed directly ("yes so my
-         * thinking would be function bound"): every guard-typed
-         * global/static's name currently in the "locked" state, shared
-         * by reference across every child scope of one function
-         * (created once at function entry, same reasoning as
-         * movedSlots), and never inherited from a caller -- a function
-         * always starts with every guard unlocked, regardless of what
-         * any caller did.
-         */
-        final Set<String> lockedGuardSlots;
-        /**
          * "When an owns value leaves scope, we need it to be deleted,"
          * confirmed directly -- the 'owns'-typed slots declared directly
          * in *this* exact lexical scope, in declaration order, never
-         * shared or inherited (unlike movedSlots/lockedGuardSlots)
+         * shared or inherited (unlike movedSlots)
          * because destruction is fundamentally per-block, not
          * function-wide: a fresh List<> every time a scope is
          * constructed. Populated by checkAssign's 'let' branch (for
@@ -1540,7 +1527,6 @@ public class TypeChecker {
             this.currentSafety = (parent != null) ? parent.currentSafety : "indeterminate";
             this.activeMatchPatterns = (parent != null) ? parent.activeMatchPatterns : Collections.emptyList();
             this.suspendsSelfRecursion = parent != null && parent.suspendsSelfRecursion;
-            this.lockedGuardSlots = (parent != null) ? parent.lockedGuardSlots : new HashSet<>();
             this.functionRootScope = (parent != null) ? parent.functionRootScope : this;
             this.loopBoundaryScope = (parent != null) ? parent.loopBoundaryScope : null;
             this.tryBlockBoundaryScope = (parent != null) ? parent.tryBlockBoundaryScope : null;
@@ -1554,7 +1540,6 @@ public class TypeChecker {
             this.currentSafety = (parent != null) ? parent.currentSafety : "indeterminate";
             this.activeMatchPatterns = (parent != null) ? parent.activeMatchPatterns : Collections.emptyList();
             this.suspendsSelfRecursion = parent != null && parent.suspendsSelfRecursion;
-            this.lockedGuardSlots = (parent != null) ? parent.lockedGuardSlots : new HashSet<>();
             this.functionRootScope = (parent != null) ? parent.functionRootScope : this;
             this.loopBoundaryScope = (parent != null) ? parent.loopBoundaryScope : null;
             this.tryBlockBoundaryScope = (parent != null) ? parent.tryBlockBoundaryScope : null;
@@ -1568,7 +1553,6 @@ public class TypeChecker {
             this.currentSafety = currentSafetyOverride;
             this.activeMatchPatterns = (parent != null) ? parent.activeMatchPatterns : Collections.emptyList();
             this.suspendsSelfRecursion = parent != null && parent.suspendsSelfRecursion;
-            this.lockedGuardSlots = (parent != null) ? parent.lockedGuardSlots : new HashSet<>();
             this.functionRootScope = (parent != null) ? parent.functionRootScope : this;
             this.loopBoundaryScope = (parent != null) ? parent.loopBoundaryScope : null;
             this.tryBlockBoundaryScope = (parent != null) ? parent.tryBlockBoundaryScope : null;
@@ -1583,7 +1567,6 @@ public class TypeChecker {
             this.activeMatchPatterns = extendedMatchPatterns;
             ProofKills.stamp(extendedMatchPatterns);
             this.suspendsSelfRecursion = (parent != null && parent.suspendsSelfRecursion) || suspendsSelfRecursionOverride;
-            this.lockedGuardSlots = (parent != null) ? parent.lockedGuardSlots : new HashSet<>();
             this.functionRootScope = (parent != null) ? parent.functionRootScope : this;
             this.loopBoundaryScope = (parent != null) ? parent.loopBoundaryScope : null;
             this.tryBlockBoundaryScope = (parent != null) ? parent.tryBlockBoundaryScope : null;
@@ -1611,7 +1594,6 @@ public class TypeChecker {
             this.activeMatchPatterns = extendedMatchPatterns;
             ProofKills.stamp(extendedMatchPatterns);
             this.suspendsSelfRecursion = (parent != null && parent.suspendsSelfRecursion) || suspendsSelfRecursionOverride;
-            this.lockedGuardSlots = (parent != null) ? parent.lockedGuardSlots : new HashSet<>();
             this.functionRootScope = (parent != null) ? parent.functionRootScope : this;
             this.loopBoundaryScope = (parent != null) ? parent.loopBoundaryScope : null;
             this.tryBlockBoundaryScope = (parent != null) ? parent.tryBlockBoundaryScope : null;
@@ -1625,7 +1607,6 @@ public class TypeChecker {
             this.currentSafety = (parent != null) ? parent.currentSafety : "indeterminate";
             this.activeMatchPatterns = (parent != null) ? parent.activeMatchPatterns : Collections.emptyList();
             this.suspendsSelfRecursion = parent != null && parent.suspendsSelfRecursion;
-            this.lockedGuardSlots = (parent != null) ? parent.lockedGuardSlots : new HashSet<>();
             this.functionRootScope = (parent != null) ? parent.functionRootScope : this;
             this.loopBoundaryScope = isNewLoopBoundary ? this : ((parent != null) ? parent.loopBoundaryScope : null);
             this.tryBlockBoundaryScope = (parent != null) ? parent.tryBlockBoundaryScope : null;
@@ -1639,7 +1620,6 @@ public class TypeChecker {
             this.currentSafety = (parent != null) ? parent.currentSafety : "indeterminate";
             this.activeMatchPatterns = (parent != null) ? parent.activeMatchPatterns : Collections.emptyList();
             this.suspendsSelfRecursion = parent != null && parent.suspendsSelfRecursion;
-            this.lockedGuardSlots = (parent != null) ? parent.lockedGuardSlots : new HashSet<>();
             this.functionRootScope = (parent != null) ? parent.functionRootScope : this;
             this.loopBoundaryScope = isNewLoopBoundary ? this : ((parent != null) ? parent.loopBoundaryScope : null);
             this.tryBlockBoundaryScope = (parent != null) ? parent.tryBlockBoundaryScope : null;
@@ -1660,7 +1640,6 @@ public class TypeChecker {
             this.currentSafety = (parent != null) ? parent.currentSafety : "indeterminate";
             this.activeMatchPatterns = (parent != null) ? parent.activeMatchPatterns : Collections.emptyList();
             this.suspendsSelfRecursion = parent != null && parent.suspendsSelfRecursion;
-            this.lockedGuardSlots = (parent != null) ? parent.lockedGuardSlots : new HashSet<>();
             this.functionRootScope = (parent != null) ? parent.functionRootScope : this;
             this.loopBoundaryScope = (parent != null) ? parent.loopBoundaryScope : null;
             this.tryBlockBoundaryScope = (parent != null) ? parent.tryBlockBoundaryScope : null;
@@ -1683,7 +1662,6 @@ public class TypeChecker {
             this.currentSafety = (parent != null) ? parent.currentSafety : "indeterminate";
             this.activeMatchPatterns = (parent != null) ? parent.activeMatchPatterns : Collections.emptyList();
             this.suspendsSelfRecursion = parent != null && parent.suspendsSelfRecursion;
-            this.lockedGuardSlots = (parent != null) ? parent.lockedGuardSlots : new HashSet<>();
             this.functionRootScope = (parent != null) ? parent.functionRootScope : this;
             this.loopBoundaryScope = (parent != null) ? parent.loopBoundaryScope : null;
             this.tryBlockBoundaryScope = (parent != null) ? parent.tryBlockBoundaryScope : null;
@@ -1709,7 +1687,6 @@ public class TypeChecker {
             this.currentSafety = (parent != null) ? parent.currentSafety : "indeterminate";
             this.activeMatchPatterns = (parent != null) ? parent.activeMatchPatterns : Collections.emptyList();
             this.suspendsSelfRecursion = parent != null && parent.suspendsSelfRecursion;
-            this.lockedGuardSlots = (parent != null) ? parent.lockedGuardSlots : new HashSet<>();
             this.functionRootScope = (parent != null) ? parent.functionRootScope : this;
             this.loopBoundaryScope = (parent != null) ? parent.loopBoundaryScope : null;
             this.tryBlockBoundaryScope = this;
@@ -2267,47 +2244,13 @@ public class TypeChecker {
         checkDynArrayForLoopResizeSafety();
         checkNoRecursion();
         validateNoThrowReachableFromGhostTableFunctions();
-        validateNoGuardTypeMisuse();
+        validateNoAutoReturns();
         validateNoRefSomeStructMembers();
         validateNoAutoStructMembers();
         validateNoRecursiveStructs();
-        validateLockGuardExclusivity();
         validateNoPointersInLockStructs();
         validateMainFunction();
         validateUnsafeBlockTags();
-    }
-
-    /**
-     * "I would feel like we should ban @lock() on a @guard struct. The
-     * struct should be either a guard or a lock - but not both,"
-     * confirmed directly -- checked once, here, after every struct is
-     * fully flattened (so `StructInfo.lockFieldName` is known) *and*
-     * every impl is fully collected (so `isGuardType` -- which reads
-     * `implsByConcreteType` -- is reliable), rather than at
-     * flattenStruct time, when impls may not all be collected yet.
-     * Checked in both directions independently, not assumed to be the
-     * same question: a struct carrying the struct-level
-     * "@lock(match self.x : X)" decorator can never also implement a
-     * "@guard" interface, and a struct implementing "@guard" can never
-     * also carry that decorator -- the same statement, but each impl
-     * block is its own, separate place either fact could be true, so
-     * both are walked explicitly.
-     */
-    private void validateLockGuardExclusivity() {
-        for (Map.Entry<String, StructInfo> entry : structs.entrySet()) {
-            String name = entry.getKey();
-            StructInfo info = entry.getValue();
-            if (info.lockFieldName == null) {
-                continue;
-            }
-            TypeInfo asType = new TypeInfo(null, "imut", name);
-            if (isGuardType(asType)) {
-                throw new CompilerException("type", info.declTok.file, info.declTok.line,
-                        "'" + name + "' carries a struct-level '@lock(match self." + info.lockFieldName
-                                + " : ...)' decorator and also implements a '@guard' interface -- a struct "
-                                + "must be either a guard or a lock, never both");
-            }
-        }
     }
 
     /**
@@ -3503,50 +3446,7 @@ public class TypeChecker {
             }
             info.ownMethods.put(methodName, sig);
         }
-        if (getDecorator(t.decorators, "guard") != null) {
-            validateGuardInterface(t, name, info);
-        }
         interfaces.put(name, info);
-    }
-
-    /**
-     * "@guard says this is on a generic struct [interface, corrected
-     * mid-thread], compiler error if it isnt. There will be a @lock and
-     * a @unlock method implemented for this struct [interface]. And its
-     * a compiler error if there isn't," confirmed directly, refined
-     * across a full design conversation to: `@guard` marks a *generic*
-     * interface declaration, requiring exactly one `@lock`-decorated and
-     * exactly one `@unlock`-decorated method among its own declarations.
-     */
-    private void validateGuardInterface(Token t, String name, InterfaceInfo info) {
-        // "typeParams == null" alone can't distinguish "never generic at
-        // all" from "generic, and now correctly monomorphized" -- by the
-        // time this runs, GenericsExpander has already cleared
-        // typeParams on every monomorphized copy (since it's now
-        // concrete), so `wasGenericTemplate` (set right before that
-        // clearing happens) is what actually answers "was this declared
-        // generic in the source."
-        if ((t.typeParams == null || t.typeParams.isEmpty()) && !t.wasGenericTemplate) {
-            throw new CompilerException("type", t.file, t.line,
-                    "'@guard' requires '" + name + "' to be a generic interface (it must be able to guard "
-                            + "any type)");
-        }
-        int lockCount = 0;
-        int unlockCount = 0;
-        for (RawMethodSig sig : info.ownMethods.values()) {
-            if (getDecorator(sig.decorators, "lock") != null) {
-                lockCount++;
-            }
-            if (getDecorator(sig.decorators, "unlock") != null) {
-                unlockCount++;
-            }
-        }
-        if (lockCount != 1 || unlockCount != 1) {
-            throw new CompilerException("type", t.file, t.line,
-                    "'@guard' interface '" + name + "' must declare exactly one '@lock' method and exactly "
-                            + "one '@unlock' method, found " + lockCount + " and " + unlockCount
-                            + " respectively");
-        }
     }
 
     /**
@@ -4016,7 +3916,6 @@ public class TypeChecker {
                 }
                 validateExactSignatureMatch(ifaceSig, entry.getValue(), concreteName, interfaceName);
                 validateOverridesRealizes(entry.getValue(), ifaceSig, concreteName, interfaceName);
-                validateGuardMethodDecorators(entry.getValue(), ifaceSig, concreteName, interfaceName);
                 requireIdenticalLocks(entry.getValue(), ifaceSig, concreteName, interfaceName);
                 requirePublicInterfaceImpl(entry.getValue(), methodName, concreteName, interfaceName);
             }
@@ -4031,7 +3930,6 @@ public class TypeChecker {
                 }
                 validateExactSignatureMatch(ifaceSig, entry.getValue(), concreteName, interfaceName);
                 validateOverridesRealizes(entry.getValue(), ifaceSig, concreteName, interfaceName);
-                validateGuardMethodDecorators(entry.getValue(), ifaceSig, concreteName, interfaceName);
                 requireIdenticalLocks(entry.getValue(), ifaceSig, concreteName, interfaceName);
                 requirePublicInterfaceImpl(entry.getValue(), methodName, concreteName, interfaceName);
             }
@@ -4652,29 +4550,6 @@ public class TypeChecker {
     }
 
     /**
-     * "The methods must also be similar tagged if they are to produce
-     * new behaviour in the compiler," confirmed directly -- matching
-     * `validateOverridesRealizes`'s exact pattern: the interface
-     * declares which method is `@lock`/`@unlock`, and the concrete
-     * method fulfilling it must carry the identical tag, checked
-     * directly rather than inferred from the method's name (any name is
-     * allowed; only the decorator itself is what the compiler
-     * recognizes).
-     */
-    private void validateGuardMethodDecorators(FuncInfo implMethod, RawMethodSig interfaceMethod,
-            String concreteName, String interfaceName) {
-        for (String tag : new String[]{"lock", "unlock"}) {
-            boolean interfaceHasTag = getDecorator(interfaceMethod.decorators, tag) != null;
-            boolean implHasTag = getDecorator(implMethod.funcToken.decorators, tag) != null;
-            if (interfaceHasTag != implHasTag) {
-                throw new CompilerException("type", implMethod.funcToken.file, implMethod.funcToken.line,
-                        "'" + concreteName + "'s '" + implMethod.name + "' must" + (interfaceHasTag ? "" : " not")
-                                + " be labelled '@" + tag + "' to match '" + interfaceName + "'s declaration");
-            }
-        }
-    }
-
-    /**
      * "I want to be able to use lock as a qualified decorator on any
      * method within an impl, impl for an interface or as part of a
      * signature, as in an interface... its required on implementation,"
@@ -4795,7 +4670,6 @@ public class TypeChecker {
         return null;
     }
 
-    /** True if `t`'s base type implements any interface decorated `@guard`. */
     /**
      * "Globals and static locals in safe code can't be @guards -- only
      * @locks with atomic swap locks and atomic primitives," confirmed
@@ -4812,24 +4686,6 @@ public class TypeChecker {
     private boolean isSwapLockStructType(TypeInfo t) {
         StructInfo structInfo = structs.get(t.baseType);
         return structInfo != null && structInfo.swapFieldName != null;
-    }
-
-    /** True if `t`'s base type implements any interface decorated `@guard`. */
-    private boolean isGuardType(TypeInfo t) {
-        List<ImplInfo> impls = implsByConcreteType.get(t.baseType);
-        if (impls == null) {
-            return false;
-        }
-        for (ImplInfo impl : impls) {
-            if (impl.interfaceName == null) {
-                continue; // a bare impl (no interface) can never be a guard
-            }
-            InterfaceInfo ii = interfaces.get(impl.interfaceName);
-            if (ii != null && getDecorator(ii.declTok.decorators, "guard") != null) {
-                return true;
-            }
-        }
-        return false;
     }
 
     /**
@@ -4853,35 +4709,11 @@ public class TypeChecker {
     }
 
     /**
-     * "We can just permit the use of non-guarded globals and statics in
-     * unsafe code, but not everywhere else," confirmed directly -- a
-     * global or static local can only be touched (read or written)
-     * outside `unsafe` code when its own type is one of the two
-     * mechanisms confirmed safe enough to grant that exemption.
-     *
-     * "Globals and static locals in safe code can't be @guards, only
-     * @locks with atomic swap locks and atomic primitives. Until I can
-     * figure out a way to incorporate the various mutex methodologies
-     * in a safe way, its not safe to allow the user to do whatever,"
-     * confirmed directly -- a real, deliberate *narrowing* of this
-     * exemption, not a new restriction from scratch: `@guard`'s own
-     * lock()/unlock() discipline (including its "guaranteed unwind"
-     * `lock EXPR{...}` block form) previously granted this exemption
-     * too, on the theory that the discipline itself made unmediated
-     * access safe. That theory is now considered unproven -- `@guard`
-     * remains a fully implemented, usable language feature (its own
-     * lock/unlock discipline, `lock EXPR{...}`, interface conformance,
-     * mutual exclusivity with the struct-level `@lock`, all completely
-     * unchanged), but a `@guard`-typed global/static is no longer,
-     * on its own, exempt from needing `unsafe` to touch at all --
-     * exactly the same restriction any other non-exempt global/static
-     * already has. Only two mechanisms grant the exemption now:
-     * `isAtomic` (an atomic primitive, always global/static-only by
-     * construction) and `isSwapLockStructType` (a struct declaring a
-     * 'swap'-tagged atomic mutex-state field, touched through its own
-     * `match @lock` statement).
+     * A global or static local can only be touched (read or written) outside `unsafe` code when its own type is an atomic primitive
+     * (`isAtomic`, and then only from `unsafe atomic{}`) or a struct declaring a 'swap'-tagged atomic mutex-state field
+     * (`isSwapLockStructType`, touched through its own `match @lock`).
      */
-    private void requireGuardOrUnsafe(TypeInfo t, String name, Scope scope, Token at) {
+    private void requireSharedStateOrUnsafe(TypeInfo t, String name, Scope scope, Token at) {
         if (t.isAtomic) {
             // an atomic primitive shared between threads: reading, writing or swapping it is one atomic step, but whether a program built from
             // such steps is correct is not something the compiler can check, so every access is an audited `unsafe atomic{...}` use; the only
@@ -4896,8 +4728,7 @@ public class TypeChecker {
         if (!isSwapLockStructType(t) && !unsafeBypass(scope, "global")) {
             throw new CompilerException("type", at.file, at.line,
                     "'" + name + "' is a global/static variable -- in safe code, only a struct with a 'swap'-tagged atomic mutex-state "
-                            + "field (touched through its own 'match @lock') can be accessed without 'unsafe' code; '@guard' alone no "
-                            + "longer grants that exemption");
+                            + "field (touched through its own 'match @lock') can be accessed without 'unsafe' code");
         }
     }
 
@@ -4963,7 +4794,7 @@ public class TypeChecker {
     private static final Set<String> FUNC_BASE_DECORATORS = new HashSet<>(Arrays.asList(
             "pure", "recursive", "inline", "call_convention", "reads", "writes",
             "gt_init", "gt_alive_check", "gt_destruct", "gt_register", "gt_moved", "gt_ref_id", "gt_ref_resolve", "par_call", "await_call", "sleep",
-            "lock", "unlock", "async", "pub", "with_tick", "tick", "event_loop", "make_safe_args", "throws", "drop", "fs_root", "fs_unsafe", "non"));
+            "lock", "async", "pub", "with_tick", "tick", "event_loop", "make_safe_args", "throws", "drop", "fs_root", "fs_unsafe", "non"));
     /** `@drop` marks a struct's cleanup function: the drop glue calls it with the struct's address just before the struct (an `owns` value) is freed, so a handle type can close what it holds. It takes exactly one parameter, `ref some mut S` for a struct S, returns void and does not throw. */
     private void requireDropHookShape(Token t, FuncInfo info, List<Token> returnTypeTokens) {
         TypeInfo p = info.paramTypes.size() == 1 ? info.paramTypes.get(0) : null;
@@ -5056,7 +4887,7 @@ public class TypeChecker {
 
     private static final Set<String> STRUCT_DECORATORS = new HashSet<>(Arrays.asList("unpadded", "untyped", "pub", "lock"));
     private static final Set<String> ENUM_DECORATORS = new HashSet<>(Arrays.asList("non_exhaustive"));
-    private static final Set<String> INTERFACE_DECORATORS = new HashSet<>(Arrays.asList("guard", "pub"));
+    private static final Set<String> INTERFACE_DECORATORS = new HashSet<>(Arrays.asList("pub"));
     /** "structs, func definitions, struct members, interfaces, impls and impl members," confirmed directly -- 'impl' itself never validated any decorator at all before this; "pub" is genuinely its first one. */
     private static final Set<String> IMPL_DECORATORS = new HashSet<>(Arrays.asList("pub"));
     private static final Set<String> LIBRARY_DECORATORS = new HashSet<>(Arrays.asList("pub"));
@@ -5187,6 +5018,11 @@ public class TypeChecker {
             if (!allowedNames.contains(d.name)) {
                 throw new CompilerException("type", d.file, d.line,
                         "'@" + d.name + "' is not a valid decorator on " + contextDesc);
+            }
+            if (d.name.equals("lock") && d.lockFieldName == null && d.lockInParams == null) {
+                throw new CompilerException("type", d.file, d.line,
+                        "a bare '@lock' method decorator has been removed (it belonged to '@guard'); write '@lock(match self.field : VARIANT)' "
+                                + "or '@lock(match x in self.field)'");
             }
             validateDecoratorArgShape(d);
         }
@@ -7190,47 +7026,6 @@ public class TypeChecker {
     }
 
     /**
-     * "Passing them from a func, return it from a func or put it in a
-     * struct" -- all three confirmed directly as forbidden, alongside
-     * the local-'let' restriction already checked inline in checkAssign
-     * (that one's checkable immediately, since resolveExprType has
-     * already run; these three can't be, since a plain function's own
-     * param/return types are resolved in pass 1 -- collectFunc/
-     * collectImpl -- where a struct declared *later* in the source and
-     * only *then* made into a guard type via its own 'impl' block might
-     * not have registered as one yet. Run once, here, after every
-     * declaration (struct/interface/impl/func) has been fully
-     * collected, so ordering in the source never matters.
-     */
-    private void validateNoGuardTypeMisuse() {
-        for (List<FuncInfo> overloads : functions.values()) {
-            for (FuncInfo f : overloads) {
-                validateGuardTypeNotUsedInSignature(f);
-            }
-        }
-        for (List<ImplInfo> impls : implsByConcreteType.values()) {
-            for (ImplInfo impl : impls) {
-                for (FuncInfo f : impl.methods.values()) {
-                    validateGuardTypeNotUsedInSignature(f);
-                }
-                for (FuncInfo f : impl.staticMethods.values()) {
-                    validateGuardTypeNotUsedInSignature(f);
-                }
-            }
-        }
-        for (StructInfo si : structs.values()) {
-            for (Map.Entry<String, TypeInfo> member : si.members.entrySet()) {
-                if (isGuardType(member.getValue())) {
-                    throw new CompilerException("type", si.declTok.file, si.declTok.line,
-                            "'" + si.name + "'s member '" + member.getKey() + "' implements a '@guard' "
-                                    + "interface -- it can only ever be the type of a global or 'let "
-                                    + "static' local, never a struct member");
-                }
-            }
-        }
-    }
-
-    /**
      * "ref some" as a struct member's own type is rejected here,
      * narrowly -- 'ref some' remains completely legal everywhere else
      * (function parameters/self-receivers, local variables, return
@@ -7554,20 +7349,21 @@ public class TypeChecker {
         onStack.remove(structName);
     }
 
-    private void validateGuardTypeNotUsedInSignature(FuncInfo f) {
-        requireNoAutoReturn(f);
-        if (isGuardType(f.returnType)) {
-            throw new CompilerException("type", f.funcToken.file, f.funcToken.line,
-                    "'" + f.name + "' returns '" + f.returnType.baseType + "', which implements a "
-                            + "'@guard' interface -- it can only ever be the type of a global or 'let "
-                            + "static' local, never a return type");
+    /** Runs `requireNoAutoReturn` over every function and impl method, once all declarations are collected. */
+    private void validateNoAutoReturns() {
+        for (List<FuncInfo> overloads : functions.values()) {
+            for (FuncInfo f : overloads) {
+                requireNoAutoReturn(f);
+            }
         }
-        for (int i = 0; i < f.paramTypes.size(); i++) {
-            if (isGuardType(f.paramTypes.get(i))) {
-                throw new CompilerException("type", f.funcToken.file, f.funcToken.line,
-                        "'" + f.name + "'s parameter '" + f.paramNames.get(i) + "' implements a '@guard' "
-                                + "interface -- it can only ever be the type of a global or 'let static' "
-                                + "local, never a parameter");
+        for (List<ImplInfo> impls : implsByConcreteType.values()) {
+            for (ImplInfo impl : impls) {
+                for (FuncInfo f : impl.methods.values()) {
+                    requireNoAutoReturn(f);
+                }
+                for (FuncInfo f : impl.staticMethods.values()) {
+                    requireNoAutoReturn(f);
+                }
             }
         }
     }
@@ -8968,8 +8764,7 @@ public class TypeChecker {
                         checkLockMatchStatement(stmt, scope, func, insideLoop);
                         return;
                     }
-                    checkLockBlock(stmt, scope, func, insideLoop);
-                    return;
+                    throw new CompilerException("type", stmt.file, stmt.line, "internal error: a 'lock' statement that is not 'match @lock'");
                 case "assume":
                     // Only the block form ever reaches here -- the
                     // no-block form ("assume match expr;", `!stmt.
@@ -11850,7 +11645,7 @@ public class TypeChecker {
                         ProofKills.refSomeRead(node, scope.activeMatchPatterns);
                     }
                     if (scope.isStatic(node.text)) {
-                        requireGuardOrUnsafe(t, node.text, scope, node);
+                        requireSharedStateOrUnsafe(t, node.text, scope, node);
                         requirePureDoesNotReadMutableStatic(t, node.text, func, node);
                     }
                     if (t.literalValue != null || t.literalElements != null || t.floatLiteral || t.floatArrayLiteral) {
@@ -11893,7 +11688,7 @@ public class TypeChecker {
                         }
                     }
                     TypeInfo globalType = globals.get(node.text);
-                    requireGuardOrUnsafe(globalType, node.text, scope, node);
+                    requireSharedStateOrUnsafe(globalType, node.text, scope, node);
                     requirePureDoesNotReadMutableStatic(globalType, node.text, func, node);
                     return globalType;
                 }
@@ -12476,22 +12271,8 @@ public class TypeChecker {
             } else {
                 requireConcreteMutability(rhsType, op.right);
             }
-            // "You could make local copies, with let"... "hmm no your
-            // right, your right, no need for a let copy" -- confirmed
-            // directly, reversed mid-conversation: a guard type is
-            // singular by construction, never duplicated. Checked only
-            // here, not on the 'let static' branch above -- "guards
-            // would be for globals, static locals," confirmed directly,
-            // so a 'let static' local is the one place besides an actual
-            // global a guard type is allowed to be.
-            if (isGuardType(rhsType)) {
-                throw new CompilerException("type", op.left.file, op.left.line,
-                        "'" + rhsType.baseType + "' implements a '@guard' interface -- it can only ever "
-                                + "be the type of a global or 'let static' local, never a plain 'let'");
-            }
             // "I should have the same degree of safety as my Mutexes,"
-            // confirmed directly -- mirrors the '@guard' restriction
-            // just above exactly: a *direct* atomic declaration
+            // confirmed directly -- a *direct* atomic declaration
             // ("let x = atomic '!'") can only ever be a global or
             // 'let static' local, never a plain 'let'. An expression
             // that merely *resolves* to an already-atomic value (e.g.
@@ -15215,7 +14996,6 @@ public class TypeChecker {
                     requireRecursiveCallReturnSiteOnly(func, op);
                     requireRecursiveCallWithinProof(func, op, argNodes, argTypes, scope);
                 }
-                checkGuardLockDiscipline(receiverType, candidate, dotNode.left, scope, op);
                 requireMethodLockProofs(candidate, dotNode.left, argNodes, scope, op);
                 requirePureCalleeIfPure(func, candidate, op);
                 callEdges.add(new CallEdge(func, candidate, scope.currentSafety, op, scope.insideDynArrayForLoopBody));
@@ -15328,7 +15108,6 @@ public class TypeChecker {
         // harmless, cheap to compute unconditionally otherwise.
         op.destructOnExit = collectOwnsToDestruct(scope, scope.functionRootScope, null);
         op.unlockOnExit = collectLockReleasesToBoundary(scope, scope.functionRootScope);
-        checkGuardLockDiscipline(receiverType, candidate, dotNode.left, scope, op);
         requireMethodLockProofs(candidate, dotNode.left, argNodes, scope, op);
         requirePureCalleeIfPure(func, candidate, op);
         callEdges.add(new CallEdge(func, candidate, scope.currentSafety, op, scope.insideDynArrayForLoopBody));
@@ -15619,163 +15398,6 @@ public class TypeChecker {
                 "'" + concreteName + "' has no static method '" + methodName
                         + "' matching argument types (" + describeTypes(argTypes) + ")"
                         + unavailableNote(concreteName + "." + methodName));
-    }
-
-    /**
-     * "Enforce that access to the internal type only happens between
-     * lock and unlock," confirmed directly, function-bound, confirmed
-     * directly -- calling '@lock' while already locked, or '@unlock'
-     * while not locked, or anything else on a guard while unlocked, are
-     * all rejected. "Everyone [else requires the lock]... the only way
-     * for it to be safe would be to make sure it was read only,"
-     * confirmed directly -- no third "doesn't need the lock" decorator
-     * exists, deliberately. "Unsafe code... permit the use of non-
-     * guarded globals and statics... but not everywhere else,"
-     * confirmed directly for the *type* restriction -- extended here,
-     * consistently with how 'unsafe' is the universal escape hatch
-     * everywhere else this session, to also exempt 'unsafe' code from
-     * the lock-state discipline itself.
-     */
-    private void checkGuardLockDiscipline(TypeInfo receiverType, FuncInfo candidate, Token receiverNode,
-            Scope scope, Token at) {
-        if (!isGuardType(receiverType)) {
-            return;
-        }
-        boolean isLockMethod = getDecorator(candidate.funcToken.decorators, "lock") != null;
-        boolean isUnlockMethod = getDecorator(candidate.funcToken.decorators, "unlock") != null;
-        // "So bare lock() and unlock() could be unsafe, and then we have
-        // lock unwinding guaranteed with the lock{} block like you
-        // said, and we just dont guarantee the unwinding for safe
-        // code," confirmed directly -- a bare, user-written call to a
-        // @lock/@unlock-tagged method is only ever legal from 'unsafe'
-        // code; the one exemption is the compiler's own synthesized
-        // lock()/unlock() calls a "lock EXPR{...}" block's own lowering
-        // builds, which are never held to this (they're exactly the
-        // guaranteed-unwind-safe alternative this restriction exists to
-        // steer ordinary, safe code toward).
-        if ((isLockMethod || isUnlockMethod) && !at.isCompilerSynthesizedLockCall && !unsafeBypass(scope, "guard")) {
-            throw new CompilerException("type", at.file, at.line,
-                    "a bare call to '" + candidate.name + "' requires 'unsafe' code -- use a "
-                            + "'lock EXPR{...}' block instead for a guaranteed-unwind-safe way in");
-        }
-        if ("unsafe".equals(scope.currentSafety)) {
-            // Unsafe code is not held to the lock discipline (and does not track it); a method that needs the guard locked
-            // and finds it not proven locked is what the 'lock' tag is for.
-            if (!isLockMethod && !isUnlockMethod) {
-                String unsafeSlotKey = slotKeyOf(receiverNode);
-                if (unsafeSlotKey == null || !scope.lockedGuardSlots.contains(unsafeSlotKey)) {
-                    unsafeBypass(scope, "guard");
-                }
-            }
-            return;
-        }
-        String slotKey = slotKeyOf(receiverNode);
-        boolean currentlyLocked = slotKey != null && scope.lockedGuardSlots.contains(slotKey);
-        if (isLockMethod) {
-            if (currentlyLocked) {
-                throw new CompilerException("type", at.file, at.line,
-                        "'" + candidate.name + "' called while already locked -- this is almost certainly "
-                                + "a mistake in the code");
-            }
-            if (slotKey != null) {
-                scope.lockedGuardSlots.add(slotKey);
-            }
-        } else if (isUnlockMethod) {
-            if (!currentlyLocked) {
-                throw new CompilerException("type", at.file, at.line,
-                        "'" + candidate.name + "' called without a matching lock");
-            }
-            scope.lockedGuardSlots.remove(slotKey);
-        } else if (!currentlyLocked) {
-            throw new CompilerException("type", at.file, at.line,
-                    "'" + candidate.name + "' requires the guard to be locked first");
-        }
-    }
-
-    /**
-     * Builds a compiler-synthesized, real "CALL" node for
-     * "receiver.methodName()" -- the exact Token shape ordinary,
-     * parsed source for a method call already has (a "." operator node
-     * as .left, an empty-args "(" delineator as .right), so it flows
-     * through the completely ordinary checkCall/checkMethodCall
-     * machinery for free (overload resolution, CallEdge recording,
-     * @guard lock-discipline proof injection, purity checks, all of
-     * it) -- the same "AST-rewrite into a real, ordinary-machinery-
-     * checked node" precedent "for match Some(i) in x{...}" already
-     * established, rather than hand-building a bytecode shape
-     * directly. `receiver` is reused by reference, never cloned --
-     * the same "reuse the original, already-resolved token directly"
-     * precedent an enum-match's own if-chain lowering already set.
-     */
-    private Token buildSynthesizedGuardCall(Token receiver, String methodName, Token at) {
-        Token methodNameTok = new Token(TokenType.VARREF, methodName, at.line, at.file);
-        Token dotNode = new Token(TokenType.OPERATOR, ".", at.line, at.file);
-        dotNode.left = receiver;
-        dotNode.right = methodNameTok;
-        Token argsDelineator = new Token(TokenType.DELINEATOR, "(", at.line, at.file);
-        argsDelineator.childs = new ArrayList<>();
-        Token call = new Token(TokenType.OPERATOR, "CALL", at.line, at.file);
-        call.left = dotNode;
-        call.right = argsDelineator;
-        call.isCompilerSynthesizedLockCall = true;
-        return call;
-    }
-
-    /**
-     * "lock EXPR{...}" -- compiles to EXPR.lock() / body / EXPR.unlock(),
-     * with the unlock() call guaranteed on every exit path (natural end,
-     * return, break), confirmed directly. Requires EXPR to be
-     * @guard-typed (the same, singular kind of value a bare
-     * "myGuard.lock()" already only ever makes sense on -- see
-     * isGuardType's own doc for why this can only ever be a bare
-     * reference to a global/static). The lock()/unlock() calls
-     * themselves are built once, here, as real, synthesized CALL nodes
-     * (buildSynthesizedGuardCall) and routed through the ordinary
-     * checkMethodCall machinery -- this is what injects the same
-     * "locked" proof (Scope.lockedGuardSlots) an ordinary, bare
-     * `.lock()` call already does, for free, with no separate proof-
-     * injection code needed here at all.
-     */
-    private void checkLockBlock(Token stmt, Scope scope, FuncInfo func, boolean insideLoop) {
-        Token receiver = stmt.sub.get(0);
-        TypeInfo targetType = resolveExprType(receiver, scope, func);
-        if (!isGuardType(targetType)) {
-            throw new CompilerException("type", stmt.file, stmt.line,
-                    "'lock' requires a '@guard'-typed value, found '" + targetType.canonical() + "'");
-        }
-        Token lockCall = buildSynthesizedGuardCall(receiver, "lock", stmt);
-        resolveExprType(lockCall, scope, func);
-        stmt.lockAcquireCall = lockCall;
-        Token unlockCall = buildSynthesizedGuardCall(receiver, "unlock", stmt);
-        Scope bodyScope = new Scope(scope, unlockCall);
-        checkLinesInScope(stmt.childs, bodyScope, func, insideLoop);
-        // Resolved against the *enclosing* scope, not the body's own --
-        // this is the block's own exit, conceptually already past its
-        // body -- so the type-check of the unlock() call itself (and
-        // the lockedGuardSlots removal it performs as a side effect)
-        // reflects "after the block," matching every natural-end
-        // exit's own placement in the emitted bytecode.
-        resolveExprType(unlockCall, scope, func);
-        stmt.unlockOnExit = collectNaturalEndUnlock(stmt.childs, unlockCall);
-        // Same reasoning as "unsafe"/"safe"'s own natural-end destruct
-        // -- any 'owns' local declared directly inside this block's own
-        // body still needs its ordinary GT_DESTRUCT at the block's
-        // natural end, independent of (and in addition to) the guard's
-        // own unlock() above.
-        stmt.destructOnExit = collectNaturalEndDestruct(stmt.childs, bodyScope, bodyScope);
-    }
-
-    /** The unlock-release counterpart of collectNaturalEndDestruct -- see its own doc for why a block whose last statement is already 'return'/'break' owes nothing further here (that statement's own unlockOnExit already covers it). */
-    private List<Token> collectNaturalEndUnlock(List<Token> lines, Token unlockCall) {
-        List<Token> result = new ArrayList<>();
-        if (!lines.isEmpty()) {
-            Token last = lines.get(lines.size() - 1).childs.get(0);
-            if (last.type == TokenType.KEYWORD && (last.text.equals("return") || last.text.equals("break"))) {
-                return result;
-            }
-        }
-        result.add(unlockCall);
-        return result;
     }
 
     /**
@@ -16553,23 +16175,6 @@ public class TypeChecker {
                             + structInfo.lockFieldName + " : ...)')"
                             + (structInfo.swapFieldName != null && structInfo.swapFieldName.equals(structInfo.lockFieldName)
                                     ? " -- or take the lock: 'match @lock " + slotDisplay + "{ OPEN:{...} CLOSED:{...} }'" : ""));
-        }
-    }
-
-    private void requireGuardCurrentlyLocked(TypeInfo receiverType, Token receiverNode, Scope scope, Token at) {
-        checkOrBypass(scope, "guard", () -> requireGuardCurrentlyLockedImpl(receiverType, receiverNode, scope, at));
-    }
-
-    private void requireGuardCurrentlyLockedImpl(TypeInfo receiverType, Token receiverNode, Scope scope, Token at) {
-        if (!isGuardType(receiverType)) {
-            return;
-        }
-        String slotKey = slotKeyOf(receiverNode);
-        boolean currentlyLocked = slotKey != null && scope.lockedGuardSlots.contains(slotKey);
-        if (!currentlyLocked) {
-            throw new CompilerException("type", at.file, at.line,
-                    "accessing a member of a '@guard'-protected value requires the guard to be locked "
-                            + "first");
         }
     }
 
@@ -18030,7 +17635,6 @@ public class TypeChecker {
                             + "prove this) -- only an inline (no-storage), 'auto', or 'some'-tagged "
                             + "struct value supports '.' without one");
         }
-        requireGuardCurrentlyLocked(leftType, op.left, scope, op);
         if (op.right.type != TokenType.VARREF) {
             throw new CompilerException("type", op.right.file, op.right.line,
                     "expected a member name after '.'");
@@ -19035,7 +18639,7 @@ public class TypeChecker {
                 if (sig.isStatic) {
                     continue; // no receiver -- "TypeName.method()" is already unambiguous, needs no dispatcher
                 }
-                if (getDecorator(sig.decorators, "lock") != null || getDecorator(sig.decorators, "unlock") != null) {
+                if (getDecorator(sig.decorators, "lock") != null) {
                     // A synthesized dispatcher's own case-body call
                     // ("recv.method(...)") is an ordinary call site,
                     // subject to the ordinary lock-discipline rule

@@ -91,14 +91,6 @@ final class LockNestingCheck {
             }
             return;
         }
-        if (t.type == TokenType.KEYWORD && t.text.equals("lock") && t.lockAcquireCall != null) {
-            acquire(t, held, in);
-            walk(t.sub == null || t.sub.isEmpty() ? null : t.sub.get(0), held, in);
-            for (Token c : t.childs) {
-                walk(c, true, in);
-            }
-            return;
-        }
         String waitKind = waitKindOf(t);
         if (waitKind != null) {
             if (held) {

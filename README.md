@@ -365,7 +365,6 @@ impl Greeter for B{
 - `x implements I` takes a struct-typed `x` and an interface name `I`.
 - Both are run-time tests and must be inside `match Some(...)` when `x` is a pointer, like any other use of
   the pointer.
-- `@guard` interfaces describe a lock and are covered in 3.4.
 
 A call on a value of a concrete type is a direct call. A call through an interface-typed pointer is
 dispatched at run time:
@@ -1384,7 +1383,7 @@ function it calls: the compiler rejects it and names the call chain. A holder th
 holds, which is a deadlock. With this rule a lock holder only runs code that depends on no other thread, so it always lets go. (External calls and
 `unsafe` loops inside a lock are marked `unsafe` and are not judged.)
 
-**Locks cannot be nested.** While a lock is held (the `OPEN` case of `match @lock`, or the body of a `lock x{}` block) nothing may take another one,
+**Locks cannot be nested.** While a lock is held (the `OPEN` case of `match @lock`) nothing may take another one,
 neither in the same function nor in any function it calls, however deep: the compiler rejects it and names the call chain. The lock records no owner, so taking
 the same lock again can never succeed, and two different locks taken in opposite orders by two threads deadlock; the language has no lock order, so there is no
 safe nesting to allow. Take locks one after the other, or put what must change together under one lock. The one exemption is the standard library's own lock
@@ -1415,9 +1414,21 @@ An `owns` value that goes into a swap-lock struct (a member, a nested member, an
 A method can require the lock too: `@lock(match self.gate : OPEN)` on a method means the caller must already
 be inside the matching `match @lock`, and the standard library uses the same decorator on
 `DynamicArray.get` and `set` to demand an index proof (`@lock(match i in self.backing)`). For a lock that
-is not a spin lock, `@guard` marks a generic interface with one `@lock` and one `@unlock` method (see
-`stdlib/guard.caspien`), and `lock x{ ... }` calls them around the block. A guarded value must be a global or
-`let static`, so that form needs `unsafe`.
+is not a spin lock there is no lock statement (the old `@guard` interface and `lock x{ ... }` block were removed): wrap the lock in an
+owned value whose `@drop` hook releases it, and the hook runs on every way out of the scope (end, `return`, `break`, `continue`, `throw`):
+
+```
+@drop
+func release(h: ref some mut Held) void{ /* unlock here */ }
+
+func work() mut u64{
+	?catch(e){ return 0 }
+	let h = mut ?new Held{id= 1}       // taking the lock; `release` runs when `h` goes out of scope
+	return compute()                    // ... also on this early return
+}
+```
+
+`tests/raii_unlock_test.caspien` checks every exit path.
 
 **Threads.** An `@async` function takes at most one parameter, which must fit in a register, and can only
 be called with `par` or `await`. Each call runs on its own OS thread. `await f(x)` blocks and returns the
@@ -1501,8 +1512,7 @@ in `unsafe` relaxes those checks.
 A statement-level `unsafe` block must say why it is unsafe, by naming the reasons after the keyword:
 `unsafe assume extern{`. The reasons are `extern` (a C call), `memcopy`, `raw` (making a `raw` pointer),
 `deref` and `clone` (dereferencing or cloning a `raw` pointer), `global`, `loop`, `udyn` (an unsafe dynarray of plain data) or `udyn:owns` (an unsafe dynarray whose elements own memory: the compiler only frees the block, so you destruct the elements yourself before shrinking or leaving scope), `assume` (`assume match`),
-`call` (calling a function pointer), `asm`, `async` (a pointer across an `@async` boundary), `guard` (using a
-`@guard` type without proving it locked), `atomic` (using an atomic, or touching a `swap` mutex field, outside `match @lock`) and `file` (opening a path the build's file policy has not vouched for, see 2.6). The
+`call` (calling a function pointer), `asm`, `async` (a pointer across an `@async` boundary), `atomic` (using an atomic, or touching a `swap` mutex field, outside `match @lock`) and `file` (opening a path the build's file policy has not vouched for, see 2.6). The
 compiler checks the list both ways: a block that needs a reason it does not name is an error, and so is a block
 that names one it does not need, so the line is also what you grep for. A bare `unsafe{}` is an error. The one exception is `unsafe unaudited{`: it stands for every tag at once and says nothing about why, for code nobody has audited yet. It is written alone, is just as easy to grep for, and the standard library may never use it (the compiler refuses it in any file under `stdlib/`). (A
 root-level `unsafe{}` that holds declarations is not a statement block and takes no list.)
@@ -1543,11 +1553,6 @@ unsafe asm{                                                 // asm: an inline `A
 unsafe async raw{                                           // async: a pointer crosses into an @async function
 	let pc = mut (raw cell)
 	got = mut ? await readCell(pc)
-}
-unsafe global guard{                                        // guard: a bare @lock/@unlock call (the safe form is `lock gate{ ... }`)
-	gate.lock()
-	counter += 8
-	gate.unlock()
 }
 unsafe atomic{ m.lockState swap St.CLOSED }                   // atomic: touch an atomic by hand: a swap mutex's state field, or a bare atomic variable
 unsafe unaudited{ counter = mut deref(pc) }                  // unaudited: any of the above, no reasons given (never in the stdlib)
@@ -1823,7 +1828,6 @@ target linux                 # in ===codegen.config===, was windows_gnu
 | `process.caspien` | `spawn`, `StdOut.read`, `StdIn.write`, `closeProcess`. |
 | `sleep.caspien`, `par_call.caspien`, `await_call.caspien` | The glue behind the `sleep`, `par` and `await` keywords. |
 | `event_loop*.caspien`, `make_safe_args.caspien` | The program entry points (see 1.3). |
-| `guard.caspien` | The `Guard<T>` interface for lockable types. |
 | `gt/` (also `gt_set/`, `gt_linear/`) | The ghost table that tracks live allocations (see 2.3). |
 
 The older reference documentation, including the full description of every optimisation pass, is in
@@ -2599,7 +2603,6 @@ The same decorator appears in several places. Proof locks are described in 2.4 a
 | `@lock(match self.f : OPEN)`, `f` a `swap` atomic | struct | a spin lock: the other members need `match @lock x{ OPEN:{...} }` |
 | `@lock(match self.f : V)` | method | the caller must already be inside the matching `match` |
 | `@lock(match i in self.a)` | method | the caller must hold a bounds proof for `i` (`into` for writes) |
-| `@lock`, `@unlock` | method of a `@guard` implementer | the two operations behind `lock x{ ... }` |
 
 ### D. Reading the code
 
@@ -2620,8 +2623,6 @@ is an error ("'@x' is not a valid decorator on a function"). This is the full se
 | `@overrides` | method in `impl Interface for T` | replaces a `@default` method |
 | `@lock(match self.f : OPEN)` | struct, method | the members are reachable only while the lock field `f` is held |
 | `@lock(match i in self.a)` | method | the caller must hold a bounds proof for `i` against `self.a` (`into` for writes) |
-| `@lock`, `@unlock` | method of a `@guard` implementer | the two operations behind `lock x{ ... }` |
-| `@guard` | interface | a generic interface with one `@lock` and one `@unlock` method |
 | `@untyped` | struct | no hidden class id, so no `instanceof` or `implements` |
 | `@non_exhaustive` | enum | its last variant is `default`; a `match` needs a `default` case only when some variant is not named (an error when all are) |
 | `@link_name(sym)` | `extern` | the C symbol, when the Caspien name differs |

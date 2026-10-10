@@ -154,17 +154,6 @@ public class Token {
     }
 
     /**
-     * Set by GenericsExpander on a monomorphized copy, right before it
-     * clears `typeParams` back to null (since the copy is now concrete)
-     * -- lets a later pass (TypeChecker's `@guard` validation) tell "this
-     * was never generic at all" apart from "this was generic, and has
-     * now been correctly monomorphized," which look identical
-     * (`typeParams == null`) by the time TypeChecker ever sees either
-     * one.
-     */
-    public boolean wasGenericTemplate;
-
-    /**
      * Usage-site generic type arguments, e.g. the raw token groups for
      * "Point" in "List:<Point>{...}" (expression context, base token was
      * lexed with the merged ":<" operator) or for "T" in a bare "List<T>"
@@ -1013,22 +1002,6 @@ public class Token {
      * own condition clones. Null/absent wherever nothing is owed.
      */
     public List<Token> unlockOnExit;
-
-    /**
-     * Set only on a "CALL" node TypeChecker itself builds (never parsed
-     * from real source) for the lock()/unlock() calls a "lock EXPR{...}"
-     * block's own lowering synthesizes -- the one, narrow exemption from
-     * the "a bare, user-written lock()/unlock() call requires 'unsafe'"
-     * restriction (checkGuardLockDiscipline): the block form is this
-     * language's own guaranteed-unwind-safe way in, so its own
-     * compiler-generated calls must never be held to the restriction
-     * that exists specifically to steer *user* code away from an
-     * unguaranteed bare call.
-     */
-    public boolean isCompilerSynthesizedLockCall;
-
-    /** Set by TypeChecker on a "lock" KEYWORD (block form) statement -- the synthesized, already-type-checked EXPR.lock() call BytecodeEmitter emits right at the block's own start, before its body. */
-    public Token lockAcquireCall;
 
     /**
      * Set only on the two ".field" DOT nodes `checkLockMatchStatement`

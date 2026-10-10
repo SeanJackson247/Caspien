@@ -1,0 +1,114 @@
+// Scoped unlock without `lock x{}`: an owned guard value whose `@drop` hook unlocks. The hook runs on every way out of the
+// scope that owns it (end of block, `return`, `break`, `continue`, a throw). `depth` goes up in `enter` and down in the hook, so it is 0
+// whenever no scope is open. This is the replacement idiom for the removed `@guard` / `lock x{}`.
+import "../stdlib/libc.caspien"
+import "../stdlib/gt/*"
+
+struct Held{@pub{
+	id: mut u64
+}}
+
+let static depth = mut 0
+let static unlocks = mut 0
+
+@drop
+func release(h: ref some mut Held) void{
+	unsafe global{
+		depth -= 1
+		unlocks += 1
+	}
+}
+
+func readDepth() mut u64{
+	let d = mut 0
+	unsafe global{ d = depth }
+	return d
+}
+
+func readUnlocks() mut u64{
+	let d = mut 0
+	unsafe global{ d = unlocks }
+	return d
+}
+
+@throws
+func enter() owns some mut Held{
+	?catch(e){ throw e }
+	unsafe global{ depth += 1 }
+	let h = mut ?new Held{id= 1}
+	return h
+}
+
+func check(name: static imut string, got: mut u64, want: mut u64) void{
+	unsafe extern{
+		if got == want{
+			printf("PASS %s\n", name)
+		}else{
+			printf("FAIL %s got %llu want %llu\n", name, got, want)
+		}
+	}
+	return
+}
+
+func early(flag: mut u64) mut u64{
+	?catch(e){ return 99 }
+	let seen = mut 0
+	let h = mut ?enter()
+	seen = readDepth()
+	if flag == 1{ return seen + 10 }
+	return seen
+}
+
+@throws
+func boom() void{
+	throw "boom"
+}
+
+func thrower() mut u64{
+	?catch(e){ return 1 }
+	let h = mut ?enter()
+	?boom()
+	return 0
+}
+
+func main() void{
+	?catch(e){
+		unsafe extern{ printf("FAIL unexpected throw\n") }
+		return
+	}
+	let inside = mut 0
+	if inside == 0{
+		let h = mut ?enter()
+		inside = readDepth()
+	}
+	check("depth inside scope", inside, 1)
+	check("depth after scope", readDepth(), 0)
+
+	check("early return value", early(1), 11)
+	check("depth after return", readDepth(), 0)
+	check("normal path value", early(0), 1)
+	check("depth after normal", readDepth(), 0)
+
+	let n = mut 0
+	for i in 0..5{
+		let h = mut ?enter()
+		n += 1
+		if i == 2{ break }
+	}
+	check("break count", n, 3)
+	check("depth after break", readDepth(), 0)
+
+	let m = mut 0
+	for i in 0..4{
+		let h = mut ?enter()
+		if i % 2 == 0{ continue }
+		m += 1
+	}
+	check("continue count", m, 2)
+	check("depth after continue", readDepth(), 0)
+
+	check("throw caught", thrower(), 1)
+	check("depth after throw", readDepth(), 0)
+	check("unlock count", readUnlocks(), 11)
+	unsafe extern{ printf("ALL RAII UNLOCK TESTS PASSED\n") }
+}

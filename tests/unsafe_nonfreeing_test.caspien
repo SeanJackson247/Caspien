@@ -1,4 +1,4 @@
-// An `unsafe` block whose reasons cannot free anything (memcopy, raw, deref, clone, global, loop, atomic, guard, assume) keeps the alive proofs; a ref some
+// An `unsafe` block whose reasons cannot free anything (memcopy, raw, deref, clone, global, loop, atomic, assume) keeps the alive proofs; a ref some
 // parameter stays proven after a helper that only does `unsafe memcopy raw`. Blocks with extern/call/asm/udyn/async/file/unaudited still end them
 // (unsafe_extern_kills_error_test, ref_free_unsafe_error_test).
 // Expected output (model: unsafe_nonfreeing_test.py):

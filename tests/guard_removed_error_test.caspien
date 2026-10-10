@@ -1,0 +1,14 @@
+// `@guard` was removed: an interface decorated with it must not compile.
+import "../stdlib/libc.caspien"
+
+@guard
+@pub
+interface Guard{
+	@lock
+	lock() imut void;
+	@unlock
+	unlock() imut void;
+}
+
+func main() void{
+}
