@@ -1696,7 +1696,22 @@ public class TypeChecker {
             return false;
         }
 
+        /** An `unsafe`/`safe` block is a permission marker, not a lexical scope: what it declares belongs to the nearest enclosing real scope. */
+        boolean transparent;
+
+        Scope declScope() {
+            Scope s = this;
+            while (s.transparent && s.parent != null) {
+                s = s.parent;
+            }
+            return s;
+        }
+
         void declare(String name, TypeInfo type, Token at) {
+            if (transparent && parent != null) {
+                parent.declare(name, type, at);
+                return;
+            }
             if (vars.containsKey(name)) {
                 throw new CompilerException("type", at.file, at.line,
                         "variable '" + name + "' is already declared in this scope");
@@ -8933,6 +8948,7 @@ public class TypeChecker {
                                 "'unsafe' cannot be nested inside 'safe'");
                     }
                     Scope safetyBlockScope = new Scope(scope, stmt.text);
+                    safetyBlockScope.transparent = true;
                     if (stmt.text.equals("unsafe")) {
                         if (!stmt.synthesizedUnsafe) {
                             requireNotPure(func, stmt, "an 'unsafe' block", "unsafe code can do anything the compiler cannot check, so purity could not be guaranteed");
@@ -9128,7 +9144,7 @@ public class TypeChecker {
         info.name = name;
         info.rawText = rawText;
         info.declTok = stmt;
-        scope.localAsmNames.put(name, info);
+        scope.declScope().localAsmNames.put(name, info);
     }
 
     /**
@@ -12375,9 +12391,9 @@ public class TypeChecker {
                     rhsType = rhsType.withAtomic(false);
                 }
                 scope.declare(nameTok.text, rhsType, nameTok);
-                scope.staticNames.add(nameTok.text);
+                scope.declScope().staticNames.add(nameTok.text);
                 if (op.left.isConst) {
-                    scope.constNames.add(nameTok.text);
+                    scope.declScope().constNames.add(nameTok.text);
                 }
                 scope.movedSlots.remove(nameTok.text);
             partlyMovedSlots.remove(nameTok.text);
@@ -12441,7 +12457,7 @@ public class TypeChecker {
                 ProofKills.implicit(nameTok.text, pointeeOf(rhsType));
             }
             if (op.left.isConst) {
-                scope.constNames.add(nameTok.text);
+                scope.declScope().constNames.add(nameTok.text);
             }
             // "When an owns value leaves scope, we need it to be
             // deleted" -- confirmed directly: recorded here, in
@@ -12449,7 +12465,7 @@ public class TypeChecker {
             // a GT_DESTRUCT for whenever control leaves it (naturally or
             // via an early 'return'/'break').
             if ("owns".equals(rhsType.storage) || isInlineOwningStruct(rhsType)) {
-                scope.ownsDeclaredHere.add(nameTok.text);
+                scope.declScope().ownsDeclaredHere.add(nameTok.text);
                 func.ownsLocalTypes.put(nameTok.text, rhsType);
                 if (isLockedAsyncHandle(rhsType) && !synthesizingGlueBody) {
                     fnHandleDecls.putIfAbsent(nameTok.text, nameTok);

@@ -9,13 +9,17 @@
 // answer constant-folded, on the stack path and on the register path. A bare literal operand adapts to the other operand's type.
 //
 // Each case exists in a CONSTANT form (literal operands, which constant folding may fold; narrow widths use the u8Max/s8Min-style
-// limit constants as the typed operand) and a RUNTIME form (values arriving as function arguments, atoll() results or loop
+// limit constants as the typed operand) and a RUNTIME form (values arriving as function arguments, atol() results or loop
 // variables, which nothing can fold). Prints `PASS name` / `FAIL name expected E got G` per check and a summary line. The output
 // must be identical with every optimisation switch off and on (and on both register models).
 import "../stdlib/libc.caspien"
 import "../stdlib/gt/*"
 
-extern atoll(static imut string) mut u64
+
+
+
+
+extern atol(static imut string) mut u64
 
 let static passed = mut 0
 let static failed = mut 0
@@ -1729,748 +1733,748 @@ func ct_s64() void{
 	return
 }
 
-// ---- values from atoll() and from loop variables: whole sweeps of counts, compared as one checksum each ----
+// ---- values from atol() and from loop variables: whole sweeps of counts, compared as one checksum each ----
 func sweep_u8() void{
 	unsafe extern{
-		let:<mut u8> x = mut wrap:<u8>(atoll("1"))
-		let acc = mut 0
+		let:<mut u8> x1 = mut wrap:<u8>(atol("1"))
+		let acc1 = mut 0
 		for i in 0..78{
 			let:<mut u8> c = mut wrap:<u8>(i)
-			acc = acc + wrap:<u64>(bits_left(x, c))
+			acc1 = acc1 + wrap:<u64>(bits_left(x1, c))
 		}
-		check("sweep left u8 1 (78 counts)", acc == 255)
+		check("sweep left u8 1 (78 counts)", acc1 == 255)
 	}
 	unsafe extern{
-		let:<mut u8> x = mut wrap:<u8>(atoll("255"))
-		let acc = mut 0
+		let:<mut u8> x2 = mut wrap:<u8>(atol("255"))
+		let acc2 = mut 0
 		for i in 0..78{
 			let:<mut u8> c = mut wrap:<u8>(i)
-			acc = acc + wrap:<u64>(bits_left(x, c))
+			acc2 = acc2 + wrap:<u64>(bits_left(x2, c))
 		}
-		check("sweep left u8 255 (78 counts)", acc == 1793)
+		check("sweep left u8 255 (78 counts)", acc2 == 1793)
 	}
 	unsafe extern{
-		let:<mut u8> x = mut wrap:<u8>(atoll("0"))
-		let acc = mut 0
+		let:<mut u8> x3 = mut wrap:<u8>(atol("0"))
+		let acc3 = mut 0
 		for i in 0..78{
 			let:<mut u8> c = mut wrap:<u8>(i)
-			acc = acc + wrap:<u64>(bits_left(x, c))
+			acc3 = acc3 + wrap:<u64>(bits_left(x3, c))
 		}
-		check("sweep left u8 0 (78 counts)", acc == 0)
+		check("sweep left u8 0 (78 counts)", acc3 == 0)
 	}
 	unsafe extern{
-		let:<mut u8> x = mut wrap:<u8>(atoll("170"))
-		let acc = mut 0
+		let:<mut u8> x4 = mut wrap:<u8>(atol("170"))
+		let acc4 = mut 0
 		for i in 0..78{
 			let:<mut u8> c = mut wrap:<u8>(i)
-			acc = acc + wrap:<u64>(bits_left(x, c))
+			acc4 = acc4 + wrap:<u64>(bits_left(x4, c))
 		}
-		check("sweep left u8 170 (78 counts)", acc == 854)
+		check("sweep left u8 170 (78 counts)", acc4 == 854)
 	}
 	unsafe extern{
-		let:<mut u8> x = mut wrap:<u8>(atoll("85"))
-		let acc = mut 0
+		let:<mut u8> x5 = mut wrap:<u8>(atol("85"))
+		let acc5 = mut 0
 		for i in 0..78{
 			let:<mut u8> c = mut wrap:<u8>(i)
-			acc = acc + wrap:<u64>(bits_left(x, c))
+			acc5 = acc5 + wrap:<u64>(bits_left(x5, c))
 		}
-		check("sweep left u8 85 (78 counts)", acc == 939)
+		check("sweep left u8 85 (78 counts)", acc5 == 939)
 	}
 	unsafe extern{
-		let:<mut u8> x = mut wrap:<u8>(atoll("1"))
-		let acc = mut 0
+		let:<mut u8> x6 = mut wrap:<u8>(atol("1"))
+		let acc6 = mut 0
 		for i in 0..78{
 			let:<mut u8> c = mut wrap:<u8>(i)
-			acc = acc + wrap:<u64>(bits_right(x, c))
+			acc6 = acc6 + wrap:<u64>(bits_right(x6, c))
 		}
-		check("sweep right u8 1 (78 counts)", acc == 1)
+		check("sweep right u8 1 (78 counts)", acc6 == 1)
 	}
 	unsafe extern{
-		let:<mut u8> x = mut wrap:<u8>(atoll("255"))
-		let acc = mut 0
+		let:<mut u8> x7 = mut wrap:<u8>(atol("255"))
+		let acc7 = mut 0
 		for i in 0..78{
 			let:<mut u8> c = mut wrap:<u8>(i)
-			acc = acc + wrap:<u64>(bits_right(x, c))
+			acc7 = acc7 + wrap:<u64>(bits_right(x7, c))
 		}
-		check("sweep right u8 255 (78 counts)", acc == 502)
+		check("sweep right u8 255 (78 counts)", acc7 == 502)
 	}
 	unsafe extern{
-		let:<mut u8> x = mut wrap:<u8>(atoll("0"))
-		let acc = mut 0
+		let:<mut u8> x8 = mut wrap:<u8>(atol("0"))
+		let acc8 = mut 0
 		for i in 0..78{
 			let:<mut u8> c = mut wrap:<u8>(i)
-			acc = acc + wrap:<u64>(bits_right(x, c))
+			acc8 = acc8 + wrap:<u64>(bits_right(x8, c))
 		}
-		check("sweep right u8 0 (78 counts)", acc == 0)
+		check("sweep right u8 0 (78 counts)", acc8 == 0)
 	}
 	unsafe extern{
-		let:<mut u8> x = mut wrap:<u8>(atoll("170"))
-		let acc = mut 0
+		let:<mut u8> x9 = mut wrap:<u8>(atol("170"))
+		let acc9 = mut 0
 		for i in 0..78{
 			let:<mut u8> c = mut wrap:<u8>(i)
-			acc = acc + wrap:<u64>(bits_right(x, c))
+			acc9 = acc9 + wrap:<u64>(bits_right(x9, c))
 		}
-		check("sweep right u8 170 (78 counts)", acc == 336)
+		check("sweep right u8 170 (78 counts)", acc9 == 336)
 	}
 	unsafe extern{
-		let:<mut u8> x = mut wrap:<u8>(atoll("85"))
-		let acc = mut 0
+		let:<mut u8> x10 = mut wrap:<u8>(atol("85"))
+		let acc10 = mut 0
 		for i in 0..78{
 			let:<mut u8> c = mut wrap:<u8>(i)
-			acc = acc + wrap:<u64>(bits_right(x, c))
+			acc10 = acc10 + wrap:<u64>(bits_right(x10, c))
 		}
-		check("sweep right u8 85 (78 counts)", acc == 166)
+		check("sweep right u8 85 (78 counts)", acc10 == 166)
 	}
 	return
 }
 func sweep_u16() void{
 	unsafe extern{
-		let:<mut u16> x = mut wrap:<u16>(atoll("1"))
-		let acc = mut 0
+		let:<mut u16> x11 = mut wrap:<u16>(atol("1"))
+		let acc11 = mut 0
 		for i in 0..86{
 			let:<mut u16> c = mut wrap:<u16>(i)
-			acc = acc + wrap:<u64>(bits_left(x, c))
+			acc11 = acc11 + wrap:<u64>(bits_left(x11, c))
 		}
-		check("sweep left u16 1 (86 counts)", acc == 65535)
+		check("sweep left u16 1 (86 counts)", acc11 == 65535)
 	}
 	unsafe extern{
-		let:<mut u16> x = mut wrap:<u16>(atoll("65535"))
-		let acc = mut 0
+		let:<mut u16> x12 = mut wrap:<u16>(atol("65535"))
+		let acc12 = mut 0
 		for i in 0..86{
 			let:<mut u16> c = mut wrap:<u16>(i)
-			acc = acc + wrap:<u64>(bits_left(x, c))
+			acc12 = acc12 + wrap:<u64>(bits_left(x12, c))
 		}
-		check("sweep left u16 65535 (86 counts)", acc == 983041)
+		check("sweep left u16 65535 (86 counts)", acc12 == 983041)
 	}
 	unsafe extern{
-		let:<mut u16> x = mut wrap:<u16>(atoll("0"))
-		let acc = mut 0
+		let:<mut u16> x13 = mut wrap:<u16>(atol("0"))
+		let acc13 = mut 0
 		for i in 0..86{
 			let:<mut u16> c = mut wrap:<u16>(i)
-			acc = acc + wrap:<u64>(bits_left(x, c))
+			acc13 = acc13 + wrap:<u64>(bits_left(x13, c))
 		}
-		check("sweep left u16 0 (86 counts)", acc == 0)
+		check("sweep left u16 0 (86 counts)", acc13 == 0)
 	}
 	unsafe extern{
-		let:<mut u16> x = mut wrap:<u16>(atoll("43690"))
-		let acc = mut 0
+		let:<mut u16> x14 = mut wrap:<u16>(atol("43690"))
+		let acc14 = mut 0
 		for i in 0..86{
 			let:<mut u16> c = mut wrap:<u16>(i)
-			acc = acc + wrap:<u64>(bits_left(x, c))
+			acc14 = acc14 + wrap:<u64>(bits_left(x14, c))
 		}
-		check("sweep left u16 43690 (86 counts)", acc == 480598)
+		check("sweep left u16 43690 (86 counts)", acc14 == 480598)
 	}
 	unsafe extern{
-		let:<mut u16> x = mut wrap:<u16>(atoll("21845"))
-		let acc = mut 0
+		let:<mut u16> x15 = mut wrap:<u16>(atol("21845"))
+		let acc15 = mut 0
 		for i in 0..86{
 			let:<mut u16> c = mut wrap:<u16>(i)
-			acc = acc + wrap:<u64>(bits_left(x, c))
+			acc15 = acc15 + wrap:<u64>(bits_left(x15, c))
 		}
-		check("sweep left u16 21845 (86 counts)", acc == 502443)
+		check("sweep left u16 21845 (86 counts)", acc15 == 502443)
 	}
 	unsafe extern{
-		let:<mut u16> x = mut wrap:<u16>(atoll("1"))
-		let acc = mut 0
+		let:<mut u16> x16 = mut wrap:<u16>(atol("1"))
+		let acc16 = mut 0
 		for i in 0..86{
 			let:<mut u16> c = mut wrap:<u16>(i)
-			acc = acc + wrap:<u64>(bits_right(x, c))
+			acc16 = acc16 + wrap:<u64>(bits_right(x16, c))
 		}
-		check("sweep right u16 1 (86 counts)", acc == 1)
+		check("sweep right u16 1 (86 counts)", acc16 == 1)
 	}
 	unsafe extern{
-		let:<mut u16> x = mut wrap:<u16>(atoll("65535"))
-		let acc = mut 0
+		let:<mut u16> x17 = mut wrap:<u16>(atol("65535"))
+		let acc17 = mut 0
 		for i in 0..86{
 			let:<mut u16> c = mut wrap:<u16>(i)
-			acc = acc + wrap:<u64>(bits_right(x, c))
+			acc17 = acc17 + wrap:<u64>(bits_right(x17, c))
 		}
-		check("sweep right u16 65535 (86 counts)", acc == 131054)
+		check("sweep right u16 65535 (86 counts)", acc17 == 131054)
 	}
 	unsafe extern{
-		let:<mut u16> x = mut wrap:<u16>(atoll("0"))
-		let acc = mut 0
+		let:<mut u16> x18 = mut wrap:<u16>(atol("0"))
+		let acc18 = mut 0
 		for i in 0..86{
 			let:<mut u16> c = mut wrap:<u16>(i)
-			acc = acc + wrap:<u64>(bits_right(x, c))
+			acc18 = acc18 + wrap:<u64>(bits_right(x18, c))
 		}
-		check("sweep right u16 0 (86 counts)", acc == 0)
+		check("sweep right u16 0 (86 counts)", acc18 == 0)
 	}
 	unsafe extern{
-		let:<mut u16> x = mut wrap:<u16>(atoll("43690"))
-		let acc = mut 0
+		let:<mut u16> x19 = mut wrap:<u16>(atol("43690"))
+		let acc19 = mut 0
 		for i in 0..86{
 			let:<mut u16> c = mut wrap:<u16>(i)
-			acc = acc + wrap:<u64>(bits_right(x, c))
+			acc19 = acc19 + wrap:<u64>(bits_right(x19, c))
 		}
-		check("sweep right u16 43690 (86 counts)", acc == 87372)
+		check("sweep right u16 43690 (86 counts)", acc19 == 87372)
 	}
 	unsafe extern{
-		let:<mut u16> x = mut wrap:<u16>(atoll("21845"))
-		let acc = mut 0
+		let:<mut u16> x20 = mut wrap:<u16>(atol("21845"))
+		let acc20 = mut 0
 		for i in 0..86{
 			let:<mut u16> c = mut wrap:<u16>(i)
-			acc = acc + wrap:<u64>(bits_right(x, c))
+			acc20 = acc20 + wrap:<u64>(bits_right(x20, c))
 		}
-		check("sweep right u16 21845 (86 counts)", acc == 43682)
+		check("sweep right u16 21845 (86 counts)", acc20 == 43682)
 	}
 	return
 }
 func sweep_u32() void{
 	unsafe extern{
-		let:<mut u32> x = mut wrap:<u32>(atoll("1"))
-		let acc = mut 0
+		let:<mut u32> x21 = mut wrap:<u32>(atol("1"))
+		let acc21 = mut 0
 		for i in 0..102{
 			let:<mut u32> c = mut wrap:<u32>(i)
-			acc = acc + wrap:<u64>(bits_left(x, c))
+			acc21 = acc21 + wrap:<u64>(bits_left(x21, c))
 		}
-		check("sweep left u32 1 (102 counts)", acc == 4294967295)
+		check("sweep left u32 1 (102 counts)", acc21 == 4294967295)
 	}
 	unsafe extern{
-		let:<mut u32> x = mut wrap:<u32>(atoll("4294967295"))
-		let acc = mut 0
+		let:<mut u32> x22 = mut wrap:<u32>(atol("4294967295"))
+		let acc22 = mut 0
 		for i in 0..102{
 			let:<mut u32> c = mut wrap:<u32>(i)
-			acc = acc + wrap:<u64>(bits_left(x, c))
+			acc22 = acc22 + wrap:<u64>(bits_left(x22, c))
 		}
-		check("sweep left u32 4294967295 (102 counts)", acc == 133143986177)
+		check("sweep left u32 4294967295 (102 counts)", acc22 == 133143986177)
 	}
 	unsafe extern{
-		let:<mut u32> x = mut wrap:<u32>(atoll("0"))
-		let acc = mut 0
+		let:<mut u32> x23 = mut wrap:<u32>(atol("0"))
+		let acc23 = mut 0
 		for i in 0..102{
 			let:<mut u32> c = mut wrap:<u32>(i)
-			acc = acc + wrap:<u64>(bits_left(x, c))
+			acc23 = acc23 + wrap:<u64>(bits_left(x23, c))
 		}
-		check("sweep left u32 0 (102 counts)", acc == 0)
+		check("sweep left u32 0 (102 counts)", acc23 == 0)
 	}
 	unsafe extern{
-		let:<mut u32> x = mut wrap:<u32>(atoll("2863311530"))
-		let acc = mut 0
+		let:<mut u32> x24 = mut wrap:<u32>(atol("2863311530"))
+		let acc24 = mut 0
 		for i in 0..102{
 			let:<mut u32> c = mut wrap:<u32>(i)
-			acc = acc + wrap:<u64>(bits_left(x, c))
+			acc24 = acc24 + wrap:<u64>(bits_left(x24, c))
 		}
-		check("sweep left u32 2863311530 (102 counts)", acc == 65856165206)
+		check("sweep left u32 2863311530 (102 counts)", acc24 == 65856165206)
 	}
 	unsafe extern{
-		let:<mut u32> x = mut wrap:<u32>(atoll("1431655765"))
-		let acc = mut 0
+		let:<mut u32> x25 = mut wrap:<u32>(atol("1431655765"))
+		let acc25 = mut 0
 		for i in 0..102{
 			let:<mut u32> c = mut wrap:<u32>(i)
-			acc = acc + wrap:<u64>(bits_left(x, c))
+			acc25 = acc25 + wrap:<u64>(bits_left(x25, c))
 		}
-		check("sweep left u32 1431655765 (102 counts)", acc == 67287820971)
+		check("sweep left u32 1431655765 (102 counts)", acc25 == 67287820971)
 	}
 	unsafe extern{
-		let:<mut u32> x = mut wrap:<u32>(atoll("1"))
-		let acc = mut 0
+		let:<mut u32> x26 = mut wrap:<u32>(atol("1"))
+		let acc26 = mut 0
 		for i in 0..102{
 			let:<mut u32> c = mut wrap:<u32>(i)
-			acc = acc + wrap:<u64>(bits_right(x, c))
+			acc26 = acc26 + wrap:<u64>(bits_right(x26, c))
 		}
-		check("sweep right u32 1 (102 counts)", acc == 1)
+		check("sweep right u32 1 (102 counts)", acc26 == 1)
 	}
 	unsafe extern{
-		let:<mut u32> x = mut wrap:<u32>(atoll("4294967295"))
-		let acc = mut 0
+		let:<mut u32> x27 = mut wrap:<u32>(atol("4294967295"))
+		let acc27 = mut 0
 		for i in 0..102{
 			let:<mut u32> c = mut wrap:<u32>(i)
-			acc = acc + wrap:<u64>(bits_right(x, c))
+			acc27 = acc27 + wrap:<u64>(bits_right(x27, c))
 		}
-		check("sweep right u32 4294967295 (102 counts)", acc == 8589934558)
+		check("sweep right u32 4294967295 (102 counts)", acc27 == 8589934558)
 	}
 	unsafe extern{
-		let:<mut u32> x = mut wrap:<u32>(atoll("0"))
-		let acc = mut 0
+		let:<mut u32> x28 = mut wrap:<u32>(atol("0"))
+		let acc28 = mut 0
 		for i in 0..102{
 			let:<mut u32> c = mut wrap:<u32>(i)
-			acc = acc + wrap:<u64>(bits_right(x, c))
+			acc28 = acc28 + wrap:<u64>(bits_right(x28, c))
 		}
-		check("sweep right u32 0 (102 counts)", acc == 0)
+		check("sweep right u32 0 (102 counts)", acc28 == 0)
 	}
 	unsafe extern{
-		let:<mut u32> x = mut wrap:<u32>(atoll("2863311530"))
-		let acc = mut 0
+		let:<mut u32> x29 = mut wrap:<u32>(atol("2863311530"))
+		let acc29 = mut 0
 		for i in 0..102{
 			let:<mut u32> c = mut wrap:<u32>(i)
-			acc = acc + wrap:<u64>(bits_right(x, c))
+			acc29 = acc29 + wrap:<u64>(bits_right(x29, c))
 		}
-		check("sweep right u32 2863311530 (102 counts)", acc == 5726623044)
+		check("sweep right u32 2863311530 (102 counts)", acc29 == 5726623044)
 	}
 	unsafe extern{
-		let:<mut u32> x = mut wrap:<u32>(atoll("1431655765"))
-		let acc = mut 0
+		let:<mut u32> x30 = mut wrap:<u32>(atol("1431655765"))
+		let acc30 = mut 0
 		for i in 0..102{
 			let:<mut u32> c = mut wrap:<u32>(i)
-			acc = acc + wrap:<u64>(bits_right(x, c))
+			acc30 = acc30 + wrap:<u64>(bits_right(x30, c))
 		}
-		check("sweep right u32 1431655765 (102 counts)", acc == 2863311514)
+		check("sweep right u32 1431655765 (102 counts)", acc30 == 2863311514)
 	}
 	return
 }
 func sweep_u64() void{
 	unsafe extern{
-		let:<mut u64> x = mut wrap:<u64>(atoll("1"))
-		let acc = mut 0
+		let:<mut u64> x31 = mut wrap:<u64>(atol("1"))
+		let acc31 = mut 0
 		for i in 0..70{
 			let:<mut u64> c = mut wrap:<u64>(i)
-			acc = acc + wrap:<u64>(bits_left(x, c))
+			acc31 = acc31 + wrap:<u64>(bits_left(x31, c))
 		}
-		check("sweep left u64 1 (70 counts)", acc == 18446744073709551615)
+		check("sweep left u64 1 (70 counts)", acc31 == 18446744073709551615)
 	}
 	unsafe extern{
-		let:<mut u64> x = mut wrap:<u64>(atoll("9223372036854775807") + 9223372036854775808)
-		let acc = mut 0
+		let:<mut u64> x32 = mut wrap:<u64>(atol("9223372036854775807") + 9223372036854775808)
+		let acc32 = mut 0
 		for i in 0..70{
 			let:<mut u64> c = mut wrap:<u64>(i)
-			acc = acc + wrap:<u64>(bits_left(x, c))
+			acc32 = acc32 + wrap:<u64>(bits_left(x32, c))
 		}
-		check("sweep left u64 18446744073709551615 (70 counts)", acc == 1)
+		check("sweep left u64 18446744073709551615 (70 counts)", acc32 == 1)
 	}
 	unsafe extern{
-		let:<mut u64> x = mut wrap:<u64>(atoll("0"))
-		let acc = mut 0
+		let:<mut u64> x33 = mut wrap:<u64>(atol("0"))
+		let acc33 = mut 0
 		for i in 0..70{
 			let:<mut u64> c = mut wrap:<u64>(i)
-			acc = acc + wrap:<u64>(bits_left(x, c))
+			acc33 = acc33 + wrap:<u64>(bits_left(x33, c))
 		}
-		check("sweep left u64 0 (70 counts)", acc == 0)
+		check("sweep left u64 0 (70 counts)", acc33 == 0)
 	}
 	unsafe extern{
-		let:<mut u64> x = mut wrap:<u64>(atoll("3074457345618258602") + 9223372036854775808)
-		let acc = mut 0
+		let:<mut u64> x34 = mut wrap:<u64>(atol("3074457345618258602") + 9223372036854775808)
+		let acc34 = mut 0
 		for i in 0..70{
 			let:<mut u64> c = mut wrap:<u64>(i)
-			acc = acc + wrap:<u64>(bits_left(x, c))
+			acc34 = acc34 + wrap:<u64>(bits_left(x34, c))
 		}
-		check("sweep left u64 12297829382473034410 (70 counts)", acc == 6148914691236517206)
+		check("sweep left u64 12297829382473034410 (70 counts)", acc34 == 6148914691236517206)
 	}
 	unsafe extern{
-		let:<mut u64> x = mut wrap:<u64>(atoll("6148914691236517205"))
-		let acc = mut 0
+		let:<mut u64> x35 = mut wrap:<u64>(atol("6148914691236517205"))
+		let acc35 = mut 0
 		for i in 0..70{
 			let:<mut u64> c = mut wrap:<u64>(i)
-			acc = acc + wrap:<u64>(bits_left(x, c))
+			acc35 = acc35 + wrap:<u64>(bits_left(x35, c))
 		}
-		check("sweep left u64 6148914691236517205 (70 counts)", acc == 12297829382473034411)
+		check("sweep left u64 6148914691236517205 (70 counts)", acc35 == 12297829382473034411)
 	}
 	unsafe extern{
-		let:<mut u64> x = mut wrap:<u64>(atoll("1"))
-		let acc = mut 0
+		let:<mut u64> x36 = mut wrap:<u64>(atol("1"))
+		let acc36 = mut 0
 		for i in 0..70{
 			let:<mut u64> c = mut wrap:<u64>(i)
-			acc = acc + wrap:<u64>(bits_right(x, c))
+			acc36 = acc36 + wrap:<u64>(bits_right(x36, c))
 		}
-		check("sweep right u64 1 (70 counts)", acc == 1)
+		check("sweep right u64 1 (70 counts)", acc36 == 1)
 	}
 	unsafe extern{
-		let:<mut u64> x = mut wrap:<u64>(atoll("9223372036854775807") + 9223372036854775808)
-		let acc = mut 0
+		let:<mut u64> x37 = mut wrap:<u64>(atol("9223372036854775807") + 9223372036854775808)
+		let acc37 = mut 0
 		for i in 0..70{
 			let:<mut u64> c = mut wrap:<u64>(i)
-			acc = acc + wrap:<u64>(bits_right(x, c))
+			acc37 = acc37 + wrap:<u64>(bits_right(x37, c))
 		}
-		check("sweep right u64 18446744073709551615 (70 counts)", acc == 18446744073709551550)
+		check("sweep right u64 18446744073709551615 (70 counts)", acc37 == 18446744073709551550)
 	}
 	unsafe extern{
-		let:<mut u64> x = mut wrap:<u64>(atoll("0"))
-		let acc = mut 0
+		let:<mut u64> x38 = mut wrap:<u64>(atol("0"))
+		let acc38 = mut 0
 		for i in 0..70{
 			let:<mut u64> c = mut wrap:<u64>(i)
-			acc = acc + wrap:<u64>(bits_right(x, c))
+			acc38 = acc38 + wrap:<u64>(bits_right(x38, c))
 		}
-		check("sweep right u64 0 (70 counts)", acc == 0)
+		check("sweep right u64 0 (70 counts)", acc38 == 0)
 	}
 	unsafe extern{
-		let:<mut u64> x = mut wrap:<u64>(atoll("3074457345618258602") + 9223372036854775808)
-		let acc = mut 0
+		let:<mut u64> x39 = mut wrap:<u64>(atol("3074457345618258602") + 9223372036854775808)
+		let acc39 = mut 0
 		for i in 0..70{
 			let:<mut u64> c = mut wrap:<u64>(i)
-			acc = acc + wrap:<u64>(bits_right(x, c))
+			acc39 = acc39 + wrap:<u64>(bits_right(x39, c))
 		}
-		check("sweep right u64 12297829382473034410 (70 counts)", acc == 6148914691236517172)
+		check("sweep right u64 12297829382473034410 (70 counts)", acc39 == 6148914691236517172)
 	}
 	unsafe extern{
-		let:<mut u64> x = mut wrap:<u64>(atoll("6148914691236517205"))
-		let acc = mut 0
+		let:<mut u64> x40 = mut wrap:<u64>(atol("6148914691236517205"))
+		let acc40 = mut 0
 		for i in 0..70{
 			let:<mut u64> c = mut wrap:<u64>(i)
-			acc = acc + wrap:<u64>(bits_right(x, c))
+			acc40 = acc40 + wrap:<u64>(bits_right(x40, c))
 		}
-		check("sweep right u64 6148914691236517205 (70 counts)", acc == 12297829382473034378)
+		check("sweep right u64 6148914691236517205 (70 counts)", acc40 == 12297829382473034378)
 	}
 	return
 }
 func sweep_s8() void{
 	unsafe extern{
-		let:<mut s8> x = mut wrap:<s8>(atoll("1"))
-		let acc = mut 0
+		let:<mut s8> x41 = mut wrap:<s8>(atol("1"))
+		let acc41 = mut 0
 		for i in 0..78{
 			let:<mut s8> c = mut wrap:<s8>(i)
-			acc = acc + wrap:<u64>(bits_left(x, c))
+			acc41 = acc41 + wrap:<u64>(bits_left(x41, c))
 		}
-		check("sweep left s8 1 (78 counts)", acc == 18446744073709551615)
+		check("sweep left s8 1 (78 counts)", acc41 == 18446744073709551615)
 	}
 	unsafe extern{
-		let:<mut s8> x = mut wrap:<s8>(atoll("127"))
-		let acc = mut 0
+		let:<mut s8> x42 = mut wrap:<s8>(atol("127"))
+		let acc42 = mut 0
 		for i in 0..78{
 			let:<mut s8> c = mut wrap:<s8>(i)
-			acc = acc + wrap:<u64>(bits_left(x, c))
+			acc42 = acc42 + wrap:<u64>(bits_left(x42, c))
 		}
-		check("sweep left s8 127 (78 counts)", acc == 18446744073709551489)
+		check("sweep left s8 127 (78 counts)", acc42 == 18446744073709551489)
 	}
 	unsafe extern{
-		let:<mut s8> x = mut wrap:<s8>(atoll("128"))
-		let acc = mut 0
+		let:<mut s8> x43 = mut wrap:<s8>(atol("128"))
+		let acc43 = mut 0
 		for i in 0..78{
 			let:<mut s8> c = mut wrap:<s8>(i)
-			acc = acc + wrap:<u64>(bits_left(x, c))
+			acc43 = acc43 + wrap:<u64>(bits_left(x43, c))
 		}
-		check("sweep left s8 -128 (78 counts)", acc == 18446744073709551488)
+		check("sweep left s8 -128 (78 counts)", acc43 == 18446744073709551488)
 	}
 	unsafe extern{
-		let:<mut s8> x = mut wrap:<s8>(atoll("170"))
-		let acc = mut 0
+		let:<mut s8> x44 = mut wrap:<s8>(atol("170"))
+		let acc44 = mut 0
 		for i in 0..78{
 			let:<mut s8> c = mut wrap:<s8>(i)
-			acc = acc + wrap:<u64>(bits_left(x, c))
+			acc44 = acc44 + wrap:<u64>(bits_left(x44, c))
 		}
-		check("sweep left s8 -86 (78 counts)", acc == 18446744073709551446)
+		check("sweep left s8 -86 (78 counts)", acc44 == 18446744073709551446)
 	}
 	unsafe extern{
-		let:<mut s8> x = mut wrap:<s8>(atoll("85"))
-		let acc = mut 0
+		let:<mut s8> x45 = mut wrap:<s8>(atol("85"))
+		let acc45 = mut 0
 		for i in 0..78{
 			let:<mut s8> c = mut wrap:<s8>(i)
-			acc = acc + wrap:<u64>(bits_left(x, c))
+			acc45 = acc45 + wrap:<u64>(bits_left(x45, c))
 		}
-		check("sweep left s8 85 (78 counts)", acc == 18446744073709551531)
+		check("sweep left s8 85 (78 counts)", acc45 == 18446744073709551531)
 	}
 	unsafe extern{
-		let:<mut s8> x = mut wrap:<s8>(atoll("1"))
-		let acc = mut 0
+		let:<mut s8> x46 = mut wrap:<s8>(atol("1"))
+		let acc46 = mut 0
 		for i in 0..78{
 			let:<mut s8> c = mut wrap:<s8>(i)
-			acc = acc + wrap:<u64>(bits_right(x, c))
+			acc46 = acc46 + wrap:<u64>(bits_right(x46, c))
 		}
-		check("sweep right s8 1 (78 counts)", acc == 1)
+		check("sweep right s8 1 (78 counts)", acc46 == 1)
 	}
 	unsafe extern{
-		let:<mut s8> x = mut wrap:<s8>(atoll("127"))
-		let acc = mut 0
+		let:<mut s8> x47 = mut wrap:<s8>(atol("127"))
+		let acc47 = mut 0
 		for i in 0..78{
 			let:<mut s8> c = mut wrap:<s8>(i)
-			acc = acc + wrap:<u64>(bits_right(x, c))
+			acc47 = acc47 + wrap:<u64>(bits_right(x47, c))
 		}
-		check("sweep right s8 127 (78 counts)", acc == 247)
+		check("sweep right s8 127 (78 counts)", acc47 == 247)
 	}
 	unsafe extern{
-		let:<mut s8> x = mut wrap:<s8>(atoll("128"))
-		let acc = mut 0
+		let:<mut s8> x48 = mut wrap:<s8>(atol("128"))
+		let acc48 = mut 0
 		for i in 0..78{
 			let:<mut s8> c = mut wrap:<s8>(i)
-			acc = acc + wrap:<u64>(bits_right(x, c))
+			acc48 = acc48 + wrap:<u64>(bits_right(x48, c))
 		}
-		check("sweep right s8 -128 (78 counts)", acc == 18446744073709551291)
+		check("sweep right s8 -128 (78 counts)", acc48 == 18446744073709551291)
 	}
 	unsafe extern{
-		let:<mut s8> x = mut wrap:<s8>(atoll("170"))
-		let acc = mut 0
+		let:<mut s8> x49 = mut wrap:<s8>(atol("170"))
+		let acc49 = mut 0
 		for i in 0..78{
 			let:<mut s8> c = mut wrap:<s8>(i)
-			acc = acc + wrap:<u64>(bits_right(x, c))
+			acc49 = acc49 + wrap:<u64>(bits_right(x49, c))
 		}
-		check("sweep right s8 -86 (78 counts)", acc == 18446744073709551372)
+		check("sweep right s8 -86 (78 counts)", acc49 == 18446744073709551372)
 	}
 	unsafe extern{
-		let:<mut s8> x = mut wrap:<s8>(atoll("85"))
-		let acc = mut 0
+		let:<mut s8> x50 = mut wrap:<s8>(atol("85"))
+		let acc50 = mut 0
 		for i in 0..78{
 			let:<mut s8> c = mut wrap:<s8>(i)
-			acc = acc + wrap:<u64>(bits_right(x, c))
+			acc50 = acc50 + wrap:<u64>(bits_right(x50, c))
 		}
-		check("sweep right s8 85 (78 counts)", acc == 166)
+		check("sweep right s8 85 (78 counts)", acc50 == 166)
 	}
 	return
 }
 func sweep_s16() void{
 	unsafe extern{
-		let:<mut s16> x = mut wrap:<s16>(atoll("1"))
-		let acc = mut 0
+		let:<mut s16> x51 = mut wrap:<s16>(atol("1"))
+		let acc51 = mut 0
 		for i in 0..86{
 			let:<mut s16> c = mut wrap:<s16>(i)
-			acc = acc + wrap:<u64>(bits_left(x, c))
+			acc51 = acc51 + wrap:<u64>(bits_left(x51, c))
 		}
-		check("sweep left s16 1 (86 counts)", acc == 18446744073709551615)
+		check("sweep left s16 1 (86 counts)", acc51 == 18446744073709551615)
 	}
 	unsafe extern{
-		let:<mut s16> x = mut wrap:<s16>(atoll("32767"))
-		let acc = mut 0
+		let:<mut s16> x52 = mut wrap:<s16>(atol("32767"))
+		let acc52 = mut 0
 		for i in 0..86{
 			let:<mut s16> c = mut wrap:<s16>(i)
-			acc = acc + wrap:<u64>(bits_left(x, c))
+			acc52 = acc52 + wrap:<u64>(bits_left(x52, c))
 		}
-		check("sweep left s16 32767 (86 counts)", acc == 18446744073709518849)
+		check("sweep left s16 32767 (86 counts)", acc52 == 18446744073709518849)
 	}
 	unsafe extern{
-		let:<mut s16> x = mut wrap:<s16>(atoll("32768"))
-		let acc = mut 0
+		let:<mut s16> x53 = mut wrap:<s16>(atol("32768"))
+		let acc53 = mut 0
 		for i in 0..86{
 			let:<mut s16> c = mut wrap:<s16>(i)
-			acc = acc + wrap:<u64>(bits_left(x, c))
+			acc53 = acc53 + wrap:<u64>(bits_left(x53, c))
 		}
-		check("sweep left s16 -32768 (86 counts)", acc == 18446744073709518848)
+		check("sweep left s16 -32768 (86 counts)", acc53 == 18446744073709518848)
 	}
 	unsafe extern{
-		let:<mut s16> x = mut wrap:<s16>(atoll("43690"))
-		let acc = mut 0
+		let:<mut s16> x54 = mut wrap:<s16>(atol("43690"))
+		let acc54 = mut 0
 		for i in 0..86{
 			let:<mut s16> c = mut wrap:<s16>(i)
-			acc = acc + wrap:<u64>(bits_left(x, c))
+			acc54 = acc54 + wrap:<u64>(bits_left(x54, c))
 		}
-		check("sweep left s16 -21846 (86 counts)", acc == 18446744073709507926)
+		check("sweep left s16 -21846 (86 counts)", acc54 == 18446744073709507926)
 	}
 	unsafe extern{
-		let:<mut s16> x = mut wrap:<s16>(atoll("21845"))
-		let acc = mut 0
+		let:<mut s16> x55 = mut wrap:<s16>(atol("21845"))
+		let acc55 = mut 0
 		for i in 0..86{
 			let:<mut s16> c = mut wrap:<s16>(i)
-			acc = acc + wrap:<u64>(bits_left(x, c))
+			acc55 = acc55 + wrap:<u64>(bits_left(x55, c))
 		}
-		check("sweep left s16 21845 (86 counts)", acc == 18446744073709529771)
+		check("sweep left s16 21845 (86 counts)", acc55 == 18446744073709529771)
 	}
 	unsafe extern{
-		let:<mut s16> x = mut wrap:<s16>(atoll("1"))
-		let acc = mut 0
+		let:<mut s16> x56 = mut wrap:<s16>(atol("1"))
+		let acc56 = mut 0
 		for i in 0..86{
 			let:<mut s16> c = mut wrap:<s16>(i)
-			acc = acc + wrap:<u64>(bits_right(x, c))
+			acc56 = acc56 + wrap:<u64>(bits_right(x56, c))
 		}
-		check("sweep right s16 1 (86 counts)", acc == 1)
+		check("sweep right s16 1 (86 counts)", acc56 == 1)
 	}
 	unsafe extern{
-		let:<mut s16> x = mut wrap:<s16>(atoll("32767"))
-		let acc = mut 0
+		let:<mut s16> x57 = mut wrap:<s16>(atol("32767"))
+		let acc57 = mut 0
 		for i in 0..86{
 			let:<mut s16> c = mut wrap:<s16>(i)
-			acc = acc + wrap:<u64>(bits_right(x, c))
+			acc57 = acc57 + wrap:<u64>(bits_right(x57, c))
 		}
-		check("sweep right s16 32767 (86 counts)", acc == 65519)
+		check("sweep right s16 32767 (86 counts)", acc57 == 65519)
 	}
 	unsafe extern{
-		let:<mut s16> x = mut wrap:<s16>(atoll("32768"))
-		let acc = mut 0
+		let:<mut s16> x58 = mut wrap:<s16>(atol("32768"))
+		let acc58 = mut 0
 		for i in 0..86{
 			let:<mut s16> c = mut wrap:<s16>(i)
-			acc = acc + wrap:<u64>(bits_right(x, c))
+			acc58 = acc58 + wrap:<u64>(bits_right(x58, c))
 		}
-		check("sweep right s16 -32768 (86 counts)", acc == 18446744073709486011)
+		check("sweep right s16 -32768 (86 counts)", acc58 == 18446744073709486011)
 	}
 	unsafe extern{
-		let:<mut s16> x = mut wrap:<s16>(atoll("43690"))
-		let acc = mut 0
+		let:<mut s16> x59 = mut wrap:<s16>(atol("43690"))
+		let acc59 = mut 0
 		for i in 0..86{
 			let:<mut s16> c = mut wrap:<s16>(i)
-			acc = acc + wrap:<u64>(bits_right(x, c))
+			acc59 = acc59 + wrap:<u64>(bits_right(x59, c))
 		}
-		check("sweep right s16 -21846 (86 counts)", acc == 18446744073709507848)
+		check("sweep right s16 -21846 (86 counts)", acc59 == 18446744073709507848)
 	}
 	unsafe extern{
-		let:<mut s16> x = mut wrap:<s16>(atoll("21845"))
-		let acc = mut 0
+		let:<mut s16> x60 = mut wrap:<s16>(atol("21845"))
+		let acc60 = mut 0
 		for i in 0..86{
 			let:<mut s16> c = mut wrap:<s16>(i)
-			acc = acc + wrap:<u64>(bits_right(x, c))
+			acc60 = acc60 + wrap:<u64>(bits_right(x60, c))
 		}
-		check("sweep right s16 21845 (86 counts)", acc == 43682)
+		check("sweep right s16 21845 (86 counts)", acc60 == 43682)
 	}
 	return
 }
 func sweep_s32() void{
 	unsafe extern{
-		let:<mut s32> x = mut wrap:<s32>(atoll("1"))
-		let acc = mut 0
+		let:<mut s32> x61 = mut wrap:<s32>(atol("1"))
+		let acc61 = mut 0
 		for i in 0..102{
 			let:<mut s32> c = mut wrap:<s32>(i)
-			acc = acc + wrap:<u64>(bits_left(x, c))
+			acc61 = acc61 + wrap:<u64>(bits_left(x61, c))
 		}
-		check("sweep left s32 1 (102 counts)", acc == 18446744073709551615)
+		check("sweep left s32 1 (102 counts)", acc61 == 18446744073709551615)
 	}
 	unsafe extern{
-		let:<mut s32> x = mut wrap:<s32>(atoll("2147483647"))
-		let acc = mut 0
+		let:<mut s32> x62 = mut wrap:<s32>(atol("2147483647"))
+		let acc62 = mut 0
 		for i in 0..102{
 			let:<mut s32> c = mut wrap:<s32>(i)
-			acc = acc + wrap:<u64>(bits_left(x, c))
+			acc62 = acc62 + wrap:<u64>(bits_left(x62, c))
 		}
-		check("sweep left s32 2147483647 (102 counts)", acc == 18446744071562067969)
+		check("sweep left s32 2147483647 (102 counts)", acc62 == 18446744071562067969)
 	}
 	unsafe extern{
-		let:<mut s32> x = mut wrap:<s32>(atoll("2147483648"))
-		let acc = mut 0
+		let:<mut s32> x63 = mut wrap:<s32>(atol("2147483648"))
+		let acc63 = mut 0
 		for i in 0..102{
 			let:<mut s32> c = mut wrap:<s32>(i)
-			acc = acc + wrap:<u64>(bits_left(x, c))
+			acc63 = acc63 + wrap:<u64>(bits_left(x63, c))
 		}
-		check("sweep left s32 -2147483648 (102 counts)", acc == 18446744071562067968)
+		check("sweep left s32 -2147483648 (102 counts)", acc63 == 18446744071562067968)
 	}
 	unsafe extern{
-		let:<mut s32> x = mut wrap:<s32>(atoll("2863311530"))
-		let acc = mut 0
+		let:<mut s32> x64 = mut wrap:<s32>(atol("2863311530"))
+		let acc64 = mut 0
 		for i in 0..102{
 			let:<mut s32> c = mut wrap:<s32>(i)
-			acc = acc + wrap:<u64>(bits_left(x, c))
+			acc64 = acc64 + wrap:<u64>(bits_left(x64, c))
 		}
-		check("sweep left s32 -1431655766 (102 counts)", acc == 18446744070846240086)
+		check("sweep left s32 -1431655766 (102 counts)", acc64 == 18446744070846240086)
 	}
 	unsafe extern{
-		let:<mut s32> x = mut wrap:<s32>(atoll("1431655765"))
-		let acc = mut 0
+		let:<mut s32> x65 = mut wrap:<s32>(atol("1431655765"))
+		let acc65 = mut 0
 		for i in 0..102{
 			let:<mut s32> c = mut wrap:<s32>(i)
-			acc = acc + wrap:<u64>(bits_left(x, c))
+			acc65 = acc65 + wrap:<u64>(bits_left(x65, c))
 		}
-		check("sweep left s32 1431655765 (102 counts)", acc == 18446744072277895851)
+		check("sweep left s32 1431655765 (102 counts)", acc65 == 18446744072277895851)
 	}
 	unsafe extern{
-		let:<mut s32> x = mut wrap:<s32>(atoll("1"))
-		let acc = mut 0
+		let:<mut s32> x66 = mut wrap:<s32>(atol("1"))
+		let acc66 = mut 0
 		for i in 0..102{
 			let:<mut s32> c = mut wrap:<s32>(i)
-			acc = acc + wrap:<u64>(bits_right(x, c))
+			acc66 = acc66 + wrap:<u64>(bits_right(x66, c))
 		}
-		check("sweep right s32 1 (102 counts)", acc == 1)
+		check("sweep right s32 1 (102 counts)", acc66 == 1)
 	}
 	unsafe extern{
-		let:<mut s32> x = mut wrap:<s32>(atoll("2147483647"))
-		let acc = mut 0
+		let:<mut s32> x67 = mut wrap:<s32>(atol("2147483647"))
+		let acc67 = mut 0
 		for i in 0..102{
 			let:<mut s32> c = mut wrap:<s32>(i)
-			acc = acc + wrap:<u64>(bits_right(x, c))
+			acc67 = acc67 + wrap:<u64>(bits_right(x67, c))
 		}
-		check("sweep right s32 2147483647 (102 counts)", acc == 4294967263)
+		check("sweep right s32 2147483647 (102 counts)", acc67 == 4294967263)
 	}
 	unsafe extern{
-		let:<mut s32> x = mut wrap:<s32>(atoll("2147483648"))
-		let acc = mut 0
+		let:<mut s32> x68 = mut wrap:<s32>(atol("2147483648"))
+		let acc68 = mut 0
 		for i in 0..102{
 			let:<mut s32> c = mut wrap:<s32>(i)
-			acc = acc + wrap:<u64>(bits_right(x, c))
+			acc68 = acc68 + wrap:<u64>(bits_right(x68, c))
 		}
-		check("sweep right s32 -2147483648 (102 counts)", acc == 18446744069414584251)
+		check("sweep right s32 -2147483648 (102 counts)", acc68 == 18446744069414584251)
 	}
 	unsafe extern{
-		let:<mut s32> x = mut wrap:<s32>(atoll("2863311530"))
-		let acc = mut 0
+		let:<mut s32> x69 = mut wrap:<s32>(atol("2863311530"))
+		let acc69 = mut 0
 		for i in 0..102{
 			let:<mut s32> c = mut wrap:<s32>(i)
-			acc = acc + wrap:<u64>(bits_right(x, c))
+			acc69 = acc69 + wrap:<u64>(bits_right(x69, c))
 		}
-		check("sweep right s32 -1431655766 (102 counts)", acc == 18446744070846240000)
+		check("sweep right s32 -1431655766 (102 counts)", acc69 == 18446744070846240000)
 	}
 	unsafe extern{
-		let:<mut s32> x = mut wrap:<s32>(atoll("1431655765"))
-		let acc = mut 0
+		let:<mut s32> x70 = mut wrap:<s32>(atol("1431655765"))
+		let acc70 = mut 0
 		for i in 0..102{
 			let:<mut s32> c = mut wrap:<s32>(i)
-			acc = acc + wrap:<u64>(bits_right(x, c))
+			acc70 = acc70 + wrap:<u64>(bits_right(x70, c))
 		}
-		check("sweep right s32 1431655765 (102 counts)", acc == 2863311514)
+		check("sweep right s32 1431655765 (102 counts)", acc70 == 2863311514)
 	}
 	return
 }
 func sweep_s64() void{
 	unsafe extern{
-		let:<mut s64> x = mut wrap:<s64>(atoll("1"))
-		let acc = mut 0
+		let:<mut s64> x71 = mut wrap:<s64>(atol("1"))
+		let acc71 = mut 0
 		for i in 0..70{
 			let:<mut s64> c = mut wrap:<s64>(i)
-			acc = acc + wrap:<u64>(bits_left(x, c))
+			acc71 = acc71 + wrap:<u64>(bits_left(x71, c))
 		}
-		check("sweep left s64 1 (70 counts)", acc == 18446744073709551615)
+		check("sweep left s64 1 (70 counts)", acc71 == 18446744073709551615)
 	}
 	unsafe extern{
-		let:<mut s64> x = mut wrap:<s64>(atoll("9223372036854775807"))
-		let acc = mut 0
+		let:<mut s64> x72 = mut wrap:<s64>(atol("9223372036854775807"))
+		let acc72 = mut 0
 		for i in 0..70{
 			let:<mut s64> c = mut wrap:<s64>(i)
-			acc = acc + wrap:<u64>(bits_left(x, c))
+			acc72 = acc72 + wrap:<u64>(bits_left(x72, c))
 		}
-		check("sweep left s64 9223372036854775807 (70 counts)", acc == 9223372036854775809)
+		check("sweep left s64 9223372036854775807 (70 counts)", acc72 == 9223372036854775809)
 	}
 	unsafe extern{
-		let:<mut s64> x = mut wrap:<s64>(atoll("0") + 9223372036854775808)
-		let acc = mut 0
+		let:<mut s64> x73 = mut wrap:<s64>(atol("0") + 9223372036854775808)
+		let acc73 = mut 0
 		for i in 0..70{
 			let:<mut s64> c = mut wrap:<s64>(i)
-			acc = acc + wrap:<u64>(bits_left(x, c))
+			acc73 = acc73 + wrap:<u64>(bits_left(x73, c))
 		}
-		check("sweep left s64 -9223372036854775808 (70 counts)", acc == 9223372036854775808)
+		check("sweep left s64 -9223372036854775808 (70 counts)", acc73 == 9223372036854775808)
 	}
 	unsafe extern{
-		let:<mut s64> x = mut wrap:<s64>(atoll("3074457345618258602") + 9223372036854775808)
-		let acc = mut 0
+		let:<mut s64> x74 = mut wrap:<s64>(atol("3074457345618258602") + 9223372036854775808)
+		let acc74 = mut 0
 		for i in 0..70{
 			let:<mut s64> c = mut wrap:<s64>(i)
-			acc = acc + wrap:<u64>(bits_left(x, c))
+			acc74 = acc74 + wrap:<u64>(bits_left(x74, c))
 		}
-		check("sweep left s64 -6148914691236517206 (70 counts)", acc == 6148914691236517206)
+		check("sweep left s64 -6148914691236517206 (70 counts)", acc74 == 6148914691236517206)
 	}
 	unsafe extern{
-		let:<mut s64> x = mut wrap:<s64>(atoll("6148914691236517205"))
-		let acc = mut 0
+		let:<mut s64> x75 = mut wrap:<s64>(atol("6148914691236517205"))
+		let acc75 = mut 0
 		for i in 0..70{
 			let:<mut s64> c = mut wrap:<s64>(i)
-			acc = acc + wrap:<u64>(bits_left(x, c))
+			acc75 = acc75 + wrap:<u64>(bits_left(x75, c))
 		}
-		check("sweep left s64 6148914691236517205 (70 counts)", acc == 12297829382473034411)
+		check("sweep left s64 6148914691236517205 (70 counts)", acc75 == 12297829382473034411)
 	}
 	unsafe extern{
-		let:<mut s64> x = mut wrap:<s64>(atoll("1"))
-		let acc = mut 0
+		let:<mut s64> x76 = mut wrap:<s64>(atol("1"))
+		let acc76 = mut 0
 		for i in 0..70{
 			let:<mut s64> c = mut wrap:<s64>(i)
-			acc = acc + wrap:<u64>(bits_right(x, c))
+			acc76 = acc76 + wrap:<u64>(bits_right(x76, c))
 		}
-		check("sweep right s64 1 (70 counts)", acc == 1)
+		check("sweep right s64 1 (70 counts)", acc76 == 1)
 	}
 	unsafe extern{
-		let:<mut s64> x = mut wrap:<s64>(atoll("9223372036854775807"))
-		let acc = mut 0
+		let:<mut s64> x77 = mut wrap:<s64>(atol("9223372036854775807"))
+		let acc77 = mut 0
 		for i in 0..70{
 			let:<mut s64> c = mut wrap:<s64>(i)
-			acc = acc + wrap:<u64>(bits_right(x, c))
+			acc77 = acc77 + wrap:<u64>(bits_right(x77, c))
 		}
-		check("sweep right s64 9223372036854775807 (70 counts)", acc == 18446744073709551551)
+		check("sweep right s64 9223372036854775807 (70 counts)", acc77 == 18446744073709551551)
 	}
 	unsafe extern{
-		let:<mut s64> x = mut wrap:<s64>(atoll("0") + 9223372036854775808)
-		let acc = mut 0
+		let:<mut s64> x78 = mut wrap:<s64>(atol("0") + 9223372036854775808)
+		let acc78 = mut 0
 		for i in 0..70{
 			let:<mut s64> c = mut wrap:<s64>(i)
-			acc = acc + wrap:<u64>(bits_right(x, c))
+			acc78 = acc78 + wrap:<u64>(bits_right(x78, c))
 		}
-		check("sweep right s64 -9223372036854775808 (70 counts)", acc == 18446744073709551611)
+		check("sweep right s64 -9223372036854775808 (70 counts)", acc78 == 18446744073709551611)
 	}
 	unsafe extern{
-		let:<mut s64> x = mut wrap:<s64>(atoll("3074457345618258602") + 9223372036854775808)
-		let acc = mut 0
+		let:<mut s64> x79 = mut wrap:<s64>(atol("3074457345618258602") + 9223372036854775808)
+		let acc79 = mut 0
 		for i in 0..70{
 			let:<mut s64> c = mut wrap:<s64>(i)
-			acc = acc + wrap:<u64>(bits_right(x, c))
+			acc79 = acc79 + wrap:<u64>(bits_right(x79, c))
 		}
-		check("sweep right s64 -6148914691236517206 (70 counts)", acc == 6148914691236517168)
+		check("sweep right s64 -6148914691236517206 (70 counts)", acc79 == 6148914691236517168)
 	}
 	unsafe extern{
-		let:<mut s64> x = mut wrap:<s64>(atoll("6148914691236517205"))
-		let acc = mut 0
+		let:<mut s64> x80 = mut wrap:<s64>(atol("6148914691236517205"))
+		let acc80 = mut 0
 		for i in 0..70{
 			let:<mut s64> c = mut wrap:<s64>(i)
-			acc = acc + wrap:<u64>(bits_right(x, c))
+			acc80 = acc80 + wrap:<u64>(bits_right(x80, c))
 		}
-		check("sweep right s64 6148914691236517205 (70 counts)", acc == 12297829382473034378)
+		check("sweep right s64 6148914691236517205 (70 counts)", acc80 == 12297829382473034378)
 	}
 	return
 }
@@ -3444,96 +3448,96 @@ func literalForms() void{
 
 func fromAtol() void{
 	unsafe extern{
-		let:<mut u8> au8 = mut wrap:<u8>(atoll("43"))
-		let:<mut u8> bu8 = mut wrap:<u8>(atoll("29"))
-		let:<mut u8> nu8 = mut wrap:<u8>(atoll("5"))
-		chk_u8("atoll and u8", bits_and(au8, bu8), 9)
-		chk_u8("atoll or u8", bits_or(au8, bu8), 0x3f)
-		chk_u8("atoll xor u8", bits_xor(au8, bu8), 0X36)
-		chk_u8("atoll not u8", bits_not(au8), 0b11010100)
-		chk_u8("atoll left u8", bits_left(au8, nu8), 0B0110_0000)
-		chk_u8("atoll right u8", bits_right(au8, nu8), 1)
-		let:<mut u16> au16 = mut wrap:<u16>(atoll("11051"))
-		let:<mut u16> bu16 = mut wrap:<u16>(atoll("7453"))
-		let:<mut u16> nu16 = mut wrap:<u16>(atoll("5"))
-		chk_u16("atoll and u16", bits_and(au16, bu16), 0x09_09)
-		chk_u16("atoll or u16", bits_or(au16, bu16), 0x003f3f)
-		chk_u16("atoll xor u16", bits_xor(au16, bu16), 0x3636)
-		chk_u16("atoll not u16", bits_not(au16), 54484)
-		chk_u16("atoll left u16", bits_left(au16, nu16), 0x6560)
-		chk_u16("atoll right u16", bits_right(au16, nu16), 0X159)
-		let:<mut u32> au32 = mut wrap:<u32>(atoll("724249387"))
-		let:<mut u32> bu32 = mut wrap:<u32>(atoll("488447261"))
-		let:<mut u32> nu32 = mut wrap:<u32>(atoll("5"))
-		chk_u32("atoll and u32", bits_and(au32, bu32), 0b1001000010010000100100001001)
-		chk_u32("atoll or u32", bits_or(au32, bu32), 0B0011_1111_0011_1111_0011_1111_0011_1111)
-		chk_u32("atoll xor u32", bits_xor(au32, bu32), 909_522_486)
-		chk_u32("atoll not u32", bits_not(au32), 0xD4_D4_D4_D4)
-		chk_u32("atoll left u32", bits_left(au32, nu32), 0x0065656560)
-		chk_u32("atoll right u32", bits_right(au32, nu32), 0x1595959)
-		let:<mut u64> au64 = mut wrap:<u64>(atoll("3110627432037296939"))
-		let:<mut u64> bu64 = mut wrap:<u64>(atoll("2097865012304223517"))
-		let:<mut u64> nu64 = mut wrap:<u64>(atoll("5"))
-		chk_u64("atoll and u64", bits_and(au64, bu64), 651061555542690057)
-		chk_u64("atoll or u64", bits_or(au64, bu64), 0x3f3f3f3f3f3f3f3f)
-		chk_u64("atoll xor u64", bits_xor(au64, bu64), 0X3636363636363636)
-		chk_u64("atoll not u64", bits_not(au64), 0b1101010011010100110101001101010011010100110101001101010011010100)
-		chk_u64("atoll left u64", bits_left(au64, nu64), 0B0110_0101_0110_0101_0110_0101_0110_0101_0110_0101_0110_0101_0110_0101_0110_0000)
-		chk_u64("atoll right u64", bits_right(au64, nu64), 97_207_107_251_165_529)
-		let:<mut s8> as8 = mut wrap:<s8>(atoll("43"))
-		let:<mut s8> bs8 = mut wrap:<s8>(atoll("29"))
-		let:<mut s8> ns8 = mut wrap:<s8>(atoll("5"))
-		chk_s8("atoll and s8", bits_and(as8, bs8), 0x09)
-		chk_s8("atoll or s8", bits_or(as8, bs8), 0x003f)
-		chk_s8("atoll xor s8", bits_xor(as8, bs8), 0x36)
-		chk_s8("atoll not s8", bits_not(as8), -44)
-		chk_s8("atoll left s8", bits_left(as8, ns8), 0x60)
-		chk_s8("atoll right s8", bits_right(as8, ns8), 0X1)
-		let:<mut s16> as16 = mut wrap:<s16>(atoll("11051"))
-		let:<mut s16> bs16 = mut wrap:<s16>(atoll("7453"))
-		let:<mut s16> ns16 = mut wrap:<s16>(atoll("5"))
-		chk_s16("atoll and s16", bits_and(as16, bs16), 0b100100001001)
-		chk_s16("atoll or s16", bits_or(as16, bs16), 0B0011_1111_0011_1111)
-		chk_s16("atoll xor s16", bits_xor(as16, bs16), 13_878)
-		chk_s16("atoll not s16", bits_not(as16), -0x2B_2C)
-		chk_s16("atoll left s16", bits_left(as16, ns16), 0x006560)
-		chk_s16("atoll right s16", bits_right(as16, ns16), 0x159)
-		let:<mut s32> as32 = mut wrap:<s32>(atoll("724249387"))
-		let:<mut s32> bs32 = mut wrap:<s32>(atoll("488447261"))
-		let:<mut s32> ns32 = mut wrap:<s32>(atoll("5"))
-		chk_s32("atoll and s32", bits_and(as32, bs32), 151587081)
-		chk_s32("atoll or s32", bits_or(as32, bs32), 0x3f3f3f3f)
-		chk_s32("atoll xor s32", bits_xor(as32, bs32), 0X36363636)
-		chk_s32("atoll not s32", bits_not(as32), -0b101011001010110010101100101100)
-		chk_s32("atoll left s32", bits_left(as32, ns32), 0B0110_0101_0110_0101_0110_0101_0110_0000)
-		chk_s32("atoll right s32", bits_right(as32, ns32), 22_632_793)
-		let:<mut s64> as64 = mut wrap:<s64>(atoll("3110627432037296939"))
-		let:<mut s64> bs64 = mut wrap:<s64>(atoll("2097865012304223517"))
-		let:<mut s64> ns64 = mut wrap:<s64>(atoll("5"))
-		chk_s64("atoll and s64", bits_and(as64, bs64), 0x09_09_09_09_09_09_09_09)
-		chk_s64("atoll or s64", bits_or(as64, bs64), 0x003f3f3f3f3f3f3f3f)
-		chk_s64("atoll xor s64", bits_xor(as64, bs64), 0x3636363636363636)
-		chk_s64("atoll not s64", bits_not(as64), -3110627432037296940)
-		chk_s64("atoll left s64", bits_left(as64, ns64), 0x6565656565656560)
-		chk_s64("atoll right s64", bits_right(as64, ns64), 0X159595959595959)
+		let:<mut u8> au8 = mut wrap:<u8>(atol("43"))
+		let:<mut u8> bu8 = mut wrap:<u8>(atol("29"))
+		let:<mut u8> nu8 = mut wrap:<u8>(atol("5"))
+		chk_u8("atol and u8", bits_and(au8, bu8), 9)
+		chk_u8("atol or u8", bits_or(au8, bu8), 0x3f)
+		chk_u8("atol xor u8", bits_xor(au8, bu8), 0X36)
+		chk_u8("atol not u8", bits_not(au8), 0b11010100)
+		chk_u8("atol left u8", bits_left(au8, nu8), 0B0110_0000)
+		chk_u8("atol right u8", bits_right(au8, nu8), 1)
+		let:<mut u16> au16 = mut wrap:<u16>(atol("11051"))
+		let:<mut u16> bu16 = mut wrap:<u16>(atol("7453"))
+		let:<mut u16> nu16 = mut wrap:<u16>(atol("5"))
+		chk_u16("atol and u16", bits_and(au16, bu16), 0x09_09)
+		chk_u16("atol or u16", bits_or(au16, bu16), 0x003f3f)
+		chk_u16("atol xor u16", bits_xor(au16, bu16), 0x3636)
+		chk_u16("atol not u16", bits_not(au16), 54484)
+		chk_u16("atol left u16", bits_left(au16, nu16), 0x6560)
+		chk_u16("atol right u16", bits_right(au16, nu16), 0X159)
+		let:<mut u32> au32 = mut wrap:<u32>(atol("724249387"))
+		let:<mut u32> bu32 = mut wrap:<u32>(atol("488447261"))
+		let:<mut u32> nu32 = mut wrap:<u32>(atol("5"))
+		chk_u32("atol and u32", bits_and(au32, bu32), 0b1001000010010000100100001001)
+		chk_u32("atol or u32", bits_or(au32, bu32), 0B0011_1111_0011_1111_0011_1111_0011_1111)
+		chk_u32("atol xor u32", bits_xor(au32, bu32), 909_522_486)
+		chk_u32("atol not u32", bits_not(au32), 0xD4_D4_D4_D4)
+		chk_u32("atol left u32", bits_left(au32, nu32), 0x0065656560)
+		chk_u32("atol right u32", bits_right(au32, nu32), 0x1595959)
+		let:<mut u64> au64 = mut wrap:<u64>(atol("3110627432037296939"))
+		let:<mut u64> bu64 = mut wrap:<u64>(atol("2097865012304223517"))
+		let:<mut u64> nu64 = mut wrap:<u64>(atol("5"))
+		chk_u64("atol and u64", bits_and(au64, bu64), 651061555542690057)
+		chk_u64("atol or u64", bits_or(au64, bu64), 0x3f3f3f3f3f3f3f3f)
+		chk_u64("atol xor u64", bits_xor(au64, bu64), 0X3636363636363636)
+		chk_u64("atol not u64", bits_not(au64), 0b1101010011010100110101001101010011010100110101001101010011010100)
+		chk_u64("atol left u64", bits_left(au64, nu64), 0B0110_0101_0110_0101_0110_0101_0110_0101_0110_0101_0110_0101_0110_0101_0110_0000)
+		chk_u64("atol right u64", bits_right(au64, nu64), 97_207_107_251_165_529)
+		let:<mut s8> as8 = mut wrap:<s8>(atol("43"))
+		let:<mut s8> bs8 = mut wrap:<s8>(atol("29"))
+		let:<mut s8> ns8 = mut wrap:<s8>(atol("5"))
+		chk_s8("atol and s8", bits_and(as8, bs8), 0x09)
+		chk_s8("atol or s8", bits_or(as8, bs8), 0x003f)
+		chk_s8("atol xor s8", bits_xor(as8, bs8), 0x36)
+		chk_s8("atol not s8", bits_not(as8), -44)
+		chk_s8("atol left s8", bits_left(as8, ns8), 0x60)
+		chk_s8("atol right s8", bits_right(as8, ns8), 0X1)
+		let:<mut s16> as16 = mut wrap:<s16>(atol("11051"))
+		let:<mut s16> bs16 = mut wrap:<s16>(atol("7453"))
+		let:<mut s16> ns16 = mut wrap:<s16>(atol("5"))
+		chk_s16("atol and s16", bits_and(as16, bs16), 0b100100001001)
+		chk_s16("atol or s16", bits_or(as16, bs16), 0B0011_1111_0011_1111)
+		chk_s16("atol xor s16", bits_xor(as16, bs16), 13_878)
+		chk_s16("atol not s16", bits_not(as16), -0x2B_2C)
+		chk_s16("atol left s16", bits_left(as16, ns16), 0x006560)
+		chk_s16("atol right s16", bits_right(as16, ns16), 0x159)
+		let:<mut s32> as32 = mut wrap:<s32>(atol("724249387"))
+		let:<mut s32> bs32 = mut wrap:<s32>(atol("488447261"))
+		let:<mut s32> ns32 = mut wrap:<s32>(atol("5"))
+		chk_s32("atol and s32", bits_and(as32, bs32), 151587081)
+		chk_s32("atol or s32", bits_or(as32, bs32), 0x3f3f3f3f)
+		chk_s32("atol xor s32", bits_xor(as32, bs32), 0X36363636)
+		chk_s32("atol not s32", bits_not(as32), -0b101011001010110010101100101100)
+		chk_s32("atol left s32", bits_left(as32, ns32), 0B0110_0101_0110_0101_0110_0101_0110_0000)
+		chk_s32("atol right s32", bits_right(as32, ns32), 22_632_793)
+		let:<mut s64> as64 = mut wrap:<s64>(atol("3110627432037296939"))
+		let:<mut s64> bs64 = mut wrap:<s64>(atol("2097865012304223517"))
+		let:<mut s64> ns64 = mut wrap:<s64>(atol("5"))
+		chk_s64("atol and s64", bits_and(as64, bs64), 0x09_09_09_09_09_09_09_09)
+		chk_s64("atol or s64", bits_or(as64, bs64), 0x003f3f3f3f3f3f3f3f)
+		chk_s64("atol xor s64", bits_xor(as64, bs64), 0x3636363636363636)
+		chk_s64("atol not s64", bits_not(as64), -3110627432037296940)
+		chk_s64("atol left s64", bits_left(as64, ns64), 0x6565656565656560)
+		chk_s64("atol right s64", bits_right(as64, ns64), 0X159595959595959)
 	}
 	return
 }
 
 @link_name(snprintf)
 extern c_snprintf(raw mut u8, mut u64, static imut string, ...) mut u64
-@link_name(atoll)
+@link_name(atol)
 extern atol_buf(raw mut u8) mut u64
 
 func varargForms() void{
 	unsafe extern{
 		let:<raw mut u8> buf = null
 		buf = malloc(64)
-		let:<mut u8> vau8 = mut wrap:<u8>(atoll("240"))
-		let:<mut u8> vbu8 = mut wrap:<u8>(atoll("60"))
-		let:<mut u8> vnu8 = mut wrap:<u8>(atoll("3"))
-		let:<mut u8> vku8 = mut wrap:<u8>(atoll("7"))
-		let:<mut u8> v1u8 = mut wrap:<u8>(atoll("1"))
+		let:<mut u8> vau8 = mut wrap:<u8>(atol("240"))
+		let:<mut u8> vbu8 = mut wrap:<u8>(atol("60"))
+		let:<mut u8> vnu8 = mut wrap:<u8>(atol("3"))
+		let:<mut u8> vku8 = mut wrap:<u8>(atol("7"))
+		let:<mut u8> v1u8 = mut wrap:<u8>(atol("1"))
 		c_snprintf(buf, 64, "%llu", mut bits_and(vau8, vbu8))
 		chk_u64("vararg and u8", atol_buf(buf), 0b110000)
 		c_snprintf(buf, 64, "%llu", mut bits_or(vau8, vbu8))
@@ -3552,11 +3556,11 @@ func varargForms() void{
 		chk_u64("vararg right 1 u8", atol_buf(buf), 0x78)
 		c_snprintf(buf, 64, "%llu", mut bits_not(bits_left(vau8, vnu8)))
 		chk_u64("vararg not of left u8", atol_buf(buf), 0X7f)
-		let:<mut u16> vau16 = mut wrap:<u16>(atoll("61680"))
-		let:<mut u16> vbu16 = mut wrap:<u16>(atoll("15420"))
-		let:<mut u16> vnu16 = mut wrap:<u16>(atoll("3"))
-		let:<mut u16> vku16 = mut wrap:<u16>(atoll("15"))
-		let:<mut u16> v1u16 = mut wrap:<u16>(atoll("1"))
+		let:<mut u16> vau16 = mut wrap:<u16>(atol("61680"))
+		let:<mut u16> vbu16 = mut wrap:<u16>(atol("15420"))
+		let:<mut u16> vnu16 = mut wrap:<u16>(atol("3"))
+		let:<mut u16> vku16 = mut wrap:<u16>(atol("15"))
+		let:<mut u16> v1u16 = mut wrap:<u16>(atol("1"))
 		c_snprintf(buf, 64, "%llu", mut bits_and(vau16, vbu16))
 		chk_u64("vararg and u16", atol_buf(buf), 0b11000000110000)
 		c_snprintf(buf, 64, "%llu", mut bits_or(vau16, vbu16))
@@ -3575,11 +3579,11 @@ func varargForms() void{
 		chk_u64("vararg right 1 u16", atol_buf(buf), 0x7878)
 		c_snprintf(buf, 64, "%llu", mut bits_not(bits_left(vau16, vnu16)))
 		chk_u64("vararg not of left u16", atol_buf(buf), 0X787F)
-		let:<mut u32> vau32 = mut wrap:<u32>(atoll("4042322160"))
-		let:<mut u32> vbu32 = mut wrap:<u32>(atoll("1010580540"))
-		let:<mut u32> vnu32 = mut wrap:<u32>(atoll("3"))
-		let:<mut u32> vku32 = mut wrap:<u32>(atoll("31"))
-		let:<mut u32> v1u32 = mut wrap:<u32>(atoll("1"))
+		let:<mut u32> vau32 = mut wrap:<u32>(atol("4042322160"))
+		let:<mut u32> vbu32 = mut wrap:<u32>(atol("1010580540"))
+		let:<mut u32> vnu32 = mut wrap:<u32>(atol("3"))
+		let:<mut u32> vku32 = mut wrap:<u32>(atol("31"))
+		let:<mut u32> v1u32 = mut wrap:<u32>(atol("1"))
 		c_snprintf(buf, 64, "%llu", mut bits_and(vau32, vbu32))
 		chk_u64("vararg and u32", atol_buf(buf), 0b110000001100000011000000110000)
 		c_snprintf(buf, 64, "%llu", mut bits_or(vau32, vbu32))

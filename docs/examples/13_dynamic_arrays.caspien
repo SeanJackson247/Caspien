@@ -54,9 +54,9 @@ func main() void{
 		let v = mut (i * i)
 		? list.pushBack(list, v)
 	}
-	let sum = mut 0
+	let listSum = mut 0
 	for i in 0..5{
-		match i in list.backing{ sum += list.get(list, i) }
+		match i in list.backing{ listSum += list.get(list, i) }
 	}
 	let top = mut ? list.popBack(list, mut 999)       // the argument is returned if the array is empty
 	let bottom = mut ? list.popFront(list, mut 999)
@@ -65,7 +65,7 @@ func main() void{
 	let first = mut 0
 	let zeroIdx = mut 0
 	match zeroIdx in list.backing{ first = list.get(list, zeroIdx) }
-	unsafe extern{ printf("DynamicArray: sum=%llu top=%llu bottom=%llu len=%llu first=%llu\n", sum, top, bottom, count, first) }
+	unsafe extern{ printf("DynamicArray: sum=%llu top=%llu bottom=%llu len=%llu first=%llu\n", listSum, top, bottom, count, first) }
 
 	let s = mut ? new String("hello")
 	? s.appendChar(s, mut '!')

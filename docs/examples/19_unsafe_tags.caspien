@@ -136,8 +136,8 @@ func main() void{
 	let w0 = mut ?new World{ticks= 9}
 	let h = mut Holder{w= w0}
 	unsafe extern udyn:owns{
-		let a = mut unsafe dyn([h])
-		let back = mut a[0].w                  // moved out, so it is freed here instead of leaking
+		let arr2 = mut unsafe dyn([h])
+		let back = mut arr2[0].w                  // moved out, so it is freed here instead of leaking
 		printf("udyn:owns: %llu\n", back.ticks)
 	}
 
@@ -187,10 +187,10 @@ func main() void{
 	// `unaudited` stands for every other tag: this block needs extern, global, raw and deref, and names none of them. It says "nobody has
 	// checked why this is unsafe", so it is a grep target for review, and the standard library may never use it.
 	unsafe unaudited{
-		let cell = mut 6
-		let pc = mut (raw cell)
-		assume match Some(pc)
-		counter = mut deref(pc)
+		let cell2 = mut 6
+		let pc2 = mut (raw cell2)
+		assume match Some(pc2)
+		counter = mut deref(pc2)
 		printf("unaudited: %llu\n", counter)
 	}
 }

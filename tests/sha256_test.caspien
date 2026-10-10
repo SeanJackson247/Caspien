@@ -372,9 +372,9 @@ func main() void{
 		let st2 = mut sha256NewState()
 		let wd = mut sha256WordsAlloc(16)
 		let blk = mut malloc(mut 64)
-		let dig = mut malloc(mut 32)
-		sha256Digest(st, dig)
-		report("sha256NewState / sha256Digest: H0 first bytes 6a09e667", beWord(dig, 0) == 0x6a09e667 && beWord(dig, 7) == 0x5be0cd19)
+		let digB = mut malloc(mut 32)
+		sha256Digest(st, digB)
+		report("sha256NewState / sha256Digest: H0 first bytes 6a09e667", beWord(digB, 0) == 0x6a09e667 && beWord(digB, 7) == 0x5be0cd19)
 		// sha256Compress and sha256CompressWords on the padded single block of an n-byte message
 		for bi in 0..nBlk{
 			let n = mut 0
@@ -453,7 +453,7 @@ func main() void{
 		sha256FreeState(st2)
 		sha256WordsFree(wd)
 		free(blk)
-		free(dig)
+		free(digB)
 	}
 	unsafe extern global{
 		printf("sha256: %llu passed, %llu failed\n", passed, failed)

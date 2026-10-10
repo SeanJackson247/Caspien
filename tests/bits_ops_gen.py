@@ -352,6 +352,7 @@ for t, w, s in TYPES:
 emit("")
 
 # ---------------------------------------------------------------------------------------------- C: atol + loop variables
+sweep_n = [0]
 begin("X")
 emit("// ---- values from atol() and from loop variables: whole sweeps of counts, compared as one checksum each ----")
 for t, w, s in TYPES:
@@ -373,14 +374,16 @@ for t, w, s in TYPES:
                 src = "wrap:<%s>(atol(\"%d\") + 9223372036854775808)" % (t, (a & mask(w)) - (1 << 63))
             else:
                 src = "wrap:<%s>(atol(\"%d\"))" % (t, a & mask(w))
+            sweep_n[0] += 1
+            sn = sweep_n[0]    # unsafe blocks are not scopes: every sweep needs its own names
             emit("\tunsafe extern{",
-                 "\t\tlet:<mut %s> x = mut %s" % (t, src),
-                 "\t\tlet acc = mut 0",
+                 "\t\tlet:<mut %s> x%d = mut %s" % (t, sn, src),
+                 "\t\tlet acc%d = mut 0" % sn,
                  "\t\tfor i in 0..%d{" % hi,
                  "\t\t\tlet:<mut %s> c = mut wrap:<%s>(i)" % (t, t),
-                 "\t\t\tacc = acc + wrap:<u64>(%s(x, c))" % BUILTIN[o],
+                 "\t\t\tacc%d = acc%d + wrap:<u64>(%s(x%d, c))" % (sn, sn, BUILTIN[o], sn),
                  "\t\t}",
-                 '\t\tcheck("sweep %s %s %d (%d counts)", acc == %d)' % (o, t, a, hi, total),
+                 '\t\tcheck("sweep %s %s %d (%d counts)", acc%d == %d)' % (o, t, a, hi, sn, total),
                  "\t}")
     emit("\treturn", "}")
 emit("")

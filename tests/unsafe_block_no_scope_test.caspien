@@ -1,0 +1,19 @@
+// A name declared inside an `unsafe` block stays visible after it (the block is a permission marker, not a scope), and an
+// owning local declared there is dropped at the end of the ENCLOSING scope, not at the block's end.
+import "../stdlib/libc.caspien"
+import "../stdlib/gt/*"
+import "../stdlib/print.caspien"
+struct Node{@pub{ value: mut u64 }}
+func main() void{
+	?catch(e){ return }
+	let before = mut 5
+	unsafe unaudited{
+		let n = mut ?new Node{value= 41}
+		printf("inside\n")
+	}
+	n.value = n.value + 1
+	let r = mut ref n
+	match Some(r){
+		if r.value == 42{ print("PASS visible after block\n") } else { print("FAIL visible after block\n") }
+	}
+}
