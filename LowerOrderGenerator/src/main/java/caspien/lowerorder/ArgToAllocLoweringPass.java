@@ -197,6 +197,16 @@ public class ArgToAllocLoweringPass implements OptimizationPass {
                     if (m2.size() >= 2 && m2.get(0).text.equals("ALLOC") && m2.get(1).text.equals("gt_error_message")) {
                         out.add(m2);
                         idx++;
+                        // stack traces: gt_trace_id (rbp-24) and gt_trace_ptr (rbp-32) follow, still before the parameters
+                        while (idx <= end) {
+                            List<BytecodeToken> m3 = lines.get(idx);
+                            if (m3.size() >= 2 && m3.get(0).text.equals("ALLOC") && m3.get(1).text.startsWith("gt_trace_")) {
+                                out.add(m3);
+                                idx++;
+                            } else {
+                                break;
+                            }
+                        }
                     }
                 }
                 emitParamAllocs(out, paramNames, paramTypes);

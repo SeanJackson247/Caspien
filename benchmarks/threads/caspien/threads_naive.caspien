@@ -34,7 +34,7 @@ func task(id: mut u64) mut u64{
 
 func main() void{
 	?catch(e){
-		unsafe extern{ printf("FAIL %s\n", e) }
+		unsafe extern{ printf("FAIL %s\n", e.msg) }
 		return
 	}
 	let n = mut 0

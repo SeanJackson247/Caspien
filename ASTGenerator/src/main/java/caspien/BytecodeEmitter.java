@@ -368,7 +368,50 @@ public class BytecodeEmitter {
                     throw new IllegalStateException("unexpected top-level token: " + t.text);
             }
         }
+        fillFuncNameTable();
         return emitHoistedStringsPrefix() + out.toString();
+    }
+
+    /** Marker string the stdlib `funcname` returns; replaced at the end of emission by the generated id -> name chain. */
+    private static final String FUNCNAME_MARKER = "@@funcname@@";
+
+    /**
+     * Stack traces (stack_trace.md, 3.7): `stdlib/funcname.caspien` is `return "@@funcname@@"`. Once every function has its id, the push of that
+     * marker is replaced by a chain `if id == k { return "name k" }` ending in `"?"`. Without a call to `funcname` the table stays out.
+     */
+    private void fillFuncNameTable() {
+        String markerId = hoistedStrings.get(FUNCNAME_MARKER);
+        if (markerId == null) {
+            return;
+        }
+        String markerPush = "PUSH " + markerId + " static_some_imut_string\n";
+        int at = out.indexOf(markerPush);
+        if (at < 0) {
+            return;
+        }
+        boolean referenced = out.indexOf("CALL funcname\n") >= 0;
+        StringBuilder chain = new StringBuilder();
+        if (referenced) {
+            for (int i = 0; i < traceFuncNames.size(); i++) {
+                String label = "@funcname_next_" + (i + 1);
+                chain.append("PUSH id imut_u64\nPUSH ").append(i + 1).append(" indeterminate_u64\n")
+                        .append("EQ imut_u64 indeterminate_u64 indeterminate_bool\nCMP\nJMP ").append(label).append('\n')
+                        .append("PUSH ").append(hoistedStrings.computeIfAbsent(traceFuncNames.get(i), v -> "string_id" + (hoistedStrings.size() + 1)))
+                        .append(" static_some_imut_string\nRET static_imut_string\n").append(label).append(":\n");
+            }
+        }
+        String unknownId = hoistedStrings.computeIfAbsent("?", v -> "string_id" + (hoistedStrings.size() + 1));
+        chain.append("PUSH ").append(unknownId).append(" static_some_imut_string\n");
+        out.replace(at, at + markerPush.length(), chain.toString());
+    }
+
+    /** Source-level name for a trace: the emitted name without its signature suffix, plus where it is defined. */
+    private static String traceDisplayName(TypeChecker.FuncInfo info, String emittedName) {
+        int sig = emittedName.indexOf("__sig_");
+        String name = sig >= 0 ? emittedName.substring(0, sig) : emittedName;
+        String file = info.funcToken != null && info.funcToken.file != null ? info.funcToken.file : "?";
+        file = file.substring(Math.max(file.lastIndexOf('/'), file.lastIndexOf('\\')) + 1);
+        return name + " (" + file + ":" + (info.funcToken != null ? info.funcToken.line : 0) + ")";
     }
 
     /**
@@ -1136,6 +1179,64 @@ public class BytecodeEmitter {
         if (checker.usesThrow()) {
             line("ALLOC gt_error_message static_imut_string");
         }
+        // Stack traces (stack_trace.md, 3.2): two more fixed slots right behind the first two, at rbp-24 (this function's id, written once at
+        // entry by `emitTraceIdStore`) and rbp-32 (the trace pointer carried by the unwind). Present in every frame when tracing is on.
+        if (TraceConfig.usesTrace) {
+            line("ALLOC gt_trace_id mut_u64");
+            line("ALLOC gt_trace_ptr " + traceArrayPointerType());
+            if (isTraceRoot(info, emittedName)) {
+                line("ALLOC gt_trace_buf mut_u64[" + (TraceConfig.depth + 1) + "]");   // the root frame's staging array (3.3)
+            }
+        }
+    }
+
+    /** Type of the trace pointer: `auto` to the `DEPTH + 1` ids of a trace (a pointer into a frame, as the root's buffer is). */
+    private static String traceArrayPointerType() {
+        return "auto_mut_u64[" + (TraceConfig.depth + 1) + "]";
+    }
+
+    /** A frame whose caller is not a traced Caspien frame: the real `main` (C entry point or event loop), a thread trampoline, an exported function. */
+    private static boolean isTraceRoot(TypeChecker.FuncInfo info, String emittedName) {
+        return emittedName.equals("main") || emittedName.startsWith("__trampoline_") || info.isExported;
+    }
+
+    /** Catch parameter names of the function being emitted: `throw e` of one of them re-throws and keeps the trace captured at the original throw. */
+    private Set<String> functionCatchParams = new HashSet<>();
+
+    /** With tracing on: copies the ids of the frames from here up to the root into the root's staging array (before the unwind starts). */
+    private void emitTraceCapture() {
+        if (TraceConfig.usesTrace && !inGtSuppressedContext) {
+            line("TRACE_CAPTURE " + TraceConfig.depth);
+        }
+    }
+
+    /** Next function id for stack traces: ids start at 1, id 0 ends a trace. Assigned in emission order, one per emitted function (a generic instantiation is its own function). */
+    private int nextTraceId = 1;
+    /** id - 1 -> the emitted function name, for the name table (`funcname`). */
+    private final List<String> traceFuncNames = new ArrayList<>();
+
+    /**
+     * With tracing on, stores `(id << 1) | isRoot` into this frame's `gt_trace_id` slot. A root is a frame whose caller is not a traced Caspien frame:
+     * the real `main` (the C entry point, or the event loop), a thread trampoline, an exported function.
+     */
+    private void emitTraceIdStore(TypeChecker.FuncInfo info, String emittedName) {
+        if (!TraceConfig.usesTrace) {
+            return;
+        }
+        boolean root = isTraceRoot(info, emittedName);
+        int id = nextTraceId++;
+        traceFuncNames.add(traceDisplayName(info, emittedName));
+        line("ADDR gt_trace_id mut_u64");
+        line("PUSH " + (((long) id << 1) | (root ? 1 : 0)) + " indeterminate_u64");
+        line("ASSIGN mut_u64 indeterminate_u64 mut_u64");
+        if (root) {
+            // a root's trace pointer starts at its own staging array; unwinding then carries the same pointer up every frame
+            String arr = "mut_u64[" + (TraceConfig.depth + 1) + "]";
+            line("ADDR gt_trace_ptr " + traceArrayPointerType());
+            line("PUSH gt_trace_buf " + arr);
+            line("ADDR_OF AUTO " + arr + " auto_indeterminate_u64[" + (TraceConfig.depth + 1) + "]");
+            line("ASSIGN " + traceArrayPointerType() + " " + traceArrayPointerType() + " " + traceArrayPointerType());
+        }
     }
 
     /**
@@ -1144,7 +1245,7 @@ public class BytecodeEmitter {
      * a `catch` in any frame up the chain sees the message that was thrown, not its own never-written slot.
      */
     private String gtUnwindLine() {
-        return checker.usesThrow() ? "GT_UNWIND MSG" : "GT_UNWIND";
+        return checker.usesThrow() ? (TraceConfig.usesTrace ? "GT_UNWIND MSG TRACE" : "GT_UNWIND MSG") : "GT_UNWIND";
     }
 
     /** The rest of the `gt_routine` prologue -- see `emitGtRoutineAlloc`'s doc comment for why this is split out and why it must run only after every ALLOC/ALLOC_STATIC in the function has already been emitted. */
@@ -1207,6 +1308,7 @@ public class BytecodeEmitter {
         // unwind through, so the simpler, whole-function-list shape is
         // still exactly as correct (and exactly as untouched) as it
         // always was.
+        emitTraceIdStore(info, emittedName);
         if (checker.usesThrow()) {
             return;
         }
@@ -1398,6 +1500,7 @@ public class BytecodeEmitter {
         // this can't wait until the try-block's own normal-position
         // emission the way an ordinary fresh label generation would.
         collectTryBlockLabels(info.funcToken.childs, new ArrayDeque<>());
+        functionCatchParams = new HashSet<>();
         line("FUNC_START " + emittedName);
         if (allowExport && info.isExported) {
             // "This symbol will be available to an assembly file linking
@@ -1408,6 +1511,9 @@ public class BytecodeEmitter {
             line("EXPORT");
         }
         emitDecorators("FUNC_DECORATE", info.funcToken.decorators, true);
+        if (TraceConfig.usesTrace && !gtSuppressed) {
+            line("FUNC_DECORATE @dont(inline)");   // an inlined function leaves no frame, and so no id, on the stack (stack_trace.md, 3.3)
+        }
         line("RETURNS " + info.returnType.canonical());
         // "ARG name type" -- one bare declaration line per parameter, in
         // declared order, right after "RETURNS". Confirmed directly this
@@ -2238,7 +2344,11 @@ public class BytecodeEmitter {
 
     /** Shared by both `collectHoistedAllocs` call sites that find a "try" node (under a 'let', or standalone): hoists the catch's own bound parameter (`ALLOC <catchParamName> static_imut_string`, initialized later by `emitHoistedCatchBlocks`'s own one-time snapshot write) plus, recursively, anything the catch body itself declares. */
     private void collectTryHoistedAllocs(Token tryNode, List<Runnable> staticAllocs, List<Runnable> ordinaryAllocs) {
+        functionCatchParams.add(tryNode.catchParamName);
         ordinaryAllocs.add(() -> line("ALLOC " + tryNode.catchParamName + " static_imut_string"));
+        if (tryNode.catchUsesStackTrace) {
+            ordinaryAllocs.add(() -> line("ALLOC " + tryNode.catchParamName + "$trace mut_u64[" + (TraceConfig.depth + 1) + "]"));
+        }
         collectHoistedAllocs(tryNode.childs, staticAllocs, ordinaryAllocs);
     }
 
@@ -2380,6 +2490,14 @@ public class BytecodeEmitter {
             line("ADDR " + tryNode.catchParamName + " static_imut_string");
             line("PUSH gt_error_message static_imut_string");
             line("ASSIGN static_imut_string static_imut_string static_imut_string");
+            if (tryNode.catchUsesStackTrace) {
+                // handler-local copy of the trace: the staging array belongs to the root and a later throw would overwrite it
+                String arr = "mut_u64[" + (TraceConfig.depth + 1) + "]";
+                line("ADDR " + tryNode.catchParamName + "$trace " + arr);
+                line("PUSH gt_trace_ptr " + traceArrayPointerType());
+                line("DEREF " + arr);
+                line("ASSIGN " + arr + " " + arr + " " + arr);
+            }
             emitBlock(tryNode.childs);
             // Deliberately no `emitDestructList`/trailing `JMP` here --
             // `TypeChecker.checkTry` guarantees this block's own last
@@ -3302,6 +3420,9 @@ public class BytecodeEmitter {
         // "static_some_imut_string" for a literal, "static_imut_string"
         // for a variable -- the identical type text an ordinary `PUSH`
         // of this same expression would already use anywhere else.
+        if (!(expr.type == TokenType.VARREF && functionCatchParams.contains(expr.text))) {
+            emitTraceCapture();   // a fresh throw starts a new trace; `throw e` of a catch parameter keeps the one already captured
+        }
         line("ADDR gt_error_message static_imut_string");
         line("PUSH " + operand + " " + expr.resolvedType);
         line("ASSIGN static_imut_string " + expr.resolvedType + " static_imut_string");
@@ -5987,6 +6108,7 @@ public class BytecodeEmitter {
     /** Sets the shared `gt_error_message` and jumps to the catch of the `try`/`?` wrapping a 'par'/'await' (same shape as the 'new' out-of-memory exit). */
     private void emitAsyncFailureJump(String catchLabel, String message) {
         String messageId = hoistedStringId(message);
+        emitTraceCapture();
         line("ADDR gt_error_message static_imut_string");
         line("PUSH " + messageId + " static_imut_string");
         line("ASSIGN static_imut_string static_imut_string static_imut_string");
@@ -6324,6 +6446,17 @@ public class BytecodeEmitter {
      * down to the base token first.
      */
     private void emitDot(Token op) {
+        if (op.catchMember != null) {
+            String param = op.catchTry.catchParamName;
+            if (op.catchMember.equals("msg")) {
+                line("PUSH " + param + " static_imut_string");
+            } else {
+                String arr = "mut_u64[" + (TraceConfig.depth + 1) + "]";
+                line("PUSH " + param + "$trace " + arr);
+                line("ADDR_OF AUTO " + arr + " auto_indeterminate_u64[" + (TraceConfig.depth + 1) + "]");
+            }
+            return;
+        }
         if (isQualifiedNameableDot(op)) {
             line("PUSH " + qualifiedDotName(op) + " " + op.resolvedType);
             return;
@@ -6376,6 +6509,9 @@ public class BytecodeEmitter {
      * (confirmed directly against real bytecode, not assumed).
      */
     private boolean isQualifiedNameableDot(Token node) {
+        if (node.catchMember != null) {
+            return false;
+        }
         if (node.type == TokenType.OPERATOR && node.text.equals(".")) {
             // Per-level check, not just "does the whole chain bottom out
             // at a VARREF": node.left is the segment this level dots
@@ -6779,6 +6915,7 @@ public class BytecodeEmitter {
             emitDestructMovedSources(movedSources); // the moved-in values are lost with the failed allocation: free them
             emitDestructTempNames(movedTemps, op);
             String oomStringId = hoistedStringId("out of memory");
+            emitTraceCapture();
             line("ADDR gt_error_message static_imut_string");
             line("PUSH " + oomStringId + " static_imut_string");
             line("ASSIGN static_imut_string static_imut_string static_imut_string");
@@ -6829,6 +6966,7 @@ public class BytecodeEmitter {
             emitDestructMovedSources(movedSources);
             emitDestructTempNames(movedTemps, op);
             String oomStringId = hoistedStringId("out of memory");
+            emitTraceCapture();
             line("ADDR gt_error_message static_imut_string");
             line("PUSH " + oomStringId + " static_imut_string");
             line("ASSIGN static_imut_string static_imut_string static_imut_string");

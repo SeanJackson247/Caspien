@@ -1,0 +1,21 @@
+// A catch parameter is the caught error (message + stack trace), not the message string: using it bare is a compile error.
+// Use `e.msg` for the message, `e.stack_trace` for the trace; only `throw e` (a re-throw) takes it bare.
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+
+@throws
+func f() mut u64{
+	throw "boom"
+}
+
+func main() void{
+	?catch(e){
+		unsafe extern{ printf("%s\n", e) }
+		return
+	}
+	let v = mut ? f()
+}

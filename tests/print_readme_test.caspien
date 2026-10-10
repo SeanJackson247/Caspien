@@ -28,7 +28,7 @@ func parse(x: mut u64) mut u64{
 func middle(x: mut u64) mut u64{
 	?catch(e){
 		print("middle: saw '")
-		print(e)
+		print(e.msg)
 		println("', passing it on")
 		throw e
 	}
@@ -50,7 +50,7 @@ func run(x: mut u64) void{
 			print("run(")
 			print(x)
 			print("): caught '")
-			print(e)
+			print(e.msg)
 			println("'")
 			continue
 		}

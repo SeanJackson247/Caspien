@@ -42,7 +42,7 @@ func worker(id: mut u64) void{
 
 func main() void{
 	?catch(e){
-		unsafe extern{ printf("FAIL %s\n", e) }
+		unsafe extern{ printf("FAIL %s\n", e.msg) }
 		return
 	}
 	let rounds = mut 0

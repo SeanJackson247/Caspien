@@ -16,7 +16,7 @@ func triple(x: mut u64) mut u64{
 
 func main() void{
 	?catch(e){
-		unsafe extern{ printf("FAIL par_detach: %s\n", e) }
+		unsafe extern{ printf("FAIL par_detach: %s\n", e.msg) }
 		return
 	}
 	let good = mut 0

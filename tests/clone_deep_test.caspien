@@ -30,7 +30,7 @@ func main() void{
 	let fails = mut 0
 	try{
 		?catch(e){
-			unsafe extern{ printf("FAIL caught %s\n", e) }
+			unsafe extern{ printf("FAIL caught %s\n", e.msg) }
 			return
 		}
 		let ip = mut ?new Pair{a= 7, b= 9}

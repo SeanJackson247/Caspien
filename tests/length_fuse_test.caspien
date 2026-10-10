@@ -22,7 +22,7 @@ func out(name: static imut string, v: imut u64) void{
 @dont(inline)
 func t1() void{
 	?catch(e){
-		unsafe extern{ printf("FAIL uncaught: %s\n", e) }
+		unsafe extern{ printf("FAIL uncaught: %s\n", e.msg) }
 		return
 	}
 	let n20 = mut 0
@@ -63,7 +63,7 @@ func t1() void{
 @dont(inline)
 func t2() void{
 	?catch(e){
-		unsafe extern{ printf("FAIL uncaught: %s\n", e) }
+		unsafe extern{ printf("FAIL uncaught: %s\n", e.msg) }
 		return
 	}
 	let n20 = mut 0
@@ -115,7 +115,7 @@ func t2() void{
 @dont(inline)
 func t3() void{
 	?catch(e){
-		unsafe extern{ printf("FAIL uncaught: %s\n", e) }
+		unsafe extern{ printf("FAIL uncaught: %s\n", e.msg) }
 		return
 	}
 	let n20 = mut 0
@@ -165,7 +165,7 @@ func t3() void{
 @dont(inline)
 func t4() void{
 	?catch(e){
-		unsafe extern{ printf("FAIL uncaught: %s\n", e) }
+		unsafe extern{ printf("FAIL uncaught: %s\n", e.msg) }
 		return
 	}
 	let n20 = mut 0
@@ -219,7 +219,7 @@ func t4() void{
 @dont(inline)
 func t5() void{
 	?catch(e){
-		unsafe extern{ printf("FAIL uncaught: %s\n", e) }
+		unsafe extern{ printf("FAIL uncaught: %s\n", e.msg) }
 		return
 	}
 	let n20 = mut 0

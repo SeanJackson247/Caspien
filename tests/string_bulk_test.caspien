@@ -26,7 +26,7 @@ func code(c: mut char) mut u64{
 
 func main() void{
 	?catch(e){
-		unsafe extern{ printf("FAIL uncaught: %s\n", e) }
+		unsafe extern{ printf("FAIL uncaught: %s\n", e.msg) }
 		return
 	}
 	let s = mut ? new String()

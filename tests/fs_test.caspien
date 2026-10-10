@@ -64,7 +64,7 @@ func readLen(d: ref some imut Dir, name: static imut string) mut u64{
 
 func main() imut s32{
 	?catch(e){
-		unsafe extern{ printf("FAIL uncaught %s\n", e) }
+		unsafe extern{ printf("FAIL uncaught %s\n", e.msg) }
 		return 1
 	}
 	let d = mut ? Dir.rootRW("/tmp/caspien_fs_test")

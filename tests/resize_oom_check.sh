@@ -26,7 +26,7 @@ struct Holder{@pub{
 func main() void{
 	try{
 		?catch(e){
-			unsafe extern{ printf("CAUGHT %s\n", e) }
+			unsafe extern{ printf("CAUGHT %s\n", e.msg) }
 			return
 		}'
 TAIL='

@@ -33,7 +33,7 @@ func mix(x: imut u64) u64{
 
 func main() void{
 	?catch(e){
-		unsafe extern{ printf("FAIL uncaught: %s\n", e) }
+		unsafe extern{ printf("FAIL uncaught: %s\n", e.msg) }
 		return
 	}
 	let n3 = mut 0

@@ -18,7 +18,7 @@ func check(name: static imut string, ok: imut bool) void{
 
 func main() void{
 	?catch(e){
-		unsafe extern{ printf("FAIL uncaught: %s\n", e) }
+		unsafe extern{ printf("FAIL uncaught: %s\n", e.msg) }
 		return
 	}
 	let m100 = mut ? new HashMap:<u64>(mut 0, mut 0, mut 100)

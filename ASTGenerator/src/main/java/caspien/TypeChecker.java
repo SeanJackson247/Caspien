@@ -1935,7 +1935,8 @@ public class TypeChecker {
      * in every function.
      */
     private boolean usesThrow = false;
-    boolean usesThrow() { return usesThrow; }
+    /** True when the program throws, or when stack tracing is on (it needs the throw-style frame layout in every function). */
+    boolean usesThrow() { return usesThrow || TraceConfig.usesTrace; }
 
     /**
      * Context flag (not a per-token field, unlike `Token.insideTry`,
@@ -11393,7 +11394,13 @@ public class TypeChecker {
                     "'" + func.name + "' is '@pure' and cannot 'throw' -- an unconditional program "
                             + "termination can never be verified at compile time");
         }
-        TypeInfo exprType = resolveExprType(throwTok.sub.get(0), scope, func);
+        rethrowOperand = throwTok.sub.get(0);   // `throw e` of a catch parameter is the one bare use that stays legal
+        TypeInfo exprType;
+        try {
+            exprType = resolveExprType(throwTok.sub.get(0), scope, func);
+        } finally {
+            rethrowOperand = null;
+        }
         TypeInfo requiredType = new TypeInfo("static", "imut", "string");
         if (!typesCompatible(requiredType, exprType)) {
             throw new CompilerException("type", throwTok.file, throwTok.line,
@@ -11581,6 +11588,7 @@ public class TypeChecker {
         // `Token.catchParamName`'s own doc comment).
         Scope catchBodyScope = new Scope(scope);
         catchBodyScope.vars.put(tryTok.catchParamName, new TypeInfo("static", "imut", "string"));
+        Token previousActiveCatchTry = activeCatchTries.put(tryTok.catchParamName, tryTok);
         // `insideCatchBody` (an instance field, not a Scope field -- see
         // its own doc comment) is what `checkStatement`'s own "continue"
         // case reads to confirm 'continue' is only ever used somewhere
@@ -11602,6 +11610,11 @@ public class TypeChecker {
         } finally {
             insideCatchBody = previousInsideCatchBody;
             catchEnclosingLoopBoundary = previousCatchLoopBoundary;
+            if (previousActiveCatchTry == null) {
+                activeCatchTries.remove(tryTok.catchParamName);
+            } else {
+                activeCatchTries.put(tryTok.catchParamName, previousActiveCatchTry);
+            }
         }
         // No `tryTok.destructOnExit` is computed here any more (unlike an
         // ordinary block): that field exists to describe what still needs
@@ -11754,6 +11767,12 @@ public class TypeChecker {
                             "use of '" + node.text + "' after its ownership was moved");
                 }
                 TypeInfo t = scope.lookup(node.text);
+                if (t != null && activeCatchTries.containsKey(node.text) && node != rethrowOperand) {
+                    // stack_trace.md, 3.6: the catch parameter is the caught error (message + trace), not the message string
+                    throw new CompilerException("type", node.file, node.line,
+                            "'" + node.text + "' is the caught error -- use '" + node.text + ".msg' for the message, '" + node.text
+                                    + ".stack_trace' for the trace, or 'throw " + node.text + "' to re-throw it");
+                }
                 if (t != null) {
                     if ("ref".equals(t.storage) && t.isSome && node != assignTargetVar) {
                         ProofKills.refSomeRead(node, scope.activeMatchPatterns);
@@ -17791,9 +17810,28 @@ public class TypeChecker {
                         + "written through its own 'match @lock' statement, or from 'unsafe atomic{...}' code");
     }
 
+    /** Catch parameters of the catch bodies being checked (name -> the try token that binds it). */
+    private final Map<String, Token> activeCatchTries = new HashMap<>();
+    /** The operand of the `throw` being checked (a bare catch parameter there is a re-throw, not a use of the message). */
+    private Token rethrowOperand = null;
+
     private TypeInfo checkDot(Token op, Scope scope, FuncInfo func) {
         boolean leftIsBareName = op.left.type == TokenType.VARREF;
         boolean leftIsDeclaredVar = leftIsBareName && scope.lookup(op.left.text) != null;
+
+        // `e.msg` / `e.stack_trace` on a catch parameter (stack_trace.md, 3.6)
+        if (leftIsBareName && leftIsDeclaredVar && activeCatchTries.containsKey(op.left.text)
+                && op.right.type == TokenType.VARREF
+                && (op.right.text.equals("msg") || op.right.text.equals("stack_trace"))) {
+            Token tryTok = activeCatchTries.get(op.left.text);
+            op.catchMember = op.right.text;
+            op.catchTry = tryTok;
+            if (op.right.text.equals("msg")) {
+                return new TypeInfo("static", "imut", "string");
+            }
+            tryTok.catchUsesStackTrace = true;
+            return new TypeInfo("auto", "imut", "u64[" + (TraceConfig.depth + 1) + "]");
+        }
 
         // "only in a match statement a Struct.enum may be used in place
         // of a literal struct name for instanceof, or a Interface.enum

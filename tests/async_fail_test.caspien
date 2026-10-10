@@ -18,7 +18,7 @@ func triple(x: mut u64) mut u64{
 func main() void{
 	try{
 		?catch(e){
-			unsafe extern{ printf("CAUGHT %s\n", e) }
+			unsafe extern{ printf("CAUGHT %s\n", e.msg) }
 			return
 		}
 		let a = mut ? await triple(mut 14)

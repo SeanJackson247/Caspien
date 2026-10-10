@@ -910,7 +910,7 @@ func parse(x: mut u64) mut u64{
 @throws
 func middle(x: mut u64) mut u64{
 	?catch(e){
-		unsafe extern{ printf("middle: saw '%s', passing it on\n", e) }
+		unsafe extern{ printf("middle: saw '%s', passing it on\n", e.msg) }
 		throw e                                  // re-throw the same message
 	}
 	let p = mut ? new Point{x= mut x, y= mut 1}  // freed during the unwind
@@ -934,7 +934,7 @@ that compiles to nothing, and it must contain at least one real `try`. Its only 
 func run(x: mut u64) void{
 	try{
 		let r = try top(x) catch(e){
-			unsafe extern{ printf("run(%llu): caught '%s'\n", x, e) }
+			unsafe extern{ printf("run(%llu): caught '%s'\n", x, e.msg) }
 			continue                 // jump to just past the enclosing try{} block
 		}
 		unsafe extern{ printf("run(%llu): ok, r=%llu\n", x, r) }

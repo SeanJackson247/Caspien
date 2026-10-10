@@ -29,7 +29,7 @@ import "../stdlib/gt_destruct.caspien"
 import "../stdlib/gt_moved.caspien"
 func main() void{
 	?catch(e){
-		unsafe extern{ printf("CAUGHT %s\n", e) }
+		unsafe extern{ printf("CAUGHT %s\n", e.msg) }
 		return
 	}
 	let m = mut ? new HashMap:<u64>(mut 0, mut 0, mut 4)

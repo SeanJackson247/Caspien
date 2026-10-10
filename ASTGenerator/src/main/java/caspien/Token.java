@@ -426,6 +426,12 @@ public class Token {
      */
     public String catchParamName;
 
+    /** Set by TypeChecker on a try token whose catch body mentions `<e>.stack_trace`: the emitter then keeps a handler-local copy of the trace. */
+    public boolean catchUsesStackTrace;
+    /** Set by TypeChecker on a `.` token that is `<catch parameter>.msg` or `.stack_trace`: the member name; `catchTry` is the owning try token. */
+    public String catchMember;
+    public Token catchTry;
+
     /**
      * "try { ... }" -- a plain lexical-scope block, distinct from (but
      * sharing the same "try" KEYWORD text as) the throwing "try EXPR

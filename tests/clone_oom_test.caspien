@@ -27,7 +27,7 @@ func main() void{
 	unsafe extern{ printf("start\n") }
 	try{
 		?catch(e){
-			unsafe extern{ printf("CAUGHT %s\n", e) }
+			unsafe extern{ printf("CAUGHT %s\n", e.msg) }
 			return
 		}
 		let ip = mut ?new Pair{a= 7, b= 9}

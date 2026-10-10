@@ -1,0 +1,34 @@
+// A throw caught inside an @async thread: the trace ends at the thread trampoline (its root); checked by stack_trace_check.sh.
+import "../stdlib/print.caspien"
+import "../stdlib/funcname.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+import "../stdlib/par_call.caspien"
+import "../stdlib/await_call.caspien"
+
+@throws
+func leaf(x: mut u64) mut u64{
+	throw "in thread"
+}
+
+@async
+func work(x: mut u64) mut u64{
+	?catch(e){
+		println(e.msg)
+		let t = e.stack_trace
+		println(funcname(t[0]))
+		println(funcname(t[1]))
+		println(funcname(t[2]))
+		return 0
+	}
+	return ? leaf(x)
+}
+
+func main() void{
+	?catch(e){ return }
+	let v = mut ? await work(mut 1)
+	println(v)
+}

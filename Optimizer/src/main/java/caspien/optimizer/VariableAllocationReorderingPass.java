@@ -124,11 +124,15 @@ public class VariableAllocationReorderingPass implements OptimizationPass {
             p++;
             if (p <= last && fn.get(p).get(1).text.equals("gt_error_message")) {
                 p++;
+                // stack traces: the id and trace-pointer slots stay at rbp-24 / rbp-32
+                while (p <= last && fn.get(p).get(1).text.startsWith("gt_trace_")) {
+                    p++;
+                }
             }
         }
         for (int k = p; k <= last; k++) {
             String nm = fn.get(k).get(1).text;
-            if (nm.equals("gt_routine_address") || nm.equals("gt_error_message")) {
+            if (nm.equals("gt_routine_address") || nm.equals("gt_error_message") || nm.startsWith("gt_trace_")) {
                 return null;
             }
         }
@@ -136,7 +140,7 @@ public class VariableAllocationReorderingPass implements OptimizationPass {
             List<BytecodeToken> l = fn.get(k);
             if (isAlloc(l)) {
                 String nm = l.get(1).text;
-                if (nm.equals("gt_routine_address") || nm.equals("gt_error_message")) {
+                if (nm.equals("gt_routine_address") || nm.equals("gt_error_message") || nm.startsWith("gt_trace_")) {
                     return null;
                 }
             }

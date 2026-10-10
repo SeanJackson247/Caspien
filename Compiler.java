@@ -97,7 +97,7 @@ public class Compiler {
     }
 
     private static final String USAGE =
-            "Usage: java Compiler -i <input.caspien> <output> [--no-warnings] [--fs-report] [--asm | --lob | --hob] [--no-cache] [--cache-report] [--clear-cache]\n       java Compiler -i <input.caspien> --audit [--audit-no-stdlib]\n       java Compiler -i <input.caspien> --viz [out.html]";
+            "Usage: java Compiler -i <input.caspien> <output> [--no-warnings] [--fs-report] [--asm | --lob | --hob] [--trace-depth N] [--no-cache] [--cache-report] [--clear-cache]\n       java Compiler -i <input.caspien> --audit [--audit-no-stdlib]\n       java Compiler -i <input.caspien> --viz [out.html]";
 
     private static class UsageError extends RuntimeException {
         UsageError(String message) {
@@ -115,6 +115,7 @@ public class Compiler {
         boolean stopAsm = false, stopLob = false, stopHob = false;
         boolean noCache = false, cacheReport = false, clearCache = false;
         boolean audit = false, auditNoStdlib = false, viz = false;
+        int traceDepth = 16;
 
         for (int i = 0; i < args.length; i++) {
             String a = args[i];
@@ -149,6 +150,19 @@ public class Compiler {
                 case "--audit-no-stdlib":
                     audit = true;
                     auditNoStdlib = true;
+                    break;
+                case "--trace-depth":
+                    if (i + 1 >= args.length) {
+                        throw new UsageError("--trace-depth requires a number");
+                    }
+                    try {
+                        traceDepth = Integer.parseInt(args[++i]);
+                    } catch (NumberFormatException e) {
+                        throw new UsageError("--trace-depth requires a whole number, got: " + args[i]);
+                    }
+                    if (traceDepth < 1 || traceDepth > 1024) {
+                        throw new UsageError("--trace-depth must be from 1 to 1024, got: " + traceDepth);
+                    }
                     break;
                 case "--no-cache":
                     noCache = true;
@@ -224,6 +238,8 @@ public class Compiler {
         splitToolchainConfig(root, astGenDir, optimizerDir, lowerOrderDir, codegenDir);
         // the front end needs the target for the platform-specific stdlib imports ("{target}" in an import path, e.g. fs_{target}.caspien)
         Files.writeString(astGenDir.resolve("platform.config"), "target: " + readCodegenTarget(codegenDir) + "\n", StandardCharsets.UTF_8);
+        // stack traces: how many frames a captured trace keeps (see stack_trace.md); only matters to a program that uses the feature
+        Files.writeString(astGenDir.resolve("trace.config"), "trace-depth: " + traceDepth + "\n", StandardCharsets.UTF_8);
 
         Path buildDir = null; // created lazily, only if an intermediate file is actually needed
 
@@ -242,7 +258,7 @@ public class Compiler {
         // ---- Stage 1: ASTGenerator (.caspien -> higher-order bytecode) ----
         Path hobOut = stopHob ? output : (buildDir = ensureBuildDir(buildDir, output)).resolve("1_ast_generator.hob.txt");
         String key1 = fsReport ? null : CompilerCache.sha("S1\n" + cache.classesHash(astGenDir) + "\n"
-                + CompilerCache.configView(compilerCfg, CompilerCache.OPT_KEYS, CompilerCache.REG_KEYS) + "\n--fs--\n" + fsCfg + "\n--target--\n" + target
+                + CompilerCache.configView(compilerCfg, CompilerCache.OPT_KEYS, CompilerCache.REG_KEYS) + "\n--fs--\n" + fsCfg + "\n--target--\n" + target + "\n--trace-depth--\n" + traceDepth
                 + "\n--input--\n" + input);
         if (viz) {
             Map<String, String> env = new java.util.HashMap<>();

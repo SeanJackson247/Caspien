@@ -1,0 +1,33 @@
+// A failed allocation (made to fail by tests/alloc_shim.c, FAILN) is caught with a trace that starts in the function that allocated.
+// stack_trace_oom_check.sh runs it. Without the shim it prints "alloc ok".
+import "../stdlib/print.caspien"
+import "../stdlib/funcname.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+
+struct Box{
+	@pub{ v: mut u64 }
+}
+
+@throws
+func make() owns some mut Box{
+	?catch(e){ throw e }
+	let b = mut ?new Box{v= 7}
+	return b
+}
+
+func main() void{
+	?catch(e){
+		println(e.msg)
+		let t = e.stack_trace
+		println(funcname(t[0]))
+		println(funcname(t[1]))
+		println(funcname(t[2]))
+		return
+	}
+	let b = mut ?make()
+	println("alloc ok")
+}

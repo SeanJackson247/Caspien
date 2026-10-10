@@ -636,7 +636,7 @@ public class LoopUnrollingPass implements OptimizationPass {
             List<BytecodeToken> l = work.get(a);
             if (!is(l, 3, "ALLOC")) continue;
             String name = l.get(1).text;
-            if (name.equals(lp.var) || name.equals(lp.rangeName) || name.equals("gt_routine_address") || name.equals("gt_error_message")) continue;
+            if (name.equals(lp.var) || name.equals(lp.rangeName) || name.equals("gt_routine_address") || name.equals("gt_error_message") || name.startsWith("gt_trace_")) continue;
             boolean inside = false, outside = false;
             for (int k = f[0]; k <= f[1] && !outside; k++) {
                 if (k == a || is(work.get(k), 3, "ALLOC")) continue;   // other ALLOC lines only spell the name in a range type; they are renamed with their variable

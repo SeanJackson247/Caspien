@@ -4955,6 +4955,52 @@ public class X86Backend {
                 emitAlignedCall(() -> emitCallByName("pthread_exit"));
                 return;
             }
+            case "TRACE_CAPTURE": {
+                // Stack traces (stack_trace.md, 3.4). Walk the rbp chain from this frame: each traced frame keeps `(id << 1) | isRoot` at
+                // rbp-24; stop at the first root (never following a root's saved rbp), counting frames. The root's rbp-32 holds the address of its
+                // staging array. Second pass: store the innermost min(count, DEPTH) ids, then a 0 terminator. Nothing else is touched: the
+                // scratch registers are saved and restored, because variable registers may be live across this instruction.
+                int depth = Integer.parseInt(line.get(1).text);
+                raw("    pushq %rax");
+                raw("    pushq %rcx");
+                raw("    pushq %rdx");
+                raw("    pushq %rsi");
+                raw("    pushq %r11");
+                raw("    movq %rbp, %rcx");
+                raw("    xorl %edx, %edx");
+                raw("1:");
+                raw("    incq %rdx");
+                raw("    movq -24(%rcx), %rax");
+                raw("    testb $1, %al");
+                raw("    jnz 2f");
+                raw("    movq (%rcx), %rcx");
+                raw("    jmp 1b");
+                raw("2:");
+                raw("    movq -32(%rcx), %rsi");
+                raw("    movq $" + depth + ", %rax");
+                raw("    cmpq %rax, %rdx");
+                raw("    cmova %rax, %rdx");
+                raw("    movq %rbp, %rcx");
+                raw("    xorl %eax, %eax");
+                raw("3:");
+                raw("    cmpq %rdx, %rax");
+                raw("    jae 4f");
+                raw("    movq -24(%rcx), %r11");
+                raw("    shrq $1, %r11");
+                raw("    movq %r11, (%rsi,%rax,8)");
+                raw("    incq %rax");
+                raw("    movq (%rcx), %rcx");
+                raw("    jmp 3b");
+                raw("4:");
+                raw("    movq $0, (%rsi,%rdx,8)");
+                raw("    movq %rsi, -32(%rbp)");   // this frame's trace pointer = the root's array (a catch in this same frame reads it)
+                raw("    popq %r11");
+                raw("    popq %rsi");
+                raw("    popq %rdx");
+                raw("    popq %rcx");
+                raw("    popq %rax");
+                return;
+            }
             case "GT_UNWIND": {
                 // "Make the assembly to return from a function as you
                 // normally would, but then locate the first variable in
@@ -5025,8 +5071,14 @@ public class X86Backend {
                 // caller's slot, so a catch anywhere up the chain sees what was thrown. rax is free here (it is loaded with the jump
                 // target below).
                 boolean carryMessage = line.size() > 1 && "MSG".equals(line.get(1).text);
+                // "GT_UNWIND MSG TRACE" (stack traces on): the trace pointer slot (rbp-32) travels up the same way; rcx is free here
+                // (a variable in rcx lives only in a call-free region, and an unwind always follows a call).
+                boolean carryTrace = carryMessage && line.size() > 2 && "TRACE".equals(line.get(2).text);
                 if (carryMessage) {
                     movMemToReg("rax", -16);
+                }
+                if (carryTrace) {
+                    movMemToReg("rcx", -32);
                 }
                 raw("    movq %rbp, %rsp");
                 
@@ -5035,6 +5087,9 @@ public class X86Backend {
                 
                 if (carryMessage) {
                     movRegToMem("rax", -16); // the caller's gt_error_message slot
+                }
+                if (carryTrace) {
+                    movRegToMem("rcx", -32); // the caller's gt_trace_ptr slot
                 }
                 movMemToReg("rax", -8); // the caller's own gt_routine_address slot
                 raw("    jmp *%rax");

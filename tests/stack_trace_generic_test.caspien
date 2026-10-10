@@ -1,0 +1,38 @@
+// Two instantiations of one generic @throws function have different trace names (chk_u8, chk_u64); checked by stack_trace_check.sh.
+import "../stdlib/print.caspien"
+import "../stdlib/funcname.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+
+@throws
+func chk<T>(x: mut T) mut u64{
+	throw "bad"
+}
+
+func one() void{
+	try{
+		let a = try chk:<u8>(1) catch(e){
+			let t = e.stack_trace
+			println(funcname(t[0]))
+			return
+		}
+	}
+}
+
+func two() void{
+	try{
+		let b = try chk:<u64>(1) catch(e){
+			let t = e.stack_trace
+			println(funcname(t[0]))
+			return
+		}
+	}
+}
+
+func main() void{
+	one()
+	two()
+}

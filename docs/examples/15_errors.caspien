@@ -29,7 +29,7 @@ func parse(x: mut u64) mut u64{
 func middle(x: mut u64) mut u64{
 	// ?catch declares the handler that every `?` below it uses. It must end in return, throw or continue.
 	?catch(e){
-		unsafe extern{ printf("middle: saw '%s', passing it on\n", e) }
+		unsafe extern{ printf("middle: saw '%s', passing it on\n", e.msg) }
 		throw e                                  // re-throw the same message
 	}
 	let p = mut ? new Point{x= mut x, y= mut 1}  // `new` can fail, so it is a throwing call too
@@ -47,7 +47,7 @@ func top(x: mut u64) mut u64{
 func run(x: mut u64) void{
 	try{                                         // a scope that compiles to nothing; it is where `continue` lands
 		let r = try top(x) catch(e){             // the long form of `?`, with its own handler
-			unsafe extern{ printf("run(%llu): caught '%s'\n", x, e) }
+			unsafe extern{ printf("run(%llu): caught '%s'\n", x, e.msg) }
 			continue                             // jump to just past the enclosing try{} block
 		}
 		unsafe extern{ printf("run(%llu): ok, r=%llu\n", x, r) }

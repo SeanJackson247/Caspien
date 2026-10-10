@@ -1,0 +1,7 @@
+// funcname(id): the source-level name of a function id found in `e.stack_trace` (stack_trace.md, 3.7). Total and non-throwing: id 0 or
+// an id past the table gives "?". The body below is a placeholder: when the program is compiled with stack traces on, the compiler
+// replaces the marker string by a generated lookup over every function id (and only if the program calls `funcname`).
+@pub
+func funcname(id: imut u64) static imut string{
+	return "@@funcname@@"
+}

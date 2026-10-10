@@ -202,9 +202,9 @@ global, no collection and no registration. Nothing here is shared between thread
 
 ## 7. Open decisions
 
-1. The exact type exposed for `e.stack_trace` (a pointer to a `u64` array; which pointer kind, and whether its length is known
+1. (DECIDED 10 Oct: `auto imut u64[DEPTH+1]`, indexing needs a literal index.) The exact type exposed for `e.stack_trace` (a pointer to a `u64` array; which pointer kind, and whether its length is known
    to the checker) and how indexing it fits the `for match` proof rules.
-2. Whether the handler-local copy (3.6) should be unconditional for any handler that mentions `e.stack_trace`, as written, or
+2. (DECIDED 10 Oct: the copy is made only for a handler that mentions `e.stack_trace`.) Whether the handler-local copy (3.6) should be unconditional for any handler that mentions `e.stack_trace`, as written, or
    whether the extra frame space is worth avoiding by reading the root's array directly.
 
 ## 8. Order of work

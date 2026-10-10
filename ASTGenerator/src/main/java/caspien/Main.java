@@ -54,6 +54,7 @@ public class Main {
 
         FsPolicy.current = FsPolicy.load("fs.config");
         FsPolicy.loadPlatform("platform.config");
+        TraceConfig.load("trace.config");
         boolean fsReport = false;
         boolean audit = false;
         boolean viz = false;
@@ -96,6 +97,7 @@ public class Main {
 
         CompilerConfig config = CompilerConfig.load("compiler.config");
 
+        TraceConfig.scan(expanded);
         TypeChecker typeChecker = new TypeChecker(config);
         typeChecker.check(expanded);
 

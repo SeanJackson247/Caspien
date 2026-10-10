@@ -1,0 +1,32 @@
+// Built with --trace-depth 2 by stack_trace_check.sh: the trace keeps the two innermost frames, then the 0 terminator (index 2).
+import "../stdlib/print.caspien"
+import "../stdlib/funcname.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+
+@throws
+func leaf(x: mut u64) mut u64{
+	if x > 3{ throw "too big" }
+	return x
+}
+
+@throws
+func mid(x: mut u64) mut u64{
+	?catch(e){ throw e }
+	return ? leaf(x)
+}
+
+func main() void{
+	?catch(e){
+		let t = e.stack_trace
+		println(funcname(t[0]))
+		println(funcname(t[1]))
+		println(funcname(t[2]))
+		return
+	}
+	let v = mut ? mid(9)
+	println(v)
+}

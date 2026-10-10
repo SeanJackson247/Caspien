@@ -63,7 +63,7 @@ func attempt(x: mut u64) mut u64{
 func attemptMsg(x: mut u64) mut u64{
 	?catch(e){
 		unsafe extern{
-			if strcmp(e, "too big") == 0{
+			if strcmp(e.msg, "too big") == 0{
 				return 1
 			}
 		}

@@ -57,7 +57,7 @@ func message(x: mut u64) mut bool{
 	try{
 		?catch(e){
 			unsafe extern{
-				if strcmp(e, "big") == 0{
+				if strcmp(e.msg, "big") == 0{
 					same = true
 				}
 			}

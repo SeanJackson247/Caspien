@@ -1273,7 +1273,7 @@ There are no exceptions that arrive unannounced. An error is a `throw` of a mess
 throw says so with `@throws`, and every caller must say what happens when it does.
 
 - A function with a `throw` must be marked `@throws`, and a `@throws` function must contain a `throw`.
-  `throw` takes a string literal, or the `e` of a `catch` to re-throw it.
+  `throw` takes a string literal, or the `e` of a `catch` to re-throw it (a re-throw keeps the original stack trace).
 - Every call to a `@throws` function, and every `new`, must be wrapped, and the wrapper must be needed:
   wrapping a call that cannot throw is an error too.
 - A handler must end in `return`, `throw` or `continue`. It cannot fall through, because a call that threw
@@ -1281,7 +1281,7 @@ throw says so with `@throws`, and every caller must say what happens when it doe
 - When a throw leaves a function, every `owns` local in it is freed on the way, and the message is
   delivered to the handler unchanged, however many frames up it is.
 
-The long form is `try EXPR catch(e){ ... }`, where `e` is the message. It is an expression, so it can sit
+The long form is `try EXPR catch(e){ ... }`, where `e` is the caught error: `e.msg` is the message (a `static imut string`) and `e.stack_trace` the trace (see below). A bare `e` is a compile error, except in `throw e`. It is an expression, so it can sit
 on the right of a `let`. `?` is shorthand for it. `?catch(e){ ... }` declares a handler, and `? EXPR` is
 `try EXPR catch(e){ <the handler most recently declared> }`. Declare it once at the top of a function and
 mark each throwing call with `?`:
@@ -1297,7 +1297,7 @@ func parse(x: mut u64) mut u64{
 func middle(x: mut u64) mut u64{
 	?catch(e){
 		print("middle: saw '")
-		print(e)
+		print(e.msg)
 		println("', passing it on")
 		throw e                                  // re-throw the same message
 	}
@@ -1325,7 +1325,7 @@ func run(x: mut u64) void{
 			print("run(")
 			print(x)
 			print("): caught '")
-			print(e)
+			print(e.msg)
 			println("'")
 			continue                 // jump to just past the enclosing try{} block
 		}
@@ -1342,8 +1342,7 @@ func run(x: mut u64) void{
 
 The most recent `?catch` applies, so one function can switch handlers part-way through. The declaration is
 positional and not scoped, so a `?catch` written inside an `if` stays in effect after it, even when the
-branch did not run. It resets at the start of every function. `throw` is safe code, and a catch parameter
-is a `static imut string`. These are the errors:
+branch did not run. It resets at the start of every function. `throw` is safe code. These are the errors:
 
 ```
 call to 'f', which is decorated '@throws', must be wrapped in 'try ... catch { ... }'
@@ -1352,7 +1351,34 @@ call to 'f', which is decorated '@throws', must be wrapped in 'try ... catch { .
 'g' uses 'throw' but is not decorated '@throws' -- add '@throws' to this function's declaration
 'catch' must be terminating -- every path through its body must end in a 'return', a 'throw', or a 'continue' ...
 '?' requires a preceding '?catch(e) { ... }' declaration, earlier in this same function, to supply its catch block
+'e' is the caught error -- use 'e.msg' for the message, 'e.stack_trace' for the trace, or 'throw e' to re-throw it
 ```
+
+**Stack traces.** A handler can read where the error came from. `e.stack_trace` is an `auto imut u64[N+1]` of function ids,
+innermost first (the function that threw, then its caller, up to the thread's root), ended by a `0`; `N` is 16 unless
+`java Compiler --trace-depth N` says otherwise (1 to 1024), and a deeper stack keeps the innermost `N` frames.
+`funcname(id)` from `stdlib/funcname.caspien` gives a name such as `leaf (prog.caspien:10)`, and `"?"` for `0` or an id it
+does not know. It cannot fail and allocates nothing, so it is safe to call while reporting an out-of-memory error.
+
+```rust
+import "stdlib/funcname.caspien"
+...
+func main() void{
+	?catch(e){
+		println(e.msg)
+		let t = e.stack_trace
+		println(funcname(t[0]))      // the function that threw
+		println(funcname(t[1]))      // its caller, and so on; 0 ends the trace
+		return
+	}
+	let v = mut ? mid(9)
+}
+```
+
+Tracing costs nothing unless a program mentions `stack_trace` or `funcname`: then every function gets two more frame
+slots, functions are no longer inlined, and each throw and each failed allocation copies the ids into a per-thread staging
+array. The handler gets its own copy of the trace, so a throw caught inside the handler cannot overwrite it. Allocation-failure
+traces start in the function that allocated. A program that mentions neither compiles to exactly the same code as before.
 
 #### Atomics, locks and threads
 

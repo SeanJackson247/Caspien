@@ -1,0 +1,85 @@
+// Stack traces: `e.stack_trace` holds the function ids from the throw up to the root (innermost first, 0 ends it); `funcname` names them.
+// This program prints the names; stack_trace_check.sh compares them with the expected chains (names carry file:line, the check strips it)
+// and also runs --trace-depth 2 and the allocation-failure cases. The PASS/FAIL lines here only cover what needs no names.
+import "../stdlib/print.caspien"
+import "../stdlib/funcname.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
+
+@throws
+func leaf(x: mut u64) mut u64{
+	if x > 3{ throw "too big" }
+	return x
+}
+
+@throws
+func mid(x: mut u64) mut u64{
+	?catch(e){ throw e }
+	return ? leaf(x)
+}
+
+// a handler in the frame that is neither the thrower nor the root
+func caught(x: mut u64) mut u64{
+	?catch(e){
+		println("in caught:")
+		let t = e.stack_trace
+		println(funcname(t[0]))
+		println(funcname(t[1]))
+		println(funcname(t[2]))
+		println(funcname(t[3]))
+		return 0
+	}
+	return ? leaf(x)
+}
+
+@throws
+func inner() mut u64{
+	throw "inner"
+}
+
+// the handler's copy survives a later throw that is caught inside the handler
+func copy_survives(x: mut u64) mut u64{
+	?catch(e){
+		let t = e.stack_trace
+		let before = t[0]
+		let z = mut try inner() catch(e2){
+			let after = t[0]
+			if before == after{
+				println("PASS copy survives")
+			}else{
+				println("FAIL copy survives")
+			}
+			println(e2.msg)
+			return 0
+		}
+		println(z)
+		return 0
+	}
+	return ? leaf(x)
+}
+
+func main() void{
+	?catch(e){
+		println(e.msg)
+		let t = e.stack_trace
+		println(funcname(t[0]))
+		println(funcname(t[1]))
+		println(funcname(t[2]))
+		println(funcname(t[3]))
+		if t[3] == 0{
+			println("PASS terminator")
+		}else{
+			println("FAIL terminator")
+		}
+		let c = caught(9)
+		let d = copy_survives(9)
+		println(funcname(0))
+		println(funcname(100000))
+		return
+	}
+	let v = mut ? mid(9)
+	println(v)
+}

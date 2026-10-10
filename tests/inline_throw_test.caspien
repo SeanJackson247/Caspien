@@ -95,7 +95,7 @@ func msgOf0() mut bool{
 	let same = mut false
 	try{
 		let v = mut try prop2(0) catch(e){
-			unsafe extern{ same = strcmp(e, "zero") == 0 }
+			unsafe extern{ same = strcmp(e.msg, "zero") == 0 }
 			return same
 		}
 		same = false
@@ -107,7 +107,7 @@ func msgOf1() mut bool{
 	let same = mut false
 	try{
 		let v = mut try prop2(1) catch(e){
-			unsafe extern{ same = strcmp(e, "one") == 0 }
+			unsafe extern{ same = strcmp(e.msg, "one") == 0 }
 			return same
 		}
 		same = false
@@ -119,7 +119,7 @@ func msgTranslated() mut bool{
 	let same = mut false
 	try{
 		let v = mut try translate(0) catch(e){
-			unsafe extern{ same = strcmp(e, "translated") == 0 }
+			unsafe extern{ same = strcmp(e.msg, "translated") == 0 }
 			return same
 		}
 		same = false

@@ -103,6 +103,8 @@ So a comment edit re-runs only the front end (the later stages see an identical 
                     numbered contents of the braces, `unsafe unaudited` blocks with the tags they actually need, other uses (`unsafe dyn(..)`),
                     and a summary by tag. Sections: your code / standard library (`--audit-no-stdlib` hides the second).
                     Then a worst-case execution cost section (abstract gas, see "Worst-case gas" below).
+    --trace-depth N Frames kept in `e.stack_trace` (1..1024, default 16). Only matters for programs that mention `stack_trace` or `funcname`
+                    (stack traces, see README "Errors"); with neither the setting has no effect on the output. Part of the stage-1 cache key.
     --clear-cache   Delete the build cache (alone, or together with a build).
 
     --no-warnings   Suppress warning output (they simply aren't printed;

@@ -10,7 +10,7 @@ import "../stdlib/gt_moved.caspien"
 
 func main() void{
 	?catch(e){
-		unsafe extern{ printf("FAIL uncaught: %s\n", e) }
+		unsafe extern{ printf("FAIL uncaught: %s\n", e.msg) }
 		return
 	}
 	let a8 = mut ? dyn:<u8>([])

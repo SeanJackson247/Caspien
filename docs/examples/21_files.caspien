@@ -37,7 +37,7 @@ func refused(d: ref some imut Dir, name: static imut string) mut u64{
 
 func run(root: ref some imut Dir) void{
 	?catch(e){
-		unsafe extern{ printf("failed: %s\n", e) }
+		unsafe extern{ printf("failed: %s\n", e.msg) }
 		return
 	}
 	? Dir.make(root, "caspien_demo")

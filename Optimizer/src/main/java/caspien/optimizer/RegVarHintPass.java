@@ -114,7 +114,7 @@ public class RegVarHintPass implements OptimizationPass {
             String n = e.getKey();
             // A name declared several times with ONE type (the counter `i` of several `for` loops of a function) is one slot
             // for the lower stages (they resolve a name to a single frame offset), so it is one candidate.
-            if (!mixedType.contains(n) && !n.startsWith("$") && !n.equals("gt_routine_address") && !n.equals("gt_error_message")
+            if (!mixedType.contains(n) && !n.startsWith("$") && !n.equals("gt_routine_address") && !n.equals("gt_error_message") && !n.startsWith("gt_trace_")
                     && PLAIN_SCALAR.matcher(allocType.get(n)).matches()) {
                 candidates.add(n);
             }

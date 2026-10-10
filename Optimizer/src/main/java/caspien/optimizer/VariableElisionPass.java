@@ -61,7 +61,7 @@ public class VariableElisionPass implements OptimizationPass {
             Map<String, String> lits = new HashMap<>();
             boundLits.put(f[0], new Object[] {f[1], lits});
             for (VarAnalysis.Var v : vars.values()) {
-                if (v.bad || v.assigns.size() != 1) continue;
+                if (v.bad || v.assigns.size() != 1 || v.name.startsWith("gt_trace_")) continue;   // read only by the backend's TRACE_CAPTURE walk
                 int a = v.assigns.get(0);
                 boolean ok = true;
                 for (int r : v.reads) {

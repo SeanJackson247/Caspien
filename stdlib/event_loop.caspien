@@ -20,7 +20,7 @@ import "event_loop_fail.caspien"
 @throws
 func start() void{
 	?catch(e){
-		eventLoopReport(e)
+		eventLoopReport(e.msg)
 		throw e
 	}
 	let state = mut ? main()

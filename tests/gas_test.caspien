@@ -58,7 +58,7 @@ func gas_try(x: mut u64) mut u64{
 	let total = mut 0
 	try{
 		?catch(e){
-			unsafe extern{ printf("caught %s\n", e) }
+			unsafe extern{ printf("caught %s\n", e.msg) }
 			continue
 		}
 		let v = mut ? gas_thrower(x)
