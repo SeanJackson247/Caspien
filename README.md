@@ -1505,6 +1505,10 @@ compiler checks the list both ways: a block that needs a reason it does not name
 that names one it does not need, so the line is also what you grep for. A bare `unsafe{}` is an error. The one exception is `unsafe unaudited{`: it stands for every tag at once and says nothing about why, for code nobody has audited yet. It is written alone, is just as easy to grep for, and the standard library may never use it (the compiler refuses it in any file under `stdlib/`). (A
 root-level `unsafe{}` that holds declarations is not a statement block and takes no list.)
 
+An `unsafe` block is a permission marker, not a scope: a name declared inside it stays visible after it, an owning local declared inside is dropped at the end of the
+enclosing scope, and declaring the same name again in the same function (even in a second `unsafe` block) is the usual redeclaration error. So a block can be
+as small as the statements that need it, and `--fix unsafe-split` (see *Doc comments*) does exactly that to a large one.
+
 One example of every tag (each is compiled and run in `docs/examples/19_unsafe_tags.caspien`, which also
 defines the helpers they use):
 
@@ -1716,12 +1720,19 @@ holding it is `conditional`. On a generic function the label has to hold for eve
 before the `unsafe` and `termination` before the inner `loop`. Branches take no label: a function that is `conditional` is so because of a
 loop or call inside one of its arms, and `--audit` names it, with the file and line of the loop or of the callee.
 
-The compiler can write these comments for you, as text only (it inserts whole comment lines and changes nothing else):
+The compiler can write these comments for you and can take big `unsafe` blocks apart. Both are text edits that are checked afterwards:
 
 ```
 java Compiler -i main.caspien --fix termination,justify            # show the plan, write nothing
 java Compiler -i main.caspien --fix termination,justify --write    # apply it
+java Compiler -i main.caspien --fix unsafe-split --write           # break big unsafe blocks into minimal tagged ones
 ```
+
+`--fix unsafe-split` takes a large block (typically an `unsafe unaudited{`) apart: each run of adjacent statements that needs the same reasons becomes its own block
+named with exactly those reasons, a statement that needs none moves out of `unsafe`, and every new block gets a `/*! justify: TODO */` (the block's existing
+justification stays on the first one). A bare `assume match` keeps the rest of its block together, since a proof lives in the scope it was made in. A one-line
+`unsafe unaudited{ .. }` just gets its real tags. After `--write` the program must compile to the same bytecode (source line numbers and unreachable code after
+a `return` aside); a block whose rewrite fails that is left as written while the others go through (`# kept as written`).
 
 `termination` labels every unlabelled `func`, `for` and `loop` in your files with the class the audit computes (a construct whose generic
 instances disagree, or that does not start its line, is listed and left alone). `justify` puts `/*! justify: TODO */` before every
@@ -1768,7 +1779,7 @@ like `import "../stdlib/libc.caspien"`.
 | `--no-warnings` | Hide warnings (errors are always shown). |
 | `--fs-report` | Print every file-system root the program opens and every `unsafe file` use, next to the build's file policy (see 4.3). |
 | `--audit` | Do not build anything: print what the compiler can say about the compilation target (see *Auditing a target*). |
-| `--fix MODES [--write] [--fix-stdlib]` | Do not build anything: insert `termination` / `justify` doc comments (see *Doc comments*); a dry run unless `--write`. |
+| `--fix MODES [--write] [--fix-stdlib]` | Do not build anything: insert `termination` / `justify` doc comments or rewrite big `unsafe` blocks into minimal ones (`unsafe-split`, see *Doc comments*); a dry run unless `--write`. |
 | `--viz [out.html]` | Do not build anything: write an HTML page that draws the entry function and its direct callees as circles sized by worst-case stack depth. |
 
 The intermediate files of every stage are also kept under `output/.build/`, which is the easiest way to see

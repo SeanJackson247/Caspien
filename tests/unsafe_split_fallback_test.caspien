@@ -1,0 +1,28 @@
+// `--fix unsafe-split` fallback input: two big `unsafe unaudited{}` blocks. The first splits cleanly. In the second, a statement that needs no tag
+// follows a C call: an `extern` block ends the alive proof of `r` when it closes, so once the call sits in a block of its own the later read
+// `r.value` is outside it and is refused. That rewrite cannot be verified, so that block must stay exactly as written (tests/unsafe_split_check.sh).
+import "../stdlib/libc.caspien"
+import "../stdlib/gt/*"
+
+struct Node{@pub{ value: mut u64 }}
+
+func main() void{
+	?catch(e){ return }
+	let base = mut 3
+	unsafe unaudited{
+		let a = mut (base + 1)
+		printf("first %llu\n", a)
+		let b = mut (a + 1)
+		putchar(10)
+	}
+	let n = mut ?new Node{value= 7}
+	let r = mut ref n
+	match Some(r){
+		unsafe unaudited{
+			let before = mut 1
+			printf("second %llu\n", r.value)
+			let after = mut (r.value + before)
+			printf("after %llu\n", after)
+		}
+	}
+}

@@ -1146,7 +1146,55 @@ public class TypeChecker {
         final Token tok;
         final Set<String> declared = new java.util.TreeSet<>();
         final Set<String> used = new java.util.TreeSet<>();
+        /** For `--fix unsafe-split`: per direct child statement of the block (by position) its source line, whether it is a bare `assume match`, and the tags it needed. */
+        final List<Integer> childLine = new ArrayList<>();
+        final List<Boolean> childAssume = new ArrayList<>();
+        final List<Set<String>> childTags = new ArrayList<>();
+        /** Tags used while no direct child was being checked (the split cannot place them). */
+        final Set<String> unattributed = new java.util.TreeSet<>();
+        int cur = -1;
         UnsafeBlockRecord(Token tok) { this.tok = tok; }
+        void noteChild(int idx, Token stmt) {
+            while (childLine.size() <= idx) {
+                childLine.add(0);
+                childAssume.add(false);
+                childTags.add(new java.util.TreeSet<>());
+            }
+            childLine.set(idx, stmt.line);
+            childAssume.set(idx, stmt.type == TokenType.KEYWORD && stmt.text.equals("assume") && !stmt.hasBlock);
+            cur = idx;
+        }
+        void use(String tag) {
+            used.add(tag);
+            if (cur >= 0) {
+                childTags.get(cur).add(tag);
+            } else {
+                unattributed.add(tag);
+            }
+        }
+    }
+
+    /** What `--fix unsafe-split` needs about one written statement-level `unsafe` block. */
+    static final class SplitInfo {
+        final String file;
+        final int line;
+        final Set<String> declared;
+        final List<Integer> childLine;
+        final List<Boolean> childAssume;
+        final List<Set<String>> childTags;
+        final Set<String> unattributed;
+        SplitInfo(String file, int line, Set<String> declared, List<Integer> childLine, List<Boolean> childAssume, List<Set<String>> childTags, Set<String> unattributed) {
+            this.file = file; this.line = line; this.declared = declared; this.childLine = childLine; this.childAssume = childAssume;
+            this.childTags = childTags; this.unattributed = unattributed;
+        }
+    }
+
+    List<SplitInfo> unsafeSplitInfo() {
+        List<SplitInfo> out = new ArrayList<>();
+        for (UnsafeBlockRecord rec : unsafeBlockRecords.values()) {
+            out.add(new SplitInfo(rec.tok.file, rec.tok.line, rec.declared, rec.childLine, rec.childAssume, rec.childTags, rec.unattributed));
+        }
+        return out;
     }
 
     private final Map<String, UnsafeBlockRecord> unsafeBlockRecords = new java.util.LinkedHashMap<>();
@@ -1275,7 +1323,7 @@ public class TypeChecker {
         }
         for (Scope sc = scope; sc != null; sc = sc.parent) {
             if (sc.unsafeBlock != null) {
-                sc.unsafeBlock.used.add(tag);
+                sc.unsafeBlock.use(tag);
                 break;
             }
         }
@@ -8646,8 +8694,13 @@ public class TypeChecker {
 
     private void checkLinesInScope(List<Token> lines, Scope scope, FuncInfo func, boolean insideLoop) {
         checkNoCodeAfterTerminalStatement(lines);
+        UnsafeBlockRecord blockRec = scope.unsafeBlock;      // set only for the scope of a written `unsafe` block: its direct children are attributed one by one
+        int childIdx = 0;
         for (Token lineTok : lines) {
             Token stmt = lineTok.childs.get(0);
+            if (blockRec != null) {
+                blockRec.noteChild(childIdx++, stmt);
+            }
             if (stmt.type == TokenType.KEYWORD && stmt.text.equals("assume") && !stmt.hasBlock) {
                 // "The assumptions of the expression for the type
                 // checker are a given for the rest of the scope when a
@@ -8672,6 +8725,9 @@ public class TypeChecker {
                 continue;
             }
             checkStatement(stmt, scope, func, insideLoop);
+        }
+        if (blockRec != null) {
+            blockRec.cur = -1;
         }
     }
 

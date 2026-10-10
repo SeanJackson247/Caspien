@@ -97,7 +97,7 @@ public class Compiler {
     }
 
     private static final String USAGE =
-            "Usage: java Compiler -i <input.caspien> <output> [--no-warnings] [--fs-report] [--asm | --lob | --hob] [--trace-depth N] [--no-cache] [--cache-report] [--clear-cache]\n       java Compiler -i <input.caspien> --audit [--audit-no-stdlib]\n       java Compiler -i <input.caspien> --viz [out.html]\n       java Compiler -i <input.caspien> --fix termination|justify [--write] [--fix-stdlib]";
+            "Usage: java Compiler -i <input.caspien> <output> [--no-warnings] [--fs-report] [--asm | --lob | --hob] [--trace-depth N] [--no-cache] [--cache-report] [--clear-cache]\n       java Compiler -i <input.caspien> --audit [--audit-no-stdlib]\n       java Compiler -i <input.caspien> --viz [out.html]\n       java Compiler -i <input.caspien> --fix termination|justify|unsafe-split [--write] [--fix-stdlib]";
 
     private static class UsageError extends RuntimeException {
         UsageError(String message) {
@@ -151,7 +151,7 @@ public class Compiler {
                     break;
                 case "--fix":
                     if (i + 1 >= args.length) {
-                        throw new UsageError("--fix requires a mode: termination, justify (or both, comma separated)");
+                        throw new UsageError("--fix requires a mode: termination, justify, unsafe-split (comma separated)");
                     }
                     fixModes = args[++i];
                     break;
@@ -300,6 +300,8 @@ public class Compiler {
             env.put("CASPIEN_FIX_FILE", report.toString());
             env.put("CASPIEN_FIX_HASH", hash.toString());
             env.put("CASPIEN_FIX_BACKUP", bak.toString());
+            Path blocksFile = tmp.resolve("blocks.txt");
+            env.put("CASPIEN_FIX_BLOCKS", blocksFile.toString());
             if (fixWrite) {
                 env.put("CASPIEN_FIX_WRITE", "1");
             }
@@ -321,6 +323,62 @@ public class Compiler {
                     for (String l : Files.readAllLines(manifest, StandardCharsets.UTF_8)) {
                         String[] p = l.split("\t");
                         Files.copy(Path.of(p[1]), Path.of(p[0]), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                    }
+                    if (fixModes.contains("unsafe-split") && Files.isRegularFile(blocksFile)) {
+                        // The all-at-once rewrite did not verify. Try the blocks one at a time, last one in each file first (an edit never moves
+                        // the lines above it), keeping every rewrite that compiles to identical bytecode and leaving the others as written.
+                        List<String> blocks = new ArrayList<>();
+                        for (String l : Files.readAllLines(blocksFile, StandardCharsets.UTF_8)) {
+                            if (!l.isBlank()) {
+                                blocks.add(l);
+                            }
+                        }
+                        blocks.sort((x, y) -> {
+                            String[] a1 = x.split("\t"), b1 = y.split("\t");
+                            int c = a1[0].compareTo(b1[0]);
+                            return c != 0 ? c : Integer.compare(Integer.parseInt(b1[1]), Integer.parseInt(a1[1]));
+                        });
+                        int kept = 0, left = 0;
+                        for (String blk : blocks) {
+                            String[] bp = blk.split("\t");
+                            Path bak2 = Files.createTempDirectory(tmp, "one");
+                            Map<String, String> env3 = new java.util.HashMap<>();
+                            env3.put("CASPIEN_FIX_MODE", "unsafe-split");
+                            env3.put("CASPIEN_FIX_FILE", tmp.resolve("one-report.txt").toString());
+                            env3.put("CASPIEN_FIX_HASH", tmp.resolve("one-hash.txt").toString());
+                            env3.put("CASPIEN_FIX_BACKUP", bak2.toString());
+                            env3.put("CASPIEN_FIX_WRITE", "1");
+                            env3.put("CASPIEN_FIX_ONLY", bp[0] + ":" + bp[1]);
+                            if (fixStdlib) {
+                                env3.put("CASPIEN_FIX_STDLIB", "1");
+                            }
+                            Diagnostics d3 = new Diagnostics(noWarnings);
+                            runJavaStage(astGenDir, "caspien.Main", input, hobOut, d3, "ASTGenerator", "--fix", env3, null);
+                            Path man2 = bak2.resolve("manifest.txt");
+                            if (d3.hasFatalError() || !Files.isRegularFile(man2)) {
+                                left++;
+                                continue;
+                            }
+                            Map<String, String> env4 = new java.util.HashMap<>();
+                            env4.put("CASPIEN_FIX_VERIFY", tmp.resolve("one-hash.txt").toString());
+                            Diagnostics v4 = new Diagnostics(noWarnings);
+                            runJavaStage(astGenDir, "caspien.Main", input, hobOut, v4, "ASTGenerator", null, env4, null);
+                            if (v4.hasFatalError()) {
+                                for (String l : Files.readAllLines(man2, StandardCharsets.UTF_8)) {
+                                    String[] p = l.split("\t");
+                                    Files.copy(Path.of(p[1]), Path.of(p[0]), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                                }
+                                System.out.println("# kept as written (the rewrite changes the bytecode or does not compile): " + bp[0] + ":" + bp[1]);
+                                left++;
+                            } else {
+                                kept++;
+                            }
+                        }
+                        System.out.println("# unsafe-split, one block at a time: " + kept + " rewritten and verified, " + left + " left as written");
+                        if (!fixModes.equals("unsafe-split")) {
+                            System.out.println("# note: the other modes (" + fixModes + ") were not applied; run them again");
+                        }
+                        return 0;
                     }
                     System.err.println("[error] --fix: the program did not compile to the same bytecode after the edit; every file was restored");
                     return 1;

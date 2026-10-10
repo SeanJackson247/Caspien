@@ -576,7 +576,14 @@ justify: TODO)`, and gives loop reasons as `file:line` and callee reasons as `ca
 
 `java Compiler -i prog.caspien --fix termination|justify[,..] [--write] [--fix-stdlib]` (`FixTool.java`): inserts whole comment lines, nothing else; existing
 comments are never touched. Without `--write` it prints the plan. With it the files are edited (originals kept in a temp folder), the front end runs again and its
-HOB must hash equal to the HOB before the edit, else the orchestrator restores every file and exits 1. Tests `doc_comment_check.sh` (+ `doc_comment_test.caspien`).
+HOB must hash equal to the HOB before the edit, else the orchestrator restores every file and exits 1. The hash is taken over `FixTool.normalize(hob)`: source line numbers in `*_DECORATE` lines are dropped and so is straight-line code after a `RET` up to the next label or `FUNC_END` (unreachable). Tests `doc_comment_check.sh` (+ `doc_comment_test.caspien`).
+
+`--fix unsafe-split` (`FixTool.planUnsafeSplit`, needs `TypeChecker.unsafeSplitInfo()`): for every statement-level `unsafe` block the type checker recorded, per direct child statement, the tags it used
+(`UnsafeBlockRecord.noteChild/use`; tags used outside any child make the block unsplittable, so it is listed and left alone). Adjacent children with equal tag sets become one block named with exactly those
+tags (alphabetical), children with no tags move out and are dedented, a bare `assume match` binds every later child of its block, a child's extent includes the comment and decorator lines directly above it, the
+justify comment above the old block moves to the first new block and every other new block gets `/*! justify: TODO */`; a block that is already one exactly-tagged group is skipped; a one-line `unsafe unaudited{ .. }` is retagged in
+place. Blocks of generic functions use the union over instances. If the whole rewrite fails the HOB check the orchestrator restores everything and retries one block at a time, last block of each file first
+(`CASPIEN_FIX_ONLY=file:line`), keeping each rewrite that verifies (`# kept as written` for the others). Test `unsafe_split_check.sh` (+ `unsafe_split_test.caspien`, `unsafe_split_fallback_test.caspien`).
 
 ## Visualizer (`--viz`)
 

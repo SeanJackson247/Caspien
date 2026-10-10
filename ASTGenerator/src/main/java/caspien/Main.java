@@ -147,7 +147,7 @@ public class Main {
                 Files.write(Paths.get(hashFile), FixTool.sha(bytecode).getBytes(StandardCharsets.UTF_8));
             }
             boolean write = "1".equals(System.getenv("CASPIEN_FIX_WRITE"));
-            String report = FixTool.run(fixModes, write, "1".equals(System.getenv("CASPIEN_FIX_STDLIB")), bytecodeEmitter, bytecode, System.getenv("CASPIEN_FIX_BACKUP"));
+            String report = FixTool.run(fixModes, write, "1".equals(System.getenv("CASPIEN_FIX_STDLIB")), bytecodeEmitter, bytecode, System.getenv("CASPIEN_FIX_BACKUP"), typeChecker.unsafeSplitInfo());
             String target = System.getenv("CASPIEN_FIX_FILE");
             if (target != null && !target.isEmpty()) {
                 Files.write(Paths.get(target), report.getBytes(StandardCharsets.UTF_8));
