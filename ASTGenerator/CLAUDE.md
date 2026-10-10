@@ -66,3 +66,6 @@ No framework. Fixtures: `examples/` in this folder (hand-written `.caspien`); na
 - Structs are never passed by value as parameters (returns use RVO): a struct can grow past 8 bytes when its definition changes, which would silently change how it is passed, so anything over a register must be argument-split, and splitting is only defined for ranges. Pass an explicit pointer instead (`auto`/`ref`), because explicit beats an implicit auto pointer.
 - `deref(p) = v` struct-wide assignment is rejected (`deref` is never a write target); an unsafe `resize` has no failure handling (the programmer's job, like C).
 - Moving one owns slot twice in one expression (`f(a, a)`, `dyn([a, a])`, `[a, a]`) is rejected by `requireNotMovedAlready` (operands are all checked before any is marked moved).
+
+## Docs
+Design and rules of the big classes (TypeChecker, BytecodeEmitter, Parser) are in `docs/<Class>.md`; how they got that way is in `docs/history.md`. Code comments there stay short and point at those docs by section heading.

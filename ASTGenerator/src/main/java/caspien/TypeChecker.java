@@ -17,46 +17,12 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Stage 6: type and logic checking over the fully import-resolved,
- * tree-built program. Per the project spec, mutability checking is left
- * as a stub for a later pass -- this stage does not enforce it.
- *
- * DESIGN DECISION -- type equality is base-type only everywhere in this
- * checker (arithmetic, comparisons, call-argument matching, duplicate-
- * signature detection, return-type matching), ignoring storage and
- * mutability. This isn't laziness: 'let' has no type-annotation syntax
- * at all in this language version, so every locally declared variable's
- * type comes purely from RHS inference, and every literal is defined as
- * 'imut' by the spec's own literal-typing table. A 'let'-declared local
- * can therefore never be anything but imut in this version -- there is
- * no way to write one otherwise. Requiring exact mutability matches
- * anywhere that involves a 'let' value (basically everywhere) would
- * make nearly every realistic function call or arithmetic expression
- * fail to type-check for a reason that isn't really about types. This
- * reads as consistent with "mutability check is a stub for now" rather
- * than a contradiction of it -- full mutability semantics are future
- * work, not something to half-enforce here.
- *
- * Canonical type strings (storage_mutability_basetype, e.g. "raw_imut_string",
- * "imut_u64", "imut_void") are still constructed and stored in every
- * token's .resolvedType, matching the spec's bytecode-stage format
- * exactly -- only the *comparisons* this checker makes are base-type-only.
+ * Stage 6: type and logic checking over the import-resolved, tree-built program.
+ * Type equality in comparisons is base-type only; see docs/TypeChecker.md, "Design decisions".
  */
 public class TypeChecker {
 
-    /**
-     * Loaded once, up front (see Main), from compiler.config --
-     * required, never optional, confirmed directly ("hard fail if not
-     * there"). Read here to validate every "@call_convention(name)"
-     * argument against the real, live set of declared conventions (so
-     * the accepted-argument list is never allowed to drift out of sync
-     * with the config file itself), and to resolve the *actual*
-     * convention every func/extern/function-pointer type ends up using
-     * when none is explicitly decorated (falls back to
-     * `config.defaultConvention`). Also handed to BytecodeEmitter
-     * (via getConfig) so it can read each resolved convention's own
-     * "n" (argumentRegisters.size()) instead of a hardcoded constant.
-     */
+    /** The loaded compiler.config (required): validates @call_convention names, supplies the default convention, and is handed to BytecodeEmitter via getConfig. */
     private final CompilerConfig config;
 
     /** `unsafe` reasons that cannot free memory by themselves; a block with only these keeps the alive proofs (see the 'unsafe' statement case). */
@@ -106,27 +72,19 @@ public class TypeChecker {
     }
     private static final Set<String> INTEGER_TYPES = new HashSet<>(Arrays.asList(
             "u64", "s64", "u32", "s32", "u16", "s16", "u8", "s8"));
-    /** "sizeof(T)"/"len(...)"/"range(...)"/"deref(...)"/"clone(...)"/"call(...)"/"bits_left(...)"/"bits_right(...)"/"bits_or(...)"/"bits_and(...)"/"bits_xor(...)"/"bits_not(...)"/"memcopy(...)"/"dyn(...)"/"resize(...)" -- reserved, can't be shadowed by a user-declared function name. */
+    /** Reserved builtin names; a user function may not shadow them. */
     private static final Set<String> BUILTIN_NAMES = new HashSet<>(Arrays.asList(
             "sizeof", "len", "range", "deref", "clone", "call",
             "bits_left", "bits_right", "bits_rotl", "bits_rotr", "bits_or", "bits_and", "bits_xor", "bits_not", "memcopy", "dyn", "resize", "Some",
             "insecure_rand", "wrap", "sat"
     ));
-    /** "just for f32 types -- the state modifier," confirmed directly. Not lexer keywords -- recognized only contextually (type-annotation position ahead of "f32", or a match-on-f32's own case labels), the same way "default" is contextual rather than globally reserved. */
+    /** Float state modifiers: contextual words (type annotation before f32, match-on-f32 case labels), not lexer keywords. */
     private static final Set<String> FLOAT_STATE_NAMES = new HashSet<>(Arrays.asList("finite", "infinite", "nan"));
 
     private boolean isFloatStateName(String text) {
         return FLOAT_STATE_NAMES.contains(text);
     }
-    /**
-     * Byte size per primitive type, used only by 'sizeof'. Integer
-     * widths derive directly from the existing INTEGER_WIDTH bit
-     * counts; f32 is the standard 4-byte IEEE-754 single-precision
-     * size. bool and char are not stated anywhere in the request --
-     * assumed 1 byte each (the ordinary C-style convention this
-     * project's string type already follows), flagged as an assumption
-     * rather than silently baked in.
-     */
+    /** Byte size per primitive, used only by 'sizeof'; bool and char are assumed 1 byte. See docs/TypeChecker.md, "Built-in names and sizes". */
     private static final Map<String, Long> PRIMITIVE_SIZE = new HashMap<>();
     static {
         PRIMITIVE_SIZE.put("u8", 1L); PRIMITIVE_SIZE.put("s8", 1L);
@@ -168,230 +126,37 @@ public class TypeChecker {
         final String storage;     // nullable
         final String mutability;  // "mut"/"imut", or null for the "null" literal type
         final String baseType;    // always the *real*, fully-resolved representation -- never an alias name
-        /** The alias name this type was referred to by at this particular reference, if any -- nullable. Purely a nominal tag for exact-match comparisons (typesCompatible, sameSignature); every structural check (arithmetic, member lookup, canonical()/bytecode emission) uses `baseType` directly and is completely unaffected by this field. */
+        /** Alias name used at this reference (nullable): a nominal tag for typesCompatible/sameSignature only; structural checks use baseType. */
         final String aliasName;
-        /**
-         * Set only when this TypeInfo represents a function-pointer
-         * type ("static [@decorator...] func(ParamTypes...)
-         * ReturnType," confirmed directly) -- kept as real TypeInfo
-         * objects/a real Set, never re-derived by parsing baseType's own
-         * "func(params)returnType" text back apart. `baseType` itself deliberately
-         * excludes decorators (built from these fields via canonical()
-         * for bytecode/equality purposes) -- typesCompatible's
-         * "a decorated function may satisfy an undecorated slot, never
-         * the reverse" rule (confirmed directly) needs to compare
-         * decorators as a subset check, not by exact baseType string
-         * equality, so they're never folded into the string two
-         * function-pointer types are compared by.
-         */
+        /** Function-pointer parts, kept as real objects (decorators are not in baseType; typesCompatible compares them as a subset). See docs/TypeChecker.md, "Type model". */
         final List<TypeInfo> funcPtrParamTypes;
         final TypeInfo funcPtrReturnType;
         final Set<String> funcPtrDecorators;
-        /** This function-pointer type's own resolved calling-convention name -- "part of the signature, used for all calls," confirmed directly, so INVOKE reads it from *here* (the pointer's static type) rather than from whatever concrete function it happens to be holding at runtime, since a function-pointer variable's target isn't known at compile time at all. Never null on a real function-pointer TypeInfo (funcPointer() always resolves it, falling back to compiler.config's own default the same way a plain func/extern would). Null on every non-function-pointer TypeInfo. */
+        /** Resolved calling convention of a function-pointer type; INVOKE reads it from here. Null on every other TypeInfo. */
         final String funcPtrCallConvention;
-        /**
-         * Set only when this TypeInfo represents a "dynarray(T)" --
-         * a native, owns-only, runtime-resizable array (see "dyn"/
-         * "resize"/"len" in "Built-in functions"). This doc comment
-         * used to claim `baseType` was already "dynarray(" +
-         * elementType.canonical() + ")" -- found, while making the
-         * bytecode representation of a dynarray actually carry its full
-         * type information, to have been stale/simply wrong: the real
-         * code (`dynArray()`, just below in this same class) always
-         * built `baseType` from `elementType.baseType` alone, discarding
-         * storage entirely, confirmed directly by compiling a struct
-         * member declared "items: mut dynarray(owns mut Leaf)" and
-         * finding it emitted byte-for-byte identical bytecode
-         * ("STRUCT_MEMBER items mut_dynarray(Leaf)") to a plain
-         * "dynarray(Leaf)" field. Now genuinely true, but via
-         * `dynArrayElementText(elementType)`, not a bare `.canonical()`
-         * -- see that method's own doc comment for why only the
-         * element's *storage* is embedded, deliberately still leaving
-         * mutability out (the pre-existing "two dynarrays holding the
-         * same kind of element are the same type regardless of
-         * mut-wrapped-vs-bare literal construction" precedent stays
-         * intact; only the storage-erasure half of the old behavior was
-         * ever the actual gap). Every structural use (element-type
-         * derivation for []/resize's fill value/dyn's own construction)
-         * still reads this field directly rather than re-parsing
-         * baseType's own text back apart, wherever this field is
-         * actually available -- see `parseDynArrayElementText` for the
-         * one place (a type-annotation-only nested dynarray) where no
-         * such field exists and re-parsing is unavoidable.
-         */
+        /** Set only for a safe "dynarray(T)": element type kept as a field instead of re-parsing baseType. See docs/TypeChecker.md, "Type model". */
         final TypeInfo dynArrayElementType;
-        /**
-         * Set only when this TypeInfo represents an "unsafe dynarray(T)"
-         * -- a raw, heap-allocated, length-less growable array with no
-         * hidden runtime length field at all (see "unsafe dynarray" in
-         * the design discussion this stems from -- two nominally
-         * distinct dynarray types, never coercible either direction).
-         * Deliberately a SEPARATE field from `dynArrayElementType`,
-         * never a shared field with a boolean flag alongside it -- this
-         * is what lets the existing `isDynArrayType(t) { return
-         * t.dynArrayElementType != null; }` check keep excluding the
-         * unsafe variant everywhere it's already used (checkIn, resize,
-         * len, checkLookup, for-loop) with zero risk of accidentally
-         * granting the unsafe variant the safe variant's own bounds-
-         * checked privileges. `baseType` is "unsafe_dynarray(" +
-         * elementType.baseType + ")" -- a distinct base-type string
-         * from the safe variant's "dynarray(...)", which is also what
-         * makes the two types mutually non-coercible for free, via the
-         * existing exact-match `typesCompatible`/`sameBaseType` checks,
-         * with no new coercion-blocking code needed at all.
-         */
+        /** Set only for "unsafe dynarray(T)"; a separate field so isDynArrayType() excludes it. See docs/TypeChecker.md, "Type model". */
         final TypeInfo unsafeDynArrayElementType;
-        /**
-         * Set only when this TypeInfo represents a fixed array
-         * ("elemType[N]") whose element type was actually established
-         * from a real value (i.e. built by `checkArrayLiteral`, not
-         * merely parsed from an array-type *annotation*, which has no
-         * syntax to say a per-element storage at all -- see
-         * `resolveTypeAnnotationRaw`'s own array-suffix handling,
-         * completely untouched by this field). "elements can be owns/
-         * ref etc in arrays and dynamicarrays," confirmed directly --
-         * this is the fixed-array counterpart of `dynArrayElementType`
-         * just above, needed for the identical reason: `checkLookup`'s
-         * own array case used to strip every element down to its bare
-         * base type, discarding storage entirely, so "arr[i]" on an
-         * array of e.g. 'owns mut Box' elements always, silently
-         * resolved to a plain, storage-less 'mut_Box' -- a real, found-
-         * and-fixed bug (a pointer-typed array element could never
-         * actually be indexed back out as a pointer at all, before
-         * this), not a new capability invented here. Same "baseType
-         * embeds only the element's *base* type, deliberately never its
-         * storage/mutability" convention `dynArrayElementType` already
-         * established -- this field is a purely auxiliary, shape-
-         * carrying addition; it changes nothing about `baseType`/
-         * `canonical()`/`typesCompatible` for the array's own type
-         * identity, only what `checkLookup` hands back for an actual
-         * "[]" access.
-         */
+        /** Set only for a fixed array built from a real value (checkArrayLiteral): the element type with its storage, for checkLookup. See docs/TypeChecker.md, "Type model". */
         final TypeInfo arrayElementType;
-        /**
-         * "go with option a please," confirmed directly, after "run it
-         * by me if you do [adjust the C-ABI main signature]" -- real,
-         * recursive 'raw' pointer support: set only when this 'raw'
-         * type's own target is *itself* another full type annotation
-         * ("raw mut raw mut char" -- confirmed directly this doesn't
-         * parse at all without this, tested three different ways before
-         * concluding it was a genuine gap, not a syntax slip), never
-         * re-derived by parsing `baseType`'s own text back apart, the
-         * same discipline `dynArrayElementType` above already
-         * established. Deliberately scoped to 'raw' only, never
-         * `owns`/`ref`/`static` -- nested ownership is a substantially
-         * different, unrequested question ("what would 'owns mut owns
-         * mut Foo' even mean" has no obvious answer the way a pointer
-         * to a pointer plainly does), so this stays narrowly the thing
-         * actually needed for a real C-ABI signature. `baseType` embeds
-         * the pointee's own full, recursive `canonical()` directly
-         * (not merely its own bare `baseType`, unlike
-         * `dynArrayElementType`'s "the same kind of element is the same
-         * type regardless of its own mutability" convention -- a
-         * pointee's own mutability is genuinely part of a pointer
-         * type's own identity, "raw mut raw mut char" and "raw mut raw
-         * imut char" are different types), so this type's own
-         * `canonical()` recursively, correctly produces the whole
-         * chain with no special-casing needed in `canonical()` itself
-         * at all.
-         */
+        /** Set only for a "raw" pointer whose target is itself a full type ("raw mut raw mut char"). See docs/TypeChecker.md, "Type model". */
         final TypeInfo rawPointeeType;
-        /**
-         * "we now must add a presence modifier: some" -- true only when
-         * this type was explicitly annotated "some" (only ever
-         * meaningful alongside `owns`/`ref`/`raw`/`static` storage --
-         * `auto` is inherently non-null already and never takes it, a
-         * no-storage value has no null/non-null question to begin
-         * with). Deliberately defaults to `false` in every existing
-         * constructor rather than threading a new parameter through
-         * each one (which would touch every one of this class's many
-         * construction sites throughout the whole compiler) -- the
-         * handful of places that actually need to set it call
-         * `withSome(true)` instead, the same "add a with-method rather
-         * than a constructor parameter" pattern `withMutability`/
-         * `withStorage` already established for the identical reason.
-         */
+        /** True when annotated "some" (non-null); meaningful with owns/ref/raw/static storage. Set via withSome(). */
         final boolean isSome;
-        /**
-         * "a new modifier, just for f32 types -- the state modifier...
-         * unlike other modifiers this one can be chained with |,"
-         * confirmed directly -- null means unconstrained (no modifier
-         * written at all -- any of "finite"/"infinite"/"nan" is
-         * possible), non-null holds a genuine, proper subset of
-         * {"finite","infinite","nan"} (never empty, and never all
-         * three -- "all three cases finite|infinite|nan is a syntax
-         * error, the correct form is to just use the bare type,"
-         * confirmed directly, checked where this gets built). A
-         * `TreeSet` specifically, not a plain `HashSet` -- iteration
-         * order is therefore *always* alphabetical, which is exactly
-         * the canonical string form this modifier needs ("canonicalise
-         * the chains to be alphabetical order within the bytecode
-         * regardless of what the user writes," confirmed directly) --
-         * ordering the source is free to write in never needs separate
-         * sorting logic anywhere downstream, since the set itself is
-         * never out of order to begin with. Meaningful only alongside
-         * an 'f32' baseType -- validated, not merely documented, where
-         * this gets built. Defaults to null everywhere via the same
-         * "add a with-method rather than a constructor parameter"
-         * pattern `isSome` above already established.
-         */
+        /** Subset of {finite, infinite, nan} for an f32/f64; null = unconstrained. A TreeSet so the canonical form is alphabetical. See docs/TypeChecker.md, "Type model". */
         final java.util.TreeSet<String> floatStates;
-        /**
-         * "const can go next to let for variables... A parameter marked
-         * const can't be assigned. A struct member marked const cannot
-         * be assigned, outside of the OTC pattern," confirmed directly
-         * -- "const is always the leftmost thing" in a type annotation,
-         * confirmed directly (a parameter/struct-member's own const, as
-         * opposed to Token.isConst, which is the separate "let const"
-         * local-variable case). Never affects `baseType`/`canonical()`
-         * at all -- deliberately, unlike `isSome` (which genuinely
-         * changes what values are type-compatible): whether a slot can
-         * be reassigned is an assignment-time question TypeChecker
-         * answers by consulting this flag directly at the assignment
-         * site, not a structural part of the type two values are
-         * compared by. Defaults to `false` everywhere via the same
-         * "add a with-method rather than a constructor parameter"
-         * pattern `isSome` already established.
-         */
+        /** Parameter/struct-member "const"; not part of baseType or canonical() (checked at assignment sites only). */
         final boolean isConst;
-        /**
-         * Integer tightening, part 1 (literal adaptation): for the type of an
-         * integer LITERAL (or a negated literal, or a `mut`/`imut` wrapper of
-         * one) the literal's exact value; null for every other type. A
-         * literal is spelled without a width, so its default type is `u64`
-         * (`s64` when negated) -- but when the context demands a narrower or
-         * signed type and the value fits, the literal simply IS that type
-         * (`typesCompatible`, `adaptLiteral`). Deliberately not part of
-         * `canonical()`/type identity: once a literal has been adapted, its
-         * node is retagged with the demanded type and this field is gone.
-         * Non-final so the with-methods can carry it across a copy.
-         */
+        /** Exact value of an integer literal (or negated/mut-wrapped one), else null; lets the literal adapt to a narrower or signed slot. Not part of type identity. See docs/TypeChecker.md, "Type model". */
         java.math.BigInteger literalValue = null;
-        /** True on a bare float literal (`0.5`, `-2.0`): it has no width of its own until a slot decides -- it adapts to an `f32` or `f64` slot, and is `f32` when nothing constrains it. A variable is never a float literal. */
+        /** True on a bare float literal: adapts to an f32 or f64 slot, f32 when unconstrained. */
         boolean floatLiteral = false;
         /** An array literal whose elements are all float literals: adapts to an `f32[n]`/`f64[n]` slot as a whole. */
         boolean floatArrayLiteral = false;
-        /** Set on an array literal whose elements are ALL integer literals: their values, so the whole literal can adapt to a `T[n]` slot whose element type holds each of them (`let:<mut u8[3]> s = mut [1, 2, 200]`). */
+        /** On an array literal whose elements are all integer literals: their values, so the literal can adapt to a `T[n]` slot. */
         java.util.List<java.math.BigInteger> literalElements = null;
-        /**
-         * "An atomic modifier could only be applied to types that can
-         * be supported with atomic instructions... let myAtomicChar=
-         * atomic '!';," confirmed directly -- true only when this type
-         * was explicitly built by the "atomic" prefix operator
-         * (TypeChecker.checkAtomicWrapper). Deliberately never affects
-         * `baseType`/type-compatibility (the same reasoning `isConst`
-         * already established: `typesCompatible` never consults this
-         * field, so an atomic and a plain value of the same base type
-         * freely interoperate) -- `canonical()` still embeds it
-         * directly, though (unlike `isConst`), since ordinary reads/
-         * writes of an atomic variable need no new bytecode
-         * instructions at all -- the existing type-string operand
-         * PUSH/ASSIGN already carry is simply widened to include
-         * "atomic", carrying the distinction through to bytecode for
-         * free. Defaults to `false` everywhere via the same "add a
-         * with-method rather than a constructor parameter" pattern
-         * `isSome`/`isConst` already established.
-         */
+        /** True for a type built by the "atomic" prefix (checkAtomicWrapper); embedded in canonical() but ignored by type compatibility. */
         final boolean isAtomic;
 
         TypeInfo(String storage, String mutability, String baseType) {
@@ -432,34 +197,7 @@ public class TypeChecker {
                     paramTypes, returnType, decorators, callConvention, null, null);
         }
 
-        /**
-         * The element-type text embedded in a dynarray's own canonical
-         * baseType -- "does the bytecode representation of a dynarray
-         * carry its full type information," confirmed directly, in
-         * response to finding that a dynarray of genuine `owns`-storage
-         * pointer elements erased to byte-for-byte identical bytecode
-         * as a dynarray of plain inline values of the same struct (a
-         * struct member `items: mut dynarray(owns mut Leaf)` used to
-         * emit the exact same `STRUCT_MEMBER items mut_dynarray(Leaf)`
-         * as a plain `dynarray(Leaf)` field would -- confirmed by
-         * direct compilation before this fix). Includes the element's
-         * own *storage* keyword (`owns`/`ref`/`raw`/`static`/`auto`)
-         * when it has one, deliberately still leaving out its
-         * *mutability* -- unlike storage, mutability was never the
-         * missing dimension here (nothing downstream needs to tell a
-         * `dynarray(mut u64)` apart from a `dynarray(imut u64)` to
-         * lower it correctly, and the pre-existing "two dynarrays
-         * holding the same kind of element are the same type
-         * regardless of whether one happened to be constructed from
-         * `mut`-wrapped literals and the other from bare ones"
-         * precedent this replaces was specifically about mutability,
-         * confirmed by re-reading its own comment -- so that half of it
-         * is deliberately kept, only the storage-erasure half is fixed).
-         * A dynarray of plain values (the overwhelmingly common case,
-         * `elementType.storage == null`) is completely unaffected --
-         * same bare element text as before, zero change to any existing
-         * fixture using one.
-         */
+        /** Element text embedded in a dynarray baseType: the element's storage keyword (if any) plus base type, never mutability. See docs/TypeChecker.md, "Type model". */
         private static String dynArrayElementText(TypeInfo elementType) {
             return elementType.storage != null ? elementType.storage + "_" + elementType.baseType
                     : elementType.baseType;
@@ -468,19 +206,7 @@ public class TypeChecker {
         /** Storage keywords `dynArrayElementText` ever prepends -- kept as one list so parsing it back apart (below) can never drift out of sync with producing it. */
         private static final String[] DYN_ARRAY_ELEMENT_STORAGE_KEYWORDS = {"owns", "ref", "raw", "static", "auto"};
 
-        /**
-         * The exact inverse of `dynArrayElementText` -- reconstructs a
-         * real, storage-bearing `TypeInfo` from element text that may or
-         * may not carry one of the storage prefixes it can emit. Needed
-         * wherever a dynarray's element text is recovered by re-parsing
-         * a baseType *string* after the fact (rather than reading an
-         * already-real `dynArrayElementType`/`arrayElementType` field
-         * directly, which is always preferred where available) -- e.g.
-         * a nested "dynarray(dynarray(owns mut Leaf))[2]" reached only
-         * via a type annotation, which has no per-element storage-
-         * bearing `TypeInfo` of its own to read back (see this call
-         * site's own doc comment).
-         */
+        /** Inverse of dynArrayElementText, for dynarray element text that is only available as a baseType string. */
         private static TypeInfo parseDynArrayElementText(String text) {
             for (String storage : DYN_ARRAY_ELEMENT_STORAGE_KEYWORDS) {
                 if (text.startsWith(storage + "_")) {
@@ -490,27 +216,27 @@ public class TypeChecker {
             return new TypeInfo(null, "indeterminate", text);
         }
 
-        /** Used only to construct a "dynarray(T)" type -- see the field comment above and `dynArrayElementText`'s own doc comment. Always "owns" storage (a dynarray is inherently a heap-allocated, owned thing, reusing the exact same ownership/GT_DESTRUCT machinery every other owns value already has). */
+        /** Builds a "dynarray(T)" type; always owns storage. */
         static TypeInfo dynArray(String mutability, TypeInfo elementType) {
             String baseType = "dynarray(" + dynArrayElementText(elementType) + ")";
             return new TypeInfo("owns", mutability, baseType, null,
                     null, null, null, null, elementType, null);
         }
 
-        /** Used only to construct a fixed-array literal's own type ("elemType[N]") -- see `arrayElementType`'s field comment above. `elementType` is the array literal's own established, real element type (storage included); `baseType` itself still embeds only its bare `baseType`, never storage/mutability, matching `dynArray`'s identical convention. */
+        /** Builds a fixed-array literal type "elemType[N]"; baseType embeds only the element base type. */
         static TypeInfo array(TypeInfo elementType, int length) {
             String baseType = elementType.baseType + "[" + length + "]";
             return new TypeInfo(null, "indeterminate", baseType, null,
                     null, null, null, null, null, elementType, null);
         }
 
-        /** Used only to construct a recursive "raw" pointer-to-pointer type -- see the field comment above. `baseType` embeds the pointee's own full, recursive `canonical()` (not just its own bare `baseType`, unlike `dynArray` just above -- see the field comment for why a pointee's own mutability genuinely is part of identity here). */
+        /** Builds a recursive "raw" pointer type; baseType embeds the pointee's full canonical() (its mutability is part of the identity). */
         static TypeInfo rawPointer(String mutability, TypeInfo pointeeType) {
             return new TypeInfo("raw", mutability, pointeeType.canonical(), null,
                     null, null, null, null, null, null, pointeeType);
         }
 
-        /** Used only to construct an "unsafe dynarray(T)" type -- see `unsafeDynArrayElementType`'s field comment above. Always "owns" storage, the identical reasoning `dynArray()` above already has (still heap-allocated, still uses the same ownership/GT_DESTRUCT machinery). `baseType` is "unsafe_dynarray(" + dynArrayElementText(elementType) + ")" -- a distinct string from the safe variant's own "dynarray(...)", deliberately so the two are never mutually coercible via the existing exact-match type-compatibility machinery, with zero extra code needed for that; see `dynArrayElementText`'s own doc comment for why the element text now includes storage. */
+        /** Builds an "unsafe dynarray(T)" type; its distinct baseType keeps it non-coercible with the safe dynarray. */
         static TypeInfo unsafeDynArray(String mutability, TypeInfo elementType) {
             String baseType = "unsafe_dynarray(" + dynArrayElementText(elementType) + ")";
             return new TypeInfo("owns", mutability, baseType, null,
@@ -543,7 +269,7 @@ public class TypeChecker {
                     null, arrayElementType, rawPointeeType, isSome, floatStates, isConst, false);
         }
 
-        /** The full, canonical constructor every other one delegates down to -- adds `isAtomic` (see its own field comment above) as the newest, trailing field, following the exact "default false everywhere, thread it through only here" pattern `isConst` itself already established. */
+        /** The full constructor all others delegate to. */
         private TypeInfo(String storage, String mutability, String baseType, String aliasName,
                 List<TypeInfo> funcPtrParamTypes, TypeInfo funcPtrReturnType, Set<String> funcPtrDecorators,
                 String funcPtrCallConvention, TypeInfo dynArrayElementType, TypeInfo unsafeDynArrayElementType,
@@ -567,7 +293,7 @@ public class TypeChecker {
             this.isConst = isConst;
         }
 
-        /** The "some" counterpart of withMutability/withStorage just below -- threads every field through structurally into a genuinely new, independent TypeInfo (never mutates the original, which may be shared/reused elsewhere), changing only isSome, rather than re-enumerating fields at each call site (the actual root cause behind every prior instance of this exact bug class). */
+        /** Copy changing only isSome; copies go through here so no field is dropped. */
         TypeInfo withSome(boolean newIsSome) {
             TypeInfo copy = new TypeInfo(storage, mutability, baseType, aliasName,
                     funcPtrParamTypes, funcPtrReturnType, funcPtrDecorators, funcPtrCallConvention,
@@ -606,7 +332,7 @@ public class TypeChecker {
             return copy;
         }
 
-        /** The `isAtomic` counterpart of withSome/withConst above -- identical reasoning and shape, threading every field through into a genuinely new TypeInfo rather than re-enumerating them at each call site. */
+        /** Copy changing only isAtomic. */
         TypeInfo withAtomic(boolean newIsAtomic) {
             TypeInfo copy = new TypeInfo(storage, mutability, baseType, aliasName,
                     funcPtrParamTypes, funcPtrReturnType, funcPtrDecorators, funcPtrCallConvention,
@@ -620,51 +346,25 @@ public class TypeChecker {
         }
 
 
-        /** Always the real, underlying representation -- an alias never appears in canonical()/bytecode text, confirmed directly ("there's no aliases in the bytecode"). */
+        /** Canonical type string: storage_some_mutability_atomic_states_@decorators_baseType; aliases never appear. See docs/TypeChecker.md, "Type model". */
         String canonical() {
             StringBuilder sb = new StringBuilder();
             if (storage != null) {
                 sb.append(storage).append('_');
             }
             if (isSome) {
-                // "str:owns some mut String" -- storage, then "some",
-                // then mutability, then base type, confirmed directly
-                // as this modifier's own ordering; canonical() mirrors
-                // it exactly, the same "the string IS the type identity"
-                // discipline every other modifier here already follows.
                 sb.append("some").append('_');
             }
             if (mutability != null) {
                 sb.append(mutability).append('_');
             }
             if (isAtomic) {
-                // "this doesnt require new bytecode operations because
-                // the type data is there in the instruction," confirmed
-                // directly -- embedded directly in canonical() (unlike
-                // isConst, which never affects it at all) so every
-                // ordinary PUSH/ASSIGN of an atomic value already
-                // carries the distinction, with zero new bytecode
-                // instructions needed for plain reads/writes.
                 sb.append("atomic").append('_');
             }
             if (floatStates != null) {
-                // "the state modifier... unlike other modifiers this one
-                // can be chained with |," confirmed directly --
-                // `floatStates` is a TreeSet, so iterating it is always
-                // already alphabetical; no separate sort needed here.
-                // "canonicalise the chains to be alphabetical order
-                // within the bytecode regardless of what the user
-                // writes," confirmed directly.
                 sb.append(String.join("|", floatStates)).append('_');
             }
             if (funcPtrDecorators != null && !funcPtrDecorators.isEmpty()) {
-                // Decorators shown for display purposes only, sorted for
-                // determinism -- never part of `baseType` itself (see
-                // the field comment above for why). "call_convention"
-                // is the one decorator here that actually carries a
-                // real value (funcPtrCallConvention), so its resolved
-                // name is shown alongside it -- every other decorator
-                // in this position is still bare-name-only.
                 List<String> sorted = new ArrayList<>(funcPtrDecorators);
                 Collections.sort(sorted);
                 for (String d : sorted) {
@@ -683,20 +383,7 @@ public class TypeChecker {
             return other != null && baseType.equals(other.baseType);
         }
 
-        /**
-         * A copy of this type with a different (always concrete: 'mut'
-         * or 'imut') mutability, otherwise completely identical --
-         * every field, including the funcPtr-prefixed ones and
-         * dynArrayElementType, threaded through unchanged. The one
-         * correct way to implement "mut X"/"imut X" wrapping
-         * (checkMutabilityOf) -- a hand-rolled field-by-field
-         * reconstruction there previously silently dropped whichever
-         * fields it didn't happen to list, a real bug (found while
-         * adding dynArrayElementType -- it would have affected
-         * function-pointer types identically, just never surfaced)
-         * fixed here once, structurally, rather than by re-enumerating
-         * fields at every call site that needs this.
-         */
+        /** Copy with a different mutability, every other field kept (the one place "mut X"/"imut X" wrapping is implemented). */
         TypeInfo withMutability(String newMutability) {
             TypeInfo copy = new TypeInfo(storage, newMutability, baseType, aliasName,
                     funcPtrParamTypes, funcPtrReturnType, funcPtrDecorators, funcPtrCallConvention,
@@ -709,20 +396,7 @@ public class TypeChecker {
             return copy;
         }
 
-        /**
-         * The exact same reasoning as withMutability above, for the
-         * other field storage-modifier construction (checkAddressOf's
-         * "raw x"/"ref x"/"auto x"/"static x") needed instead of a
-         * mutability change -- a real, separate instance of the
-         * identical bug class, found directly (not assumed) while
-         * extending "for" to accept a dynarray: "ref h.backing" was
-         * silently losing its own dynArrayElementType, so "i in
-         * (ref h.backing)" failed as "not a range or dynarray"
-         * even though the operand plainly was one -- checkAddressOf's
-         * own final `return` used the same 4-argument partial
-         * constructor withMutability itself used to, dropping every
-         * field past aliasName.
-         */
+        /** Copy with a different storage keyword, every other field kept (checkAddressOf). */
         TypeInfo withStorage(String newStorage) {
             TypeInfo copy = new TypeInfo(newStorage, mutability, baseType, aliasName,
                     funcPtrParamTypes, funcPtrReturnType, funcPtrDecorators, funcPtrCallConvention,
@@ -747,103 +421,34 @@ public class TypeChecker {
         /** Memoization/cycle-detection marker for the flatten pass. */
         boolean flattened;
         Token declTok;
-        /**
-         * "these are things that can be decorated @pub with everything
-         * else being private by default," confirmed directly. Gates
-         * the struct itself (see checkVisibility): a private struct is
-         * simply not nameable at all outside its own declaring file --
-         * "not accessible outside the file its declared in," confirmed
-         * directly -- regardless of what any individual member's own
-         * visibility says.
-         */
+        /** Gates the struct itself: a private struct is not nameable outside its declaring file. See docs/TypeChecker.md, "Visibility". */
         boolean isPublic;
-        /**
-         * "I want a @pub{} block for being able to group multiple
-         * fields as public in a struct," confirmed directly -- member
-         * names explicitly marked public this way; every member not in
-         * this set is private by default, the same as every other
-         * declaration surface. Only ever meaningful when `isPublic`
-         * (this class's own field just above) is also true -- "if the
-         * impl is not public, none of its methods can be reached
-         * outside the file its declared in," confirmed directly,
-         * extended here to structs by the identical "container gates
-         * everything inside it" reasoning (not itself confirmed
-         * directly for structs specifically, but inferred by symmetry
-         * with that same rule for `impl`).
-         */
+        /** Members marked public through a @pub{} block; all others are private. Meaningful only when `isPublic`. */
         final Set<String> publicMembers = new HashSet<>();
-        /** Each member's own original declaring file, propagated through `extends` exactly like `publicMembers` just above -- needed so a private member's file-locality check is correct even when accessed through a derived struct declared in a different file than the member's own real origin. */
+        /** Each member's original declaring file, for the private-member file-locality check. */
         final Map<String, String> memberDeclFile = new HashMap<>();
-        /**
-         * "@lock(match self.x : X)... on a struct rather than a
-         * method," confirmed directly -- null unless this struct
-         * carries that qualifier. `lockFieldName` is "x" itself, always
-         * freely readable ("The second reading seems more usable to
-         * me... go with the second reason," confirmed directly -- only
-         * every *other* member requires the proof). `lockVariants` is
-         * "X", one entry per '|'-chained variant.
-         */
+        /** For "@lock(match self.x : X)" on a struct: `lockFieldName` is x (always freely readable), `lockVariants` the |-chained variants. */
         String lockFieldName;
         List<String> lockVariants;
-        /**
-         * "swap flag: atomic mut MutexState" -- null unless this struct
-         * declares a 'swap'-tagged member (at most one per struct). Its
-         * own type is always a `mut atomic`-flagged, plain, exactly-
-         * two-variant ('OPEN'/'CLOSED') enum, validated by
-         * `validateSwapMutexField`. When `lockFieldName` is also set on
-         * the same struct, the two must name the *same* field --
-         * enforced the same place -- so the pre-existing "the
-         * discriminant field itself is always freely readable" carve-
-         * out already exempts this field from `requireStructLockProof`
-         * with no further code needed.
-         */
+        /** Name of the struct's single 'swap'-tagged mutex member (a mut atomic OPEN/CLOSED enum), validated by validateSwapMutexField; must equal `lockFieldName` when both are set. */
         String swapFieldName;
-        /**
-         * "impl default match @lock MyMutex{ CLOSED:(tries:imut u64,...)
-         * =>{...} }" -- at most one per struct, null unless registered.
-         * The template itself is never checked/lowered on its own (its
-         * own "break" has to target whichever spin loop actually uses
-         * it, which doesn't exist yet at declaration time) -- only a
-         * deep-cloned copy, freshly gathered/RPN-converted/tree-built
-         * per "CLOSED:default"/"CLOSED:default(args)" use site, is ever
-         * type-checked at all. See DefaultLockMatchPolicy.
-         */
+        /** The struct's "impl default match @lock" policy template (at most one). Only deep-cloned copies per use site are checked. See DefaultLockMatchPolicy. */
         DefaultLockMatchPolicy defaultLockMatchPolicy;
-        /**
-         * "the Class ID of the struct... pushed first as a secret
-         * argument on every OTC," confirmed directly -- this struct's own
-         * value in the flat, auto-generated `Class` enum (see
-         * `generateClassHierarchyEnums`), null only for an `@untyped` one
-         * (excluded from the scheme entirely). Read by
-         * BytecodeEmitter.emitStruct/emitInstantiate to add and populate
-         * the hidden "___type" struct field -- see emitInstantiate's own
-         * doc comment for why every construction site, not only 'new',
-         * needs to populate it.
-         */
+        /** Class id in the flat `Class` enum (generateClassHierarchyEnums); null for an @untyped struct. Populates the hidden "___type" field. */
         Long classId;
         StructInfo(String name) { this.name = name; }
     }
 
     /**
-     * "impl default match @lock MyMutex{ CLOSED:(tries:imut u64,...)
-     * =>{...} }" -- a reusable, parameterized backoff/retry policy
-     * template for a "match @lock" statement's own CLOSED case, invoked
-     * at a call site as bare "CLOSED:default" or parameterized
-     * "CLOSED:default(args...)". Kept as raw, ungathered tokens
-     * (exactly as `Parser.gatherFunc` itself stashes a paramsTok/body --
-     * see the parser's own doc comment on this shape) -- never checked
-     * or lowered on its own, since its own "break" has to target
-     * whichever spin loop a *use site* generates, which doesn't exist
-     * yet at declaration time. A fresh, deep-cloned copy is gathered/
-     * RPN-converted/tree-built and only then type-checked, once per use
-     * site, by `checkLockMatchStatement`'s own default-policy handling.
+     * "impl default match @lock" policy template for a match @lock CLOSED case ("CLOSED:default" / "CLOSED:default(args)").
+     * Kept as raw tokens, never checked itself; a fresh clone is checked per use site. See docs/TypeChecker.md, "Default lock-match policy".
      */
     static class DefaultLockMatchPolicy {
         /** The struct this policy is declared for (StructInfo.defaultLockMatchPolicy's own owner). */
         final String structName;
-        /** Raw "(" DELINEATOR token holding the raw, unresolved parameter list -- its first parameter is always the automatic, per-iteration "tries" counter, never supplied by a call site; every parameter after it is a real, caller-supplied configuration value. */
+        /** Raw "(" token of the parameter list; the first parameter is the automatic per-iteration "tries" counter, never supplied by the call site. */
         final Token rawParamsTok;
-        /** Raw body lines (LINE tokens, each holding a flat, ungathered token list) -- exactly `blockTok.childs` as the parser found it, never itself passed through gatherKeywordBlocks/RPN/tree-build. */
+        /** Raw body lines, exactly the parser's `blockTok.childs`; never run through gatherKeywordBlocks/RPN/tree-build. */
         final List<Token> rawBodyLines;
         final Token declTok;
         DefaultLockMatchPolicy(String structName, Token rawParamsTok, List<Token> rawBodyLines, Token declTok) {
@@ -857,150 +462,76 @@ public class TypeChecker {
     static class EnumInfo {
         final String name;
         final List<String> variants = new ArrayList<>();
-        /** "unless the enum is decorated @non_exhaustive, in which case it must have as its last case default," confirmed directly. */
+        /** Decorated @non_exhaustive: the enum must end with a `default` case. */
         boolean isNonExhaustive;
-        /**
-         * "I want to support using integer literals (positive only) to
-         * dictate what those numbers are," confirmed directly -- null
-         * unless this enum used explicit discriminant values at all
-         * ("only change the format if the values are explicit,"
-         * confirmed directly); when non-null, same length as
-         * `variants`, in the same order ("no partial mixing," confirmed
-         * directly -- every variant has one, or none do). Originally
-         * purely representational ("no new powers, its just control of
-         * what is emmitted, its not a full blown numeric type to work
-         * with," confirmed directly) -- read only by `flattenEnum`'s
-         * own validation and `BytecodeEmitter.emitEnum` at first. Also
-         * now the "is this enum 'guaranteed'?" test
-         * `checkGuaranteedEnumMembership` uses to gate "u64 in
-         * EnumName" -- see "Guaranteed-enum membership" below.
-         */
+        /** Explicit integer discriminants; null unless every variant has one (no partial mixing). Also the test for a "guaranteed" enum (checkGuaranteedEnumMembership). */
         List<Long> explicitValues;
-        /**
-         * "we will store unique ranges (pairs of u64s) as variants...
-         * Because this will compile down to a range and not a u64 it
-         * is not a drop in replacement for the other type of enum (not
-         * fungible)," confirmed directly -- null unless this enum is
-         * range-valued, mutually exclusive with `explicitValues` (an
-         * enum is plain, u64-valued, or range-valued, never more than
-         * one of those at once). Same length and order as `variants`,
-         * "no partial mixing" enforced identically to the u64 case.
-         * `explicitRangeStarts.get(i)`/`explicitRangeEnds.get(i)` are
-         * `variants.get(i)`'s own inclusive `[start, end]` bounds.
-         */
+        /** Explicit [start, end] range per variant for a range-valued enum; null otherwise, exclusive with `explicitValues`. */
         List<Long> explicitRangeStarts;
         List<Long> explicitRangeEnds;
-        /** True once this enum is confirmed range-valued (`explicitRangeStarts != null`) -- read wherever "is this a range-valued enum" needs asking without re-deriving it from the list fields directly. */
+        /** True when this enum is range-valued. */
         boolean isRangeValued() { return explicitRangeStarts != null; }
         EnumInfo(String name) { this.name = name; }
     }
 
     static class FuncInfo {
         String name;
-        /** Defaults to `name`; overridden for impl methods (see ImplInfo) since interface/impl membership is a naming-convention concern for CALL, not part of the signature/type. */
+        /** Defaults to `name`; overridden for impl methods. */
         String mangledName;
         final List<String> paramNames = new ArrayList<>();
         final List<TypeInfo> paramTypes = new ArrayList<>();
         TypeInfo returnType;
         Token funcToken;
-        /** Root-list position (or, for an impl method, its enclosing impl's position) -- used only for globals' "cannot be referenced before declaration" check. Integer.MAX_VALUE (no restriction) unless explicitly set. */
+        /** Root-list position (impl method: its impl's), for the globals "referenced before declaration" check; MAX_VALUE = no restriction. */
         int declOrder = Integer.MAX_VALUE;
-        /** "A function is unsafe if declared inside unsafe{}, safe if inside safe{}, indeterminate otherwise," confirmed directly -- one of "unsafe"/"safe"/"indeterminate", never null. Set by collectFunc/collectImpl from the enclosing unsafe/safe wrapper (if any) found while flattening root declarations. */
+        /** "unsafe"/"safe"/"indeterminate" from the enclosing wrapper block; never null. */
         String safetyTag = "indeterminate";
-        /** "export foo" marked this plain top-level func for external (C) linkage -- read by BytecodeEmitter to emit an EXPORT line inside its FUNC_START block. Always false for impl methods (export can't reference one; see collectExport). */
+        /** Marked by "export foo": BytecodeEmitter emits an EXPORT line. Never true for impl methods. */
         boolean isExported = false;
-        /** This func's own resolved calling-convention name -- "@call_convention(name)" if present, otherwise compiler.config's own declared default. Never null once buildFuncInfo has run. Read by BytecodeEmitter for every CALL/RECURSIVE_CALL targeting this func. */
+        /** Resolved calling convention (decorator or config default); read for every CALL/RECURSIVE_CALL. */
         String callConvention;
-        /** "@async," confirmed directly -- true only for a function decorated this way, which can then *only* ever be invoked through "par"/"await" (checkCall itself enforces this, both directions: an "@async" function called plainly, and a non-"@async" function invoked through "par"/"await", are both hard errors), never called synchronously/plainly the ordinary way. */
+        /** @async: invoked only through par/await, and par/await only accept @async functions (checkCall enforces both directions). */
         boolean isAsync;
-        /** "@throws," confirmed directly -- true only for a function decorated this way (required, and required only, on a function whose own body contains a 'throw' statement -- see TypeChecker.checkThrow). Read at every call-resolution site (see requireThrowsWrapping) to enforce the two-way "a call to this function needs 'try'/'catch' around it, and nothing else does" contract. */
+        /** @throws: required, and only allowed, on a function whose body throws; every call needs try/catch (requireThrowsWrapping). */
         boolean isThrows;
-        /** Set the moment a real, fully-validated 'throw' statement is checked anywhere in this function's own body (see checkThrow) -- read back, once the whole body has been checked, by checkFunctionBody's own "'@throws' requires an actual 'throw'" enforcement: '@throws' on a function that never itself throws is equally a hard error, the direct mirror of "'throw' requires '@throws'" (checkThrow's own very first check). Meaningless (stays false) for a function not decorated '@throws' -- nothing reads it in that case. */
+        /** Set when a 'throw' is checked in this body; checkFunctionBody uses it to reject an unneeded @throws. */
         boolean sawThrow;
-        /** "these are things that can be decorated @pub with everything else being private by default," confirmed directly -- struct/enum/interface member funcs (impl methods) are gated *both* by this and by their own enclosing ImplInfo's own `isPublic` ("if the impl is not public, none of its methods can be reached outside the file its declared in," confirmed directly) -- a plain top-level func has only this one gate, no enclosing container to also check. */
+        /** @pub; for impl methods also gated by the enclosing ImplInfo's `isPublic`. See docs/TypeChecker.md, "Visibility". */
         boolean isPublic;
-        /** Null for a plain top-level func. Set by collectImpl for every impl method (instance or static) -- gives visibility-checking code (and anything else that needs "which struct/interface is this method really a member of") a direct path back to its own enclosing ImplInfo, which FuncInfo otherwise has no way to reach on its own. */
+        /** Null for a plain top-level func; else the impl this method belongs to. */
         ImplInfo enclosingImpl;
-        /** Null unless this is a library function (collectLibrary). Mirrors `enclosingImpl` exactly -- "the same privacy rules in terms of encapsulation as an impl," confirmed directly -- gives requireLibraryVisibility a direct path back to the library that actually *declared* this function (never the library it might be reached through via 'extends'), the identity the "same construct" half of the privacy rule is checked against. */
+        /** Null unless a library function: the library that declared it (for requireLibraryVisibility). */
         LibraryInfo enclosingLibrary;
-        /** "@event_loop is a privileged function - it can use loop{} exactly once internally while remaining safe," confirmed directly -- counts how many bare 'loop{...}' statements within this func's own body have already been exempted from the ordinary 'unsafe' requirement; only the first one ever is (see checkStatement's own "loop" case). Meaningless (stays 0) for any function not decorated '@event_loop'. */
+        /** Count of bare loop{} statements already exempted in an @event_loop function (only the first is). */
         int eventLoopSafeLoopCount;
-        /**
-         * "double check the ownership model for any other potential
-         * leaks," confirmed directly -- every `owns`-typed local this
-         * function ever declares, name to type, across every scope
-         * within it (not just one), populated at the same point
-         * `Scope.ownsDeclaredHere` already is. Exists so
-         * BytecodeEmitter can null a slot out after its own natural-
-         * end-of-scope `GT_DESTRUCT` (needed for loop-body locals
-         * specifically -- see `emitDestructList`'s own doc) without
-         * threading type information through `Token.destructOnExit`
-         * itself (a `List<String>`, used in many places, kept
-         * unchanged).
-         */
+        /** Every owns-typed local of this function, across all scopes, so BytecodeEmitter can null a slot after its scope-end GT_DESTRUCT (see emitDestructList). */
         Map<String, TypeInfo> ownsLocalTypes = new LinkedHashMap<>();
-        /**
-         * "I should support all of the current ones, but also each of
-         * them with each of the following variations for arguments,"
-         * confirmed directly -- null (no args), "c_args" (the C-ABI
-         * "(imut s32, raw mut raw mut char)" shape), or "safe_args"
-         * (the wrapped "owns some mut dynarray(...)" shape). Set only
-         * for the one real 'main' function (`validateMainFunction`);
-         * read later by `validateTickEventLoop` (an '@event_loop'
-         * function's own required signature now depends on this) and
-         * by `BytecodeEmitter` (whether a synthesized C-ABI wrapper is
-         * needed at all).
-         */
+        /** Argument shape of the real 'main': null, "c_args" or "safe_args" (validateMainFunction). Read by validateTickEventLoop and BytecodeEmitter. */
         String mainArgShape;
-        /** True only for a constructor ("impl constructor for ConcreteName(...) self {...}") -- see collectFunc's own constructor-registration branch. Never true for an ordinary top-level func or an impl method. */
+        /** True for "impl constructor for Name(...)" (see collectFunc). */
         boolean isConstructor;
-        /** Only meaningful when isConstructor is true -- the struct this constructor builds ("MyClass" in the example above), before name-mangling. Read by checkInstantiate's OTC gate (see insideConstructorBodyForStruct) and by checkNew/checkCall's error messages. */
+        /** For a constructor: the struct it builds; read by checkInstantiate's OTC gate and checkNew/checkCall errors. */
         String constructorConcreteName;
     }
 
-    /**
-     * "extern printf(static imut string,...) void" -- a signature this
-     * compilation unit expects the final linked assembly to already
-     * provide (a C function, typically). No body, no mangledName (an
-     * extern's bytecode symbol is always its own bare declared name --
-     * C has no name mangling to match), no overloading (globally unique
-     * by construction: `externs` is a plain name-keyed map, and
-     * collectFunc/collectExtern cross-check each other's namespace so
-     * neither an extern nor an ordinary function can silently shadow
-     * the other).
-     */
+    /** "extern name(types...) ret": a signature the linked assembly provides. No body, no mangling, no overloading; globally unique by name. */
     static class ExternInfo {
         String name;
-        /** The real, literal symbol this extern links against at the assembly level -- "@link_name(realName)" if present, otherwise always identical to `name` itself (the ordinary, overwhelmingly common case). See "@link_name"'s own doc comment in validateDecoratorArgShape for why the two ever need to differ at all. */
+        /** Literal link symbol: "@link_name(x)" if present, else `name`. */
         String linkName;
-        /**
-         * Unnamed on purpose -- "extern printf(static imut string,...)
-         * void" gives only types, never "name: type" pairs, since these
-         * parameters are never referenced from any Caspien expression
-         * (there's no body to reference them in).
-         */
+        /** Parameter types only; extern parameters are unnamed. */
         final List<TypeInfo> paramTypes = new ArrayList<>();
-        /** True if the signature ended in a trailing '...' -- any number of additional, wholly unchecked arguments (any type, any mutability, just not indeterminate) may follow the fixed params at a call site. */
+        /** Signature ended in '...': extra unchecked arguments allowed at call sites. */
         boolean hasVarargs;
         TypeInfo returnType;
         Token declTok;
-        /** This extern's own resolved calling-convention name -- "@call_convention(name)" if present, otherwise compiler.config's own declared default. The whole reason externs accept decorators at all: "when I extern a func I should be able to put the calling convention decorator in the extern statement," confirmed directly -- this is the actual C/OS ABI boundary, where getting the real convention right matters most. */
+        /** Resolved calling convention (decorator or config default). */
         String callConvention;
     }
 
-    /**
-     * "ASM name { ... }" or "ASM name \"path\"" -- opaque, verbatim
-     * assembly text this compiler never inspects beyond the one
-     * "ASM_END" reservation check (already done by the lexer for the
-     * block form; done here, once, for the file form). `rawText` is
-     * always the final, fully-resolved content either way -- the block
-     * form's own already-extracted text, or the file form's contents
-     * read from disk -- so every consumer (an invocation elsewhere,
-     * or this same declaration if unnamed) only ever needs this one
-     * field, never needing to know which form it originally came from.
-     */
+    /** "ASM name { ... }" or "ASM name \"path\"": opaque assembly; `rawText` is the final content for both forms. */
     static class AsmInfo {
-        /** Null for an unnamed declaration -- never registered under any name, never referenceable by an "asm_name;" invocation; it simply self-emits at its own declaration point instead (see collectRootAsm/checkStatement's "ASM" case). */
+        /** Null for an unnamed declaration, which self-emits at its declaration point. */
         String name;
         String rawText;
         Token declTok;
@@ -1016,7 +547,7 @@ public class TypeChecker {
         LinkedHashMap<String, RawMethodSig> ownMethods;
         boolean flattened;
         Token declTok;
-        /** Gates the interface itself, not its own members -- "except for interface members which are all public," confirmed directly: every method an interface declares is unconditionally public, regardless of this flag, but a private interface is itself not nameable outside its own declaring file, the same as a private struct/func/impl. */
+        /** Gates the interface itself; its methods are always public. */
         boolean isPublic;
     }
 
@@ -1026,11 +557,11 @@ public class TypeChecker {
         List<Token> returnTypeTokens;
         /** True if this came from a "@default func ...{...}" (a body-bearing method) rather than a plain signature-only declaration. */
         boolean isDefault;
-        /** Only set when isDefault is true -- the interface's own, already-gathered "func" token (name/params/return type in .sub, body in .childs), kept around so an impl that omits this method can still get a real, callable entry materialized from it (see collectImpl and materializeDefaultMethod) -- "overriding the default should be optional," confirmed directly. Never mutated in place; deep-cloned per impl that needs it, since one interface's default method may be inherited by many concrete types. */
+        /** Only for isDefault: the interface's gathered "func" token, deep-cloned for each impl that omits the method (see materializeDefaultMethod). */
         Token defaultBodyTok;
-        /** The interface method declaration's own decorators (e.g. "@lock"/"@unlock" on a @guard interface's methods) -- needed so an implementing method can be validated against them, the same way @overrides/@realizes already are. */
+        /** Decorators of the interface method declaration (e.g. @lock/@unlock on @guard interfaces), checked against the implementing method. */
         List<Token.Decorator> decorators;
-        /** True for a "static NAME(...) ReturnType;" or "static func NAME(...) ReturnType{...}" declaration -- kept in the *same* `methods`/`ownMethods` maps as ordinary signatures (name collision between a static and an instance signature of the same name is still a real, rejected collision, not two separate namespaces), this flag is what conformance-checking and call-site dispatch key off of to keep the two kinds strictly separate. */
+        /** "static" signature; kept in the same maps as instance signatures (a name clash is still an error), this flag keeps the two kinds apart. */
         boolean isStatic;
     }
 
@@ -1039,31 +570,15 @@ public class TypeChecker {
         String interfaceName;
         String concreteName;
         final LinkedHashMap<String, FuncInfo> methods = new LinkedHashMap<>();
-        /**
-         * "TypeName.method(...)," never through an instance -- kept in
-         * a genuinely separate map from `methods` above, not just a
-         * flag on a shared one, so "I do not want the behaviour where
-         * instance methods are accessible from the Type, or static
-         * methods accessible from an instance" is enforced structurally
-         * by which map a caller's own dispatch path ever looks in, not
-         * by a runtime/call-site check that could be gotten wrong.
-         */
+        /** Static methods, in a separate map so instance/static dispatch stay structurally apart. */
         final LinkedHashMap<String, FuncInfo> staticMethods = new LinkedHashMap<>();
         /**
-         * Method overloading: every instance/static method by bare name, in
-         * declaration order, INCLUDING the first one (which is also what
-         * `methods`/`staticMethods` above hold under the plain name). A
-         * second, same-named method with a different parameter signature is
-         * stored in `methods`/`staticMethods` under the synthetic key
-         * "name#signature" (so every existing `.values()` walk -- body
-         * checking, emission, guard validation -- still sees every method)
-         * and appended here. Only a bare `impl` may overload; an interface
-         * impl cannot (an interface method is identified by name alone).
-         * Always go through candidates(...) to look a method up by name.
+         * Overload lists by bare name (includes the first method). A second same-named method with a different signature is stored in
+         * `methods`/`staticMethods` under the key "name#signature". Only a bare `impl` may overload. Look up through candidates().
          */
         final LinkedHashMap<String, List<FuncInfo>> methodOverloads = new LinkedHashMap<>();
         final LinkedHashMap<String, List<FuncInfo>> staticMethodOverloads = new LinkedHashMap<>();
-        /** Every overload of `name` (instance or static), in declaration order; empty when there is none. Falls back to the plain map so an entry put() straight into `methods`/`staticMethods` without going through registration still resolves. */
+        /** Every overload of `name` in declaration order; empty if none. */
         List<FuncInfo> candidates(String name, boolean isStatic) {
             List<FuncInfo> list = (isStatic ? staticMethodOverloads : methodOverloads).get(name);
             if (list != null) {
@@ -1073,50 +588,24 @@ public class TypeChecker {
             return single == null ? java.util.Collections.<FuncInfo>emptyList() : java.util.Collections.singletonList(single);
         }
         Token declTok;
-        /** "if the impl is not public, none of its methods can be reached outside the file its declared in," confirmed directly -- an outer gate, checked in addition to (never instead of) each individual method's own FuncInfo.isPublic. A @pub impl does *not* make every method inside it public automatically -- an un-@pub method inside a @pub impl is still only reachable from other funcs within that same impl, the original, narrower rule. */
+        /** Outer visibility gate, checked in addition to each method's own isPublic. */
         boolean isPublic;
-        /** This impl's own safety tag ("unsafe"/"safe"/"indeterminate") -- carried alongside declTok so a call-site-triggered generic-method instantiation (see genericMethodTemplates below) can check its own newly-materialized body with the identical safety context an ordinary method on this same impl already gets. */
+        /** The impl's safety tag, used when checking a generic method instantiated at a call site. */
         String safetyTag;
-        /**
-         * "impl with its own independent type params" -- a method token
-         * GenericsExpander tagged with a non-null Token.typeParams (its own
-         * residual, impl-level type parameter(s), not consumed matching the
-         * target struct's own generics -- see GenericsExpander's own doc
-         * comment on the feature) is held back here, by method name, rather
-         * than registered into the ordinary `methods`/`staticMethods` map
-         * above at all: it isn't a real, callable method yet -- only once a
-         * call site supplies its own explicit ":<U>" type argument
-         * (checkGenericMethodCall) is a genuine, concrete FuncInfo ever
-         * materialized for it (into genericMethodInstances, below).
-         */
+        /** Generic methods (own impl-level type params) held back by name; materialized per call site by instantiateGenericMethod. See docs/TypeChecker.md, "Generic impl methods". */
         final LinkedHashMap<String, Token> genericMethodTemplates = new LinkedHashMap<>();
-        /**
-         * Memoized, already-checked instantiations of a genericMethodTemplates
-         * entry, keyed by "methodName<arg1,arg2>" (mirroring GenericsExpander's
-         * own memo-key shape) -- populated, and consulted first, by
-         * instantiateGenericMethod, so the identical ":<u64>" call written at
-         * two different call sites reuses one materialized method rather than
-         * generating (and re-checking) a fresh copy each time.
-         */
+        /** Memoized instantiations of genericMethodTemplates, keyed "method<arg1,arg2>". */
         final LinkedHashMap<String, FuncInfo> genericMethodInstances = new LinkedHashMap<>();
     }
 
     /**
-     * "A library is just a collection of functions... it has the same
-     * privacy rules in terms of encapsulation as an impl," confirmed
-     * directly. Dispatched purely by bare library name
-     * ("Math.sin(10.2)"), never through an instance -- structurally
-     * closest to a static-method-only impl with no concrete struct
-     * behind it at all, rather than to a struct/interface (there is no
-     * instance, no "self," and multiple inheritance ("extends A; extends
-     * B;") is fully unlimited, the same "an interface can extend over
-     * many interfaces" shape flattenInterface already established,
-     * rather than a struct's single-parent cap).
+     * "library Name { ... }": functions dispatched by bare library name ("Math.sin(x)"); no instance, no self.
+     * Same privacy rules as an impl; unlimited 'extends'.
      */
     static class LibraryInfo {
         String name;
         List<String> extendsNames = new ArrayList<>();
-        /** This library's own declared functions only, name -> every overload declared directly in this library's own body (kept until the flatten pass consumes them). Overloading is by full signature (name + parameter types) -- "full signature (name + params)," confirmed directly, a deliberate departure from an impl's own "no overloading" rule. */
+        /** Own functions only, name to overloads (overloaded by full signature, unlike an impl). */
         LinkedHashMap<String, List<FuncInfo>> ownFunctions;
         /** Final, flattened function set (own + every extended library's, full-signature-collision-checked). Populated by flattenLibrary. */
         final LinkedHashMap<String, List<FuncInfo>> functions = new LinkedHashMap<>();
@@ -1126,17 +615,10 @@ public class TypeChecker {
         boolean isPublic;
     }
 
-    /**
-     * A zero-instance marker type whose only job is to give the
-     * try-block-boundary-marking `Scope` constructor a signature distinct
-     * from `Scope(Scope, boolean, boolean)` (the dynarray-for-loop
-     * constructor), which a plain second `boolean` parameter would
-     * collide with under erasure. `MARK` is the one value ever passed.
-     */
+    /** Marker type giving the try-block Scope constructor a signature distinct from Scope(Scope, boolean, boolean). */
     private enum TryBlockBoundaryMarker { MARK }
 
-    /** The reasons a statement-level `unsafe` block must name (`unsafe deref extern{`), each matching one rule that otherwise needs a proof or is refused in safe code.
-     *  `unaudited` is the catch-all: a block that names it (alone) is accepted whatever it needs, and says nothing about why; the stdlib may never use it. */
+    /** The reasons a statement-level `unsafe` block must name (`unsafe deref extern{`); `unaudited` is the catch-all, written alone, and never allowed in the stdlib. See docs/TypeChecker.md, "Unsafe block tags". */
     static final Set<String> UNSAFE_TAGS = new java.util.LinkedHashSet<>(Arrays.asList(
             "extern", "memcopy", "raw", "deref", "clone", "global", "loop", "udyn", "udyn:owns",
             "assume", "call", "asm", "async", "atomic", "file", "unaudited"));
@@ -1146,7 +628,7 @@ public class TypeChecker {
         final Token tok;
         final Set<String> declared = new java.util.TreeSet<>();
         final Set<String> used = new java.util.TreeSet<>();
-        /** For `--fix unsafe-split`: per direct child statement of the block (by position) its source line, whether it is a bare `assume match`, and the tags it needed. */
+        /** For `--fix unsafe-split`: per direct child statement its source line, whether it is a bare `assume match`, and the tags it needed. */
         final List<Integer> childLine = new ArrayList<>();
         final List<Boolean> childAssume = new ArrayList<>();
         final List<Set<String>> childTags = new ArrayList<>();
@@ -1312,11 +794,7 @@ public class TypeChecker {
         return typeOwnsMemory(el, new HashSet<>()) ? "udyn:owns" : "udyn";
     }
 
-    /**
-     * Called at every place where `unsafe` lets something through that safe code would refuse (or demand a proof for): true when
-     * the code is in unsafe context, and notes that the enclosing tagged block needed `tag`. Call it only when the bypass is
-     * actually exercised (the proof is missing / the operation is the unsafe one), so a declared-but-unneeded tag can be flagged.
-     */
+    /** Called where `unsafe` bypasses a rule: true in unsafe context, and records `tag` on the enclosing tagged block. Call only when the bypass is actually exercised. */
     private boolean unsafeBypass(Scope scope, String tag) {
         if (!"unsafe".equals(scope.currentSafety)) {
             return false;
@@ -1335,37 +813,11 @@ public class TypeChecker {
         final Map<String, TypeInfo> vars = new HashMap<>();
         /** Names declared via 'let static' in this exact scope -- checkAddressOf's 'static' case needs to know this to accept "raw someStaticVar"-style pointers. */
         final Set<String> staticNames = new HashSet<>();
-        /**
-         * "A variable marked const can never be assigned outside of its
-         * declaration," confirmed directly -- the local-variable
-         * counterpart of `TypeInfo.isConst` (which covers a parameter/
-         * struct-member's own type annotation instead). Populated only
-         * from a "let const" declaration's own `Token.isConst` flag;
-         * consulted by `isConstName` the same "walk up through parent
-         * scopes" way `isStatic` just below already does.
-         */
+        /** Names declared by 'let const' in this scope (local counterpart of TypeInfo.isConst); see isConstName. */
         final Set<String> constNames = new HashSet<>();
-        /**
-         * "Both i and arr are immutable within a for or for match
-         * loop," confirmed directly -- slot keys (a plain variable name,
-         * or a simple "a.b" path) that are temporarily unassignable for
-         * the dynamic extent of this scope and every scope nested inside
-         * it, granted by a "for"/"for match" loop for its own loop
-         * variable and its own source expression (see checkForLoop).
-         * Deliberately a different mechanism from `constNames`:
-         * `isConstName` only ever consults the slot's own *declaring*
-         * scope (a "let const" is permanent, for the life of that
-         * binding), whereas this is consulted at every scope in the
-         * chain, the same "inherited down through nesting, checked
-         * anywhere within that dynamic extent" shape `currentSafety`/
-         * `activeMatchPatterns` already have -- a loop's own source
-         * variable is declared *outside* the loop, so marking it const
-         * at its own declaring scope would make it permanently const,
-         * not just immutable for the loop's own duration. Null unless
-         * this exact scope was the one that granted some.
-         */
+        /** Slot keys made unassignable by a for/for-match loop for its variable and source expression, for the loop body. Unlike constNames, checked along the whole scope chain. */
         Set<String> ownLoopImmutableSlots;
-        /** See `ownLoopImmutableSlots`'s own doc -- walks up through every parent scope, not just this one, since a loop's own immutability grant applies to its whole body, including any block nested further inside it. */
+        /** Walks all parent scopes: a loop's immutability grant covers nested blocks. */
         boolean isLoopImmutable(String slotKey) {
             if (slotKey == null) {
                 return false;
@@ -1377,149 +829,29 @@ public class TypeChecker {
             }
             return false;
         }
-        /**
-         * "ASM name {...}" declared inside a function body -- own
-         * separate namespace (never checked against vars/functions/
-         * externs/anything else), ordinary lexical scoping (added here
-         * only once this exact declaration statement has been checked,
-         * so a reference earlier in the same block/function naturally
-         * fails to find it, exactly like a local 'let' would) rather
-         * than a whole-function-visible flat registry the way a root-
-         * level one is.
-         */
+        /** ASM names declared inside a function body; lexical, visible only after the declaration is checked. */
         final Map<String, AsmInfo> localAsmNames = new HashMap<>();
-        /**
-         * "Slots" (a bare variable name, or a simple "a.b" struct-member
-         * path) currently holding a moved-away 'owns' value -- shared by
-         * reference across every child scope of one function (created
-         * once at function entry), since ownership movement isn't
-         * lexically scoped the way a variable declaration is: a move
-         * inside a nested "if" block must still be visible after that
-         * block ends.
-         */
+        /** Slots (variable name or "a.b" path) currently holding a moved-away owns value. Shared across all scopes of one function, since moves are not lexically scoped. */
         final Set<String> movedSlots;
-        /**
-         * "A function is unsafe if declared inside unsafe{}, safe if
-         * inside safe{}, indeterminate otherwise... safety is tracked
-         * per-safe block," confirmed directly -- this is the *current*
-         * safety context at this exact point in a function body,
-         * inherited from the parent scope unless overridden by entering
-         * a nested "unsafe"/"safe" block (see checkStatement). One of
-         * "unsafe"/"safe"/"indeterminate", never null.
-         */
+        /** Current safety context ("unsafe"/"safe"/"indeterminate"), inherited and overridable by a nested block. */
         final String currentSafety;
         /** The tagged 'unsafe' block this scope sits in (set on the scope that block opens, found via parents); null outside any statement-level unsafe block. */
         UnsafeBlockRecord unsafeBlock;
-        /**
-         * "Validation of liveness, type and bounds within a match
-         * block," confirmed directly -- every MatchPattern currently
-         * proven true, inherited from the parent scope and extended by
-         * entering a "match" block (see checkMatch), never mutated in
-         * place. Lexically scoped exactly like any other nested scope:
-         * leaving the match block means using a Scope that doesn't
-         * include its patterns at all, not an explicit "pop."
-         */
+        /** Proven MatchPatterns, inherited and extended by entering a match block; never mutated. */
         final List<Token.MatchPattern> activeMatchPatterns;
-        /**
-         * "Inside this match block, the func looses its recursive
-         * privileges," confirmed directly -- true only within (and
-         * lexically scoped to) the specific "match RANGE_PARAM is
-         * base{...}" block a @recursive function is required to have;
-         * checked by checkCall/checkMethodCall to reject a self-call
-         * made from within it. Inherited from the parent scope
-         * otherwise, same as everything else here.
-         */
+        /** True inside the base-case match of a @recursive function; checkCall/checkMethodCall reject self-calls there. */
         final boolean suspendsSelfRecursion;
-        /**
-         * "When an owns value leaves scope, we need it to be deleted,"
-         * confirmed directly -- the 'owns'-typed slots declared directly
-         * in *this* exact lexical scope, in declaration order, never
-         * shared or inherited (unlike movedSlots)
-         * because destruction is fundamentally per-block, not
-         * function-wide: a fresh List<> every time a scope is
-         * constructed. Populated by checkAssign's 'let' branch (for
-         * ordinary locals) and by checkFunctionBody (for the function's
-         * own 'owns'-typed parameters, added to the function's root
-         * scope specifically, since a parameter's obligation to destruct
-         * belongs to the function itself, not any inner block).
-         */
+        /** Owns slots declared directly in this scope, in order (per block, not inherited); dropped at scope end. Filled by checkAssign (lets) and checkFunctionBody (params, in the root scope). */
         final List<String> ownsDeclaredHere = new ArrayList<>();
-        /**
-         * The Scope representing the current function's own outermost
-         * scope -- points to itself at that root, inherited unchanged
-         * by every descendant scope within the same function. "It does
-         * not apply to values preserved by a return statement,"
-         * confirmed directly -- a 'return' statement's own destruct list
-         * walks from the current scope up to (and including) this
-         * boundary, so this is what tells checkReturn where to stop.
-         */
+        /** The function's outermost scope (itself at the root); a 'return' destructs owns locals up to and including it. */
         final Scope functionRootScope;
-        /**
-         * The Scope representing the current innermost loop's own body
-         * root -- null outside any loop. "Ending scope... include early
-         * exit out of a function, or loop," confirmed directly -- a
-         * 'break' statement's destruct list walks from the current scope
-         * up to (and including) this boundary, never beyond it into the
-         * enclosing function (a loop's own exit doesn't mean the
-         * function exits). Reset to a new boundary on entering a nested
-         * loop, inherited unchanged through everything else (an 'if'
-         * inside a loop doesn't change which loop 'break' targets).
-         */
+        /** Innermost loop body scope (null outside loops); a 'break' destructs up to and including it. Reset by each nested loop. */
         final Scope loopBoundaryScope;
-        /**
-         * The Scope representing the current innermost "try { ... }"
-         * block's own body root -- null outside any try-block. The exact
-         * "break"/loopBoundaryScope shape, just targeting a different
-         * construct: a 'continue' used inside a "catch(e){ ... }" body
-         * ("It's just the same as catch(e){}, but makes it a bit more
-         * explicit," confirmed directly) walks from its own current
-         * scope up to (and including) this boundary, destructing/
-         * unlocking exactly what an early exit out of the try-block
-         * requires, then jumps to just beneath that try-block's own
-         * closing brace -- "the fallthru comes out here," confirmed
-         * directly, resolving the "what is x" ambiguity a plain
-         * fallthrough out of catch would otherwise leave unanswered,
-         * since whatever the try-block's own body declared (including
-         * the try/catch's own bound variable) is already out of scope
-         * the moment execution reaches that point. Reset to a new
-         * boundary on entering a nested try-block, inherited unchanged
-         * through everything else -- the identical "an 'if' inside a
-         * loop doesn't change which loop 'break' targets" reasoning
-         * loopBoundaryScope's own doc comment gives, just for try-blocks.
-         */
+        /** Innermost "try { }" body scope (null outside); a 'continue' in a catch body destructs/unlocks up to it and jumps past the try block. Reset by each nested try. */
         final Scope tryBlockBoundaryScope;
-        /**
-         * True while checking the body of a "for i in dynarrayExpr{...}"
-         * loop specifically (never a plain "loop", nor a range-
-         * sourced "for") -- "we need to be barred from resizing (even
-         * indirectly thru another function) the dynarray in a for
-         * loop," confirmed directly. Inherited from the parent scope
-         * like currentSafety (so a nested block/loop/if inside one of
-         * these still counts), but -- unlike currentSafety, which a
-         * nested "unsafe"/"safe" can freely override in either
-         * direction -- this can only ever be turned *on* by entering
-         * such a loop's own body, never back off by anything nested
-         * inside it; there's no legitimate reason a function would want
-         * to locally lift this restriction.
-         */
+        /** True inside a "for i in dynarrayExpr" body: the dynarray may not be resized, even through another function. Inherited; can only be turned on. */
         final boolean insideDynArrayForLoopBody;
-        /**
-         * "guarantees the unlock() call happens on every exit path from
-         * the block," confirmed directly -- every already-type-checked,
-         * compiler-synthesized unlock (or spin-lock release-swap) call
-         * currently owed on exit, in acquisition order, inherited from
-         * the parent scope and extended only by entering a "lock
-         * EXPR{...}" block's own body (or a "match @lock"'s own OPEN
-         * case body) -- the identical "inherited down through nesting,
-         * extended by copy" shape `activeMatchPatterns` already has.
-         * checkReturn/break read this list directly (the *entire* list
-         * for a return, since a lock is always function-bound and
-         * return always exits every one of them; the suffix beyond the
-         * loop boundary's own list for a break, the same "walk the
-         * scope chain to a boundary" reasoning collectOwnsToDestruct
-         * already uses, just against an immutable copy-per-scope list
-         * instead of a mutable per-scope one).
-         */
+        /** Owed lock releases (synthesized unlock calls) in acquisition order, inherited and extended by lock/match @lock OPEN bodies; return reads all, break the suffix past the loop boundary. */
         final List<Token> activeLockReleases;
         Scope(Scope parent) {
             this.parent = parent;
@@ -1559,7 +891,7 @@ public class TypeChecker {
             this.insideDynArrayForLoopBody = (parent != null) && parent.insideDynArrayForLoopBody;
             this.activeLockReleases = (parent != null) ? parent.activeLockReleases : Collections.emptyList();
         }
-        /** Used only when entering a "match" block -- extends the parent's already-active patterns with this match's own newly-proven ones, and, if this specific match is the required "RANGE_PARAM is base" one, suspends self-recursion for its body. */
+        /** Entering a match block: extends the proven patterns; suspends self-recursion for the required "RANGE_PARAM is base" match. */
         Scope(Scope parent, List<Token.MatchPattern> extendedMatchPatterns, boolean suspendsSelfRecursionOverride) {
             this.parent = parent;
             this.movedSlots = (parent != null) ? parent.movedSlots : new HashSet<>();
@@ -1573,19 +905,7 @@ public class TypeChecker {
             this.insideDynArrayForLoopBody = (parent != null) && parent.insideDynArrayForLoopBody;
             this.activeLockReleases = (parent != null) ? parent.activeLockReleases : Collections.emptyList();
         }
-        /**
-         * Used only for one branch of a "match"/"elsematch"/"else"
-         * chain -- needs both overrides at once (unlike either existing
-         * combination alone): an isolated movedSlots copy (branches are
-         * mutually exclusive at runtime, so a move proven in one must
-         * never leak into another's own checking, the same reasoning
-         * checkIfChain's branches already rely on) *and* this specific
-         * branch's own proven match patterns/base-case suspension (a
-         * plain 'else' branch passes the parent's own unchanged patterns
-         * through with none added, and never suspends self-recursion --
-         * "the else block gets none of the match body's special proof
-         * privileges," confirmed directly).
-         */
+        /** One branch of a match/elsematch/else chain: isolated movedSlots copy plus this branch's patterns (a plain else adds none and never suspends recursion). */
         Scope(Scope parent, Set<String> movedSlotsOverride, List<Token.MatchPattern> extendedMatchPatterns,
                 boolean suspendsSelfRecursionOverride) {
             this.parent = parent;
@@ -1600,7 +920,7 @@ public class TypeChecker {
             this.insideDynArrayForLoopBody = (parent != null) && parent.insideDynArrayForLoopBody;
             this.activeLockReleases = (parent != null) ? parent.activeLockReleases : Collections.emptyList();
         }
-        /** Used only when entering a loop's own body scope ("loop"/desugared "for") -- this scope becomes the new innermost loop boundary for itself and every descendant, until a still-deeper loop resets it again. */
+        /** Entering a loop body: this scope becomes the innermost loop boundary. */
         Scope(Scope parent, boolean isNewLoopBoundary) {
             this.parent = parent;
             this.movedSlots = (parent != null) ? parent.movedSlots : new HashSet<>();
@@ -1613,7 +933,7 @@ public class TypeChecker {
             this.insideDynArrayForLoopBody = (parent != null) && parent.insideDynArrayForLoopBody;
             this.activeLockReleases = (parent != null) ? parent.activeLockReleases : Collections.emptyList();
         }
-        /** Used only when entering a "for i in dynarrayExpr{...}" loop's own body specifically -- same loop-boundary handling as the constructor just above, plus turning on insideDynArrayForLoopBody for this scope and every descendant. */
+        /** Entering a "for i in dynarrayExpr" body: loop boundary plus insideDynArrayForLoopBody. */
         Scope(Scope parent, boolean isNewLoopBoundary, boolean isDynArrayForLoopBody) {
             this.parent = parent;
             this.movedSlots = (parent != null) ? parent.movedSlots : new HashSet<>();
@@ -1626,14 +946,7 @@ public class TypeChecker {
             this.insideDynArrayForLoopBody = isDynArrayForLoopBody || (parent != null && parent.insideDynArrayForLoopBody);
             this.activeLockReleases = (parent != null) ? parent.activeLockReleases : Collections.emptyList();
         }
-        /**
-         * Used only when entering a "lock EXPR{...}" block's own body,
-         * or a "match @lock"'s own OPEN case body -- extends the
-         * parent's own already-owed release list with this one's own
-         * synthesized, already-type-checked unlock/release call, the
-         * same "immutable, copy-and-append" shape `activeMatchPatterns`
-         * already has.
-         */
+        /** Entering a lock body or match @lock OPEN body: appends the synthesized release call. */
         Scope(Scope parent, Token extraLockRelease) {
             this.parent = parent;
             this.movedSlots = (parent != null) ? parent.movedSlots : new HashSet<>();
@@ -1648,14 +961,7 @@ public class TypeChecker {
             extended.add(extraLockRelease);
             this.activeLockReleases = extended;
         }
-        /**
-         * The "match @lock"-only combination of the two constructors just
-         * above: an isolated movedSlots copy (the OPEN/CLOSED cases are
-         * mutually exclusive per spin iteration, the same branch
-         * semantics an ordinary if/else pair already gets) *and* the
-         * OPEN case's own owed release call, together -- no existing
-         * constructor threads both at once.
-         */
+        /** match @lock: isolated movedSlots copy plus the OPEN case's release call. */
         Scope(Scope parent, Set<String> movedSlotsOverride, Token extraLockRelease) {
             this.parent = parent;
             this.movedSlots = movedSlotsOverride;
@@ -1670,17 +976,7 @@ public class TypeChecker {
             extended.add(extraLockRelease);
             this.activeLockReleases = extended;
         }
-        /**
-         * Used only when entering a "try { ... }" block's own body -- this
-         * scope becomes the new innermost try-block boundary for itself
-         * and every descendant, until a still-deeper try-block resets it
-         * again (the exact `isNewLoopBoundary` shape just above, for
-         * `continue`'s new try-block-exiting sense rather than `break`'s
-         * loop-exiting one). A dedicated marker type, not another
-         * `boolean` parameter, since `Scope(Scope, boolean, boolean)` is
-         * already spoken for by the dynarray-for-loop constructor above --
-         * erasure would collide.
-         */
+        /** Entering a "try { }" body: this scope becomes the innermost try boundary (a marker type avoids an erasure clash with Scope(Scope, boolean, boolean)). */
         Scope(Scope parent, TryBlockBoundaryMarker ignoredMarker) {
             this.parent = parent;
             this.movedSlots = (parent != null) ? parent.movedSlots : new HashSet<>();
@@ -1746,32 +1042,21 @@ public class TypeChecker {
     }
 
     private final Map<String, StructInfo> structs = new HashMap<>();
-    /** Every struct's own name, in declaration order (across the whole compilation unit, imports included) -- `structs` itself is unordered, but `generateClassHierarchyEnums` needs a real order to match "declaration order" for the Class/ClassID hierarchy and every 'enum for' membership list. Appended to only by `registerStructLike`. */
+    /** Struct names in declaration order (imports included), for generateClassHierarchyEnums; appended only by registerStructLike. */
     private final List<String> structDeclOrder = new ArrayList<>();
     private final Map<String, EnumInfo> enums = new HashMap<>();
-    /**
-     * A reference to the exact same list object `check(...)` was called
-     * with -- BytecodeEmitter's own top-level emit() later walks this
-     * identical list (Main.java passes the same "expanded" object to
-     * both), so a root-level Token appended here after `check` starts
-     * is genuinely visible to emission, not a separate, disconnected
-     * copy. Needed specifically for "par"'s own synthesized
-     * AsyncHandle_T struct/impl (see getOrCreateAsyncHandleType) --
-     * every other declaration in this compiler already exists as real
-     * source text by the time this list is built, so nothing else has
-     * ever needed to append to it after the fact.
-     */
+    /** The list `check(...)` was given, shared with BytecodeEmitter, so root tokens appended later (par's AsyncHandle_T, see getOrCreateAsyncHandleType) reach emission. */
     private List<Token> rootLinesRef;
     private final Map<String, List<FuncInfo>> functions = new HashMap<>();
     private final Map<String, InterfaceInfo> interfaces = new HashMap<>();
-    /** "extern printf(static imut string,...) void" -- name -> signature. Globally unique by construction (a plain map); collectFunc/collectExtern cross-check each other's namespace so an extern and an ordinary function can never share a name. */
+    /** extern name -> signature; collectFunc/collectExtern cross-check so an extern and a function never share a name. */
     private final Map<String, ExternInfo> externs = new HashMap<>();
-    /** Every plain top-level func name already claimed by an 'export' statement -- "export foo" twice, or exporting two different overloads sharing one bare name, is a hard error (checked against this, not against FuncInfo.isExported, since the latter is per-FuncInfo and this needs a simple whole-name check before the target overload is even resolved). */
+    /** Top-level func names already claimed by an 'export' (a second export of the name, or of overloads sharing it, is an error). */
     private final Set<String> exportedNames = new HashSet<>();
-    /** Named root-level "ASM name {...}"/"ASM name \"path\"" declarations -- name -> content. Its own separate namespace (never checked against structs/funcs/externs/globals/anything else); visible from any function body regardless of file position (the same asymmetry globals already have: pass 1 fully collects every root ASM before pass 2 checks any function body), but a *root-level* "asm_name;" invocation statement is itself processed in strict file order, so it can only reference one already registered earlier in that same walk -- see collectAsmDeclarationsAndInvocations. */
+    /** Named root-level ASM declarations, in their own namespace. Visible from any function body; a root-level "asm_name;" invocation is processed in file order. See collectAsmDeclarationsAndInvocations. */
     private final Map<String, AsmInfo> rootAsms = new HashMap<>();
 
-    /** Walks the current lexical scope chain first (function-local "ASM name{...}" declarations), then falls back to a root-level one -- null if `name` isn't a known ASM name at all here. */
+    /** Local ASM names (scope chain) first, then root-level; null if unknown. */
     private AsmInfo lookupAsmName(String name, Scope scope) {
         for (Scope s = scope; s != null; s = s.parent) {
             AsmInfo info = s.localAsmNames.get(name);
@@ -1783,25 +1068,7 @@ public class TypeChecker {
     }
     /** Concrete type name -> every impl block declared for it (at most one bare impl, plus at most one per interface -- enforced at collection time). */
     private final Map<String, List<ImplInfo>> implsByConcreteType = new HashMap<>();
-    /**
-     * Every *generic* constructor's own `FuncInfo`, registered by
-     * `collectImpl`'s own `isConstructorDecl` branch straight into the
-     * shared `functions` overload map (not into any `ImplInfo`'s
-     * `methods`/`staticMethods`) -- so `check()`'s own two existing
-     * method-body-checking loops (root "func" tokens, and every
-     * `ImplInfo.methods`/`.staticMethods`) never reach it at all. Without
-     * this, a generic constructor's own body silently never gets
-     * `checkFunctionBody`'d: every expression inside it (a nested
-     * `Slice:<T>{...}` OTC literal, say) would never get its own
-     * `resolvedType` populated, which `BytecodeEmitter` then reads back
-     * as a bare Java `null` -- concatenated straight into the emitted
-     * text as the literal four characters "null" (confirmed directly:
-     * "PUSH origin null" / "ASSIGN mut_Slice_u64 null mut_Slice_u64" in
-     * real output), not a crash, so this class of gap is easy to miss
-     * without inspecting the actual bytecode. `check()` now has a third
-     * loop, right after its existing two, that calls `checkFunctionBody`
-     * on every entry here.
-     */
+    /** Every generic constructor's FuncInfo, registered by collectImpl into `functions` (so check()'s two body loops miss it); check() runs a third loop over this list. See docs/TypeChecker.md, "Generic constructors". */
     private final List<FuncInfo> genericConstructorFuncInfos = new ArrayList<>();
 
     /** Thrown by buildFuncInfo for a generic-instance method whose signature is illegal only because of the chosen type argument (by-value struct parameter). */
@@ -1813,11 +1080,7 @@ public class TypeChecker {
         }
     }
 
-    /**
-     * Methods/constructors dropped from a generic impl instantiation because their signature is illegal for the chosen type argument, keyed by
-     * "Concrete.method" (instance or static) or "__ctor__Concrete" (constructors); each value is a ready-to-print reason. They are never
-     * registered, checked or emitted; a call that finds no match gets the reasons appended to its "no match" error (see unavailableNote).
-     */
+    /** Methods/constructors dropped from a generic impl instantiation because their signature is illegal for the type argument, keyed "Concrete.method" or "__ctor__Concrete"; reasons are appended to a later "no match" error (unavailableNote). */
     private final Map<String, List<String>> unavailableGenericMethods = new HashMap<>();
 
     private void recordUnavailable(String key, String shownName, String concreteName, boolean ctor, DeferredSignatureException e) {
@@ -1834,63 +1097,30 @@ public class TypeChecker {
         }
         return " (" + String.join("; ", l) + ")";
     }
-    /** Library name -> its LibraryInfo. Shares its namespace with structs/enums/interfaces (registerLibraryName cross-checks all three, and each of those checks back against this map too). */
+    /** Library name -> LibraryInfo; shares its namespace with structs/enums/interfaces (registerLibraryName cross-checks). */
     private final Map<String, LibraryInfo> libraries = new LinkedHashMap<>();
     /** Root-level "let static NAME = ..." globals -- name -> resolved type. */
     private final Map<String, TypeInfo> globals = new HashMap<>();
-    /** "type NAME <target tokens>" -- name -> raw, unresolved target type-token span. Resolved lazily, per usage site (see resolveTypeAnnotation/expandAliases), not via a separate flatten pass -- confirmed acceptable directly ("you don't need to worry about catching all incomplete type errors at this stage"), so an alias that's never actually used anywhere is never validated at all. */
+    /** "type NAME ..." aliases: name -> raw target tokens, resolved lazily per use, so an unused alias is never validated. */
     private final Map<String, List<Token>> aliasRawTargets = new HashMap<>();    /** Root-list position each global was declared at, for "cannot be referenced before declaration." */
     private final Map<String, Integer> globalDeclOrder = new HashMap<>();
     /** Declaration order, so BytecodeEmitter emits every 'GLOBAL' line in a stable, deterministic order. */
     private final List<String> globalOrder = new ArrayList<>();
     /** Each global's own initializer expression, kept for BytecodeEmitter to fold into 'GLOBAL' lines later. */
     private final Map<String, Token> globalRhsByName = new HashMap<>();
-    /**
-     * "let/static are excempt, globals are not, with a private global
-     * being innaccessible outside of the file its declared in,"
-     * confirmed directly -- a genuinely *local*, function-scoped "let
-     * static" needs no entry here at all (it was never a declaration
-     * surface to begin with, already governed by ordinary lexical
-     * scoping); only root-level globals participate, private by
-     * default like everything else. The declaring file itself is never
-     * duplicated into a second map here -- `globalRhsByName.get(name)
-     * .file` already has it.
-     */
+    /** Public root-level globals (private by default; a local 'let static' needs no entry). The declaring file is in globalRhsByName. */
     private final Set<String> publicGlobals = new HashSet<>();
-    /**
-     * "const NAME EXPR" -- "if you see the symbol on the left you
-     * replace it with the one on the right," confirmed directly: a
-     * pure compile-time textual substitution, not a typed variable.
-     * name -> the expression's own already-tree-built root token (still
-     * unevaluated at registration time -- consts are forward-
-     * declarable, confirmed directly, so evaluation happens lazily, on
-     * first actual reference, not eagerly in declaration order).
-     */
+    /** "const NAME EXPR": pure compile-time substitution; name -> unevaluated expression root, evaluated lazily on first use (consts are forward-declarable). */
     private final Map<String, Token> constExprs = new HashMap<>();
-    /** Memoizes each const's own evaluateConstant(...) result once computed, keyed by name -- a fresh literal Token (INTEGER/FLOAT/BOOL/CHAR/STRING/NULL), never re-evaluated after the first lookup. */
+    /** Memoized evaluateConstant result per const. */
     private final Map<String, Token> constResolvedValues = new HashMap<>();
-    /** Names currently mid-evaluation, for cycle detection ("const A B" / "const B A" -- confirmed a real, necessary check, the same "memoized, with circular-inheritance detection" shape flattenStruct/flattenInterface already use for 'extends' chains). */
+    /** Consts mid-evaluation, for cycle detection. */
     private final Set<String> constsBeingEvaluated = new HashSet<>();
-    /** Set once per collectDeclarations() call, read by collectFunc/collectImpl: KEYWORD token (func, or impl -- the same instance for every one of its methods too) -> its root-list position. */
+    /** Set per collectDeclarations(): func/impl KEYWORD token (impl methods share the impl's) -> root-list position. */
     private Map<Token, Integer> pendingDeclOrder = new HashMap<>();
     /** Generates unique names for the hidden range-binding variable a for-loop desugars to (see checkForLoop). */
     private int forVarCounter = 0;
-    /**
-     * Set by checkReturn, for the duration of resolving its own return
-     * expression only, to the exact node being resolved as the sole
-     * expression of that 'return' statement -- identity-compared (never
-     * by value/shape) against a "CALL" node reached from deep inside
-     * `resolveExprType`'s own recursive descent, at every self-call
-     * site, to tell whether *this exact* call is the bare, top-level
-     * expression of a 'return' (legal for a '@recursive' tail-call) or
-     * merely nested somewhere inside a larger expression a 'return'
-     * happens to also contain (not legal) -- see
-     * requireRecursiveCallReturnSiteOnly. A recursive sub-call made
-     * while resolving the outer expression never touches this field, so
-     * a nested "CALL" node several levels down is correctly never equal
-     * to it, with no explicit "am I still at the top" bookkeeping
-     * needed anywhere else.
-     */
+    /** Identity of the sole expression of the 'return' being resolved, to tell a bare tail self-call (legal for @recursive) from one nested in a larger expression (requireRecursiveCallReturnSiteOnly). */
     private Token directReturnExprNode;
 
     /** For BytecodeEmitter: the resolved declarations this checker collected, valid after check() runs. */
@@ -1903,140 +1133,37 @@ public class TypeChecker {
     Map<String, ExternInfo> getExterns() { return externs; }
     List<String> getGlobalOrder() { return globalOrder; }
     Map<String, TypeInfo> getGlobals() { return globals; }
-    /** Null unless 'main' is '@with_tick' (validateTickEventLoop sets this once, during its own run) -- the one function decorated '@event_loop', which BytecodeEmitter dunders 'main' in favor of. See that method's own comment for the full rule set. */
+    /** Null unless 'main' is '@with_tick': the @event_loop function (set by validateTickEventLoop), which BytecodeEmitter makes the entry point instead of main. */
     private FuncInfo eventLoopFunc;
     FuncInfo getEventLoopFunc() { return eventLoopFunc; }
     Map<String, Token> getGlobalRhs() { return globalRhsByName; }
 
-    /**
-     * "There can only be one for each of these decorated functions,"
-     * confirmed directly -- at most one function in the whole
-     * compilation unit may carry each of @gt_init/@gt_alive_check/
-     * @gt_destruct/@gt_register. Populated by
-     * validateGhostTableDecoratorSignatures as each function is
-     * collected; read by BytecodeEmitter (getGhostTableFunction) at the
-     * exact point it's about to emit the corresponding ghost-table
-     * bytecode instruction (GT_DESTRUCT/GT_ALIVE_CHECK) -- "if I emit a
-     * ghost table interaction, then I must have that corresponding
-     * decorated function in the final compilation unit," confirmed
-     * directly, so presence is enforced at the point of actual emission,
-     * not merely wherever a decorator happens to exist.
-     */
+    /** At most one function per ghost-table decorator (@gt_init/@gt_alive_check/@gt_destruct/@gt_register...), filled by validateGhostTableDecoratorSignatures; BytecodeEmitter requires the function at each emission point. */
     private final Map<String, FuncInfo> ghostTableFunctions = new HashMap<>();
 
     /** For BytecodeEmitter: the (at most one) function decorated with the given ghost-table decorator name, or null if none exists in this compilation unit. */
     FuncInfo getGhostTableFunction(String decoratorName) { return ghostTableFunctions.get(decoratorName); }
 
-    /**
-     * "if I have any owns, ref, dyn or new in the final compilation
-     * unit, then I must have: GT_INIT in my main()... before any of my
-     * expressions," confirmed directly -- a whole-compilation-unit,
-     * syntactic-presence flag (not a reachability analysis): set the
-     * instant any of the four constructs is actually encountered
-     * anywhere while resolving the final, already-generics-expanded
-     * tree -- an 'owns'/'ref' storage modifier appearing in *any* type
-     * annotation (a parameter, return type, struct member, function-
-     * pointer signature, or a bound-type 'let'), a 'new' expression, or
-     * a 'dyn(...)' builtin call, however deeply nested and regardless
-     * of whether the surrounding function itself is ever actually
-     * called. This deliberately mirrors "is any of these four ever
-     * written in this program at all," not "is any of these four ever
-     * exercised at runtime" -- the same syntactic-presence spirit
-     * `@event_loop`'s own decorator-search already has, just triggered
-     * by usage rather than a decorator. Read once, at the very end of
-     * bytecode emission for whichever function is actually the real
-     * entry point (see `BytecodeEmitter.emitFunc`'s own dundering
-     * logic) -- never re-derived per function, since the rule is
-     * whole-program, not per-function.
-     */
+    /** Whole-program, syntactic flag: any owns/ref storage modifier, 'new' or 'dyn(...)' appears anywhere. Read by BytecodeEmitter to require GT_INIT in the entry point. See docs/TypeChecker.md, "Whole-program flags". */
     private boolean usesOwnsRefDynNew = false;
     boolean usesOwnsRefDynNew() { return usesOwnsRefDynNew; }
 
-    /**
-     * A second, parallel whole-program trigger, alongside
-     * `usesOwnsRefDynNew` above -- set the instant any `throw`
-     * statement is type-checked anywhere in the program (`checkThrow`).
-     * Needed because `BytecodeEmitter.emitGtRoutinePrologue`'s own
-     * per-function `gt_routine`/`GT_UNWIND` machinery is now emitted
-     * only when actually needed (see its own doc comment) -- "the
-     * simple/complicated set classification was temporary build
-     * scaffolding... GT_UNWIND should only be emitted if the final
-     * compilation unit actually needs GT_INIT," confirmed directly, the
-     * same `usesOwnsRefDynNew` trigger `GT_INIT` already uses -- but a
-     * `throw` statement's own bytecode (`THROW string_id label`) always
-     * names its own enclosing function's `gt_routine` label as a real
-     * operand, regardless of whether that function ever touches
-     * `owns`/`ref`/`dyn`/`new` at all, so omitting the prologue
-     * whenever `usesOwnsRefDynNew` alone is false would leave a real
-     * `throw` pointing at a label that was never emitted. `usesThrow`
-     * is therefore OR'd alongside `usesOwnsRefDynNew` at every prologue
-     * emission site, so a program using `throw` but genuinely nothing
-     * else from that other list still gets a real, valid unwind target
-     * in every function.
-     */
+    /** Whole-program flag: any 'throw' was checked. OR'd with usesOwnsRefDynNew to decide whether each function gets the gt_routine/GT_UNWIND prologue. See docs/TypeChecker.md, "Whole-program flags". */
     private boolean usesThrow = false;
     /** True when the program throws, or when stack tracing is on (it needs the throw-style frame layout in every function). */
     boolean usesThrow() { return usesThrow || TraceConfig.usesTrace; }
 
-    /**
-     * Context flag (not a per-token field, unlike `Token.insideTry`,
-     * which `requireThrowsWrapping` still uses unchanged for a wrapped
-     * CALL) tracking "is the expression currently being type-checked
-     * anywhere underneath a `try new/dyn/resize ... catch(e){...}`
-     * wrapper." Needed because a throwing allocation's own operand can
-     * itself contain a NESTED throwing allocation (a field value inside
-     * a struct literal, e.g. "new String{chars= new DynamicArray{...}}",
-     * or a `dyn(...)`/`resize(...)` argument built from another one) --
-     * confirmed as real, not hypothetical, by the stdlib's own
-     * `String.from`. `checkTry`'s own gate only ever wraps one direct
-     * `new`/`dyn`/`resize`/CALL node (the grammar's own "try ... catch
-     * { ... } always ends its own line" constraint -- see `tryNodeOf`'s
-     * doc comment -- means there is no way to write a second, separate
-     * `try...catch` around that nested inner allocation), so a
-     * per-token `insideTry` flag set only on the outermost node can
-     * never reach a nested one. This context flag instead covers the
-     * whole recursive descent `checkTry` kicks off for a `new`/safe-
-     * `dyn`/safe-`resize`-shaped wrapped node -- every one of the three
-     * reached anywhere within it, however deeply nested inside struct-
-     * literal/array-literal field values, sees this as true. The one
-     * `try...catch` written at the source level covers every allocation
-     * failure anywhere inside its wrapped expression, at any depth, not
-     * just the outermost one -- and at the bytecode level this falls
-     * out for free: `emitNew`/the `dyn`/`resize` null-checks (mirroring
-     * it) read `pendingTryCatchLabel`, which stays set for the whole
-     * nested `emitExpr` descent `emitTryGuardedCall` kicks off, so a
-     * nested allocation's own null branch already lands at the exact
-     * same catch label with no separate plumbing needed there at all.
-     * UPDATE (`dyn`/`resize`): originally `insideThrowingNewContext`,
-     * covering only `new` -- renamed and broadened once `dyn`/`resize`
-     * became throw-capable too ("new throws, but dyn and resize dont,
-     * they need to use the same pattern as new," confirmed directly);
-     * the mechanism was already fully general, only the name and the
-     * one `checkTry` gate needed to change.
-     */
+    /** True while checking anything under a "try new/dyn/resize ... catch" wrapper; nested allocations then share the one catch. See docs/TypeChecker.md, "Checker context flags". */
     private boolean insideThrowingAllocContext = false;
 
-    /**
-     * True while checking the body of a "catch(e){ ... }" block
-     * specifically -- the one place `continue` (in its new, try-block-
-     * exiting sense) is ever legal at all. Threaded the identical
-     * "instance field, saved and restored around the one call site that
-     * enters this context" way `insideThrowingAllocContext` just above
-     * already is, rather than as a new parameter threaded through the
-     * whole `checkStatement`/`checkLines` call chain -- deliberately
-     * narrower than `Scope`'s own lexical fields (`tryBlockBoundaryScope`
-     * among them), since this answers "am I lexically inside a catch
-     * body," a question with nothing to do with any one scope's own
-     * ancestry. Set/restored by `checkTry`, read by `checkStatement`'s
-     * own "continue" case.
-     */
+    /** True while checking a "catch(e){ }" body, the only place `continue` exits the try block. Save/restored by checkTry. */
     private boolean insideCatchBody = false;
-    /** The innermost loop boundary at the point the catch body being checked starts (null if none). A `continue` inside the catch whose own loop boundary is still this one belongs to the catch (skip past the try block); a `continue` inside a loop opened within the catch belongs to that loop. */
+    /** Innermost loop boundary when the catch body being checked started: a `continue` still targeting it belongs to the catch (skips the try block); one in a loop opened inside the catch belongs to that loop. */
     private Scope catchEnclosingLoopBoundary = null;
     /** Loop-body scopes of user-written `for`/`loop` statements (not the synthesized `match @lock` spin loop): the only scopes a loop `continue` may target. */
     private final Set<Scope> userLoopScopes = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
 
-    /** The spin-loop scope of the 'match @lock' CLOSED case currently being checked (null elsewhere, and while checking an OPEN case): a `continue` directly inside it retries the acquire. Save/restored around each 'match @lock'. */
+    /** Spin-loop scope of the match @lock CLOSED case being checked (null elsewhere, and for OPEN): a `continue` directly inside retries the acquire. */
     private Scope lockClosedLoopScope = null;
     private int lockRetryContinuesSeen = 0;      // every `continue` that retries a `match @lock` acquire
 
@@ -2054,111 +1181,16 @@ public class TypeChecker {
         }
     }
 
-    /**
-     * True only for the single, immediately-next `resolveExprType` call
-     * that is legally allowed to resolve a top-level `&&then`/`||then`
-     * node -- the "lazy chain evaluation" pseudo-operators ("Ok I need
-     * lazy chain evaluation, achieved with the then pseudo operator...
-     * They only work at the top level of an expression in a conditional
-     * (if or else if statement)," confirmed directly). Unlike
-     * `insideCatchBody`/`insideThrowingAllocContext` just above -- both
-     * "sticky true for a whole recursive descent" flags, correct for
-     * "anywhere nested inside this body" questions -- this one is
-     * deliberately narrow and single-shot: it must be true for the exact
-     * node about to be resolved, then immediately go back to false for
-     * everything else that node's own resolution reaches, so a
-     * `&&then`/`||then` buried inside a `!`, a function-call argument, a
-     * comparison operand, a `match`, or as an operand of a *plain*
-     * `&&`/`||` is correctly rejected -- only a path of `&&then`/`||then`
-     * nodes reached directly from an `if`/`elseif` condition's own root
-     * stays eligible.
-     *
-     * Consumed (read, then unconditionally reset to `false`) once, right
-     * at the top of `resolveOperatorType`, before its own switch ever
-     * dispatches -- the single choke point every operator-shaped node
-     * (arithmetic, comparison, call, logical, ...) passes through -- and
-     * handed to `checkLogical` as a plain parameter from there (not read
-     * back out of the field inside `checkLogical` itself, since by then
-     * it would already have been reset). The two places that ever set it
-     * *true* are `checkIfChain` (around its own condition's very first
-     * `resolveExprType` call) and `checkLogical` (around each of its own
-     * `op.left`/`op.right` calls, but ONLY when `op` itself is
-     * `&&then`/`||then` -- never for a plain `&&`/`||`, since a plain,
-     * eager combinator can never soundly contain a `&&then`/`||then`
-     * operand: eager `&&`/`||` always evaluates *both* sides into a
-     * single combined value, but a `&&then`/`||then` node has no such
-     * value-producing form at all -- it only ever lowers to a jump
-     * cascade at the bytecode stage (see `BytecodeEmitter.emitShortCircuit`)
-     * -- so "top level" deliberately means "the root condition itself, or
-     * reached from it through zero or more further `&&then`/`||then`
-     * nodes only," not "anywhere inside the condition's combinator tree
-     * whatsoever." A `&&then`/`||then` whose immediate parent is a plain
-     * `&&`/`||` is therefore rejected exactly like one found inside a
-     * function call -- a deliberate, narrower reading of "top level" than
-     * the widest one that would technically fit the user's own wording,
-     * chosen because the wider reading has no sound single-value codegen
-     * and the user's own examples never actually exercise it.
-     */
+    /** Single-shot: true only for the next resolveExprType call, which may resolve a top-level `&&then`/`||then` (from an if/elseif condition root or through other then-nodes only). See docs/TypeChecker.md, "Checker context flags". */
     private boolean insideShortCircuitEligiblePosition = false;
 
-    /**
-     * True only for the single, immediately-next `resolveExprType` call
-     * that is legally allowed to resolve a call to a struct-by-value-
-     * returning function ("Return Value Optimization... returning
-     * structs on the stack by manipulating a hidden struct on the stack
-     * in the parent frame," confirmed directly). Consumed the identical
-     * "captured once, unconditionally reset to false, at the single
-     * choke point every operator-shaped node passes through" way
-     * `insideShortCircuitEligiblePosition` already is -- see that
-     * field's own doc comment for the full mechanism; this is a wholly
-     * separate flag for a wholly separate restriction, not a reuse of
-     * that one.
-     *
-     * Set true in exactly two places, both in `checkAssign`: around a
-     * plain (non-`static`) 'let' binding's own right-hand-side
-     * resolution (the destination is always a fresh, simple local
-     * there), and around a plain '=' assignment's own right-hand-side
-     * resolution when its left-hand target is a bare variable (never a
-     * '.'/`LOOKUP` target). Deliberately NOT set around a `return`
-     * statement's own expression: a struct-RVO call used there (tail-
-     * forwarding one function's own hidden destination pointer straight
-     * into another) would need genuinely different codegen (no local
-     * destination exists to take the address of at all) that this round
-     * doesn't implement -- so it's simply left ineligible, and rejected
-     * by the same, generic "not one of the two legal positions" error
-     * `checkCall` already gives any other disallowed use (a function
-     * argument, a struct-literal field value, a nested sub-expression,
-     * ...), a deliberate, documented scope limitation for this first
-     * version rather than a bug.
-     *
-     * Why only these two positions at all, and not, say, any addressable
-     * lvalue ('p.field = f()', an array element, ...): keeping the
-     * destination to "a whole, bare local variable" means the caller-side
-     * codegen is always exactly "take this one local's own address and
-     * hand it to the callee" (`BytecodeEmitter.emitStructRvoAssign`) --
-     * the simplest, most obviously-correct shape, verified end to end
-     * against the real 4-stage pipeline before this was implemented at
-     * all. A dotted/indexed destination is a reasonable future
-     * extension, not attempted here.
-     */
+    /** Single-shot, like insideShortCircuitEligiblePosition: true only where a struct-returning call (RVO) is legal, i.e. a plain let RHS or a bare-variable '=' RHS in checkAssign; not a return. See docs/TypeChecker.md, "Checker context flags". */
     private boolean insideStructRvoDestinationPosition = false;
 
-    /**
-     * Null unless the code currently being checked is lexically inside
-     * one of a struct's own constructor bodies, in which case it's that
-     * struct's own name -- set (unconditionally, no save/restore needed:
-     * functions never nest, the same reasoning `pendingOptionalCatchParamName`'s
-     * own reset already relies on) by `checkFunctionBody` around a
-     * constructor's own body check. Read by `checkInstantiate`'s own
-     * "one true constructor" (OTC) gate: once a struct declares any
-     * constructor at all, its own bare "StructName{...}" literal is
-     * illegal everywhere *except* here -- on the stack or via 'new',
-     * inside a constructor of a *different* struct, inside an ordinary
-     * function, anywhere else at all.
-     */
+    /** Name of the struct whose constructor body is being checked, else null. checkInstantiate's OTC gate: once a struct has a constructor, its bare literal is legal only inside it. */
     private String insideConstructorBodyForStruct = null;
 
-    /** True once "structName" has at least one declared "impl constructor for structName(...) self {...}" -- read by checkInstantiate's OTC gate and by checkCall's "MyClass(...)" resolution. */
+    /** True once "structName" has at least one declared constructor. */
     private boolean hasConstructors(String structName) {
         return functions.containsKey(Parser.CONSTRUCTOR_NAME_PREFIX + structName);
     }
@@ -2174,19 +1206,8 @@ public class TypeChecker {
     }
 
     /**
-     * "An unsafe or safe block can be used in a func or at the root,"
-     * confirmed directly. At root, recurses into "unsafe"/"safe"
-     * wrapper tokens (each holding its own contents as ordinary,
-     * already-gathered root lines, exactly like the top level itself),
-     * producing a flat list of every real declaration with its
-     * enclosing safety context attached -- every pass below that used
-     * to iterate `rootLines` directly now iterates this instead, so a
-     * declaration wrapped in unsafe/safe is found the same as an
-     * unwrapped one. "You cannot declare an unsafe block inside a safe
-     * block... an unsafe inside a safe is a compiler error, but a safe
-     * inside an unsafe is permitted," confirmed directly -- checked
-     * here, structurally, the moment a nested "unsafe" is found while
-     * the current context is already "safe".
+     * Flattens root lines through unsafe/safe wrappers into declarations tagged with their safety context;
+     * an 'unsafe' nested in 'safe' is an error (the reverse is allowed).
      */
     private List<FlatDecl> flattenRootLines(List<Token> lines, String currentSafety) {
         List<FlatDecl> out = new ArrayList<>();
@@ -2234,9 +1255,7 @@ public class TypeChecker {
                 }
             }
         }
-        // A *generic* constructor's own FuncInfo (see this field's own
-        // doc comment) -- registered into the shared `functions` map by
-        // collectImpl, reachable by neither loop just above.
+        // Generic constructors are in `functions` only, so neither loop above reaches them.
         for (FuncInfo ctorInfo : genericConstructorFuncInfos) {
             checkFunctionBody(ctorInfo);
         }
@@ -2253,33 +1272,7 @@ public class TypeChecker {
         validateUnsafeBlockTags();
     }
 
-    /**
-     * "I need to check that it is enforced that there is a main func
-     * and only one main func in the final compilation unit," confirmed
-     * directly, together with the exact three allowed signatures --
-     * "func main() imut int" corrected directly to "func main() imut
-     * s32," confirmed directly as the deliberate choice, not a
-     * shortcut: "it needs to be what the operating system expects in
-     * terms of error codes, so really it needs to be what it is in C,
-     * exactly the same width and signage" -- C's own `int` is 32-bit
-     * signed on every mainstream platform, which is exactly what
-     * `s32` already is here, so no new type was needed for this.
-     * Any other signature (for example a varargs-style one) is
-     * rejected; the accepted parameter shapes are described at
-     * `validateAndResolveMainArgShape`.
-     * Runs once, at the very end
-     * of `check(...)`, over the final, fully-resolved `functions` map
-     * (every import already flattened in by this point) -- not a
-     * per-file requirement, a whole-compilation-unit one.
-     */
-    /**
-     * "found purely by decorator," confirmed directly -- scans every
-     * top-level func across the entire, final `functions` map (every
-     * name, every overload) for one decorated `decoratorName`, rather
-     * than requiring any particular function name. Used for `@tick`/
-     * `@event_loop`, neither of which is required to be called `tick`/
-     * anything specific -- unlike `main`, whose own name is fixed.
-     */
+    /** All top-level funcs (any overload) with the given decorator; @tick/@event_loop/@make_safe_args are found by decorator, not by name. */
     private List<FuncInfo> findFuncsWithDecorator(String decoratorName) {
         List<FuncInfo> found = new ArrayList<>();
         for (List<FuncInfo> overloads : functions.values()) {
@@ -2292,15 +1285,7 @@ public class TypeChecker {
         return found;
     }
 
-    /**
-     * "func (owns some mut struct T)owns some mut struct T where T is
-     * the same T," confirmed directly, with "T" itself confirmed
-     * directly to mean a real, concrete struct name the programmer
-     * writes -- no new generic syntax at all, just a shape this
-     * validates against. Returns the struct's own name on success, so
-     * the caller can compare it against another type's own struct name
-     * for "same T" (`main`'s own return type against `@tick`'s).
-     */
+    /** Requires "owns some mut" of a concrete struct; returns the struct name so callers can compare "same T". */
     private String requireOwnsSomeMutStruct(TypeInfo t, String context, Token at) {
         boolean shapeOk = "owns".equals(t.storage) && t.isSome && "mut".equals(t.mutability)
                 && structs.containsKey(t.baseType);
@@ -2312,22 +1297,12 @@ public class TypeChecker {
         return t.baseType;
     }
 
-    /**
-     * "I want to add three new decorators: @with_tick... @tick...
-     * @event_loop," confirmed directly, together with every validation
-     * rule each carries -- see the individual checks below, each
-     * tagged with its own confirmed source. Runs as part of the same
-     * whole-compilation-unit, end-of-check() pass `main` itself is
-     * already validated in.
-     */
+    /** Validates @with_tick, @tick and @event_loop together with main. See docs/TypeChecker.md, "main, @tick, @event_loop, @make_safe_args". */
     private void validateTickEventLoop(FuncInfo main, boolean withTick) {
         List<FuncInfo> tickFuncs = findFuncsWithDecorator("tick");
         List<FuncInfo> eventLoopFuncs = findFuncsWithDecorator("event_loop");
         if (!withTick) {
-            // "error if this is used and main is not @event_loop" --
-            // corrected directly to "if main is @with_tick" -- so
-            // outside that condition, neither decorator may appear at
-            // all.
+            // Without @with_tick, neither decorator may appear.
             if (!tickFuncs.isEmpty()) {
                 Token at = tickFuncs.get(0).funcToken;
                 throw new CompilerException("type", at.file, at.line,
@@ -2340,8 +1315,7 @@ public class TypeChecker {
             }
             return;
         }
-        // "main is @with_tick... then it is required to be used once
-        // and only once in the final compilation unit."
+        // With @with_tick, @tick and @event_loop are each required exactly once.
         if (tickFuncs.isEmpty()) {
             throw new CompilerException("type", main.funcToken.file, main.funcToken.line,
                     "'main' is '@with_tick', so a '@tick' function is required");
@@ -2366,20 +1340,14 @@ public class TypeChecker {
                     "'@tick's own parameter ('" + tickParamStruct + "') and return type ('"
                             + tickReturnStruct + "') must be the same struct");
         }
-        // "func main() owns some owns some mut struct T" -- corrected
-        // directly to "use the return signature from tick" -- so
-        // `main`'s own return type must match `@tick`'s exactly, same
-        // struct included.
+        // main must return the same struct as @tick.
         String mainReturnStruct = requireOwnsSomeMutStruct(main.returnType, "'main'", main.funcToken);
         if (!mainReturnStruct.equals(tickReturnStruct)) {
             throw new CompilerException("type", main.funcToken.file, main.funcToken.line,
                     "'main' returns '" + mainReturnStruct + "', but '@tick' is for '" + tickReturnStruct
                             + "' -- both must be the same struct");
         }
-        // "the third decorator is also required... it must be used
-        // only once and only on a function like so... It must have the
-        // same signature as one of the main signatures that doesnt
-        // return a pointer."
+        // @event_loop is required exactly once.
         if (eventLoopFuncs.isEmpty()) {
             throw new CompilerException("type", main.funcToken.file, main.funcToken.line,
                     "'main' is '@with_tick', so an '@event_loop' function is required");
@@ -2391,18 +1359,7 @@ public class TypeChecker {
         }
         FuncInfo eventLoop = eventLoopFuncs.get(0);
         Token elAt = eventLoop.funcToken;
-        // "the idea is to support all of them - wire the arguments thru
-        // the event loop if they are there," confirmed directly --
-        // '@event_loop', when it exists, is always the *real* entry
-        // point (the exact same "main" it's already dundered to), so
-        // it's the one that must receive whatever raw C-ABI shape
-        // `main`'s own argument shape actually implies -- "it's fine to
-        // have different event loop functions in the stdlib for each
-        // eventuality," confirmed directly, is exactly why this
-        // doesn't try to validate the event-loop function's own *body*
-        // here at all, only its signature; which stdlib variant a
-        // program imports is entirely up to the programmer, same as
-        // '@gt_destruct's own implementation always has been.
+        // @event_loop is the real entry point, so its signature follows main's argument shape; its body is not validated.
         if (main.mainArgShape == null) {
             if (!eventLoop.paramNames.isEmpty()) {
                 throw new CompilerException("type", elAt.file, elAt.line,
@@ -2430,6 +1387,7 @@ public class TypeChecker {
         eventLoopFunc = eventLoop;
     }
 
+    /** Exactly one 'main' with a valid signature, over the final import-flattened `functions` map. See docs/TypeChecker.md, "main, @tick, @event_loop, @make_safe_args". */
     private void validateMainFunction() {
         List<FuncInfo> mains = functions.get("main");
         if (mains == null || mains.isEmpty()) {
@@ -2464,17 +1422,7 @@ public class TypeChecker {
         validateTickEventLoop(main, withTick);
     }
 
-    /**
-     * "I should support all of the current ones, but also each of them
-     * with each of the following variations for arguments," confirmed
-     * directly -- three shapes: no arguments at all (the original,
-     * unchanged behavior), the C-ABI "(int argc, char** argv)" shape
-     * ("int being the appropriate equivalent to C's int type," resolved
-     * to 's32', confirmed directly this is the right mapping -- the
-     * only 32-bit signed type this language has, matching C's 'int' on
-     * essentially every real platform), and the "safe", wrapped shape
-     * (`safeArgsType`, below). Returns null/"c_args"/"safe_args".
-     */
+    /** Resolves main's argument shape: none (null), C-ABI "c_args", or the wrapped "safe_args". */
     private String validateAndResolveMainArgShape(FuncInfo main, Token at) {
         if (main.paramNames.isEmpty()) {
             return null;
@@ -2504,49 +1452,14 @@ public class TypeChecker {
                         + main.paramNames.size() + " parameters");
     }
 
-    /**
-     * "func main(owns some mut dynarray<owns some mut dynarray<mut
-     * char>>)," confirmed directly, then "uhm so i meant the builtin
-     * dynarray type... I don't mind them all being imutable tho if
-     * that makes things easier," confirmed directly -- simplifies to
-     * an owned outer dynarray of *plain*, immutable inner dynarrays of
-     * immutable chars (a built-in dynarray's own elements can never
-     * themselves be 'owns'-tagged, confirmed directly in an earlier
-     * session -- only the whole dynarray, as one unit, ever can be), a
-     * shape confirmed directly to actually parse and type-check (a
-     * nested "dynarray(dynarray(char))" isn't otherwise exercised
-     * anywhere else in this compiler, tested directly rather than
-     * assumed to already work).
-     */
+    /** Type of the safe main argument: owns some mut dynarray of imut dynarrays of imut char. */
     TypeInfo safeArgsType() {
         TypeInfo charType = new TypeInfo(null, "imut", "char");
         TypeInfo innerDynArray = TypeInfo.dynArray("imut", charType);
         return TypeInfo.dynArray("mut", innerDynArray).withSome(true);
     }
 
-    /**
-     * "It's existence is necesitated by use of the second main
-     * signature, ie if that main is used there must be a
-     * @make_safe_args function and there can be only one if there is,"
-     * confirmed directly. Tied to `main`'s own resolved argument shape
-     * alone (`"safe_args".equals(main.mainArgShape)`), not to whether
-     * '@event_loop' exists -- the requirement is that *something* is
-     * able to call `make_safe_args` to actually produce the wrapped
-     * value `main` declares it wants, and that's equally true whether
-     * the caller ends up being a compiler-synthesized wrapper (no
-     * `@event_loop`) or the stdlib '@event_loop' variant's own body
-     * (with one) -- either way, the decorated function itself must
-     * exist. "make_safe_args returns owned memory, but make_safe_args
-     * doesnt take ownership of the actual real arguments passed to
-     * main - it copies them," confirmed directly -- reflected here only
-     * as the required signature (`(imut s32, raw mut raw mut char)`,
-     * neither parameter `owns`, so nothing is *moved* out of the
-     * caller's own argc/argv at the call site at all -- returning
-     * `safeArgsType()`, matching "make_safe_args returns owned memory"
-     * exactly); the copying itself is `make_safe_args`'s own
-     * implementation detail, not something this validation can (or
-     * needs to) verify.
-     */
+    /** @make_safe_args must exist exactly once iff main uses safe_args, with signature (imut s32, raw mut raw mut char) returning safeArgsType(). */
     private void validateMakeSafeArgs(FuncInfo main) {
         List<FuncInfo> candidates = findFuncsWithDecorator("make_safe_args");
         if (candidates.size() > 1) {
@@ -2581,11 +1494,7 @@ public class TypeChecker {
 
     private void collectDeclarations(List<Token> rootLines) {
         List<FlatDecl> flatDecls = flattenRootLines(rootLines, "indeterminate");
-        // Pass 1a: struct/interface -- registered *raw* first
-        // (own content captured, nothing cross-referenced resolved yet),
-        // since one may extend another declared later in the file.
-        // Globals are skipped here entirely (handled in their own pass,
-        // 1a.7 below, after flattening finishes).
+        // Pass 1a: register structs, interfaces, enums, libraries, aliases and consts raw (see docs/TypeChecker.md, "collectDeclarations passes").
         for (FlatDecl fd : flatDecls) {
             if (globalLetAssignOf(fd.lineTok) != null) {
                 continue;
@@ -2601,26 +1510,14 @@ public class TypeChecker {
                 default: break; // func/impl handled below
             }
         }
-        // Pass 1a.5: flatten every struct's member set and every
-        // interface's method set, recursively resolving interface "extends" chains
-        // (memoized, with circular-inheritance detection) -- must finish
-        // before impls are validated, since an impl checks its interface's
-        // *flattened* method set, and before globals are processed, since
-        // a global's initializer might construct a struct literal.
+        // Pass 1a.5: flatten struct members and interface methods (before impls and globals are processed).
         for (String name : new ArrayList<>(structs.keySet())) {
             flattenStruct(name, new HashSet<>());
         }
         for (String name : new ArrayList<>(interfaces.keySet())) {
             flattenInterface(name, new HashSet<>());
         }
-        // Pass 1a.6: record each func/impl's root-list position -- read
-        // by collectFunc/collectImpl just below to set FuncInfo.declOrder,
-        // which globals' "cannot be referenced before declaration" check
-        // needs (a func's *body* isn't checked until pass 2, by which
-        // point every global in the file already exists in `globals`, so
-        // plain map membership can't enforce ordering the way it
-        // naturally does for one global referencing an earlier one,
-        // below).
+        // Pass 1a.6: record each func/impl's root-list position (FuncInfo.declOrder).
         pendingDeclOrder = new HashMap<>();
         for (int i = 0; i < flatDecls.size(); i++) {
             Token t = flatDecls.get(i).lineTok.childs.get(0);
@@ -2634,28 +1531,14 @@ public class TypeChecker {
                 }
             }
         }
-        // Pass 1a.7: extern declarations -- self-contained signatures
-        // (no cross-referencing of their own beyond struct/interface
-        // names in param/return types, already flattened above), but
-        // collected *before* pass 1b's func/impl collection so an
-        // ordinary func declared with a colliding name is caught right
-        // at its own declaration site (collectFunc checks against
-        // `externs`, already fully populated by then).
+        // Pass 1a.7: externs, before func/impl collection so a colliding function name is caught.
         for (FlatDecl fd : flatDecls) {
             Token t = fd.lineTok.childs.get(0);
             if (t.type == TokenType.KEYWORD && t.text.equals("extern")) {
                 collectExtern(t);
             }
         }
-        // Pass 1a.8: globals, strictly in file order. "Cannot be
-        // referenced before declaration" (confirmed directly) falls out
-        // naturally for global-to-global references: each one's
-        // initializer is checked against only the globals already
-        // registered so far in this same left-to-right walk. A
-        // reference from inside a *function* body needs the explicit
-        // declOrder comparison instead (see the VARREF case in
-        // resolveExprTypeInner), since every global already exists in
-        // `globals` well before any function body is checked at all.
+        // Pass 1a.8: globals, in file order.
         for (int i = 0; i < flatDecls.size(); i++) {
             Token assignNode = globalLetAssignOf(flatDecls.get(i).lineTok);
             if (assignNode != null) {
@@ -2673,63 +1556,27 @@ public class TypeChecker {
                 default: break; // already handled above
             }
         }
-        // Pass 1b.5: flatten every library's own 'extends' chain --
-        // deferred until here (rather than alongside flattenStruct/
-        // flattenInterface in pass 1a.5) since it needs every library's
-        // own function set already built (with real, resolved parameter
-        // types) for its full-signature collision check, and that only
-        // happens once collectLibrary itself has run, just above.
+        // Pass 1b.5: flatten library 'extends' chains (needs every library's function set).
         for (String name : new ArrayList<>(libraries.keySet())) {
             flattenLibrary(name, new HashSet<>());
         }
-        // Pass 1c: every struct's declared "implements" clause is
-        // a compile-time contract -- a matching "impl X for Y{...}" must
-        // actually exist somewhere in the compilation unit, checked now
-        // that every impl has been collected.
+        // Pass 1c: check every struct's "implements" contract.
         for (StructInfo info : structs.values()) {
             checkImplementsContract(info);
         }
-        // Pass 1c-bis: the compiler-synthesized flat Class enum over all
-        // non-@untyped structs, and the "enum for X" membership enums
-        // (interface implementers).
-        // Must run after every impl is collected (Pass 1b) and after
-        // implsByConcreteType is fully populated -- generateEnumForEnums
-        // depends on it -- and after generateClassHierarchyEnums, since it
-        // reads structs.get(name).classId, which the former sets.
+        // Pass 1c-bis: synthesize the Class enum and the "enum for X" membership enums (order matters).
         generateClassHierarchyEnums();
         generateEnumForEnums();
-        // Pass 1c-ter: synthesize one interface-method dispatcher per
-        // (interface, method) pair -- see generateInterfaceDispatchers'
-        // own doc comment. Must run after generateEnumForEnums (needs
-        // each interface's own "$enum_for_X" implementer list) and
-        // after every impl is fully validated (Pass 1b/1c already ran),
-        // so every real implementer is guaranteed to already have its
-        // own callable method entry to dispatch to.
+        // Pass 1c-ter: synthesize interface-method dispatchers (after enum-for and impl validation).
         generateInterfaceDispatchers();
-        // Pass 1d: export statements -- each references an already-
-        // collected, unambiguous, non-generic top-level func (pass 1b
-        // must have finished first).
+        // Pass 1d: export statements.
         for (FlatDecl fd : flatDecls) {
             Token t = fd.lineTok.childs.get(0);
             if (t.type == TokenType.KEYWORD && t.text.equals("export")) {
                 collectExport(t);
             }
         }
-        // Pass 1e: root-level ASM declarations and "asm_name;"
-        // invocations, processed together, in strict file order --
-        // unlike every other pass here, order matters for its own sake:
-        // ASM has no dependency on anything else in the file, but a
-        // root-level invocation needs to know, right at the point it's
-        // reached, whether the name it references was already declared
-        // *earlier* in this same walk (a forward reference is rejected,
-        // matching the "cannot be referenced before declaration" rule a
-        // global referencing a later global is already held to). A
-        // *function body's* own reference to a root-declared ASM is a
-        // completely different, unconditional case -- handled entirely
-        // separately in checkStatement/resolveExprTypeInner, since every
-        // root ASM already exists by the time any function body is
-        // checked at all (pass 1 fully finishes before pass 2 begins),
-        // the same asymmetry a global already has.
+        // Pass 1e: root-level ASM declarations and invocations, in strict file order.
         for (FlatDecl fd : flatDecls) {
             Token t = fd.lineTok.childs.get(0);
             if (t.type == TokenType.KEYWORD && t.text.equals("ASM")) {
@@ -2738,46 +1585,7 @@ public class TypeChecker {
                 collectRootAsmInvocation(t, fd.safety);
             }
         }
-        // Pass 1f: disambiguate genuinely overloaded plain top-level
-        // functions at the bytecode level -- "function overloading thru
-        // name mangling was one of the very first things I asked for,"
-        // confirmed directly. Two overloads of the same top-level func
-        // previously emitted as identically-named FUNC_START/CALL pairs
-        // in bytecode, with nothing to distinguish them (a real,
-        // confirmed-live gap, found by direct testing, not merely
-        // suspected). The 'library' feature already built the actual
-        // fix -- signatureSuffix, above, an unconditional, full-
-        // parameter-type-derived mangled-name suffix -- but scoped it
-        // only to library functions. Reused here, generally, but ONLY
-        // when a name genuinely has more than one overload -- unlike a
-        // library function (whose own collision rule explicitly, always
-        // allows two same-named overloads to coexist, so its own suffix
-        // is unconditional), an ordinary top-level func name is, in the
-        // overwhelming majority of cases, never overloaded at all, and
-        // keeping its own bare, unmangled name in that case means
-        // nothing elsewhere in this compiler that compares a mangled
-        // name against a literal string needs any change at all -- confirmed
-        // this covers every such comparison directly: 'main' can only
-        // ever have one real overload (its three allowed signatures
-        // differ only in return type, and two zero-parameter functions
-        // sharing a name are already rejected as an ordinary duplicate
-        // declaration before this pass ever runs, regardless of return
-        // type); every '@gt_init'/'@gt_destruct'/'@gt_alive_check'/
-        // '@gt_register'-decorated function is limited to exactly one
-        // per decorator in the whole compilation unit
-        // (registerGhostTableFunction); '@tick'/'@event_loop' are each
-        // required exactly once when used at all; and 'export' already
-        // requires its own target name to have exactly one overload to
-        // begin with ("ambiguous -- C has no overloading," confirmed
-        // directly, checked in collectExport, which has already run by
-        // this point) -- so an exported function's own overload count is
-        // structurally guaranteed to be exactly one, and it is therefore
-        // never touched by this pass either, with no separate check
-        // needed here to enforce that. `functions` holds plain top-level
-        // funcs only -- impl methods are never overloadable within one
-        // impl at all (checked structurally, one method per name per
-        // impl block, in collectImpl) and live in a completely separate
-        // map, so this pass has no effect on them.
+        // Pass 1f: mangle overloaded top-level funcs (only a name with more than one overload).
         for (List<FuncInfo> overloads : functions.values()) {
             if (overloads.size() <= 1) {
                 continue;
@@ -2836,19 +1644,8 @@ public class TypeChecker {
     }
 
     /**
-     * "let static MY_GLOBAL = 32" at the root -- "the righthand side is
-     * subject to the same static instantiation rules as the static
-     * variables," confirmed directly: same compile-time-constant
-     * restriction (`checkNoRuntimeConstructs`) and the same mutability
-     * requirement (`requireStaticMutable`) local statics already use.
-     * The one genuine difference: a global's initializer *is* allowed to
-     * reference an *earlier* global (unlike a local static, which uses a
-     * fully empty scope rejecting every variable reference) -- handled
-     * by resolving through a synthetic FuncInfo carrying just this
-     * global's own declOrder, so the ordinary VARREF-fallback-to-globals
-     * path (see resolveExprTypeInner) naturally rejects any global at or
-     * after this position, the same "cannot be referenced before
-     * declaration" rule a real function body is held to.
+     * "let static NAME = ..." at the root: the RHS follows the local-static rules but may name an earlier global.
+     * See docs/TypeChecker.md, "Top-level declaration collection".
      */
     private void collectGlobal(Token assignNode, int declOrder) {
         Token letTok = assignNode.left;
@@ -2879,10 +1676,7 @@ public class TypeChecker {
             rhsType = globalBound;
         }
         requireStaticMutable(rhsType, assignNode.right);
-        // Same "direct declaration vs. merely reading an already-atomic
-        // value" distinction the 'let static' local branch of
-        // checkAssign applies -- see isDirectAtomicDeclaration's own
-        // doc comment.
+        // Direct atomic declaration vs. merely reading an atomic value: see isDirectAtomicDeclaration.
         if (rhsType.isAtomic && !isDirectAtomicDeclaration(assignNode.right)) {
             rhsType = rhsType.withAtomic(false);
         }
@@ -2926,12 +1720,8 @@ public class TypeChecker {
                             + "invocation) are allowed at the top level");
         }
         Token t = lineTok.childs.get(0);
-        // A bare VARREF line is allowed through here unconditionally --
-        // it can only legally mean "asm_name;", an ASM invocation
-        // statement; see collectAsmInvocations, which validates it's
-        // actually a known ASM name (a lone identifier that *isn't* one
-        // is rejected there instead, with a clearer, ASM-specific
-        // message than this generic one could give).
+        // A bare VARREF line is allowed: it can only be an "asm_name;" invocation (validated in
+        // collectAsmInvocations).
         if (t.type == TokenType.VARREF) {
             return t;
         }
@@ -2951,13 +1741,8 @@ public class TypeChecker {
     }
 
     /**
-     * "type NAME <target>" -- just stores the raw target token span,
-     * name-collision-checked against the same shared struct/enum/
-     * interface namespace (confirmed directly). Not checked
-     * against `globals` here (globals aren't registered until a later
-     * pass) -- collectGlobal checks `aliasRawTargets` from its own side
-     * instead, so the collision is still caught either way regardless of
-     * which one comes first in the file.
+     * "type NAME <target>": stores the raw target tokens. Collision with globals is checked from collectGlobal's
+     * side.
      */
     private void registerAlias(Token t) {
         String name = t.sub.get(0).text;
@@ -2969,17 +1754,8 @@ public class TypeChecker {
     }
 
     /**
-     * "const NAME EXPR" -- registered raw here (the expression's own
-     * already-tree-built root, from t.childs.get(0)), never evaluated at
-     * this point: consts are forward-declarable, confirmed directly, so
-     * "const A B" appearing before "const B 5" in the file is fine, and
-     * evaluation happens lazily, on first actual reference (see
-     * resolveConstValue). Collision-checked here against every other
-     * top-level namespace already populated by this same pass (struct/
-     * enum/interface/type); func/global collision is checked from their
-     * own, later registration side instead, against constExprs, the
-     * identical two-sided pattern registerAlias/registerStructLike
-     * already use for each other.
+     * "const NAME EXPR": registered raw and evaluated lazily on first reference (consts are forward-declarable,
+     * see resolveConstValue). See docs/TypeChecker.md, "Top-level declaration collection".
      */
     private void registerConst(Token t) {
         String name = t.sub.get(0).text;
@@ -2992,15 +1768,8 @@ public class TypeChecker {
     }
 
     /**
-     * "Shares the struct/enum/interface namespace," confirmed
-     * directly -- raw registration only (name/extends/decorators
-     * captured, nothing about the library's own functions resolved
-     * yet), the same "registered raw first, since one may extend
-     * another declared later in the file" pattern registerStructLike/
-     * registerInterface already use for their own 'extends' chains.
-     * The library's own functions are built later, in collectLibrary
-     * (pass 1b), once structs/interfaces have already been flattened --
-     * a function's own parameter/return types may reference either.
+     * Raw registration of a library name (shares the struct/enum/interface namespace); its functions are built
+     * later in collectLibrary.
      */
     private void registerLibraryName(Token t) {
         String name = t.sub.get(0).text;
@@ -3025,17 +1794,8 @@ public class TypeChecker {
             throw new CompilerException("type", t.file, t.line, "'" + name + "' is already declared");
         }
         validateDecorators(t.decorators, STRUCT_DECORATORS, "a struct");
-        // "@unpadded gets a not supported error for now," confirmed
-        // directly -- every struct is now compiler-padded to its own
-        // natural alignment by emitStruct below (see that method's own
-        // doc comment), and there is no real "leave it unpadded"
-        // lowering path built yet to honor the decorator's own request.
-        // Kept in STRUCT_DECORATORS above (rather than deleted outright)
-        // so a program that writes "@unpadded" gets this specific,
-        // named rejection rather than the generic "not a real decorator"
-        // one -- the same "recognized, but not yet supported" shape
-        // this project already uses for a handful of other reserved-but-
-        // inert names elsewhere.
+        // @unpadded is recognised but rejected: every struct is compiler-padded (see emitStruct). Kept in
+        // STRUCT_DECORATORS to give this specific error.
         if (getDecorator(t.decorators, "unpadded") != null) {
             throw new CompilerException("type", t.file, t.line,
                     "'@unpadded' is not supported yet -- every struct is compiler-padded to its own "
@@ -3099,18 +1859,9 @@ public class TypeChecker {
             }
         }
         if (lockDecorator != null) {
-            // "@lock(match self.x : X)... on a struct rather than a
-            // method," confirmed directly -- validated here, right
-            // after this struct's own members are fully known (the
-            // same reason this runs at the very end of flattenStruct,
-            // not during collection, when member types aren't resolved
-            // yet).
+            // Validated at the end of flattenStruct, once member types are known.
             validateLockEnumClause(lockDecorator, info, name);
-            // "when a struct is decorated with @lock, then its first
-            // member must be the lock in question" -- confirmed directly.
-            // info.members is the ordered list of declared members; the
-            // hidden ___type field is not in it, so "first" means the
-            // first user-declared member.
+            // The first user-declared member must be the lock field (the hidden ___type is not in info.members).
             if (!info.members.isEmpty()) {
                 String firstMember = info.members.keySet().iterator().next();
                 if (!firstMember.equals(lockDecorator.lockFieldName)) {
@@ -3123,15 +1874,8 @@ public class TypeChecker {
             info.lockFieldName = lockDecorator.lockFieldName;
             info.lockVariants = lockDecorator.lockVariants;
             if (info.swapFieldName != null && !info.swapFieldName.equals(info.lockFieldName)) {
-                // "two distinct flavors of the @lock(match self.field:X)
-                // decorator" -- the plain 'imut' discriminant flavor and
-                // the 'mut'+'atomic'+'swap'-tagged one -- are never mixed
-                // on one struct: a struct that declares both a 'swap'
-                // member and a struct-level '@lock(...)' decorator must
-                // have the decorator name that exact same field, so the
-                // pre-existing "the discriminant field is always freely
-                // readable" carve-out already covers the swap field too,
-                // with no separate exemption needed.
+                // A swap member plus a struct-level @lock(...) must name the same field. See docs/TypeChecker.md,
+                // "Struct flattening and @lock clauses".
                 throw new CompilerException("type", info.declTok.file, info.declTok.line,
                         "'" + name + "'s '@lock(match self." + info.lockFieldName + " : ...)' decorator must "
                                 + "name the same field as its 'swap'-tagged member ('" + info.swapFieldName
@@ -3143,13 +1887,8 @@ public class TypeChecker {
     }
 
     /**
-     * "match @lock EXPR{ OPEN:{...} CLOSED:{...} }" -- the safe spin-lock
-     * entry point requires its target struct's 'swap'-tagged member to
-     * be a plain, exactly-two-variant enum named literally 'OPEN' and
-     * 'CLOSED' (mandatory names, not merely "any two-variant enum") --
-     * this is what lets `checkLockMatchStatement` build the acquire/
-     * release ATOMIC_SWAP calls against fixed, known variant names
-     * without any further configuration.
+     * The swap member of a "match @lock" target must be a two-variant enum named exactly OPEN and CLOSED (codegen
+     * builds ATOMIC_SWAP calls against those names).
      */
     private void validateSwapMutexField(StructInfo structInfo, String structName, String fieldName, Token at) {
         TypeInfo fieldType = structInfo.members.get(fieldName);
@@ -3169,16 +1908,8 @@ public class TypeChecker {
     }
 
     /**
-     * "@lock(match self.x : X)," confirmed directly -- the field must
-     * really exist on `structInfo`, must be enum-typed, and every named
-     * variant must be a real variant of that exact enum. Shared between
-     * the struct-level use of this qualifier (flattenStruct, just
-     * above) and the newer, method-level one ("I want to be able to use
-     * lock as a qualified decorator on any method," confirmed directly
-     * -- see validateMethodLocks) -- the field/enum/variant validation
-     * itself is identical either way, only *where* the resulting proof
-     * requirement applies differs (every non-discriminant member of the
-     * whole struct, vs. just this one method).
+     * Validates "@lock(match self.x : X)": the field exists, is enum-typed, and every variant belongs to that
+     * enum. Shared by struct-level and method-level use.
      */
     private void validateLockEnumClause(Token.Decorator d, StructInfo structInfo, String structName) {
         String fieldName = d.lockFieldName;
@@ -3203,16 +1934,8 @@ public class TypeChecker {
     }
 
     /**
-     * "I want to be able to use lock as a qualified decorator on any
-     * method within an impl, impl for an interface or as part of a
-     * signature, as in an interface... [and] I want to expand the
-     * @lock mechanism to also support the @lock(match x in self.x2),"
-     * confirmed directly. Validates every "@lock(match ...)" decorator
-     * on one method (an instance/static impl method or an interface's
-     * own declared signature) -- a method may carry more than one,
-     * each validated (and later required at every call site)
-     * independently. Only ever meaningful for a struct receiver (an
-     * enum has no "self.x2" members at all to lock).
+     * Validates every "@lock(match ...)" decorator on one method (impl method or interface signature); struct
+     * receivers only. See docs/TypeChecker.md, "Method-level @lock".
      */
     private void validateMethodLocks(List<Token.Decorator> decorators, List<String> paramNames,
             List<TypeInfo> paramTypes, String concreteName) {
@@ -3230,25 +1953,13 @@ public class TypeChecker {
             } else if (d.lockInParams != null) {
                 validateLockInClause(d, si, concreteName, paramNames, paramTypes);
             }
-            // else: the ordinary, argument-less "@lock" (the pre-
-            // existing @guard method decorator) -- nothing of this
-            // feature's own to validate.
+            // else: no qualified @lock clause to validate.
         }
     }
 
     /**
-     * "x is one of the imutable arguments passed to the function, and
-     * x2 is a field. The expression must satisfy the type requirements
-     * of the in operator," confirmed directly -- checked against
-     * `checkIn`'s own exact rules (plain u64/range on the left,
-     * range/dynarray on the right) when the clause was written
-     * with "in", not a separate, looser approximation of them. A
-     * clause written with "within" instead is checked against
-     * `checkWithin`'s own narrower rules the exact same way -- "I want
-     * the within operator to be able to be used everywhere the in
-     * can... in a @lock(match) decorator," confirmed directly; which
-     * rule set applies is decided per-clause by `d.lockInOperators`,
-     * never assumed.
+     * Validates "@lock(match x in|within self.f)" against the typing rules of checkIn / checkWithin (chosen per
+     * clause by d.lockInOperators).
      */
     private void validateLockInClause(Token.Decorator d, StructInfo si, String concreteName,
             List<String> paramNames, List<TypeInfo> paramTypes) {
@@ -3291,13 +2002,8 @@ public class TypeChecker {
                                 + "' requires a range" + (isWithin ? "" : " or a dynarray")
                                 + " on the right, got '" + fieldType.canonical() + "'");
             }
-            // "@lock(match Some(i) in self.x)" -- the same index-bounds
-            // -plus-element-alive sugar the bare-match/for-match forms
-            // already support, extended to this qualifier: 'self.field'
-            // must actually be a dynarray of pointer-typed elements, the
-            // same "element must be a pointer" requirement
-            // checkSomeIndexBoundsCondition already enforces for the
-            // other two forms.
+            // "Some(i) in self.x" needs self.x to be a dynarray of pointer elements (as checkSomeIndexBoundsCondition
+            // requires).
             if (d.lockInSomeWrapped != null && Boolean.TRUE.equals(d.lockInSomeWrapped.get(i))) {
                 if (!isDynArrayType(fieldType) || fieldType.dynArrayElementType == null
                         || fieldType.dynArrayElementType.storage == null) {
@@ -3390,12 +2096,8 @@ public class TypeChecker {
     }
 
     /**
-     * "interface Name{ method(params) returnType; ... }" -- each
-     * method's signature is kept raw (unresolved) here, since 'self'
-     * isn't a concrete type yet; only validated structurally (does
-     * every 'self' occurrence carry a storage modifier, confirmed
-     * directly as a hard requirement). Full resolution happens per
-     * concrete implementation, in collectImpl.
+     * "interface Name{...}": signatures stay raw (self is not concrete yet) and are only checked structurally;
+     * resolved per impl in collectImpl.
      */
     private void registerInterface(Token t) {
         String name = t.sub.get(0).text;
@@ -3414,16 +2116,8 @@ public class TypeChecker {
             boolean isDefault = methodTok.text.equals("func");
             validateInterfaceMethodDecorators(methodTok, isDefault, name);
             if (methodTok.isStaticMethod) {
-                // Same reasoning as collectImpl's identical check --
-                // "self can't be used in these funcs or their
-                // signatures -- at all," confirmed directly -- a static
-                // interface signature is never given a "self" to
-                // substitute in the first place, so this needs the
-                // unconditional recursive rejection, not
-                // validateSelfIsPointer's "if present, it must be a
-                // pointer" check a few lines below (which assumes a
-                // static method's params/return type could legitimately
-                // reference "self" at all).
+                // A static signature never gets a "self": reject any use outright. See docs/TypeChecker.md,
+                // "Interfaces".
                 forbidSelfReference(methodTok, "a static method");
             } else if (isDefault) {
                 forbidSelfReference(methodTok, "a '@default' method");
@@ -3450,15 +2144,8 @@ public class TypeChecker {
     }
 
     /**
-     * "Functions in interfaces accepted provided they are labelled
-     * default," confirmed directly -- a body-bearing method (parsed via
-     * full 'func' syntax, see Parser.gatherInterface) always requires
-     * "@default"; a plain signature-only method (no body at all) never
-     * allows it, since there'd be nothing "default" about a promise with
-     * no implementation. "@overrides"/"@realizes" never apply to an
-     * interface's own method declarations at all -- those decorate an
-     * *impl*'s methods (collectImpl), not the interface being
-     * implemented.
+     * Body-bearing interface methods require @default, signature-only ones forbid it; @overrides/@realizes belong
+     * to impl methods only.
      */
     private void validateInterfaceMethodDecorators(Token methodTok, boolean isDefault, String interfaceName) {
         if (isDefault) {
@@ -3488,7 +2175,10 @@ public class TypeChecker {
         validateDecorators(t.decorators, FUNC_ALL_DECORATORS, "a function");
     }
 
-    /** "A function labelled @default CANNOT have access to the self reserved term" -- confirmed directly, checked across the *entire* signature and body, not just the body. Shared verbatim by a "static func"'s identical restriction ("self can't be used in these funcs or their signatures -- at all," confirmed directly) -- `context` distinguishes which one actually applies, in the error message a caller of either sees. */
+    /**
+     * Rejects 'self' anywhere in a signature or body: used for @default methods and static methods (`context`
+     * names which, for the message).
+     */
     private void forbidSelfReference(Token methodTok, String context) {
         for (Token s : methodTok.sub) {
             forbidSelfReferenceIn(s, context);
@@ -3522,14 +2212,7 @@ public class TypeChecker {
         }
     }
 
-    /**
-     * Recursively resolves `name`'s final, flattened method set. An
-     * interface's `extendsNames` has no cap at all
-     * (confirmed directly: "an interface can extend over many
-     * interfaces") -- every extended interface's already-flattened
-     * method set is merged in, name-collision-checked, before this
-     * interface's own methods are added on top.
-     */
+    /** Resolves an interface's flattened method set (any number of extends; name collisions are errors). */
     private void flattenInterface(String name, Set<String> visiting) {
         InterfaceInfo info = interfaces.get(name);
         if (info == null || info.flattened) {
@@ -3599,39 +2282,9 @@ public class TypeChecker {
     }
 
     /**
-     * "impl InterfaceName for ConcreteName{ func ... }" or
-     * "impl ConcreteName{ func ... }". Confirmed directly: an interface
-     * cannot be implemented for an enum; an interface impl must match
-     * the interface's method set exactly (no more, no less); a method
-     * name+full-signature that's ambiguous across impls for the same
-     * concrete type (whether from two different interfaces, a bare
-     * impl and an interface impl, or two bare impls) is a hard error at
-     * declaration time -- "it creates an ambiguity that cannot be
-     * resolved at the call site." Each method's mangled name (used for
-     * CALL, never for signature/type matching -- confirmed directly
-     * that interface/impl membership is a naming convention only) is
-     * "Concrete__Interface_method" for an interface impl or
-     * "Concrete_method" for a bare one (the bare form's exact
-     * underscore convention wasn't given by example; this is the
-     * natural parallel chosen for it).
-     */
-    /**
-     * "impl default match @lock MyMutex{ CLOSED:(tries:imut u64,...)
-     * =>{...} }" -- registers a reusable "match @lock" CLOSED-case
-     * backoff/retry policy for a swap-tagged mutex struct (see
-     * DefaultLockMatchPolicy). Validated once, eagerly, right here --
-     * the same "validate once, right after the struct's own members
-     * are fully flattened" timing `validateSwapMutexField` itself
-     * already established (this runs in Pass 1b, strictly after every
-     * struct has already been flattened in Pass 1a) -- rather than
-     * deferred to first use: a mistyped policy should fail loudly at
-     * its own declaration site, not silently at whichever "match @lock"
-     * happens to reference it first. Only the parameter list's own
-     * *shape* is checked here (arity, the required "imut u64" first
-     * parameter); the body itself is never checked at all until a real
-     * use site clones and checks it, since checking it here, unbound to
-     * any real spin loop, would have nothing for its own "break" to
-     * target.
+     * "impl default match @lock S{ CLOSED:(tries:imut u64,...)=>{...} }": registers a retry policy, validated
+     * eagerly at its declaration (only the parameter shape; the body is checked at each use site). See
+     * docs/TypeChecker.md, "Impl collection".
      */
     private void collectDefaultLockMatchPolicy(Token t) {
         String structName = t.sub.get(0).text;
@@ -3668,6 +2321,7 @@ public class TypeChecker {
         structInfo.defaultLockMatchPolicy = new DefaultLockMatchPolicy(structName, paramsTok, t.childs, t);
     }
 
+    /** Registers "impl [I for] C{...}". See docs/TypeChecker.md, "Impl collection" for the rules. */
     private void collectImpl(Token t, String safetyTag) {
         String interfaceName = t.sub.size() == 2 ? t.sub.get(0).text : null;
         String concreteName = t.sub.size() == 2 ? t.sub.get(1).text : t.sub.get(0).text;
@@ -3699,49 +2353,16 @@ public class TypeChecker {
         validateDecorators(t.decorators, IMPL_DECORATORS, "an 'impl'");
         implInfo.isPublic = getDecorator(t.decorators, "pub") != null;
 
-        // A residual-generic method template (below) is held back into
-        // genericMethodTemplates, never registered as an ordinary,
-        // directly-emittable method -- so its own raw token has to come
-        // back out of t.childs too, or BytecodeEmitter's own "impl" case
-        // (which walks t.childs directly, matching each entry back to a
-        // real FuncInfo) would trip over it with no FuncInfo to find.
-        // Removed after the loop below, never during it (t.childs is
-        // iterated live).
+        // Residual-generic templates are held back in genericMethodTemplates; their tokens are removed from t.childs
+        // after the loop (BytecodeEmitter walks t.childs).
         List<Token> genericTemplateTokensToRemove = new ArrayList<>();
         boolean droppedUnavailable = false;
         for (Token methodTok : t.childs) {
             // methodTok is a gathered 'func' token: sub = [nameTok, paramsTok, ...returnTypeTokens].
             if (methodTok.isConstructorDecl) {
-                // A *generic* constructor -- "impl<T> constructor for
-                // Concrete<T>(...) self {...}" -- reaches here (rather
-                // than collectFunc) because Parser.gatherConstructorImpl
-                // wraps a generic constructor in an "impl"-shaped token
-                // so GenericsExpander's existing impl-template machinery
-                // can register/instantiate it per concrete `Concrete<...>`
-                // with no changes of its own; by the time this specific,
-                // already-monomorphized clone reaches here,
-                // `methodTok.sub.get(0).text` is already
-                // "__ctor__<mangledStructName>" and
-                // `methodTok.constructorConcreteName` already names the
-                // mangled struct (both rewritten by
-                // GenericsExpander.generateImplInstantiation's own
-                // constructor-rename patch), so this is registered the
-                // exact same way `collectFunc` registers a non-generic
-                // constructor: as an ordinary overloaded `FuncInfo` under
-                // the shared `functions` map, not this impl's own
-                // (non-overloading) `implInfo.methods` -- a constructor
-                // is only ever called as "ConcreteName(...)"/
-                // "new ConcreteName(...)", never as a receiver-dispatched
-                // "instance.__ctor__ConcreteName(...)" method call.
-                // Deliberately left in `t.childs` (not removed, unlike
-                // the residual-generic-template case below):
-                // BytecodeEmitter's own "impl" case still walks
-                // `t.childs` to emit every method's body, and special-
-                // cases `isConstructorDecl` there to look this FuncInfo
-                // up in `functions` (via `findFuncInfo`) instead of this
-                // impl's own `methods`/`staticMethods` (via
-                // `findImplMethodInfo`), rather than duplicating an
-                // "emit constructor bodies" pass of its own.
+                // Generic constructor wrapped by Parser.gatherConstructorImpl: registered as an ordinary overload in
+                // `functions` (like collectFunc) but left in t.childs for BytecodeEmitter. See docs/TypeChecker.md,
+                // "Impl collection".
                 FuncInfo ctorInfo = new FuncInfo();
                 ctorInfo.funcToken = methodTok;
                 try {
@@ -3778,21 +2399,10 @@ public class TypeChecker {
                 continue;
             }
             if (methodTok.typeParams != null) {
-                // "impl with its own independent type params" -- this
-                // specific method token is itself a residual-generic-
-                // method template (GenericsExpander's own tagging; see
-                // ImplInfo.genericMethodTemplates' own doc comment).
-                // Held back entirely from the ordinary methods/
-                // staticMethods registration below -- it isn't a real,
-                // callable method until a call site's own explicit
-                // ":<U>" type argument instantiates it on demand.
+                // Residual-generic method template (own type params): held back, instantiated per call site by an
+                // explicit ":<U>".
                 if (methodTok.isStaticMethod) {
-                    // Known, narrower scope limitation for this first version
-                    // of "impl with its own independent type params": only
-                    // instance methods (reached via "receiver.method:<U>(...)")
-                    // are supported -- a static method reached via
-                    // "TypeName:<T>.method:<U>(...)" would need parallel
-                    // handling in checkStaticMethodCall, not yet built.
+                    // Only instance methods are supported; a static one would need handling in checkStaticMethodCall.
                     throw new CompilerException("type", methodTok.file, methodTok.line,
                             "a 'static' method cannot declare its own residual type parameter(s) yet -- "
                                     + "only an instance method's own residual generics are supported");
@@ -3814,29 +2424,16 @@ public class TypeChecker {
                 continue;
             }
             if (methodTok.isStaticMethod) {
-                // "self can't be used in these funcs or their
-                // signatures -- at all," confirmed directly --
-                // reusing the exact same recursive check (signature
-                // *and* body) an interface's own "@default" method
-                // already needs for the identical reason: neither is
-                // ever dispatched on any instance to substitute a
-                // concrete "self" for in the first place.
+                // A static method cannot mention 'self' (signature or body).
                 forbidSelfReference(methodTok, "a static method");
             } else {
-                // 'self' is substituted for the concrete type name in
-                // place (both the interface-impl and bare-impl examples
-                // given use it this way), before the method's own
-                // signature is resolved normally via the existing
-                // buildFuncInfo.
+                // 'self' is replaced by the concrete type name before buildFuncInfo.
                 substituteSelfInPlace(methodTok.sub.get(1).childs, concreteName);
                 substituteSelfInPlace(methodTok.sub.subList(2, methodTok.sub.size()), concreteName);
             }
 
             if (interfaceInfo == null) {
-                // "a bare impl without an interface isn't realizing the
-                // promise of a function, or overriding an existing one,"
-                // confirmed directly -- none of the three apply here at
-                // all.
+                // A bare impl has no interface: @default/@overrides/@realizes do not apply.
                 for (String forbidden : new String[]{"default", "overrides", "realizes"}) {
                     Token.Decorator bad = getDecorator(methodTok.decorators, forbidden);
                     if (bad != null) {
@@ -3862,16 +2459,8 @@ public class TypeChecker {
             info.enclosingImpl = implInfo;
             info.declOrder = pendingDeclOrder.getOrDefault(t, Integer.MAX_VALUE);
             info.safetyTag = safetyTag;
-            // A static method's own mangled name is deliberately
-            // distinct from what an instance method of the same name
-            // would get ("_static_" spliced in) -- the two live in
-            // genuinely separate maps (ImplInfo.methods vs.
-            // .staticMethods) and are never confusable at any real call
-            // site, so nothing stops the *same name* being used for
-            // both an instance and a static method on one type, and a
-            // bytecode-level symbol collision between them has to be
-            // ruled out structurally, not just by the source-level
-            // separation.
+            // Static methods get "static_" in the mangled name so they cannot collide with an instance method of the
+            // same name.
             String methodNamePart = methodTok.isStaticMethod ? "static_" + info.name : info.name;
             info.mangledName = interfaceName != null
                     ? concreteName + "__" + interfaceName + "_" + methodNamePart
@@ -3889,14 +2478,7 @@ public class TypeChecker {
                 boolean ifaceIsStatic = ifaceSig.isStatic;
                 LinkedHashMap<String, FuncInfo> implMap = ifaceIsStatic ? implInfo.staticMethods : implInfo.methods;
                 if (!implMap.containsKey(methodName)) {
-                    // "overriding the default should be optional," confirmed
-                    // directly -- an omitted method is only a real gap when
-                    // the interface itself never gave it a body to fall back
-                    // on; a '@default' method is materialized below, once
-                    // every method the impl *did* write has already been
-                    // validated (see materializeDefaultMethod's own doc
-                    // comment for why it's deliberately not validated the
-                    // same way a real, user-written impl method is).
+                    // An omitted method is an error unless the interface gave it a @default body (materialized below).
                     if (ifaceSig.isDefault) {
                         continue;
                     }
@@ -3934,12 +2516,7 @@ public class TypeChecker {
                 requirePublicInterfaceImpl(entry.getValue(), methodName, concreteName, interfaceName);
             }
 
-            // Materialize a real, callable entry for every '@default'
-            // method this impl chose to omit -- done last, strictly
-            // after every method the impl *did* write has already been
-            // validated above, so this never disturbs either loop (it
-            // only ever adds entries the two loops just above have
-            // already finished iterating over).
+            // Materialize omitted @default methods last, after every written method has been validated.
             for (Map.Entry<String, RawMethodSig> entry : interfaceInfo.methods.entrySet()) {
                 String methodName = entry.getKey();
                 RawMethodSig ifaceSig = entry.getValue();
@@ -3951,13 +2528,7 @@ public class TypeChecker {
             }
         }
 
-        // An impl made up solely of constructors ("impl<T> constructor for
-        // X<T>(...) self {...}") registers each constructor as an
-        // ordinary overload under the shared per-struct key above and
-        // contributes no methods, so it is not a "bare impl block" for
-        // the one-bare-impl rule: several constructor impls (one per
-        // constructor, the only spelling a generic struct has) may sit
-        // beside each other and beside a real bare impl.
+        // An impl made only of constructors is not a "bare impl block" for the one-bare-impl rule.
         if (droppedUnavailable && t.childs.isEmpty()) {
             return; // every method of this impl instance was unavailable for this type argument
         }
@@ -4012,47 +2583,14 @@ public class TypeChecker {
     }
 
     /**
-     * Materializes a real, callable method entry for an interface's own
-     * "@default" method that this impl chose not to redeclare --
-     * "overriding the default should be optional," confirmed directly
-     * as a correction to this project's own earlier, wrong claim that
-     * this already worked "for free" (it didn't: collectImpl's own
-     * "is missing method" check, just above, previously required
-     * *every* impl to redeclare *every* interface method, '@default' or
-     * not, with no exemption at all).
-     *
-     * Reuses the interface's own already-parsed default body verbatim
-     * (deep-cloned once per impl -- one interface default method may be
-     * inherited by many concrete types, each needing its own,
-     * independent Token tree rather than sharing one across multiple
-     * FuncInfos) -- this is never user-written *here*, so none of the
-     * ordinary impl-method validations (@overrides/@realizes labelling,
-     * exact-signature-match against the interface, @pub) apply at all:
-     * this literally *is* the interface's own signature and body, by
-     * construction, not an independent implementation that could
-     * disagree with it. Self-substitution is still run for consistency
-     * with every other impl method, even though it's a harmless no-op
-     * here -- a '@default' method can never reference 'self' in the
-     * first place (see forbidSelfReference's own doc comment on
-     * registerInterface), so there's nothing for it to actually
-     * substitute.
+     * Materializes a callable entry for an interface @default method that this impl omits: the default body is
+     * deep-cloned per impl and none of the user-impl validations apply. See docs/TypeChecker.md, "Default
+     * interface methods".
      */
     private void materializeDefaultMethod(ImplInfo implInfo, String concreteName, String interfaceName,
             String methodName, RawMethodSig ifaceSig, String safetyTag, Token implDeclTok) {
-        // An interface's own default method body is deliberately never
-        // RPN-converted/tree-built at all -- both RpnConverter's and
-        // TreeBuilder's own "interface" case return immediately,
-        // untouched ("pure declarations... nothing to convert/build"),
-        // since nothing previously ever needed a *checkable* body out
-        // of one. So the clone made here is still in the same
-        // "gathered (via Parser.gatherKeywordBlocks), but pre-RPN/
-        // pre-tree-build" shape the whole body originally was in --
-        // exactly the state `impl default match @lock`'s own policy
-        // bodies are cloned into at *their* own use site (see
-        // substituteDefaultLockMatchPolicyIfPresent), and fixed up the
-        // identical way: wrap it as a real line, then run it through a
-        // fresh RpnConverter/TreeBuilder pass, once per impl that
-        // actually needs it.
+        // The default body was never RPN-converted or tree-built (RpnConverter/TreeBuilder skip "interface"), so wrap
+        // the clone and convert it here.
         Token methodTok = deepCloneCheckedTree(ifaceSig.defaultBodyTok);
         Token wrapLine = new Token(TokenType.LINE, "line", methodTok.line, methodTok.file);
         wrapLine.childs.add(methodTok);
@@ -4067,12 +2605,7 @@ public class TypeChecker {
         FuncInfo info = new FuncInfo();
         info.funcToken = methodTok;
         buildFuncInfo(methodTok, info);
-        // Every method satisfying an interface must be public -- see
-        // requirePublicInterfaceImpl's own doc comment -- but a
-        // '@default' method's own source is never required to carry
-        // '@pub' itself (validateInterfaceMethodDecorators never checks
-        // for it), so this is forced directly rather than read off a
-        // decorator that may not be there.
+        // Must be public to satisfy the interface; forced because the @default source need not carry @pub.
         info.isPublic = true;
         info.enclosingImpl = implInfo;
         info.declOrder = pendingDeclOrder.getOrDefault(implDeclTok, Integer.MAX_VALUE);
@@ -4083,35 +2616,14 @@ public class TypeChecker {
         LinkedHashMap<String, FuncInfo> targetMap = methodTok.isStaticMethod
                 ? implInfo.staticMethods : implInfo.methods;
         targetMap.put(info.name, info);
-        // BytecodeEmitter's own "impl" case walks the impl's *root*
-        // token's own .childs (findImplMethodInfo matches back to a
-        // FuncInfo purely by Token identity) -- never implInfo.methods/
-        // staticMethods directly -- so a method that only ever exists
-        // in those maps, with no corresponding entry in the impl's own
-        // .childs, would type-check fine but never actually be emitted
-        // at all (confirmed directly: this was caught by inspecting
-        // real bytecode output, not assumed). Appending the same Token
-        // object used above as info.funcToken is what makes the
-        // ordinary, unmodified emission walk pick this method up for
-        // free, exactly as if it had been written directly in the impl
-        // block's own source.
+        // BytecodeEmitter emits impl methods by walking the impl token's childs (matching FuncInfo by Token identity),
+        // so the cloned token must be appended there or the method is never emitted.
         implDeclTok.childs.add(methodTok);
     }
 
     /**
-     * Deep-clones an already-gathered/RPN-converted/tree-built Token
-     * tree that hasn't been type-checked yet -- the same state
-     * GenericsExpander's own, structurally identical private
-     * deepClone(...) already clones for monomorphization (GenericsExpander
-     * runs before TypeChecker.check() ever does), copied here rather
-     * than shared across the two classes since GenericsExpander's own
-     * copy is private and this is the only place TypeChecker itself
-     * ever needs one. Deliberately does *not* attempt
-     * Token.deepCloneRaw()'s own, much narrower field set -- that one is
-     * scoped to raw, pre-gather tokens (see its own doc comment); an
-     * interface's default method body has already been fully gathered
-     * and tree-built by the time collectImpl ever runs, the same shape
-     * GenericsExpander's own templates are in when *it* clones them.
+     * Deep-clones a gathered, tree-built, not yet type-checked Token tree (a copy of GenericsExpander's private
+     * deepClone; Token.deepCloneRaw has a narrower field set).
      */
     private Token deepCloneCheckedTree(Token src) {
         Token copy = new Token(src.type, src.text, src.line, src.file);
@@ -4166,17 +2678,8 @@ public class TypeChecker {
     }
 
     /**
-     * Builds a library's own function set -- every "func" declaration
-     * directly inside its body, buildFuncInfo'd exactly like a plain
-     * top-level function (never like an impl method: a library function
-     * never has a "self" to substitute, so none of collectImpl's own
-     * self-substitution/forbidSelfReference-for-static machinery
-     * applies here -- every library function is unconditionally
-     * self-less, the same "self can't be used... at all" restriction a
-     * static method's signature and body both already get). Overloading
-     * is by full signature (name + parameter types), a deliberate
-     * departure from collectFunc/collectImpl's own "no overloading"
-     * rule -- "full signature (name + params)," confirmed directly.
+     * Builds a library's own function set (self-less; overloaded by full signature, unlike functions and impl
+     * methods). See docs/TypeChecker.md, "Libraries".
      */
     private void collectLibrary(Token t, String safetyTag) {
         String name = t.sub.get(0).text;
@@ -4213,17 +2716,9 @@ public class TypeChecker {
     }
 
     /**
-     * Registers one method into `implInfo`, allowing overloading in a bare
-     * impl: a second same-named method (instance or static, tracked
-     * separately) is accepted when its parameter signature differs from every
-     * already-registered one (same rule as plain functions: sameSignature --
-     * base type + alias per parameter), and is given a unique mangled name
-     * (`<first mangled>__sig_<signature>`) so the emitted FUNC_START/CALL
-     * symbols never collide. The FIRST method of a name keeps its original
-     * mangled name, so a program with no overloads emits byte-identical
-     * bytecode to before. An interface impl cannot overload (an interface
-     * method is identified by name alone), so a duplicate there keeps the old
-     * error.
+     * Registers a method into implInfo. A bare impl allows overloads by signature (unique mangled name
+     * "<first>__sig_<signature>"; the first keeps its name). An interface impl cannot overload. See
+     * docs/TypeChecker.md, "Impl method overloading".
      */
     private void registerImplMethod(ImplInfo implInfo, FuncInfo info, Token methodTok, String concreteName,
             boolean hasInterface) {
@@ -4264,7 +2759,10 @@ public class TypeChecker {
         existing.add(info);
     }
 
-    /** A bytecode-safe suffix built from a function's own full parameter-type signature, appended to every library function's own mangled name unconditionally -- never only when an overload actually exists -- so two differently-parameterized, same-named library functions can never collide at the FUNC_START/CALL level (a real, deliberate departure from this compiler's own general "two overloads of the same function emit as identically-named FUNC_START/CALL pairs" gap, needed specifically because a library's own "full signature" collision rule allows exactly that shape to coexist). */
+    /**
+     * Parameter-type suffix for overload mangled names; always appended for library functions so same-named
+     * overloads never collide at FUNC_START/CALL.
+     */
     private String signatureSuffix(List<TypeInfo> paramTypes) {
         if (paramTypes.isEmpty()) {
             return "void";
@@ -4283,23 +2781,8 @@ public class TypeChecker {
     }
 
     /**
-     * Recursively resolves `name`'s final, flattened function set.
-     * "Multiple inheritance is fine for libraries, but it is a compile
-     * time error if theres any function signature collisions,"
-     * confirmed directly, together with the user's own answer that
-     * "collision" means the *full* signature (name + parameter types),
-     * not merely the name -- so, unlike flattenInterface (name-only
-     * collision), two functions sharing a name but differing in
-     * parameter types, inherited from two different extended libraries,
-     * are explicitly allowed to coexist. Unlimited multiple 'extends',
-     * exactly like an interface's own (never a struct's single-parent
-     * cap) -- "multiple inheritance is fine for libraries," confirmed
-     * directly. A function is inherited *by reference* (the same
-     * FuncInfo object, never a copy) -- calling it through a child
-     * library's own name still targets its originally-declaring
-     * library's own mangled name, the identical "just allows
-     * referencing that library thru the child library" shape the user's
-     * own example describes.
+     * Flattens a library's function set: multiple extends, only a full-signature collision is an error, functions
+     * inherited by reference. See docs/TypeChecker.md, "Libraries".
      */
     private void flattenLibrary(String name, Set<String> visiting) {
         LibraryInfo info = libraries.get(name);
@@ -4332,7 +2815,10 @@ public class TypeChecker {
         visiting.remove(name);
     }
 
-    /** Merges `incoming` (one function name's worth of overloads, from either an extended library or this library's own declarations) into `info.functions`, rejecting only a genuine full-signature collision -- a same-name, different-parameter-types pair is deliberately allowed to coexist, per the library feature's own collision rule (see flattenLibrary's own doc comment). */
+    /**
+     * Merges one function name's overloads into `info.functions`, rejecting only a full-signature collision (see
+     * flattenLibrary).
+     */
     private void mergeLibraryOverloads(LibraryInfo info, String name, String funcName, List<FuncInfo> incoming) {
         List<FuncInfo> existing = info.functions.computeIfAbsent(funcName, k -> new ArrayList<>());
         for (FuncInfo candidate : incoming) {
@@ -4349,17 +2835,8 @@ public class TypeChecker {
     }
 
     /**
-     * "It has the same privacy rules in terms of encapsulation as an
-     * impl," confirmed directly -- exactly mirrors
-     * checkImplMethodVisibility's own two-layer gate, substituting
-     * "library" for "impl" throughout: the outer gate (is the library
-     * itself '@pub') is checked first, unconditionally, against the
-     * function's own *declaring* library (`candidate.enclosingLibrary`)
-     * -- never whichever library name the call site actually used to
-     * reach it (e.g. a child library's own name, via 'extends') -- the
-     * same "that same impl" object-identity precedent
-     * checkImplMethodVisibility already established. Only once that
-     * passes does the function's own public/private status matter.
+     * Library visibility, mirroring checkImplMethodVisibility: the declaring library must be @pub (or in the same
+     * file), then the function must be public or called from the same library.
      */
     private void requireLibraryVisibility(FuncInfo candidate, String funcName, Token at, FuncInfo callerFunc) {
         LibraryInfo declLib = candidate.enclosingLibrary;
@@ -4381,22 +2858,8 @@ public class TypeChecker {
     }
 
     /**
-     * "Math.sin(10.2)" -- the library counterpart of checkStaticMethodCall,
-     * structurally identical (same overload search over the flattened
-     * function set, same CallEdge/purity/recursion bookkeeping) except
-     * there's no ImplInfo/concrete struct involved at all, and
-     * visibility is checked via requireLibraryVisibility instead of
-     * checkImplMethodVisibility. No guard-lock discipline applies here
-     * (a library has no receiver value for checkGuardLockDiscipline to
-     * even resolve a type from), and requireMethodLockProofs is
-     * likewise never relevant -- a library function's own decorator set
-     * doesn't include '@lock'/'@unlock' at all (LIBRARY_DECORATORS is
-     * "pub" only; a library function itself still validates against the
-     * ordinary FUNC_ALL_DECORATORS via buildFuncInfo, which does permit
-     * '@lock'/'@unlock', but those exist for '@guard' interface
-     * conformance -- meaningless for a function with no enclosing
-     * struct/interface to guard at all, so none of that machinery is
-     * ever invoked here).
+     * "Lib.f(args)": library counterpart of checkStaticMethodCall (overload search, call-edge bookkeeping); no
+     * guard-lock or method-lock machinery applies.
      */
     private TypeInfo checkLibraryCall(Token op, String libName, String funcName, Scope scope, FuncInfo func) {
         LibraryInfo lib = libraries.get(libName);
@@ -4436,14 +2899,8 @@ public class TypeChecker {
                 for (int i = 0; i < argNodes.size(); i++) {
                     markMovedIfOwned(candidate.paramTypes.get(i), argNodes.get(i), scope);
                 }
-                // Precise, per-call-site destruct list -- see checkThrow's own doc
-                // comment for the full design: if this callee (or anything it calls,
-                // transitively) ever throws and unwinds back into this exact call, this
-                // caller needs to know exactly what's alive in *it* right here, the same
-                // precision an ordinary 'return' at this point would have -- not the old
-                // whole-function conservative list. BytecodeEmitter only actually uses
-                // this when the whole program uses 'throw' at all (checker.usesThrow());
-                // harmless, cheap to compute unconditionally otherwise.
+                // Per-call-site destruct list, as in checkThrow (BytecodeEmitter uses it only when the program uses
+                // throw).
                 op.destructOnExit = collectOwnsToDestruct(scope, scope.functionRootScope, null);
                 op.unlockOnExit = collectLockReleasesToBoundary(scope, scope.functionRootScope);
                 if (candidate == func && scope.suspendsSelfRecursion) {
@@ -4492,18 +2949,7 @@ public class TypeChecker {
         return result;
     }
 
-    /**
-     * "@overrides for when they override a default method, and
-     * @realizes for when they fulfill the promise of a function,"
-     * confirmed directly -- every method in an interface impl must be
-     * exactly one of the two, matched against whether the corresponding
-     * interface method is itself "@default": overriding one that isn't
-     * @default (nothing to override) or realizing one that is
-     * (@default already provides an implementation -- this doesn't
-     * "fulfill a promise," it replaces one) are both rejected, not just
-     * "missing the right label."
-     */
-    /** "A func which is an implementation for an interface, must therefore also be @pub," confirmed directly -- every method actually satisfying an interface's own method set (whether via a real "@default" body in the interface itself, or an implementing method in an impl) is required to be public, since an interface's own members are themselves unconditionally public ("except for interface members which are all public," confirmed directly) -- a private method could never actually stand in for one. */
+    /** Every method satisfying an interface must be @pub (interface members are public). */
     private void requirePublicInterfaceImpl(FuncInfo implMethod, String methodName, String concreteName,
             String interfaceName) {
         if (!implMethod.isPublic) {
@@ -4513,6 +2959,10 @@ public class TypeChecker {
         }
     }
 
+    /**
+     * Each interface-impl method must carry exactly one of @overrides (the interface method is @default) or
+     * @realizes (it is a plain signature).
+     */
     private void validateOverridesRealizes(FuncInfo implMethod, RawMethodSig interfaceMethod,
             String concreteName, String interfaceName) {
         List<Token.Decorator> decorators = implMethod.funcToken.decorators;
@@ -4550,21 +3000,8 @@ public class TypeChecker {
     }
 
     /**
-     * "I want to be able to use lock as a qualified decorator on any
-     * method within an impl, impl for an interface or as part of a
-     * signature, as in an interface... its required on implementation,"
-     * confirmed directly -- an interface method's own "@lock(match
-     * ...)" qualifier(s) (distinct from the plain, argument-less
-     * "@lock"/"@unlock" pair `validateGuardMethodDecorators` just above
-     * already handles) must be matched exactly, in the same order, by
-     * every implementing method. Matched by parameter *position*, not
-     * literal name, for the "in"-style shape -- confirmed directly this
-     * is the right comparison, since this language's own interface
-     * conformance was already confirmed to be type/position-based, not
-     * name-based (`validateExactSignatureMatch` never once compares a
-     * parameter's own name at all), so an implementation is free to
-     * call its own parameter something other than whatever the
-     * interface itself called it.
+     * An interface method's "@lock(match ...)" qualifiers must be repeated exactly, in order, by each implementing
+     * method; "in"-style clauses match by parameter position, not name.
      */
     private void requireIdenticalLocks(FuncInfo actual, RawMethodSig ifaceSig, String concreteName,
             String interfaceName) {
@@ -4632,30 +3069,14 @@ public class TypeChecker {
         for (int j = 0; j < ifaceLock.lockInParams.size(); j++) {
             int ifacePos = ifaceParamNames.indexOf(ifaceLock.lockInParams.get(j));
             int implPos = implParamNames.indexOf(implLock.lockInParams.get(j));
-            // Same operator required too, not just same param/field --
-            // "in" and "within" grant the identical proof once
-            // satisfied, but they're still a different written contract
-            // at this exact clause, so an implementation isn't free to
-            // silently swap one for the other any more than it's free
-            // to swap which field is named (not explicitly specified
-            // either way, but kept consistent with every other part of
-            // this clause already being matched exactly, not just
-            // matched in effect).
+            // The operator must match too ("in" vs "within").
             if (ifacePos != implPos || !ifaceLock.lockInFields.get(j).equals(implLock.lockInFields.get(j))
                     || !ifaceLock.lockInOperators.get(j).equals(implLock.lockInOperators.get(j))) {
                 return "clause " + (j + 1) + " must be on the same parameter (by position), the same "
                         + "field, and the same operator as the interface's own '"
                         + ifaceLock.lockInOperators.get(j) + " self." + ifaceLock.lockInFields.get(j) + "'";
             }
-            // "Some(...)"-wrapped-ness is required to match exactly too
-            // -- "exact-match conformance," confirmed directly, on
-            // whether a clause used the 'Some(...)'-wrapped variant at
-            // all, the same discipline every other part of a lock
-            // clause already gets. Never a superset/subset relationship
-            // here even though 'Some(...)''s own proof is strictly
-            // stronger for reads -- a plain 'in'-style implementation
-            // can never satisfy a 'Some(...)'-wrapped interface clause,
-            // or vice versa.
+            // Some(...)-wrapping must match exactly (no superset/subset relation).
             boolean ifaceSome = ifaceLock.lockInSomeWrapped != null
                     && Boolean.TRUE.equals(ifaceLock.lockInSomeWrapped.get(j));
             boolean implSome = implLock.lockInSomeWrapped != null
@@ -4671,17 +3092,8 @@ public class TypeChecker {
     }
 
     /**
-     * "Globals and static locals in safe code can't be @guards -- only
-     * @locks with atomic swap locks and atomic primitives," confirmed
-     * directly -- true only when `t`'s own base type is a struct
-     * declaring a 'swap'-tagged atomic mutex-state field (the same
-     * field `structs.get(...).swapFieldName` already records for
-     * `match @lock`'s own use), regardless of whether that struct also
-     * carries a struct-level `@lock(match self.x:X)` decorator (see
-     * "the discriminant field itself is always freely readable" --
-     * this is exactly the same reasoning extended to the global/static
-     * declaration point itself, not just member access once one is
-     * already in hand).
+     * True when `t` is a struct with a swap-tagged mutex field: the only kind of global/static safe code may touch
+     * directly.
      */
     private boolean isSwapLockStructType(TypeInfo t) {
         StructInfo structInfo = structs.get(t.baseType);
@@ -4689,16 +3101,8 @@ public class TypeChecker {
     }
 
     /**
-     * True only when `expr` is a direct, optionally mut/imut-wrapped
-     * use of the "atomic" prefix operator itself -- a genuine new
-     * atomic declaration, as opposed to an ordinary expression that
-     * merely happens to *resolve* to an atomic-tagged type (e.g.
-     * reading an already-declared atomic global/static's current
-     * value, "let myAtomicChar2 = myAtomicChar," confirmed directly as
-     * an ordinary, non-atomic local). This distinction is what lets a
-     * plain 'let' silently strip 'isAtomic' when merely reading one,
-     * while still hard-rejecting an attempt to *declare* a new atomic
-     * outside a global/'let static' -- see the two call sites below.
+     * True for a direct (optionally mut/imut-wrapped) "atomic" operator, i.e. a new atomic declaration, as opposed
+     * to an expression that merely resolves to an atomic type (reading one yields an ordinary non-atomic local).
      */
     private boolean isDirectAtomicDeclaration(Token expr) {
         Token t = expr;
@@ -4715,9 +3119,8 @@ public class TypeChecker {
      */
     private void requireSharedStateOrUnsafe(TypeInfo t, String name, Scope scope, Token at) {
         if (t.isAtomic) {
-            // an atomic primitive shared between threads: reading, writing or swapping it is one atomic step, but whether a program built from
-            // such steps is correct is not something the compiler can check, so every access is an audited `unsafe atomic{...}` use; the only
-            // safe way to share mutable state is a struct with a `swap` lock, touched through its own `match @lock`
+            // An atomic primitive: each access is one atomic step but program correctness cannot be checked, so every
+            // access needs an audited `unsafe atomic{}`.
             if (!unsafeBypass(scope, "atomic")) {
                 throw new CompilerException("type", at.file, at.line,
                         "'" + name + "' is an atomic -- outside a lock it can only be read, written or swapped from 'unsafe atomic{...}' code; "
@@ -4733,14 +3136,8 @@ public class TypeChecker {
     }
 
     /**
-     * "Yes, ban them from reading global and statics too," confirmed
-     * directly, scoped specifically to *mutable* ones (matching how the
-     * proposal that was agreed to was phrased) -- an 'imut' global/
-     * static can never change once set, so reading one poses no threat
-     * to referential transparency at all; only a 'mut' one can differ
-     * across two calls with identical arguments. "Unsafe code does not
-     * get an exemption for this," confirmed directly -- checked
-     * unconditionally, never gated on scope.currentSafety.
+     * A @pure function may not read mutable globals/statics (imut ones are fine); @pure(rt) may read none. Unsafe
+     * code is not exempt. See docs/TypeChecker.md, "Purity".
      */
     private void requirePureDoesNotReadMutableStatic(TypeInfo t, String name, FuncInfo func, Token at) {
         if (isPureRtFunc(func)) {
@@ -4888,10 +3285,10 @@ public class TypeChecker {
     private static final Set<String> STRUCT_DECORATORS = new HashSet<>(Arrays.asList("unpadded", "untyped", "pub", "lock"));
     private static final Set<String> ENUM_DECORATORS = new HashSet<>(Arrays.asList("non_exhaustive"));
     private static final Set<String> INTERFACE_DECORATORS = new HashSet<>(Arrays.asList("pub"));
-    /** "structs, func definitions, struct members, interfaces, impls and impl members," confirmed directly -- 'impl' itself never validated any decorator at all before this; "pub" is genuinely its first one. */
+    /** Only "pub" is allowed on an impl. */
     private static final Set<String> IMPL_DECORATORS = new HashSet<>(Arrays.asList("pub"));
     private static final Set<String> LIBRARY_DECORATORS = new HashSet<>(Arrays.asList("pub"));
-    /** "let/static are excempt, globals are not," confirmed directly -- a top-level "let static" is its own, separate declaration surface from every other decoratable construct, so it gets its own allowlist rather than reusing FUNC_BASE_DECORATORS or similar. */
+    /** A top-level "let static" has its own decorator allowlist. */
     private static final Set<String> GLOBAL_DECORATORS = new HashSet<>(Arrays.asList("pub"));
     private static final Set<String> LOOP_DECORATORS = new HashSet<>(Arrays.asList("par", "unroll"));
     private static final Set<String> READS_WRITES_ARGS = new HashSet<>(Arrays.asList("all", "self", "others", "globals"));
@@ -4912,7 +3309,10 @@ public class TypeChecker {
         return null;
     }
 
-    /** "@call_convention(name)" if present -- already argument-shape-and-membership validated by validateDecoratorArgShape by the time this is ever called (every caller validates decorators first) -- otherwise compiler.config's own declared default. Shared by func/extern collection; the function-pointer-type-annotation case has its own parallel inline version (parseInlineCallConventionArg) since decorators are parsed completely differently there. */
+    /**
+     * The "@call_convention(name)" argument if present (already validated), else compiler.config's default. Shared
+     * by func and extern collection.
+     */
     private String resolveCallConvention(List<Token.Decorator> decorators) {
         Token.Decorator d = getDecorator(decorators, "call_convention");
         return d != null ? d.args.get(0) : config.defaultConvention;
@@ -4961,16 +3361,8 @@ public class TypeChecker {
     }
 
     /**
-     * "So no writing to static or global variables, or calling
-     * functions that do... a pure function can only call another pure
-     * function," confirmed directly -- a purely local, per-edge rule
-     * (never transitive/reachability-based the way `checkSafetyCallGraph`
-     * is): if `f` is calling `g` while `f` is itself `@pure`, `g` must be
-     * too, full stop, regardless of anything `g` itself does. "Unsafe
-     * code does not get an exemption for this," confirmed directly --
-     * so this is checked unconditionally here, never gated on
-     * `scope.currentSafety` the way `raw`/`call()`/the `@guard` flow-
-     * state discipline all are.
+     * Per-edge rule (not transitive): a @pure caller may only call @pure callees, a @pure(rt) caller only
+     * @pure(rt) ones. Checked even in unsafe code. See docs/TypeChecker.md, "Purity".
      */
     private void requirePureCalleeIfPure(FuncInfo caller, FuncInfo callee, Token at) {
         if (isPureFunc(caller) && !isPureFunc(callee)) {
@@ -4986,17 +3378,8 @@ public class TypeChecker {
     }
 
     /**
-     * Validates every decorator in `decorators` is both a real, reserved
-     * decorator (typo'd or made-up names are rejected, not silently
-     * ignored) and one that's actually allowed in this context
-     * (`allowedNames`) -- and that its own argument shape is correct
-     * ("@call_convention" takes exactly one, "@reads"/"@writes" take one
-     * or more from the fixed all/self/others/globals set, everything
-     * else takes none). "@dont(X)" is the one special case: usable
-     * "anywhere one of its arguments can be used," confirmed directly --
-     * so it's valid in a context exactly when its own single argument
-     * names a decorator that's *itself* valid in that same context,
-     * rather than being its own separately-listed name anywhere.
+     * Checks each decorator is a real one, allowed in this context, with the right argument shape. "@dont(X)" is
+     * valid exactly where X is.
      */
     private void validateDecorators(List<Token.Decorator> decorators, Set<String> allowedNames, String contextDesc) {
         if (decorators == null) {
@@ -5046,10 +3429,7 @@ public class TypeChecker {
                             "'@call_convention' takes a bare name, not a string -- '@call_convention("
                                     + d.args.get(0) + ")', not '@call_convention(\"" + d.args.get(0) + "\")'");
                 }
-                // The accepted-argument set is read live from
-                // compiler.config itself -- never a separately
-                // maintained list that could drift out of sync with it,
-                // confirmed directly.
+                // Accepted names are read live from compiler.config.
                 if (!config.callingConventions.containsKey(d.args.get(0))) {
                     throw new CompilerException("type", d.file, d.line,
                             "'@call_convention(" + d.args.get(0) + ")' is not a calling convention declared in "
@@ -5057,28 +3437,8 @@ public class TypeChecker {
                 }
                 break;
             case "link_name":
-                // "@link_name(realCName)" -- an extern's own escape
-                // hatch for when the real C symbol it needs to link
-                // against can no longer be spelled as an ordinary
-                // Caspien identifier at all (its declared name and its
-                // linked symbol name are otherwise always identical,
-                // confirmed directly: "externs are never mangled --
-                // their bytecode symbol is always the bare declared
-                // name"). Concretely needed the moment "sleep" became a
-                // reserved language keyword: the real C library still
-                // only exports its own "sleep" symbol under that exact
-                // literal spelling, but "extern sleep(...)" can no
-                // longer even parse (the name position now lexes as a
-                // KEYWORD, not a VARREF) -- "extern c_sleep(...)" alone
-                // would link against a symbol named "c_sleep", which
-                // doesn't exist. "@link_name(sleep)" lets the Caspien-
-                // side identifier ("c_sleep") and the real linked symbol
-                // ("sleep") differ, exactly the same way a decorator
-                // argument already tolerates naming a keyword (see
-                // Parser's own "@dont(par)" doc comment) -- a bare word,
-                // not a string, for the identical reason: this is a
-                // second, separate name namespace, immune to whatever
-                // the ordinary keyword table reserves.
+                // "@link_name(realCName)": extern escape hatch for a C symbol that is not a valid Caspien identifier
+                // (e.g. "sleep", now a keyword). A bare word, not a string. See docs/TypeChecker.md, "Decorators".
                 if (d.args.size() != 1) {
                     throw new CompilerException("type", d.file, d.line,
                             "'@link_name' takes exactly one argument, e.g. '@link_name(sleep)'");
@@ -5141,21 +3501,8 @@ public class TypeChecker {
     }
 
     /**
-     * The constructor-specific bookkeeping shared by both places a
-     * constructor's own func token can reach this checker: a plain,
-     * non-generic "impl constructor for ConcreteName(...) self {...}"
-     * arrives as a bare top-level "func" token straight into
-     * `collectFunc`, while a generic "impl<T> constructor for
-     * Concrete<T>(...) self {...}" arrives, once monomorphized by
-     * `GenericsExpander` for one concrete instantiation, as a method
-     * token nested inside an "impl"-shaped wrapper, seen by `collectImpl`
-     * instead. Both cases are, by the time either method calls this,
-     * indistinguishable: `t.constructorConcreteName` already names the
-     * real, concrete struct (either written directly by the user, or
-     * rewritten to the mangled instantiation name by
-     * `GenericsExpander.generateImplInstantiation`), and `info`'s own
-     * name/return-type were already built normally by `buildFuncInfo`
-     * just before this is called.
+     * Constructor bookkeeping shared by collectFunc (plain constructor) and collectImpl (monomorphized generic
+     * constructor).
      */
     private void registerConstructorFuncInfo(Token t, FuncInfo info) {
         if (!structs.containsKey(t.constructorConcreteName)) {
@@ -5186,18 +3533,8 @@ public class TypeChecker {
         info.funcToken = t;
         buildFuncInfo(t, info);
         if (t.isConstructorDecl) {
-            // "impl constructor for ConcreteName(...) self {...}" --
-            // registered as an ordinary FuncInfo overload (see
-            // Parser.gatherConstructorImpl's own doc comment for why:
-            // its name is already the shared, "$"-prefixed synthetic key
-            // every constructor for this struct is registered under, and
-            // its return type is already the concrete struct by value,
-            // both baked in at parse time, before this method ever
-            // sees it) -- only the constructor-specific bookkeeping
-            // below is genuinely new. Shared with collectImpl's own
-            // constructor branch (below), which registers a *generic*
-            // constructor's now-monomorphized method token the exact
-            // same way, via `registerConstructorFuncInfo`.
+            // Constructor: registered as an ordinary overload (name and return type were fixed by
+            // Parser.gatherConstructorImpl); shared with collectImpl via registerConstructorFuncInfo.
             registerConstructorFuncInfo(t, info);
         } else if (BUILTIN_NAMES.contains(info.name)) {
             throw new CompilerException("type", t.file, t.line,
@@ -5227,25 +3564,13 @@ public class TypeChecker {
         overloads.add(info);
     }
 
-    /**
-     * "extern printf(static imut string,...) void" -- collects a
-     * signature-only declaration expected to be satisfied by the final
-     * linked assembly. No body, no type parameters (there's no such
-     * thing as a generic extern -- C has no monomorphization to
-     * target). Registered into its own namespace (`externs`), cross-
-     * checked against `functions` both ways (collectFunc checks this
-     * map; this checks that one) so an extern and an ordinary function
-     * can never silently share a name -- confirmed directly: "no
-     * overloading is a good idea" for externs, and C itself has no
-     * name-mangling to disambiguate a collision even if we allowed one.
-     * Accepts exactly one decorator, "@call_convention" -- "when I
-     * extern a func I should be able to put the calling convention
-     * decorator in the extern statement," confirmed directly; every
-     * other decorator is still rejected (none of this language's other
-     * decorators have any C-linkage meaning).
-     */
+    /** Decorators an extern accepts (no other decorator has C-linkage meaning). */
     private static final Set<String> EXTERN_DECORATORS = new HashSet<>(Arrays.asList("call_convention", "link_name"));
 
+    /**
+     * "extern name(types) ret": signature-only declaration with its own namespace, cross-checked against
+     * `functions` both ways (no overloading). See docs/TypeChecker.md, "Externs and exports".
+     */
     private void collectExtern(Token t) {
         validateDecorators(t.decorators, EXTERN_DECORATORS, "an extern");
         Token nameTok = t.sub.get(0);
@@ -5286,10 +3611,7 @@ public class TypeChecker {
                 ? new TypeInfo(null, "imut", "void")
                 : resolveTypeAnnotation(returnTypeTokens, t, true);
 
-        // Same "a struct/enum/array cannot be returned by value, only by
-        // pointer" rule an ordinary function's return type is held to
-        // (see buildFuncInfo) -- kept consistent rather than carving out
-        // a separate rule for externs.
+        // Same by-pointer-only return rule as ordinary functions.
         if ((structs.containsKey(info.returnType.baseType) || enums.containsKey(info.returnType.baseType)
                 || isArrayType(info.returnType.baseType)) && info.returnType.storage == null) {
             throw new CompilerException("type", t.file, t.line,
@@ -5310,14 +3632,8 @@ public class TypeChecker {
     }
 
     /**
-     * Splits an extern's raw param-list tokens on ',' (reusing the same
-     * splitIntoRawGroups an ordinary func's "name : type" list uses),
-     * but each group here is a *bare type* -- no "name :" prefix at
-     * all, since an extern parameter is never referenced from any
-     * Caspien expression -- except the final group, which may instead
-     * be exactly the '...' placeholder, meaning "and any number of
-     * further arguments, of any type, follow." '...' is rejected
-     * anywhere but the last position.
+     * Splits an extern's params into bare types (no "name :"); a final '...' marks varargs and is rejected
+     * anywhere else.
      */
     private ExternParamParseResult parseExternParamList(List<Token> flat, Token at) {
         List<List<Token>> groups = splitIntoRawGroups(flat);
@@ -5340,13 +3656,7 @@ public class TypeChecker {
         return new ExternParamParseResult(types, hasVarargs);
     }
 
-    /**
-     * "export foo" -- marks an already-declared, unambiguous (no
-     * overloading -- C has none), non-generic (no C equivalent of
-     * monomorphization), plain top-level func (never an impl method --
-     * naturally excluded, since impl methods never appear in
-     * `functions`) for external linkage under its own bare name.
-     */
+    /** "export foo": foo must be a declared, overload-free, non-generic top-level func. */
     private void collectExport(Token t) {
         Token nameTok = t.sub.get(0);
         String name = nameTok.text;
@@ -5407,24 +3717,7 @@ public class TypeChecker {
                 ? new TypeInfo(null, "imut", "void")
                 : resolveTypeAnnotation(returnTypeTokens, t, true);
 
-        // Enum/array return types must be pointers -- confirmed directly:
-        // "I cannot return structs without a storage modifier from a
-        // function," later extended the same way to arrays ("they can be
-        // returned by functions but only as pointers"). This is a
-        // return-type-only restriction for enum: params can still be
-        // plain inline struct/enum values (confirmed directly).
-        //
-        // UPDATE (Return Value Optimization): struct dropped from this
-        // check entirely -- "I now need to support Return Value
-        // Optimization; returning structs on the stack by manipulating a
-        // hidden struct on the stack in the parent frame," confirmed
-        // directly. A plain (no-storage-modifier) struct return type is
-        // now legal: see `isStructByValueReturn`, `checkCall`'s own
-        // "struct RVO call" eligibility check, and
-        // `BytecodeEmitter.emitFuncUnderName`'s hidden leading
-        // "$ret_dest" parameter for the full mechanism. Enum/array are
-        // deliberately left exactly as they were -- this feature was
-        // asked for, and verified, for structs only.
+        // Enum/array returns need a storage modifier (struct returns are legal: RVO, see isStructByValueReturn).
         if ((enums.containsKey(info.returnType.baseType) || isArrayType(info.returnType.baseType))
                 && info.returnType.storage == null) {
             throw new CompilerException("type", t.file, t.line,
@@ -5433,12 +3726,7 @@ public class TypeChecker {
                             + "returned by value, only by pointer (owns/ref/raw/auto/static)");
         }
 
-        // Unlike struct/enum, an array-typed *parameter* also always
-        // requires a storage modifier -- confirmed directly: "they can
-        // be parameters, but only if pointers." A plain inline array
-        // can never be passed by value as a parameter, only referenced
-        // via an explicit pointer (e.g. 'raw'/'auto' on the caller's
-        // side).
+        // Array parameters also need a storage modifier.
         for (int i = 0; i < info.paramTypes.size(); i++) {
             TypeInfo paramType = info.paramTypes.get(i);
             if (isArrayType(paramType.baseType) && paramType.storage == null) {
@@ -5447,38 +3735,11 @@ public class TypeChecker {
                                 + "' is an array without a storage modifier -- arrays can only be "
                                 + "passed as parameters by pointer (owns/ref/raw/auto/static)");
             }
-            // Same rule as arrays, and unconditional in exactly the same
-            // way: passing a struct on the stack, not by pointer, is
-            // illegal in the language, full stop -- confirmed directly,
-            // and it has nothing to do with the struct's size. (An
-            // earlier version of this check only rejected a by-value
-            // struct parameter once its real size exceeded one 8-byte
-            // word, on the theory that a plain inline struct parameter
-            // was otherwise legal by design; that theory was wrong --
-            // the by-value form was never legal at all, at any size --
-            // so the size computation was dropped in favor of the same
-            // unconditional shape as the array-parameter check just
-            // above.) Every real struct is always at least 16 bytes
-            // (its own hidden classId field alone is a full 8-byte word,
-            // before counting any declared members -- see this file's
-            // own doc comment on `computeSizeOf` for why that method
-            // itself excludes it), so a size-based reading of the rule
-            // and an unconditional one happen to reject exactly the same
-            // programs in practice; the unconditional form is the
-            // correct one to encode; see `struct_arg_gt16_probe.caspien`
-            // / `struct_arg_16byte_probe.caspien` for the confirmed
-            // runtime corruption (wild-pointer write, not assumed) this
-            // also happens to prevent, and this project's CLAUDE.md for
-            // the full account.
+            // A by-value struct parameter is illegal at any size. See docs/TypeChecker.md, "Function signature rules".
             StructInfo paramStructInfo = structs.get(paramType.baseType);
             if (paramStructInfo != null && paramType.storage == null) {
                 if (t.fromGenericInstance) {
-                    // A method/constructor of a monomorphized generic impl
-                    // (`impl<T> DynamicArray<T>`) whose by-value `T`
-                    // parameter became a struct: the rule is NOT relaxed,
-                    // the method is simply unavailable for this T. Callers
-                    // (collectImpl) drop it and remember why; it is an
-                    // error only if somebody calls it.
+                    // Monomorphized generic: the method is only unavailable for this T, an error only if called.
                     throw new DeferredSignatureException(t.file, t.line,
                             "parameter '" + info.paramNames.get(i) + "' of '" + info.name
                                     + "' is a plain (by-value) '" + paramType.baseType + "' (the generic "
@@ -5496,15 +3757,7 @@ public class TypeChecker {
         validateGhostTableDecoratorSignatures(t, info);
     }
 
-    /**
-     * "@gt_init, @gt_alive_check, @gt_destruct, @gt_register... they
-     * don't need to do anything, they are for the bytecode to
-     * assembler to work with," confirmed directly -- these tag which
-     * user-written functions the eventual bytecode-to-assembler stage
-     * should call for each ghost-table operation; nothing here
-     * validates or uses their *behavior* in any way, only that each
-     * one's own signature is exactly the required shape.
-     */
+    /** Checks the fixed signature of each ghost-table / async / sleep hook decorator and registers it (behavior is never validated). See docs/TypeChecker.md, "Decorator signature checks". */
     private void validateGhostTableDecoratorSignatures(Token t, FuncInfo info) {
         if (getDecorator(t.decorators, "gt_init") != null) {
             requireGhostTableSignature(t, info, "gt_init", 0, "void");
@@ -5526,20 +3779,7 @@ public class TypeChecker {
             requireGhostTableSignature(t, info, "gt_moved", 1, "void");
             registerGhostTableFunction(t, info, "gt_moved");
         }
-        // "@par_call"/"@await_call" -- the two ghost-table-decorator-
-        // shaped hooks the "par"/"await" desugaring calls at every call
-        // site (see BytecodeEmitter.emitAsyncCall): mirrors
-        // "@gt_register" etc. exactly (exactly one function may carry
-        // each decorator in the whole compilation unit; a fixed, two-
-        // parameter signature -- a trampoline function pointer and a
-        // handle pointer, both "raw u8" -- validated here, never their
-        // real behavior). Kept in this same method, sharing
-        // `registerGhostTableFunction`'s own uniqueness-enforcement map
-        // (a plain "one function per decorator name" registry, not
-        // specific to the ghost table concept despite its name) rather
-        // than a parallel mechanism, since the shape is identical.
-        // "@gt_ref_id" (address -> 64-bit id, 0 when null/dead) and "@gt_ref_resolve" (id -> address, null when dead):
-        // the nullable `ref` representation hooks (stdlib/gt).
+        // @gt_ref_id / @gt_ref_resolve: nullable-ref hooks. @par_call / @await_call: async glue; all share the one-function-per-decorator map.
         if (getDecorator(t.decorators, "gt_ref_id") != null) {
             requireGtRefSignature(t, info, "gt_ref_id", true);
             registerGhostTableFunction(t, info, "gt_ref_id");
@@ -5556,40 +3796,14 @@ public class TypeChecker {
             requireAsyncGlueSignature(t, info, "await_call");
             registerGhostTableFunction(t, info, "await_call");
         }
-        // "@sleep" -- the hook the "sleep(...)" keyword's call sites
-        // resolve to (see checkSleepCall): mirrors "@par_call"/
-        // "@await_call" exactly (exactly one function may carry it in
-        // the whole compilation unit, shares the identical
-        // `registerGhostTableFunction` uniqueness-enforcement map, and
-        // has a fixed required signature validated here, never its real
-        // behavior) -- except its call sites resolve to it dynamically
-        // by real mangled name (`checkSleepCall` reads
-        // `getGhostTableFunction("sleep").mangledName` directly, the
-        // same way "@par_call"/"@await_call" already do), never through
-        // a hardcoded literal the way the four original ghost-table
-        // opcodes (`GT_INIT`/etc.) do -- so this decorator needs no
-        // `forceGhostTableFunctionNames`-style name-forcing at all; the
-        // class of bug that fix addressed simply doesn't apply here.
+        // @sleep: call sites resolve it by mangled name (checkSleepCall), so no name forcing is needed.
         if (getDecorator(t.decorators, "sleep") != null) {
             requireSleepSignature(t, info);
             registerGhostTableFunction(t, info, "sleep");
         }
     }
 
-    /**
-     * "Have it take the same arguments as the function in C," confirmed
-     * directly -- the real POSIX "unsigned int sleep(unsigned int)",
-     * approximated here (matching this compiler's own pre-existing
-     * "extern sleep(mut u64) mut u64" declaration, now renamed
-     * "c_sleep" since "sleep" itself became a reserved keyword) as
-     * exactly one plain "u64" parameter (either mutability -- nothing
-     * about "same arguments as C" requires pinning that down further,
-     * the same leniency `requireGhostTableSignature`'s own "raw u8"
-     * check already allows), returning "u64" (the unslept remainder, C
-     * semantics preserved). A pointer/"raw"/"owns"/etc.-storage "u64"
-     * doesn't satisfy this -- the real C parameter is passed by plain
-     * value, never by address.
-     */
+    /** @sleep takes one plain u64 and returns a plain u64, like C sleep(unsigned int). */
     private void requireSleepSignature(Token t, FuncInfo info) {
         if (info.paramTypes.size() != 1) {
             throw new CompilerException("type", t.file, t.line,
@@ -5609,18 +3823,7 @@ public class TypeChecker {
         }
     }
 
-    /**
-     * "func(fn: raw imut u8, handle: raw mut u8) void" -- the fixed
-     * shape "@par_call"/"@await_call" must have: a trampoline function
-     * pointer (passed as an opaque "raw imut u8" -- this bytecode has
-     * no real function-pointer *value* type distinct from a plain raw
-     * pointer once it's been reduced to a bare address, the same way
-     * "@gt_register"'s own single "raw u8" parameter already carries an
-     * arbitrary pointer without needing to name what it points to) and
-     * a handle pointer (a "raw mut u8" -- the real, concrete
-     * AsyncHandle_<T>/hidden-handle struct pointer, similarly reduced
-     * to a bare address at this boundary), returning void.
-     */
+    /** Fixed shape of @par_call / @await_call. See docs/TypeChecker.md, "Decorator signature checks". */
     private void requireAsyncGlueSignature(Token t, FuncInfo info, String decoratorName) {
         boolean isPar = decoratorName.equals("par_call");
         if (info.paramTypes.size() != (isPar ? 3 : 2)) {
@@ -5657,21 +3860,7 @@ public class TypeChecker {
         }
     }
 
-    /**
-     * "@async" functions may take at most one parameter, and, if
-     * present, it must fit in a single machine register (<=8 bytes) --
-     * confirmed directly, since a call crossing "par"/"await" packs its
-     * one argument into the compiler-synthesized handle's own "value"
-     * field (see getOrCreateAsyncHandleType) for a real OS thread's
-     * entry point (pthread's fixed "void*(void*)" trampoline shape) to
-     * carry across, and there is exactly one machine word available
-     * there -- no argument-marshalling convention for more than that
-     * exists (or is planned) for this boundary. A range is explicitly
-     * excluded even though `sizeof` might suggest otherwise ("no
-     * range, no oversized struct" was the exact instruction) -- a range
-     * is two words, not one, regardless of its own reported byte width
-     * anywhere else in this compiler.
-     */
+    /** @async functions take at most one parameter, and it must fit one machine register (no ranges, no structs). See docs/TypeChecker.md, "Decorator signature checks". */
     private static final Set<String> ASYNC_PARAM_ALLOWED_BASE_TYPES = new HashSet<>(Arrays.asList(
             "u8", "u16", "u32", "u64", "s8", "s16", "s32", "s64", "bool", "char"));
 
@@ -5685,7 +3874,7 @@ public class TypeChecker {
             return;
         }
         TypeInfo paramType = info.paramTypes.get(0);
-        boolean fitsInOneRegister = paramType.storage != null // any pointer/raw type -- always one word
+        boolean fitsInOneRegister = paramType.storage != null
                 || ASYNC_PARAM_ALLOWED_BASE_TYPES.contains(paramType.baseType);
         if (!fitsInOneRegister) {
             throw new CompilerException("type", t.file, t.line,
@@ -5696,40 +3885,9 @@ public class TypeChecker {
     }
 
     /**
-     * The bug: X86Backend's GT_INIT/GT_ALIVE_CHECK/GT_DESTRUCT/GT_REGISTER
-     * opcodes each compile down to a direct call to a hardcoded *literal*
-     * symbol -- "gt_init", "gt_alive_check", "gt_destruct", "gt_register"
-     * -- never to whatever the source actually named the function that
-     * carries the matching decorator (confirmed directly by reading every
-     * `emitCallByName("gt_...")` call site in X86Backend -- none of them
-     * consult a mangled name at all). The real stdlib happens to name
-     * these four functions literally that way, so the mismatch was
-     * invisible until a self-written stub used a different, e.g. camelCase
-     * name ("myInit") -- the function still type-checked fine (its
-     * signature is all `requireGhostTableSignature` ever verified) and
-     * still got a working `gt_init` global-init call site (BytecodeEmitter
-     * never emits an ordinary CALL to it, just GT_INIT), but the linker
-     * then failed to find a symbol literally called "gt_init" anywhere.
-     *
-     * The fix: force each of the (up to four) ghost-table-decorated
-     * functions' own `mangledName` -- the single field every emission
-     * site (FUNC_START's own label, and any ordinary CALL to the function
-     * by name) already treats as the sole source of truth for its
-     * assembly-level identity -- to be the literal decorator name itself,
-     * regardless of whatever the user actually wrote in source. Run once,
-     * here, right after every function in the whole compilation unit
-     * (every import already flattened in) is collected, rather than
-     * inline in `registerGhostTableFunction` -- a function literally
-     * named e.g. "gt_init" might not have been collected yet at the
-     * moment any particular `@gt_init`-decorated function is registered,
-     * and the collision check just below needs the complete, final
-     * picture to be reliable.
-     *
-     * `par_call`/`await_call` are deliberately excluded: unlike the
-     * original four, their own call sites (BytecodeEmitter.emitAsyncCall)
-     * already call `glueInfo.mangledName` directly rather than a
-     * hardcoded literal, so they were never affected by this bug and
-     * don't need (or want) their name forced.
+     * Forces each gt_* decorated function's mangledName to the literal decorator name, because X86Backend calls those
+     * symbols by literal name. Runs after all functions are collected so the collision check is complete.
+     * See docs/TypeChecker.md, "Decorator signature checks".
      */
     private void forceGhostTableFunctionNames() {
         for (String decoratorName : Arrays.asList("gt_init", "gt_alive_check", "gt_destruct", "gt_register", "gt_moved", "gt_ref_id", "gt_ref_resolve")) {
@@ -5752,7 +3910,7 @@ public class TypeChecker {
         }
     }
 
-    /** "There can only be one for each of these decorated functions" -- a second function carrying the same ghost-table decorator anywhere in the compilation unit (including across separate imported files, since every file's declarations flow through this same, single TypeChecker instance) is a hard error. */
+    /** At most one function per ghost-table decorator in the whole compilation unit (imports included). */
     private void registerGhostTableFunction(Token t, FuncInfo info, String decoratorName) {
         FuncInfo existing = ghostTableFunctions.get(decoratorName);
         if (existing != null && existing != info) {
@@ -5763,7 +3921,7 @@ public class TypeChecker {
         ghostTableFunctions.put(decoratorName, info);
     }
 
-    /** expectedParamCount is always 0 ("gt_init take no arguments") or 1 (the others, "one argument a raw u8") -- never validates a param's own mutability, since none was specified ("a raw u8" -- either mut or imut satisfies this). */
+    /** Parameter count is 0 (gt_init) or 1 (a `raw u8`, either mutability). */
     private void requireGhostTableSignature(Token t, FuncInfo info, String decoratorName, int expectedParamCount,
             String expectedReturnBaseType) {
         if (info.paramTypes.size() != expectedParamCount) {
@@ -5815,11 +3973,7 @@ public class TypeChecker {
             if (!pa.baseType.equals(pb.baseType)) {
                 return false;
             }
-            // A param aliased differently is a nominally distinct
-            // overload, not a duplicate -- "func f(x:u8)" and
-            // "func f(x:byte)" may both exist, even though they're
-            // structurally identical underneath, since a caller needs an
-            // explicit cast to move between them either way.
+            // Differently aliased params are nominally distinct overloads.
             if (!java.util.Objects.equals(pa.aliasName, pb.aliasName)) {
                 return false;
             }
@@ -5843,22 +3997,17 @@ public class TypeChecker {
     private static class NameType {
         final String name;
         final TypeInfo type;
-        /** "swap flag: atomic mut MutexState" -- only ever true for a struct member (parseNameTypeGroup, never parseParamList's own function-parameter use of this same machinery). */
+        /** True only for a struct member declared with `swap`. */
         final boolean isSwap;
         NameType(String name, TypeInfo type, boolean isSwap) { this.name = name; this.type = type; this.isSwap = isSwap; }
     }
 
-    /**
-     * Splits a flat token list on ',' and/or stray TERMINATOR tokens (the
-     * latter can appear inside a '(' param list written across multiple
-     * lines, since '(' contents are never line-split earlier in the
-     * pipeline the way '{' blocks are) into "name : type..." groups.
-     */
+    /** Splits a flat token list on ',' / stray TERMINATORs into "name : type" groups (param lists may span lines). */
     private List<NameType> parseParamList(List<Token> flat) {
         return parseNameTypeGroupsFrom(flat, false);
     }
 
-    /** Struct members only -- the one place `swap` (a struct-member-only modifier keyword) is ever recognized. */
+    /** Struct members only: the one place `swap` is recognized. */
     private List<NameType> parseNameTypeGroup(List<Token> flat) {
         return parseNameTypeGroupsFrom(flat, true);
     }
@@ -5871,17 +4020,7 @@ public class TypeChecker {
         return result;
     }
 
-    /**
-     * Splits a flat token list on ',' and/or stray TERMINATOR tokens
-     * into raw "name : type..." groups, *without* resolving each
-     * group's type -- used both by parseNameTypeGroupsFrom (which
-     * immediately resolves each group via resolveTypeAnnotation) and by
-     * interface method signature validation (which can't resolve
-     * "self" as a type yet, since it isn't a concrete type at
-     * interface-declaration time -- it just needs to look at the raw
-     * tokens to check whether 'self' is present and whether a storage
-     * modifier accompanies it).
-     */
+    /** Splits into raw "name : type..." groups without resolving types (interface signature checks need the raw tokens, since `self` is not a type yet). */
     private List<List<Token>> splitIntoRawGroups(List<Token> flat) {
         List<List<Token>> result = new ArrayList<>();
         List<Token> current = new ArrayList<>();
@@ -5908,12 +4047,7 @@ public class TypeChecker {
         Token swapTok = null;
         if (allowSwap && !group.isEmpty() && group.get(0).type == TokenType.OPERATOR
                 && group.get(0).text.equals("swap")) {
-            // "swap flag: atomic mut MutexState" -- 'swap' is always
-            // lexed as an OPERATOR (the infix atomic read-modify-write
-            // operator), never a KEYWORD, so it can never collide with
-            // an ordinary struct-member declaration's own leading
-            // VARREF -- checked and stripped here, before the ordinary
-            // "name : type" shape check below even runs.
+            // `swap` always lexes as an OPERATOR, so it cannot collide with a member name.
             isSwap = true;
             swapTok = group.get(0);
             group = group.subList(1, group.size());
@@ -5931,17 +4065,7 @@ public class TypeChecker {
         return new NameType(name, type, isSwap);
     }
 
-    /**
-     * "swap flag: atomic mut MutexState" -- a 'swap'-tagged struct
-     * member's own type must begin with the 'atomic' keyword (a new
-     * type-annotation grammar position, deliberately scoped to only
-     * this one context rather than folded into the generic
-     * resolveTypeAnnotationRaw dispatch every other type annotation
-     * flows through -- 'atomic' stays a hard rejection everywhere else,
-     * exactly as it already was before this feature). Once stripped,
-     * the remainder resolves as an entirely ordinary type annotation,
-     * with 'atomic' applied afterward by hand via TypeInfo.withAtomic.
-     */
+    /** A `swap` member's type must start with `atomic` (accepted only here), be concretely mut and carry no storage. See docs/TypeChecker.md, "Name:type groups and swap members". */
     private TypeInfo resolveSwapMemberType(List<Token> typeTokens, Token at) {
         if (typeTokens.isEmpty() || typeTokens.get(0).type != TokenType.KEYWORD
                 || !typeTokens.get(0).text.equals("atomic")) {
@@ -5971,50 +4095,17 @@ public class TypeChecker {
         return sb.toString().trim();
     }
 
-    /** Resolves a "mut/imut owns/ref/raw/auto/static BASENAME" annotation into a TypeInfo. */
     /**
-     * Resolves a raw type-annotation token span into a final `TypeInfo`.
-     * Alias-aware: if the span's base-type name is a known "type" alias,
-     * its raw declaration tokens are recursively spliced in at that
-     * exact position -- literally "as if what was written in the type
-     * statement was just put in there" (confirmed directly), chained
-     * through any further aliases the same way, with cycle detection --
-     * *before* the actual parsing below ever runs. That parsing itself
-     * (`resolveTypeAnnotationRaw`) is completely unmodified: every
-     * existing validation it does (duplicate mutability/storage
-     * modifier, pointer-required check, array suffixes) fires exactly
-     * the same way whether the tokens came from the usage site, a
-     * spliced-in alias, or a mix of both -- which is also exactly how
-     * "if what that generates is then an incomplete type, it's an
-     * incomplete type error" (confirmed directly) falls out for free,
-     * with no separate validation of its own needed here. The one thing
-     * layered on top afterward: the *outermost* alias name encountered
-     * (if any) is preserved as `TypeInfo.aliasName`, a purely nominal tag
-     * used only by exact-match checks (typesCompatible, sameSignature) --
-     * every structural use of the result (arithmetic, member lookup,
-     * canonical()/bytecode emission) reads `baseType` directly, which is
-     * always the real, fully-expanded representation, so it's completely
-     * unaffected by this tag either way.
+     * Resolves a type annotation, splicing in `type` aliases first (textual substitution, cycle-checked); the outermost
+     * alias name is kept as TypeInfo.aliasName (nominal tag only). See docs/TypeChecker.md, "Type annotation resolution".
      */
     private TypeInfo resolveTypeAnnotation(List<Token> typeTokens, Token at) {
         return resolveTypeAnnotation(typeTokens, at, false);
     }
 
     /**
-     * "I would also like to relax the requirement of mutability on
-     * return types," confirmed directly -- `allowIndeterminateMutability`
-     * true only at the three real call sites where a *function's own*
-     * return type (never a parameter, struct member, local, or a
-     * function-pointer type's own nested return type within some other
-     * annotation) is resolved: an ordinary func/impl method
-     * (`buildFuncInfo`), an `extern` (`parseExternDecl`), and an
-     * interface method's own declared signature (confirmed directly:
-     * "everywhere... including interface func signatures"). Every
-     * recursive call inside `resolveTypeAnnotationRaw` itself (a
-     * function-pointer type's own nested param/return types, a
-     * recursive 'raw' pointee) calls the raw method directly with
-     * `false`, never threading this flag down into them -- those are
-     * never "the" return type this relaxation is about.
+     * `allowIndeterminateMutability` is true only when resolving a function's own return type (func/impl method, extern,
+     * interface method signature); nested resolutions always pass false. See docs/TypeChecker.md, "Type annotation resolution".
      */
     private TypeInfo resolveTypeAnnotation(List<Token> typeTokens, Token at, boolean allowIndeterminateMutability) {
         String[] aliasNameHolder = new String[1];
@@ -6026,19 +4117,7 @@ public class TypeChecker {
         return new TypeInfo(resolved.storage, resolved.mutability, resolved.baseType, aliasNameHolder[0]);
     }
 
-    /**
-     * Recursively splices any alias-name base-type token in `tokens` with
-     * that alias's own raw declaration tokens, exactly in place -- true
-     * textual substitution, so any duplicate-modifier conflict between
-     * the usage site and the alias's own declaration (or between nested
-     * levels of a chain) is naturally caught later by
-     * `resolveTypeAnnotationRaw`'s ordinary parsing, not by anything
-     * special here. Only the *first* VARREF encountered is ever treated
-     * as the base-type position (matching `resolveTypeAnnotationRaw`'s
-     * own "one base type per span" rule) -- everything at or after that
-     * point that isn't itself an alias-splice is passed through
-     * unchanged, including array-length suffixes.
-     */
+    /** Splices alias base types in place; only the first VARREF counts as the base type, the rest (array suffixes etc.) passes through. */
     private List<Token> expandAliases(List<Token> tokens, Set<String> expanding, String[] aliasNameHolder, Token at) {
         List<Token> result = new ArrayList<>();
         boolean sawBaseType = false;
@@ -6064,19 +4143,7 @@ public class TypeChecker {
         return result;
     }
 
-    /**
-     * "structs... interfaces... these are things that can be decorated
-     * @pub with everything else being private by default... Not
-     * accessible outside the file its declared in," confirmed directly
-     * -- a struct/interface name written in a type annotation is
-     * exactly as much a "reference" as calling a func or reading a
-     * global is. Silently does nothing for any other name (a
-     * primitive, an enum, a generic type parameter, or anything not
-     * yet resolvable to a real struct/interface at this point) --
-     * enums were never listed among the decoratable things at all, and
-     * a bare type-parameter letter like "T" would never collide with a
-     * real struct/interface name in the first place.
-     */
+    /** A struct/interface named in a type annotation must be @pub or declared in the same file; other names are ignored. */
     private void checkTypeNameVisibility(String baseType, Token at) {
         StructInfo si = structs.get(baseType);
         if (si != null) {
@@ -6095,18 +4162,7 @@ public class TypeChecker {
         }
     }
 
-    /**
-     * "const owns some imut T... constancy -> storage -> presence ->
-     * mutability -> base type," confirmed directly. `const` itself is
-     * already, structurally, always first (stripped before
-     * `resolveTypeAnnotationRaw`'s own loop even starts), so this only
-     * ever needs to order storage(1)/presence(2)/mutability(3) against
-     * whichever of them, if any, already appeared -- "some types wont
-     * have a presence or constancy modifier, but what they do have
-     * should still be in the correct order," confirmed directly, is
-     * exactly why this compares ranks rather than requiring all three
-     * to be present at all.
-     */
+    /** Modifiers must come in the order `const`, storage, `some`, mutability, base type; compares ranks of those present. */
     private void requireModifierOrder(int seenRank, int thisRank, String thisKind, Token at) {
         if (thisRank < seenRank) {
             throw new CompilerException("type", at.file, at.line,
@@ -6122,16 +4178,7 @@ public class TypeChecker {
 
     private TypeInfo resolveTypeAnnotationRaw(List<Token> typeTokens, Token at,
             boolean allowIndeterminateMutability) {
-        // "const is always the leftmost thing," confirmed directly --
-        // for a parameter/struct-member's own type annotation (never a
-        // "let"'s own, which is Token.isConst, an entirely separate,
-        // earlier parse-time flag). Stripped here, unconditionally,
-        // before the ordinary modifier-walking loop below even starts,
-        // rather than folded into that loop as one more modifier among
-        // mut/imut/some/storage -- those can appear in any order
-        // relative to each other, but 'const' is strictly positional,
-        // so a dedicated check is clearer than threading a "have we
-        // seen a non-const token yet" condition through the loop.
+        // `const` must be leftmost; stripped before the modifier loop (a let's const is Token.isConst, set earlier).
         boolean isConst = false;
         if (!typeTokens.isEmpty() && typeTokens.get(0).type == TokenType.KEYWORD
                 && typeTokens.get(0).text.equals("const")) {
@@ -6141,16 +4188,11 @@ public class TypeChecker {
         String mutability = null;
         String storage = null;
         boolean isSome = false;
-        int modifierRank = 0; // "constancy -> storage -> presence -> mutability -> base type," confirmed directly -- 'const' is already handled above, structurally first by construction; this tracks storage(1)/some(2)/mutability(3) against each other. "Some types wont have a presence or constancy modifier, but what they do have should still be in the correct order," confirmed directly -- so this only ever compares ranks of modifiers actually present, never requires all three.
+        // modifierRank: storage 1, some 2, mutability 3 (const is handled above); only modifiers present are compared.
+        int modifierRank = 0;
         java.util.TreeSet<String> floatStates = null;
         String baseType = null;
-        // The actual token `baseType` was read from, kept alongside the
-        // plain string specifically so the later privacy check
-        // (checkTypeNameVisibility) can be anchored to *this* token's own
-        // `.file`, not the generic `at` anchor (typically a parameter/
-        // member name token) -- see checkTypeNameVisibility's own call
-        // site below for why this distinction is load-bearing for a
-        // monomorphized generic function's own type-argument reference.
+        // Token the base type came from: the visibility check anchors to its file, not `at` (matters for monomorphized generics).
         Token baseTypeTok = null;
         StringBuilder arraySuffix = new StringBuilder();
         boolean baseIsIncompleteRange = false;
@@ -6165,12 +4207,7 @@ public class TypeChecker {
         for (int i = 0; i < typeTokens.size(); i++) {
             Token t = typeTokens.get(i);
             if (t.type == TokenType.OPERATOR && t.text.equals("@")) {
-                // "static @pure func(u64,u64) void" -- confirmed
-                // directly. Decorators normally attach to a whole
-                // preceding statement line (stripDecoratorsDeep); this
-                // is a genuinely different situation -- "@name" written
-                // inline, mid-annotation -- so it's recognized directly
-                // here instead.
+                // Inline `@name` inside a function-pointer annotation (normal decorators attach to a statement line).
                 if (i + 1 >= typeTokens.size() || typeTokens.get(i + 1).type != TokenType.VARREF) {
                     throw new CompilerException("type", t.file, t.line,
                             "'@' must be followed by a decorator name");
@@ -6181,12 +4218,7 @@ public class TypeChecker {
                 }
                 funcPtrDecorators.add(decoratorName);
                 i++; // consumed the decorator name token too
-                // Optional "(args)" -- "@call_convention is part of the
-                // signature, used for all calls," confirmed directly,
-                // so it's the one function-pointer decorator that
-                // actually needs to carry a value through to here;
-                // every other decorator in this position stays bare-
-                // name-only, exactly as before.
+                // Optional "(args)": only @call_convention carries a value.
                 if (i + 1 < typeTokens.size() && typeTokens.get(i + 1).type == TokenType.DELINEATOR
                         && typeTokens.get(i + 1).text.equals("(")) {
                     Token parenTok = typeTokens.get(i + 1);
@@ -6196,11 +4228,7 @@ public class TypeChecker {
                     }
                 }
             } else if (t.type == TokenType.KEYWORD && t.text.equals("func") && baseType == null) {
-                // "func(ParamType1,ParamType2,...) ReturnType" --
-                // confirmed directly. The return type is whatever
-                // tokens remain after the parenthesized parameter list
-                // -- there's nothing else this annotation could contain
-                // after it, so it's consumed all the way to the end.
+                // "func(P1,P2,...) R": the return type is everything after the parameter list.
                 if (i + 1 >= typeTokens.size() || typeTokens.get(i + 1).type != TokenType.DELINEATOR
                         || !typeTokens.get(i + 1).text.equals("(")) {
                     throw new CompilerException("type", t.file, t.line,
@@ -6230,14 +4258,7 @@ public class TypeChecker {
                     modifierRank = 3;
                     mutability = t.text;
                 } else if (t.text.equals("some")) {
-                    // "some can be used on any owns,ref,raw or static,"
-                    // confirmed directly -- not a storage itself, so
-                    // kept as its own flag rather than folded into
-                    // `storage`. "constancy -> storage -> presence ->
-                    // mutability -> base type," confirmed directly --
-                    // 'some' is rank 2, checked against whatever's
-                    // already been seen the same way every other
-                    // modifier here is.
+                    // `some` is a presence flag, not a storage; rank 2.
                     if (isSome) {
                         throw new CompilerException("type", t.file, t.line,
                                 "duplicate 'some' modifier in type annotation");
@@ -6248,17 +4269,7 @@ public class TypeChecker {
                 } else {
                     if (storage != null) {
                         if (storage.equals("raw") && t.text.equals("raw")) {
-                            // "go with option a please" -- real,
-                            // recursive 'raw' pointer support,
-                            // confirmed directly. Everything from this
-                            // second "raw" onward is itself a complete,
-                            // nested type annotation ("raw mut char"
-                            // inside "raw mut raw mut char") -- resolved
-                            // the exact same way "func(...)"'s own
-                            // return-type span, just above, already
-                            // recurses into this same method on a
-                            // sub-span of tokens, rather than a special,
-                            // parallel parsing path of its own.
+                            // A second `raw` starts a nested annotation ("raw mut raw mut char"), resolved recursively.
                             List<Token> pointeeSpan = new ArrayList<>(typeTokens.subList(i, typeTokens.size()));
                             rawPointeeType = resolveTypeAnnotationRaw(pointeeSpan, at);
                             baseType = rawPointeeType.canonical();
@@ -6272,30 +4283,14 @@ public class TypeChecker {
                     modifierRank = 1;
                     storage = t.text;
                     if (storage.equals("owns") || storage.equals("ref")) {
-                        // "if I have any owns, ref, dyn or new," --
-                        // confirmed directly this is a syntactic-
-                        // presence question, so every type annotation
-                        // that ever writes 'owns'/'ref' counts, not
-                        // only ones actually reached by a real call.
+                        // Any annotation that writes owns/ref counts (syntactic presence).
                         usesOwnsRefDynNew = true;
                     }
                 }
             } else if (t.type == TokenType.VARREF && baseType == null && i + 1 < typeTokens.size()
                     && isFloatStateName(t.text)) {
-                // "a new modifier, just for f32 types -- the state
-                // modifier... unlike other modifiers this one can be
-                // chained with |," confirmed directly. Not a lexer
-                // keyword -- "finite"/"infinite"/"nan" stay ordinary
-                // identifiers, recognized only contextually here
-                // (matching "default"'s own contextual recognition in
-                // an enum-match case, rather than reserving three more
-                // words globally the way an actual modifier like "some"
-                // needed to be). Disambiguated from an ordinary type
-                // that happens to be *named* "finite" by the presence of
-                // at least one more token after it -- if this VARREF
-                // were the very last token in the whole annotation, it
-                // must be the base type itself, not a state modifier
-                // (the fallback VARREF case just below handles that).
+                // Float-state modifier (finite|infinite|nan, chainable with '|'): contextual identifiers, not keywords.
+                // A VARREF that is the last token is the base type instead.
                 if (floatStates != null) {
                     throw new CompilerException("type", t.file, t.line,
                             "duplicate float-state modifier in type annotation");
@@ -6320,15 +4315,7 @@ public class TypeChecker {
             } else if (t.type == TokenType.KEYWORD && t.text.equals("unsafe") && baseType == null
                     && i + 1 < typeTokens.size() && typeTokens.get(i + 1).type == TokenType.VARREF
                     && typeTokens.get(i + 1).text.equals("dynarray")) {
-                // "unsafe dynarray(T)" -- the type-annotation spelling
-                // for the raw, length-less dynarray variant, confirmed
-                // directly as the chosen spelling (reusing the existing
-                // 'unsafe' keyword as a prefix modifier on the existing
-                // 'dynarray(T)' annotation, rather than a distinct
-                // 'unsafe_dynarray' type name). Same "no bare/incomplete
-                // form" restriction the safe variant already has --
-                // requires the full, spelled-out 'unsafe dynarray(T)',
-                // never just 'unsafe dynarray' alone.
+                // "unsafe dynarray(T)": the element type must be spelled out.
                 Token dynTok = typeTokens.get(i + 1);
                 Token parenTok = (i + 2 < typeTokens.size()) ? typeTokens.get(i + 2) : null;
                 if (parenTok == null || parenTok.type != TokenType.DELINEATOR || !parenTok.text.equals("(")) {
@@ -6346,16 +4333,7 @@ public class TypeChecker {
                 baseType = "unsafe_dynarray(" + TypeInfo.dynArrayElementText(unsafeDynArrayElementType) + ")";
                 i += 2; // consumed 'dynarray' and the '(' token's whole span as one unit
             } else if (t.type == TokenType.VARREF && t.text.equals("dynarray") && baseType == null) {
-                // "owns mut dynarray(u64)" -- writing out by hand the
-                // exact same type "dyn([...])" already infers, needed
-                // wherever a dynarray has to appear in an explicit
-                // annotation position (a struct member, a function
-                // parameter/return type) rather than being inferred
-                // from a "dyn([...])" call's own result. Always a full,
-                // complete type -- unlike range there's no "bare
-                // incomplete dynarray" form at all (a dynarray's
-                // element type is never erased/opaque the way a bare
-                // range pointer's shape can be).
+                // "dynarray(T)": always complete, no bare form.
                 Token next = (i + 1 < typeTokens.size()) ? typeTokens.get(i + 1) : null;
                 if (next == null || next.type != TokenType.DELINEATOR || !next.text.equals("(")) {
                     throw new CompilerException("type", t.file, t.line,
@@ -6372,36 +4350,18 @@ public class TypeChecker {
                 baseType = "dynarray(" + TypeInfo.dynArrayElementText(dynArrayElementType) + ")";
                 i++; // consumed the '(' token's whole span as one unit
             } else if (t.type == TokenType.VARREF && t.text.equals("slice") && baseType == null) {
-                // 'slice' has been removed from the language entirely --
-                // it had a chronic, unfixed addressing bug (its own
-                // 'storage' field never actually resolved to a real
-                // address in the optimizer) and a broken write path, so
-                // rather than let it parse and fail confusingly later,
-                // it's rejected right here, at the type-annotation
-                // level, with a clear, dedicated message -- the same
-                // whether it's written bare ('slice') or complete
-                // ('slice(origin,range)').
+                // `slice` was removed from the language; rejected with a dedicated message.
                 throw new CompilerException("type", t.file, t.line,
                         "'slice' is no longer a valid type -- Caspien has removed the slice type; use a "
                                 + "scalar index or a range/pointer pair explicitly");
             } else if (t.type == TokenType.VARREF && t.text.equals("range") && baseType == null) {
                 Token next = (i + 1 < typeTokens.size()) ? typeTokens.get(i + 1) : null;
                 if (next != null && next.type == TokenType.DELINEATOR && next.text.equals("(")) {
-                    // Full, complete type: "range(0,5)" -- confirmed
-                    // directly, a range "takes what it knows at
-                    // construction into its type," reusing the exact
-                    // same bound-descriptor shape (bare literal, or a
-                    // bare identifier) `rangeBoundDescriptor` already
-                    // established for expression-position ranges --
-                    // nothing new invented here, just written out by
-                    // hand instead of inferred.
+                    // "range(a,b)": bounds as in rangeBoundDescriptor.
                     baseType = parseRangeAnnotationArgs(next, at);
                     i++; // consumed the '(' token's whole span as one unit
                 } else {
-                    // Bare "range" -- an incomplete type, but legal
-                    // WITHOUT any storage at all, as a genuine by-value
-                    // type: "the bounds are always two U64s, just known
-                    // or not known by the compiler," confirmed directly.
+                    // Bare "range": legal by value without storage (two u64 bounds, unknown at compile time).
                     baseType = t.text;
                     baseIsIncompleteRange = true;
                 }
@@ -6413,12 +4373,7 @@ public class TypeChecker {
                 baseType = t.text;
                 baseTypeTok = t;
             } else if (t.type == TokenType.DELINEATOR && t.text.equals("[")) {
-                // "basetype[length]" -- an array-length annotation. Can
-                // repeat for a multi-dimensional array ("u64[5][10]"),
-                // since each '[' just appends its own "[N]" suffix in
-                // order. Length must be a single integer literal --
-                // there's no syntax for a variable-length array
-                // annotation.
+                // "T[N]": N is one integer literal; repeatable for multi-dimensional arrays.
                 if (baseType == null) {
                     throw new CompilerException("type", t.file, t.line,
                             "array length annotation '[...]' with no base type before it");
@@ -6437,41 +4392,13 @@ public class TypeChecker {
             throw new CompilerException("type", at.file, at.line, "type annotation is missing a base type");
         }
         if (isSome) {
-            // "some can be used on any owns,ref,raw or static,"
-            // confirmed directly -- never a no-storage (plain, inline)
-            // value, which has no null/non-null question to begin with,
-            // and never 'auto' specifically, which is already always
-            // non-null by construction (the address of an existing,
-            // already-live variable) and so has nothing for "some" to
-            // add.
+            // `some` needs owns/ref/raw/static storage ('auto' is already non-null).
             if (storage == null || storage.equals("auto")) {
                 throw new CompilerException("type", at.file, at.line,
                         "'some' requires 'owns'/'ref'/'raw'/'static' storage, got '"
                                 + (storage == null ? "none" : storage) + "'");
             }
-            // NOTE: deliberately no fixed-array-specific "ref some"
-            // restriction here, despite a fixed array's own storage/some
-            // applying to every element by construction (see the "no
-            // separate array-as-a-whole type" comment above `dynarray`'s
-            // own handling). A fixed array is always an inline, C-style,
-            // address-of-first-element layout -- confirmed directly,
-            // `buildFuncInfo` rejects a storage-less array in
-            // return/param position outright, and no code path anywhere
-            // in this method ever produces a TypeInfo meaning "one
-            // pointer to N elements" -- so a fixed array can never be
-            // independently heap-allocated, returned, or copied out as
-            // its own unit; it's always exactly as lifetime-bound as
-            // whatever already contains it (a local, a parameter, or a
-            // struct member/dynarray element, each of which is already
-            // covered by its own dedicated check --
-            // `validateNoRefSomeStructMembers`/`checkNotRefSomeElement`
-            // -- since that member/element's own `storage`/`isSome`
-            // fields get checked directly, independent of whether an
-            // array suffix is present). A bare local/parameter/return
-            // fixed array of 'ref some' elements introduces no new
-            // escape path beyond what a scalar 'ref some' already has in
-            // that same position, so it stays exactly as legal as the
-            // scalar case.
+            // No fixed-array-specific `ref some` restriction here. See docs/TypeChecker.md, "Type annotation resolution".
         }
         if (floatStates != null && !isFloatType(baseType)) {
             throw new CompilerException("type", at.file, at.line,
@@ -6479,27 +4406,9 @@ public class TypeChecker {
                             + baseType + "'");
         }
         if (baseIsIncompleteRange) {
-            // A bare, incomplete 'range' is legal with no storage
-            // modifier at all: "a range folds information into its type
-            // as its available, but they're still fungible, because the
-            // bounds are always two U64s, just known or not known by the
-            // compiler at that particular point," confirmed directly. A
-            // range's in-memory representation never depends on whether
-            // its bounds are compile-time literals -- it's always
-            // exactly two u64 fields either way. So a bare 'range' is a
-            // genuine plain-by-value type whose bounds are simply not
-            // known to the compiler at this point (only known at
-            // runtime), nothing further to check here. (This used to
-            // also gate a bare, incomplete 'slice' -- which, unlike
-            // range, could only ever exist behind indirection -- but
-            // slice has been removed from the language entirely and is
-            // now rejected outright wherever it's written, above.)
+            // Bare `range` is a plain by-value type: nothing to check.
         } else if (funcPtrParams != null) {
-            // "storage type must be static," confirmed directly -- a
-            // function pointer, unlike a struct/enum, is never a valid
-            // inline value; there's no "the member's own storage IS the
-            // layout" option the way a plain struct has, since a
-            // function isn't a value with fields to lay out at all.
+            // Function-pointer types need 'static' storage.
             if (!"static".equals(storage)) {
                 throw new CompilerException("type", at.file, at.line,
                         "a function-pointer type's storage must be 'static', got '"
@@ -6520,74 +4429,21 @@ public class TypeChecker {
             throw new CompilerException("type", at.file, at.line, "unknown type '" + baseType + "'");
         }
         if (mutability == null && !baseType.equals("void") && !allowIndeterminateMutability) {
-            // "The user never writes indeterminate as a type modifier.
-            // The only actual modifiers are mut and imut, and they are
-            // required in those 3 areas [parameters, return values,
-            // struct members]... and also everywhere else, like in
-            // interface func signatures and so on," confirmed directly,
-            // explicitly including "everywhere" a type annotation is
-            // written, not just those three named cases -- so this is a
-            // hard error now, not a default. "I would also like to
-            // relax the requirement of mutability on return types,"
-            // confirmed directly, is the one, later exception to this --
-            // `allowIndeterminateMutability`, true only for a real
-            // function's own declared return type (see
-            // resolveTypeAnnotation's own doc for the exact three call
-            // sites).
+            // Mutability is mandatory in annotations except on a function's own return type (allowIndeterminateMutability).
             throw new CompilerException("type", at.file, at.line,
                     "type annotations require an explicit 'mut' or 'imut' -- mutability is never "
                             + "inferred or defaulted here");
         }
         if (mutability == null && allowIndeterminateMutability && !baseType.equals("void")) {
-            // "They can be mut,imut or indeterminate (unspecified),"
-            // confirmed directly -- the exact same "indeterminate"
-            // state a bare literal already has before being wrapped in
-            // 'mut'/'imut' ("yes indeterminate is that state," confirmed
-            // directly), not a new, separate concept -- so this reuses
-            // the literal string "indeterminate" every other
-            // indeterminate value already resolves to, rather than
-            // inventing a fourth mutability spelling just for this.
+            // Return types may omit mutability; recorded as "indeterminate".
             mutability = "indeterminate";
         }
         if (mutability == null) {
-            // "void" is the sole exemption -- it never holds a value at
-            // all, so mutability is meaningless for it (a necessary,
-            // derivable consequence: every function signature in this
-            // language uses "void" as a return type, and there is no
-            // sensible "mut void"/"imut void" distinction to require).
-            // Defaults to "imut" specifically (not left null) to match
-            // the canonical() form an *omitted* return type already
-            // produces elsewhere (`new TypeInfo(null, "imut", "void")`),
-            // so both spellings of "no return value" compare equal.
+            // `void` is exempt; "imut" so it equals an omitted return type.
             mutability = "imut";
         }
-        // 'string' is inherently pointer-like (spec: "equivalent to C's
-        // const char*") and always requires a storage modifier. A named
-        // struct/enum type, by contrast, is genuinely EITHER a pointer
-        // (storage given -- a separate allocation elsewhere, this slot
-        // just holds an address) OR an inline value type (no storage --
-        // the member/variable's own storage literally *is* the struct's
-        // members laid out back to back, C-struct style, confirmed
-        // directly). So storage is optional, not required, for
-        // struct/enum base types -- only 'string' has a hard requirement,
-        // and (for a different reason) an interface type does too: an
-        // interface has no fixed layout of its own -- different
-        // conforming concrete types could have wildly different sizes --
-        // so there is no possible "inline" representation for it at all,
-        // only a pointer.
-        // Arrays follow their own, context-dependent rule (optional for
-        // struct members, required for func params/return types) --
-        // enforced by the caller, not here, since this method has no
-        // idea which context it was called from.
-        // Anchored to baseTypeTok (the real base-type token itself), not
-        // the generic `at` anchor (typically a parameter/member name
-        // token, still carrying a monomorphized generic function's own
-        // *template* declaring file) -- see GenericsExpander.substituteParams'
-        // own doc comment for the matching, call-site-file-threading half
-        // of this fix. Falls back to `at` for the rare case baseType was
-        // never actually set from a plain VARREF at all (composite
-        // range/dynarray/func-pointer base types, none of which are
-        // ever struct/interface names checkTypeNameVisibility cares about).
+        // string and interface types require storage; structs/enums may be inline values. Array rules are enforced by the caller.
+        // The visibility check is anchored to baseTypeTok (see above).
         checkTypeNameVisibility(baseType, baseTypeTok != null ? baseTypeTok : at);
         if ((pointerLikeBaseTypes.contains(baseType) || interfaces.containsKey(baseType)) && storage == null) {
             throw new CompilerException("type", at.file, at.line,
@@ -6595,73 +4451,9 @@ public class TypeChecker {
                             + "(owns/ref/raw/auto/static)");
         }
         if (dynArrayElementType != null && arraySuffix.length() == 0) {
-            // The generic 6-arg constructor just below doesn't carry
-            // dynArrayElementType through at all (it's not one of its
-            // parameters) -- without this, an *explicitly annotated*
-            // dynarray type would end up with a baseType string saying
-            // "dynarray(...)" but a null dynArrayElementType field,
-            // silently failing isDynArrayType everywhere downstream.
-            //
-            // A real, separate, found-and-fixed bug alongside this,
-            // found while auditing dynarray codegen support: this
-            // branch must NOT fire when `arraySuffix` is non-empty --
-            // "dynarray(u64)[3]" (an ARRAY *of* dynarrays, a genuinely
-            // different composite type -- see "Dynarrays" in the
-            // language reference) parses `dynArrayElementType` as
-            // non-null too (from parsing its own inner "dynarray(u64)"
-            // segment), but this branch used to fire for it
-            // unconditionally regardless, attaching the *inner*
-            // dynarray's own `dynArrayElementType` to a TypeInfo whose
-            // own real baseType was "dynarray(u64)[3]" (the OUTER array,
-            // not a dynarray at all) -- making `isDynArrayType` return
-            // `true` for a plain fixed array, confirmed directly (a
-            // struct member declared "rows: mut dynarray(mut u64)[2]"
-            // then indexed via "rows[0]" resolved straight to a bare
-            // "mut_u64" instead of a real "owns_mut_dynarray(u64)"
-            // element type -- `checkLookup`'s own dynarray branch was
-            // being taken for the *outer array itself*, never reaching
-            // its real array-element-type fallback at all). Guarding on
-            // `arraySuffix.length() == 0` restricts this branch to a
-            // genuinely bare, un-arrayed "dynarray(T)" annotation --
-            // an arrayed one now falls through to the ordinary, generic
-            // constructor at the bottom of this method instead, the
-            // identical "no type-annotation syntax carries a composite-
-            // identity field through an array wrapper" precedent every
-            // other array-of-composite type annotation already follows.
-            // A real, separate, found-and-fixed bug alongside the two
-            // above, found while making the bytecode representation of
-            // a dynarray carry its full type information (specifically
-            // its element's storage, via `dynArrayElementText`): this
-            // branch used to hand the local `storage` variable straight
-            // through -- null unless the user happened to write "owns"
-            // (or some other storage keyword) directly before this
-            // exact "dynarray(...)" token, which real fixtures do at a
-            // type's own top-level slot (a struct member, say) but
-            // routinely omit at a NESTED dynarray-of-dynarrays element
-            // position (`examples/stdlib/make_safe_args.caspien`'s own
-            // "owns some mut dynarray(imut dynarray(imut char))" writes
-            // "owns" once, outermost, never again for the inner
-            // element). `TypeInfo.dynArray()`/`unsafeDynArray()` (this
-            // same annotation's exact counterpart for a `dyn([...])`-
-            // inferred value) always force "owns" regardless, since a
-            // dynarray is inherently a heap-allocated, owned value with
-            // no other storage it could sensibly have -- so this
-            // asymmetry meant an annotated nested dynarray element and
-            // a real, `dyn([...])`-constructed one disagreed on their
-            // own storage field. Invisible before this fix (nothing
-            // ever read a dynarray element's `.storage`), it surfaced
-            // the moment `dynArrayElementText` started doing exactly
-            // that: `make_safe_args`'s own declared return type
-            // resolved to "...dynarray(dynarray(char))" (element
-            // storage null, from this annotation) while its actual
-            // `return` statement's value resolved to
-            // "...dynarray(owns_dynarray(char))" (element storage
-            // "owns", from the factory) -- a spurious return-type
-            // mismatch on code that was always correct. Forced to
-            // "owns" here too, matching the factories exactly, with an
-            // explicit error (rather than a silent override) if the
-            // user wrote some other, genuinely nonsensical storage
-            // keyword before it.
+            // The generic constructor below drops dynArrayElementType, so build the TypeInfo here.
+            // Only for a bare "dynarray(T)", not "dynarray(T)[3]"; storage is forced to owns.
+            // See docs/TypeChecker.md, "Type annotation resolution".
             if (storage != null && !storage.equals("owns")) {
                 throw new CompilerException("type", at.file, at.line,
                         "a dynarray is always 'owns' storage -- it's inherently a heap-allocated, "
@@ -6673,13 +4465,7 @@ public class TypeChecker {
                             .withSome(isSome).withFloatStates(floatStates).withConst(isConst);
         }
         if (unsafeDynArrayElementType != null) {
-            // Same reasoning as dynArrayElementType just above, for the
-            // "unsafe dynarray(T)" sibling: without this, an explicitly
-            // annotated unsafe dynarray type would end up with a
-            // baseType string saying "unsafe_dynarray(...)" but a null
-            // unsafeDynArrayElementType field, silently failing
-            // isUnsafeDynArrayType everywhere downstream. Storage forced
-            // to "owns" for the identical reason just fixed above.
+            // Same for "unsafe dynarray(T)": keep the element type, force owns.
             if (storage != null && !storage.equals("owns")) {
                 throw new CompilerException("type", at.file, at.line,
                         "an unsafe dynarray is always 'owns' storage -- it's inherently a "
@@ -6691,10 +4477,7 @@ public class TypeChecker {
                     isSome, floatStates, isConst, false);
         }
         if (rawPointeeType != null) {
-            // Same reasoning as dynArrayElementType just above, for the
-            // exact same reason: without this, an explicitly-nested
-            // "raw" pointer type would end up with the right baseType
-            // string but a null rawPointeeType field.
+            // Explicit nested raw: keep rawPointeeType.
             return new TypeInfo(storage, mutability, baseType + arraySuffix, null,
                     null, null, null, null, null, rawPointeeType)
                             .withSome(isSome).withFloatStates(floatStates).withConst(isConst);
@@ -6703,21 +4486,7 @@ public class TypeChecker {
                 .withSome(isSome).withFloatStates(floatStates).withConst(isConst);
     }
 
-    /**
-     * "ref some" is rejected here for a dynarray/unsafe-dynarray element
-     * type, narrowly -- called only at the two recursive
-     * `resolveTypeAnnotationRaw` call sites that produce an element
-     * type (never a blanket restriction on 'ref some' itself: a plain
-     * 'ref some T' parameter/local/return is completely untouched,
-     * confirmed by this only ever being called with an already-resolved
-     * element TypeInfo, never from the top-level annotation path). See
-     * the sibling check on the fixed-array-suffix case, just above in
-     * `resolveTypeAnnotationRaw` itself, for the other of the two
-     * contexts this restriction applies to (struct members are the
-     * third -- checked separately, post-hoc, in
-     * `validateNoRefSomeStructMembers`, since a member's own TypeInfo is
-     * never resolved through this element-specific path at all).
-     */
+    /** `ref some` is rejected as a dynarray / unsafe-dynarray element type (struct members: validateNoRefSomeStructMembers). */
     private void checkNotRefSomeElement(TypeInfo elementType, Token at, String contextDesc) {
         if ("ref".equals(elementType.storage) && elementType.isSome) {
             throw new CompilerException("type", at.file, at.line,
@@ -6725,15 +4494,7 @@ public class TypeChecker {
         }
     }
 
-    /**
-     * "static @call_convention(win64) func(...) ..." -- the one
-     * function-pointer-position decorator that carries a real value,
-     * parsed the same way an ordinary "@name(args)" decorator's own
-     * parenthesized argument list already is (Parser.parseDecoratorLine)
-     * -- a bare identifier only ("no string is best," confirmed
-     * directly), exactly one, and it must actually name a calling
-     * convention this compilation's compiler.config declares.
-     */
+    /** Parses `@call_convention(name)` in a function-pointer annotation: one bare name declared in compiler.config. */
     private String parseInlineCallConventionArg(Token parenTok) {
         List<String> args = new ArrayList<>();
         for (Token argTok : parenTok.childs) {
@@ -6769,17 +4530,7 @@ public class TypeChecker {
                 + "," + rangeAnnotationBoundDescriptor(args.get(1)) + ")";
     }
 
-    /**
-     * A range's own bounds, written in a type annotation: a bare
-     * integer literal, or a bare identifier -- confirmed directly, "a
-     * range takes what it knows at construction into its type, it can't
-     * see into variables," the exact same principle
-     * `rangeBoundDescriptor` already applies to an expression-position
-     * range, just with nothing to actually resolve here (there's no
-     * live variable at annotation-parsing time) -- an identifier bound
-     * is assumed 'imut' by default, the same default this language
-     * already applies to every other unspecified mutability.
-     */
+    /** A range bound in a type annotation: an integer literal or a bare identifier (assumed imut). */
     private String rangeAnnotationBoundDescriptor(List<Token> boundTokens) {
         if (boundTokens.size() != 1) {
             throw new CompilerException("type", boundTokens.get(0).file, boundTokens.get(0).line,
@@ -6848,7 +4599,7 @@ public class TypeChecker {
     }
 
     private final List<CallEdge> callEdges = new ArrayList<>();
-    /** One entry per real, fully-validated 'throw' statement anywhere in the whole program (checkThrow, right alongside its own `usesThrow = true`/`func.sawThrow = true`) -- read back once by `validateNoThrowReachableFromGhostTableFunctions`, after every function body (and so every `callEdges` entry) is known. */
+    /** One validated `throw` statement; read by validateNoThrowReachableFromGhostTableFunctions. */
     private static class ThrowSite {
         final FuncInfo func;
         final Token at;
@@ -6858,25 +4609,10 @@ public class TypeChecker {
         }
     }
     private final List<ThrowSite> throwSites = new ArrayList<>();
-    /** Every function that calls "resize" directly anywhere in its own body -- the seed set checkDynArrayForLoopResizeSafety's own reachability walk starts from, the exact same shape reachesUnsafe's own seed (f.safetyTag.equals("unsafe")) already uses. */
+    /** Functions calling `resize` directly: the seed of checkDynArrayForLoopResizeSafety's reachability walk. */
     private final Set<FuncInfo> funcsCallingResizeDirectly = new HashSet<>();
 
-    /**
-     * "Check via a call graph that safe code does not touch unsafe
-     * code, that's the only restriction for now," confirmed directly,
-     * and "its transitive," confirmed directly. Runs once every
-     * function body has been checked (so every call edge has been
-     * recorded): for every call site whose *own* effective safety is
-     * "safe" (from a nested "safe{}" block, or the enclosing function's
-     * own root-level tag if no nested block overrides it), the callee
-     * must not itself be declared "unsafe", and must not be able to
-     * *transitively* reach anything declared "unsafe" through its own
-     * calls (computed via ordinary graph reachability, regardless of
-     * the safety tag on any of *those* intermediate call sites -- only
-     * the originating site's own safety matters for deciding whether to
-     * check at all; reachability itself just asks "does an unsafe
-     * function exist anywhere downstream").
-     */
+    /** A call made in a "safe" context may not reach "unsafe" code, transitively. Runs after all bodies are checked. See docs/TypeChecker.md, "Whole-program call-graph checks". */
     private void checkSafetyCallGraph() {
         Map<FuncInfo, List<FuncInfo>> callees = new HashMap<>();
         for (CallEdge e : callEdges) {
@@ -6896,19 +4632,7 @@ public class TypeChecker {
         }
     }
 
-    /**
-     * "We are outlawing recursion - not any code that could theoretically
-     * be recursive, but isn't provably so... this can't be guaranteed
-     * for uses of call(), so it works on a presumption that call can't
-     * call recursive code," confirmed directly -- 'call()' targets are
-     * runtime function-pointer values, never recorded as a `CallEdge` at
-     * all (only ordinary resolved calls are), so this simply never sees
-     * them; there's nothing extra to build for that presumption to hold.
-     * "Add an exception to that rule for funcs decorated 'recursive',
-     * which can do direct but not indirect recursion," confirmed
-     * directly -- so direct self-edges and indirect cycles are checked
-     * completely separately, with different rules for each.
-     */
+    /** Direct recursion needs @recursive; any indirect cycle is an error. `call()` targets are not CallEdges, so they are never seen. See docs/TypeChecker.md, "Whole-program call-graph checks". */
     private void checkNoRecursion() {
         Map<FuncInfo, List<CallEdge>> outEdges = new HashMap<>();
         for (CallEdge e : callEdges) {
@@ -6952,39 +4676,7 @@ public class TypeChecker {
         onStack.remove(f);
     }
 
-    /**
-     * "The cleanest solution... another solution would be to just not
-     * allow the @gt_ functions to throw," confirmed directly, resolved
-     * in favor of the second: a 'throw' statement is banned anywhere
-     * (transitively) reachable from one of the (up to four) real
-     * '@gt_init'/'@gt_alive_check'/'@gt_destruct'/'@gt_register'
-     * functions -- the exact same reachability
-     * `BytecodeEmitter.gtReachableMangledNames` computes at emission
-     * time for GT-instruction suppression ("this needs to descend the
-     * whole way down"), just computed here, at type-check time,
-     * against 'throw' instead. Deliberately narrower than "no
-     * '@throws' function may be called from there at all": calling one
-     * and catching it locally is still completely fine (a 'try'/'catch'
-     * never lets anything escape past itself) -- only a 'throw'
-     * statement that could actually escape a gt-decorated function's
-     * own call graph is banned, whether written directly in a
-     * reachable function's own body or inside a 'catch' block that's
-     * itself reachable from there. `throw` directly inside one of the
-     * four gt-decorated functions themselves is already a separate,
-     * earlier, more specific error (see checkThrow's own
-     * "'throw' cannot be used inside '@gt_init'..." check, which always
-     * fires first, during that function's own body-check, long before
-     * this whole-program pass ever runs) -- this only ever reports the
-     * "reachable, but not itself one of the four" case.
-     *
-     * Reuses `callEdges` (built at every one of the 5 call-resolution
-     * sites, already known by name to `requireThrowsWrapping`) rather
-     * than building a second call graph of its own -- the identical
-     * "callees" adjacency `checkSafetyCallGraph`/`checkNoRecursion`
-     * already build from the same list, just walked outward from the
-     * gt-decorated functions themselves instead of from an 'unsafe'
-     * edge or a self-edge.
-     */
+    /** No `throw` may be reachable from a gt_* decorated function (a local try/catch is fine). See docs/TypeChecker.md, "Whole-program call-graph checks". */
     private void validateNoThrowReachableFromGhostTableFunctions() {
         List<FuncInfo> gtFuncs = new ArrayList<>();
         for (String decoratorName : Arrays.asList("gt_init", "gt_alive_check", "gt_destruct", "gt_register", "gt_moved", "gt_ref_id", "gt_ref_resolve")) {
@@ -7025,20 +4717,6 @@ public class TypeChecker {
         }
     }
 
-    /**
-     * "ref some" as a struct member's own type is rejected here,
-     * narrowly -- 'ref some' remains completely legal everywhere else
-     * (function parameters/self-receivers, local variables, return
-     * types), confirmed directly. A struct member's TypeInfo is
-     * resolved via `flattenStruct`/`parseNameTypeGroup`, never through
-     * either of the two element-specific paths
-     * `checkNotRefSomeElement` covers (a dynarray's own nested element
-     * type, or a fixed array's in-place suffix) -- so this needs its
-     * own dedicated post-collection pass, the identical shape
-     * `validateNoGuardTypeMisuse`'s own struct-member loop already
-     * uses, run once, here, after every struct has been fully
-     * collected (ordering in the source never matters).
-     */
     /** True when `t` is an `auto`, or an array / dynarray of them (a pointer to a stack slot that cannot outlive its frame). */
     private boolean typeHoldsAuto(TypeInfo t) {
         if (t == null) {
@@ -7108,6 +4786,7 @@ public class TypeChecker {
         }
     }
 
+    /** `ref some` is rejected as a struct member type; members bypass checkNotRefSomeElement, hence this post-collection pass. */
     private void validateNoRefSomeStructMembers() {
         for (StructInfo si : structs.values()) {
             for (Map.Entry<String, TypeInfo> member : si.members.entrySet()) {
@@ -7121,31 +4800,6 @@ public class TypeChecker {
         }
     }
 
-    /**
-     * "I need to forbid recursive structs - struct A{ a:A; }, including
-     * thru pointers - including indirectly," confirmed directly, and
-     * confirmed to be a cycle of any length ("i think it has to be a
-     * cycle of any length, to get the guarantees we want"). Checked
-     * post-monomorphization (confirmed directly, "yeah just do it post
-     * monomorphization") on each concrete struct's own already-
-     * flattened `members` map (structs have no ancestors, so every
-     * member of a struct is declared in it directly). Every
-     * member counts as an edge regardless of storage -- plain (the
-     * request's own example is the plain, no-storage form specifically,
-     * confirmed by testing that it compiles cleanly today, a genuine,
-     * separate pre-existing gap) as much as owns/ref/raw/auto/static.
-     * "The fixed size array doesn't change anything," confirmed
-     * directly -- an array-of-struct member is unwrapped to its own
-     * element type before being treated as an edge, the same as any
-     * other member. Standard DFS cycle detection, mirroring
-     * `checkNoRecursion`'s own `detectIndirectCycle` shape exactly.
-     * Exception (owner's request, 5 Oct): a plain nullable `ref` member is not an edge, so a struct may hold `ref` links to
-     * its own type (lists, trees, graphs); `ref some`, `owns`, `raw`, `auto`, plain and `static` members still are.
-     */
-    /**
-     * Whether the assignment target `a.b.c` / `a.items[i]` lies inside a swap-lock struct: some step of the path reads a member
-     * of a struct that has a `swap` mutex field.
-     */
     private TypeInfo declaredTypeIncludingGlobals(Token node, Scope scope) {
         if (node.type == TokenType.VARREF && scope.lookup(node.text) == null) {
             return globals.get(node.text);
@@ -7158,6 +4812,7 @@ public class TypeChecker {
         return lookupDeclaredTypeStructurally(node, scope);
     }
 
+    /** Whether the assignment target `a.b.c` / `a.items[i]` lies inside a swap-lock struct. */
     private boolean assignsInsideSwapLockStruct(Token target, Scope scope) {
         Token cur = target;
         while (cur != null && cur.type == TokenType.OPERATOR && (".".equals(cur.text) || "LOOKUP".equals(cur.text)) && cur.left != null) {
@@ -7176,9 +4831,8 @@ public class TypeChecker {
     }
 
     /**
-     * An owning value that enters a swap-lock struct must be a fresh allocation: `null`, `new ...`, `dyn(...)` or `clone(...)`, with
-     * no owned variable moved into it. A variable moved in could still have `ref`s taken before the move (ids stay valid), and a
-     * thread using such a ref would reach the data with no lock (a data race in safe code). Use `clone(x)` to copy an existing value in.
+     * A value entering a swap-lock struct must be a fresh allocation (`null`, `new`, `dyn`, `clone`), never a moved variable: an
+     * earlier `ref` would reach the data without the lock. See docs/TypeChecker.md, "Lock struct rules".
      */
     private void requireFreshIntoSwapLock(Token rhs, String verb, String targetText) {
         Token v = rhs;
@@ -7232,12 +4886,7 @@ public class TypeChecker {
         return false;
     }
 
-    /**
-     * A lock protects what the struct holds, not what a reference inside it points to: a `ref` or `auto` handed out through the lock
-     * can be used by two threads at once with nothing between them (a data race in safe code). So no `ref`/`auto` may appear anywhere
-     * inside a `@lock` struct: not as a member, not in a nested struct, not in a fixed or dynamic array of them, not behind an `owns`
-     * member, and not in any struct that implements an interface-typed member's interface. Checked once every struct is flattened (nested structs may be declared after the lock struct).
-     */
+    /** No `ref`/`auto` anywhere inside a `@lock` struct (nested structs, arrays, owns pointees, interface implementers). See docs/TypeChecker.md, "Lock struct rules". */
     private void validateNoPointersInLockStructs() {
         for (Map.Entry<String, StructInfo> entry : structs.entrySet()) {
             StructInfo info = entry.getValue();
@@ -7311,6 +4960,7 @@ public class TypeChecker {
         return null;
     }
 
+    /** Rejects recursive structs (cycle of any length, any member storage), after monomorphization. A plain nullable `ref` member is not an edge. See docs/TypeChecker.md, "Recursive structs". */
     private void validateNoRecursiveStructs() {
         Set<String> visited = new HashSet<>();
         Set<String> onStack = new HashSet<>();
@@ -7387,30 +5037,7 @@ public class TypeChecker {
         return result;
     }
 
-    /**
-     * "We need to be barred from resizing (even indirectly thru
-     * another function) the dynarray in a for loop... conservative is
-     * absolutely fine," confirmed directly -- a real, separate
-     * restriction, checked here rather than at each call site directly
-     * (unlike the direct "resize(...)" case in checkResizeBuiltin
-     * itself), since knowing whether a *called function* eventually
-     * reaches "resize" needs the complete call graph, which isn't
-     * available until every function body has been checked. Runs once
-     * every function body has been checked (so every call edge and
-     * every direct "resize" call has been recorded), exactly the same
-     * timing checkSafetyCallGraph already needs and gets.
-     *
-     * Deliberately conservative, not precise: this never attempts to
-     * prove a resize reached through some other function call targets
-     * a genuinely *different* dynarray than the one being iterated --
-     * that would need real alias analysis this compiler doesn't have.
-     * Any call, from inside such a loop's own body, to a function that
-     * calls "resize" anywhere at all (directly or transitively) is
-     * simply barred outright, exactly the same "does an unsafe
-     * function exist anywhere downstream" shape reachesUnsafe already
-     * uses for a different restriction, just seeded from
-     * funcsCallingResizeDirectly instead of a safety tag.
-     */
+    /** Calling, from a `for i in dynarrayExpr{}` body, any function that may `resize` is barred outright (conservative: no alias analysis). See docs/TypeChecker.md, "Whole-program call-graph checks". */
     private void checkDynArrayForLoopResizeSafety() {
         Map<FuncInfo, List<FuncInfo>> callees = new HashMap<>();
         for (CallEdge e : callEdges) {
@@ -7513,13 +5140,7 @@ public class TypeChecker {
                 ProofKills.implicit(func.paramNames.get(i), pointeeOf(paramType));   // the caller guarantees it is alive at entry
             }
             scope.vars.put(func.paramNames.get(i), func.paramTypes.get(i));
-            // "By the parameter being owns, it guarantees the func will
-            // do this [destruct it]. The only exception is if it is
-            // released from that obligation by the ownership moving,"
-            // confirmed directly -- registered on the function's own
-            // root scope specifically (not any inner block), since the
-            // obligation belongs to the whole function, discharged
-            // wherever it exits.
+            // An owns parameter is owed a destruct unless moved; registered on the root scope (the obligation spans the whole function).
             if ("owns".equals(func.paramTypes.get(i).storage)) {
                 scope.ownsDeclaredHere.add(func.paramNames.get(i));
                 func.ownsLocalTypes.put(func.paramNames.get(i), func.paramTypes.get(i));
@@ -7532,58 +5153,21 @@ public class TypeChecker {
         insideConstructorBodyForStruct = func.isConstructor ? func.constructorConcreteName : null;
         Scope bodyScope = checkLines(func.funcToken.childs, bodyCheckScope, func, false);
         insideConstructorBodyForStruct = null;
-        // The direct mirror of checkThrow's own very first check
-        // ("'throw' requires '@throws'") -- confirmed directly:
-        // "@throws" is required, and required only, on a function
-        // whose own body actually contains a 'throw'. `func.sawThrow`
-        // is only ever set by a real, fully-validated 'throw'
-        // statement (checkThrow, after every one of its own checks --
-        // including 'unsafe', not-'@pure', right-typed message --
-        // already passed), so this can never fire against a function
-        // that merely *could* throw in some informal sense; only
-        // "declared '@throws', body checked in full, not one single
-        // 'throw' survived checking anywhere in it."
+        // `@throws` is required exactly when the body has a validated `throw` (func.sawThrow).
         if (func.isThrows && !func.sawThrow) {
             throw new CompilerException("type", func.funcToken.file, func.funcToken.line,
                     "'" + func.name + "' is decorated '@throws' but its body contains no 'throw' -- "
                             + "remove '@throws' (or add a 'throw')");
         }
-        // "Control flows which don't end in return within a function
-        // returning non void, supposed to be a compiler error,"
-        // confirmed directly -- a real, previously-missing check: a
-        // non-void function whose body could fall off the bottom
-        // (or out of an if-chain with no matching else, etc.) without
-        // ever executing a `return` used to compile silently, with
-        // whatever garbage happened to be on the stack treated as the
-        // return value. Conservative by design (same spirit as a
-        // typical "missing return statement" check elsewhere): a
-        // `match`/`elsematch` block's own body is never itself enough
-        // to prove the *function* returns, since whether it executes
-        // at all is a runtime question this pass has no way to settle
-        // -- only `return` itself, an if/elseif/.../else chain whose
-        // every branch definitely returns, and a `break`-free `loop`
-        // (which can only ever end by returning, or not end at all)
-        // count.
+        // Every path of a non-void function must end in a return (conservative; see definitelyReturns and docs/TypeChecker.md, "Control-flow termination checks").
         if (!isVoidReturnType(func.returnType) && !definitelyReturns(func.funcToken.childs)) {
             throw new CompilerException("type", func.funcToken.file, func.funcToken.line,
                     "'" + func.name + "' is declared to return '" + func.returnType.canonical()
                             + "' but not every path through its body ends in a 'return'");
         }
-        // The function's own natural end (falling off the bottom with
-        // no explicit 'return') is the outermost boundary there is --
-        // unlike a loop's own natural end, this destructs everything
-        // still live, all the way up to and including the function's
-        // own root scope (where its 'owns' parameters were registered),
-        // not just the body's own immediate locals.
+        // Falling off the end destructs everything live up to and including the root scope (owns parameters).
         func.funcToken.destructOnExit = collectNaturalEndDestruct(func.funcToken.childs, bodyScope, scope);
-        // "the function is still 'recursive' and safe, but doesnt burn
-        // the stack," confirmed directly -- runs strictly after every
-        // restriction above (including the "every path returns" check
-        // just above, evaluated against the function's still-original,
-        // un-lowered shape) has already passed, the same "validate on
-        // the real construct, lower only for bytecode shape afterward"
-        // discipline lowerEnumMatchToIfChain/lowerFloatMatchToIfChain
-        // already established.
+        // Runs after every restriction above, on the original (un-lowered) shape; the lowering only changes bytecode shape.
         if (getDecorator(func.funcToken.decorators, "recursive") != null) {
             lowerRecursiveFunctionToLoop(func, scope);
         }
@@ -7593,23 +5177,10 @@ public class TypeChecker {
         return t.baseType.equals("void");
     }
 
-    /**
-     * Conservative "does every path through this list of statements
-     * definitely end in a return" check -- see checkFunctionBody's own
-     * comment for the reasoning behind exactly which constructs count.
-     * Only needs to look at the *first* statement in `statements` that
-     * itself definitely returns/never falls through -- everything
-     * after it is unreachable regardless, so nothing past that point
-     * changes the answer.
-     */
+    /** Conservative: does some statement of `lines` definitely end in a return (or throw)? See docs/TypeChecker.md, "Control-flow termination checks". */
     private boolean definitelyReturns(List<Token> lines) {
         for (Token lineTok : lines) {
-            // A genuinely blank line (no real statement at all -- found
-            // directly, a lowered match case's own body, unlike an
-            // ordinary function/if/loop body, can still contain one of
-            // these) has nothing to check here; skipping it is also
-            // exactly correct for the "definitely returns" question
-            // itself, since a blank line obviously never does.
+            // Skip blank lines (a lowered match case body can contain one).
             if (lineTok.childs.isEmpty()) {
                 continue;
             }
@@ -7630,32 +5201,14 @@ public class TypeChecker {
             case "throw":
                 return true;
             case "break":
-                // Only counts while checking a 'match @lock' CLOSED case
-                // (see `closedCaseTerminates`), where 'break' means "give
-                // up without the lock".
+                // Counts only while checking a `match @lock` CLOSED case (closedCaseTerminates): break = give up without the lock.
                 return breakCountsAsTerminator;
             case "continue":
-                // Only ever legal inside a "catch(e){ ... }" body in the
-                // first place (checkStatement's own "continue" case
-                // already rejects any other use, and -- since every
-                // statement is fully checked before this conservative
-                // "definitely returns" pass ever walks the same tree --
-                // an illegal one can never survive to reach here), where
-                // it terminates that path exactly as unconditionally as
-                // 'return'/'throw' do: control never falls through a
-                // 'continue', it always jumps straight to just past the
-                // enclosing try-block.
+                // Legal only in a catch body (checkStatement rejects other uses); jumps past the enclosing try-block, so it terminates like return/throw.
                 return true;
             case "if":
             case "match":
-                // Both share the identical '.right'-linked chain shape
-                // (a plain trailing 'else' branch has an empty '.sub',
-                // exactly like an 'if' chain's own does) -- only counts
-                // if the chain ends in one *and* every branch along the
-                // way definitely returns. A 'match' with no trailing
-                // 'else' at all is never enough on its own -- whether
-                // its own condition holds is a runtime question this
-                // pass has no way to settle.
+                // if/match share the '.right'-linked chain: counts only if it ends in a plain else and every branch returns.
                 boolean sawElse = false;
                 for (Token branch = stmt; branch != null; branch = branch.right) {
                     if (!definitelyReturns(branch.childs)) {
@@ -7667,40 +5220,25 @@ public class TypeChecker {
                 }
                 return sawElse;
             case "loop":
-                // An infinite loop (no 'break' anywhere in its own body,
-                // not counting a nested loop's own break) can only ever
-                // end by returning from inside it, or not end at all --
-                // either way, nothing after it is ever reached naturally.
+                // With no 'break' a loop can only end by returning (or never).
                 return !containsBreak(stmt.childs);
             case "unsafe":
             case "safe":
-                // Not conditional at all (unlike if/match) -- always
-                // executes, so it propagates "definitely returns" from
-                // its own body directly.
+                // Unconditional: propagates from the body.
                 return definitelyReturns(stmt.childs);
             case "lock":
-                // Same reasoning as "unsafe"/"safe" -- a "lock
-                // EXPR{...}" block always executes its own body.
+                // Same as unsafe/safe.
                 return definitelyReturns(stmt.childs);
             case "try":
-                // Only the plain "try { ... }" block form (`isTryBlock`)
-                // is unconditional like "unsafe"/"safe" just above -- a
-                // throwing "try EXPR catch(e){ ... }" statement's own
-                // *normal* (non-throwing) completion path isn't itself a
-                // return, so that shape still falls through to the same
-                // `default: return false` an ordinary call statement
-                // already gets.
+                // Only the plain "try { }" block is unconditional; a throwing "try EXPR catch" falls through to false.
                 return stmt.isTryBlock && definitelyReturns(stmt.childs);
             default:
-                // 'match'/'elsematch' included, deliberately -- whether
-                // its condition holds at all is a runtime question this
-                // pass has no way to settle, so its own body returning
-                // is never enough to prove the *function* does.
+                // Anything else never proves a return.
                 return false;
         }
     }
 
-    /** True if a 'break' appears anywhere in `lines`, at any statement-nesting depth, *except* inside a further-nested 'loop' of its own (whose 'break' belongs to that inner loop, not the one being asked about here). */
+    /** True if a 'break' appears in `lines` at any depth, except inside a nested 'loop' (whose break is its own). */
     private boolean containsBreak(List<Token> lines) {
         for (Token lineTok : lines) {
             if (statementContainsBreak(lineTok.childs.get(0))) {
@@ -7737,23 +5275,10 @@ public class TypeChecker {
             case "safe":
                 return containsBreak(stmt.childs);
             case "lock":
-                // Not conditional -- always executes -- so a 'break'
-                // anywhere in its own body still belongs to the
-                // enclosing loop, the same "unsafe"/"safe" reasoning
-                // just above. Never reached for the "match @lock" form
-                // (not yet implemented -- see checkStatement's own
-                // "lock" case), but harmless either way: .childs is
-                // empty for that shape today regardless.
+                // Not conditional: a break in its body belongs to the enclosing loop.
                 return containsBreak(stmt.childs);
             case "try":
-                // Same "unconditional, isTryBlock only" split as
-                // `statementDefinitelyReturns`'s own "try" case just
-                // above -- a throwing "try EXPR catch(e){ ... }"'s own
-                // catch body is never reached by an ordinary 'break'
-                // belonging to a loop enclosing the *whole* try/catch
-                // statement anyway (see this method's own doc comment on
-                // the pre-existing, narrower `insideLoop` gap for that
-                // path), so that shape still falls through to `default`.
+                // Only the plain try-block form is unconditional (as in statementDefinitelyReturns).
                 return stmt.isTryBlock && containsBreak(stmt.childs);
             default:
                 return false;
@@ -7761,18 +5286,8 @@ public class TypeChecker {
     }
 
     /**
-     * True if a real "try EXPR catch(e){ ... }" statement (the throwing
-     * construct, `!lineTok.isTryBlock`) appears anywhere within `lines`,
-     * at any statement-nesting depth -- used by `checkTryBlock` to
-     * enforce "it's a syntax error if there isn't at least one regular
-     * try statement in the try block," confirmed directly. Deliberately
-     * broader than `definitelyReturns`/`containsBreak` above (which only
-     * ever need to walk if/match/loop/unsafe/safe/lock, the constructs
-     * relevant to their own specific control-flow questions) -- this is
-     * a plain "does it appear anywhere" search, so it also descends into
-     * 'for'/'cast'/'assume' and a nested "try { ... }" block's own body:
-     * a real try/catch satisfies the requirement no matter how deeply
-     * it's nested inside this try-block's own body.
+     * True if a real throwing "try EXPR catch(e){ }" appears anywhere in `lines` (any depth, also through for/assume and nested
+     * try-blocks); used by checkTryBlock. Broader than definitelyReturns/containsBreak, which only walk the relevant constructs.
      */
     private boolean containsRealTryCatch(List<Token> lines) {
         for (Token lineTok : lines) {
@@ -7787,13 +5302,7 @@ public class TypeChecker {
     }
 
     private boolean statementContainsRealTryCatch(Token stmt) {
-        // A "try EXPR catch(e){ ... }" used as a `let`'s or a plain
-        // assignment's right-hand side ("let x = try f() catch(e){...}",
-        // "x = try f() catch(e){...}") is embedded as that "="
-        // OPERATOR's own right operand (through any "mut"/"imut"
-        // wrapper), never as this statement's own top-level KEYWORD --
-        // mirroring `BytecodeEmitter.tryNodeOf`'s identical unwrap, since
-        // that's the exact same shape it has to recognize.
+        // A try used as a let/assignment RHS hangs off the "=" operator (through mut/imut), as in BytecodeEmitter.tryNodeOf.
         if (stmt.type == TokenType.OPERATOR && stmt.text.equals("=") && stmt.right != null) {
             Token rhs = stmt.right;
             while (rhs.type == TokenType.OPERATOR && (rhs.text.equals("mut") || rhs.text.equals("imut"))
@@ -7810,11 +5319,7 @@ public class TypeChecker {
         }
         switch (stmt.text) {
             case "try":
-                // A real "try EXPR catch(e){ ... }" is exactly what a
-                // "try { ... }" block is required to contain. A nested
-                // "try { ... }" block (`stmt.isTryBlock`) isn't itself
-                // one, but is still descended into -- a real try/catch
-                // nested inside *it* still satisfies the outer block.
+                // A real try/catch qualifies; a nested "try { }" block does not itself, but is searched.
                 return !stmt.isTryBlock || containsRealTryCatch(stmt.childs);
             case "if":
             case "match":
@@ -7849,23 +5354,8 @@ public class TypeChecker {
     }
 
     /**
-     * "try { ... }" -- a plain lexical-scope block, distinct from the
-     * throwing "try EXPR catch(e){ ... }" construct that shares the
-     * same keyword (`Token.isTryBlock` tells them apart, set by
-     * `Parser`'s own pre-scan -- see its own doc comment). "It's a
-     * syntax error if there isn't at least one regular try statement in
-     * the try block," confirmed directly -- enforced via
-     * `containsRealTryCatch`, which looks arbitrarily deep (through if/
-     * match/loop/for/unsafe/safe/lock/cast/assume/a nested try-block),
-     * not just at this block's own top level. Otherwise checked exactly
-     * like an ordinary lexical block ('unsafe'/'safe' minus the safety-
-     * context override): a fresh child Scope inheriting the enclosing
-     * `currentSafety` unchanged (this construct has no safety meaning of
-     * its own -- the plain `Scope(Scope parent)` constructor, the same
-     * one `checkTry`'s own `catchBodyScope` already uses), its own
-     * statements checked via `checkLinesInScope`, and an ordinary
-     * natural-end destruct list, same as any other non-function/
-     * non-loop-boundary block.
+     * Plain "try { }" lexical block (Token.isTryBlock): must contain at least one real try/catch (any depth); otherwise an ordinary
+     * child Scope with the safety context inherited. See docs/TypeChecker.md, "Control-flow termination checks".
      */
     private void checkTryBlock(Token stmt, Scope scope, FuncInfo func, boolean insideLoop) {
         if (!containsRealTryCatch(stmt.childs)) {
@@ -7873,35 +5363,14 @@ public class TypeChecker {
                     "'try { ... }' requires at least one real 'try ... catch(e) { ... }' statement "
                             + "somewhere inside it");
         }
-        // The `TryBlockBoundaryMarker` constructor, not the plain
-        // `Scope(scope)` this used before `continue` existed -- makes
-        // this scope (and everything nested inside it, until a further,
-        // still-deeper try-block resets it again) the target a nested
-        // 'continue' resolves via `scope.tryBlockBoundaryScope`, the
-        // identical "isNewLoopBoundary" shape a loop's own body scope
-        // already gets for 'break'.
+        // TryBlockBoundaryMarker makes this scope the target a nested `continue` resolves via tryBlockBoundaryScope.
         Scope tryBlockScope = new Scope(scope, TryBlockBoundaryMarker.MARK);
         checkLinesInScope(stmt.childs, tryBlockScope, func, insideLoop);
         stmt.destructOnExit = collectNaturalEndDestruct(stmt.childs, tryBlockScope, tryBlockScope);
     }
 
 
-    /**
-     * "Now i wish to remove the primitive type of a recurse from the
-     * language, instead make the final argument requirement for
-     * @recurse be just a range," confirmed directly -- the final
-     * parameter is now a plain 'imut range', identified purely by
-     * position (the last declared parameter), not by a required fixed
-     * name; any name is acceptable. "Keep a required leading base-case
-     * statement too... still need to check the base case first, its
-     * just now it is done on a range," confirmed directly -- the
-     * structural "first statement (after any leading 'let static') must
-     * be 'match PARAM is base{...}'" requirement is unchanged in spirit,
-     * just retargeted to whatever the final range parameter is actually
-     * named. Both checked structurally, before the body is type-checked
-     * at all -- this is purely about *shape*, not anything that depends
-     * on resolving expression types.
-     */
+    /** A `@recursive` function needs a final `imut range` parameter (any name) and a first statement (after `let static`s) of `match PARAM is base{...}`; structural checks only. See docs/TypeChecker.md, "@recursive functions". */
     private void validateRecursiveFuncRequirements(FuncInfo func) {
         if (getDecorator(func.funcToken.decorators, "recursive") == null) {
             return;
@@ -7912,12 +5381,7 @@ public class TypeChecker {
                     "a '@recursive' function must have an 'imut range' as its final parameter");
         }
         String rangeParamName = func.paramNames.get(n - 1);
-        // "If there is anything above it, between it and the start of
-        // the func that it is in, and that thing is not 'let static'
-        // then its a compiler error," confirmed directly -- strict:
-        // *any* other statement kind (an ordinary let, a bare call,
-        // anything at all) appearing before the required match is
-        // rejected, not just "the first non-static let must be this."
+        // Strict: any statement other than `let static` before the required match is rejected.
         Token firstNonStatic = null;
         for (Token lineTok : func.funcToken.childs) {
             Token stmt = lineTok.childs.get(0);
@@ -7935,7 +5399,7 @@ public class TypeChecker {
         }
     }
 
-    /** True if `stmt` is structurally exactly "match RANGEPARAM is base{...}" -- checked before any type-checking runs, so this only confirms shape, not that RANGEPARAM actually resolves to a 'range' value (checkMatchCondition, run later, confirms that separately). */
+    /** Shape check only: "match RANGEPARAM is base{...}" (checkMatchCondition confirms the type later). */
     private boolean isRequiredBaseCaseMatch(Token stmt, String rangeParamName) {
         if (stmt == null || stmt.type != TokenType.KEYWORD || !stmt.text.equals("match") || stmt.sub.isEmpty()) {
             return false;
@@ -7946,54 +5410,7 @@ public class TypeChecker {
                 && condition.right.type == TokenType.VARREF && condition.right.text.equals("base");
     }
 
-    /**
-     * "Ensure that any recursive call within the @recurse function must
-     * be wrapped within a match x within x2{} match block, where x2 is
-     * the range parameter of the function and x is the range argument
-     * which is then used for the recursive call. x must also be
-     * imutable," confirmed directly -- checked at every self-call site
-     * reachable outside the function's own required base-case branch
-     * (a self-call from *inside* that branch is barred entirely, by the
-     * `scope.suspendsSelfRecursion` check right beside every call site
-     * of this method). "No, absolute rule, no unsafe bypass," confirmed
-     * directly -- so this fires unconditionally, regardless of
-     * `scope.currentSafety`. Only ever called when `candidate == func`
-     * and `func` is itself '@recursive' (a self-call is otherwise
-     * either barred unconditionally by the separate checkNoRecursion
-     * pass, for a non-'@recursive' function, or is this exact function
-     * -- there's no other case reachable here).
-     */
-    /**
-     * "the only place that the recursive call can take place is at the
-     * return site," confirmed directly -- a self-call to a '@recursive'
-     * function may only ever appear as the sole expression of a bare
-     * 'return' statement ('return foo(...)'), never bound to a variable
-     * first ('let result = foo(...); return result') and never nested
-     * inside a larger expression. Checked by identity against
-     * `directReturnExprNode` (set only by checkReturn, for the exact
-     * duration of resolving its own return expression) -- `op` is
-     * exactly that node only when this call is the return statement's
-     * entire expression with nothing wrapping it; any wrapper (an
-     * arithmetic operator, a 'let' binding, anything at all) puts a
-     * *different* node there instead, so identity comparison rejects it
-     * with no separate "is this call wrapped in something" walk needed.
-     *
-     * This is a genuinely separate requirement from the existing
-     * 'within'-wrap proof (`requireRecursiveCallWithinProof`) -- both
-     * apply together, not either/or -- and, once satisfied, is exactly
-     * what makes `lowerRecursiveFunctionToLoop`'s later tree-rewrite
-     * possible at all: a call site marked `isRecursiveTailCallSite` is
-     * always, structurally, the very last thing done before its
-     * enclosing 'return' -- and therefore, since "nothing may follow a
-     * statement that always ends this block's own execution" is already
-     * enforced elsewhere (`checkNoCodeAfterTerminalStatement`), always
-     * the last statement of its own enclosing block, too. That's what
-     * lets the lowering replace it with a plain reassignment and no
-     * explicit 'continue' at all: falling off the end of that block
-     * inside the lowered 'for' loop has the identical effect a
-     * 'continue' would, and this language has no 'continue' keyword to
-     * begin with.
-     */
+    /** A self-call to a `@recursive` function may only be the sole expression of a `return`, checked by node identity with directReturnExprNode. See docs/TypeChecker.md, "@recursive functions". */
     private void requireRecursiveCallReturnSiteOnly(FuncInfo func, Token op) {
         if (op != directReturnExprNode) {
             throw new CompilerException("type", op.file, op.line,
@@ -8004,18 +5421,13 @@ public class TypeChecker {
         op.isRecursiveTailCallSite = true;
     }
 
+    /** Every self-call must sit inside `match x within RANGEPARAM{}` with x an imut range; absolute rule, no unsafe bypass. See docs/TypeChecker.md, "@recursive functions". */
     private void requireRecursiveCallWithinProof(FuncInfo func, Token op, List<Token> argNodes,
             List<TypeInfo> argTypes, Scope scope) {
-        // func's own final parameter is guaranteed, by
-        // validateRecursiveFuncRequirements (run structurally before any
-        // body is type-checked at all), to be its required 'imut range'.
+        // The last parameter is an imut range (validateRecursiveFuncRequirements).
         String rangeParamName = func.paramNames.get(func.paramNames.size() - 1);
         Token finalArg = argNodes.get(argNodes.size() - 1);
-        // Reuses the already-resolved type from the overload-matching
-        // pass just above (never re-resolves the expression) -- calling
-        // resolveExprType a second time on the same node is avoided
-        // deliberately, the same caution every other post-match check
-        // here (markMovedIfOwned, requireMethodLockProofs) already takes.
+        // Reuse the argTypes from overload matching; do not resolve the node again.
         TypeInfo finalArgType = argTypes.get(argTypes.size() - 1);
         if (!"imut".equals(finalArgType.mutability)) {
             throw new CompilerException("type", finalArg.file, finalArg.line,
@@ -8044,56 +5456,8 @@ public class TypeChecker {
     }
 
     /**
-     * "Once that restriction is applied, you may perform a textual
-     * transform early on compilation... And now the function is still
-     * 'recursive' and safe, but doesnt burn the stack," confirmed
-     * directly. Rewrites a '@recursive' function's already-fully-
-     * validated body into a real, bounded 'for' loop: every self-call
-     * return site (`op.isRecursiveTailCallSite`, set only once both the
-     * 'within'-wrap and return-site-only restrictions above already
-     * passed) is replaced by a plain reassignment of the function's own
-     * parameters, eliminating the real self-call -- and therefore the
-     * `RECURSIVE_CALL` bytecode it would otherwise emit -- entirely.
-     *
-     * Introduces one *shadow* local per parameter, declared once,
-     * outside the loop -- "shadow variables should be declared outside
-     * the for loop," confirmed directly -- rather than reassigning the
-     * real parameter bindings directly (nothing at the bytecode level
-     * actually requires that: a parameter and a 'let' local are emitted
-     * identically, see `emitAssignTarget`). Each shadow starts as a
-     * same-type, same-mutability rebind of its own parameter ("let x =
-     * x"), so every already-resolved reference to that name throughout
-     * the *reused* original body keeps referring to exactly the type it
-     * always did -- the preserved body is relocated into the new loop
-     * wrapper wholesale, never re-resolved.
-     *
-     * The one piece ordinary type-checking genuinely cannot validate is
-     * the reassignment itself: a parameter's own declared mutability is
-     * whatever the original signature required (usually 'imut'), and
-     * this language has no legal way for ordinary, hand-written code to
-     * ever reassign an 'imut'-declared binding (`requireMutable`) --
-     * that restriction is never meant to be worked around from real
-     * source. The reassignment nodes built here bypass it entirely and
-     * set their own '.resolvedType' fields directly instead -- the same
-     * "lowering sets bytecode shape by hand, once validation is already
-     * done" precedent `lowerFloatMatchToIfChain`'s own `FLOAT_CHECK`
-     * node already established -- sound specifically *because* the
-     * value being written in was already proven type-compatible against
-     * this exact parameter slot the moment the original self-call
-     * itself was type-checked (the ordinary argType-vs-paramType check
-     * every call already goes through, in `checkCall`'s own overload-
-     * matching loop).
-     *
-     * This language has no 'continue' statement at all -- see
-     * requireRecursiveCallReturnSiteOnly's own doc comment for why a
-     * plain reassignment, with nothing emitted after it, already has
-     * the identical effect one would.
-     *
-     * Known, documented scope limitation, not attempted here: an
-     * 'owns'-typed parameter. None of this project's own '@recursive'
-     * fixtures use one, and this pass doesn't thread the
-     * GT_DESTRUCT/ownership bookkeeping a real one would need through
-     * the loop.
+     * Rewrites a validated `@recursive` function body into a bounded `for` loop over shadow locals; each tail-call return site becomes
+     * a reassignment of the shadows. See docs/TypeChecker.md, "@recursive functions".
      */
     private void lowerRecursiveFunctionToLoop(FuncInfo func, Scope paramScope) {
         List<Token> original = func.funcToken.childs;
@@ -8137,11 +5501,8 @@ public class TypeChecker {
         rangeDotDot.right = new Token(TokenType.VARREF, "__recur_range_end", line, file);
         newChilds.add(wrapAsCheckedLine(buildCheckedLetAssign("__recur_range", rangeDotDot, wrapperScope, func)));
 
-        // The bounded loop runs (initial range length) times, but a recursion that shrinks its range by only one per step needs one more
-        // "call" than that to reach its base case: the check that would fire at the top of the (L+1)th call. Every step strictly shrinks the
-        // range (the 'within' proof is a strict-subrange proof), so when the loop is exhausted the range is empty and that base case is
-        // certain to hold. So a copy of the (already validated, self-call-free) base-case block is placed after the loop: it is exactly what
-        // the next recursive call would have done on entry, and it keeps the loop bounded. Cloned before the return sites are rewritten.
+        // The loop runs (initial length) times, but a recursion shrinking by one per step needs one more call to reach its base case.
+        // The range is then empty, so a copy of the validated base-case block after the loop does what that call would (cloned before the return sites are rewritten).
         Token baseCaseAfterLoop = restLines.get(0).deepCloneChecked();
         replaceRecursiveReturnsInLines(restLines, func);
 
@@ -8152,15 +5513,8 @@ public class TypeChecker {
         forTok.sub = new ArrayList<>();
         forTok.sub.add(inTok);
         forTok.childs = new ArrayList<>();
-        // Build (and fully, really validate) just the loop's own header
-        // pieces against an empty body first -- checkForLoop's own
-        // desugaring is reused completely unmodified for this -- then
-        // swap in the *real*, already-validated-once body afterward,
-        // deliberately bypassing a second, redundant re-check of it
-        // (which would re-run ordinary reassignment validation against
-        // the shadow locals above and fail, exactly the restriction
-        // this whole lowering exists to route around for the one
-        // synthetic reassignment case that needs it).
+        // Validate only the loop header against an empty body (checkForLoop reused unchanged), then swap in the already-validated body:
+        // re-checking it would reject the synthetic reassignment of imut parameters.
         checkForLoop(forTok, wrapperScope, func);
         forTok.childs = restLines;
         forTok.destructOnExit = new ArrayList<>();
@@ -8183,7 +5537,7 @@ public class TypeChecker {
         return assign;
     }
 
-    /** The same "LINE" wrapper `Parser.wrapAsLine` builds for real, parsed source -- `lineTok.childs.get(0)` is the convention every statement-list walker throughout this compiler already relies on. */
+    /** The "LINE" wrapper Parser.wrapAsLine builds; statement walkers rely on lineTok.childs.get(0). */
     private Token wrapAsCheckedLine(Token stmt) {
         Token lineTok = new Token(TokenType.LINE, "line", stmt.line, stmt.file);
         lineTok.childs.add(stmt);
@@ -8191,19 +5545,8 @@ public class TypeChecker {
     }
 
     /**
-     * Walks every statement-list this language's own block-shaped
-     * constructs can nest one inside (an 'if'/'match' chain via its own
-     * '.right' linking, a case-match's own per-case bodies, a
-     * 'for'/'loop'/'unsafe'/'safe' body, an 'assume match{...}' block),
-     * replacing every 'return' statement whose own sole expression was
-     * marked `isRecursiveTailCallSite` with the reassignment statements
-     * `buildTailCallReplacementLines` builds for it -- in place, in
-     * whichever real statement list actually contains that 'return'
-     * line, so the surrounding structure (which branch, how deeply
-     * nested) is completely preserved; only the terminal 'return' itself
-     * is ever replaced. "Allow multiple call sites," confirmed directly
-     * -- nothing here assumes there's only one; every one reachable
-     * anywhere in the body is found and replaced independently.
+     * Replaces every "return SELFCALL(..)" marked isRecursiveTailCallSite, wherever it nests, with the reassignment
+     * lines; any number of call sites. See docs/TypeChecker.md, "Recursive tail-call lowering".
      */
     private void replaceRecursiveReturnsInLines(List<Token> lines, FuncInfo func) {
         for (int i = 0; i < lines.size(); i++) {
@@ -8241,18 +5584,9 @@ public class TypeChecker {
     }
 
     /**
-     * Builds the replacement for "return SELFCALL(arg0, arg1, ...)":
-     * first, one ordinary, fully-checked "let __recur_tmpN = argN" per
-     * argument (evaluating every new argument value up front, before any
-     * parameter is reassigned -- the same "arguments are fully evaluated
-     * before the callee's own parameters take on their new values"
-     * semantics an ordinary call already has, needed here since a
-     * later argument could otherwise, in principle, reference an
-     * earlier parameter that this same replacement is about to
-     * overwrite); then one hand-built, unchecked "paramN = __recur_tmpN"
-     * reassignment per parameter -- see this method's own class-level
-     * doc comment (on `lowerRecursiveFunctionToLoop`) for why that
-     * second step can't go through ordinary validation.
+     * Replacement for "return SELFCALL(a0, a1, ..)": one checked "let __recur_tmpN = argN" per argument (all evaluated
+     * before any parameter changes), then an unchecked "paramN = __recur_tmpN" per parameter.
+     * See docs/TypeChecker.md, "Recursive tail-call lowering".
      */
     private List<Token> buildTailCallReplacementLines(Token returnTok, FuncInfo func) {
         Token callOp = returnTok.sub.get(0);
@@ -8296,17 +5630,8 @@ public class TypeChecker {
     }
 
     /**
-     * "static let is only permitted at the top of the scope" -- resolved
-     * directly to mean the top of the *function body* specifically: a
-     * leading run of "let static" statements (any order relative to each
-     * other, but nothing else allowed to appear before or between them),
-     * never inside a nested block at all. Only scans `lines` itself
-     * (the function's own top-level statement list) -- a 'static let'
-     * written inside an 'if'/'loop'/'for'/'cast' body is structurally
-     * invisible to this scan entirely (it lives in that block's own,
-     * separate childs list), which is exactly why checkAssign's static
-     * branch double-checks `staticApproved` itself rather than trusting
-     * that reaching it at all implies a valid position.
+     * "let static" is only allowed as a leading run at the top of the function body (never in a nested block, which this
+     * scan cannot see; checkAssign re-checks staticApproved for that reason). See docs/TypeChecker.md, "Static let placement".
      */
     private void validateStaticLetPlacement(List<Token> lines) {
         boolean stillLeading = true;
@@ -8359,45 +5684,7 @@ public class TypeChecker {
         return scope;
     }
 
-    /**
-     * Walks from `from` up to (and including) `boundary`, collecting
-     * every live 'owns' slot in reverse declaration order (innermost
-     * scope first, and within each scope, most-recently-declared
-     * first) -- the exact order GT_DESTRUCT should run in. Skips
-     * anything already moved (nothing left to destroy) and, for
-     * `preservedSlotKey` (a 'return' statement's own returned slot,
-     * null everywhere else), skips that one too -- "it does not apply
-     * to values preserved by a return statement," confirmed directly.
-     */
-    /**
-     * "Remove GT_DESTRUCT on internals... but its still just variables
-     * that get GT_DESTRUCT, no need to reach into their internals,"
-     * confirmed directly -- a second reversal of the same design point:
-     * an earlier, deliberate "flat, one-instruction-per-slot" decision
-     * was itself later reversed to cascade into an owned struct's own
-     * nested owns members recursively ("that GT_DESTRUCT should be
-     * called on all of its children first"); this undoes that second
-     * change, back to flat. "I now realise that it makes more sense to
-     * defer this to the bytecode. The bytecode to assembly generator is
-     * going to parse the bytecode and read the struct definitions, it
-     * will generate the necessary routines as needed," confirmed
-     * directly -- a later, separate stage (not yet built) is
-     * responsible for recursing into a struct's own owns members at
-     * destruct time, using its own knowledge of struct layout; this
-     * compiler's own bytecode now emits exactly one GT_DESTRUCT per
-     * top-level owns slot again, nothing about what's inside it.
-     */
-    /**
-     * The lock-release counterpart of `collectOwnsToDestruct` -- walks
-     * from `from` up to (but not past) `boundary`, collecting every
-     * lock-release call owed within that span, in reverse acquisition
-     * order (innermost/most-recently-acquired first, the correct LIFO
-     * unlock order). Since `Scope.activeLockReleases` is already an
-     * immutable, monotonically-extended-by-copy list (the same shape
-     * `activeMatchPatterns` has, not a mutable per-scope list the way
-     * `ownsDeclaredHere` is), the span owed is simply the suffix beyond
-     * whatever `boundary` itself already had.
-     */
+    /** Lock-release calls owed from `from` up to (not past) `boundary`, in LIFO order (activeLockReleases is extended by copy, so the span is a suffix). */
     private List<Token> collectLockReleasesToBoundary(Scope from, Scope boundary) {
         List<Token> slice = new ArrayList<>(from.activeLockReleases.subList(
                 boundary.activeLockReleases.size(), from.activeLockReleases.size()));
@@ -8406,12 +5693,7 @@ public class TypeChecker {
     }
 
 
-    /**
-     * Slots moved on SOME of the paths reaching a merge point but not all of them. `movedSlots` stays a union (a
-     * later read of such a slot is still "use after move"), but a move nulls the slot, so the scope-exit destruct
-     * of a partly moved slot is still emitted: it frees the block on the paths that did not move it and does
-     * nothing (null) on the paths that did. Without it the not-moved path leaked.
-     */
+    /** Slots moved on only SOME paths into a merge point: still "moved" for use-after-move, but their scope-exit destruct is kept (null-safe). See docs/TypeChecker.md, "Branch merge and partly-moved slots". */
     private final Set<String> partlyMovedSlots = new HashSet<>();
 
     private boolean chainHasElse(Token first) {
@@ -8422,12 +5704,7 @@ public class TypeChecker {
         return last.sub.isEmpty();
     }
 
-    /**
-     * Replaces the pre-branch moved set with the union of the branches (the use-after-move rule) and records which
-     * of those slots are not moved on every path that reaches the merge. `survivors` are the moved sets of the
-     * branches that fall through (a branch that always returns/throws/breaks never reaches the merge);
-     * `implicitPath` adds the "no branch taken" path of a chain without an else.
-     */
+    /** Replaces the pre-branch moved set with the union of the branches and records the partly-moved slots; `survivors` are the moved sets of branches that fall through, `implicitPath` adds the no-branch-taken path of a chain without else. */
     private void finishBranchMerge(Set<String> preState, Set<String> union, List<Set<String>> survivors,
             boolean implicitPath) {
         List<Set<String>> paths = new ArrayList<>(survivors);
@@ -8450,6 +5727,10 @@ public class TypeChecker {
         }
     }
 
+    /**
+     * Owns slots to GT_DESTRUCT, innermost scope and most recent declaration first, up to `boundary`; skips moved slots and
+     * `preservedSlotKey` (a return statement's returned slot). One flat entry per slot. See docs/TypeChecker.md, "Scope exit: destruct and unlock lists".
+     */
     private List<String> collectOwnsToDestruct(Scope from, Scope boundary, String preservedSlotKey) {
         List<String> result = new ArrayList<>();
         for (Scope s = from; s != null; s = s.parent) {
@@ -8467,17 +5748,7 @@ public class TypeChecker {
         return result;
     }
 
-    /**
-     * A block's own "natural end" destruct list is dead, unreachable
-     * bytecode -- not a correctness bug, since an explicit 'return'/
-     * 'break' as the block's last statement already jumps away before
-     * ever reaching it, but duplicate, misleading output nonetheless.
-     * Only catches the simple, common case (the last statement being
-     * literally 'return'/'break') rather than full reachability
-     * analysis (e.g. an 'if' whose every branch already returns) --
-     * deliberately, since that's a much larger, separate problem this
-     * feature was never asked to solve.
-     */
+    /** Natural-end destruct list; empty when the last statement is a literal return/break (the list would be dead code). Deliberately no full reachability analysis. */
     private List<String> collectNaturalEndDestruct(List<Token> lines, Scope from, Scope boundary) {
         if (!lines.isEmpty()) {
             Token last = lines.get(lines.size() - 1).childs.get(0);
@@ -8498,22 +5769,8 @@ public class TypeChecker {
                 blockRec.noteChild(childIdx++, stmt);
             }
             if (stmt.type == TokenType.KEYWORD && stmt.text.equals("assume") && !stmt.hasBlock) {
-                // "The assumptions of the expression for the type
-                // checker are a given for the rest of the scope when a
-                // block {} is not provided," confirmed directly --
-                // genuinely different from every other statement kind:
-                // it needs to change which Scope every *following*
-                // statement in this same block sees, not just its own.
-                // Handled directly here, in this loop, rather than
-                // through the ordinary checkStatement dispatch (which
-                // returns void, one statement at a time, with no way to
-                // affect what its own caller does next) -- reassigning
-                // this method's own local `scope` parameter is exactly
-                // what "for the rest of the scope" means in practice:
-                // a fresh, nested Scope, parented to the one just
-                // replaced (so every variable/moved-slot already
-                // visible stays visible), whose own activeMatchPatterns
-                // is extended with this assumption's own proof(s).
+                // "assume match expr;" without a block holds for the rest of the enclosing block, so it swaps `scope` for a nested
+                // Scope with the extra proofs here instead of going through checkStatement.
                 List<Token.MatchPattern> assumePatterns = checkAssumeMatchCondition(stmt, scope, func);
                 List<Token.MatchPattern> assumeExtended = new ArrayList<>(scope.activeMatchPatterns);
                 assumeExtended.addAll(assumePatterns);
@@ -8528,26 +5785,8 @@ public class TypeChecker {
     }
 
     /**
-     * "both returns and throw should not allow dead code after them in
-     * the execution flow," confirmed directly -- a real, previously-
-     * missing check (return itself was found, by direct testing, to
-     * currently allow dead code after it to compile silently and even
-     * be emitted, genuinely unreachable but never rejected). Reuses
-     * `statementDefinitelyReturns` exactly as-is, rather than a
-     * separate, narrower "is this specifically a return/throw" check --
-     * that function already correctly recognizes every other
-     * unconditional-exit shape too (an if/elseif/.../else chain whose
-     * every branch definitely returns, a break-free 'loop'), so any of
-     * those, not just a bare 'return'/'throw', now also makes whatever
-     * follows it in the *same* statement list unreachable. Runs once
-     * per block (this is `checkLinesInScope`'s own shared entry point,
-     * so every block -- a function's own top-level body, an
-     * if/elseif/else branch, a loop body, an unsafe/safe block -- goes
-     * through this identically) -- deliberately does NOT flag code
-     * following an 'if' whose branches only *some* of the time
-     * definitely return (an 'if' with no matching 'else', for
-     * instance): whatever comes after that is still genuinely
-     * reachable on the branch(es) that fall through.
+     * Rejects any statement following one that always ends the block (statementDefinitelyReturns: return/throw/continue,
+     * exhaustive if chains, break-free loops). A partly-returning "if" does not count. See docs/TypeChecker.md, "Unreachable code".
      */
     private void checkNoCodeAfterTerminalStatement(List<Token> lines) {
         for (int i = 0; i < lines.size() - 1; i++) {
@@ -8577,23 +5816,9 @@ public class TypeChecker {
     }
 
     /**
-     * "Movement on one iteration means a use-after-move on the second
-     * iteration" -- confirmed directly. A cheap, purely structural
-     * pre-scan (no expression resolution at all -- just `Scope`/
-     * `StructInfo` lookups against already-known declared types) run
-     * *before* the one real check pass over a loop body, finding which
-     * already-in-scope 'owns' slots the body moves *anywhere* within
-     * it, and seeding the moved-set with them up front. That's the
-     * entire fix for the cross-iteration case: the one real pass then
-     * sees a use anywhere in the body of anything the body eventually
-     * moves, in the same single traversal every other statement
-     * already gets, without re-running the type-checker at all.
-     * Deliberately narrow, not a general dataflow analysis: a function
-     * call's argument only counts if that function name has exactly
-     * one overload (no attempt to resolve which overload would
-     * actually be picked, which would need full expression resolution
-     * to do correctly) -- a documented, acceptable gap for an
-     * ambiguous overloaded call specifically, not a silent one.
+     * Cheap structural pre-scan of a loop body: seeds the moved set with every in-scope owns slot the body moves anywhere, so
+     * one real pass sees cross-iteration use-after-move. Call arguments only count for a name with exactly one overload.
+     * See docs/TypeChecker.md, "Loop move pre-scan".
      */
     private void collectLoopMoves(List<Token> lines, Scope scope, Set<String> out) {
         for (Token lineTok : lines) {
@@ -8691,23 +5916,7 @@ public class TypeChecker {
                     checkIfChain(stmt, scope, func, insideLoop);
                     return;
                 case "loop":
-                    // "loops are unsafe, for is fine, but loop is not,"
-                    // confirmed directly -- a bare "loop{...}" is
-                    // unbounded by construction (no compile-time-checked
-                    // exit condition the way a "for i in 0..n" range
-                    // always has), so it carries the same "the compiler
-                    // can't vouch for this on its own" character as
-                    // constructing a 'raw' pointer or calling an
-                    // 'extern' -- checked the identical way those
-                    // already are, against this exact statement's own
-                    // enclosing safety context. Exempted once, and only
-                    // once, for a function decorated '@event_loop' --
-                    // "it can use loop{} exactly once internally while
-                    // remaining safe," confirmed directly -- a genuine
-                    // privilege this one specific kind of function has,
-                    // not a general loosening; a second bare 'loop{}' in
-                    // the same '@event_loop' function still needs
-                    // 'unsafe' the ordinary way.
+                    // A bare loop{} needs unsafe, except once in an @event_loop function. See docs/TypeChecker.md, "Statement dispatch".
                     boolean alreadyUnsafe = unsafeBypass(scope, "loop");
                     boolean eventLoopExempt = !alreadyUnsafe && func != null
                             && func.eventLoopSafeLoopCount == 0
@@ -8717,28 +5926,13 @@ public class TypeChecker {
                                 "'loop' can only be used from within 'unsafe' code");
                     }
                     if (eventLoopExempt) {
-                        // Only ever consumed when it was actually the
-                        // reason this check passed -- a 'loop{}' already
-                        // inside an 'unsafe' block never needed the
-                        // exemption at all, so it must not spend it,
-                        // leaving a later, genuinely-'safe' 'loop{}' in
-                        // the same function without one.
+                        // Spent only when the exemption was the reason the check passed.
                         func.eventLoopSafeLoopCount++;
                     }
                     validateDecorators(stmt.decorators, LOOP_DECORATORS, "a 'loop' statement");
                     collectLoopMoves(stmt.childs, scope, scope.movedSlots);
-                    // entering a loop body: insideLoop becomes true for its
-                    // direct contents (and stays true for anything nested
-                    // further inside, including a nested loop)
                     Scope loopBodyScope = checkLinesAsLoopBody(stmt.childs, scope, func);
-                    // Every iteration is its own entry/exit of this body's
-                    // scope -- a fresh 'let owns' next iteration would
-                    // otherwise silently overwrite the previous iteration's
-                    // un-destructed value. Emitted at the natural bottom of
-                    // the loop body (BytecodeEmitter), executed every time
-                    // control reaches there (including falling through to
-                    // the next iteration), same reasoning as any other
-                    // block's own natural-end destruct.
+                    // Every iteration is its own scope exit: owns locals are destructed at the natural bottom of the body.
                     stmt.destructOnExit = collectNaturalEndDestruct(stmt.childs, loopBodyScope, loopBodyScope);
                     return;
                 case "for":
@@ -8757,23 +5951,13 @@ public class TypeChecker {
                     return;
                 case "lock":
                     if (stmt.isCaseMatch) {
-                        // "match @lock EXPR{ OPEN:{...} CLOSED:{...} }" --
-                        // the swap-mutex spin-lock form. Validated fully
-                        // on the real construct, then lowered in place
-                        // into a genuine loop -- see checkLockMatchStatement.
+                        // "match @lock EXPR{ OPEN:.. CLOSED:.. }": validated, then lowered in place into a loop (checkLockMatchStatement).
                         checkLockMatchStatement(stmt, scope, func, insideLoop);
                         return;
                     }
                     throw new CompilerException("type", stmt.file, stmt.line, "internal error: a 'lock' statement that is not 'match @lock'");
                 case "assume":
-                    // Only the block form ever reaches here -- the
-                    // no-block form ("assume match expr;", `!stmt.
-                    // hasBlock`) is special-cased directly in
-                    // checkLinesInScope's own loop instead, since it
-                    // needs to change which Scope every *subsequent*
-                    // statement in the same block sees, something an
-                    // ordinary checkStatement call (returning void, one
-                    // statement at a time) has no way to do on its own.
+                    // Block form only; the no-block form is handled in checkLinesInScope.
                     if (!stmt.hasBlock) {
                         throw new IllegalStateException(
                                 "no-block 'assume match' must be handled by checkLinesInScope, never reach here");
@@ -8787,13 +5971,7 @@ public class TypeChecker {
                     return;
                 case "unsafe":
                 case "safe":
-                    // "you cannot declare an unsafe block inside a safe
-                    // block... an unsafe inside a safe is a compiler
-                    // error, but a safe inside an unsafe is permitted,"
-                    // confirmed directly -- checked here for the
-                    // statement-level (inside-a-function) case; the
-                    // root-level case is checked identically by
-                    // flattenRootLines.
+                    // unsafe inside safe is an error, safe inside unsafe is fine (root level: flattenRootLines).
                     if (stmt.text.equals("unsafe") && scope.currentSafety.equals("safe")) {
                         throw new CompilerException("type", stmt.file, stmt.line,
                                 "'unsafe' cannot be nested inside 'safe'");
@@ -8808,19 +5986,15 @@ public class TypeChecker {
                     }
                     checkLinesInScope(stmt.childs, safetyBlockScope, func, insideLoop);
                     if (stmt.text.equals("unsafe")) {
-                        // The block ends the proofs that were active before it. Uses inside it are the programmer's responsibility, as everywhere in `unsafe`.
-                        // A block whose reasons are all of the kinds that cannot free anything by themselves (the checker sees every `resize`, owns assignment and call
-                        // inside it as its own event) leaves the proofs alone: `memcopy`, `raw`, `deref`, `clone`, `global`, `loop`, `atomic`, `guard`, `assume`.
-                        // `extern`, `call`, `asm`, `udyn`, `udyn:owns`, `async`, `file`, `unaudited` (or no tag list at all) may free, so they still end every proof.
+                        // Ends the proofs active before the block unless all its tags are in NON_FREEING_UNSAFE_TAGS (they cannot free by themselves).
+                        // Uses inside the block are the programmer's responsibility.
                         boolean assumeOnly = stmt.unsafeTags != null && !stmt.unsafeTags.isEmpty()
                                 && NON_FREEING_UNSAFE_TAGS.containsAll(stmt.unsafeTags);
                         if (!stmt.synthesizedUnsafe && !assumeOnly) {
                             ProofKills.kill(scope.activeMatchPatterns, stmt, "an 'unsafe' block");
                         }
                     }
-                    // Same reasoning as an 'if' branch or match block --
-                    // an 'unsafe'/'safe' block's own natural end isn't a
-                    // function/loop boundary either.
+                    // Natural end of a block is not a function/loop boundary.
                     stmt.destructOnExit = collectNaturalEndDestruct(stmt.childs, safetyBlockScope, safetyBlockScope);
                     return;
                 case "return":
@@ -8830,19 +6004,8 @@ public class TypeChecker {
                     checkThrow(stmt, scope, func);
                     return;
                 case "try":
-                    // Two, unrelated shapes share this one KEYWORD text
-                    // (Token.isTryBlock tells them apart -- see its own
-                    // doc comment): a plain "try { ... }" lexical-scope
-                    // block, and the bare "try foo() catch(e){ ... }"
-                    // statement form -- a whole statement on its own,
-                    // its own resulting value (if any) simply discarded,
-                    // exactly like a bare, non-throwing call statement
-                    // already is. The expression-position form ("let x
-                    // = try foo() catch{...}") never reaches
-                    // checkStatement at all -- it flows through
-                    // resolveExprTypeInner's own "try" case instead (see
-                    // there for why `insideLoop` can't always be
-                    // threaded through that path).
+                    // Two shapes share "try" (Token.isTryBlock): the "try { .. }" block and the bare "try foo() catch(e){..}" statement.
+                    // The expression form goes through resolveExprTypeInner instead.
                     if (stmt.isTryBlock) {
                         checkTryBlock(stmt, scope, func, insideLoop);
                         return;
@@ -8858,31 +6021,9 @@ public class TypeChecker {
                     stmt.unlockOnExit = collectLockReleasesToBoundary(scope, scope.loopBoundaryScope);
                     return;
                 case "continue":
-                    // The exact "break" shape just above, targeting a
-                    // "try { ... }" block instead of a loop -- "a fallthru
-                    // should actually be achieved with a continue... Its
-                    // just the same as catch(e){}, but makes it a bit more
-                    // explicit," confirmed directly. Two independent
-                    // requirements, checked in the order they're most
-                    // useful to a person reading the error: this has to be
-                    // somewhere inside a catch body in the first place
-                    // (checkTry's own "must be terminating" check is what
-                    // actually makes 'continue' meaningful here -- see its
-                    // own updated error text), and that catch has to be
-                    // itself lexically inside an enclosing "try { ... }"
-                    // block for 'continue' to have anywhere well-defined
-                    // to jump to at all -- "if there isn't [one], it's a
-                    // syntax error - the fallthrough is not allowed,"
-                    // confirmed directly.
-                    // In the CLOSED case of a 'match @lock' (directly, not
-                    // inside a catch body or a nested loop) 'continue'
-                    // means "retry the acquire": jump back to the spin
-                    // loop's start. No lock is held there, so nothing is
-                    // released; only owns locals declared inside the CLOSED
-                    // body are destructed on the way.
-                    // 'continue' in a user-written 'for'/'loop' (innermost construct: not a catch body that
-                    // started inside the same loop) means "next iteration": same unwinding as 'break', but it
-                    // jumps to the loop's step (for) or start (loop) instead of its end.
+                    // Same as "break", targeting an enclosing try block. Order: a user for/loop (next iteration), the CLOSED case of a
+                    // match @lock (retry the acquire; no lock is held), then a catch body (needs an enclosing try block).
+                    // See docs/TypeChecker.md, "Statement dispatch".
                     stmt.isLoopContinue = false;
                     stmt.isLockRetryContinue = false;
                     boolean continueBelongsToCatch = insideCatchBody
@@ -8918,14 +6059,7 @@ public class TypeChecker {
                     stmt.unlockOnExit = collectLockReleasesToBoundary(scope, scope.tryBlockBoundaryScope);
                     return;
                 case "yield":
-                    // "Never any arguments, but becomes: YIELD in the
-                    // bytecode," confirmed directly -- nothing else to
-                    // check at all; already normalized to this exact bare,
-                    // single-keyword shape (see RpnConverter's own
-                    // handling of the optional "yield()" call-syntax
-                    // form), and has no restriction on where it may
-                    // appear (not even requiring the enclosing function be
-                    // '@async').
+                    // Bare keyword, no restrictions (not even @async); emits YIELD.
                     return;
                 case "ASM":
                     checkAsmDeclaration(stmt, scope);
@@ -8935,15 +6069,7 @@ public class TypeChecker {
                             "'" + stmt.text + "' is not valid inside a function body");
             }
         }
-        // "asm_name;" -- a bare identifier, alone, as the *entire*
-        // statement, referencing a known ASM (checked first, taking
-        // priority over ordinary variable resolution below, since a
-        // bare-identifier-statement that merely reads and discards an
-        // ordinary variable's value is a vanishingly rare, essentially
-        // pointless pattern nobody realistically writes -- "own separate
-        // namespace" here means no collision is ever validated between
-        // the two, so this priority order is what actually decides which
-        // one wins if a real variable happens to share the exact name).
+        // A bare identifier statement naming a known ASM invokes it (takes priority over variable resolution).
         if (stmt.type == TokenType.VARREF) {
             AsmInfo info = lookupAsmName(stmt.text, scope);
             if (info != null) {
@@ -8960,16 +6086,8 @@ public class TypeChecker {
     }
 
     /**
-     * "ASM name { ... }" or "ASM name \"path\"" declared as a
-     * statement inside a function body. Unnamed: resolves its content
-     * and stashes it directly on this declaration statement's own
-     * token -- it's never referenceable by name, so this is the only
-     * place it can ever be emitted, "spat out there and then." Named:
-     * registers into the *current* scope only (ordinary lexical
-     * scoping -- visible from here onward, within this block and any
-     * nested one, exactly like a local 'let' variable would be; never
-     * visible to a sibling or enclosing scope declared before this
-     * point).
+     * "ASM name {..}" / "ASM name \"path\"" as a statement. Unnamed: content is stashed on the token and emitted in place.
+     * Named: registered in the current scope only. See docs/TypeChecker.md, "ASM declarations".
      */
     private void checkAsmDeclaration(Token stmt, Scope scope) {
         if (!unsafeBypass(scope, "asm")) {
@@ -8982,11 +6100,7 @@ public class TypeChecker {
             return;
         }
         String name = stmt.sub.get(0).text;
-        // "In this scope" only -- matching Scope.declare's own exact
-        // convention for ordinary 'let' variables (shadowing an outer
-        // scope's same-named declaration in a nested block is allowed;
-        // only re-declaring the identical name *within* the same scope
-        // is rejected).
+        // Redeclaring in the same scope is an error; shadowing an outer scope is allowed (as for let).
         if (scope.localAsmNames.containsKey(name)) {
             throw new CompilerException("type", stmt.file, stmt.line,
                     "'ASM " + name + "' is already declared in this scope");
@@ -8999,17 +6113,8 @@ public class TypeChecker {
     }
 
     /**
-     * Exactly one of `t.asmBlockText`/`t.asmFilePath` is set (see
-     * Parser.gatherAsm). The block form's text is already fully
-     * resolved and validated (by Lexer.scanAsmBlock, at the character
-     * level, well before ordinary tokenization ever touched it) --
-     * returned as-is. The file form reads the referenced file (path
-     * resolved relative to the declaring file's own directory, the
-     * same convention ImportResolver already uses) and validates it
-     * for a stray 'ASM_END' -- "the file version would just need the
-     * ASM_END scan, not the {} balance check," confirmed directly:
-     * there's no enclosing braces to balance for a whole file, EOF is
-     * simply the end.
+     * Block form text is already validated by Lexer.scanAsmBlock; the file form is read relative to the declaring file and
+     * scanned for a stray ASM_END.
      */
     private String resolveAsmRawText(Token t) {
         if (t.asmBlockText != null) {
@@ -9031,15 +6136,7 @@ public class TypeChecker {
         return content;
     }
 
-    /**
-     * Standalone re-implementation of Lexer.scanAsmBlock's own
-     * string/comment-aware 'ASM_END' scan, minus the brace-balance
-     * tracking a block form needs but a whole file never does -- kept
-     * as a separate, simpler pass rather than forcing the file form
-     * through the lexer's own character-level machinery (which expects
-     * to be scanning this compiler's own source stream, mid-tokenize,
-     * not an arbitrary already-read file's contents after the fact).
-     */
+    /** Simplified copy of Lexer.scanAsmBlock's string/comment-aware ASM_END scan, without brace balancing (a whole file has no braces to balance). */
     private void validateNoAsmEndMarker(String content, String path) {
         int i = 0;
         int lineNo = 1;
@@ -9098,65 +6195,6 @@ public class TypeChecker {
         }
     }
 
-    /**
-     * "match p instanceof Point{ ... }" -- originally: "the compiler
-     * just needs to store these assertions about its type system...
-     * later we will address how these change the type checking within
-     * the match block itself," confirmed directly, with "the match
-     * statement doesn't change types - only cast and as can do that"
-     * as the explicit interim position. **"Later" has arrived**:
-     * confirmed by direct testing (not assumed from stale doc wording)
-     * that this was still genuinely true -- `match b instanceof Sub{
-     * b.subOnlyField }` still failed with "struct 'Base' has no member
-     * named 'subOnlyField'" immediately before this round's fix, even
-     * though a shadowing mechanism for narrowing a variable (the
-     * since-removed `cast x as Y{...}`) already existed, unused for this. `checkMatchChain`/`checkEnumForMatch` now reuse
-     * that identical mechanism automatically: any "instanceof"-kind
-     * proof recorded for a plain local-variable slot (never a
-     * '.'-chain -- narrowing only ever rebinds a real variable
-     * binding) also
-     * shadows that variable with the proven concrete type for the
-     * branch's own duration, exactly as an explicit `cast x as
-     * Sub{...}` immediately inside the branch would have. "implements"
-     * proofs are deliberately NOT narrowed the same way -- the right
-     * side of 'implements' is always an interface, never a concrete
-     * struct, so there is no single concrete baseType to narrow a
-     * variable to from that proof alone.
-     */
-    /**
-     * "I want chains, else match and elsematch," confirmed directly --
-     * a direct mirror of checkIfChain's union move-tracking ("the value
-     * is considered moved if it moved in any branch," confirmed
-     * directly -- already the exact rule checkIfChain and the loop
-     * pre-scan both already use, corrected from an earlier, wrong
-     * description of that existing rule rather than a new behavior
-     * invented here), with each match/elsematch branch keeping its own
-     * condition-checking and proof-scoping (activeMatchPatterns/base-
-     * case suspension) exactly as the single-block version already did.
-     * A bare 'else' branch gets none of that: no condition to check, no
-     * patterns proven, no suspension -- "the else block gets none of
-     * the match body's special proof privileges," confirmed directly.
-     */
-    /**
-     * "anywhere A match statement is valid, in unsafe mode only, the
-     * programmer can write... assume match expression," confirmed
-     * directly. Reuses checkMatchCondition -- the identical condition
-     * grammar and proof machinery an ordinary "match"/"elsematch"
-     * already uses -- rather than a separate, parallel implementation
-     * for every *ordinary* condition shape; "expression being any of
-     * the expressions the match statement already understands" is
-     * exactly what that reuse guarantees. The enum-style "x.field :
-     * VARIANT" shape (`stmt.assumeFieldVariants != null`) is handled
-     * entirely separately (`checkAssumeFieldVariant`, just below) since
-     * it was never buildable as an ordinary expression tree node in the
-     * first place -- see Token.assumeFieldVariants' own doc for why.
-     * Requires 'unsafe' unconditionally either way: "I know you need
-     * these checks, but as I am in unsafe mode, I'm going to vouch for
-     * their validity at runtime," confirmed directly -- there is no
-     * separate escape hatch here the way 'unsafe' itself is one for
-     * other restrictions; being inside 'unsafe' is this whole
-     * statement's own precondition, not an exemption from it.
-     */
     /** Registers (or finds) the record of a statement-level `unsafe` block and validates its tag words. */
     private UnsafeBlockRecord recordUnsafeBlock(Token stmt) {
         if (stmt.synthesizedUnsafe) {
@@ -9193,10 +6231,9 @@ public class TypeChecker {
     }
 
     /**
-     * After the whole program is checked: every statement-level `unsafe` block must name exactly the reasons it needs. A bare
-     * `unsafe{}`, a needed reason that is not written, and a written reason the block does not need are all errors. When the
-     * environment variable CASPIEN_UNSAFE_REPORT names a file, the needed tags of every block are appended there
-     * (file TAB line TAB tags) and nothing is reported -- the migration helper tests/unsafe_tags_migrate.py reads it.
+     * After the program is checked: each statement-level unsafe block must name exactly the reasons it needs. With env
+     * CASPIEN_UNSAFE_REPORT set, the needed tags are appended to that file (file TAB line TAB tags) for tests/unsafe_tags_migrate.py
+     * and nothing is reported. See docs/TypeChecker.md, "Unsafe block tags".
      */
     private void validateUnsafeBlockTags() {
         String reportPath = System.getenv("CASPIEN_UNSAFE_REPORT");
@@ -9235,6 +6272,7 @@ public class TypeChecker {
         }
     }
 
+    /** "assume match EXPR": needs unsafe; reuses checkMatchCondition, the enum-field form is checkAssumeFieldVariant. See docs/TypeChecker.md, "Assume match". */
     private List<Token.MatchPattern> checkAssumeMatchCondition(Token stmt, Scope scope, FuncInfo func) {
         if (!unsafeBypass(scope, "assume")) {
             throw new CompilerException("type", stmt.file, stmt.line,
@@ -9255,22 +6293,11 @@ public class TypeChecker {
         return patterns;
     }
 
-    /**
-     * "@lock(match self.x : X)," confirmed directly -- the same
-     * enum-style condition the '@lock' qualifier itself uses, "works
-     * fully with the @lock decorators," confirmed directly, meaning
-     * this can also satisfy that qualifier's own required proof at a
-     * call site. `stmt.sub.get(0)` is the left-hand "x.field" access,
-     * already a real, fully-built expression tree (ordinary RPN/tree
-     * processing, untouched by any of this); `stmt.assumeFieldVariants`
-     * is the right-hand variant chain, already parsed into plain
-     * strings by the parser itself, needing no further building.
-     */
+    /** "assume match x.field : V1|V2" and the float-state form; `stmt.sub.get(0)` is the built x.field tree, assumeFieldVariants the parsed variant names. */
     private void checkAssumeFieldVariant(Token stmt, Scope scope, FuncInfo func, List<Token.MatchPattern> out) {
         Token fieldAccess = stmt.sub.get(0);
         {
-            // 'assume match x : finite' / 'finite|infinite' -- the assume form of a float-state match: it records
-            // the same "float_state" proof a real `match x{ finite:{..} .. }` case body has, and never runs.
+            // float-state form: records the same "float_state" proof as a real match case body, and never runs.
             if (fieldAccess.type == TokenType.OPERATOR && fieldAccess.text.equals(".")) {
                 fieldAccess.isCompilerSynthesizedSwapAccess = true;
             }
@@ -9323,35 +6350,11 @@ public class TypeChecker {
     }
 
     /**
-     * "I want a Compiler error on redundant match statements in safe
-     * code... It's not like a lexical check, it tries the match
-     * statement and then checks if a new type assertion was added, if
-     * not its a fail," confirmed directly. Compares `newPatterns` (this
-     * one match/elsematch branch's own, just-computed proofs) against
-     * `scope.activeMatchPatterns` (whatever was already active *before*
-     * this branch) -- exactly the same information a nested match
-     * would otherwise redundantly re-derive. "The question is not if
-     * they are related, the question is if they provide the same type
-     * assurances to the type system, and that is the only question,"
-     * confirmed directly -- so two conditions about the very same
-     * variable are perfectly fine together as long as each one's own
-     * proof is genuinely new (`Some(x)` nested inside `x instanceof X`,
-     * or `x instanceof Y` nested inside `x instanceof X` for a
-     * different `Y`, are both allowed; only a branch whose *every* own
-     * proof already exactly matches one already active is rejected).
-     * Never called for a bare "else"/no-condition branch at all (there
-     * is nothing here to have asserted in the first place), and never
-     * for the enum-style, case-label form ("This doesnt apply to
-     * matching on an enum tho," confirmed directly -- `checkCaseMatch`
-     * never calls this).
+     * Safe code: a match/elsematch branch must add at least one proof not already active (an alive proof with kill events
+     * since it was made counts as stale). Never called for a bare else or for case matches. See docs/TypeChecker.md, "Match chains".
      */
     private void requireNewTypeAssertion(List<Token.MatchPattern> newPatterns, Scope scope, Token at) {
         if (scope.currentSafety.equals("unsafe") || newPatterns.isEmpty()) {
-            // An empty `newPatterns` means this condition never produced
-            // anything trackable in the first place (e.g. its own
-            // operand isn't a nameable slot at all) -- "redundant" isn't
-            // a meaningful question to ask about it, since there's
-            // nothing here to compare against anything earlier.
             return;
         }
         for (Token.MatchPattern p : newPatterns) {
@@ -9366,7 +6369,7 @@ public class TypeChecker {
                         + "already active here");
     }
 
-    /** Field-by-field equality for `Token.MatchPattern` -- there is no `equals()`/`hashCode()` on the class itself (it's compared this narrowly only here, nowhere else needs it). */
+    /** Field-by-field equality; MatchPattern has no equals(). */
     private boolean matchPatternsEqual(Token.MatchPattern a, Token.MatchPattern b) {
         return java.util.Objects.equals(a.slotKey, b.slotKey) && java.util.Objects.equals(a.kind, b.kind)
                 && java.util.Objects.equals(a.targetName, b.targetName)
@@ -9374,6 +6377,7 @@ public class TypeChecker {
                 && java.util.Objects.equals(a.provenVariants, b.provenVariants);
     }
 
+    /** match / elsematch / else chain: union move-tracking like checkIfChain, per-branch proof scoping. See docs/TypeChecker.md, "Match chains". */
     private void checkMatchChain(Token matchTok, Scope scope, FuncInfo func, boolean insideLoop) {
         Set<String> preState = scope.movedSlots;
         Set<String> union = new HashSet<>();
@@ -9394,10 +6398,7 @@ public class TypeChecker {
             Scope branchScope = new Scope(scope, branchMoved, extended, isBaseCaseMatch);
             narrowInstanceofSlots(patterns, scope, branchScope);
             checkLinesInScope(branch.childs, branchScope, func, insideLoop);
-            // Same reasoning as an 'if' branch -- a match/elsematch/else
-            // branch's own natural end is not a function/loop boundary
-            // at all, so only its own immediate locals are destructed
-            // here.
+            // Natural end of a branch is not a function/loop boundary.
             branch.destructOnExit = collectNaturalEndDestruct(branch.childs, branchScope, branchScope);
             union.addAll(branchMoved);
             if (!closedCaseTerminates(branch.childs)) { survivorMoves.add(branchMoved); }
@@ -9405,19 +6406,7 @@ public class TypeChecker {
         finishBranchMerge(preState, union, survivorMoves, !chainHasElse(matchTok));
     }
 
-    /**
-     * Shared by `checkMatchChain` and `checkEnumForMatch` -- for every
-     * "instanceof"-kind proof in `patterns` whose own slot is a plain
-     * local-variable name (never a '.'-chain or a lookup -- narrowing
-     * only ever rebinds a real variable binding), shadows that variable inside
-     * `branchScope` with a copy of its own original `TypeInfo` except
-     * the baseType replaced by the proof's own concrete target --
-     * identical in shape to an explicit narrowing of the variable
-     * by hand. Silently skips anything that doesn't resolve to a real,
-     * currently-in-scope plain variable (an untrackable slot, or a
-     * proof over an expression rather than a variable) -- there's
-     * nothing to shadow in that case.
-     */
+    /** Shadows a plain local variable with the concrete type proven by an "instanceof" proof for the branch (not for dotted/indexed slots). See docs/TypeChecker.md, "Match chains". */
     private void narrowInstanceofSlots(List<Token.MatchPattern> patterns, Scope outerScope, Scope branchScope) {
         for (Token.MatchPattern p : patterns) {
             if (!"instanceof".equals(p.kind) || p.slotKey == null || p.slotKey.contains(".") || p.slotKey.contains("[")) {
@@ -9431,29 +6420,10 @@ public class TypeChecker {
         }
     }
 
-    /**
-     * "match b{ TRUE:{...} FALSE:{...} }" -- "we need to support match
-     * on an enum," confirmed directly. Unlike checkMatchChain, this
-     * establishes no new proof/type information at all -- "the match
-     * statement should in theory mean the compiler has some new type
-     * information, but... there is nothing for it to do with this
-     * information at this stage of development, so it makes no
-     * assertions about types for now," confirmed directly -- each
-     * case's own body is checked in an entirely ordinary child scope,
-     * with no MatchPattern recorded.
-     */
+    /** "match e{ A:{..} B:{..} }" on an enum: records no proof; each case body is an ordinary child scope. See docs/TypeChecker.md, "Float and enum case matches". */
     private void checkCaseMatch(Token matchTok, Scope scope, FuncInfo func, boolean insideLoop) {
         Token conditionExpr = matchTok.sub.get(0);
-        // "match x instanceof ParentClass.enum{...}" / "match x
-        // implements MyInterface.enum{...}" -- a third, genuinely
-        // different case-match condition shape, alongside an ordinary
-        // enum-typed or 'f32' bare condition: detected structurally,
-        // before the generic resolveExprType dispatch below ever runs
-        // (which would otherwise reject "ParentClass.enum" outright --
-        // checkInstanceof/checkImplementsOperator both require a bare
-        // VARREF on the right, and "X.enum" is a "."-access node, not
-        // one). See checkEnumForMatch's own doc comment for the full
-        // semantics.
+        // "match x instanceof P.enum{..}" / "implements I.enum{..}" is detected structurally before resolveExprType rejects "P.enum".
         if (isEnumForMatchCondition(conditionExpr)) {
             checkEnumForMatch(matchTok, conditionExpr, scope, func, insideLoop);
             return;
@@ -9473,30 +6443,10 @@ public class TypeChecker {
                         + "enum-typed or 'f32'/'f64' condition, got '" + conditionType.canonical() + "'");
     }
 
-    /**
-     * "let f = 0.25... match f{ finite:{...} infinite:{...} nan:{...}
-     * }," confirmed directly -- the `f32` counterpart of checkEnumMatch,
-     * sharing the exact same overall shape (validate the real
-     * construct fully first; only afterward, lower to an if-chain-
-     * equivalent bytecode form) but against `f32`'s own three-state
-     * "finite"/"infinite"/"nan" universe instead of an enum's own
-     * variant list, and with a real proof recorded per case -- "note
-     * this is only for access... this restriction doesnt apply in
-     * unsafe mode," confirmed directly: entering any case (including a
-     * `|`-combined one) proves `conditionExpr`'s own slot for the rest
-     * of that case body, the identical "alive" shape `isProvenAlive`
-     * already has, just under its own new "float_state" kind rather
-     * than reusing that one (a genuinely different guarantee -- "not
-     * null" vs "not an unproven float" -- so a separate kind, not an
-     * overloaded meaning for the existing one).
-     */
+    /** "match f{ finite:.. infinite:.. nan:.. }" on a float: exhaustive over the type's allowed states, records a "float_state" proof per case, then lowers to an if-chain. See docs/TypeChecker.md, "Float and enum case matches". */
     private void checkFloatMatch(Token matchTok, Token conditionExpr, TypeInfo conditionType, Scope scope,
             FuncInfo func, boolean insideLoop) {
-        // "the match statement must be exhaustive for the type, taking
-        // into account the modifier," confirmed directly -- the
-        // required set to cover is the condition's own type-level
-        // restriction if it has one, or the full three-state universe
-        // if it's unconstrained (no modifier written at all).
+        // Exhaustive over the type-level state set if it has one, else all three states.
         Set<String> required = conditionType.floatStates != null
                 ? conditionType.floatStates : FLOAT_STATE_NAMES;
         Set<String> covered = new HashSet<>();
@@ -9510,19 +6460,13 @@ public class TypeChecker {
             for (Token label : labels) {
                 String labelName = label.text;
                 if (!isFloatStateName(labelName)) {
-                    // "There's no default allowed as a case in this
-                    // match statement," confirmed directly -- 'default'
-                    // (or anything else) simply isn't a recognized
-                    // label here at all, not even structurally, unlike
-                    // the enum form where it's a real, meaningful
-                    // (if conditionally rejected) case.
+                    // No default here: anything but a float state name is rejected.
                     throw new CompilerException("type", label.file, label.line,
                             "'" + labelName + "' isn't a valid float state -- expected 'finite', "
                                     + "'infinite', or 'nan'");
                 }
                 if (!required.contains(labelName)) {
-                    // "not only is nan not required, it would be a
-                    // compiler error," confirmed directly.
+                    // A state the type's modifier rules out is an error.
                     throw new CompilerException("type", label.file, label.line,
                             "'" + labelName + "' is impossible here -- '" + conditionType.canonical()
                                     + "'s own state modifier already rules it out");
@@ -9563,25 +6507,9 @@ public class TypeChecker {
     }
 
     /**
-     * The `f32` counterpart of lowerEnumMatchToIfChain -- see its own
-     * comment for the shared reasoning (validation strictly above,
-     * mutate `matchTok` in place, the very last case always
-     * unconditional). The one real difference: "for the bytecode
-     * emission, this is a conditional chain like the others, but unlike
-     * an enum we wont be doing a comparison operator... PUSH f /
-     * FLOAT_CHECK finite," confirmed directly -- so this builds a new,
-     * purely compiler-internal "FLOAT_CHECK" operator node (never
-     * parsed from real source, so resolveExprType has no general case
-     * for it -- its own result type is set directly here instead,
-     * mirroring how checkMatchCondition's own "is_base" case sets
-     * `resolvedType` by hand rather than through the ordinary dispatch)
-     * instead of an "==" comparison. `.right`'s own text field carries
-     * the alphabetically-sorted "finite|nan"-style chain string
-     * straight through to BytecodeEmitter -- "canonicalise the chains
-     * to be alphabetical order within the bytecode regardless of what
-     * the user writes," confirmed directly, free here since `.sub` on
-     * a case is built in source order but the canonical chain text is
-     * built from a TreeSet instead, never from that source order.
+     * Float counterpart of lowerEnumMatchToIfChain: each non-last case becomes an if on a compiler-internal "FLOAT_CHECK"
+     * node (result type set by hand; no resolveExprType case) whose right text is the alphabetically sorted chain
+     * ("finite|nan"), built from a TreeSet so source order never matters. See docs/TypeChecker.md, "Float and enum case matches".
      */
     private void lowerFloatMatchToIfChain(Token matchTok, Token conditionExpr, Scope scope, FuncInfo func) {
         List<Token> cases = matchTok.childs;
@@ -9599,22 +6527,7 @@ public class TypeChecker {
                 for (Token label : caseTok.sub) {
                     chain.add(label.text);
                 }
-                // Reuses `conditionExpr` directly -- no clone at all --
-                // rather than a shallow "new Token(type, text, line,
-                // file)" copy, which silently dropped `.left`/`.right`
-                // (a real, separate bug found and fixed directly: a
-                // compound condition like "obj.field" crashed with a
-                // NullPointerException the moment more than one case
-                // needed its own copy, since the shallow clone was a
-                // bare, childless VARREF-shaped Token no matter what the
-                // real condition actually was -- never caught earlier
-                // since every match condition tested until now happened
-                // to be a single bare variable). Safe to reuse the exact
-                // same object across every case's own comparison:
-                // `conditionExpr` is already fully type-checked and
-                // never mutated again after this point, so multiple
-                // parents pointing at the same read-only subtree causes
-                // no issue for a tree-walking emitter.
+                // conditionExpr is reused, not cloned, in every case: it is fully checked and never mutated again.
                 Token chainTok = new Token(TokenType.VARREF, String.join("|", chain), caseTok.line, caseTok.file);
                 Token checkOp = new Token(TokenType.OPERATOR, "FLOAT_CHECK", caseTok.line, caseTok.file);
                 checkOp.left = conditionExpr;
@@ -9680,13 +6593,7 @@ public class TypeChecker {
                 for (Token label : labels) {
                     String labelName = label.text;
                     if (labelName.equals("default")) {
-                        // "default must be the last case in the match,"
-                        // confirmed directly -- and its own "cover
-                        // everything not named elsewhere" meaning
-                        // doesn't combine sensibly with an explicit
-                        // variant name alongside it in one `|`-chain
-                        // either, so it's rejected there too, not just
-                        // when it's genuinely alone.
+                        // "default" cannot share a "|"-chain with a variant name; it must stand alone as the final case.
                         throw new CompilerException("type", label.file, label.line,
                                 "'default' can't be combined with another label in a '|'-chain -- it must "
                                         + "stand alone as its own, final case");
@@ -9707,15 +6614,7 @@ public class TypeChecker {
                     ? enumInfo.variants.stream().filter(v -> !covered.contains(v))
                             .collect(java.util.stream.Collectors.toList())
                     : labels.stream().map(l -> l.text).collect(java.util.stream.Collectors.toList());
-            // "@lock(match self.x : X)" (struct-level) and "@lock(match
-            // ...)" enum-style on a method both read this exact same
-            // proof -- granted generally, for *any* "receiver.field"
-            // match condition, not only one a struct happens to have
-            // declared a lock qualifier for at all (see
-            // Token.MatchPattern's own "enum_field_variants" doc for
-            // why this is deliberately general, not narrowly gated to
-            // only the cases the struct-level feature originally
-            // needed).
+            // Every "receiver.field" condition records the enum_field_variants proof that @lock(match self.x : X) qualifiers read.
             if (conditionExpr.type == TokenType.OPERATOR && conditionExpr.text.equals(".")) {
                 String fieldSlot = slotKeyOf(conditionExpr.left);
                 if (fieldSlot != null) {
@@ -9753,43 +6652,12 @@ public class TypeChecker {
                             + String.join(", ", missing));
         }
         finishBranchMerge(preState, union, survivorMoves, false);
-        // "I want it to compile as tho it were an if c/else if/else
-        // chain, always ending as if else even for a non-default
-        // terminating block," confirmed directly -- done *here*,
-        // strictly after every validation/case-body check above has
-        // already run against the real match-on-enum construct (never
-        // instead of that -- "it cant convert it and then type check
-        // it... match blocks may assert type information to the
-        // compiler, so that has to exist to be possibly added to
-        // later," confirmed directly: this lowering step is purely a
-        // bytecode-shape concern, with no bearing on where a future
-        // per-case type-narrowing mechanism would need to hook in
-        // above). The very last case never gets a comparison at all,
-        // exhaustiveness/'default' having already guaranteed by this
-        // point that it's the only value physically left once every
-        // earlier one has been ruled out -- exactly "if(a==MyEnum.TRUE)
-        // {}else{}," confirmed directly, not an extra, redundant final
-        // comparison. Mutates `matchTok` itself in place (rather than
-        // replacing it) since every other reference to this exact
-        // object elsewhere in the tree needs to see the new shape too;
-        // `emitIfChain` reads only `.sub`/`.childs`/`.right`/
-        // `.destructOnExit`, never `.text`, confirmed directly, so
-        // leaving `.text` as "match" causes no issue at BytecodeEmitter's
-        // own dispatch -- only `emitStatement`'s *own* switch (on
-        // `.text`) needs it changed to "if" to route there at all.
+        // Lowered to an if/else-if/else chain only now, after all validation ran on the real construct; the last case gets no
+        // comparison. matchTok is mutated in place; emitIfChain ignores .text, only emitStatement needs "if". See docs/TypeChecker.md, "Float and enum case matches".
         lowerEnumMatchToIfChain(matchTok, conditionExpr, enumInfo, scope, func);
     }
 
-    /**
-     * The lowering step checkEnumMatch's own final call performs -- see
-     * its own comment there for the full reasoning. Builds one
-     * "conditionExpr == EnumName.Variant" comparison per case except the
-     * last, type-checked here directly (BytecodeEmitter itself never
-     * type-checks anything, it only emits from already-resolved
-     * `.resolvedType` fields) via the exact same general "==" dispatch
-     * (`resolveExprType`) any other comparison in this language already
-     * goes through -- no new comparison logic invented for this.
-     */
+    /** Lowering step of checkEnumMatch: one type-checked "conditionExpr == Enum.Variant" per case except the last, via the ordinary "==" dispatch. */
     private void lowerEnumMatchToIfChain(Token matchTok, Token conditionExpr, EnumInfo enumInfo, Scope scope,
             FuncInfo func) {
         List<Token> cases = matchTok.childs;
@@ -9803,29 +6671,8 @@ public class TypeChecker {
             if (isLast) {
                 branch.sub = new ArrayList<>();
             } else {
-                // One "conditionExpr == EnumName.Label" comparison per
-                // label in this case's own `.sub` (more than one only
-                // for the `|`-chained form), OR-combined together --
-                // "TRUE|FALSE:{...}" lowers to
-                // "conditionExpr==EnumName.TRUE||conditionExpr==EnumName.FALSE".
-                // Reuses `conditionExpr` directly in every comparison --
-                // no clone at all -- rather than a shallow "new
-                // Token(type, text, line, file)" copy, which silently
-                // dropped `.left`/`.right` (a real, separate bug found
-                // and fixed directly: a compound condition like
-                // "obj.field" crashed with a NullPointerException the
-                // moment more than one case needed its own copy, since
-                // the shallow clone was a bare, childless VARREF-shaped
-                // Token no matter what the real condition actually was
-                // -- never caught earlier since every match condition
-                // tested until now happened to be a single bare
-                // variable). Safe to reuse the exact same object across
-                // every case's own comparison: `conditionExpr` is
-                // already fully type-checked and never mutated again
-                // after this point (re-resolving it again via
-                // resolveExprType below is simply idempotent), so
-                // multiple parents pointing at the same read-only
-                // subtree causes no issue for a tree-walking emitter.
+                // One "conditionExpr == Enum.Label" per label, OR-combined for "A|B:" chains.
+                // conditionExpr is reused, not cloned (it is fully checked and never mutated again; re-resolving it is idempotent).
                 Token combined = null;
                 for (Token labelTok : caseTok.sub) {
                     Token enumNameTok = new Token(TokenType.VARREF, enumInfo.name, labelTok.line, labelTok.file);
@@ -9864,15 +6711,7 @@ public class TypeChecker {
         matchTok.right = first.right;
     }
 
-    /**
-     * True if `conditionExpr` is exactly "x instanceof OwnerName.enum"
-     * or "x implements OwnerName.enum" -- the structural shape
-     * checkCaseMatch checks for before its own generic dispatch runs.
-     * "OwnerName.enum" is parsed as an ordinary "."-access node whose
-     * right side is a bare VARREF "enum" (lexed contextually as a
-     * VARREF, not the "enum" declaration keyword, immediately after a
-     * "." -- see Lexer.justSawDotOperator).
-     */
+    /** True for exactly "x instanceof Owner.enum" / "x implements Owner.enum" ("enum" lexes as a VARREF after "."; Lexer.justSawDotOperator). */
     private boolean isEnumForMatchCondition(Token conditionExpr) {
         if (conditionExpr.type != TokenType.OPERATOR
                 || !(conditionExpr.text.equals("instanceof") || conditionExpr.text.equals("implements"))) {
@@ -9885,18 +6724,9 @@ public class TypeChecker {
     }
 
     /**
-     * Only in a match statement may an Interface.enum be used in place of
-     * a literal interface name for implements, which then produces an enum
-     * style match statement: "match x implements MyInterface.enum{
-     * StructWhichImplementsA:{...} ... }". Each case's own label names a
-     * real member of the interface's compiler-synthesized
-     * "$enum_for_InterfaceName" enum (see TypeChecker.generateEnumForEnums)
-     * -- the interface's implementers -- and the match must be exhaustive
-     * over that exact membership list (no 'default' case exists for this
-     * form). Structs have no subclasses, so 'Struct.enum' no longer exists.
-     * Each case's own body gets the "instanceof" MatchPattern proof that
-     * checkMatchCondition's own ordinary "x instanceof Y" case records,
-     * just derived from this construct instead.
+     * "match x implements Iface.enum{ Impl1:{..} .. }": labels are the members of the synthesized "$enum_for_Iface" enum
+     * (generateEnumForEnums) and must cover it exactly, no default. "instanceof Owner.enum" is always an error (structs have no
+     * subclasses). Each case gets an "instanceof" proof. See docs/TypeChecker.md, "Float and enum case matches".
      */
     private void checkEnumForMatch(Token matchTok, Token conditionExpr, Scope scope, FuncInfo func,
             boolean insideLoop) {
@@ -9926,16 +6756,7 @@ public class TypeChecker {
             }
             memberNames = enumForInfo.variants;
         }
-        // Validate x itself exactly as an ordinary "x instanceof
-        // FirstMember" would (leftType is an interface-typed value,
-        // alive-proof, @untyped) -- reuses checkInstanceof directly, on a
-        // throwaway node built against the owner's own first member,
-        // purely so every one of those existing checks runs once, up
-        // front, with a clear error if x itself is invalid, before any
-        // case-by-case validation. Always "instanceof", never
-        // "implements", even for the "implements"-on-interface form --
-        // every member name here is a concrete struct (see
-        // lowerEnumForMatchToIfChain's own comment for why).
+        // A throwaway "x instanceof FirstMember" runs checkInstanceof once on x (always instanceof: members are concrete structs).
         Token probe = new Token(TokenType.OPERATOR, "instanceof", conditionExpr.line, conditionExpr.file);
         probe.left = xExpr;
         probe.right = new Token(TokenType.VARREF, memberNames.get(0), conditionExpr.line, conditionExpr.file);
@@ -9968,31 +6789,12 @@ public class TypeChecker {
             Set<String> branchMoved = new HashSet<>(preState);
             List<Token.MatchPattern> branchPatterns = scope.activeMatchPatterns;
             if (xSlotKey != null && labels.size() == 1) {
-                // Always an "instanceof" proof, even for the
-                // 'implements'-on-interface form -- a case label always
-                // names a concrete struct (the interface's own
-                // implementer), never an interface itself, so the real
-                // assertion a case body gains is always "x is this
-                // exact concrete type," the identical guarantee "match
-                // x instanceof SubClass1{}" already gives -- "in here is
-                // the same type assertion as if it was in a match x
-                // instanceof SubClass1{}," confirmed directly, stated
-                // for the instanceof-on-hierarchy form but equally true
-                // here: an interface conformance alone was already
-                // established by "x implements MyInterface.enum" being
-                // the match's own outer condition; each case narrows
-                // that down to one specific concrete implementer.
+                // Always an "instanceof" proof, even for the "implements" form: a label names a concrete implementer.
                 branchPatterns = new ArrayList<>(branchPatterns);
                 branchPatterns.add(new Token.MatchPattern(xSlotKey, "instanceof", labels.get(0).text));
             }
             Scope branchScope = new Scope(scope, branchMoved, branchPatterns, false);
-            // Same shadowing checkMatchChain's own ordinary "instanceof"
-            // branches now get -- see narrowInstanceofSlots' own doc
-            // comment. This is what lets a synthesized interface-method
-            // dispatcher's own case body (planned next) write plainly
-            // "c.foo(args)" inside the 'A:' case and have it resolve as
-            // A's own method, not the still-unsupported bare-interface
-            // dispatch this compiler rejects everywhere else.
+            // Same instanceof shadowing as checkMatchChain (narrowInstanceofSlots), so "c.foo()" in an "A:" case resolves as A's method.
             narrowInstanceofSlots(branchPatterns, scope, branchScope);
             checkLinesInScope(caseTok.childs, branchScope, func, insideLoop);
             caseTok.destructOnExit = collectNaturalEndDestruct(caseTok.childs, branchScope, branchScope);
@@ -10013,26 +6815,11 @@ public class TypeChecker {
         lowerEnumForMatchToIfChain(matchTok, xExpr, scope, func);
     }
 
-    /**
-     * The lowering step checkEnumForMatch's own final call performs --
-     * mirrors lowerEnumMatchToIfChain's own shape exactly (validate
-     * fully above, mutate matchTok in place afterward, the last case
-     * always unconditional), except each per-label comparison is a
-     * genuine "x instanceof Label"/"x implements Label" operator node
-     * (OR-combined for a '|'-chained case) rather than an "=="
-     * comparison -- "x.___type in Class.MySubClass... x instanceof
-     * MySubClass," confirmed directly as the intended real-world
-     * meaning, so the lowered bytecode shape is the ordinary
-     * INSTANCEOF/IMPLEMENTS instruction, unchanged.
-     */
+    /** Lowering step of checkEnumForMatch: like lowerEnumMatchToIfChain but each comparison is an INSTANCEOF node (OR-combined for "|" chains). */
     private void lowerEnumForMatchToIfChain(Token matchTok, Token xExpr, Scope scope, FuncInfo func) {
         List<Token> cases = matchTok.childs;
         List<Token> branches = new ArrayList<>();
-        // Always "instanceof" -- see checkEnumForMatch's own proof-
-        // recording comment above for why a case label is always a
-        // concrete struct name, never an interface, regardless of
-        // whether the match's own outer condition was written with
-        // "instanceof" or "implements".
+        // Always "instanceof": a case label is a concrete struct, even for the "implements" form.
         String opText = "instanceof";
         for (int i = 0; i < cases.size(); i++) {
             Token caseTok = cases.get(i);
@@ -10078,24 +6865,14 @@ public class TypeChecker {
     }
 
     /**
-     * "The following operations permitted: left instanceof right, left
-     * implements right, left in right, left [a bare expression]. They
-     * can also be chained using the operator and," confirmed directly.
-     * Recurses through an "and"-chain, type-checking each leaf via the
-     * exact same resolveExprType dispatch every other expression already
-     * goes through (reusing checkInstanceof/checkImplementsOperator/
-     * checkIn's full existing validation unchanged) and recording one
-     * MatchPattern per leaf.
+     * Match condition grammar: left instanceof right, left implements right, left in right, a bare expression, chained with
+     * "and". Each leaf is checked through resolveExprType and records one MatchPattern. See docs/TypeChecker.md, "Match chains".
      */
     private void checkMatchCondition(Token node, Scope scope, FuncInfo func, List<Token.MatchPattern> out) {
         if (node.type == TokenType.OPERATOR && node.text.equals("and")) {
             checkMatchCondition(node.left, scope, func, out);
             checkMatchCondition(node.right, scope, func, out);
-            // "and" only ever appears inside a match condition -- there's
-            // no general resolveExprType dispatch case for it (nothing
-            // else in the language ever produces one), so its own result
-            // type is set directly here rather than through that path;
-            // always bool, the same result "&&" itself would produce.
+            // "and" has no resolveExprType case; its result type is set here (always bool).
             node.resolvedType = "imut_bool";
             return;
         }
@@ -10103,61 +6880,22 @@ public class TypeChecker {
                 && (node.left.type == TokenType.VARREF || (assumeKeyMode && exprKeyOf(node.left) != null))
                 && node.right.type == TokenType.INTEGER
                 && node.right.text.equals("0")) {
-            // "match rht!=0 and lft!=0{ return lft/rht }" -- confirmed
-            // directly, a real, dedicated match-condition case: proving
-            // an integer variable is nonzero, which then (see
-            // checkArithmetic/checkCompoundAssign) makes '/'/'%'/'/='/
-            // '%=' on it legal in ordinary (non-'unsafe') code.
-            //
-            // Never falls through to the generic bare-expression "alive"
-            // case below, regardless of whether the type ends up being
-            // one this proof actually helps with -- a bare "x != 0"
-            // comparison's own *result* (a bool) was never a meaningful
-            // thing to alive-check via the ghost table in the first
-            // place; that's a real, separate class of bug this
-            // deliberately avoids reproducing for its own new case,
-            // confirmed directly by testing the unfixed general shape
-            // first ("rht != 0 and lft != 0" as a match condition was
-            // emitting a real, meaningless GT_ALIVE_CHECK on the
-            // comparison's own boolean result before this existed).
+            // "match rht != 0 and lft != 0{ .. }": proves an integer nonzero, which makes / % /= %= legal in safe code.
+            // Never falls through to the bare-expression "alive" case (an alive check on the comparison's bool result is meaningless).
             TypeInfo leftType = resolveExprType(node.left, scope, func);
             boolean isInteger = INTEGER_TYPES.contains(leftType.baseType);
             if (!isInteger) {
-                // Not the numeric-vs-zero shape after all (e.g. some
-                // other, non-numeric type happens to be compared against
-                // a bare integer "0") -- fall through to the ordinary
-                // comparison check, which will produce its own accurate
-                // type error for whatever this actually is.
+                // Not an integer after all: let the ordinary comparison check report its own error.
                 resolveExprType(node, scope, func);
                 out.add(new Token.MatchPattern(slotKeyOf(node), "alive", null));
                 return;
             }
-            // A literal "0" is representable in *every* integer type,
-            // signed or unsigned -- but resolveExprType always resolves
-            // a bare integer literal's own base type as "u64"
-            // unconditionally (there's no context-sensitive promotion
-            // for literals the way unary minus gets one), and
-            // checkComparison requires an exact base-type match on both
-            // sides. Calling resolveExprType on the whole node here
-            // would therefore wrongly reject "someS64Var != 0" as a
-            // type mismatch ('mut_s64' vs 'indeterminate_u64') --
-            // confirmed directly, this is exactly what happened before
-            // this fix. Set the comparison's own resolved types by hand
-            // instead, coercing the literal's base type to match the
-            // left side's -- 0 is a genuinely valid value in either
-            // signedness, so this isn't a real coercion risk the way it
-            // would be for two arbitrary mismatched operands.
+            // A literal 0 fits every integer type, but resolveExprType types it u64 and checkComparison needs equal base types, so
+            // the comparison's types are set by hand here (literal coerced to the left side's type).
             node.right.resolvedType = leftType.canonical();
             node.resolvedType = "imut_bool";
             boolean isUnsigned = UNSIGNED_TO_SIGNED.containsKey(leftType.baseType);
-            // "!=0" only proves enough for safe division on an unsigned
-            // type -- for a signed one, the divisor could still be -1,
-            // and TYPE_MIN / -1 is a second, genuinely distinct integer
-            // division hazard (it overflows the type's own representable
-            // range) that traps identically to division by zero on real
-            // hardware, not merely a theoretical concern. ">0" (strictly
-            // positive) rules the divisor being -1 out entirely, for
-            // either signedness, so it's always sufficient regardless.
+            // "!= 0" suffices only for unsigned types (a signed divisor could still be -1: TYPE_MIN / -1 traps); "> 0" always suffices.
             boolean sufficientForDivision = node.text.equals(">") || (node.text.equals("!=") && isUnsigned);
             if (sufficientForDivision) {
                 out.add(new Token.MatchPattern(proofKeyOf(node.left), "nonzero", null));
@@ -10177,33 +6915,19 @@ public class TypeChecker {
         if (node.type == TokenType.OPERATOR && (node.text.equals("in") || node.text.equals("into"))
                 && node.left.type == TokenType.OPERATOR && node.left.text.equals("CALL")
                 && node.left.left.type == TokenType.VARREF && node.left.left.text.equals("Some")) {
-            // "match Some(i) in x{...}" / "match Some(i) into x{...}" --
-            // the sugar form, handled entirely separately below (never
-            // falling through to the ordinary "in"/"into" cases, which
-            // would otherwise reject "Some(i)" outright as an invalid
-            // left operand).
+            // "match Some(i) in x" / "into x": sugar form handled separately (the ordinary in/into cases would reject "Some(i)").
             checkSomeIndexBoundsCondition(node, node.text, scope, func, out);
             return;
         }
         if (node.type == TokenType.OPERATOR && node.text.equals("in")) {
             resolveExprType(node, scope, func);
-            // "u64 in GuaranteedEnum" is deliberately never valid as a
-            // match condition -- confirmed directly: unlike the
-            // ordinary range/dynarray "in" (which proves an
-            // index is in bounds, relaxing a real, later restriction),
-            // there's nothing this shape could ever relax inside the
-            // block -- the right side is a bare type name, not a
-            // nameable slot a bounds proof could even target.
+            // "u64 in GuaranteedEnum" is never a valid match condition: the right side is a type name, so no bounds proof can target it.
             if (node.isGuaranteedEnumMembershipCheck) {
                 throw new CompilerException("type", node.file, node.line,
                         "'u64 in " + node.right.resolvedType + "' is not valid as a match condition -- "
                                 + "it's only usable as an ordinary bool expression");
             }
-            // "u64 in string" is likewise never valid as a match
-            // condition -- same reasoning as the guaranteed-enum case
-            // just above: this is a byte-membership scan, not a bounds
-            // check, so there's no index/target pair here for a bounds
-            // proof to ever relax.
+            // "u64 in string" is a byte-membership scan, not a bounds check: likewise never a match condition.
             if (node.isStringMembershipCheck) {
                 throw new CompilerException("type", node.file, node.line,
                         "'u64 in <string>' is not valid as a match condition -- "
@@ -10213,18 +6937,8 @@ public class TypeChecker {
             return;
         }
         if (node.type == TokenType.OPERATOR && node.text.equals("into")) {
-            // "match i into arr{...}" -- structurally identical to "match
-            // i in arr{...}" (same left/right type rules, reused directly
-            // via checkIn -- "into" is never in the generic
-            // resolveExprType dispatch at all, so it's called here
-            // by hand instead), but recorded under its own "into"
-            // MatchPattern kind rather than "in": "into" grants
-            // everything "in" does (isProvenInBounds treats an "into"
-            // proof as a superset, for reads) *plus* a write-legalizing
-            // proof isProvenWritable alone consults, for the exact same
-            // (index, target) pair -- "arr[i] = ..." now works, but
-            // "arr[i+1] = ..." still doesn't, matching the exact-index
-            // requirement "in"'s own bounds proof already has.
+            // "match i into arr{..}": like "in" (checkIn, called by hand), but recorded as an "into" proof, which also
+            // legalizes writes at that exact index (isProvenWritable). See docs/TypeChecker.md, "Match chains".
             TypeInfo intoCondType = checkIn(node, scope, func);
             node.resolvedType = intoCondType.canonical();
             if (node.isGuaranteedEnumMembershipCheck) {
@@ -10241,26 +6955,13 @@ public class TypeChecker {
             return;
         }
         if (node.type == TokenType.OPERATOR && node.text.equals("within")) {
-            // "in a match statement, providing the same type assurance
-            // to the type system by doing so," confirmed directly --
-            // "within" is a fully legal match condition, checked by the
-            // same resolveExprType dispatch (-> checkWithin) "in" uses,
-            // and recorded under the exact same "in" MatchPattern kind
-            // "in" itself uses -- not a separate "within" kind -- so
-            // every downstream consumer of an "in" proof
-            // (isProvenInBounds, requireMethodLockProofs, any future
-            // one) treats a proven "match A within B{...}" exactly the
-            // same as a proven "match A in B{...}", with zero special-
-            // casing needed anywhere past this point.
+            // "within" is checked like "in" and recorded under the same "in" proof kind, so every consumer of an "in" proof treats it alike.
             resolveExprType(node, scope, func);
             out.add(new Token.MatchPattern(boundsSlotKeyOf(node.left), "in", null, boundsTargetSlotOf(node.right)));
             return;
         }
         if (node.type == TokenType.OPERATOR && node.text.equals("fits")) {
-            // "match x fits u8{...}" -- integer tightening: inside the branch, x is proven
-            // representable in the named integer type, so 'x as u8' (narrowing, or a sign
-            // change) is legal there. Recorded under its own "fits" MatchPattern kind, with the
-            // target type name; a later write to x invalidates it like every other proof.
+            // "match x fits u8{..}": inside the branch x is proven representable in u8, so "x as u8" is legal; a later write to x kills it.
             TypeInfo fitsLeft = resolveExprType(node.left, scope, func);
             if (fitsLeft.storage != null || !INTEGER_TYPES.contains(fitsLeft.baseType)) {
                 throw new CompilerException("type", node.left.file, node.left.line,
@@ -10282,22 +6983,8 @@ public class TypeChecker {
             return;
         }
         if (node.type == TokenType.OPERATOR && node.text.equals("is")) {
-            // "match RANGE_PARAM is base{...}" -- confirmed directly, a
-            // special, reserved form (not a general-purpose "is"
-            // operator), kept as-is and retargeted from the now-removed
-            // 'recurse' type to plain 'range': "it is kept... think
-            // about what a @recurse function is and the purpose. still
-            // need to check the base case first, its just now it is
-            // done on a range," confirmed directly. The left side must
-            // be a range-typed expression (a @recursive function's own
-            // final parameter, by the structural check above), and the
-            // right side must be literally the bare word "base", nothing
-            // else. "base" for a range means the range is empty (its
-            // start has reached its end) -- checked purely at runtime by
-            // IS_BASE, since a range's bounds aren't necessarily known
-            // at compile time. No general resolveExprType dispatch case
-            // for "is" exists (same reasoning as "and"), so its own
-            // result type is set directly here too.
+            // "match RANGE_PARAM is base{..}": reserved form, left must be a range, right literally "base" (range empty, tested at run time by
+            // IS_BASE). Like "and", it has no resolveExprType case, so its result type is set here.
             TypeInfo leftType = resolveExprType(node.left, scope, func);
             if (!isRangeType(leftType)) {
                 throw new CompilerException("type", node.left.file, node.left.line,
@@ -10313,17 +7000,8 @@ public class TypeChecker {
         }
         if (node.type == TokenType.OPERATOR && node.text.equals("CALL") && node.left.type == TokenType.VARREF
                 && node.left.text.equals("Some")) {
-            // "match Some(x){...}," confirmed directly -- replacing the
-            // old bare form ("match x{...}"), removed below. The
-            // bytecode is unchanged (still a plain GT_ALIVE_CHECK on
-            // x); resolveExprType here dispatches to checkSomeBuiltin,
-            // the ordinary, generally-available builtin check ("Some()
-            // is meant to be generally available," confirmed directly)
-            // -- this adds the one thing specific to *this* being a
-            // match condition on top: recording the "alive" proof for
-            // x's own slot, the identical "ordinary expression there,
-            // plus a proof recorded here" split "in"/"instanceof"
-            // already have.
+            // "match Some(x){..}": the bytecode is a plain GT_ALIVE_CHECK; resolveExprType dispatches to checkSomeBuiltin and this adds
+            // the "alive" proof for x's slot.
             ProofKills.suppressReads++;       // the alive check itself reads the pointer; that read is what renews the proof
             try {
                 resolveExprType(node, scope, func);
@@ -10337,12 +7015,7 @@ public class TypeChecker {
             out.add(someProof);
             return;
         }
-        // "we must update the match statement to no longer take a
-        // plain value expression," confirmed directly -- the old bare
-        // form ("match x{...}", type-checked as any ordinary expression
-        // and recorded as an "alive" pattern with no target name) no
-        // longer exists at all; "match Some(x){...}" is the only way to
-        // prove a pointer alive now, handled above.
+        // A bare value expression is no longer a match condition; "match Some(x)" is the only way to prove a pointer alive.
         throw new CompilerException("type", node.file, node.line,
                 "a 'match' condition must be 'Some(x)', 'x in y', 'x within y', 'x into y', 'x instanceof Y', "
                         + "'x implements Y', 'x fits T' (for an integer x), 'x != 0'/'x > 0' (for an integer x), 'x is base' (for a range x), or "
@@ -10351,27 +7024,15 @@ public class TypeChecker {
                         + "meant to prove it isn't null");
     }
 
-    /** A short, best-effort description of a rejected bare match condition, for the "did you mean Some(...)" error above -- a bare varref's own name if there is one, otherwise just "..." rather than reconstructing arbitrary expression source text. */
+    /** Best-effort text for the "did you mean Some(..)" error: the variable name, else "...". */
     private String describeConditionForError(Token node) {
         return node.type == TokenType.VARREF ? node.text : "...";
     }
 
     /**
-     * "match Some(i) in x{...}" / "match Some(i) into x{...}" -- sugar
-     * for "match i in/into x{ match Some(x[i]){...} }", confirmed
-     * directly: a single condition granting a block's own body *both*
-     * proofs at once -- the ordinary index-in-bounds (or, for "into",
-     * bounds-plus-write) proof "i" already gets against "x", *and* an
-     * element-alive proof for "x[i]" specifically -- without writing
-     * two separate, nested match blocks by hand. Also reused, unchanged,
-     * by the "for match Some(i) in/into x{...}" loop-header sugar
-     * (`checkForLoop`) and by the "@lock(match Some(i) in/into
-     * self.field)" qualifier shape.
-     *
-     * `i` (the argument to `Some(...)`) may be a bare variable or a
-     * '.'-chain -- confirmed directly, the broader of the two options
-     * considered, never an arbitrary computed expression (there'd be no
-     * slot for either proof to actually target).
+     * "match Some(i) in/into x{..}" = "match i in/into x{ match Some(x[i]){..} }": grants the index bounds proof and the
+     * element-alive proof for x[i] at once. `i` must be a variable or a "."-chain. Also used by the "for match Some(i)" header
+     * (checkForLoop) and the @lock(match Some(i) in self.field) qualifier. See docs/TypeChecker.md, "Match chains".
      */
     private void checkSomeIndexBoundsCondition(Token node, String kind, Scope scope, FuncInfo func,
             List<Token.MatchPattern> out) {
@@ -10384,10 +7045,7 @@ public class TypeChecker {
                     "'Some(...) " + kind + "' requires a bare variable or a '.'-chain inside 'Some(...)', "
                             + "not an arbitrary expression");
         }
-        // The ordinary bounds check, exactly as "match i in/into x{...}"
-        // already performs it -- built as a synthetic node reusing
-        // checkIn's own existing rules wholesale, rather than
-        // duplicating them.
+        // The bounds check reuses checkIn on a synthetic node.
         Token boundsOp = new Token(TokenType.OPERATOR, kind, node.line, node.file);
         boundsOp.left = indexExpr;
         boundsOp.right = node.right;
@@ -10405,14 +7063,8 @@ public class TypeChecker {
         Token.MatchPattern boundsPattern = new Token.MatchPattern(indexSlot, kind, null, targetSlot);
         out.add(boundsPattern);
 
-        // The inner element-alive proof -- "x[i]", never the "in"/
-        // "into" proof's own right-hand expression verbatim; the same
-        // "range(origin)"-unwrapping a real, later "origin[i]" lookup
-        // would itself need (boundsTargetExprOf) -- type-checked as a
-        // throwaway, never-emitted LOOKUP node, under a scope that
-        // already has the bounds proof above active, so its own
-        // isProvenInBounds gate passes exactly as a real, later
-        // "origin[i]" access would.
+        // Element-alive proof for x[i]: a throwaway LOOKUP on the "range(origin)"-unwrapped target (boundsTargetExprOf), checked
+        // under a scope that already has the bounds proof.
         Token originExpr = boundsTargetExprOf(node.right);
         Token bracket = new Token(TokenType.DELINEATOR, "[", node.line, node.file);
         bracket.childs.add(indexExpr);
@@ -10433,22 +7085,11 @@ public class TypeChecker {
         lookupNode.someOnRef = "ref".equals(elemType.storage) && !elemType.isSome;
         elemProof.onId = lookupNode.someOnRef;
         lookupNode.someProofKey = slotKeyOf(lookupNode);
-        // Handed to BytecodeEmitter so it can emit the real
-        // "GT_ALIVE_CHECK" for this exact, already-resolved lookup
-        // directly, rather than re-deriving/re-unwrapping the target a
-        // second time on the emitter side.
+        // Lets BytecodeEmitter emit the GT_ALIVE_CHECK for this resolved lookup directly.
         node.someIndexElementExpr = lookupNode;
     }
 
-    /**
-     * For "match i in X{...}", determines which slot the proven bounds
-     * ultimately apply to -- almost always just X's own slot (a
-     * range variable used directly), but "range(my_str)" (the
-     * builtin) specifically wraps its *origin* argument, and it's that
-     * origin -- not the builtin call result itself -- that a later
-     * "my_str[i]" lookup actually indexes. Returns null if untrackable
-     * either way.
-     */
+    /** Slot a bounds proof applies to: the range variable itself, or the origin argument of "range(origin)". Null if untrackable. */
     private String boundsTargetSlotOf(Token rightExpr) {
         if (rightExpr.type == TokenType.OPERATOR && rightExpr.text.equals("CALL")
                 && rightExpr.left.type == TokenType.VARREF && rightExpr.left.text.equals("range")
@@ -10462,14 +7103,7 @@ public class TypeChecker {
         return boundsSlotKeyOf(rightExpr);
     }
 
-    /**
-     * The real Token a later "X[i]" lookup would actually index --
-     * mirrors `boundsTargetSlotOf`'s own "range(origin)" unwrapping
-     * exactly, but returns the unwrapped expression Token itself
-     * rather than just its string key, so a synthetic "origin[i]"
-     * LOOKUP node can actually be built and type-checked (e.g. for the
-     * "Some(...) in/into" sugar's own inner element-alive proof).
-     */
+    /** Like boundsTargetSlotOf but returns the unwrapped expression Token, so a synthetic "origin[i]" LOOKUP can be built. */
     private Token boundsTargetExprOf(Token rightExpr) {
         if (rightExpr.type == TokenType.OPERATOR && rightExpr.text.equals("CALL")
                 && rightExpr.left.type == TokenType.VARREF && rightExpr.left.text.equals("range")
@@ -10485,43 +7119,9 @@ public class TypeChecker {
 
 
     /**
-     * "We should also be able to bind to parent classes or interfaces,"
-     * confirmed directly -- true if `structName` implements
-     * `interfaceName` (directly or, since an interface can itself
-     * 'extends' another, transitively). `StructInfo.implementsNames` is
-     * never flattened down an 'extends' chain the way struct members
-     * are (confirmed by checking directly, not assumed) -- a subclass
-     * that implements a contract purely by inheriting a parent's own
-     * "implements" clause would otherwise be missed entirely, so both
-     * dimensions (the struct's own ancestry, and each found interface's
-     * own ancestry) are walked here explicitly. Also checks
-     * `implsByConcreteType` directly (the standalone "impl X for Y{...}"
-     * form, a genuinely separate mechanism from the struct-declaration
-     * "implements X" clause -- confirmed by testing, not assumed, after
-     * a real miss here: a struct implementing an interface purely via a
-     * standalone impl block, with no "implements" clause on the struct
-     * itself at all, is exactly how the @guard round's own fixtures
-     * were written, and isGuardType already had to check this same,
-     * separate map for exactly that reason).
-     */
-    /**
-     * Enforces a generic bound/constraint ("func f<T: SomeInterface>(...)")
-     * at every concrete instantiation site -- "at each instantiation site
-     * only," confirmed directly, never a structural check against the
-     * template's own body (this language's monomorphize-then-typecheck
-     * architecture never validates an unbound template body at all, so
-     * there's nothing else for a bound to gate). Called once, right after
-     * `collectDeclarations` -- every struct/impl is already fully
-     * collected by then (Pass 1a/1b), so `structImplementsInterface`,
-     * which reads `implsByConcreteType`, is reliable.
-     *
-     * `GenericsExpander` already recorded exactly what needs checking on
-     * each freshly-monomorphized declaration's own root token
-     * (`Token.pendingGenericBoundChecks`) -- this just walks every
-     * top-level entry looking for one and validates it, reusing the
-     * identical `structImplementsInterface` machinery the interface-
-     * dispatch feature's own struct-to-interface upcast rule already
-     * relies on.
+     * Enforces generic bounds ("func f<T: Iface>") at each instantiation site only (templates are never checked unbound).
+     * Runs right after collectDeclarations so structImplementsInterface is reliable; GenericsExpander recorded the checks in
+     * Token.pendingGenericBoundChecks. See docs/TypeChecker.md, "Generic bounds".
      */
     private void validateGenericBounds(List<Token> rootLines) {
         for (Token lineTok : rootLines) {
@@ -10541,6 +7141,7 @@ public class TypeChecker {
         }
     }
 
+    /** True if the struct implements the interface directly or through an interface that extends it, including standalone "impl X for Y" blocks (implsByConcreteType). */
     private boolean structImplementsInterface(String structName, String interfaceName) {
         StructInfo info = structs.get(structName);
         if (info == null) {
@@ -10578,18 +7179,7 @@ public class TypeChecker {
         return false;
     }
 
-    /**
-     * "Moved in any branch means it's moved" -- confirmed directly ("the
-     * alternative would be completely unworkable"). Each branch is
-     * checked against its own isolated copy of the pre-if moved set
-     * (the condition itself, though, is checked against the real,
-     * shared one, since it runs before any branching happens); the
-     * shared set is then replaced with the union of every branch's
-     * result. A missing 'else' needs no special case: every explicit
-     * branch's own copy already starts as a superset of the pre-if
-     * state, so the union can never end up smaller than it regardless
-     * of whether all paths were covered.
-     */
+    /** If chain: each branch is checked against its own copy of the pre-if moved set; the shared set becomes their union. See docs/TypeChecker.md, "Branch merge and partly-moved slots". */
     private void checkIfChain(Token ifTok, Scope scope, FuncInfo func, boolean insideLoop) {
         Set<String> preState = scope.movedSlots;
         Set<String> union = new HashSet<>();
@@ -10597,10 +7187,7 @@ public class TypeChecker {
         for (Token branch = ifTok; branch != null; branch = branch.right) {
             if (!branch.sub.isEmpty()) {
                 Token condNode = branch.sub.get(0);
-                // The one place `insideShortCircuitEligiblePosition` is
-                // ever seeded true from scratch -- see its own doc
-                // comment: a branch's condition, resolved right here, is
-                // the "top level" a `&&then`/`||then` chain is legal at.
+                // The one place insideShortCircuitEligiblePosition is seeded true: a branch condition is the top level where &&then / ||then is legal.
                 boolean previousEligible = insideShortCircuitEligiblePosition;
                 insideShortCircuitEligiblePosition = true;
                 TypeInfo condType;
@@ -10613,13 +7200,9 @@ public class TypeChecker {
             }
             Set<String> branchMoved = new HashSet<>(preState);
             Scope branchScope = new Scope(scope, branchMoved);
-            // if/elseif/else don't change loop context -- 'break' inside an
-            // if inside a loop still targets the enclosing loop
+            // if / else do not change loop context.
             Scope branchBodyScope = checkLines(branch.childs, branchScope, func, insideLoop);
-            // A branch's own natural end is not a function/loop boundary
-            // at all -- control simply continues to whatever follows the
-            // whole 'if' chain -- so only this branch's own immediate
-            // locals are destructed here, nothing beyond it.
+            // A branch's natural end is not a function/loop boundary: only its own locals are destructed.
             branch.destructOnExit = collectNaturalEndDestruct(branch.childs, branchBodyScope, branchBodyScope);
             union.addAll(branchMoved);
             if (!closedCaseTerminates(branch.childs)) { survivorMoves.add(branchMoved); }
@@ -10627,30 +7210,9 @@ public class TypeChecker {
         finishBranchMerge(preState, union, survivorMoves, !chainHasElse(ifTok));
     }
 
-    /**
-     * "if"/"elseif" condition expressions are not required to resolve to
-     * 'bool'" -- a real, previously-missing check, confirmed directly by
-     * testing (`if someStructValue{...}` used to compile cleanly, emitting
-     * a real but meaningless bare CMP on the struct's own pushed value,
-     * with no actual comparison operand). Fixed to bind to 'bool' **or**
-     * a numeric type -- matching C's own "any scalar, zero is false"
-     * convention, not a 'bool'-only restriction: an ordinary integer
-     * (any width, either signedness), 'f32', or 'char' condition is all
-     * legal, exactly as it would be in C (`if (x)`, `if (n)`, `if (c)`).
-     * Everything else -- a struct/enum/array/pointer/range/
-     * dynarray/string/void, or a function-pointer value -- is rejected
-     * outright; this language has no implicit "truthy pointer" or
-     * "non-empty collection" notion the way some other languages do, and
-     * a null check already has its own, dedicated mechanism
-     * ("match Some(x){...}") rather than overloading 'if' for it.
-     */
+    /** An if/elseif condition must be bool or a numeric type (integer, f32, char; C-style "zero is false"); no truthy pointers or collections. See docs/TypeChecker.md, "Conditions". */
     private void requireBoolOrNumericCondition(TypeInfo t, Token at) {
-        // Deliberately storage-less only -- a *pointer* to a bool/numeric
-        // value is not itself a legal condition (this language has no
-        // "truthy if non-null" notion; that's what "match Some(x){...}"
-        // exists for), so a raw/owns/ref/auto/static-tagged operand is
-        // rejected the same as any other non-qualifying type, even when
-        // its own base type would otherwise qualify.
+        // Storage-less only: a pointer to a bool/number is not a condition (null checks use "match Some(x)").
         if (t.storage == null && (t.baseType.equals("bool") || t.baseType.equals("char")
                 || NUMERIC_TYPES.contains(t.baseType))) {
             return;
@@ -10662,49 +7224,8 @@ public class TypeChecker {
     }
 
     /**
-     * "for i in 0..n{ ... }" -- structurally always an 'in' expression
-     * at the root, confirmed directly, but a *special* one: unlike an
-     * ordinary "x in someRange" boolean expression, the left of this
-     * 'in' is a fresh variable being *introduced* by the loop itself
-     * (like 'let'), not a reference to something already in scope.
-     * Confirmed directly: this variable is always 'imut u64', starts
-     * at the range's start, and increments at the end of each
-     * iteration (implemented as an ordinary check-at-top loop in
-     * BytecodeEmitter -- see emitForLoop). The loop body gets its own
-     * child scope with the loop variable declared in it, and
-     * insideLoop=true, so 'break' works exactly like it does in an
-     * ordinary 'loop'.
-     */
-    /**
-     * "for x in someRange{ body }" desugars to (confirmed directly):
-     *   let $range = someRange
-     *   let x = $range.start
-     *   loop { if <x in $range is false> break; body; x++ }
-     * built here as real, ordinary AST nodes -- a genuine 'let'-shaped
-     * declaration for the hidden range binding (so it's a properly
-     * scoped, properly ALLOC'd variable like any other, not a
-     * bytecode-string trick invisible to the rest of the compiler), and
-     * a genuine 'in' node for the per-iteration condition, type-checked
-     * through the *exact same* checkAssign/checkIn/checkIncrement any
-     * hand-written equivalent would use. The payoff (confirmed
-     * directly): the IN opcode this produces is byte-for-byte the same
-     * whether it came from a for-loop or an ordinary boolean
-     * expression -- BytecodeEmitter's "in" case never needs to know
-     * which -- which is the whole point: minimizing how many distinct
-     * shapes the eventual bytecode-to-assembly stage has to understand
-     * per opcode.
-     *
-     * The hidden range variable's name uses a '$' prefix specifically
-     * because the lexer can never produce '$' inside a real identifier
-     * (see Lexer's identifier scan), so it can never collide with
-     * anything user-written; forVarCounter guarantees it's unique
-     * across every for-loop in the program (nested or sequential).
-     *
-     * The loop-level condition check reuses the exact same CMP/JMP
-     * shape an 'if' branch's own condition check already uses ("if
-     * true, fall through; if false, jump away") -- no logical NOT
-     * wrapper is needed, since "x in $range" is already the correct
-     * "keep looping" condition in the same direction CMP/JMP expects.
+     * "for x in range{..}" desugars into real AST nodes: let $range = ..; let x = $range.start; condition "x in $range"; step x++.
+     * The "in" condition is byte-for-byte what an ordinary "in" expression emits. See docs/TypeChecker.md, "For loop desugaring".
      */
     private void checkForLoop(Token forTok, Scope scope, FuncInfo func) {
         boolean rootIsIn = !forTok.sub.isEmpty() && forTok.sub.get(0).type == TokenType.OPERATOR
@@ -10716,14 +7237,7 @@ public class TypeChecker {
                     "'for' requires 'varname in range { ... }'");
         }
         if (rootIsInto && !forTok.isForMatch) {
-            // "thinking about it, it should not be allowed in a plain
-            // for due to that ambiguity," confirmed directly -- a plain
-            // "for i into arr{...}" (no "match") is rejected outright
-            // rather than silently granting nothing, unlike plain "for
-            // i in arr{...}" (which is legal but proof-free); only
-            // "for match i into arr{...}" actually grants the write-
-            // legalizing proof, so writing "into" without "match" would
-            // be misleading about what it does.
+            // A plain "for i into arr" is rejected: only "for match i into arr" grants the write proof.
             throw new CompilerException("type", forTok.file, forTok.line,
                     "'into' in a 'for' header requires 'for match', not a plain 'for' -- write 'for match "
                             + forTok.sub.get(0).left.text + " into ...{...}', or use plain 'in' instead");
@@ -10731,26 +7245,12 @@ public class TypeChecker {
         Token originalIn = forTok.sub.get(0);
         Token loopVarTok = originalIn.left;
         Token rangeExpr = originalIn.right;
-        // "for match Some(i) in x{...}" / "for match Some(i) into
-        // x{...}" -- sugar for "for match i in/into x{ match
-        // Some(x[i]){...} }," confirmed directly, mirroring the bare
-        // "match Some(i) in/into x{...}" sugar exactly, just written as
-        // a loop header. Detected here, before the ordinary "must be a
-        // plain, new variable name" check just below (which would
-        // otherwise reject "Some(i)" outright) -- unwraps down to the
-        // real loop variable name, `i`, and the actual AST rewriting
-        // this needs (wrapping the loop's own body in a real, synthetic
-        // "match Some(x[i]){...}") is done further down, once the loop
-        // header's own bounds proof has been established.
+        // "for match Some(i) in/into x{..}": detected before the plain-variable check; the body is wrapped in a synthetic
+        // "match Some(x[i])" further down.
         boolean isSomeIndexForm = loopVarTok.type == TokenType.OPERATOR && loopVarTok.text.equals("CALL")
                 && loopVarTok.left.type == TokenType.VARREF && loopVarTok.left.text.equals("Some");
         if (isSomeIndexForm) {
-            // Always requires "for match" -- without it, there'd be
-            // nowhere for either proof this shape grants (the bounds
-            // proof, or the inner element-alive one) to actually go,
-            // the same "misleading about what it does" reasoning the
-            // pre-existing "into" without "match" rejection above
-            // already established.
+            // Needs "for match", otherwise the proofs have nowhere to go.
             if (!forTok.isForMatch) {
                 throw new CompilerException("type", originalIn.file, originalIn.line,
                         "'for Some(...) " + originalIn.text + " ...{...}' requires 'for match', not a "
@@ -10772,14 +7272,7 @@ public class TypeChecker {
 
         TypeInfo rangeType = resolveExprType(rangeExpr, scope, func);
         if (isUnsafeDynArrayType(rangeType)) {
-            // "banned outright" -- confirmed directly: an unsafe
-            // dynarray has no compiler-known length at all for 'for' to
-            // loop against, unlike the safe variant (which starts its
-            // loop variable at a literal 0 and relies on checkIn's own
-            // bounds proof per iteration -- there is no such proof
-            // possible here). Iterate by hand instead, with a bare
-            // 'loop{}' inside 'unsafe' code, using your own tracked
-            // bound.
+            // Banned: an unsafe dynarray has no compiler-known length; iterate by hand with loop{} in unsafe code.
             throw new CompilerException("type", rangeExpr.file, rangeExpr.line,
                     "'for ... in/into' cannot be used on an 'unsafe dynarray' -- it has no compiler-known "
                             + "length to loop against; iterate by hand with a bare 'loop{}' inside 'unsafe' "
@@ -10797,48 +7290,19 @@ public class TypeChecker {
                     "'for ... in' requires a range or a dynarray on the right, got '"
                             + rangeType.canonical() + "'");
         }
-        // "for varref in dynarrayExpr{...}" -- a second source, added
-        // later: a dynarray has no '.start'/'.end' at all (it's not a
-        // range), so the loop variable starts at a literal 0
-        // instead; everything else below (the per-iteration "x in
-        // $range" condition, the "x++" increment) is unchanged, since
-        // checkIn already accepts a dynarray on the right precisely
-        // the same way it accepts a range. Deliberately does
-        // *not* prove anything about `dynArrExpr[x]` itself being safe
-        // to index inside the loop body -- that still needs its own
-        // "match x in dynArrExpr{...}", same as anywhere else in this
-        // language -- confirmed directly as the intended design: an
-        // array of nullable pointers is exactly the case where folding
-        // that proof into the loop itself would create real ambiguity
-        // about whether a null entry is silently skipped or not.
+        // Dynarray source: the loop variable starts at a literal 0 (no .start); the body gets no proof about dynArrExpr[x] itself
+        // (it needs its own "match x in .."; entries may be null).
 
         forVarCounter++;
         String rangeVarName = "$for_range_" + forVarCounter;
         Scope forScope = new Scope(scope);
 
-        // let $range = <rangeExpr>, or "let $range = ref <rangeExpr>"
-        // for a dynarray specifically -- a dynarray is always
-        // "owns"-typed by construction (there is no other way to
-        // obtain one), so a plain, unwrapped "let $range = rangeExpr"
-        // would move it away, breaking the *source* expression's own
-        // further use for the rest of the enclosing function (in
-        // particular, inside the loop body itself, which almost always
-        // needs to keep indexing the very same dynarray). "ref" is
-        // exactly the sound, already-existing way to borrow an "owns"
-        // value without moving it -- confirmed directly this doesn't
-        // move the original ("h.backing" stays fully usable after
-        // "let r = mut ref h.backing").
+        // let $range = <rangeExpr>; for a dynarray "let $range = mut ref <rangeExpr>" so the owns source is borrowed, not moved.
         Token rangeSourceExpr = rangeExpr;
         if (isDynArraySource) {
             Token refWrap = new Token(TokenType.OPERATOR, "ref", forTok.line, forTok.file);
             refWrap.left = rangeExpr;
-            // "ref X" is a freshly-constructed pointer value, same as
-            // any other storage-modifier prefix -- "indeterminate" by
-            // default, needing an explicit mut/imut wrapper before it
-            // can be bound to a "let" (see checkAddressOf's own
-            // comment) -- missed on a first pass here, caught directly
-            // by the exact "this value's mutability is indeterminate"
-            // error a plain, unwrapped case would produce.
+            // "ref X" is indeterminate-mutability, so it needs a mut wrapper to bind to a let.
             Token mutRefWrap = new Token(TokenType.OPERATOR, "mut", forTok.line, forTok.file);
             mutRefWrap.left = refWrap;
             rangeSourceExpr = mutRefWrap;
@@ -10853,8 +7317,7 @@ public class TypeChecker {
         TypeInfo rangeAssignType = checkAssign(rangeAssign, forScope, func);
         rangeAssign.resolvedType = rangeAssignType.canonical();
 
-        // let x = $range.start -- or "let x = mut 0" for a dynarray,
-        // which has no ".start" of its own.
+        // let x = $range.start (a dynarray starts at literal 0).
         Token loopVarLetTok = new Token(TokenType.KEYWORD, "let", forTok.line, forTok.file);
         loopVarLetTok.childs = new ArrayList<>();
         loopVarLetTok.childs.add(loopVarTok);
@@ -10871,17 +7334,7 @@ public class TypeChecker {
             startDot.right = startNameTok;
             loopVarInitialValue = startDot;
         }
-        // The loop's own machinery increments this variable every
-        // iteration (the synthesized '++' further below), so it must be
-        // 'mut' -- synthesized here rather than left to '.start' itself
-        // (see checkDot: '.start'/'.end' now resolve as 'indeterminate',
-        // a computed/derived value like any other, not a hardcoded
-        // concrete one, so coercing it to 'mut' here is a legal
-        // indeterminate -> mut transition, not the forbidden imut ->
-        // mut one an earlier draft of this fix ran into) -- a bare
-        // literal "0" is indeterminate by the exact same default rule,
-        // so the identical wrapping works unmodified for the dynarray
-        // case too.
+        // The loop variable is mut (the synthesized ++ writes it); .start / literal 0 are indeterminate, so wrapping in mut is legal.
         Token mutStartDot = new Token(TokenType.OPERATOR, "mut", forTok.line, forTok.file);
         mutStartDot.left = loopVarInitialValue;
         loopVarAssign.right = mutStartDot;
@@ -10905,50 +7358,21 @@ public class TypeChecker {
         TypeInfo incType = checkIncrement(increment, forScope, func);
         increment.resolvedType = incType.canonical();
 
-        // "for match i in x{...}" -- bytecode-identical to an ordinary
-        // "for" (nothing above this point differs at all), except the
-        // loop body's own scope additionally carries the "i in x"
-        // MatchPattern proof a real "match i in x{...}" condition would
-        // grant -- "it gets the same type assertion it would from:
-        // match i in x{...}," confirmed directly. Built directly here,
-        // against the loop variable's own slot and the *original*
-        // rangeExpr (not the synthesized "$range" copy -- an indexing
-        // expression inside the loop body targets the real source, e.g.
-        // "self.x2[i]", so the proof has to name that same slot, the
-        // identical boundsTargetSlotOf resolution an ordinary "match i
-        // in x{...}" condition already uses). Scoped to the loop body
-        // only, via a fresh intermediate Scope wrapping forScope --
-        // never mutates forScope itself, so nothing about the
-        // enclosing function is affected.
+        // "for match i in x{..}": same bytecode, but the body scope also carries the "i in x" proof, built against the ORIGINAL
+        // rangeExpr (not $range) so indexing in the body names the same slot; wrapped in a fresh Scope, forScope stays untouched.
         Scope forScopeForBody = forScope;
         if (forTok.isForMatch) {
             String iSlotKey = slotKeyOf(loopVarTok);
             if (iSlotKey != null) {
                 List<Token.MatchPattern> extended = new ArrayList<>(forScope.activeMatchPatterns);
-                // "into" grants everything "in" already does (see
-                // isProvenInBounds's own "in"-or-"into" acceptance) plus
-                // the separate, write-specific "into" proof
-                // isProvenWritable alone consults -- so only the kind
-                // recorded here differs; nothing else about this
-                // injection changes.
+                // "into" also grants everything "in" does; only the recorded kind differs.
                 String kind = rootIsInto ? "into" : "in";
                 extended.add(new Token.MatchPattern(iSlotKey, kind, null, boundsTargetSlotOf(rangeExpr)));
                 forScopeForBody = new Scope(forScope, forScope.movedSlots, extended, false);
             }
         }
-        // "It should be the case that both i and arr are imutable within
-        // a for or for match loop," confirmed directly -- both the
-        // synthesized loop variable and the loop's own source expression
-        // (when it's a plain, trackable slot) are unassignable for the
-        // loop body's own dynamic extent, in every "for"/"for match"
-        // loop, regardless of "in"/"into"/plain. Deliberately wraps a
-        // fresh scope even when the isForMatch branch above didn't --
-        // this never mutates forScope itself, so the loop's own
-        // already-checked synthesized pieces above (rangeAssign,
-        // loopVarAssign, conditionIn, increment -- all of which
-        // legitimately reassign the loop variable, being the compiler's
-        // own internal desugaring, not user code) are completely
-        // unaffected.
+        // The loop variable and the source slot are immutable inside the body (all for forms). A fresh scope is wrapped even without
+        // for-match so the synthesized pieces above, which do reassign the variable, are unaffected.
         if (forScopeForBody == forScope) {
             forScopeForBody = new Scope(forScope);
         }
@@ -10960,22 +7384,7 @@ public class TypeChecker {
         }
         forScopeForBody.ownLoopImmutableSlots = immutableHere;
         if (isSomeIndexForm) {
-            // The actual AST rewriting "for match Some(i) in/into
-            // x{...}" needs -- "match i in/into x{ match Some(x[i])
-            // {...} }," confirmed directly -- built as a real, ordinary
-            // "match Some(EXPR){...}" statement (`someCall` is a fully
-            // ordinary "Some(...)" CALL node, exactly what a real,
-            // hand-written condition would parse to) wrapping the
-            // loop's own original body, so every existing, already-
-            // tested piece of match-condition/GT_ALIVE_CHECK checking
-            // and emission handles it with zero new logic of its own --
-            // neither checkMatchCondition/checkSomeBuiltin nor
-            // BytecodeEmitter's own emitMatchCondition/emitExpr needed
-            // a single new case added for this. `originExpr` is the
-            // same "range(origin)"-unwrapped target a real, later
-            // "origin[i]" access would itself resolve against
-            // (boundsTargetExprOf), matching the bare "match Some(i)
-            // in/into x{...}" sugar's own identical reasoning.
+            // Wrap the body in a real "match Some(origin[i]){..}" statement so existing match checking and emission handle it unchanged.
             Token originExpr = boundsTargetExprOf(rangeExpr);
             Token idxRef = new Token(TokenType.VARREF, loopVarTok.text, forTok.line, forTok.file);
             Token bracket = new Token(TokenType.DELINEATOR, "[", forTok.line, forTok.file);
@@ -10993,12 +7402,7 @@ public class TypeChecker {
             syntheticMatch.sub = new ArrayList<>();
             syntheticMatch.sub.add(someCall);
             syntheticMatch.childs = forTok.childs;
-            // "LINE" wrapper shape (Parser.wrapAsLine) -- every
-            // statement-list walker throughout this compiler
-            // (checkLinesInScope chief among them) expects each element
-            // of a body list to be one of these, with the real
-            // statement in `.childs.get(0)`, not a bare statement token
-            // directly.
+            // LINE wrapper shape (Parser.wrapAsLine): statement lists hold LINE tokens with the statement in childs.get(0).
             Token lineTok = new Token(TokenType.LINE, "line", forTok.line, forTok.file);
             lineTok.childs.add(syntheticMatch);
             forTok.childs = new ArrayList<>();
@@ -11006,14 +7410,9 @@ public class TypeChecker {
         }
         collectLoopMoves(forTok.childs, forScope, forScope.movedSlots);
         Scope forBodyScope = checkLinesAsLoopBody(forTok.childs, forScopeForBody, func, isDynArraySource);
-        // Same per-iteration reasoning as the plain "loop" statement --
-        // each pass through the body is its own scope entry/exit.
+        // Per-iteration scope exit, as for "loop".
         forTok.destructOnExit = collectNaturalEndDestruct(forTok.childs, forBodyScope, forBodyScope);
-        // Stash the desugared pieces for BytecodeEmitter -- documented
-        // convention specific to a checked "for" token, since Token is
-        // a general-purpose class reused differently per construct
-        // throughout this compiler already (e.g. 'sub' means something
-        // different for 'func' than it does for 'if').
+        // Desugared pieces for BytecodeEmitter, stored in forTok.sub: [rangeAssign, loopVarAssign, conditionIn, increment].
         forTok.sub = new ArrayList<>();
         forTok.sub.add(rangeAssign);
         forTok.sub.add(loopVarAssign);
@@ -11035,19 +7434,8 @@ public class TypeChecker {
         }
         Token previousDirectReturnExprNode = directReturnExprNode;
         directReturnExprNode = returnTok.sub.get(0);
-        // "return foo()" tail-forwarding: a struct-RVO call sitting
-        // directly as this 'return' statement's own expression is now a
-        // third legal RVO destination position (alongside a 'let' RHS
-        // and a bare-variable assignment RHS), forwarding this
-        // function's own "$ret_dest" straight into the callee -- see
-        // `BytecodeEmitter.emitStructRvoForwardCall`'s own doc comment
-        // for the caller-side mechanics. Only meaningful when this
-        // function itself returns a struct by value (the same gate
-        // `checkCall` itself already applies via `isStructByValueReturn`
-        // before ever consulting this flag); set unconditionally
-        // otherwise-harmless when it isn't, since a non-matching call
-        // still can't satisfy `isStructByValueReturn(candidate.returnType)`
-        // and this flag is simply never consulted.
+        // 'return foo()' forwards this function's $ret_dest into a struct-returning callee (third legal RVO position).
+        // See docs/TypeChecker.md, "Struct return values (RVO)".
         boolean previousRvoEligible = insideStructRvoDestinationPosition;
         insideStructRvoDestinationPosition = isStructByValueReturn(func.returnType);
         TypeInfo exprType;
@@ -11058,23 +7446,8 @@ public class TypeChecker {
             insideStructRvoDestinationPosition = previousRvoEligible;
         }
         if (func.returnType.isSome && !exprType.isSome && isProvenAlive(returnTok.sub.get(0), scope)) {
-            // "a new is how you get an owns, but never an owns some --
-            // new can return null because malloc can fail. if the type
-            // system says otherwise its wrong and needs fixed
-            // immediatedly," confirmed directly -- a real, serious
-            // correction to an earlier, unsound attempt here (treating
-            // a direct 'new' construction as automatically 'some',
-            // which is exactly the false guarantee just called out).
-            // The actually-sound way to satisfy a 'some'-declared
-            // return type is the same mechanism 'some' already has
-            // everywhere else: a real, runtime `match Some(...)` proof.
-            // A return expression currently proven alive (an active
-            // "alive" pattern in `scope.activeMatchPatterns` for its own
-            // slot -- the exact same check `.` member access on an
-            // unproven pointer already relies on) is genuinely,
-            // soundly known non-null at this exact point, checked at
-            // runtime by the `match` itself, not merely assumed at
-            // compile time the way the reverted "new" attempt was.
+            // A return expression proven alive by an active `match Some` counts as 'some' for a 'some' return type.
+            // A bare `new` never does (malloc can fail). See docs/TypeChecker.md, "Returning owns some".
             exprType = exprType.withSome(true);
             returnTok.sub.get(0).resolvedType = exprType.canonical();
         }
@@ -11089,70 +7462,13 @@ public class TypeChecker {
                             + "nested somewhere inside it) from an '@async' function requires 'unsafe' "
                             + "code");
         }
-        // Return Value Optimization -- "returning structs on the stack by
-        // manipulating a hidden struct on the stack in the parent frame,"
-        // confirmed directly. Scoped narrowly for v1, mirroring this
-        // project's own established pattern of shipping a correct, narrow
-        // slice rather than full generality in one pass: the returned
-        // value must be either a fresh struct-literal expression
-        // ("INSTANTIATE", e.g. 'return Point{x:23,y:45}') or a
-        // *readable value chain* of the exact same struct type -- a bare
-        // variable, a '.' field-access chain rooted in one, a "LOOKUP"
-        // (array/dynarray/string indexing) rooted in one, or any nesting
-        // of the two (e.g. 'return p', 'return self.point', 'return
-        // arr[i]', 'return arr[i].point', 'return self.arr[i]') -- see
-        // `isReadableValueChain`'s own doc comment for the full
-        // reasoning, including why this is deliberately a *wider*
-        // category than `isAddressableLvalue` (the "can a real address
-        // be computed for this" question 'raw'/'auto' ask, which is
-        // strictly harder to satisfy than RVO's own "is this an ordinary
-        // read of an already-existing value" question). "uh yes if you
-        // could add support for return arr[i]," confirmed directly, and
-        // "arr[i] -- this is just following the pointer and doing the
-        // same [as self.point]" was the reasoning that led here.
-        //
-        // No new mechanism was needed at the BytecodeEmitter level for
-        // this extension either, for the same reason field access needed
-        // none: `emitStructRvoReturn` was already written generically
-        // against `expr.resolvedType` and a plain `emitExpr(expr)` call,
-        // and `emitLookup`'s own "LOOKUP baseType indexType resultType"
-        // was already exactly as size-generic as "PUSH"/"DOT"/"ASSIGN"
-        // everywhere else -- confirmed directly, 'let p = mut arr[1]' for
-        // an array of structs already compiled and ran correctly,
-        // completely independent of RVO, before this restriction was
-        // ever loosened to let a struct-RVO `return` reach it.
-        //
-        // "Just copy" is exactly right, and needs no new move/destruct
-        // machinery of its own: this project's ownership tracking is
-        // already flat, by design -- only a top-level 'owns'-storage slot
-        // is ever tracked for a move or a GT_DESTRUCT
-        // (`markMovedIfOwned`/`scope.ownsDeclaredHere` both gate strictly
-        // on `"owns".equals(declaredType.storage)`), never a plain
-        // struct-by-value local, field, or array element merely because
-        // some field nested inside it happens to be 'owns' --
-        // destructing/moving a struct's own nested 'owns' members is
-        // explicitly documented (see `collectOwnsToDestruct`'s
-        // neighboring comment) as deferred to a not-yet-built later
-        // stage, for *every* struct-by-value use in this language
-        // already (an ordinary 'let p2 = p1' struct copy, a struct
-        // passed by value as a parameter, an ordinary '.'/LOOKUP read,
-        // ...), not something RVO introduces or must solve. A readable-
-        // value-chain RVO return is therefore exactly as safe (and
-        // exactly as limited) as any other existing struct-by-value read
-        // already is -- genuinely nothing new here, just reusing the
-        // same, already-accepted-elsewhere shallow-copy behavior.
+        // Struct-by-value return: only a fresh struct literal, a readable value chain of the same struct, or a tail call.
+        // See docs/TypeChecker.md, "Struct return values (RVO)".
         if (isStructByValueReturn(func.returnType)) {
             Token retExpr = returnTok.sub.get(0);
             boolean isFreshLiteral = retExpr.type == TokenType.OPERATOR && retExpr.text.equals("INSTANTIATE");
             boolean isReadableExpr = isReadableValueChain(retExpr);
-            // "return foo()" tail-forwarding -- see this method's own
-            // `insideStructRvoDestinationPosition` setup above and
-            // `BytecodeEmitter.emitStructRvoForwardCall`'s doc comment.
-            // `checkCall` only ever sets `isStructRvoCall` on a node once
-            // it has *already* confirmed the callee returns a struct by
-            // value and this exact position was eligible, so checking
-            // the flag here (rather than re-deriving eligibility) is
-            // sufficient and can't be spoofed by an unrelated call.
+            // checkCall sets isStructRvoCall only for an eligible position, so testing the flag is enough.
             Token unwrapped = retExpr;
             while (unwrapped.type == TokenType.OPERATOR
                     && (unwrapped.text.equals("mut") || unwrapped.text.equals("imut"))) {
@@ -11172,17 +7488,9 @@ public class TypeChecker {
                                 + "expression");
             }
         }
-        // Annotate with the function's *declared* return type, not the
-        // expression's own resolved type -- these differ specifically
-        // when returning 'null' for a pointer return type, and the
-        // bytecode needs to know the real pointer type being returned,
-        // not that the literal expression happened to be 'null'.
+        // Annotate with the declared return type (differs from the expression's when returning 'null' for a pointer type).
         returnTok.resolvedType = func.returnType.canonical();
-        // "It does not apply to values preserved by a return statement"
-        // -- confirmed directly: the exact slot named directly in the
-        // return expression (if it's a bare reference to one at all) is
-        // exempted from destruction here, since ownership is passing to
-        // the caller, not ending.
+        // The slot named directly in the return expression passes to the caller and is exempt from destruction.
         String preservedSlotKey = slotKeyOf(returnTok.sub.get(0));
         if (preservedSlotKey != null) {
             fnEverMoved.add(preservedSlotKey);
@@ -11192,63 +7500,21 @@ public class TypeChecker {
     }
 
     /**
-     * "throw \`...\`," confirmed directly -- a new, unconditional
-     * program-termination statement, "counts as returning for control flow completeness" both
-     * confirmed directly (the latter handled in
-     * statementDefinitelyReturns, right alongside 'return' itself).
-     * "restricted to C style or static some imut string as it would be
-     * in our system," confirmed directly -- typesCompatible against
-     * plain 'static imut string' already accepts a 'some'-tagged
-     * source (the one-way coercion every other 'static imut string'
-     * parameter already relies on), so a template literal or an
-     * ordinary string literal both work exactly the way `printf`'s own
-     * first parameter already does.
-     *
-     * UPDATE (per-throw-site unwinding, replacing the old whole-function
-     * `gt_routine`): a `throw` now destructs exactly the `owns` locals
-     * genuinely alive at *this* precise point, the identical
-     * `collectOwnsToDestruct(scope, scope.functionRootScope, ...)` call
-     * `checkReturn` already makes for an ordinary `return` right here --
-     * see this method's own bottom, and `BytecodeEmitter.emitThrow`'s
-     * doc comment for the full design and why the old, whole-function,
-     * "every owns local this function ever declares" conservative list
-     * is gone (it existed only because one shared label had to be
-     * correct regardless of where in the function a throw came from;
-     * a throw's own destination is now resolved at compile time, per
-     * throw statement, so it can be exactly as precise as `return`).
-     * There is still no caller-side value to preserve the way a
-     * `return` expression can be (`preservedSlotKey` is always `null`
-     * here) -- `throw` never hands anything back, it only unwinds.
-     */
+         * `throw <string>`: unconditional termination that unwinds to the nearest `try`/`catch`, destructing the owns locals
+         * alive at this throw site (no preserved slot). See docs/TypeChecker.md, "throw, try and catch".
+         */
     private void checkThrow(Token throwTok, Scope scope, FuncInfo func) {
         if (throwTok.sub.isEmpty()) {
             throw new CompilerException("type", throwTok.file, throwTok.line,
                     "'throw' requires a string expression, e.g. 'throw \"message\"'");
         }
-        // 'throw' is safe: what it does is fully defined (per-throw-site
-        // destruct list, unwind to the nearest 'try'/'catch'), so it no
-        // longer requires 'unsafe'.
-        // "Every function that has the keyword throw in it must have a
-        // @throws decorator," confirmed directly -- checked as early as
-        // possible (ahead of every other throw-specific check below),
-        // so a missing decorator is always reported as exactly that,
-        // never masked by some other, unrelated throw restriction
-        // firing first.
+        // 'throw' is safe code but needs '@throws' on the function; checked first so the message is never masked.
         if (getDecorator(func.funcToken.decorators, "throws") == null) {
             throw new CompilerException("type", throwTok.file, throwTok.line,
                     "'" + func.name + "' uses 'throw' but is not decorated '@throws' -- add '@throws' to "
                             + "this function's declaration");
         }
-        // "Entirely skipped for a gt-suppressed function," confirmed
-        // directly (of the gt_routine mechanism itself, in
-        // BytecodeEmitter) -- one of the (up to four) real, user-
-        // written ghost-table functions never gets its own gt_routine
-        // at all, the same recursion-avoidance reasoning an ordinary
-        // GT_DESTRUCT inside one already has, so 'throw' inside one
-        // would otherwise emit a THROW naming a label that's never
-        // actually emitted anywhere -- confirmed directly by building
-        // this exact case and inspecting the real, invalid bytecode it
-        // produced before this check existed.
+        // Ghost-table functions have no gt_routine of their own, so 'throw' would name a label that is never emitted.
         for (String decoratorName : Arrays.asList("gt_init", "gt_alive_check", "gt_destruct", "gt_register", "gt_moved", "gt_ref_id", "gt_ref_resolve")) {
             if (getDecorator(func.funcToken.decorators, decoratorName) != null) {
                 throw new CompilerException("type", throwTok.file, throwTok.line,
@@ -11273,33 +7539,14 @@ public class TypeChecker {
             throw new CompilerException("type", throwTok.file, throwTok.line,
                     "'throw' requires a 'static imut string' -- got '" + exprType.canonical() + "'");
         }
-        // A real, valid `throw` always needs its own enclosing
-        // function's per-throw-site destruct-and-unwind sequence to
-        // exist in the emitted bytecode (see this method's own doc
-        // comment) -- set unconditionally the moment any `throw` passes
-        // every check above, regardless of whether `owns`/`ref`/`dyn`/
-        // `new` is ever used anywhere else in the program.
+        // Any valid `throw` needs the per-throw-site destruct-and-unwind sequence to exist in the bytecode.
         usesThrow = true;
         func.sawThrow = true;
         throwSites.add(new ThrowSite(func, throwTok));
-        // Precise, per-throw-site destruct list -- see this method's
-        // own doc comment. No preserved slot: unlike 'return', 'throw'
-        // never hands an owns value back to anything. A throw also
-        // releases every 'match @lock' lock held at this point, exactly
-        // like 'return' (collectLockReleasesToBoundary, below): without
-        // that, a throw out of an OPEN case left the lock held forever.
+        // Per-throw-site destruct list and held-lock releases (a throw out of an OPEN case must not leave the lock held).
         throwTok.destructOnExit = collectOwnsToDestruct(scope, scope.functionRootScope, null);
         throwTok.unlockOnExit = collectLockReleasesToBoundary(scope, scope.functionRootScope);
-        // "compiles to: THROW string_id," confirmed directly -- a
-        // single-operand bytecode line, not a "PUSH ...; RET ..." pair
-        // the way 'return' itself uses. Restricted to exactly what
-        // that single operand can represent (a string literal --
-        // including a template literal, already reduced to one by the
-        // time this runs -- or a bare variable reference), matching
-        // "C style or static some imut string," confirmed directly, as
-        // the thrown value's own required shape; anything needing its
-        // own separate evaluation first (a function call, a '.' member
-        // access chain) doesn't fit this one-line form at all.
+        // THROW takes one operand: a string literal (templates are already reduced) or a bare variable.
         Token expr = throwTok.sub.get(0);
         if (expr.type != TokenType.STRING && expr.type != TokenType.VARREF) {
             throw new CompilerException("type", throwTok.file, throwTok.line,
@@ -11310,88 +7557,17 @@ public class TypeChecker {
     }
 
     /**
-     * "try foo() catch{ ... }," confirmed directly -- required,
-     * and required only, around a direct call to an '@throws' function
-     * (see requireThrowsWrapping, called from every one of this class's
-     * call-resolution sites once the callee is actually known -- the
-     * enforcement lives there, not here, since a plain call expression
-     * anywhere in a function body might or might not turn out to target
-     * an '@throws' function, and this method has no way to know which
-     * calls exist elsewhere in the same body). This method's own job is
-     * narrower: confirm 'try' wraps exactly one direct call (nothing
-     * more general -- "try foo().bar catch{}"/"try 1+foo() catch{}"
-     * aren't valid; only a bare call, mirroring 'throw's own restriction
-     * to simple operands, keeps the wrapped expression's own shape
-     * simple enough for the not-yet-built lowering stage to reason
-     * about later), type-check that call exactly as it would be
-     * checked anywhere else (marking it `insideTry` first, so
-     * requireThrowsWrapping can tell this exact call site apart from an
-     * unwrapped one), and check the catch block as an ordinary nested
-     * statement block.
-     *
-     * This whole 'try' expression's own resolved type is simply the
-     * wrapped call's own return type -- ordinary completion (the call
-     * returns without throwing) behaves exactly as if 'try'/'catch'
-     * weren't there at all; the catch block runs only when the call
-     * actually throws and unwinds back into it, at which point it is
-     * just an ordinary block of statements (not required to produce a
-     * value, or to diverge, or anything else at the type-check level
-     * yet). What value (if any) a 'let x = try ... catch{...}' binding
-     * ends up with on the caught path, and the actual unwind-into-catch
-     * control transfer itself, are deliberately NOT addressed by this
-     * pass at all -- purely structural (parsing/type-checking) for now,
-     * per direct instruction ("just make those structural changes
-     * first, and then we'll address the lowering/codegen of TRY");
-     * BytecodeEmitter does not yet emit a real "TRY" line, or hoist the
-     * catch block to the top of the frame, or anything else lowering-
-     * related -- that's a deliberately separate, later piece of work.
-     *
-     * `insideLoop` is `false` whenever this is reached from expression
-     * position (a 'let' RHS, via resolveExprTypeInner's own "try" case)
-     * rather than as a bare statement (checkStatement's own "try" case,
-     * which has the real value to thread through) -- resolveExprType
-     * has no `insideLoop` parameter at all, since no expression-
-     * position construct has ever needed one before 'try' (nothing
-     * else embeds a real statement block inside an expression). A
-     * stray 'break' inside a catch block reached this way isn't yet
-     * caught as invalid the way it always is everywhere else -- a
-     * known, narrow gap, left for whenever this path is revisited.
-     */
+         * `try CALL catch(e){..}`: wraps exactly one call, `new`, `par`/`await` or `dyn`/`resize`/`clone`, type-checks it as usual
+         * and checks the catch body as a nested block. See docs/TypeChecker.md, "throw, try and catch".
+         */
     private TypeInfo checkTry(Token tryTok, Scope scope, FuncInfo func, boolean insideLoop) {
         if (tryTok.sub == null || tryTok.sub.isEmpty()) {
             throw new CompilerException("type", tryTok.file, tryTok.line,
                     "'try' requires an expression (a call to a '@throws' function) before 'catch'");
         }
         Token callNode = tryTok.sub.get(0);
-        // UPDATE (throwing 'new'): "try new Point{...} catch(e){...}" --
-        // 'new' is now a second, throw-capable expression shape 'try'
-        // can wrap, alongside a direct call to a '@throws' function --
-        // confirmed directly, "NEW now changes the result of new from
-        // owns T to owns some T" and requires the identical wrapping
-        // discipline. `checkNew` (dispatched via `resolveExprType` ->
-        // `resolveExprTypeInner`'s own "new" case, unchanged here) reads
-        // `insideTry` itself and enforces the "must be wrapped" rule
-        // directly -- there's no `FuncInfo`/`requireThrowsWrapping` to
-        // delegate to the way a CALL node has, since 'new' is always
-        // throw-capable (never conditionally, the way a callee's own
-        // `@throws` decorator makes a CALL only *sometimes* need
-        // wrapping), so only that one direction of the check applies.
-        //
-        // UPDATE (throwing 'dyn'/'resize'): "new throws, but dyn and
-        // resize dont, they need to use the same pattern as new,"
-        // confirmed directly -- the (safe-variant) `dyn(...)`/
-        // `resize(...)` builtins can fail exactly the same way `new`
-        // can (the underlying allocation/reallocation can fail), and now
-        // require the identical wrapping discipline. Unlike 'new',
-        // though, `dyn`/`resize` are ordinary CALL-shaped nodes already
-        // (built-in names, not their own OPERATOR grammar) -- so they
-        // already satisfy the plain "CALL" branch of the shape check
-        // just below with no grammar change needed here at all;
-        // `checkDynBuiltinCore`/`checkResizeBuiltin` read `op.insideTry`
-        // directly for their own direct (non-nested) case, mirroring
-        // `requireThrowsWrapping`'s own CALL-node handling -- the one
-        // thing this method still needs to do for them by hand is the
-        // *nested* case just below, identical to 'new's own.
+        // Shapes `try` may wrap: a CALL (including the dyn/resize/clone builtins), `new`, `par`/`await`.
+        // `new` and the builtins enforce their own wrapping rule; a CALL is enforced by requireThrowsWrapping.
         boolean isAsyncNode = callNode.type == TokenType.OPERATOR
                 && (callNode.text.equals("par") || callNode.text.equals("await"));
         boolean isNewNode = callNode.type == TokenType.OPERATOR && callNode.text.equals("new");
@@ -11405,28 +7581,8 @@ public class TypeChecker {
                             + "'par'/'await' call, or a 'dyn'/'resize'/'clone' builtin call, not a more general expression");
         }
         callNode.insideTry = true;
-        // UPDATE (nested 'new'/'dyn'/'resize'): a per-token `insideTry`
-        // flag (as read by `requireThrowsWrapping` for the CALL case)
-        // can only ever mark the one, outermost node 'try' directly
-        // wraps -- but a throwing allocation reached deeper during this
-        // resolveExprType call (e.g. "new String{chars= new
-        // DynamicArray{...}}", a 'new' nested inside another 'new's own
-        // struct-literal field value; the same shape applies just as
-        // well to a 'dyn'/'resize' nested inside one) can never be given
-        // its own, separate 'try'/'catch' at all, since this grammar's
-        // 'try'/'catch' always consumes a whole line (see tryNodeOf's
-        // own doc comment) -- there is no syntax to wrap just the inner
-        // allocation on its own. So for these shapes specifically,
-        // coverage is tracked with this context flag instead, set for
-        // the whole recursive descent this call triggers, not just the
-        // outermost node -- `checkNew`/`checkDynBuiltinCore`/
-        // `checkResizeBuiltin` read `insideThrowingAllocContext`, not
-        // `op.insideTry`, for exactly this reason, whenever the node
-        // being checked isn't itself the one 'try' directly wraps. No
-        // BytecodeEmitter change is needed for this: `pendingTryCatchLabel`
-        // already stays set through the whole nested `emitExpr` descent,
-        // so a nested allocation's own null-check already lands at the
-        // same, single outer catch label for free.
+        // A nested allocation cannot get its own `try`, so coverage is tracked by the insideThrowingAllocContext flag
+        // for the whole descent, not by the per-token insideTry.
         boolean previousInsideThrowingAllocContext = insideThrowingAllocContext;
         if (isNewNode || isThrowingBuiltinCall || isAsyncNode) {
             insideThrowingAllocContext = true;
@@ -11437,37 +7593,13 @@ public class TypeChecker {
         } finally {
             insideThrowingAllocContext = previousInsideThrowingAllocContext;
         }
-        // "catch(e){}" -- Parser.gatherTryCatchSpan already guarantees
-        // `tryTok.catchParamName` is exactly one bare identifier by the
-        // time this runs. Declared here, in a scope wrapping the catch
-        // body's own check (mirroring how checkFunctionBody registers
-        // a function's own params into the scope it hands to
-        // `checkLines`, before that body is ever checked), so a 'throw'
-        // inside "catch(e){...}" can read `e` back exactly like any
-        // other local variable -- "throw e where e is an argument in a
-        // surrounding catch," confirmed directly. Given the identical
-        // type a thrown message itself is required to have
-        // (`checkThrow`'s own `requiredType`, "static imut string"),
-        // so "catch(e){ throw e }" -- re-propagating the exact value
-        // this catch just caught -- passes `checkThrow`'s own type
-        // check with no special-casing needed there at all. Not yet
-        // given any real runtime value by BytecodeEmitter (see
-        // `Token.catchParamName`'s own doc comment).
+        // Declare the catch parameter in a scope around the catch body. A bare use is rejected in the VARREF case
+        // (`e.msg`, `e.stack_trace`, or `throw e`).
         Scope catchBodyScope = new Scope(scope);
         catchBodyScope.vars.put(tryTok.catchParamName, new TypeInfo("static", "imut", "string"));
         Token previousActiveCatchTry = activeCatchTries.put(tryTok.catchParamName, tryTok);
-        // `insideCatchBody` (an instance field, not a Scope field -- see
-        // its own doc comment) is what `checkStatement`'s own "continue"
-        // case reads to confirm 'continue' is only ever used somewhere
-        // inside a real catch body -- saved and restored around exactly
-        // this call, the one place a catch body's own statements are
-        // ever checked, so a 'continue' found anywhere within it (at any
-        // nesting depth, through if/match/loop/etc.) sees this as true,
-        // and anything checked once this call returns sees it restored
-        // to whatever it was before (correctly staying `true` for a
-        // catch nested inside an outer catch's own body, exactly the
-        // "nested loops both count" shape `insideLoop` itself already
-        // has).
+        // insideCatchBody / catchEnclosingLoopBoundary are saved and restored around the catch body, so a `continue`
+        // at any depth inside it is recognised, and a nested catch restores the outer values.
         boolean previousInsideCatchBody = insideCatchBody;
         Scope previousCatchLoopBoundary = catchEnclosingLoopBoundary;
         insideCatchBody = true;
@@ -11483,35 +7615,10 @@ public class TypeChecker {
                 activeCatchTries.put(tryTok.catchParamName, previousActiveCatchTry);
             }
         }
-        // No `tryTok.destructOnExit` is computed here any more (unlike an
-        // ordinary block): that field exists to describe what still needs
-        // destructing at a block's own *natural* end, and -- per the
-        // termination requirement enforced just below -- a catch body
-        // categorically never reaches its own natural end. Its own
-        // `return`/`throw` already carries its own complete destruct
-        // list (computed the same way any other return/throw site's is),
-        // so there is nothing left here for BytecodeEmitter to consult.
+        // No destructOnExit: a catch body never reaches its natural end (it must terminate, checked below).
         tryTok.resolvedType = resultType.canonical();
-        // "we dont need that special after label. Instead what we need
-        // is our catch block to be terminating -- return or throw
-        // inside," confirmed directly: a caught throw is redirected
-        // straight into the catch block (BytecodeEmitter's own
-        // `GT_UNWIND`-reads-`gt_routine_address` mechanism), never back
-        // through the wrapped call's own normal return path -- so for
-        // the expression-position form ("let x = try foo() catch{...}"),
-        // there is no path back to a "resume normal execution, x now
-        // holds ???" point unless the catch body itself makes one, by
-        // definitely ending in its own 'return', 'throw', or (new)
-        // 'continue'. Reuses the exact same conservative "does every
-        // path through this list of statements definitely end in a
-        // return" analysis a function body's own "not every path
-        // returns" check already applies (`definitelyReturns` -- see its
-        // own "continue" case for the third terminator this adds).
-        // Requiring this up front is what lets BytecodeEmitter drop the
-        // whole "where does the catch body go once it's done" question
-        // entirely -- see `emitHoistedCatchBlocks`'s own doc comment for
-        // the shape a 'return'/'throw' ending produces, and `emitContinue`
-        // for the shape a 'continue' ending produces instead.
+        // A catch body must end every path in return, throw or continue: a caught throw jumps straight into it,
+        // never back through the call's return path. See docs/TypeChecker.md, "throw, try and catch".
         if (!definitelyReturns(tryTok.childs)) {
             throw new CompilerException("type", tryTok.file, tryTok.line,
                     "'catch' must be terminating -- every path through its body must end in a 'return', "
@@ -11525,16 +7632,7 @@ public class TypeChecker {
         return resultType;
     }
 
-    /**
-     * The two-way "@throws" contract, checked once the callee behind
-     * any one call expression is actually known -- called from every
-     * one of this class's call-resolution success sites (checkCall,
-     * checkLibraryCall, checkStaticMethodCall, checkImplMethodCall, and
-     * the interface-dispatch call site), right after `candidate` (the
-     * resolved overload) is settled. `op` is the CALL node itself --
-     * `op.insideTry` is set only by checkTry, on the exact call node it
-     * wraps, immediately before recursively type-checking it.
-     */
+    /** The two-way @throws contract, checked at each call-resolution site once the callee is known: an '@throws' callee must be in try/`?`, a non-throwing one must not be. */
     private void requireThrowsWrapping(FuncInfo candidate, Token op) {
         if (candidate.isThrows && !op.insideTry && !op.coveredByThrowingNew) {
             throw new CompilerException("type", op.file, op.line,
@@ -11566,30 +7664,12 @@ public class TypeChecker {
     private TypeInfo resolveExprTypeInner(Token node, Scope scope, FuncInfo func) {
         switch (node.type) {
             case STRING:
-                // C-style string literals live in static memory, per the
-                // spec's own "equivalent to C's const char*" description --
-                // confirmed directly that the full canonical form is
-                // "static imut string", not "raw imut string". "some,"
-                // now, too -- "this will change the type of string
-                // literals from static string to static some string,"
-                // confirmed directly: a literal is always, unconditionally
-                // present at compile time, so it's exactly the kind of
-                // value "some" exists to describe, and every existing
-                // use of a string literal's own `.field`-equivalent
-                // access (there is none -- 'string' has no members) or
-                // passing it where a plain, non-'some' 'static imut
-                // string' is expected keeps working completely
-                // unmodified, since 'some' coerces to plain one-way.
+                // String literals are 'static imut string' and 'some' (always present); 'some' coerces one-way to plain.
                 return new TypeInfo("static", "imut", "string").withSome(true);
             case CHAR:
                 return new TypeInfo(null, "indeterminate", "char");
             case INTEGER:
-                // A built-in numeric-limit constant (u64Max, s8Min,
-                // ...) carries its own forced, concrete type -- see
-                // Token.forcedLiteralType's own doc comment -- rather
-                // than the ordinary "every bare integer literal is
-                // indeterminate u64" default every other INTEGER
-                // token still gets.
+                // Built-in limit constants (u64Max, ...) carry a forced concrete type; other integer literals are indeterminate u64.
                 if (node.forcedLiteralType != null) {
                     return new TypeInfo(null, "imut", node.forcedLiteralType);
                 }
@@ -11660,26 +7740,14 @@ public class TypeChecker {
                     return t;
                 }
                 if (globals.containsKey(node.text)) {
-                    // "cannot be referenced before declaration," confirmed
-                    // directly -- every global already exists in `globals`
-                    // by the time any function body is checked (globals
-                    // are fully processed in an earlier pass), so this
-                    // can't be enforced by map membership alone the way it
-                    // naturally is for one global referencing an earlier
-                    // one (collectGlobal); it needs an explicit declOrder
-                    // comparison against whichever func (real or, for
-                    // another global's own initializer, synthetic) this
-                    // reference occurs within.
+                    // Globals already exist in `globals` while bodies are checked, so use-before-declaration needs an explicit declOrder comparison.
                     Integer declaredAt = globalDeclOrder.get(node.text);
                     if (func != null && declaredAt != null && declaredAt >= func.declOrder) {
                         throw new CompilerException("type", node.file, node.line,
                                 "'" + node.text + "' is used before its declaration");
                     }
                     if (!publicGlobals.contains(node.text)) {
-                        // "let/static are excempt, globals are not, with
-                        // a private global being innaccessible outside
-                        // of the file its declared in," confirmed
-                        // directly.
+                        // Private globals are visible only in their declaring file (let/static are exempt).
                         String declFile = globalRhsByName.get(node.text).file;
                         if (!declFile.equals(node.file)) {
                             throw new CompilerException("type", node.file, node.line,
@@ -11693,16 +7761,7 @@ public class TypeChecker {
                     return globalType;
                 }
                 if (constExprs.containsKey(node.text)) {
-                    // "if you see the symbol on the left you replace it
-                    // with the one on the right," confirmed directly --
-                    // mutate this VARREF token in place into the literal
-                    // it names, then resolve *that* normally. Genuine
-                    // substitution, not a lookup that merely reports the
-                    // right type: once this runs, the tree itself no
-                    // longer has a VARREF here at all, so BytecodeEmitter
-                    // needs no new logic whatsoever -- it already knows
-                    // how to emit an INTEGER/FLOAT/BOOL/CHAR/STRING/NULL
-                    // literal.
+                    // Consts are substituted: the VARREF token is mutated in place into the literal, so the emitter needs no const logic.
                     Token literal = resolveConstValue(node.text, node);
                     node.type = literal.type;
                     node.text = literal.text;
@@ -11711,13 +7770,7 @@ public class TypeChecker {
                     node.forcedLiteralType = literal.forcedLiteralType;
                     return resolveExprTypeInner(node, scope, func);
                 }
-                // "let foo_ptr = foo" -- confirmed directly: a bare
-                // function name used as an expression (not immediately
-                // followed by '(', which would already have been turned
-                // into a CALL node by insertCallLookupInFlat) refers to
-                // the function itself, as a function-pointer value
-                // matching its own real signature and its own declared
-                // decorators.
+                // A bare function name used as a value is a function pointer with its own signature and decorators.
                 List<FuncInfo> asFunc = functions.get(node.text);
                 if (asFunc != null) {
                     if (asFunc.size() > 1) {
@@ -11727,11 +7780,7 @@ public class TypeChecker {
                     }
                     FuncInfo target = asFunc.get(0);
                     if (hasDecorator(target.funcToken.decorators, "event_loop")) {
-                        // Same restriction as an ordinary call -- "it
-                        // cannot be called or referenced anywhere in
-                        // the compilation unit," confirmed directly,
-                        // and a bare function name used as a value (not
-                        // called) is exactly a "reference" to it too.
+                        // '@event_loop' cannot be referenced anywhere, same as being called.
                         throw new CompilerException("type", node.file, node.line,
                                 "'" + node.text + "' is '@event_loop' -- it cannot be called or "
                                         + "referenced anywhere in the compilation unit");
@@ -11754,13 +7803,7 @@ public class TypeChecker {
                             "internal error: bare 'let' token in expression position");
                 }
                 if (node.text.equals("try")) {
-                    // "let x = try foo() catch{ ... }" -- reached only
-                    // for the expression-position form; the bare-
-                    // statement form is checked directly by
-                    // checkStatement's own "try" case instead (which
-                    // has a real `insideLoop` to thread through --
-                    // see checkTry's own doc comment for why this path
-                    // always passes `false`).
+                    // Expression-position `try`; insideLoop is passed as false (see checkTry).
                     return checkTry(node, scope, func, false);
                 }
                 break;
@@ -11785,24 +7828,11 @@ public class TypeChecker {
     }
 
     private TypeInfo resolveOperatorType(Token op, Scope scope, FuncInfo func) {
-        // Consumed here, once, before any operator-specific dispatch --
-        // see `insideShortCircuitEligiblePosition`'s own doc comment for
-        // why this single choke point (every operator-shaped node passes
-        // through this method) is exactly where a stale "true" from an
-        // enclosing context must stop propagating by default. Only
-        // `checkLogical` (handed `eligibleHere` below) ever gets to see
-        // this call's own captured value; everything else dispatched
-        // from the switch below runs with the field already back to
-        // `false`, so any `&&then`/`||then` its own operand resolution
-        // reaches is correctly treated as "not top level."
+        // Captured once and reset before dispatch, so a stale 'true' from an enclosing context cannot reach other operators;
+        // only checkLogical sees it. See docs/TypeChecker.md, "Operator dispatch context flags".
         boolean eligibleHere = insideShortCircuitEligiblePosition;
         insideShortCircuitEligiblePosition = false;
-        // Same "captured once, reset unconditionally, before any
-        // operator-specific dispatch" mechanism, for the wholly separate
-        // struct-RVO-call-position restriction -- see
-        // `insideStructRvoDestinationPosition`'s own doc comment. Only
-        // `checkCall` (handed `eligibleForRvoHere` below) ever consults
-        // this call's own captured value.
+        // Same capture-and-reset for the struct-RVO destination flag; only checkCall consults it.
         boolean eligibleForRvoHere = insideStructRvoDestinationPosition;
         insideStructRvoDestinationPosition = false;
         switch (op.text) {
@@ -11836,17 +7866,7 @@ public class TypeChecker {
             case "owns": case "ref": case "auto": case "raw": case "static":
                 return checkAddressOf(op, scope, func);
             case "mut": case "imut":
-                // "mut"/"imut" are transparent wrappers for the struct-RVO
-                // eligibility flag: `let point = mut newPoint()` must still
-                // let the CALL node underneath see the eligibility that was
-                // armed for the "let"'s own RHS. checkMutabilityOf's very
-                // first action is to resolve its own single inner operand
-                // (op.left) via resolveExprType, so re-arming the flag here,
-                // immediately before that call, correctly and narrowly
-                // re-propagates it one level down without leaking it
-                // anywhere else (the flag is consumed/reset again at the
-                // top of whatever resolveOperatorType call handles op.left,
-                // exactly as normal).
+                // mut/imut are transparent for the RVO flag: re-armed one level down so the wrapped CALL still sees it.
                 insideStructRvoDestinationPosition = eligibleForRvoHere;
                 return checkMutabilityOf(op, scope, func);
             case "new":
@@ -11872,42 +7892,18 @@ public class TypeChecker {
             case "implements":
                 return checkImplementsOperator(op, scope, func);
             case "dup":
-                // Only ever meaningful as a raw element of an array
-                // literal's comma-chain, where DupExpander (an earlier
-                // pipeline stage, before generics expansion and before
-                // type-checking) expands and consumes it directly -- so
-                // by the time this checker runs, every legitimate 'dup'
-                // is already gone. Reaching here means it was used
-                // somewhere else entirely (a bare expression, a call
-                // argument, etc.), which is a hard error, not silently
-                // tolerated.
+                // 'dup' is expanded earlier (DupExpander); reaching here means it was used outside an array literal.
                 throw new CompilerException("type", op.file, op.line,
                         "'dup' can only be used as an element of an array literal");
             case ",":
                 resolveExprType(op.left, scope, func);
                 return resolveExprType(op.right, scope, func);
             case "and":
-                // Only ever meaningful inside a match condition (see
-                // checkMatchCondition, which walks an "and"-chain
-                // directly and never reaches this general dispatch at
-                // all for a well-formed one). Reaching here means it was
-                // used somewhere else entirely, same "hard error, not
-                // silently tolerated" treatment as 'dup' above.
+                // 'and' is only valid inside a match condition (checkMatchCondition walks the chain itself).
                 throw new CompilerException("type", op.file, op.line,
                         "'and' can only be used to chain conditions inside a 'match' statement");
             case "into":
-                // Deliberately *not* generally available, unlike "in"/
-                // "within" -- "it can't be used outside a match, for,
-                // for match or @lock()," confirmed directly, and a bare
-                // expression use is explicitly called out as invalid
-                // ("is_in = 0 into 0..100... because it doesnt make any
-                // sense"). checkMatchCondition, checkForLoop (its own
-                // "for match" root-operator case), and
-                // validateLockInClause each call checkIn(node, ...)
-                // directly for a legal "into" instead of ever routing
-                // through this generic dispatch -- reaching here means
-                // it was used somewhere else entirely (a bare expression,
-                // a plain "for" header without "match", anywhere else).
+                // 'into' is legal only in match, for match and @lock(...), which call checkIn directly; any other use lands here.
                 throw new CompilerException("type", op.file, op.line,
                         "'into' has no meaning as an ordinary expression -- it can only be used as a "
                                 + "match condition ('match i into arr{...}'), a 'for match' loop header "
@@ -11922,15 +7918,7 @@ public class TypeChecker {
         }
     }
 
-    /**
-     * A "slot" this ownership-tracking system understands: a bare
-     * variable name, or a simple "a.b" struct-member path (transparent
-     * through grouping parens). Anything else -- a call result, a fresh
-     * struct/array literal, an arithmetic expression -- isn't a slot at
-     * all: there's no existing binding to move *from*, so it's simply
-     * never tracked, which is exactly correct (nothing to mark, nothing
-     * to check).
-     */
+    /** The tracked slot key of a bare name, an `a.b` member path or `x[i]` (parens transparent); null for untrackable shapes, which are never moved. */
     private String slotKeyOf(Token node) {
         if (node.type == TokenType.DELINEATOR && node.text.equals("(") && !node.childs.isEmpty()) {
             return slotKeyOf(node.childs.get(0));
@@ -11944,16 +7932,8 @@ public class TypeChecker {
         }
         if (node.type == TokenType.OPERATOR && node.text.equals("LOOKUP") && node.right != null
                 && !node.right.childs.isEmpty()) {
-            // "x[i]" as a slot of its own -- a pre-existing gap (never
-            // supported at all before this), needed so a proof granted
-            // for a specific "x[i]" (e.g. the "Some(...) in/into"
-            // sugar's own inner element-alive proof) can actually be
-            // matched back against a later, real "x[i]" access. Both
-            // the target and the index must themselves resolve to a
-            // slot -- an arbitrary, uncomputed index expression is
-            // never trackable, the same "nothing to mark, nothing to
-            // check" reasoning every other untrackable shape here
-            // already gets.
+            // `x[i]` as a slot, so a proof granted for a specific element can be matched by a later access.
+            // Both target and index must themselves be slots.
             String leftKey = slotKeyOf(node.left);
             String idxKey = slotKeyOf(node.right.childs.get(0));
             if (leftKey == null || idxKey == null) {
@@ -11965,23 +7945,9 @@ public class TypeChecker {
     }
 
     /**
-     * Marks every currently-active match-condition proof that depends
-     * on `target`'s own slot as invalidated (see
-     * `Token.MatchPattern.invalidated`'s own doc comment for the full
-     * mechanism and the exact bug this fixes) -- called from every
-     * real place a variable is written: a plain '=' (`checkAssign`), a
-     * compound '+='/'-='/etc. (`checkCompoundAssign`), '++'/'--'
-     * (`checkIncrement`), and 'swap' (`checkSwapOperator`). A no-op for
-     * any target `slotKeyOf` doesn't track at all (a `[]`/CALL/computed
-     * expression can never itself be a proof's own subject anyway).
-     * Invalidates a proof that names this slot either as its own
-     * `slotKey` (the divisor in a "nonzero" proof, the index in an
-     * "in"/"into" bounds proof, the pointer in an "alive" proof, ...)
-     * or as its `rightSlotKey` (the array/target an "in"/"into" bounds
-     * proof was granted against) -- writing to *either* side of a
-     * bounds pairing invalidates it, since the proof was specifically
-     * about that pairing's value at proof time.
-     */
+         * Invalidates every active match proof whose slotKey or rightSlotKey is `target`'s slot (or an assumed expression
+         * key mentioning it); called from every write. See docs/TypeChecker.md, "Match-proof invalidation".
+         */
     private void invalidateMatchPatternsForWrite(Token target, Scope scope) {
         String key = slotKeyOf(target);
         if (key == null) {
@@ -12082,14 +8048,6 @@ public class TypeChecker {
     }
 
     /**
-     * "Values with the storage modifier owns are subject to extra
-     * validation," confirmed directly. Called wherever a value is
-     * matched against a declared type (let inference, assignment, a
-     * call argument against its parameter, a struct-literal field) --
-     * whenever that declared type is exactly 'owns', whatever slot the
-     * value came from (if any) is moved.
-     */
-    /**
      * Operands of one call, array literal or `dyn([..])` are all checked before any of them is marked moved, so `f(a, a)` or
      * `dyn([a, a])` passes the read check. A slot that is already moved when its own move is being recorded was moved a moment ago
      * by a sibling operand (a later read of an earlier-moved slot is rejected when it is read): two owners of one block.
@@ -12104,6 +8062,7 @@ public class TypeChecker {
     /** > 0 while the operands of a `new` / `dyn` are being checked: an owner moved in there is freed if the allocation fails, so it ends alive proofs. */
     private int newDynDepth = 0;
 
+    /** Marks the source slot of a value bound to an `owns` type as moved (let, assignment, call argument, struct field). See docs/TypeChecker.md, "Ownership moves". */
     private void markMovedIfOwned(TypeInfo declaredType, Token valueExpr, Scope scope) {
         markMovedIfOwnedInner(declaredType, valueExpr, scope);
         if (newDynDepth > 0 && valueExpr.isOwnershipMoveSource) {
@@ -12173,12 +8132,7 @@ public class TypeChecker {
         }
     }
 
-    /**
-     * 'deref(p)' produces a value (a copy of the pointee), never a place, so it
-     * cannot be written to: "deref(p) = x", "deref(p) += x", "deref(p)++" and
-     * "deref(p) swap x" are all rejected. Writing through a pointer is done with
-     * '.' member assignment on a proven-alive struct pointer, or with 'memcopy'.
-     */
+    /** 'deref(p)' yields a copy, never a place: rejected as the target of =, compound assignment, ++/-- and swap. */
     private void rejectDerefAsWriteTarget(Token target, String what) {
         Token t = target;
         if (t != null && "CALL".equals(t.text) && t.left != null && t.left.type == TokenType.VARREF
@@ -12215,15 +8169,7 @@ public class TypeChecker {
                                     + "other statement");
                 }
                 checkNoRuntimeConstructs(op.right);
-                // Compile-time constant: resolved in a scope with nothing
-                // declared in it at all, so any attempt to reference a
-                // real variable fails exactly like referencing an
-                // undeclared one would -- no separate "no variables
-                // allowed" check needed, this falls out for free. Struct
-                // names/enum names are unaffected (checkInstantiate/
-                // checkDot look those up in TypeChecker's own maps, never
-                // through Scope), so a struct-literal or enum-variant
-                // default still resolves correctly.
+                // Compile-time constant: resolved in an empty Scope, so any variable reference fails as undeclared.
                 TypeInfo rhsType = resolveExprType(op.right, new Scope(null), func);
                 TypeInfo bound = resolveAndValidateTypeBound(op.left, rhsType, op.right);
                 if (bound != null) {
@@ -12231,13 +8177,7 @@ public class TypeChecker {
                 } else {
                     requireStaticMutable(rhsType, op.right);
                 }
-                // "So I can allow atomics I believe as globals and
-                // static locals," confirmed directly -- a 'let static'
-                // is exactly the one place (alongside a global) a
-                // *direct* atomic declaration is legal; an atomic value
-                // merely read from elsewhere and reassigned into a new
-                // 'let static' is silently stripped instead (see
-                // isDirectAtomicDeclaration's own doc comment).
+                // A direct atomic declaration is legal for 'let static'; an atomic merely read from elsewhere is stripped.
                 if (rhsType.isAtomic && !isDirectAtomicDeclaration(op.right)) {
                     rhsType = rhsType.withAtomic(false);
                 }
@@ -12251,12 +8191,7 @@ public class TypeChecker {
                 op.left.resolvedType = rhsType.canonical();
                 return rhsType;
             }
-            // A plain 'let' always introduces a fresh, simple local --
-            // exactly the one destination shape a struct-RVO call is
-            // legal against (see `insideStructRvoDestinationPosition`'s
-            // own doc comment) -- so every plain 'let' RHS is eligible,
-            // unconditionally; `checkCall` itself is what actually
-            // decides whether this expression is such a call at all.
+            // A plain 'let' RHS is always an eligible struct-RVO destination; checkCall decides whether it is such a call.
             boolean previousRvoEligible = insideStructRvoDestinationPosition;
             insideStructRvoDestinationPosition = true;
             TypeInfo rhsType;
@@ -12271,16 +8206,8 @@ public class TypeChecker {
             } else {
                 requireConcreteMutability(rhsType, op.right);
             }
-            // "I should have the same degree of safety as my Mutexes,"
-            // confirmed directly -- a *direct* atomic declaration
-            // ("let x = atomic '!'") can only ever be a global or
-            // 'let static' local, never a plain 'let'. An expression
-            // that merely *resolves* to an already-atomic value (e.g.
-            // reading an existing atomic global) is not a new
-            // declaration at all, so it's silently stripped instead of
-            // rejected -- "let myAtomicChar2 = myAtomicChar" is an
-            // ordinary, non-atomic local, confirmed directly by the
-            // user's own worked example.
+            // A direct atomic declaration is legal only for a global or 'let static'; an expression that merely resolves to an
+            // atomic value is stripped to non-atomic. See docs/TypeChecker.md, "Atomic write rules".
             if (rhsType.isAtomic) {
                 if (isDirectAtomicDeclaration(op.right)) {
                     throw new CompilerException("type", op.left.file, op.left.line,
@@ -12296,11 +8223,7 @@ public class TypeChecker {
             if (op.left.isConst) {
                 scope.declScope().constNames.add(nameTok.text);
             }
-            // "When an owns value leaves scope, we need it to be
-            // deleted" -- confirmed directly: recorded here, in
-            // declaration order, so this exact scope knows what it owes
-            // a GT_DESTRUCT for whenever control leaves it (naturally or
-            // via an early 'return'/'break').
+            // Recorded in declaration order so this scope drops the owning local at every exit (natural end, return, break).
             if ("owns".equals(rhsType.storage) || isInlineOwningStruct(rhsType)) {
                 scope.declScope().ownsDeclaredHere.add(nameTok.text);
                 func.ownsLocalTypes.put(nameTok.text, rhsType);
@@ -12308,15 +8231,7 @@ public class TypeChecker {
                     fnHandleDecls.putIfAbsent(nameTok.text, nameTok);
                 }
             }
-            // A fresh 'let' always introduces a brand-new binding --
-            // confirmed directly ("we are tracking owns values and
-            // slots, not variables directly"), so it must never inherit
-            // a stale moved-flag left over from an unrelated earlier use
-            // of the same textual name (e.g. a loop body re-declaring
-            // "let owned_var = ..." fresh every iteration, after the
-            // loop's own cross-iteration pre-scan already seeded that
-            // name as moved -- caught by testing a loop with genuinely
-            // no cross-iteration hazard, not just the hazardous case).
+            // A fresh 'let' is a new binding: clear any stale moved-flag from an earlier use of the same name (e.g. a loop body redeclaring it).
             scope.movedSlots.remove(nameTok.text);
             partlyMovedSlots.remove(nameTok.text);
             op.left.resolvedType = rhsType.canonical();
@@ -12324,13 +8239,7 @@ public class TypeChecker {
             markMovedIfOwned(rhsType, op.right, scope);
             return rhsType;
         }
-        // About to (re)write this slot regardless of its prior moved
-        // state -- confirmed directly ("we are tracking owns values and
-        // slots, not variables directly"), a fresh assignment always
-        // revives it. Cleared *before* resolving the left side's own
-        // type, so that resolution (which goes through the same
-        // move-check every other read does) doesn't itself reject a
-        // legitimate revival.
+        // A fresh assignment revives a moved slot; cleared before the left side is resolved so the move check does not reject it.
         String leftSlotKeyForRevival = slotKeyOf(op.left);
         if (leftSlotKeyForRevival != null) {
             scope.movedSlots.remove(leftSlotKeyForRevival);
@@ -12343,47 +8252,19 @@ public class TypeChecker {
         } finally {
             assignTargetVar = null;
         }
-        // A bare "EnumName.Variant" literal is always 'imut', unconditionally
-        // -- never coercible to a concretely-'mut' target via the ordinary
-        // typesCompatible lattice, even though the value is perfectly
-        // well-typed and known at compile time. The identical exception
-        // `checkInstantiate`'s own swap-field construction case and
-        // `checkSwapOperator`'s own right-operand case both make, for the
-        // identical reason -- most directly needed here for
-        // `checkLockMatchStatement`'s own synthesized release assignment
-        // ("receiver.field = mut StateEnum.OPEN"), but applies uniformly to
-        // any ordinary 'mut'-typed enum-typed assignment target.
+        // A bare EnumName.Variant is always 'imut' and would not coerce to a 'mut' target; allowed as in checkInstantiate and
+        // checkSwapOperator (needed by the synthesized lock-release write).
         boolean isBareEnumVariantRight = enums.containsKey(leftType.baseType)
                 && isBareEnumVariantRefNode(op.right, leftType.baseType);
-        // "= " on an already-atomic target is allowed only in the exact
-        // same shape 'swap''s own right operand is (see
-        // `isSwapRhsAllowedShape`'s own doc comment for the full
-        // reasoning) -- a bare variable, a literal, or this same
-        // "EnumName.Variant" exception, never a compound expression.
-        // Narrower than an outright ban: an outright ban was tried first
-        // and broke real, already-correct code --
-        // `checkLockMatchStatement`'s own synthesized lock-release write
-        // just above ("receiver.field = mut StateEnum.OPEN") is exactly
-        // this shape, and it's genuinely safe (a fixed literal has zero
-        // dependency on the lock's own prior value, unlike
-        // "counter = counter + 1"), so it has to stay legal. Compound
-        // assignment ("+="/etc.) and "++"/"--" get no equivalent
-        // allowance (`requireNotAtomicOrdinaryWriteTarget`, checked in
-        // `checkCompoundAssign`/`checkIncrement` instead) -- those are
-        // self-referencing by construction, with no variable-or-literal
-        // shaped version that isn't secretly reading the same atomic.
+        // '=' on an atomic target is allowed only for a bare variable, literal or enum variant (isSwapRhsAllowedShape); compound
+        // assignment and ++/-- are rejected outright. See docs/TypeChecker.md, "Atomic write rules".
         if (leftType.isAtomic && !isBareEnumVariantRight && !isSwapRhsAllowedShape(op.right)) {
             throw new CompilerException("type", op.right.file, op.right.line,
                     "an 'atomic' target can only be assigned a bare variable, a literal, or an "
                             + "'EnumName.Variant' reference with '=' -- not a computed expression. Use "
                             + "'swap' instead if the new value needs to be computed");
         }
-        // A struct-RVO call is eligible here only when the
-        // assignment's own target is a bare variable -- never a
-        // '.'/`LOOKUP` target (see
-        // `insideStructRvoDestinationPosition`'s own doc comment
-        // for why the destination is kept to "a whole, bare local
-        // variable" for now).
+        // A struct-RVO call is eligible here only when the assignment target is a bare variable.
         boolean previousRvoEligible = insideStructRvoDestinationPosition;
         insideStructRvoDestinationPosition = op.left.type == TokenType.VARREF;
         TypeInfo rightType;
@@ -12402,20 +8283,7 @@ public class TypeChecker {
         if (op.left.type == TokenType.OPERATOR && op.left.text.equals("LOOKUP")) {
             requireLookupWriteAuthorized(op.left, scope);
         }
-        // Revive the target's own slot a second time, right before this
-        // final move-check -- needed for the real, intentional
-        // self-consuming idiom "arr = resize(arr, ...)": resolving the
-        // right side just above may itself have moved this exact same
-        // slot as a side effect (resize consumes its own first argument
-        // via markMovedIfOwned, by hand, since it bypasses the ordinary
-        // call/parameter machinery entirely) -- but that move is
-        // transient, immediately superseded by this very assignment
-        // overwriting the slot with a fresh value, so it must not
-        // survive past this statement. The first revival (just above,
-        // before either side was resolved) only covers a *pre-existing*
-        // moved state from an earlier statement; this one covers a move
-        // that happened *during* this statement's own right-side
-        // evaluation.
+        // Revive the target again: `arr = resize(arr, ..)` moves the slot while the RHS is resolved, and this assignment supersedes that move.
         if (leftSlotKeyForRevival != null) {
             scope.movedSlots.remove(leftSlotKeyForRevival);
             partlyMovedSlots.remove(leftSlotKeyForRevival);
@@ -12434,39 +8302,11 @@ public class TypeChecker {
         if (typeOwnsMemory(leftType, new HashSet<>()) && assignsInsideSwapLockStruct(op.left, scope)) {
             requireFreshIntoSwapLock(op.right, "assigned into", String.valueOf(memberPathRoot(op.left)));
         }
-        // Return the target's own type, not the assigned value's -- these
-        // differ when the value was 'null' assigned into a pointer slot,
-        // and the target's real type is what should propagate from here.
+        // Return the target's type (it differs from the value's when assigning 'null').
         return leftType;
     }
 
-    /**
-     * Rejects a compound "+="/"-="/"*="/"/="/"%=" (`checkCompoundAssign`)
-     * or "++"/"--" (`checkIncrement`) against an already-atomic target,
-     * outright, with no exception. Confirmed directly, closing a real
-     * gap: every one of these previously decomposed into an ordinary
-     * multi-step PUSH/op/ASSIGN sequence -- exactly the "read, then
-     * write, with a gap another thread can land in" shape
-     * `checkSwapOperator`'s own doc comment already explains 'swap'
-     * exists specifically to avoid ("a true read-modify-write can't be
-     * safely decomposed into an ordinary PUSH-then-ASSIGN pair while
-     * remaining atomic") -- while the resulting bytecode's own type
-     * operand still said "atomic", silently claiming a guarantee that
-     * multi-step sequence never actually provided.
-     *
-     * Unlike plain "=" (`checkAssign`'s own narrower, shape-based check,
-     * right next to `isBareEnumVariantRight` in the reassignment branch
-     * -- allowed when the new value is a bare variable/literal/enum-
-     * variant, exactly `isSwapRhsAllowedShape`'s own shape), there is no
-     * variable-or-literal-shaped version of a compound assignment or
-     * increment that isn't secretly reading the same atomic: "counter +=
-     * 1" and "counter++" are self-referencing by construction, not merely
-     * by coincidence of what expression someone happened to write, so an
-     * outright ban is the correct, sound rule here specifically (as
-     * opposed to plain "=", where an outright ban turned out to be too
-     * strong -- it broke `checkLockMatchStatement`'s own genuinely safe,
-     * literal-only synthesized lock-release write).
-     */
+    /** Rejects compound assignment and ++/-- on an atomic target outright (they are read-then-write; use `swap`). See docs/TypeChecker.md, "Atomic write rules". */
     private void requireNotAtomicOrdinaryWriteTarget(TypeInfo targetType, Token at, String opText) {
         if (targetType.isAtomic) {
             throw new CompilerException("type", at.file, at.line,
@@ -12476,24 +8316,7 @@ public class TypeChecker {
         }
     }
 
-    /**
-     * "A variable marked const can never be assigned outside of its
-     * declaration. A parameter marked const can't be assigned. A
-     * struct member marked const cannot be assigned, outside of the
-     * OTC pattern," confirmed directly. Three genuinely different
-     * sources feed into one check: a local variable's own const-ness
-     * (`Scope.isConstName`, populated only from a real "let const"
-     * declaration -- a plain type annotation never applies to a local
-     * at all, since a local's own type is always inferred, never
-     * separately annotated); a parameter or struct member's own
-     * (`TypeInfo.isConst`, set directly from its own type annotation).
-     * Never reached at all for the "OTC pattern" (a struct-literal's
-     * own field values, "new Foo{field=value}") -- that's checked
-     * entirely by `checkInstantiate` instead, which never calls this
-     * method or goes through an ordinary "=" assignment token in the
-     * first place, so the exemption falls out structurally, with
-     * nothing extra needed here to carve it out.
-     */
+    /** Rejects assignment to a `let const` local, a const parameter or a const struct member. Struct-literal initialisation goes through checkInstantiate and never reaches here. */
     private void requireNotConst(Token target, TypeInfo targetType, Scope scope, Token at) {
         if (target.type == TokenType.VARREF && scope.isConstName(target.text)) {
             throw new CompilerException("type", at.file, at.line,
@@ -12508,18 +8331,7 @@ public class TypeChecker {
         }
     }
 
-    /**
-     * "It should be the case that both i and arr are imutable within a
-     * for or for match loop," confirmed directly -- rejects reassigning
-     * (plain "=", a compound "+="/"-="/etc, or "++"/"--") a "for"/"for
-     * match" loop's own loop variable or its own trackable source
-     * expression, for the dynamic extent of that loop's own body (see
-     * `Scope.ownLoopImmutableSlots`/`isLoopImmutable`). A no-op for any
-     * target `slotKeyOf` doesn't track at all (a `[]`/CALL/computed
-     * expression) -- in particular, "arr[i] = ..." is deliberately
-     * untouched by this check entirely (that's the separate "into"
-     * write-legalization gate, `requireLookupWriteAuthorized`, below).
-     */
+    /** Rejects reassigning a for/for-match loop variable or its source expression inside the loop body (`arr[i] = ..` is governed by requireLookupWriteAuthorized). */
     private void requireNotLoopImmutable(Token target, Scope scope, Token at) {
         String key = slotKeyOf(target);
         if (key != null && scope.isLoopImmutable(key)) {
@@ -12530,15 +8342,7 @@ public class TypeChecker {
         }
     }
 
-    /**
-     * "no runtime logic in a compile time event," confirmed directly --
-     * same restriction already established for 'dup' counts, generalized
-     * here to reject a function call *anywhere* within a static
-     * initializer (arithmetic, 'as' casts, struct literals, and literal/
-     * enum-variant values are all fine and pass straight through; only a
-     * CALL node itself is rejected). Variable references are rejected
-     * separately, for free, by resolving against an empty Scope.
-     */
+    /** A 'static' initializer may contain no CALL (except sizeof) and no `new`; variable references fail by resolving in an empty Scope. */
     private void checkNoRuntimeConstructs(Token node) {
         if (node == null) {
             return;
@@ -12554,16 +8358,7 @@ public class TypeChecker {
                             + "allowed");
         }
         if (node.type == TokenType.OPERATOR && node.unary && node.text.equals("new")) {
-            // 'new' performs a genuine runtime heap allocation (malloc,
-            // by way of the ghost-table system) -- never something a
-            // compile-time constant fold can stand in for, the same
-            // reason a plain function call is already rejected here.
-            // This was previously unchecked: the type checker itself
-            // never rejected it (only got as far as needing a
-            // '@gt_init' function to exist at bytecode-emission time),
-            // so a static/global initializer could silently reach
-            // codegen carrying a real allocation with no way to ever
-            // run it at load time.
+            // `new` is a runtime allocation and can never be folded to a constant.
             throw new CompilerException("type", node.file, node.line,
                     "a 'static' initializer must be a compile-time constant -- 'new' (a runtime heap "
                             + "allocation) is not allowed");
@@ -12578,20 +8373,9 @@ public class TypeChecker {
     }
 
     /**
-     * "const NAME EXPR" -- "if you see the symbol on the left you
-     * replace it with the one on the right," confirmed directly. Looks
-     * up (and, on first reference, evaluates and memoizes) a known
-     * const's own value, returning a fresh literal Token (INTEGER/
-     * FLOAT/BOOL/CHAR/STRING/NULL) to substitute in place of the VARREF
-     * that named it -- the actual "replace the symbol" step happens at
-     * the call site (resolveExprTypeInner's own VARREF case), which
-     * mutates that VARREF token in place into what this returns.
-     * Forward-declarable (confirmed directly), so evaluation is lazy
-     * and memoized here, not eager in declaration order -- with cycle
-     * detection (constsBeingEvaluated), the identical "memoized, with
-     * circular-inheritance detection" shape flattenStruct/
-     * flattenInterface already use for 'extends' chains.
-     */
+         * Looks up a `const`, evaluating lazily and memoizing (cycle-checked via constsBeingEvaluated); returns a literal Token that
+         * the VARREF case substitutes in place. See docs/TypeChecker.md, "Compile-time constants".
+         */
     private Token resolveConstValue(String name, Token referencingNode) {
         Token cached = constResolvedValues.get(name);
         if (cached != null) {
@@ -12613,24 +8397,7 @@ public class TypeChecker {
         return result;
     }
 
-    /**
-     * "The right is any valid literal value (not a varref), or any
-     * expression which can be compile time resolved, in which case the
-     * result is used," confirmed directly. Mirrors resolveOperatorType's
-     * own dispatch structure exactly ("its just an expression, we
-     * already parse expressions... propagate values as well as types
-     * and you have support for all the operators," confirmed directly)
-     * -- every operator this compiler already type-checks here also gets
-     * constant-folding for free, rather than needing a separate
-     * evaluator maintained in parallel. Returns a fresh literal Token
-     * (INTEGER/FLOAT/BOOL/CHAR/STRING/NULL); throws directly (not a
-     * generic fallback) for anything that isn't actually compile-time
-     * resolvable, the same "no runtime logic in a compile time event"
-     * restriction 'static'/global initializers already enforce via
-     * checkNoRuntimeConstructs -- a CALL is rejected there explicitly
-     * rather than just falling through to "unsupported operator" below,
-     * since it deserves its own clearer message.
-     */
+    /** Evaluates a const expression (literals, other consts, operators) to a literal Token, mirroring resolveOperatorType's dispatch; anything else throws. */
     private Token evaluateConstant(Token node) {
         switch (node.type) {
             case INTEGER:
@@ -12656,28 +8423,7 @@ public class TypeChecker {
         }
     }
 
-    /**
-     * "let my_error_string = `Important Config file(${CONFIG_FILE})
-     * not found on ${__FILENAME}:${__LINE}`... because it takes consts
-     * and builtins, not variables, these should be resolved early on
-     * in compilation," confirmed directly, together with "if by
-     * arbitrary expression you mean not one resolveable at compile
-     * time/rules of static initialization then yes," confirmed
-     * directly -- each "${...}" segment is evaluated by the exact same
-     * `evaluateConstant` a real "const NAME EXPR" declaration's own
-     * right-hand side already goes through (arithmetic on consts,
-     * `__LINE`/`__FILENAME`, nested compile-time-only expressions all
-     * included for free this way; a variable reference or a function
-     * call rejected the identical way a const's own RHS already
-     * rejects them). Every segment concatenates into one plain string,
-     * and `node` itself is mutated in place into that STRING token --
-     * the same "replace the node in place with what was found"
-     * substitution shape `resolveConstValue`'s own call site already
-     * uses for an ordinary const reference -- so nothing downstream
-     * (BytecodeEmitter included) ever needs to know a template literal
-     * was here at all; by the time anything else looks at this node,
-     * it's a perfectly ordinary string literal.
-     */
+    /** Folds a template literal into a plain STRING token in place; each `${..}` is evaluated by evaluateConstant. See docs/TypeChecker.md, "Compile-time constants". */
     private TypeInfo resolveTemplateString(Token node) {
         StringBuilder sb = new StringBuilder();
         for (Token seg : node.childs) {
@@ -12685,10 +8431,7 @@ public class TypeChecker {
                 sb.append(seg.literalValue);
                 continue;
             }
-            // Otherwise: the synthesized '(' group wrapping one
-            // "${...}" segment's own expression -- see Lexer's own
-            // comment on why '(' rather than '{' is what actually
-            // reaches this stage.
+            // The synthesized '(' group wraps one `${..}` segment (the Lexer emits '(' rather than '{').
             if (seg.childs.isEmpty()) {
                 throw new CompilerException("type", seg.file, seg.line, "empty '${}' in template literal");
             }
@@ -12703,17 +8446,7 @@ public class TypeChecker {
         return new TypeInfo("static", "imut", "string").withSome(true);
     }
 
-    /**
-     * Stringifies one "${...}" segment's own compile-time-evaluated
-     * value for splicing into the surrounding template literal --
-     * confirmed directly this needs to handle more than a bare string
-     * const, since `__LINE` (always an INTEGER) appears directly in
-     * the example itself. A FLOAT value is deliberately rejected
-     * outright for now, rather than guessed at -- how many decimal
-     * places, trailing zeros, or scientific notation for extreme
-     * values is a real, separate formatting choice not yet settled,
-     * kept simple until it's actually needed.
-     */
+    /** Stringifies one evaluated `${..}` segment; floats are rejected because no formatting convention is settled. */
     private String stringifyTemplateSegmentValue(Token value) {
         switch (value.type) {
             case STRING:
@@ -12865,9 +8598,7 @@ public class TypeChecker {
             }
         } else if (leftTok.type == rightTok.type
                 && (op.text.equals("==") || op.text.equals("!="))) {
-            // Non-numeric equality -- bool/char/string, compared by
-            // their own actual value (literalValue for char/string,
-            // which holds the fully escape-processed form, not text).
+            // Non-numeric equality compares values (literalValue holds the escape-processed form for char/string).
             String l = leftTok.literalValue != null ? leftTok.literalValue : leftTok.text;
             String r = rightTok.literalValue != null ? rightTok.literalValue : rightTok.text;
             boolean eq = l.equals(r);
@@ -12888,27 +8619,7 @@ public class TypeChecker {
         return Double.toString(value);
     }
 
-    /**
-     * "mutability is required," confirmed directly -- a *concrete*
-     * mutability, the same requirement any other 'let' binding already
-     * has (an indeterminate value can never be bound to a variable at
-     * all), not "must specifically be 'mut'." Originally implemented as
-     * the narrower, 'mut'-only check; found and corrected directly (not
-     * assumed) after review turned up that the narrower reading blocked
-     * an entirely reasonable, concrete 'imut' static/global (and, as a
-     * direct consequence, blocked a 'let static'/global from ever
-     * holding a bare string literal at all, since a string literal is
-     * always 'imut' and 'imut' can never coerce to 'mut' -- see
-     * CLAUDE.md's own former "Known gaps" entry for this, now resolved).
-     * For a struct-typed static, there's nothing extra to check here:
-     * the struct's own declared member types already dictate each
-     * field's mutability (checkInstantiate already enforced an exact
-     * match against them), so a struct default is only ever as mutable
-     * as its own declaration already requires. Only the scalar case
-     * needs an explicit check, since a scalar's mutability comes purely
-     * from its own inferred (or 'as'-cast) type, with no struct
-     * declaration to fall back on.
-     */
+    /** A static/global scalar needs a concrete mutability ('mut' or 'imut'); a struct is already governed by its member declarations. */
     private void requireStaticMutable(TypeInfo type, Token at) {
         if (structs.containsKey(type.baseType)) {
             return;
@@ -12920,16 +8631,7 @@ public class TypeChecker {
         }
     }
 
-    /**
-     * "Variables, however, are strongly typed, both in terms of type
-     * and mutability... and can only accept values that are mut or
-     * imut," confirmed directly -- an indeterminate value (the default
-     * for "any freshly-constructed value with no existing binding --
-     * literals, struct literals, array literals, arithmetic/comparison/
-     * logical results," confirmed directly, string literals excepted)
-     * can't be stored in a variable at all until it's made concrete via
-     * the 'mut'/'imut' prefix operator.
-     */
+    /** A variable only accepts a value with concrete mutability; indeterminate values (literals, arithmetic results) need a `mut`/`imut` prefix. */
     private void requireConcreteMutability(TypeInfo type, Token at) {
         if (!"mut".equals(type.mutability) && !"imut".equals(type.mutability)) {
             throw new CompilerException("type", at.file, at.line,
@@ -12939,25 +8641,9 @@ public class TypeChecker {
     }
 
     /**
-     * "let:<FullType> name = expr"... confirmed directly, refined across
-     * a full design conversation into: the bound is always a *complete*
-     * type annotation (no partial-type merging needed at all, once
-     * "it can't actually support partial types, they must be full
-     * types" was confirmed) -- resolved through the exact same
-     * resolveTypeAnnotationRaw machinery any parameter/return type
-     * already uses. The RHS must satisfy it via exactly one of: 'null'
-     * against a pointer-typed bound (reusing the same isPointerType
-     * rule already used everywhere else null is accepted -- nothing new
-     * built for this), an exact type match, or -- the one genuinely new
-     * capability here -- the RHS being an implementer of an interface
-     * bound ("we should also be able to bind to parent classes or
-     * interfaces," confirmed directly), with compatible storage/
-     * mutability either way. No implicit casting beyond this -- "it
-     * doesn't do any explicit casting, as it's achieved through cast,
-     * and as," confirmed directly. Returns null if there's no bound at
-     * all, signaling the caller to fall back to its existing, unbound
-     * 'let' logic completely unchanged.
-     */
+         * Checks `let:<FullType> name = expr`: the RHS must match the bound exactly, be 'null' for a pointer bound, or implement an
+         * interface bound; no other implicit casting. Returns null when no bound is written. See docs/TypeChecker.md, "Let type bounds".
+         */
     private TypeInfo resolveAndValidateTypeBound(Token letTok, TypeInfo rhsType, Token rhsExpr) {
         if (letTok.typeBound == null) {
             return null;
@@ -12965,24 +8651,14 @@ public class TypeChecker {
         TypeInfo bound = resolveTypeAnnotationRaw(letTok.typeBound, letTok);
         TypeInfo result;
         if (rhsType.baseType.equals("null")) {
-            // "Note that only pointers can be null, and not auto or
-            // static ones" -- confirmed directly; isPointerType already
-            // encodes exactly this distinction (owns/ref/raw only, not
-            // auto/static), the same check every other null-acceptance
-            // site in this compiler already relies on.
+            // Only pointers (owns/ref/raw, not auto/static) can be null.
             if (!isPointerType(bound)) {
                 throw new CompilerException("type", rhsExpr.file, rhsExpr.line,
                         "'null' can only satisfy a pointer-typed bound ('owns'/'ref'/'raw'), got '"
                                 + bound.canonical() + "'");
             }
             if (bound.isSome) {
-                // "reject assigning a null literal to a some," confirmed
-                // directly -- this path is a genuinely separate check
-                // from typesCompatible's own identical rule (a bound-type
-                // 'let' validates a 'null' RHS by hand, never going
-                // through typesCompatible at all), found and fixed only
-                // by testing this specific path directly, not assumed
-                // covered by the fix made there.
+                // A 'null' RHS is checked against a 'some' bound by hand here; this path does not go through typesCompatible.
                 throw new CompilerException("type", rhsExpr.file, rhsExpr.line,
                         "'null' cannot satisfy a 'some'-tagged bound ('" + bound.canonical()
                                 + "') -- a 'some' type guarantees a real value is present");
@@ -13008,13 +8684,7 @@ public class TypeChecker {
             }
             result = bound;
         }
-        // The variable's real, final declared type is the bound, not
-        // rhsType -- so 'let static's own, stricter mutability
-        // restriction (requireStaticMutable, "must be mutable, got
-        // ...", exempting structs entirely) applies to the bound here,
-        // exactly mirroring how the existing unbound 'let static' path
-        // already applies it to whatever the declared type turns out to
-        // be.
+        // The declared type is the bound, so the 'let static' mutability rule applies to it.
         if (letTok.isStatic) {
             requireStaticMutable(result, rhsExpr);
         }
@@ -13121,30 +8791,9 @@ public class TypeChecker {
     }
 
     /**
-     * "these operations are not allowed in safe code without match
-     * statements," confirmed directly -- '/'/'%' (and their compound-
-     * assign forms) on a non-compile-time-known-nonzero divisor need
-     * either 'unsafe' or a live "nonzero" match proof for that exact
-     * divisor slot (see checkMatchCondition's own "!=0"/">0" case).
-     * "unsafe math is totally fine in unsafe mode," confirmed directly
-     * -- an 'unsafe' safety context always bypasses this outright, the
-     * same way it already does for a 'raw' pointer/an 'extern' call/a
-     * bare 'loop'/etc.
-     *
-     * Floats (f32) are deliberately, entirely exempt: under IEEE 754,
-     * dividing by zero doesn't trap on any target this compiler would
-     * realistically generate code for -- it produces a well-defined
-     * +-Infinity/NaN, not a hardware fault the way an integer division
-     * does, so there's no crash for this restriction to actually be
-     * guarding against for a float divisor.
-     *
-     * A literal divisor never needs a proof at all -- its value is
-     * already known at compile time, so either it's already provably
-     * safe (a nonzero literal, e.g. "x / 2") or it's provably *not*
-     * ("x / 0"), which is a hard, direct error regardless of safety
-     * context (there is nothing "unproven" about a literal zero
-     * divisor to excuse with 'unsafe' -- it's simply wrong).
-     */
+         * Integer '/' and '%' need a literal nonzero divisor, a live nonzero match proof, or `assume match`; a literal 0 is always an error.
+         * Floats are exempt (IEEE gives inf/NaN, no trap). See docs/TypeChecker.md, "Division proofs".
+         */
     private void requireProvenNonzeroDivisor(Token divisorExpr, TypeInfo divisorType, Scope scope, Token op) {
         if (!INTEGER_TYPES.contains(divisorType.baseType)) {
             return;
@@ -13216,17 +8865,7 @@ public class TypeChecker {
         return new TypeInfo(null, "indeterminate", operand.baseType);
     }
 
-    /**
-     * "In order for a variable's state to be modified (outside of
-     * assignment declaration), its mutability must be mut," confirmed
-     * directly. Applied everywhere an existing binding's contents
-     * change: reassignment, struct-member assignment, and '++'. Walks
-     * back through every prefix of a dotted target ("my_struct.x = y is
-     * not fine if my_struct has indeterminate mutability, or is
-     * immutable," confirmed directly): writing through a struct member
-     * also requires the containing binding itself to be mut, not just
-     * the member's own declared mutability.
-     */
+    /** Modifying a value needs 'mut' on the target and on every prefix of a dotted/indexed path. */
     private void requireMutable(Token targetExpr, TypeInfo targetType, Scope scope, FuncInfo func, Token at) {
         if (!"mut".equals(targetType.mutability)) {
             throw new CompilerException("type", at.file, at.line,
@@ -13234,18 +8873,7 @@ public class TypeChecker {
                             + (targetType.mutability == null ? "indeterminate" : targetType.mutability)
                             + "', not 'mut'");
         }
-        // "So no writing to static or global variables... a pure
-        // function should be barred from acting on a mutable pointer,
-        // still can receive them and pass them around, just not mutate
-        // them," confirmed directly -- checked at every level of the
-        // walk below, not just the outermost one: "param.inner.x = y"
-        // still mutates the same memory 'param' points to even though
-        // '.inner' is itself a plain, no-storage member, so a mut
-        // pointer anywhere in the chain (not just as the direct,
-        // immediate object) makes the whole write forbidden. "Unsafe
-        // code does not get an exemption for this," confirmed directly
-        // -- checked unconditionally, never gated on
-        // scope.currentSafety.
+        // '@pure' functions may not mutate through any pointer anywhere in the chain; unsafe gives no exemption.
         if (isPureFunc(func) && targetType.storage != null) {
             throw new CompilerException("type", at.file, at.line,
                     "'" + func.name + "' is '@pure' and cannot mutate through a pointer -- '"
@@ -13255,39 +8883,16 @@ public class TypeChecker {
             TypeInfo prefixType = resolveExprType(targetExpr.left, scope, func);
             requireMutable(targetExpr.left, prefixType, scope, func, at);
         } else if (targetExpr.type == TokenType.OPERATOR && targetExpr.text.equals("LOOKUP")) {
-            // Only walked for the '@pure' check above -- the existing
-            // mutability-propagation rule for a plain array element
-            // already makes checking the element's own type sufficient
-            // for the ordinary (non-'@pure') case, so this branch adds
-            // no new behavior there, only reachability for the pointer
-            // check on whatever the array itself sits behind. Recurses
-            // via the same requireMutable call the '.' branch uses (not
-            // just a single inline check), so a chain like "p.arr[0]"
-            // still walks all the way down into "p.arr" and then "p"
-            // itself -- a bug caught directly by testing this exact
-            // shape, not assumed correct from the single-level version.
+            // LOOKUP is walked for the '@pure' pointer check, recursing so `p.arr[0]` reaches `p`.
             TypeInfo prefixType = resolveExprType(targetExpr.left, scope, func);
             requireMutable(targetExpr.left, prefixType, scope, func, at);
         }
     }
 
     /**
-     * "&&"/"||" (always eager -- both operands are unconditionally
-     * evaluated and combined into one value at the bytecode stage, see
-     * `BytecodeEmitter.emitLogical`) and their lazy "then" siblings
-     * "&&then"/"||then" -- "just operators until they are parsed out to
-     * their instructions in the hob [BytecodeEmitter]," confirmed
-     * directly -- share this one type-checker (both sides must be
-     * bool-or-integer, the result is an indeterminate bool), since lazy-
-     * vs-eager is purely a codegen-stage distinction with zero type-level
-     * difference. The only thing that *does* differ here is legality:
-     * `eligibleHere` (captured by `resolveOperatorType` before this was
-     * called, from `insideShortCircuitEligiblePosition`) says whether
-     * `op` itself was reached from an `if`/`elseif` condition's own root
-     * through zero or more further `&&then`/`||then` nodes only -- see
-     * that field's own doc comment for the full "top level" definition
-     * and why a plain `&&`/`||` parent doesn't count.
-     */
+         * `&&`/`||` (eager) and `&&then`/`||then` (lazy) share this check; the then-variants are legal only at the top of an
+         * if/elseif condition (eligibleHere). See docs/TypeChecker.md, "Operator dispatch context flags".
+         */
     private TypeInfo checkLogical(Token op, Scope scope, FuncInfo func, boolean eligibleHere) {
         boolean isThenVariant = op.text.equals("&&then") || op.text.equals("||then");
         if (isThenVariant && !eligibleHere) {
@@ -13298,11 +8903,7 @@ public class TypeChecker {
                             + "inside a '!' or comparison, as an operand of a plain '&&'/'||', inside a 'match', "
                             + "or anywhere else an ordinary expression is expected");
         }
-        // Only a then-variant re-arms eligibility for its own two
-        // operands (so a chain like "a &&then b ||then c" -- every
-        // combinator a then-variant -- stays eligible all the way down);
-        // a plain '&&'/'||' leaves it consumed (false), so a then-variant
-        // reached through *it* is correctly rejected above instead.
+        // Only a then-variant re-arms eligibility for its operands; a plain &&/|| leaves it consumed.
         if (isThenVariant) {
             insideShortCircuitEligiblePosition = true;
         }
@@ -13325,12 +8926,7 @@ public class TypeChecker {
         leftType = unified[0];
         rightType = unified[1];
         boolean sameType = leftType.sameBaseType(rightType);
-        // '==' and '!=' additionally allow comparing a pointer-typed
-        // struct/enum value against 'null' (either side) -- checking
-        // whether a pointer is null is the whole point of it being
-        // nullable in the first place. Ordering comparisons (< > <= >=)
-        // don't get this exception; comparing a pointer's ordering
-        // against null isn't meaningful.
+        // '==' and '!=' also allow comparing a pointer with 'null' (either side); ordering comparisons do not.
         boolean nullVsPointer = (op.text.equals("==") || op.text.equals("!="))
                 && ((rightType.baseType.equals("null") && isPointerType(leftType))
                     || (leftType.baseType.equals("null") && isPointerType(rightType)));
@@ -13373,12 +8969,7 @@ public class TypeChecker {
 
     private TypeInfo checkCall(Token op, Scope scope, FuncInfo func, boolean eligibleForRvoHere) {
         if (op.left.type == TokenType.KEYWORD && op.left.text.equals("sleep")) {
-            // "sleep(...)" is a real Lexer keyword (never a VARREF), so
-            // it can never reach the ordinary by-name overload lookup
-            // below at all -- resolved here, first, to whichever
-            // function actually carries the "@sleep" decorator,
-            // regardless of that function's own real declared name (see
-            // checkSleepCall's own doc comment).
+            // 'sleep' is a Lexer keyword, so it resolves to whichever function carries '@sleep'.
             return checkSleepCall(op, scope, func);
         }
         if (op.left.type == TokenType.OPERATOR && op.left.text.equals(".")) {
@@ -13391,27 +8982,12 @@ public class TypeChecker {
         String funcName = op.left.text;
         boolean wasEventLoopRedirect = false;
         if (funcName.equals("tick") && func != null && hasDecorator(func.funcToken.decorators, "event_loop")) {
-            // "found purely by decorator," confirmed directly -- neither
-            // '@tick' nor '@event_loop' requires a fixed function name,
-            // so a literal call to "tick(...)" written inside the
-            // '@event_loop' function's own body (as the stdlib event
-            // loop itself does) can't just resolve by ordinary name
-            // lookup: nothing guarantees a function actually called
-            // "tick" exists at all. Redirected here, specifically and
-            // only within an '@event_loop' function's own body, to
-            // whichever function is actually decorated '@tick',
-            // regardless of its real name -- 'main' needs no equivalent
-            // redirection, since its own name is already fixed.
+            // Inside '@event_loop', a literal `tick(..)` redirects to the function decorated '@tick' (neither has a fixed name).
             List<FuncInfo> tickFuncs = findFuncsWithDecorator("tick");
             if (!tickFuncs.isEmpty()) {
                 funcName = tickFuncs.get(0).name;
                 wasEventLoopRedirect = true;
-                // '@tick' may or may not be '@throws': the stdlib loop
-                // always writes `? tick(state)`, and the wrap is kept
-                // only when this program's tick can throw, so the
-                // ordinary two-way rule (a call is wrapped iff the
-                // callee is '@throws') still holds for the resolved
-                // call and no pointless catch path exists.
+                // The stdlib loop writes `? tick(state)`; the wrap is kept only if tick is '@throws', so the two-way rule still holds.
                 if (!tickFuncs.get(0).isThrows) {
                     op.insideTry = false;
                 }
@@ -13427,14 +9003,7 @@ public class TypeChecker {
         List<FuncInfo> overloads = functions.get(funcName);
         boolean isConstructorCallShape = false;
         if (overloads == null && structs.containsKey(funcName)) {
-            // "MyClass(...)" -- a bare call naming a struct, not a
-            // function: resolved against that struct's own constructors
-            // (Parser.CONSTRUCTOR_NAME_PREFIX + funcName), via the exact
-            // same overload-matching loop just below -- a constructor is,
-            // by the time it reaches this map, an ordinary FuncInfo
-            // overload indistinguishable from any other struct-by-value-
-            // returning function (see collectFunc's own constructor
-            // branch), so no separate resolution mechanism is needed here.
+            // `MyClass(..)` resolves against the struct's constructors (CONSTRUCTOR_NAME_PREFIX + name) via the normal overload loop.
             overloads = functions.get(Parser.CONSTRUCTOR_NAME_PREFIX + funcName);
             isConstructorCallShape = true;
         }
@@ -13469,11 +9038,7 @@ public class TypeChecker {
             if (matches) {
                 retagLiteralArgs(candidate.paramTypes, argTypes, argNodes);
                 if (hasDecorator(candidate.funcToken.decorators, "event_loop")) {
-                    // "It cannot be called or referenced anywhere in
-                    // the compilation unit," confirmed directly -- the
-                    // dundered bytecode entry point this function
-                    // becomes (see BytecodeEmitter) has no meaningful
-                    // "call" for ordinary Caspien code to make anyway.
+                    // '@event_loop' cannot be called or referenced.
                     throw new CompilerException("type", op.file, op.line,
                             "'" + funcName + "' is '@event_loop' -- it cannot be called or referenced "
                                     + "anywhere in the compilation unit");
@@ -13485,27 +9050,8 @@ public class TypeChecker {
                 boolean isMainOrTick = candidate.name.equals("main")
                         || hasDecorator(candidate.funcToken.decorators, "tick");
                 if (mainIsWithTick && isMainOrTick && !callerIsEventLoop) {
-                    // "only @event_loop may call main or @tick,"
-                    // confirmed directly -- a real, separate gap from
-                    // the ordinary '@pub' visibility check just below:
-                    // even a '@pub' 'main'/'@tick' function, or one
-                    // called from within its own declaring file, could
-                    // otherwise still be called directly by anything
-                    // else, entirely bypassing the event-loop mechanism
-                    // this whole feature exists to enforce. Checked
-                    // directly against `candidate`'s own identity (name
-                    // for 'main', the '@tick' decorator itself for the
-                    // tick function) rather than merely against
-                    // `funcName`, so a direct call using the real
-                    // function's own true name (not just the
-                    // redirected "tick(...)" spelling) is caught too.
-                    // Scoped to only fire when 'main' is '@with_tick'
-                    // at all -- read directly from `functions` rather
-                    // than the `eventLoopFunc` field, since that field
-                    // isn't populated until validateTickEventLoop runs,
-                    // at the very end of check(), well after every
-                    // function body (including this call site) has
-                    // already been checked.
+                    // With a '@with_tick' main, only the '@event_loop' function may call main or the '@tick' function. Read from `functions`,
+                    // because eventLoopFunc is not set until validateTickEventLoop runs at the end of check().
                     throw new CompilerException("type", op.file, op.line,
                             "'" + funcName + "' can only be called from within the '@event_loop' "
                                     + "function");
@@ -13514,18 +9060,7 @@ public class TypeChecker {
                         || (funcName.equals("main") && callerIsEventLoop);
                 if (!candidate.isPublic && !candidate.funcToken.file.equals(op.file)
                         && !privilegedEventLoopCall) {
-                    // "Not accessible outside the file its declared
-                    // in," confirmed directly -- a plain top-level func
-                    // has no enclosing impl to also check, unlike an
-                    // impl method (see checkImplMethodVisibility).
-                    // Exempted for 'main' itself, and for whichever
-                    // function is actually decorated '@tick', both only
-                    // when called from within the '@event_loop'
-                    // function's own body -- all three are singleton,
-                    // whole-program constructs the compiler already
-                    // privileges specially (the same spirit as 'tick's
-                    // own name redirection just above), not ordinary
-                    // cross-file access.
+                    // Private function: same file only; main and the '@tick' function are exempt when called from the '@event_loop' body.
                     throw new CompilerException("type", op.file, op.line,
                             "'" + funcName + "' is private -- not accessible outside the file it's "
                                     + "declared in");
@@ -13541,9 +9076,7 @@ public class TypeChecker {
                                     + "function -- '" + funcName + "' isn't one");
                 }
                 if (op.asyncCallKind != null) {
-                    // "Passing a pointer, including nested within
-                    // struct members, would be unsafe," confirmed
-                    // directly.
+                    // Pointers (even nested in structs) cannot cross par/await without 'unsafe async'.
                     for (int i = 0; i < argNodes.size(); i++) {
                         if (containsPointerAnywhere(candidate.paramTypes.get(i)) && !unsafeBypass(scope, "async")) {
                             throw new CompilerException("type", argNodes.get(i).file, argNodes.get(i).line,
@@ -13560,14 +9093,7 @@ public class TypeChecker {
                 for (int i = 0; i < argNodes.size(); i++) {
                     markMovedIfOwned(candidate.paramTypes.get(i), argNodes.get(i), scope);
                 }
-                // Precise, per-call-site destruct list -- see checkThrow's own doc
-                // comment for the full design: if this callee (or anything it calls,
-                // transitively) ever throws and unwinds back into this exact call, this
-                // caller needs to know exactly what's alive in *it* right here, the same
-                // precision an ordinary 'return' at this point would have -- not the old
-                // whole-function conservative list. BytecodeEmitter only actually uses
-                // this when the whole program uses 'throw' at all (checker.usesThrow());
-                // harmless, cheap to compute unconditionally otherwise.
+                // Per-call-site destruct list, used if the callee throws and unwinds back here (emitted only when the program uses throw).
                 op.destructOnExit = collectOwnsToDestruct(scope, scope.functionRootScope, null);
                 op.unlockOnExit = collectLockReleasesToBoundary(scope, scope.functionRootScope);
                 if (candidate == func && scope.suspendsSelfRecursion) {
@@ -13581,17 +9107,8 @@ public class TypeChecker {
                 }
                 requirePureCalleeIfPure(func, candidate, op);
                 callEdges.add(new CallEdge(func, candidate, scope.currentSafety, op, scope.insideDynArrayForLoopBody));
-                // Return Value Optimization: "returning structs on the
-                // stack by manipulating a hidden struct on the stack in
-                // the parent frame," confirmed directly. See
-                // `insideStructRvoDestinationPosition`'s own doc comment
-                // for exactly which two positions are legal (a 'let'
-                // binding's own right-hand side, or a plain assignment's
-                // right-hand side targeting a bare variable) and why
-                // nothing else is, for now -- enforced here, the one
-                // place an ordinary call to a plain top-level function is
-                // finally resolved, regardless of which of those two
-                // positions (or neither) actually called this.
+                // Struct-by-value return: legal only at a 'let' RHS or a bare-variable assignment RHS (insideStructRvoDestinationPosition).
+                // See docs/TypeChecker.md, "Struct return values (RVO)".
                 if (isStructByValueReturn(candidate.returnType)) {
                     if (!eligibleForRvoHere) {
                         throw new CompilerException("type", op.file, op.line,
@@ -13613,22 +9130,7 @@ public class TypeChecker {
                         + unavailableNote(isConstructorCallShape ? Parser.CONSTRUCTOR_NAME_PREFIX + funcName : funcName));
     }
 
-    /**
-     * Calling an "extern" declaration -- "exporting safe things is
-     * safe, but externing them is inherently unsafe," confirmed
-     * directly: declaring an extern needs no 'unsafe' at all, but every
-     * *call site* does, exactly like 'raw' pointer construction and
-     * 'call()'. Also banned unconditionally inside a '@pure' function,
-     * the same way 'call()' is -- an extern's actual behavior (almost
-     * always side-effecting, e.g. printf) can never be verified at
-     * compile time, so there's no sound way to let '@pure' code invoke
-     * one. Fixed parameters are checked exactly like an ordinary call's
-     * arguments (arity + typesCompatible); anything beyond that (only
-     * possible when the extern ends in '...') is entirely unchecked --
-     * any type, any mutability at all -- except that it must still be
-     * *concrete* (not indeterminate), since there's no expected type on
-     * the other end for an indeterminate value to coerce against.
-     */
+    /** Calling an extern needs `unsafe extern` and is banned in '@pure'. Fixed parameters are checked like an ordinary call; varargs only need a concrete (non-indeterminate) type. */
     private TypeInfo checkExternCall(ExternInfo info, Token op, Scope scope, FuncInfo func) {
         if (!unsafeBypass(scope, "extern")) {
             throw new CompilerException("type", op.file, op.line,
@@ -13672,25 +9174,7 @@ public class TypeChecker {
         return info.returnType;
     }
 
-    /**
-     * "sleep(...)" -- a real Lexer keyword, so this call site's own
-     * "callee" was never a real, independently-resolvable name at all
-     * (unlike "tick(...)"'s own event-loop redirect just above, which
-     * still starts from an ordinary VARREF spelling); it always means
-     * "whichever function actually carries '@sleep'," found via the
-     * exact same `ghostTableFunctions` registry "@par_call"/
-     * "@await_call" already share, resolved directly to that function's
-     * own real mangled name -- never a hardcoded literal the way
-     * `GT_INIT`/etc.'s bytecode-level callees are (see
-     * `forceGhostTableFunctionNames`'s own doc comment for why that
-     * distinction matters). Argument checking mirrors
-     * `checkExternCall`'s own shape closely (a fixed-arity, fixed-type
-     * signature checked via plain `typesCompatible`, no overload
-     * resolution needed since there is, by construction, only ever one
-     * "@sleep" function in the whole compilation unit) rather than the
-     * ordinary multi-overload `checkCall` path just above, since there's
-     * nothing to overload against.
-     */
+    /** `sleep(...)`: always resolves to the function carrying `@sleep` (ghost-table function registry); fixed arity and types, no overloads. See docs/TypeChecker.md, "Builtin calls". */
     private TypeInfo checkSleepCall(Token op, Scope scope, FuncInfo func) {
         FuncInfo sleepFunc = getGhostTableFunction("sleep");
         if (sleepFunc == null) {
@@ -13722,35 +9206,12 @@ public class TypeChecker {
         }
         op.resolvedCallTarget = sleepFunc.mangledName;
         op.resolvedCallConvention = sleepFunc.callConvention;
-        // "SLEEP sleep_call duration" in the bytecode, not an ordinary
-        // "CALL" -- confirmed directly. Emission-side routing only
-        // (BytecodeEmitter.emitCallOrBuiltin checks this flag); every
-        // check above (arity, argument type, "@sleep" existing at all)
-        // stays completely unchanged either way.
+        // Emitted as SLEEP, not CALL; BytecodeEmitter.emitCallOrBuiltin reads the flag.
         op.isSleepCall = true;
         return sleepFunc.returnType;
     }
 
-    /**
-     * "receiver.methodName(args...)" -- confirmed directly: not "quite
-     * full object orientation" -- the receiver is used *only* to
-     * resolve which concrete type's impls to search; it is never
-     * implicitly injected as an argument. Whatever the impl's own
-     * first parameter needs (typically some spelling of 'self') must
-     * be passed explicitly in the call's own parens, exactly like any
-     * other argument. Resolution is entirely compile-time: every
-     * method call is matched to one specific, concrete, already-
-     * existing function (`op.resolvedCallTarget`), with zero runtime
-     * dispatch machinery of any kind -- essential per the project's own
-     * stated ethos for this feature.
-     */
-    /**
-     * "These look like functions and use the function call syntax, but
-     * they get their own instruction in the bytecode output, unless
-     * otherwise specified," confirmed directly. Dispatches on the
-     * reserved name itself -- these never go through the ordinary
-     * user-function overload table at all.
-     */
+    /** Dispatches a reserved builtin name to its checker; builtins never use the user-function overload table. */
     private TypeInfo checkBuiltinCall(String name, Token op, Scope scope, FuncInfo func) {
         switch (name) {
             case "sizeof": return checkSizeofBuiltin(op, scope, func);
@@ -13771,20 +9232,7 @@ public class TypeChecker {
         }
     }
 
-    /**
-     * "match Some(x){...}" -- "Some() is a built in for this very
-     * purpose," confirmed directly, replacing the old bare-form
-     * "match x{...}". Generally available, not match-condition-only --
-     * "instanceof and implements are meant to be operators which are
-     * generally available. Some() is meant to be generally available.
-     * in is also meant to be generally available," confirmed directly
-     * -- so this is checked here exactly like any other builtin call
-     * would be, returning an ordinary 'bool'; checkMatchCondition
-     * additionally records a genuine "alive" proof when this specific
-     * shape ("Some(x)", x a bare, trackable slot) is used as a match
-     * condition, the same two-layer "ordinary expression here, plus a
-     * proof recorded there" split "in"/"instanceof" already have.
-     */
+    /** `Some(x)`: an ordinary bool builtin; checkMatchCondition adds the alive proof when it is a match condition. */
     private TypeInfo checkSomeBuiltin(Token op, Scope scope, FuncInfo func) {
         Token argExpr = collectSingleBuiltinArg(op, "Some", scope, func).get(0);
         TypeInfo argType = resolveExprType(argExpr, scope, func);
@@ -13872,31 +9320,7 @@ public class TypeChecker {
         return args;
     }
 
-    /**
-     * "insecure_rand() //generates a NOT crypto secure random number,"
-     * confirmed directly -- "insecure_rand is not unsafe, but its
-     * limitation is self documenting," confirmed directly, and "have
-     * them allowed in a pure function - a pure function is no
-     * self-referential, its side effect free, not the same thing,"
-     * confirmed directly: unlike an ordinary, user-declared 'extern'
-     * (which unconditionally requires 'unsafe' and is unconditionally
-     * banned inside '@pure' -- checkExternCall, above -- since the
-     * compiler genuinely cannot know what an arbitrary external symbol
-     * does), this is a compiler builtin the compiler itself fully
-     * vouches for: a fixed, known, side-effect-free C function (it
-     * reads no global/mutable state a Caspien program could ever
-     * observe and writes none either), just non-deterministic --
-     * exactly what the confirmed, narrower "'@pure' means side-effect-
-     * free, not referentially transparent" definition allows. So this
-     * is checked here as its own, entirely separate path -- never
-     * routed through checkExternCall at all -- with neither restriction
-     * even attempted, rather than special-cased as an exemption from
-     * either. Bound to C's own 'rand()' -- "have insecure_rand() be
-     * rand()," confirmed directly, as well-established a choice as
-     * 'strlen'/'printf' themselves, and precisely as well-known to be
-     * cryptographically weak, which is the whole reason its own name
-     * carries that warning instead of a compiler-enforced one.
-     */
+    /** `insecure_rand()`: non-crypto u64 (C `rand()`). A compiler builtin, so it needs no `unsafe` and is allowed in `@pure`. See docs/TypeChecker.md, "Builtin calls". */
     private TypeInfo checkInsecureRandBuiltin(Token op) {
         Token argsDelineator = op.right;
         if (!argsDelineator.childs.isEmpty()) {
@@ -13910,17 +9334,7 @@ public class TypeChecker {
         return new TypeInfo(null, "indeterminate", "u64");
     }
 
-    /**
-     * "sizeof is computed size of type, feeding it an array just gets
-     * you the size of the array's base type. It should also work for
-     * expressions, but again returns the sizeof the base type of the
-     * array," confirmed directly -- both forms supported: a bare (or
-     * storage-prefixed) type name written directly, or an ordinary
-     * expression whose *resolved type* is used instead. "Its exempt for
-     * the parameter - mutability doesn't effect size - but not for what
-     * it returns, which is a u64 treated like every other u64 (ie.
-     * indeterminate)," confirmed directly.
-     */
+    /** `sizeof(T)` or `sizeof(expr)`: for an array, the base element type's size; the result is an indeterminate u64. */
     private TypeInfo checkSizeofBuiltin(Token op, Scope scope, FuncInfo func) {
         Token argExpr = collectSingleBuiltinArg(op, "sizeof", scope, func).get(0);
         TypeInfo argType = tryResolveAsTypeDescriptor(argExpr);
@@ -13949,22 +9363,7 @@ public class TypeChecker {
         return structs.containsKey(base) ? base : null;
     }
 
-    /**
-     * Walks storage ("raw"/"owns"/"ref"/"auto"/"static") and mutability
-     * ("mut"/"imut" -- skipped through, exempt for sizeof's purposes)
-     * prefix operator nodes down to a bare VARREF, returning a
-     * synthesized TypeInfo if the base name is a known type. Returns
-     * null (not a type descriptor at all) if the shape doesn't match or
-     * the base name isn't a known type -- the caller falls back to
-     * ordinary expression resolution, treating it as a variable
-     * reference instead. Deliberately narrow: array-bracket and
-     * composite range annotation syntax don't parse as valid
-     * expressions in the first place (no example needs them written
-     * directly inside "sizeof(...)"; "feeding it an array" means an
-     * expression whose type is an array, not "sizeof(u64[5])" written
-     * literally), so this only needs to recognize the shapes that
-     * genuinely can appear here.
-     */
+    /** Reads a (storage/mutability-prefixed) bare type name as a TypeInfo; null if it is not a known type, so the caller treats it as an expression. */
     private TypeInfo tryResolveAsTypeDescriptor(Token node) {
         String storage = null;
         Token cur = node;
@@ -13986,15 +9385,7 @@ public class TypeChecker {
         return new TypeInfo(storage, "imut", cur.text);
     }
 
-    /**
-     * "A range should be 16 bytes" (2x u64 bounds); "structs when not
-     * pointers are their actual size" (a plain sum of member sizes --
-     * "flag that as worthy of review later," confirmed directly, since
-     * this ignores alignment/padding entirely); any pointer (any
-     * storage, any pointee) is POINTER_SIZE; "feeding it an array just
-     * gets you the size of the array's base type" (recursing through
-     * every array dimension down to the true, non-array element type).
-     */
+    /** Size of a type: any pointer = POINTER_SIZE, range = 16, array = its base element. See docs/TypeChecker.md, "Builtin calls". */
     private long computeSizeOf(TypeInfo t, Token at) {
         if (t.storage != null) {
             return POINTER_SIZE;
@@ -14028,16 +9419,7 @@ public class TypeChecker {
                 "'sizeof' doesn't know the size of '" + t.canonical() + "'");
     }
 
-    /**
-     * "For a static C style string or for an array, returns its
-     * length. These are compile time known and directly substituted,"
-     * confirmed directly. An array's length is always known (it's part
-     * of the type); a string's length is known only for a *direct*
-     * string literal token -- the exact same restriction the reference/
-     * bounds-checking round already established for '[]' (a variable
-     * holding a string literal doesn't carry its length, even though
-     * the literal itself does).
-     */
+    /** `len(x)`: constant for arrays and direct string literals, run-time for dynarrays; the 2-arg form scans an unsafe dynarray. See docs/TypeChecker.md, "len and range". */
     private TypeInfo checkLenBuiltin(Token op, Scope scope, FuncInfo func) {
         List<Token> args = new ArrayList<>();
         Token argsDelineator = op.right;
@@ -14045,19 +9427,7 @@ public class TypeChecker {
             collectCommaArgs(argsDelineator.childs.get(0), args);
         }
         if (args.size() == 2) {
-            // "len(my_unsafe_char_array,'\0')" -- the unsafe, 2-arg
-            // form: an unsafe dynarray has no hidden runtime length at
-            // all, so its own length can only ever be found by scanning
-            // for a caller-supplied terminator value, confirmed
-            // directly ("I can use len() on an unsafe dynarray, but I
-            // have to provide the terminating type... using len in this
-            // way is unsafe"). Requires 'unsafe' code; the first
-            // argument must actually be an unsafe dynarray (never the
-            // safe variant -- there's nothing for a terminator to add
-            // there), and the terminator's own type must match the
-            // element base type exactly, the identical "fill value must
-            // match the element type" check `resize`'s own 3-arg form
-            // already makes.
+            // `len(unsafe_dynarray, terminator)`: unsafe, scans for the terminator; its type must equal the element type (as resize's fill).
             if (!"unsafe".equals(scope.currentSafety)) {
                 throw new CompilerException("type", op.file, op.line,
                         "'len' with a terminator argument can only be used from within 'unsafe' code");
@@ -14078,11 +9448,7 @@ public class TypeChecker {
                                 + targetType.unsafeDynArrayElementType.baseType + "'), got '"
                                 + termType.baseType + "'");
             }
-            // Deliberately leaves op.builtinConstantValue unset -- the
-            // identical "a real, unfoldable runtime read" signal the
-            // safe dynarray's own 1-arg 'len' already uses, read
-            // directly by BytecodeEmitter to know a real scanning
-            // instruction is needed instead of folding to a literal.
+            // builtinConstantValue stays unset: BytecodeEmitter then emits a real scan.
             return new TypeInfo(null, "indeterminate", "u64");
         }
         if (args.size() != 1) {
@@ -14093,25 +9459,13 @@ public class TypeChecker {
         Token argExpr = args.get(0);
         TypeInfo argType = resolveExprType(argExpr, scope, func);
         if (isUnsafeDynArrayType(argType)) {
-            // "the issue is the length" -- an unsafe dynarray genuinely
-            // has none without a terminator to scan for, so the bare,
-            // 1-arg form is rejected outright here, rather than falling
-            // through to the generic "requires a string/array/dynarray"
-            // error below, which would be misleading for a target that
-            // plainly *is* a dynarray, just one this form can't measure.
+            // A bare 1-arg `len` on an unsafe dynarray has no length to read; a specific error beats the generic one below.
             throw new CompilerException("type", argExpr.file, argExpr.line,
                     "'len' on an 'unsafe dynarray' requires a terminator argument, e.g. "
                             + "'len(arr, '\\0')' -- it has no hidden length to read otherwise");
         }
         if (isDynArrayType(argType)) {
-            // A "dynarray(T)"'s length is a genuine runtime value --
-            // never foldable to a compile-time constant the way a
-            // fixed array's/string literal's already is, confirmed by
-            // its own type shape (no length baked into it at all).
-            // `op.builtinConstantValue` deliberately stays unset here
-            // -- BytecodeEmitter reads that absence directly to know a
-            // real "LEN" instruction is needed instead of folding to a
-            // literal PUSH.
+            // Run-time length: builtinConstantValue stays unset so BytecodeEmitter emits LEN.
             return new TypeInfo(null, "indeterminate", "u64");
         }
         long length;
@@ -14132,34 +9486,7 @@ public class TypeChecker {
         return new TypeInfo(null, "indeterminate", "u64");
     }
 
-    /**
-     * "This produces a range of 0..len(string|array|dynarray)," using
-     * the exact same length-knowability restriction 'len' does --
-     * confirmed directly, extended to a safe dynarray the same way
-     * 'len' already covers one. A string/fixed-array argument's length
-     * is a compile-time constant, exactly like 'sizeof'/'len' already
-     * fold theirs: `op.builtinConstantValue` is set, and the returned
-     * type carries the real bounds baked in (`"range(0," + length +
-     * ")"`), so `BytecodeEmitter` can emit two plain `PUSH` literals
-     * with no instruction at all. A safe dynarray's length is a genuine
-     * runtime value (no different from 'len's own dynarray case) --
-     * `op.builtinConstantValue` is deliberately left unset, the same
-     * "unfoldable, needs a real read" signal 'len' already uses, and the
-     * returned type is the plain, bare, bounds-*incomplete* `range`
-     * (`func(r: mut range) void`'s own type -- "the bounds are always
-     * two u64s, just known or not known by the compiler") rather than a
-     * fabricated `range(0,something)` with no real bound to embed. An
-     * unsafe dynarray is rejected outright, the same "no hidden length
-     * to read, and no terminator argument exists here to scan for one"
-     * reasoning 'len's own bare 1-arg form already rejects it for.
-     *
-     * (This used to produce a slice pairing that range with the
-     * container's own origin -- the slice type has been removed from
-     * the language entirely, so this now produces the plain range
-     * directly, which is all any caller ever actually used -- e.g.
-     * `for index in range(my_string)` only ever consumed the range's
-     * own bounds, never the origin.)
-     */
+    /** `range(x)`: 0..len for a string literal / fixed array (bounds baked into the type), plain `range` for a safe dynarray, error for an unsafe one. See docs/TypeChecker.md, "len and range". */
     private TypeInfo checkRangeBuiltin(Token op, Scope scope, FuncInfo func) {
         Token argExpr = collectSingleBuiltinArg(op, "range", scope, func).get(0);
         TypeInfo argType = resolveExprType(argExpr, scope, func);
@@ -14169,8 +9496,7 @@ public class TypeChecker {
                             + "terminator argument to scan for one either, unlike 'len'");
         }
         if (isDynArrayType(argType)) {
-            // A genuine runtime value -- see this method's own doc
-            // comment. No `op.builtinConstantValue`, no baked-in bounds.
+            // Run-time length: no builtinConstantValue, no baked-in bounds.
             return new TypeInfo(null, "imut", "range");
         }
         long length;
@@ -14191,17 +9517,7 @@ public class TypeChecker {
         return new TypeInfo(null, "imut", "range(0," + length + ")");
     }
 
-    /**
-     * "PUSH pointer / DEREF. Produces an on stack version of whatever
-     * was dereferenced," confirmed directly -- the pointee's own type,
-     * with storage stripped (null), same as any other inline value. A
-     * useful side effect worth noting: since checkDot's pointer
-     * restriction only fires when storage is non-null, a struct value
-     * obtained this way is immediately usable with ordinary '.' member
-     * access, unlike a plain pointer -- "make a note for later review:
-     * this may need deref by member for structs" is about a *future*,
-     * more targeted form, not a blocker on this one.
-     */
+    /** `deref(p)`: the pointee value with storage stripped (usable with `.` directly). */
     private TypeInfo checkDerefBuiltin(Token op, Scope scope, FuncInfo func) {
         requireNotPureRt(func, op, "'deref'", "it reads memory through a pointer");
         Token argExpr = collectSingleBuiltinArg(op, "deref", scope, func).get(0);
@@ -14229,17 +9545,10 @@ public class TypeChecker {
         return new TypeInfo(null, argType.mutability, argType.baseType, argType.aliasName);
     }
 
-    /**
-     * "PUSH pointer / CLONE. Creates an owns pointer to whatever type
-     * was pointed to by the original pointer," confirmed directly -- any
-     * storage accepted (not just an existing 'owns'), the pointee's own
-     * base type and mutability preserved, storage becomes 'owns'.
-     */
+    /** `clone(p)`: any storage accepted; the result is `owns some`, pointee type and mutability kept. */
     private TypeInfo checkCloneBuiltin(Token op, Scope scope, FuncInfo func) {
         requireNotPureRt(func, op, "'clone'", "allocation depends on heap state (it can fail), so the result is not a function of the arguments");
-        // `clone` allocates a fresh heap copy and registers it with the ghost table, exactly as `new` does, so it
-        // can fail the same way and needs the same try/catch (or `?`) discipline, and it makes the same demands of
-        // the program (ghost table functions, the throw machinery).
+        // Allocates and registers like `new`: same try/catch discipline and same program-wide flags.
         usesOwnsRefDynNew = true;
         usesThrow = true;
         if (!op.insideTry && !insideThrowingAllocContext) {
@@ -14278,29 +9587,13 @@ public class TypeChecker {
         return argType.withStorage("owns").withSome(true); // keeps dynarray/array shape, mutability and alias
     }
 
-    /**
-     * "let result_of_func = call(func_ptr,arg1,arg2)," confirmed
-     * directly -- unlike every other builtin, this takes a variable
-     * number of arguments (the function pointer, then the call's own
-     * arguments), so it can't reuse collectSingleBuiltinArg. "The
-     * following is restricted to unsafe code only... the use of
-     * call()," confirmed directly. "call() is not unchecked. Everything
-     * is checked. Function signatures carry their argument types,
-     * return type and decorations in their signature," confirmed
-     * directly -- arity, every argument's type (via the same
-     * typesCompatible every other call site already uses, including the
-     * decorator-subset rule), and the result type all come directly
-     * from the function-pointer value's own recorded signature.
-     */
+    /** `call(fp, args...)`: variable arity, unsafe only; arity, argument types and result type come from the pointer's recorded signature. */
     private TypeInfo checkCallBuiltin(Token op, Scope scope, FuncInfo func) {
         if (!unsafeBypass(scope, "call")) {
             throw new CompilerException("type", op.file, op.line,
                     "'call' can only be used from within 'unsafe' code");
         }
-        // "Pure functions need to be forbidden from using call," confirmed
-        // directly -- the callee's own purity can never be verified at
-        // compile time (its identity isn't even known until runtime), so
-        // there's no sound way to let a '@pure' function use this at all.
+        // Banned in @pure: the callee's purity cannot be verified at compile time.
         if (isPureFunc(func)) {
             throw new CompilerException("type", op.file, op.line,
                     "'" + func.name + "' is '@pure' and cannot use 'call' -- the target's purity can "
@@ -14342,18 +9635,7 @@ public class TypeChecker {
         return funcPtrType.funcPtrReturnType;
     }
 
-    /**
-     * "bits_left()/bits_right()/bits_or()... the equivalents of <<, >>
-     * and | in C/C++," confirmed directly; bits_and / bits_xor (binary,
-     * same rules) and bits_not (unary, one integer argument, result the
-     * same type) complete the set -- validated the same way
-     * arithmetic operators already are (both sides the same integer
-     * type, result that same type, 'indeterminate' mutability like any
-     * other computed value), since none of that was stated differently
-     * and there's no reason a shift/or would need different rules.
-     * Integer specifically, not the broader "numeric" set arithmetic
-     * accepts -- a bitwise operation on a float has no meaning.
-     */
+    /** `bits_*` builtins: integer operands only, both sides one type (literals adapt), result that type; `bits_not` is unary. */
     private TypeInfo checkBitsBuiltin(String name, Token op, Scope scope, FuncInfo func) {
         List<Token> args = new ArrayList<>();
         if (!op.right.childs.isEmpty()) {
@@ -14419,24 +9701,7 @@ public class TypeChecker {
         return new TypeInfo(null, "indeterminate", leftType.baseType);
     }
 
-    /**
-     * "memcopy(raw any,u64,any pointer)... this copies the second
-     * argument number of bytes from the second pointer to the first
-     * pointer. It returns void" -- confirmed directly, later corrected
-     * ("I've decided not to introduce a new type") to "memcopy(raw
-     * u8,u64,any pointer)," generic over the destination's own base
-     * type -- "let my_new_raw_u8 = memcopy(raw u8,u64,any pointer)"
-     * confirmed the return type mirrors the destination's own type
-     * exactly, the same "the result is whatever was pointed to" shape
-     * 'clone'/'deref' already established, not a fixed void-typed
-     * signature despite the return value going unused in that same
-     * example. Restricted to 'unsafe' code, confirmed directly and
-     * explicitly -- not implied for free by requiring a 'raw' first
-     * argument, since a 'raw'-typed *value*, once constructed, can be
-     * held and passed around (a struct member, a parameter) from
-     * ordinary code with no 'unsafe' block in sight; only *constructing*
-     * one is gated, not using one already in hand.
-     */
+    /** `memcopy(raw dest, u64 bytes, src)`: unsafe only; returns the destination's type. Constructing a `raw` is what is gated, not holding one. */
     private TypeInfo checkMemcopyBuiltin(Token op, Scope scope, FuncInfo func) {
         if (!unsafeBypass(scope, "memcopy")) {
             throw new CompilerException("type", op.file, op.line,
@@ -14469,64 +9734,15 @@ public class TypeChecker {
         return destType;
     }
 
-    /**
-     * "dyn([0,1,2,3])" -- constructs a fresh, owns, runtime-resizable
-     * array (see "dynarray(T)" on TypeInfo, and the "resize"/"len"
-     * builtins) from an ordinary array literal. Every element must be
-     * given explicitly, the same "no uninitialized field" discipline a
-     * struct literal already enforces -- "it should not be possible to
-     * create an initialized field," confirmed directly. Reuses
-     * checkArrayLiteral's own full existing validation (uniform
-     * element type, null-poisoning, owns-move-tracking) completely
-     * unmodified -- the argument here is a genuine array literal,
-     * checked exactly the way "new [0,1,2,3]" (a *fixed*-size array)
-     * already is; only the *result* type differs. 'dup' already works
-     * inside the argument for free, since it fully expands during
-     * type-checking before this ever runs. `op.builtinConstantValue`
-     * carries the literal's own element count through to
-     * BytecodeEmitter (not a foldable result value the way it is for
-     * 'len'/'sizeof' -- reused here for the one piece of information
-     * the "NEW dynarray(T) count" line needs that isn't otherwise
-     * recoverable from the already-emitted element pushes).
-     */
+    /** `dyn([..])`: a fresh owns dynarray from an array literal (checkArrayLiteral validates it); builtinConstantValue carries the element count to BytecodeEmitter. */
     private TypeInfo checkDynBuiltin(Token op, Scope scope, FuncInfo func) {
         requireNotPureRt(func, op, "'dyn'", "allocation depends on heap state (it can fail), so the result is not a function of the arguments");
         return checkDynBuiltinCore(op, scope, func, false);
     }
 
     /**
-     * Shared core for both "dyn([...])" (the safe, hidden-length
-     * dynarray) and "unsafe dyn([...])" (the raw, length-less
-     * variant) -- factored out specifically because `checkUnsafeDynWrapper`
-     * cannot simply delegate to the ordinary `resolveExprType`/`checkCall`
-     * dispatch the way `checkAwait` does for its own wrapped call: doing
-     * so would run the wrong (safe-variant) builtin dispatch on the
-     * inner CALL node. Every validation step is identical either way --
-     * only the final, returned TypeInfo differs.
-     *
-     * UPDATE (throwing 'dyn'): "new throws, but dyn and resize dont,
-     * they need to use the same pattern as new," confirmed directly --
-     * the safe variant allocates real heap memory (the dynarray's own
-     * backing store) exactly the way 'new' does, and can fail the same
-     * way, so it now requires the identical 'try'/'catch' wrapping.
-     * Scoped to the *safe* variant only (`!isUnsafe`): the `unsafe
-     * dyn([...])` form is a pre-existing, separately-gated feature
-     * (`checkUnsafeDynWrapper` already requires 'unsafe' code around
-     * it) that plenty of already-existing fixtures use unwrapped today
-     * -- "restricted to unsafe mode" is this project's own established
-     * looser-guarantees carve-out elsewhere (see `resize`'s own unsafe
-     * branch), and nothing about this change touches it. Checked via
-     * `op.insideTry` directly (this node itself is the plain CALL 'try'
-     * wraps, when it's wrapped at the top level -- unlike 'new', 'dyn'
-     * has no special OPERATOR shape of its own, so the ordinary
-     * per-token flag already works here) OR `insideThrowingAllocContext`
-     * (when this 'dyn' is reached nested inside another 'new'/'dyn'/
-     * 'resize's own operand -- see that field's own doc comment).
-     * `usesThrow` mirrors 'new's own unconditional flip, for the
-     * identical reason (a real gt_routine_address/gt_error_message
-     * reserved slot is needed the instant any throwing 'dyn' is
-     * checked, regardless of whether the program ever writes the word
-     * `throw` itself).
+     * Shared by `dyn([..])` and `unsafe dyn([..])` (checkUnsafeDynWrapper cannot delegate to the ordinary dispatch). The safe form allocates, so it needs
+     * try/catch like `new` (op.insideTry or insideThrowingAllocContext) and sets usesThrow; the unsafe form is exempt. See docs/TypeChecker.md, "dyn and resize".
      */
     private TypeInfo checkDynBuiltinCore(Token op, Scope scope, FuncInfo func, boolean isUnsafe) {
         newDynDepth++;
@@ -14549,12 +9765,7 @@ public class TypeChecker {
         }
         Token argExpr = collectSingleBuiltinArg(op, "dyn", scope, func).get(0);
         boolean argIsArrayLiteral = argExpr.type == TokenType.DELINEATOR && argExpr.text.equals("[");
-        // `dyn:<T>([])` -- the typed EMPTY dynarray. An array literal with no
-        // elements has no element type to infer, so the only way to write one is
-        // to hand `dyn` the element type explicitly, and the only literal a type
-        // argument is accepted with is the empty one (a non-empty literal already
-        // carries its own element type). The element is `mut T`, the same as
-        // `dyn([seed])` gives for a `mut` seed.
+        // `dyn:<T>([])`: the only way to write an empty dynarray (an empty literal has no element type); the element is `mut T`.
         List<List<Token>> dynTypeArgs = op.left == null ? null : op.left.genericArgs;
         if (dynTypeArgs != null) {
             if (dynTypeArgs.size() != 1 || dynTypeArgs.get(0).size() != 1) {
@@ -14582,17 +9793,7 @@ public class TypeChecker {
                             + "'dyn:<char>([])') to construct an empty dynarray");
         }
         if (!argIsArrayLiteral) {
-            // "Have dyn also take a static imut string, returning a dyn
-            // of chars," confirmed directly -- lets String construction
-            // (and anything else that wants a real, runtime-populated
-            // dynarray(char) from an arbitrary string value) avoid
-            // `raw`/`unsafe` memory walking entirely. Checked here, not
-            // as a separate case earlier, so the ordinary array-literal
-            // path above stays completely unmodified for every existing
-            // caller. A string's own `[]` access "always yields an imut
-            // char, per spec, regardless of the string's own mutability"
-            // -- the synthesized element type mirrors that exactly,
-            // never inheriting the string's own storage/mutability.
+            // `dyn(text)`: a dynarray of chars; the element is `imut char`, like string indexing.
             TypeInfo argType = resolveExprType(argExpr, scope, func);
             if (argType.baseType.equals("string")) {
                 op.dynFromStringSource = true;
@@ -14605,48 +9806,14 @@ public class TypeChecker {
         }
         TypeInfo fixedArrayType = checkArrayLiteral(argExpr, scope, func);
         int count = arrayLength(fixedArrayType.baseType);
-        // Real, established element TypeInfo (storage included) is
-        // already sitting on `fixedArrayType.arrayElementType` --
-        // `checkArrayLiteral` just computed it a moment ago, including
-        // running the move-checker over every "owns"-storage element.
-        // This USED TO re-derive it from scratch with a second
-        // `resolveExprType` pass over the same element tokens, which
-        // silently re-triggered the VARREF move-check a second time on
-        // what was textually still the first, only reference to a
-        // moved-from local -- confirmed directly via `dyn([a, b])` for
-        // two freshly-`new`'d owns pointers `a`/`b`, which failed with
-        // "use of 'a' after its ownership was moved" despite `a` never
-        // having been written twice anywhere in the source. Reusing the
-        // already-computed field instead removes the redundant
-        // resolution entirely, with no change to `Scope.movedSlots` or
-        // the VARREF move-check itself. Note `dyn([a, a])` -- a genuine
-        // double-use of the same owns pointer within one literal -- was
-        // already not rejected by `checkArrayLiteral` itself even
-        // before this fix (confirmed directly: it compiles, pushing `a`
-        // twice), since its own move-marking loop just adds to
-        // `movedSlots` without first checking it; that's a pre-existing
-        // gap in `checkArrayLiteral`, unrelated to and unchanged by
-        // this fix, not something introduced or masked here.
+        // Reuse the element type checkArrayLiteral already computed: resolving the elements again re-ran the move check and wrongly reported `dyn([a, b])`.
         TypeInfo elementType = fixedArrayType.arrayElementType;
         op.builtinConstantValue = (long) count;
         return isUnsafe ? TypeInfo.unsafeDynArray("indeterminate", elementType)
                 : TypeInfo.dynArray("indeterminate", elementType).withSome(true);
     }
 
-    /**
-     * "unsafe dyn([0,1,2,3])" -- the prefix-operator wrapper form that
-     * constructs the raw, length-less dynarray variant, promoted to a
-     * unary OPERATOR by RpnConverter the same way "new"/"await"/"par"
-     * already are. Unlike `checkAwait` (which delegates its wrapped
-     * CALL straight to the ordinary `resolveExprType` dispatch, since
-     * an awaited call resolves to exactly the type it always would),
-     * this must change what the inner CALL resolves to -- a genuinely
-     * different concrete type than a bare, unwrapped "dyn(...)" would
-     * produce -- so it calls the shared `checkDynBuiltinCore` directly
-     * and sets `op.left.resolvedType` by hand afterward, since the
-     * generic per-node `resolvedType`-setting wrapper (`resolveExprType`)
-     * is deliberately bypassed for the inner CALL node on this path.
-     */
+    /** `unsafe dyn(..)`: calls checkDynBuiltinCore directly (the inner CALL must resolve to the unsafe type) and sets op.left.resolvedType by hand. */
     private TypeInfo checkUnsafeDynWrapper(Token op, Scope scope, FuncInfo func) {
         requireNotPure(func, op, "'unsafe dyn(...)'", "unsafe code can do anything the compiler cannot check, so purity could not be guaranteed");
         if (!"unsafe".equals(scope.currentSafety)) {
@@ -14664,19 +9831,7 @@ public class TypeChecker {
         return result;
     }
 
-    /**
-     * "resize(dynArr, newCount, fillValue)" -- mutates dynArr in place
-     * to hold exactly newCount elements: shrinking just truncates (no
-     * fill needed), growing fills every newly-created slot with
-     * fillValue explicitly -- "it should not be possible to create an
-     * initialized field," confirmed directly, applies here too: there
-     * is no way to grow a dynarray and leave a slot's value
-     * unspecified. Requires a 'mut' dynarray (a genuine in-place
-     * mutation, the same "mut required to mutate" rule everywhere else
-     * in this language already follows). Unlike 'memcopy' this is
-     * *not* restricted to 'unsafe' code at all -- it's a first-class,
-     * fully type-checked operation, never raw memory manipulation.
-     */
+    /** `resize(d, n, fill)`: needs a `mut` dynarray, allowed in safe code; growing needs an explicit fill. Moves the source. See docs/TypeChecker.md, "dyn and resize". */
     private TypeInfo checkResizeBuiltin(Token op, Scope scope, FuncInfo func) {
         TypeInfo result;
         result = checkResizeBuiltinInner(op, scope, func);
@@ -14691,14 +9846,7 @@ public class TypeChecker {
 
     private TypeInfo checkResizeBuiltinInner(Token op, Scope scope, FuncInfo func) {
         requireNotPureRt(func, op, "'resize'", "allocation depends on heap state (it can fail), so the result is not a function of the arguments");
-        // "We need to be barred from resizing (even indirectly thru
-        // another function) the dynarray in a for loop," confirmed
-        // directly -- a direct "resize(...)" call inside such a loop's
-        // own body is rejected immediately here, with no need for the
-        // reachability walk checkDynArrayForLoopResizeSafety does for
-        // the indirect case (called through another function): this is
-        // the one place the compiler can see it with total certainty,
-        // at the exact call site.
+        // A direct `resize` in a dynarray `for` body is rejected here; indirect ones by checkDynArrayForLoopResizeSafety.
         if (scope.insideDynArrayForLoopBody) {
             throw new CompilerException("type", op.file, op.line,
                     "'resize' cannot be called inside a \"for i in dynarrayExpr{...}\" loop's own body -- "
@@ -14726,13 +9874,7 @@ public class TypeChecker {
             throw new CompilerException("type", args.get(0).file, args.get(0).line,
                     "'resize' requires a 'mut' dynarray, got '" + dynArrType.canonical() + "'");
         }
-        // "resize(dyn_arr, newCapacity)" -- on an unsafe dynarray, a
-        // bare realloc of some memory, confirmed directly: no fill
-        // value at all, since there's no hidden length field to keep in
-        // sync and no per-element "no uninitialized field" guarantee to
-        // uphold here the way the safe variant has -- "this will mean
-        // the potential for uninitialised memory, but its ok because it
-        // is restricted to unsafe mode," confirmed directly.
+        // Unsafe dynarray: a bare realloc with no fill (no hidden length, no initialisation guarantee).
         if (isUnsafeTarget) {
             if (!unsafeBypass(scope, udynTag(dynArrType))) {
                 throw new CompilerException("type", op.file, op.line,
@@ -14745,16 +9887,7 @@ public class TypeChecker {
                                 + "memory uninitialized, permitted here only because the code is "
                                 + "'unsafe', got " + args.size());
             }
-            // UPDATE (throwing 'resize'): scoped to the *safe* variant
-            // only, mirroring 'dyn' above -- "restricted to unsafe mode"
-            // already carries its own, looser latitude here (an unsafe
-            // realloc can already hand back uninitialized memory; a
-            // failed one is the caller's own problem to detect, the same
-            // way raw C code would be), so an unsafe 'resize' is deliberately
-            // left both unable to require 'try' and unable to accept it --
-            // the same two-way contract `requireThrowsWrapping` enforces
-            // for an ordinary non-'@throws' call, checked here by hand
-            // since 'resize' bypasses that machinery entirely.
+            // An unsafe `resize` cannot throw, so `try` around it is rejected (same two-way contract as requireThrowsWrapping).
             if (op.insideTry) {
                 throw new CompilerException("type", op.file, op.line,
                         "'try' wraps a call to 'resize' on an 'unsafe dynarray', which cannot throw -- "
@@ -14766,18 +9899,7 @@ public class TypeChecker {
                     "'resize' on a dynarray takes exactly three arguments (the dynarray, the new count, "
                             + "a fill value for any newly-created slots), got " + args.size());
         }
-        // UPDATE (throwing 'resize'): "new throws, but dyn and resize
-        // dont, they need to use the same pattern as new," confirmed
-        // directly -- a safe 'resize' reallocates real heap memory (the
-        // dynarray's own backing store growing or shrinking) exactly the
-        // way 'new'/'dyn' do, and can fail the same way, so it now
-        // requires the identical 'try'/'catch' wrapping. Checked via
-        // `op.insideTry` (this node itself is the plain CALL 'try' wraps,
-        // when wrapped at the top level) OR `insideThrowingAllocContext`
-        // (when this 'resize' is reached nested inside another
-        // 'new'/'dyn'/'resize's own operand -- see that field's own doc
-        // comment). `usesThrow` mirrors 'new'/'dyn's own unconditional
-        // flip, for the identical reason.
+        // A safe `resize` can fail like `new`/`dyn`: it needs try/catch (op.insideTry or insideThrowingAllocContext) and sets usesThrow.
         if (!isUnsafeTarget) {
             usesThrow = true;
             if (!op.insideTry && !insideThrowingAllocContext) {
@@ -14803,39 +9925,13 @@ public class TypeChecker {
                                 + elementType.baseType + "'), got '" + fillType.baseType + "'");
             }
         }
-        // "resize should take ownership (owns) of the dynamicarray and
-        // return a new owns. the reason for this is if this will
-        // eventually be a realloc, and a realloc can return a new
-        // pointer, because sometimes the OS needs to return a new
-        // address," confirmed directly -- applies to both variants (the
-        // user's own explicit answer: "Both variants change"). The old
-        // binding is consumed (moved) exactly like any other owns-typed
-        // value handed to something that takes ownership of it, via the
-        // same markMovedIfOwned mechanism an ordinary function call's
-        // own owns-typed argument already goes through -- resize itself
-        // bypasses the ordinary call/parameter-matching machinery
-        // entirely, so this is invoked here by hand.
+        // `resize` takes ownership and returns a new owns (a realloc may move): the source is moved by hand via markMovedIfOwned, both variants.
         markMovedIfOwned(dynArrType, args.get(0), scope);
         return isUnsafeTarget ? TypeInfo.unsafeDynArray("indeterminate", elementType)
                 : TypeInfo.dynArray("indeterminate", elementType).withSome(true);
     }
 
-    /**
-     * "If it's public it is accessible anywhere, if its private its
-     * subject to the following rules: Not accessible outside the file
-     * its declared in... If a func in an impl, then it can be
-     * referenced only by other funcs within that same impl," confirmed
-     * directly, together with "if the impl is not public, none of its
-     * methods can be reached outside the file its declared in,"
-     * confirmed directly -- the outer, impl-level gate is checked
-     * first and unconditionally (regardless of the method's own
-     * `isPublic`); only once that passes does the method's own
-     * public/private status matter at all. `impl` identity (`==`, not
-     * just "any impl for the same concrete type") is deliberate --
-     * "that same impl" means the specific block, since a struct can
-     * have more than one (a bare `impl` and one or more `impl
-     * InterfaceName for`, each a genuinely separate ImplInfo).
-     */
+    /** Visibility: the impl-level gate (impl must be `@pub` outside its file) comes first; a private method is callable only from the same impl block (identity, since a struct can have several). */
     private void checkImplMethodVisibility(FuncInfo candidate, ImplInfo impl, String methodName, Token at,
             FuncInfo callerFunc) {
         String declFile = candidate.funcToken.file;
@@ -14855,12 +9951,7 @@ public class TypeChecker {
         }
     }
 
-    /**
-     * Return Value Optimization for a METHOD call (instance, static or residual-generic), same rule and message as `checkCall` gives a plain
-     * function: a method returning a plain struct writes it through a hidden destination pointer, so the call may only be a `let`'s own
-     * right-hand side or a plain bare-variable assignment's (directly or under `mut`/`imut`/`try`/`?`). Before this existed the caller
-     * never passed the hidden destination at all and the callee wrote through garbage (segfault) -- see CLAUDE.md.
-     */
+    /** RVO for a method call returning a struct: legal only as a `let` RHS or bare-variable assignment RHS (same rule and message as `checkCall`). */
     private void markStructRvoMethodCall(Token op, FuncInfo candidate, boolean eligibleForRvoHere) {
         if (!isStructByValueReturn(candidate.returnType)) {
             return;
@@ -14876,6 +9967,7 @@ public class TypeChecker {
         op.isStructRvoCall = true;
     }
 
+    /** `receiver.method(args)`: the receiver only selects the impls to search and is not injected as an argument; resolved at compile time, no run-time dispatch. See docs/TypeChecker.md, "Method calls". */
     private TypeInfo checkMethodCall(Token op, Scope scope, FuncInfo func, boolean eligibleForRvoHere) {
         Token dotNode = op.left;
         Token methodNameTok = dotNode.right;
@@ -14885,36 +9977,20 @@ public class TypeChecker {
         }
         String methodName = methodNameTok.text;
 
-        // "TypeName.method(...)," never through an instance -- a bare
-        // name that's *not* a declared variable but *is* a known
-        // struct/enum is a static-method call, dispatched entirely
-        // differently below (checkStaticMethodCall), never through
-        // resolveExprType at all (there's no value here to resolve --
-        // "String" isn't an expression). Confirmed directly this needs
-        // its own dedicated path: routing "TypeName.method(...)" through
-        // the ordinary instance-call path below fails immediately as
-        // "use of undeclared variable" the moment resolveExprType runs
-        // on the bare type name. A generic receiver
-        // ("DynamicArray:<u64>.method(...)") already arrives here fully
-        // monomorphized into a concrete struct name by the generics
-        // expander, before this method is ever reached -- confirmed
-        // directly, no special generics handling is needed here at all.
+        // `TypeName.method(..)` (static call): a bare non-variable name that is a struct/enum goes to checkStaticMethodCall; generic receivers arrive already monomorphized.
         if (dotNode.left.type == TokenType.VARREF && scope.lookup(dotNode.left.text) == null
                 && (structs.containsKey(dotNode.left.text) || enums.containsKey(dotNode.left.text))) {
             return checkStaticMethodCall(op, dotNode.left.text, methodName, scope, func, eligibleForRvoHere);
         }
 
-        // "Math.sin(10.2)" -- a bare name that's a known library, never
-        // a declared variable -- dispatched entirely differently too,
+        // `Lib.fn(..)`: a bare library name.
         // the library counterpart of the static-method case just above.
         if (dotNode.left.type == TokenType.VARREF && scope.lookup(dotNode.left.text) == null
                 && libraries.containsKey(dotNode.left.text)) {
             return checkLibraryCall(op, dotNode.left.text, methodName, scope, func);
         }
 
-        // Resolved as an ordinary expression -- not through checkDot at
-        // all, since 'toJSON' isn't a struct member, it's a method; the
-        // receiver's *type* is all that's needed here.
+        // Resolved as an expression, not via checkDot (a method is not a member).
         TypeInfo receiverType = resolveExprType(dotNode.left, scope, func);
 
         if (interfaces.containsKey(receiverType.baseType)) {
@@ -14927,13 +10003,7 @@ public class TypeChecker {
                     "'" + receiverType.baseType + "' has no method named '" + methodName + "'");
         }
 
-        // "receiver.method:<U>(...)" -- an explicit generic-method type
-        // argument, deliberately left untouched by GenericsExpander (see
-        // its own walkAndProcess doc comment) so it survives here, where
-        // the receiver's concrete type is finally known. Dispatched
-        // entirely separately from the ordinary, non-generic matching
-        // loop just below -- a residual-generic method is never placed
-        // into impl.methods at all (see ImplInfo.genericMethodTemplates).
+        // `recv.method:<U>(..)`: explicit generic-method type args survive GenericsExpander and are dispatched separately (never in impl.methods).
         if (methodNameTok.genericArgs != null) {
             return checkGenericMethodCall(op, dotNode, receiverType, impls, methodName, methodNameTok, scope, func, eligibleForRvoHere);
         }
@@ -14977,14 +10047,7 @@ public class TypeChecker {
                 for (int i = 0; i < argNodes.size(); i++) {
                     markMovedIfOwned(candidate.paramTypes.get(i), argNodes.get(i), scope);
                 }
-                // Precise, per-call-site destruct list -- see checkThrow's own doc
-                // comment for the full design: if this callee (or anything it calls,
-                // transitively) ever throws and unwinds back into this exact call, this
-                // caller needs to know exactly what's alive in *it* right here, the same
-                // precision an ordinary 'return' at this point would have -- not the old
-                // whole-function conservative list. BytecodeEmitter only actually uses
-                // this when the whole program uses 'throw' at all (checker.usesThrow());
-                // harmless, cheap to compute unconditionally otherwise.
+                // Per-call-site unwind lists; see docs/TypeChecker.md, "Method calls".
                 op.destructOnExit = collectOwnsToDestruct(scope, scope.functionRootScope, null);
                 op.unlockOnExit = collectLockReleasesToBoundary(scope, scope.functionRootScope);
                 if (candidate == func && scope.suspendsSelfRecursion) {
@@ -15004,12 +10067,7 @@ public class TypeChecker {
             }
             }
         }
-        // "I do not want the behaviour where... static methods
-        // accessible from an instance," confirmed directly -- a real,
-        // specific error ("my_string.from("")" -- from is on String,
-        // not a String instance) rather than a generic "no method
-        // named" one, whenever the name genuinely does exist, just as
-        // the *other* kind.
+        // A specific error when the name exists only as a static method.
         if (nameExistsAsStatic) {
             throw new CompilerException("type", op.file, op.line,
                     "'" + methodName + "' is a static method on '" + receiverType.baseType + "', not an "
@@ -15023,15 +10081,7 @@ public class TypeChecker {
     }
 
     /**
-     * "receiver.method:<U>(...)" -- resolves and instantiates (memoized,
-     * via instantiateGenericMethod) a residual-generic impl method (see
-     * ImplInfo.genericMethodTemplates' own doc comment), then matches the
-     * call's own arguments against it exactly the way the ordinary,
-     * non-generic checkMethodCall loop already matches an overload set --
-     * except there's only ever one candidate here (no generic-method
-     * overloading, same "at most one generic template per name" rule the
-     * struct/func/interface/library side of generics already enforces).
-     */
+    /** `recv.method:<U>(..)`: instantiates (memoized) the residual-generic method and matches the arguments against that single candidate. */
     private TypeInfo checkGenericMethodCall(Token op, Token dotNode, TypeInfo receiverType, List<ImplInfo> impls,
             String methodName, Token methodNameTok, Scope scope, FuncInfo func, boolean eligibleForRvoHere) {
         ImplInfo owningImpl = null;
@@ -15098,14 +10148,7 @@ public class TypeChecker {
         for (int i = 0; i < argNodes.size(); i++) {
             markMovedIfOwned(candidate.paramTypes.get(i), argNodes.get(i), scope);
         }
-        // Precise, per-call-site destruct list -- see checkThrow's own doc
-        // comment for the full design: if this callee (or anything it calls,
-        // transitively) ever throws and unwinds back into this exact call, this
-        // caller needs to know exactly what's alive in *it* right here, the same
-        // precision an ordinary 'return' at this point would have -- not the old
-        // whole-function conservative list. BytecodeEmitter only actually uses
-        // this when the whole program uses 'throw' at all (checker.usesThrow());
-        // harmless, cheap to compute unconditionally otherwise.
+        // Per-call-site unwind lists; see docs/TypeChecker.md, "Method calls".
         op.destructOnExit = collectOwnsToDestruct(scope, scope.functionRootScope, null);
         op.unlockOnExit = collectLockReleasesToBoundary(scope, scope.functionRootScope);
         requireMethodLockProofs(candidate, dotNode.left, argNodes, scope, op);
@@ -15115,19 +10158,7 @@ public class TypeChecker {
         return candidate.returnType;
     }
 
-    /**
-     * Materializes (or, on a repeat ":<u64>" instantiation of the same
-     * template, reuses -- ImplInfo.genericMethodInstances) a real, callable
-     * FuncInfo for one residual-generic impl method template, given the
-     * concrete type argument(s) a call site supplied. Mirrors
-     * materializeDefaultMethod's own overall shape (clone, substitute,
-     * buildFuncInfo, append to the impl's own root .childs for bytecode
-     * emission) but, unlike a "@default" method's raw/never-tree-built
-     * body, this template is already fully gathered/RPN-converted/tree-
-     * built (an ordinary impl method's own body always is) -- so
-     * deepCloneCheckedTree is the right clone here, not Token.deepCloneRaw(),
-     * and no fresh RpnConverter/TreeBuilder pass is needed at all.
-     */
+    /** Materializes (memoized per type-argument list) a callable FuncInfo for a residual-generic method template; the template is already tree-built, so deepCloneCheckedTree is used. */
     private FuncInfo instantiateGenericMethod(ImplInfo impl, Token template, List<String> argNames, Token usageTok) {
         String key = template.sub.get(0).text + "<" + String.join(",", argNames) + ">";
         FuncInfo existing = impl.genericMethodInstances.get(key);
@@ -15153,11 +10184,7 @@ public class TypeChecker {
         }
 
         Token clone = deepCloneCheckedTree(template);
-        // "self" is never substituted for a residual-generic template
-        // while it sits in ImplInfo.genericMethodTemplates (collectImpl
-        // diverts it away before its own ordinary self-substitution runs)
-        // -- done here instead, the identical way collectImpl already
-        // does it for every ordinary method.
+        // `self` is substituted here for residual-generic templates (collectImpl skips them).
         substituteSelfInPlace(clone.sub.get(1).childs, impl.concreteName);
         substituteSelfInPlace(clone.sub.subList(2, clone.sub.size()), impl.concreteName);
         substituteGenericMethodParams(clone, subMap);
@@ -15170,13 +10197,7 @@ public class TypeChecker {
         info.enclosingImpl = impl;
         info.declOrder = pendingDeclOrder.getOrDefault(impl.declTok, Integer.MAX_VALUE);
         info.safetyTag = impl.safetyTag;
-        // A residual-generic method is only ever reached through an
-        // ordinary instance-method call site, which already requires the
-        // owning impl itself to be @pub (checkImplMethodVisibility, called
-        // right after this returns) -- forced true here the same way
-        // materializeDefaultMethod already forces it for its own
-        // synthesized method, rather than read off a decorator this clone
-        // may not carry.
+        // Forced public: reached only through an instance call, whose impl-level @pub check follows.
         info.isPublic = true;
         String methodNamePart = info.name;
         info.mangledName = (impl.interfaceName != null
@@ -15184,19 +10205,9 @@ public class TypeChecker {
                 : impl.concreteName + "_" + methodNamePart) + "__" + String.join("_", argNames);
         validateMethodLocks(clone.decorators, info.paramNames, info.paramTypes, impl.concreteName);
 
-        // Memoized BEFORE its own body is checked -- guards against a
-        // self-referential recursive call to this exact instantiation
-        // (same argument list) re-entering this method for the identical
-        // key, and avoids the ConcurrentModificationException hazard a
-        // naive put() into implInfo.methods mid-iteration would risk (see
-        // this feature's own design notes) -- genericMethodInstances is a
-        // separate map, never touched by TypeChecker.check()'s own
-        // existing per-impl iteration loops.
+        // Memoized before the body is checked: guards recursive self-instantiation and avoids mutating implInfo.methods while it is iterated.
         impl.genericMethodInstances.put(key, info);
-        // BytecodeEmitter's own "impl" case walks the impl's *root*
-        // token's own .childs, never genericMethodInstances directly --
-        // the same reason materializeDefaultMethod already appends its
-        // own synthesized method token there too.
+        // BytecodeEmitter walks the impl root's childs, not genericMethodInstances.
         impl.declTok.childs.add(clone);
 
         checkFunctionBody(info);
@@ -15204,7 +10215,7 @@ public class TypeChecker {
         return info;
     }
 
-    /** Blanket VARREF-text substitution for a residual-generic impl method's own type parameter(s) -- the TypeChecker-side counterpart of GenericsExpander's own private substituteParams, needed here since this substitution only ever happens at call-site instantiation time (post-GenericsExpander), never during monomorphization. */
+    /** Blanket VARREF-text substitution of a residual-generic method's type parameters (post-GenericsExpander counterpart of its substituteParams). */
     private void substituteGenericMethodParams(Token node, Map<String, String> subMap) {
         if (node == null) {
             return;
@@ -15238,25 +10249,7 @@ public class TypeChecker {
         }
     }
 
-    /**
-     * "c.foo(args)" where 'c's own resolved type is a bare interface
-     * (not a concrete struct) -- redirects to the compiler-synthesized
-     * dispatcher `generateOneInterfaceDispatcher` already built for
-     * this exact (interface, method) pair, if one exists. Deliberately
-     * a separate, parallel matching block rather than folding into
-     * checkMethodCall's own `impls`-iterating loop just above: the
-     * dispatcher is a plain top-level FuncInfo (no enclosing ImplInfo
-     * at all), so the impl-specific bookkeeping that loop does
-     * (checkImplMethodVisibility, self-recursion, checkGuardLockDiscipline/
-     * requireMethodLockProofs) either doesn't apply or doesn't type --
-     * the dispatcher is compiler-internal, always public, never
-     * self-recursive, and (for now -- interface methods combined with
-     * '@lock' aren't handled by dispatcher generation yet) never
-     * lock-decorated. Exactly one candidate (never an overload set --
-     * `interfaceDispatcherName` is unique per interface+method), so
-     * this is arg-count/arg-type matching against a single signature,
-     * not overload resolution.
-     */
+    /** `c.foo(args)` on a bare interface type: uses the synthesized dispatcher for (interface, method); one candidate, no overloads, no impl bookkeeping. See docs/TypeChecker.md, "Method calls". */
     private TypeInfo checkInterfaceMethodDispatch(Token op, Token dotNode, String interfaceName, String methodName,
             Scope scope, FuncInfo func) {
         List<FuncInfo> overloads = functions.get(interfaceDispatcherName(interfaceName, methodName));
@@ -15304,14 +10297,7 @@ public class TypeChecker {
         return dispatcher.returnType;
     }
 
-    /**
-     * "TypeName.method(...)" -- the static-dispatch counterpart of
-     * checkMethodCall just above, structurally identical (same overload
-     * search, same CallEdge/guard/purity/recursion bookkeeping) except
-     * for the one thing that's genuinely different: there's no receiver
-     * *value* to resolve a type from at all, `concreteName` is already
-     * it, taken directly off the bare type name on the left of '.'.
-     */
+    /** `TypeName.method(..)`: static twin of checkMethodCall; the concrete name comes straight from the type name. */
     private TypeInfo checkStaticMethodCall(Token op, String concreteName, String methodName, Scope scope,
             FuncInfo func, boolean eligibleForRvoHere) {
         List<ImplInfo> impls = implsByConcreteType.get(concreteName);
@@ -15360,14 +10346,7 @@ public class TypeChecker {
                 for (int i = 0; i < argNodes.size(); i++) {
                     markMovedIfOwned(candidate.paramTypes.get(i), argNodes.get(i), scope);
                 }
-                // Precise, per-call-site destruct list -- see checkThrow's own doc
-                // comment for the full design: if this callee (or anything it calls,
-                // transitively) ever throws and unwinds back into this exact call, this
-                // caller needs to know exactly what's alive in *it* right here, the same
-                // precision an ordinary 'return' at this point would have -- not the old
-                // whole-function conservative list. BytecodeEmitter only actually uses
-                // this when the whole program uses 'throw' at all (checker.usesThrow());
-                // harmless, cheap to compute unconditionally otherwise.
+                // Per-call-site unwind lists; see docs/TypeChecker.md, "Method calls".
                 op.destructOnExit = collectOwnsToDestruct(scope, scope.functionRootScope, null);
                 op.unlockOnExit = collectLockReleasesToBoundary(scope, scope.functionRootScope);
                 if (candidate == func && scope.suspendsSelfRecursion) {
@@ -15386,9 +10365,7 @@ public class TypeChecker {
             }
             }
         }
-        // "I do not want the behaviour where instance methods are
-        // accessible from the Type," confirmed directly -- the mirror
-        // image of checkMethodCall's own identical courtesy above.
+        // A specific error when the name exists only as an instance method.
         if (nameExistsAsInstance) {
             throw new CompilerException("type", op.file, op.line,
                     "'" + methodName + "' is an instance method on '" + concreteName + "', not a static "
@@ -15400,16 +10377,7 @@ public class TypeChecker {
                         + unavailableNote(concreteName + "." + methodName));
     }
 
-    /**
-     * Builds an ordinary "receiver.fieldName" '.' node -- raw,
-     * unresolved, ready for resolveExprType. Used only by
-     * checkLockMatchStatement, for its own synthesized swap-field
-     * acquire/release access -- marked as such so checkDot's own
-     * swap-field access restriction exempts it, the identical "the
-     * compiler's own mediated access is exempt from the restriction
-     * that exists to steer *user* code away from unmediated access"
-     * shape isCompilerSynthesizedLockCall already established.
-     */
+    /** Builds a raw `receiver.field` node for checkLockMatchStatement; marked compiler-synthesized so checkDot's swap-field restriction exempts it. */
     private Token buildFieldDot(Token receiver, String fieldName, Token at) {
         Token dot = new Token(TokenType.OPERATOR, ".", at.line, at.file);
         dot.left = receiver;
@@ -15427,27 +10395,8 @@ public class TypeChecker {
     }
 
     /**
-     * "match @lock EXPR{ OPEN:{...} CLOSED:{...} }" -- the safe spin-lock
-     * entry point, design item G: "exhaustive over a two-variant enum
-     * (OPEN/CLOSED mandatory), lowering to a genuine unbounded loop
-     * using ATOMIC_SWAP, modeled on @recursive's own loop-lowering
-     * precedent." Structurally detected and gathered as an ordinary
-     * case-match (Parser.gatherLockStatement, isCaseMatch=true), so
-     * `stmt.sub.get(0)` is the already-built receiver expression and
-     * `stmt.childs` holds one Token per case, exactly like an ordinary
-     * "match X{ LABEL:{...} }".
-     *
-     * Every piece below is built as an ordinary, real Token tree and
-     * resolved through the completely ordinary machinery (checkSwapOperator,
-     * checkComparison, checkAssign, checkDot's own enum-variant branch)
-     * -- the same "reuse, don't reinvent" precedent `checkLockBlock`'s
-     * own synthesized lock()/unlock() calls already established for the
-     * non-'match' lock block. `stmt` is mutated in place into a real
-     * "loop" statement only at the very end, once every piece has
-     * already been independently validated -- the same "validate on the
-     * real construct, lower only for bytecode shape afterward"
-     * discipline `lowerEnumMatchToIfChain`/`lowerRecursiveFunctionToLoop`
-     * already established.
+     * `match @lock EXPR{ OPEN:{..} CLOSED:{..} }`: validates real Token trees (swap, ==, release assign) through the ordinary machinery, then rewrites
+     * `stmt` in place into a `loop` (spin on ATOMIC_SWAP). See docs/TypeChecker.md, "match @lock lowering".
      */
     private void checkLockMatchStatement(Token stmt, Scope scope, FuncInfo func, boolean insideLoop) {
         requireNotPure(func, stmt, "'match @lock'", "acquiring the lock writes the mutex and blocks (a retry loop on shared state)");
@@ -15499,64 +10448,26 @@ public class TypeChecker {
                     "'match @lock' must be exhaustive -- both 'OPEN' and 'CLOSED' cases are required");
         }
 
-        // The acquire attempt: "receiver.field swap StateEnum.CLOSED" --
-        // an ordinary, real ATOMIC_SWAP, type-checked through
-        // checkSwapOperator exactly as if written by hand.
+        // Acquire attempt: `recv.field swap Enum.CLOSED`.
         Token swapOp = new Token(TokenType.OPERATOR, "swap", stmt.line, stmt.file);
         swapOp.left = buildFieldDot(receiver, swapFieldName, stmt);
         swapOp.right = buildEnumVariantRef(stateEnumName, "CLOSED", stmt);
         resolveExprType(swapOp, scope, func);
 
-        // "was it OPEN a moment ago" -- an ordinary "==" comparison
-        // against the swap's own (indeterminate, snapshot) result.
+        // Was it OPEN: `== Enum.OPEN` on the swap result.
         Token condOp = new Token(TokenType.OPERATOR, "==", stmt.line, stmt.file);
         condOp.left = swapOp;
         condOp.right = buildEnumVariantRef(stateEnumName, "OPEN", stmt);
         resolveExprType(condOp, scope, func);
 
-        // The release: "receiver.field = mut StateEnum.OPEN" -- an
-        // ordinary assignment, checked once here and then reused by
-        // reference (never cloned) as every OPEN-case exit's own owed
-        // release, the same "resolved once, replayed at every needed
-        // exit point" shape `checkLockBlock`'s own unlockCall already
-        // has.
-        // Deliberately *not* wrapped in a "mut" prefix operator -- an
-        // "EnumName.Variant" reference always resolves as 'imut',
-        // unconditionally, and this language's own mutability lattice
-        // never lets 'mut EXPR' accept an already-'imut' operand (it only
-        // ever accepts an indeterminate or already-'mut' one). checkAssign
-        // carries the matching exception for exactly this shape (a bare
-        // enum-variant literal satisfying a concretely-'mut' enum-typed
-        // target), the identical one checkSwapOperator's own right operand
-        // and checkInstantiate's own swap-field construction case both
-        // already have.
+        // Release: `recv.field = Enum.OPEN`, checked once and replayed at every OPEN-case exit. Not wrapped in `mut`: an enum-variant reference is always imut and checkAssign has the matching exception.
         Token releaseValue = buildEnumVariantRef(stateEnumName, "OPEN", stmt);
         Token releaseAssign = new Token(TokenType.OPERATOR, "=", stmt.line, stmt.file);
         releaseAssign.left = buildFieldDot(receiver, swapFieldName, stmt);
         releaseAssign.right = releaseValue;
         resolveExprType(releaseAssign, scope, func);
 
-        // The OPEN case's own body -- owes `releaseAssign` on every
-        // exit (natural end, or a user-written return/break inside it),
-        // via the exact same Scope.activeLockReleases mechanism
-        // checkReturn/the "break" statement case already consult
-        // unconditionally, with zero new code needed at either site.
-        // "match @lock" itself lowers into a genuine, real spin loop (see
-        // the "stmt.text = 'loop'" mutation below) -- so a `break`
-        // written inside either case body must be able to target *that*
-        // loop directly, the same way a `break` inside an ordinary
-        // `loop{}`/`for{}` body already can. Neither case body's own
-        // Scope was previously marked as a new loopBoundaryScope at all
-        // (each was parented directly to the incoming `scope`), so a
-        // user-written `break` inside one could only ever reach
-        // whatever *outer* loop the whole `match @lock` statement happened
-        // to be nested inside from the caller's side -- never this
-        // statement's own implicit spin loop, which didn't exist yet at
-        // the point either child Scope was built. Fixed with one extra
-        // wrapping Scope, reusing the existing loop-boundary constructor
-        // unchanged: both case bodies are now parented through it, so
-        // `scope.loopBoundaryScope` inside either one correctly resolves
-        // to this statement's own spin loop.
+        // The OPEN body owes `releaseAssign` on every exit (Scope.activeLockReleases). Both case bodies sit under one extra loop-boundary Scope so a user `break` targets this statement's own spin loop.
         Scope loopBodyScope = new Scope(scope, true);
 
         Set<String> preState = scope.movedSlots;
@@ -15582,15 +10493,7 @@ public class TypeChecker {
         }
         openCase.destructOnExit = collectNaturalEndDestruct(openCase.childs, openBodyScope, openBodyScope);
 
-        // "CLOSED:default" / "CLOSED:default(args)" -- detected here on
-        // the CLOSED case's own already-RPN-converted/tree-built body
-        // (distinct from Parser.gatherMatchCases' own raw-token-level
-        // detection, which only ever produced this exact shape so it
-        // could safely flow through the ordinary pipeline unmodified).
-        // On a match, `closedCase.childs`/the loop's own body scope are
-        // both substituted below before either is used any further; on
-        // a miss (an ordinary, literal '{...}' CLOSED body), nothing
-        // here has any effect at all.
+        // `CLOSED:default` / `CLOSED:default(args)`: detected on the tree-built CLOSED body and substituted before use; an ordinary body is untouched.
         Scope closedParentScope = loopBodyScope;
         DefaultPolicySubstitution substitution = substituteDefaultLockMatchPolicyIfPresent(closedCase, structInfo,
                 scope, loopBodyScope, func);
@@ -15630,14 +10533,7 @@ public class TypeChecker {
         preState.addAll(openBranchMoved);
         preState.addAll(closedBranchMoved);
 
-        // The synthesized "we got it -- stop spinning" exit, appended
-        // unconditionally after the OPEN case's own body: harmless, dead
-        // bytecode if that body already ends in its own return/break
-        // (the same "dead code is fine" precedent
-        // collectNaturalEndDestruct/collectNaturalEndUnlock already
-        // established), and otherwise the real, natural-end exit --
-        // its own unlockOnExit (via collectLockReleasesToBoundary)
-        // already, automatically includes `releaseAssign`.
+        // Synthesized "got it, stop spinning" exit after the OPEN body (dead code if the body already ends in return/break); its unlockOnExit includes `releaseAssign`.
         Token breakTok = new Token(TokenType.KEYWORD, "break", stmt.line, stmt.file);
         // Only the owns locals declared INSIDE the OPEN body die at this exit (stop at the spin loop's own boundary scope, like a
         // user-written `break` does). Walking on to `scope` also destroyed the enclosing function's owns locals (e.g. the matched
@@ -15659,13 +10555,7 @@ public class TypeChecker {
         elseTok.destructOnExit = closedCase.destructOnExit;
         ifTok.right = elseTok;
 
-        // Mutate `stmt` itself into a real "loop" statement -- the same
-        // "mutate the token in place, every existing reference to it
-        // sees the new shape too" precedent lowerEnumMatchToIfChain/
-        // lowerFloatMatchToIfChain/lowerRecursiveFunctionToLoop already
-        // established. BytecodeEmitter's own ordinary "loop"/"if"/
-        // "break"/"="/"swap" emission handles literally everything from
-        // here on -- nothing further is 'match @lock'-specific at all.
+        // Mutate `stmt` in place into a real `loop`; BytecodeEmitter's ordinary loop/if/break/=/swap emission does the rest.
         stmt.text = "loop";
         stmt.isLockSpinLoop = true;
         stmt.isCaseMatch = false;
@@ -15675,7 +10565,7 @@ public class TypeChecker {
         stmt.destructOnExit = new ArrayList<>();
     }
 
-    /** Bundles what `substituteDefaultLockMatchPolicyIfPresent` needs to hand back to its caller -- the pre-loop-init assign list itself (for `Token.preLoopInit`), and the fresh Scope those assigns were declared in (so the CLOSED case's own body scope can be parented through it and see them). */
+    /** What `substituteDefaultLockMatchPolicyIfPresent` returns: the pre-loop `let` assigns (Token.preLoopInit) and the Scope they were declared in. */
     private static class DefaultPolicySubstitution {
         final List<Token> preLoopInit;
         final Scope preLoopScope;
@@ -15705,20 +10595,7 @@ public class TypeChecker {
         }
     }
 
-    /**
-     * Detects the "CLOSED:default" / "CLOSED:default(args)" shorthand
-     * on the CLOSED case's own already-RPN-converted/tree-built body --
-     * Parser.gatherMatchCases' own allowDefaultPolicyRef synthesis
-     * (raw-token level, before any of that runs) auto-wraps the
-     * shorthand as a single, ordinary expression-statement LINE, whose
-     * one child is either a bare VARREF "default" (the no-argument
-     * form) or a CALL node whose own '.left' is VARREF "default" (the
-     * parenthesized, argument-taking form) -- both already-completely-
-     * ordinary shapes RpnConverter/TreeBuilder needed zero new code for.
-     * Returns that lone child token (ready to be inspected/used
-     * directly), or null when the CLOSED case is an ordinary, literal
-     * '{...}' body instead.
-     */
+    /** Returns the lone expression of a `CLOSED:default` / `CLOSED:default(args)` body (bare VARREF `default` or a CALL on it), or null for an ordinary body. */
     private Token detectDefaultPolicyRef(Token closedCase) {
         if (closedCase.childs.size() != 1) {
             return null;
@@ -15739,43 +10616,9 @@ public class TypeChecker {
     }
 
     /**
-     * When the CLOSED case is the "CLOSED:default"/"CLOSED:default(args)"
-     * shorthand (see `detectDefaultPolicyRef`), substitutes it in place
-     * with a real body built from the struct's own registered
-     * "impl default match @lock" policy, and returns the pre-loop-init
-     * pieces (see `Token.preLoopInit`'s own doc comment) the caller
-     * needs to finish wiring up. Returns null, leaving `closedCase`
-     * completely untouched, when the CLOSED case is an ordinary,
-     * literal '{...}' body instead.
-     *
-     * Concretely, on a match: looks up the struct's own registered
-     * policy (erroring if none is registered at all); validates the
-     * call site's own argument count/types against the policy's own
-     * declared parameter list (its first parameter is always the
-     * automatic, per-iteration "tries" counter -- never supplied by the
-     * call site; every parameter after it is a real, caller-supplied
-     * configuration value, positionally bound from the call's own
-     * arguments); builds one pre-loop-init "let" assign for the shared
-     * "$lm_tries" counter (initialized once to 0) plus one per
-     * configuration parameter (each bound once, before the loop starts,
-     * to its own already-resolved call-site argument); deep-clones the
-     * policy's own raw (pre-gather) parameter list/body, runs the clone
-     * through the same structural-gather/RPN-conversion/tree-building
-     * passes real source already goes through (a fresh copy each use
-     * site, since the template's own "break" has nothing valid to
-     * target until *this* real spin loop exists); and finally replaces
-     * `closedCase.childs` with a "$lm_tries++" increment, a
-     * "let <triesParamName> = imut $lm_tries" rebinding of the policy's
-     * own first parameter name, and the cloned user body, all left
-     * completely unchecked -- the caller's own, already-in-place
-     * `checkLinesInScope(closedCase.childs, closedBodyScope, func,
-     * true)` call is what actually type-checks every one of these, the
-     * identical two-step "build raw, then let the ordinary machinery
-     * check it" shape this whole method's own pre-loop-init assigns
-     * (built via `buildCheckedLetAssign`, already checked at the point
-     * they're built) deliberately do *not* need, since they're never
-     * re-visited by that later call at all -- they live outside
-     * `closedCase` entirely, on `stmt.preLoopInit`.
+     * Replaces a `CLOSED:default[(args)]` body with a real one built from the struct's registered `impl default match @lock` policy (or the built-in
+     * attempt-limit form when none is registered); returns the pre-loop-init pieces, or null if the body is ordinary.
+     * The new body is left unchecked: the caller's checkLinesInScope checks it. See docs/TypeChecker.md, "CLOSED:default substitution".
      */
     private DefaultPolicySubstitution substituteDefaultLockMatchPolicyIfPresent(Token closedCase,
             StructInfo structInfo, Scope scope, Scope loopBodyScope, FuncInfo func) {
@@ -15851,11 +10694,7 @@ public class TypeChecker {
                         "'CLOSED:default(...)' argument " + p + " for '" + policy.structName + "' must be '"
                                 + param.type.canonical() + "', got '" + argType.canonical() + "'");
             }
-            // Bound once, before the loop, directly under its own real
-            // declared name -- never a mangled placeholder -- since the
-            // cloned policy body (below) references it by exactly that
-            // name, the same way a function's own parameter is referred
-            // to by its own declared name inside that function's body.
+            // Bound once before the loop under its declared name; the cloned policy body refers to it by that name.
             Token wrappedArg = wrapWithMutability(argExpr, param.type.mutability);
             Token configAssign = buildCheckedLetAssign(param.name, wrappedArg, preLoopScope, func);
             preLoopInit.add(configAssign);
@@ -15946,7 +10785,7 @@ public class TypeChecker {
         return ifTok;
     }
 
-    /** Wraps `expr` in a "mut"/"imut" prefix operator, raw and unresolved -- used only to force a freshly-built synthesized value's own indeterminate mutability concrete before it's bound to a "let". */
+    /** Wraps `expr` in a raw `mut`/`imut` prefix operator to make a synthesized value's mutability concrete before a `let`. */
     private Token wrapWithMutability(Token expr, String mutability) {
         Token wrapper = new Token(TokenType.OPERATOR, mutability, expr.line, expr.file);
         wrapper.left = expr;
@@ -15954,46 +10793,8 @@ public class TypeChecker {
     }
 
     /**
-     * "Enforce that access to the internal type only happens between
-     * lock and unlock" -- confirmed directly, and originally
-     * implemented (checkGuardLockDiscipline, just above) only at
-     * *method-call* sites on a guard-typed value, never for a plain
-     * "instance.member" read or write -- a real gap: the entire point
-     * of a guard is to protect its own data, and a bare field access
-     * bypassed that protection completely, for exactly the case (state
-     * mutation) that matters most. Fixed here, called from checkDot --
-     * the single choke point every ".member" access on a struct,
-     * whether a read or an assignment target, already flows through --
-     * so this one check covers both uniformly. Same "unsafe is the
-     * universal escape hatch" exemption checkGuardLockDiscipline
-     * already has.
-     */
-    /**
-     * "This creates a requirement for this parent match at the call
-     * site," confirmed directly -- checked once per call, for every
-     * "@lock(...)" the called method carries (a method may have more
-     * than one, each required independently). Skipped entirely inside
-     * 'unsafe', the same universal escape hatch every other proof-based
-     * restriction in this language already has. `argNodes` is known
-     * (from how this is already called, positionally, from
-     * checkMethodCall) to include the receiver itself as its own first
-     * element, matching `candidate.paramTypes`'/`candidate.paramNames`'
-     * own shape (an instance method's own first declared parameter is
-     * always "_self") -- so `candidate.paramNames.indexOf(paramName)`
-     * safely indexes directly into `argNodes` too, no offset needed.
-     */
-    /**
-     * "When validating the inside of the function, the condition of
-     * the parent match is assumed," confirmed directly -- the callee's
-     * own required proof(s), injected directly into the function's own
-     * root scope so its body never needs a second, redundant `match` of
-     * its own to use what the call site was already required to prove.
-     * Only ever meaningful for a non-static impl method (the only kind
-     * "self" refers to anything real for at all) -- this language's own
-     * convention already guarantees such a method's first parameter is
-     * always the receiver, whatever the programmer chose to actually
-     * call it, so `func.paramNames.get(0)` reliably substitutes for
-     * every "self" the qualifier itself was written against.
+     * The proofs a `@lock(..)` method may assume inside its own body (so it needs no `match` of its own). Only for non-static impl methods: the first
+     * parameter is the receiver, whatever it is called. See docs/TypeChecker.md, "Method lock proofs".
      */
     private List<Token.MatchPattern> assumedLockPatterns(FuncInfo func) {
         List<Token.MatchPattern> result = new ArrayList<>();
@@ -16011,22 +10812,13 @@ public class TypeChecker {
                         d.lockVariants));
             } else if (d.lockInParams != null) {
                 for (int j = 0; j < d.lockInParams.size(); j++) {
-                    // "in"/"within" both grant the shared "in" kind
-                    // (read-only); "into" grants its own, write-capable
-                    // "into" kind instead -- see checkMatchCondition's
-                    // own "into" case for the identical distinction.
+                    // `in`/`within` grant the read-only "in" kind, `into` the write-capable "into" kind (see checkMatchCondition).
                     String kind = d.lockInOperators.get(j).equals("into") ? "into" : "in";
                     String paramName = d.lockInParams.get(j);
                     String fieldName = d.lockInFields.get(j);
                     String targetSlot = selfParamName + "." + fieldName;
                     result.add(new Token.MatchPattern(paramName, kind, null, targetSlot));
-                    // "Some(...)"-wrapped: also grant the inner
-                    // element-alive proof, for "self.field[param]" --
-                    // the same second proof checkSomeIndexBoundsCondition
-                    // grants for the bare-match/for-match forms, so a
-                    // method whose own body indexes "self.field[param]"
-                    // directly needs no further "match Some(...)" of its
-                    // own.
+                    // `Some(..)`-wrapped: also grant the element-alive proof for `self.field[param]` (as checkSomeIndexBoundsCondition does).
                     if (d.lockInSomeWrapped != null && Boolean.TRUE.equals(d.lockInSomeWrapped.get(j))) {
                         result.add(new Token.MatchPattern(targetSlot + "[" + paramName + "]", "alive", null));
                     }
@@ -16048,6 +10840,7 @@ public class TypeChecker {
         }
     }
 
+    /** At a call to a `@lock(..)` method: requires the matching proofs at the call site (skipped in unsafe). `argNodes` includes the receiver as its first element, like candidate.paramTypes. See docs/TypeChecker.md, "Method lock proofs". */
     private void requireMethodLockProofs(FuncInfo candidate, Token receiverNode, List<Token> argNodes, Scope scope,
             Token at) {
         if (candidate.funcToken.decorators == null) {
@@ -16070,21 +10863,7 @@ public class TypeChecker {
                 for (int j = 0; j < d.lockInParams.size(); j++) {
                     String paramName = d.lockInParams.get(j);
                     String fieldName = d.lockInFields.get(j);
-                    // The written operator ("in" or "within") is purely
-                    // cosmetic here -- the proof both grant is the same
-                    // shared "in" MatchPattern kind, checked identically
-                    // below regardless of which one this clause used --
-                    // but the error message still names the operator
-                    // actually written, not a hardcoded "in", so a
-                    // "within"-style clause's own error doesn't wrongly
-                    // suggest writing "in" instead. "into" is different:
-                    // its own proof is strictly stronger (read + write),
-                    // so a call site satisfies an "in"/"within" clause
-                    // with either an "in" or an "into" proof, but a
-                    // clause written "into" specifically requires an
-                    // "into" proof at the call site too -- "yes, exact
-                    // match required," confirmed directly: an "in"-proven
-                    // call site never satisfies an "into"-required one.
+                    // The written operator only changes the message. An `in`/`within` clause accepts an "in" or "into" proof; an `into` clause needs an "into" proof (exact match).
                     String operatorText = d.lockInOperators.get(j);
                     String requiredKind = operatorText.equals("into") ? "into" : "in";
                     int paramIdx = candidate.paramNames.indexOf(paramName);
@@ -16104,11 +10883,7 @@ public class TypeChecker {
                                         + "(it's decorated '@lock(match " + paramName + " " + operatorText
                                         + " self." + fieldName + ")')");
                     }
-                    // "Some(...)"-wrapped clause: also requires the
-                    // inner element-alive proof for "self.field[param]"
-                    // at the call site -- the same second proof the
-                    // bare-match/for-match forms of this sugar grant
-                    // together with their own bounds proof.
+                    // A `Some(..)`-wrapped clause also needs the element-alive proof for `self.field[param]`.
                     if (d.lockInSomeWrapped != null && Boolean.TRUE.equals(d.lockInSomeWrapped.get(j))) {
                         String elemSlot = targetSlot != null && argSlot != null
                                 ? targetSlot + "[" + argSlot + "]" : null;
@@ -16128,15 +10903,7 @@ public class TypeChecker {
         }
     }
 
-    /**
-     * True if `scope` currently has an active "enum_field_variants"
-     * proof for `slotKey.fieldName` whose own proven variant set is
-     * entirely contained in `requiredVariants` -- the "is the current,
-     * actual value definitely safe" question every consumer of this
-     * proof (the struct-level "@lock(match self.x : X)" feature, and
-     * the newer, method-level enum-style "@lock(...)") ultimately
-     * reduces to.
-     */
+    /** True if `scope` has an active enum_field_variants proof for `slotKey.fieldName` whose proven variants are all within `requiredVariants`. */
     private boolean hasEnumFieldProof(Scope scope, String slotKey, String fieldName, List<String> requiredVariants) {
         if (slotKey == null) {
             return false;
@@ -16146,20 +10913,7 @@ public class TypeChecker {
                         && p.targetName.equals(fieldName) && requiredVariants.containsAll(p.provenVariants));
     }
 
-    /**
-     * "just as you check for member access before lock on a guard, you
-     * must check for member access without[sic] parent match block of
-     * the form described," confirmed directly. `memberName` itself --
-     * the discriminant field the struct's own "@lock(match self.x :
-     * ...)" names -- is always freely readable ("The second reading
-     * seems more usable to me... go with the second reason," confirmed
-     * directly); every *other* member requires an active proof for this
-     * exact receiver slot (`hasEnumFieldProof`), planted by
-     * checkEnumMatch only within a case whose own variant(s) are all
-     * covered by the struct's own required set. "Unsafe" is the same
-     * universal escape hatch every other proof-based restriction in
-     * this language already has.
-     */
+    /** A member other than the lock discriminant field needs an active enum-field proof for this receiver (planted by checkEnumMatch); the discriminant is freely readable; unsafe bypasses. */
     private void requireStructLockProof(StructInfo structInfo, String memberName, Token receiverNode, Scope scope,
             Token at) {
         if (structInfo.lockFieldName == null || memberName.equals(structInfo.lockFieldName) || synthesizingGlueBody) {
@@ -16187,27 +10941,7 @@ public class TypeChecker {
         }
     }
 
-    /**
-     * "[0,1,2,3,4]" -- an array literal. Reuses the exact same
-     * bottom-up resolution `(`/`[` already get from `RpnConverter` and
-     * `TreeBuilder` (recursively resolved into a single comma-chain
-     * tree), so all that's needed here is flattening that chain (via
-     * the existing `collectCommaArgs`, already used for `CALL`
-     * arguments) and requiring every element resolve to the exact same
-     * base type (confirmed directly). The array's own base-type string
-     * embeds both the element type and the length
-     * ("elementType[length]") -- same "embed everything" approach as
-     * `range`, so two arrays are only the same type if element type
-     * *and* length both match, via the existing, unmodified
-     * `sameBaseType`, with no extra logic needed.
-     *
-     * `dup` no longer appears anywhere in the tree by the time this runs
-     * -- DupExpander (a new, earlier pipeline stage, before generics
-     * expansion) already expands every `dup` node into N literal
-     * repeated copies, structurally, over the whole program. This method
-     * therefore no longer needs to know `dup` exists at all; it only
-     * ever sees an already-flat comma-chain of real elements.
-     */
+    /** `[a, b, ..]`: flattens the comma chain and requires one element base type; the type string embeds the length (`T[n]`). `dup` is already expanded by DupExpander. */
     private TypeInfo checkArrayLiteral(Token node, Scope scope, FuncInfo func) {
         if (node.childs.isEmpty()) {
             throw new CompilerException("type", node.file, node.line,
@@ -16220,15 +10954,7 @@ public class TypeChecker {
                     "array literal must have at least one element");
         }
 
-        // Confirmed directly: null "poisons" the type system when it's
-        // all that can be inferred ([null, null] genuinely has type
-        // null[2], not an error) -- but when a non-null element is also
-        // present, the array's element type comes from that element,
-        // with null accepted anywhere alongside it, exactly like null
-        // already satisfies any pointer-typed slot elsewhere in the
-        // language (assignment, struct-literal members, return values,
-        // etc.) -- reusing the same isPointerType check those already
-        // use, not a new rule invented just for arrays.
+        // null alone gives `null[n]`; next to a non-null element the type comes from that element and null is accepted wherever a pointer is.
         List<TypeInfo> elementTypes = new ArrayList<>();
         TypeInfo establishedType = null;
         for (Token element : elements) {
@@ -16289,13 +11015,10 @@ public class TypeChecker {
             establishedType = elementTypes.get(0);
         }
         if (establishedType == null) {
-            // every element is null -- the poisoned case, confirmed
-            // directly as valid, not an error.
+            // every element is null: the poisoned case, valid.
             establishedType = elementTypes.get(0);
         } else if (!isPointerType(establishedType)) {
-            // an established, non-pointer type still needs every
-            // element to actually match it -- null can't stand in for
-            // a plain inline value the way it can for a pointer.
+            // A non-pointer element type needs every element to match; null cannot stand in.
             for (int i = 0; i < elementTypes.size(); i++) {
                 TypeInfo t = elementTypes.get(i);
                 if (t.baseType.equals("null")) {
@@ -16314,15 +11037,7 @@ public class TypeChecker {
                 TypeInfo t = elementTypes.get(i);
                 if (t.baseType.equals("null")) {
                     if (establishedType.isSome) {
-                        // Same "reject assigning/returning a null
-                        // literal to a some" rule, confirmed directly --
-                        // an array literal's own element-type
-                        // establishment is a third, genuinely separate
-                        // place "null satisfies any pointer" is checked
-                        // (distinct from typesCompatible and the
-                        // bound-type 'let' path), found and fixed only
-                        // by searching every such site directly, not
-                        // assumed covered by the other two fixes.
+                        // A null literal cannot satisfy a `some` element type (third site of this rule, besides typesCompatible and the bound-type `let` path).
                         throw new CompilerException("type", elements.get(i).file, elements.get(i).line,
                                 "'null' cannot satisfy a 'some'-tagged array element type ('"
                                         + establishedType.canonical() + "')");
@@ -16343,13 +11058,7 @@ public class TypeChecker {
             }
         }
 
-        // "elements can be owns/ref etc in arrays and dynamicarrays,"
-        // confirmed directly -- TypeInfo.array carries the real,
-        // established element type (storage included) through as its
-        // own auxiliary `arrayElementType`, so a later "[]" access
-        // (checkLookup) can hand a pointer-typed element back out as a
-        // real pointer, instead of always stripping it to a bare,
-        // storage-less base type the way it used to unconditionally.
+        // TypeInfo.array keeps the real element type (storage included) in arrayElementType so a later `[]` can hand back a pointer element.
         TypeInfo arrayType = TypeInfo.array(establishedType, elements.size());
         boolean allLiteral = establishedType.storage == null && INTEGER_WIDTH.containsKey(establishedType.baseType);
         List<java.math.BigInteger> values = new ArrayList<>();
@@ -16403,55 +11112,28 @@ public class TypeChecker {
         return arrayType;
     }
 
-    /**
-     * "ifaceValue instanceof StructName" -- a runtime check: the left side must be
-     * interface-typed, the right side must name a struct. It compares the value's
-     * hidden `___type` class id against the named struct's own id. Never valid on a
-     * struct-typed left side (its type is already known statically).
-     */
     /** True if `structName` is decorated `@untyped` (no hidden class id, so no runtime type information). */
     private boolean isUntyped(String structName) {
         StructInfo si = structs.get(structName);
         return si != null && getDecorator(si.declTok.decorators, "untyped") != null;
     }
 
+    /**
+     * "ifaceValue instanceof StructName": runtime class-id (`___type`) compare. Left side must be
+     * interface-typed, right side a struct name. See docs/TypeChecker.md, "instanceof and implements".
+     */
     private TypeInfo checkInstanceof(Token op, Scope scope, FuncInfo func) {
         TypeInfo leftType = resolveExprType(op.left, scope, func);
-        // Also legal on an interface-typed value ("c: C" where C is an
-        // interface) -- this is the mirror-image of the ordinary
-        // This is the only legal shape: it narrows a value only known
-        // through its interface type down to one of that interface's own
-        // real implementers. The runtime check is a class-id comparison
-        // against the named struct's own tag, so nothing below this gate needs to change -- an
-        // interface-typed leftType simply skips isUntyped (interfaces
-        // aren't @untyped-able, isUntyped safely returns false for a
-        // name absent from 'structs') and the alive-proof gate right
-        // below already treats an interface-typed value as pointer-like
-        // on its own (see TypeInfo/requiresAliveProof), so this widening
-        // doesn't relax anything -- a bare interface-typed local still
-        // needs the same proven 'Some(...)' this always required.
+        // Interface-typed left side only: narrows to one of the interface's implementers. @untyped is
+        // skipped safely (interfaces are absent from 'structs'); the alive-proof gate below treats
+        // interface-typed values as pointer-like already.
         if (!interfaces.containsKey(leftType.baseType)) {
             throw new CompilerException("type", op.left.file, op.left.line,
                     "'instanceof' can only be used on an interface-typed value ('x instanceof SomeStruct'), got '"
                             + leftType.canonical() + "'");
         }
-        // "instanceof and implements can be done on nullable types. They
-        // need to be updated so they need a 'some' type to work on,"
-        // confirmed directly -- the exact same gate '.' member access
-        // already uses (checkDot), reused as-is rather than a separate,
-        // looser approximation of it: exempt for no-storage/'auto'/
-        // 'some'-tagged values, otherwise requires a live 'match
-        // Some(...)' proof over this exact slot first. Applied here
-        // before the untyped/right-hand checks below, and applies
-        // identically whether this node is a bare expression or is
-        // itself a match condition (checkMatchCondition dispatches to
-        // this same function either way) -- "Yes, identical gate,
-        // applies everywhere," confirmed directly. Inherits
-        // requiresAliveProof's own known, separately-documented quirk
-        // unchanged: 'unsafe' does not currently bypass this gate at
-        // all (see "spawn" section) -- reusing the gate exactly as it
-        // stands, not patching that quirk here as a side effect of an
-        // unrelated round.
+        // Same alive-proof gate as '.' access (checkDot); applies whether this is an expression or a
+        // match condition. 'unsafe' does not bypass it (known quirk, left as is).
         if (requiresAliveProof(leftType, op.left, scope)) {
             throw new CompilerException("type", op.left.file, op.left.line,
                     "'instanceof' on a pointer-typed struct value is not permitted -- the type system "
@@ -16494,18 +11176,13 @@ public class TypeChecker {
      */
     private TypeInfo checkImplementsOperator(Token op, Scope scope, FuncInfo func) {
         TypeInfo leftType = resolveExprType(op.left, scope, func);
-        // Widened alongside checkInstanceof's own identical gate -- see
-        // its doc comment above for why an interface-typed left operand
-        // ("c: C") is legal here too: "does the struct concretely behind
-        // this interface-typed value implement SomeOtherInterface" is
-        // a real runtime question.
+        // Interface-typed left operands are legal too (mirror of checkInstanceof).
         if (!structs.containsKey(leftType.baseType)) {
             throw new CompilerException("type", op.left.file, op.left.line,
                     "'implements' can only be used on a struct-typed value ('x implements SomeInterface'), got '"
                             + leftType.canonical() + "'");
         }
-        // Same gate, same reasoning, as checkInstanceof's own -- see its
-        // doc comment above.
+        // Same alive-proof gate as checkInstanceof.
         if (requiresAliveProof(leftType, op.left, scope)) {
             throw new CompilerException("type", op.left.file, op.left.line,
                     "'implements' on a pointer-typed struct value is not permitted -- the type system "
@@ -16527,24 +11204,8 @@ public class TypeChecker {
             throw new CompilerException("type", op.right.file, op.right.line,
                     "'" + targetName + "' is not a known interface");
         }
-        // "the compiler and not the optimizer" should flag an 'implements'
-        // check against an interface nothing in the program actually
-        // implements, confirmed directly -- a warning, not an error (the
-        // interface itself is perfectly real, so this is never a type
-        // *mistake* the way an unknown name above is), and it's this
-        // type-checker's own job because it's the one place that already
-        // knows the full, whole-program set of real implementers by the
-        // time any function body is checked (`implsByConcreteType` is
-        // fully populated by `collectDeclarations` before `check`'s own
-        // body-checking loop ever starts -- see `check`'s own top,
-        // `generateEnumForEnums`' identical whole-program scan just below
-        // it -- so this is never a source-order artifact, "no
-        // implementer *yet*", but a genuine, final fact about the
-        // program as a whole). The sibling `caspien-optimizer` project
-        // lowers this exact, provably-always-false shape silently, to a
-        // bare "PUSH false" -- confirmed directly as the right split:
-        // "that's a type system level catch thing," the optimizer's own
-        // job is just lowering, with no complaints of its own.
+        // Warning, not error: an interface nothing implements. `implsByConcreteType` is complete before
+        // bodies are checked, so this is a whole-program fact. See docs/TypeChecker.md, "instanceof and implements".
         if (!hasAnyImplementer(targetName)) {
             warn(op.right.file, op.right.line,
                     "'implements " + targetName + "' can never be true -- no struct anywhere in this "
@@ -16573,7 +11234,7 @@ public class TypeChecker {
         return si != null && si.implementsNames.contains(interfaceName);
     }
 
-    /** Whether any "impl `interfaceName` for SomeStruct" block exists anywhere in the whole compilation unit -- the exact same whole-program scan `generateEnumForEnums` already does to build `$enum_for_interfaceName`, reused here rather than duplicated with different logic that could drift out of sync with it. */
+    /** Whether any `impl interfaceName for X` exists in the program (same scan as `generateEnumForEnums`). */
     private boolean hasAnyImplementer(String interfaceName) {
         for (List<ImplInfo> implList : implsByConcreteType.values()) {
             for (ImplInfo impl : implList) {
@@ -16586,17 +11247,8 @@ public class TypeChecker {
     }
 
     /**
-     * A non-fatal compiler diagnostic -- unlike `CompilerException`
-     * (thrown, aborts compilation immediately), this prints and lets
-     * checking continue, the same "[stage error] file:line - message"
-     * shape `CompilerException.format` already uses, with "warning" in
-     * place of "error" so tooling that greps for one never confuses it
-     * for the other. No warning-collection/counting machinery added
-     * here -- this compiler prints diagnostics as it finds them
-     * (`Main`'s own "[info] wrote bytecode..." line is the identical
-     * precedent), and a single warning site doesn't yet justify a
-     * general facility good only for someone hitting it multiple times a
-     * lot's an entirely separate call, that's out of scope of this one.
+     * Non-fatal diagnostic: prints "[warning] file:line - message" to stderr and checking continues.
+     * No collection/counting machinery on purpose.
      */
     private static void warn(String file, int line, String message) {
         StringBuilder sb = new StringBuilder("[warning] ");
@@ -16640,40 +11292,14 @@ public class TypeChecker {
     }
 
     /**
-     * "Soon we will introduce a match statement... which will allow us
-     * to confirm that references are valid and bounds access is valid
-     * prior to permitting it, for now we must set the default behaviour
-     * even if it is not practical on its own" -- confirmed directly.
-     * The default, until 'match' exists: a lookup is only permitted
-     * when the target's length is knowable at compile time in the
-     * first place (an array's length is always part of its type; a
-     * string's length is knowable only when the expression being
-     * indexed is directly a string literal),
-     * *and* the index itself is a literal integer, provably within that
-     * known length -- exactly the bounds check this project already
-     * did for a literal array index, generalized uniformly to every
-     * indexable kind rather than left as an array-only special case.
-     * A variable/computed index is no longer silently undefined; it's a
-     * hard compile error, the same as an unknowable target length.
+     * "[]" default rules: a lookup needs a compile-time-known target length and a literal in-range index,
+     * or a live `match i in` proof. See docs/TypeChecker.md, "Lookup".
      */
     private TypeInfo checkLookup(Token op, Scope scope, FuncInfo func) {
         TypeInfo targetType = resolveExprType(op.left, scope, func);
         if (isUnsafeDynArrayType(targetType)) {
-            // "unsafe dynarray" indexing -- always requires 'unsafe',
-            // fully unchecked (recommended), confirmed directly. Unlike
-            // the safe variant, there is no bounds-proof mechanism that
-            // could ever apply here at all (no hidden length exists to
-            // check the index against), so this is a dedicated, early
-            // branch rather than a further case threaded through the
-            // ordinary knownLength/provenInBounds machinery below --
-            // that whole mechanism has nothing to offer this variant.
-            // Deliberately never sets `op.isLookupProofReliant` (stays
-            // its default `false`) -- so `requireLookupWriteAuthorized`
-            // (which only ever fires when that flag is set) is never
-            // triggered for this target at all: a write through an
-            // unsafe dynarray's own '[]' is unconditionally permitted
-            // once inside 'unsafe' code, the same unchecked-write
-            // precedent a raw pointer already has.
+            // Unsafe dynarray: needs 'unsafe', unchecked (no hidden length). Never sets
+            // `op.isLookupProofReliant`, so writes need no "into" proof. See docs/TypeChecker.md, "Lookup".
             if (!unsafeBypass(scope, udynTag(targetType))) {
                 throw new CompilerException("type", op.file, op.line,
                         "'[]' on an 'unsafe dynarray' can only be used from within 'unsafe' code -- it "
@@ -16690,9 +11316,7 @@ public class TypeChecker {
                         "'unsafe dynarray' index must be an integer type, got '"
                                 + indexTypeUnsafe.canonical() + "'");
             }
-            // Same "elements can be owns/ref etc" storage-preservation
-            // fix the safe dynarray/array cases below already have --
-            // preserved here too, for the identical reason.
+            // Keep element storage (owns/ref) as the safe cases below do.
             TypeInfo unsafeElem = targetType.unsafeDynArrayElementType;
             if (unsafeElem.storage != null) {
                 return unsafeElem.withMutability(targetType.mutability);
@@ -16714,13 +11338,7 @@ public class TypeChecker {
         }
         Token indexExpr = indexDelineator.childs.get(0);
 
-        // A "dynarray(T)"'s length is never known at compile time at
-        // all -- not baked into its type the way a fixed array's is,
-        // confirmed directly by its own type shape -- so `knownLength`
-        // stays null here unconditionally, meaning even a literal index
-        // ("dynArr[0]") always requires a live "match i in dynArr{...}"
-        // proof, same as any variable index would. There is no
-        // "sometimes provably safe without one" case for a dynarray.
+        // A dynarray length is never compile-time known: even a literal index needs a `match i in` proof.
         Long knownLength = null;
         if (isArray) {
             knownLength = (long) arrayLength(targetType.baseType);
@@ -16729,37 +11347,14 @@ public class TypeChecker {
                 knownLength = (long) op.left.literalValue.length();
             }
         }
-        // "match i in range(my_str){ print_char(my_str[i]) // now
-        // accessible }" -- confirmed directly: a live "in" proof, tied
-        // to *this exact target*, lets both the "target length must be
-        // known" and "index must be a literal" restrictions be skipped
-        // for a plain-integer index specifically -- the runtime check
-        // the match statement already emits (CMP/JMP) is itself the
-        // bounds guarantee at that point, so no further compile-time
-        // proof is needed.
+        // A live `match i in range(target)` proof for this exact target lifts the known-length/literal
+        // index restrictions (the match already emitted the runtime check).
         boolean provenInBounds = isProvenInBounds(op.left, indexExpr, scope);
-        // See Token.isLookupProofReliant's own doc -- the one case that
-        // never needed a proof at all (a literal index into a target
-        // whose length is baked into its own type) is exactly the case
-        // requireLookupWriteAuthorized also never needs a write-specific
-        // "into" proof for.
+        // A literal index into a type-known length needs no proof (see Token.isLookupProofReliant).
         op.isLookupProofReliant = !(indexExpr.type == TokenType.INTEGER && knownLength != null);
 
-        // Resolve (and reject a range-typed) index BEFORE the generic
-        // bounds-provability gate below. A range-typed index used to
-        // construct a slice value here ("let my_slice =
-        // my_array[my_range]", same "[...]" syntax as ordinary indexing,
-        // dispatched purely on what the index itself resolves to). The
-        // slice type has been removed from the language entirely -- it
-        // had a chronic, unfixed addressing bug and a broken write path,
-        // so this is now a clear, deliberate compile-time rejection
-        // instead of constructing anything. This has to be checked ahead
-        // of the "knownLength == null" bounds throw immediately below:
-        // a dynarray target's length is *never* compile-time-known (see
-        // this method's own comment on that a few lines up), so without
-        // this ordering that generic, unrelated bounds error would
-        // always fire first for a dynarray operand and this specific,
-        // clearer slicing-rejection message would be unreachable for it.
+        // Resolve and reject a range-typed index (slicing was removed) BEFORE the knownLength bounds
+        // error below, or dynarray operands would always hit that generic error first.
         TypeInfo indexType = resolveExprType(indexExpr, scope, func);
         if (isRangeType(indexType)) {
             throw new CompilerException("type", indexExpr.file, indexExpr.line,
@@ -16799,118 +11394,31 @@ public class TypeChecker {
             return new TypeInfo(null, "imut", "char");
         }
         if (isDynArray) {
-            // Same "the mutability of the container and one of its
-            // entries should be the same" principle the array fix
-            // below already established -- the dynarray's *own*
-            // mutability, not whatever mutability its element type
-            // happened to be constructed with (dyn(...)'s element type
-            // is only ever used for shape/identity purposes, not
-            // per-access mutability) -- governs the *result*'s own
-            // mutability either way.
-            //
-            // "elements can be owns/ref etc in arrays and
-            // dynamicarrays," confirmed directly -- a real, found-and-
-            // fixed bug, not a new capability: a pointer-typed element
-            // (e.g. a dynarray of 'owns mut Box') used to always come
-            // back storage-less ('mut_Box') from '[]', meaning it could
-            // never actually be used as a pointer again once read back
-            // out -- confirmed directly by testing, not assumed.
-            // dynArrayElementType is a full TypeInfo (storage
-            // included), so it's now threaded through directly for a
-            // genuinely pointer-typed element; a plain, inline element
-            // keeps the exact prior, unmodified behavior (storage-less,
-            // container-mutability-governed).
+            // Container mutability governs the result; element storage (owns/ref) is preserved.
             TypeInfo dynElem = targetType.dynArrayElementType;
             if (dynElem.storage != null) {
                 return dynElem.withMutability(targetType.mutability);
             }
             return new TypeInfo(null, targetType.mutability, dynElem.baseType);
         }
-        // Same "elements can be owns/ref etc in arrays" fix as the
-        // dynarray case just above, for a fixed array -- only ever
-        // available when this exact array value was built from a real
-        // array literal (checkArrayLiteral's own TypeInfo.array),
-        // which is the only way a fixed array's type can carry a real,
-        // storage-bearing element TypeInfo at all (no type-annotation
-        // syntax for "an array of pointers" exists in this language --
-        // resolveTypeAnnotationRaw's own array-suffix handling never
-        // populates arrayElementType). A type-annotation-only array
-        // type (a parameter/struct member declared "Box[5]", say) has
-        // no `arrayElementType` at all, so this falls straight through
-        // to the exact prior, unmodified behavior for it.
+        // Fixed array: storage-bearing element type is only available for array-literal types;
+        // annotation-declared arrays ("Box[5]") fall through to the storage-less path.
         if (targetType.arrayElementType != null && targetType.arrayElementType.storage != null) {
             return targetType.arrayElementType.withMutability(targetType.mutability);
         }
         String elementBaseType = arrayElementType(targetType.baseType);
-        // "The mutability of an array and the mutability of one of its
-        // entries should be the same," confirmed directly -- a real bug
-        // fix, not a new rule invented here: this used to hardcode
-        // 'imut' unconditionally, meaning a 'mut' array's own elements
-        // could never be written through '[]' at all, regardless of the
-        // array's own mutability. Deliberately not touched for the
-        // string case just above (still hardcoded 'imut') -- that one
-        // has its own explicit "per spec" justification, unrelated to
-        // this fix.
+        // Element mutability follows the array's (string case above stays imut by spec).
         if (elementBaseType.equals("string")) {
-            // A real, found-and-fixed bug in this exact fallback path
-            // (reached only for a type-annotation-declared array whose
-            // own element TypeInfo carries no storage at all, e.g. a
-            // struct member or parameter declared "raw mut string[2]"
-            // -- see this branch's own doc comment above for why the
-            // earlier, storage-preserving branch never fires here),
-            // found while auditing string codegen support: "string" is
-            // this language's one and only `pointerLikeBaseType`
-            // (confirmed directly), and every other string-typed value
-            // this compiler ever produces is canonically storage
-            // "static" (e.g. a string literal's own
-            // "static_some_imut_string", a struct member explicitly
-            // declared "static imut string") -- so a storage-less
-            // "mut_string" element type reaching this fallback is
-            // never actually correct, and would make the resulting
-            // element value unusable as a real pointer by anything
-            // downstream that checks storage (including this
-            // compiler's own bytecode-to-assembly codegen stage's
-            // `SimpleTypes.isPointerTypeString`). Fixed narrowly, only
-            // for this one base type, the same way `isString`'s own
-            // dedicated branch just above already special-cases
-            // "string" without touching the general array-element path
-            // for every other base type.
+            // Annotation-declared string array elements must be static, like every other string value
+            // (codegen's isPointerTypeString checks storage).
             return new TypeInfo("static", targetType.mutability, "string");
         }
         if (elementBaseType.startsWith("dynarray(") && elementBaseType.endsWith(")")) {
-            // The identical class of bug as the "string" branch just
-            // above, found while auditing dynarray codegen support: an
-            // ARRAY of dynarrays declared purely via a type annotation
-            // (a struct member or parameter, e.g. "rows: mut
-            // dynarray(u64)[2]" -- no per-element storage-bearing
-            // TypeInfo exists at all for a type-annotation-only array,
-            // see this fallback branch's own doc comment above) used to
-            // come back from '[]' as a bare, storage-less,
-            // dynArrayElementType-less TypeInfo whose baseType merely
-            // *looked like* "dynarray(u64)" as text -- unusable as a
-            // real dynarray by anything downstream that actually checks
-            // `dynArrayElementType` (isDynArrayType, len(), 'match i
-            // in', a further '[]') rather than merely the baseType
-            // string, and, like the string case, also unusable as a
-            // real pointer by this compiler's own codegen stage (a
-            // dynarray value "always resolves to owns storage," see
-            // "Dynarrays" in the language reference). Fixed by
-            // reconstructing a real, storage-bearing dynarray TypeInfo
-            // via the same `TypeInfo.dynArray(...)` factory every other
-            // dynarray value already goes through, rather than returning
-            // a plain baseType-only TypeInfo.
+            // Annotation-declared array of dynarrays: rebuild a real dynarray TypeInfo via
+            // TypeInfo.dynArray instead of a bare baseType string.
             String innerElementText = elementBaseType.substring(
                     "dynarray(".length(), elementBaseType.length() - 1);
-            // `innerElementText` may itself now carry a storage prefix
-            // (`dynArrayElementText`'s own doc comment) -- e.g.
-            // "owns_Leaf" for a nested "dynarray(dynarray(owns mut
-            // Leaf))[2]" annotation -- so it can't be handed to `new
-            // TypeInfo(null, ...)` as a single opaque baseType the way
-            // it always safely could before that fix (back when this
-            // text was guaranteed bare): that would silently manufacture
-            // a bogus, storage-less type literally named "owns_Leaf"
-            // instead of a real `owns`-storage "Leaf". Split the one
-            // known storage prefix back off first if present.
+            // innerElementText may carry a storage prefix (e.g. "owns_Leaf"): split it off.
             TypeInfo innerElementType = TypeInfo.parseDynArrayElementText(innerElementText);
             return TypeInfo.dynArray(targetType.mutability, innerElementType);
         }
@@ -16918,16 +11426,8 @@ public class TypeChecker {
     }
 
     /**
-     * A range's own bounds are already the complete type information
-     * (confirmed directly) -- "range(2,5)" for two literal bounds,
-     * "range(imut_x,5)" for a variable one, exactly the shape
-     * `rangeBoundDescriptor` already builds. Reads that shape directly
-     * rather than carrying a second, redundant representation of the
-     * same fact: an identifier bound always starts with a letter (no
-     * identifier in this language can start with a digit), so "are both
-     * parts entirely digits" is a complete, unambiguous, deterministic
-     * test against this compiler's own fixed output format -- not a
-     * guess about arbitrary input shape.
+     * Reads literal bounds off a `range(a,b)` base-type string; null unless both are all digits
+     * (identifiers never start with a digit). See docs/TypeChecker.md, "Lookup".
      */
     private long[] parseLiteralRangeBounds(String rangeBaseType) {
         if (!rangeBaseType.startsWith("range(") || !rangeBaseType.endsWith(")")) {
@@ -16959,16 +11459,8 @@ public class TypeChecker {
     }
 
     /**
-     * Resolves a bare type name written as an `as` cast target, for
-     * structural comparison purposes only -- deliberately lighter than
-     * `resolveTypeAnnotation`: a plain, non-aliased name (e.g. "u8")
-     * resolves to a bare "no storage" TypeInfo directly, rather than
-     * running the full pointer-required validation a genuine type
-     * annotation would (a cast target is never itself a declaration, so
-     * that validation doesn't apply here at all). A known alias still
-     * goes through the exact same `expandAliases` splicing every other
-     * usage site uses, so a storage-modified alias target (e.g. "type
-     * BytePtr raw u8") resolves to its real, complete representation.
+     * Resolves a bare `as` target name for structural comparison only (lighter than
+     * resolveTypeAnnotation: no pointer-required validation).
      */
     private TypeInfo resolveCastTargetBare(String name, Token at) {
         if (aliasRawTargets.containsKey(name)) {
@@ -16976,21 +11468,8 @@ public class TypeChecker {
             List<Token> synthetic = new ArrayList<>();
             synthetic.add(new Token(TokenType.VARREF, name, at.line, at.file));
             List<Token> expanded = expandAliases(synthetic, new HashSet<>(), aliasNameHolder, at);
-            // Some aliases carry their own mutability already (e.g. "type
-            // PointPtr raw imut Point"); others don't (e.g. "type byte
-            // u8" -- a pure structural/nominal definition with nothing to
-            // write mut/imut on at all). resolveTypeAnnotationRaw
-            // unconditionally requires exactly one mutability modifier
-            // present, so a synthetic 'imut' is prepended here only when
-            // the expansion doesn't already carry one of its own -- it is
-            // never actually read by any caller of this method (checkAs's
-            // alias branch, the only caller, only ever consults the
-            // returned .storage/.baseType/.aliasName, never .mutability --
-            // "mutability is untouched by this cast," confirmed directly),
-            // so which value is chosen here has zero effect on any real
-            // result; this only needs to avoid the parser's separate
-            // "duplicate mutability modifier" rejection when one is
-            // already present.
+            // resolveTypeAnnotationRaw needs exactly one mutability modifier; the synthetic 'imut' is
+            // never read by checkAs (mutability is untouched by a cast).
             boolean alreadyHasMutability = expanded.stream().anyMatch(t ->
                     t.type == TokenType.MODIFIER && (t.text.equals("mut") || t.text.equals("imut")));
             if (!alreadyHasMutability) {
@@ -17005,35 +11484,6 @@ public class TypeChecker {
         return new TypeInfo(null, "imut", name);
     }
 
-    /**
-     * "value as TypeName" has exactly two legal shapes today: an alias
-     * relabel (both sides already structurally identical underneath --
-     * a pure compile-time rename, see `op.isAliasCast` below), or a
-     * same-signedness-family widening cast (u8->u16->u32->u64 or
-     * s8->s16->s32->s64 -- narrower, equal-width, or cross-signedness
-     * targets are all rejected, and so are float/pointer casts -- "other
-     * types will be castable thru functions in the stdlib, beyond the
-     * scope for now," confirmed directly). The right-hand side here is a
-     * target descriptor, not a value expression -- it's read directly
-     * off its own token rather than through resolveExprType, since a
-     * bare type name like 'u64' isn't a declared variable and would
-     * otherwise fail as "undeclared".
-     *
-     * `value as mut`/`value as imut` (changing only mutability, both
-     * directions) used to be a third legal shape here -- confirmed
-     * removed, not merely undocumented: `mut`/`imut` no longer even
-     * parses as the right-hand side of `as` at all (tested directly --
-     * "expression ends unexpectedly" at the PARSER stage, before this
-     * method ever runs), so the `op.right.type != VARREF` throw below is
-     * unreachable for that shape specifically, not a live rejection path
-     * for it. Mutability reinterpretation is the dedicated `mut`/`imut`
-     * PREFIX operator's own job now (`checkMutabilityOf`, a completely
-     * separate operator from this one) -- confirmed directly by the
-     * throw's own wording ("use the 'mut'/'imut' prefix operator
-     * instead"). `BytecodeEmitter.emitAs` no longer carries a
-     * corresponding branch for this shape, having been dead code since
-     * whenever the grammar dropped it.
-     */
     /** True when an active, un-invalidated 'match x fits T' proof covers this exact slot and target type. */
     private boolean isProvenFits(Token expr, String targetBase, Scope scope) {
         String key = slotKeyOf(expr);
@@ -17048,6 +11498,11 @@ public class TypeChecker {
         return false;
     }
 
+    /**
+     * "value as TypeName": an alias relabel (same structure underneath), a same-signedness widening
+     * (u8->u16->u32->u64, s8->..->s64), or a `match x fits T` proven tightening. The right side is read
+     * off its token, not typed as an expression. See docs/TypeChecker.md, "as casts".
+     */
     private TypeInfo checkAs(Token op, Scope scope, FuncInfo func) {
         TypeInfo leftType = resolveExprType(op.left, scope, func);
         // `x as f64` for an f32 x: always exact, never needs a float-state proof. A bare float literal
@@ -17068,14 +11523,7 @@ public class TypeChecker {
         if (op.right.type == TokenType.VARREF) {
             String targetBase = op.right.text;
 
-            // "casting between aliases always legal," confirmed directly,
-            // whenever the two sides' fully-resolved structural
-            // representations (storage + real base type -- mutability is
-            // untouched by this cast, same as the plain integer-widening
-            // form below) are identical. Only attempted when an alias is
-            // actually involved on either side; a plain, non-aliased cast
-            // falls straight through to the existing widening-only logic,
-            // completely unchanged.
+            // Alias casts: legal when storage and base type match structurally (mutability untouched).
             if (aliasRawTargets.containsKey(targetBase) || leftType.aliasName != null) {
                 TypeInfo resolvedTarget = resolveCastTargetBare(targetBase, op.right);
                 boolean structuralMatch = java.util.Objects.equals(leftType.storage, resolvedTarget.storage)
@@ -17139,59 +11587,9 @@ public class TypeChecker {
     }
 
     /**
-     * "EnumName.Variant" -- the only supported use of '.' right now.
-     * Both sides are read directly off their raw tokens rather than
-     * through resolveExprType, same reasoning as 'as': neither an enum
-     * name nor a variant name is a declared variable, so resolving them
-     * as expressions would incorrectly fail as "undeclared". Struct
-     * instance member access (e.g. `p.x` on a struct value) is
-     * explicitly out of scope for this addition -- structs don't have
-     * instantiation syntax yet either, per the original spec -- and
-     * gets its own clear error rather than silently doing something
-     * unintended.
-     */
-    /**
-     * '.' supports two unrelated things, distinguished by what the left
-     * side actually is:
-     *   - EnumName.Variant   -- type-level access, left is a bare name
-     *     that is NOT a declared variable but IS a known enum
-     *   - instance.member    -- value-level access on a struct instance,
-     *     left is resolved as an ordinary expression (so this also
-     *     naturally supports chains like "line.start.x", since '.' is
-     *     left-associative and the outer '.' just sees "line.start"
-     *     as its own already-resolved left operand)
-     * A declared local variable always takes priority over an
-     * identically-named enum (ordinary shadowing) -- checked via
-     * scope.lookup before ever consulting the enums map.
-     */
-    /**
-     * "For a pointer x: match x{ // accessing x here now valid }" --
-     * confirmed directly. True if the given expression's own slot has a
-     * live "alive" (bare-expression) MatchPattern in scope -- the match
-     * statement doesn't change x's type at all (confirmed directly, "x
-     * has the same type... there's no dereferencing going on here at
-     * all"), it just tells the type system the runtime condition
-     * already checked (that x is a valid, non-null reference) holds
-     * within this block, letting the pointer-access restriction be
-     * skipped specifically for this proven slot.
-     */
-    /**
-     * The single gate for "does this pointer-typed value need a
-     * 'match Some(x){...}' proof before '.field' access" -- true only
-     * when the type genuinely has real (non-null) storage, that storage
-     * isn't 'auto', it isn't already 'some'-tagged, and no active proof
-     * already covers `targetExpr`'s own slot. `auto` is exempt because
-     * it's inherently non-null by construction (the address of an
-     * existing, already-live variable, confirmed directly this was a
-     * real, pre-existing bug -- "auto cannot be null, it should not
-     * require the proof" -- not something this feature's own scope
-     * otherwise touches). `some` is exempt because that's this entire
-     * modifier's whole reason to exist -- "if the type has the some
-     * modifier that restriction is not in place, it is as if it has
-     * already passed a verify_alive check," confirmed directly. Kept as
-     * one shared helper, not duplicated at each of checkDot's two call
-     * sites (range/struct), specifically to rule out the two ever
-     * silently drifting apart from each other.
+     * The single gate for "needs a `match Some(x)` proof before '.field'": real storage, not `auto`
+     * (non-null by construction), not `some`-tagged, and no active proof for this slot. Shared by
+     * checkDot's range/struct sites so they cannot drift.
      */
     private boolean requiresAliveProof(TypeInfo t, Token targetExpr, Scope scope) {
         if (t.storage == null || t.storage.equals("auto") || t.isSome) {
@@ -17214,26 +11612,9 @@ public class TypeChecker {
     }
 
     /**
-     * "access on float without qualifying match... note this is only
-     * for access -- it can be returned or passed without validation.
-     * this restriction doesnt apply in unsafe mode," confirmed
-     * directly. Called from every operator confirmed in scope for
-     * "access" -- the five arithmetic operators, all six comparisons,
-     * unary minus ("it is still propagation of a poisonous sentinel,"
-     * confirmed directly -- negating NaN/Infinity is well-defined, but
-     * the *result* is just as poisonous as the input, so this counts
-     * too), and an 'as' cast. Bypassed whenever the value's own
-     * possible-state set is already *known* rather than genuinely
-     * open -- either a type-level `floatStates` restriction of any
-     * kind (not only "finite" specifically: a function that only
-     * ever accepts, say, "infinite f32" has already had its caller
-     * acknowledge that fact at the type level, the identical
-     * reasoning "some" already uses for pointers), or an active
-     * "float_state" match-proof for this exact slot (recorded by
-     * *any* case in checkFloatMatch, including a non-"finite" one --
-     * "your assumptions all look solid," confirmed directly, on the
-     * identical point for case-body access) -- or, as with every
-     * other proof-gated restriction in this language, 'unsafe' code.
+     * Float "access" (arithmetic, comparisons, unary minus, `as`) needs a known state: a type-level
+     * `floatStates`, an active float_state proof for the slot, a literal, or 'unsafe'. Passing or
+     * returning a float needs no proof. See docs/TypeChecker.md, "Proof lookups".
      */
     private void requireProvenFloatState(Token expr, TypeInfo type, Scope scope, Token op) {
         if (!isFloatType(type.baseType)) {
@@ -17242,12 +11623,7 @@ public class TypeChecker {
         Token unwrapped = expr;
         while (unwrapped.type == TokenType.OPERATOR
                 && (unwrapped.text.equals("mut") || unwrapped.text.equals("imut")) && unwrapped.left != null) {
-            // "mut 0.0" (a literal wrapped in an explicit mutability
-            // annotation, which this language often requires) is just
-            // as much a compile-time-known value as a bare literal --
-            // seeing through mut/imut here mirrors how every other
-            // literal-detecting check in this compiler already treats
-            // wrapped and bare literals identically.
+            // See through mut/imut wrappers: "mut 0.0" is a literal too.
             unwrapped = unwrapped.left;
         }
         if (unwrapped.type == TokenType.OPERATOR && unwrapped.right == null && unwrapped.left != null
@@ -17255,13 +11631,7 @@ public class TypeChecker {
             return; // a negated float literal is as known as the literal
         }
         if (unwrapped.type == TokenType.FLOAT) {
-            // A literal's value is already known at compile time --
-            // the same "a literal divisor never needs a proof" shape
-            // requireProvenNonzeroDivisor already established just
-            // above, for the identical reason: there's nothing
-            // "unproven" about it. This language has no NaN/Infinity
-            // literal syntax, so every float literal is, unconditionally,
-            // finite.
+            // No NaN/Infinity literal syntax: every float literal is finite.
             return;
         }
         if (type.floatStates != null || type.floatLiteral) {
@@ -17279,17 +11649,8 @@ public class TypeChecker {
     }
 
     /**
-     * "Passing a pointer, including nested within struct members, would
-     * be unsafe, as would returning the same from an async function,"
-     * confirmed directly. True for any type with real (non-null)
-     * storage directly, or -- recursively -- for a struct any of whose
-     * own (flattened) members is itself such a type. No cycle
-     * protection needed: a struct containing itself, at any depth,
-     * through any storage, is already a separate, unconditional hard
-     * compile error (see "Recursion, `recurse`, and RECURSIVE_CALL"),
-     * so this recursion is guaranteed to terminate, the identical
-     * reasoning the old, since-reversed recursive `GT_DESTRUCT`
-     * expansion already relied on.
+     * True for a type with real storage, or a struct with such a member (recursively; struct cycles are
+     * already a hard error, so this terminates). Used to ban passing/returning pointers to async.
      */
     private boolean containsPointerAnywhere(TypeInfo type) {
         if (type.storage != null) {
@@ -17307,6 +11668,7 @@ public class TypeChecker {
         return false;
     }
 
+    /** True if a live "alive" proof covers this slot (`match x{..}` / `match Some(x)`); the match does not change x's type. */
     private boolean isProvenAlive(Token targetExpr, Scope scope) {
         String key = lookupKeyOf(targetExpr);
         if (key == null) {
@@ -17335,7 +11697,7 @@ public class TypeChecker {
         return true;
     }
 
-    /** "match rht!=0 and lft!=0{ return lft/rht }" -- the division-safety counterpart of isProvenAlive just above, identical shape. */
+    /** Division-safety counterpart of isProvenAlive ("match rht!=0 and lft!=0{ .. }"). */
     private boolean isProvenNonzero(Token targetExpr, Scope scope) {
         String key = lookupKeyOf(targetExpr);
         if (key == null) {
@@ -17350,14 +11712,8 @@ public class TypeChecker {
     }
 
     /**
-     * "match i in range(my_str){ print_char(my_str[i]) // now
-     * accessible }" -- confirmed directly, "the former" (tied to the
-     * specific target actually named in the match's own "in" clause,
-     * not any array/string anywhere in the block, "as the later
-     * doesnt make a lot of sense," confirmed directly). True if there's
-     * a live "in" MatchPattern in scope whose own left slot matches this
-     * exact index expression *and* whose recorded bounds-target slot
-     * (see boundsTargetSlotOf) matches this exact lookup target.
+     * True if a live "in" (or "into") proof covers this exact index slot AND this exact lookup target
+     * (the target named in the match's `in` clause, not just any array in the block).
      */
     private boolean isProvenInBounds(Token lookupTarget, Token indexExpr, Scope scope) {
         String indexKey = boundsSlotKeyOf(indexExpr);
@@ -17366,10 +11722,7 @@ public class TypeChecker {
             return false;
         }
         for (Token.MatchPattern p : scope.activeMatchPatterns) {
-            // "into" grants everything "in" does, plus write access (see
-            // isProvenWritable below) -- a superset, so it satisfies a
-            // plain read-bounds check the identical way an "in"/"within"
-            // proof already does.
+            // "into" is a superset of "in" (adds write access).
             if (!p.invalidated && (p.kind.equals("in") || p.kind.equals("into")) && indexKey.equals(p.slotKey)
                     && targetKey.equals(p.rightSlotKey)) {
                 return true;
@@ -17378,14 +11731,7 @@ public class TypeChecker {
         return false;
     }
 
-    /**
-     * The write-specific counterpart to isProvenInBounds -- "arr[i] = "
-     * only legalizes a write for the exact same (index, target) pair an
-     * active "into" proof was granted for, never merely an "in"/"within"
-     * one ("only works if arr was mut before the for loop, otherwise
-     * still imutable" is `requireMutable`'s own, separate, still-
-     * required check -- this is purely the bounds-proof gate).
-     */
+    /** Write counterpart of isProvenInBounds: only an "into" proof for the exact (index, target) pair. Mutability is checked separately by requireMutable. */
     private boolean isProvenWritable(Token lookupTarget, Token indexExpr, Scope scope) {
         String indexKey = boundsSlotKeyOf(indexExpr);
         String targetKey = boundsSlotKeyOf(lookupTarget);
@@ -17402,17 +11748,9 @@ public class TypeChecker {
     }
 
     /**
-     * "cant modify i or arr in loop... arr[i] = arr[i]+12 // right hand
-     * side is valid, but left isnt," confirmed directly -- checkLookup's
-     * own bounds gate (isProvenInBounds) never distinguished a read from
-     * a write; this is the write-specific gate layered on top, called
-     * only from checkAssign/checkCompoundAssign, only for a "LOOKUP"
-     * target. A literal, compile-time-provably-safe access (see
-     * Token.isLookupProofReliant) needs nothing further, the same as a
-     * read -- everything else needs a live "into" proof for this exact
-     * (index, target) pair specifically ("arr[i+1] = ..." still doesn't
-     * work, matching the exact-index requirement any bounds proof
-     * already has).
+     * Write gate layered on checkLookup's bounds gate, called from checkAssign/checkCompoundAssign for a
+     * LOOKUP target: a literal provably-safe access needs nothing more, everything else needs an "into"
+     * proof for this exact (index, target) ("arr[i+1] = .." does not qualify).
      */
     private void requireLookupWriteAuthorized(Token lookupOp, Scope scope) {
         if (!lookupOp.isLookupProofReliant) {
@@ -17429,18 +11767,9 @@ public class TypeChecker {
     }
 
     /**
-     * Extends slotKeyOf specifically for bounds-proving purposes: a
-     * direct string literal is also a trackable "slot" here (keyed on
-     * its own text), matching itself when the identical literal
-     * appears in both the match's "in" clause and a later lookup --
-     * confirmed necessary directly, since "range(my_str)" can't itself
-     * be tested end to end without also relaxing the literal-only
-     * string-length restriction (out of scope, flagged for later), so
-     * the only way to exercise this rule at all today is with a direct
-     * literal on both sides. Deliberately *not* folded into the general
-     * slotKeyOf itself -- ownership-tracking also uses that helper, and
-     * treating two identical string literals as "the same slot" would
-     * be wrong there (a fresh literal is never a moveable binding).
+     * slotKeyOf extended for bounds proofs: string and integer literals are slots too (keyed on their
+     * text). Kept out of slotKeyOf itself because ownership tracking must not treat two equal string
+     * literals as the same slot.
      */
     private String boundsSlotKeyOf(Token node) {
         if (node.type == TokenType.STRING) {
@@ -17454,13 +11783,7 @@ public class TypeChecker {
         return slotKeyOf(node);
     }
 
-    /**
-     * "If a member of a struct, it is only referenceable in an impl for
-     * that struct, or an impl for an interface on that struct,"
-     * confirmed directly. `receiverStructName` is the receiver's own
-     * static type (`leftType.baseType`); the enclosing impl's own
-     * `concreteName` must equal it.
-     */
+    /** A non-public struct member is referenceable only in an impl for that struct (or an interface impl on it). */
     private void checkStructMemberVisibility(StructInfo structInfo, String receiverStructName, String memberName,
             Token at, FuncInfo callerFunc) {
         if (structInfo.publicMembers.contains(memberName)) {
@@ -17481,27 +11804,10 @@ public class TypeChecker {
     }
 
     /**
-     * A "swap"-tagged struct field's whole point is to be touched only
-     * through its own "match @lock" statement -- reading or writing it
-     * directly, unmediated, bypasses the acquire/release mechanism
-     * entirely and can silently corrupt the mutex (confirmed directly
-     * by a real, deliberate compile test: before this restriction
-     * existed, a swap-tagged field could be read/written freely, both
-     * from inside a "match @lock" case body and from completely
-     * ordinary code outside any "match @lock" at all). Both reads and
-     * writes are restricted alike -- an unsynchronized read of the
-     * field is exactly as racy/meaningless as a write, outside the
-     * atomic swap itself. `unsafe` is the same universal escape hatch
-     * every other proof-based restriction in this language already
-     * has; the statement's own synthesized acquire/release access
-     * (Token.isCompilerSynthesizedSwapAccess) is the one, narrow
-     * exemption, the identical shape
-     * Token.isCompilerSynthesizedLockCall already established for
-     * "lock EXPR{...}"'s own synthesized lock()/unlock() calls.
-     * Struct-literal construction (checkInstantiate) is a completely
-     * separate code path from checkDot and is unaffected -- building a
-     * fresh mutex needs no 'unsafe' at all, matching every existing
-     * swap-field fixture.
+     * A "swap"-tagged field may only be touched through its own `match @lock` (reads and writes alike,
+     * unsynchronised access can corrupt the mutex). Exempt: 'unsafe atomic', and the compiler's own
+     * acquire/release access (Token.isCompilerSynthesizedSwapAccess). Struct-literal construction is a
+     * separate path and needs no unsafe.
      */
     private void requireSwapFieldAccessAuthorized(StructInfo structInfo, String memberName, Scope scope, Token op) {
         if (!memberName.equals(structInfo.swapFieldName)) {
@@ -17520,6 +11826,11 @@ public class TypeChecker {
     /** The operand of the `throw` being checked (a bare catch parameter there is a re-throw, not a use of the message). */
     private Token rethrowOperand = null;
 
+    /**
+     * '.' means either EnumName.Variant (left is a bare name that is not a declared variable but is an
+     * enum) or instance.member (left resolved as an expression; chains work as '.' is left-associative).
+     * A declared local shadows an enum of the same name.
+     */
     private TypeInfo checkDot(Token op, Scope scope, FuncInfo func) {
         boolean leftIsBareName = op.left.type == TokenType.VARREF;
         boolean leftIsDeclaredVar = leftIsBareName && scope.lookup(op.left.text) != null;
@@ -17538,15 +11849,8 @@ public class TypeChecker {
             return new TypeInfo("auto", "imut", "u64[" + (TraceConfig.depth + 1) + "]");
         }
 
-        // "only in a match statement a Struct.enum may be used in place
-        // of a literal struct name for instanceof, or a Interface.enum
-        // for an implements," confirmed directly -- reached only when
-        // "X.enum" is used *outside* that one legal position (a bare
-        // expression, an argument, anything else): checkCaseMatch's own
-        // isEnumForMatchCondition detects and fully handles the legal
-        // shape before generic resolveExprType/checkDot dispatch ever
-        // sees it, so anything reaching here is, by construction, an
-        // illegal use.
+        // "X.enum" is only legal as a match condition (handled before dispatch in checkCaseMatch);
+        // anything reaching here is an illegal use.
         if (leftIsBareName && !leftIsDeclaredVar && op.right.type == TokenType.VARREF
                 && op.right.text.equals("enum") && (structs.containsKey(op.left.text)
                         || interfaces.containsKey(op.left.text))) {
@@ -17570,16 +11874,7 @@ public class TypeChecker {
                         "enum '" + enumName + "' has no variant named '" + variantName + "'");
             }
             if (enumInfo.isRangeValued()) {
-                // "Instances of its variants are ranges and can be
-                // treated as such," confirmed directly -- a
-                // range-valued enum's own "EnumName.Variant" resolves
-                // as a genuine, literal-bounds 'range' value, not an
-                // enum-typed one at all: "not a drop in replacement for
-                // the other type of enum (not fungible)." Both bounds
-                // are already known integers at this point (collected
-                // by collectEnum), so the ordinary literal-bound
-                // "range(start,end)" canonical shape checkRange itself
-                // already produces applies unchanged here.
+                // Range-valued enum variant: resolves to a literal-bounds range value (not enum-typed, not fungible).
                 long start = enumInfo.explicitRangeStarts.get(variantIdx);
                 long end = enumInfo.explicitRangeEnds.get(variantIdx);
                 return new TypeInfo(null, "imut", "range(" + start + "," + end + ")");
@@ -17591,13 +11886,7 @@ public class TypeChecker {
         TypeInfo leftType = resolveExprType(op.left, scope, func);
 
         if (isRangeType(leftType)) {
-            // A plain range constructed via ".." always has null storage -- checkRange
-            // never sets one. Non-null storage here can only come from
-            // an *explicit* type annotation (e.g. "raw range(0,5)" on a
-            // parameter), which genuinely is a pointer to a range value
-            // living elsewhere, the same kind of pointer a struct
-            // parameter's storage already represents -- so this check
-            // stays.
+            // A plain `..` range has null storage; non-null storage only comes from an explicit annotation (e.g. "raw range(0,5)"), which still needs the alive proof.
             if (requiresAliveProof(leftType, op.left, scope)) {
                 throw new CompilerException("type", op.left.file, op.left.line,
                         "member access on a pointer-typed range value is not permitted -- the type "
@@ -17609,11 +11898,7 @@ public class TypeChecker {
                 throw new CompilerException("type", op.right.file, op.right.line,
                         "a range only has 'start' and 'end', got '" + op.right.text + "'");
             }
-            // A computed/derived value, not a hardcoded concrete one --
-            // "indeterminate" like any other freshly-produced result
-            // (confirmed by necessity: checkForLoop's own desugared
-            // loop-variable declaration needs to coerce this to 'mut',
-            // which only an indeterminate source permits).
+            // Derived value: "indeterminate" (checkForLoop's desugared loop variable coerces it to 'mut').
             return new TypeInfo(null, "indeterminate", "u64");
         }
 
@@ -17657,16 +11942,8 @@ public class TypeChecker {
     }
 
     /**
-     * "StructName{ member= value, ... }" -- struct literal instantiation
-     * under the "one true constructor" policy: every declared member
-     * must be provided exactly once, and no member outside the struct's
-     * definition may be provided. op.right (the '{' token) arrives here
-     * with .childs already a List of LINE tokens (from TreeBuilder, via
-     * buildLines -- see TreeBuilder.resolveNestedGroups), each wrapping
-     * one fully-built "name = value" tree; a member's own name (op.left
-     * of that tree) is read directly off its token rather than through
-     * resolveExprType, same reasoning as 'as' and '.': it names a
-     * struct member, not a declared variable.
+     * "StructName{ member= value, ... }" under the one-true-constructor policy: every member exactly
+     * once, none unknown. Member names are read off the raw tokens. See docs/TypeChecker.md, "Struct literals".
      */
     private TypeInfo checkInstantiate(Token op, Scope scope, FuncInfo func) {
         if (op.left.type != TokenType.VARREF) {
@@ -17685,14 +11962,7 @@ public class TypeChecker {
                     "'" + structName + "' is not a known struct");
         }
         checkTypeNameVisibility(structName, op.left);
-        // "OTC only accessible there means nowhere else either on stack
-        // or via new," confirmed directly -- once a struct declares its
-        // own constructor(s), its bare "StructName{...}" literal (the
-        // "one true constructor" pattern this whole method implements)
-        // is only legal lexically inside one of THAT struct's own
-        // constructor bodies -- not on the stack, not as 'new's own
-        // operand, not inside a constructor of some other struct.
-        // Constructors become the sole way anyone else builds this type.
+        // A struct with its own constructors may only be built with a bare literal inside its own constructor bodies.
         if (hasConstructors(structName) && !structName.equals(insideConstructorBodyForStruct)) {
             throw new CompilerException("type", op.left.file, op.left.line,
                     "'" + structName + "' declares its own constructor(s) -- its struct-literal form ('"
@@ -17759,18 +12029,8 @@ public class TypeChecker {
         if (!missing.isEmpty()) {
             if (structInfo.lockFieldName != null && provided.size() == 1
                     && provided.contains(structInfo.lockFieldName)) {
-                // The one, narrow exception to OTC ("One True
-                // Construction") this project's locked-struct feature
-                // allows: every member *except* the lock/discriminant
-                // field may be omitted at once (never a partial
-                // subset), but only when the lock field's own given
-                // value is a direct, literal 'EnumName.Variant'
-                // reference the compiler can statically prove does NOT
-                // satisfy this struct's own lock -- "the missing data
-                // can't be read," confirmed directly, since the
-                // struct's existing lock-proof mechanism already makes
-                // every other member permanently unreadable in that
-                // case. See checkOtcLockViolation.
+                // Narrow OTC exception for lock-field structs: only the lock field given, as a provably
+                // non-satisfying literal (see checkOtcLockViolation).
                 checkOtcLockViolation(op, structInfo, structName, lockFieldValueNode);
                 op.isLockViolationConstruct = true;
             } else {
@@ -17780,35 +12040,13 @@ public class TypeChecker {
             }
         }
 
-        // "when we declare struct definitions, their members have
-        // mutability explicitly set... the struct itself, as a literal,
-        // has indeterminate mutability until it is explicitly stated,"
-        // confirmed directly -- distinct from each individual member's
-        // own declared mutability (set by the struct definition,
-        // untouched here), this is the whole literal's own top-level
-        // mutability, matching every other "freshly-constructed value"
-        // this round.
+        // A literal's top-level mutability is indeterminate until stated; member mutability comes from the definition.
         return new TypeInfo(null, "indeterminate", structName);
     }
 
     /**
-     * "each with its own OTC construction rule" -- the 'swap'-tagged
-     * flavor's own construction rule, genuinely distinct from the plain
-     * 'imut' discriminant flavor's omission-sugar rule (checkOtcLockViolation,
-     * just below): the swap field is always 'mut', so the pre-existing
-     * "the lock field's own mutability restriction is soft" check
-     * already, structurally, makes the omission sugar unavailable for
-     * it (checkOtcLockViolation's own leading 'imut' requirement).
-     * Instead, a *fully, exhaustively* provided construction gets its
-     * own, new restriction here: whenever the given value is a direct,
-     * literal 'EnumName.CLOSED' reference the compiler can statically
-     * prove, construction is rejected outright -- a fresh mutex can
-     * never be handed out already held. Exactly like
-     * checkOtcLockViolation's own literal check, a non-literal value
-     * (a variable, a call result) can't be proven either way and is
-     * simply allowed through unchecked, the same "only reject the
-     * provably-wrong literal case" idiom this project's proof-based
-     * restrictions already use throughout.
+     * Swap-flavoured construction rule: a literal 'EnumName.CLOSED' value is rejected (a fresh mutex is
+     * never handed out held); non-literal values pass unchecked. See docs/TypeChecker.md, "Struct literals".
      */
     private void checkSwapFieldNotConstructedClosed(StructInfo structInfo, String structName,
             Token swapFieldValueNode) {
@@ -17823,17 +12061,8 @@ public class TypeChecker {
     }
 
     /**
-     * True when `node` is a direct, bare "EnumName.Variant" reference
-     * naming a real variant of the enum called `enumName` -- the same
-     * literal-detection shape `checkOtcLockViolation` already
-     * established for the lock-field omission sugar, factored out here
-     * so `checkSwapFieldNotConstructedClosed` and `checkInstantiate`'s
-     * own swap-field construction exception (see its call site) share
-     * one implementation rather than two copies that could drift apart.
-     * `node` is checked directly, on the raw expression, never via its
-     * `.resolvedType` -- an arbitrary variable of the same enum type
-     * resolves identically and can't be told apart from a real literal
-     * that way.
+     * True when `node` is a raw bare "EnumName.Variant" reference to enum `enumName` (checked on the raw
+     * expression: a variable of the same type resolves identically). Shared by the swap/lock checks.
      */
     private boolean isBareEnumVariantRefNode(Token node, String enumName) {
         return node.type == TokenType.OPERATOR && node.text.equals(".")
@@ -17844,34 +12073,9 @@ public class TypeChecker {
     }
 
     /**
-     * "the righthand of the swap needs to be a variable or a literal" --
-     * confirmed directly, and confirmed directly *why*: not because this
-     * closes every possible race (it can't -- "let newVal = counter + 1;
-     * counter swap newVal" is exactly as racy as "counter swap (counter +
-     * 1)", just spread across two lines, and no syntactic shape check can
-     * see through a variable to where its value actually came from), but
-     * because it stops the *syntax itself* from misleadingly presenting a
-     * non-atomic read-and-compute as though it were bundled inside one
-     * atomic primitive. "if i know my reads and writes (which have to be
-     * swaps) are atomic, and i know my math operations arent -- then this
-     * breaking atomicity is the plain reading," confirmed directly: once
-     * any real computation is forced onto its own separate line (an
-     * ordinary 'let' with ordinary arithmetic, nothing atomic-looking
-     * about it), the person reading the code is never invited to assume
-     * "swap" absorbed that computation atomically along with the write.
-     *
-     * A "literal" here means: an ordinary literal token (a number,
-     * string, char, bool, or 'null'), a negative-number literal (unary
-     * '-' directly wrapping one), or a bare "EnumName.Variant" reference
-     * (already handled separately by `isBareEnumVariantRefNode`, called
-     * by this method's own caller) -- every one of these has zero runtime
-     * provenance, so none of them can ever be "stale." A bare variable
-     * reference is allowed too (its value might still be derived from a
-     * stale read, but that's the caller's own responsibility to reason
-     * about, made visible rather than hidden -- see the doc comment
-     * above); anything else (a call, a binary/comparison operator, a
-     * member-access chain that isn't the one whitelisted enum-variant
-     * shape, etc.) is rejected outright.
+     * Allowed right-hand shapes of a swap: a literal (number, string, char, bool, null, negative number),
+     * a bare enum variant, or a bare variable. Computation must sit on its own line so the syntax never
+     * suggests a non-atomic read-compute is part of the atomic write. See docs/TypeChecker.md, "Swap and atomic".
      */
     private boolean isSwapRhsAllowedShape(Token node) {
         switch (node.type) {
@@ -17894,17 +12098,8 @@ public class TypeChecker {
     }
 
     /**
-     * Validates the one, narrow OTC ("One True Construction") violation
-     * this project's locked-struct feature allows -- "the only time
-     * there can be a violation of the OTC, and it can only be done on
-     * locked structs, and what must be provided is the struct's lock
-     * variable with a value that does not match the lock," confirmed
-     * directly. Called only once `checkInstantiate` has already
-     * confirmed the literal provides *exactly* the lock field and
-     * nothing else (the "all-or-nothing" omission rule itself, so
-     * nothing further needs checking about *which* fields were
-     * omitted -- there's only one possible shape left to validate: the
-     * lock field's own given value).
+     * Validates the lock-struct OTC exception (only the lock field provided, with a value that does not
+     * satisfy the lock). See docs/TypeChecker.md, "Struct literals".
      */
     private void checkOtcLockViolation(Token op, StructInfo structInfo, String structName,
             Token lockFieldValueNode) {
@@ -17915,18 +12110,7 @@ public class TypeChecker {
                             + "'" + structInfo.lockFieldName + "' must be declared 'imut' for this "
                             + "to be provably safe (it's declared 'mut' here)");
         }
-        // The lock field's own value must be a direct, bare
-        // "EnumName.Variant" reference -- never a variable or a call
-        // result -- so the compiler can statically prove the mismatch
-        // itself, rather than trusting a runtime value it can't see.
-        // This is the exact same shape checkDot's own
-        // "enums.containsKey(op.left.text)" branch recognizes for an
-        // ordinary "EnumName.Variant" expression, checked here by hand
-        // instead of relying on that dispatch having already run (an
-        // arbitrary variable reference resolves to the identical enum
-        // type through ordinary type-checking, so type-compatibility
-        // alone can never tell the two apart -- only inspecting the
-        // raw expression shape itself can).
+        // The value must be a raw bare "EnumName.Variant" so the mismatch is provable statically.
         boolean isBareEnumVariantRef = lockFieldValueNode.type == TokenType.OPERATOR
                 && lockFieldValueNode.text.equals(".")
                 && lockFieldValueNode.left != null && lockFieldValueNode.left.type == TokenType.VARREF
@@ -17957,111 +12141,13 @@ public class TypeChecker {
     }
 
     /**
-     * "owns x" / "ref x" / "auto x" / "raw x" / "static x" (also the
-     * parenthesized form "auto(x)", which RpnConverter reduces to the
-     * exact same shape) -- constructs a pointer to x with the given
-     * storage. Confirmed directly: there are 5 storage modifiers
-     * (owns/ref/auto/raw/static), and construction validity depends on
-     * where the operand actually lives:
-     *   - owns/ref (heap pointers): this language has no heap-allocation
-     *     mechanism of any kind yet, so nothing is ever heap-resident --
-     *     constructing one of these is always a hard error for now, not
-     *     a gap silently left open.
-     *   - static (a pointer into static memory): the only thing that's
-     *     ever static-resident right now is a string/char literal
-     *     itself (there's no other way to place data in static memory),
-     *     so this is only valid applied directly to one.
-     *   - auto (a stack pointer): requires an addressable lvalue -- a
-     *     plain variable, or a dot-chain rooted in one (e.g.
-     *     "auto point.x") -- not a literal or a freshly-computed value,
-     *     matching the usual rule that you can't take the address of a
-     *     temporary (same reason C won't let you write &5 or &(a+b)).
-     *   - raw: no restriction at all ("a pointer with nothing else
-     *     going on, no guarantees"), valid on anything.
-     */
-    /**
-     * "new Point{x:32,y:64}" -- constructs a fresh value (the operand,
-     * type-checked completely normally via the ordinary resolveExprType
-     * dispatch -- a struct literal's full field-exhaustiveness, an array
-     * literal's element-type uniformity, etc. all still apply exactly as
-     * they already do) and immediately homes it on the heap, resolving
-     * to "owns some TypeName" (see UPDATE below -- it used to be plain
-     * "owns TypeName"). Mutability is the operand's own resolved
-     * mutability, not a hardcoded value: a bare, unwrapped literal/
-     * struct-literal/array-literal is `indeterminate`, same as it would
-     * be anywhere else in the language, and still requires an explicit
-     * `mut`/`imut` wrapper (`new mut Point{...}`) before it can be bound
-     * to a `let`, exactly like any other indeterminate value.
-     * "I need to be able to 'new' anything, any type" (struct literals,
-     * primitive literals, enum variants, and array literals all count)
-     * -- but explicitly *not* a bare reference to an already-existing
-     * value: 'new' allocates a fresh value, it doesn't duplicate one
-     * that's already sitting somewhere, so a plain variable reference
-     * (or a struct-member-access chain on one) is rejected, while an
-     * enum-variant reference (structurally identical to a member-access
-     * chain, but on a *type* name rather than a variable) is fine.
-     *
-     * UPDATE (throwing 'new', "owns T" -> "owns some T"): "it does
-     * exactly what it does now, but if it gets back NULL from the
-     * malloc, it throws, and therefore needs try/catch... this now
-     * changes the result of new from owns T to owns some T," confirmed
-     * directly. Originally scoped to only this plain `new T{...}` form,
-     * with `dyn([...])`'s/`resize(...)`'s own owns-(re)allocating paths
-     * left untouched -- since broadened to cover both of those too (see
-     * `checkDynBuiltinCore`/`checkResizeBuiltin`'s own doc comments):
-     * "new throws, but dyn and resize dont, they need to use the same
-     * pattern as new," confirmed directly. This method itself is
-     * unchanged by that broadening -- only `insideThrowingNewContext`'s
-     * rename to `insideThrowingAllocContext` (see that field's own doc
-     * comment) touches it at all.
-     *
-     * 'new' is now unconditionally throw-capable (never conditionally,
-     * the way a callee's own `@throws` decorator makes a CALL only
-     * *sometimes* need wrapping) -- so unlike `requireThrowsWrapping`
-     * (which checks both directions: must-wrap when throws, must-NOT-
-     * wrap when it doesn't), only the "must be wrapped" direction ever
-     * applies here; there's no "wrapped a 'new' in a pointless try"
-     * error, since every 'new' can always throw. Coverage is read off
-     * `insideThrowingAllocContext`, not `op.insideTry` -- a per-token
-     * flag (as `requireThrowsWrapping` still uses for a wrapped CALL
-     * node) can only ever mark the one, outermost node 'try' directly
-     * wraps, but a 'new' nested inside another 'new's own struct-
-     * literal field value (e.g. "new String{chars= new DynamicArray{
-     * ...}}") can never be given its own, separate 'try'/'catch' --
-     * this grammar's 'try'/'catch' always consumes a whole line (see
-     * tryNodeOf's own doc comment), so there is no syntax to wrap just
-     * the inner 'new' on its own. `checkTry` sets
-     * `insideThrowingAllocContext` for the whole recursive descent it
-     * triggers when the node it wraps is 'new'-shaped (or a safe
-     * `dyn`/`resize` call -- see that field's own doc comment), so a
-     * nested 'new' reached that way is covered too.
-     *
-     * `usesThrow` is flipped unconditionally the moment any 'new' is
-     * checked, mirroring the exact precedent `usesOwnsRefDynNew` just
-     * above already sets for 'new' -- "a real, compiler-introduced
-     * need, not just literal syntax": a 'new' expression needs the
-     * exact same gt_routine_address/gt_error_message reserved-slot
-     * machinery a literal 'throw' does (see `emitGtRoutineAlloc`), even
-     * in a program that never writes the word `throw` itself. Note this
-     * does NOT require the *containing function* to be decorated
-     * `@throws` -- a bare `try new T{...} catch(e){ return }` never
-     * escapes its own immediate catch, so nothing propagates further
-     * unless that catch body itself contains a real `throw e`, which
-     * `checkThrow` already requires `@throws` for, completely
-     * independently of 'new'.
-     *
-     * Unlike a throwing CALL's own call site, no `op.destructOnExit` is
-     * computed here -- a throwing CALL's destruct list matters because
-     * its own throw genuinely crosses a function-call boundary and, in
-     * the no-local-catch case, needs to know what's alive in *this*
-     * frame right before it (possibly) unwinds out of it entirely.
-     * 'new' never crosses any such boundary: `op.insideTry` is required
-     * unconditionally (just above), so its own catch is always local,
-     * in this exact same frame, which is never torn down -- there's
-     * nothing to destruct at the null-check site itself; whatever's
-     * already alive stays exactly as it was, destructed normally
-     * whenever this function's own body naturally reaches that point
-     * later, same as if 'new' had simply succeeded.
+     * "new T{..}" homes a fresh value on the heap and yields `owns some T` (mutability is the operand's own;
+     * a bare literal is `indeterminate`, so `new mut ..` is needed for a let). The operand must construct a
+     * value, not name an existing one. 'new' always throws on allocation failure, so it must be covered by
+     * `insideThrowingAllocContext` (set by checkTry for the whole descent, since a nested 'new' cannot get
+     * its own try); the containing function needs no `@throws` unless the catch re-throws. No
+     * destructOnExit is computed: the catch is always local to this frame.
+     * See docs/TypeChecker.md, "Storage constructors and new".
      */
     private TypeInfo checkNew(Token op, Scope scope, FuncInfo func) {
         TypeInfo result;
@@ -18089,22 +12175,8 @@ public class TypeChecker {
                     "'new' can fail (it throws when the underlying allocation fails) and must be "
                             + "wrapped in 'try ... catch { ... }'");
         }
-        // "new MyClass(...)" -- a struct-RVO call (a constructor, or any
-        // other plain struct-by-value-returning function) is a fourth
-        // legal RVO destination position, alongside a 'let' RHS, a
-        // bare-variable assignment RHS, and a 'return' forwarding its own
-        // $ret_dest -- 'new' provides its own real, stable destination
-        // (heap memory it's about to malloc), so the call can write
-        // directly into it exactly the same way. See BytecodeEmitter.
-        // emitNew's own doc comment for how the destination is actually
-        // supplied (a hidden stack temp constructed first, then copied
-        // into the malloc'd space by the existing, unmodified NEW/
-        // GT_REGISTER sequence -- "it already operates on a struct on
-        // the stack," confirmed directly, so no new bytecode mnemonic is
-        // needed here at all, unlike the STACK_LOCK generalization ruled
-        // out elsewhere in this file: the destination this call writes
-        // into is a real, named, whole-function-ALLOC'd slot the whole
-        // way through, never an anonymous mid-expression reservation).
+        // A struct-RVO call (constructor or struct-returning function) may be the operand: 'new' supplies a
+        // stable destination (a hidden stack temp copied by the existing NEW/GT_REGISTER sequence).
         boolean previousRvoEligible = insideStructRvoDestinationPosition;
         insideStructRvoDestinationPosition = true;
         if (op.left.type == TokenType.OPERATOR && op.left.text.equals("CALL")) {
@@ -18119,23 +12191,13 @@ public class TypeChecker {
         return new TypeInfo("owns", operandType.mutability, operandType.baseType).withSome(true);
     }
 
-    /** Every base type this compiler can actually back with a real atomic CPU instruction -- "integers + bool + char," confirmed directly. */
+    /** Base types backed by a real atomic CPU instruction: integers, bool, char. */
     private static final Set<String> ATOMIC_ELIGIBLE_BASE_TYPES = new HashSet<>(Arrays.asList(
             "u8", "u16", "u32", "u64", "s8", "s16", "s32", "s64", "bool", "char"));
 
     /**
-     * "let myAtomicChar= atomic '!';" -- a prefix operator tagging an
-     * ordinary scalar value's type as atomic (TypeInfo.isAtomic),
-     * modeled directly on checkNew just above: the operand's own
-     * resolved mutability is preserved unchanged (an operand with no
-     * existing binding is typically 'indeterminate', so an explicit
-     * outer 'mut'/'imut' wrap is still required before this can be
-     * bound to a 'let' -- "still needs an explicit 'mut'/'imut'
-     * wrapper," confirmed directly). Restricted to a base type a real
-     * atomic CPU instruction can actually back ("Integers + bool +
-     * char," confirmed directly) and to a plain, no-storage value --
-     * there is no such thing as an atomic pointer here, only an atomic
-     * scalar.
+     * "atomic x": tags a plain scalar's type as atomic (TypeInfo.isAtomic). Mutability is preserved
+     * (still needs an explicit mut/imut wrap to bind); only integer/bool/char, no storage.
      */
     private TypeInfo checkAtomicWrapper(Token op, Scope scope, FuncInfo func) {
         TypeInfo operandType = resolveExprType(op.left, scope, func);
@@ -18152,28 +12214,13 @@ public class TypeChecker {
     }
 
     /**
-     * "myAtomicChar swap '\0'" -- an atomic read-modify-write: reads
-     * the left (atomic) operand's current value, atomically stores the
-     * right operand as its new value, and resolves to whatever value
-     * was there a moment ago -- "which is effectively like: let
-     * myAtomicChar2 = myAtomicChar; myAtomicChar='\0'; but its
-     * atomic," confirmed directly. Unlike an ordinary atomic read/
-     * write (which needs no new bytecode instruction at all -- the
-     * type data already travels in the instruction's own type
-     * operand, confirmed directly), this genuinely is a new,
-     * dedicated operation (ATOMIC_SWAP) -- a true read-modify-write
-     * can't be safely decomposed into an ordinary PUSH-then-ASSIGN
-     * pair while remaining atomic.
+     * "a swap b": atomic read-modify-write, yields the previous value (dedicated ATOMIC_SWAP, it cannot
+     * be decomposed into PUSH + ASSIGN atomically).
      */
     private TypeInfo checkSwapOperator(Token op, Scope scope, FuncInfo func) {
         rejectDerefAsWriteTarget(op.left, "'swap'");
-        // A bare reference (an atomic global/static, the ordinary case)
-        // or a '.'-member-access chain (a 'swap'-tagged atomic struct
-        // field, e.g. "receiver.field swap CLOSED_variant" -- needed by
-        // `checkLockMatchStatement`'s own synthesized acquire attempt,
-        // and available to ordinary hand-written code too) -- never
-        // anything else, since neither an atomic global/static nor a
-        // struct field is ever reached any other way.
+        // Left: a bare reference (atomic global/static) or a '.' chain (a 'swap'-tagged struct field, used
+        // by checkLockMatchStatement's synthesized acquire).
         boolean isBareOrFieldChain = op.left.type == TokenType.VARREF
                 || (op.left.type == TokenType.OPERATOR && op.left.text.equals("."));
         if (!isBareOrFieldChain) {
@@ -18191,23 +12238,11 @@ public class TypeChecker {
                     "the left operand of 'swap' must be concretely 'mut' -- an 'imut' atomic can never "
                             + "be swapped");
         }
-        // A bare "EnumName.Variant" literal is always 'imut', unconditionally
-        // -- this language's own mutability lattice never lets that coerce
-        // to a concretely-'mut' atomic slot via the ordinary typesCompatible
-        // check, even though the value itself is perfectly well-typed and
-        // known at compile time. The identical exception
-        // `checkInstantiate`'s own swap-field construction case makes, for
-        // the identical reason -- reusing `isBareEnumVariantRefNode` rather
-        // than a second copy of the same literal-detection shape.
+        // A bare EnumName.Variant is always 'imut' and would not coerce to a 'mut' atomic slot via
+        // typesCompatible; same exception as checkInstantiate's swap-field case.
         boolean isBareEnumVariantRight = enums.containsKey(leftType.baseType)
                 && isBareEnumVariantRefNode(op.right, leftType.baseType);
-        // "the righthand of the swap needs to be a variable or a literal" --
-        // see `isSwapRhsAllowedShape`'s own doc comment for the full
-        // reasoning (this is a syntax-honesty rule, not a soundness
-        // guarantee). Checked ahead of `resolveExprType` below since an
-        // arbitrary rejected expression (a call, say) might otherwise
-        // still need its own type-checking machinery run over it for no
-        // reason -- reject the shape first, on the raw parse tree alone.
+        // Syntax-honesty rule (see isSwapRhsAllowedShape); checked on the raw tree before type resolution.
         if (!isBareEnumVariantRight && !isSwapRhsAllowedShape(op.right)) {
             throw new CompilerException("type", op.right.file, op.right.line,
                     "the right operand of 'swap' must be a bare variable, a literal, or an 'EnumName.Variant' "
@@ -18223,28 +12258,13 @@ public class TypeChecker {
                             + "type ('" + leftType.canonical() + "'), but found '" + rightType.canonical() + "'");
         }
         invalidateMatchPatternsForWrite(op.left, scope);
-        // A fresh, plain (never atomic) snapshot of whatever the atomic
-        // held a moment ago -- "indeterminate," the same default every
-        // other freshly-computed result already has (arithmetic,
-        // comparisons, struct/array literals), needing its own explicit
-        // 'mut'/'imut' wrap before it can be bound to a 'let', exactly
-        // like any other computed value.
+        // A plain (never atomic) snapshot of the old value, "indeterminate" like any computed result.
         return new TypeInfo(null, "indeterminate", leftType.baseType);
     }
 
     /**
-     * "let foo_result = await foo();" -- confirmed directly. `await`
-     * blocks until the wrapped call finishes and yields the result
-     * directly (the callee's own return type), no handle involved at
-     * all -- unlike `par` (still to come), which needs a real handle
-     * type to let the caller check readiness/retrieve the result
-     * later. `op.left` must be a direct "CALL" node (the parse-level
-     * shape "await FUNC(args)" always produces) -- marked with
-     * `asyncCallKind = "AWAIT"` *before* delegating to the ordinary
-     * `resolveExprType`/`checkCall` dispatch, so `checkCall` itself
-     * enforces the actual "@async" requirement (both directions) in
-     * one single, shared place, rather than duplicating that check
-     * here and in `checkPar` separately.
+     * "await f(args)": blocks and yields the callee's own return type (no handle). The CALL is marked
+     * `asyncCallKind = "AWAIT"` before dispatch so checkCall enforces the @async requirement in one place.
      */
     private TypeInfo checkAwait(Token op, Scope scope, FuncInfo func) {
         TypeInfo result;
@@ -18272,49 +12292,13 @@ public class TypeChecker {
     }
 
     /**
-     * Shared by checkAwait/checkPar, run once `op.left` (the wrapped
-     * CALL) has already been fully resolved by the ordinary checkCall
-     * dispatch (so `op.left.resolvedCallTarget` names the real
-     * "@async" function's own mangled name): resolves that function's
-     * own FuncInfo (top-level only -- see findTopLevelAsyncFuncInfo's
-     * own doc comment for why), obtains/creates the handle type this
-     * call site needs (the real, exposed one for a non-void return, or
-     * the internal, never-exposed one for a void return -- either way
-     * a real struct, needed by BytecodeEmitter's own emitAsyncCall
-     * regardless of whether "par"/"await" end up exposing it), records
-     * its name/canonical text directly on the CALL token for
-     * BytecodeEmitter to read, and synthesizes this function's own
-     * trampoline (memoized -- a second "par"/"await" call site against
-     * the same "@async" function reuses the same trampoline).
+     * Shared by checkAwait/checkPar after the CALL is resolved: finds the top-level @async FuncInfo,
+     * obtains the handle type (exposed for non-void, internal for void), records its names on the CALL
+     * token for BytecodeEmitter.emitAsyncCall, and synthesizes the (memoized) trampoline.
      */
     private TypeInfo prepareAsyncCallSite(Token callTok, TypeInfo calleeReturnType) {
-        // "par"/"await" desugars to real "NEW"/"GT_REGISTER"/"GT_DESTRUCT"
-        // bytecode (see BytecodeEmitter.emitAsyncCall) even though a
-        // program using only "par"/"await" -- never writing a literal
-        // "owns"/"ref"/"new"/"dyn" anywhere in its own source -- would
-        // otherwise never set `usesOwnsRefDynNew`, a real, confirmed gap
-        // found the hard way: `GT_INIT` (gated on that exact flag, see
-        // `emitFuncUnderName`'s own "the whole-program trigger `GT_INIT`
-        // itself already uses" precedent) would then never run at all,
-        // leaving the ghost table's own "capacity"/"base" globals at
-        // their raw zero-initialized `GLOBAL` values forever -- a
-        // genuinely different failure from "gt_alive_check always reads
-        // not-alive" (this project's very first ghost-table bug): here,
-        // `gt_register`'s own growth arithmetic ("capacity * 2") starting
-        // from a real zero capacity stays zero forever, so every
-        // registration after the first silently writes through a
-        // never-actually-grown, still-effectively-zero-byte allocation --
-        // confirmed directly via instrumented stdlib output showing
-        // "cap=0" on every entry and "growing to 0" on every registration,
-        // eventually corrupting the heap once two or more handles are
-        // constructed and destructed in the same program (a single
-        // register+destruct cycle happens to not crash purely by luck of
-        // what memory a size-0 `realloc` happens to return). Fixed by
-        // setting the flag directly, right here, the moment any real
-        // "par"/"await" call site needs the ghost table at all -- the
-        // same "a real, compiler-introduced need, not just literal
-        // syntax" spirit `checkThrow`'s own `usesThrow` trigger already
-        // has for the same `emitGtRoutineBody` gate.
+        // par/await need the ghost table even if the program never writes owns/ref/new/dyn: without this
+        // flag GT_INIT never runs and gt_register grows from capacity 0 forever (heap corruption).
         usesOwnsRefDynNew = true;
         FuncInfo asyncFuncInfo = findTopLevelAsyncFuncInfo(callTok);
         TypeInfo paramType = asyncFuncInfo.paramTypes.isEmpty() ? null : asyncFuncInfo.paramTypes.get(0);
@@ -18323,22 +12307,8 @@ public class TypeChecker {
                 "PAR".equals(callTok.asyncCallKind));
         callTok.asyncHandleStructName = handleType.baseType;
         callTok.asyncHandleCanonicalType = handleType.canonical();
-        // A void "@async" function's hidden handle is never exposed to
-        // any caller when reached via "par" (checkPar makes the whole
-        // expression "void" in that case, not the handle) -- so nothing
-        // a caller could ever GT_DESTRUCT it through exists, yet the
-        // caller can't safely destruct it itself either (the real OS
-        // thread the trampoline is running on may still be reading
-        // "handle.value" well after this non-blocking "par_call" already
-        // returned). Only this one shape -- hidden AND reached via "par"
-        // -- needs its own distinct, self-destructing trampoline (see
-        // BytecodeEmitter.emitAsyncCall's own doc comment on this same
-        // problem, and synthesizeAsyncTrampoline's own doc comment on
-        // the mechanism). A void "@async" function reached via "await"
-        // keeps sharing the ordinary, non-self-destructing trampoline --
-        // "await_call" already blocks (pthread_join) before returning,
-        // so the caller-side GT_DESTRUCT BytecodeEmitter emits right
-        // after it returns is always safe, void or not.
+        // A hidden (void) handle reached via par is never visible to the caller and its thread may still read
+        // it, so it needs a self-destructing trampoline; void via await shares the ordinary one (it joins first).
         boolean selfDestructHidden = isVoid && "PAR".equals(callTok.asyncCallKind);
         boolean lockedHandle = !isVoid && "PAR".equals(callTok.asyncCallKind);
         String trampolineName = "__trampoline_" + asyncFuncInfo.mangledName
@@ -18353,19 +12323,8 @@ public class TypeChecker {
     }
 
     /**
-     * "par"/"await" desugaring needs the real function's own FuncInfo
-     * (its paramTypes, to size the handle's own "value" field and to
-     * decide whether the trampoline unpacks an argument at all) -- but
-     * `op.left.resolvedCallTarget` is only ever a bare mangled-name
-     * string. Scoped to plain top-level functions only (the `functions`
-     * map, never an impl method) -- "@async" on a method isn't
-     * supported by this round's desugaring at all: taking a bare
-     * function-pointer *value* of a method (needed to pass the
-     * trampoline's own address into "@par_call"/"@await_call") has no
-     * existing mechanism in this language the way a plain top-level
-     * function's bare-name reference already does (see resolveExprType's
-     * own "let foo_ptr = foo" VARREF case) -- a real, narrower,
-     * documented limitation, not silently mishandled.
+     * Finds the FuncInfo of the resolved @async call target (plain top-level functions only: there is no
+     * way to take a method's function-pointer value for "@par_call"/"@await_call").
      */
     private FuncInfo findTopLevelAsyncFuncInfo(Token callTok) {
         for (List<FuncInfo> overloads : functions.values()) {
@@ -18380,21 +12339,12 @@ public class TypeChecker {
                         + "supported yet -- only a plain top-level '@async' function can be used here");
     }
 
-    /** Memoization guard for ensureAsyncStateEnum -- synthesized at most once per compilation, lazily, the first time any "par" expression on a non-void '@async' function is actually type-checked. */
+    /** Memoization guard for ensureAsyncStateEnum. */
     private boolean asyncStateEnumEnsured;
 
     /**
-     * "match foo_handle.state{ READY:{...} default:{...} }" -- confirmed
-     * directly, later settled on "pending"/"running" (a natural,
-     * complete PENDING -> RUNNING -> READY lifecycle) as the exact
-     * variant names. Synthesized once, lazily, entirely as real
-     * TypeChecker/BytecodeEmitter data (an EnumInfo plus a root-level
-     * "enum" Token appended to `rootLinesRef` -- see that field's own
-     * comment for why this is visible to BytecodeEmitter at all)
-     * rather than written as real Caspien source anywhere, since it
-     * needs to be available unconditionally, without any explicit
-     * import, the same way `Some`/other core language machinery
-     * already is.
+     * Synthesizes the `AsyncState` enum (PENDING, RUNNING, READY) once, lazily, as EnumInfo plus a root
+     * token appended to `rootLinesRef`, so it is available without any import.
      */
     private void ensureAsyncStateEnum() {
         if (asyncStateEnumEnsured) {
@@ -18405,11 +12355,7 @@ public class TypeChecker {
         info.variants.add("PENDING");
         info.variants.add("RUNNING");
         info.variants.add("READY");
-        // "match foo_handle.state{ READY:{...} default:{...} }," confirmed
-        // directly -- the user's own example uses 'default' as a
-        // catch-all for the other two states, which requires
-        // '@non_exhaustive' (an ordinary enum's own match must cover
-        // every variant by name instead).
+        // Non-exhaustive so `match h.state{ READY:{..} default:{..} }` works.
         info.isNonExhaustive = true;
         enums.put("AsyncState", info);
         Token nameTok = new Token(TokenType.VARREF, "AsyncState", 0, "<synthesized>");
@@ -18435,7 +12381,7 @@ public class TypeChecker {
         appendSynthesizedEnumRootToken("AsyncGate");
     }
 
-    /** Wraps `t` in a LINE token (the shape every entry in `rootLinesRef` already has -- `emit()`'s own root walk reads `lineTok.childs.get(0)`) and appends it to the live root-list object BytecodeEmitter will later walk. */
+    /** Wraps `t` in a LINE token and appends it to the live root list BytecodeEmitter walks later. */
     private void appendSynthesizedRootToken(Token t) {
         Token lineTok = new Token(TokenType.LINE, "line", t.line, t.file);
         lineTok.childs = new ArrayList<>();
@@ -18444,14 +12390,9 @@ public class TypeChecker {
     }
 
     /**
-     * Generates the compiler-owned `Class` enum: one u64 variant per
-     * non-@untyped struct in the compilation unit, in declaration order,
-     * numbered 0..n-1. A struct's value is its hidden `___type` class id
-     * (offset 0 of every instance), which interface dispatch and
-     * `x instanceof Struct` compare against. Called once, at the end of
-     * `collectDeclarations`. Built directly as `EnumInfo`/root-token data
-     * (the `ensureAsyncStateEnum` precedent). With no eligible struct, no
-     * enum is generated. `Class` is reserved.
+     * Generates the compiler-owned `Class` enum: one u64 variant per non-@untyped struct, in declaration
+     * order (0..n-1) = the hidden `___type` id used by interface dispatch and `instanceof`. Called at the
+     * end of `collectDeclarations`; no eligible struct = no enum; `Class` is reserved.
      */
     private void generateClassHierarchyEnums() {
         if (enums.containsKey("Class") || structs.containsKey("Class") || interfaces.containsKey("Class")) {
@@ -18489,19 +12430,9 @@ public class TypeChecker {
     }
 
     /**
-     * A compiler-generated enum, never written by the user, for each
-     * interface: enum for MyInterface{ StructWhichImplementsA,
-     * StructWhichImplementsB }, one member per implementing struct.
-     * (Struct inheritance has been removed, so there is no struct-side
-     * form.) Every such enum is u64-valued (each member's own value is
-     * that concrete struct's own `Class` id) and lives under a synthetic,
-     * never-user-nameable key (`"$enum_for_" + ownerName`, the same
-     * `$`-prefixed "never real source" convention `$range`/
-     * `$for_range_N` already established) -- reached only through the
-     * dedicated "OwnerName.enum" syntax (see `checkDot`'s own rejection
-     * of it as an ordinary expression, and `checkMatchCondition`'s
-     * dedicated enum-style-match handling, the only place it's
-     * actually legal).
+     * For each interface, a compiler-generated u64 enum of its implementing structs (values = their
+     * `Class` ids), stored under the never-user-nameable key "$enum_for_<Interface>" and reached only
+     * via the "Owner.enum" syntax (legal only in a match condition; see checkDot/checkMatchCondition).
      */
     private void generateEnumForEnums() {
         for (String interfaceName : interfaces.keySet()) {
@@ -18541,90 +12472,15 @@ public class TypeChecker {
     }
 
     /**
-     * Synthesizes one real, compiler-generated dispatcher function per
-     * (interface, method) pair -- the piece that finally lets
-     * `c.foo(args)` compile when `c`'s own static type is only known
-     * as the bare interface, not a concrete struct. See CLAUDE.md,
-     * "Known gaps: interface method dispatch" for the full design.
-     * Built entirely as hand-constructed, already-tree-shaped Token
-     * nodes (the exact same technique `getOrCreateAsyncHandleType`
-     * already established for its own synthesized "resolve()" method --
-     * nothing here hand-computes a resolvedType anywhere; the ordinary,
-     * already-trusted `checkFunctionBody`/`BytecodeEmitter` machinery
-     * does the real work, exactly as it would for a body written by
-     * hand), never by re-lexing/re-parsing generated source text --
-     * lower-risk, since every node shape here is copied directly from
-     * a real, already-parsed construct elsewhere in this same file
-     * (the "instanceof" probe `checkEnumForMatch` already builds, the
-     * case-match shape `Parser.gatherMatchCases` produces, and
-     * `getOrCreateAsyncHandleType`'s own synthesized-body precedent).
-     *
-     * Each dispatcher's own body is exactly:
-     *   func __iface_dispatch__I__m(p0: T0', p1: T1', ...) R'{
-     *       match Some(p_self){
-     *           match p_self implements I.enum{
-     *               Impl1:{ [return] p_self.m(p0, p1, ...) }
-     *               Impl2:{ [return] p_self.m(p0, p1, ...) }
-     *               ...
-     *           }
-     *       }
-     *       [return <default literal>]   // only when R' isn't void
-     *   }
-     * where every T_i'/R' is the interface's own declared type with
-     * 'self' substituted for the interface's own name (not any
-     * concrete struct -- the dispatcher's own receiver parameter is
-     * genuinely interface-typed), and p_self is whichever parameter's
-     * own declared type was literally 'self' in the interface's
-     * original declaration -- "just reuse whichever parameter position
-     * already carries the receiver, rather than inventing an extra
-     * one" (this also means a caller must pass 'c' explicitly, e.g.
-     * "c.foo(c)", the same explicit-self convention every method call
-     * in this language already requires -- see 'd.pushBack(d, ...)' in
-     * the stdlib -- so checkMethodCall's existing arg-matching logic
-     * needs zero special-casing to route to this dispatcher).
-     *
-     * Deliberately skipped, not attempted, for any interface method
-     * with no 'self'-typed parameter anywhere in its own declared
-     * signature (e.g. '@guard's receiver-only "lock() imut void;" --
-     * a real, narrower, structural limitation, not an oversight: with
-     * no self-typed parameter, there is no value anywhere in the
-     * dispatcher's own signature that identifies which concrete
-     * implementer to branch on at all). Also skipped whenever a
-     * trivial default return value can't be synthesized for a non-void
-     * return type (a 'some'-tagged pointer return, or any return type
-     * outside {void, pointer-like, bool, integer, f32}) -- the
-     * fallback line after the exhaustive (but not proven-exhaustive-
-     * for-return-path-analysis, see the resolved proof-relaxation gap
-     * above) 'match Some(...)' needs *some* literal to return, even
-     * though it's genuinely unreachable at runtime. Either skip leaves
-     * `checkMethodCall`'s own dispatcher lookup empty for that specific
-     * method, which then reports a clear, specific error rather than
-     * silently mis-dispatching.
+     * Synthesizes one dispatcher function per (interface, method) so `c.foo(c, ..)` compiles when `c` is
+     * only known by its interface: a `match Some(p_self){ match p_self implements I.enum{ Impl:{ [return]
+     * p_self.m(..) } .. } }` body built directly as Token nodes, plus a trailing default-literal return
+     * for non-void. Skipped (clear error at the call) for methods with no `self`-typed parameter or with
+     * no synthesizable default return. See docs/TypeChecker.md, "Compiler-generated enums and interface dispatchers".
      */
     private void generateInterfaceDispatchers() {
-        // Every generated dispatcher body needs 'match Some(recv){...}'
-        // to satisfy the ordinary pointer alive-proof gate before it
-        // can legally do 'recv implements C.enum{...}' at all (see
-        // checkInstanceof/checkImplementsOperator's own
-        // requiresAliveProof gate) -- and 'match Some(...)' always
-        // lowers to a real GT_ALIVE_CHECK instruction, regardless of
-        // the proven value's own storage kind (confirmed by testing:
-        // even a 'raw'-storage receiver emits one). That instruction
-        // requires a real '@gt_alive_check'-decorated function to exist
-        // somewhere in the compilation unit (BytecodeEmitter's own
-        // hard requirement) -- so generating even one dispatcher for a
-        // program that never imported the ghost-table stdlib at all
-        // would newly force that dependency onto programs that have
-        // nothing to do with ownership/ghost-table tracking otherwise.
-        // Confirmed as a real regression by testing (11 previously-
-        // passing fixtures broke on first implementation, none of them
-        // using 'owns'/'new' at all) -- guarded against here by
-        // skipping this whole pass outright whenever no such function
-        // exists yet, rather than generating dispatchers no one can
-        // actually compile. Interface dispatch is therefore only
-        // available once a program has imported the gt_* stdlib --
-        // a real, narrower limitation of this first cut, not silently
-        // worked around.
+        // Skipped unless a '@gt_alive_check' function exists: the bodies use 'match Some(..)' (GT_ALIVE_CHECK),
+        // and generating them in programs without the ghost-table stdlib would newly require it.
         if (!hasGtAliveCheckFunction()) {
             return;
         }
@@ -18640,20 +12496,7 @@ public class TypeChecker {
                     continue; // no receiver -- "TypeName.method()" is already unambiguous, needs no dispatcher
                 }
                 if (getDecorator(sig.decorators, "lock") != null) {
-                    // A synthesized dispatcher's own case-body call
-                    // ("recv.method(...)") is an ordinary call site,
-                    // subject to the ordinary lock-discipline rule
-                    // (requireMethodLockProofs) every real call site
-                    // already is -- confirmed as a second real
-                    // regression by testing (a lock-decorated interface
-                    // method's own concrete impl correctly rejected the
-                    // synthesized call for the exact same reason it
-                    // would reject any hand-written caller with no
-                    // proof). Synthesizing the right lock-proof wrapper
-                    // generically (the lock condition names an arbitrary
-                    // parameter/field pair per method) is real, separate
-                    // future work -- skipped here rather than generating
-                    // invalid code.
+                    // @lock methods are skipped: the synthesized call would need a lock proof (future work).
                     continue;
                 }
                 generateOneInterfaceDispatcher(interfaceName, methodEntry.getKey(), sig, enumForInfo.variants);
@@ -18661,7 +12504,7 @@ public class TypeChecker {
         }
     }
 
-    /** Whether any function anywhere in this compilation unit (including every imported file, already collected by this point) is decorated '@gt_alive_check' -- see generateInterfaceDispatchers' own doc comment for why this gates the whole pass. */
+    /** Whether any function is decorated '@gt_alive_check' (gates generateInterfaceDispatchers). */
     private boolean hasGtAliveCheckFunction() {
         for (List<FuncInfo> overloads : functions.values()) {
             for (FuncInfo fi : overloads) {
@@ -18673,7 +12516,7 @@ public class TypeChecker {
         return false;
     }
 
-    /** The deterministic name `checkMethodCall`'s own redirect looks this dispatcher back up by -- never user-nameable in practice (this language's identifiers can't start with two underscores by any normal source-writing convention this project follows elsewhere), so a genuine collision is vanishingly unlikely; if one ever happens, collectFunc's own "already declared" check below throws a real, visible error rather than silently overwriting anything. */
+    /** Name `checkMethodCall` redirects to; a collision is caught by collectFunc's "already declared" check. */
     private String interfaceDispatcherName(String interfaceName, String methodName) {
         return "__iface_dispatch__" + interfaceName + "__" + methodName;
     }
@@ -18738,11 +12581,7 @@ public class TypeChecker {
         caseMatchTok.sub.add(implementsOp);
         caseMatchTok.childs = new ArrayList<>();
         for (String implName : implementers) {
-            // "recv.methodName(p0, p1, ...)" -- every one of the
-            // dispatcher's own params passed straight through
-            // unchanged, including 'recv' itself at its own original
-            // position, exactly as the caller's own explicit-self
-            // convention already supplied it.
+            // recv.method(p0, p1, ..): every dispatcher param passed through unchanged (recv at its own position).
             Token dotCall = new Token(TokenType.OPERATOR, ".", at.line, at.file);
             dotCall.left = new Token(TokenType.VARREF, recvName, at.line, at.file);
             dotCall.right = new Token(TokenType.VARREF, methodName, at.line, at.file);
@@ -18824,14 +12663,7 @@ public class TypeChecker {
         appendSynthesizedRootToken(funcTok);
     }
 
-    /**
-     * A trivial, always-well-typed default literal for a synthesized
-     * dispatcher's own unreachable fallback return line (see
-     * generateOneInterfaceDispatcher's own doc comment for why one is
-     * needed at all). Returns null for anything outside {pointer-like
-     * non-'some', bool, integer, f32} -- the caller treats null as "skip
-     * this method's dispatcher entirely" rather than guessing.
-     */
+    /** Trivial well-typed default literal for a dispatcher's unreachable fallback return; null (skip the dispatcher) outside {non-'some' pointer, bool, integer, float}. */
     private Token buildDefaultLiteralFor(TypeInfo t, Token at) {
         if (t.storage != null) {
             return t.isSome ? null : new Token(TokenType.NULL, "null", at.line, at.file);
@@ -18848,7 +12680,7 @@ public class TypeChecker {
         return null;
     }
 
-    /** "mut 0"/"imut 0" -- the exact unary-prefix shape RpnConverter builds for a mutability-tagged literal (MUTABILITY_MODIFIER_TEXTS: type promoted to OPERATOR, unary=true, operand on '.left', never '.right'). */
+    /** "mut 0"/"imut 0" in the unary-prefix shape RpnConverter builds (OPERATOR, unary, operand on `.left`). */
     private Token mutabilityWrap(TypeInfo t, Token literal) {
         String mutability = "mut".equals(t.mutability) ? "mut" : "imut";
         Token op = new Token(TokenType.OPERATOR, mutability, literal.line, literal.file);
@@ -18857,45 +12689,16 @@ public class TypeChecker {
         return op;
     }
 
-    /** Memoizes one AsyncHandle_<T> struct/impl per distinct concrete T ever produced by a "par" expression anywhere in the program -- keyed by T's own canonical() string, sanitized into a valid identifier. */
+    /** One AsyncHandle struct/impl per distinct (result, param, locked) key. */
     private final Map<String, TypeInfo> asyncHandleTypesByResultCanonical = new HashMap<>();
 
     /**
-     * "let h = par:<u64> foo() is a little hard to read... go for
-     * option 2," confirmed directly -- synthesizes a genuine, concrete
-     * "AsyncHandle_<T>" struct (two members: "state" (AsyncState) and
-     * "result" (T)) plus a "resolve()" method returning T, entirely as
-     * compiler-internal data, bypassing GenericsExpander completely
-     * (which runs *before* type-checking and cannot infer T from a
-     * called function's own return type the way this needs to).
-     * `resolve()`'s own body ("return _self.result") is built here only
-     * as a *raw*, unresolved token tree -- deliberately not hand-
-     * computing `resolvedType` anywhere in it -- so the ordinary,
-     * already-trusted `checkFunctionBody` machinery (already called,
-     * for every entry in `implsByConcreteType`, by `check(...)`'s own
-     * second loop, which runs after every function body -- including
-     * whichever one triggered this synthesis -- has been checked) does
-     * the actual type-checking, the same way it would for a method
-     * written by hand; nothing here needs to replicate that logic
-     * itself. The returned type is `owns some AsyncHandle_<T>` -- the
-     * `some` is deliberate, not incidental: it lets `.state` and
-     * `:resolve()` work immediately, with no `match Some(...)` proof
-     * needed first, matching every one of the user's own examples,
-     * which never wrap `foo_handle` in one.
-     */
-    /**
-     * `resultType` is null for a void "@async" function -- produces the
-     * internal, never-user-exposed hidden handle shape (just "value"/
-     * "threadId", no "state"/"result"/"resolve()" at all: nothing ever
-     * polls a void call's own readiness or return value, so there's
-     * nothing for those to do). Memoized independently by
-     * (resultType-or-"void", paramType-or-"none") so a void and a
-     * non-void "@async" function sharing the same parameter type never
-     * collide, and two different parameter types (or one present, one
-     * absent) never share a "value" field of the wrong shape -- see
-     * this method's own "value" field doc just below for why that
-     * field's own type has to vary per parameter type at all, unlike
-     * "state"/"threadId".
+     * Synthesizes the handle struct for an @async call as compiler-internal data (GenericsExpander runs
+     * too early to infer T): non-void `par` handles get `state`, `result`, `value`, `threadId` plus a
+     * `resolve()` method (raw token tree, type-checked later by the ordinary impl loop) and are returned
+     * as `owns some` so `.state`/`:resolve()` need no `match Some`. `resultType == null` (void) gives the
+     * hidden internal shape (`value`, `threadId` only). `locked` makes a `par` handle a swap-lock struct.
+     * Memoized by (result|void, param|none[, par]). See docs/TypeChecker.md, "Async: await, par, handles".
      */
     private TypeInfo getOrCreateAsyncHandleType(TypeInfo resultType, TypeInfo paramType, Token at, boolean locked) {
         boolean hidden = resultType == null;
@@ -18908,26 +12711,8 @@ public class TypeChecker {
         if (cached != null) {
             return cached;
         }
-        // Deliberately NOT "AsyncHandle_" + key with non-alphanumerics
-        // replaced by underscores, confirmed the hard way by a real
-        // segfault: the sibling caspien-lowerordergenerator project's own
-        // "CanonicalType.parse" is (correctly, for its own purpose) run
-        // against a bare "NEW <structName>" operand to size it (see
-        // AddressLoweringPass's own "NEW" rewrite), and that parser reads
-        // ANY name shaped like "..._mutability_baseType" as if it *were*
-        // a real canonical type -- an underscore-heavy struct name like
-        // "AsyncHandle_mut_u64_mut_u64" was silently misparsed as
-        // storage=null, baseType="mut_u64_mut_u64" (garbage), falling
-        // back to a generic, wrong 8-byte size instead of this struct's
-        // real (16- or 32-byte) size, corrupting every "NEW"/"GT_REGISTER"
-        // construction site for it. A hex hash suffix has no underscores
-        // at all -- and no risk of colliding with a real storage/
-        // mutability keyword prefix either -- so it can never be
-        // misparsed as a canonical type this way, at the one, deliberate
-        // cost of a struct name that's no longer human-readably tied to
-        // its own param/result types (an acceptable trade: nothing ever
-        // surfaces this name to a real Caspien programmer -- it's a
-        // purely internal, compiler-synthesized identifier).
+        // The name is a hex hash, not a readable "AsyncHandle_<types>": the LOB stage's CanonicalType.parse
+        // misreads underscore names shaped like "..._mutability_baseType" as canonical types and mis-sizes NEW.
         String structName = "AsyncHandle" + Integer.toHexString(key.hashCode() & 0xFFFFFFF);
 
         StructInfo si = new StructInfo(structName);
@@ -18944,31 +12729,10 @@ public class TypeChecker {
             si.members.put("state", new TypeInfo(null, "mut", "AsyncState"));
             si.publicMembers.add("state");
         }
-        // "value" -- holds the packed argument for the real function's
-        // own single parameter, read back out by this function's own
-        // compiler-synthesized trampoline (see synthesizeAsyncTrampoline)
-        // to actually call it on the new OS thread. Typed as the real
-        // parameter's own exact type (not, e.g., a uniform "u64" every
-        // shape reinterprets down to its own real width) -- deliberately:
-        // this language's "as" cast only ever widens (same-signedness),
-        // never narrows, so unpacking a narrower parameter (a "u32", a
-        // "bool", ...) back out of a uniformly-8-byte slot would have had
-        // no legal expression inside the trampoline's own real Caspien-
-        // source body without new casting machinery this round didn't
-        // build. Typing "value" exactly as the parameter's own type sidesteps
-        // that entirely -- construction (BytecodeEmitter.emitAsyncCall)
-        // just pushes the argument's own already-correctly-typed value
-        // straight into this field, and the trampoline reads it back out
-        // with no cast of any kind needed either way. For a 0-parameter
-        // "@async" function, "value" is a plain, always-unused "mut u64"
-        // -- there's no real argument to size it for, and nothing ever
-        // reads it.
+        // "value" has the parameter's own exact type (casts only widen, so a uniform u64 slot could not be
+        // unpacked); a plain unused "mut u64" for a 0-parameter function.
         si.members.put("value", paramType != null ? paramType : new TypeInfo(null, "mut", "u64"));
-        // "threadId" -- pthread_t is word-sized on Linux/glibc; written
-        // by "@par_call"/"@await_call"'s own body (pthread_create's real
-        // C signature takes a "pthread_t*" out-parameter -- "&handle.
-        // threadId", via this same field), never touched by the
-        // trampoline itself.
+        // "threadId": written by "@par_call"/"@await_call" (pthread_create out-parameter), never by the trampoline.
         si.members.put("threadId", new TypeInfo(null, "mut", "u64"));
         if (!hidden) {
             si.members.put("result", resultType.withMutability("mut"));
@@ -18991,12 +12755,7 @@ public class TypeChecker {
         TypeInfo handleType = new TypeInfo("owns", "indeterminate", structName).withSome(true);
 
         if (!hidden) {
-            // "return _self.result" -- a raw, unresolved token tree; see
-            // this method's own comment for why nothing here sets
-            // resolvedType by hand. Skipped entirely for the hidden
-            // handle shape -- there is no "result" field for it to
-            // return, and nothing ever calls ":resolve()" on it (it's
-            // never exposed as any expression's own type).
+            // "return _self.result" as a raw unresolved tree (type-checked later); not needed for the hidden shape.
             Token selfRef = new Token(TokenType.VARREF, "_self", at.line, at.file);
             Token resultRef = new Token(TokenType.VARREF, "result", at.line, at.file);
             Token dotOp = new Token(TokenType.OPERATOR, ".", at.line, at.file);
@@ -19026,23 +12785,13 @@ public class TypeChecker {
             resolveFunc.paramTypes.add(new TypeInfo("ref", "imut", structName).withSome(true));
             resolveFunc.returnType = resultType;
             resolveFunc.callConvention = config.defaultConvention;
-            // "these are things that can be decorated @pub with everything
-            // else being private by default," confirmed directly -- called
-            // from outside this synthesized impl (via self-bolting, "let
-            // result = foo_handle:resolve()"), so it needs this set
-            // explicitly, the same as any real, hand-written impl method
-            // meant to be called from outside its own impl would.
+            // Public: called from outside this synthesized impl.
             resolveFunc.isPublic = true;
             resolveFunc.funcToken = methodTok;
 
             ImplInfo implInfo = new ImplInfo();
             implInfo.concreteName = structName;
-            // Deliberately public regardless of which file first triggers
-            // this synthesis -- memoized per (result,param) pair, not per
-            // call site (see the class-level comment above), so a second,
-            // different file reusing the identical handle type must never
-            // be blocked by whichever file happened to trigger the
-            // synthesis first.
+            // Public regardless of which file first triggers the (memoized) synthesis.
             implInfo.isPublic = true;
             implInfo.methods.put("resolve", resolveFunc);
             if (locked) {
@@ -19062,23 +12811,7 @@ public class TypeChecker {
         return handleType;
     }
 
-    /**
-     * "let foo_handle = par foo(); ... let child_process =
-     * spawn(...)... par mythread()" -- confirmed directly. For a
-     * void-returning '@async' function, "par" itself resolves to
-     * `void` directly (usable as a bare statement, discarding
-     * everything, exactly the "par mythread()" shape shown) -- no
-     * handle at all, sidestepping the question of whether `void` could
-     * ever be a meaningful struct member type. For a value-returning
-     * one, "par" resolves to a genuine `owns some AsyncHandle_<T>` (see
-     * getOrCreateAsyncHandleType). Either way, `op.left`'s own
-     * `resolvedType` (read directly by BytecodeEmitter for its
-     * PUSH_RET line) is overwritten to match *this* operator's own
-     * result type after the ordinary call-checking dispatch runs --
-     * the call's real return type, T, was only ever needed to
-     * determine the handle type, never actually produced on its own
-     * here the way an ordinary/await call's return value is.
-     */
+    /** Type of `par call(..)`: void for a void '@async' callee (bare statement), else an `owns some AsyncHandle_<T>`. See docs/TypeChecker.md, "par / await and trampolines". */
     private TypeInfo checkPar(Token op, Scope scope, FuncInfo func) {
         TypeInfo result;
         result = checkParInner(op, scope, func);
@@ -19113,67 +12846,8 @@ public class TypeChecker {
     private final Set<String> asyncTrampolinesSynthesized = new HashSet<>();
 
     /**
-     * Synthesizes the one real, compiler-generated trampoline function a
-     * "@par"/"@await" call site needs to actually run the real
-     * "@async" function on a new OS thread: pthread's own fixed
-     * "void*(void*)" entry-point shape, `raw mut u8 __trampoline_<name>
-     * (raw mut u8)`, which unpacks the packed argument (if any) out of
-     * the handle it's handed, calls the real function, writes the
-     * result/state back into the handle (skipped entirely for a void
-     * function -- nothing to write, and no "result"/"state" fields on
-     * its own hidden handle shape to write them into), and returns
-     * "null".
-     *
-     * Built as **real Caspien source text**, run through the ordinary
-     * front-end pipeline (Lexer/Parser/RpnConverter/TreeBuilder) exactly
-     * as `caspien.Main` does for a real file -- not hand-assembled
-     * Token-by-Token the way `getOrCreateAsyncHandleType`'s own trivial
-     * "return _self.result" body is. That's a deliberate, documented
-     * deviation from this method's own established "hand-build the raw
-     * token tree directly" precedent: this body is genuinely non-trivial
-     * (an "unsafe" block, a typed `let`, a `memcopy` call, conditional
-     * member reads/writes), and re-lexing/re-parsing a small, fully
-     * self-contained snippet of real source text is dramatically lower-
-     * risk than replicating the parser's own exact Token shapes for all
-     * of that by hand. The snippet's own Lexer is given the *real*
-     * "@async" function's own declaring file as its "file" (not some
-     * synthetic marker) specifically so the ordinary file-visibility
-     * check (a private function is only callable from its own declaring
-     * file) never spuriously rejects this trampoline's own direct call
-     * into it, whatever file it happens to live in or however it's
-     * marked "@pub".
-     *
-     * The one place this snippet can't be checked by the ordinary
-     * "@async"-calling rules is its own direct call into the real
-     * function -- an ordinary call to an "@async" function is always
-     * rejected outright ("can only be called through 'par' or
-     * 'await'"), and this genuinely is a plain, direct call, not a
-     * "par"/"await" one. `findCallNodeByCalleeName` locates that one
-     * CALL node in the freshly-parsed tree (there is exactly one --
-     * this method controls the whole snippet's own text) and marks it
-     * `isTrampolineOwnCall`, the one, deliberate, narrowly-scoped
-     * bypass for exactly this situation (see that field's own doc
-     * comment on Token).
-     *
-     * Also handles this trampoline's own registration and body-checking
-     * directly and eagerly, right here, rather than relying on being
-     * picked up later by `check()`'s own top-level "check every plain
-     * function's body" sweep: that sweep already snapshots its own
-     * worklist (`flattenRootLines(rootLines, ...)`) once, up front,
-     * before any function body is checked -- unlike the *impl-method*
-     * sweep just below it, which iterates `implsByConcreteType`'s own
-     * live map/lists (still fully open when the sweep begins, since
-     * every plain function body -- including whichever one triggers a
-     * "par"/"await" synthesis -- is checked *before* that second sweep
-     * even starts), a plain top-level function added to `functions`
-     * *during* the first sweep's own execution (exactly what happens
-     * here, mid-body-check, for a "par"/"await" expression) would never
-     * be visited by it at all. Confirmed by inspection of `check()`'s
-     * own three-sweep structure, not assumed -- calling
-     * `checkFunctionBody` explicitly, right here, sidesteps that
-     * ordering hazard entirely rather than trying to retrofit a fourth
-     * sweep or a "was anything added while I was iterating" recheck
-     * into `check()` itself.
+     * Synthesizes (once per function) the pthread-shaped trampoline `raw mut u8 __trampoline_<name>(raw mut u8)` as Caspien source text run through the front end,
+     * and checks its body eagerly (check()'s sweep worklist is already fixed). See docs/TypeChecker.md, "par / await and trampolines".
      */
     private void synthesizeAsyncTrampoline(FuncInfo asyncFuncInfo, TypeInfo handleType, TypeInfo paramType,
             TypeInfo resultTypeOrNull, String trampolineName, boolean selfDestructHidden, boolean lockedHandle) {
@@ -19183,46 +12857,14 @@ public class TypeChecker {
         String handleStructName = handleType.baseType;
         boolean hasParam = paramType != null;
         boolean hasResult = resultTypeOrNull != null;
-        // The handle needs to be reinterpreted back out of "argPtr" (see
-        // the "some"-tagged "handlePtr" local below) whenever the real
-        // function reads a packed argument out of it, writes a result
-        // into it, OR -- new in this round -- when this trampoline is
-        // itself responsible for self-destructing it afterward (see
-        // "selfDestructHidden"'s own doc comment on prepareAsyncCallSite):
-        // a fire-and-forget "par" of a 0-argument void "@async" function
-        // would otherwise never need "handlePtr" at all, yet still needs
-        // it here purely to hand its own address to "gt_destruct".
+        // the handle is recovered from argPtr when the real function reads/writes it or this trampoline self-destructs it
         boolean needsHandlePtr = hasParam || hasResult || selfDestructHidden;
 
         StringBuilder src = new StringBuilder();
         src.append("func ").append(trampolineName).append("(argPtr: raw mut u8) raw mut u8{\n");
         src.append("\tunsafe{\n");
         if (needsHandlePtr) {
-            // Two-step reinterpret: a plain (non-"some") "raw mut
-            // <Handle>" local, initialized "null" and then overwritten
-            // via "memcopy" with argPtr's own bit pattern (the real
-            // pointer reinterpret -- see this method's own doc comment),
-            // followed by a second, "some"-bound "let" reading that
-            // already-non-null value back out. Two steps, not one,
-            // because "let:<raw some mut T> x = null" is rejected
-            // outright ("'null' cannot satisfy a 'some'-tagged bound" --
-            // a real, deliberate restriction, confirmed directly
-            // elsewhere in this compiler: "reject assigning a null
-            // literal to a some") -- there is no legal way to declare a
-            // "some"-tagged local "empty" and fill it in after the fact,
-            // so the fill-in has to happen on a plain, non-"some" local
-            // first, with the "some" tag only applied once a real
-            // (already non-null) value exists to back it. This never
-            // needs a genuine `match Some(...)` alive-proof (which would
-            // pull in a whole new "@gt_alive_check" dependency onto
-            // every "par"/"await"-using program, not asked for by this
-            // round's spec) -- a plain rebinding `let` with a "some"-
-            // tagged bound already accepts any already-non-null pointer
-            // value of the right shape, confirmed directly by inspecting
-            // `resolveAndValidateTypeBound`'s own non-null branch, which
-            // validates only base type/storage/mutability compatibility,
-            // never re-deriving or requiring an "isSome" proof of its
-            // own.
+            // two-step reinterpret: a plain raw local is filled by memcopy, then rebound to a `some` local ("null" cannot satisfy `some`)
             src.append("\t\tlet:<raw mut ").append(handleStructName).append("> handlePlain = null\n");
             src.append("\t\tmemcopy(raw handlePlain, mut 8, raw argPtr)\n");
             src.append("\t\tlet:<raw some mut ").append(handleStructName)
@@ -19230,8 +12872,7 @@ public class TypeChecker {
         }
         String callExpr = asyncFuncInfo.name + "(" + (hasParam ? "handlePtr.value" : "") + ")";
         if (hasResult && lockedHandle) {
-            // The caller may be polling the handle: publish result and state together while holding its lock (a reader holds the
-            // lock for a few instructions only, so this retry is short; compiler-written code may retry without a bound).
+            // publish result and state together under the handle's lock (compiler-written code may retry without a bound)
             src.append("\t\tlet realResult = mut ").append(callExpr).append("\n");
             src.append("\t\tmatch @lock handlePtr{\n");
             src.append("\t\t\tOPEN:{\n");
@@ -19248,25 +12889,7 @@ public class TypeChecker {
             src.append("\t\t").append(callExpr).append("\n");
         }
         if (selfDestructHidden) {
-            // The fire-and-forget "par" case: nobody else will ever
-            // GT_DESTRUCT this hidden handle (see this method's own doc
-            // comment, and prepareAsyncCallSite's "selfDestructHidden"
-            // doc comment) -- the real function has now genuinely
-            // finished running (the line just above already returned),
-            // so it's safe to reclaim it right here, from inside this
-            // same OS thread, before this trampoline itself returns.
-            // "gt_destruct" takes a bare "raw imut u8" -- reached the
-            // same reinterpret-via-memcopy way "handlePtr" itself was
-            // recovered from "argPtr" above, since a real, concrete
-            // "AsyncHandle_<T>"/hidden-handle struct pointer can't be
-            // passed to it directly (the type checker's own ordinary
-            // exact-baseType-match rule for a plain function call, no
-            // different from any other call site -- ordinary "GT_DESTRUCT"
-            // bytecode emission bypasses this by being emitted directly,
-            // never through a real Caspien-level call, which is exactly
-            // why every *other* GT_DESTRUCT everywhere else in this
-            // compiler is a bare mnemonic, not a real function call like
-            // this one deliberately, uniquely, has to be here).
+            // fire-and-forget par: nobody else destructs the hidden handle, so the thread does it; gt_destruct needs a raw u8, hence the memcopy reinterpret
             if (getGhostTableFunction("gt_destruct") == null) {
                 throw new CompilerException("type", asyncFuncInfo.funcToken.file, asyncFuncInfo.funcToken.line,
                         "a 'par' call to void '@async' function '" + asyncFuncInfo.name + "' requires a "
@@ -19432,23 +13055,7 @@ public class TypeChecker {
             throw new CompilerException("type", op.file, op.line,
                     "'raw' pointers can only be constructed from within 'unsafe' code");
         }
-        // "raw pointer was my catch all... but taking a raw directly off
-        // the stack like 'let x = mut raw 5' seems to create issues,"
-        // confirmed directly -- a bare literal or a freshly-computed
-        // expression (an arithmetic result, a call's return value, ...)
-        // has no real memory location to take the address of at all,
-        // the identical problem 'auto' was already restricted against
-        // (`isAddressableLvalue`, just below). A string literal is the
-        // one, deliberate exception: it's already hoisted to genuine
-        // static storage (`case STRING:` above always returns
-        // `"static_imut_string"`), so it already has a real address
-        // before 'raw' is ever applied -- the same "already storage-
-        // bearing, nothing left to compute" situation an existing
-        // 'owns'/'ref'/'raw'/'static' value would be in, just reached
-        // through a literal token instead of a named one. Every other
-        // literal kind (a bare number, a char, a freshly-computed
-        // expression) is rejected here exactly as 'auto' already
-        // rejects it -- bind it to a 'let' first.
+        // 'raw' needs an addressable lvalue; a string literal is the one exception (already static memory). See docs/TypeChecker.md, "Address-of operators".
         if (storage.equals("raw") && op.left.type != TokenType.STRING && !isAddressableLvalue(op.left)) {
             throw new CompilerException("type", op.left.file, op.left.line,
                     "'raw' requires an addressable variable (or a struct member access chain rooted in "
@@ -19461,15 +13068,7 @@ public class TypeChecker {
                             + "no general heap allocation mechanism yet; use 'new' instead");
         }
         if (storage.equals("ref")) {
-            // "let ref_var = ref(owning_var_1)" -- confirmed directly this
-            // must work: a 'ref' taken from an *existing* 'owns'-typed
-            // value is sound even without a general heap allocation
-            // mechanism, since that value is already understood to be
-            // heap-resident (that's exactly what 'new' already models).
-            // Anything else -- a plain stack value with no storage, a
-            // fresh literal, 'raw'/'auto'/'static' sources -- has no such
-            // backing and is still rejected, for the same reason it
-            // always was.
+            // a 'ref' can only be taken from an existing 'owns' value (already heap-resident)
             TypeInfo operandDeclaredType = lookupDeclaredTypeStructurally(op.left, scope);
             if (operandDeclaredType == null || !"owns".equals(operandDeclaredType.storage)) {
                 throw new CompilerException("type", op.file, op.line,
@@ -19522,17 +13121,7 @@ public class TypeChecker {
                     "'auto' cannot be applied to '" + (op.left.text == null ? "this expression" : op.left.text) + "', which is already a pointer ("
                             + operandType.canonical() + "): use the pointer itself, or 'ref' for a borrow of an owned value");
         }
-        // "raw x"/"ref x"/"auto x"/"static x" is a freshly-constructed
-        // value (the address itself), same as a literal, a struct
-        // literal, or "new EXPR" -- and, like those, defaults to
-        // 'indeterminate' rather than a hardcoded concrete mutability,
-        // needing an explicit 'mut'/'imut' wrapper before it can be
-        // bound to a 'let'. This was hardcoded 'imut' unconditionally
-        // for a long time (the same bug 'new' itself had, fixed
-        // earlier) -- meaning a pointer *variable* could never be
-        // declared 'mut' at all, blocking both reassignment and '++'
-        // (both require a 'mut' target) even in 'unsafe' code with a
-        // legitimate reason to advance a raw pointer through memory.
+        // the result is a fresh value: indeterminate mutability, needing mut/imut before a 'let' binds it
         TypeInfo prefixResult = operandType.withMutability("indeterminate").withStorage(storage);
         if (storage.equals("ref") && !prefixResult.isSome) {
             op.refToId = true;   // `ref x` of a nullable owner is a nullable `ref`: an id, not the address
@@ -19549,60 +13138,15 @@ public class TypeChecker {
             return isAddressableLvalue(node.left);
         }
         if (node.type == TokenType.DELINEATOR && node.text.equals("(") && !node.childs.isEmpty()) {
-            // "auto(x)" -- transparent grouping parens, same unwrap
-            // resolveExprType already does for type resolution.
+            // transparent grouping parens
             return isAddressableLvalue(node.childs.get(0));
         }
         return false;
     }
 
     /**
-     * True for a VARREF, a '.' chain rooted in one, a "LOOKUP" (array/
-     * dynarray/string indexing, e.g. 'arr[i]') rooted in one, or "LOOKUP"
-     * nested inside any of those arbitrarily deep in *either* direction
-     * (e.g. 'self.arr[i]', 'matrix[i][j]', 'arr[i][j].field',
-     * 'arr[i].field') -- deliberately a strict superset of
-     * `isAddressableLvalue` just above, not a replacement for it:
-     * `isAddressableLvalue` answers "can a real *address* be computed
-     * for this" (`raw`/`auto`'s own question, whose `ADDR_OF` lowering
-     * only ever supported a statically-known offset -- a named slot, or a
-     * struct field at a compile-time-known offset from one, never a
-     * runtime-computed array index), while this answers the strictly
-     * weaker "is this an ordinary *read* of an already-existing value,
-     * not a freshly computed one" -- RVO's own `return EXPR` restriction
-     * only ever needed the weaker question, and a LOOKUP was excluded
-     * from it purely by borrowing `isAddressableLvalue` wholesale, not
-     * because of any actual gap: `emitLookup`'s own "LOOKUP baseType
-     * indexType resultType" is already exactly as size-generic as
-     * "PUSH"/"DOT"/"ASSIGN" everywhere else in this compiler (confirmed
-     * directly -- 'let p = mut arr[1]' for an array of structs already
-     * compiles and runs correctly, completely independent of RVO), so a
-     * struct-sized element read was already fully supported; only the
-     * TypeChecker-side restriction was ever missing it. Used only by
-     * `checkReturn`'s own struct-RVO restriction -- `raw`/`auto`'s own,
-     * separate restriction is deliberately left exactly as narrow as it
-     * already was, since their own reason for it (the `ADDR_OF` lowering
-     * issue) is real and unrelated to this.
-     *
-     * FORMERLY one deliberate exclusion here: a '.' node whose own base
-     * contained a "LOOKUP" *anywhere* below it (e.g. 'arr[i].field') used
-     * to be rejected, even though the *reverse* nesting ('self.arr[i]', a
-     * LOOKUP whose base contains a '.') was already accepted -- not a
-     * scoping choice, but routing around a real, then-still-open
-     * `caspien-codegen` gap: `X86Backend`'s own read-DOT implementation's
-     * `size > 8` branch (a struct/array-typed field read off a base that
-     * arrived as a whole pushed value, e.g. the array element LOOKUP just
-     * extracted) used to carry an explicit `TODO(codegen): DOT of a
-     * >8-byte nested field not yet implemented -- pushing 0 as a
-     * placeholder`. That gap is now fixed for real (see
-     * `caspien-codegen`'s own CLAUDE.md, "Fixed: `DOT` of a >8-byte
-     * nested field..." -- both the wrong-anchor addressing bug and a
-     * follow-on overlapping-copy bug it surfaced are resolved and
-     * execution-verified, including the exact 'arr[i].field' shape this
-     * exclusion used to route around), so the exclusion -- and the
-     * `containsLookup` helper that implemented it -- have been removed:
-     * 'return arr[i].field' is now accepted the same as every other
-     * nesting of '.'/LOOKUP already was.
+     * Weaker than isAddressableLvalue: also allows LOOKUP anywhere in the chain ('arr[i].f', 'm[i][j]'). Used only by checkReturn's struct-RVO restriction.
+     * See docs/TypeChecker.md, "Address-of operators".
      */
     private boolean isReadableValueChain(Token node) {
         if (node.type == TokenType.VARREF) {
@@ -19620,17 +13164,7 @@ public class TypeChecker {
         return false;
     }
 
-    /**
-     * "let i = mut 0" instead of "let i = 0 as mut," confirmed directly
-     * -- 'mut'/'imut' as a prefix operator that forces an expression's
-     * mutability to become concrete. "An indeterminate can be coerced to
-     * a mut or imut, and a mut can be coerced to an imut, but a mut or
-     * imut cannot be coerced to indeterminate, and an imut cannot be
-     * coerced to a mut," confirmed directly -- the only case this
-     * prefix operator can actually reject is imut -> mut; every other
-     * starting mutability (indeterminate, or already the target itself)
-     * is fine.
-     */
+    /** Prefix `mut`/`imut`: forces concrete mutability; only imut -> mut is rejected. See docs/TypeChecker.md, "Address-of operators". */
     private TypeInfo checkMutabilityOf(Token op, Scope scope, FuncInfo func) {
         String target = op.text;
         TypeInfo operandType = resolveExprType(op.left, scope, func);
@@ -19642,30 +13176,7 @@ public class TypeChecker {
         return operandType.withMutability(target);
     }
 
-    /**
-     * "a..b" -- constructs a range value, a new built-in type whose
-     * canonical base-type string literally embeds its own bounds
-     * (confirmed directly: "the available information travels in the
-     * type"). Both operands must resolve to a plain (non-pointer)
-     * `u64`, and -- confirmed directly -- each must be either a bare
-     * integer literal or a bare variable reference; anything more
-     * complex (a computed expression) is a hard error, not silently
-     * approximated to some placeholder.
-     *
-     * Bound descriptor format, confirmed directly by example ("my_range
-     * will have the type imut_range(imut_my_start,imut_my_end)"): a
-     * literal bound contributes its bare numeral ("12"); a variable
-     * bound contributes "<itsMutability>_<itsName>" (e.g.
-     * "imut_my_start") -- note this embeds the variable's *name*, not
-     * its type. The two worked examples given disagreed on whether the
-     * outer "range(...)" wrapper itself gets a mutability prefix (one
-     * showed bare "range(0,12)", the other explicitly
-     * "imut_range(...)") -- resolved by applying this project's
-     * established "full explicitness" convention (every canonical type
-     * string spells out mutability, even where the example that
-     * introduced a construct didn't bother) and treating the bare form
-     * as the informal one.
-     */
+    /** `a..b`: a range type whose base-type string embeds its bounds; both operands u64, each a bare literal or variable. See docs/TypeChecker.md, "Ranges and membership operators". */
     private TypeInfo checkRange(Token op, Scope scope, FuncInfo func) {
         TypeInfo leftType = resolveExprType(op.left, scope, func);
         TypeInfo rightType = resolveExprType(op.right, scope, func);
@@ -19699,12 +13210,12 @@ public class TypeChecker {
                         + "expression");
     }
 
-    /** True for any "dynarray(T)" type -- always complete (its element type is always fully known, baked in at construction; unlike range there's no "bare incomplete pointer" variant of this type at all). Deliberately excludes the "unsafe dynarray(T)" variant -- see `isUnsafeDynArrayType` just below, and `unsafeDynArrayElementType`'s own field comment for why the two are kept as separate fields rather than one shared field with a flag. */
+    /** True for "dynarray(T)" (not the "unsafe dynarray(T)" variant, see isUnsafeDynArrayType). */
     private boolean isDynArrayType(TypeInfo t) {
         return t.dynArrayElementType != null;
     }
 
-    /** True for any "unsafe dynarray(T)" type -- the raw, length-less counterpart of `isDynArrayType` above. Never true at the same time as `isDynArrayType` for the same TypeInfo -- the two element-type fields are mutually exclusive by construction (only `TypeInfo.dynArray`/`TypeInfo.unsafeDynArray` ever populate either one, and neither ever populates both). */
+    /** True for "unsafe dynarray(T)"; never true together with isDynArrayType. */
     private boolean isUnsafeDynArrayType(TypeInfo t) {
         return t.unsafeDynArrayElementType != null;
     }
@@ -19719,26 +13230,6 @@ public class TypeChecker {
         return t.baseType.startsWith("range(");
     }
 
-    /**
-     * "x in someRange" -- confirmed directly: the left must be a plain
-     * (non-pointer) 'u64', the right a range, and the result is a
-     * plain 'bool'. Mirrors '..''s own "exactly u64, no storage"
-     * restriction for consistency, since both are range-related
-     * operators. Compiles to a dedicated "IN" opcode, confirmed
-     * directly, rather than being expressed in terms of any other
-     * comparison.
-     */
-    /**
-     * "u64 in range" generalizes to the full cross product of
-     * {u64, range} on the left and {range, dynarray} on the right --
-     * confirmed directly. "Like most bytecode commands it should have
-     * its type information there for its operands, so we're not giving
-     * it new logic, but we are expanding the acceptable operand types"
-     * -- emitIn already just names whichever types actually resolve
-     * here, unchanged, so relaxing this validation is the entire
-     * change. (This used to also accept a slice on either side --
-     * slice has been removed from the language entirely.)
-     */
     /** Builds the synthesized call "range(arr)" around an already-parsed fixed-array expression (same CALL shape the parser produces for a written-out `range(arr)`). */
     private Token wrapFixedArrayAsRange(Token arr) {
         Token args = new Token(TokenType.DELINEATOR, "(", arr.line, arr.file);
@@ -19750,47 +13241,20 @@ public class TypeChecker {
         return call;
     }
 
+    /** `x in R`: u64 or range on the left; range, dynarray, fixed array, string or guaranteed enum on the right. See docs/TypeChecker.md, "Ranges and membership operators". */
     private TypeInfo checkIn(Token op, Scope scope, FuncInfo func) {
-        // "On my guaranteed enums only, I want to support the use of
-        // the in operator where the lefthand is a u64. u64 in enum,"
-        // confirmed directly -- checked first, before the ordinary
-        // range/dynarray shape below, on the same "a bare type
-        // name on the right is a genuinely different shape, not just
-        // another kind of value" precedent checkInstanceof/
-        // checkImplementsOperator already established for their own
-        // right operand. A bare VARREF naming a known enum is never
-        // ambiguous with the ordinary shape -- the ordinary right side
-        // is always a range/dynarray *value* expression, and no
-        // enum name is ever independently one of those.
+        // a bare enum name on the right is a different shape: `u64 in Enum`
         if (op.right.type == TokenType.VARREF && enums.containsKey(op.right.text)) {
             return checkGuaranteedEnumMembership(op, scope, func);
         }
         TypeInfo leftType = resolveExprType(op.left, scope, func);
         TypeInfo rightType = resolveExprType(op.right, scope, func);
         if (isArrayType(rightType.baseType)) {
-            // "match i in arr{...}" / "into arr" on a fixed array: sugar for
-            // "range(arr)", whose length is the array's own compile-time length.
-            // (A dynarray already accepts the bare form; a fixed array used to
-            // need the explicit "range(arr)".) The bounds-proof key is the same
-            // either way, since boundsTargetSlotOf unwraps range(X) to X.
+            // sugar for range(arr), using the array's compile-time length
             op.right = wrapFixedArrayAsRange(op.right);
             rightType = resolveExprType(op.right, scope, func);
         }
-        // "u64 in string" -- checked next, before the ordinary range/
-        // dynarray gate below, on the same "a genuinely different
-        // right-hand shape gets its own branch entirely" precedent
-        // `checkGuaranteedEnumMembership` just above already established.
-        // A string is never one of range/dynarray (it's its own,
-        // pointer-like base type -- see `pointerLikeBaseTypes`), so
-        // there's no ambiguity between this shape and the ordinary one.
-        // Unlike the ordinary shape (a bounds/length comparison the
-        // operands alone already resolve), a string has no stored
-        // length at all -- the same "must scan, not just compare" gap
-        // `len()`'s own 2-arg unsafe-dynarray form already has -- so
-        // this is a real byte-by-byte runtime scan for `op.left`'s value
-        // among the string's bytes, up to (not including) its null
-        // terminator, marked here for `BytecodeEmitter` to emit under
-        // its own dedicated "IN_SCAN" mnemonic rather than plain "IN".
+        // `u64 in string`: runtime byte scan up to the NUL (IN_SCAN)
         if (rightType.baseType.equals("string")) {
             if (!isPlainU64(leftType)) {
                 throw new CompilerException("type", op.left.file, op.left.line,
@@ -19806,14 +13270,7 @@ public class TypeChecker {
                             + leftType.canonical() + "'");
         }
         if (isUnsafeDynArrayType(rightType)) {
-            // "the issue is the length" -- an unsafe dynarray has no
-            // hidden runtime length at all, so there's nothing for a
-            // bounds proof to check the index against; unlike the safe
-            // variant, this is a dedicated rejection, not merely
-            // falling through to the generic "not a range/
-            // dynarray" message just below, which would be misleading
-            // for a right side that plainly *is* a dynarray, just not
-            // one this operator can ever support.
+            // an unsafe dynarray has no length to bound against: dedicated message
             throw new CompilerException("type", op.right.file, op.right.line,
                     "'in'/'into' cannot be used on an 'unsafe dynarray' -- it has no length to bound-check "
                             + "against; index it directly inside 'unsafe' code instead");
@@ -19826,30 +13283,7 @@ public class TypeChecker {
         return new TypeInfo(null, "indeterminate", "bool");
     }
 
-    /**
-     * "u64 in EnumName" -- true iff the left `u64` equals the explicit
-     * discriminant value of some variant of the named enum. "The enum
-     * must be guaranteed," confirmed directly -- "guaranteed" reuses
-     * this project's own earlier term for an enum whose every variant
-     * carries an explicit discriminant value
-     * (`EnumInfo.explicitValues != null`, "no partial mixing" already
-     * enforced at `flattenEnum`), the same feature "I want to support
-     * enums with guarantees as to the values used underneath for
-     * them" introduced. An enum that never used explicit values at all
-     * is rejected outright here, with a dedicated message, rather than
-     * falling through to the ordinary "not a range/dynarray"
-     * one, which would be genuinely misleading for a right side that
-     * *is* a real enum, just not a guaranteed one.
-     *
-     * Right side is a bare type name, never a value expression --
-     * `op.right` is left entirely unresolved as an expression (no
-     * `resolveExprType` call on it at all, the same restraint
-     * `checkInstanceof` already shows its own right operand);
-     * `op.right.resolvedType` is instead set directly to the enum's
-     * own bare name, reused both as this shape's own marker for
-     * `BytecodeEmitter` (see `Token.isGuaranteedEnumMembershipCheck`)
-     * and as the literal operand text its own "in" emission pushes.
-     */
+    /** `u64 in EnumName`: the enum must be "guaranteed" (every variant has an explicit discriminant). See docs/TypeChecker.md, "Ranges and membership operators". */
     private TypeInfo checkGuaranteedEnumMembership(Token op, Scope scope, FuncInfo func) {
         TypeInfo leftType = resolveExprType(op.left, scope, func);
         if (!isPlainU64(leftType)) {
@@ -19870,25 +13304,7 @@ public class TypeChecker {
         return new TypeInfo(null, "indeterminate", "bool");
     }
 
-    /**
-     * "within" -- structurally identical to "in" (same dispatch shape,
-     * same TypeInfo result, same bytecode-operand-naming approach), but
-     * with checkIn's own cross product narrowed on both sides: no plain
-     * 'u64' on the left (a single point has nothing to be "within" --
-     * only a range being compared against another range is
-     * meaningful here), and no 'dynarray' on the right (a dynarray has
-     * no fixed bounds of its own for a proper-subrange test to compare
-     * against). Confirmed directly: "its all identical to the in
-     * operator except for the changes I noted." Runtime semantics (not
-     * enforced here -- this is purely the type rule): true iff the left
-     * range's bounds fall strictly inside the right's, excluding
-     * the case where both sides carry identical bounds -- "1..2 is
-     * within 0..3 but 0..3 is not within 0..3." Compiles to a dedicated
-     * "WITHIN" opcode (BytecodeEmitter.emitOperator), never "IN" -- the
-     * two operators have different runtime meanings, so collapsing them
-     * onto one mnemonic would lose that distinction for the not-yet-
-     * built bytecode-to-assembly stage to act on.
-     */
+    /** `within`: like `in` but range on both sides; strict proper subrange (IN-style typing, WITHIN opcode). See docs/TypeChecker.md, "Ranges and membership operators". */
     private TypeInfo checkWithin(Token op, Scope scope, FuncInfo func) {
         TypeInfo leftType = resolveExprType(op.left, scope, func);
         TypeInfo rightType = resolveExprType(op.right, scope, func);
@@ -19905,28 +13321,12 @@ public class TypeChecker {
         return new TypeInfo(null, "indeterminate", "bool");
     }
 
-    /**
-     * An array type's canonical base-type string is always
-     * "elementType[length]" (nestable: "u64[5][10]" for a
-     * multi-dimensional array) -- same "embed everything in baseType"
-     * approach as `range`, and for the same reason: it means two arrays
-     * are only the same type if their element type *and* length both
-     * match exactly, via the existing, unmodified `sameBaseType`/
-     * `typesCompatible`, with zero extra comparison logic needed
-     * anywhere ("the length is part of the type," confirmed directly).
-     */
+    /** Array base types are "elem[len]" (nestable); the length is part of the type. */
     private boolean isArrayType(String baseType) {
         return baseType.endsWith("]") && baseType.contains("[");
     }
 
-    /**
-     * True for a plain (no storage modifier) struct-typed value -- the
-     * one shape Return Value Optimization applies to. Storage-less is
-     * required (an `owns`/`ref`/`raw`/`auto`/`static` struct pointer is
-     * already an ordinary 8-byte value, returned exactly like any other
-     * pointer always could be -- RVO only ever concerns the case that
-     * used to be rejected outright).
-     */
+    /** True for a storage-less struct-typed value (the Return Value Optimization shape). */
     private boolean isStructByValueReturn(TypeInfo t) {
         return t.storage == null && structs.containsKey(t.baseType);
     }
@@ -19942,60 +13342,12 @@ public class TypeChecker {
     }
 
 
-    /**
-     * True for any genuine pointer -- storage present, any base type.
-     * Broadened from an earlier "struct/enum only" version now that
-     * scalars can be pointed-to too (confirmed directly: "let y = auto x"
-     * where x is a plain u64).
-     */
+    /** True for any type with a storage modifier. */
     private boolean isPointerType(TypeInfo t) {
         return t.storage != null;
     }
 
-    /**
-     * Directional compatibility check: can a value of type `actual` be
-     * used where a value of type `expected` is required (assignment
-     * target, return type, call parameter, struct-literal member)?
-     *
-     *   - `actual` being the literal `null` type always satisfies any
-     *     pointer-typed `expected` (confirmed directly, extended to
-     *     assignment and return in addition to call arguments and
-     *     struct-literal members).
-     *   - Base type must always match otherwise.
-     *   - If `expected` isn't a pointer (no storage), storage plays no
-     *     role at all -- this is the ordinary inline-value/scalar case,
-     *     unaffected by anything below.
-     *   - If `expected` *is* a pointer, `actual` must be a pointer too
-     *     (no implicit address-of -- a bare inline value doesn't
-     *     satisfy a pointer-typed slot on its own; the value must
-     *     explicitly go through 'auto'/'raw'/etc first), and the two
-     *     storages must be coercion-compatible: exact match, or one of
-     *     the two allowed conversions confirmed directly -- anything
-     *     coerces to `raw`, and `owns` coerces to `ref`.
-     */
-    /**
-     * The call-argument counterpart of `checkReturn`'s own existing
-     * "a `some`-declared return type may be satisfied by a proven-alive
-     * expression, even though its own static type isn't `some`" rule
-     * (`isSome && !exprType.isSome && isProvenAlive(...)`) -- extended
-     * here to ordinary function/method-call argument matching, so a
-     * `ref some self`-style parameter can be satisfied by an ordinary,
-     * not-`some`-typed value the caller has already proven alive via
-     * `match Some(...)`, not only by a value whose *static* type already
-     * carries `some` (a string literal, or the compiler's own `par`-
-     * produced async handle -- the only two things that can ever
-     * construct a genuinely `some`-typed value from real source).
-     * Without this, "the caller passes the null-check responsibility"
-     * (the whole point of a `some`-tagged `_self` parameter) would be
-     * unreachable for any ordinary struct method, since nothing in this
-     * language lets hand-written code produce a `some`-tagged `owns`/
-     * `ref` value at all -- `typesCompatible` alone requires the
-     * argument's own static type to already be `some`, unconditionally,
-     * with no exception for an active proof. `argExpr` may be null (a
-     * synthesized argument with no real source expression), in which
-     * case this falls back to plain `typesCompatible` -- there is no
-     * expression for `isProvenAlive` to check a proof against.
-     */
+    /** Argument matching: like typesCompatible, but a `some` parameter also accepts a not-`some` argument proven alive by `match Some`. See docs/TypeChecker.md, "Type compatibility". */
     private boolean argSatisfiesParam(TypeInfo paramType, TypeInfo argType, Token argExpr, Scope scope) {
         if (typesCompatible(paramType, argType)) {
             return true;
@@ -20249,27 +13601,16 @@ public class TypeChecker {
         return true;
     }
 
+    /** Directional: may `actual` be used where `expected` is required. See docs/TypeChecker.md, "Type compatibility". */
     private boolean typesCompatible(TypeInfo expected, TypeInfo actual) {
         if (literalAdapts(expected, actual)) {
             return true;
         }
         if (actual.baseType.equals("null") && isPointerType(expected)) {
-            // "reject assigning a null literal to a some, or returning a
-            // null literal for a some," confirmed directly -- the one
-            // narrow exception to "null satisfies any pointer slot,"
-            // since a 'some'-tagged slot's entire point is to guarantee
-            // there's a real value there.
+            // null satisfies any pointer slot except a `some` one
             return !expected.isSome;
         }
-        // A bare 'range' is fungible with a literal-known 'range(a,b)'
-        // BY VALUE too, not only pointer-to-pointer -- "the bounds are
-        // always two U64s, just known or not known by the compiler,"
-        // confirmed directly, so a bare range parameter genuinely
-        // accepts a literal-bounds range argument (and vice versa is
-        // still refused: a bare range's bounds aren't known, so it
-        // can't satisfy a slot that requires the literal shape). Mirrors
-        // the ordinary exact-baseType-match rules just below, just
-        // without requiring baseType equality first.
+        // a complete range(a,b) satisfies a bare `range` slot, by value too (not the reverse)
         if (expected.baseType.equals("range") && isRangeType(actual) && isCompleteRange(actual)) {
             if (!mutabilityCompatible(expected.mutability, actual.mutability)) {
                 return false;
@@ -20282,20 +13623,7 @@ public class TypeChecker {
             }
             return storageCompatible(expected.storage, actual.storage);
         }
-        // A concrete struct value satisfies an interface-typed slot it
-        // really implements -- "structValue implements
-        // InterfaceName" was already true as a runtime/instanceof-style
-        // fact; a param/assignment/return slot declared as that
-        // interface is the ordinary, general place this needs to hold
-        // too, not just the narrow 'let static:<InterfaceType>' bound-
-        // declaration path that already special-cased it (see the
-        // sibling check in collectDeclarations' static-init handling,
-        // which reuses this exact same structImplementsInterface
-        // helper). One-directional only, matching every other
-        // "more general on the expected side" rule already here --
-        // an interface-typed actual does NOT satisfy a concrete-struct-
-        // typed expected slot; needs the not-yet-built dispatch/'as'
-        // mechanism first.
+        // a struct satisfies an interface-typed slot it implements (one direction only)
         if (interfaces.containsKey(expected.baseType) && structs.containsKey(actual.baseType)
                 && structImplementsInterface(actual.baseType, expected.baseType)) {
             if (!mutabilityCompatible(expected.mutability, actual.mutability)) {
@@ -20315,21 +13643,11 @@ public class TypeChecker {
         if (!expected.baseType.equals(actual.baseType)) {
             return false;
         }
-        // "one with a decorator can be placed in the slot of one with
-        // none, but not vice versa," confirmed directly -- checked
-        // separately from baseType equality (which already confirms an
-        // identical signature, since decorators are deliberately never
-        // part of that string): actual must carry at least every
-        // decorator expected requires, though it may carry more.
+        // the actual funcptr must carry every decorator the expected one requires
         if (expected.funcPtrParamTypes != null && !actual.funcPtrDecorators.containsAll(expected.funcPtrDecorators)) {
             return false;
         }
-        // Nominal, not structural: a bare 'u8' and a 'byte' (an alias of
-        // it) are the same real representation but must NOT satisfy each
-        // other without an explicit cast, confirmed directly -- so exact-
-        // match compatibility additionally requires the alias tag itself
-        // to agree (including both being plain/untagged), even though
-        // baseType alone would already consider them identical.
+        // nominal alias: 'u8' and an alias of it must not satisfy each other
         if (!java.util.Objects.equals(expected.aliasName, actual.aliasName)) {
             return false;
         }
@@ -20343,37 +13661,23 @@ public class TypeChecker {
             return false;
         }
         if (expected.isSome && !actual.isSome) {
-            // "some x may be coerced to x, but not the other way,"
-            // confirmed directly -- exactly mut->imut's own one-way
-            // shape: a guaranteed-present value can always stand in
-            // where only "maybe absent" was required (nothing is lost),
-            // but the reverse would silently promise a guarantee the
-            // type system never actually confirmed.
+            // `some` coerces to non-`some`, not the reverse
             return false;
         }
         return storageCompatible(expected.storage, actual.storage);
     }
 
-    /**
-     * "An indeterminate can be coerced to a mut or imut, and a mut can
-     * be coerced to an imut, but a mut or imut cannot be coerced to
-     * indeterminate, and an imut cannot be coerced to a mut," confirmed
-     * directly.
-     */
+    /** indeterminate -> mut/imut, mut -> imut; nothing coerces into indeterminate or imut -> mut. */
     private boolean mutabilityCompatible(String expected, String actual) {
         if (expected == null || actual == null) {
-            // Java-null here only ever means the special "null" literal
-            // type (already handled by typesCompatible's own early
-            // return before this is ever reached) -- a defensive no-op
-            // guard, not a real case in this lattice.
+            // only the "null" literal type has a null mutability (handled earlier)
             return true;
         }
         if (expected.equals(actual)) {
             return true;
         }
         if (expected.equals("indeterminate")) {
-            // Nothing coerces *into* indeterminate except another
-            // indeterminate, already handled by the equals() check above.
+            // only indeterminate itself coerces into indeterminate
             return false;
         }
         if (actual.equals("indeterminate")) {
@@ -20404,12 +13708,7 @@ public class TypeChecker {
         return t != null && "raw".equals(t.storage) && t.funcPtrParamTypes == null;
     }
 
-    /**
-     * The pointee size in bytes of a 'raw' pointer, for C-style pointer
-     * arithmetic: `raw u64` -> 8, `raw u8` -> 1, `raw SomeStruct` -> its size,
-     * a pointer to a pointer -> 8. `void` (and anything without a known size)
-     * steps by one byte, as GNU C does for `void *`.
-     */
+    /** Pointee size of a 'raw' pointer for C-style arithmetic (void and unknown sizes step by one byte). */
     private long pointeeSize(TypeInfo ptr, Token at) {
         TypeInfo pointee = ptr.rawPointeeType != null ? ptr.rawPointeeType : new TypeInfo(null, "imut", ptr.baseType);
         if (pointee.storage != null) {

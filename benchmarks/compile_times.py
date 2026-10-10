@@ -20,7 +20,7 @@ def stored(prog):
         d = json.load(open(os.path.join(HERE, prog, "results.json")))
     except OSError:
         return {}
-    return {r["label"]: r.get("compile_s") for r in d["results"] if r.get("compile_s") is not None}
+    return {r["label"]: (r.get("compile_s"), r.get("size_bytes")) for r in d["results"] if r.get("compile_s") is not None}
 
 
 def main():
@@ -56,16 +56,17 @@ def main():
                     ts = []
                     break
                 ts.append(dt)
+                size = os.path.getsize(exe)
             if not ts:
                 continue
-            row = {"program": prog, "variant": name, "compile_s": statistics.median(ts), "runs": ts}
+            row = {"program": prog, "variant": name, "compile_s": statistics.median(ts), "runs": ts, "size_bytes": size}
             rows.append(row)
-            print("%-14s %-28s %6.2fs  (%s)" % (prog, name, row["compile_s"], " ".join("%.2f" % t for t in ts)), flush=True)
+            print("%-14s %-28s %6.2fs %9d B (%s)" % (prog, name, row["compile_s"], size, " ".join("%.2f" % t for t in ts)), flush=True)
     others = {}
     for prog in progs:
         for l, v in stored(prog).items():
             if l.startswith(("C -O2", "Rust", "Go", "Zig", "Odin", "C++ -O2")):
-                others.setdefault(prog, {})[l] = v
+                others.setdefault(prog, {})[l] = {"compile_s": v[0], "size_bytes": v[1]}
     json.dump({"builds": a.builds, "caspien_full": rows, "others_stored": others}, open(a.out, "w"), indent=1)
     page(rows, others, a.html, a.builds)
     import shutil
@@ -76,24 +77,30 @@ def page(rows, others, dst, builds):
     byprog = {}
     for r in rows:
         byprog.setdefault(r["program"], []).append(r)
-    mx = max(r["compile_s"] for r in rows) if rows else 1
-    mx = max([mx] + [v for d in others.values() for v in d.values()])
-    out = ["<!doctype html><meta charset=utf-8><title>Compile times</title><style>"
+    out = ["<!doctype html><meta charset=utf-8><title>Compile time and executable size</title><style>"
            ":root{--bg:#fff;--fg:#1d2430;--mut:#6b7686;--cas:#2e9e5b;--oth:#c0504d;--line:#e3e7ee}"
            "@media(prefers-color-scheme:dark){:root{--bg:#14181f;--fg:#e6e9ef;--mut:#9aa5b4;--cas:#4cc47f;--oth:#e07a76;--line:#2a313c}}"
            "body{background:var(--bg);color:var(--fg);font:14px system-ui,sans-serif;margin:0;padding:16px;max-width:980px}"
-           "h1{font-size:20px}h2{font-size:15px;margin:22px 0 6px}.r{display:grid;grid-template-columns:230px 1fr 64px;gap:8px;align-items:center;margin:2px 0}"
+           "h1{font-size:20px}h2{font-size:16px;margin:28px 0 4px}h3{font-size:14px;margin:16px 0 4px}.r{display:grid;grid-template-columns:230px 1fr 90px;gap:8px;align-items:center;margin:2px 0}"
            ".b{height:14px;border-radius:2px}.c{background:var(--cas)}.o{background:var(--oth);opacity:.8}.n{color:var(--mut);font-size:12px;text-align:right}"
            ".l{font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}p{color:var(--mut);max-width:70ch}</style>",
-           "<h1>Compile times</h1><p>Caspien: every benchmark program compiled now with all optimisations on, no stage cache, median of %d builds (seconds, whole "
-           "compiler run: front end, optimiser, lowering, codegen, gcc). Red bars: the other languages' compile times as stored from the last full run "
-           "(not re-measured). Nothing was run.</p>" % builds]
-    for prog, rs in byprog.items():
-        out.append("<h2>%s</h2>" % html.escape(prog))
-        for r in rs:
-            out.append('<div class=r><div class=l>Caspien %s</div><div><div class="b c" style="width:%.1f%%"></div></div><div class=n>%.2f s</div></div>' % (html.escape(r["variant"]), 100 * r["compile_s"] / mx, r["compile_s"]))
-        for l, v in others.get(prog, {}).items():
-            out.append('<div class=r><div class=l>%s (stored)</div><div><div class="b o" style="width:%.1f%%"></div></div><div class=n>%.2f s</div></div>' % (html.escape(l), 100 * v / mx, v))
+           "<h1>Compile time and executable size</h1><p>Green: Caspien, every benchmark program built now with all optimisations on, no stage cache "
+           "(compile time = median of %d builds, whole compiler run including gcc; size = the executable). Red: the other languages' figures as stored "
+           "from the last full run (not re-measured). Nothing was run.</p>" % builds]
+    def fmt(m, v):
+        if m == "compile_s":
+            return "%.2f s" % v
+        return "%.1f KB" % (v / 1024) if v < 1 << 20 else "%.2f MB" % (v / (1 << 20))
+    for m, title in (("compile_s", "Compile time (seconds)"), ("size_bytes", "Executable size")):
+        mx = max([r[m] for r in rows] + [d[m] for o in others.values() for d in o.values() if d.get(m)] + [1])
+        out.append("<h2>%s</h2>" % title)
+        for prog, rs in byprog.items():
+            out.append("<h3>%s</h3>" % html.escape(prog))
+            for r in rs:
+                out.append('<div class=r><div class=l>Caspien %s</div><div><div class="b c" style="width:%.1f%%"></div></div><div class=n>%s</div></div>' % (html.escape(r["variant"]), 100 * r[m] / mx, fmt(m, r[m])))
+            for l, d in others.get(prog, {}).items():
+                if d.get(m):
+                    out.append('<div class=r><div class=l>%s (stored)</div><div><div class="b o" style="width:%.1f%%"></div></div><div class=n>%s</div></div>' % (html.escape(l), 100 * d[m] / mx, fmt(m, d[m])))
     open(dst, "w").write("\n".join(out))
 
 

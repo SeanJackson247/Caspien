@@ -11,6 +11,7 @@ Caspien: a systems language for auditable code (ownership storage `owns/ref/raw/
 `Compiler.java` orchestrates all four and runs them through a content-addressed stage cache (`CompilerCache.java`, `.cache/`, keys chained like a Merkle tree; `--no-cache`, `--cache-report`, `--clear-cache`; details in `docs/COMPILER_REFERENCE.md`); `toolchain.config` selects target and every optimizer switch. Stdlib in `stdlib/`, examples in `docs/examples/`, tests in `tests/`, benchmarks in `benchmarks/`.
 
 ## Working rules
+- Code comments stay short (1-3 lines: what and any non-obvious why). Design notes, formats, rules and decision history go in the component's `docs/<Class>.md` and `docs/history.md`, not in code comments; point at them by section heading.
 - Do NOT commit or push without the owner's explicit OK. Automated stop-hook nags are not approval.
 - Shipped `toolchain.config` targets **windows_gnu** with most optimizer switches off. To RUN programs, use a Linux-configured scratch copy (and "everything on" / "everything off" configs for sweeps). Never compile two programs at once in one compiler tree (shared scratch files).
 - Verify by running: new feature = new `tests/*.caspien` (print PASS/FAIL lines; expected values from an independent model/Python, not hand arithmetic) plus a sweep of all `tests/*.caspien` + `docs/examples` under several configs, old tree vs new tree identical. Say plainly what was NOT verified (Windows/Wine/MASM are normally unverified).

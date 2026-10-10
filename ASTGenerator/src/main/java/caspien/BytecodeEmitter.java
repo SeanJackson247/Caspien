@@ -13,44 +13,8 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Stage 7 (final stage of the first deliverable): walks the fully
- * type-checked tree and emits the spec's stack-based bytecode as plain
- * text. Assembly generation is explicitly out of scope for this
- * deliverable -- this is the target artifact.
- *
- * Instruction shapes, per the spec:
- *   - PUSH value type
- *   - a binary operator: OPNAME leftType rightType returnType
- *   - a unary operator: OPNAME operandType returnType
- *   - ALLOC name type          (hoisted to the top of its enclosing {} scope)
- *   - ASSIGN leftType rightType returnType
- *   - RET type                 (RET imut_void for an empty/void return)
- *   - CALL funcName             (the one exception: takes the function
- *                                name as a literal argument rather than
- *                                type triples; call arguments are PUSHed
- *                                separately before it, per spec)
- *   - ',' emits nothing at all -- just compile left then right
- *   - FUNC_START/RETURNS/ARG.../FUNC_END, STRUCT_START/STRUCT_MEMBER.../
- *     STRUCT_END, and ENUM name member... exactly as given in the spec
- *
- * Two things the spec's own examples leave genuinely ambiguous or
- * unspecified, resolved here and documented (see CLAUDE.md for the
- * fuller reasoning):
- *   - if/elseif/else chaining: the given example only shows a single
- *     'if' with no chain, and its literal shape (jump straight to the
- *     chain's *final* end label on a false condition) would be wrong
- *     for a real chain -- it would skip subsequent elseif/else branches
- *     instead of falling through to check them. Each branch here jumps
- *     to the *next* branch's label on false (or the shared end label,
- *     for the last branch) -- which is a strict generalization that
- *     collapses to exactly the spec's given shape when there's no
- *     elseif/else at all.
- *   - postfix '++' and compound assignment (+=, -=, etc.) aren't given
- *     bytecode shapes in the spec. Both are desugared here into
- *     existing primitives rather than inventing new opcodes: "x++"
- *     compiles as if it were "x = x .INC" (push target, push value,
- *     INC, ASSIGN); "x += y" compiles as if it were "x = x + y" (push
- *     target, push x, push y, ADD, ASSIGN).
+ * Final front-end stage: walks the type-checked tree and emits the stack-based higher-order bytecode (HOB) as text.
+ * Instruction shapes, if/elseif chaining and the ++ / compound-assignment desugaring: see docs/BytecodeEmitter.md, "Instruction shapes".
  */
 public class BytecodeEmitter {
 
@@ -59,70 +23,16 @@ public class BytecodeEmitter {
     /** Same lifetime as `currentFuncMangledName`, set/cleared alongside it -- needed by `emitDestructList` to look up an `owns` local's own type (`TypeChecker.FuncInfo.ownsLocalTypes`) when nulling a slot out after its own natural-end-of-scope destruct. */
     private TypeChecker.FuncInfo currentFuncInfo;
 
-    /**
-     * One entry per call site (within the function currently being
-     * emitted) that staged the reserved `gt_routine_address` slot to
-     * point at a call-site-specific unwind landing pad -- see
-     * `stageCallSiteForUnwind`'s own doc comment for the whole design.
-     * Reset to a fresh, empty list at the start of every
-     * `emitFuncUnderName` call (saved/restored exactly like
-     * `currentFuncMangledName`/`currentFuncInfo`/`inGtSuppressedContext`
-     * already are), populated as ordinary `CALL`/`RECURSIVE_CALL` sites
-     * are emitted, and drained by `emitCallSiteUnwindLandingPads` right
-     * before this same function's own `FUNC_END` -- by which point every
-     * call site in its body has already been visited, so the full,
-     * final list is known.
-     */
+    /** Landing pads staged for call sites of the current function, drained before its FUNC_END; reset per emitFuncUnderName. See docs/BytecodeEmitter.md, "Call-site unwinding". */
     private List<PendingUnwindLandingPad> pendingCallSiteUnwindLandingPads = new ArrayList<>();
 
-    /**
-     * Maps each "try" token (within the function currently being
-     * emitted) to the catch-block label already assigned to it by
-     * `emitHoistedCatchBlocks`, before a single statement of the
-     * function's real body is emitted -- so that when emission later
-     * reaches the call site a "try" directly wraps (`emitTryGuardedCall`),
-     * the label to redirect into already exists. Reset to a fresh, empty
-     * map at the start of every `emitFuncUnderName` call, same lifetime
-     * as `pendingCallSiteUnwindLandingPads`.
-     */
+    /** "try" token -> catch label assigned by emitHoistedCatchBlocks before the body is emitted; reset per function. */
     private Map<Token, String> tryCatchLabels = new HashMap<>();
-    /**
-     * The identical `tryCatchLabels` shape (per-function, populated by a
-     * pre-pass before any of this function's own statements are
-     * emitted, save/restored around `emitFuncUnderName`), for "try
-     * { ... }" blocks instead of real catch nodes: `tryBlockLabels`
-     * (keyed by the try-block's own Token) is where its own "after"
-     * label lives, and `continueTargetLabels` (keyed by a 'continue'
-     * Token) is which try-block's label that particular 'continue'
-     * targets -- see `collectTryBlockLabels`'s own doc comment for why
-     * this needs to be precomputed rather than tracked with a live,
-     * push-as-you-go stack the way `loopEndLabels`/'break' gets away
-     * with.
-     */
+    /** try-block token -> its "after" label, and continue token -> the try-block label it targets; precomputed per function by collectTryBlockLabels. */
     private Map<Token, String> tryBlockLabels = new HashMap<>();
     private Map<Token, String> continueTargetLabels = new HashMap<>();
 
-    /**
-     * "Early on in the lowering, the TRY eats the next two
-     * instructions," confirmed directly: rather than emitting a
-     * standalone "TRY &lt;label&gt;" line of its own ahead of the
-     * wrapped call's own staging block, a "try" now redirects that
-     * exact staging write -- the "ADDR gt_routine_address" / "PUSH_LABEL
-     * ..." / "ASSIGN ..." triple `stageCallSiteForUnwindNames` already
-     * emits ahead of every ordinary call -- to point at the catch
-     * block's own label directly, in place of a fresh, ordinary
-     * `@gt_callsite__...` landing-pad label. One-shot: set immediately
-     * before `emitExpr`ing the exact call node a "try" directly wraps
-     * (`emitTryGuardedCall`), consumed and cleared by the very next
-     * `stageCallSiteForUnwindNames` call -- which is guaranteed to be
-     * the staging write for that exact call (`emitCall`'s own
-     * `stageCallSiteForUnwind` call happens before any argument of that
-     * call is evaluated), so it can never leak into an unrelated,
-     * ordinary call nested inside that same call's own argument list
-     * (e.g. the plain `g()` in "try f(g()) catch{...}" -- g's own
-     * staging must still get its own ordinary landing pad, never be
-     * redirected into f's catch block).
-     */
+    /** One-shot: a "try" points the next call-site staging write at its catch label instead of a fresh landing pad. See docs/BytecodeEmitter.md, "Call-site unwinding". */
     private String pendingTryCatchLabel;
 
     /** One buffered call-site unwind landing pad -- see `pendingCallSiteUnwindLandingPads`'s own doc comment. */
@@ -140,37 +50,10 @@ public class BytecodeEmitter {
         }
     }
 
-    /**
-     * "Generation of ghost table instructions... don't happen in the
-     * ghost table decorated functions... function calls within these
-     * functions need to be to dundered duplicates of the actual
-     * functions, which have the GT instructions removed... this needs
-     * to descend the whole way down," confirmed directly. Two pieces
-     * of state, both computed once at the start of emit() and read
-     * throughout:
-     *
-     * gtDecoratedFuncMangledNames: the (up to four) gt_init/
-     * gt_alive_check/gt_destruct/gt_register functions' own mangled
-     * names -- these are emitted exactly once, under their real name,
-     * but with gt-suppression active for their own body (they never
-     * get a dundered duplicate of themselves -- nothing ever calls
-     * them via ordinary CALL).
-     *
-     * gtReachableMangledNames: every function/method transitively
-     * called (CALL/RECURSIVE_CALL only -- an extern has no body to
-     * duplicate, and a function-pointer target isn't statically known
-     * at all, see the '@pure'-style ban on call() below) from within
-     * any of the four gt-decorated functions' own bodies. Each of
-     * these gets emitted *twice*: once completely normally (ordinary
-     * callers elsewhere in the program see real GT_DESTRUCT/
-     * GT_ALIVE_CHECK behavior), and once more as a "__"-prefixed
-     * dundered duplicate with gt-suppression active -- never re-typed-
-     * checked, always the exact same already-checked tree, emitted a
-     * second time under a different bytecode identity.
-     */
+    /** Names of the gt-decorated functions, and of everything they transitively call (each of those is emitted twice, the second as a "__" duplicate). See docs/BytecodeEmitter.md, "Ghost-table suppression". */
     private Set<String> gtDecoratedFuncMangledNames = new HashSet<>();
     private Set<String> gtReachableMangledNames = new HashSet<>();
-    /** True while emitting either a gt-decorated function's own body, or any dundered ("__"-prefixed) duplicate -- both get identical treatment: GT_DESTRUCT is silently skipped, a bare 'match' condition that would need GT_ALIVE_CHECK is a hard error instead, and any CALL/RECURSIVE_CALL target found in gtReachableMangledNames is redirected to its own "__"-prefixed duplicate. */
+    /** True while emitting a gt-decorated function or any "__" duplicate: GT_DESTRUCT is skipped, a bare 'match' needing GT_ALIVE_CHECK is an error, calls into gtReachableMangledNames go to the "__" copy. */
     private boolean inGtSuppressedContext = false;
 
     private static final Map<String, String> ARITH_NAMES = new HashMap<>();
@@ -201,24 +84,10 @@ public class BytecodeEmitter {
 
     private final StringBuilder out = new StringBuilder();
     private int labelCounter = 0;
-    /**
-     * Every distinct string literal's raw (unescaped) content -> its
-     * generated hoisted id ("string_id1", "string_id2", ...), in first-
-     * occurrence order. Char literals are deliberately excluded --
-     * "not char literals," confirmed directly -- CHAR still goes
-     * through the ordinary inline PUSH 'c' type shape unchanged.
-     * Populated lazily, purely as a side effect of the single existing
-     * top-to-bottom emission pass (via literalValueOf's STRING case,
-     * the one and only place a string literal's text is ever turned
-     * into bytecode text anywhere in this class), then emitted as
-     * "STRING id \"text\"" lines prepended to the very front of the
-     * finished output right before emit() returns -- "right to the top
-     * of the entire bytecode," confirmed directly, ahead of even
-     * GLOBAL lines.
-     */
+    /** Distinct string literal -> hoisted id ("string_id1", ...), first-occurrence order; char literals are excluded. Filled by literalValueOf, emitted as STRING lines at the very front of the output. */
     private final Map<String, String> hoistedStrings = new LinkedHashMap<>();
 
-    /** Two identical string literals anywhere in the program -- whether both are ordinary PUSHed expressions, or one is a PUSH and the other is a GLOBAL/ALLOC_STATIC folded constant, or anything else -- always share the same id: a real string pool, not "one id per occurrence." */
+    /** Identical string literals anywhere in the program share one id. */
     private String hoistedStringId(String rawValue) {
         return hoistedStrings.computeIfAbsent(rawValue, v -> "string_id" + (hoistedStrings.size() + 1));
     }
@@ -236,15 +105,7 @@ public class BytecodeEmitter {
     /** Start labels of the enclosing 'match @lock' spin loops, innermost last: the target of a lock-retry 'continue'. */
     private final List<String> lockRetryLabels = new ArrayList<>();
 
-    /**
-     * "These blocks are not reflected in the bytecode output," confirmed
-     * directly -- recursively expands "unsafe"/"safe" wrapper tokens at
-     * root into their own contents inline (mirroring TypeChecker's
-     * flattenRootLines, minus the nesting validation, since that already
-     * ran and this only executes on an already-valid tree), so every
-     * declaration wrapped in one is emitted exactly as if the wrapper
-     * weren't there at all.
-     */
+    /** Expands root-level unsafe/safe wrappers into their contents (they leave no bytecode); mirrors TypeChecker's flattenRootLines without the validation. */
     private List<Token> flattenRootLinesForEmit(List<Token> lines) {
         List<Token> out = new ArrayList<>();
         for (Token lineTok : lines) {
@@ -268,12 +129,7 @@ public class BytecodeEmitter {
         LockNestingCheck.run(checker, lockExempt);
         checker.checkProofKills();
 
-        // Globals first, all of them, regardless of where in the file
-        // they were declared -- confirmed directly by example (every
-        // 'GLOBAL' line appears before any 'FUNC_START'). Emitted via
-        // the exact same folding logic ("same static instantiation
-        // rules as the static variables," confirmed directly) local
-        // statics already use, just with a different leading mnemonic.
+        // Globals first, wherever they were declared (every GLOBAL line precedes any FUNC_START); same folding as local statics.
         for (String name : checker.getGlobalOrder()) {
             emitStaticAlloc("GLOBAL", name, checker.getGlobals().get(name).canonical(),
                     checker.getGlobalRhs().get(name));
@@ -285,11 +141,7 @@ public class BytecodeEmitter {
                 continue; // a global -- already emitted above
             }
             if (t.type == TokenType.VARREF) {
-                // "asm_name;" at the root -- TypeChecker already
-                // resolved and validated this as a real ASM invocation
-                // (resolvedAsmContent is only ever set there); nothing
-                // else can legally reach here as a bare VARREF root
-                // line at all.
+                // "asm_name;" at the root: already resolved and validated by TypeChecker.
                 emitAsm(t.resolvedAsmContent);
                 continue;
             }
@@ -298,9 +150,9 @@ public class BytecodeEmitter {
                     emitStruct(structs.get(t.sub.get(0).text));
                     break;
                 case "type":
-                    break; // no bytecode representation at all -- a type alias fully erases (confirmed directly: "there's no aliases in the bytecode"), every usage site already resolved to the real underlying type by TypeChecker
+                    break; // no bytecode: a type alias is erased, TypeChecker resolved every use
                 case "const":
-                    break; // no bytecode representation at all, same reasoning as 'type' just above -- a const fully erases too, every reference already substituted with the literal it names by TypeChecker
+                    break; // no bytecode: a const is erased, TypeChecker substituted every use
                 case "enum":
                     emitEnum(enums.get(t.sub.get(0).text));
                     break;
@@ -308,21 +160,10 @@ public class BytecodeEmitter {
                     emitFunc(findFuncInfo(checker, t));
                     break;
                 case "interface":
-                    break; // no bytecode representation at all -- confirmed directly
+                    break; // no bytecode
                 case "impl":
                     for (Token methodTok : t.childs) {
-                        // A generic constructor ("impl<T> constructor for
-                        // Concrete<T>(...) self {...}") is registered by
-                        // TypeChecker.collectImpl into the shared
-                        // `functions` overload map, not this impl's own
-                        // `methods`/`staticMethods` (see collectImpl's own
-                        // doc comment on its `isConstructorDecl` branch),
-                        // so its FuncInfo is looked up the same way a
-                        // plain top-level function's is, not via
-                        // findImplMethodInfo (which only ever searches
-                        // this concrete type's own ImplInfo.methods/
-                        // staticMethods/genericMethodInstances, and would
-                        // throw "no FuncInfo for impl method" here).
+                        // Generic constructors live in the shared `functions` overload map, not in the impl's method tables.
                         if (methodTok.isConstructorDecl) {
                             emitFunc(findFuncInfo(checker, methodTok));
                         } else {
@@ -331,17 +172,7 @@ public class BytecodeEmitter {
                     }
                     break;
                 case "library":
-                    // No STRUCT_START/etc. of its own -- a library has no
-                    // instances at all, so its own functions emit exactly
-                    // like a plain top-level func/static method: ordinary
-                    // FUNC_START/FUNC_END blocks under their own already-
-                    // full-signature-mangled names (see
-                    // TypeChecker.collectLibrary's own mangledName). An
-                    // inherited (library "extends") function is never re-emitted
-                    // here -- it only exists once, under its own
-                    // originally-declaring library's root token, exactly
-                    // the same "no duplication, just a naming-convention
-                    // reference" shape interface conformance already has.
+                    // A library has no instances: its functions emit like plain top-level funcs. An inherited function is emitted only under its declaring library.
                     for (Token funcTok : t.childs) {
                         emitFunc(findLibraryFuncInfo(checker, t, funcTok));
                     }
@@ -350,16 +181,11 @@ public class BytecodeEmitter {
                     emitExtern(checker.getExterns().get(t.sub.get(0).text));
                     break;
                 case "export":
-                    break; // no bytecode representation of its own -- already folded into the target func's own FUNC_START block as an "EXPORT" line (see emitFunc)
+                    break; // folded into the target func's FUNC_START block as an EXPORT line (see emitFunc)
                 case "impl_default_lock_match":
-                    break; // a pure template declaration -- no bytecode representation of its own at all; only a fresh, deep-cloned copy checked at each use site is ever emitted, folded directly into that use site's own "match @lock" spin-loop bytecode
+                    break; // template only: a cloned copy is emitted at each use site inside the "match @lock" spin loop
                 case "ASM":
-                    // Named: nothing here -- it self-emits only at each
-                    // "asm_name;" invocation site instead (handled by
-                    // the VARREF branch above, wherever it's actually
-                    // used, possibly nowhere at all). Unnamed: this
-                    // declaration point is the *only* place it can ever
-                    // be emitted -- "spat out there and then."
+                    // Named: emitted at each "asm_name;" invocation (see the VARREF branch). Unnamed: emitted only here.
                     if (t.sub.isEmpty()) {
                         emitAsm(t.resolvedAsmContent);
                     }
@@ -414,16 +240,7 @@ public class BytecodeEmitter {
         return name + " (" + file + ":" + (info.funcToken != null ? info.funcToken.line : 0) + ")";
     }
 
-    /**
-     * "STRING string_id1 \"Hello World!\"" -- one line per distinct
-     * string literal encountered anywhere during the pass that just
-     * finished (hoistedStrings is fully populated by now -- it's
-     * populated purely as a side effect of that same single top-to-
-     * bottom walk, via literalValueOf's STRING case), in first-
-     * occurrence order, prepended ahead of everything else in the
-     * final output -- including the GLOBAL lines that already come
-     * first among everything *else*.
-     */
+    /** One STRING line per hoisted string literal, prepended to the output (ahead of the GLOBAL lines). */
     private String emitHoistedStringsPrefix() {
         StringBuilder prefix = new StringBuilder();
         for (Map.Entry<String, String> entry : hoistedStrings.entrySet()) {
@@ -434,20 +251,8 @@ public class BytecodeEmitter {
     }
 
     /**
-     * Builds gtDecoratedFuncMangledNames (the up-to-four gt_init/
-     * gt_alive_check/gt_destruct/gt_register functions' own mangled
-     * names) and gtReachableMangledNames (everything transitively
-     * CALLed from within any of their bodies) via a plain BFS over
-     * Token.resolvedCallTarget -- already fully resolved by
-     * TypeChecker, nothing re-derived here. Also enforces the one
-     * restriction that has to be checked here rather than at an
-     * ordinary emission site: "call()" (INVOKE) is banned anywhere in
-     * this whole reachable set, the same way it's already banned
-     * inside a '@pure' function -- a function-pointer's target isn't
-     * known at compile time, so there's no way to guarantee *it* also
-     * only reaches dundered duplicates. Checked eagerly, over every
-     * reachable body, rather than lazily at whatever point emission
-     * happens to reach it.
+     * Builds gtDecoratedFuncMangledNames and gtReachableMangledNames (BFS over Token.resolvedCallTarget) and bans call() (INVOKE) anywhere in the
+     * reachable set. See docs/BytecodeEmitter.md, "Ghost-table suppression".
      */
     private void computeGtReachableFunctions() {
         Deque<String> queue = new ArrayDeque<>();
@@ -468,15 +273,11 @@ public class BytecodeEmitter {
             if (info != null) {
                 collectCallTargetsAndBanInvoke(info.funcToken, queue);
             }
-            // info == null means this name resolved to an extern -- no
-            // body to duplicate or recurse into, and EXTERN_CALL is a
-            // wholly separate emission path that never consults
-            // gtReachableMangledNames at all, so nothing further is
-            // needed for it here.
+            // info == null: an extern, which has no body to duplicate and never consults gtReachableMangledNames.
         }
     }
 
-    /** Every FuncInfo (plain function or impl method) whose own mangledName matches, searched across both namespaces -- the only way to go from a bare mangled-name string (all Token.resolvedCallTarget ever carries) back to the actual body to recurse into. */
+    /** The FuncInfo (plain function, impl method or library function) with this mangled name; Token.resolvedCallTarget only carries the name. */
     private TypeChecker.FuncInfo findFuncInfoByMangledName(String mangledName) {
         for (List<TypeChecker.FuncInfo> overloads : checker.getFunctions().values()) {
             for (TypeChecker.FuncInfo info : overloads) {
@@ -540,7 +341,7 @@ public class BytecodeEmitter {
         }
     }
 
-    /** "ASM_START" / the raw content, verbatim, exactly as written / "ASM_END" -- shared by every emission site (root declaration, root invocation, function-body declaration, function-body invocation) since the shape is identical regardless of where it's spliced in. */
+    /** ASM_START / raw content / ASM_END, shared by every asm emission site. */
     private void emitAsm(String rawContent) {
         line("ASM_START");
         out.append(rawContent);
@@ -563,10 +364,7 @@ public class BytecodeEmitter {
                     return info;
                 }
             }
-            // "impl with its own independent type params" -- a call-
-            // site-instantiated residual-generic method (see
-            // ImplInfo.genericMethodInstances' own doc comment) never
-            // lives in methods/staticMethods above at all, only here.
+            // Call-site-instantiated residual-generic methods live only in genericMethodInstances.
             for (TypeChecker.FuncInfo info : implInfo.genericMethodInstances.values()) {
                 if (info.funcToken == methodTok) {
                     return info;
@@ -599,11 +397,9 @@ public class BytecodeEmitter {
     }
 
     /**
-     * A name may be declared again in a sibling scope with another type (the slot is shared and sized for the widest use, see
-     * tests/same_name_locals_test), EXCEPT when one of the types needs a generated drop (owned memory inside it): the drop-glue pass resolves `GT_DESTRUCT name`
-     * through one name -> type map, so with two different types behind one name the destruct of the other one ran the wrong drop
-     * (a catch parameter `e` plus a local `e` that owns a DynamicArray leaked its elements; an owned Node and an owned Holder
-     * under one name dropped through the wrong layout). Rename one of them.
+     * A name may be redeclared in a sibling scope with another type (the slot is shared, sized for the widest use; tests/same_name_locals_test), EXCEPT
+     * when a type needs generated drop glue: the glue pass resolves `GT_DESTRUCT name` through one name -> type map, so two owning types under one
+     * name dropped through the wrong layout (a catch parameter `e` plus an owning local `e` leaked). Rename one of them.
      */
     private void requireOneOwnsTypePerSlotName(TypeChecker.FuncInfo info, String allocLines) {
         Map<String, String> seen = new HashMap<>();
@@ -656,23 +452,8 @@ public class BytecodeEmitter {
     private void emitStruct(TypeChecker.StructInfo info) {
         line("STRUCT_START " + info.name);
         emitDecorators("STRUCT_DECORATE", info.declTok.decorators);
-        // "the Class ID of the struct is pushed first as a secret
-        // argument on every OTC... it is to be in there definitions,"
-        // confirmed directly -- a real hidden field, present in the
-        // struct's own bytecode definition (not merely a compile-time-
-        // only concept), never user-declared and never appearing in
-        // `info.members` (so it's exempt from struct-literal field-
-        // exhaustiveness and ordinary "." member access) -- see
-        // emitInstantiate for where its value is actually populated, at
-        // every construction site. "@untyped are excempt" -- classId is
-        // null for those, so they get no hidden field, and no layout
-        // slot, at all. Emitted *before* the user-declared members,
-        // matching emitInstantiate's/emitStaticAlloc's own "pushed
-        // first" ordering -- computeStructLayout (below) is what
-        // actually walks this order to assign every member's own byte
-        // offset, so this ordering is load-bearing, not cosmetic: laying
-        // classId last would put it at the *end* of the struct's own
-        // memory layout instead of offset 0.
+        // The hidden ___type class id comes first (absent for @untyped): computeStructLayout assigns offsets in this order, so it must precede the
+        // user members. See docs/BytecodeEmitter.md, "Struct layout and padding".
         for (StructLayoutEntry entry : computeStructLayout(info).entries) {
             line(entry.paddingBytes > 0
                     ? "STRUCT_PADDING " + entry.paddingBytes
@@ -681,49 +462,8 @@ public class BytecodeEmitter {
         line("STRUCT_END");
     }
 
-    // ---- struct layout / alignment (padding round) ------------------------
-    //
-    // "All structs get padded by the compiler (not the optimizer) --
-    // appears in higher order bytecode... with the padding interdispersed
-    // as needed," confirmed directly: real, natural/C-like alignment is
-    // baked directly into a struct's own STRUCT_START/STRUCT_MEMBER/
-    // STRUCT_END declaration here, rather than left for a later stage to
-    // recompute from a flat, unpadded member sum the way
-    // AddressLoweringPass/SizeCalculator always used to (see that class's
-    // own long-standing "structs when not pointers are their actual size
-    // -- ignores alignment/padding entirely, flag that as worthy of
-    // review later" comment -- this is that review). "@unpadded gets a
-    // not supported error for now" -- registerStructLike already rejects
-    // it outright (see that method), so every struct that ever reaches
-    // this section is always padded; there is no unpadded branch to keep
-    // here.
-    //
-    // Rule: each field is aligned to its own natural alignment (equal to
-    // its own size for every leaf shape -- nothing in this language is
-    // ever over-aligned relative to its own width); a struct's own
-    // alignment is the max of its members' own (computed recursively --
-    // a struct made entirely of u8 fields is 1-aligned, one containing a
-    // u64 anywhere is 8-aligned); padding is inserted immediately before
-    // any field whose running offset isn't already a multiple of its own
-    // alignment; and the struct's own total size is rounded up to its
-    // own overall alignment at the end (ordinary C-style trailing struct
-    // padding, so an array of these structs keeps every element
-    // correctly aligned too).
-    //
-    // Walk `info.members` once, in order, with the hidden classId field
-    // prepended (structs have no inheritance, so there is no parent part).
-    //
-    // Deliberately duplicates its own tiny size/alignment table rather
-    // than reusing TypeChecker's own private PRIMITIVE_SIZE (used only
-    // by the unrelated 'sizeof' builtin, which has its own, deliberately
-    // different rules -- e.g. 'sizeof' on an array type returns the
-    // element size, not the real total layout size, and never accounts
-    // for alignment either -- a separate, still-flagged, still-untouched
-    // concern) -- matching this project's established precedent of every
-    // sizing table living independently in whichever stage actually
-    // needs it (the optimizer's own SizeCalculator already keeps a fully
-    // independent copy of this same table rather than reaching into the
-    // compiler project at all).
+    // ---- struct layout / alignment ---- see docs/BytecodeEmitter.md, "Struct layout and padding".
+    // Keeps its own size/alignment table (not TypeChecker.PRIMITIVE_SIZE, which serves 'sizeof' under different rules).
 
     private static final Map<String, Long> LAYOUT_PRIMITIVE_SIZE = new HashMap<>();
     static {
@@ -819,7 +559,7 @@ public class BytecodeEmitter {
         return layout;
     }
 
-    /** [size, align] in bytes for one member's own full canonical type text ("storage?_some?_mutability_atomic?_baseType", TypeInfo.canonical()'s own format) -- a storage-bearing type is always one 8-byte, 8-aligned pointer word regardless of pointee (the identical "just a pointer" reasoning emitArgTransfer's own single-word argument case already uses), otherwise this strips down to the bare baseType and defers to layoutSizeAndAlignOfBaseType. */
+    /** [size, align] in bytes for a member's canonical type text: any storage-bearing type is one 8-byte pointer word, otherwise strips to the base type (layoutSizeAndAlignOfBaseType). */
     private long[] layoutSizeAndAlignOf(String canonical) {
         String rest = canonical;
         int firstUnderscore = rest.indexOf('_');
@@ -837,7 +577,7 @@ public class BytecodeEmitter {
         return layoutSizeAndAlignOfBaseType(baseType);
     }
 
-    /** [size, align] in bytes for a bare baseType (no storage/mutability prefix) -- "a range should be 16 bytes, 8-aligned" (two plain u64 bounds); a fixed array's own alignment is its element's own alignment, its size the element's size times its length; a dynarray is always one 8-byte, 8-aligned handle; a nested struct recurses into its own already-computed layout; anything else unknown here (an enum name -- every enum in this language fits in one u64 word, SizeCalculator's own identical fallback, confirmed against real compiled output for an enum-typed struct field) falls back to a conservative one-word, 8-aligned default rather than guessing. */
+    /** [size, align] for a bare base type: range 16/8; fixed array = element align, count * element size; dynarray = one 8-byte handle; nested struct recurses; enum or unknown = one 8-byte word. */
     private long[] layoutSizeAndAlignOfBaseType(String baseType) {
         if (baseType.equals("range") || baseType.startsWith("range(")) {
             return new long[]{16, 8};
@@ -873,18 +613,7 @@ public class BytecodeEmitter {
     }
 
     private void emitEnum(TypeChecker.EnumInfo info) {
-        // "currently, ENUM_DEF BLACK WHITE... but if the variants were
-        // guaranteed, you'd have... ENUM_DEF BLACK 0 WHITE 1,"
-        // confirmed directly -- "only change the format if the values
-        // are explicit," confirmed directly, so the bare, name-only
-        // format is untouched for every enum that never used
-        // ":"/"=" at all.
-        // A range-valued enum ("we will store unique ranges (pairs of
-        // u64s) as variants," confirmed directly) gets its own third
-        // format, "NAME start..end" per variant -- distinct from the
-        // plain u64-valued "NAME value" shape above it (never emitted
-        // together; collectEnum already guarantees an enum is exactly
-        // one of plain/u64-valued/range-valued).
+        // Plain enum: "ENUM name V1 V2"; explicit values: "V1 0 V2 1"; range-valued: "V1 a..b" (exactly one kind per enum).
         StringBuilder sb = new StringBuilder("ENUM ").append(info.name);
         for (int i = 0; i < info.variants.size(); i++) {
             sb.append(' ').append(info.variants.get(i));
@@ -898,38 +627,7 @@ public class BytecodeEmitter {
         line(sb.toString());
     }
 
-    /**
-     * Emits an ordinary function/method exactly once under its real
-     * name -- with gt-suppression active for its own body only if it's
-     * itself one of the (up to four) gt-decorated functions -- and,
-     * separately, a second time as a "__"-prefixed dundered duplicate
-     * (gt-suppression always active, `EXPORT` never emitted -- an
-     * internal duplicate has no business being exported for C
-     * linkage) if this function is anywhere in gtReachableMangledNames.
-     * The two emissions are otherwise identical: same already-checked
-     * tree, walked twice, never re-type-checked.
-     */
-    /**
-     * "func main(int,raw mut raw mut char){ let args =
-     * make_safe_args(i,args_ptrs); return dundered_main(args); },"
-     * confirmed directly -- synthesized directly as bytecode (no
-     * synthetic Token/FuncInfo tree routed through the ordinary
-     * checking/emission pipeline at all), since nothing about this
-     * wrapper was ever written as real source for TypeChecker to have
-     * validated in the first place. `userMain` here is the *original*
-     * FuncInfo (already emitted under "__caspien_main" by the caller, just
-     * before this runs) -- used only to read its own return type and
-     * calling convention, never re-emitted itself.
-     *
-     * Gets its own full `gt_routine` treatment via
-     * `emitGtRoutineAlloc`/`emitGtRoutineBody` (a minimal, synthetic
-     * `FuncInfo` whose own `ownsLocalTypes` holds exactly the one local
-     * this wrapper ever declares, "args") -- this genuinely is "the true main" now
-     * (there's no '@event_loop' in this branch at all -- see emitFunc's
-     * own dispatch), so it needs the identical `EXIT`-ending, reserved-
-     * slot treatment every other real entry point already gets, not a
-     * bespoke, simpler one.
-     */
+    /** Synthesizes the real C-ABI `main(argc, argv)`: builds the safe args value with make_safe_args and calls "__caspien_main" with it. See docs/BytecodeEmitter.md, "Entry points". */
     private void emitSafeArgsMainWrapper(TypeChecker.FuncInfo userMain) {
         TypeChecker.FuncInfo makeSafeArgs = checker.getFunctions().get("make_safe_args").get(0);
         TypeChecker.TypeInfo argcType = new TypeChecker.TypeInfo(null, "imut", "s32");
@@ -945,26 +643,8 @@ public class BytecodeEmitter {
         currentFuncMangledName = "main";
         currentFuncInfo = wrapperInfo;
 
-        // Same "RETURNS, then ARG*, then ALLOCs" ordering
-        // `emitFuncUnderName` now uses for every ordinary function --
-        // this wrapper's body is hand-synthesized bytecode, not a real
-        // `emitBlock` call, but it declares exactly one local ("args")
-        // and gets the identical treatment: "argc"/"argv" (this real,
-        // OS-facing "main"'s own two parameters) as bare `ARG` lines
-        // right after `RETURNS` -- genuinely just signature facts here,
-        // never a real frame slot or load sequence; see "ARG-to-ALLOC
-        // lowering" in the sibling `caspien-optimizer` project's own
-        // CLAUDE.md for where and how those get turned into a real
-        // `ALLOC`+load sequence -- then `gt_routine_address`, then
-        // "args" (this wrapper's own one real, hand-emitted local), then
-        // the gt_routine body, only then GT_INIT and the rest of this
-        // wrapper's own hand-written sequence. This is the real C-ABI
-        // entry point the OS/C runtime itself calls; it carries no
-        // `@call_convention` decorator of its own (no source syntax to
-        // write one on a synthesized function), so `ArgToAllocLoweringPass`
-        // resolves its convention the same way it resolves any other
-        // undecorated function's: this project's own `compiler.config`
-        // `default:`.
+        // Same order as emitFuncUnderName: RETURNS, ARG lines (argc/argv, signature facts only), then the gt_routine slot and the one local "args".
+        // No @call_convention (nothing to write it on): ArgToAllocLoweringPass uses the config default.
         List<String> osArgNames = Arrays.asList("argc", "argv");
         List<String> osArgTypes = Arrays.asList(argcType.canonical(), argvType.canonical());
         emitParamDecls(osArgNames, osArgTypes);
@@ -972,13 +652,7 @@ public class BytecodeEmitter {
         line("ALLOC args " + argsType.canonical());
         emitGtRoutineBody(wrapperInfo, "main", false);
 
-        // "after my allocation and my static allocations, but before
-        // any of my expressions" -- it's exactly as much "the true
-        // main" as an ordinary one (see this method's own doc comment)
-        // -- so it gets the identical GT_INIT placement, right after
-        // its one hoisted ALLOC and before the call-sequence that
-        // constitutes its own single "expression"
-        // (`let args = make_safe_args(...)`).
+        // GT_INIT placement of a true main: after the ALLOCs, before the first expression.
         if (checker.usesOwnsRefDynNew()) {
             requireGhostTableFunctionPresent("gt_init", userMain.funcToken);
             requireGhostTableFunctionPresent("gt_moved", userMain.funcToken);
@@ -989,9 +663,7 @@ public class BytecodeEmitter {
         line("ADDR args " + argsType.canonical());
         Token argcTok = syntheticVarref("argc", argcType.canonical());
         Token argvTok = syntheticVarref("argv", argvType.canonical());
-        // Staged with an empty destruct list -- "args" doesn't exist yet
-        // at this point (this call's own return value is what creates
-        // it) -- see `stageCallSiteForUnwindNames`'s own doc comment.
+        // Empty destruct list: "args" does not exist yet.
         stageCallSiteForUnwindNames(Collections.emptyList(), Collections.emptyList(), userMain.funcToken);
         emitCallSequence(null, Arrays.asList(argcTok, argvTok), () -> line("CALL make_safe_args"),
                 argsType.canonical(), makeSafeArgs.callConvention);
@@ -1000,10 +672,7 @@ public class BytecodeEmitter {
         Token argsTok = syntheticVarref("args", argsType.canonical());
         argsTok.isOwnershipMoveSource = true;
         boolean isVoid = userMain.returnType.canonical().equals("imut_void");
-        // Also staged with an empty destruct list -- "args" ownership is
-        // moving into this exact call (`argsTok.isOwnershipMoveSource`),
-        // so there is nothing left of this wrapper's own to destruct if
-        // it unwinds back out of "__caspien_main".
+        // Empty destruct list: "args" is moved into this call.
         stageCallSiteForUnwindNames(Collections.emptyList(), Collections.emptyList(), userMain.funcToken);
         emitCallSequence(null, Arrays.asList(argsTok), () -> line("CALL __caspien_main"),
                 isVoid ? null : userMain.returnType.canonical(), userMain.callConvention);
@@ -1012,9 +681,7 @@ public class BytecodeEmitter {
         } else {
             line("RET " + userMain.returnType.canonical());
         }
-        // This wrapper is always emitted under "main" (the true root),
-        // never `gtSuppressed` -- the identical landing-pad placement
-        // `emitFuncUnderName` uses for every ordinary function.
+        // Always emitted under "main" and never gt-suppressed.
         emitCallSiteUnwindLandingPads(wrapperInfo, "main", false);
         line("FUNC_END");
         currentFuncMangledName = null;
@@ -1022,7 +689,7 @@ public class BytecodeEmitter {
         pendingCallSiteUnwindLandingPads = previousPendingLandingPads;
     }
 
-    /** A minimal VARREF token, just enough for `emitExpr`'s own VARREF case ("PUSH name type") and `emitAssignTarget`'s own bare-name case -- used only to feed a synthesized name into the same, real emission machinery every ordinary call/assignment already goes through, never type-checked (there's no real source for it to have come from). */
+    /** A minimal VARREF token so synthesized names can go through the ordinary emitExpr / emitAssignTarget machinery; never type-checked. */
     private Token syntheticVarref(String name, String resolvedType) {
         Token t = new Token(TokenType.VARREF, name, 0, "<synthesized>");
         t.resolvedType = resolvedType;
@@ -1030,16 +697,7 @@ public class BytecodeEmitter {
     }
 
     private void emitFunc(TypeChecker.FuncInfo info) {
-        // "In the final emitted bytecode, dunder the main and have the
-        // @event_loop function be the actual main," confirmed directly.
-        // 'main' itself is renamed to "__caspien_main" (this compiler's own
-        // existing "__"-prefixed dundered-duplicate convention, already
-        // used for the unrelated GT_DESTRUCT-suppression case just
-        // below); the '@event_loop' function is emitted *as* "main" in
-        // its place, so the bytecode's own real entry point becomes
-        // whatever a real assembly backend would recognize "main" to
-        // be, regardless of what either function was actually named in
-        // source.
+        // An @event_loop function is emitted as "main" and the user's main becomes "__caspien_main". See docs/BytecodeEmitter.md, "Entry points".
         TypeChecker.FuncInfo eventLoop = checker.getEventLoopFunc();
         if (eventLoop != null) {
             if (info == eventLoop) {
@@ -1051,15 +709,7 @@ public class BytecodeEmitter {
                 return;
             }
         } else if (info.name.equals("main") && "safe_args".equals(info.mainArgShape)) {
-            // "func main(int,raw mut raw mut char){ let args =
-            // make_safe_args(i,args_ptrs); return dundered_main(args);
-            // }," confirmed directly -- no '@event_loop' exists to
-            // already be "the real entry point," so the compiler
-            // itself synthesizes that same shape directly as bytecode
-            // (`emitSafeArgsMainWrapper`, just below): the real,
-            // C-ABI-shaped "main" the OS/C runtime actually calls,
-            // which builds the safe, wrapped value and hands it to the
-            // user's own (dundered) 'main'.
+            // No @event_loop: synthesize the C-ABI main wrapper (emitSafeArgsMainWrapper).
             emitFuncUnderName(info, "__caspien_main", false, false);
             emitSafeArgsMainWrapper(info);
             return;
@@ -1072,70 +722,9 @@ public class BytecodeEmitter {
     }
 
     /**
-     * "I need a garbage collection routine at the top of all my
-     * functions," confirmed directly. Emitted once, right after this
-     * function's own "ARG" lines, before its ordinary body -- a
-     * reserved slot ("gt_routine_address", always the very first thing
-     * this function's own frame holds, before any other local),
-     * pointing at a label this function's own body never reaches
-     * except by explicitly jumping there (a `JMP` right over it, the
-     * same "no JMPing... at runtime" shape `assume match` already
-     * established for a different reason), containing exactly one
-     * `GT_DESTRUCT` per `owns` local this function ever declares
-     * (`FuncInfo.ownsLocalTypes`, already accumulated across every
-     * nested scope within it, not just its own root one), followed by
-     * however this particular function's own unwind boundary is
-     * resolved (see the three-way choice below).
-     *
-     * "The only functions that doesnt have GT_UNWIND is the true main,
-     * being main or the @event_loop as the case may be, and @async
-     * functions," confirmed directly -- `emittedName` (not
-     * `info.name`) is what's checked against "main" specifically,
-     * since dundering has already resolved, by the time this runs,
-     * which of `main`/`@event_loop` (if either) is truly emitted under
-     * that name.
-     *
-     * Entirely skipped for a gt-suppressed function (one of the (up to
-     * four) real, user-written ghost-table functions themselves, or
-     * either's own dundered duplicate) -- the exact same reasoning
-     * `emitDestructList` already applies to an *ordinary* `GT_DESTRUCT`
-     * inside one of these (calling `gt_destruct` from within
-     * `gt_destruct` itself would recurse forever), extended here to
-     * the whole mechanism: no reserved slot, no label, no `GT_UNWIND`.
-     *
-     * NOTE FOR THE FUTURE BYTECODE-TO-ASSEMBLY GENERATOR: this is the
-     * one place in the whole bytecode format a raw code address (not a
-     * variable's value, not a literal) is ever pushed as an operand --
-     * `PUSH_LABEL`, deliberately a different mnemonic from plain
-     * `PUSH`, precisely so this is never confused with reading a
-     * named slot's own current value. `gt_routine_address` itself is
-     * typed `code_addr`, a pseudo-type with no equivalent anywhere
-     * else in this language's own type system -- pointer-sized, never
-     * user-visible, never subject to ordinary type-checking (there is
-     * none here to subject it to).
-     *
-     * "We static alloc, then we Alloc, including the special variable
-     * for the unwinding being the first thing, then we have the rest
-     * of the functionality. We do not have our routines mixed in with
-     * our allocs," confirmed directly -- `GT_UNWIND`'s own correctness
-     * depends on every function's own "ALLOC gt_routine_address" being
-     * at the exact same, fixed offset from the base pointer in
-     * literally every frame, and every local's own `ALLOC` needs its
-     * frame slot reserved before anything else in the function runs.
-     * This method is therefore split into two halves that
-     * `emitFuncUnderName` calls at two different points, never
-     * adjacent to each other: `emitGtRoutineAlloc` (just the reserved
-     * slot's own `ALLOC`, emitted first among all of this function's
-     * ordinary allocations -- ahead of every local `emitFuncUnderName`
-     * has already collected from anywhere in the function body, no
-     * matter how deeply nested) and `emitGtRoutineBody` (the label,
-     * jump-around, `GT_DESTRUCT` list, and `EXIT`/`GT_UNWIND`/
-     * `EXIT_THREAD` ending), which only runs once every single
-     * `ALLOC`/`ALLOC_STATIC` this function will ever need has already
-     * been emitted -- so the bytecode text itself is now the actual
-     * source of truth for "every local's slot exists before any other
-     * functionality runs," not something a later assembly stage has to
-     * separately know to honor.
+     * Reserved frame slots, emitted ahead of every local so GT_UNWIND finds them at the same rbp offset in every frame: gt_routine_address first, then
+     * gt_error_message (only when the program throws), then the trace slots. Skipped when gt-suppressed or when the program uses neither
+     * owns/ref/dyn/new nor throw. The label/destruct/ending half is emitGtRoutineBody. See docs/BytecodeEmitter.md, "gt_routine prologue".
      */
     private void emitGtRoutineAlloc(TypeChecker.FuncInfo info, String emittedName, boolean gtSuppressed) {
         if (gtSuppressed) {
@@ -1145,37 +734,8 @@ public class BytecodeEmitter {
             return;
         }
         line("ALLOC gt_routine_address code_addr");
-        // A second reserved slot, right alongside the first -- "another
-        // secret variable, like the one used for gt unwinding routine's
-        // address, this one is used for the error message... a secret
-        // address variable, and a secret message variable," confirmed
-        // directly. Unlike `gt_routine_address` (needed the moment
-        // *anything* `owns`/`ref`/`dyn`/`new`-shaped could ever unwind
-        // through this frame), this one is meaningless without `throw`
-        // specifically -- gated on `checker.usesThrow()` alone, narrower
-        // than the `||` just above. Typed `static_imut_string`, the
-        // exact same type a thrown message already resolves to ("a
-        // pointer just like any other pointer to a static imut string,"
-        // confirmed directly) -- an entirely ordinary type, unlike
-        // `gt_routine_address`'s own pseudo-type `code_addr`, so nothing
-        // about reading or writing it needs special-casing anywhere
-        // `static imut string` already flows. See `emitThrow` (the
-        // write) and `emitHoistedCatchBlocks` (the read, snapshotted
-        // once into each catch's own bound parameter) for the two ends
-        // of this slot's own lifetime. `GT_UNWIND MSG`'s real x86-64 codegen
-        // (X86Backend.java, the Codegen project -- a genuinely separate,
-        // already-working backend, not merely a documented contract)
-        // implements the actual one-frame-further propagation itself:
-        // it reads this slot out of the unwinding (child) frame before
-        // its epilogue retargets `rbp`, then writes that value into the
-        // caller's own identically-offset slot right after, exactly
-        // mirroring how it already propagates `gt_routine_address` by
-        // reading it out of the (now-caller's) frame post-epilogue. That
-        // copy only ever runs when this slot is present somewhere in the
-        // compilation unit at all (see X86Backend's own
-        // `programHasErrorMessage`), since -- unlike `gt_routine_address`
-        // -- it isn't ALLOC'd in every `gt_routine`-bearing frame, only
-        // ones reachable when `checker.usesThrow()` is true program-wide.
+        // gt_error_message: meaningful only with `throw`, hence the narrower gate. Typed static_imut_string like a thrown message. Written by emitThrow,
+        // read by emitHoistedCatchBlocks; GT_UNWIND MSG (X86Backend) copies it into the caller's frame. See docs/BytecodeEmitter.md, "gt_routine prologue".
         if (checker.usesThrow()) {
             line("ALLOC gt_error_message static_imut_string");
         }
@@ -1253,61 +813,12 @@ public class BytecodeEmitter {
         if (gtSuppressed) {
             return;
         }
-        // "the simple/complicated set distinction wasn't for the
-        // codebase itself, it was me trying to help you compartmentalize
-        // the build out, for efficiency... I see there's an issue that
-        // GT_UNWIND is unconditionally in every non-main. It should
-        // actually only be there if the final compilation unit includes
-        // that GT_INIT at the main," confirmed directly -- the whole
-        // `gt_routine` prologue (the reserved slot, the label, and
-        // whichever of GT_UNWIND/EXIT/EXIT_THREAD it ends in) is real
-        // scaffolding this program only actually needs when something
-        // could reach it: either the program uses `owns`/`ref`/`dyn`/
-        // `new` anywhere at all (the exact same whole-program trigger
-        // `GT_INIT` itself already uses -- `checker.usesOwnsRefDynNew()`),
-        // or the program uses `throw` anywhere at all (whose own bytecode
-        // always names its enclosing function's `gt_routine` label as a
-        // real operand -- `checker.usesThrow()`, see its own doc comment
-        // for why this second trigger is needed alongside the first). A
-        // program using neither gets no `gt_routine` scaffolding
-        // anywhere, in any function, not even `main` -- there is nothing
-        // left that could ever reference it. (Kept as the identical
-        // gate `emitGtRoutineAlloc` already checked, so the two halves
-        // agree on whether this function gets any gt_routine machinery
-        // at all.)
+        // Gate identical to emitGtRoutineAlloc's: the prologue is needed only if the program uses owns/ref/dyn/new (the GT_INIT trigger) or throw.
         if (!checker.usesOwnsRefDynNew() && !checker.usesThrow()) {
             return;
         }
-        // UPDATE (per-throw-site/per-call-site unwinding): the whole-
-        // function `gt_routine` label below -- one shared destruct list
-        // for "every owns local this function ever declares," reached
-        // only via a `THROW`'s own direct `jmp` from within this same
-        // function -- is now entirely superseded whenever the program
-        // uses `throw` anywhere. See `TypeChecker.checkThrow`'s own doc
-        // comment, `emitThrow`, `stageCallSiteForUnwind`, and
-        // `emitCallSiteUnwindLandingPads` for the real, precise
-        // replacement: a `throw` now destructs exactly the `owns` locals
-        // alive at that lexical point (inline, no label needed -- its
-        // own destination is resolved at compile time, so there's
-        // nothing to jump *to*), and an unwind bubbling up from a deeper
-        // call lands at a landing pad specific to the exact call site
-        // that made it, staged into `gt_routine_address` immediately
-        // before that call (`stageCallSiteForUnwind`) rather than at
-        // this whole-function label. Nothing here is reachable any more
-        // once `usesThrow()` is true -- not even by a bug, since nothing
-        // else in the emitted bytecode ever names `gt_routine__<func>`
-        // any more either -- so there is genuinely nothing left to emit
-        // for this function's *old-style* prologue at all; only the
-        // reserved slot's own `ALLOC` (`emitGtRoutineAlloc`, already
-        // emitted) and this function's own call-site landing pads
-        // (`emitCallSiteUnwindLandingPads`, emitted separately, once
-        // every call site in this function's body is known) remain.
-        // When `usesThrow()` is false but `usesOwnsRefDynNew()` is true,
-        // the old design below is kept completely unchanged -- there is
-        // no `throw` anywhere in the whole program for anything to ever
-        // unwind through, so the simpler, whole-function-list shape is
-        // still exactly as correct (and exactly as untouched) as it
-        // always was.
+        // With `throw` anywhere in the program this whole-function label is superseded by per-call-site landing pads (stageCallSiteForUnwind,
+        // emitCallSiteUnwindLandingPads) and nothing below is emitted. Without throw the old whole-function shape is kept. See docs/BytecodeEmitter.md, "gt_routine prologue".
         emitTraceIdStore(info, emittedName);
         if (checker.usesThrow()) {
             return;
@@ -1333,37 +844,9 @@ public class BytecodeEmitter {
     }
 
     /**
-     * Stages the reserved `gt_routine_address` slot, immediately before
-     * an ordinary `CALL`/`RECURSIVE_CALL`, to point at a landing pad
-     * scoped to exactly *this* call site -- the caller's own half of the
-     * "set the special pointer at the call site" design (see the
-     * conversation this was designed in, and `TypeChecker.checkThrow`'s
-     * own doc comment for the throw-site half). If the callee (or
-     * anything it calls, transitively, at any depth) ever throws and
-     * unwinds all the way back out to here, `GT_UNWIND` will tear down
-     * that deeper frame and read *this* frame's own slot -- landing
-     * precisely at the label this call staged, which destructs exactly
-     * what's alive in `currentFuncMangledName` at this exact point
-     * (`op.destructOnExit`, computed by `TypeChecker` the identical way
-     * a `return` right here would have been) before continuing the
-     * unwind one frame further up.
-     *
-     * Nothing about the propagation mechanism itself is new -- still one
-     * fixed slot, still one `GT_UNWIND` reading "whatever's now the
-     * current frame." What's new is that a function re-stages its own
-     * slot before every single call it makes, rather than writing it
-     * once in its own prologue -- see `emitGtRoutineBody`'s own doc
-     * comment for why the old, single, whole-function value is gone
-     * entirely once the program uses `throw` anywhere.
-     *
-     * A complete no-op whenever `checker.usesThrow()` is false (nothing
-     * in the whole program could ever throw, so there's nothing to
-     * stage) or inside gt-suppressed context (a ghost-table function's
-     * own body, or its dundered duplicate -- `checkThrow` already
-     * forbids `throw` inside one of the four real ghost-table functions
-     * outright, and a call made *from* one is never itself an unwind
-     * boundary worth staging for, the same recursion-avoidance reasoning
-     * `emitDestructList`/`emitGtRoutineBody` already apply here).
+     * Stages the reserved `gt_routine_address` slot, just before an ordinary CALL/RECURSIVE_CALL, to point at a landing pad for exactly this call
+     * site (it destructs what `op.destructOnExit` lists, then continues the unwind). No-op when the program never throws or in gt-suppressed context.
+     * See docs/BytecodeEmitter.md, "Call-site unwinding".
      */
     private void stageCallSiteForUnwind(Token op) {
         List<String> destructNames = op.destructOnExit != null ? op.destructOnExit : Collections.emptyList();
@@ -1371,34 +854,14 @@ public class BytecodeEmitter {
         stageCallSiteForUnwindNames(destructNames, unlocks, op);
     }
 
-    /**
-     * The real staging work `stageCallSiteForUnwind` does, factored out
-     * so `emitSafeArgsMainWrapper`'s own two hand-synthesized calls
-     * (`make_safe_args`, `__main` -- real bytecode built directly, never
-     * routed through `TypeChecker.checkCall`, so there's no real
-     * `Token.destructOnExit` for them to read) can stage themselves too,
-     * with an explicit, hand-reasoned destruct list instead: empty for
-     * both of this wrapper's own calls, since its only owns local
-     * ("args") is either not yet constructed (the `make_safe_args` call)
-     * or has just had its ownership moved into the call itself (the
-     * `__main` call, `argsTok.isOwnershipMoveSource`) -- so there is
-     * never anything of this wrapper's own left to destruct if either
-     * call unwinds back into it.
-     */
+    /** The staging work of stageCallSiteForUnwind, also used by emitSafeArgsMainWrapper's two hand-built calls with an explicit (empty) destruct list. */
     private void stageCallSiteForUnwindNames(List<String> destructNames, List<Token> unlockCalls, Token at) {
         if (!checker.usesThrow() || inGtSuppressedContext) {
             return;
         }
         String label;
         if (pendingTryCatchLabel != null) {
-            // "The TRY eats the next two instructions" -- redirect this
-            // exact staging write straight at the catch block already
-            // hoisted to this frame's own top, instead of a fresh,
-            // ordinary landing-pad label of our own. No entry is added
-            // to `pendingCallSiteUnwindLandingPads` for this call site --
-            // nothing should ever land at an intermediate pad here, only
-            // directly in the catch block, so there is no separate pad
-            // for `emitCallSiteUnwindLandingPads` to later emit.
+            // A "try" redirects this staging write straight at its hoisted catch label; no landing pad entry is added.
             label = pendingTryCatchLabel;
             pendingTryCatchLabel = null;
         } else {
@@ -1411,24 +874,8 @@ public class BytecodeEmitter {
     }
 
     /**
-     * Shared by `emitExpr`'s and `emitStatement`'s own "try" cases (the
-     * expression- and bare-statement-position forms of "try foo()
-     * catch{...}"): stages the one-shot `pendingTryCatchLabel` redirect
-     * (see its own doc comment) around emitting the exact call node a
-     * "try" directly wraps -- `tryTok.sub.get(0)`, always a plain CALL
-     * per `TypeChecker.checkTry`'s own validation -- so that call's own
-     * staging write lands in the catch block instead of a fresh landing
-     * pad. The explicit clear after `emitExpr` returns is a pure safety
-     * net (`stageCallSiteForUnwindNames` already consumes and clears it
-     * itself, the moment it actually fires); it guarantees this can
-     * never leak into unrelated code even if that call somehow didn't
-     * happen (it always does today -- see `pendingTryCatchLabel`'s own
-     * doc comment for why). No label is needed here for where a caught
-     * throw "resumes" afterward -- `TypeChecker.checkTry` now requires
-     * every catch body to be terminating (end in its own 'return' or
-     * 'throw'), so a caught throw never falls back through this call
-     * site's own normal-path code at all; see `emitHoistedCatchBlocks`'s
-     * own doc comment for what that buys.
+     * Emits the call node a "try" directly wraps with the one-shot `pendingTryCatchLabel` set, so its staging write lands in the catch block. The
+     * clear afterwards is only a safety net. No resume label is needed: checkTry requires every catch body to terminate. See docs/BytecodeEmitter.md, "Call-site unwinding".
      */
     private void emitTryGuardedCall(Token tryTok) {
         pendingTryCatchLabel = tryCatchLabels.get(tryTok);
@@ -1437,21 +884,8 @@ public class BytecodeEmitter {
     }
 
     /**
-     * Emits every call-site landing pad `stageCallSiteForUnwind` staged
-     * while this function's own body was being emitted -- placed after
-     * the real body's own natural-end destruct list but still ahead of
-     * "FUNC_END" (dead code during ordinary execution, reached only by
-     * an unwind reading this exact frame's own `gt_routine_address`
-     * slot; the leading `JMP` guarantees normal fall-through control
-     * flow never wanders into it), the identical "jump-around" placement
-     * the old, now-superseded whole-function `gt_routine` label used.
-     *
-     * Each landing pad: its own precise `GT_DESTRUCT` list (exactly what
-     * was alive at that one specific call site, never this function's
-     * whole-function superset), then the same three-way root/async/
-     * ordinary ending `emitGtRoutineBody` already established --
-     * `EXIT` for the true root, `EXIT_THREAD` for an `@async` function,
-     * `GT_UNWIND` (continue the chain one frame further up) otherwise.
+     * Emits the landing pads staged while the body was emitted, after the natural-end destruct list and ahead of FUNC_END, behind a leading JMP
+     * (dead unless an unwind lands there). Each pad: its GT_DESTRUCT list, then EXIT (true main), EXIT_THREAD (@async) or GT_UNWIND.
      */
     private void emitCallSiteUnwindLandingPads(TypeChecker.FuncInfo info, String emittedName, boolean gtSuppressed) {
         if (gtSuppressed || pendingCallSiteUnwindLandingPads.isEmpty()) {
@@ -1493,12 +927,7 @@ public class BytecodeEmitter {
         tryBlockLabels = new HashMap<>();
         Map<Token, String> previousContinueTargetLabels = continueTargetLabels;
         continueTargetLabels = new HashMap<>();
-        // Precomputes every try-block's own "after" label, and every
-        // 'continue's own target among them, before a single statement
-        // of this function's body -- hoisted catch or otherwise -- is
-        // emitted. See `collectTryBlockLabels`'s own doc comment for why
-        // this can't wait until the try-block's own normal-position
-        // emission the way an ordinary fresh label generation would.
+        // Try-block "after" labels and continue targets are precomputed here (see collectTryBlockLabels).
         collectTryBlockLabels(info.funcToken.childs, new ArrayDeque<>());
         functionCatchParams = new HashSet<>();
         line("FUNC_START " + emittedName);
@@ -1514,11 +943,7 @@ public class BytecodeEmitter {
             }
         }
         if (allowExport && info.isExported) {
-            // "This symbol will be available to an assembly file linking
-            // to this one" -- confirmed directly. Always the func's own
-            // bare, unmangled name (isExported is only ever set on a
-            // plain top-level func, never an impl method, so
-            // mangledName already equals name here regardless).
+            // Always the bare name (isExported is only set on plain top-level funcs).
             line("EXPORT");
         }
         emitDecorators("FUNC_DECORATE", info.funcToken.decorators, true);
@@ -1526,65 +951,15 @@ public class BytecodeEmitter {
             line("FUNC_DECORATE @dont(inline)");   // an inlined function leaves no frame, and so no id, on the stack (stack_trace.md, 3.3)
         }
         line("RETURNS " + info.returnType.canonical());
-        // "ARG name type" -- one bare declaration line per parameter, in
-        // declared order, right after "RETURNS". Confirmed directly this
-        // is genuinely high-order-bytecode work, not low-order: naming
-        // a parameter and stating its canonical type is a signature fact
-        // the type checker already fully owns, nothing about it involves
-        // a real frame address or byte size. Turning "ARG" into a real
-        // `ALLOC` (correctly positioned relative to `gt_routine_address`
-        // and every ordinary local) plus its own load sequence is
-        // "ARG-to-ALLOC lowering" -- genuinely low-order, address-
-        // lowering work, and it now happens entirely in the sibling
-        // `caspien-optimizer` project's own `ArgToAllocLoweringPass`,
-        // confirmed directly this compiler-side version of it was wrong
-        // from the start: "i just said i wanted the ARG to ALLOC
-        // conversions to take place in the optimizer." See that
-        // project's CLAUDE.md, "ARG-to-ALLOC lowering," for the full,
-        // corrected design.
+        // "ARG name type": signature facts only. ARG-to-ALLOC lowering is done by the optimizer's ArgToAllocLoweringPass.
         if (isStructByValueReturn(info.returnType)) {
-            // Return Value Optimization: a function that returns a struct
-            // by value gets one synthetic, hidden leading parameter --
-            // "$ret_dest", never collidable with a real user identifier
-            // (the Lexer can never produce '$' inside one, the same
-            // established precedent the for-loop's own hidden range
-            // variable already relies on) -- the caller-owned destination
-            // address this function will write its result directly into.
-            // Emitted before every real, user-declared ARG line so it
-            // always lands in the very first argument-register slot,
-            // matching the real x86-64 "hidden sret pointer" ABI
-            // convention (System V RDI / win64 RCX) this feature
-            // implements. `ArgToAllocLoweringPass` (in the sibling
-            // `caspien-optimizer` project) needs zero changes to handle
-            // this -- confirmed directly, it already converts any
-            // declared "ARG name type" line into an ALLOC+load sequence
-            // with no special-casing by name at all.
+            // RVO: a hidden leading "$ret_dest" parameter ('$' cannot occur in a user identifier) receives the result address. It comes first so it lands in
+            // the sret register slot (System V RDI / win64 RCX); ArgToAllocLoweringPass needs no special case for it.
             line("ARG $ret_dest raw_mut_" + info.returnType.baseType);
         }
         emitParamDecls(info.paramNames, canonicalParamTypes(info));
-        // "We static alloc, then we Alloc, including the special
-        // variable for the unwinding being the first thing, then we
-        // have the rest of the functionality. We do not have our
-        // routines mixed in with our allocs... the whole point of all
-        // of this is to limit the amount of work done, not more.
-        // Obviously the allocs are all supposed to be together,
-        // eventually optimized to a single instruction manipulating
-        // the stack pointers," confirmed directly -- every
-        // ALLOC/ALLOC_STATIC this function will ever need, from
-        // anywhere in its body no matter how deeply nested (an 'if'/
-        // 'loop'/'for'/'match'/'lock'/'unsafe'/'safe'/'assume'
-        // body, at any depth), is collected up front here and emitted
-        // contiguously, before a single byte of the gt_routine
-        // machinery or the function's own statement bodies. This is a
-        // genuine, whole-function *textual* hoist -- not merely a
-        // convention a later assembly stage is trusted to compensate
-        // for -- so `emitBlock` (and `emitPreLoopInit`/`emitForLoop`)
-        // no longer emit any ALLOC/ALLOC_STATIC of their own at all,
-        // only the runtime initialization (the ASSIGN each declaration
-        // still needs) at its original position. Parameters are not
-        // part of this hoist at all any more -- they're still bare
-        // `ARG` lines above, not `ALLOC`s, until the optimizer's own
-        // `ArgToAllocLoweringPass` runs.
+        // Every ALLOC/ALLOC_STATIC of the whole function (any nesting depth) is hoisted here: statics, then gt_routine_address, then ordinary locals.
+        // emitBlock and friends emit only the initializing ASSIGNs. Parameters stay ARG lines. See docs/BytecodeEmitter.md, "ALLOC hoisting".
         List<Runnable> staticAllocs = new ArrayList<>();
         List<Runnable> ordinaryAllocs = new ArrayList<>();
         collectHoistedAllocs(info.funcToken.childs, staticAllocs, ordinaryAllocs);
@@ -1607,25 +982,10 @@ public class BytecodeEmitter {
         lateAllocs = new ArrayList<>();
         emitGtRoutineBody(info, emittedName, gtSuppressed);
         emitHoistedCatchBlocks(info);
-        // "this goes in @event_loop instead" when '@with_tick' --
-        // `emittedName` is already the post-dundering, actually-
-        // emitted bytecode name by this point (the identical
-        // "check the emitted name, not the source name" precedent
-        // `emitGtRoutineBody` already established for its own,
-        // separate EXIT-vs-GT_UNWIND choice), so this is exactly the
-        // one call to `emitBlock` that ever represents the real
-        // program-entry-point function's own top-level body -- true
-        // whether that's the ordinary 'main' itself or the '@event_loop'
-        // function emitted in its place.
+        // isEntryPointBody is true for the function emitted as "main" (the post-dundering name), i.e. also for an @event_loop function.
         emitBlock(info.funcToken.childs, emittedName.equals("main"));
         emitDestructList(info.funcToken.destructOnExit, info.funcToken);
-        // Every call site in this function's own body has now been
-        // visited (the block above is done), so the full, final list of
-        // this function's own call-site landing pads is known -- emit
-        // them here, after the real body's own natural-end destruct list
-        // but still ahead of "FUNC_END", the same "dead unless jumped
-        // into" placement the old whole-function `gt_routine` label used
-        // (see `emitCallSiteUnwindLandingPads`'s own doc comment).
+        // Every call site is known now: emit the landing pads after the natural-end destruct list, before FUNC_END.
         emitCallSiteUnwindLandingPads(info, emittedName, gtSuppressed);
         line("FUNC_END");
         if (!lateAllocs.isEmpty()) {
@@ -1647,15 +1007,7 @@ public class BytecodeEmitter {
         continueTargetLabels = previousContinueTargetLabels;
     }
 
-    /**
-     * True for a plain (no storage modifier) struct-typed `TypeInfo` --
-     * exactly `TypeChecker.isStructByValueReturn`'s own condition,
-     * duplicated here since this class only ever sees `checker`'s already-
-     * built struct table, not that private helper itself. Return Value
-     * Optimization applies to a function whenever this is true of its own
-     * declared return type -- see `emitFuncUnderName`'s hidden "$ret_dest"
-     * parameter, `emitReturn`'s struct-RVO branch, and `emitStructRvoAssign`.
-     */
+    /** True for a plain (no storage modifier) struct type, i.e. TypeChecker.isStructByValueReturn's condition: such a return uses RVO (hidden "$ret_dest", emitReturn, emitStructRvoAssign). */
     private boolean isStructByValueReturn(TypeChecker.TypeInfo t) {
         return t.storage == null && checker.getStructs().containsKey(t.baseType);
     }
@@ -1669,58 +1021,16 @@ public class BytecodeEmitter {
         return out;
     }
 
-    /**
-     * "ARG name type" -- a genuine signature annotation, never a real
-     * instruction. This is deliberately the *entire* extent of this
-     * compiler's own involvement in a parameter's own bytecode
-     * representation: no frame slot, no load sequence, no register-vs-
-     * stack decision, nothing address-related at all. Turning this line
-     * into a real `ALLOC` (correctly positioned relative to
-     * `gt_routine_address` and every ordinary local) plus its own
-     * `ADDR`/`PUSH ARGn`/`ASSIGN` load sequence is "ARG-to-ALLOC
-     * lowering" -- confirmed directly this is genuinely low-order,
-     * address-lowering work and belongs entirely in the sibling
-     * `caspien-optimizer` project's own `ArgToAllocLoweringPass`, not
-     * here: naming a parameter and stating its canonical type is a
-     * signature fact the type checker already fully owns; nothing about
-     * it needs a real frame address or byte size to exist yet. See that
-     * project's CLAUDE.md, "ARG-to-ALLOC lowering," for the full,
-     * corrected design (including how it decides where in the frame a
-     * parameter's own synthesized `ALLOC` belongs, given this compiler
-     * emits `ARG` right after `RETURNS` -- textually *before*
-     * `gt_routine_address`'s own `ALLOC` -- while the frame layout needs
-     * parameters positioned *after* it).
-     */
+    /** One "ARG name type" line per parameter; see the ARG comment in emitFuncUnderName. */
     private void emitParamDecls(List<String> paramNames, List<String> paramCanonicalTypes) {
         for (int i = 0; i < paramNames.size(); i++) {
             line("ARG " + paramNames.get(i) + " " + paramCanonicalTypes.get(i));
         }
     }
 
-    /**
-     * "extern printf(static imut string,...) void" -- signature-only,
-     * no body (there's nothing here for this compilation unit to
-     * implement; the final linked assembly is expected to already
-     * provide it). A START/END-wrapped multi-line block was the first
-     * shape tried here (mirroring FUNC_START/FUNC_END), but there's no
-     * nested body of variable length between them the way an actual
-     * function has -- just a name, a return type, and a flat list of
-     * param types, exactly the shape ENUM's single line already
-     * handles for its own flat variant list. One line, matching that
-     * precedent: name, return type, then each fixed param type in
-     * order, then a trailing "VARARGS" token if the declaration ended
-     * in '...'.
-     */
+    /** One line: "EXTERN linkName returnType paramType... [VARARGS]". Signature only; the linker provides the body. */
     private void emitExtern(TypeChecker.ExternInfo info) {
-        // "info.linkName," not "info.name" -- purely cosmetic here (this
-        // declaration line is itself a no-op at the codegen stage, "ELF
-        // resolves an EXTERN'd symbol via the linker automatically, with
-        // no explicit declaration needed in GAS"), but kept matching the
-        // real linked symbol ("EXTERN_CALL"'s own operand, see
-        // emitExternCall) rather than the Caspien-side identifier, so a
-        // reader of raw bytecode output never sees two different names
-        // for what is, at the machine-code level, one and the same
-        // extern.
+        // linkName, not name: it matches the EXTERN_CALL operand, so raw bytecode never shows two names for one extern.
         StringBuilder sb = new StringBuilder("EXTERN ").append(info.linkName)
                 .append(' ').append(info.returnType.canonical());
         for (TypeChecker.TypeInfo paramType : info.paramTypes) {
@@ -1732,14 +1042,7 @@ public class BytecodeEmitter {
         line(sb.toString());
     }
 
-    /**
-     * "these labels should also be able to take arguments," confirmed
-     * directly, reproduced verbatim in the emitted line rather than
-     * dropped -- a string argument keeps its quotes, a bare identifier
-     * doesn't get any added. One line per decorator, in declaration
-     * order, matching the "FUNC_DECORATE @pure" example exactly
-     * (mnemonic + one space + the decorator's own written form).
-     */
+    /** One line per decorator, in declaration order: mnemonic + "@name(args)"; string arguments keep their quotes. */
     private void emitDecorators(String mnemonic, List<Token.Decorator> decorators) {
         emitDecorators(mnemonic, decorators, false);
     }
@@ -1778,28 +1081,8 @@ public class BytecodeEmitter {
     }
 
     /**
-     * "In the final bytecode, in my main, if I have any owns, ref, dyn
-     * or new in the final compilation unit, then I must have GT_INIT
-     * in my main() after my allocation and my static allocations, but
-     * before any of my expressions," confirmed directly -- `isEntryPointBody`
-     * is `true` for exactly one call to this method in the whole
-     * program: the one `emitFuncUnderName` makes for whichever
-     * function is actually emitted under the bytecode name "main" (see
-     * that method's own comment) -- never for a nested block (an
-     * `if`/loop/`unsafe`/`safe` body, every one of which calls the
-     * plain, single-argument overload above, which always passes
-     * `false`), and never for any other function's own top-level body.
-     *
-     * No longer hoists any ALLOC/ALLOC_STATIC of its own -- every one
-     * of those, for the *entire* enclosing function, has already been
-     * emitted by `emitFuncUnderName` (via `collectHoistedAllocs`)
-     * before this method ever runs, so GT_INIT here is already
-     * genuinely "after my allocation and my static allocations" for
-     * the whole function, not just this one block. A `let` line's own
-     * runtime initialization (its ASSIGN) is still emitted right here,
-     * at its original position, via the ordinary `emitStatement`
-     * dispatch below -- only the frame-reservation moved, not the
-     * value computation.
+     * isEntryPointBody is true for the single block of the function emitted as "main": it gets GT_INIT (when owns/ref/dyn/new is used anywhere),
+     * after the hoisted ALLOCs and before any expression. A `let` emits only its ASSIGN here; the ALLOC was hoisted.
      */
     private void emitBlock(List<Token> lines, boolean isEntryPointBody) {
         if (isEntryPointBody && checker.usesOwnsRefDynNew()) {
@@ -1820,59 +1103,22 @@ public class BytecodeEmitter {
     }
 
     /**
-     * "When an owns value leaves scope, we need it to be deleted, we
-     * achieve this with: GT_DESTRUCT my_owns," confirmed directly. Reads
-     * TypeChecker's precomputed list (already in the exact order to
-     * emit them: reverse declaration order, already excluding anything
-     * moved or return-preserved) and emits one instruction per name --
-     * this function does no computation of its own at all.
-     *
-     * "If I emit a ghost table interaction, then I must have that
-     * corresponding decorated function in the final compilation unit,"
-     * confirmed directly -- checked here, right at the point a real
-     * GT_DESTRUCT is about to be emitted (an empty/null list emits
-     * nothing and needs no function backing it at all), rather than
-     * unconditionally requiring @gt_destruct to exist even in a program
-     * that never actually destructs anything.
+     * One GT_DESTRUCT per name of TypeChecker's precomputed list (reverse declaration order, moved and return-preserved names already excluded).
+     * Requires a function decorated @gt_destruct only when something is actually emitted.
      */
     private void emitDestructList(List<String> names, Token at) {
         if (names == null || names.isEmpty()) {
             return;
         }
         if (inGtSuppressedContext) {
-            // "Generation of ghost table instructions... don't happen
-            // in the ghost table decorated functions," confirmed
-            // directly -- silently skipped here (not an error): this
-            // is implicit, compiler-inserted behavior, not something
-            // the programmer wrote directly, so there's nothing to
-            // flag -- unlike a bare 'match' condition below, which the
-            // programmer *did* write directly, and which does error.
+            // Silent skip: implicit compiler-inserted behavior (unlike a bare 'match' condition the programmer wrote, which errors).
             return;
         }
         requireGhostTableFunctionPresent("gt_destruct", at);
         for (String name : names) {
             line("GT_DESTRUCT " + name);
-            // "double check the ownership model for any other
-            // potential leaks," confirmed directly -- surfaced a real
-            // one: a loop-body-local `owns` variable shares the same
-            // hoisted `ALLOC` slot across every iteration, so without
-            // this, a slot destructed at one iteration's own natural
-            // end would still hold that same, now-freed pointer at the
-            // *start* of the next -- stale, not null. If a throw
-            // (once that machinery exists) reached that slot before
-            // its own re-declaration ran again, a blind re-destruct on
-            // an already-freed address that some unrelated allocation
-            // has since reused would corrupt live, unrelated data --
-            // not a theoretical risk, since reusing a just-freed
-            // address is exactly what a real allocator routinely does.
-            // Nulled here, immediately, the same "the slot's own value
-            // is always the truth" principle the move-out fix already
-            // established -- applied uniformly to every call site of
-            // this method, not only loop bodies specifically, since a
-            // one-time (non-looping) block exit has the identical
-            // "stale until something else overwrites it" shape, just
-            // without the repetition that makes a loop the case most
-            // likely to actually hit it.
+            // Null the slot after its destruct: a loop-body owns local shares one hoisted slot across iterations, and a stale freed pointer could be
+            // destructed again after the allocator reused the address.
             TypeChecker.TypeInfo type = currentFuncInfo != null ? currentFuncInfo.ownsLocalTypes.get(name) : null;
             if (type != null && checker.isInlineOwningStruct(type)) {
                 // an inline owning struct: its members were dropped by the GT_DESTRUCT above; leave them null
@@ -1887,16 +1133,7 @@ public class BytecodeEmitter {
         }
     }
 
-    /**
-     * The lock-release counterpart of emitDestructList -- emits each
-     * already-type-checked, compiler-synthesized unlock() call
-     * (TypeChecker.Token.unlockOnExit) as an ordinary expression
-     * statement, in the order TypeChecker already put them in (reverse
-     * acquisition order). Each is a real CALL node, so this is just an
-     * ordinary emitExpr per entry -- no dedicated bytecode shape of its
-     * own, the same "reuse the ordinary call-emission machinery" the
-     * calls themselves were built to get for free at type-check time.
-     */
+    /** Lock-release counterpart of emitDestructList: emits TypeChecker's synthesized unlock() calls (reverse acquisition order) as ordinary expressions. */
     private void emitUnlockList(List<Token> unlockCalls, Token at) {
         if (unlockCalls == null || unlockCalls.isEmpty()) {
             return;
@@ -1917,22 +1154,9 @@ public class BytecodeEmitter {
     }
 
     /**
-     * "let static ... = ..." -- the value is a compile-time constant
-     * (TypeChecker.checkAssign/collectGlobal already validated this: no
-     * function calls, and no variable references besides an earlier
-     * global), so instead of the ordinary runtime ALLOC+PUSH+PUSH+ASSIGN
-     * sequence, the folded value is emitted directly as part of
-     * allocation itself. A scalar becomes one "MNEMONIC name type value"
-     * line; a struct becomes a container line ("MNEMONIC name
-     * imut_StructName", no value -- the container itself is never a
-     * scalar) followed by one "MNEMONIC name.member type value" line per
-     * member (in the same declaration order ordinary struct-literal
-     * emission already uses), confirmed directly by example, including
-     * for a struct nested inside a struct (dotted paths compose the same
-     * way one level deeper: "name.outer.inner"). `mnemonic` is
-     * "ALLOC_STATIC" for a local static, "GLOBAL" for a root-level one --
-     * confirmed directly these are "subject to the same static
-     * instantiation rules," so the only difference is the leading word.
+     * A compile-time-constant `let static` / global: the folded value is part of the allocation line. Scalar: "MNEMONIC name type value". Struct: a
+     * container line "MNEMONIC name imut_Struct" then one "MNEMONIC name.member type value" per member (nested: "name.outer.inner"). Array:
+     * container then "name.0", "name.1"... Range: container, "name.start", "name.end". MNEMONIC is ALLOC_STATIC (local) or GLOBAL.
      */
     private void emitStaticAlloc(String mnemonic, String name, String resolvedType, Token rhs) {
         Token unwrapped = unwrapStaticExpr(rhs);
@@ -1940,34 +1164,14 @@ public class BytecodeEmitter {
         if (structName != null) {
             line(mnemonic + " " + name + " imut_" + structName);
             TypeChecker.StructInfo structInfo = checker.getStructs().get(structName);
-            // The hidden "___type" (classId) field a real, runtime
-            // "X{...}" literal always gets, pushed first, as a secret
-            // argument, by emitInstantiate -- found missing here directly
-            // ("its an issue in the compiler... it should be just like
-            // the other fields"): the static path iterated
-            // `structInfo.members` (the user-declared fields only) and
-            // never emitted a "name.___type" line at all, so a
-            // classId-bearing static struct's own runtime type tag was
-            // simply never initialized -- correct only by coincidence
-            // whenever the struct's own classId happens to be 0 (whatever
-            // zero-initializes unclaimed static storage by default gets
-            // it right without anyone asking it to). Fixed by giving the
-            // static path the exact same "@untyped are exempt" gate
-            // `emitInstantiate`/`emitStruct` both already use
-            // (`structInfo.classId == null` for one), emitting the
-            // classId as an ordinary "name.___type imut_u64 classId" line
-            // -- deliberately emitted *before* the user-declared members
-            // below, matching `emitInstantiate`'s own "pushed first"
-            // ordering, though nothing downstream actually depends on
-            // this particular ordering the way a real stack push would.
+            // Hidden ___type (classId) first, as emitInstantiate pushes it; absent for @untyped. Without it a classId-bearing static was left uninitialised.
             Map<String, Token> valueByMember = new HashMap<>();
             for (Token lineTok : unwrapped.right.childs) {
                 Token assignNode = lineTok.childs.get(0);
                 valueByMember.put(assignNode.left.text, assignNode.right);
             }
-            // Walk the struct's real layout (hidden ___type first, members in order, padding gaps). The backend places each
-            // dotted "name.member" line at the running sum of the sizes before it, so the padding gaps must be lines too
-            // ("name.$padN"); without them every member after a gap (a bool followed by a u64, say) was read at the wrong offset.
+            // Walk the real layout (___type, members, padding): the backend places each "name.member" line at the running sum of the sizes before it,
+            // so padding gaps must be lines too ("name.$padN").
             int padCount = 0;
             for (StructLayoutEntry entry : computeStructLayout(structInfo).entries) {
                 if (entry.paddingBytes > 0) {
@@ -1982,13 +1186,7 @@ public class BytecodeEmitter {
         }
         List<Token> arrayElements = staticArrayElements(unwrapped);
         if (arrayElements != null) {
-            // "let static arr = mut [1,2,3]" -- a fixed-array literal is
-            // a composite with no single-line runtime representation,
-            // the identical struct/range shape above: one no-value
-            // container line, then one real line per positional element
-            // ("name.0", "name.1", ...), matching the struct case's own
-            // dotted-member convention but for a numeric index instead
-            // of a field name.
+            // Fixed-array literal: a no-value container line, then "name.0", "name.1", ... per element.
             line(mnemonic + " " + name + " " + resolvedType);
             String elemType = staticArrayElementType(resolvedType, unwrapped);
             for (int i = 0; i < arrayElements.size(); i++) {
@@ -1997,17 +1195,7 @@ public class BytecodeEmitter {
             return;
         }
         if (isRangeType(resolvedType)) {
-            // "a range folds information into its type as its
-            // available... always exactly two u64 fields either way" --
-            // a range value, like a struct value, is a composite with
-            // no single-line runtime representation of its own, so it
-            // gets the identical container-plus-named-subfields shape a
-            // struct-typed static already established just above: one
-            // no-value container line, then one real line per field
-            // ("name.start"/"name.end", matching the qualified-name
-            // convention an ordinary, non-static range's own PUSH
-            // already uses -- see "emitPush"'s own range-field-access
-            // handling in the codegen stage).
+            // Range: a no-value container line, then "name.start" and "name.end".
             long[] bounds = rangeBoundValues(unwrapped);
             line(mnemonic + " " + name + " " + resolvedType);
             line(mnemonic + " " + name + ".start imut_u64 " + bounds[0]);
@@ -2017,16 +1205,7 @@ public class BytecodeEmitter {
         line(mnemonic + " " + name + " " + resolvedType + " " + foldStaticConstant(rhs));
     }
 
-    /**
-     * Strips a leading (mut|imut) wrapper, a transparent 'as' cast, and
-     * redundant grouping parens -- the shapes a static/global
-     * initializer's own top-level RHS may legally be wrapped in -- down
-     * to the real, underlying expression node those wrappers carry no
-     * runtime representation for. Shared by every static-initializer
-     * shape check that needs to see past them (struct-literal
-     * detection, range detection) rather than each re-implementing its
-     * own unwrap loop.
-     */
+    /** Strips (mut|imut) wrappers, 'as' casts and grouping parens from a static initializer down to the node that has a runtime shape. */
     private Token unwrapStaticExpr(Token node) {
         while (true) {
             if (node.type == TokenType.DELINEATOR && node.text.equals("(") && !node.childs.isEmpty()) {
@@ -2046,13 +1225,7 @@ public class BytecodeEmitter {
         }
     }
 
-    /**
-     * The array literal's own element expressions, in written order, if
-     * `rhs` is a "[" (array literal) DELINEATOR node -- else null (not
-     * an array literal). Mirrors the ordinary, non-static array-literal
-     * shape `emitExpr`'s own DELINEATOR "[" case already collects via
-     * `collectCommaArgs`.
-     */
+    /** The element expressions if `rhs` is an array literal ("[" node), else null. */
     private List<Token> staticArrayElements(Token rhs) {
         if (rhs.type != TokenType.DELINEATOR || !rhs.text.equals("[")) {
             return null;
@@ -2062,13 +1235,7 @@ public class BytecodeEmitter {
         return elements;
     }
 
-    /**
-     * Strips a static array type's own trailing "[N]" length suffix,
-     * leaving the per-element type text every positional sub-line
-     * ("name.0", "name.1", ...) is emitted with -- e.g. "mut_u64[3]" ->
-     * "mut_u64". Hand-scanned, no regex, per this project's standing
-     * rule.
-     */
+    /** Strips the trailing "[N]" of a static array type: "mut_u64[3]" -> "mut_u64". */
     private String staticArrayElementType(String resolvedType, Token at) {
         int bracket = resolvedType.lastIndexOf('[');
         if (bracket < 0) {
@@ -2086,14 +1253,7 @@ public class BytecodeEmitter {
         return null;
     }
 
-    /**
-     * True when a static/global's own canonical resolved type names a
-     * range -- checked by stripping the one optional leading storage
-     * segment and the one mutability segment off the front (a range's
-     * own canonical text is otherwise never wrapped in anything else),
-     * then testing for the literal "range(" prefix every literal-bound
-     * range type this compiler ever produces carries.
-     */
+    /** True when a static/global's canonical type is a range (after one optional storage and one mutability prefix, "range(" follows). */
     private boolean isRangeType(String resolvedType) {
         String t = resolvedType;
         for (String storage : new String[]{"raw_", "owns_", "ref_", "auto_", "static_"}) {
@@ -2111,16 +1271,7 @@ public class BytecodeEmitter {
         return t.startsWith("range(");
     }
 
-    /**
-     * Resolves a range-typed static initializer's own two literal
-     * bounds -- either a literal "a..b" construction (folding each side
-     * through the ordinary `foldStaticConstant`) or a range-valued
-     * enum-variant reference ("Span.SMALL"), whose own bounds never
-     * appear as real, separate sub-expressions at all -- they're baked
-     * directly into the variant reference's own resolved type text
-     * ("imut_range(0,10)"), read back out by `parseEmbeddedRangeBounds`
-     * the same way this codegen stage's own runtime `resolveEnumVariantRangeBounds` already does for the identical shape.
-     */
+    /** The two bounds of a range static: a literal "a..b" (each side folded) or a range-valued enum variant, whose bounds are embedded in its type text ("imut_range(0,10)"). */
     private long[] rangeBoundValues(Token node) {
         if (node.type == TokenType.OPERATOR && node.text.equals("..")) {
             return new long[]{Long.parseLong(foldStaticConstant(node.left)),
@@ -2154,23 +1305,15 @@ public class BytecodeEmitter {
     }
 
     /**
-     * Folds a compile-time-constant expression down to a single literal
-     * value's bytecode text -- literal leaves pass straight through
-     * (reusing `literalValueOf`), an 'as' cast is transparent (it only
-     * ever changes mutability or widens an integer's *type*, never its
-     * printed value), and integer arithmetic (+,-,*,/,%, unary '-') is
-     * evaluated directly, the same restricted shape 'dup' counts already
-     * use (see DupExpander). Enum-variant defaults aren't handled here
-     * yet -- no example covers that shape, so it's left as a follow-up
-     * rather than guessed at.
+     * Folds a compile-time-constant expression to the bytecode text of one literal: literals pass through (literalValueOf), 'as'/mut/imut/static/atomic
+     * wrappers are transparent, integer + - * / % and unary - are evaluated (the restricted shape 'dup' counts use, see DupExpander), a plain enum
+     * variant folds to its dotted name, a global may reference an earlier global. Enum-variant defaults beyond that are not handled.
      */
     private String foldStaticConstant(Token node) {
         if (node.sizeofStruct != null && node.left != null && node.left.type == TokenType.VARREF
                 && node.left.text.equals("sizeof")) {
-            // "let static n = sizeof(Struct)": a global/static initializer is a data line, not code,
-            // so the Optimizer's SIZEOF resolution never sees it; fold the real laid-out size here.
-            // The value is fixed here, so the Optimizer's StructMemberReorderingPass must not
-            // change this struct's size: STRUCT_PIN names it (the pass always strips the line).
+            // "let static n = sizeof(Struct)": the initializer is a data line, so the Optimizer never resolves it; fold the laid-out size here and emit
+            // STRUCT_PIN so StructMemberReorderingPass cannot change that size (the pass always strips the line).
             line("STRUCT_PIN " + node.sizeofStruct);
             return Long.toString(computeStructLayout(checker.getStructs().get(node.sizeofStruct)).size);
         }
@@ -2186,64 +1329,20 @@ public class BytecodeEmitter {
         }
         if (node.type == TokenType.OPERATOR && node.unary
                 && (node.text.equals("mut") || node.text.equals("imut"))) {
-            // "let static x = mut 42" -- the RHS is virtually always
-            // wrapped this way, since a bare literal is indeterminate
-            // and a static/global's value must be concrete. The
-            // wrapper itself carries no runtime representation (see
-            // "A mutability-only value carries no runtime
-            // representation" in the language reference) -- fold
-            // straight through to the operand, the same way 'as' is
-            // already treated as transparent just above.
+            // The RHS is virtually always wrapped in mut/imut (a bare literal is indeterminate); the wrapper has no runtime representation.
             return foldStaticConstant(node.left);
         }
         if (node.type == TokenType.OPERATOR && node.unary && node.text.equals("static")) {
-            // "let static sp = static \"hello\"" -- 'static' applied
-            // directly to a string/char literal (the only shape that
-            // can ever actually reach here; a reference to an existing
-            // 'let static'/global is separately, structurally blocked
-            // from ever type-checking at all for a *local* static's own
-            // initializer -- see CLAUDE.md's "Known gaps" for the
-            // identical, pre-existing Scope-safety limitation already
-            // documented for globals) carries no runtime representation
-            // of its own either -- emitAddressOf's own ordinary,
-            // non-static codegen for this exact shape is just
-            // "emitExpr(op.left), nothing more," confirmed directly
-            // against that method's own doc comment -- so folding
-            // straight through to the literal is the identical
-            // "nothing to add" behavior, not a guess.
+            // 'static' on a string/char literal has no runtime representation either (emitAddressOf emits just the operand).
             return foldStaticConstant(node.left);
         }
         if (node.type == TokenType.OPERATOR && node.unary && node.text.equals("atomic")) {
-            // "let static myAtomic = mut atomic '!'" -- 'atomic' is a
-            // pure type-modifier wrapper (see "The 'atomic' modifier
-            // and 'swap' operator": "this doesnt require new bytecode
-            // operations because the type data is there in the
-            // instruction... isAtomic is embedded directly into the
-            // type string"), carrying no runtime representation of its
-            // own, exactly like the 'mut'/'imut'/'static' wrappers
-            // already stripped just above -- a real, separate,
-            // previously-latent bug found by direct testing (compiling
-            // a real 'let static x = mut atomic <literal>' probe and
-            // inspecting the actual emitted GLOBAL/ALLOC_STATIC line):
-            // without this case, control fell through all the way to
-            // the generic operator-node fallback and then to
-            // literalValueOf's own 'default: return node.text' branch,
-            // which returned the literal operator text "atomic" itself
-            // as the supposed initial value -- silently corrupting
-            // every atomic global/static's own folded constant, not a
-            // hypothetical edge case.
+            // 'atomic' is a pure type modifier; without this case the operator text "atomic" itself became the folded initial value of every atomic static/global.
             return foldStaticConstant(node.left);
         }
         if (node.type == TokenType.OPERATOR && node.text.equals(".") && isQualifiedNameableDot(node)) {
-            // "let static c = Color.GREEN" -- a plain (never
-            // range-valued -- emitStaticAlloc's own isRangeType check
-            // routes that shape to its own, separate container/start/
-            // end handling before this method is ever reached)
-            // enum-variant reference. Folds to the same dot-qualified
-            // name text an ordinary, non-static PUSH of the identical
-            // expression already uses (qualifiedDotName) -- this
-            // codegen stage's own "isEnumVariantLiteral" resolution
-            // already expects exactly this shape.
+            // Plain enum-variant reference ("let static c = Color.GREEN"; range-valued ones are routed by emitStaticAlloc's isRangeType check): folds to the
+            // same dotted name an ordinary PUSH uses (qualifiedDotName).
             return qualifiedDotName(node);
         }
         if (node.type == TokenType.OPERATOR && !node.unary) {
@@ -2262,18 +1361,13 @@ public class BytecodeEmitter {
         if (node.type == TokenType.OPERATOR && node.unary && node.text.equals("-")) {
             String folded = foldStaticConstant(node.left);
             if (folded.contains(".") || folded.contains("e") || folded.contains("E")) {
-                // A float constant ("let static y = mut -1.16", or a negative element of
-                // a static float array): negate the text itself. parseLong threw a
-                // NumberFormatException here and crashed the compiler.
+                // Float constant (negative literal or array element): negate the text; parseLong would throw.
                 return folded.startsWith("-") ? folded.substring(1) : "-" + folded;
             }
             return Long.toString(-Long.parseLong(folded));
         }
         if (node.type == TokenType.VARREF && checker.getGlobals().containsKey(node.text)) {
-            // A global may reference an earlier global (unlike a local
-            // static, which uses a fully empty scope) -- fold through to
-            // that global's own already-folded value rather than
-            // printing its bare name.
+            // A global may reference an earlier global: fold through to its value.
             return foldStaticConstant(checker.getGlobalRhs().get(node.text));
         }
         return literalValueOf(node);
@@ -2291,20 +1385,9 @@ public class BytecodeEmitter {
     // ---- whole-function ALLOC hoisting -----------------------------------
 
     /**
-     * Recursively walks a function's entire body -- every nested
-     * 'if'/'match'/'loop'/'for'/'lock'/'unsafe'/'safe'/'assume'
-     * block, at any depth -- collecting one `Runnable` per
-     * ALLOC/ALLOC_STATIC this function will ever need to emit, in the
-     * exact same program order `emitBlock` and friends would otherwise
-     * have emitted them in, but without emitting anything itself.
-     * `emitFuncUnderName` runs every collected static `Runnable` first,
-     * then the reserved `gt_routine_address` slot, then every collected
-     * ordinary `Runnable` -- so the actual initialization each
-     * declaration still needs (an ASSIGN, emitted separately by
-     * `emitBlock`/`emitPreLoopInit`/`emitForLoop` at the declaration's
-     * original position) is the only thing left where the source put
-     * it; the frame-reservation itself is genuinely, textually grouped
-     * at the top of the function's own bytecode.
+     * Walks the whole function body (every nested block, any depth) collecting one Runnable per ALLOC/ALLOC_STATIC, in program order, without
+     * emitting. emitFuncUnderName runs the static ones, then the gt_routine_address slot, then the ordinary ones; the initializing ASSIGN stays at
+     * the declaration's position. See docs/BytecodeEmitter.md, "ALLOC hoisting".
      */
     private void collectHoistedAllocs(List<Token> lines, List<Runnable> staticAllocs, List<Runnable> ordinaryAllocs) {
         for (Token lineTok : lines) {
@@ -2319,31 +1402,15 @@ public class BytecodeEmitter {
                 } else {
                     ordinaryAllocs.add(() -> line("ALLOC " + nameTok.text + " " + letTok.resolvedType));
                 }
-                // A 'let' declaration's own right-hand side can itself be
-                // a "try...catch(e){...}" ("let x = try foo() catch(e)
-                // {...}") -- `letDeclarationOf` matching above must never
-                // skip hoisting *that* catch's own bound parameter (and
-                // anything declared inside its body), so this check runs
-                // unconditionally alongside it, not instead of it.
+                // A 'let' right-hand side can itself be a "try...catch(e){...}": hoist its catch parameter and body locals as well.
                 Token tryNodeUnderLet = tryNodeOf(stmt);
                 if (tryNodeUnderLet != null) {
                     collectTryHoistedAllocs(tryNodeUnderLet, staticAllocs, ordinaryAllocs);
                 }
                 continue;
             }
-            // Found and fixed while adding real runtime backing for
-            // `catch(e){...}`'s own bound parameter: a "try...catch(e)
-            // {...}" was previously never hoisted through *any* path --
-            // `collectHoistedAllocsFromStatement`'s own switch only ever
-            // sees a KEYWORD-typed `stmt`, but the two assignment shapes
-            // ("let x = try..." above, and the plain reassignment "x =
-            // try..." here -- `stmt.type == OPERATOR "="` in both cases)
-            // never reached it at all, and even the bare "try...catch(e)
-            // {...}" statement form's own nested `let`s were silently
-            // never hoisted either. `tryNodeOf` recognizes all three
-            // shapes uniformly (see its own doc comment), so checking it
-            // once, right here, ahead of the ordinary switch dispatch,
-            // closes the gap for every shape at once.
+            // "let x = try..." (above), "x = try..." and a bare "try...catch(e){...}" were once never hoisted (the switch below only sees KEYWORD
+            // statements); tryNodeOf recognises all three shapes, so checking it here closes the gap.
             Token tryNode = tryNodeOf(stmt);
             if (tryNode != null) {
                 collectTryHoistedAllocs(tryNode, staticAllocs, ordinaryAllocs);
@@ -2407,15 +1474,7 @@ public class BytecodeEmitter {
                 }
                 return;
             case "try":
-                // Only the plain "try { ... }" block form (`isTryBlock`)
-                // is ever reached through this switch -- a throwing
-                // "try...catch(e){...}" is always intercepted earlier, by
-                // `collectHoistedAllocs`'s own `tryNodeOf` check (see its
-                // doc comment for why `tryNodeOf` now excludes this
-                // shape), before this method is ever called for one.
-                // Compiles to nothing of its own (see `emitStatement`'s
-                // own "try" case), so there's nothing to hoist here
-                // beyond its own body's declarations.
+                // Only the plain "try { ... }" block form arrives here (a throwing try...catch is intercepted by tryNodeOf); it emits nothing of its own.
                 collectHoistedAllocs(stmt.childs, staticAllocs, ordinaryAllocs);
                 return;
             default:
@@ -2426,55 +1485,9 @@ public class BytecodeEmitter {
     // ---- whole-function catch-block hoisting -------------------------------
 
     /**
-     * "The catch block is hoisted to the top of the stack frame, so like
-     * how before in the stackframe the first command was to jump over
-     * the centralised gt routine, back when there was one, now the
-     * command will be to jump over the catch blocks. The catch blocks
-     * just have normal code in them," confirmed directly. Mirrors
-     * `emitCallSiteUnwindLandingPads`'s own "JMP skipLabel / pads... /
-     * skipLabel:" shape, but placed at the *start* of the function's
-     * real body (right after the gt_routine prologue, before a single
-     * ordinary statement is emitted) rather than at the end right before
-     * "FUNC_END" -- this is the literal "first command" the doc comment
-     * above describes. Every "try" token anywhere in this function's
-     * body, at any nesting depth (including inside another catch
-     * block's own body -- "the catch blocks just have normal code in
-     * them," which can itself contain a nested "try"), is collected up
-     * front here via `collectTryCatchNodes`, given its own fresh label,
-     * and its catch block emitted here, once, ahead of the real body.
-     * `tryCatchLabels` is populated before any of this function's own
-     * statements are emitted, so `emitTryGuardedCall` (reached from
-     * `emitExpr`'s/`emitStatement`'s own "try" case) always finds its
-     * label already assigned by the time it redirects the wrapped
-     * call's own staging write here (`stageCallSiteForUnwindNames`'s own
-     * `pendingTryCatchLabel` handling) -- the real unwind-into-catch
-     * wiring, not merely a structural placeholder any more.
-     *
-     * No trailing `JMP` is emitted after a catch body's own code, and no
-     * per-try "where does this resume" label exists at all: "we dont
-     * need that special after label. Instead what we need is our catch
-     * block to be terminating -- return or throw inside," confirmed
-     * directly, and enforced at the structural level -- `TypeChecker.
-     * checkTry` now requires every catch body to definitely end in its
-     * own `return` or `throw` (reusing the same "does every path
-     * through this list of statements definitely end in a return"
-     * analysis a function body's own "not every path returns" check
-     * already applies). A caught throw is redirected straight into this
-     * block (never back through the wrapped call's own normal return
-     * path), so once a catch body's own required terminating statement
-     * runs (`emitReturn`/`emitThrow`, both already genuinely
-     * control-flow-terminating -- `RET`/`EXIT`/`GT_UNWIND`, no
-     * fallthrough), there is nothing left for this block to jump to:
-     * it never falls off its own bottom. This also fully resolves what
-     * was previously an open question ("what value does `x` get in
-     * `let x = try foo() catch{...}`, on the caught path?") -- there is
-     * no such path any more: reaching the code after a `try`/`catch`
-     * statement now categorically means the call returned normally,
-     * never that it threw and was caught, so `x` is always the real
-     * return value there, nothing else. Still open: lock release during
-     * an unwind through a `try` (the pre-existing "no lock release
-     * during unwind" gap this project's history already documents for
-     * `throw`/call-site landing pads generally, unrelated to this).
+     * Emits each real try/catch's catch body once, at the top of the function behind a JMP over them (a catch body is plain
+     * code that must end in return/throw, so no resume label exists). Labels are assigned before any statement is emitted
+     * so call sites can redirect unwinds into them. See docs/BytecodeEmitter.md, "Hoisted catch blocks".
      */
     private void emitHoistedCatchBlocks(TypeChecker.FuncInfo info) {
         List<Token> tryNodes = new ArrayList<>();
@@ -2489,15 +1502,7 @@ public class BytecodeEmitter {
         line("JMP " + skipLabel);
         for (Token tryNode : tryNodes) {
             line(tryCatchLabels.get(tryNode) + ":");
-            // One-time snapshot of this frame's own `gt_error_message`
-            // slot into the catch's own bound parameter -- see
-            // `Token.catchParamName`'s own doc comment for why this is
-            // a copy into an independent local (hoisted below, in
-            // `collectHoistedAllocsFromStatement`'s new "try" case),
-            // never a live alias to the shared slot. Emitted first,
-            // before a single statement of the catch body's own code,
-            // so `e` already holds the right value for every
-            // subsequent read exactly like an ordinary local would.
+            // copy of this frame's gt_error_message into the catch parameter (an independent local, never an alias)
             line("ADDR " + tryNode.catchParamName + " static_imut_string");
             line("PUSH gt_error_message static_imut_string");
             line("ASSIGN static_imut_string static_imut_string static_imut_string");
@@ -2510,13 +1515,7 @@ public class BytecodeEmitter {
                 line("ASSIGN " + arr + " " + arr + " " + arr);
             }
             emitBlock(tryNode.childs);
-            // Deliberately no `emitDestructList`/trailing `JMP` here --
-            // `TypeChecker.checkTry` guarantees this block's own last
-            // statement is a `return` or `throw`, and both already emit
-            // their own full destruct list (`returnTok.destructOnExit`/
-            // `throwTok.destructOnExit`) and their own genuinely
-            // terminating instruction; there is no "falling off the
-            // end" case left for this method to handle.
+            // no trailing JMP/destruct list: the body ends in return/throw, which emit their own
         }
         line(skipLabel + ":");
     }
@@ -2528,9 +1527,7 @@ public class BytecodeEmitter {
             Token tryNode = tryNodeOf(stmt);
             if (tryNode != null) {
                 collected.add(tryNode);
-                // "the catch blocks just have normal code in them" -- which
-                // can itself contain another "try", so recurse into this
-                // one's own catch body too.
+                // a catch body can itself contain a nested try
                 collectTryCatchNodes(tryNode.childs, collected);
                 continue;
             }
@@ -2552,12 +1549,7 @@ public class BytecodeEmitter {
                     collectTryCatchNodes(stmt.childs, collected);
                     break;
                 case "try":
-                    // Only the plain "try { ... }" block form ever
-                    // reaches here -- a throwing "try...catch(e){...}"
-                    // is already caught by `tryNodeOf` above, before
-                    // this switch even runs. Recurse into its own body
-                    // regardless, so a real try/catch nested inside it
-                    // is still discovered and hoisted.
+                    // plain "try { }" block form only (the throwing form was taken by tryNodeOf); recurse so nested try/catch is found
                     collectTryCatchNodes(stmt.childs, collected);
                     break;
                 case "assume":
@@ -2572,26 +1564,9 @@ public class BytecodeEmitter {
     }
 
     /**
-     * The `collectTryCatchNodes` traversal template, adapted to a different
-     * job: rather than collecting real try/catch nodes to hoist, this walks
-     * the whole function body once, tracking a stack of lexically enclosing
-     * "try { ... }" blocks (`isTryBlock`), so that:
-     *   (a) every "try { ... }" block gets a fresh label, recorded into
-     *       `tryBlockLabels`, BEFORE any of its own (possibly hoisted)
-     *       catch bodies are emitted, and
-     *   (b) every 'continue' statement gets its target label -- the
-     *       label of its nearest lexically enclosing try-block -- recorded
-     *       into `continueTargetLabels`, resolved here rather than at
-     *       emission time, since a 'continue' living inside a real catch
-     *       body is emitted from `emitHoistedCatchBlocks`, BEFORE the
-     *       function's own real body (where the try-block itself lexically
-     *       sits, and where a live push/pop stack would normally be
-     *       updated) is ever reached. See `emitContinue`'s own doc comment
-     *       for the full story of why a live stack can't work here.
-     *
-     * This must recurse into a real try/catch's own catch body too (via
-     * `tryNodeOf`, exactly like `collectTryCatchNodes` does) -- that's
-     * exactly where a 'continue' statement lives.
+     * Walks the function body once, giving every plain "try { }" block a label (tryBlockLabels) and resolving every 'continue' to
+     * its nearest enclosing try-block label (continueTargetLabels) before any code is emitted: a 'continue' inside a hoisted
+     * catch body is emitted before its try block is reached. See docs/BytecodeEmitter.md, "Hoisted catch blocks".
      */
     private void collectTryBlockLabels(List<Token> lines, Deque<Token> enclosingTryBlocks) {
         for (Token lineTok : lines) {
@@ -2619,12 +1594,7 @@ public class BytecodeEmitter {
                     collectTryBlockLabels(stmt.childs, enclosingTryBlocks);
                     break;
                 case "try":
-                    // Only the plain "try { ... }" block form ever reaches
-                    // here -- a throwing "try...catch(e){...}" is already
-                    // caught by `tryNodeOf` above. Assign its label up
-                    // front, before recursing, so a 'continue' anywhere
-                    // inside it (including inside a nested real catch
-                    // body) can resolve against it immediately.
+                    // plain "try { }" only; label assigned before recursing so a nested catch's 'continue' can resolve it
                     tryBlockLabels.put(stmt, newLabel("after_try_block"));
                     enclosingTryBlocks.push(stmt);
                     collectTryBlockLabels(stmt.childs, enclosingTryBlocks);
@@ -2639,9 +1609,7 @@ public class BytecodeEmitter {
                     if (!enclosingTryBlocks.isEmpty()) {
                         continueTargetLabels.put(stmt, tryBlockLabels.get(enclosingTryBlocks.peek()));
                     }
-                    // If the stack is empty, this 'continue' has no
-                    // enclosing try-block -- already rejected by
-                    // TypeChecker, so nothing further to do here.
+                    // empty stack: already rejected by TypeChecker
                     break;
                 default:
                     break;
@@ -2650,37 +1618,11 @@ public class BytecodeEmitter {
     }
 
     /**
-     * Returns the "try" token a statement carries, whether the statement
-     * IS one (the bare "try foo() catch{...}" statement form) or is a
-     * "let x = try foo() catch{...}"/"x = try foo() catch{...}"
-     * assignment whose right-hand side is one -- the only two shapes
-     * `Parser.gatherTryCatchSpan` and `TypeChecker.checkTry` ever
-     * produce (see the whole-line-consuming constraint on the grammar
-     * itself: "try ... catch { ... }" always ends its own line, so it's
-     * never embedded any deeper inside a larger expression than this).
-     * Null if `stmt` carries no "try" at all.
-     *
-     * UPDATE (throwing 'new'): now also sees through a leading `mut`/
-     * `imut` wrapper directly around the "try" (`let p = mut try new
-     * Point{...} catch(e){...}`) -- a genuinely new combination a
-     * throwing CALL never needed (a callee's own declared return type
-     * is never indeterminate, so nothing ever had to wrap a `try` in
-     * `mut`/`imut` before), but a `new`'s own operand can be, exactly
-     * like any other bare literal/struct-literal elsewhere in the
-     * language -- so `try`'s own resolved type can likewise need that
-     * same wrapper, sitting *outside* the whole `try...catch`, not
-     * inside it. Without this, this statement's own "try" would go
-     * entirely undiscovered -- no hoisted catch body, no
-     * `tryCatchLabels` entry, silently wrong (not even an error)
-     * bytecode.
+     * The throwing "try" token a statement carries (bare statement, "let/x = [mut|imut] try ..", or "return [mut|imut] try ..");
+     * null if none. See docs/BytecodeEmitter.md, "Hoisted catch blocks".
      */
     private Token tryNodeOf(Token stmt) {
-        // A plain "try { ... }" block (`isTryBlock`) shares this same
-        // KEYWORD text but is a completely different construct -- no
-        // wrapped call, no catch, no `pendingTryCatchLabel`/hoisted-
-        // catch-block machinery involved at all (see `emitStatement`'s
-        // own "try" case) -- so it's excluded here, the same way this
-        // method already only ever matches the throwing shape.
+        // a plain "try { }" block shares the KEYWORD text but is a different construct; excluded
         if (stmt.type == TokenType.KEYWORD && stmt.text.equals("try") && !stmt.isTryBlock) {
             return stmt;
         }
@@ -2728,30 +1670,12 @@ public class BytecodeEmitter {
                     return;
                 case "unsafe":
                 case "safe":
-                    // "These blocks are not reflected in the bytecode
-                    // output," confirmed directly -- purely a compile-
-                    // time safety-context marker (see TypeChecker's
-                    // Scope.currentSafety/checkSafetyCallGraph), nothing
-                    // to emit for the wrapper itself, just its own
-                    // statements.
+                    // compile-time safety markers only; emit the statements, no wrapper
                     emitBlock(stmt.childs);
                     emitDestructList(stmt.destructOnExit, stmt);
                     return;
                 case "assume":
-                    // "This just effects the validation of the code
-                    // during the type checking stage, the bytecode
-                    // emitted is as if the assume match doesn't exist,"
-                    // confirmed directly -- for the block form, exactly
-                    // the same "no wrapper, just its own statements"
-                    // shape 'unsafe'/'safe' just above already has (no
-                    // JMP, no condition ever evaluated at runtime). The
-                    // no-block form has no `stmt.childs` at all --
-                    // there is nothing nested under it to emit here;
-                    // whatever statements follow it in source are
-                    // already direct siblings in the *surrounding*
-                    // block's own emitBlock loop, not children of this
-                    // token, so nothing further is needed for that case
-                    // either.
+                    // no runtime presence: the block form emits its statements; the no-block form has no children (later siblings belong to the enclosing block)
                     if (stmt.hasBlock) {
                         emitBlock(stmt.childs);
                         emitDestructList(stmt.destructOnExit, stmt);
@@ -2766,33 +1690,9 @@ public class BytecodeEmitter {
                     emitThrow(stmt);
                     return;
                 case "try":
-                    // Two, unrelated shapes share this one KEYWORD text
-                    // (Token.isTryBlock tells them apart -- see its own
-                    // doc comment). A plain "try { ... }" block compiles
-                    // to nothing of its own -- "it compiles to nothing
-                    // in the hob and lob," confirmed directly -- the
-                    // exact same "no wrapper, just its own statements"
-                    // shape 'unsafe'/'safe' just above already have,
-                    // *except* for one label: a nested catch's own
-                    // 'continue' needs somewhere to jump to (see
-                    // `emitContinue`). That label is precomputed by
-                    // `collectTryBlockLabels`, before this function's own
-                    // body (and its hoisted catch blocks) are emitted --
-                    // NOT generated fresh here -- because a real catch
-                    // body containing 'continue' is hoisted to the top of
-                    // the function (`emitHoistedCatchBlocks`), reached
-                    // before this try-block's own lexical position is
-                    // ever walked; a fresh label generated only when
-                    // control reaches here would already be too late.
-                    // Otherwise, this is the bare "try foo() catch(e) {
-                    // ... }" statement form -- same shape as emitExpr's
-                    // own "try" case (reached for the expression-position
-                    // form, e.g. "let x = try foo() catch(e){...}"), just
-                    // without an "ADDR"/"ASSIGN" around it: the call's
-                    // return value, if any, is simply left on the stack,
-                    // same as any other plain expression-statement (see
-                    // the "plain expression statement" comment at the
-                    // bottom of this method).
+                    // Two constructs share this KEYWORD (Token.isTryBlock). A plain "try { }" block emits its statements plus a label
+                    // precomputed by collectTryBlockLabels (a hoisted catch's 'continue' jumps to it). Otherwise it is the bare
+                    // "try call() catch(e){..}" statement; the call's result, if any, stays on the stack.
                     if (stmt.isTryBlock) {
                         emitBlock(stmt.childs);
                         emitDestructList(stmt.destructOnExit, stmt);
@@ -2808,19 +1708,11 @@ public class BytecodeEmitter {
                     emitContinue(stmt);
                     return;
                 case "yield":
-                    // "Never any arguments, but becomes: YIELD... in the
-                    // bytecode, which will produce the assembly
-                    // necessary to yield the current thread," confirmed
-                    // directly -- a single, bare mnemonic, no operands.
+                    // bare mnemonic, no operands
                     line("YIELD");
                     return;
                 case "ASM":
-                    // Named: nothing here -- see the "ASM" case in
-                    // emit()'s own root-level dispatch for the identical
-                    // reasoning (self-emits only at each "asm_name;"
-                    // invocation site instead). Unnamed: this
-                    // declaration point is the only place it can ever
-                    // be emitted.
+                    // named: emitted at each invocation site (see the "ASM" case in emit()); unnamed: only here
                     if (stmt.sub.isEmpty()) {
                         emitAsm(stmt.resolvedAsmContent);
                     }
@@ -2830,19 +1722,11 @@ public class BytecodeEmitter {
             }
         }
         if (stmt.type == TokenType.VARREF && stmt.resolvedAsmContent != null) {
-            // "asm_name;" -- TypeChecker already validated this exact
-            // statement as a real ASM invocation (resolvedAsmContent is
-            // only ever set there, and only for a genuine one); an
-            // ordinary bare-variable-read statement (ordinary VARREF,
-            // resolvedAsmContent left null) falls through to the plain
-            // expression-statement handling below completely unchanged.
+            // "asm_name;" invocation (resolvedAsmContent is set only by TypeChecker, only for genuine ones)
             emitAsm(stmt.resolvedAsmContent);
             return;
         }
-        // plain expression statement (its result, if any, is simply left
-        // on the stack -- v1 doesn't emit a POP/discard for statement-level
-        // expression results; acceptable per the project's stated priority
-        // of correctness over efficiency at this stage).
+        // plain expression statement: the result, if any, is left on the stack (no POP)
         emitExpr(stmt);
     }
 
@@ -2862,10 +1746,7 @@ public class BytecodeEmitter {
             if (hasCondition) {
                 Token cond = branch.sub.get(0);
                 if (isThenVariant(cond)) {
-                    // "&&then"/"||then" as the condition's own root
-                    // operator -- see emitShortCircuit's own doc comment
-                    // for the full cascading-jump design this replaces
-                    // the ordinary eager "emitExpr; CMP; JMP" pair with.
+                    // "&&then"/"||then" root: cascading jumps (see emitShortCircuit)
                     emitShortCircuit(cond, nextLabel, null);
                 } else {
                     emitExpr(cond);
@@ -2883,35 +1764,7 @@ public class BytecodeEmitter {
         line(endLabel + ":");
     }
 
-    /**
-     * "A match, in the bytecode disolves to CMP and JMP as if it were an
-     * if," confirmed directly -- a single conditional block, no elseif/
-     * else chain, so this is exactly one branch of emitIfChain's own
-     * shape rather than the full loop over a chain. The condition
-     * itself (an "instanceof"/"implements"/"in" operator, an "and"-
-     * chain of those, or a bare expression) is emitted completely
-     * normally through the ordinary emitExpr dispatch -- nothing match-
-     * specific about how any of those individual pieces get emitted,
-     * only the CMP/JMP wrapper around the whole thing is new. The bare-
-     * expression condition specifically needs one new instruction
-     * (GT_ALIVE_CHECK, confirmed directly by name) to turn whatever was
-     * pushed into the bool CMP itself needs -- "for now we must set the
-     * default behaviour even if it is not practical on its own," so this
-     * always confirms alive, matching TypeChecker.checkMatch's own "no
-     * real liveness tracking exists yet" scope for this round.
-     */
-    /**
-     * "I want chains, else match and elsematch," confirmed directly --
-     * a direct mirror of emitIfChain's own jump structure (a shared
-     * endLabel, each branch falling through to it once done, an
-     * intermediate label per non-final branch to jump to on failure),
-     * using emitMatchCondition in place of plain emitExpr+CMP for each
-     * branch's own condition, since match conditions need the special
-     * instanceof/implements/in/GT_ALIVE_CHECK/IS_BASE handling ordinary
-     * boolean expressions don't. A bare 'else' branch (no condition at
-     * all) unconditionally falls into its own block, exactly like an
-     * 'if' chain's own trailing 'else' already does.
-     */
+    /** A match is an if-chain: one CMP/JMP per branch (conditions via emitMatchCondition), shared end label; a bare 'else' branch falls into its block. */
     private void emitMatchChain(Token matchTok) {
         String endLabel = newLabel("end_of_match");
         List<Token> branches = new ArrayList<>();
@@ -2949,18 +1802,8 @@ public class BytecodeEmitter {
             return;
         }
         if (node.someIndexElementExpr != null) {
-            // "match Some(i) in/into x{...}" -- sugar for "match i
-            // in/into x{ match Some(x[i]){...} }," confirmed directly.
-            // Emitted as a single combined boolean (bounds AND
-            // element-alive), gating entry into the one wrapped block,
-            // rather than two literally nested match blocks --
-            // functionally identical (the block only ever runs when
-            // both hold), and the simpler of the two shapes to emit
-            // correctly. node.left is the "Some(...)" CALL -- its own
-            // argument (the plain index) is what actually gets pushed
-            // for the bounds check, never the CALL node itself (which
-            // would otherwise emit a real, meaningless GT_ALIVE_CHECK
-            // on the *index*, not the element).
+            // "match Some(i) in/into x": one combined bool (bounds IN, then element alive) gating the single block.
+            // node.left is the Some(..) call; only its index argument is pushed for the IN.
             Token indexExpr = singleBuiltinArg(node.left);
             emitExpr(indexExpr);
             emitExpr(node.right);
@@ -2986,28 +1829,13 @@ public class BytecodeEmitter {
                 && (node.text.equals("instanceof") || node.text.equals("implements") || node.text.equals("in")
                         || node.text.equals("within") || node.text.equals("into"))) {
             // "within" as a match condition emits exactly like "within"
-            // as a bare expression (PUSH left / PUSH right / WITHIN
-            // ...), the same "ordinary expression, plus a proof
-            // recorded separately (by checkMatchCondition)" split "in"
-            // already has -- confirmed directly, bytecode emission for
-            // "within" is identical to "in" throughout. "into" likewise
-            // -- "it compiles to the same bytecode as it would if it
-            // were an IN operator," confirmed directly -- emitOperator's
-            // own "in" case handles "into" identically, zero new
-            // mnemonics.
+            // within/into emit exactly like in as expressions; the proof is recorded separately by the type checker
             emitExpr(node);
             return;
         }
         if (node.type == TokenType.OPERATOR && node.text.equals("CALL") && node.left.type == TokenType.VARREF
                 && node.left.text.equals("Some")) {
-            // "the bytecode is the same," confirmed directly -- emitExpr
-            // itself already emits the exact GT_ALIVE_CHECK sequence
-            // (emitCallOrBuiltin's own "Some" case) the old bare form
-            // used to need this whole function's own fallback for;
-            // falling through to that fallback here would emit a
-            // second, duplicate GT_ALIVE_CHECK on top of it -- confirmed
-            // directly this is exactly what happened before this case
-            // existed.
+            // emitExpr already emits GT_ALIVE_CHECK for Some(..); the generic fallback below would duplicate it
             emitExpr(node);
             return;
         }
@@ -3016,45 +1844,9 @@ public class BytecodeEmitter {
             return;
         }
         if (node.type == TokenType.OPERATOR && node.text.equals("is")) {
-            // "PUSH x / IS_BASE -- instead of push base and then IS,"
-            // confirmed directly: only the left side is ever pushed
-            // (there's no real value "base" is, so nothing is pushed
-            // for it at all), collapsed into the one instruction. Fully
-            // generic over whatever node.left is -- no hardcoded
-            // reference to any particular parameter name -- so this
-            // needed zero changes when 'is' was retargeted from
-            // 'recurse' to 'range'.
-            //
-            // "IS_BASE leftType" -- not bare "IS_BASE" -- for the same
-            // reason DEREF/CLONE both carry their own operand's type
-            // directly rather than leaving a later stage to infer it
-            // from whatever bytecode line happens to precede them: a
-            // real, found bug, confirmed directly by actually compiling
-            // "match (2..5) is base{...}" (an inline range *literal* as
-            // the match subject -- legal; checkMatchCondition's "is"
-            // case only requires `isRangeType(leftType)`, never that
-            // `node.left` itself be a bare VARREF -- that restriction is
-            // `isRequiredBaseCaseMatch`'s own, narrower, structural check
-            // for a `@recursive` function's *mandatory* base case only,
-            // not a general restriction on "is base" itself). A range
-            // literal's own two bounds are pushed as two separate,
-            // ordinary scalar "PUSH n u64" lines with no consolidating
-            // instruction (`emitExpr`'s own ".." case) -- so the line
-            // immediately before "IS_BASE" is, in that case, only ever
-            // the upper bound's own bare scalar push, whose own trailing
-            // type is "u64", never "range(...)" -- there is no line
-            // anywhere in the emitted bytecode that ever carries the
-            // true left-operand type when it's a composite literal like
-            // this. `node.left.resolvedType` (set by `resolveExprType`
-            // as an unconditional side effect of type-checking, still
-            // holding the *real* operand type here regardless of how
-            // many bytecode lines that operand took to emit) is the only
-            // place that fact still exists once emission reaches this
-            // point -- so it's written down directly, the same "emit the
-            // distinguishing fact, don't leave it to be inferred later"
-            // rule already applied elsewhere in this project's own
-            // history, rather than trusting a later stage to reconstruct
-            // it from shape alone.
+            // "PUSH x / IS_BASE <leftType>": only the left side is pushed. The type is written out because for a composite
+            // left operand (e.g. a range literal = two scalar pushes) the preceding line does not carry it.
+            // See docs/BytecodeEmitter.md, "Operator emission".
             emitExpr(node.left);
             line("IS_BASE " + node.left.resolvedType);
             return;
@@ -3062,22 +1854,11 @@ public class BytecodeEmitter {
         if (node.type == TokenType.OPERATOR && (node.text.equals("!=") || node.text.equals(">"))
                 && node.left.type == TokenType.VARREF && node.right.type == TokenType.INTEGER
                 && node.right.text.equals("0")) {
-            // The division-safety proof case (checkMatchCondition's own
-            // identical shape check) -- an ordinary comparison, emitted
-            // exactly the same way any other "!="/">" expression already
-            // is; its own boolean *result* was never something a
-            // GT_ALIVE_CHECK made any sense to run against (it isn't a
-            // pointer), so this never falls through to the generic
-            // bare-form path below at all, the same way "in"/
-            // "instanceof"/"implements" already don't.
+            // division-safety proof shape: an ordinary comparison, never a GT_ALIVE_CHECK
             emitExpr(node);
             return;
         }
-        // Unreachable now that the bare form no longer exists at all --
-        // checkMatchCondition itself rejects any condition shape that
-        // isn't one of the cases already handled above, so type-
-        // checking would already have failed before bytecode emission
-        // was ever reached for anything landing here.
+        // unreachable: checkMatchCondition rejects every other shape
         throw new IllegalStateException(
                 "internal error: unrecognized match condition shape reached bytecode emission: " + node.text);
     }
@@ -3137,23 +1918,8 @@ public class BytecodeEmitter {
     }
 
     /**
-     * "CLOSED:default"/"CLOSED:default(args)" -- see `Token.
-     * preLoopInit`'s own doc comment: a "match @lock" statement (already
-     * lowered, by this point, into an ordinary "loop" token) whose
-     * CLOSED case invoked a registered "impl default match @lock" policy
-     * carries its own pre-loop-init assigns here -- the shared
-     * "$lm_tries" per-iteration counter (initialized once to 0) plus one
-     * per real configuration parameter the policy declares. Each is
-     * emitted exactly *once*, right before the loop's own start label --
-     * deliberately *not* through `emitBlock`'s own statement loop,
-     * since none of these are direct children of any block this loop's
-     * own body ever walks (`emitBlock(loopTok.childs)` never sees them
-     * at all) -- an ordinary loop with no default-policy usage has a
-     * null list here and this is a complete no-op. Its own ALLOC is no
-     * longer emitted here -- `collectHoistedAllocs`'s "loop" case
-     * already collected it, ahead of this whole function's other
-     * allocations, so only the runtime initialization (the ASSIGN)
-     * still belongs at this position.
+     * Pre-loop assigns of a lowered "match @lock" loop that uses a "CLOSED:default" policy ($lm_tries = 0 and the policy's
+     * parameters), run once before the start label and not through emitBlock. Their ALLOCs are hoisted by collectHoistedAllocs.
      */
     private void emitPreLoopInit(List<Token> preLoopInit) {
         if (preLoopInit == null) {
@@ -3165,31 +1931,9 @@ public class BytecodeEmitter {
     }
 
     /**
-     * "for i in 0..n{ ... }" desugars, in TypeChecker.checkForLoop, into
-     * real 'let'/'in'/'++' AST nodes -- so this method's whole job is
-     * just to emit each of those four pieces (stashed in forTok.sub)
-     * through the *exact same* emission functions an ordinary
-     * hand-written equivalent would go through: emitAssign for the two
-     * declarations (so the hidden range-binding variable is an
-     * ordinary ALLOC'd variable, not a bytecode-string trick), and
-     * emitExpr on the 'in' condition dispatches straight through
-     * emitOperator's ordinary "in" case -- confirmed directly, the
-     * whole point being that the IN opcode is byte-for-byte identical
-     * whether it came from a for-loop or an ordinary boolean
-     * expression, so nothing downstream (bytecode-to-assembly
-     * generation, eventually) needs to know or care which. Likewise
-     * the increment reuses the ordinary postfix '++' emission.
-     * The only thing genuinely new here is the loop-level control flow
-     * itself (labels, the check-at-top CMP/JMP, the jump back) -- and
-     * even that reuses the exact same CMP/JMP shape an 'if' branch's
-     * own condition check already uses ("if true, fall through; if
-     * false, jump away"), plus the same loopEndLabels mechanism an
-     * ordinary 'loop' already uses for 'break'.
-     * Neither hidden variable's own ALLOC is emitted here any more --
-     * `collectHoistedAllocs`'s "for" case already collected both, ahead
-     * of this whole function's other allocations -- only their runtime
-     * initialization (each own ASSIGN, via `emitAssign`) still belongs
-     * at this position.
+     * Emits a 'for' that TypeChecker.checkForLoop desugared into four nodes (range let, loop-variable let, 'in' condition, '++')
+     * through the ordinary emission paths, plus the loop control flow (check at top, continue label before the step, jump back).
+     * The hidden variables' ALLOCs are hoisted by collectHoistedAllocs.
      */
     private void emitForLoop(Token forTok) {
         Token rangeAssign = forTok.sub.get(0);
@@ -3227,13 +1971,7 @@ public class BytecodeEmitter {
         return rangeAssign.left.childs.get(0).text;
     }
 
-    /**
-     * 'break' compiles to a jump straight to the enclosing loop's end
-     * label. Only valid inside a loop -- already enforced by
-     * TypeChecker before bytecode generation ever runs, so an empty
-     * loopEndLabels stack here would mean that check was skipped or has
-     * a bug, not a legitimate program state.
-     */
+    /** 'break': destruct/unlock lists, then a jump to the enclosing loop's end label. An empty stack means TypeChecker failed. */
     private void emitBreak(Token breakTok) {
         if (loopEndLabels.isEmpty()) {
             throw new IllegalStateException(
@@ -3246,29 +1984,9 @@ public class BytecodeEmitter {
     }
 
     /**
-     * 'continue' (only ever legal inside a "catch(e){ ... }" body -- see
-     * `TypeChecker.checkStatement`'s own "continue" case) compiles to a
-     * jump straight to the nearest enclosing try-block's own end label --
-     * conceptually the exact `emitBreak` shape just above (a jump to a
-     * boundary-scope's own end label), but resolved through
-     * `continueTargetLabels` rather than a live push/pop stack like
-     * `loopEndLabels`. A live stack can't work here: a real catch body
-     * (where every 'continue' lives) is hoisted to the very top of its
-     * function by `emitHoistedCatchBlocks`, emitted BEFORE this function's
-     * own real body -- where the try-block itself lexically sits, and
-     * where a live stack's own push would normally happen -- is ever
-     * walked. So `continueTargetLabels` is precomputed instead, by
-     * `collectTryBlockLabels`, once per function, before any of that
-     * function's bytecode (hoisted catch bodies included) is emitted --
-     * the identical precomputed-map pattern `tryCatchLabels`/
-     * `collectTryCatchNodes` already established for the same "hoisted
-     * catch body needs to reference a label from its future, not-yet-
-     * reached lexical surroundings" problem.
-     *
-     * A missing entry here means TypeChecker's own "requires this 'catch'
-     * to be inside an enclosing 'try { ... }' block" check was skipped or
-     * has a bug, not a legitimate program state -- already enforced before
-     * bytecode generation ever runs.
+     * 'continue' in three forms: a user for/loop (jump to the step/start), the CLOSED case of a 'match @lock' (retry), or a
+     * catch-body continue (jump to the label from continueTargetLabels, precomputed because the catch body is hoisted).
+     * See docs/BytecodeEmitter.md, "Hoisted catch blocks".
      */
     private void emitContinue(Token continueTok) {
         if (continueTok.isLoopContinue) {
@@ -3287,9 +2005,7 @@ public class BytecodeEmitter {
             return;
         }
         if (continueTok.isLockRetryContinue) {
-            // 'continue' in the CLOSED case of a 'match @lock': retry the
-            // acquire (the spin loop's start label, after any pre-loop
-            // init, so retry counters are not reset). No lock is held.
+            // CLOSED case of a 'match @lock': retry at the spin loop's start (after the pre-loop init, so counters are kept); no lock is held
             if (lockRetryLabels.isEmpty()) {
                 throw new IllegalStateException(
                         "internal error: lock-retry 'continue' reached bytecode gen outside a 'match @lock' loop");
@@ -3323,56 +2039,20 @@ public class BytecodeEmitter {
             return;
         }
         emitExpr(expr);
-        // Evaluated (and, per its own resolvedType, already pushed)
-        // before any destructing happens -- the returned value itself is
-        // never in this list at all (TypeChecker already excludes it),
-        // so nothing here can disturb what's about to be returned.
+        // the value is evaluated before destructing; the returned value is never in the destruct list
         emitDestructList(returnTok.destructOnExit, returnTok);
         emitUnlockList(returnTok.unlockOnExit, returnTok);
         line("RET " + returnTok.resolvedType);
     }
 
-    /**
-     * Return Value Optimization's callee-side half: writes the returned
-     * struct value's fields directly into the caller-owned memory
-     * "$ret_dest" points at, instead of leaving a value behind for the
-     * caller to copy. Confirmed directly, via a hand-authored bytecode
-     * file run through the real, unmodified optimizer/lowerorder/codegen
-     * pipeline: "PUSH $ret_dest ptrType" then `emitExpr(expr)` -- entirely
-     * unchanged, genuinely oblivious to the fact its result is headed
-     * through a pointer rather than into an ordinary local slot, and
-     * genuinely oblivious to whether `expr` is a fresh struct literal
-     * (its own flat, one-push-per-field sequence) or a bare existing
-     * variable (a single "PUSH varName Type" whole-value read) --
-     * `TypeChecker.checkReturn` is the only thing restricting which
-     * shapes `expr` may take, not this method -- then a single
-     * whole-struct "ASSIGN" -- exactly `emitAssign`'s own shape, just
-     * with "$ret_dest" standing in for a plain `emitAssignTarget`-computed
-     * address. `ASSIGN` was confirmed completely agnostic to both how its
-     * own destination address arrived on the stack (an "ADDR name" no
-     * differently from a plain already-computed pointer value) AND how
-     * many words its own source value arrived in (one combined push same
-     * as several flat field pushes, as long as the total width matches),
-     * which is the key fact that makes this correct either way.
-     *
-     * The callee still finishes with "RET raw_mut_StructName", returning
-     * the same destination pointer in what real System V/win64 ABI code
-     * would leave in RAX -- matching the genuine hidden-sret-pointer
-     * convention this feature implements, even though this project's own
-     * call sites (`emitStructRvoAssign`) never read it back. "RET"/
-     * "PUSH_RET" were already fully generic for any pointer-sized return
-     * type before this feature existed (an 'owns'/'raw' struct pointer
-     * return was already legal), so this is a genuinely unmodified reuse,
-     * not a new instruction shape.
-     */
+    /** Callee half of struct RVO: writes the returned struct through "$ret_dest" and returns that pointer. See docs/BytecodeEmitter.md, "Return and struct return (RVO)". */
     private void emitStructRvoReturn(Token expr, Token returnTok) {
         String structName = currentFuncInfo.returnType.baseType;
         String ptrType = "raw_mut_" + structName;
         String structType = "mut_" + structName;
         Token unwrapped = unwrapMutWrappers(expr);
         if (unwrapped.isStructRvoCall) {
-            // "return foo()" -- see `emitStructRvoForwardCall`'s own doc
-            // comment for the full tail-forwarding account.
+            // "return foo()": forward $ret_dest (emitStructRvoForwardCall)
             emitStructRvoForwardCall(unwrapped, ptrType);
         } else {
             line("PUSH $ret_dest " + ptrType);
@@ -3386,87 +2066,25 @@ public class BytecodeEmitter {
     }
 
     /**
-     * UPDATE (per-throw-site unwinding): "THROW string_id" used to carry
-     * a second operand -- its own enclosing function's whole-function
-     * `gt_routine` label -- and compiled to nothing but a single `jmp`
-     * to it. That label is gone entirely now (see `emitGtRoutineBody`'s
-     * own doc comment), and a `throw`'s own destination no longer needs
-     * a jump *to* anything: since it's always resolved at compile time
-     * (this exact lexical point, in this exact function), its own
-     * precise destruct-and-unwind sequence is simply emitted inline,
-     * right here, immediately after this marker -- mirroring an ordinary
-     * `return`'s own shape (push/destruct/terminate, no separate label)
-     * far more closely than the old jump-based design ever did.
-     *
-     * UPDATE (real message propagation): `THROW <operand>` itself
-     * remains a single-operand marker line only -- a real backend can
-     * still treat it as a no-op/comment, exactly as before -- but it is
-     * no longer the only thing this method emits for its own operand.
-     * Immediately after it, an ordinary `ADDR`/`PUSH`/`ASSIGN` sequence
-     * now actually writes that same operand into this frame's own
-     * reserved `gt_error_message` slot (see `emitGtRoutineAlloc`'s own
-     * doc comment), which is what `catch(e){...}` ultimately reads --
-     * so the thrown value is genuinely live at runtime now, not inert;
-     * only `THROW` the marker line itself carries no independent
-     * meaning. The actual control transfer is still entirely carried by
-     * the ordinary `GT_DESTRUCT`/`GT_UNWIND`/`EXIT`/`EXIT_THREAD` lines
-     * that follow, using machinery a real backend already has to
-     * implement regardless (return-site and call-site-landing-pad
-     * destructs use the identical instructions).
+     * THROW marker line, then the write of the operand into this frame's gt_error_message slot, the per-throw-site destruct list
+     * and the unwind/exit. See docs/BytecodeEmitter.md, "Throw".
      */
     private void emitThrow(Token throwTok) {
         Token expr = throwTok.sub.get(0);
         String operand = expr.type == TokenType.VARREF ? expr.text : literalValueOf(expr);
         line("THROW " + operand);
         if (inGtSuppressedContext) {
-            // "GT instructions removed" inside a gt-suppressed (dundered
-            // ghost-table-reachable) function's own duplicate -- the
-            // identical reasoning `emitDestructList` already applies
-            // (calling 'gt_destruct' from within a path that must never
-            // recurse into it). Nothing here is real, allocated frame
-            // machinery either: `emitGtRoutineAlloc`/`emitGtRoutineBody`
-            // both skip a gt-suppressed function outright, so there is
-            // no `gt_routine_address` slot for a 'GT_UNWIND' here to even
-            // read. `checkThrow` already forbids 'throw' inside the four
-            // real ghost-table functions themselves; this guard covers
-            // the (untested, likely never-hit in practice) remaining
-            // edge case of a *reachable* function containing 'throw'
-            // that also happens to need a dundered duplicate -- strictly
-            // safer than the old design, which would have emitted a
-            // 'jmp' to a 'gt_routine' label that was never emitted for
-            // this exact function either.
+            // gt-suppressed function: no ghost-table instructions and no gt_routine slot exist here (checkThrow bans throw in the ghost-table functions)
             return;
         }
-        // The real write: this frame's own `gt_error_message` slot (see
-        // `emitGtRoutineAlloc`'s own doc comment) now actually holds the
-        // thrown value, an entirely ordinary `ADDR`/`PUSH`/`ASSIGN`
-        // sequence -- no new instruction needed, and no special-casing
-        // between the two operand shapes `checkThrow` allows: `operand`
-        // is already either a string literal's own `string_id` (pushed
-        // exactly like any other string constant) or a bare variable's
-        // name (pushed exactly like any other variable read -- including
-        // a catch's own bound parameter, e.g. "catch(e){ throw e }",
-        // whose own current value is simply re-pushed and re-written
-        // back into the same slot, correctly re-propagating it further
-        // up the chain unchanged). `expr.resolvedType` is already set,
-        // by `TypeChecker.checkThrow`'s own `resolveExprType` call --
-        // "static_some_imut_string" for a literal, "static_imut_string"
-        // for a variable -- the identical type text an ordinary `PUSH`
-        // of this same expression would already use anywhere else.
+        // operand is a string literal id or a variable name (a catch parameter is re-propagated unchanged)
         if (!(expr.type == TokenType.VARREF && functionCatchParams.contains(expr.text))) {
             emitTraceCapture();   // a fresh throw starts a new trace; `throw e` of a catch parameter keeps the one already captured
         }
         line("ADDR gt_error_message static_imut_string");
         line("PUSH " + operand + " " + expr.resolvedType);
         line("ASSIGN static_imut_string " + expr.resolvedType + " static_imut_string");
-        // Precise, per-throw-site destruct list -- see
-        // `TypeChecker.checkThrow`'s own doc comment. `currentFuncInfo`/
-        // `currentFuncMangledName` here are the same *emitted* (post-
-        // dundering) identity `emitGtRoutineBody`'s own three-way
-        // root/async/ordinary ending already keys off of, so a throw
-        // inside a gt-decorated function's own dundered duplicate, or
-        // inside the real, dundered "main"/"__caspien_main" pair, resolves
-        // exactly the same way that ending already does.
+        // per-throw-site destruct list; currentFuncInfo/currentFuncMangledName are the emitted (post-dundering) identity
         List<String> destructNames = throwTok.destructOnExit != null ? throwTok.destructOnExit
                 : Collections.emptyList();
         if (!destructNames.isEmpty()) {
@@ -3606,33 +2224,21 @@ public class BytecodeEmitter {
                     return;
                 }
                 if (node.text.equals("try")) {
-                    // Expression-position form ("let x = try foo() catch
-                    // { ... }", reached here as the "=" operator's own
-                    // right-hand side -- see emitAssign, which already
-                    // emitted "ADDR x" before calling emitExpr on us and
-                    // will emit "ASSIGN ..." right after we return).
+                    // expression-position "let x = try .. catch .."; emitAssign already emitted ADDR x
                     emitTryGuardedCall(node);
                     return;
                 }
                 break;
             case DELINEATOR:
                 if (node.text.equals("(")) {
-                    // transparent grouping parens reached as a plain operand
-                    // (CALL's own '(' args holder is handled directly in
-                    // emitCall, not through this generic dispatch).
+                    // transparent grouping parens
                     if (!node.childs.isEmpty()) {
                         emitExpr(node.childs.get(0));
                     }
                     return;
                 }
                 if (node.text.equals("[")) {
-                    // array literal -- same "value type, no wrapping
-                    // instruction" shape as struct instantiation: just
-                    // each element's value PUSHed in written order
-                    // (unlike a struct literal, there's no member-name
-                    // reordering concern here -- an array has no names,
-                    // only position, and elements are written in the
-                    // exact order they belong on the stack).
+                    // array literal: each element pushed in written order
                     List<Token> elements = new ArrayList<>();
                     collectCommaArgs(node.childs.get(0), elements);
                     for (Token element : elements) {
@@ -3688,46 +2294,16 @@ public class BytecodeEmitter {
                 emitComparison(op);
                 return;
             case "in": case "into":
-                // dedicated "IN" opcode, confirmed directly -- not
-                // expressed in terms of any other comparison. "into"
-                // reuses this exact case unmodified -- "it compiles to
-                // the same bytecode as it would if it were an IN
-                // operator," confirmed directly, zero new mnemonics; the
-                // only difference between "in" and "into" is entirely a
-                // TypeChecker-side, compile-time-only one (which proof
-                // kind gets recorded/consulted), invisible here.
+                // dedicated IN opcode; "into" emits identically (the difference is only a type-checker proof kind)
                 if (op.isGuaranteedEnumMembershipCheck) {
-                    // "u64 in GuaranteedEnumName" -- the right side is
-                    // a bare enum *type* name, never a value
-                    // expression, so it's pushed directly by its own
-                    // name (checkGuaranteedEnumMembership already set
-                    // op.right.resolvedType to it) rather than walked
-                    // through the ordinary emitExpr an rvalue "in"'s
-                    // right side gets -- the same "PUSH the name
-                    // itself" shape checkInstanceof's own right operand
-                    // already uses. Still reuses the plain, generic
-                    // "IN" mnemonic, with zero new bytecode: a later
-                    // backend derives the actual membership check from
-                    // the enum's own already-emitted "ENUM" line, keyed
-                    // by this same bare name.
+                    // right side is a bare enum type name, pushed by name; the backend derives the check from the ENUM line
                     emitExpr(op.left);
                     line("PUSH " + op.right.resolvedType);
                     line("IN " + op.left.resolvedType + " " + op.right.resolvedType + " " + op.resolvedType);
                     return;
                 }
                 if (op.isStringMembershipCheck) {
-                    // "u64 in string" -- a string has no stored length
-                    // (see the "len"/LEN_SCAN precedent for the
-                    // identical "no stored length, must scan" shape an
-                    // unsafe dynarray already has), so this can never be
-                    // the ordinary bounds/length comparison plain "IN"
-                    // already covers -- it's a real byte-by-byte runtime
-                    // scan instead, kept under its own dedicated
-                    // mnemonic ("IN_SCAN") rather than overloading "IN"
-                    // with a fourth, differently-shaped runtime meaning,
-                    // the identical "different runtime meaning gets its
-                    // own mnemonic" precedent "WITHIN" (vs "IN") and
-                    // "LEN_SCAN" (vs "LEN") already established.
+                    // a string has no stored length: runtime byte scan under its own mnemonic IN_SCAN
                     emitExpr(op.left);
                     emitExpr(op.right);
                     line("IN_SCAN " + op.left.resolvedType + " " + op.right.resolvedType + " " + op.resolvedType);
@@ -3738,21 +2314,7 @@ public class BytecodeEmitter {
                 line("IN " + op.left.resolvedType + " " + op.right.resolvedType + " " + op.resolvedType);
                 return;
             case "within":
-                // Identical shape to "in" just above (same PUSH-both-
-                // sides-then-one-instruction pattern, same trailing
-                // operand-type annotations, same single plain mnemonic
-                // regardless of pointerness on either side): always
-                // "WITHIN", never a separate "PTR_WITHIN". Pointerness
-                // used to be decided here at emission time (the retired
-                // `op.isPtrWithin` field), but "in" never needed a
-                // "PTR_IN" for the identical reason -- dereferencing is
-                // handled downstream, in the optimizer's
-                // MembershipLoweringPass, which already builds the exact
-                // same materialize/dereference machinery for "WITHIN" as
-                // it does for "IN". The trailing operand-type text still
-                // carries each side's full storage/mutability/baseType
-                // exactly as before, so that pass can always tell which
-                // operand(s) need dereferencing from the type text alone.
+                // same shape as "in"; always WITHIN (pointerness is handled by MembershipLoweringPass from the operand types)
                 emitExpr(op.left);
                 emitExpr(op.right);
                 line("WITHIN " + op.left.resolvedType + " " + op.right.resolvedType + " " + op.resolvedType);
@@ -3776,69 +2338,33 @@ public class BytecodeEmitter {
                 emitAddressOf(op);
                 return;
             case "mut": case "imut":
-                // "let i = mut 0" -- purely a compile-time mutability
-                // retag (see TypeChecker.checkMutabilityOf's coercion
-                // lattice), never a runtime effect: the underlying value
-                // doesn't change at all, only the type system's view of
-                // it, the same "nothing to emit for the wrapper itself"
-                // reasoning 'cast' already has for its own compile-time-
-                // only scope narrowing.
+                // compile-time mutability retag: nothing to emit
                 emitExpr(op.left);
                 return;
             case "new":
                 emitNew(op);
                 return;
             case "await":
-                // "await" itself has no bytecode presence at all -- the
-                // wrapped CALL node already knows to emit AWAIT_CALL
-                // (its own `asyncCallKind`, set by TypeChecker.checkAwait
-                // before this stage ever runs), so this is purely a
-                // pass-through.
+                // no bytecode of its own; the wrapped CALL emits AWAIT_CALL
                 emitExpr(op.left);
                 return;
             case "par":
-                // Same reasoning as "await" just above -- the wrapped
-                // CALL node already knows to emit PAR_CALL, and already
-                // has its own `resolvedType` overwritten (by
-                // TypeChecker.checkPar) to whatever "par" itself
-                // resolves to (void, or the synthesized handle type),
-                // so emitCallSequence's own PUSH_RET line already comes
-                // out right with no special-casing needed here either.
+                // no bytecode of its own; the wrapped CALL emits PAR_CALL (its resolvedType was overwritten by checkPar)
                 emitExpr(op.left);
                 return;
             case "unsafe":
-                // "unsafe dyn([0,1,2,3])" -- zero runtime representation
-                // of its own, the identical "no bytecode presence at all"
-                // pattern "await"/"par"/"mut"/"imut" already established
-                // just above: the wrapped CALL node already carries its
-                // own, already-corrected `resolvedType` (set by
-                // TypeChecker.checkUnsafeDynWrapper to the unsafe
-                // variant), so emitting it directly here needs no
-                // special-casing at all -- the ordinary "dyn" builtin
-                // emission (NEW <baseType> <count>) already reads that
-                // resolvedType/baseType, whichever variant it is.
+                // no bytecode of its own ("unsafe dyn(..)"); the wrapped call carries the corrected resolvedType
                 emitExpr(op.left);
                 return;
             case "atomic":
-                // "this doesnt require new bytecode operations because
-                // the type data is there in the instruction," confirmed
-                // directly -- zero runtime representation of its own,
-                // the identical "no bytecode presence at all" pattern
-                // "mut"/"imut"/"unsafe" already established just above:
-                // the wrapped expression's own resolvedType already
-                // carries "atomic" (TypeChecker.checkAtomicWrapper), so
-                // every later PUSH/ASSIGN of it already emits that type
-                // text with no special-casing needed here at all.
+                // no bytecode of its own; the wrapped expression's resolvedType carries "atomic"
                 emitExpr(op.left);
                 return;
             case "swap":
                 emitSwap(op);
                 return;
             case "..":
-                // a range is just its two u64 bounds sitting on the
-                // stack, back to back -- no instruction of its own,
-                // confirmed directly ("the .. operator doesn't need to
-                // do anything, they're stacked already").
+                // a range is its two u64 bounds pushed back to back
                 emitExpr(op.left);
                 emitExpr(op.right);
                 return;
@@ -3848,65 +2374,18 @@ public class BytecodeEmitter {
                 emitExpr(op.right);
                 return;
             case "instanceof": case "implements":
-                // "our operators are just ending up as operators in our
-                // bytecode" -- confirmed directly. This flat
-                // representation defers *all* real computation detail
-                // (sizes, addressing, the actual RTTI tag comparison) to
-                // a later bytecode-to-assembly stage, exactly like every
-                // other operator here -- it doesn't need the underlying
-                // runtime mechanism to already exist, only to name the
-                // operation, the same way "x+2" is just "PUSH x / PUSH 2
-                // / ADD" long before addition is ever actually wired to
-                // real hardware. The right operand is a bare type/
-                // interface name, not a value -- pushed directly via its
-                // own resolved name (set by checkInstanceof/
-                // checkImplementsOperator), not evaluated as an
-                // expression.
-                //
-                // "INSTANCEOF"/"IMPLEMENTS" now also carries the left
-                // operand's own resolved type as a trailing operand --
-                // the identical "IS_BASE leftType" fix just above, for
-                // the identical reason: a real, found bug, confirmed
-                // directly by actually compiling "Point{x=1} instanceof
-                // Point" (a bare, non-`new` struct *literal* as the left
-                // operand -- legal; checkInstanceof only requires
-                // `leftType` be struct/interface-typed and, via
-                // `requiresAliveProof`, explicitly allows "an inline
-                // (no-storage)... struct value," which a bare literal
-                // construction is). `emitInstantiate`'s own non-`new`
-                // construction path pushes classId plus every member back
-                // to back with no consolidating instruction, so the line
-                // immediately before this one is, in that case, only ever
-                // the *last member's own* scalar push -- its trailing
-                // type is that member's own type, never the struct's.
-                // `op.left.resolvedType` (an unconditional side effect of
-                // `resolveExprType` at check time) is the only place the
-                // real operand type still exists by the time emission
-                // gets here, so, like `IS_BASE`, it's written down
-                // directly rather than left for a later pass to guess at
-                // from shape.
+                // right operand is a bare type/interface name pushed by name. The left operand's type is a trailing operand
+                // because a bare struct literal on the left leaves only its last member's push before this line.
                 emitExpr(op.left);
                 line("PUSH " + op.right.resolvedType);
                 line(op.text.toUpperCase() + " " + op.left.resolvedType);
                 return;
             case "and":
-                // Compiles to exactly the same bytecode as "&&", per the
-                // match-condition-chaining round: "&&, but also, my left
-                // and right operands are rules for the temporary type
-                // system within a match block" -- that extra meaning is
-                // entirely a TypeChecker.checkMatch concern (already
-                // consumed by the time bytecode emission runs); here
-                // it's just AND.
+                // same bytecode as "&&"; the extra meaning is type-checker only
                 emitLogical(op, "AND");
                 return;
             case "FLOAT_CHECK":
-                // "PUSH f / FLOAT_CHECK finite," confirmed directly --
-                // a purely compiler-internal operator (never parsed
-                // from real source; built only by
-                // TypeChecker.lowerFloatMatchToIfChain), so op.right is
-                // never a real expression to evaluate here -- its own
-                // `.text` already holds the alphabetically-canonical
-                // "finite|nan"-style chain string directly.
+                // compiler-internal operator (TypeChecker.lowerFloatMatchToIfChain); op.right.text holds the "finite|nan" chain string
                 emitExpr(op.left);
                 // an f64 operand carries its width (the f32 form is unchanged: "FLOAT_CHECK cats")
                 line("FLOAT_CHECK " + op.right.text + (op.left.resolvedType != null && (op.left.resolvedType.equals("f64") || op.left.resolvedType.endsWith("_f64")) ? " 8" : ""));
@@ -3917,94 +2396,10 @@ public class BytecodeEmitter {
     }
 
     /**
-     * "x = expr / x.y = expr / x[y] = expr... the root of the left hand
-     * side of assignment must have the address of the variable,"
-     * confirmed directly, refined across a full design conversation to:
-     * a pure mnemonic swap at exactly the assignment target's own root
-     * -- ADDR replacing PUSH, DOT_LHS replacing the ordinarily-collapsed
-     * '.' chain (here, and only here, '.' is emitted as a real,
-     * uncollapsed operator, with a new PUSH_FIELDNAME carrying the field
-     * name the same way PUSH already carries a variable name), LOOKUP_
-     * LHS replacing LOOKUP. Every type argument is identical to what the
-     * ordinary read-form instruction would have shown -- "any change to
-     * the normal type system can only effect the assignment opcode...
-     * our type system should remain unaffected," confirmed directly, so
-     * nothing here reads or writes anything TypeChecker produced beyond
-     * the same resolvedType fields every other emit function already
-     * reads. "It doesn't need to recurse down the chain... foo().x --
-     * the foo() part needs to produce its actual value, not the
-     * address," confirmed directly -- only this exact root swaps
-     * treatment; whatever's on the left of a '.'/LOOKUP root (another
-     * '.', a call, anything) is evaluated completely normally via the
-     * ordinary emitExpr, collapsing exactly as it always has.
-     *
-     * A real, previously-unintentional ambiguity in the '.'/LOOKUP root
-     * specifically (never the bare-VARREF root above, which was always
-     * correct): "x is not simply going to be given a value type, we
-     * need to update the frontend of the compiler where it swaps the
-     * mnemonic used for x," confirmed directly. Before this fix, a bare
-     * VARREF root of a '.'/LOOKUP chain was routed through the ordinary,
-     * unmodified emitExpr -- which for a stack-resident (no-storage)
-     * root emits an ordinary "PUSH x type," the exact same instruction
-     * an unrelated genuine value-read of x already uses -- so the only
-     * way anything downstream could tell "here's the base to compute a
-     * field/element address from" apart from "read this value" was to
-     * peek ahead at the instruction that followed (DOT_LHS/LOOKUP_LHS
-     * vs. an ordinary consumer). `emitDotLhsRoot` closes this the same
-     * way the doc comment above already describes the bare-assignment-
-     * target case: a bare VARREF root whose own resolved type carries no
-     * storage modifier gets the identical ADDR-replacing-PUSH mnemonic
-     * swap the top-level "x = expr" case already gets, since a
-     * stack-resident struct/array's own real, on-stack address is
-     * exactly what DOT_LHS/LOOKUP_LHS both need as their base to add an
-     * offset to. A pointer-typed root (raw/owns/ref/auto/static) is
-     * left completely untouched, still routed through ordinary emitExpr
-     * -- its own pushed value already IS the address to use, no swap
-     * needed there, the identical "already correct, unambiguous" case
-     * `pp.x = z` (`pp` a `raw mut Point`) always was. A root that isn't
-     * a bare VARREF at all (a deeper chain, a call result, ...) is
-     * likewise left untouched -- "whatever's on the left of a '.'/
-     * LOOKUP root... is evaluated completely normally" already covers
-     * it, and there is no bare slot for a mnemonic swap to even target.
-     *
-     * UPDATE (chained-lookup write fix, "grid[1][1] = x"): the "root
-     * that isn't a bare VARREF at all" claim above turned out to be
-     * incomplete for exactly one shape -- a root that is ITSELF another
-     * '.'/LOOKUP node, e.g. the inner "grid[1]" of "grid[1][1] = x"'s
-     * target ("LOOKUP" with left="LOOKUP(grid,1)", right="[1]"). Before
-     * this fix, that inner root fell through to the plain "emitExpr(root)"
-     * call below -- which, for a stack-resident (no-storage) array/struct
-     * ELEMENT result, is exactly the ordinary *read* path: per
-     * X86Backend's own "LOOKUP_ARRAY" (non-LHS) handling, a fixed-size
-     * array/struct-typed read pushes the whole VALUE by copying its
-     * bytes onto the stack, never its address ("the read side always
-     * gets its base via a plain PUSH <totalArraySize> $offset -- the
-     * whole array pushed by value... never an address"). The very next
-     * instruction this method's own caller emits, though, is
-     * "LOOKUP_LHS", which requires an ADDRESS as its base to add an
-     * element offset to -- so the outer write ended up indexing into a
-     * copied VALUE block as if it were a pointer, producing a garbage
-     * address and corrupting the real stack (confirmed directly: a real
-     * "grid[1][1] = 99" fixture segfaulted inside glibc's own
-     * malloc/free machinery from the resulting stack corruption).
-     *
-     * The fix: a '.'/LOOKUP root, like the bare-VARREF root above, also
-     * needs its own ADDRESS-producing form when it has no storage
-     * modifier -- and that form already exists, recursively, as this
-     * exact method's own caller, `emitAssignTarget` (its '.'/LOOKUP
-     * branches already emit exactly "compute the base's address, then
-     * DOT_LHS/LOOKUP_LHS" -- precisely what's needed here, one level
-     * deeper). So a stack-resident '.'/LOOKUP root now recurses into
-     * `emitAssignTarget(root)` instead of `emitExpr(root)`, giving a
-     * chain of arbitrary depth ("cube[1][0][1] = x") a chain of nested
-     * LOOKUP_LHS/DOT_LHS address computations all the way down to the
-     * true base, exactly mirroring how the read side
-     * (`emitLookup`/`emitDot`) already recurses via plain `emitExpr` on
-     * their own left sides. A pointer-typed '.'/LOOKUP root (rare, but
-     * possible e.g. through a `raw`-returning accessor) is left routed
-     * through ordinary `emitExpr`, matching the pointer-typed-VARREF
-     * case above: its own pushed value already IS the address, no
-     * recursion needed.
+    /**
+     * Pushes the base of an assignment target's '.'/LOOKUP chain: a no-storage bare variable gets ADDR instead of PUSH, a
+     * no-storage '.'/LOOKUP root recurses into emitAssignTarget (so "grid[1][1] = x" computes nested addresses), and a
+     * pointer-typed root or anything else goes through emitExpr. See docs/BytecodeEmitter.md, "Assignment targets".
      */
     private void emitDotLhsRoot(Token root) {
         if (root.type == TokenType.VARREF && !hasStorage(root.resolvedType)) {
@@ -4021,12 +2416,7 @@ public class BytecodeEmitter {
 
     /** "[storage_]_[mutability]_[basetype]" -- storage, when present, is always the string's own leading segment, immediately followed by '_' (TypeChecker.TypeInfo.canonical()'s own documented ordering). */
     private static boolean hasStorage(String canonicalType) {
-        // Null-safe: a node that was never resolved to a real value type at
-        // all (an EnumName reference used only as a '.'-chain root, e.g.
-        // "Color.GREEN" -- confirmed directly via a real NullPointerException
-        // compiling a plain "printf(...)" program that happens to reference
-        // an enum-valued static constant indirectly through stdlib -- has no
-        // resolvedType, and "no type" trivially carries no storage keyword.
+        // null-safe: an enum name used only as a '.'-chain root has no resolvedType
         return canonicalType != null && (canonicalType.startsWith("raw_") || canonicalType.startsWith("owns_")
                 || canonicalType.startsWith("ref_") || canonicalType.startsWith("auto_")
                 || canonicalType.startsWith("static_"));
@@ -4048,10 +2438,7 @@ public class BytecodeEmitter {
             return;
         }
         if (target.type == TokenType.KEYWORD && target.text.equals("let")) {
-            // A fresh 'let' declaration's own target -- "let" isn't the
-            // variable name itself, it's a wrapper holding it as its
-            // first child (see emitExpr's own identical handling of this
-            // same shape for an ordinary read).
+            // fresh 'let': the name is the wrapper's first child
             Token nameTok = target.childs.get(0);
             line("ADDR " + nameTok.text + " " + target.resolvedType);
             return;
@@ -4059,40 +2446,6 @@ public class BytecodeEmitter {
         line("ADDR " + target.text + " " + target.resolvedType);
     }
 
-    /**
-     * "a=null... immediately after that move... The a=null isn't
-     * subject to all the rule checking, it just becomes like: ASSIGN a
-     * null," confirmed directly. Emits exactly the bytecode shape a
-     * real, user-written "x = null" would (`emitAssignTarget` +
-     * "PUSH null type" + "ASSIGN"), just synthesized directly here
-     * rather than from real source -- reusing the existing, already-
-     * correct machinery for both an ordinary variable and a struct
-     * field (`emitAssignTarget` already handles both shapes). Called
-     * only where `TypeChecker.markMovedIfOwned` actually set
-     * `isOwnershipMoveSource` -- never unconditionally -- since a move
-     * whose own source has no nameable slot at all (a fresh `new`/
-     * call-result consumed directly) has nothing here to null out.
-     *
-     * NOTE FOR THE FUTURE BYTECODE-TO-ASSEMBLY GENERATOR: for a call
-     * argument specifically (see the ARG-loop call site of this
-     * method), this null-out is emitted *between* the argument's own
-     * "POP ARGn" and the "CALL" that follows -- deliberately, not
-     * after the call returns (a throw inside the callee would skip
-     * right past anything placed after the call entirely, leaving the
-     * caller's own slot stale when its own unwind routine later reads
-     * it). This ordering creates a real constraint on register
-     * allocation: this "ASSIGN ... null" sits between the ARGn-th
-     * value being placed into its calling-convention register/slot and
-     * the CALL that reads it, so whatever real registers this specific
-     * ASSIGN's own generated code uses as scratch space MUST NOT be
-     * (or must save/restore) any register already holding a still-
-     * pending ARG value. Every ASSIGN emitted anywhere else in this
-     * bytecode format is safe to treat as "the last operation of its
-     * own statement" and free to clobber scratch registers however it
-     * likes -- this is the one place that assumption is false, and the
-     * assembler needs to know it explicitly rather than discover it as
-     * a hard-to-reproduce bug in a throwing program.
-     */
     /** A synthesized `base.member` access, enough for `emitAssignTarget`/`DOT_LHS`. */
     private Token syntheticMember(Token base, String member, TypeChecker.TypeInfo memberType) {
         Token dot = new Token(TokenType.OPERATOR, ".", base.line, base.file);
@@ -4146,6 +2499,11 @@ public class BytecodeEmitter {
         }
     }
 
+    /**
+     * Nulls a moved-from owner right after the move (synthesized "x = null", only where isOwnershipMoveSource is set). For a call
+     * argument it sits between "POP ARGn" and the CALL, so a backend must keep its scratch registers off pending ARG registers.
+     * See docs/BytecodeEmitter.md, "Moves and owning assignment".
+     */
     private void emitOwnershipMoveNullOut(Token valueExpr) {
         if (valueExpr.inlineOwnsStruct != null) {
             emitInlineOwnsNullOut(unwrapMutWrappers(valueExpr), valueExpr.inlineOwnsStruct);
@@ -4157,92 +2515,6 @@ public class BytecodeEmitter {
         line("ASSIGN " + source.resolvedType + " " + source.resolvedType + " " + source.resolvedType);
     }
 
-    /**
-     * "now i have a memory leak because the old b never has a
-     * GT_DESTRUCT," confirmed directly -- a genuinely different gap
-     * from the move-nulling above: that was about a move's own
-     * *source* losing track of a value it no longer owns; this is
-     * about an assignment's own *target* losing track of a value it
-     * owned *before* being overwritten. Fixed by destructing whatever
-     * the target currently holds first, before the new value is ever
-     * written in -- reusing `gt_destruct`'s own already-established
-     * null-safety (confirmed directly: "it just does nothing if you
-     * pass it a null") to make this always safe to emit even when the
-     * target happens to already be null.
-     *
-     * Deliberately scoped to *ordinary reassignment only* -- never a
-     * fresh `let` (checked via `target.type != KEYWORD`, since a real
-     * reassignment target is a VARREF or a '.' field access, never the
-     * "let" wrapper token itself). A fresh `let`'s own hoisted `ALLOC`
-     * slot only ever needs this if it could be re-executing with a
-     * still-live prior value already in it -- the loop-reentry case --
-     * and that's already made safe by nulling the slot after its own
-     * natural-end-of-scope destruct (a separate, related fix), so a
-     * fresh `let` is always either genuinely fresh (slot already null)
-     * or a loop reentry (slot already nulled by that other fix) --
-     * never a case this destruct would actually need to catch. Applying
-     * it to `let` anyway was tried and reverted: it broke every
-     * function whose only `owns` locals are immediately returned or
-     * otherwise never need destructing at all, by forcing a
-     * `@gt_destruct` function to exist even there (confirmed directly
-     * by a real fixture regression, not assumed) -- a real, unwanted
-     * cost for a case that doesn't need the protection in the first
-     * place once the other fix is in place.
-     *
-     * Returns the target's own dotted name (matching `qualifiedDotName`
-     * exactly, so a struct field like "h.inner" is destructed
-     * correctly too, not just a bare variable) -- when a flat
-     * compile-time name is even possible; see the "GT_DESTRUCT
-     * dotted-operand gap" update below for when it isn't.
-     *
-     * UPDATE ("GT_DESTRUCT dotted-operand gap" fix): the original version
-     * of this method built a flat, dot-joined name string
-     * (`qualifiedDotName`) for ANY '.' target unconditionally, and simply
-     * gave up (no destruct emitted at all -- a silent memory leak, not a
-     * compile error) for a LOOKUP target. Both were real gaps with the
-     * same root cause: `AddressLoweringPass.resolveAddress` (the
-     * lowerorder-stage pass that turns a flat name like "a.b.c" into a
-     * single compile-time byte offset) can only do that when EVERY
-     * segment of the chain is an ordinary, stack-resident value -- the
-     * moment a pointer (`raw`/`owns`/`ref`/`auto`/`static`) sits anywhere
-     * in the middle, there is no single fixed offset to fold to at all
-     * (confirmed directly in that pass's own code: "return null; //
-     * pointer indirection"), and a LOOKUP's own index is a runtime value
-     * to begin with, never flat-nameable in the first place. Before this
-     * fix, either shape left `GT_DESTRUCT`'s own text operand unresolved,
-     * and `X86Backend`'s `GT_DESTRUCT` case has no fallback for that --
-     * it just emits a `TODO(codegen): ... not yet implemented` comment
-     * and skips the destruct call entirely, silently leaking the old
-     * owned value.
-     *
-     * `isQualifiedNameableDot` is the exact gate `emitDot` (ordinary
-     * reads) and `emitAssignTarget` (assignment targets, via
-     * `emitDotLhsRoot`) already check before deciding whether a '.'
-     * chain is safe to flatten -- this method now checks the identical
-     * gate instead of assuming every '.' chain qualifies. When it does
-     * (no pointer anywhere in the chain), the original flat-name
-     * behavior is unchanged. When it doesn't -- or the target is a
-     * LOOKUP, which never qualifies -- there is no flat name to build at
-     * all, so this falls back to the OTHER already-correct, already-
-     * pointer-crossing mechanism this project has: the same runtime
-     * address computation `emitAssignTarget` itself performs via
-     * `DOT_LHS`/`LOOKUP_LHS` (proven correct through arbitrary pointer
-     * indirection by the chained-array-lookup write fix -- see this
-     * file's own CLAUDE.md, "Chained array indexing"). That address is
-     * computed via `emitAssignTarget(target)` (pushing it once),
-     * duplicated with the existing `DUP_TOP` mnemonic (added for the
-     * win64 varargs-duplication fix, reused here for an unrelated
-     * purpose -- any 8-byte stack word), and one copy consumed by a new
-     * `GT_DESTRUCT_ADDR` bytecode line (an address-based sibling of the
-     * existing, flat-offset-only `GT_DESTRUCT`; see `X86Backend`'s own
-     * CLAUDE.md for its codegen). The other copy is left on the stack
-     * for `emitAssign`'s own subsequent store to consume directly --
-     * returning `true` from this method tells `emitAssign` the address
-     * is already there, so it must NOT call `emitAssignTarget` again
-     * (which would both waste work and, worse, double-evaluate any
-     * side-effecting sub-expression inside the target, such as a LOOKUP
-     * index expression containing a call).
-     */
     private boolean isFlatOwnsDestructTarget(Token target) {
         if (target.type == TokenType.KEYWORD || target.resolvedType == null
                 || !(target.resolvedType.startsWith("owns") || target.inlineOwnsStruct != null)) {
@@ -4262,6 +2534,11 @@ public class BytecodeEmitter {
                 || (target.text.equals(".") && !isQualifiedNameableDot(target)));
     }
 
+    /**
+     * Before an owning assignment overwrites its target, destructs the old value (gt_destruct is null-safe); never for a fresh 'let'.
+     * Returns true when the target has no flat name: its address is then on the stack (DUP_TOP + GT_DESTRUCT_ADDR) and emitAssign
+     * must not compute it again. See docs/BytecodeEmitter.md, "Moves and owning assignment".
+     */
     private boolean emitDestructOldOwnedValue(Token target) {
         if (target.type == TokenType.KEYWORD || target.resolvedType == null
                 || !(target.resolvedType.startsWith("owns") || target.inlineOwnsStruct != null)) {
@@ -4300,15 +2577,10 @@ public class BytecodeEmitter {
             emitStructRvoAssign(op);
             return;
         }
-        // A flat-named owns target (a variable, or a pointer-free '.' chain) is destructed
-        // AFTER the right side is evaluated: "s = pass(s)" moves the old value into the
-        // call, which nulls the variable, so destructing first freed an object the callee
-        // was about to use. Destructing late sees the moved-out (null) slot and is a no-op.
+        // Flat-named owns target: destruct AFTER the right side ("s = pass(s)" moves the old value into the call, nulling the variable).
         boolean lateDestruct = isFlatOwnsDestructTarget(op.left);
-        // An owns target reached through a pointer or an index ("h.w = pass(h.w)", "a[i] = f(a[i])") has no flat name, so
-        // its old value is destructed through the computed address. The right side is still evaluated FIRST (into a hidden
-        // local): it may move the old value out (the move nulls the slot, so the destruct below is then a no-op), and if it
-        // throws, the old value is left untouched instead of freed.
+        // Pointer/index-reached owns target (no flat name): the right side is evaluated FIRST into a hidden local, so a move out of
+        // the old value nulls it and a throw leaves it untouched.
         boolean pointerCrossingOwns = !lateDestruct && lateAllocs != null && op.right.resolvedType != null
                 && (op.right.resolvedType.startsWith("owns") || op.left.inlineOwnsStruct != null)
                 && isPointerCrossingOwnsTarget(op.left);
@@ -4342,62 +2614,14 @@ public class BytecodeEmitter {
         }
     }
 
-    /**
-     * Return Value Optimization's caller-side half: `op.right` is a CALL
-     * node `TypeChecker.checkCall` already confirmed targets a function
-     * that returns a plain struct by value, sitting in one of the two
-     * positions that's legal for it (a fresh 'let' binding's own RHS, or
-     * a plain assignment's RHS with a bare-variable target -- enforced
-     * entirely by TypeChecker; `op.left` is therefore always a bare,
-     * addressable variable name here). No "PUSH_RET"/"ASSIGN" copy
-     * happens at all -- instead, the callee is handed the destination's
-     * own address directly, as a synthetic leading argument, and writes
-     * the struct's fields into it directly (see `emitStructRvoReturn`).
-     *
-     * The hidden-argument push deliberately mirrors -- byte for byte --
-     * the bytecode shape a real, ordinary "raw destVar" call argument
-     * already produces ("PUSH destVar itsType" then "ADDR_OF RAW itsType
-     * raw_indeterminate_StructName"), confirmed directly via probing
-     * already-legal programs: this is the exact, already-proven-legal
-     * way to pass a variable's own address as a call argument in this
-     * bytecode format, and a "raw_indeterminate_..." argument was already
-     * confirmed to satisfy a "raw_mut_..."-declared parameter (an
-     * indeterminate-mutability pointer freely coerces to any declared
-     * pointee mutability -- the same rule an ordinary "takesPtr(raw p)"
-     * call already relied on before this feature existed).
-     *
-     * Every real, user-written argument is transferred exactly as
-     * `emitCall`/`emitCallSequence` already would, just manually inlined
-     * here (rather than reusing `emitCallSequence` itself) so the hidden
-     * destination pointer can occupy register slot 0 ahead of them --
-     * `ArgCounters` is a genuinely running, mutable per-call counter, so
-     * simply transferring the hidden argument into it first, before the
-     * real arguments' own loop, is all "offsetting by one register"
-     * requires; nothing about `emitArgTransfer`/`emitArgWord` needs to
-     * know this call is any different from an ordinary one.
-     */
-    /**
-     * "mut x"/"imut x" are purely compile-time mutability retags with no
-     * runtime effect at all (see `emitOperator`'s own "mut"/"imut" case) --
-     * so a struct-RVO CALL node sitting underneath one (e.g. "let point =
-     * mut newPoint()", needed here since a fresh struct literal always
-     * has indeterminate mutability and a 'let' RHS requires a concrete
-     * one) is still exactly the same call `TypeChecker.checkCall` marked
-     * `isStructRvoCall` -- this just walks down through any number of
-     * such transparent wrappers to find it, mirroring the "mut"/"imut"
-     * transparency `TypeChecker.resolveOperatorType` itself now gives the
-     * struct-RVO eligibility flag for the identical reason.
-     */
+    /** Strips transparent mut/imut wrappers (and a non-block try) to find the underlying node, e.g. the struct-RVO CALL. */
     private Token unwrapMutWrappers(Token t) {
         while (true) {
             if (t.type == TokenType.OPERATOR && (t.text.equals("mut") || t.text.equals("imut"))) {
                 t = t.left;
             } else if (t.type == TokenType.KEYWORD && t.text.equals("try") && !t.isTryBlock
                     && t.sub != null && !t.sub.isEmpty()) {
-                // `let e = mut ? f()` / `try f() catch(..){..}`: the wrapped call is still the very call
-                // TypeChecker flagged `isStructRvoCall` (the flag travels through `try`), so it must get its
-                // hidden destination like any other RVO call; `emitStructRvoCallSequence` re-attaches the
-                // try's catch label (see `ownerTryOf`).
+                // the isStructRvoCall flag travels through try; emitStructRvoCallSequence re-attaches the try's catch label (ownerTryOf)
                 t = t.sub.get(0);
             } else {
                 return t;
@@ -4415,6 +2639,7 @@ public class BytecodeEmitter {
         return null;
     }
 
+    /** Caller half of struct RVO: the callee gets the destination's address as a hidden first argument; no PUSH_RET/ASSIGN copy. See docs/BytecodeEmitter.md, "Return and struct return (RVO)". */
     private void emitStructRvoAssign(Token op) {
         Token callOp = unwrapMutWrappers(op.right);
         String funcName = resolveCallTargetForEmission(callOp.resolvedCallTarget);
@@ -4444,43 +2669,15 @@ public class BytecodeEmitter {
             line("PUSH " + destVarName + " " + destType);
             line("ADDR_OF RAW " + destType + " " + rawPtrType);
         });
-        // Deliberately no "PUSH_RET"/"ASSIGN" here -- the destination's
-        // own memory has already been populated directly by the callee.
+        // no PUSH_RET/ASSIGN: the callee already wrote the destination
     }
 
-    /**
-     * "return foo()" tail-forwarding: `callOp` is a struct-RVO call sitting
-     * directly (through any number of "mut"/"imut" wrappers) as a
-     * `return` statement's own expression, in a function whose own
-     * return type matches. Rather than materialize a fresh destination
-     * and then copy it into "$ret_dest" -- extra work this project's
-     * flat struct handling doesn't otherwise need -- this function's OWN
-     * "$ret_dest" is handed straight to `callOp` as *its* hidden
-     * destination pointer: the callee then writes the struct directly
-     * into the memory the ORIGINAL, outermost caller is waiting on, with
-     * zero intermediate copies, however many "return foo()"-chained
-     * frames deep this goes. `$ret_dest` is already a pointer (unlike a
-     * plain struct-typed destination variable), so unlike
-     * `emitStructRvoAssign`'s own "PUSH destVar; ADDR_OF RAW" (take the
-     * address of a struct value), this is just "PUSH $ret_dest" --
-     * forward the pointer value itself, no address-of needed.
-     */
+    /** "return foo()" tail forwarding: this function's own $ret_dest pointer is the callee's hidden destination (no address-of, no copy). */
     private void emitStructRvoForwardCall(Token callOp, String ptrType) {
         emitStructRvoCallSequence(callOp, ptrType, () -> line("PUSH $ret_dest " + ptrType));
     }
 
-    /**
-     * The part `emitStructRvoAssign`/`emitStructRvoForwardCall` share:
-     * everything about a struct-RVO call site except *how* the hidden
-     * destination pointer's own value gets onto the stack in the first
-     * place (`pushDestPointer` -- takes an address for a local
-     * destination, or forwards an already-a-pointer "$ret_dest" for tail
-     * forwarding). Every real, user-written argument is transferred
-     * exactly as `emitCall`/`emitCallSequence` already would, just
-     * manually inlined here (rather than reusing `emitCallSequence`
-     * itself) so the hidden destination pointer can occupy register slot
-     * 0 ahead of them.
-     */
+    /** Shared RVO call site: arguments are transferred as emitCallSequence would, with the hidden destination pointer (pushDestPointer) in register slot 0. */
     private void emitStructRvoCallSequence(Token callOp, String rawPtrType, Runnable pushDestPointer) {
         String funcName = resolveCallTargetForEmission(callOp.resolvedCallTarget);
         List<Token> args = new ArrayList<>();
@@ -4510,7 +2707,7 @@ public class BytecodeEmitter {
         line("CC_END " + conventionName);
     }
 
-    /** The bare-variable target's own name -- `op.left` is always a plain VARREF here (a "let" binding's own fresh name, or an ordinary bare-variable assignment target; both are the only two positions `TypeChecker` ever allows a struct-RVO call in), never a "let"-wrapper node or a dotted/indexed target, so this is simpler than the general-purpose `emitAssignTarget`. */
+    /** Name of the bare-variable destination (a 'let' binding or a plain assignment target). */
     private String destVarNameOf(Token target) {
         if (target.type == TokenType.KEYWORD && target.text.equals("let")) {
             return target.childs.get(0).text;
@@ -4519,42 +2716,8 @@ public class BytecodeEmitter {
     }
 
     /**
-     * "right so we do need ATOMIC_ASSIGN and ATOMIC_PUSH" -- confirmed
-     * directly: a single aligned load/store of an atomic-eligible
-     * (<=8-byte) value can never tear, so ATOMIC_PUSH/ATOMIC_ASSIGN exist
-     * for a different reason than ATOMIC_SWAP does. ATOMIC_SWAP is a
-     * genuine read-modify-write primitive with no non-atomic equivalent;
-     * ATOMIC_PUSH/ATOMIC_ASSIGN are ordinary reads/writes that would be
-     * emitted identically to a plain PUSH/ASSIGN if not for one thing a
-     * not-yet-built backend needs to know and would otherwise have no way
-     * to recover once this compiler's own type text is gone: this
-     * specific access must not be reordered across other memory
-     * operations, hoisted out of a loop, or common-subexpression-
-     * eliminated with another read of the same location -- the same
-     * "volatile"-like guarantee C gives a volatile-qualified access,
-     * needed here because another thread may change this value between
-     * any two instructions with no fence or lock this compiler emits
-     * that a real optimizing backend would otherwise respect. Emitted
-     * directly at the one and only place each of these two mnemonics'
-     * plain counterparts is emitted, rather than left to be reconstructed
-     * later from a neighboring line -- this session's standing "emit the
-     * distinguishing fact directly, once it's known, don't infer it back
-     * from context afterward" rule (see DEREF/NEW_DYN/NEW_UDYN/RESIZE/
-     * URESIZE's own identical reasoning).
-     *
-     * Checked via a plain substring test against the already-built
-     * canonical type text, not a dedicated TypeInfo field -- this class
-     * only ever sees the string TypeChecker already resolved onto each
-     * Token, the same way `.startsWith("owns")` already tests for
-     * storage a few lines up in `emitDestructOldOwnedValue`.
-     * `TypeInfo.canonical()`'s own emission order (see its doc comment)
-     * always writes the literal segment "atomic_" as its own token,
-     * immediately preceded by either the very start of the string or an
-     * underscore closing off a prior segment (storage/some/mutability)
-     * -- never as a substring straddling an ordinary identifier, since no
-     * real base type or struct name in this language is ever spelled
-     * with a literal lowercase "atomic_" of its own. A plain `contains`
-     * check is therefore exact here, not a heuristic.
+     * True if the canonical type text contains "atomic_" (exact: canonical() writes it as its own segment). ATOMIC_PUSH/ATOMIC_ASSIGN
+     * carry the volatile-like guarantee (no reordering, hoisting or CSE). See docs/BytecodeEmitter.md, "Atomics".
      */
     private static boolean isAtomicCanonical(String canonical) {
         return canonical != null && canonical.contains("atomic_");
@@ -4665,7 +2828,7 @@ public class BytecodeEmitter {
         line("ASSIGN " + t + " " + t + " " + t);
     }
 
-    /** x-- -- the identical shape emitIncrement uses for x++, with "DEC" in place of "INC"; everything else (target/value order, the trailing ASSIGN) is exactly the same. */
+    /** x-- : emitIncrement's shape with DEC. */
     private void emitDecrement(Token op) {
         if (op.pointerScale > 1) {
             emitPointerStep(op, "SUB");
@@ -4689,75 +2852,20 @@ public class BytecodeEmitter {
     }
 
     /**
-     * "&&then"/"||then" -- the lazy "then" pseudo-operator -- are "just
-     * operators until they are parsed out to their instructions in the
-     * hob," confirmed directly: everywhere else in the compiler
-     * (RpnConverter, TreeBuilder, TypeChecker) they're ordinary binary
-     * operator nodes, but they have no eager, single-pushed-value form at
-     * all -- unlike plain "&&"/"||" (see emitLogical just above, which
-     * always evaluates *both* sides before combining them with one
-     * AND/OR instruction), a "&&then"/"||then" node only ever lowers to
-     * this cascading CMP/JMP control-flow shape, entered here (from
-     * emitIfChain) instead of the ordinary single `emitExpr; CMP; JMP`
-     * pair an eager condition gets.
-     *
-     * TypeChecker.checkLogical already guarantees (see
-     * `insideShortCircuitEligiblePosition`'s own doc comment) that a
-     * "&&then"/"||then" node's own `.left`/`.right` are each *either*
-     * another "&&then"/"||then" node (the chain continues), *or* some
-     * completely ordinary expression containing no "&&then"/"||then" of
-     * its own anywhere inside it (a plain "&&"/"||" subtree included --
-     * that subtree's own "always evaluate both sides" guarantee is
-     * preserved exactly, since it's emitted as one atomic leaf via the
-     * ordinary `emitExpr`/`emitLogical` path below, never decomposed).
-     * So this method never needs to search *inside* a non-then-variant
-     * node for a further, illegally-nested "&&then"/"||then" -- one
-     * simply cannot be there.
-     *
-     * Exactly one of `falseLabel`/`trueLabel` is ever non-null for any
-     * one call -- the other says which outcome this call should just
-     * *fall through* on, letting whatever code follows continue
-     * naturally, rather than jump anywhere: `falseLabel` non-null means
-     * "jump there if this node is false, fall through if true" (the
-     * shape an ordinary `if`-condition or an "&&then" chain's own
-     * operand needs); `trueLabel` non-null means the opposite (needed
-     * for "||then"'s own left operand -- see the "||then" branch below,
-     * matching the user's own sketch: "if A false, go evaluate B... A
-     * was true -> skip straight into the body").
-     *
-     * Deliberately emits no "AND"/"OR" instruction anywhere in the
-     * cascade (unlike the user's own rough sketch, which included one
-     * for "&&then"): each operand independently determines whether to
-     * jump away, so no combined boolean value is ever needed -- ANDing
-     * with a value already known (from having fallen through) to be
-     * "true" is a no-op, and omitting it avoids any question of whether
-     * "CMP" pops or peeks its operand, staying entirely within the
-     * already-proven "one push, one CMP, one JMP" instruction pairing
-     * used everywhere else in this codebase.
+     * Cascading CMP/JMP lowering of "&&then"/"||then". Exactly one of falseLabel/trueLabel is non-null; the other outcome falls
+     * through. No AND/OR is emitted. See docs/BytecodeEmitter.md, "Short-circuit conditions".
      */
     private void emitShortCircuit(Token node, String falseLabel, String trueLabel) {
         if (!isThenVariant(node)) {
-            // A leaf for cascading purposes -- any ordinary expression,
-            // including a whole plain "&&"/"||" subtree emitted fully
-            // eagerly (both sides always evaluated) via the normal
-            // emitExpr/emitLogical path; only its single resulting bool
+            // leaf: any ordinary expression (a plain &&/|| subtree stays eager); only its bool is tested
             // is tested here.
             emitExpr(node);
             line("CMP");
             if (falseLabel != null) {
-                // "CMP; JMP label" already means "jump if false, fall
-                // through if true" (emitIfChain's own established
-                // reading) -- exactly what's needed here.
+                // "CMP; JMP label" = jump if false, fall through if true
                 line("JMP " + falseLabel);
             } else {
-                // Need the opposite: jump to trueLabel only if true, fall
-                // through if false. No dedicated "jump if true" opcode
-                // exists, so this is built from the same CMP/JMP pairing
-                // by inverting it with one extra unconditional jump: if
-                // false, CMP/JMP's own "jump if false" lands past the
-                // unconditional "JMP trueLabel" entirely (the natural
-                // fall-through-on-false this branch needs); if true, it
-                // falls through *into* the unconditional jump instead.
+                // jump to trueLabel only if true: there is no jump-if-true opcode, so invert with an extra unconditional JMP
                 String skipLabel = newLabel("short_circuit_leaf_skip");
                 line("JMP " + skipLabel);
                 line("JMP " + trueLabel);
@@ -4768,21 +2876,11 @@ public class BytecodeEmitter {
         boolean isAnd = node.text.equals("&&then");
         if (isAnd) {
             if (trueLabel == null) {
-                // Ordinary "fall through if both true, jump falseLabel
-                // the moment either fails" cascade -- the common case,
-                // used directly by emitIfChain and by an outer
-                // "&&then"'s own recursive call into this same shape.
+                // common case: fall through if both are true, jump to falseLabel as soon as either fails
                 emitShortCircuit(node.left, falseLabel, null);
                 emitShortCircuit(node.right, falseLabel, null);
             } else {
-                // This "&&then" node is itself the left operand of an
-                // enclosing "||then" (the only way trueLabel ends up
-                // non-null here) -- needs "jump trueLabel only if BOTH
-                // sides pass, otherwise fall through" instead. Built by
-                // cascading both sides against one local fail label that
-                // sits right before the unconditional jump to trueLabel,
-                // so any failure skips past that jump and lands exactly
-                // on the desired "fall through" outcome.
+                // left operand of an enclosing "||then": jump to trueLabel only if both pass; a failure lands past that jump
                 String bothFailLabel = newLabel("andthen_fail");
                 emitShortCircuit(node.left, bothFailLabel, null);
                 emitShortCircuit(node.right, bothFailLabel, null);
@@ -4792,21 +2890,12 @@ public class BytecodeEmitter {
         } else { // "||then"
             if (falseLabel == null) {
                 // This "||then" is itself the left operand of an
-                // enclosing "||then" -- both sides just forward the same
-                // trueLabel directly (either one being true jumps
-                // straight there, matching plain "||then" semantics one
+                // left operand of an enclosing "||then": forward trueLabel to both sides
                 // level up), falling through only if both are false.
                 emitShortCircuit(node.left, null, trueLabel);
                 emitShortCircuit(node.right, null, trueLabel);
             } else {
-                // The ordinary case (used directly by emitIfChain, and
-                // by an enclosing "&&then"'s own recursive call): if the
-                // left operand is true, skip evaluating the right one
-                // entirely and fall straight through as "true" (the
-                // user's own sketch: "A was true -> skip straight into
-                // the body, don't evaluate B at all"); otherwise fall
-                // through to test the right operand, jumping to
-                // falseLabel only if that one also fails.
+                // left true: skip the right side and fall through as true; otherwise test the right side against falseLabel
                 String passLabel = newLabel("orthen_pass");
                 emitShortCircuit(node.left, null, passLabel);
                 emitShortCircuit(node.right, falseLabel, null);
@@ -4822,37 +2911,16 @@ public class BytecodeEmitter {
                 + " " + op.resolvedType);
     }
 
-    /**
-     * "myAtomicChar swap '\0'" -- a genuine, dedicated read-modify-
-     * write instruction, unlike an ordinary atomic read/write (which
-     * needs no new bytecode at all). Same "PUSH both sides, one
-     * instruction, trailing operand-type annotations" shape every
-     * other binary operator here already has (see emitComparison/
-     * emitLogical just above) -- ATOMIC_SWAP's own left operand is
-     * always a bare atomic variable reference (checkSwapOperator
-     * requires this), so it's simply pushed like any other value; the
-     * result left on the stack is the value that was there a moment
-     * before this instruction ran.
-     */
+    /** "a swap b": ATOMIC_SWAP, a read-modify-write; the left operand is pushed as an address, the result is the previous value. */
     private void emitSwap(Token op) {
-        // ATOMIC_SWAP consumes an ADDRESS (xchg through it), so push the target as an address (as an
-        // assignment target does). It used to push the field's VALUE, which only worked for statics
-        // (resolved by name downstream); a swap-lock struct held in a local segfaulted.
+        // ATOMIC_SWAP consumes an ADDRESS (xchg through it); pushing the field's value worked only for statics and segfaulted for a swap-lock struct in a local
         emitAssignTarget(op.left);
         emitExpr(op.right);
         line("ATOMIC_SWAP " + op.left.resolvedType + " " + op.right.resolvedType + " " + op.resolvedType);
     }
 
-    /**
-     * "These look like functions and use the function call syntax, but
-     * they get their own instruction in the bytecode output, unless
-     * otherwise specified," confirmed directly. TypeChecker never sets
-     * resolvedCallTarget for one of these (they bypass the ordinary
-     * overload table entirely), so this must intercept before ever
-     * reaching the ordinary emitCall path, dispatching on the reserved
-     * name itself.
-     */
-    /** Per-function-body-unrelated, whole-program counter for the hidden local variable each "par"/"await" call site needs to hold its own async handle pointer (see emitAsyncCall's own doc comment) -- global rather than per-function, purely so no naming scheme has to track per-function uniqueness at all. */
+    /** Builtin calls: they bypass the overload table (no resolvedCallTarget), so they are dispatched here by reserved name before emitCall; see docs/BytecodeEmitter.md, "Builtin call emission". */
+    /** Whole-program counter naming the hidden async-handle local of each par/await site. */
     private int asyncHandleTempCounter;
 
     private void emitCallOrBuiltin(Token op) {
@@ -4867,11 +2935,7 @@ public class BytecodeEmitter {
         if (op.left.type == TokenType.VARREF) {
             switch (op.left.text) {
                 case "sizeof":
-                    // "gets me the integer value, direct replacement in
-                    // bytecode - no instruction," confirmed directly.
-                    // A struct (or array of structs) stays symbolic: its real size (hidden ___type,
-                    // padding, and whatever layout the Optimizer finally settles on) is only known
-                    // there, and SizeofResolutionPass turns this into the same PUSH.
+                    // Direct PUSH; a struct size stays symbolic (SIZEOF) until SizeofResolutionPass.
                     if (op.sizeofStruct != null) {
                         line("SIZEOF " + op.sizeofStruct + " " + op.resolvedType);
                     } else {
@@ -4882,70 +2946,30 @@ public class BytecodeEmitter {
                     List<Token> lenArgs = new ArrayList<>();
                     collectCommaArgs(op.right.childs.get(0), lenArgs);
                     if (lenArgs.size() == 2) {
-                        // "len(my_unsafe_char_array,'\0')" -- the
-                        // unsafe, 2-arg terminator-scanning form.
-                        // Never foldable (TypeChecker.checkLenBuiltin
-                        // leaves builtinConstantValue unset for this
-                        // case too), so both arguments are pushed and a
-                        // new, dedicated "LEN_SCAN" instruction reads
-                        // the real, scanned-for-a-terminator length at
-                        // runtime -- kept as its own mnemonic, distinct
-                        // from the safe variant's plain "LEN", since the
-                        // two need genuinely different runtime
-                        // implementations (a hidden-field read vs. a
-                        // byte-by-byte scan).
+                        // Unsafe 2-arg terminator scan: never foldable, own LEN_SCAN mnemonic.
                         Token targetArg = lenArgs.get(0);
                         Token termArg = lenArgs.get(1);
                         emitExpr(targetArg);
                         emitExpr(termArg);
                         line("LEN_SCAN " + targetArg.resolvedType + " " + termArg.resolvedType);
                     } else if (op.builtinConstantValue != null) {
-                        // A fixed array or a direct string literal --
-                        // same "no instruction, direct literal
-                        // replacement" fold 'sizeof' always uses.
+                        // Fixed array / string literal: folded to a PUSH.
                         line("PUSH " + op.builtinConstantValue + " " + op.resolvedType);
                     } else {
-                        // A "dynarray(T)" -- its length is a genuine
-                        // runtime value (TypeChecker.checkLenBuiltin
-                        // deliberately leaves builtinConstantValue unset
-                        // for exactly this case), so it needs an actual
-                        // instruction reading it, not a compile-time
-                        // fold.
+                        // Safe dynarray: run-time length, read by LEN.
                         emitExpr(singleBuiltinArg(op));
                         line("LEN");
                     }
                     return;
                 }
                 case "range": {
-                    // A range's own bounds are always two plain u64
-                    // words (TypeChecker.checkRangeBuiltin's own doc
-                    // comment) -- "start" is always a literal 0 in both
-                    // shapes below, never itself a variable or a
-                    // computed value.
+                    // A range is two u64 words; start is always literal 0.
                     if (op.builtinConstantValue != null) {
-                        // A string literal or fixed array -- both
-                        // bounds are compile-time constants; the exact
-                        // same "no instruction, direct literal
-                        // replacement" fold 'sizeof'/'len' already use,
-                        // just written as two words instead of one.
-                        // There used to be a real "RANGE" bytecode
-                        // instruction here instead -- retired entirely,
-                        // the same "compiled away, needs no instruction
-                        // once the front end already knows the answer"
-                        // treatment 'len'/'sizeof' already got, once it
-                        // turned out this length was knowable at
-                        // compile time all along and was just being
-                        // thrown away before reaching codegen.
+                        // String literal / fixed array: constant bounds, no RANGE instruction.
                         line("PUSH 0 imut_u64");
                         line("PUSH " + op.builtinConstantValue + " imut_u64");
                     } else {
-                        // A safe dynarray -- its length is a genuine
-                        // runtime value, read through the exact same
-                        // hidden-length-header mechanism 'len's own
-                        // dynarray form already reads (and the existing
-                        // "LEN" instruction, unchanged, does the actual
-                        // reading) -- no new codegen instruction needed
-                        // at all.
+                        // Safe dynarray: length read by LEN.
                         line("PUSH 0 imut_u64");
                         emitExpr(singleBuiltinArg(op));
                         line("LEN");
@@ -4953,58 +2977,15 @@ public class BytecodeEmitter {
                     return;
                 }
                 case "deref":
-                    // "PUSH pointer / DEREF" used to carry no operand at
-                    // all -- a real, found-and-fixed gap: a dereference is
-                    // genuinely a copy (it reads the pointee's own bytes
-                    // off the heap and replaces the pointer on the stack
-                    // with the actual value), and on this bytecode's own
-                    // byte-precise stack (PUSH/POP/ASSIGN all carry an
-                    // explicit width), a copy needs to know how many bytes
-                    // to move -- confirmed directly: "im against getting
-                    // it from the previous line as much as possible" --
-                    // the preceding "PUSH pointer" line's own erased width
-                    // (AddressLoweringPass) is always exactly 8 (every
-                    // pointer is one machine word, `SizeCalculator`'s own
-                    // "storage-bearing types are always 8 bytes" rule),
-                    // which describes the *pointer's* size, never the
-                    // *pointee's* -- there was never a legitimate way to
-                    // recover the real copy width from context, so `DEREF`
-                    // now carries it directly: `checkDerefBuiltin` already
-                    // resolves the pointee's own type onto this call's own
-                    // `op.resolvedType` (via the ordinary `resolveExprType`
-                    // wrapper every expression node gets, "storage
-                    // stripped, same as any other inline value" -- that
-                    // method's own doc comment) -- it was simply never
-                    // read here before. `AddressLoweringPass` erases it to
-                    // a byte count the identical way every other typed,
-                    // single-operand mnemonic (`NEG`, ...) already does.
+                    // DEREF carries the pointee type because it is the copy width (the pushed pointer is always 8 bytes).
                     emitExpr(singleBuiltinArg(op));
                     line("DEREF " + op.resolvedType);
                     return;
                 case "clone": {
-                    // A call nested in this builtin's operands would consume the pending catch label (it is meant for the
-                    // call-site staging of the first call), leaving the allocation check below without one: hold it back here.
+                    // Hold back the pending catch label: a nested call would consume it (see "Allocation failure check").
                     final String cloneCatchLabel = pendingTryCatchLabel;
                     pendingTryCatchLabel = null;
-                    // "the compiler should output the arguments for
-                    // CLONE the same style as other standard operations,
-                    // and then the optimizer should reduce it to CLONE
-                    // size during the lowering," confirmed directly --
-                    // CLONE used to be emitted completely bare, the only
-                    // mnemonic here with a real, meaningful operand
-                    // (checkCloneBuiltin's own pointee) but zero type
-                    // annotation of any kind, unlike every other
-                    // instruction in this format ("every instruction
-                    // states the type of what it leaves on the stack").
-                    // Now carries its argument's own pointer type and its
-                    // own result type, the identical trailing-operand
-                    // shape NEG/NOT/DEREF's siblings already use, so the
-                    // sibling caspien-optimizer project's AddressLoweringPass
-                    // can resolve the pointee's own byte size from the
-                    // argument type alone (stripping the storage keyword
-                    // first -- a pointer is always one word regardless of
-                    // what it points to, but CLONE needs to know how much
-                    // to actually copy).
+                    // CLONE carries argument and result types so lowering can size the pointee.
                     Token arg = singleBuiltinArg(op);
                     emitExpr(arg);
                     requireGhostTableFunctionPresent("gt_register", op);
@@ -5017,18 +2998,7 @@ public class BytecodeEmitter {
                     return;
                 }
                 case "Some":
-                    // "the bytecode is the same," confirmed directly --
-                    // the exact GT_ALIVE_CHECK sequence the old bare-
-                    // form match condition already emitted, now reached
-                    // through a real, generally-available builtin call
-                    // instead of match's own special-cased bare form.
-                    // Both restrictions that guarded the old bare form
-                    // move here with it, unconditionally -- "Some()" now
-                    // needs them regardless of whether it's used inside
-                    // a match condition or as an ordinary expression
-                    // anywhere else, since the actual GT_ALIVE_CHECK
-                    // emission (and everything that depends on it) is
-                    // identical either way.
+                    // Same GT_ALIVE_CHECK sequence as a match condition; both restrictions apply in any expression position.
                     if (inGtSuppressedContext) {
                         throw new CompilerException("type", op.file, op.line,
                                 "'Some(...)' (which needs '@gt_alive_check') can't be used here -- this "
@@ -5049,20 +3019,7 @@ public class BytecodeEmitter {
                     emitConvert(op);
                     return;
                 case "insecure_rand":
-                    // "have insecure_rand() be rand()," confirmed
-                    // directly -- reuses the exact same shared call
-                    // machinery every ordinary/extern call already goes
-                    // through (emitCallSequence: CC_START / .. / CALL-
-                    // shaped instruction / CC_END / PUSH_RET), just with
-                    // zero arguments and no registered ExternInfo at
-                    // all -- this builtin is never reachable as an
-                    // ordinary user-declared "extern rand(...)" would
-                    // be, so there's nothing to look up here, only a
-                    // fixed, known call to emit. The default calling
-                    // convention (compiler.config's own declared one) is
-                    // used directly, the same way any other call site
-                    // with no applicable "@call_convention" decorator
-                    // already resolves to it.
+                    // rand() through the shared call sequence: no ExternInfo, default convention.
                     emitCallSequence(null, new ArrayList<>(), () -> line("EXTERN_CALL rand 0"), "mut_u64",
                             checker.getConfig().defaultConvention);
                     return;
@@ -5075,16 +3032,7 @@ public class BytecodeEmitter {
                     return;
                 }
                 case "bits_left": case "bits_right": case "bits_rotl": case "bits_rotr": case "bits_or": case "bits_and": case "bits_xor": {
-                    // "these compile to single instructions like other
-                    // builtins," confirmed directly. Given the shape
-                    // wasn't spelled out explicitly the way "call"'s
-                    // was, this mirrors the structurally closest existing
-                    // case -- a binary arithmetic operator (ADD/SUB/...),
-                    // not a unary builtin like RANGE/DEREF/CLONE -- since
-                    // these are themselves binary, two-operand operations
-                    // with a result, the same shape ADD already has,
-                    // including the operand-type annotations that shape
-                    // always carries. (bits_not is the unary sibling just above.)
+                    // Binary shape like ADD: both operands, then "OP leftType rightType resultType".
                     List<Token> bitsArgs = new ArrayList<>();
                     collectCommaArgs(op.right.childs.get(0), bitsArgs);
                     Token bitsLeft = bitsArgs.get(0);
@@ -5106,14 +3054,7 @@ public class BytecodeEmitter {
                     return;
                 }
                 case "memcopy": {
-                    // "this copies the second argument number of bytes
-                    // from the second pointer to the first pointer,"
-                    // confirmed directly -- no dedicated bytecode shape
-                    // given explicitly, so this follows the same
-                    // "PUSH every argument, then one instruction naming
-                    // the operand types" shape 'call'/binary-operator
-                    // emission already establishes, rather than
-                    // inventing something new.
+                    // Push all arguments, then MEMCOPY with the operand types.
                     List<Token> memcopyArgs = new ArrayList<>();
                     collectCommaArgs(op.right.childs.get(0), memcopyArgs);
                     for (Token arg : memcopyArgs) {
@@ -5124,33 +3065,16 @@ public class BytecodeEmitter {
                     return;
                 }
                 case "dyn": {
-                    // A call nested in this builtin's operands would consume the pending catch label (it is meant for the
-                    // call-site staging of the first call), leaving the allocation check below without one: hold it back here.
+                    // Hold back the pending catch label (see "Allocation failure check").
                     final String dynCatchLabel = pendingTryCatchLabel;
                     pendingTryCatchLabel = null;
                     if (op.dynFromStringSource) {
-                        // "dyn(text)" -- a static imut string argument,
-                        // not an array literal. Pushes the string value
-                        // (its own hoisted string_id, or a plain
-                        // variable reference, via ordinary emitExpr),
-                        // then one "NEW_FROM_STRING dynarray(T)
-                        // sourceType" line -- a genuinely new runtime
-                        // operation (character-by-character copying out
-                        // of the string, not a fixed, already-known set
-                        // of pushed elements the way an array literal
-                        // is), so it needs its own mnemonic rather than
-                        // reusing "NEW"'s own shape.
+                        // dyn(text): NEW_FROM_STRING copies the characters at run time.
                         Token stringArg = singleBuiltinArg(op);
                         emitExpr(stringArg);
                         line("NEW_FROM_STRING " + op.resolvedType.substring("owns_".length()) + " "
                                 + stringArg.resolvedType);
-                        // UPDATE (throwing 'dyn'): the safe variant
-                        // ("dyn(text)", not "unsafe dyn(text)") now
-                        // requires 'try'/'catch' -- see
-                        // TypeChecker.checkDynBuiltinCore's own doc
-                        // comment -- so its own allocation failure now
-                        // needs the identical runtime null-check-and-
-                        // jump-to-catch `emitNew` already does for 'new'.
+                        // Safe dyn(text) throws: same allocation failure check as new.
                         if (!op.resolvedType.substring("owns_".length()).startsWith("indeterminate_unsafe_dynarray(")) {
                             pendingTryCatchLabel = dynCatchLabel;
                             // The block start is registered with the ghost table (like `new`), so scope-end drop frees it;
@@ -5161,40 +3085,7 @@ public class BytecodeEmitter {
                         }
                         return;
                     }
-                    // "dyn([0,1,2,3])" -- reuses the exact same array-
-                    // literal push shape "new [1,2,3]" already emits
-                    // unchanged (each element PUSHed, in order, no
-                    // instruction of its own for the literal itself),
-                    // then one "NEW_DYN dynarray(T) count" /
-                    // "NEW_UDYN unsafe_dynarray(T) count" line -- a
-                    // trailing count appended in both cases, since a
-                    // dynarray's own type string (unlike a fixed array's)
-                    // never bakes in a length for the consumer to read
-                    // the element count back out of otherwise.
-                    //
-                    // Split into two distinct mnemonics, rather than
-                    // reusing plain "NEW" (as an earlier version of this
-                    // did), for the identical reason `LOOKUP` was split
-                    // into `LOOKUP_ARRAY`/`LOOKUP_DYN` in the optimizer's
-                    // own `AddressLoweringPass.lookupMnemonicFor`: a safe
-                    // `dynarray(T)`'s own allocation needs room for its
-                    // 8-byte length header ahead of the elements, an
-                    // unsafe one doesn't -- two genuinely different
-                    // allocation shapes that a backend shouldn't have to
-                    // tell apart by parsing a type string once this is
-                    // fully lowered. `AddressLoweringPass` erases each
-                    // one differently: "NEW_UDYN size" (a flat
-                    // count*elementSize byte total -- an unsafe dynarray
-                    // has no header to write, so nothing else is needed);
-                    // "NEW_DYN size count" (elementSize count*elementSize
-                    // total for the *elements* -- the header's own extra
-                    // 8 bytes deliberately left for whatever allocates it
-                    // to add, not folded in here -- plus `count` kept on
-                    // the line, since the actual runtime code will need
-                    // it again to write into the length header, and
-                    // that's exactly the kind of thing this project
-                    // doesn't recover by re-deriving it from a
-                    // neighboring line).
+                    // dyn([..]): push the elements, then NEW_DYN (safe, keeps count) or NEW_UDYN (unsafe, flat size); see docs/BytecodeEmitter.md, "dyn literals".
                     Token arrayLiteral = singleBuiltinArg(op);
                     List<Token> literalElements = new ArrayList<>();
                     final List<String> literalTemps = new ArrayList<>();
@@ -5212,17 +3103,7 @@ public class BytecodeEmitter {
                     boolean isUnsafeLiteral = typeText.startsWith("indeterminate_unsafe_dynarray(");
                     String mnemonic = isUnsafeLiteral ? "NEW_UDYN" : "NEW_DYN";
                     line(mnemonic + " " + typeText + " " + op.builtinConstantValue);
-                    // UPDATE (throwing 'dyn'): "new throws, but dyn and
-                    // resize dont, they need to use the same pattern as
-                    // new," confirmed directly -- the safe variant
-                    // ("dyn([...])", not "unsafe dyn([...])") now
-                    // requires 'try'/'catch' (see
-                    // TypeChecker.checkDynBuiltinCore's own doc comment),
-                    // so its own allocation failure now needs the
-                    // identical runtime null-check-and-jump-to-catch
-                    // `emitNew` already does for 'new'. Left untouched
-                    // for "NEW_UDYN": the unsafe variant is deliberately
-                    // still not throw-capable at all.
+                    // Safe dyn([..]) throws like new; NEW_UDYN stays non-throwing.
                     if (!isUnsafeLiteral) {
                         pendingTryCatchLabel = dynCatchLabel;
                         requireGhostTableFunctionPresent("gt_register", op);
@@ -5232,50 +3113,10 @@ public class BytecodeEmitter {
                     return;
                 }
                 case "resize": {
-                    // A call nested in this builtin's operands would consume the pending catch label (it is meant for the
-                    // call-site staging of the first call), leaving the allocation check below without one: hold it back here.
+                    // Hold back the pending catch label (see "Allocation failure check").
                     final String resizeCatchLabel = pendingTryCatchLabel;
                     pendingTryCatchLabel = null;
-                    // "resize should take ownership (owns) of the
-                    // dynamicarray and return a new owns" -- confirmed
-                    // directly, modeled directly on a real realloc
-                    // (which can hand back a new address). The first
-                    // argument's own null-out (when
-                    // TypeChecker.markMovedIfOwned actually marked it,
-                    // via Token.isOwnershipMoveSource) is emitted right
-                    // after that argument's own push and strictly
-                    // before the "RESIZE"/"URESIZE" line runs -- the
-                    // identical "null it out before, not after, the
-                    // operation that consumes it" placement an ordinary
-                    // call's own owns-typed argument already gets in
-                    // emitCallSequence, needed here by hand since
-                    // 'resize' bypasses the ordinary calling-convention
-                    // machinery entirely. Three args (safe, with a fill
-                    // value) or two (unsafe, a bare realloc, no fill
-                    // value) -- TypeChecker.checkResizeBuiltin already
-                    // validated which shape applies. The result is left
-                    // implicitly on the stack by "RESIZE"/"URESIZE"
-                    // itself for whatever ASSIGN/PUSH_RET follows to
-                    // consume, mirroring "NEW TypeName"'s own
-                    // "implicitly returns its constructed value" shape --
-                    // no CC_START/CC_END/PUSH_RET wrapper is needed,
-                    // since 'resize' was never routed through the
-                    // ordinary calling-convention path to begin with.
-                    //
-                    // Split into "RESIZE" (safe) / "URESIZE" (unsafe)
-                    // rather than one shared mnemonic, for the identical
-                    // reason "dyn([...])"'s own allocation was just split
-                    // into NEW_DYN/NEW_UDYN: the two shapes carry
-                    // genuinely different information (a fill value's
-                    // type vs. none at all) and a backend shouldn't have
-                    // to branch on argument count to tell them apart.
-                    // `checkResizeBuiltin` already forces the first
-                    // argument's own mutability to "mut" unconditionally
-                    // ("'resize' requires a 'mut' dynarray"), so its
-                    // resolved type text always has the fixed shape
-                    // "owns_mut_dynarray(...)" / "owns_mut_unsafe_dynarray(...)"
-                    // -- checking that exact prefix is precise and safe
-                    // here, unlike guessing at an arbitrary type string.
+                    // resize takes ownership of the array and returns a new owns; RESIZE (safe) / URESIZE (unsafe). No CC bracket. see docs/BytecodeEmitter.md, "resize emission".
                     List<Token> resizeArgs = new ArrayList<>();
                     collectCommaArgs(op.right.childs.get(0), resizeArgs);
                     Token dynArrArg = resizeArgs.get(0);
@@ -5347,19 +3188,7 @@ public class BytecodeEmitter {
                         line("CLONE_FILL " + filled + " " + dynArrArg.resolvedType + " " + tailOld);
                         line("PUSH " + filled + " " + dynArrArg.resolvedType);
                     }
-                    // UPDATE (throwing 'resize'): "new throws, but dyn
-                    // and resize dont, they need to use the same pattern
-                    // as new," confirmed directly -- the safe variant
-                    // ("RESIZE", a real realloc on a safe dynarray) now
-                    // requires 'try'/'catch' (see
-                    // TypeChecker.checkResizeBuiltin's own doc comment),
-                    // so its own reallocation failure now needs the
-                    // identical runtime null-check-and-jump-to-catch
-                    // `emitNew` already does for 'new'. Left untouched
-                    // for "URESIZE": the unsafe variant is deliberately
-                    // still not throw-capable at all (its own "restricted
-                    // to unsafe mode" latitude already covers a failed
-                    // realloc the same way raw C code would).
+                    // Safe resize throws like new; URESIZE stays non-throwing.
                     if (!isUnsafeResize) {
                         pendingTryCatchLabel = resizeCatchLabel;
                         List<Token> resizeMoved = new ArrayList<>();
@@ -5374,16 +3203,7 @@ public class BytecodeEmitter {
                     return;
                 }
                 case "call": {
-                    // "PUSH func_ptr / PUSH arg1 / PUSH arg2 / INVOKE n"
-                    // -- confirmed directly, corrected mid-thread from a
-                    // bare "INVOKE" to "INVOKE n" (n = the argument
-                    // count, not counting the function pointer itself).
-                    // Calling-convention wrapping applies to the real
-                    // arguments only -- the function pointer itself is
-                    // pushed first, inside CC_START/CC_END, but is never
-                    // one of the "first n" register-transferred slots
-                    // (it selects which callee to invoke; it isn't one
-                    // of that callee's own parameters).
+                    // PUSH fnptr, args, INVOKE n (n excludes the pointer); the pointer is not an ARGn word.
                     List<Token> callArgs = new ArrayList<>();
                     collectCommaArgs(op.right.childs.get(0), callArgs);
                     Token funcPtrArg = callArgs.get(0);
@@ -5411,63 +3231,16 @@ public class BytecodeEmitter {
     }
 
     /**
-     * Wraps the calling-convention bracket ("CC_START name" .. push
-     * each argument, register-transferring only the first n of them
-     * (n = that convention's own declared argumentRegisters.size(),
-     * read from compiler.config) via "POP ARGn type" right after each
-     * is pushed, anything beyond that left as a plain PUSH .. the
-     * actual call instruction .. "CC_END name") and, for a non-void
-     * return, a trailing "PUSH_RET type" *after* CC_END -- shared by
-     * every call mechanism (CALL/RECURSIVE_CALL, EXTERN_CALL, INVOKE),
-     * confirmed directly to apply to all three identically. Naturally
-     * nests: "foo(bar())" -- bar()'s own argument is emitted via the
-     * ordinary recursive emitExpr call inside this method's own arg-
-     * emission loop, so bar()'s complete, self-contained CC_START/.../
-     * CC_END/PUSH_RET sequence (using *its own* resolved convention,
-     * independently of foo's) is already fully emitted (and its result
-     * already sitting on the stack, via its own PUSH_RET) by the time
-     * foo's outer POP ARG0 runs against it -- no special-casing needed
-     * anywhere for this, including when the two calls resolve to
-     * genuinely different conventions.
-     *
-     * pushFuncPtr: null for an ordinary/extern call; for `call()`,
-     * pushes the function-pointer operand itself, inside the CC
-     * bracket but *before* the register-transferred args and never
-     * counted as one of them (it isn't one of the callee's own
-     * parameters).
-     * regArgs: the arguments actually subject to ARGn register
-     * transfer.
-     * emitCallInstruction: emits the one CALL/RECURSIVE_CALL/
-     * EXTERN_CALL/INVOKE line itself.
-     * returnTypeOrNull: the call's own canonical return type, or null
-     * for a void return (see voidSafeReturnType) -- when non-null,
-     * emits "PUSH_RET returnTypeOrNull" after CC_END.
-     * conventionName: this call site's own resolved calling convention
-     * (Token.resolvedCallConvention -- TypeChecker already resolved
-     * this from the target func/extern's own "@call_convention", or,
-     * for INVOKE, the function-pointer type's own; compiler.config's
-     * declared default when neither was present. Never re-derived
-     * here.
+     * Wraps one call in CC_START .. CC_END (first n arguments moved to ARGn registers) and adds PUSH_RET for a non-void result.
+     * pushFuncPtr is non-null only for call(); regArgs are the register-transferred arguments; returnTypeOrNull null = void.
+     * The convention is the one TypeChecker resolved, never re-derived. see docs/BytecodeEmitter.md, "Call sequence".
      */
     private void emitCallSequence(Runnable pushFuncPtr, List<Token> regArgs, Runnable emitCallInstruction,
             String returnTypeOrNull, String conventionName) {
         emitCallSequence(pushFuncPtr, regArgs, emitCallInstruction, returnTypeOrNull, conventionName, -1);
     }
 
-    /**
-     * `varargStartIndex` -- the index (into `regArgs`) of the first
-     * *true* vararg, i.e. the first argument past a variadic extern's
-     * own fixed, declared parameter list, or -1 for an ordinary,
-     * wholly non-variadic call (every other call site in this
-     * compiler). C's own "default argument promotion" rule applies
-     * only to the true varargs -- never to a variadic function's own
-     * fixed prefix parameters (printf's own format-string argument,
-     * for instance) -- see `emitExternCall`, the only caller that ever
-     * passes anything but -1 here, and `PROMOTE_F32_TO_F64`'s own doc
-     * comment in `caspien-codegen`'s `X86Backend` for the full ABI
-     * reasoning and the fix this was added for ("printf('%f', ...)
-     * always prints 0.000000").
-     */
+    /** varargStartIndex: first true vararg of a variadic extern (-1 = none); only emitExternCall passes one. see docs/BytecodeEmitter.md, "Variadic calls". */
     private void emitCallSequence(Runnable pushFuncPtr, List<Token> regArgs, Runnable emitCallInstruction,
             String returnTypeOrNull, String conventionName, int varargStartIndex) {
         ArgCounters counters = new ArgCounters(checker.getConfig().callingConventions.get(conventionName));
@@ -5475,54 +3248,20 @@ public class BytecodeEmitter {
         if (pushFuncPtr != null) {
             pushFuncPtr.run();
         }
-        // "Normally one argument maps to one argument register, but
-        // instead for a range it maps to two," confirmed directly --
-        // so the register index is now a running counter, advanced by
-        // however many words the argument just transferred actually
-        // occupied, rather than the simple per-argument loop index this
-        // used to be. `ArgCounters` itself (see its own doc comment)
-        // additionally tracks which register *bank* each word draws
-        // from -- int or float -- and the one real ABI difference in how
-        // the two conventions this project knows about count them.
+        // The register index is a running counter advanced by the words each argument occupied (a range takes two); ArgCounters tracks the banks.
         for (int argIndex = 0; argIndex < regArgs.size(); argIndex++) {
             Token arg = regArgs.get(argIndex);
             boolean isTrueVararg = varargStartIndex >= 0 && argIndex >= varargStartIndex;
             boolean promoteToDouble = isTrueVararg; // "in the ... part of a variadic call": an f32 is widened, any float gets win64's register duplication
             emitArgTransfer(arg, counters, promoteToDouble);
             if (arg.isOwnershipMoveSource) {
-                // "It seems I need to null it out before the function
-                // is called, not after," confirmed directly -- right
-                // here, immediately after this argument's own value is
-                // captured (into its register(s), or left in place for a
-                // stack-passed argument) and strictly before
-                // `emitCallInstruction` runs, so the caller's own slot
-                // is already null by the time control could possibly
-                // reach a `throw` inside the callee. See
-                // emitOwnershipMoveNullOut's own doc for the register-
-                // clobbering hazard this specific placement creates.
-                // (A by-value range is never itself an ownership-
-                // move source -- moves apply only to 'owns' pointers,
-                // which are always storage-bearing and so always take
-                // the ordinary, unsplit single-word path below.)
+                // Null the moved owns slot right after its value is captured and before the call, so a throw inside the callee sees it null.
+                // A by-value range is never a move source. Register hazard: see emitOwnershipMoveNullOut.
                 emitOwnershipMoveNullOut(arg);
             }
         }
         if (varargStartIndex >= 0) {
-            // The SysV "%al must hold the number of vector (xmm)
-            // registers used" varargs rule (win64 has no equivalent --
-            // `X86Backend` only ever reads this for its own non-win64
-            // call sites) needs the real, final count of float-bank
-            // registers this call's own arguments actually consumed --
-            // only known now, after every argument has been transferred.
-            // Emitted only for a genuinely variadic call (never for an
-            // ordinary fixed-arity one), immediately before the actual
-            // call instruction, so `X86Backend` can consume it from
-            // exactly the right call's own preamble -- see
-            // `ArgCounters.floatRegistersUsed`'s own doc comment for why
-            // this isn't simply `counters.floatIdx` (an unclamped running
-            // total, not a real register count), and `X86Backend`'s own
-            // `pendingVarargsXmmCount`/`case "VARARGS_XMM_COUNT"` for how
-            // this value is actually consumed.
+            // SysV varargs: %al = xmm registers used. Only for a variadic call, just before the call instruction; see docs/BytecodeEmitter.md, "Variadic calls".
             line("VARARGS_XMM_COUNT " + counters.floatRegistersUsed());
         }
         emitCallInstruction.run();
@@ -5532,56 +3271,22 @@ public class BytecodeEmitter {
         }
     }
 
-    /** Only 'imut'/'mut'/'indeterminate' -- no storage prefix -- immediately before a bare or literal-bounds 'range' base type: a genuine by-value range, never a pointer to one. */
+    /** A genuine by-value range type (no storage prefix). */
     private static final java.util.regex.Pattern BY_VALUE_RANGE_ARG =
             java.util.regex.Pattern.compile("^(?:imut|mut|indeterminate)_range(?:\\(.*\\))?$");
 
-    /**
-     * Transfers one call argument into its register(s), returning the
-     * next free register index for the argument after it.
-     *
-     * An ordinary argument -- including a storage-bearing ('ref
-     * range(...)', etc.) range, which is just a single-word pointer
-     * like any other -- occupies exactly one register, unchanged from
-     * before.
-     *
-     * A by-value range argument is split into its two u64 bounds:
-     * "foo(x) being: PUSH x.start / POP ARG0 / PUSH x.end / POP ARG1...
-     * a range maps to two [registers]," confirmed directly.
-     *
-     * A '..'-literal range argument (e.g. "foo(1..2)" or "foo(a..b)")
-     * already naturally emits its two bounds as two separate pushes via
-     * the ordinary '..' bytecode (no instruction of its own -- see its
-     * own emitOperator case) -- so it needs no synthesized names at
-     * all, just the same per-word register bookkeeping any other
-     * argument gets. Only a *named* range value (a variable, or a
-     * dotted member chain like "self.field") needs its words
-     * synthesized, as their own qualified-name pushes -- the exact
-     * "PUSH qualifiedName type" shape an ordinary, parsed '.start'/
-     * '.end' access (emitDot) already produces for the same names.
-     *
-     * (This used to also split a by-value slice argument into three
-     * words -- its origin, then its range's own two bounds -- and a
-     * slice-construction argument's own three-word transfer; the slice
-     * type has been removed from the language entirely, so both of
-     * those cases are gone along with it.)
-     */
+    /** Transfers one argument into its register(s); a by-value range becomes its two u64 bounds. see docs/BytecodeEmitter.md, "Call sequence". */
     private void emitArgTransfer(Token arg, ArgCounters counters, boolean promoteToDouble) {
         Token unwrapped = unwrapParens(arg);
         if (BY_VALUE_RANGE_ARG.matcher(arg.resolvedType).matches()) {
-            // A range's own two words are always plain "indeterminate_u64"
-            // bounds, never float -- promotion can never apply here
-            // (the caller's own isFloatCanonical check already ensures
-            // `promoteToDouble` is always false by the time a range
-            // argument reaches this branch; not re-asserted here, just
-            // noted).
+            // A range's words are u64 bounds, never float.
             emitRangeArgWords(unwrapped, counters);
             return;
         }
         emitArgWord(arg, counters, promoteToDouble);
     }
 
-    /** The range-only portion of `emitArgTransfer`, for a plain range argument. Both of a range's own two words are always "indeterminate_u64" (a bound, never a float), so these always draw from the int bank -- never float -- regardless of the range's own element type. */
+    /** Range portion of emitArgTransfer; both words are int-bank u64. */
     private void emitRangeArgWords(Token unwrapped, ArgCounters counters) {
         if (unwrapped.type == TokenType.OPERATOR && unwrapped.text.equals("..")) {
             emitArgWord(unwrapped.left, counters, false);
@@ -5593,84 +3298,23 @@ public class BytecodeEmitter {
         emitSyntheticArgWord(base + ".end", "indeterminate_u64", counters);
     }
 
-    /**
-     * Pushes one ordinary, already-resolved sub-expression (one word)
-     * via the generic emitExpr dispatch and transfers it into the next
-     * register of its own type's bank, if any remain.
-     *
-     * `promoteToDouble` -- true only for a genuinely `f32`-typed
-     * argument landing in the true, `...`-matched portion of a variadic
-     * call (see `emitCallSequence`'s own `varargStartIndex` doc comment)
-     * -- inserts a `PROMOTE_F32_TO_F64` line immediately after the value
-     * is pushed and before it's transferred into its register/left on
-     * the stack: C's own "default argument promotion" rule, widening
-     * the real 4-byte value to an 8-byte `double`'s bit pattern in
-     * place, occupying the exact same one stack word either way (see
-     * that mnemonic's own doc comment in `caspien-codegen`'s
-     * `X86Backend` for the full ABI reasoning). This changes nothing
-     * about which bank/register the word still draws from -- a
-     * promoted `f32` argument is still counted as exactly one
-     * float-bank word by `emitArgTransferTail` below, unchanged.
-     */
+    /** Pushes one word and moves it to the next register of its bank; promoteToDouble inserts PROMOTE_F32_TO_F64 for a true f32 vararg. */
     private void emitArgWord(Token expr, ArgCounters counters, boolean promoteToDouble) {
         emitExpr(expr);
         if (promoteToDouble && isF32Canonical(expr.resolvedType)) {
             line("PROMOTE_F32_TO_F64");
         }
-        // `promoteToDouble` is already exactly "a true vararg, and f32" --
-        // precisely the same precondition win64's own "also duplicate a
-        // variadic float register argument into its same-index integer
-        // register" rule needs (see `emitArgTransferTail`'s own doc
-        // comment) -- so it doubles as that flag too, rather than
-        // threading a second, differently-named boolean through for an
-        // identical condition.
+        // promoteToDouble doubles as the win64 variadic float duplication flag (same precondition).
         emitArgTransferTail(expr.resolvedType, counters, promoteToDouble);
     }
 
-    /** Pushes a synthesized qualified-name word (e.g. "x.start") -- the same "PUSH qualifiedName type" shape emitDot already produces for an ordinary, parsed access -- and transfers it into the next register of its own type's bank, if any remain. A range's own two words are never float and never reach a true-vararg call site (see `emitArgTransfer`'s own doc comment), so this never needs the win64 varargs-duplication treatment. */
+    /** Pushes a synthesized qualified-name word (e.g. "x.start") and transfers it; never float. */
     private void emitSyntheticArgWord(String qualifiedName, String type, ArgCounters counters) {
         line("PUSH " + qualifiedName + " " + type);
         emitArgTransferTail(type, counters, false);
     }
 
-    /**
-     * Shared tail of `emitArgWord`/`emitSyntheticArgWord`: having already
-     * pushed the word's value, decides which bank it draws from and
-     * emits "POP ARGn"/"POP FARGn" if a register is still available in
-     * that bank, leaving it as a plain stack-resident push (no POP line
-     * at all) otherwise -- unchanged from the pre-float-split behavior,
-     * just now type-aware.
-     *
-     * `isTrueVarargFloat` -- true only for a genuinely `f32`-typed
-     * argument landing in the true, `...`-matched portion of a variadic
-     * call (identically to `emitArgWord`'s own `promoteToDouble`, which
-     * is where this flag actually comes from) -- additionally triggers
-     * win64's own, separate ABI requirement for a *register-passed*
-     * variadic floating-point argument: "for variadic functions,
-     * floating-point arguments must be passed in both the XMM register
-     * and the corresponding general-purpose register" (win64's own
-     * varargs convention has no separate register-save-area mechanism
-     * the way SysV's `%al`-count rule does -- the callee doesn't know
-     * statically which of its own already-`shared`-position argument
-     * registers were meant to be read as a float and which as an
-     * integer, so the caller duplicates a float one into both). This is
-     * a genuinely different rule from `PROMOTE_F32_TO_F64` (the SysV/C
-     * *value*-widening rule) -- both happen to share the identical
-     * "true vararg, and float" precondition, but this one is
-     * win64-only, register-shape-only, and needs no separate f64
-     * value-level meaning at all: the exact same 8-byte (already
-     * promoted) bit pattern is simply read twice, once into each
-     * register. Only fires when a real float register is actually
-     * available for this word (`regIndex >= 0`) and the convention is
-     * genuinely win64's `sharedArgumentPosition` one -- both `ArgCounters`
-     * argument-register tables are always sized identically (4 and 4)
-     * for a `shared` convention, so a valid float register index here
-     * always has a real, same-index integer register to duplicate into
-     * as well. A stack-passed (overflowing) variadic float, on either
-     * convention, is untouched here -- win64 has no register-save-area
-     * duplication concern for a word that was never in a register to
-     * begin with.
-     */
+    /** Emits POP ARGn / POP FARGn if the word's bank has a register left, else leaves it on the stack. isTrueVarargFloat additionally duplicates the word into the same-index int register on a shared-position (win64) convention. see docs/BytecodeEmitter.md, "Variadic calls". */
     private void emitArgTransferTail(String type, ArgCounters counters, boolean isTrueVarargFloat) {
         boolean isFloat = isFloatCanonical(type);
         int regIndex = counters.next(isFloat);
@@ -5686,17 +3330,7 @@ public class BytecodeEmitter {
         }
     }
 
-    /**
-     * True for a real float base type -- "f32" only, the sole
-     * floating-point primitive `TypeChecker.PRIMITIVE_SIZE` defines.
-     * `TypeInfo.canonical()` always writes a real base type as the very
-     * last segment of the string (storage_mutability_atomic_
-     * floatstates_baseType, confirmed directly against its own
-     * construction order in `canonical()`), so checking the tail is
-     * exact -- the identical "one literal segment can only ever mean
-     * one thing" reasoning `isAtomicCanonical`'s own prefix check
-     * already relies on, just anchored at the other end of the string.
-     */
+    /** True for an f32/f64 canonical type (the base type is the last segment). */
     private static boolean isFloatCanonical(String canonical) {
         return canonical != null && (canonical.equals("f32") || canonical.endsWith("_f32")
                 || canonical.equals("f64") || canonical.endsWith("_f64"));
@@ -5707,29 +3341,7 @@ public class BytecodeEmitter {
         return canonical != null && (canonical.equals("f32") || canonical.endsWith("_f32"));
     }
 
-    /**
-     * Per-call-site running counters deciding which real register (if
-     * any) each argument word draws from, and from which bank (int or
-     * float) -- confirmed directly this genuinely needs to be
-     * convention-aware, not just a bare count: SysV/arm64 count an
-     * integer argument and a float argument on two fully independent
-     * running counters (a float argument never "uses up" an integer
-     * register slot, or vice versa), while win64 shares one running
-     * position counter between the two banks (its own documented
-     * behavior -- "f(int a, float b, int c)" passes b in XMM1, not
-     * XMM0, because it's the *2nd* argument overall, not the 1st float
-     * one). See `CompilerConfig.CallingConvention.sharedArgumentPosition`
-     * for the full ABI reasoning; this class just applies whichever
-     * rule that flag names. A stack-passed word (whichever bank
-     * overflowed) still advances its own bank's counter here, exactly
-     * as a register-transferred one does -- this class only decides
-     * *this* call site's own register assignment, never a real stack
-     * offset (an overflowing word is simply left as a plain stack push
-     * with no "POP ARGn"/"POP FARGn" line at all, unchanged from
-     * before this split; the not-yet-built stack-argument-marshalling
-     * work this leaves for later is a separate, already-documented
-     * gap).
-     */
+    /** Per-call-site counters choosing the register and bank (int/float) of each argument word: SysV counts the banks independently, win64 shares one position counter. A stack-passed word still advances its counter. see docs/BytecodeEmitter.md, "Call sequence". */
     private static final class ArgCounters {
         private final boolean shared;
         private final int intCount;
@@ -5761,29 +3373,12 @@ public class BytecodeEmitter {
             return idx < cutoff ? idx : -1;
         }
 
-        /**
-         * The real number of float-bank (xmm) *registers* this call's
-         * arguments actually consumed, for the SysV "%al must hold the
-         * number of vector registers used" varargs rule -- deliberately
-         * NOT the same as the raw `floatIdx` running counter, which
-         * keeps advancing (unclamped) even once a call's floats have
-         * overflowed onto the stack (`next`'s own -1-on-exhaustion
-         * return doesn't stop `floatIdx` itself from incrementing, since
-         * a stack-passed word still needs its own bank's counter
-         * advanced -- see `next`'s own doc comment). Clamped to
-         * `floatCount` (the real number of float argument registers
-         * this convention has) so an overflowing call still reports the
-         * true register count, not an inflated total including its own
-         * stack-passed floats. Meaningless (and never consulted) for a
-         * `shared`-position convention (win64) -- that ABI has no
-         * equivalent varargs rule at all; only ever called for a real,
-         * non-win64 variadic call.
-         */
+        /** Float-bank registers really used (clamped to floatCount) for the SysV %al rule; not the raw floatIdx, which keeps counting stack-passed floats. */
         int floatRegistersUsed() {
             return Math.min(floatIdx, floatCount);
         }
 
-        /** True for win64's own "one running position counter shared between int and float argument banks" convention -- see this class's own doc comment. Used by `emitArgTransferTail` to gate win64's separate variadic-float-register-duplication rule, which has no SysV equivalent at all. */
+        /** True for win64's shared position counter. */
         boolean isShared() {
             return shared;
         }
@@ -5797,7 +3392,7 @@ public class BytecodeEmitter {
         return t;
     }
 
-    /** "Funcs that return void don't need this [PUSH_RET]," confirmed directly -- null here means "emit no PUSH_RET at all." Void's canonical form is always exactly "imut_void" or "mut_void" (void never takes a storage prefix), so an exact-equality check against those two spellings, rather than a substring/suffix check, can never be fooled by an unrelated base-type name that merely contains "void" as a substring. */
+    /** Null for void ("imut_void"/"mut_void", exact match) so no PUSH_RET is emitted. */
     private String voidSafeReturnType(Token op) {
         String t = op.resolvedType;
         if (t == null || t.equals("imut_void") || t.equals("mut_void")) {
@@ -5806,34 +3401,7 @@ public class BytecodeEmitter {
         return t;
     }
 
-    /**
-     * A real varargs call site (possible only when the extern's own
-     * declaration ended in '...') pushes a different number of
-     * arguments at each call site, unlike an ordinary fixed-arity CALL
-     * (whose arg count is already fully determined by its target's own
-     * FUNC_START/ARG lines) -- so, unlike CALL, this always carries its
-     * actual pushed-argument count explicitly, the same way INVOKE
-     * already does for function-pointer calls of unknown fixed arity.
-     * Never RECURSIVE_CALL -- an extern has no body of its own here to
-     * recurse into.
-     */
-    /**
-     * "SLEEP sleep_call duration" -- confirmed directly: a dedicated
-     * bytecode mnemonic (not an ordinary "CALL"), carrying the real
-     * "@sleep"-decorated function's own mangled name directly as an
-     * operand (`op.resolvedCallTarget`, resolved by TypeChecker.
-     * checkSleepCall -- never a hardcoded literal the codegen stage
-     * would otherwise have to already know, avoiding the exact naming
-     * fragility the "@gt_init"/etc. fix addressed), plus the pushed
-     * duration argument's own resolved type as a trailing operand (the
-     * identical "every instruction states the type of what it operates
-     * on" convention NEG/DEREF/CLONE/LEN_SCAN already follow) -- "sleep
-     * is used like sleep(duration) where duration is the duration type
-     * C expects," confirmed directly. `requireSleepSignature` already
-     * guarantees "@sleep" takes exactly one plain "u64" and returns one
-     * plain "u64", so there is always exactly one argument to push here
-     * and always exactly one "u64"-shaped result to leave behind.
-     */
+    /** SLEEP sleep_call duration: dedicated mnemonic naming the @sleep function (resolved by TypeChecker) with the duration type. see docs/BytecodeEmitter.md, "Sleep call". */
     private void emitSleepCall(Token op) {
         List<Token> argNodes = new ArrayList<>();
         Token argsDelineator = op.right;
@@ -5844,7 +3412,7 @@ public class BytecodeEmitter {
         emitExpr(durationArg);
         line("SLEEP " + op.resolvedCallTarget + " " + durationArg.resolvedType);
     }
-
+    /** Extern call; a variadic one carries its pushed-argument count in EXTERN_CALL. see docs/BytecodeEmitter.md, "Variadic calls". */
     private void emitExternCall(Token op, TypeChecker.ExternInfo info) {
         List<Token> args = new ArrayList<>();
         Token argsDelineator = op.right;
@@ -5864,92 +3432,17 @@ public class BytecodeEmitter {
         if (!argsDelineator.childs.isEmpty()) {
             collectCommaArgs(argsDelineator.childs.get(0), args);
         }
-        // "par"/"await" no longer reach here at all -- emitCallOrBuiltin
-        // intercepts both up front and routes them through emitAsyncCall
-        // instead, which desugars the whole call site into ordinary
-        // NEW/CALL/ASSIGN-shaped bytecode (see that method's own doc
-        // comment). What used to be a bare "PAR_CALL"/"AWAIT_CALL"
-        // mnemonic substitution right here is gone along with that --
-        // this method's only remaining job is the ordinary CALL/
-        // RECURSIVE_CALL choice, including for the trampoline's own
-        // direct call into the real "@async" function it wraps
-        // (`isTrampolineOwnCall`), which is a perfectly ordinary CALL.
-        //
-        // "At every call site of a @recursive function that is within
-        // that same function, I will be using RECURSIVE_CALL instead of
-        // CALL," confirmed directly -- a self-call is only reachable at
-        // all (TypeChecker.checkNoRecursion already having run) when the
-        // target function is decorated '@recursive', so no further
-        // condition needs checking here beyond "is this call's own
-        // target the function it appears inside" -- compared *after*
-        // dundered redirection, so a dundered duplicate's own self-call
-        // correctly resolves to RECURSIVE_CALL against its own dundered
-        // name too.
+        // par/await are intercepted earlier (emitAsyncCall). A self-call (compared after dunder redirection) is RECURSIVE_CALL.
         String mnemonic = funcName.equals(currentFuncMangledName) ? "RECURSIVE_CALL" : "CALL";
-        // Staged immediately before the call itself (ahead of
-        // `emitCallSequence`'s own argument-pushing sequence too) --
-        // see `stageCallSiteForUnwind`'s own doc comment. Argument
-        // evaluation happening after the staging write is harmless: the
-        // slot is only ever read by a deeper `GT_UNWIND`, which can't
-        // happen until the real `CALL`/`RECURSIVE_CALL` instruction
-        // itself actually runs.
+        // Staged before the argument sequence: the slot is only read by a deeper GT_UNWIND, after the real call runs.
         stageCallSiteForUnwind(op);
         emitCallSequence(null, args, () -> line(mnemonic + " " + funcName), voidSafeReturnType(op),
                 op.resolvedCallConvention);
     }
 
     /**
-     * Desugars a "par"/"await" call site entirely into ordinary
-     * NEW/CALL/ASSIGN-shaped bytecode -- confirmed directly as the
-     * intended net effect ("PAR_CALL"/"AWAIT_CALL" no longer emitted at
-     * all anywhere in the front end). Shape, for both:
-     *
-     *   ALLOC __async_handle_N handleCanonicalType
-     *   ADDR __async_handle_N handleCanonicalType
-     *   [[ handle-literal member push sequence, in the handle struct's
-     *      own padded layout order -- "value" gets the real argument (if
-     *      any), "threadId" starts 0, "state" (non-void only) starts
-     *      PENDING, "result" (non-void only) is left as an uninitialized
-     *      STACK_LOCK-reserved gap, since nothing may read it before the
-     *      trampoline writes it and "state" flips to READY ]]
-     *   NEW <HandleStructName>
-     *   GT_REGISTER
-     *   ASSIGN handleCanonicalType handleCanonicalType handleCanonicalType
-     *   CC_START <par_call/await_call's own convention>
-     *   PUSH __trampoline_<realFuncName> <its own func-pointer type>
-     *   POP ARG0 <that type>
-     *   PUSH __async_handle_N handleCanonicalType
-     *   POP ARG1 handleCanonicalType
-     *   CALL par_call   (or await_call)
-     *   CC_END <convention>
-     *   -- PAR: PUSH __async_handle_N handleCanonicalType  (the handle
-     *      itself is this whole expression's own value; ownership
-     *      transfers out to whatever consumes it, exactly like any other
-     *      freshly-`new`'d value flowing straight into an assignment)
-     *   -- AWAIT: read __async_handle_N.result back out (the same
-     *      PUSH+PUSH_FIELDNAME+DOT_LHS+DEREF shape emitDot's own
-     *      storage-pointer branch already uses), then GT_DESTRUCT the
-     *      now-unneeded handle -- it was never exposed to any caller,
-     *      it's this expression's own, purely internal plumbing.
-     *
-     * The hidden local ("__async_handle_N") is deliberately allocated
-     * inline, right here, rather than hoisted to this function's own
-     * top the way every other local's `ALLOC` is (see BytecodeEmitter's
-     * own "Whole-function ALLOC hoisting" convention) -- a real,
-     * accepted, documented deviation: retrofitting arbitrary-depth
-     * expression scanning (a "par"/"await" can appear anywhere inside
-     * any expression, not just at statement position, unlike the
-     * existing hoisting collector's own "let"/"for"/"loop" cases) into
-     * the hoisting collector was out of scope for this round, and
-     * nothing about correctness actually depends on hoisting position:
-     * the low-order address-lowering stage assigns every named local's
-     * own frame offset purely from the textual order its `ALLOC` lines
-     * appear in, not from where in the function body they sit relative
-     * to other statements -- hoisting is a style/optimization goal
-     * ("eventually optimized to a single instruction manipulating the
-     * stack pointers," per that convention's own doc comment), not a
-     * correctness one. Flagged here, not silently done, and mentioned
-     * again in this project's own CLAUDE.md.
+     * Desugars a par/await site into ordinary ALLOC/NEW/GT_REGISTER/CALL bytecode with a hidden local __async_handle_N (emitted inline, not hoisted).
+     * see docs/BytecodeEmitter.md, "par / await desugaring".
      */
     private void emitAsyncCall(Token op) {
         boolean isAwait = "AWAIT".equals(op.asyncCallKind);
@@ -6096,45 +3589,14 @@ public class BytecodeEmitter {
                 line("DOT_LHS " + handleCanonical + " " + resultCanonical + " " + resultCanonical);
                 line("DEREF " + resultCanonical);
             }
-            // Safe unconditionally, void or not: "@await_call" already
-            // blocked (pthread_join) before this point ever returns, so
-            // the trampoline it started is guaranteed finished running by
-            // now -- there is no other thread left that could still be
-            // touching this handle, unlike the fire-and-forget "par" path
-            // just below.
+            // Safe for void too: @await_call has already joined, no other thread touches the handle.
             requireGhostTableFunctionPresent("gt_destruct", op);
             line("GT_DESTRUCT " + tempName);
         } else if (!isVoidResult) {
-            // Non-void "par": the handle is this whole expression's own
-            // value, handed off to whatever consumes it (a "let", a
-            // ".resolve()" call, etc.) -- exactly like any other freshly
-            // -"new"'d value. Ownership (and eventually GT_DESTRUCT) is
-            // the caller's problem from here on, the same as any other
-            // "owns" value flowing out of an expression.
+            // Non-void par: the handle is the expression value; the consumer owns it.
             line("PUSH " + tempName + " " + handleCanonical);
         } else {
-            // Void "par": fire-and-forget -- this hidden handle is never
-            // bound to anything a caller could ever see or destruct
-            // (checkPar exposes "void" as this whole expression's type
-            // for exactly this case, not the handle type), so nothing
-            // pushed here for anyone to consume. It would otherwise leak
-            // forever: the *caller* can never safely `GT_DESTRUCT` it
-            // immediately after this non-blocking "par_call" returns
-            // (the new OS thread the trampoline is running on may still
-            // be reading "handle.value" well after "par_call" itself has
-            // already returned -- a real use-after-free/race, not just a
-            // leak, if the caller destructed it here). So instead the
-            // trampoline itself is responsible for destructing this
-            // hidden handle, from *inside* the new thread, only once it
-            // is genuinely done reading from it -- see
-            // "synthesizeAsyncTrampoline"'s own "selfDestructHidden"
-            // parameter and doc comment for the mechanism (the same
-            // hidden-handle-shaped trampoline is never reused between a
-            // void "par" call site and a void "await" one -- each gets
-            // its own trampoline instance precisely so only the "par"
-            // one self-destructs; "await"'s own caller-side destruct
-            // just above remains correct and non-racy for its own,
-            // separate trampoline).
+            // Void par: the hidden handle is destructed by the trampoline itself (selfDestructHidden), never here: the thread may still be reading it.
         }
     }
 
@@ -6148,35 +3610,14 @@ public class BytecodeEmitter {
         line("JMP " + catchLabel);
     }
 
-    /**
-     * "Void's canonical form is always exactly 'imut_void' or 'mut_void'"
-     * -- the same exact-equality check `voidSafeReturnType` already uses,
-     * mirrored here since this call site needs the boolean itself (to
-     * decide whether to emit a ".result" read / a final handle push) far
-     * more than it needs the substitution `voidSafeReturnType` performs.
-     */
+    /** Exact-equality void test, as voidSafeReturnType. */
     private boolean isVoidCanonical(String canonical) {
         return canonical == null || canonical.equals("imut_void") || canonical.equals("mut_void");
     }
 
-    /**
-     * The canonical text a bare reference to `info` (a plain top-level
-     * function, never called -- "let foo_ptr = foo") resolves to, per
-     * `TypeInfo.funcPointer` (mirrored here rather than reused directly,
-     * since that's a `TypeChecker`-side type and this is purely a
-     * bytecode-emission-side operand-text need): "imut_func(paramType1,
-     * paramType2,...)returnType" -- the exact shape a real "let x = foo"
-     * would resolve `x`'s own declared type to, which is all this
-     * operand text needs to be for the low-order stage to treat this
-     * "PUSH __trampoline_X ..." line as a function-address push, the
-     * same mechanism `call()`'s own function-pointer argument already
-     * relies on.
-     */
+    /** Canonical text of a bare function reference ("static_imut_func(params)ret"), mirroring TypeInfo.funcPointer; used for the trampoline address push. */
     private String funcPointerCanonicalOf(TypeChecker.FuncInfo info) {
-        // Mirrors TypeInfo.funcPointer's own canonical() shape exactly:
-        // storage is always "static" for a function-pointer value, so
-        // the full text is "static_<mutability>_func(params)returnType",
-        // never a bare "func(...)" alone.
+        // Function-pointer values always have static storage.
         StringBuilder sb = new StringBuilder("static_imut_func(");
         for (int i = 0; i < info.paramTypes.size(); i++) {
             if (i > 0) {
@@ -6188,31 +3629,12 @@ public class BytecodeEmitter {
         return sb.toString();
     }
 
-    /**
-     * "Function calls within these functions need to be to dundered
-     * duplicates of the actual functions," confirmed directly --
-     * applies uniformly whenever gt-suppression is active (both a gt-
-     * decorated function's own body, and every dundered duplicate
-     * itself), redirecting any CALL/RECURSIVE_CALL target found in
-     * gtReachableMangledNames to its own "__"-prefixed duplicate.
-     * Outside gt-suppressed context, or for a target that isn't in the
-     * reachable set at all (impossible in practice when suppressed,
-     * given the set's own closure property, but checked defensively
-     * anyway), the target is returned completely unchanged.
-     */
+    /** Under gt-suppression a CALL to a gt-reachable function is redirected to its "__" duplicate. see docs/BytecodeEmitter.md, "Call target redirection". */
     private String resolveCallTargetForEmission(String mangledName) {
         if (inGtSuppressedContext && gtReachableMangledNames.contains(mangledName)) {
             return "__" + mangledName;
         }
-        // "dunder the main and have the @event_loop function be the
-        // actual main," confirmed directly -- the real 'main' function
-        // is emitted under "__caspien_main" (see emitFunc), so any call
-        // actually targeting it (its own type-checked resolvedCallTarget
-        // is still plainly "main" -- TypeChecker has no reason to know
-        // about this purely-emission-time rename) must be redirected
-        // here too, the exact same "resolve at the last possible
-        // moment, right before the mnemonic line is written" shape the
-        // gt-suppression case just above already uses.
+        // main is emitted as __caspien_main when an event loop is the real entry (see emitFunc); redirect calls to it.
         if (mangledName.equals("main") && checker.getEventLoopFunc() != null) {
             return "__caspien_main";
         }
@@ -6233,13 +3655,7 @@ public class BytecodeEmitter {
         if (op.left.type == TokenType.VARREF && leftType != null && !hasStorage(leftType)
                 && leftType.endsWith("]") && !leftType.contains("dynarray")
                 && op.resolvedType != null && op.resolvedType.matches("(mut|imut|indeterminate)_(u8|u16|u32|u64|s8|s16|s32|s64|f32|f64|bool|char)")) {
-            // A read of one element of a fixed array held in a variable: take the element's
-            // ADDRESS (the same ADDR + LOOKUP_LHS a write uses) and load just that element,
-            // instead of pushing the whole array onto the stack first and picking one element out
-            // of the copy -- that copy cost O(array size) per read (a 20-byte array read pushed
-            // 20 bytes, an n-body inner loop did it ~30 times per pair). Scalar elements only: an
-            // aggregate element (a row of a 2D array, a struct) is a block whose size the following
-            // LOOKUP/DOT tracks from the PUSH that produced it, and DEREF does not carry that.
+            // Scalar element of a fixed array variable: take the element address (ADDR + LOOKUP_LHS) and load only it, instead of pushing the whole array. Aggregate elements keep the old path (DEREF carries no size).
             line("ADDR " + op.left.text + " " + leftType);
             Token idx = op.right.childs.get(0);
             emitExpr(idx);
@@ -6253,42 +3669,7 @@ public class BytecodeEmitter {
         line("LOOKUP " + op.left.resolvedType + " " + indexExpr.resolvedType + " " + op.resolvedType);
     }
 
-    /**
-     * "value as SomeAlias" (the `isAliasCast` shape -- both sides already
-     * share the same underlying storage+baseType, only the nominal alias
-     * name differs, and an alias never appears in bytecode text at all)
-     * emits no instruction at all beyond compiling the left side -- there
-     * is nothing for a runtime instruction to do to an already-identical
-     * representation. Only the remaining shape -- same-signedness-family
-     * integer widening -- genuinely changes the value's width at
-     * runtime, so it alone gets a real instruction: "SEXT" (sign-extend)
-     * for a signed family, "ZEXT" (zero-extend) for an unsigned one, in
-     * place of the single, size-only "CAST" this used to always emit --
-     * "cast just being instances where the compiler can unambiguously do
-     * it," confirmed directly, so pointer/float casts stay out of scope
-     * here entirely (planned as stdlib functions instead).
-     *
-     * UPDATE (dead-code cleanup): this used to also special-case
-     * `op.right.type == TokenType.MODIFIER` for a third shape, "value as
-     * mut/imut" -- a pure compile-time mutability reinterpretation, with
-     * the identical zero-instruction treatment. Confirmed that shape no
-     * longer reaches here at all: `mut`/`imut` no longer even parses as
-     * the right-hand side of `as` (a parser-level removal, not just a
-     * `TypeChecker.checkAs` rejection -- see that method's own doc
-     * comment), so `op.right` is guaranteed to be a plain type-name
-     * VARREF by the time bytecode emission runs, and that branch was
-     * dead code. Removed rather than left as defensive dead code, per
-     * this project's own "don't guess/handle what can't happen" standing
-     * discipline.
-     */
-    /**
-     * 'x fits T' as a runtime test, built only from unsigned 64-bit compares (no signed-compare
-     * dependence). x is widened to 64 bits (SEXT/ZEXT by its signedness); then
-     *   - x unsigned or T unsigned:   x64 <= Tmax            (a negative signed x is a huge u64, so it fails)
-     *   - x signed and T signed:      (x64 + (-Tmin)) <= (Tmax - Tmin)
-     * where Tmax for u64 is taken as s64's max when x is signed (negatives already excluded) and the
-     * always-true test 'x >= 0' is used when the range covers everything.
-     */
+    /** 'x fits T' as unsigned 64-bit compares only; see docs/BytecodeEmitter.md, "fits". */
     private void emitFits(Token node) {
         String xb = node.fitsSourceBase;
         String tb = node.fitsTargetBase;
@@ -6339,13 +3720,7 @@ public class BytecodeEmitter {
         return canonical.substring(canonical.lastIndexOf('_') + 1);
     }
 
-    /**
-     * `wrap:<T>(x)` / `sat:<T>(x)` -- total integer conversions.
-     * wrap: widen (SEXT/ZEXT by the SOURCE's signedness), relabel (same width) or TRUNC.
-     * sat: when every value of x always fits T this is exactly wrap's widening/relabel. Otherwise
-     * x is widened to 64 bits and clamped with branch-free arithmetic that uses only unsigned
-     * compares and literals below 2^63 (the backend's compares are unsigned), then TRUNC'd.
-     */
+    /** wrap:<T>(x) / sat:<T>(x), total integer conversions; see docs/BytecodeEmitter.md, "wrap and sat". */
     private void emitConvert(Token op) {
         final Token arg = singleBuiltinArg(op);
         if (op.isFloatConvert || (op.resolvedType != null && isFloatCanonical(op.resolvedType))) {
@@ -6443,7 +3818,7 @@ public class BytecodeEmitter {
             line("TRUNC " + u64 + " " + op.resolvedType);
         }
     }
-
+    /** "as": no instruction for an alias cast, FCONV / TRUNC / SEXT / ZEXT otherwise. see docs/BytecodeEmitter.md, "as casts". */
     private void emitAs(Token op) {
         emitExpr(op.left);
         if (op.isFloatConvert) {
@@ -6460,24 +3835,7 @@ public class BytecodeEmitter {
         line((op.isSignedWideningCast ? "SEXT " : "ZEXT ") + op.left.resolvedType + " " + op.resolvedType);
     }
 
-    /**
-     * "EnumName.Variant" compiles to a single PUSH of the qualified
-     * variant name, treated like any other compile-time-known literal
-     * value -- there's no separate DOT instruction, and no runtime
-     * computation happens (neither side is a value expression to
-     * compile: the enum name and variant name are read directly off
-     * their own tokens, not emitted through emitExpr).
-     */
-    /**
-     * Both '.' forms -- EnumName.Variant and instance.member (including
-     * arbitrarily deep chains like line.start.x) -- compile to the same
-     * shape: a single PUSH of the fully-qualified dot-joined name. This
-     * works for chains with no extra logic because the qualified name is
-     * built recursively: op.left for a chained access is itself another
-     * '.' node, not a plain token, so a naive "op.left.text" would only
-     * ever capture the innermost segment -- qualifiedDotName walks back
-     * down to the base token first.
-     */
+    /** Both EnumName.Variant and instance.member chains: one PUSH of the dot-joined name when the chain is nameable, else base + DOT / DOT_LHS+DEREF. see docs/BytecodeEmitter.md, "Dot access". */
     private void emitDot(Token op) {
         if (op.catchMember != null) {
             String param = op.catchTry.catchParamName;
@@ -6494,33 +3852,7 @@ public class BytecodeEmitter {
             line("PUSH " + qualifiedDotName(op) + " " + op.resolvedType);
             return;
         }
-        // The chain's own base isn't a plain, nameable slot -- either
-        // because it isn't a bare-VARREF-rooted chain at all (a LOOKUP --
-        // "arr[i].x" -- or a call result), or because it IS one but some
-        // segment along the way has storage (a pointer), which needs a
-        // real runtime dereference to get past, not a constant-folded
-        // name. Either way: recurse into the base with an ordinary,
-        // fully-recursive emitExpr (which, for a further '.' node, comes
-        // straight back through this same method -- so a multi-level
-        // chain like "x.y.z" with x/y both pointers is decided per level,
-        // never as a single whole-chain check: each hop only ever reads
-        // its own field's own width off whatever value the previous hop
-        // left on the stack, never bulk-copying an intervening pointee).
-        //
-        // Once the base's own value is on the stack, this level's own
-        // field access branches on whether that base is itself a pointer
-        // (has storage) or an inline value:
-        //   - no storage: the base IS the containing value, pushed
-        //     inline -- DOT's original model, offsetting straight into
-        //     it (unchanged from before this comment).
-        //   - storage: the base is a runtime address, not the value --
-        //     DOT_LHS's exact address-computation logic (base + field
-        //     offset) gets the field's own address, and DEREF's exact
-        //     load logic then reads exactly this field's own width from
-        //     it. Both mnemonics already exist and are already fully
-        //     implemented (DOT_LHS for the write side, DEREF for
-        //     pointer-dereference reads) -- this reuses them verbatim
-        //     rather than inventing a new one.
+        // Not nameable (base is a LOOKUP/call, or a segment is a pointer): emit the base, then DOT (inline base) or DOT_LHS+DEREF (pointer base), decided per level.
         emitExpr(op.left);
         line("PUSH_FIELDNAME " + op.right.text + " " + op.resolvedType);
         if (hasStorage(op.left.resolvedType)) {
@@ -6531,33 +3863,13 @@ public class BytecodeEmitter {
         }
     }
 
-    /**
-     * True when this '.' chain's own base ultimately bottoms out at a
-     * plain, bare-nameable token (a VARREF) -- the only case
-     * `qualifiedDotName`'s own base case (returning `node.text`
-     * directly) is actually meaningful for. A LOOKUP/CALL/any other
-     * expression's own `.text` is an internal marker ("LOOKUP", "CALL"),
-     * never a real name -- using it as one silently produced a
-     * malformed "PUSH LOOKUP.x"-style operand before this check existed
-     * (confirmed directly against real bytecode, not assumed).
-     */
+    /** True when the whole chain is storage-free and rooted at a VARREF (a LOOKUP/CALL .text is a marker, not a name). */
     private boolean isQualifiedNameableDot(Token node) {
         if (node.catchMember != null) {
             return false;
         }
         if (node.type == TokenType.OPERATOR && node.text.equals(".")) {
-            // Per-level check, not just "does the whole chain bottom out
-            // at a VARREF": node.left is the segment this level dots
-            // into, so it also has to itself be storage-free -- a
-            // storage-bearing (pointer) intermediate needs a genuine
-            // runtime dereference to move past, which a flat, dot-joined
-            // compile-time string can't express. This is the exact same
-            // "bail on any storage-bearing segment before the final one"
-            // rule AddressLoweringPass.resolveAddress already applies
-            // when constant-folding a nameable chain's own address --
-            // this check exists precisely so a chain that pass would
-            // have to bail on is never handed to it as a flat name in
-            // the first place.
+            // Per level: the segment dotted into must be storage-free too, the same bail-out AddressLoweringPass.resolveAddress applies.
             return isQualifiedNameableDot(node.left) && !hasStorage(node.left.resolvedType);
         }
         return node.type == TokenType.VARREF && !hasStorage(node.resolvedType);
@@ -6570,42 +3882,7 @@ public class BytecodeEmitter {
         return node.text;
     }
 
-    /**
-     * "StructName{ member= value, ... }" -- a struct is a plain value
-     * type here, C-struct-style: no pointer, no wrapping instruction,
-     * no separate allocation at the construction site. The instance
-     * *is* its members' values, laid out inline -- so this compiles to
-     * nothing more than each member's value PUSHed in the struct's
-     * *declared* member order (read off StructInfo, via the `checker`
-     * field set in emit()), regardless of what order the literal itself
-     * listed them in. Declaration order matters here specifically
-     * because nothing else disambiguates which pushed value is which
-     * member anymore -- an earlier version of this emitted a NEW
-     * instruction carrying member names precisely to allow written
-     * order to differ from declared order, but that doesn't fit a
-     * value-type model where the instance is only ever "however many
-     * slots the type's size says it is, back to back" with no
-     * per-member bookkeeping at runtime. The surrounding ASSIGN/PUSH/RET
-     * that consumes this struct value doesn't change at all: it already
-     * treats "the value" as a single opaque unit (see emitAssign), and
-     * a later bytecode-to-assembly stage is expected to know a given
-     * type's total size and copy/move that many slots as one block --
-     * nothing here needs to size anything itself.
-     */
-    /**
-     * "the Class ID of the struct is pushed first as a secret argument
-     * on every OTC... its not for NEW, it is also when they are on the
-     * stack... at the OTC in the bytecode," confirmed directly -- this
-     * is the single choke point for every struct-literal construction
-     * site in the whole compiler ('new X{...}' funnels through here via
-     * emitNew's own "emitExpr(op.left)" call, and a bare, plain-stack
-     * 'X{...}' literal reaches here identically, directly) -- so
-     * pushing the hidden "___type" value first, right here, covers
-     * both without needing two separate call sites to stay in sync.
-     * "@untyped are excempt" -- `structInfo.classId` is null for one,
-     * so no hidden push happens for it at all, matching emitStruct's
-     * own identical exemption for the field's declaration.
-     */
+    /** Struct literal: optional hidden ___type push, then members in padded layout order (declaration order, not literal order). Single choke point for `new X{..}` and bare `X{..}`. see docs/BytecodeEmitter.md, "Struct literals". */
     private void emitInstantiate(Token op) {
         String structName = op.left.text;
         TypeChecker.StructInfo structInfo = checker.getStructs().get(structName);
@@ -6614,17 +3891,7 @@ public class BytecodeEmitter {
         }
 
         if (op.isLockViolationConstruct) {
-            // The one, deliberate OTC ("One True Construction")
-            // violation this project's locked-struct feature allows
-            // (see TypeChecker.checkOtcLockViolation) -- every member
-            // except the lock/discriminant field was omitted, so this
-            // is the *only* value ever pushed here, followed by a
-            // "STACK_LOCK <structName>" line rather than the ordinary,
-            // full per-declared-member push sequence below. "this will
-            // manipulate the stack pointer directly," confirmed
-            // directly -- the not-yet-built assembly stage is expected
-            // to actually reserve/zero the omitted members' own stack
-            // slots from this one instruction.
+            // OTC lock violation: only the lock/discriminant value is pushed, then STACK_LOCK <structName>.
             Token lockAssignNode = op.right.childs.get(0).childs.get(0);
             Token lockValue = lockAssignNode.right;
             emitExpr(lockValue);
@@ -6640,16 +3907,7 @@ public class BytecodeEmitter {
             Token assignNode = lineTok.childs.get(0);
             valueByMember.put(assignNode.left.text, assignNode.right);
         }
-        // Walk the same padded layout emitStruct declared, not just the
-        // real members, so the values actually pushed here land at the
-        // exact byte offsets StructTable/AddressLoweringPass expect.
-        // ___type was already pushed above (it's always the layout's
-        // first entry when present), so skip it here to avoid pushing it
-        // twice; every other real-member entry is pushed as before, and
-        // every padding gap becomes a "move the stack pointer forward
-        // this many bytes without pushing a value" STACK_LOCK, the same
-        // instruction the OTC lock-violation branch above already uses
-        // for exactly that purpose.
+        // Walk the padded layout: ___type already pushed, each padding gap is a STACK_LOCK.
         for (StructLayoutEntry entry : computeStructLayout(structInfo).entries) {
             if (entry.memberName == null) {
                 line("STACK_LOCK " + entry.paddingBytes);
@@ -6665,13 +3923,7 @@ public class BytecodeEmitter {
             }
             emitExpr(value);
             if (value.isOwnershipMoveSource) {
-                // Same reasoning, and same placement principle, as the
-                // call-argument case: a *later* field's own value
-                // expression can itself contain a throwing call (e.g.
-                // "new Foo{a=x, b=someFunc()}"), so this field's own
-                // move-source is nulled out immediately, before the
-                // loop advances to the next field at all -- not once,
-                // afterward, once every field has been pushed.
+                // Null the move source right away: a later field value may contain a throwing call.
                 if (deferredMoveNullOuts != null) {
                     deferredMoveNullOuts.add(value); // inside `new`: nulled only once the allocation has succeeded
                 } else {
@@ -6745,149 +3997,9 @@ public class BytecodeEmitter {
         }
     }
 
-    /**
-     * "owns x" never reaches here -- TypeChecker rejects it unconditionally
-     * (checkAddressOf), since nothing is ever heap-resident yet. "static x"
-     * applied to a literal is a pure compile-time reinterpretation (the
-     * literal already inherently has static storage, or is being placed
-     * there explicitly) -- no runtime representation change, so (like a
-     * mutability-only 'as' cast) it emits nothing beyond compiling the
-     * literal itself (see the early return in emitAddressOf, just below).
-     * "auto x", "raw x" and "ref x" all do reach here, and all three are
-     * genuine, well-defined address-of operations, confirmed directly by
-     * compiling real examples -- not a placeholder, despite ADDR_OF being
-     * a mnemonic this project invents rather than one the spec names.
-     * `emitExpr(op.left)` always runs first, so the value ADDR_OF's own
-     * operand computes to is already on the stack by the time ADDR_OF
-     * itself runs; what ADDR_OF does with that value splits on whether
-     * `op.left` was addressable (a bare VARREF or a dot chain rooted in
-     * one -- `TypeChecker.isAddressableLvalue`, required today for both
-     * "auto" and "raw"): when it was, `emitExpr` collapsed to a single
-     * "PUSH qualifiedDotName type" line (emitDot's own shape for any
-     * nameable chain), and that name's own resolved offset *is* the real
-     * address -- see AddressLoweringPass's own "ADDR_OF opText leftType
-     * returnType" -> "ADDR_OF opText $address" rewrite. When it wasn't
-     * (a "ref(ownedVar)" operand, or "raw" on a string literal -- the one
-     * literal kind still permitted, since it's already hoisted to real
-     * static storage by TypeChecker's own STRING case), the pushed value
-     * already *is* the correct final pointer, and ADDR_OF is a pure,
-     * droppable no-op retag -- the same pass's "ADDR_OF ... -> dropped
-     * entirely" case, right next to that rewrite.
-     */
-    /**
-     * "new Point{...}" -- pushes whatever the constructed value's own
-     * ordinary emission already produces (a struct literal's per-member
-     * PUSHes via the existing, unmodified emitInstantiate; a primitive
-     * literal's single PUSH; etc. -- 'new's operand is type-checked and
-     * emitted completely normally, nothing new-specific about it), then
-     * one "NEW TypeName" line naming the real type to allocate. That
-     * name comes directly from `op.resolvedType` (checkNew always
-     * produces exactly "owns_" + the real base type, a format this
-     * method controls the shape of one call away, not a guess about
-     * what's in the string) with the guaranteed "owns_" prefix stripped
-     * -- deliberately *not* derived by inspecting any token's text or
-     * shape.
-     */
-    /**
-     * "new" allocates and copies, then hands the fresh pointer through
-     * the ghost table before anything downstream sees it -- confirmed
-     * directly: "malloc(size) amount of memory... copy the data off of
-     * the stack into it... then I pass that malloced pointer thru the
-     * provided gt_register function, before putting it on the stack,
-     * for the next operation/instruction to work with." The
-     * malloc+copy half was already right (`NEW`'s own doc comment in
-     * X86Backend); this method was missing the registration half
-     * entirely -- `NEW` left the fresh pointer on the stack with
-     * nothing ever telling the ghost table it exists, so
-     * `gt_alive_check`/`match Some(...)` could never find it alive (a
-     * real, confirmed gap: a fresh "new Point{...}" was silently
-     * unregistered, always reading as not-alive).
-     *
-     * `GT_REGISTER` mirrors `GT_INIT`/`GT_ALIVE_CHECK`/`GT_DESTRUCT`
-     * exactly -- same `requireGhostTableFunctionPresent` gate, same
-     * bare (operand-free) mnemonic, needing no lowering-pass rewrite
-     * for the identical reason those three don't: nothing on the line
-     * to reduce. Placed immediately after `NEW` so it's transparent to
-     * every consumer downstream -- `NEW`'s own pointer is what's still
-     * on the stack once `GT_REGISTER` returns, registration happening
-     * as a pure side effect in between.
-     */
-    /**
-     * UPDATE (throwing 'new'): "if it gets back NULL from the malloc,
-     * it throws," confirmed directly -- checked here, right after `NEW`
-     * hands back the fresh pointer and before `GT_REGISTER` ever sees
-     * it (a null pointer has no business being registered into the
-     * ghost table at all). `op.resolvedType` is now "owns_some_" + the
-     * real base type (checkNew's own `.withSome(true)`) rather than the
-     * old plain "owns_" -- both prefixes are stripped here for `NEW`'s
-     * own operand, which only ever wants the bare constructed type,
-     * unrelated to the pointer wrapper around it.
-     *
-     * No stack-peek/DUP-shaped primitive existed for this before
-     * `DUP_TOP` was reused here -- "duplicates the top 8-byte stack
-     * word in place (pop, then push it back twice)" is exactly what's
-     * needed to inspect the just-allocated pointer against null without
-     * disturbing the one copy every caller of `emitNew` already expects
-     * to find on top of the stack when this method returns (confirmed
-     * directly against a real compiled fixture: this method's whole
-     * contract, both before and after this change, is "leave exactly
-     * one value -- the pointer -- on the stack").
-     *
-     * The null branch is deliberately NOT a replica of `emitThrow`'s own
-     * EXIT|EXIT_THREAD|GT_UNWIND ending -- that ending exists only for
-     * a real `throw` (or a throwing CALL with no *local* catch to land
-     * in), which genuinely crosses a function-call boundary and so
-     * needs `GT_UNWIND`'s own frame-teardown-then-read-the-next-frame's-
-     * slot dance to get back to whichever frame is now current. A
-     * `new`'s own null check never crosses any such boundary -- it's
-     * ordinary inline code, still in the exact same frame its own
-     * `try new ... catch(e){...}` wrapper's hoisted catch block also
-     * lives in (`checkNew` requires `op.insideTry` unconditionally, so
-     * there's always exactly one, and it's always local -- unlike a
-     * throwing CALL, 'new' can never be the "propagate via a fresh,
-     * function-exiting landing pad" case `stageCallSiteForUnwindNames`
-     * also has to handle). So the null branch here is nothing more than
-     * an ordinary, local `JMP` straight to that catch label -- read off
-     * `pendingTryCatchLabel` exactly the way `stageCallSiteForUnwindNames`
-     * does for the identical "local catch" case, but consumed directly
-     * here instead of being staged through `gt_routine_address` at all
-     * (there's no deeper frame that will ever need to find it there).
-     * The one real side effect that still has to happen first is
-     * writing `gt_error_message` -- `emitHoistedCatchBlocks`'s own
-     * catch-block prologue unconditionally snapshots it into `e` the
-     * instant control reaches the label, exactly as it would for a real
-     * `throw`. The message itself is a single shared "out of memory"
-     * string literal -- `hoistedStringId` already dedupes by raw
-     * content, so every 'new' null-check across the whole program
-     * reuses the same one `STRING` entry.
-     */
-    /**
-     * "new MyClass(...)" -- op.left is a struct-RVO call (a constructor,
-     * or any other plain struct-by-value-returning function; see
-     * TypeChecker.checkNew's own doc comment for why this is legal as a
-     * fourth RVO destination position). Can't just fall through to the
-     * ordinary "emitExpr(op.left)" below -- a struct-RVO call never
-     * pushes its result the ordinary way (no PUSH_RET at all; the callee
-     * writes through a hidden destination pointer it's handed directly)
-     * -- so this constructs into a hidden, ordinary, whole-function-
-     * ALLOC'd local first (deliberately emitted inline rather than
-     * hoisted, the identical, already-documented, accepted deviation
-     * `emitAsyncCall`'s own hidden handle local already established --
-     * retrofitting arbitrary-depth expression scanning into the ALLOC-
-     * hoisting collector for this one, rare shape is out of scope), via
-     * the exact same `emitStructRvoCallSequence` an ordinary "let tmp =
-     * mut ctor()" already uses. Once that temp is fully populated, its
-     * value is pushed the ordinary, whole-value way (a plain "PUSH name
-     * type" -- `emitDot`/every other whole-struct read already do
-     * exactly this for an ordinary named local) -- from here on this
-     * method is completely unmodified: `NEW`/`GT_REGISTER` neither know
-     * nor care whether the value they just saw pushed came from an
-     * ordinary literal or from this hidden temp.
-     */
+    /** `new ctor(..)`: construct into a hidden inline local through emitStructRvoCallSequence, then push it whole. see docs/BytecodeEmitter.md, "new". */
     private void emitNewFromStructRvoCall(Token callOp) {
-        // Same "resolve the struct name from the callee's own return
-        // type, falling back to parsing the call node's own resolvedType
-        // text" precedent `emitStructRvoAssign` already established.
+        // Struct name from the callee return type, else from the call node's resolvedType.
         String funcName = resolveCallTargetForEmission(callOp.resolvedCallTarget);
         TypeChecker.FuncInfo targetInfo = findFuncInfoByMangledName(funcName);
         String structName = targetInfo != null ? targetInfo.returnType.baseType
@@ -6902,7 +4014,7 @@ public class BytecodeEmitter {
         });
         line("PUSH " + tempName + " " + structType);
     }
-
+    /** new: operand, NEW type, GT_REGISTER, null check jumping to the local catch; moved-in sources are nulled only after success. see docs/BytecodeEmitter.md, "new". */
     private void emitNew(Token op) {
         Token unwrapped = unwrapMutWrappers(op.left);
         List<Token> savedDeferral = deferredMoveNullOuts;
@@ -6960,29 +4072,7 @@ public class BytecodeEmitter {
         }
     }
 
-    /**
-     * Runtime allocation-failure check for a throwing safe `dyn`/`resize`
-     * -- the exact same "DUP_TOP / PUSH null / EQ / CMP / JMP okLabel /
-     * (on null) set gt_error_message, JMP pendingTryCatchLabel / okLabel:"
-     * dance `emitNew` already does for 'new', just above, factored out
-     * here so the three call sites that now need it ("dyn([...])",
-     * "dyn(text)", and "resize(...)"'s own safe variants -- see
-     * TypeChecker.checkDynBuiltinCore/checkResizeBuiltin's own doc
-     * comments, "new throws, but dyn and resize dont, they need to use
-     * the same pattern as new," confirmed directly) don't each duplicate
-     * it by hand. Expects the freshly-allocated/-reallocated value to
-     * already be sitting on top of the stack (immediately after the
-     * "NEW_DYN"/"NEW_FROM_STRING"/"RESIZE" line itself), exactly like
-     * `emitNew` expects right after its own "NEW" line.
-     *
-     * Deliberately does NOT call `GT_REGISTER` the way `emitNew` does
-     * right after its own equivalent check: a dynarray's own backing
-     * store is never itself a gt-tracked destructor-chain member the way
-     * a freshly-`new`'d struct is (nothing importing "gt_register" is
-     * required for `dyn`/`resize` today, and this change doesn't start
-     * requiring it) -- only the null-check-and-jump-to-catch half of
-     * `emitNew`'s own sequence actually applies here.
-     */
+    /** Null check after NEW_DYN / NEW_FROM_STRING / RESIZE, the same sequence emitNew uses; expects the value on top of the stack. see docs/BytecodeEmitter.md, "Allocation failure check". */
     private void emitAllocFailureCheck(Token op) {
         emitAllocFailureCheck(op, java.util.Collections.emptyList(), java.util.Collections.emptyList());
     }
@@ -7007,7 +4097,7 @@ public class BytecodeEmitter {
         }
         line(okLabel + ":");
     }
-
+    /** ADDR_OF auto/raw/ref (nothing for `static`); see docs/BytecodeEmitter.md, "Address-of". */
     private void emitAddressOf(Token op) {
         emitExpr(op.left);
         if (op.text.equals("static")) {
@@ -7019,12 +4109,7 @@ public class BytecodeEmitter {
     private String literalValueOf(Token node) {
         switch (node.type) {
             case STRING:
-                // Hoisted -- every occurrence of this exact string
-                // value, everywhere in the program, is replaced with
-                // its shared id; the real quoted-and-escaped text only
-                // ever appears once, in this id's own "STRING id
-                // \"text\"" declaration (emitted at the very top of the
-                // output -- see emit()).
+                // Hoisted: the quoted text appears once in a STRING declaration at the top of the output.
                 return hoistedStringId(node.literalValue);
             case CHAR:
                 return "'" + escapeForBytecode(node.literalValue) + "'";
@@ -7035,22 +4120,7 @@ public class BytecodeEmitter {
         }
     }
 
-    /**
-     * "Every char/string literal token records its own decoded value
-     * as `literalValue`" -- meaning by the time this runs, a literal
-     * like "'\0'" has already been decoded down to one real NUL byte,
-     * not the two source characters '\' and '0'. Re-escaping it back
-     * into text form for the plain-text bytecode output is this
-     * method's whole job -- but it only ever handled three of the
-     * eight control-character escapes this language's own lexer
-     * recognizes (`\\`/`\"`/`\n`), a real, separate bug found while
-     * building a generic String class: "'\0'" (needed for a genuine
-     * bounds-safe `charAt`) was leaking through as one literal raw NUL
-     * byte, embedded directly in what's supposed to be a plain-text
-     * file -- confirmed directly (not assumed) by inspecting the
-     * actual emitted bytes. Every one of the lexer's own recognized
-     * escapes is now handled explicitly here too.
-     */
+    /** Re-escapes a decoded char/string value for the text bytecode: every lexer escape (\\ \" \n \t \r \0 \b \f \a \v). */
     private String escapeForBytecode(String s) {
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < s.length(); i++) {
