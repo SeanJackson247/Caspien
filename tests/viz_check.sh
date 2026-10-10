@@ -1,5 +1,5 @@
 #!/bin/bash
-# (needs java, python3) `--viz`: writes an HTML page (canvas, black background) with the entry function and the functions it calls, sized by worst-case stack depth.
+# (needs java, python3) `--viz`: writes an HTML page (canvas, black background) with the entry function and the functions it calls, sized by worst-case stack depth and coloured by termination class (caspien.Palette).
 # The depths in the page are compared with tests/gas_model.py (an independent path search), for the two-function program of the spec and for the
 # docs examples; the page is checked for the one full-page canvas and the black background; and --viz must build nothing.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -60,6 +60,29 @@ print("ok %-28s entry %s (%d bytes), %d callees" % (name, entry, main["stack"], 
 PY
   checked=$((checked+1))
 done
+# colours: every node carries its termination class (the word `--audit` prints), the page has a distinct colour and a distinct outline style
+# per class, and the fixture with all six classes shows all six
+java -cp . Compiler -i tests/doc_comment_test.caspien --viz > $W/log.txt 2>&1 || { echo "FAIL: --viz doc_comment_test"; cat $W/log.txt; exit 1; }
+java -cp . Compiler -i tests/doc_comment_test.caspien --audit > $W/audit.txt 2>&1 || { echo "FAIL: --audit doc_comment_test"; exit 1; }
+python3 - output/doc_comment_test.html $W/audit.txt <<'PY' || exit 1
+import sys, re, json
+page = open(sys.argv[1]).read()
+nodes = [json.loads(re.search(r"const MAIN = (\{.*?\});", page).group(1))] + json.loads(re.search(r"const CALLEES = (\[.*?\]);", page).group(1))
+term = json.loads(re.search(r"const TERM = (\{.*?\});\n", page).group(1))
+words = ["bound", "finite", "unbound", "none", "conditional", "indirect"]
+if sorted(term) != sorted(words): print("FAIL: palette classes", sorted(term)); sys.exit(1)
+if len({t["fill"] for t in term.values()}) != 6 or len({t["ring"] for t in term.values()}) != 6: print("FAIL: colours/outlines are not all distinct"); sys.exit(1)
+audit = {}
+for l in open(sys.argv[2]):
+    m = re.match(r"  (\S+?)(?: \((?:entry|thread entry)\))?\s+(?:>= )?\d+\s+(bound|finite|unbound|none|conditional|indirect)\b", l)
+    if m and m.group(1) not in audit: audit[m.group(1)] = m.group(2)
+for n in nodes:
+    if n["term"] not in term: print("FAIL: %s has class %s" % (n["name"], n["term"])); sys.exit(1)
+    if audit.get(n["name"]) != n["term"]: print("FAIL: %s: page says %s, audit says %s" % (n["name"], n["term"], audit.get(n["name"]))); sys.exit(1)
+seen = {n["term"] for n in nodes}
+if seen != set(words): print("FAIL: the all-classes fixture shows", sorted(seen)); sys.exit(1)
+print("ok colours: %d nodes, all six classes, page == audit" % len(nodes))
+PY
 # the spec's example: main calls foo, nothing else
 grep -q '"name":"foo"' output/hello_viz.html || { echo "FAIL: foo is missing from the hello page"; exit 1; }
 # a program without main is an error, not a page

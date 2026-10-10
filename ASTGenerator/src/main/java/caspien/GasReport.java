@@ -2387,6 +2387,12 @@ final class GasReport {
         return "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"").replace("<", "\\u003c") + "\"";
     }
 
+    /** The termination class word of a function for the page (the word the audit prints after its gas figure). */
+    private String termWord(String name) {
+        String w = funcWord(name);
+        return w == null ? "bound" : w;
+    }
+
     private String vizPage(String title) {
         Fn entry = entryFn();
         if (entry == null) {
@@ -2402,7 +2408,8 @@ final class GasReport {
         frame.put(entry.name, frameBytes(entry));
         stackDepth(entry.name, frame, depth, via, why, new ArrayList<>());
         StringBuilder nodes = new StringBuilder();
-        nodes.append("{\"name\":").append(jsonStr(entry.name)).append(",\"stack\":").append(depth.get(entry.name)).append("}");
+        nodes.append("{\"name\":").append(jsonStr(entry.name)).append(",\"stack\":").append(depth.get(entry.name)).append(",\"term\":")
+                .append(jsonStr(termWord(entry.name))).append("}");
         StringBuilder callees = new StringBuilder();
         for (String c : entry.calls) {
             Fn cf = fns.get(c);
@@ -2412,9 +2419,10 @@ final class GasReport {
             if (callees.length() > 0) {
                 callees.append(",");
             }
-            callees.append("{\"name\":").append(jsonStr(c)).append(",\"stack\":").append(depth.get(c)).append("}");
+            callees.append("{\"name\":").append(jsonStr(c)).append(",\"stack\":").append(depth.get(c)).append(",\"term\":")
+                    .append(jsonStr(termWord(c))).append("}");
         }
-        return VIZ_TEMPLATE.replace("@@TITLE@@", title.replace("<", "&lt;")).replace("@@MAIN@@", nodes).replace("@@CALLEES@@", callees);
+        return VIZ_TEMPLATE.replace("@@TITLE@@", title.replace("<", "&lt;")).replace("@@MAIN@@", nodes).replace("@@CALLEES@@", callees).replace("@@TERM@@", Palette.terminationJson());
     }
 
     private static final String VIZ_TEMPLATE = String.join("\n",
@@ -2426,6 +2434,8 @@ final class GasReport {
         "// circle area is proportional to the worst-case stack depth in bytes (frame + deepest callee) of the function",
         "const MAIN = @@MAIN@@;",
         "const CALLEES = [@@CALLEES@@];",
+        "// colours and outline styles per termination class: caspien.Palette (the one place the tools' look is decided)",
+        "const TERM = @@TERM@@;",
         "const cv = document.getElementById('c'), cx = cv.getContext('2d');",
         "function draw(){",
         "  const dpr = window.devicePixelRatio || 1, W = innerWidth, H = innerHeight;",
@@ -2437,16 +2447,29 @@ final class GasReport {
         "  let k = 0.14 * u / Math.sqrt(maxS);",
         "  if (n > 0) {",
         "    const maxC = Math.max(...CALLEES.map(c => Math.sqrt(c.stack)));",
-        "    k = Math.min(k, 0.95 * R / (Math.sqrt(MAIN.stack) + maxC));",
-        "    if (n > 1) k = Math.min(k, 0.95 * R * Math.sin(Math.PI / n) / maxC);",
+        "    k = Math.min(k, 0.88 * R / (Math.sqrt(MAIN.stack) + maxC));",
+        "    if (n > 1) k = Math.min(k, 0.88 * R * Math.sin(Math.PI / n) / maxC);",
         "  }",
         "  const rad = s => Math.max(3, k * Math.sqrt(s));",
-        "  cx.strokeStyle = '#fff'; cx.fillStyle = '#fff'; cx.lineWidth = 1;",
+        "  cx.strokeStyle = '#4b5563'; cx.lineWidth = 1;",
         "  if (n > 0) { cx.beginPath(); cx.arc(mx, my, R, 0, 2 * Math.PI); cx.stroke(); }",
         "  const pts = CALLEES.map((c, i) => { const a = -Math.PI / 2 + 2 * Math.PI * i / n; return [mx + R * Math.cos(a), my + R * Math.sin(a), c]; });",
         "  for (const [x, y] of pts) { cx.beginPath(); cx.moveTo(mx, my); cx.lineTo(x, y); cx.stroke(); }",
-        "  for (const [x, y, c] of pts) { cx.beginPath(); cx.arc(x, y, rad(c.stack), 0, 2 * Math.PI); cx.fill(); }",
-        "  cx.beginPath(); cx.arc(mx, my, rad(MAIN.stack), 0, 2 * Math.PI); cx.fill();",
+        "  function disc(x, y, r, node) {",
+        "    const t = TERM[node.term] || TERM.bound;",
+        "    cx.beginPath(); cx.arc(x, y, r, 0, 2 * Math.PI); cx.fillStyle = t.fill; cx.fill();",
+        "    cx.strokeStyle = t.line; cx.setLineDash([]); cx.lineWidth = 2;",
+        "    const ring = (rr, dash, w) => { cx.beginPath(); cx.arc(x, y, rr, 0, 2 * Math.PI); cx.setLineDash(dash); cx.lineWidth = w; cx.stroke(); cx.setLineDash([]); };",
+        "    // a second channel besides the hue: every class has its own outline",
+        "    if (t.ring === 'solid') ring(r + 3, [], 1.5);",
+        "    else if (t.ring === 'double') { ring(r + 3, [], 1.5); ring(r + 7, [], 1.5); }",
+        "    else if (t.ring === 'dashed') ring(r + 4, [6, 4], 2);",
+        "    else if (t.ring === 'thick') ring(r + 4, [], 4);",
+        "    else if (t.ring === 'dotted') ring(r + 4, [1.5, 4], 2.5);",
+        "    else ring(r + 4, [9, 3, 2, 3], 2);",
+        "  }",
+        "  for (const [x, y, c] of pts) disc(x, y, rad(c.stack), c);",
+        "  disc(mx, my, rad(MAIN.stack), MAIN);",
         "}",
         "addEventListener('resize', draw); draw();",
         "</script></body></html>",

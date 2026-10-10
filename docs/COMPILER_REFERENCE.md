@@ -588,10 +588,10 @@ place. Blocks of generic functions use the union over instances. If the whole re
 ## Visualizer (`--viz`)
 
 `java Compiler -i prog.caspien --viz [out.html]` builds nothing (like `--audit`) and writes one HTML page, `output/<name>.html` by default: a single full-page
-canvas on a black background. The entry function (`main`, or the `@with_tick` main) is a white circle in the exact centre; the functions it calls directly
-(those with a body, in source order) sit evenly spaced on a white ring around it, each joined to the centre by a white line. A circle's AREA is proportional to
+canvas on a black background. The entry function (`main`, or the `@with_tick` main) is a circle in the exact centre; the functions it calls directly
+(those with a body, in source order) sit evenly spaced on a grey ring around it, each joined to the centre by a grey line. A circle's AREA is proportional to
 the function's worst-case stack depth in bytes (the figure of the `# stack depth` section: its frame plus the deepest callee), one scale for all circles, shrunk
-when needed so circles do not touch the centre circle or each other. Nothing else is drawn yet (no labels, no deeper calls). Code: `GasReport.viz`; test `tests/viz_check.sh`.
+when needed so circles do not touch the centre circle or each other. Each circle is filled by the termination class of its function (the word `--audit` prints; `GasReport.funcWord`) and has an outline of its own per class, so colour is never the only channel: bound blue solid, finite purple double, unbound red dashed, none amber thick, conditional grey dotted, indirect dark with a bright dash-dot outline (white edges became grey). All of this comes from one table, `Palette.java` (rationale in its comment), which future graphical tools should use too. Nothing else is drawn yet (no labels, no deeper calls). Code: `GasReport.viz`, `Palette`; test `tests/viz_check.sh` (page class == audit class, six distinct colours and outlines).
 
 ## Worst-case gas (`--audit`)
 
