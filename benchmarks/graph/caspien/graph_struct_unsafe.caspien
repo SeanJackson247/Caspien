@@ -1,11 +1,7 @@
 // Heap graph benchmark (GRAPH_N nodes), STRUCT + UNSAFE variant: ONE unsafe dynarray of Node structs (es[i].field), no bounds proofs.
 // Same graph, RNG and search as graph_unsafe (which uses parallel arrays). Prints: reachable maxdepth needledist valuesum.
 import "../../../stdlib/libc.caspien"
-import "../../../stdlib/gt_init.caspien"
-import "../../../stdlib/gt_register.caspien"
-import "../../../stdlib/gt_alive_check.caspien"
-import "../../../stdlib/gt_destruct.caspien"
-import "../../../stdlib/gt_moved.caspien"
+import "../../../stdlib/gt/*"
 
 extern getenv(static imut string) static imut string
 extern atol(static imut string) mut u64

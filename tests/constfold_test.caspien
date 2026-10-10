@@ -2,11 +2,7 @@
 // expression made only of literals (which the pass may fold) against the same operation done at runtime through variables
 // (which it cannot fold), so a wrong folded value shows up as a FAIL. The output must be identical with folding on and off.
 import "../stdlib/libc.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+import "../stdlib/gt/*"
 
 func check(name: static imut string, ok: mut bool) void{
 	unsafe extern{

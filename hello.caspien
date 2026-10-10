@@ -1,6 +1,5 @@
 import "stdlib/libc.caspien"
-import "stdlib/gt_init.caspien"
-import "stdlib/gt_destruct.caspien"
+import "stdlib/gt/*"
 
 func main() void{
     unsafe extern{

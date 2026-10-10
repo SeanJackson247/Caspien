@@ -6,11 +6,7 @@
 //   String: len=6 char=e index=2
 //   HashMap: hit=70 miss=999
 import "../../stdlib/libc.caspien"
-import "../../stdlib/gt_init.caspien"
-import "../../stdlib/gt_register.caspien"
-import "../../stdlib/gt_alive_check.caspien"
-import "../../stdlib/gt_destruct.caspien"
-import "../../stdlib/gt_moved.caspien"
+import "../../stdlib/gt/*"
 import "../../stdlib/dynamic_array.caspien"
 import "../../stdlib/string.caspien"
 import "../../stdlib/hash_map.caspien"

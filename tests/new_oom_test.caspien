@@ -2,11 +2,7 @@
 // that fails each malloc in turn and checks that a failure is caught and that the owns values already moved into the failed
 // allocation are freed (no live allocation left beyond the runtime's own).
 import "../stdlib/libc.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+import "../stdlib/gt/*"
 struct Pair{
 	@pub{ a: mut u64
 	b: mut u64 }

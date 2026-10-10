@@ -1,11 +1,7 @@
 // Sieve of Eratosthenes, counting the primes <= N (SIEVE_N). SAFE variant: a safe dynarray of bytes; every element access sits
 // under a bounds proof (match i in/into f). Only the unbounded loop{} and the C calls need unsafe.
 import "../../../stdlib/libc.caspien"
-import "../../../stdlib/gt_init.caspien"
-import "../../../stdlib/gt_register.caspien"
-import "../../../stdlib/gt_alive_check.caspien"
-import "../../../stdlib/gt_destruct.caspien"
-import "../../../stdlib/gt_moved.caspien"
+import "../../../stdlib/gt/*"
 extern getenv(static imut string) static imut string
 extern atol(static imut string) mut u64
 

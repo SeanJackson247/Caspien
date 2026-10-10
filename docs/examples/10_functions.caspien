@@ -3,11 +3,7 @@
 //   overloads=1 1 2 3 4 | methods=3 1001 5 8 | ctors=4 99
 //   pure=25 11 | generic=7 9 | bound=42 25
 import "../../stdlib/libc.caspien"
-import "../../stdlib/gt_init.caspien"
-import "../../stdlib/gt_register.caspien"
-import "../../stdlib/gt_alive_check.caspien"
-import "../../stdlib/gt_destruct.caspien"
-import "../../stdlib/gt_moved.caspien"
+import "../../stdlib/gt/*"
 
 // Overloads are told apart by parameter count and parameter BASE types.
 // Mutability, storage, parameter names and return types never distinguish them.

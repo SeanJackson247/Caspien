@@ -2,11 +2,7 @@
 // stack_trace_oom_check.sh runs it. Without the shim it prints "alloc ok".
 import "../stdlib/print.caspien"
 import "../stdlib/funcname.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+import "../stdlib/gt/*"
 
 struct Box{
 	@pub{ v: mut u64 }

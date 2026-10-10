@@ -7,9 +7,7 @@ It compiles to native x86-64 code through a four-stage compiler written in Java.
 
 ```rust
 import "stdlib/print.caspien"
-import "stdlib/gt_init.caspien"
-import "stdlib/gt_destruct.caspien"
-import "stdlib/gt_moved.caspien"
+import "stdlib/gt/*"
 
 func main() void{
 	println("Hello World!")
@@ -128,11 +126,6 @@ header comment. The code blocks use the `rust` syntax hint only because GitHub h
 
 ```rust
 import "stdlib/print.caspien"
-import "stdlib/gt_init.caspien"
-import "stdlib/gt_register.caspien"
-import "stdlib/gt_alive_check.caspien"
-import "stdlib/gt_destruct.caspien"
-import "stdlib/gt_moved.caspien"
 
 @pub
 func answer() mut u64{
@@ -146,7 +139,7 @@ func main() void{
 ```
 
 - A file is a list of declarations: `import`, `func`, `struct`, `enum`, `interface`, `impl`, `extern`,
-  `let static`. Imports are resolved relative to the importing file.
+  `let static`. Imports are resolved relative to the importing file. `import "dir/*"` imports every `.caspien` file directly in that folder (sorted by name, subfolders not included).
 - Every program that uses `new`, `owns` or `ref` requires the `gt_*` decorated functions (`@gt_init`,
   `@gt_register`, `@gt_alive_check`, `@gt_destruct`, `@gt_moved`, and for a nullable `ref` also `@gt_ref_id` and `@gt_ref_resolve`, which `gt_alive_check.caspien` imports) to be defined in the final compilation unit. Basic
   defaults are available in `stdlib/`, and the examples import them. They implement the runtime registry
@@ -757,16 +750,12 @@ what to free. The table is five small files, and a program that allocates import
 
 ```rust
 import "../stdlib/libc.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+import "../stdlib/gt/*"
 ```
 
 The table is an open-addressing hash set (expected O(1)) that also issues lazy 64-bit ids for nullable `ref`s;
 `stdlib/gt_set/` is the same set without ids and `stdlib/gt_linear/` the older linear-scan version
-(import one folder's files, never mix; only the default folder supports a nullable `ref`).
+(import one folder with `import "../stdlib/gt/*"`, `gt_set/*` or `gt_linear/*`, never mix; only the default folder supports a nullable `ref`).
 
 #### Dynamic arrays
 
@@ -1756,7 +1745,7 @@ target linux                 # in ===codegen.config===, was windows_gnu
 
 #### The standard library
 
-`stdlib/` is ordinary Caspien source, imported by relative path. There is no prelude: a program imports exactly the files it uses.
+`stdlib/` is ordinary Caspien source, imported by relative path. There is no prelude: a program imports exactly the files it uses (or a whole folder with `import "stdlib/gt/*"`).
 
 | File | What it gives you |
 |---|---|
@@ -1773,7 +1762,7 @@ target linux                 # in ===codegen.config===, was windows_gnu
 | `sleep.caspien`, `par_call.caspien`, `await_call.caspien` | The glue behind the `sleep`, `par` and `await` keywords. |
 | `event_loop*.caspien`, `make_safe_args.caspien` | The program entry points (see 1.3). |
 | `guard.caspien` | The `Guard<T>` interface for lockable types. |
-| `gt_*.caspien`, `ghost_table.caspien` | The ghost table that tracks live allocations (see 2.3). |
+| `gt/` (also `gt_set/`, `gt_linear/`) | The ghost table that tracks live allocations (see 2.3). |
 
 The older reference documentation, including the full description of every optimisation pass, is in
 [`docs/COMPILER_REFERENCE.md`](docs/COMPILER_REFERENCE.md).
@@ -2230,7 +2219,7 @@ invoking 'relax' requires 'unsafe' code
 The ghost table is the one allocation hook the compiler calls. Its functions (`@gt_init`,
 `@gt_register`, `@gt_alive_check`, `@gt_destruct`, `@gt_moved`, and for a nullable `ref` also `@gt_ref_id` and
 `@gt_ref_resolve`) are ordinary Caspien source, so a program can supply its own table, or choose one of the three in
-`stdlib/`: the hash set with ids, which is the default, the same set without ids in `stdlib/gt_set/`, and the
+`stdlib/`: the hash set with ids in `stdlib/gt/`, which is the default, the same set without ids in `stdlib/gt_set/`, and the
 older linear scan in `stdlib/gt_linear/` (the last two cannot hold a nullable `ref`). This is `gt_destruct` from `stdlib/gt_set/` (the default one also drops the pointer's id), with the table-shrinking step left out:
 
 ```rust
@@ -2579,7 +2568,7 @@ is an error ("'@x' is not a valid decorator on a function"). This is the full se
 | `@reads(...)`, `@writes(...)` | function | accepted and shape-checked, not yet enforced |
 | `@with_tick`, `@tick`, `@event_loop` | function | the event-loop trio (see 1.3) |
 | `@make_safe_args` | function | builds the safe `main` arguments (`stdlib/make_safe_args.caspien`) |
-| `@gt_init`, `@gt_register`, `@gt_alive_check`, `@gt_destruct`, `@gt_moved` | function | the five ghost-table hooks the compiler calls (`stdlib/gt_*.caspien`) |
+| `@gt_init`, `@gt_register`, `@gt_alive_check`, `@gt_destruct`, `@gt_moved` | function | the five ghost-table hooks the compiler calls (`stdlib/gt/`) |
 | `@par_call`, `@await_call`, `@sleep` | function | the thread and sleep hooks behind `par`, `await` and `sleep` (`stdlib/`) |
 | `@unroll`, `@unroll(N)`, `@dont(unroll)` | `for` loop | unroll this loop fully / by N / never, whatever the `loop-unrolling` preset says; the optimizer reports what it did (see `docs/COMPILER_REFERENCE.md`) |
 | `@par` | `for` loop | accepted; it does not change the generated code today |

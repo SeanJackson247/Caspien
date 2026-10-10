@@ -13,7 +13,7 @@ java Compiler -i docs/examples/19_unsafe_tags.caspien --audit >a.txt 2>/dev/null
 grep -q '^docs/examples/19_unsafe_tags.caspien:[0-9]*  unsafe extern {' a.txt || fail "no extern block listed with file and line"
 grep -q '| *printf("extern: %llu\\n", mut 5)' a.txt || fail "block contents missing"
 grep -q 'unsafe unaudited {   UNAUDITED; it actually needs: assume deref extern global raw' a.txt || fail "unaudited block not reported with the tags it needs"
-grep -q '^stdlib/gt_init.caspien:[0-9]*  unsafe extern {' a.txt || fail "stdlib blocks not listed"
+grep -q '^stdlib/gt/gt_init.caspien:[0-9]*  unsafe extern {' a.txt || fail "stdlib blocks not listed"
 grep -q 'not a block): let a = mut unsafe dyn' a.txt || fail "unsafe dyn expression not listed"
 grep -q '^# unaudited blocks: 1' a.txt || fail "summary: unaudited count"
 grep -q '^## your code: 25 blocks, 2 other uses' a.txt || fail "summary: your code count"

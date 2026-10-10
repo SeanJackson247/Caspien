@@ -18,8 +18,8 @@ for preset in off aggressive; do
   [ "$(grep -c '^PASS' run.txt)" = 9 ] && ! grep -q FAIL run.txt || { cat run.txt; fail "results wrong with preset $preset"; }
   [ "$(grep -c '\[note\].*@unroll: unrolled' msg.txt)" = 8 ] || { cat msg.txt; fail "expected 8 applied notes with preset $preset"; }
   [ "$(grep -c '\[warning\].*@unroll not honoured' msg.txt)" = 1 ] || fail "expected one 'not honoured' warning with preset $preset"
-  grep -q 'unroll_decorator_test.caspien:72 - @unroll not honoured: its bounds are not compile-time constants (range 0..mut_n)' msg.txt || fail "warning text/position"
-  grep -q 'unroll_decorator_test.caspien:33 - @unroll: unrolled by 3 (10 iterations' msg.txt || fail "@unroll(3) note"
+  grep -q 'unroll_decorator_test.caspien:68 - @unroll not honoured: its bounds are not compile-time constants (range 0..mut_n)' msg.txt || fail "warning text/position"
+  grep -q 'unroll_decorator_test.caspien:29 - @unroll: unrolled by 3 (10 iterations' msg.txt || fail "@unroll(3) note"
 done
 # the heuristic would unroll the 4-trip loop; @dont(unroll) keeps it and says so (only with a preset that unrolls it)
 grep -q '@dont(unroll): this loop is kept as a loop' msg.txt || fail "no @dont note under the aggressive preset"

@@ -2,11 +2,7 @@
 // for loops with literal and run-time bounds (including zero trips), nested loops, continue / break / return inside, `unsafe loop` with the exit test
 // first (unsigned, narrow u8 and signed counters), a safe dynarray length as the bound. Each line checks the result against the model.
 import "../stdlib/libc.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+import "../stdlib/gt/*"
 
 func check(name: static imut string, ok: imut bool) void{
 	unsafe extern{

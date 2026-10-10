@@ -1,11 +1,7 @@
 // `--audit` heap section: bytes requested per function (callees included) and the number of allocation operations, exact where the loop bounds and sizes are
 // literals, `>=` with a reason otherwise. tests/gas_check.sh compares the report with tests/gas_model.py and also checks the numbers written in the comments below.
 import "../stdlib/libc.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+import "../stdlib/gt/*"
 
 struct Node{@pub{
 	value: mut u64

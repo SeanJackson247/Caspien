@@ -54,11 +54,7 @@ w('''// Tests for stdlib/sha256.caspien: SHA-256 (FIPS 180-4) written in Caspien
 // Prints PASS/FAIL per check and a summary; the output must be identical with every optimisation switch off and on.
 import "../stdlib/libc.caspien"
 import "../stdlib/sha256.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+import "../stdlib/gt/*"
 
 let static passed = mut 0
 let static failed = mut 0

@@ -2,11 +2,7 @@
 // and copying it moves the owned members: the source can not be used afterwards and gives them up, so there is never a second
 // owner. Checked through the ghost table's entry count (inline_owns_drop_check.sh runs this under valgrind).
 import "../stdlib/libc.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+import "../stdlib/gt/*"
 struct World{@pub{
 	ticks: mut u64
 }}

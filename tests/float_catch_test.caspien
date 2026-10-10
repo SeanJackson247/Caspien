@@ -3,11 +3,7 @@
 // checks the accumulator in the catch. Prints PASS/FAIL lines (same output with float-variables-in-registers and inlining on or off).
 // float_catch_check.sh also fails the allocation of the second case with an LD_PRELOAD shim.
 import "../stdlib/libc.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+import "../stdlib/gt/*"
 
 struct Cell{@pub{ v: mut u64 }}
 

@@ -2,11 +2,7 @@
 // than 8 bytes (u8/u16/u32/f32/bool) AND a computed member (`k + 1`, a call, ...) stored its fields at the wrong offsets and crashed;
 // the packed all-constant path and all-8-byte structs were always fine. Run with every optimizer switch off and on: identical output.
 import "../stdlib/libc.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+import "../stdlib/gt/*"
 
 struct Mixed{
 	@pub{

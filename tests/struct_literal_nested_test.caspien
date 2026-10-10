@@ -4,11 +4,7 @@
 // a narrow multi-dimensional array crashed, and reading `arr[i].field` for a field narrower than 8 bytes read the wrong half of the word.
 // Run with every optimizer switch off and on: identical output.
 import "../stdlib/libc.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+import "../stdlib/gt/*"
 
 struct Pt{
 	@pub{

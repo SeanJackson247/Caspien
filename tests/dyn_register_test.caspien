@@ -3,11 +3,7 @@
 // count: it returns to its starting value when the scope ends (a stale entry would keep it higher, a missing registration would
 // leave the block unfreed -- see dyn_register_check.sh, which runs this under valgrind).
 import "../stdlib/libc.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+import "../stdlib/gt/*"
 
 let static c0 = mut 0
 let static c1 = mut 0

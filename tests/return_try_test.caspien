@@ -2,11 +2,7 @@
 // the `?catch` was ignored, the throw simply propagated. Also covers a re-throwing catch (message kept), `?new` in a return, an owns local
 // destructed on the catch path, a return inside a loop and a catch ending in `continue`. Identical with inlining off and at every preset.
 import "../stdlib/libc.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+import "../stdlib/gt/*"
 extern strcmp(static imut string, static imut string) mut s32
 
 struct Box{

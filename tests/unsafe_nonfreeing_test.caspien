@@ -6,11 +6,7 @@
 // PASS two helpers 2998
 // PASS match after memcopy 42
 import "../stdlib/libc.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+import "../stdlib/gt/*"
 struct Node{@pub{ value: mut u64 }}
 func report(name: static imut string, got: mut u64) void{
 	unsafe extern{ printf("PASS %s %llu\n", name, got) }

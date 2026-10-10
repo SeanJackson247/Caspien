@@ -30,11 +30,7 @@ java Compiler -i $T output/it --no-cache >/dev/null 2>&1; [ "$(calls plain)" = 0
 # a call that cannot be inlined: inside another call's argument list
 cat >warn.caspien <<EOF
 import "stdlib/libc.caspien"
-import "stdlib/gt_init.caspien"
-import "stdlib/gt_register.caspien"
-import "stdlib/gt_alive_check.caspien"
-import "stdlib/gt_destruct.caspien"
-import "stdlib/gt_moved.caspien"
+import "stdlib/gt/*"
 @inline
 func add3(x: mut u64) mut u64{
 	return x + 3
@@ -50,6 +46,6 @@ func main() void{
 EOF
 sed -i "s/^function-inlining: .*/function-inlining: off/" toolchain.config
 java Compiler -i warn.caspien output/w --no-cache >msg.txt 2>&1 || { cat msg.txt; fail "warn.caspien compile"; }
-grep -q 'warn.caspien:7 - @inline not honoured at 1 call site of add3 (0 inlined)' msg.txt || { cat msg.txt; fail "no warning for an @inline call inside an argument list"; }
+grep -q 'warn.caspien:3 - @inline not honoured at 1 call site of add3 (0 inlined)' msg.txt || { cat msg.txt; fail "no warning for an @inline call inside an argument list"; }
 ./output/w | grep -q '^1 7$' || fail "warn.caspien result"
 echo "PASS inline_decorator_check: results, off-preset, past the size limit, @dont, notes, warning"

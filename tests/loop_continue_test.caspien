@@ -4,11 +4,7 @@
 // Expected values come from an independent Python model. Output must be identical with the optimiser switches on and off
 // (a fixed-size `for` with a `continue` is unrolled when they are on).
 import "../stdlib/libc.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+import "../stdlib/gt/*"
 
 func check(name: static imut string, ok: imut bool) void{
 	unsafe extern{

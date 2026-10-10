@@ -2,11 +2,7 @@
 // constant / variable / nested (a[b[i]]) indexes, reads used as conditions, in sums and compared with each other. The printed numbers are compared
 // with udyn_read_test.py (an independent model) by udyn_read_check.sh, which also requires no stack-form LOOKUP_ARRAY left in the low-order bytecode.
 import "../stdlib/libc.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+import "../stdlib/gt/*"
 
 func main() void{
 	unsafe udyn{

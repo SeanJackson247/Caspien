@@ -1,10 +1,6 @@
 // The use comes before the free in the source but runs after it on the next iteration of a loop inside the body.
 import "../stdlib/libc.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+import "../stdlib/gt/*"
 struct Node{@pub{ value: mut u64 }}
 func consume(n: owns mut Node) void{ }
 func viaCall(n: owns mut Node) void{

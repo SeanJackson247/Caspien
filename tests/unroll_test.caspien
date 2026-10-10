@@ -2,11 +2,7 @@
 // Every loop here has LITERAL bounds (so the Optimizer may unroll it) unless its comment says otherwise. Every expected value is
 // worked out by hand; the output must be identical with unrolling off and at every preset. Prints one PASS/FAIL line per check.
 import "../stdlib/libc.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+import "../stdlib/gt/*"
 
 let static tbl = mut [1, 2, 3]
 

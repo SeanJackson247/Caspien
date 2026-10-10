@@ -6,11 +6,7 @@
 // string literal copied byte by byte (malloc + memcopy, then a raw pointer walk) into a constant table: Caspien cannot index a
 // string and a u8 array literal is not usable here. Layout: ALU 0..286, letters 287..305, headers at 306 (22), 328 (25), 353 (30).
 import "../../../stdlib/libc.caspien"
-import "../../../stdlib/gt_init.caspien"
-import "../../../stdlib/gt_register.caspien"
-import "../../../stdlib/gt_alive_check.caspien"
-import "../../../stdlib/gt_destruct.caspien"
-import "../../../stdlib/gt_moved.caspien"
+import "../../../stdlib/gt/*"
 extern getenv(static imut string) static imut string
 extern atol(static imut string) mut u64
 

@@ -1,9 +1,7 @@
 // Hello World. Prints one line. HELLOWORLD_N is not read (N is accepted but ignored): this program measures startup, compile time
 // and binary size. Only a plain printf: the minimal program (no allocation, so nothing to leak).
 import "../../../stdlib/libc.caspien"
-import "../../../stdlib/gt_init.caspien"
-import "../../../stdlib/gt_destruct.caspien"
-import "../../../stdlib/gt_moved.caspien"
+import "../../../stdlib/gt/*"
 
 func main() void{
 	unsafe extern{

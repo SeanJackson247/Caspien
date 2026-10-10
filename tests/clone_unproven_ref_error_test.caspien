@@ -1,10 +1,6 @@
 // clone of a plain (nullable) ref in safe code needs a Some proof first.
 import "../stdlib/libc.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+import "../stdlib/gt/*"
 func take(r: ref imut u64) void{
 	try{
 		?catch(e){ return }

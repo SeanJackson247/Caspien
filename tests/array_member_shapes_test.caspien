@@ -5,11 +5,7 @@
 // mixes a typed variable with plain literals (`[c, 2, c + 7]` with `c: u16` is a `u16[3]`).
 // Run with every optimizer switch off and on: identical output.
 import "../stdlib/libc.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+import "../stdlib/gt/*"
 
 struct Cell{
 	@pub{

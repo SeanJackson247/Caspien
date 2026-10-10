@@ -1,11 +1,7 @@
 // A literal index into a dynarray is proven like a variable one: `match 1 in a{ ... }`.
 // Expected output: read=2 wrote=9 skipped=0 total=4
 import "../stdlib/libc.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+import "../stdlib/gt/*"
 func main() void{
 	?catch(e){ return }
 	let a = mut ? dyn([1, 2, 3])

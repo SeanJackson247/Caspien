@@ -10,11 +10,7 @@ sed -e 's/^target windows_gnu/target linux/' -e 's/^    default: win64/    defau
 mkdir -p "$T/tests"; cd "$T"
 HDR='import "../stdlib/libc.caspien"
 import "../stdlib/dynamic_array.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+import "../stdlib/gt/*"
 struct Edge{
 	@pub{ to: mut u64 }
 	@pub{ w: mut u64 }

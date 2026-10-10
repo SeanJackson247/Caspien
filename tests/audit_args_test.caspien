@@ -3,11 +3,7 @@
 // tests/gas_model.py (a concrete interpreter over the bytecode) and requires the callers below to be BOUNDED; the peak live heap is compared with the
 // real allocator. The program also runs and prints PASS lines.
 import "../stdlib/libc.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+import "../stdlib/gt/*"
 
 func check(name: static imut string, ok: imut bool) void{
 	unsafe extern{

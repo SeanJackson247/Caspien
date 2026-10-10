@@ -580,7 +580,7 @@ public class X86Backend {
      * `NEW` expects, in a way that only manifests once that entry is
      * actually consumed (silently, no crash at the construction site
      * itself). Found via a real segfault inside the ghost table's own
-     * `gtSlotAt`/`gtWriteSlot` machinery (`stdlib/ghost_table.caspien`'s
+     * `gtSlotAt`/`gtWriteSlot` machinery (`stdlib/gt/ghost_table.caspien`'s
      * own "for i in 0..index" -- a range literal with one immediate ("0")
      * and one frame-loaded ("index") entry).
      */
@@ -4678,7 +4678,7 @@ public class X86Backend {
                 // The compiler's own ghost-table bootstrap opcode --
                 // "gt_init" is itself a real, already-compiled function
                 // sitting elsewhere in this exact same low-order file
-                // (from the imported stdlib/gt_init.caspien), with no
+                // (from the imported stdlib/gt/gt_init.caspien), with no
                 // ordinary CALL to it anywhere in the bytecode -- so
                 // this opcode's job is to call it directly, confirmed
                 // directly by the exact, unmistakable name match (and

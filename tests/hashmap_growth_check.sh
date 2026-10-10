@@ -22,11 +22,7 @@ cp tests/alloc_shim.c shim.c && gcc -shared -fPIC -o shim.so shim.c -ldl || { ec
 cat > tests/hm_oom.caspien <<'EOF'
 import "../stdlib/libc.caspien"
 import "../stdlib/hash_map.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+import "../stdlib/gt/*"
 func main() void{
 	?catch(e){
 		unsafe extern{ printf("CAUGHT %s\n", e.msg) }

@@ -4,11 +4,7 @@
 // Each tick still runs to completion (the total-slice rule); only the loop is unbounded.
 // Run it with `timeout 1 ./09 | head -3`   Expected output: tick 1, tick 2, tick 3
 import "../../stdlib/libc.caspien"
-import "../../stdlib/gt_init.caspien"
-import "../../stdlib/gt_register.caspien"
-import "../../stdlib/gt_alive_check.caspien"
-import "../../stdlib/gt_destruct.caspien"
-import "../../stdlib/gt_moved.caspien"
+import "../../stdlib/gt/*"
 import "../../stdlib/event_loop.caspien"
 
 // stdout is block-buffered when piped, so flush each tick to see output from a long-running loop.

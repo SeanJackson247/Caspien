@@ -1,7 +1,7 @@
 # gt_id: ghost-table prototype for "nullable `ref` = 64-bit id, `ref some` = address"
 
 `gt_id_bench.c` (C, `gcc -O2 gt_id_bench.c`; `./a.out [0-3]` sizes 1e3..4e6, `./a.out L <N>` the lazy-id variants) models the table designs with the same
-structure as `stdlib/ghost_table.caspien`: open addressing, linear probing, power-of-two capacity, load <= 1/2, backward-shift deletion, no lock.
+structure as `stdlib/gt/ghost_table.caspien`: open addressing, linear probing, power-of-two capacity, load <= 1/2, backward-shift deletion, no lock.
 
 Designs: **A** today (set of addresses, 8 B); **B** every object gets an id at registration (addr->id and id->addr indexes, 16 B entries);
 **C** id in the object header (+8 B/object) + id->addr index; **D** lazy ids, 16 B address entries `{addr, id}`, id assigned at the first `ref x`;

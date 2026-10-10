@@ -3,11 +3,7 @@
 // Records are Rec structs in one DynamicArray<Rec> (copied through a Rec local; names and tags live in u8 pools). Prints: records textlen checksum.
 import "../../../stdlib/libc.caspien"
 import "../../../stdlib/dynamic_array.caspien"
-import "../../../stdlib/gt_init.caspien"
-import "../../../stdlib/gt_register.caspien"
-import "../../../stdlib/gt_alive_check.caspien"
-import "../../../stdlib/gt_destruct.caspien"
-import "../../../stdlib/gt_moved.caspien"
+import "../../../stdlib/gt/*"
 extern getenv(static imut string) static imut string
 extern atol(static imut string) mut u64
 

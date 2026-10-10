@@ -3,11 +3,7 @@
 // different lengths probed alternately (a mixed-up base or length shows), narrow elements, reads and writes. Expected values come from
 // tests/length_fuse_test.py (an independent model); tests/length_fuse_check.sh compares and checks the fused instruction is really used.
 import "../stdlib/libc.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+import "../stdlib/gt/*"
 
 let static g20 = mut 20
 let static g100 = mut 100

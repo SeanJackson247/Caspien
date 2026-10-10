@@ -4,11 +4,7 @@
 // by a missing save/restore changes a checksum. Expected values come from tests/alloc_vars_test.py (an independent model);
 // tests/alloc_vars_check.sh compares them with the output of the program and checks that variables really sit in r12-r14 in these functions.
 import "../stdlib/libc.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+import "../stdlib/gt/*"
 
 let static gN = mut 200
 let static gM = mut 7

@@ -4,11 +4,7 @@
 // PASS member re-pointed 5
 // PASS dead member skipped 0
 import "../stdlib/libc.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+import "../stdlib/gt/*"
 struct Node{@pub{ value: mut u64 }}
 struct Hold{@pub{ p: ref mut Node }}
 func consume(n: owns mut Node) void{ }

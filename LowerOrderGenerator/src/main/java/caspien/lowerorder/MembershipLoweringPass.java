@@ -1818,7 +1818,7 @@ public class MembershipLoweringPass implements OptimizationPass {
          * simple," forcing an unneeded materialization -- which surfaced
          * immediately and loudly the first time a real stdlib function
          * with actual `ARG` parameters ahead of its `ALLOC` block (`for`
-         * loops appear throughout `ghost_table.caspien`/
+         * loops appear throughout `stdlib/gt/ghost_table.caspien`/
          * `gt_alive_check.caspien`/etc.) contained a `for` loop at all,
          * colliding with a second, independent, previously-latent gap in
          * `allocInsertIndex`'s own computation (see its own doc comment,

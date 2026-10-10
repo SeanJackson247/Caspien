@@ -9,11 +9,7 @@ HEAD = """// swaplock: 32 OS threads all update one shared struct (count, sum) u
 // The lock is a `swap` field (an atomic exchange): `match @lock shared` runs OPEN when it took the lock and CLOSED when someone holds it.
 %s
 import "../../../stdlib/libc.caspien"
-import "../../../stdlib/gt_init.caspien"
-import "../../../stdlib/gt_register.caspien"
-import "../../../stdlib/gt_alive_check.caspien"
-import "../../../stdlib/gt_destruct.caspien"
-import "../../../stdlib/gt_moved.caspien"
+import "../../../stdlib/gt/*"
 import "../../../stdlib/par_call.caspien"
 import "../../../stdlib/await_call.caspien"
 extern getenv(static imut string) static imut string

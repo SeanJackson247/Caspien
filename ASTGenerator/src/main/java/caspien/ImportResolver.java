@@ -30,6 +30,8 @@ import java.util.Set;
  * "declared once" logic check for no good reason. A second import of
  * an already-resolved file is simply dropped, silently.
  *
+ * Wildcard: 'import "dir/*"' imports every .caspien file in dir (see resolveWildcard).
+ *
  * Circular imports are a hard error: the chain of files currently
  * being resolved is tracked, and importing a file already on that
  * chain fails with the full cycle shown.
@@ -71,6 +73,50 @@ public class ImportResolver {
         importPath = importPath.replace("{target}", FsPolicy.platform); // platform-specific stdlib file, e.g. fs_{target}.caspien
 
         Path importerDir = Paths.get(currentFilePath).toAbsolutePath().getParent();
+        if (importPath.equals("*") || importPath.endsWith("/*")) {
+            return resolveWildcard(importTok, currentFilePath, importerDir, importPath);
+        }
+        return resolveFile(importTok, currentFilePath, importerDir, importPath);
+    }
+
+    /**
+     * 'import "dir/*"': imports every .caspien file directly inside dir (not subfolders), in file-name order, exactly as if each
+     * had its own import line. The folder must exist and hold at least one .caspien file (a typo must not import nothing).
+     * The folder itself is recorded as a dependency so that adding or removing a file invalidates the build cache.
+     */
+    private List<Token> resolveWildcard(Token importTok, String currentFilePath, Path importerDir, String importPath) {
+        String dirPart = importPath.equals("*") ? "." : importPath.substring(0, importPath.length() - 2);
+        if (dirPart.isEmpty()) {
+            dirPart = "/";
+        }
+        Path dir = (importerDir != null ? importerDir : Paths.get(".")).resolve(dirPart).normalize();
+        if (!Files.isDirectory(dir)) {
+            throw new CompilerException("import", currentFilePath, importTok.line,
+                    "wildcard import '" + importPath + "': '" + dir + "' is not a folder");
+        }
+        List<String> names = new ArrayList<>();
+        try (java.util.stream.Stream<Path> l = Files.list(dir)) {
+            l.filter(Files::isRegularFile).map(x -> x.getFileName().toString())
+                    .filter(n -> n.endsWith(".caspien")).forEach(names::add);
+        } catch (IOException e) {
+            throw new CompilerException("import", currentFilePath, importTok.line,
+                    "wildcard import '" + importPath + "': cannot list '" + dir + "': " + e.getMessage());
+        }
+        if (names.isEmpty()) {
+            throw new CompilerException("import", currentFilePath, importTok.line,
+                    "wildcard import '" + importPath + "': no .caspien files in '" + dir + "'");
+        }
+        java.util.Collections.sort(names);
+        DepsLog.record(dir);
+        List<Token> result = new ArrayList<>();
+        for (String n : names) {
+            String one = (dirPart.equals("/") ? "/" : dirPart + "/") + n;
+            result.addAll(resolveFile(importTok, currentFilePath, importerDir, one));
+        }
+        return result;
+    }
+
+    private List<Token> resolveFile(Token importTok, String currentFilePath, Path importerDir, String importPath) {
         Path resolvedPath = (importerDir != null ? importerDir : Paths.get("."))
                 .resolve(importPath).normalize();
         String resolvedPathStr = resolvedPath.toString();

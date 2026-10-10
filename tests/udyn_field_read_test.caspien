@@ -3,11 +3,7 @@
 // constant and variable indexes, reads used as index, as operand, in a condition, and next to stores to the same element. Output compared with
 // udyn_field_read_test.py by udyn_field_read_check.sh (which also checks that the generated code no longer pushes whole elements).
 import "../stdlib/libc.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+import "../stdlib/gt/*"
 
 struct Big{
 	@pub{ a: mut u64 }

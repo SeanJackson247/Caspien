@@ -3,11 +3,7 @@
 // add / xor / and / multiply whose destination variable is also an operand (x = y - x), shifts by constants, a variable read between initialisation
 // and assignment (the init must stay), and a value kept across a conditional branch. Output compared with dest_forward_test.py by dest_forward_check.sh.
 import "../stdlib/libc.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+import "../stdlib/gt/*"
 
 func main() void{
 	unsafe udyn{

@@ -28,11 +28,7 @@ w('''// Tests for stdlib/insecure_hash.caspien: real 64-bit FNV-1a. `insecure_fn
 // Prints PASS/FAIL per check and a summary line; the output must be identical with every optimisation switch off and on.
 import "../stdlib/libc.caspien"
 import "../stdlib/insecure_hash.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+import "../stdlib/gt/*"
 
 let static passed = mut 0
 let static failed = mut 0

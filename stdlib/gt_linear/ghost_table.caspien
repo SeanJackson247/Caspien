@@ -1,7 +1,7 @@
 // THE LINEAR VARIANT of the ghost table: a flat array of addresses that every gt_* operation scans from the start, and reaches slot i by
 // stepping a pointer i times, so register / alive_check / destruct cost O(n^2) in the number of live allocations. Kept as an option (smaller
-// code, trivially auditable). The default is the hash-set table in stdlib/ghost_table.caspien; a program uses this one by importing
-// "stdlib/gt_linear/gt_init.caspien" (and the four other gt_*.caspien files from the same folder) instead of the ones in stdlib/.
+// code, trivially auditable). The default is the hash-set table in stdlib/gt/ghost_table.caspien; a program uses this one by importing
+// "stdlib/gt_linear/*" instead of "stdlib/gt/*".
 // Never import files from both folders: they define the same symbols.
 // The ghost table itself: a capacitious (growing and shrinking) raw
 // byte buffer of stored addresses, guarded by a real 'swap'-tagged

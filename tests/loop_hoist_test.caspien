@@ -4,11 +4,7 @@
 // Expected values come from tests/loop_hoist_test.py (an independent model); tests/loop_hoist_check.sh compares and also checks that the
 // pass really hoisted (a loop-invariant copy lives in a register) and left the broken-invariant loops alone.
 import "../stdlib/libc.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+import "../stdlib/gt/*"
 
 let static g3 = mut 3
 let static g4 = mut 4

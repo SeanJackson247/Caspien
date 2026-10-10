@@ -2,11 +2,7 @@
 // (null fill slots cloned), clone of the whole array, shrinking resize (cut-off elements dropped) and scope-end drop. Prints one line per
 // step; expected values are in generic_owning_dyn_test.py. Run through generic_owning_dyn_check.sh (valgrind: no leak, no error).
 import "../stdlib/libc.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+import "../stdlib/gt/*"
 
 struct Box<T>{@pub{ v: mut T }}
 struct Slot<T>{@pub{ n: owns mut Box<T> }}

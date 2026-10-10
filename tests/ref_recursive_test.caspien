@@ -2,11 +2,7 @@
 // ref_recursive_*_error_test). Nodes are owned by a dynarray of Holder{n: owns} and linked with `ref v[i].n`. Prints one line per shape;
 // the expected output is in ref_recursive_test.py (an independent Python model); ref_recursive_check.sh compares and runs valgrind.
 import "../stdlib/libc.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+import "../stdlib/gt/*"
 
 struct Node{@pub{
 	value: mut u64

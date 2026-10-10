@@ -1,10 +1,6 @@
 // A cycle that goes through an `owns` member is still rejected, even though a `ref` elsewhere in it would be fine.
 import "../stdlib/libc.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+import "../stdlib/gt/*"
 struct A{@pub{
 	b: owns mut B
 	back: ref mut A

@@ -5,13 +5,7 @@
 // Prints one PASS/FAIL line per check and `ALL GT ID TESTS PASSED`.
 // EXPECT hits=5220 refs=5245 idsum=7128317 live=1485 issued=2972 resolved=2406 dead=9710
 import "../stdlib/libc.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
-import "../stdlib/gt_ref_id.caspien"
-import "../stdlib/gt_ref_resolve.caspien"
+import "../stdlib/gt/*"
 
 struct Pair{@pub{
 	a: mut u64

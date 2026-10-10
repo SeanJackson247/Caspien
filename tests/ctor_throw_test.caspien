@@ -1,11 +1,7 @@
 // A constructor that throws, called under `try` / `?` (also through `new`): the throw must land in the caller's own catch.
 // (Before the fix `new T(x)` staged no catch label for the constructor call, so the throw unwound past the caller's catch.)
 import "../stdlib/libc.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+import "../stdlib/gt/*"
 
 struct T{@pub{
 	v: mut u64

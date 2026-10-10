@@ -3,11 +3,7 @@
 // SysV argument register and the 1st win64 one, so on windows_gnu even the format string of a printf call). Each call below has such an
 // expression as a later argument. Output must be identical with every optimizer switch on and off.
 import "../stdlib/libc.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+import "../stdlib/gt/*"
 
 func check(name: static imut string, ok: mut bool) void{
 	unsafe extern{

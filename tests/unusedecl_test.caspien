@@ -6,11 +6,7 @@
 //   - `abs64`/`used_g`/`used_arr` and the PASS/FAIL strings are used      -> must survive and give the right answers
 // The output must be identical with the switch on and off.
 import "../stdlib/libc.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+import "../stdlib/gt/*"
 
 extern labs(mut u64) mut u64
 extern atoi(static imut string) mut u64

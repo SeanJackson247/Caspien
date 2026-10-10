@@ -5,11 +5,7 @@
 // allowed) with calls and a catch (not allowed), so a variable wrongly placed in r8..r10 gives a wrong sum. Every expected value was worked
 // out with an independent Python model of the same loops. The output must be identical with variables-in-registers on and off.
 import "../stdlib/libc.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+import "../stdlib/gt/*"
 
 func check(name: static imut string, ok: mut bool) void{
 	unsafe extern{

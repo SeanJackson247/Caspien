@@ -2,11 +2,7 @@
 // Expected output:
 //   node=42 parsed=7 fallback=99
 import "../../stdlib/libc.caspien"
-import "../../stdlib/gt_init.caspien"
-import "../../stdlib/gt_register.caspien"
-import "../../stdlib/gt_alive_check.caspien"
-import "../../stdlib/gt_destruct.caspien"
-import "../../stdlib/gt_moved.caspien"
+import "../../stdlib/gt/*"
 
 struct Node{@pub{
 	value: mut u64

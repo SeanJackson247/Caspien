@@ -5,11 +5,7 @@
 //   rect=1 sq=0 Rect implements Shape=1
 //   dispatch=43 27
 import "../../stdlib/libc.caspien"
-import "../../stdlib/gt_init.caspien"
-import "../../stdlib/gt_register.caspien"
-import "../../stdlib/gt_alive_check.caspien"
-import "../../stdlib/gt_destruct.caspien"
-import "../../stdlib/gt_moved.caspien"
+import "../../stdlib/gt/*"
 
 // There is no struct inheritance: share members by composition.
 struct Legs{@pub{

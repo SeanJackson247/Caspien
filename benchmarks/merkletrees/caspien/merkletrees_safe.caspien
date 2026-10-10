@@ -9,11 +9,7 @@
 // a rotate done as the low half of (x * 0x100000001) >> n; the padding block of an internal node has a constant message schedule and is a
 // separate function (compPad) with precomputed K + W round constants. The tree arrays are u32 (8 words per digest).
 import "../../../stdlib/libc.caspien"
-import "../../../stdlib/gt_init.caspien"
-import "../../../stdlib/gt_register.caspien"
-import "../../../stdlib/gt_alive_check.caspien"
-import "../../../stdlib/gt_destruct.caspien"
-import "../../../stdlib/gt_moved.caspien"
+import "../../../stdlib/gt/*"
 
 extern getenv(static imut string) static imut string
 extern atol(static imut string) mut u64

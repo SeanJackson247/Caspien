@@ -2,11 +2,7 @@
 // label the caller staged for the call: its landing pad or its catch). Every check below must give the same answer with inlining off
 // and at every preset; a wrong jump target, a lost message or a skipped catch shows up as a FAIL (or a crash).
 import "../stdlib/libc.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+import "../stdlib/gt/*"
 
 extern strcmp(static imut string, static imut string) mut s32
 

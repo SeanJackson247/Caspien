@@ -5640,7 +5640,7 @@ public class TypeChecker {
         // specific to the ghost table concept despite its name) rather
         // than a parallel mechanism, since the shape is identical.
         // "@gt_ref_id" (address -> 64-bit id, 0 when null/dead) and "@gt_ref_resolve" (id -> address, null when dead):
-        // the nullable `ref` representation hooks (stdlib/gt_id).
+        // the nullable `ref` representation hooks (stdlib/gt).
         if (getDecorator(t.decorators, "gt_ref_id") != null) {
             requireGtRefSignature(t, info, "gt_ref_id", true);
             registerGhostTableFunction(t, info, "gt_ref_id");

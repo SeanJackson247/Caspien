@@ -74,11 +74,7 @@ N=$(echo "$OUT" | grep -c '^PASS'); [ "$N" = 20 ] || { echo "FAIL policy run: ex
 # 3. names that Windows forbids (device names, trailing dot/space, stream syntax) are refused by the name check
 cat > tests/fs_names_w.caspien <<'SRC'
 import "../stdlib/libc.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+import "../stdlib/gt/*"
 import "../stdlib/fs.caspien"
 func bad(name: static imut string) mut u64{
 	?catch(e){ return 1 }

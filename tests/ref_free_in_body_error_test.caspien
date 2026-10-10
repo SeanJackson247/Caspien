@@ -1,10 +1,6 @@
 // An owner freed (moved into a consuming call) inside the match Some body that proved its ref alive: using the ref afterwards must be rejected.
 import "../stdlib/libc.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+import "../stdlib/gt/*"
 struct Node{@pub{ value: mut u64 }}
 func consume(n: owns mut Node) void{ }
 func viaCall(n: owns mut Node) void{

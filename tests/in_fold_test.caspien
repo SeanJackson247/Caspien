@@ -2,11 +2,7 @@
 // compile time by ConstantFoldingPass (`IN` with three literal operands, half-open range). Checks that the taken and not-taken sides are right at
 // the boundaries, in fully unrolled loops and in straight-line code. Expected values come from an independent Python model (see below).
 import "../stdlib/libc.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+import "../stdlib/gt/*"
 
 func check(name: static imut string, ok: mut bool) void{
 	unsafe extern{

@@ -1,10 +1,6 @@
 // Every `match @lock` retry in safe code is bounded by the compiler. The gate is closed by hand (`unsafe atomic`) to stand for a holder that never lets go.
 import "../stdlib/libc.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+import "../stdlib/gt/*"
 
 enum Gate{ OPEN, CLOSED }
 

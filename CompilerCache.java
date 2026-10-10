@@ -99,6 +99,24 @@ final class CompilerCache {
         return sha(Files.readAllBytes(p));
     }
 
+    /** Hash of a recorded dependency: a file's bytes, or for a folder (a wildcard import) the sorted list of its .caspien file names. */
+    static String depHash(Path p) throws IOException {
+        if (Files.isDirectory(p)) {
+            List<String> names = new ArrayList<>();
+            try (Stream<Path> l = Files.list(p)) {
+                l.filter(Files::isRegularFile).map(x -> x.getFileName().toString()).filter(n -> n.endsWith(".caspien")).forEach(names::add);
+            }
+            java.util.Collections.sort(names);
+            return sha("DIR\n" + String.join("\n", names));
+        }
+        return fileHash(p);
+    }
+
+    /** True when a recorded dependency still exists (file or folder). */
+    static boolean depExists(Path p) {
+        return Files.isRegularFile(p) || Files.isDirectory(p);
+    }
+
     /** Hash of every class file under componentDir/out (names and contents, sorted). */
     String classesHash(Path componentDir) throws IOException {
         String k = componentDir.toString();
@@ -177,7 +195,7 @@ final class CompilerCache {
                         return false;
                     }
                     Path f = Path.of(line.substring(tab + 1));
-                    if (!Files.isRegularFile(f) || !fileHash(f).equals(line.substring(0, tab))) {
+                    if (!depExists(f) || !depHash(f).equals(line.substring(0, tab))) {
                         return false;
                     }
                 }
@@ -218,7 +236,7 @@ final class CompilerCache {
                 StringBuilder deps = new StringBuilder();
                 for (String f : Files.readAllLines(depsFile, StandardCharsets.UTF_8)) {
                     if (!f.isEmpty()) {
-                        deps.append(fileHash(Path.of(f))).append('\t').append(f).append('\n');
+                        deps.append(depHash(Path.of(f))).append('\t').append(f).append('\n');
                     }
                 }
                 Files.writeString(tmp.resolve("deps"), deps.toString(), StandardCharsets.UTF_8);

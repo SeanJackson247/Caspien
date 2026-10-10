@@ -85,11 +85,7 @@ def program(kind):
 // stack of refs (each deref under a `match Some` alive proof, no recursion), and freed by dropping its pool slots (`pool[i].n = null`).
 // The pool is filled by a bump index that is reset after each tree is freed (the long-lived tree keeps its slots).
 import "../../../stdlib/libc.caspien"
-{imp}import "../../../stdlib/gt_init.caspien"
-import "../../../stdlib/gt_register.caspien"
-import "../../../stdlib/gt_alive_check.caspien"
-import "../../../stdlib/gt_destruct.caspien"
-import "../../../stdlib/gt_moved.caspien"
+{imp}import "../../../stdlib/gt/*"
 
 extern getenv(static imut string) static imut string
 extern atol(static imut string) mut u64

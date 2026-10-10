@@ -1,11 +1,7 @@
 // clone(p) is a deep copy: every 'owns' member (and dynarray element) reachable from p is cloned too, and each new
 // allocation is registered with the ghost table. Expected values: worked out in Python from the initial values below.
 import "../stdlib/libc.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+import "../stdlib/gt/*"
 struct Pair{
 	@pub{ a: mut u64
 	b: mut u64 }

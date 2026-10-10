@@ -1,11 +1,7 @@
 // A throw caught inside an @async thread: the trace ends at the thread trampoline (its root); checked by stack_trace_check.sh.
 import "../stdlib/print.caspien"
 import "../stdlib/funcname.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+import "../stdlib/gt/*"
 import "../stdlib/par_call.caspien"
 import "../stdlib/await_call.caspien"
 

@@ -11,8 +11,8 @@
 // T2/T3 are allocated at the first id (8 entries), double at half load and never shrink; T1 grows and shrinks as before.
 //
 // The lock is the same 'swap' atomic mutex state as before; every function takes it through 'match @lock' and the helpers below take plain
-// parameters and never touch `ghost_table`. Every pointer here is `raw`, never `owns` (see stdlib/ghost_table.caspien).
-import "libc.caspien"
+// parameters and never touch `ghost_table`. Every pointer here is `raw`, never `owns` (see stdlib/gt/ghost_table.caspien).
+import "../libc.caspien"
 
 enum GhostTableLockState{ OPEN, CLOSED }
 

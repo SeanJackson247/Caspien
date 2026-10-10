@@ -3,11 +3,7 @@
 // `c > 3`; the ghost table's own entry count must be back to its starting value after the call for both outcomes (a leaked block
 // stays registered). Valgrind alone cannot see this: the table keeps every registered block reachable (see cond_move_check.sh).
 import "../stdlib/libc.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+import "../stdlib/gt/*"
 
 struct Node{@pub{
 	value: mut u64

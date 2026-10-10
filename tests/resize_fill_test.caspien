@@ -2,11 +2,7 @@
 // non-zero runs the pointer loop. Each case grows (sometimes several times, sometimes shrinks first so spare capacity holds stale bytes) and prints
 // a position-weighted checksum of every element; resize_fill_test.py is the independent model.
 import "../stdlib/libc.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+import "../stdlib/gt/*"
 
 func main() void{
 	?catch(e){

@@ -91,11 +91,7 @@ def program(kind):
 // iterative with an explicit work stack (entries pack node*64 + depth for the build). Allocation and freeing are real: every tree is
 // built node by node, walked, then every node is returned to the free list. The pool never grows (capacity 2^(N+2)+2 covers the stretch tree).{extra}
 import "../../../stdlib/libc.caspien"
-{imp}import "../../../stdlib/gt_init.caspien"
-import "../../../stdlib/gt_register.caspien"
-import "../../../stdlib/gt_alive_check.caspien"
-import "../../../stdlib/gt_destruct.caspien"
-import "../../../stdlib/gt_moved.caspien"
+{imp}import "../../../stdlib/gt/*"
 
 extern getenv(static imut string) static imut string
 extern atol(static imut string) mut u64

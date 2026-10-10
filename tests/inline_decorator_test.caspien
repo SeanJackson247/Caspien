@@ -2,11 +2,7 @@
 // Python model: add3(4)=7, big(2)=158, twice(10)=16, noinl(7)=49, plain(5)=10, add3(5)+add3(6)=17);
 // tests/inline_decorator_check.sh checks which calls were inlined, the notes, and that `function-inlining: off` still honours `@inline`.
 import "../stdlib/libc.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+import "../stdlib/gt/*"
 
 func check(name: static imut string, ok: mut bool) void{
 	unsafe extern{

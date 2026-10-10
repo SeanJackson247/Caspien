@@ -3,11 +3,7 @@
 // copied, passed by address or reconstructed from their own members must be left alone and still give the right answer.
 // The output must be identical with the switch on and off (and with elision/shifting/folding on too).
 import "../stdlib/libc.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+import "../stdlib/gt/*"
 
 struct V{
 	@pub{

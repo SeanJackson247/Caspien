@@ -12,11 +12,7 @@ sed -i 's/^target .*/target linux/; s/^\( *\)default: win64/\1default: sysv_x64/
 cp "$ROOT/tests/alloc_shim.c" shim.c
 gcc -shared -fPIC -o shim.so shim.c -ldl || { echo "FAIL: cannot build shim"; exit 1; }
 HEAD='import "../stdlib/libc.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+import "../stdlib/gt/*"
 struct World{@pub{
 	ticks: mut u64
 }}

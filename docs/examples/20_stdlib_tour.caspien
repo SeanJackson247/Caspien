@@ -7,11 +7,7 @@
 //   String: len=12 first=c l_at=8 prefix_len=7
 //   insecure_hashOf: same=1 different=1
 import "../../stdlib/libc.caspien"
-import "../../stdlib/gt_init.caspien"
-import "../../stdlib/gt_register.caspien"
-import "../../stdlib/gt_alive_check.caspien"
-import "../../stdlib/gt_destruct.caspien"
-import "../../stdlib/gt_moved.caspien"
+import "../../stdlib/gt/*"
 import "../../stdlib/dynamic_array.caspien"
 import "../../stdlib/hash_map.caspien"
 import "../../stdlib/string.caspien"

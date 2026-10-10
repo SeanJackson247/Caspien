@@ -1,4 +1,4 @@
-import "gt_alive_check.caspien"
+import "gt/*"
 
 func main() void{
 	let alive = gt_alive_check(null)

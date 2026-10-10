@@ -10,11 +10,7 @@ HEAD = """// threads: spawn many OS threads, each runs the same integer kernel o
 // 64 named locals, each polled through its `state` and read with `resolve()`.
 %s
 import "../../../stdlib/libc.caspien"
-import "../../../stdlib/gt_init.caspien"
-import "../../../stdlib/gt_register.caspien"
-import "../../../stdlib/gt_alive_check.caspien"
-import "../../../stdlib/gt_destruct.caspien"
-import "../../../stdlib/gt_moved.caspien"
+import "../../../stdlib/gt/*"
 import "../../../stdlib/par_call.caspien"
 import "../../../stdlib/await_call.caspien"
 extern getenv(static imut string) static imut string

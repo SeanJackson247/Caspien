@@ -2,11 +2,7 @@
 // "start / built / done 5 2 16"; dyn_owning_oom_check.sh runs it with a malloc shim that fails each allocation in turn and checks
 // that every failure inside a `clone` or `resize` is caught ("out of memory"), never crashes, and leaves no extra live allocation.
 import "../stdlib/libc.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+import "../stdlib/gt/*"
 struct World{@pub{
 	ticks: mut u64
 }}

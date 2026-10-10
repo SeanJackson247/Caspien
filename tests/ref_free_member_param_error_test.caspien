@@ -1,10 +1,6 @@
 // A member ref reached through a `ref some` parameter: the callee frees the target inside the match body.
 import "../stdlib/libc.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+import "../stdlib/gt/*"
 struct Node{@pub{ value: mut u64 }}
 struct Hold{@pub{ p: ref mut Node }}
 func consume(n: owns mut Node) void{ }

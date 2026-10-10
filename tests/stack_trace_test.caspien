@@ -3,11 +3,7 @@
 // and also runs --trace-depth 2 and the allocation-failure cases. The PASS/FAIL lines here only cover what needs no names.
 import "../stdlib/print.caspien"
 import "../stdlib/funcname.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+import "../stdlib/gt/*"
 
 @throws
 func leaf(x: mut u64) mut u64{

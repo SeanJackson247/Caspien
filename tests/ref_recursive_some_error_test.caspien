@@ -1,10 +1,6 @@
 // A struct may only link to itself through a plain nullable `ref`; this member form (some) must still be rejected as a recursive struct.
 import "../stdlib/libc.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+import "../stdlib/gt/*"
 struct S{@pub{
 	v: mut u64
 	n: ref some mut S

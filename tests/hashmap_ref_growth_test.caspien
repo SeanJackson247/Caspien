@@ -3,11 +3,7 @@
 // key narrower than a word. hashmap_growth_check.sh adds valgrind and a failing-growth (out of memory) case.
 import "../stdlib/libc.caspien"
 import "../stdlib/ref/hash_map.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+import "../stdlib/gt/*"
 
 func check(name: static imut string, ok: imut bool) void{
 	unsafe extern{

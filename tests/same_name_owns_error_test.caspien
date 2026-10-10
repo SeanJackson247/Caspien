@@ -2,11 +2,7 @@
 // member), in sibling scopes. The drop-glue pass keys types by name, so the destruct of the other declaration ran the wrong drop.
 // (Same name with scalar types stays legal: tests/same_name_locals_test.)
 import "../stdlib/libc.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+import "../stdlib/gt/*"
 
 struct Node{@pub{
 	value: mut u64

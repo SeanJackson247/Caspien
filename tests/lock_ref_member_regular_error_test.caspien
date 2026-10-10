@@ -1,10 +1,6 @@
 // The same rule for a regular (proof-gated) lock struct: no `ref` member, `ref some` included.
 import "../stdlib/libc.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+import "../stdlib/gt/*"
 enum Gate{ OPEN, CLOSED }
 struct Counter{@pub{ n: mut u64 }}
 enum State{ OK, BAD }

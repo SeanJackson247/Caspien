@@ -1,10 +1,6 @@
 // A `ref` stored in a struct member is proven by `match Some(h.p)`; freeing its target inside the body ends that proof like any other.
 import "../stdlib/libc.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+import "../stdlib/gt/*"
 struct Node{@pub{ value: mut u64 }}
 struct Hold{@pub{ p: ref mut Node }}
 func consume(n: owns mut Node) void{ }

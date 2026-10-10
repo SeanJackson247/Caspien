@@ -1,11 +1,7 @@
 // clone of a `raw` pointer needs an `unsafe clone` block on top of the alive proof (here the `raw some` tag). The copy is a fresh
 // registered `owns some` that is independent of the source; the ghost table's entry count shows the copy is registered and freed.
 import "../stdlib/libc.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+import "../stdlib/gt/*"
 
 struct Pair{
 	@pub{ a: mut u64

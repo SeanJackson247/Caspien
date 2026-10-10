@@ -1,11 +1,7 @@
 // The ban on nested locks exempts the ghost table's own lock: allocation, `match Some` and drops inside a held lock still work, and two locks taken one
 // after the other (not nested) are fine. Expected: PASS nested_lock_alloc_test
 import "../stdlib/libc.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+import "../stdlib/gt/*"
 
 enum Gate{ OPEN, CLOSED }
 

@@ -3,11 +3,7 @@
 // own destruct of its owns parameter must run exactly once, and results, throws and loops must give the same answers as with inlining off.
 // Run identically with inlining off and at every preset.
 import "../stdlib/libc.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+import "../stdlib/gt/*"
 
 struct Box{
 	@pub{ v: mut u64 }

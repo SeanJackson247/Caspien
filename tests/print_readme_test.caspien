@@ -1,11 +1,7 @@
 // The README's print examples: hello world, break/continue output, lazy chains with a noisy helper, errors and try{} with printed handlers.
 // Output is compared with print_readme_model.py by print_check.sh.
 import "../stdlib/print.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+import "../stdlib/gt/*"
 
 struct Point{@pub{
 	x: mut u64

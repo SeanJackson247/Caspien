@@ -1,10 +1,6 @@
 // A function cannot return an `auto`: it would point into the frame that is returning (dangling pointer in safe code).
 import "../stdlib/libc.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+import "../stdlib/gt/*"
 struct Counter{@pub{ n: mut u64 }}
 func f() auto mut Counter{
 	let k = mut Counter{n= 1}

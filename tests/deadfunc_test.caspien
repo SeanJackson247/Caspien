@@ -3,11 +3,7 @@
 // from the program, with it off they stay. Every function that IS reached -- directly, through a chain, through a catch, or by a `par`
 // trampoline -- must survive and compute the right answer. The output must be identical with the switch on and off.
 import "../stdlib/libc.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+import "../stdlib/gt/*"
 
 func check(name: static imut string, ok: mut bool) void{
 	unsafe extern{

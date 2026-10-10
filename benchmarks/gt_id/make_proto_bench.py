@@ -76,18 +76,8 @@ IDOPS = '''		let sum = mut 0
 		t = lap("ref_resolve (live id)", t, n)
 		printf("ids %llu found %llu\\n", sum, found)
 '''
-A = '''import "../../stdlib/gt_set/gt_init.caspien"
-import "../../stdlib/gt_set/gt_register.caspien"
-import "../../stdlib/gt_set/gt_alive_check.caspien"
-import "../../stdlib/gt_set/gt_destruct.caspien"
-import "../../stdlib/gt_set/gt_moved.caspien"'''
-E = '''import "../../stdlib/gt_init.caspien"
-import "../../stdlib/gt_register.caspien"
-import "../../stdlib/gt_alive_check.caspien"
-import "../../stdlib/gt_destruct.caspien"
-import "../../stdlib/gt_moved.caspien"
-import "../../stdlib/gt_ref_id.caspien"
-import "../../stdlib/gt_ref_resolve.caspien"'''
+A = '''import "../../stdlib/gt_set/*"'''
+E = '''import "../../stdlib/gt/*"'''
 d = os.path.dirname(os.path.abspath(__file__))
 open(os.path.join(d, 'gt_proto_a.caspien'), 'w').write(HEAD.format(which='A: current table', imports=A, idops=''))
 open(os.path.join(d, 'gt_proto_z.caspien'), 'w').write(HEAD.format(which='E tables, no id ever taken', imports=E, idops=''))

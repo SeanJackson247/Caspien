@@ -1,5 +1,5 @@
 // Prototype/benchmark of the ghost-table designs for "nullable ref = 64-bit id, ref some = address" (8 Oct 2026).
-// All tables are open addressing, linear probing, power-of-two capacity, load <= 1/2, backward-shift deletion (exactly like stdlib/ghost_table.caspien).
+// All tables are open addressing, linear probing, power-of-two capacity, load <= 1/2, backward-shift deletion (exactly like stdlib/gt/ghost_table.caspien).
 //   A   current: one set of addresses (8 B/entry).            alive(addr) = 1 probe
 //   B   two indexes: addr -> {addr,id} and id -> {id,addr}    (16 B/entry each). ref(addr) = 1 probe, resolve(id) = 1 probe, register/free = 2 updates
 //   C   id stored in the object header (+8 B/object) + one id -> addr index.   ref(addr) = header read, resolve(id) = 1 probe

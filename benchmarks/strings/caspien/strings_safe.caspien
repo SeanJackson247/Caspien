@@ -1,11 +1,7 @@
 // String manipulation benchmark, SAFE variant: byte buffers are safe dynarrays; every element access sits under a bounds proof
 // (match i in/into buf). Same steps and output as strings.c. N (characters) comes from STRINGS_N.
 import "../../../stdlib/libc.caspien"
-import "../../../stdlib/gt_init.caspien"
-import "../../../stdlib/gt_register.caspien"
-import "../../../stdlib/gt_alive_check.caspien"
-import "../../../stdlib/gt_destruct.caspien"
-import "../../../stdlib/gt_moved.caspien"
+import "../../../stdlib/gt/*"
 extern getenv(static imut string) static imut string
 extern atol(static imut string) mut u64
 

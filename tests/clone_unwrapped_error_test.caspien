@@ -1,10 +1,6 @@
 // clone can fail (allocation), so it must sit inside try/catch or '?'.
 import "../stdlib/libc.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+import "../stdlib/gt/*"
 func main() void{
 	let v = mut 41
 	let p = mut auto v

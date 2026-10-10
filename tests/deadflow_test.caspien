@@ -2,11 +2,7 @@
 // here are constants (written as literals, or made constant by variable elision + constant folding), so with the passes on the guarded branches are
 // removed. Every function has a hand-computed result; the output must be identical with the switches on and off.
 import "../stdlib/libc.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+import "../stdlib/gt/*"
 
 let static hits = mut 0
 
