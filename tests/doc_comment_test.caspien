@@ -1,24 +1,31 @@
-// `--audit` terminology: every function must be classed bounded / finite / unbounded / conditional / none / unknown (tests/audit_class_check.sh
+// Doc comments: `/*! justify: .. */` before unsafe blocks, `/*! termination: .. */` / `//! termination: ..` before func, for and loop (checked, exact; tests/doc_comment_check.sh breaks them one by one). Same functions as audit_class_test. Original note: every function must be classed bounded / finite / unbounded / conditional / none / unknown (tests/audit_class_check.sh
 // holds the expected class of each function, written from the source below, not from the report). The program is only built to be audited (its `a == 12345` branch is never taken).
 import "../stdlib/libc.caspien"
 
 func inc(x: mut u64) mut u64{ return x + 1 }
 
+/*! termination: bounded */
 func k_bounded() mut u64{                 // literal range: bounded
 	let s = mut 0
+	/*! termination: bounded */
 	for i in 0..4{ s += i }
 	return s
 }
 
+/*! termination: finite */
 func k_finite(n: mut u64) mut u64{        // range given by a parameter: always ends, bound not known
 	let s = mut 0
+	//! termination: finite
 	for i in 0..n{ s += i }
 	return s
 }
 
+/*! termination: unbounded */
 func k_unbounded(n: mut u64) mut u64{     // `loop` that a `break` can leave
 	let s = mut 0
+	/*! justify: a bare loop has no bound; this test exists to be audited */
 	unsafe loop{
+		/*! termination: unbounded */
 		loop{
 			s += 1
 			if s > n{ break }
@@ -28,9 +35,12 @@ func k_unbounded(n: mut u64) mut u64{     // `loop` that a `break` can leave
 }
 
 @throws
+/*! termination: unbounded */
 func k_unbounded_throw(n: mut u64) mut u64{   // `loop` that only a `throw` can leave
 	let s = mut 0
+	/*! justify: a bare loop has no bound; this test exists to be audited */
 	unsafe loop{
+		/*! termination: unbounded */
 		loop{
 			s += 1
 			if s > n{ throw "done" }
@@ -38,9 +48,12 @@ func k_unbounded_throw(n: mut u64) mut u64{   // `loop` that only a `throw` can 
 	}
 }
 
+/*! termination: unbounded */
 func k_unbounded_return(n: mut u64) mut u64{  // `loop` that only a `return` can leave
 	let s = mut 0
+	/*! justify: a bare loop has no bound; this test exists to be audited */
 	unsafe loop{
+		/*! termination: unbounded */
 		loop{
 			s += 1
 			if s > n{ return s }
@@ -48,13 +61,17 @@ func k_unbounded_return(n: mut u64) mut u64{  // `loop` that only a `return` can
 	}
 }
 
+/*! termination: none */
 func k_forever() void{                    // `loop` with no way out, reached on every path
 	let s = mut 0
+	/*! justify: a bare loop has no bound; this test exists to be audited */
 	unsafe loop{
+		/*! termination: none */
 		loop{ s += 1 }
 	}
 }
 
+/*! termination: conditional */
 func k_maybe_forever(n: mut u64) mut u64{ // only one branch never ends
 	if n == 0{
 		k_forever()
@@ -62,20 +79,24 @@ func k_maybe_forever(n: mut u64) mut u64{ // only one branch never ends
 	return n
 }
 
+/*! termination: none */
 func k_calls_forever() void{              // reaches a function that never ends
 	k_forever()
 }
 
+/*! termination: finite */
 func k_calls_finite(n: mut u64) mut u64{  // finite callee, unknown argument
 	let r = mut k_finite(n)
 	return r
 }
 
+/*! termination: bounded */
 func k_calls_bounded() mut u64{
 	let r = mut k_finite(3)               // the call passes a literal: bounded
 	return r
 }
 
+/*! termination: unknown */
 func k_indirect() mut u64{                // indirect call: the audit cannot analyse it
 	let fp = imut inc
 	let r = mut 0
@@ -85,12 +106,14 @@ func k_indirect() mut u64{                // indirect call: the audit cannot ana
 	return r
 }
 
+/*! termination: unbounded */
 func k_try(n: mut u64) mut u64{           // handles the throw of k_unbounded_throw
 	?catch(e){ return 0 }
 	let v = mut ? k_unbounded_throw(n)
 	return v
 }
 
+/*! termination: conditional */
 func main() void{
 	let a = mut k_bounded()
 	let b = mut k_finite(3)
@@ -106,8 +129,8 @@ func main() void{
 		a += m + t
 	}
 	if a == 6 && b == 3 && c == 3 && d == 3 && e == 1 && f == 3 && g == 6{
-		unsafe extern{ printf("PASS audit_class_test\n") }
+		unsafe extern{ printf("PASS doc_comment_test\n") }
 	} else{
-		unsafe extern{ printf("FAIL audit_class_test %llu %llu %llu %llu %llu %llu %llu\n", a, b, c, d, e, f, g) }
+		unsafe extern{ printf("FAIL doc_comment_test %llu %llu %llu %llu %llu %llu %llu\n", a, b, c, d, e, f, g) }
 	}
 }

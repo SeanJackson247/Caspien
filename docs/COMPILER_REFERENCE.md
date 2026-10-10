@@ -560,6 +560,24 @@ and run a real "Hello World!" end-to-end in the sandbox:
 `target windows` (MASM) itself remains unverified -- there's no MASM
 toolchain in this sandbox to test against.
 
+## Doc comments and `--fix`
+
+`/*! key: text */` and `//! key: text` are doc comments (`DocComments.java`, validated and registered by the Lexer under the file and line of the keyword they
+label, so no later stage has to carry them). Keys: `justify` (before an `unsafe`; free text; `TODO` = not yet justified) and `termination` (before a
+`func`, `for` or `loop`, decorator lines may stand between; one of bounded, finite, unbounded, none, conditional, unknown). Anywhere else, an unknown key,
+an empty text, a bad class or a second comment with the same key before one keyword is a compile error. `BytecodeEmitter` records the label of every emitted
+function (`funcTermLabels`) and loop (`loopTermLabels`, key `function|@loop_N`); `Main` then calls `GasReport.checkLabels` (only when a label exists), which
+compares each label with the computed class: a function's class is the worst class of its reachable paths including callees (the figure `--audit` prints), a
+loop's is `GasReport.loopClass` = worst of its own bound/exit (`Loop.ownClass`: literal `for` bounded, run-time `for` finite, `loop` with an exit unbounded,
+`loop` with none none), the loops nested in it, and its calls (a `none` callee inside a loop counts as conditional) and indirect calls (unknown). Exact match
+or `termination error`. `--audit` prints the justify text under each unsafe block, `# justified blocks: N of M (a without a justify comment, b with
+justify: TODO)`, and gives loop reasons as `file:line` and callee reasons as `calls f (defined at file:line)` (`GasReport.POS`, filled from
+`BytecodeEmitter.sourcePos`).
+
+`java Compiler -i prog.caspien --fix termination|justify[,..] [--write] [--fix-stdlib]` (`FixTool.java`): inserts whole comment lines, nothing else; existing
+comments are never touched. Without `--write` it prints the plan. With it the files are edited (originals kept in a temp folder), the front end runs again and its
+HOB must hash equal to the HOB before the edit, else the orchestrator restores every file and exits 1. Tests `doc_comment_check.sh` (+ `doc_comment_test.caspien`).
+
 ## Visualizer (`--viz`)
 
 `java Compiler -i prog.caspien --viz [out.html]` builds nothing (like `--audit`) and writes one HTML page, `output/<name>.html` by default: a single full-page
@@ -584,8 +602,8 @@ hardware, optimiser switches or target. Rules:
 - A `for` over literal bounds `a..b` costs `(b-a)` iterations of the worst iteration plus the final header test (a `break` or `return` inside is
   taken at the dearest iteration). Any other loop is classed (every line ends in one word, `>= N` and the reasons follow when it is not `bounded`): **finite** = a `for` whose bound is a variable or argument
   (including the range argument of a `@recursive` function; always ends, the reason says `depends on `n``); **unbounded** = a `loop{}` with a reachable `break`, `return` or `throw` (a call that can throw counts) but no static bound;
-  **non-terminating** = a `loop{}` with none of those, on every path from the function start; **can diverge** = the same loop on some paths only, or a call to such a function that is not on every path; **unknown** = an indirect call (`INVOKE`) or recursion the audit cannot follow. The figure is then a lower bound (one iteration) printed as `>= N`; a
-  caller takes the worst class of its callees (bounded < finite < unknown < unbounded < can diverge < non-terminating), EXCEPT where the call passes values the caller knows: for a callee that is unbounded on its own the call is costed again
+  **none** = a `loop{}` with none of those, on every path from the function start; **conditional** = the same loop on some paths only, or a call to such a function that is not on every path; **unknown** = an indirect call (`INVOKE`) or recursion the audit cannot follow. The figure is then a lower bound (one iteration) printed as `>= N`; a
+  caller takes the worst class of its callees (bounded < finite < unknown < unbounded < conditional < none), EXCEPT where the call passes values the caller knows: for a callee that is unbounded on its own the call is costed again
   with the parameter values it passes (`runEvals`, one specialised copy per distinct set of values), so `sumTo(5)` costs a 5-iteration loop. Values are known when they are
   literals, variables read through straight-line code to their last write (`valueAt`: no label in between, so every path runs through that write), parameters that are never written
   (or the caller's own parameters, forwarded), variables written once at the top of a function, and `ADD SUB MUL INC DEC` of those (64-bit, results kept below 2^63; narrower types give
@@ -609,7 +627,7 @@ hardware, optimiser switches or target. Rules:
   in a loop the figure is the total requested, an upper bound on the peak live heap rather than the peak itself (the next bullet credits them). Not counted: the ghost table's own growth, the allocator's per-block
   overhead and rounding, library `malloc`s outside Caspien code.
 
-- **Event loops**: in a program with an `@event_loop` function the loop itself is not walked or listed as a root; its termination class is read off the `@tick` function instead (header line `loop: ...`): no `@throws` = non-terminating, throws on some paths = unbounded, throws on every path = bounded (one tick). A `@throws` `main` is noted as able to end the program before the loop starts. The roots of
+- **Event loops**: in a program with an `@event_loop` function the loop itself is not walked or listed as a root; its termination class is read off the `@tick` function instead (header line `loop: ...`): no `@throws` = none, throws on some paths = unbounded, throws on every path = bounded (one tick). A `@throws` `main` is noted as able to end the program before the loop starts. The roots of
   every section are the slices instead: the `@with_tick` `main` and the `@tick` function (header `# event loop:` with one line per slice: gas, stack, heap). A slice's stack figure
   includes the event loop's own frame, which it runs below. A tick's heap figure is per call.
 
@@ -631,5 +649,5 @@ hardware, optimiser switches or target. Rules:
 
 Tests: `tests/gas_check.sh` compares gas, heap bytes, allocation count and stack of every function in 25 programs (including the slice lines of `09_event_loop`) (`tests/gas_test.caspien`, `tests/heap_gas_test.caspien`, the docs examples) with
 `tests/gas_model.py`, an exhaustive path search over the bytecode (heap: the same path search with the byte cost of each allocation worked out separately in the model; unbounded iff the figure changes when the loop bound goes from 1 to 2 or a size is not a literal);
-`tests/audit_args_check.sh` covers the call-site values: `tests/audit_args_test.caspien` (every function equal to the model, `main` bounded in all sections, its peak live heap equal to the allocator's) and `tests/audit_args_unknown_test.caspien` (call results and variables changed in a loop or branch keep `main` finite); `tests/audit_class_check.sh` holds the expected class of every case in `tests/audit_class_test.caspien` (bounded, finite, three kinds of `loop{}`, can diverge, non-terminating, unknown). `tests/gas_model.py` is a concrete interpreter over the bytecode for that (it executes the integer assignments along each path and passes the argument values to the callee); an UNBOUNDED report line is only compared as a lower bound, a bounded one must equal the model exactly.
+`tests/audit_args_check.sh` covers the call-site values: `tests/audit_args_test.caspien` (every function equal to the model, `main` bounded in all sections, its peak live heap equal to the allocator's) and `tests/audit_args_unknown_test.caspien` (call results and variables changed in a loop or branch keep `main` finite); `tests/audit_class_check.sh` holds the expected class of every case in `tests/audit_class_test.caspien` (bounded, finite, three kinds of `loop{}`, conditional, none, unknown). `tests/gas_model.py` is a concrete interpreter over the bytecode for that (it executes the integer assignments along each path and passes the argument values to the callee); an UNBOUNDED report line is only compared as a lower bound, a bounded one must equal the model exactly.
 `tests/stack_check.sh` calibrates the frame estimate against real frames. `tests/heap_live_check.sh` checks the peak live heap against the real allocator: one variant of `tests/heap_live_test.caspien` per allocation shape is run under `tests/alloc_shim.c` (peak of live bytes, `PEAK=`) and must equal the audit; `tests/heap_live_sweep_check.py` runs every test and example program under the shim and requires its measured peak never to exceed the audited figure for `main`. `CASPIEN_AUDIT_ALL=1` lifts the 40-line limit of each section.

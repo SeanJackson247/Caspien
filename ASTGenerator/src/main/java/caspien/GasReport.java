@@ -21,7 +21,7 @@ import java.util.Set;
  * <li>branches take the dearer side; a `try` makes every throwing call site a possible jump to its catch block (and a call a possible jump to
  *     its unwind pad), so the catch bodies count on the worst path;</li>
  * <li>a `for` loop whose range has literal bounds costs bound * (header + worst iteration) + the final header test, exactly; any other
- *     loop (`loop {}`, a range with a variable bound, which includes the range argument of a `@recursive` function) is not bounded (classed finite / unbounded / non-terminating / unknown, see `tag`), and the
+ *     loop (`loop {}`, a range with a variable bound, which includes the range argument of a `@recursive` function) is not bounded (classed finite / unbounded / none / unknown, see `tag`), and the
  *     figure shown is then a lower bound (one iteration) tagged with the reason;</li>
  * <li>a call costs {@link #CALL_COST} plus the callee's worst case; unbounded callees make the caller unbounded;</li>
  * <li>external calls, inline assembly, indirect calls, `memcopy` sizes, sleeping and thread operations are charged a fixed amount and listed as
@@ -103,6 +103,9 @@ final class GasReport {
             return range ? a + ".." + b : a.toString();
         }
     }
+
+    /** Source positions told by the front end for `--audit` causes: "function" and "function|loop label" -> "file:line". Empty = not known. */
+    static final Map<String, String> POS = new HashMap<>();
 
     private final String[] ln;                // trimmed non-empty lines
     private final Map<String, Fn> fns = new LinkedHashMap<>();
@@ -271,6 +274,7 @@ final class GasReport {
         Val exitCost;               // cost of the paths that leave the loop and continue after it (add the tail); NEG impossible
         Val retCost = Val.NEG;      // cost of the paths that return/throw/exit from inside the loop (no tail)
         boolean done, computing;
+        int ownClass;               // the loop's own termination class (not its callees'): 0 bounded, FIN run-time `for`, UNB `loop` with an exit, NONT `loop` with none
     }
 
     /** Per-function analysis state. */
@@ -355,7 +359,8 @@ final class GasReport {
                                 dep = hi;
                             }
                         }
-                        lp.why = R(FIN, "`for` runs a number of times only known at run time" + (dep != null ? ": depends on `" + dep + "`" : " (" + (type == null ? lab : type) + ")"));
+                        String at = POS.get(f.name + "|" + lab);
+                        lp.why = R(FIN, "`for` runs a number of times only known at run time" + (dep != null ? ": depends on `" + dep + "`" : " (" + (type == null ? lab : type) + ")") + (at != null ? " (" + at + ")" : ""));
                     }
                 }
                 loops.put(lp.head, lp);
@@ -375,6 +380,7 @@ final class GasReport {
             BigInteger n;
             if (lp.count != null) {
                 n = lp.count;
+                lp.ownClass = 0;
             } else {
                 // a count or a live-heap figure does not depend on the bound of a loop that does not grow it
                 String why = lp.why;
@@ -382,6 +388,10 @@ final class GasReport {
                     boolean exit = !brk.neg || !ret.neg;     // a reachable `break`, `return` or `throw` (also from a call that can throw) inside the body
                     why = exit ? R(UNB, "`loop` with no static bound, it can leave through `break`/`return`/`throw` (" + labelOf(lp) + ")")
                             : R(runsFirst(f, lp.head) ? NONT : DIV, "`loop` with no `break`, `return` or `throw` that leaves it (" + labelOf(lp) + ")");
+                }
+                lp.ownClass = why.charAt(0) - '0';
+                if (!lp.isFor) {
+                    lp.ownClass = (!brk.neg || !ret.neg) ? UNB : NONT;
                 }
                 if (mt == GAS || (!cont.neg && cont.n.signum() > 0)) {
                     f.ub[mt].add(why);
@@ -408,7 +418,9 @@ final class GasReport {
         }
 
         String labelOf(Loop lp) {
-            return ln[lp.head].substring(0, ln[lp.head].length() - 1);
+            String label = ln[lp.head].substring(0, ln[lp.head].length() - 1);
+            String pos = POS.get(f.name + "|" + label);
+            return pos != null ? pos : label;      // source file:line when the front end told us, else the HOB label
         }
 
         Val headerCost(Loop lp) {
@@ -881,7 +893,7 @@ final class GasReport {
                 // The loop itself is not walked; how it can end is decided by the tick (the loop ends only when the tick, or `main` before it, throws).
                 top.append("#   The loop ends only when ").append(tickFn.name).append(" throws, so its termination class follows the tick:\n");
                 if (!tickFn.deco.contains("@throws")) {
-                    top.append("#     loop: non-terminating (").append(tickFn.name).append(" never throws, the loop has no exit)\n");
+                    top.append("#     loop: none (").append(tickFn.name).append(" never throws, the loop has no exit)\n");
                 } else if (canReturn(tickFn)) {
                     top.append("#     loop: unbounded (").append(tickFn.name).append(" throws on some paths: the loop runs until a tick throws, and no bound on the number of ticks is known)\n");
                 } else {
@@ -1988,6 +2000,140 @@ final class GasReport {
     }
 
     /** Bytes requested by the allocation operation at line idx (a lower bound plus an UNBOUNDED reason when the size is only known at run time). */
+    // ---- termination labels (`termination:` doc comments) ---------------------------------------------------------------------------------
+
+    /**
+     * Compares every `termination:` doc comment with the class the analysis computes: a function's class is the worst class on its
+     * reachable paths, callees included (the class `--audit` prints for it); a loop's class is that of the loop alone (its own bound or exit,
+     * its calls, the loops inside it); a `loop {}` that nothing can leave is `none` whether or not a path reaches it. Any difference, in
+     * either direction, is a compile error. `funcs` is keyed by HOB function name, `loops` by function name + "|" + loop label.
+     */
+    static void checkLabels(String hob, Map<String, DocComments.Doc> funcs, Map<String, DocComments.Doc> loops) {
+        GasReport g = new GasReport(hob);
+        final RuntimeException[] err = new RuntimeException[1];
+        Thread t = new Thread(null, () -> {
+            try {
+                g.verifyLabels(funcs, loops);
+            } catch (RuntimeException e) {
+                err[0] = e;
+            }
+        }, "gas-labels", 1L << 29);
+        t.start();
+        try {
+            t.join();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        if (err[0] != null) {
+            throw err[0];
+        }
+    }
+
+    private void verifyLabels(Map<String, DocComments.Doc> funcs, Map<String, DocComments.Doc> loops) {
+        for (Fn f : fns.values()) {
+            solve(f, new ArrayList<>());
+        }
+        for (Map.Entry<String, DocComments.Doc> e : funcs.entrySet()) {
+            String word = funcWord(e.getKey());
+            DocComments.Doc d = e.getValue();
+            if (word != null && !word.equals(d.text)) {
+                Fn f = fns.get(e.getKey());
+                throw new CompilerException("termination", d.file, d.targetLine, "function `" + shown(f.name) + "` is labelled `" + d.text
+                        + "` but its termination class is `" + word + "`" + (worstOf(f.ub[GAS]) == 0 ? "" : " (" + tag(f.ub[GAS]) + ")"));
+            }
+        }
+        for (Map.Entry<String, DocComments.Doc> e : loops.entrySet()) {
+            int bar = e.getKey().indexOf('|');
+            String word = loopWord(e.getKey().substring(0, bar), e.getKey().substring(bar + 1));
+            DocComments.Doc d = e.getValue();
+            if (word != null && !word.equals(d.text)) {
+                throw new CompilerException("termination", d.file, d.targetLine, "`" + d.kind + "` in `" + shown(e.getKey().substring(0, bar)) + "` is labelled `" + d.text
+                        + "` but its termination class is `" + word + "`");
+            }
+        }
+    }
+
+    /** The class word of a function (solved already), or null when it is not in the program. */
+    private String funcWord(String name) {
+        Fn f = fns.get(name);
+        return f == null ? null : wordOf(worstOf(f.ub[GAS]));
+    }
+
+    /** The class word of one loop (see loopClass), or null when the loop is not found. */
+    private String loopWord(String fnName, String label) {
+        Fn f = fns.get(fnName);
+        if (f == null || !f.labels.containsKey(label)) {
+            return null;     // optimised away before the report could see it, or not emitted
+        }
+        Set<String> savedUb = new LinkedHashSet<>(f.ub[GAS]);
+        Eval ev = new Eval(f, GAS);
+        Loop lp = ev.loops.get(f.labels.get(label));
+        if (lp == null) {
+            return null;
+        }
+        int cls = loopClass(ev, f, lp);
+        f.ub[GAS].clear();
+        f.ub[GAS].addAll(savedUb);
+        return wordOf(cls);
+    }
+
+    /** Class words for every site ({hobFunction, loopLabel or null, ...}): key = function + "|" + (label or ""). Used by `--fix termination`. */
+    static Map<String, String> classify(String hob, List<String[]> sites) {
+        GasReport g = new GasReport(hob);
+        final Map<String, String> out = new LinkedHashMap<>();
+        Thread t = new Thread(null, () -> {
+            for (Fn f : g.fns.values()) {
+                g.solve(f, new ArrayList<>());
+            }
+            for (String[] s : sites) {
+                String w = s[1] == null ? g.funcWord(s[0]) : g.loopWord(s[0], s[1]);
+                if (w != null) {
+                    out.put(s[0] + "|" + (s[1] == null ? "" : s[1]), w);
+                }
+            }
+        }, "gas-classify", 1L << 29);
+        t.start();
+        try {
+            t.join();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        return out;
+    }
+
+    private static String shown(String hobName) {
+        return hobName;
+    }
+
+    /** The class of one loop alone: its own bound/exit, every call and indirect call inside it, and the loops nested in it. */
+    private int loopClass(Eval ev, Fn f, Loop lp) {
+        ev.solveLoop(lp);
+        int cls = lp.ownClass;
+        for (Loop in : ev.loops.values()) {
+            if (in != lp && in.head > lp.head && in.end < lp.end) {
+                ev.solveLoop(in);
+                cls = Math.max(cls, in.ownClass);
+            }
+        }
+        for (int i = lp.head + 1; i < lp.end; i++) {
+            String o = op(ln[i]);
+            if (o.equals("INVOKE")) {
+                cls = Math.max(cls, UNK);
+            } else if (o.equals("CALL")) {
+                Fn cf = f.calleeAt.get(i);
+                if (cf == null) {
+                    cf = fns.get(arg(ln[i]));
+                }
+                if (cf == null) {
+                    continue;
+                }
+                int w = worstOf(cf.ub[GAS]);
+                cls = Math.max(cls, w == NONT ? DIV : w);
+            }
+        }
+        return cls;
+    }
+
     // ---- terminology: every reason string starts with one digit, its class ----------------------------------------------------------------
     static final int FIN = 1, UNK = 2, UNB = 3, DIV = 4, NONT = 5;
 
@@ -2008,8 +2154,8 @@ final class GasReport {
             case FIN: return "finite";
             case UNK: return "unknown";
             case UNB: return "unbounded";
-            case DIV: return "can diverge";
-            case NONT: return "non-terminating";
+            case DIV: return "conditional";
+            case NONT: return "none";
             default: return "bounded";
         }
     }
@@ -2017,7 +2163,8 @@ final class GasReport {
     /** The reason a caller inherits from a callee: the callee's worst class (a callee that never ends only makes the caller able to diverge). */
     static String callReason(String callee, Set<String> calleeReasons, boolean onEveryPath) {
         int w = worstOf(calleeReasons);
-        return R(w == NONT && !onEveryPath ? DIV : w, "calls " + callee + " (" + wordOf(w) + ")");
+        String at = POS.get(callee);
+        return R(w == NONT && !onEveryPath ? DIV : w, "calls " + callee + (at != null ? " (defined at " + at + ")" : "") + " (" + wordOf(w) + ")");
     }
 
     /** `bounded`, or the worst class followed by the reasons (those of a milder class carry their own word). */

@@ -36,7 +36,7 @@ peak=$(sed -n 's/.*PEAK=\([0-9]*\).*/\1/p' run.err)
 grep -c "^PASS" run.out | grep -qx 8 && ! grep -q FAIL run.out || { echo "FAIL: program output"; cat run.out; exit 1; }
 [ "$peak" = "$want" ] || { echo "FAIL: peak live heap: allocator measured '$peak', audit says '$want'"; exit 1; }
 echo "ok peak live heap $peak bytes == measured"
-grep -qE "^  main \(entry\) +>= [0-9]+  finite: .*calls viaResult \(finite\)" u.txt || { echo "FAIL: main in audit_args_unknown_test should be finite because of viaResult"; exit 1; }
-grep -qE "^  main \(entry\) +>= [0-9]+  finite: .*calls viaLoop \(finite\)" u.txt || { echo "FAIL: main should also be finite because of viaLoop"; exit 1; }
-grep -qE "^  main \(entry\) +>= [0-9]+  finite: .*calls viaBranch \(finite\)" u.txt || { echo "FAIL: main should also be finite because of viaBranch"; exit 1; }
+grep -qE "^  main \(entry\) +>= [0-9]+  finite: .*calls viaResult( \(defined at [^)]*\))? \(finite\)" u.txt || { echo "FAIL: main in audit_args_unknown_test should be finite because of viaResult"; exit 1; }
+grep -qE "^  main \(entry\) +>= [0-9]+  finite: .*calls viaLoop( \(defined at [^)]*\))? \(finite\)" u.txt || { echo "FAIL: main should also be finite because of viaLoop"; exit 1; }
+grep -qE "^  main \(entry\) +>= [0-9]+  finite: .*calls viaBranch( \(defined at [^)]*\))? \(finite\)" u.txt || { echo "FAIL: main should also be finite because of viaBranch"; exit 1; }
 echo "PASS audit_args_check: bounds from call-site values equal the model and the allocator; unknown arguments stay unbounded"

@@ -97,7 +97,7 @@ public class Compiler {
     }
 
     private static final String USAGE =
-            "Usage: java Compiler -i <input.caspien> <output> [--no-warnings] [--fs-report] [--asm | --lob | --hob] [--trace-depth N] [--no-cache] [--cache-report] [--clear-cache]\n       java Compiler -i <input.caspien> --audit [--audit-no-stdlib]\n       java Compiler -i <input.caspien> --viz [out.html]";
+            "Usage: java Compiler -i <input.caspien> <output> [--no-warnings] [--fs-report] [--asm | --lob | --hob] [--trace-depth N] [--no-cache] [--cache-report] [--clear-cache]\n       java Compiler -i <input.caspien> --audit [--audit-no-stdlib]\n       java Compiler -i <input.caspien> --viz [out.html]\n       java Compiler -i <input.caspien> --fix termination|justify [--write] [--fix-stdlib]";
 
     private static class UsageError extends RuntimeException {
         UsageError(String message) {
@@ -115,6 +115,8 @@ public class Compiler {
         boolean stopAsm = false, stopLob = false, stopHob = false;
         boolean noCache = false, cacheReport = false, clearCache = false;
         boolean audit = false, auditNoStdlib = false, viz = false;
+        String fixModes = null;
+        boolean fixWrite = false, fixStdlib = false;
         int traceDepth = 16;
 
         for (int i = 0; i < args.length; i++) {
@@ -146,6 +148,18 @@ public class Compiler {
                     break;
                 case "--viz":
                     viz = true;
+                    break;
+                case "--fix":
+                    if (i + 1 >= args.length) {
+                        throw new UsageError("--fix requires a mode: termination, justify (or both, comma separated)");
+                    }
+                    fixModes = args[++i];
+                    break;
+                case "--write":
+                    fixWrite = true;
+                    break;
+                case "--fix-stdlib":
+                    fixStdlib = true;
                     break;
                 case "--audit-no-stdlib":
                     audit = true;
@@ -202,6 +216,9 @@ public class Compiler {
             String base = Path.of(inputArg).getFileName().toString().replaceFirst("\\.caspien$", "");
             vizHtml = Path.of(outputArg != null ? outputArg : "output/" + base + ".html");
             outputArg = "output/viz";   // the front end's intermediate file
+        }
+        if (outputArg == null && fixModes != null) {
+            outputArg = "output/fix";     // --fix builds nothing; the front end's intermediate file goes here
         }
         if (outputArg == null && audit) {
             outputArg = "output/audit";   // an audit builds nothing; the front end's intermediate file goes here
@@ -271,6 +288,46 @@ public class Compiler {
                 System.out.println("[info] wrote " + vizHtml);
             }
             return diag.exitCode();
+        }
+        if (fixModes != null) {
+            // --fix: run only the front end, uncached; it plans (and with --write applies) comment-line insertions, then the front end runs
+            // once more and its output must equal the output before the edit (comments change no code), else every file is restored.
+            Path tmp = Files.createTempDirectory("caspien-fix");
+            Path report = tmp.resolve("report.txt"), hash = tmp.resolve("hash.txt"), bak = tmp.resolve("bak");
+            Files.createDirectories(bak);
+            Map<String, String> env = new java.util.HashMap<>();
+            env.put("CASPIEN_FIX_MODE", fixModes);
+            env.put("CASPIEN_FIX_FILE", report.toString());
+            env.put("CASPIEN_FIX_HASH", hash.toString());
+            env.put("CASPIEN_FIX_BACKUP", bak.toString());
+            if (fixWrite) {
+                env.put("CASPIEN_FIX_WRITE", "1");
+            }
+            if (fixStdlib) {
+                env.put("CASPIEN_FIX_STDLIB", "1");
+            }
+            runJavaStage(astGenDir, "caspien.Main", input, hobOut, diag, "ASTGenerator", "--fix", env, null);
+            if (diag.hasFatalError()) {
+                return diag.exitCode();
+            }
+            System.out.print(Files.readString(report, StandardCharsets.UTF_8));
+            Path manifest = bak.resolve("manifest.txt");
+            if (fixWrite && Files.isRegularFile(manifest)) {
+                Map<String, String> env2 = new java.util.HashMap<>();
+                env2.put("CASPIEN_FIX_VERIFY", hash.toString());
+                Diagnostics verify = new Diagnostics(noWarnings);
+                runJavaStage(astGenDir, "caspien.Main", input, hobOut, verify, "ASTGenerator", null, env2, null);
+                if (verify.hasFatalError()) {
+                    for (String l : Files.readAllLines(manifest, StandardCharsets.UTF_8)) {
+                        String[] p = l.split("\t");
+                        Files.copy(Path.of(p[1]), Path.of(p[0]), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                    }
+                    System.err.println("[error] --fix: the program did not compile to the same bytecode after the edit; every file was restored");
+                    return 1;
+                }
+                System.out.println("# verified: the program compiles to identical bytecode after the edit");
+            }
+            return 0;
         }
         if (audit) {
             // --audit: run only the front end, uncached, and print what it found (every `unsafe`, with file, line and the text in the braces)

@@ -116,10 +116,38 @@ public class Main {
 
         BytecodeEmitter bytecodeEmitter = new BytecodeEmitter();
         String bytecode = bytecodeEmitter.emit(expanded, typeChecker);
+        String fixModes = System.getenv("CASPIEN_FIX_MODE");
+        if (fixModes == null && (!bytecodeEmitter.funcTermLabels.isEmpty() || !bytecodeEmitter.loopTermLabels.isEmpty())) {
+            GasReport.checkLabels(bytecode, bytecodeEmitter.funcTermLabels, bytecodeEmitter.loopTermLabels);
+        }
 
         if (audit) {
+            GasReport.POS.putAll(bytecodeEmitter.sourcePos);
             String report = auditReport + GasReport.build(bytecode).text;
             String target = System.getenv("CASPIEN_AUDIT_FILE");
+            if (target != null && !target.isEmpty()) {
+                Files.write(Paths.get(target), report.getBytes(StandardCharsets.UTF_8));
+            } else {
+                System.err.print(report);
+            }
+        }
+
+        String verifyFile = System.getenv("CASPIEN_FIX_VERIFY");
+        if (verifyFile != null && !verifyFile.isEmpty()) {
+            String want = new String(Files.readAllBytes(Paths.get(verifyFile)), StandardCharsets.UTF_8).trim();
+            if (!want.equals(FixTool.sha(bytecode))) {
+                System.err.println("[error] --fix verification: the higher-order bytecode differs after the edit");
+                System.exit(3);
+            }
+        }
+        if (fixModes != null && !fixModes.isEmpty()) {
+            String hashFile = System.getenv("CASPIEN_FIX_HASH");
+            if (hashFile != null && !hashFile.isEmpty()) {
+                Files.write(Paths.get(hashFile), FixTool.sha(bytecode).getBytes(StandardCharsets.UTF_8));
+            }
+            boolean write = "1".equals(System.getenv("CASPIEN_FIX_WRITE"));
+            String report = FixTool.run(fixModes, write, "1".equals(System.getenv("CASPIEN_FIX_STDLIB")), bytecodeEmitter, bytecode, System.getenv("CASPIEN_FIX_BACKUP"));
+            String target = System.getenv("CASPIEN_FIX_FILE");
             if (target != null && !target.isEmpty()) {
                 Files.write(Paths.get(target), report.getBytes(StandardCharsets.UTF_8));
             } else {

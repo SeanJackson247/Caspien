@@ -1502,6 +1502,17 @@ public class BytecodeEmitter {
         collectTryBlockLabels(info.funcToken.childs, new ArrayDeque<>());
         functionCatchParams = new HashSet<>();
         line("FUNC_START " + emittedName);
+        curHobFn = emittedName;
+        if (info.funcToken.file != null) {
+            sourcePos.put(emittedName, shownPos(info.funcToken));
+            termSites.add(new String[]{emittedName, null, info.funcToken.file, String.valueOf(info.funcToken.line), "func"});
+        }
+        {
+            DocComments.Doc td = DocComments.find(info.funcToken.file, info.funcToken.line, "termination", "func");
+            if (td != null) {
+                funcTermLabels.put(emittedName, td);
+            }
+        }
         if (allowExport && info.isExported) {
             // "This symbol will be available to an assembly file linking
             // to this one" -- confirmed directly. Always the func's own
@@ -3082,8 +3093,35 @@ public class BytecodeEmitter {
                 "internal error: unrecognized match condition shape reached bytecode emission: " + node.text);
     }
 
+    /** `/*! termination: .. *&#47;` labels found on emitted functions (HOB function name) and loops (HOB function name + "|" + loop label); checked by GasReport.checkLabels. */
+    final Map<String, DocComments.Doc> funcTermLabels = new java.util.LinkedHashMap<>();
+    final Map<String, DocComments.Doc> loopTermLabels = new java.util.LinkedHashMap<>();
+    private String curHobFn;
+    /** Every emitted function and loop as {hobFunction, loopLabel or null, file, line, kind}: what `--fix termination` labels. */
+    final List<String[]> termSites = new ArrayList<>();
+    /** Where every emitted function and loop was written ("function" and "function|label" -> "file:line"), for the causes `--audit` prints. */
+    final Map<String, String> sourcePos = new java.util.LinkedHashMap<>();
+
+    private static String shownPos(Token t) {
+        java.nio.file.Path abs = java.nio.file.Paths.get(t.file).toAbsolutePath().normalize();
+        java.nio.file.Path base = java.nio.file.Paths.get("..").toAbsolutePath().normalize();
+        return (abs.startsWith(base) ? base.relativize(abs).toString() : abs.toString()) + ":" + t.line;
+    }
+
+    private void noteLoopLabel(Token loopTok, String kind, String startLabel) {
+        if (curHobFn != null && loopTok.file != null) {
+            sourcePos.put(curHobFn + "|" + startLabel, shownPos(loopTok));
+            termSites.add(new String[]{curHobFn, startLabel, loopTok.file, String.valueOf(loopTok.line), kind});
+        }
+        DocComments.Doc td = DocComments.find(loopTok.file, loopTok.line, "termination", kind);
+        if (td != null && curHobFn != null) {
+            loopTermLabels.put(curHobFn + "|" + startLabel, td);
+        }
+    }
+
     private void emitLoop(Token loopTok) {
         String startLabel = newLabel("loop");
+        noteLoopLabel(loopTok, "loop", startLabel);
         String endLabel = newLabel("loop_end");
         loopEndLabels.add(endLabel);
         loopContinueTargets.add(new String[] { startLabel });
@@ -3169,6 +3207,7 @@ public class BytecodeEmitter {
         emitAssign(loopVarAssign);
 
         String startLabel = newLabel("for");
+        noteLoopLabel(forTok, "for", startLabel);
         String endLabel = newLabel("for_end");
         loopEndLabels.add(endLabel);
         String[] continueTarget = new String[] { null };

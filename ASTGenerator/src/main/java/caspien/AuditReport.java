@@ -33,6 +33,17 @@ final class AuditReport {
     private AuditReport() {
     }
 
+    /** Line numbers of every `unsafe` statement block in a source text (what `--fix justify` labels). */
+    static List<Integer> blockLines(String src) {
+        List<Integer> out = new ArrayList<>();
+        for (Use u : scan("", src)) {
+            if (u.block) {
+                out.add(u.line);
+            }
+        }
+        return out;
+    }
+
     static boolean isStdlib(Path p) {
         return p.startsWith(Paths.get("..", "stdlib").toAbsolutePath().normalize());
     }
@@ -54,7 +65,7 @@ final class AuditReport {
         section(sb, "your code", mine, needed, base, false);
         section(sb, "standard library", lib, needed, base, hideStdlib);
         TreeMap<String, Integer> byTag = new TreeMap<>();
-        int unaudited = 0, blocks = 0, exprs = 0;
+        int unaudited = 0, blocks = 0, exprs = 0, justified = 0, unjustifiedNone = 0, unjustifiedTodo = 0;
         for (Use u : concat(mine, lib)) {
             if (!u.block) { exprs++; continue; }
             blocks++;
@@ -69,17 +80,33 @@ final class AuditReport {
             if (u.tags.equals("unaudited")) {
                 unaudited++;
             }
+            DocComments.Doc jd = justOf(u, base);
+            if (jd == null) {
+                unjustifiedNone++;
+            } else if (DocComments.isTodo(jd.text)) {
+                unjustifiedTodo++;
+            } else {
+                justified++;
+            }
         }
         sb.append("\n# summary: ").append(blocks).append(" unsafe blocks (").append(mine.stream().filter(u -> u.block).count()).append(" in your code, ")
           .append(lib.stream().filter(u -> u.block).count()).append(" in the standard library) and ").append(exprs).append(" other uses of the keyword, in ")
           .append(fileCount).append(" files\n");
         sb.append("# unaudited blocks: ").append(unaudited).append(unaudited > 0 ? "  <- nobody has said why these are unsafe\n" : "\n");
+        sb.append("# justified blocks: ").append(justified).append(" of ").append(blocks).append(" (").append(unjustifiedNone).append(" without a justify comment, ")
+          .append(unjustifiedTodo).append(" with `justify: TODO`)\n");
         sb.append("# blocks naming each tag:");
         for (Map.Entry<String, Integer> e : byTag.entrySet()) {
             sb.append(' ').append(e.getKey()).append('=').append(e.getValue());
         }
         sb.append('\n');
         return sb.toString();
+    }
+
+    /** The `justify:` doc comment standing before this block, or null. */
+    private static DocComments.Doc justOf(Use u, Path base) {
+        DocComments.Doc d = DocComments.find(base.resolve(u.file).toString(), u.line, "justify", "unsafe");
+        return d != null ? d : DocComments.find(Paths.get(u.file).toAbsolutePath().normalize().toString(), u.line, "justify", "unsafe");
     }
 
     private static List<Use> concat(List<Use> a, List<Use> b) {
@@ -111,6 +138,8 @@ final class AuditReport {
                 sb.append("   UNAUDITED").append(n == null ? "" : "; it actually needs: " + (n.isEmpty() ? "nothing" : String.join(" ", n)));
             }
             sb.append('\n');
+            DocComments.Doc jd = justOf(u, base);
+            sb.append("       justify: ").append(jd == null ? "(none)" : DocComments.isTodo(jd.text) ? "TODO  <- not justified yet" : jd.text).append('\n');
             String[] lines = u.text.split("\n", -1);
             for (int i = 0; i < lines.length; i++) {
                 if (i == lines.length - 1 && lines[i].trim().isEmpty()) {

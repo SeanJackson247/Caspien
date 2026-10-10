@@ -24,7 +24,7 @@ heap_sec = audit.split("# heap memory", 1)[1]
 def parse(sec, unit):
     rep = {}
     for l in sec.splitlines():
-        m = re.match(r"  (\S+?)( \((?:entry|thread entry)\))?\s+(>= )?(\d+)%s(  \(\d+ allocation sites? in its own code\))?  (bounded|finite|unknown|unbounded|can diverge|non-terminating)(: .*)?$" % unit, l)
+        m = re.match(r"  (\S+?)( \((?:entry|thread entry)\))?\s+(>= )?(\d+)%s(  \(\d+ allocation sites? in its own code\))?  (bounded|finite|unknown|unbounded|conditional|none)(: .*)?$" % unit, l)
         if m: rep[m.group(1)] = (m.group(3) is not None, int(m.group(4)))
         if m: assert (m.group(3) is not None) == (m.group(6) != "bounded"), "word and >= disagree: " + l
     return rep
@@ -32,7 +32,7 @@ gas, stack = parse(gas_sec, ""), parse(stack_sec, " bytes")
 # heap lines: `  name  [>= ]N bytes  ([>= ]K allocation operation(s))  <word>[: reasons]`
 heapb, heapc = {}, {}
 for l in heap_sec.splitlines():
-    m = re.match(r"  (\S+?)( \(entry\))?\s+(>= )?(\d+) bytes  \((>= )?(\d+) allocation operations?\)  (bounded|finite|unknown|unbounded|can diverge|non-terminating)(: .*)?$", l)
+    m = re.match(r"  (\S+?)( \(entry\))?\s+(>= )?(\d+) bytes  \((>= )?(\d+) allocation operations?\)  (bounded|finite|unknown|unbounded|conditional|none)(: .*)?$", l)
     if m:
         heapb[m.group(1)] = (m.group(3) is not None, int(m.group(4)))
         heapc[m.group(1)] = (m.group(5) is not None, int(m.group(6)))
@@ -67,7 +67,7 @@ print("ok %-40s %d functions" % (prog, len(gas)))
 PY
   checked=$((checked+1))
 done
-grep -qE "unbounded|finite|non-terminating" $W/audit.txt >/dev/null
+grep -qE "unbounded|finite|none" $W/audit.txt >/dev/null
 CASPIEN_AUDIT_FILE=$W/audit.txt java -cp out caspien.Main -i ../tests/gas_test.caspien $W/g.hob --audit >/dev/null 2>&1
 CASPIEN_AUDIT_ALL=1 CASPIEN_AUDIT_FILE=$W/audit2.txt java -cp out caspien.Main -i ../tests/heap_gas_test.caspien $W/h.hob --audit >/dev/null 2>&1
 for want in "heap_nested  *288 bytes  .18 allocation operations" "heap_loop  *80 bytes  .5 alloc" "heap_branch  *32 bytes  .2 alloc" "heap_dyn  *104 bytes  .2 alloc" "heap_one  *16 bytes  .1 allocation operation" "heap_unbounded  *>= 16 bytes  .>= 1 .*(finite|unbounded)" "heap_runtime  *>= 48 bytes  .2 allocation operations.*.resize. count is not a literal"; do
@@ -90,11 +90,11 @@ for fn, kind in (("__caspien_main", "@with_tick"), ("tick", "@tick")):
     want = r"  %s \(slice: %s\) +gas %d +stack %d bytes +heap %d bytes \(%d allocation operations?\)" % (fn, kind, g, st, hb, h)
     if not re.search(want, rep): print("FAIL: event-loop slice line for", fn, "does not match the model:", want); sys.exit(1)
 if re.search(r"^  main\b", rep, flags=re.M): print("FAIL: the event loop (main) is listed"); sys.exit(1)
-if re.search(r"(finite|unknown|unbounded|can diverge|non-terminating):", rep.split("# worst-case execution cost", 1)[1]): print("FAIL: an event-loop program shows an unbounded class"); sys.exit(1)
+if re.search(r"(finite|unknown|unbounded|conditional|none):", rep.split("# worst-case execution cost", 1)[1]): print("FAIL: an event-loop program shows an unbounded class"); sys.exit(1)
 PY
 checked=$((checked+1))
-# event-loop termination class follows the tick: no @throws -> non-terminating, throws on some paths -> unbounded, on every path -> bounded
-for pair in "09_event_loop.caspien:docs/examples:loop: non-terminating" "event_loop_tick_throw_test.caspien:tests:loop: unbounded" "event_loop_tick_always_throw_test.caspien:tests:loop: bounded"; do
+# event-loop termination class follows the tick: no @throws -> none, throws on some paths -> unbounded, on every path -> bounded
+for pair in "09_event_loop.caspien:docs/examples:loop: none" "event_loop_tick_throw_test.caspien:tests:loop: unbounded" "event_loop_tick_always_throw_test.caspien:tests:loop: bounded"; do
   f=${pair%%:*}; rest=${pair#*:}; d=${rest%%:*}; want=${rest#*:}
   CASPIEN_AUDIT_ALL=1 CASPIEN_AUDIT_FILE=$W/cls.txt java -cp out caspien.Main -i ../$d/$f $W/c.hob --audit >/dev/null 2>&1 || { echo "FAIL: audit $f"; exit 1; }
   grep -qF "#     $want (" $W/cls.txt || { echo "FAIL: $f should report '$want'"; exit 1; }

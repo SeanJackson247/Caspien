@@ -77,7 +77,7 @@ confused with:
 - **Termination is not bounded time.** A nested bounded loop with large bounds can run for years. A
   scheduler that must meet deadlines also needs a worst-case execution time per handler. Caspien proves the
   first guarantee and `--audit` reports the second in abstract gas units (a fixed cost per operation, not
-  seconds), exact for literal loop bounds and classed finite, unbounded, can diverge, non-terminating or unknown otherwise (see 3.2).
+  seconds), exact for literal loop bounds and classed finite, unbounded, conditional, none or unknown otherwise (see 3.2).
   The shape of the language makes it tractable: loop bounds are ordinary range values, and an acyclic call
   graph gives a static bound on stack depth (estimated by `--audit`).
 - **"Total" is relative to the primitives.** The guarantee is conditional on the escape hatches. A C
@@ -193,7 +193,7 @@ entry point, which calls `main` once and then calls `tick` until the loop ends. 
 
 `@tick` may also be `@throws` (for example when it allocates). The loop then ends when a tick throws: the stdlib loop writes
 `event loop stopped: <message>` to stderr and the program exits with status 1. A failing `main` ends it the same way. The auditor reads the
-loop's termination class off the tick: no `@throws` is `non-terminating`, a tick that throws on some paths is `unbounded`, and one that throws on every
+loop's termination class off the tick: no `@throws` is `none`, a tick that throws on some paths is `unbounded`, and one that throws on every
 path is `bounded` (exactly one tick runs).
 
 ```rust
@@ -1190,13 +1190,13 @@ annotated and nothing is taken on trust. Two classes are guarantees that the fun
 | `bounded` | Yes, guaranteed | It ends, and the figure is the exact worst-case cost. | A `for` over a literal range. |
 | `finite` | Yes, guaranteed | It ends, but the cost bound is not determined, so the figure is a lower bound (`>= N`) and the reason names what the bound depends on. | `for i in 0..n` where `n` is a parameter. |
 | `unbounded` | Possible, not guaranteed | A `loop{}` with no static bound, but a `break`, `return` or `throw` can leave it (a call that can throw counts). | `loop{ ... if done{ break } }` |
-| `non-terminating` | Never | A `loop{}` that nothing can leave, and every run of the function reaches it: no path terminates. | The loop of an event loop whose `@tick` never throws. |
-| `can diverge` | Not on every run | Some runs never end and others do: some execution paths are non-terminating or unbounded, while others are finite or bounded. | `if n == 0{ forever() }  return n` ends unless `n == 0`. |
+| `none` | Never | A `loop{}` that nothing can leave, and every run of the function reaches it: no path terminates. | The loop of an event loop whose `@tick` never throws. |
+| `conditional` | Not on every run | Some runs never end and others do: some execution paths are none or unbounded, while others are finite or bounded. | `if n == 0{ forever() }  return n` ends unless `n == 0`. |
 | `unknown` | No claim | The analysis cannot follow it. | An indirect call (`call(fp, ..)`), or recursion it cannot follow. |
 
-`unbounded` and `can diverge` are close, so side by side: `unbounded` is one loop that has an exit but no known bound; `can diverge` is a function where some paths reach a loop with no exit and others do not. `non-terminating` means no path terminates; `can diverge` means at least one does not.
+`unbounded` and `conditional` are close, so side by side: `unbounded` is one loop that has an exit but no known bound; `conditional` is a function where some paths reach a loop with no exit and others do not. `none` means no path terminates; `conditional` means at least one does not.
 
-A caller has the worst class among what it calls, in the order bounded, finite, unknown, unbounded, can diverge, non-terminating, so a function is only
+A caller has the worst class among what it calls, in the order bounded, finite, unknown, unbounded, conditional, none, so a function is only
 `bounded` or `finite` when everything it can reach is. Anything but `bounded` is printed as `>= N`, a lower bound, with the reasons.
 
 **Safe code is `bounded` or `finite` by construction.** The rules that give this are enforced by the compiler:
@@ -1464,8 +1464,8 @@ finished.
 | Property | Enforced today | Open (still safe code) |
 |---|---|---|
 | **Termination** | Direct and mutual recursion rejected; `@recursive` only as a tail call on a shrinking range, lowered to a bounded `for`; every `for` bound fixed at loop entry; counter immutable; no `loop{}` and no `call()` (both need `unsafe`). See 3.2. | `match @lock` waits for another thread, but in safe code only through `CLOSED:default(n)`: at most `n` attempts, then a `break`, so the wait is counted. The counted wait is still not a time bound, and `--audit` does not read `n` yet. `await` blocks on another thread. So safe code is not strictly total. |
-| **Bounded execution time** | Every `for` is bounded by its range and the call graph is acyclic, so a static bound is possible. | `--audit` prints a worst-case cost in abstract gas per function, classed bounded / finite / unbounded / non-terminating / can diverge / unknown, plus stack, heap and peak live heap; see 3.2. Time in seconds is not computed. |
-| **The single event loop** | `@with_tick` / `@tick` / `@event_loop` give a potentially non-terminating program (`docs/examples/09_event_loop.caspien`). | All three stdlib loops (no arguments, C arguments, safe arguments) have been run. The example is run by hand and is not in `tests/`. `par`/`await` add real threads, which is a deliberate departure from a single loop. |
+| **Bounded execution time** | Every `for` is bounded by its range and the call graph is acyclic, so a static bound is possible. | `--audit` prints a worst-case cost in abstract gas per function, classed bounded / finite / unbounded / none / conditional / unknown, plus stack, heap and peak live heap; see 3.2. Time in seconds is not computed. |
+| **The single event loop** | `@with_tick` / `@tick` / `@event_loop` give a program whose loop may never end (class `none`) (`docs/examples/09_event_loop.caspien`). | All three stdlib loops (no arguments, C arguments, safe arguments) have been run. The example is run by hand and is not in `tests/`. `par`/`await` add real threads, which is a deliberate departure from a single loop. |
 
 ## 4. Auditability
 
@@ -1620,7 +1620,7 @@ section ends with `# summary:` lines, so `java Compiler -i main.caspien --audit 
 | Section | What it tells you |
 |---|---|
 | `unsafe audit` | Every `unsafe` block, split into *your code* and the *standard library*, each with its file, line, tags and contents, then counts per tag and the number of `unsafe unaudited` blocks. |
-| `worst-case execution cost` | Abstract gas per function, callees included (a fixed price per operation, independent of machine and optimiser). The word after the figure is `bounded`, `finite`, `unbounded`, `non-terminating`, `can diverge` or `unknown` (see "Bounded execution time"); anything but `bounded` is `>= N` with the reasons; operations that are not modelled (external calls, inline assembly, waiting) are listed. |
+| `worst-case execution cost` | Abstract gas per function, callees included (a fixed price per operation, independent of machine and optimiser). The word after the figure is `bounded`, `finite`, `unbounded`, `none`, `conditional` or `unknown` (see "Bounded execution time"); anything but `bounded` is `>= N` with the reasons; operations that are not modelled (external calls, inline assembly, waiting) are listed. |
 | `stack depth` | An estimate of the stack bytes safe code needs, per function, and the deepest call path from the entry. `par` threads and event-loop `@tick` / `@with_tick` slices are listed as separate roots, never the event loop itself. |
 | `heap memory` | The most bytes one run can request from the allocator, with the number of allocation operations. Frees are not credited. |
 | `peak live heap` | The most bytes alive at once, with frees credited where they are certain, plus `leaves` (bytes still live when the function returns, such as a block it hands back). Never below the real peak, but not always exact. |
@@ -1676,11 +1676,57 @@ func main() void{
 
 `sumTo` on its own is only *finite*: it always ends, but its loop count depends on `n`, so the figure (`>= 32`) is a lower bound and
 the line names `n`. `main` is *bounded*, because it calls `sumTo` with the literal `10`, so that call is costed with that value.
-Every figure ends in one of six words (`bounded`, `finite`, `unbounded`, `non-terminating`, `can diverge`, `unknown`), explained in 3.2.
+Every figure ends in one of six words (`bounded`, `finite`, `unbounded`, `none`, `conditional`, `unknown`), explained in 3.2.
 
 The figures are bounds computed from the bytecode, not measurements. Direct calls to C's `malloc` through an `extern` and stack
 used by C functions are not counted. `CASPIEN_AUDIT_ALL=1` in the environment
 lifts the 40-line limit on each section; the cost table and the exact rules are in `docs/COMPILER_REFERENCE.md`.
+
+#### Doc comments: `justify`, `termination` and `--fix`
+
+A comment that starts `/*!` (or `//!`) is a doc comment: still commentary, but marked, with a key, and checked for where it stands.
+One character after the opening is all it takes; there is no marker to repeat on every line.
+
+```rust
+/*! termination: bounded */
+func sum4() mut u64{
+	let s = mut 0
+	//! termination: bounded
+	for i in 0..4{ s += i }
+	return s
+}
+
+/*! justify: the sentinel is a C string, so the scan needs a raw pointer */
+unsafe raw{
+	...
+}
+```
+
+| Key | Goes directly before | Text | Checked |
+|---|---|---|---|
+| `justify: ANY TEXT` | an `unsafe` block | Free text saying why the programmer had to use `unsafe`. | No. `--audit` prints it beside the block and counts the blocks that have none. The text `TODO` counts as not yet justified. |
+| `termination: CLASS` | a `func`, a `for` or a `loop` (decorators may stand between) | One of `bounded`, `finite`, `unbounded`, `none`, `conditional`, `unknown` (see 3.2). | Yes, exactly: a label that differs from the class the audit computes, in either direction, is a compile error that names both. |
+
+A doc comment anywhere else, with an unknown key, with no text, or with a class that is not one of the six, is a compile error. A missing
+one is fine. A `func` label describes the whole function, callees included; a `for` or `loop` label describes that loop alone (its bound or
+exit, its calls and the loops inside it), so a `loop{}` that nothing can leave is `none` even when only some paths reach it, while the function
+holding it is `conditional`. On a generic function the label has to hold for every instance. For `unsafe loop{ loop{ ... } }`, `justify` goes
+before the `unsafe` and `termination` before the inner `loop`. Branches take no label: a function that is `conditional` is so because of a
+loop or call inside one of its arms, and `--audit` names it, with the file and line of the loop or of the callee.
+
+The compiler can write these comments for you, as text only (it inserts whole comment lines and changes nothing else):
+
+```
+java Compiler -i main.caspien --fix termination,justify            # show the plan, write nothing
+java Compiler -i main.caspien --fix termination,justify --write    # apply it
+```
+
+`termination` labels every unlabelled `func`, `for` and `loop` in your files with the class the audit computes (a construct whose generic
+instances disagree, or that does not start its line, is listed and left alone). `justify` puts `/*! justify: TODO */` before every
+`unsafe` block that has no justification; the reason is for a person to write, so the tool never invents one, and `--audit` keeps counting
+the TODOs. Existing comments are never changed. `--fix-stdlib` includes the standard library. After `--write` the program is compiled again and
+its higher-order bytecode must equal the one from before the edit (comments change no code); if it does not, as for a program that prints
+`__LINE`, every file is put back.
 
 ### 4.3 Using the compiler
 
@@ -1720,6 +1766,7 @@ like `import "../stdlib/libc.caspien"`.
 | `--no-warnings` | Hide warnings (errors are always shown). |
 | `--fs-report` | Print every file-system root the program opens and every `unsafe file` use, next to the build's file policy (see 4.3). |
 | `--audit` | Do not build anything: print what the compiler can say about the compilation target (see *Auditing a target*). |
+| `--fix MODES [--write] [--fix-stdlib]` | Do not build anything: insert `termination` / `justify` doc comments (see *Doc comments*); a dry run unless `--write`. |
 | `--viz [out.html]` | Do not build anything: write an HTML page that draws the entry function and its direct callees as circles sized by worst-case stack depth. |
 
 The intermediate files of every stage are also kept under `output/.build/`, which is the easiest way to see

@@ -1076,10 +1076,67 @@ public class Lexer {
         }
     }
 
+    /** Validates a doc comment (`/*! key: text *&#47;` or `//! key: text`) and registers it under the keyword it labels. See {@link DocComments}. */
+    private void registerDocComment(int idx, Token c) {
+        int cl = c.line;
+        String body = c.text.substring(1).trim().replaceAll("\\s+", " ");
+        int colon = body.indexOf(':');
+        if (colon <= 0) {
+            throw new CompilerException("lex", file, cl, "doc comment must read '" + (c.type == TokenType.ML_COMMENT ? "/*! " : "//! ")
+                    + "key: text' (keys: justify, termination)");
+        }
+        String key = body.substring(0, colon).trim();
+        String value = body.substring(colon + 1).trim();
+        if (!key.equals("justify") && !key.equals("termination")) {
+            throw new CompilerException("lex", file, cl, "unknown doc comment key '" + key + "' (keys: justify, termination)");
+        }
+        if (value.isEmpty()) {
+            throw new CompilerException("lex", file, cl, "doc comment '" + key + ":' has no text");
+        }
+        if (key.equals("termination") && !DocComments.CLASSES.contains(value)) {
+            throw new CompilerException("lex", file, cl, "termination class '" + value + "' is not one of " + String.join(" | ", DocComments.CLASSES));
+        }
+        // the keyword it labels: the next real token, past any decorator lines (`@name ...` up to the end of its line)
+        int j = idx + 1;
+        Token target = null;
+        while (j < tokens.size()) {
+            Token x = tokens.get(j);
+            if (isDiscardable(x)) {
+                j++;
+                continue;
+            }
+            if (x.type == TokenType.OPERATOR && x.text.equals("@")) {
+                while (j < tokens.size() && tokens.get(j).type != TokenType.TERMINATOR) {
+                    j++;
+                }
+                continue;
+            }
+            target = x;
+            break;
+        }
+        String kind = target == null ? null : target.text;
+        boolean ok = key.equals("justify") ? "unsafe".equals(kind)
+                : "loop".equals(kind) || "for".equals(kind) || "func".equals(kind);
+        if (!ok) {
+            throw new CompilerException("lex", file, cl, "'" + key + ":' doc comment is not expected here: it goes directly before "
+                    + (key.equals("justify") ? "an `unsafe` block" : "a `loop`, `for` or `func`")
+                    + (target == null ? " (nothing follows it)" : " (found `" + kind + "` on line " + target.line + ")"));
+        }
+        if (!DocComments.register(new DocComments.Doc(key, value, file, kind, cl, target.line))) {
+            throw new CompilerException("lex", file, cl, "'" + key + ":' appears twice before the same `" + kind + "`");
+        }
+    }
+
     private void pinComments() {
         for (int i = 0; i < tokens.size(); i++) {
             Token t = tokens.get(i);
             if (t.type != TokenType.SL_COMMENT && t.type != TokenType.ML_COMMENT) {
+                continue;
+            }
+            if (t.text.startsWith("!")) {
+                registerDocComment(i, t);
+                tokens.remove(i);
+                i--;
                 continue;
             }
             Token target = findNextRealToken(i);
