@@ -17,38 +17,40 @@ func main() void{
 }
 ```
 
-> **Status.** Caspien is a research language and a working compiler, not a finished product. Section 1.5
-> says exactly which of the guarantees below are enforced today and which are still aspirations. Both the language
+> **Status.** Caspien is a research language and a working compiler, not a finished product. Parts 2 to 4
+> each end with a "Where it stands" section that says exactly which of the guarantees below are enforced today and which are still aspirations. Both the language
 > and the compiler are unstable: syntax, semantics, the standard library and the compiler's command-line and
 > configuration interfaces may change without notice, and no stable version has been released. Reaching one is a
 > goal we are working towards.
 
 **Contents**
 
-1. [The language](#1-the-language): philosophy, a tour with examples, and an honest status report
-2. [Using the compiler](#2-using-the-compiler): building, running, targets, every optimisation switch, the standard library and the file system
-3. [How the compiler works](#3-how-the-compiler-works)
-4. [Performance](#4-performance): latest benchmark results and an honest comparison with other languages
+1. [Philosophy](#1-philosophy): the model, the four goals, and the shape of a program
+2. [Correctness](#2-correctness): types, proofs, memory, locks and failure
+3. [Totality](#3-totality): the event loop, bounded loops, termination classes, purity, concurrency
+4. [Auditability](#4-auditability): the trust boundary, `--audit`, using the compiler, how it works
+5. [Speed](#5-speed): low-level access, your own allocation, the optimiser, benchmark results
+6. [Appendices](#appendices): builtins, idioms, every use of `@lock`, the decorator table, the examples
 
 ---
 
-## 1. The language
+## 1. Philosophy
 
-### 1.1 Philosophy
+### 1.1 The model
 
-The idea behind Caspien is not so much rapid prototyping as building and maintaining auditable codebases. Code that is accepted by the compiler carries properties that other languages ask you to take
+The idea behind Caspien is not so much rapid prototyping as building and maintaining auditable codebases. Safe code that is accepted by the compiler carries properties that other languages ask you to take
 on trust: it terminates, it does not use memory it does not own, and it has no hidden runtime failure
 paths. The language is verbose and explicit on purpose, because every explicit annotation is something a
 reviewer, an auditor or another tool can check.
 
-The model behind this is the **run-to-completion total slice**. A program is a flat, single event loop.
-Each iteration of the loop handles one event, which is a slice of time, and the handler for that event is a
-*total* function: it is guaranteed to return a result for every input, with no non-termination, no
-exception and no undefined behaviour, absent a hardware fault. The loop itself is the only unbounded
-construct, and it lives in a small, auditable place. (The project's working name for this idea was
-*Time-Slice TIDAG*, or Turing Incomplete Directed Acyclic Graph. "Total slice" says the same thing in terms that match the literature.)
+The model behind this is **event-driven programming with total handlers**. A program is a flat, single event loop.
+Each iteration of the loop handles one event, and the handler for that event is a *total* function: it is
+guaranteed to return a result for every input, with no non-termination, no exception and no undefined
+behaviour, absent a hardware fault. The loop itself is the only unbounded construct, and it lives in a
+small, auditable place. (The project's working name for this idea was *Time-Slice TIDAG*, or Turing
+Incomplete Directed Acyclic Graph.)
 
-Four properties make a handler total:
+Four properties make a handler total (each is the subject of a later part):
 
 1. **Bounded loops over an acyclic call graph.** The call graph has no cycles: direct and mutual
    recursion are compile errors. The only recursion allowed is a tail call on a strictly shrinking
@@ -69,57 +71,60 @@ Four properties make a handler total:
 4. **Explicit escape.** Everything the checker cannot prove goes in an `unsafe` block, which is easy to
    find, count and review. All C calls, `loop{}` and raw pointer dereference are in that category.
 
+Properties 2 and 3 are the subject of Part 2 (Correctness), property 1 of Part 3 (Totality), and property 4 of Parts 4 (Auditability) and 5 (Speed).
+
 Two limits are worth stating plainly, because they separate Caspien from the claims it is sometimes
 confused with:
 
 - **Termination is not bounded time.** A nested bounded loop with large bounds can run for years. A
-  scheduler that must meet deadlines also needs a worst-case execution time per slice. Caspien proves the
+  scheduler that must meet deadlines also needs a worst-case execution time per handler. Caspien proves the
   first guarantee and `--audit` reports the second in abstract gas units (a fixed cost per operation, not
-  seconds), exact for literal loop bounds and classed finite, unbounded, non-terminating or unknown otherwise (see "Termination" below).
+  seconds), exact for literal loop bounds and classed finite, unbounded, can diverge, non-terminating or unknown otherwise (see 3.2).
   The shape of the language makes it tractable: loop bounds are ordinary range values, and an acyclic call
   graph gives a static bound on stack depth (estimated by `--audit`).
 - **"Total" is relative to the primitives.** The guarantee is conditional on the escape hatches. A C
   function called from `unsafe`, or an `unsafe loop{}`, can do anything.
 
-The idea sits in a family of established work: total functional programming (Turner, 2004), the LOOP
-language (Meyer and Ritchie, 1967), synchronous languages such as Esterel (Berry and Gonthier, 1992) and
-Lustre (Halbwachs, Caspi, Raymond and Pilaud, 1991), WCET analysis (Wilhelm et al., 2008), and
-run-to-completion cooperative kernels. Caspien's contribution is to combine totality with ownership-based
-memory safety in a low-level language with a conventional imperative surface.
+The idea sits in a family of established work. For totality: total functional programming (Turner, 2004) and
+the LOOP language (Meyer and Ritchie, 1967). For handlers that run to completion: the synchronous languages
+Esterel (Berry and Gonthier, 1992), Lustre (Halbwachs, Caspi, Raymond and Pilaud, 1991) and Céu (Santos et al.,
+2018). For bounding the cost of each handler: Real-Time FRP (Wan, Taha and Hudak, 2001), E-FRP (Kaiabachev,
+Taha and Zhu, 2007) and WCET analysis (Wilhelm et al., 2008). For a deliberately Turing-incomplete language
+whose resource use can be bounded by static analysis: Simplicity (O'Connor, 2017). For the same discipline as
+a coding rule: NASA/JPL's Power of 10 (Holzmann, 2006), which asks for a fixed bound on every loop and no
+recursion. Caspien's contribution is to combine totality with ownership-based memory safety in a low-level
+language with a conventional imperative surface.
 
-### 1.2 A tour of the language
+### 1.2 Four goals
 
-This section is a guide to writing idiomatic Caspien. It goes from the shape of a program to the features
-that need the most care, and each part ends with the errors you will meet first. The examples are excerpts
-from the programs in [`docs/examples/`](docs/examples). Each program is complete, compiles, and prints the
-output shown in its header comment, so you can run it and change it. The code blocks use the `rust` syntax
-hint only because GitHub has no Caspien highlighter.
+Caspien is organised around four goals, and each has a part of this document. Parts 2 to 4 end with a
+"Where it stands" section, which says which of the guarantees are enforced today and which are still open.
 
-| Part | Program |
-|---|---|
-| [Values](#values-mutability-and-types), [structs, methods and enums](#structs-methods-and-enums) | [`01_basics`](docs/examples/01_basics.caspien) |
-| [Proofs](#proofs-instead-of-runtime-checks) | [`02_proofs`](docs/examples/02_proofs.caspien) |
-| [Ownership](#ownership-and-pointers) | [`03_ownership`](docs/examples/03_ownership.caspien) |
-| [Termination](#bounded-loops-and-bounded-recursion) | [`04_termination`](docs/examples/04_termination.caspien) |
-| [Interfaces](#interfaces), [generics](#generics-and-compile-time-dispatch), [`par`/`await`](#atomics-locks-and-threads) | [`05_abstraction`](docs/examples/05_abstraction.caspien) |
-| [Locks](#locks-and-proofs-on-your-own-types) | [`06_locks`](docs/examples/06_locks.caspien) |
-| [Program entry and event loops](#program-entry-main-arguments-and-event-loops) | [`07_main_c_args`](docs/examples/07_main_c_args.caspien), [`08_main_safe_args`](docs/examples/08_main_safe_args.caspien), [`09_event_loop`](docs/examples/09_event_loop.caspien) |
-| [Functions, overloading, `@pure`](#functions-overloading-and-pure), [generics](#generics-and-compile-time-dispatch) | [`10_functions`](docs/examples/10_functions.caspien) |
-| [Composition](#composition-there-is-no-struct-inheritance), [interfaces](#interfaces), [dispatch](#generics-and-compile-time-dispatch) | [`11_types`](docs/examples/11_types.caspien) |
-| [`match`](#the-match-statement), [loops, bounded recursion](#bounded-loops-and-bounded-recursion) | [`12_match_and_loops`](docs/examples/12_match_and_loops.caspien) |
-| [Dynamic arrays and the standard library](#dynamic-arrays-and-the-standard-library) | [`13_dynamic_arrays`](docs/examples/13_dynamic_arrays.caspien) |
-| [The standard library](#25-the-standard-library): collections, strings, hashing | [`20_stdlib_tour`](docs/examples/20_stdlib_tour.caspien) |
-| [Files and directories](#26-files-and-directories) | [`21_files`](docs/examples/21_files.caspien) |
-| [Processes, threads, sleeping](#25-the-standard-library) | [`22_processes_threads_sleep`](docs/examples/22_processes_threads_sleep.caspien) |
-| [Raw pointers and C](#unsafe-and-raw-pointers) | [`14_unsafe_pointers`](docs/examples/14_unsafe_pointers.caspien) |
-| [Every `unsafe` tag](#unsafe-and-raw-pointers) | [`19_unsafe_tags`](docs/examples/19_unsafe_tags.caspien) |
-| [`extern`, `export`, linking your own C](#talking-to-c-extern-and-export) | [`docs/c_interop/`](docs/c_interop/) |
-| [Inline assembly](#inline-assembly-asm), [`assume match`](#vouching-for-a-proof-assume-match) | [`18_asm_and_assume`](docs/examples/18_asm_and_assume.caspien) |
-| [`throw`, `try`, `?`](#errors-throw-try-) | [`15_errors`](docs/examples/15_errors.caspien) |
-| [Atomics, locks, threads](#atomics-locks-and-threads) | [`16_atomics_and_locks`](docs/examples/16_atomics_and_locks.caspien) |
-| [Locked structs, `Result`, constructors](#locks-and-proofs-on-your-own-types) | [`17_locked_results`](docs/examples/17_locked_results.caspien) |
+> **Safe code and unsafe code.** The claims below about correctness, totality and, to a lesser extent,
+> auditability are claims about *safe* Caspien. Inside an `unsafe` block the compiler still checks types, but it
+> promises nothing else: correctness and totality are the programmer's responsibility there. `unsafe` marks
+> exactly where that responsibility changes hands. Auditability is what keeps the boundary visible. It does not
+> make unsafe code correct, but it makes sure every such block is found, named and counted.
 
-#### The shape of a program
+- **Correctness (Part 2).** Safe code has no hidden failure paths. Every value says whether it can change,
+  every heap value has one owner, every index and divisor needs a proof, and every failure is declared and
+  handled. Where another language inserts a check that can fail, Caspien asks for the proof.
+- **Totality (Part 3).** A program is a loop of event handlers, and in safe code each handler is guaranteed to
+  finish. Loops are bounded, the call graph has no cycles, and the event loop is the only unbounded construct.
+  Termination classes, purity and the rules for threads and locks belong to this goal.
+- **Auditability (Part 4).** Everything the checker cannot prove is marked, counted and named. `--audit` lists
+  every `unsafe` block with its reasons and reports the worst-case cost, stack and heap of the rest. The
+  guarantee is "safe user code on top of a small, tested `unsafe` core", and Part 4 says what that core is.
+- **Speed (Part 5).** Caspien is a systems language. You can work at the level of the machine with raw
+  pointers, C calls, inline assembly and your own allocation schemes, and the compiler is a four-stage
+  optimiser with every switch exposed. Using the low-level tools means stepping outside the checker, and
+  `unsafe` marks where. Part 5 also reports measured performance, including how far behind C it is.
+
+Examples in this document are excerpts from the programs in [`docs/examples/`](docs/examples), listed in
+[Appendix E](#e-runnable-examples). Each program is complete, compiles, and prints the output shown in its
+header comment. The code blocks use the `rust` syntax hint only because GitHub has no Caspien highlighter.
+
+### 1.3 The shape of a program
 
 ```rust
 import "stdlib/print.caspien"
@@ -145,23 +150,132 @@ func main() void{
 - Every program that uses `new`, `owns` or `ref` requires the `gt_*` decorated functions (`@gt_init`,
   `@gt_register`, `@gt_alive_check`, `@gt_destruct`, `@gt_moved`, and for a nullable `ref` also `@gt_ref_id` and `@gt_ref_resolve`, which `gt_alive_check.caspien` imports) to be defined in the final compilation unit. Basic
   defaults are available in `stdlib/`, and the examples import them. They implement the runtime registry
-  that tracks which heap values are alive, and they are ordinary Caspien source, not compiler magic.
+  that tracks which heap values are alive (see 2.3), and they are ordinary Caspien source, not compiler magic.
   `libc.caspien` declares the C functions, and calling any C function, `printf` included, needs an `unsafe`
   block. To print without writing `unsafe`, import `stdlib/print.caspien` (and `print_string.caspien` for a `String`):
   `print(x)` and `println(x)` take text, every integer size, `f32`/`f64`, `bool` and `char`.
 - Blocks use braces and statements need no semicolons. A `@decorator` goes on **its own line** above the
   declaration it changes. Several decorators are several lines. `@pub @realizes func f()` on one line is a
   parse error.
-- `main` takes no arguments and returns `void`, `bool` or `s32` (the entry-point section at the end of this
-  tour covers arguments and event loops).
+- `main` takes no arguments by default and returns `void`, `bool` or `s32`. Arguments and event loops are
+  described below.
 - Everything has to be bound with `mut` or `imut` before it is stored. Arguments to C functions are the
   exception: C has no notion of mutability, so literals and expressions can be passed to `printf` and its
   kin directly.
+
+#### `main` arguments
+
+A plain program has one `main`. It can take the command-line arguments in one of two shapes.
+
+```rust
+// C shape: the raw argc/argv pair. The pointers are raw, so reading them needs `unsafe`.
+func main(argc: imut s32, argv: raw mut raw mut char) void{ /* ... */ }
+
+// Safe shape: the arguments copied into owned dynarrays of dynarrays of chars.
+// Needs `import "stdlib/make_safe_args.caspien"` (the function marked `@make_safe_args`).
+func main(args: owns some mut dynarray(imut dynarray(imut char))) void{
+	let n = mut len(args)             // how many arguments, including the program name
+	match 1 in args{                  // an index into a dynarray needs a proof
+		let first = mut args[1]
+		/* `first` is a dynarray of char */
+	}
+}
+```
+
+The safe shape is the idiomatic one: `make_safe_args` copies every argument, so your program never holds a
+pointer into the C runtime's memory. (`docs/examples/07_main_c_args.caspien` and
+`08_main_safe_args.caspien` are runnable versions.)
+
+#### Event loops
+
+The model of 1.1 is realised by an event loop. Each call to a handler runs to completion before the next one
+starts, and each handler is an ordinary terminating function. The loop is the one declared way to run forever,
+and the only place outside `unsafe` where a bare `loop{}` is allowed.
+
+A program that might never terminate is written as an **event loop**. It can still end if the loop is broken or an error is thrown. Three decorators work together, and the
+compiler checks that each appears exactly once. `main` is marked `@with_tick` and builds the initial state,
+a heap struct. `@tick` marks a function that takes the state and returns it. `@event_loop` marks the real
+entry point, which calls `main` once and then calls `tick` until the loop ends. It is the only function allowed a bare
+`loop{}` outside `unsafe`.
+
+`@tick` may also be `@throws` (for example when it allocates). The loop then ends when a tick throws: the stdlib loop writes
+`event loop stopped: <message>` to stderr and the program exits with status 1. A failing `main` ends it the same way. The auditor reads the
+loop's termination class off the tick: no `@throws` is `non-terminating`, a tick that throws on some paths is `unbounded`, and one that throws on every
+path is `bounded` (exactly one tick runs).
+
+```rust
+struct World{@pub{
+	ticks: mut u64
+}}
+
+@event_loop
+@throws
+func start() void{
+	?catch(e){ throw e }
+	let state = mut ? main()
+	loop{
+		state = ? tick(state)
+	}
+}
+
+@with_tick
+@throws
+func main() owns some mut World{
+	?catch(e){ throw e }
+	return ? new World{ticks= 0}
+}
+
+@tick
+func tick(w: owns some mut World) owns some mut World{
+	w.ticks += 1
+	return w
+}
+```
+
+Each call to `tick` is an ordinary terminating function, so it is a total handler in the sense of 1.1;
+the only unbounded construct is the loop that schedules them. `stdlib/event_loop.caspien` is a ready-made
+`@event_loop` that wraps the calls to `main` and `tick` in `?`: if either throws, it writes the message to stderr and
+the program exits with status 1 (so `main` must be `@throws`, as a `main` that builds heap state has to be). If `main` takes arguments, the `@event_loop` function receives the raw `argc`
+and `argv` and passes them (or wraps them, in `stdlib/event_loop_safe_args.caspien`) through to `main`.
+The runnable version is `docs/examples/09_event_loop.caspien`.
+
+## 2. Correctness
+
+Correctness here means that safe code has no hidden failure paths: no out-of-bounds index, no null
+dereference, no use of freed memory, no division by zero, no unproven float operation and no unhandled error.
+The checker gets there in layers, and this part follows them in order. *Types* say what a value is and
+whether it can change. *Proofs* replace the run-time checks other languages insert. *Memory* says who is
+responsible for every allocation and how a pointer is checked before it is used. *Locks* apply the same proof
+mechanism to your own types. *Failure* covers what cannot be prevented, such as running out of memory, by
+making it declared and handled.
+
+### 2.1 Types
+
+Types are where the proofs start, so they come first. Everything is explicit: each value says whether it
+can change, there are no implicit conversions, and a struct has to name every member. The sections below
+cover values, structs and enums, composition, interfaces and generics, and then functions, methods and
+constructors, which are built from them.
 
 #### Values, mutability and types
 
 Every value is `mut` or `imut`, and you write it. There are no implicit conversions between integer
 types, so a literal takes the type of the slot it lands in, and a variable never silently changes width.
+
+The primitive types are these. Pointer kinds are described in 2.3.
+
+| Type | What it is | Notes |
+|---|---|---|
+| `u8`, `u16`, `u32`, `u64` | Unsigned integers of 8 to 64 bits | Arithmetic wraps and never traps. A bare literal is a `u64` unless the slot says otherwise. |
+| `s8`, `s16`, `s32`, `s64` | Signed integers of 8 to 64 bits | As above. `as` widens only within one signedness family. |
+| `f32`, `f64` | Floating point | Each operation needs a proof that the operand is finite (2.2). |
+| `bool` | `true` or `false` | |
+| `char` | A character | The element type of C-style strings and of the safe `main` arguments. |
+| `string` | Text | A string literal is a `static imut string`. The growable `String` class is in the standard library (4.3). |
+| `T[N]` | A fixed array, such as `u64[5]` | The length is part of the type, so a literal index needs no proof. |
+| `range` | A range, such as `0..10` | The termination argument of a `@recursive` function (3.1). |
+| `dynarray(T)` | A heap array whose length is only known at run time | Every index needs a proof (2.3). |
+| `owns`, `ref`, `auto`, `static`, `raw` | The five pointer kinds | They say who is responsible for the target (2.3). |
+| `void` | No value | The return type of a function that returns nothing. |
 
 ```rust
 let count = mut 1
@@ -177,115 +291,18 @@ let wrapped = mut wrap:<u8>(big)     // explicit: keep the low bits (here 44)
 let clamped = mut sat:<u8>(big)      // explicit: clamp to the range (here 255)
 ```
 
-Integers are `u8` to `u64` and `s8` to `s64`; floats are `f32` and `f64`; there are also `bool`, `char`,
-fixed arrays (`u64[5]`), ranges (`0..10`) and strings. A literal such as `5` is a `u64` unless the slot it
+A literal such as `5` is a `u64` unless the slot it
 lands in says otherwise, and a literal that does not fit is an error. `as` only widens within one
 signedness family. Narrowing needs a `fits` proof, `wrap` or `sat`. Hex, binary and underscore literals
 work (`0xFF_FF`, `0b1010`), and the bitwise builtins are `bits_and`, `bits_or`, `bits_xor`, `bits_not`,
 `bits_left`, `bits_right`, `bits_rotl` and `bits_rotr`, with one fully defined shift rule for every width
 (rotates take the count modulo the width).
 
-#### Functions, overloading and `@pure`
+#### Structs and enums
 
-A function declares each parameter with its mutability, and the return type follows the parameter list.
-Several functions can share one name. They are told apart by their parameter count and by the **base
-type** of each parameter. Mutability, storage, parameter names and return types never distinguish two
-overloads, so `f(x: mut u64)` and `f(y: imut u64)` are duplicates.
-
-```rust
-func describe(x: mut u64) mut u64{ return 1 }
-func describe(x: mut u8) mut u64{ return 2 }
-func describe(x: mut u64, y: mut u64) mut u64{ return 3 }
-func describe(x: static imut string) mut u64{ return 4 }
-
-describe(5)        // 1: a bare literal is a u64, so the u64 overload is an exact match
-describe(small)    // 2: `small` is a u8 variable
-describe(c, c)     // 3
-describe("hi")     // 4
-```
-
-A call tries the overloads that need no literal adaptation first and then the rest in declaration order,
-and takes the first whose parameters accept the arguments. Overloading needs no decorator: it is implicit.
-Methods and constructors overload the same way, and are covered with structs below. These are the errors:
-
-```
-function 'f' with this parameter signature is already declared
-no overload of 'f' matches argument types (f32)
-```
-
-**`@pure`** marks a function with no side effects. It is not the same as referentially transparent: a `@pure`
-function may read through a pointer argument, so the same call can return different results as the
-pointee changes, and it may call the built-in `insecure_rand()` or allocate (`new`, `dyn`, `resize`, `clone`),
-which are side-effect-free but non-deterministic (the result depends on state the arguments do not determine,
-and running out of memory is part of the program's semantics). The checker enforces it call by call (it is not
-transitive, so each function in a chain carries the decorator):
-
-```rust
-@pure
-func sq(x: mut u64) mut u64{ return x * x }
-
-@pure
-func hyp(a: mut u64, b: mut u64) mut u64{
-	let s = mut sq(a)
-	let t = mut sq(b)
-	return s + t
-}
-```
-
-A `@pure` function may call only other `@pure` functions. It may not call an extern or a function pointer,
-read a `mut` global, write through any pointer, `throw`, contain an `unsafe` block (so no `asm`, `memcopy`,
-`atomic` or unsafe dynarrays), use `match @lock` (acquiring the lock writes the mutex and blocks), or start or wait
-on a thread (`par`, `await`, `@par` loops). Local variables, arithmetic and `for` loops are fine.
-
-```
-'f' is '@pure' and can only call other '@pure' functions -- 'impure' is not
-'f' is '@pure' and cannot read 'G' -- it is a mutable global/static variable
-'f' is '@pure' and cannot mutate through a pointer -- ...
-'f' is '@pure' and cannot 'throw' -- an unconditional program termination can never be verified at compile time
-'f' is '@pure' and cannot use an 'unsafe' block -- unsafe code can do anything the compiler cannot check, so purity could not be guaranteed
-'f' is '@pure' and cannot use 'match @lock' -- acquiring the lock writes the mutex and blocks (a retry loop on shared state)
-```
-
-**`@pure(rt)`** is referentially transparent: the same arguments always give the same result. It has every
-`@pure` rule above plus: no value of a pointer type (`ref`, `raw`, `owns`, `auto`, `static`) or dynamic array
-anywhere (parameters, return type, locals, expressions), so it cannot read memory the arguments do not
-determine; no globals or statics; no allocation (`new`, `dyn`, `resize`, `clone`), no `deref`, no
-`insecure_rand()`; and it may call only other `@pure(rt)` functions. Safe code has no unbounded loop, so every
-loop in an `rt` function is a `for` range or a `@recursive` bounded loop and the function always terminates.
-**`@non(deterministic)`** marks a function whose result may differ for equal arguments (a `@pure` function can
-carry it); a `@pure(rt)` function cannot call one, and `@pure(rt)` and `@non(deterministic)` cannot be combined
-on one function.
-
-```rust
-@pure(rt)
-func poly(x: mut u64) mut u64{
-	let s = mut 7
-	for i in 0..8{ s = s * 31 + x + i }
-	return s
-}
-@pure
-@non(deterministic)
-func roll() mut u64{ return insecure_rand() }
-```
-
-```
-'f' is '@pure(rt)' and can only call other '@pure(rt)' functions -- 'g' is only '@pure'
-'f' is '@pure(rt)' (referentially transparent) and cannot use 'new' -- allocation depends on heap state (it can fail), so the result is not a function of the arguments
-'f' is '@pure(rt)' (referentially transparent) and cannot have a pointer or dynamic array ('ref_some_mut_W') as parameter 'p' -- it may not read memory through pointers
-```
-
-`@reads` and `@writes` (each takes one or more of `all`, `self`, `others`, `globals`) are accepted and
-checked for shape, but nothing enforces them yet. Treat them as documentation.
-
-#### Structs, methods and enums
-
-A struct lists its members, with `@pub` to make them visible outside the file. Methods live in `impl`
-blocks. The receiver is an explicit `_self` parameter, and methods use Lua-style self bolting: `x:name(args)`
-is exactly `x.name(x, args)`. The receiver is evaluated once and bolted on as the first argument, so
-`acct:deposit(50)` and `acct.deposit(acct, 50)` are the same call, and the colon form is the one to write.
-There is no hidden `this`: what the method receives is the first argument you can see. A struct
-value cannot be passed by value as a parameter: pass a pointer, or return the struct, which the compiler
-implements without a copy.
+A struct lists its members, with `@pub` to make them visible outside the file. A struct value cannot be
+passed by value as a parameter: pass a pointer, or return the struct, which the compiler implements without a
+copy. An enum lists its variants. Methods and constructors are described after interfaces and generics.
 
 ```rust
 struct Account{@pub{
@@ -293,59 +310,8 @@ struct Account{@pub{
 	balance: mut u64
 }}
 
-impl Account{
-	@pub
-	func deposit(_self: ref some mut self, amount: mut u64) void{
-		_self.balance += amount
-	}
-}
-
 enum Shape{ CIRCLE, SQUARE, TRIANGLE }
 ```
-
-The receiver type `ref some mut self` is a non-null pointer to the value that does not own it (see *Ownership and
-pointers*), and the examples build the value with `new`, which allocates it on the heap (`?` handles an
-allocation failure; see *Errors*).
-
-Methods overload like functions, by parameter count and base type, inside a bare `impl`. A `static` method
-has no receiver and is called on the type (`Q.make()`). Overloading is implicit, with no decorator:
-
-```rust
-struct Q{@pub{ a: mut u64 }}
-impl Q{
-	@pub
-	func add(_self: ref some mut self, n: mut u64) mut u64{ return _self.a + n }
-	@pub
-	func add(_self: ref some mut self, s: static imut string) mut u64{ return _self.a + 1000 }
-	@pub
-	static func make() mut u64{ return 5 }
-	@pub
-	static func make(n: mut u64) mut u64{ return n }
-}
-```
-
-**Constructing a struct.** A struct literal must name every member exactly once, so there is no way to leave
-a member unset and safe code never sees uninitialised memory. This is the *One True Constructor* (OTC)
-policy, and the literal is the one true way to make a value. A struct can also declare constructors, with
-`impl constructor for T(...) self` (generic form: `impl<T> constructor for Box<T>(...)`). They overload by
-parameter type like any function, and once a struct has one, its literal form is legal only inside the
-constructors' own bodies. Everyone else writes `P(...)`, or `new P(...)` for a heap value:
-
-```rust
-struct P{@pub{ a: mut u64 }}
-impl constructor for P(n: mut u64) self{ return P{a= n} }
-impl constructor for P(s: static imut string) self{ return P{a= 99} }
-
-let pa = mut P(mut 4)
-```
-
-```
-'Q' already has a method named 'add' with this parameter signature in this impl block
-struct 'Point' literal is missing member(s): y
-'P' declares its own constructor(s) -- its struct-literal form ('P{...}') can only be used inside one of those constructors' own bodies; ...
-```
-
-A locked struct (see *Locks and proofs on your own types*) has one narrow exception to the first rule.
 
 #### Composition (there is no struct inheritance)
 
@@ -406,7 +372,7 @@ impl Greeter for B{
 - `x implements I` takes a struct-typed `x` and an interface name `I`.
 - Both are run-time tests and must be inside `match Some(...)` when `x` is a pointer, like any other use of
   the pointer.
-- `@guard` interfaces describe a lock and are covered with the locks below.
+- `@guard` interfaces describe a lock and are covered in 3.4.
 
 A call on a value of a concrete type is a direct call. A call through an interface-typed pointer is
 dispatched at run time:
@@ -424,6 +390,8 @@ compares the object's class id against each implementer in turn. There is no vta
 `gt_*` imports are required for such a call. A method with no `self`-typed parameter cannot be called this
 way. When the type is known statically, prefer a bounded generic (`func f<T: Shape>(...)`), which compiles
 to a direct call.
+
+(The `impl` blocks and `_self` receivers in the examples above are described under Methods, below.)
 
 #### Generics and compile-time dispatch
 
@@ -461,6 +429,106 @@ Everything in this list is resolved by the compiler and costs nothing at run tim
 generic instantiation, bounded generic calls, a method call on a value of a concrete type, `@pure`
 checking, and every proof. The only run-time dispatch in the language is a call through an interface-typed
 pointer and the `instanceof` and `implements` tests, described under Interfaces.
+
+#### Functions and overloading
+
+A function declares each parameter with its mutability, and the return type follows the parameter list.
+Several functions can share one name. They are told apart by their parameter count and by the **base
+type** of each parameter. Mutability, storage, parameter names and return types never distinguish two
+overloads, so `f(x: mut u64)` and `f(y: imut u64)` are duplicates.
+
+```rust
+func describe(x: mut u64) mut u64{ return 1 }
+func describe(x: mut u8) mut u64{ return 2 }
+func describe(x: mut u64, y: mut u64) mut u64{ return 3 }
+func describe(x: static imut string) mut u64{ return 4 }
+
+describe(5)        // 1: a bare literal is a u64, so the u64 overload is an exact match
+describe(small)    // 2: `small` is a u8 variable
+describe(c, c)     // 3
+describe("hi")     // 4
+```
+
+A call tries the overloads that need no literal adaptation first and then the rest in declaration order,
+and takes the first whose parameters accept the arguments. Overloading needs no decorator: it is implicit.
+Methods and constructors overload the same way, and are covered below. These are the errors:
+
+```
+function 'f' with this parameter signature is already declared
+no overload of 'f' matches argument types (f32)
+```
+
+`@pure` and the other function decorators that describe behaviour are covered in 3.3.
+
+#### Methods
+
+Methods live in `impl` blocks. The receiver is an explicit `_self` parameter, and methods use Lua-style
+self bolting: `x:name(args)` is exactly `x.name(x, args)`. The receiver is evaluated once and bolted on as the
+first argument, so `acct:deposit(50)` and `acct.deposit(acct, 50)` are the same call, and the colon form is the
+one to write. There is no hidden `this`: what the method receives is the first argument you can see.
+
+```rust
+impl Account{
+	@pub
+	func deposit(_self: ref some mut self, amount: mut u64) void{
+		_self.balance += amount
+	}
+}
+```
+
+The receiver type `ref some mut self` is a non-null pointer to the value that does not own it (see *Ownership and
+pointers*), and the examples build the value with `new`, which allocates it on the heap (`?` handles an
+allocation failure; see 2.5).
+
+Methods overload like functions, by parameter count and base type, inside a bare `impl`. A `static` method
+has no receiver and is called on the type (`Q.make()`). Overloading is implicit, with no decorator:
+
+```rust
+struct Q{@pub{ a: mut u64 }}
+impl Q{
+	@pub
+	func add(_self: ref some mut self, n: mut u64) mut u64{ return _self.a + n }
+	@pub
+	func add(_self: ref some mut self, s: static imut string) mut u64{ return _self.a + 1000 }
+	@pub
+	static func make() mut u64{ return 5 }
+	@pub
+	static func make(n: mut u64) mut u64{ return n }
+}
+```
+
+```
+'Q' already has a method named 'add' with this parameter signature in this impl block
+```
+
+#### Constructors
+
+**Constructing a struct.** A struct literal must name every member exactly once, so there is no way to leave
+a member unset and safe code never sees uninitialised memory. This is the *One True Constructor* (OTC)
+policy, and the literal is the one true way to make a value. A struct can also declare constructors, with
+`impl constructor for T(...) self` (generic form: `impl<T> constructor for Box<T>(...)`). They overload by
+parameter type like any function, and once a struct has one, its literal form is legal only inside the
+constructors' own bodies. Everyone else writes `P(...)`, or `new P(...)` for a heap value:
+
+```rust
+struct P{@pub{ a: mut u64 }}
+impl constructor for P(n: mut u64) self{ return P{a= n} }
+impl constructor for P(s: static imut string) self{ return P{a= 99} }
+
+let pa = mut P(mut 4)
+```
+
+```
+struct 'Point' literal is missing member(s): y
+'P' declares its own constructor(s) -- its struct-literal form ('P{...}') can only be used inside one of those constructors' own bodies; ...
+```
+
+A locked struct (see 2.4) has one narrow exception to the first rule.
+
+### 2.2 Proofs
+
+`match` is the construct behind every proof. This section describes `match` itself and then the proofs the
+checker knows about integers, floats and indexes. Proofs about memory are in 2.3.
 
 #### The `match` statement
 
@@ -527,7 +595,7 @@ line). These are the conditions:
 | `a within b` | `a` is a strict sub-range of `b` (the recursive case) |
 | `x instanceof T`, `x implements I` | use `x` as that type |
 | `c1 and c2` | both proofs |
-| `@lock` | see the locks below |
+| `@lock` | see 2.4 and 3.4 |
 
 ```rust
 func pick(n: mut u64, d: mut u64) mut u64{
@@ -602,114 +670,11 @@ Two details of bounds proofs. A *literal* index into a fixed array needs no proo
 against the length), but any index into a dynarray needs one, because its length exists only at run time.
 And a proof is tied to one array: indexing two arrays inside one loop takes two nested matches.
 
-A liveness proof ends where something may free the object. `match Some(r){...}` checks once, at the top, so a
-body that frees what `r` refers to must not use `r` afterwards, and the same holds for a `ref` that is `ref some`
-from the moment it is made (`let r = ref a` of an `owns some` owner). What ends a proof: an `unsafe` block
-(`unsafe assume{` excepted), assigning over a slot that owns memory, `resize`, `par`, `await`, moving an owner into
-`new`/`dyn`, and a call to any function that does one of these or takes an owning parameter. A later use is a compile
-error that names the call; match again (or take a new `ref`) after the free:
+### 2.3 Memory
 
-```
-'r' is used after something that may free the object it refers to: the call to consume: it takes an owning parameter, which it may drop (f.caspien:19)
-```
-
-A `ref some` parameter (including `self`) is alive when the function is entered, exactly like a fresh `ref some`
-local, and the same rules end that proof inside the function. An `unsafe` block ends proofs where the block ends, and
-`unsafe`, an unknown call target or an `extern` free end every proof; an assignment, `resize` or owning parameter ends
-only proofs of references whose target type that free can reach by ownership (freeing an `Other` cannot end a proof
-about a `Node`). A `ref` stored in a struct member is proven by `match Some(h.p)` and held to the same rules (the error names the path). A plain `ref` is a 64-bit id issued by the ghost table, not an address, so a freed object's ref stays dead even when `malloc` hands the same address to a new object; `ref some` and the binding inside `match Some` are the address. The standard
-library is held to the rule like any other code: a helper with an `unsafe` block ends proofs at its call sites.
-
-#### Locks and proofs on your own types
-
-`@lock` on a struct turns one member into a **discriminant** and makes every other member unreadable until a
-`match` on the discriminant has said it is safe. It is the same proof mechanism as `match b != 0`, applied to
-a type you define. The discriminant is an enum member, and it must be the struct's first member. There are
-two kinds. A `swap` atomic (`OPEN` or `CLOSED`) is a spin lock, described under *Atomics, locks and threads*.
-An ordinary `imut` enum is a **proof lock**, which is how a type can carry data that is only sometimes there.
-The classic use is a result:
-
-```rust
-enum ResultState{ OK, FAIL }
-
-@lock(match self.state : OK)
-struct Result<T>{@pub{
-	state: imut ResultState
-	payload: mut T
-}}
-```
-
-`payload` is reachable only inside a `match` on `state` that selected `OK`. The `FAIL` case never gets to
-touch it, and neither does code that forgot to look. The discriminant is `imut`, so it cannot change after
-construction and a proof of it cannot go stale:
-
-```rust
-let r = mut halve(10)               // a function returning Result<u64>
-match r.state{
-	OK:{ total += r.payload }       // the proof holds here
-	FAIL:{ total += 0 }             // r.payload would be rejected here
-}
-```
-
-```
-'payload' requires a 'match r.state{...}' proof first (this struct is decorated '@lock(match self.state : ...)')
-```
-
-**Constructing a locked value.** The One True Constructor policy and constructor implementations (see
-*Structs, methods and enums*) apply unchanged: a struct literal names every member, and a struct that
-declares constructors can be built only through them. A `Result<T>` normally has two, one for each state:
-
-```rust
-impl<T> constructor for Result<T>(v: mut T) self{
-	return Result:<T>{state= ResultState.OK, payload= v}
-}
-impl<T> constructor for Result<T>() self{
-	return Result:<T>{state= ResultState.FAIL}       // payload is left out, see below
-}
-
-func halve(n: mut u64) mut Result<u64>{
-	if n % 2 == 0{ return Result:<u64>(n / 2) }
-	return Result:<u64>()
-}
-```
-
-A locked struct adds one exception to the first rule. It may leave out **every** member except the
-discriminant, but only when the discriminant is `imut` and is written as a direct `Enum.Variant` that does
-**not** satisfy the lock. The compiler is then certain the other members can never be read, so it lets them
-stay uninitialised. This is the only place the language allows uninitialised data, and it is safe because
-safe code can never reach it. It works in a plain literal as well:
-
-```rust
-@lock(match self.status : LIVE)
-struct Reading{@pub{
-	status: imut Sensor
-	value: mut u64
-}}
-
-let live = mut Reading{status= Sensor.LIVE, value= 7}
-let dead = mut Reading{status= Sensor.DEAD}          // value is never initialised and never readable
-```
-
-These are the errors for getting it wrong:
-
-```
-'Result_u64' declares its own constructor(s) -- its struct-literal form ('Result_u64{...}') can only be used inside one of those constructors' own bodies; ...
-'Result_u64' cannot be constructed by omitting its other members -- 'ResultState.OK' satisfies this struct's own lock ('@lock(match self.state : OK)'), so every other member must be provided instead
-omitting every other member of 'Result_u64' requires 'state' to be given as a direct 'ResultState.Variant' reference -- never a variable or a call result, so the mismatch can be proven at compile time
-struct 'Result_u64' literal is missing member(s): state
-```
-
-**Every use of `@lock`.** The same decorator appears in several places, each described where it is used:
-
-| Form | On | Meaning |
-|---|---|---|
-| `@lock(match self.f : V)`, `f` an `imut` enum | struct | a proof lock: the other members need a `match` on `f` that selects `V` (this section) |
-| `@lock(match self.f : OPEN)`, `f` a `swap` atomic | struct | a spin lock: the other members need `match @lock x{ OPEN:{...} }` |
-| `@lock(match self.f : V)` | method | the caller must already be inside the matching `match` |
-| `@lock(match i in self.a)` | method | the caller must hold a bounds proof for `i` (`into` for writes) |
-| `@lock`, `@unlock` | method of a `@guard` implementer | the two operations behind `lock x{ ... }` |
-
-The full example is `17_locked_results`.
+Safe code never uses memory it does not own. This section covers the five pointer kinds, how a `ref` is
+checked before it is used, what ends that check, the ghost table that makes the check possible, and dynamic
+arrays, whose lengths are only known at run time.
 
 #### Ownership and pointers
 
@@ -763,179 +728,53 @@ dropped when its scope ends, and copying it (`let b = a`, `b = a`, putting it in
 literal) moves its owned members, so `a` can no longer be used. Copying one out of a pointer with `deref` is an error;
 use `clone` instead.
 
-#### Bounded loops and bounded recursion
+#### Liveness proofs: what ends them
 
-Every loop in safe code is a `for` over a range that is fixed when the loop starts. The counter cannot be
-assigned, and the bounds are read once, so assigning the variable the range came from does not change how
-many times the loop runs. An empty range (`5..5`) and an inverted one
-(`7..3`) run zero times. `break` leaves a loop and `continue` starts its next iteration (see "Control flow" below).
+A liveness proof ends where something may free the object. `match Some(r){...}` checks once, at the top, so a
+body that frees what `r` refers to must not use `r` afterwards, and the same holds for a `ref` that is `ref some`
+from the moment it is made (`let r = ref a` of an `owns some` owner). What ends a proof: an `unsafe` block
+(`unsafe assume{` excepted), assigning over a slot that owns memory, `resize`, `par`, `await`, moving an owner into
+`new`/`dyn`, and a call to any function that does one of these or takes an owning parameter. A later use is a compile
+error that names the call; match again (or take a new `ref`) after the free:
+
+```
+'r' is used after something that may free the object it refers to: the call to consume: it takes an owning parameter, which it may drop (f.caspien:19)
+```
+
+A `ref some` parameter (including `self`) is alive when the function is entered, exactly like a fresh `ref some`
+local, and the same rules end that proof inside the function. An `unsafe` block ends proofs where the block ends, and
+`unsafe`, an unknown call target or an `extern` free end every proof; an assignment, `resize` or owning parameter ends
+only proofs of references whose target type that free can reach by ownership (freeing an `Other` cannot end a proof
+about a `Node`). A `ref` stored in a struct member is proven by `match Some(h.p)` and held to the same rules (the error names the path). A plain `ref` is a 64-bit id issued by the ghost table, not an address, so a freed object's ref stays dead even when `malloc` hands the same address to a new object; `ref some` and the binding inside `match Some` are the address. The standard
+library is held to the rule like any other code: a helper with an `unsafe` block ends proofs at its call sites.
+
+#### The ghost table
+
+Every allocation (`new`, `dyn`, `clone`, a growing `resize`, `par`) is registered in a table of live
+allocations, which is how a `ref` can be checked for liveness at run time and how scope-end cleanup finds
+what to free. The table is five small files, and a program that allocates imports all of them next to
+`libc.caspien`:
 
 ```rust
-let n = mut 5
-for i in 0..n{              // runs exactly 5 times, whatever `n` becomes
-	n += 100
-}
-
-for i in arr{ ... }          // i runs over the indexes 0..len of a fixed array
-for match i in v{ s += v[i] }   // only indexes proven to be inside `v`
-for i in 0..3{
-	for j in i..3{ ... }     // nested loops may use the outer counter in their range
-}
+import "../stdlib/libc.caspien"
+import "../stdlib/gt_init.caspien"
+import "../stdlib/gt_register.caspien"
+import "../stdlib/gt_alive_check.caspien"
+import "../stdlib/gt_destruct.caspien"
+import "../stdlib/gt_moved.caspien"
 ```
 
-The same loop works directly over a dynamic array, and `match` in the header proves the index for you. `into`
-proves it for writing, and `Some(i)` additionally proves that the element `ps[i]` (a pointer) is alive:
+The table is an open-addressing hash set (expected O(1)) that also issues lazy 64-bit ids for nullable `ref`s;
+`stdlib/gt_set/` is the same set without ids and `stdlib/gt_linear/` the older linear-scan version
+(import one folder's files, never mix; only the default folder supports a nullable `ref`).
 
-```rust
-for i in d{ n += 1 }                              // i runs over 0..len(d)
-for match i in d{ s += d[i] }                     // read d[i]
-for match i into d{ d[i] = d[i] * 2 }             // write d[i]
-for match Some(i) in ps{ s += ps[i].a }           // ps is a dynarray of owned pointers: read through ps[i]
-for match Some(i) into ps{ ps[i].b = 7 }          // ... or write through it
-```
-
-A bare `loop{}` has no bound and needs `unsafe` (the `loop` tag). The only exception is the `@event_loop`
-function (see the end of this tour).
-
-```rust
-let n = mut 0
-unsafe loop{
-	loop{                    // runs until something breaks out of it
-		n += 1
-		if n == 5{ break }
-	}
-}
-```
-
-#### Control flow: `break`, `continue` and lazy chains
-
-`break` leaves the **innermost** enclosing `for` (or `loop`) and carries on after it. It can sit inside
-any number of `if` or `match` blocks within that loop, and it is the only way to end a loop early:
-
-```rust
-for i in 0..6{
-	if i == 4{ break }           // prints i=0..3, then leaves the loop
-	print("i=")
-	println(i)
-}
-for i in 0..3{
-	for j in 0..3{
-		if j == 1{ break }       // leaves the inner loop only: prints j=0 once per i
-		print("i=")
-		print(i)
-		print(" j=")
-		println(j)
-	}
-}
-```
-
-A `break` inside `match @lock ... OPEN` releases the lock on the way out (see "Atomics, locks and threads").
-Using `break` outside a loop is an error.
-
-`continue` in a `for` starts the next iteration (the counter still steps, and the bound is not re-read); in a
-`loop` it goes back to the top of the body. Like `break`, it frees the owns locals declared so far in the body,
-and it can sit inside any `if` or `match` within the loop:
-
-```rust
-let odd = mut 0
-for i in 0..10{
-	if i % 2 == 0{ continue }     // skip the even numbers
-	odd += i                      // 1 + 3 + 5 + 7 + 9 = 25
-}
-```
-
-`continue` has two older meanings, and the innermost construct around it decides which one applies:
-
-- at the end of a `catch(e){ ... }` handler it jumps to just past the enclosing `try{ ... }` block (see
-  "Errors"). If a loop is opened inside the handler, a `continue` in that loop belongs to that loop,
-- in the `CLOSED` case of a `match @lock` it retries the acquire. The `OPEN` case has no `continue`, since the
-  lock is held there.
-
-Anywhere else it is rejected: `'continue' can only be used inside a 'for' or 'loop' (next iteration), inside a
-'catch(e) { ... }' block, or directly in the 'CLOSED' case of a 'match @lock'`. To get "next iteration" from
-inside a `catch` handler, wrap the loop body in a `try{ ... }` block: the handler's `continue` then lands at the
-end of the body.
-
-An `if` or `elseif` condition made with `&&` or `||` evaluates **both** sides, as it is plain logic on two
-values. To make the chain lazy, write `&&then` or `||then`. The right side then runs only when the left side
-has not already decided the answer: `a &&then b` skips `b` when `a` is false, and `a ||then b` skips `b` when
-`a` is true. The compiler emits a compare-and-jump after each link instead of combining the two values, so a
-skipped operand is never called and its side effects never happen. A chain is evaluated left to right, and
-links can be mixed:
-
-```rust
-func noisy(name: static imut string, r: mut bool) mut bool{
-	print("  called ")
-	println(name)
-	return r
-}
-
-if noisy("a", false) && noisy("b", true){ ... }              // calls a, then b
-if noisy("a", false) &&then noisy("b", true){ ... }          // calls a only
-if noisy("c", true) ||then noisy("d", true){ ... }           // calls c only
-if noisy("e", false) &&then noisy("f", true) ||then noisy("g", true){ ... }
-                                                             // calls e, then g (f is skipped)
-```
-
-`&&then` and `||then` are written with or without a space (`&& then`), are only allowed at the root of an
-`if` or `elseif` condition (not inside a function argument, an assignment or a `match`), and `then` is not
-a reserved word elsewhere.
-
-Recursion is limited to one shape, because the compiler must be able to turn it into a bounded loop. A
-`@recursive` function:
-
-1. takes an `imut range` as its **last** parameter,
-2. starts with `match r is base{ ... }`, which returns when the range is empty,
-3. makes one self-call, as the sole expression of a `return`, inside `match r2 within r{ ... }`, where
-   `r2` is a range strictly inside `r`,
-4. ends that match with an `else` branch.
-
-```rust
-@recursive
-func fact(acc: mut u64, r: imut range) mut u64{
-	match r is base{ return acc }
-	let lo = mut (r.start + 1)
-	let hi = mut r.end
-	let r2 = imut (lo..hi)
-	match r2 within r{ return fact(acc * r.start, r2) }
-	else{ return acc }
-}
-// fact(1, 1..11) == 3628800: the compiler lowers this to a `for` loop that runs 10 times.
-```
-
-The range is the termination argument: it shrinks on every call, and `within` is a compile-time proof that
-it does. A range that shrinks by one runs as many steps as it has elements, and one that shrinks from
-both ends runs half as many (rounded up). The equivalent loop is shorter, and is usually what you want:
-
-```rust
-func factLoop(n: mut u64) mut u64{
-	let acc = mut 1
-	let hi = mut (n + 1)
-	for i in 1..hi{ acc *= i }
-	return acc
-}
-```
-
-Always write the `else` branch. A plain `return acc` statement after the `within` match compiles
-without an error and returns the wrong value, because the lowered loop falls through into it. Any other
-form of recursion is rejected:
-
-```
-'f' calls itself -- recursion is not allowed unless the function is decorated '@recursive'
-indirect recursion detected: 'b' calls 'a', which (directly or transitively) calls back to 'b' ...
-a '@recursive' function must have an 'imut range' as its final parameter
-a recursive call to 'f' may only appear as the sole expression of a 'return' statement ...
-'i' is immutable for the duration of this 'for'/'for match' loop ...
-'loop' can only be used from within 'unsafe' code
-```
-
-#### Dynamic arrays and the standard library
+#### Dynamic arrays
 
 A fixed array (`u64[5]`) has its length in its type. A dynamic array (dynarray) has its length in a hidden
 header and lives on the heap, so creating or growing one can fail and goes through `?`.
 
 ```rust
-?catch(e){ return }                       // see "Errors" below
+?catch(e){ return }                       // see 2.5
 
 let zero = mut 0
 let d = mut ? dyn:<u64>([])               // an empty array needs its element type
@@ -958,314 +797,95 @@ checker, but crashes at run time today.
 When the elements own memory (`owns` pointers, or structs with an `owns` member), shrinking frees what the cut-off
 elements owned, and growing gives each new slot its own deep copy of the fill value, never a shared pointer.
 
-An `unsafe dyn` array has no checks at all: no proofs, no `?` on `resize`, and no protection against an
-index past the end. It is for code that has proved the bounds in its own way.
+Unsafe dynamic arrays, which have no checks at all, are described in 5.1. The standard library wraps dynamic arrays, strings and hash maps in classes; see 4.3.
+
+### 2.4 Locks
+
+`@lock` on a struct turns one member into a **discriminant** and makes every other member unreadable until a
+`match` on the discriminant has said it is safe. It is the same proof mechanism as `match b != 0`, applied to
+a type you define. The discriminant is an enum member, and it must be the struct's first member. There are
+two kinds. An ordinary `imut` enum is a **proof lock**, which is how a type can carry data that is only
+sometimes there, and is the subject of this section. A `swap` atomic (`OPEN` or `CLOSED`) is a **spin lock**,
+which protects data shared between threads and is described in 3.4. The classic use of a proof lock is a result:
 
 ```rust
-unsafe udyn{
-	let us = mut unsafe dyn:<u64>([])
-	us = resize(us, 6)
-	for i in 0..6{ us[i] = i * 3 }
-}
+enum ResultState{ OK, FAIL }
+
+@lock(match self.state : OK)
+struct Result<T>{@pub{
+	state: imut ResultState
+	payload: mut T
+}}
 ```
 
-The standard library wraps these in classes, each in its own file under `stdlib/`:
-
-- `DynamicArray<T>` (`new DynamicArray:<u64>()`) has `get`, `set`, `pushBack`, `pushFront`, `popBack`,
-  `popFront`. `get` and `set` need an index proof against `list.backing`, and the mutating methods are
-  `@throws`, so call them with `?`. The pop methods return the default value you pass when the array is
-  empty. `pushBack` reallocates on every call, so it suits small arrays, not hot loops. For a struct
-  element type use the `...Ptr` variants (`pushBackPtr(list, auto s)`), which take a pointer.
-- `String` (`new String("hello")`) has `appendChar`, `concat`, `charAt`, `setCharAt`, `sub` and
-  `firstIndexOf`, which returns -1 when the character is absent.
-- `HashMap<T>` (`new HashMap:<u64>(defaultKey, defaultValue, capacity)`) has `set`, `get` and `contains`.
-  The capacity is the starting size (rounded up to a power of two; 0 means every `set` is ignored); the table doubles when it is 70% full. There is no remove.
-- `insecure_hash.caspien` (FNV-1a, for hash tables only: it is not a security primitive, hence the name) and
-  `sha256.caspien` (a real SHA-256), `process.caspien` (spawn a process and read or write its
-  pipes), `sleep.caspien`, `par_call.caspien` / `await_call.caspien` (threads).
+`payload` is reachable only inside a `match` on `state` that selected `OK`. The `FAIL` case never gets to
+touch it, and neither does code that forgot to look. The discriminant is `imut`, so it cannot change after
+construction and a proof of it cannot go stale:
 
 ```rust
-let list = mut ? new DynamicArray:<u64>()
-for i in 0..5{
-	let v = mut (i * i)
-	? list.pushBack(list, v)
+let r = mut halve(10)               // a function returning Result<u64>
+match r.state{
+	OK:{ total += r.payload }       // the proof holds here
+	FAIL:{ total += 0 }             // r.payload would be rejected here
 }
-let sum = mut 0
-for i in 0..5{
-	match i in list.backing{ sum += list.get(list, i) }
-}
-let top = mut ? list.popBack(list, mut 999)      // 16
 ```
 
-#### `unsafe` and raw pointers
+```
+'payload' requires a 'match r.state{...}' proof first (this struct is decorated '@lock(match self.state : ...)')
+```
 
-`unsafe{}` is how a program says "the compiler cannot prove this meets the guarantees of safe code: I have
-either proven it myself, or I am choosing to compile code without those guarantees". It is deliberately small, easy
-to find and easy to count. What needs it:
-
-- calling any C function (an `extern`),
-- making a `raw` pointer (`raw v`), and dereferencing or cloning one (`deref(p)`, `clone(p)`): reading through a `raw`
-  pointer is unsafe even when it is proven alive, so it needs the `deref` or `clone` tag as well as the proof (a `match Some(p)` is a
-  real run-time check against the ghost table, and `raw` pointers into C memory or the stack are not in it,
-  so for those the proof is an `assume match Some(p)`),
-- `memcopy`,
-- inline assembly (`ASM`) and `assume match`,
-- a bare `loop{}`, and an `unsafe dyn` array,
-- reading or writing a `mut` global or static that is not atomic or lock-protected.
-
-Anything that safe code proves with a `match` (a `deref` or `clone` of a pointer, a division, an arithmetic or
-compare operation on a float, a `@lock` method call) is vouched for in an `unsafe assume{` block with `assume match`, which is an assertion to the type checker
-and never runs, so it may name any expression: `assume match Some(p + i)`, `assume match d > 0`, `assume match x : finite`. Nothing else
-in `unsafe` relaxes those checks.
-
-A statement-level `unsafe` block must say why it is unsafe, by naming the reasons after the keyword:
-`unsafe assume extern{`. The reasons are `extern` (a C call), `memcopy`, `raw` (making a `raw` pointer),
-`deref` and `clone` (dereferencing or cloning a `raw` pointer), `global`, `loop`, `udyn` (an unsafe dynarray of plain data) or `udyn:owns` (an unsafe dynarray whose elements own memory: the compiler only frees the block, so you destruct the elements yourself before shrinking or leaving scope), `assume` (`assume match`),
-`call` (calling a function pointer), `asm`, `async` (a pointer across an `@async` boundary), `guard` (using a
-`@guard` type without proving it locked), `atomic` (using an atomic, or touching a `swap` mutex field, outside `match @lock`) and `file` (opening a path the build's file policy has not vouched for, see 2.6). The
-compiler checks the list both ways: a block that needs a reason it does not name is an error, and so is a block
-that names one it does not need, so the line is also what you grep for. A bare `unsafe{}` is an error. The one exception is `unsafe unaudited{`: it stands for every tag at once and says nothing about why, for code nobody has audited yet. It is written alone, is just as easy to grep for, and the standard library may never use it (the compiler refuses it in any file under `stdlib/`). (A
-root-level `unsafe{}` that holds declarations is not a statement block and takes no list.)
-
-One example of every tag (each is compiled and run in `docs/examples/19_unsafe_tags.caspien`, which also
-defines the helpers they use):
+**Constructing a locked value.** The One True Constructor policy and constructor implementations (see
+*Constructors* in 2.1) apply unchanged: a struct literal names every member, and a struct that
+declares constructors can be built only through them. A `Result<T>` normally has two, one for each state:
 
 ```rust
-unsafe extern{ printf("%llu\n", n) }                        // extern: call a C function
-unsafe raw{ let r = mut (raw v) }                           // raw: make a raw pointer
-unsafe memcopy raw{ memcopy(raw dst, mut 8, raw v) }        // memcopy: copy 8 bytes from v to dst
-unsafe assume deref raw{                                    // deref: read through a raw pointer ...
-	let pv = mut (raw v)
-	assume match Some(pv)                                   // assume: ... that you vouch is alive
-	seen = mut deref(pv)
+impl<T> constructor for Result<T>(v: mut T) self{
+	return Result:<T>{state= ResultState.OK, payload= v}
 }
-unsafe clone{ return ?clone(src) }                          // clone: deep copy of a `raw some` pointer
-unsafe global{ counter += 3 }                               // global: a mutable static that is not atomic or locked
-unsafe loop{                                                // loop: a bare `loop{}`
-	loop{
-		n += 1
-		if n == 5{ break }
-	}
+impl<T> constructor for Result<T>() self{
+	return Result:<T>{state= ResultState.FAIL}       // payload is left out, see below
 }
-unsafe udyn{ let a = mut unsafe dyn([10, 20, 30]) }         // udyn: an unsafe dynarray of plain data
-unsafe udyn:owns{ let a = mut unsafe dyn([h]) }             // udyn:owns: its elements own memory (here `h` owns a `World`)
-unsafe call{ let r = mut call(fp, mut 10) }                 // call: call through a function pointer
-unsafe asm{                                                 // asm: an inline `ASM` block (see "Inline assembly")
-	ASM relax {
-		pause
-	}
-	relax
+
+func halve(n: mut u64) mut Result<u64>{
+	if n % 2 == 0{ return Result:<u64>(n / 2) }
+	return Result:<u64>()
 }
-unsafe async raw{                                           // async: a pointer crosses into an @async function
-	let pc = mut (raw cell)
-	got = mut ? await readCell(pc)
-}
-unsafe global guard{                                        // guard: a bare @lock/@unlock call (the safe form is `lock gate{ ... }`)
-	gate.lock()
-	counter += 8
-	gate.unlock()
-}
-unsafe atomic{ m.lockState swap St.CLOSED }                   // atomic: touch an atomic by hand: a swap mutex's state field, or a bare atomic variable
-unsafe unaudited{ counter = mut deref(pc) }                  // unaudited: any of the above, no reasons given (never in the stdlib)
 ```
 
-Passing, returning, casting and stepping a `raw` pointer is safe. `raw x` needs an addressable variable (or a
-string literal), so bind a computed value to a `let` first. Pointer arithmetic is C's: `p++`, `p--`,
-`p += n`, `p -= n`, `p + n` and `p - n` move by `n * sizeof(pointee)` bytes, and `p - q` is the number of
-elements between two pointers of the same type, as an `s64`. Widening the pointee with `as` (a `raw u8` as
-`u64`) gives a pointer that steps by 8. `deref(p)` reads a value, and is never an assignment target: write
-through a pointer with member assignment on a proven pointer, or with `memcopy`.
+A locked struct adds one exception to the first rule. It may leave out **every** member except the
+discriminant, but only when the discriminant is `imut` and is written as a direct `Enum.Variant` that does
+**not** satisfy the lock. The compiler is then certain the other members can never be read, so it lets them
+stay uninitialised. This is the only place the language allows uninitialised data, and it is safe because
+safe code can never reach it. It works in a plain literal as well:
 
 ```rust
-func main() void{
-	let count = mut 5
-	let bytes = mut (count * sizeof(u64))
-	let:<raw mut u8> base = null
-	unsafe extern{
-		base = mut malloc(bytes)                // the only extern call that allocates
-	}
-	let p = mut (base as u64)                   // now a `raw u64`: it steps by 8
-	let start = mut p
-	for i in 0..count{
-		let v = mut (i * 10 + 1)
-		unsafe memcopy raw{
-			memcopy(p, mut 8, raw v)            // memcopy(destination, byteCount, source)
-		}
-		p++
-	}
-	let span = mut (p - start)                  // 5 elements
-	let q = mut start
-	let sum = mut 0
-	for i in 0..count{
-		unsafe assume deref{
-			assume match Some(q)                // vouch that q is alive: it points into C memory, so a real Some(q) would be false
-			sum += deref(q)                     // reading through a raw pointer needs the `deref` tag as well
-		}
-		q++
-	}
-	unsafe extern{
-		free(base)
-	}
-}
+@lock(match self.status : LIVE)
+struct Reading{@pub{
+	status: imut Sensor
+	value: mut u64
+}}
+
+let live = mut Reading{status= Sensor.LIVE, value= 7}
+let dead = mut Reading{status= Sensor.DEAD}          // value is never initialised and never readable
 ```
 
-Keep each `unsafe` block as narrow as the unsafe operations in it, so that a reviewer can see exactly what
-was not proven. The standard library follows that rule: its `unsafe` blocks wrap the `malloc`, `memcopy`
-and similar calls and nothing else. These are the errors you will meet:
+These are the errors for getting it wrong:
 
 ```
-calling extern 'malloc' requires 'unsafe' code
-'raw' pointers can only be constructed from within 'unsafe' code
-'deref' of a pointer requires 'unsafe' code unless the pointer is proven alive -- ...
-'deref(...)' cannot be the target of an assignment -- it yields a copy of the value, not a place to write; ...
-'loop' can only be used from within 'unsafe' code
+'Result_u64' declares its own constructor(s) -- its struct-literal form ('Result_u64{...}') can only be used inside one of those constructors' own bodies; ...
+'Result_u64' cannot be constructed by omitting its other members -- 'ResultState.OK' satisfies this struct's own lock ('@lock(match self.state : OK)'), so every other member must be provided instead
+omitting every other member of 'Result_u64' requires 'state' to be given as a direct 'ResultState.Variant' reference -- never a variable or a call result, so the mismatch can be proven at compile time
+struct 'Result_u64' literal is missing member(s): state
 ```
 
-#### Vouching for a proof: `assume match`
+Every use of the `@lock` decorator, proof lock and spin lock alike, is tabulated in [Appendix C](#c-every-use-of-lock).
+The full example is `17_locked_results`.
 
-An ordinary proof is checked: `match i in arr{...}` compiles to a run-time bounds test around the block, and
-the block runs only if the test passes. `assume match` states the same condition as true **without testing
-it**. It takes the conditions `match` takes, it is allowed only inside `unsafe`, and it is the statement to
-reach for when the proof was established somewhere the compiler cannot see, or when the test itself is the
-cost (the inner loop of a numeric kernel, say). With no block, the proof holds for the rest of the scope. With
-a block, it holds inside the block only:
+### 2.5 Failure
 
-```rust
-unsafe assume{
-	for i in a{
-		assume match i in a             // no block: holds until the end of the loop body
-		total += a[i]                   // no bounds test is emitted for this read
-	}
-	assume match b != 0{                // a block: holds inside it only
-		q = total / b
-	}
-	assume match r.status : LIVE        // the lock form: satisfies `@lock(match self.status : LIVE)`
-	total += r.value
-}
-```
-
-If the assumption is false the program has undefined behaviour: an out-of-bounds read, a division by zero, a
-member that was never initialised. The compiler has been told not to look, so reviewing an `assume match`
-means checking the claim yourself. `18_asm_and_assume` is a runnable version.
-
-```
-'assume match' is only allowed inside 'unsafe' code
-```
-
-#### Talking to C: `extern` and `export`
-
-`extern` declares a function the final program will find at link time, almost always a C function. The
-declaration lists the parameter types (no names) and the return type, and `...` as the last parameter marks a
-variadic function:
-
-```rust
-extern abs(mut s32) mut s32                    // int abs(int)
-extern labs(mut s64) mut s64                   // long labs(long)
-extern snprintf(raw mut u8, mut u64, static imut string,...) mut s32   // int snprintf(char *, size_t, const char *, ...)
-
-@link_name(labs)                               // a different Caspien name for the same C symbol
-extern c_abs(mut s64) mut s64
-```
-
-Calling an extern needs `unsafe`, and the compiler does not check an extern's declaration against the real
-C header, so a wrong one is as dangerous as it is in C. Match the C types by size and signedness: `s32` is
-`int`, `s64` is `long`, `u64` is `unsigned long` or `size_t`, a Caspien `string` is a `const char *`, and a
-`raw mut u8` is a byte pointer such as `void *`. `@link_name(symbol)` gives the C symbol when the name you
-want differs from it (a Caspien keyword such as `sleep` cannot be an extern's name), and
-`@call_convention(name)` selects the calling convention of the C side. Two declarations of one extern in a
-program are an error, so shared ones live in a file you import: `stdlib/libc.caspien` declares `printf`,
-`malloc`, `free`, `strlen` and the other C functions the standard library and the examples use.
-
-`export name` goes the other way. It names an ordinary top-level function, and the compiler emits it under its
-own bare name (no mangling) so that C can declare and call it. The function cannot be overloaded or generic,
-because C has neither, and it can be exported once:
-
-```rust
-extern c_apply(mut u64, mut u64) mut u64       // defined in helper.c
-
-func add(a: mut u64, b: mut u64) mut u64{ return a + b }
-export add                                     // C sees `unsigned long add(unsigned long, unsigned long)`
-
-func main() void{
-	let r = mut 0
-	unsafe extern{
-		r = mut c_apply(mut 40, mut 2)         // helper.c: return add(a, b) * 2;
-	}
-	println(r)                                 // 84
-}
-```
-
-The compiler links only the C library (with `-pthread` and `-lm`). To link your own C files, stop after code generation and let
-`gcc` finish the job (with a Linux target in `toolchain.config`):
-
-```
-java Compiler --asm -i docs/c_interop/interop.caspien output/interop.s
-gcc output/interop.s docs/c_interop/helper.c -o output/interop -no-pie -pthread -lm
-```
-
-`docs/c_interop/` has the whole program and a script that builds and runs it. These are the errors:
-
-```
-calling extern 'malloc' requires 'unsafe' code
-'extern strlen' is already declared
-'export add' does not name a declared function
-'export f' is ambiguous -- 'f' has 2 overloads, and C has no overloading; only an overload-free function can be exported
-'f' is generic and can't be exported -- C has no equivalent of a monomorphized function family
-```
-
-#### Inline assembly: `ASM`
-
-`ASM` puts assembly text into the compiler's output exactly as you wrote it. It is the lowest-level hatch in
-the language, so it needs `unsafe` everywhere: a root-level `ASM` sits inside an `unsafe{ }` block, and one in
-a function sits inside an `unsafe` block of that function. The block's text is not parsed or checked. The
-only rules are that its braces balance (braces inside quotes and comments do not count) and that the word
-`ASM_END` does not appear in it. It must be in the assembler syntax of your target, which is AT&T for
-`linux`.
-
-```rust
-// Root level: this defines a C-callable function in assembly. The text is copied where it stands.
-unsafe{
-ASM {
-.text
-.globl asm_add3
-asm_add3:
-	lea (%rdi,%rsi), %rax
-	add %rdx, %rax
-	ret
-}
-}
-extern asm_add3(mut u64, mut u64, mut u64) mut u64    // call it like any other extern
-
-// The same text kept in a file. The path is relative to the source file.
-unsafe{
-ASM "18_asm_helper.s"
-}
-
-func main() void{
-	unsafe asm extern{
-		let s = mut asm_add3(mut 1, mut 2, mut 3)    // 6
-
-		ASM relax {                // inside a function a block can be named,
-			pause
-		}
-		relax                      // and then it is emitted wherever its name stands alone on a line
-		relax
-	}
-}
-```
-
-An unnamed `ASM { ... }` inside a function is emitted at that point. A named block is scoped like a `let`:
-it is visible from its declaration to the end of the enclosing block. The compiler cannot see what the text
-does, so the usual assembly rules are yours to keep: leave the stack as you found it and preserve the
-callee-saved registers (`rbx`, `rbp`, `r12` to `r15`). A function that contains an `ASM` block is
-conservatively left alone by the optimiser: it gets no register variables and its variable passes skip it, and
-a program with any `ASM` in it turns off `unused-declaration-removal` as a whole. `18_asm_and_assume` is a
-runnable version. These are the errors:
-
-```
-declaring 'ASM' requires 'unsafe' code
-invoking 'relax' requires 'unsafe' code
-```
+Some failures cannot be proven away. Allocation can fail, and a program may need to report an error
+that its caller decides how to handle. Caspien makes these paths visible: a function that can throw is marked
+`@throws`, every call to it is marked at the call site, and the handler is part of the function.
 
 #### Errors: `throw`, `try`, `?`
 
@@ -1356,8 +976,9 @@ call to 'f', which is decorated '@throws', must be wrapped in 'try ... catch { .
 
 **Stack traces.** A handler can read where the error came from. `e.stack_trace` is an `auto imut u64[N+1]` of function ids,
 innermost first (the function that threw, then its caller, up to the thread's root), ended by a `0`; `N` is 16 unless
-`java Compiler --trace-depth N` says otherwise (1 to 1024), and a deeper stack keeps the innermost `N` frames.
-`funcname(id)` from `stdlib/funcname.caspien` gives a name such as `leaf (prog.caspien:10)`, and `"?"` for `0` or an id it
+`java Compiler --trace-depth N` says otherwise (1 to 1024), and a deeper stack keeps the innermost `N` frames. The index must be
+a literal, as for any fixed array. `funcname(id)` from `stdlib/funcname.caspien` gives a name such as `leaf (prog.caspien:10)`
+(a generic instance carries its type, `chk_u8`; a thread's trace ends at its `__trampoline_` entry), and `"?"` for `0` or an id it
 does not know. It cannot fail and allocates nothing, so it is safe to call while reporting an out-of-memory error.
 
 ```rust
@@ -1376,11 +997,332 @@ func main() void{
 ```
 
 Tracing costs nothing unless a program mentions `stack_trace` or `funcname`: then every function gets two more frame
-slots, functions are no longer inlined, and each throw and each failed allocation copies the ids into a per-thread staging
-array. The handler gets its own copy of the trace, so a throw caught inside the handler cannot overwrite it. Allocation-failure
-traces start in the function that allocated. A program that mentions neither compiles to exactly the same code as before.
+slots, functions are no longer inlined, and each throw and each failed allocation copies the ids into a staging array on the
+root frame of its thread. The handler gets its own copy of the trace, so a throw caught inside the handler cannot overwrite it.
+Allocation-failure traces start in the function that allocated. A program that mentions neither compiles to exactly the same
+code as before. `tests/stack_trace_check.sh` covers the chains, `--trace-depth`, generic instances, threads and allocation failures.
 
-#### Atomics, locks and threads
+### 2.6 Where it stands
+
+| Property | Enforced today | Open (still safe code) |
+|---|---|---|
+| **Memory safety** | Single ownership with compile-time move checking; array and dynarray indexes proven in bounds; dereferencing a pointer needs a liveness proof. | Liveness of a `ref` is checked at *run time* against the ghost table of live allocations, so a dangling `ref` is skipped rather than rejected at compile time. A plain (nullable) `ref` is a 64-bit id issued by the table, never reused, so a stale `ref` stays dead even when `malloc` hands the same address to a new object (`tests/ref_id_test.caspien` reproduces the old reuse problem and checks it is closed; design in [`fatrefplan_prooffix.md`](fatrefplan_prooffix.md)). A proof ends where something frees (see 2.3) (a `ref some` parameter is proven alive at entry and loses the proof the same way). The price is speed: the three benchmark programs written with nullable `ref` links run about 11x to 40x slower than their index-based twins, and 15x to 21x slower than C (5.4), and `unsafe` code can still hold a `raw` pointer past a free. |
+| **No runtime exceptions** | Division, float operations, narrowing, indexing and null access all need proofs; arithmetic wraps; failures are declared (`@throws`) and handled. | Allocation failure is reported (as a thrown error), not prevented. A throw out of the `OPEN` case of `match @lock` releases the lock before unwinding, like a `return` does (`tests/lock_unwind_test.caspien` prints `PASS`). |
+
+## 3. Totality
+
+Totality is the guarantee that, in safe code, every handler finishes. This part describes how: the loop and
+recursion rules, the termination classes that `--audit` reports, purity, and the rules for threads and locks,
+which are where the guarantee is weakest. The event loop, the one unbounded construct, is described in 1.3.
+
+### 3.1 Loops and recursion
+
+#### Bounded loops
+
+Every loop in safe code is a `for` over a range that is fixed when the loop starts. The counter cannot be
+assigned, and the bounds are read once, so assigning the variable the range came from does not change how
+many times the loop runs. An empty range (`5..5`) and an inverted one
+(`7..3`) run zero times. `break` leaves a loop and `continue` starts its next iteration (see below).
+
+```rust
+let n = mut 5
+for i in 0..n{              // runs exactly 5 times, whatever `n` becomes
+	n += 100
+}
+
+for i in arr{ ... }          // i runs over the indexes 0..len of a fixed array
+for match i in v{ s += v[i] }   // only indexes proven to be inside `v`
+for i in 0..3{
+	for j in i..3{ ... }     // nested loops may use the outer counter in their range
+}
+```
+
+The same loop works directly over a dynamic array, and `match` in the header proves the index for you. `into`
+proves it for writing, and `Some(i)` additionally proves that the element `ps[i]` (a pointer) is alive:
+
+```rust
+for i in d{ n += 1 }                              // i runs over 0..len(d)
+for match i in d{ s += d[i] }                     // read d[i]
+for match i into d{ d[i] = d[i] * 2 }             // write d[i]
+for match Some(i) in ps{ s += ps[i].a }           // ps is a dynarray of owned pointers: read through ps[i]
+for match Some(i) into ps{ ps[i].b = 7 }          // ... or write through it
+```
+
+A bare `loop{}` has no bound and needs `unsafe` (the `loop` tag). The only exception is the `@event_loop`
+function (see 1.3).
+
+```rust
+let n = mut 0
+unsafe loop{
+	loop{                    // runs until something breaks out of it
+		n += 1
+		if n == 5{ break }
+	}
+}
+```
+
+#### `break` and `continue`
+
+`break` leaves the **innermost** enclosing `for` (or `loop`) and carries on after it. It can sit inside
+any number of `if` or `match` blocks within that loop, and it is the only way to end a loop early:
+
+```rust
+for i in 0..6{
+	if i == 4{ break }           // prints i=0..3, then leaves the loop
+	print("i=")
+	println(i)
+}
+for i in 0..3{
+	for j in 0..3{
+		if j == 1{ break }       // leaves the inner loop only: prints j=0 once per i
+		print("i=")
+		print(i)
+		print(" j=")
+		println(j)
+	}
+}
+```
+
+A `break` inside `match @lock ... OPEN` releases the lock on the way out (see 3.4).
+Using `break` outside a loop is an error.
+
+`continue` in a `for` starts the next iteration (the counter still steps, and the bound is not re-read); in a
+`loop` it goes back to the top of the body. Like `break`, it frees the owns locals declared so far in the body,
+and it can sit inside any `if` or `match` within the loop:
+
+```rust
+let odd = mut 0
+for i in 0..10{
+	if i % 2 == 0{ continue }     // skip the even numbers
+	odd += i                      // 1 + 3 + 5 + 7 + 9 = 25
+}
+```
+
+`continue` has two older meanings, and the innermost construct around it decides which one applies:
+
+- at the end of a `catch(e){ ... }` handler it jumps to just past the enclosing `try{ ... }` block (see 2.5). If a loop is opened inside the handler, a `continue` in that loop belongs to that loop,
+- in the `CLOSED` case of a `match @lock` it retries the acquire. The `OPEN` case has no `continue`, since the
+  lock is held there.
+
+Anywhere else it is rejected: `'continue' can only be used inside a 'for' or 'loop' (next iteration), inside a
+'catch(e) { ... }' block, or directly in the 'CLOSED' case of a 'match @lock'`. To get "next iteration" from
+inside a `catch` handler, wrap the loop body in a `try{ ... }` block: the handler's `continue` then lands at the
+end of the body.
+
+#### Lazy conditions: `&&then` and `||then`
+
+An `if` or `elseif` condition made with `&&` or `||` evaluates **both** sides, as it is plain logic on two
+values. To make the chain lazy, write `&&then` or `||then`. The right side then runs only when the left side
+has not already decided the answer: `a &&then b` skips `b` when `a` is false, and `a ||then b` skips `b` when
+`a` is true. The compiler emits a compare-and-jump after each link instead of combining the two values, so a
+skipped operand is never called and its side effects never happen. A chain is evaluated left to right, and
+links can be mixed:
+
+```rust
+func noisy(name: static imut string, r: mut bool) mut bool{
+	print("  called ")
+	println(name)
+	return r
+}
+
+if noisy("a", false) && noisy("b", true){ ... }              // calls a, then b
+if noisy("a", false) &&then noisy("b", true){ ... }          // calls a only
+if noisy("c", true) ||then noisy("d", true){ ... }           // calls c only
+if noisy("e", false) &&then noisy("f", true) ||then noisy("g", true){ ... }
+                                                             // calls e, then g (f is skipped)
+```
+
+`&&then` and `||then` are written with or without a space (`&& then`), are only allowed at the root of an
+`if` or `elseif` condition (not inside a function argument, an assignment or a `match`), and `then` is not
+a reserved word elsewhere.
+
+#### Bounded recursion
+
+Recursion is limited to one shape, because the compiler must be able to turn it into a bounded loop. A
+`@recursive` function:
+
+1. takes an `imut range` as its **last** parameter,
+2. starts with `match r is base{ ... }`, which returns when the range is empty,
+3. makes one self-call, as the sole expression of a `return`, inside `match r2 within r{ ... }`, where
+   `r2` is a range strictly inside `r`,
+4. ends that match with an `else` branch.
+
+```rust
+@recursive
+func fact(acc: mut u64, r: imut range) mut u64{
+	match r is base{ return acc }
+	let lo = mut (r.start + 1)
+	let hi = mut r.end
+	let r2 = imut (lo..hi)
+	match r2 within r{ return fact(acc * r.start, r2) }
+	else{ return acc }
+}
+// fact(1, 1..11) == 3628800: the compiler lowers this to a `for` loop that runs 10 times.
+```
+
+The range is the termination argument: it shrinks on every call, and `within` is a compile-time proof that
+it does. A range that shrinks by one runs as many steps as it has elements, and one that shrinks from
+both ends runs half as many (rounded up). The equivalent loop is shorter, and is usually what you want:
+
+```rust
+func factLoop(n: mut u64) mut u64{
+	let acc = mut 1
+	let hi = mut (n + 1)
+	for i in 1..hi{ acc *= i }
+	return acc
+}
+```
+
+Always write the `else` branch. A plain `return acc` statement after the `within` match compiles
+without an error and returns the wrong value, because the lowered loop falls through into it. Any other
+form of recursion is rejected:
+
+```
+'f' calls itself -- recursion is not allowed unless the function is decorated '@recursive'
+indirect recursion detected: 'b' calls 'a', which (directly or transitively) calls back to 'b' ...
+a '@recursive' function must have an 'imut range' as its final parameter
+a recursive call to 'f' may only appear as the sole expression of a 'return' statement ...
+'i' is immutable for the duration of this 'for'/'for match' loop ...
+'loop' can only be used from within 'unsafe' code
+```
+
+### 3.2 Termination classes
+
+**A safe program terminates, unless it is written as an event loop, and then it runs forever only through that declared event loop.** There is no other way
+for safe code to run without end. This is the model of 1.1: the program is a flat loop whose every iteration (a handler call) is guaranteed to finish, and the loop is the
+only unbounded construct, in a small place that can be found and audited.
+
+**Every function has a termination class.** The compiler works out the class of each function from the program itself, the way it works out a type: nothing is
+annotated and nothing is taken on trust. Two classes are guarantees that the function terminates. The other four say that no such guarantee is given, and why.
+`--audit` prints the class of every function (see 4.2).
+
+| Class | Terminates? | Meaning | Example |
+|---|---|---|---|
+| `bounded` | Yes, guaranteed | It ends, and the figure is the exact worst-case cost. | A `for` over a literal range. |
+| `finite` | Yes, guaranteed | It ends, but the cost bound is not determined, so the figure is a lower bound (`>= N`) and the reason names what the bound depends on. | `for i in 0..n` where `n` is a parameter. |
+| `unbounded` | Possible, not guaranteed | A `loop{}` with no static bound, but a `break`, `return` or `throw` can leave it (a call that can throw counts). | `loop{ ... if done{ break } }` |
+| `non-terminating` | Never | A `loop{}` that nothing can leave, and every run of the function reaches it: no path terminates. | The loop of an event loop whose `@tick` never throws. |
+| `can diverge` | Not on every run | Some runs never end and others do: some execution paths are non-terminating or unbounded, while others are finite or bounded. | `if n == 0{ forever() }  return n` ends unless `n == 0`. |
+| `unknown` | No claim | The analysis cannot follow it. | An indirect call (`call(fp, ..)`), or recursion it cannot follow. |
+
+`unbounded` and `can diverge` are close, so side by side: `unbounded` is one loop that has an exit but no known bound; `can diverge` is a function where some paths reach a loop with no exit and others do not. `non-terminating` means no path terminates; `can diverge` means at least one does not.
+
+A caller has the worst class among what it calls, in the order bounded, finite, unknown, unbounded, can diverge, non-terminating, so a function is only
+`bounded` or `finite` when everything it can reach is. Anything but `bounded` is printed as `>= N`, a lower bound, with the reasons.
+
+**Safe code is `bounded` or `finite` by construction.** The rules that give this are enforced by the compiler:
+
+- Every loop is a `for` over a range that is fixed when the loop starts; the counter cannot be assigned and the bounds are read once.
+- Direct and mutual recursion are rejected. The one exception, `@recursive`, is a tail call on a range that shrinks on every call, and the compiler lowers it to
+  a bounded `for`.
+- The call graph is therefore acyclic, and the stack depth has a static bound.
+- A bare `loop{}` is not available in safe code, except in the `@event_loop` function. Everywhere else it needs `unsafe` (tag `loop`), and so does `call()`
+  through a function pointer.
+
+So a program without an event loop always reaches the end of `main`, and every handler of a program with one always returns. The two operations that wait on
+something outside the program's own computation are the exceptions: `match @lock` retries until the lock is free or its attempt limit `n` is reached (see 3.4), and `await` blocks on another thread.
+`--audit` does not yet read that limit, so a function with a `match @lock` still shows `unbounded`.
+The other four classes appear only where `unsafe` is reachable, in your code or in the trusted standard library (the lock and thread code in
+`16_atomics_and_locks` shows `unbounded`, for example). `--audit` lists every `unsafe` block, and gives each of these a fixed price and a "not modelled" note:
+external calls, inline assembly, `memcopy` sizes and waiting (`sleep`, `yield`, `match @lock`, `await`).
+
+**The event loop is the one declared way to run forever.** A program that has to keep running declares one `@event_loop` function, the only place outside
+`unsafe` where a bare `loop{}` is allowed, with `@with_tick` / `@tick` handlers (see 1.3). The loop calls the handlers over and over, and
+each call runs to completion before the next one starts. It can still be left, by `break` or a thrown error. The audit classifies the handlers and never lists the loop.
+
+**Termination is not bounded time.** A nested bounded loop with large bounds can still run for years, and a scheduler that must meet deadlines needs a
+worst-case time per handler. That is what `bounded` carries: a worst-case execution cost in *abstract gas*. Every bytecode operation has a fixed price (table in
+`docs/COMPILER_REFERENCE.md`, independent of the machine, the optimiser switches and the target), a branch costs its dearer side, a `try` counts its catch
+bodies, a call costs the callee's worst case, and a `for` with literal bounds costs `bound * (header + worst iteration)`, exactly (checked against an
+independent path-search model, `tests/gas_check.sh`). Time in seconds is not computed. The same report gives a stack-depth estimate, the most heap bytes one run
+can request, and the peak live heap.
+
+**Values the caller knows are used.** A call that passes values the caller knows (literals, locals computed from them, its own parameters, a range such as
+`0..10`) is costed with those values, so `sumTo(5)` is `bounded` even though `sumTo(n)` alone is only `finite`. Values the analysis cannot follow (a call result, a
+variable changed in a loop or a branch) leave the call `finite`.
+
+### 3.3 Purity
+
+A function can promise more than termination. `@pure` says it has no side effects, and `@pure(rt)` says its
+result depends on its arguments alone.
+
+**`@pure`** marks a function with no side effects. It is not the same as referentially transparent: a `@pure`
+function may read through a pointer argument, so the same call can return different results as the
+pointee changes, and it may call the built-in `insecure_rand()` or allocate (`new`, `dyn`, `resize`, `clone`),
+which are side-effect-free but non-deterministic (the result depends on state the arguments do not determine,
+and running out of memory is part of the program's semantics). The checker enforces it call by call (it is not
+transitive, so each function in a chain carries the decorator):
+
+```rust
+@pure
+func sq(x: mut u64) mut u64{ return x * x }
+
+@pure
+func hyp(a: mut u64, b: mut u64) mut u64{
+	let s = mut sq(a)
+	let t = mut sq(b)
+	return s + t
+}
+```
+
+A `@pure` function may call only other `@pure` functions. It may not call an extern or a function pointer,
+read a `mut` global, write through any pointer, `throw`, contain an `unsafe` block (so no `asm`, `memcopy`,
+`atomic` or unsafe dynarrays), use `match @lock` (acquiring the lock writes the mutex and blocks), or start or wait
+on a thread (`par`, `await`, `@par` loops). Local variables, arithmetic and `for` loops are fine.
+
+```
+'f' is '@pure' and can only call other '@pure' functions -- 'impure' is not
+'f' is '@pure' and cannot read 'G' -- it is a mutable global/static variable
+'f' is '@pure' and cannot mutate through a pointer -- ...
+'f' is '@pure' and cannot 'throw' -- an unconditional program termination can never be verified at compile time
+'f' is '@pure' and cannot use an 'unsafe' block -- unsafe code can do anything the compiler cannot check, so purity could not be guaranteed
+'f' is '@pure' and cannot use 'match @lock' -- acquiring the lock writes the mutex and blocks (a retry loop on shared state)
+```
+
+**`@pure(rt)`** is referentially transparent: the same arguments always give the same result. It has every
+`@pure` rule above plus: no value of a pointer type (`ref`, `raw`, `owns`, `auto`, `static`) or dynamic array
+anywhere (parameters, return type, locals, expressions), so it cannot read memory the arguments do not
+determine; no globals or statics; no allocation (`new`, `dyn`, `resize`, `clone`), no `deref`, no
+`insecure_rand()`; and it may call only other `@pure(rt)` functions. Safe code has no unbounded loop, so every
+loop in an `rt` function is a `for` range or a `@recursive` bounded loop and the function always terminates.
+**`@non(deterministic)`** marks a function whose result may differ for equal arguments (a `@pure` function can
+carry it); a `@pure(rt)` function cannot call one, and `@pure(rt)` and `@non(deterministic)` cannot be combined
+on one function.
+
+```rust
+@pure(rt)
+func poly(x: mut u64) mut u64{
+	let s = mut 7
+	for i in 0..8{ s = s * 31 + x + i }
+	return s
+}
+@pure
+@non(deterministic)
+func roll() mut u64{ return insecure_rand() }
+```
+
+```
+'f' is '@pure(rt)' and can only call other '@pure(rt)' functions -- 'g' is only '@pure'
+'f' is '@pure(rt)' (referentially transparent) and cannot use 'new' -- allocation depends on heap state (it can fail), so the result is not a function of the arguments
+'f' is '@pure(rt)' (referentially transparent) and cannot have a pointer or dynamic array ('ref_some_mut_W') as parameter 'p' -- it may not read memory through pointers
+```
+
+`@reads` and `@writes` (each takes one or more of `all`, `self`, `others`, `globals`) are accepted and
+checked for shape, but nothing enforces them yet. Treat them as documentation.
+
+### 3.4 Concurrency
+
+Threads and locks are where totality is weakest, because waiting for another thread is waiting for something
+outside the program's own computation. The table summarises what safe code guarantees about each hazard and what
+it does not. The sections after it describe the mechanisms: atomics, spin locks, and threads.
+
+| Hazard | In safe code | How | Not covered |
+|---|---|---|---|
+| Data race | Prevented | Every shared access is atomic or under a lock. An atomic used outside a lock needs `unsafe atomic`, and a non-atomic global needs `unsafe global`. | Anything inside `unsafe`. |
+| Race condition | Not prevented | The language makes every sharing point visible: `match @lock`, or an `unsafe atomic` block that `--audit` lists. | Two critical sections that read and then write can still lose updates. |
+| Deadlock | Prevented | Locks cannot be nested, in the same function or any callee. Nothing may `yield`, `sleep`, `par` or `await` while a lock is held. The error names the call chain. | `call()` through a pointer is not followed. External calls and `unsafe loop` inside a lock are not judged. The ghost table's own lock is exempt. |
+| Livelock | Spins are bounded | A retry is written `CLOSED:default(n)`: after `n` attempts the program breaks out without the lock. A policy is stopped at its limit by the compiler. | The work may not have been done, so code after the `match` must not assume it was. |
+| Hang | Partly | Spin waits are counted by `n`. | `await` blocks on another thread, and `--audit` prints `unbounded` for a `match @lock` because it does not read `n` yet. So safe code is not strictly total. |
 
 **Atomics.** `atomic` makes a global or `let static` integer, `bool` or `char` that threads may share
 (floats and pointers cannot be atomic). Each read or plain write is one instruction, and `swap` exchanges a
@@ -1411,8 +1353,7 @@ undefined behaviour. They do not give freedom from *race conditions* or from dea
 critical sections that read and then write a value lose updates just as two atomic steps do. What the language does is make every place where threads
 share state visible: a lock struct touched through `match @lock`, or an `unsafe atomic{...}` block that `--audit` lists. Locks cannot be nested (see below).
 
-**Locks.** A spin lock is the `swap` form of the locked structs described under *Locks and proofs on your own
-types*: a struct field written `swap`, of an enum with exactly the variants `OPEN` and `CLOSED`, and it must be
+**Locks.** A spin lock is the `swap` form of the locked structs described in 2.4: a struct field written `swap`, of an enum with exactly the variants `OPEN` and `CLOSED`, and it must be
 the struct's first member. `@lock` on the struct names it, and from then on the other members are reachable
 only while the lock is held:
 
@@ -1529,238 +1470,138 @@ Safe code shares data between threads only through locks (an atomic flag needs `
 a lock 100,000 times and ends with the exact count, and uses an atomic flag per worker to know that they
 finished.
 
-#### Program entry: `main` arguments and event loops
-
-A plain program has one `main`. It takes no arguments and returns `void`, `bool` or `s32`. It can instead
-take the command-line arguments in one of two shapes.
-
-```rust
-// C shape: the raw argc/argv pair. The pointers are raw, so reading them needs `unsafe`.
-func main(argc: imut s32, argv: raw mut raw mut char) void{ /* ... */ }
-
-// Safe shape: the arguments copied into owned dynarrays of dynarrays of chars.
-// Needs `import "stdlib/make_safe_args.caspien"` (the function marked `@make_safe_args`).
-func main(args: owns some mut dynarray(imut dynarray(imut char))) void{
-	let n = mut len(args)             // how many arguments, including the program name
-	match 1 in args{                  // an index into a dynarray needs a proof
-		let first = mut args[1]
-		/* `first` is a dynarray of char */
-	}
-}
-```
-
-The safe shape is the idiomatic one: `make_safe_args` copies every argument, so your program never holds a
-pointer into the C runtime's memory. (`docs/examples/07_main_c_args.caspien` and
-`08_main_safe_args.caspien` are runnable versions.)
-
-A program that might never terminate is written as an **event loop**. It can still end if the loop is broken or an error is thrown. Three decorators work together, and the
-compiler checks that each appears exactly once. `main` is marked `@with_tick` and builds the initial state,
-a heap struct. `@tick` marks a function that takes the state and returns it. `@event_loop` marks the real
-entry point, which calls `main` once and then calls `tick` until the loop ends. It is the only function allowed a bare
-`loop{}` outside `unsafe`.
-
-`@tick` may also be `@throws` (for example when it allocates). The loop then ends when a tick throws: the stdlib loop writes
-`event loop stopped: <message>` to stderr and the program exits with status 1. A failing `main` ends it the same way. The auditor reads the
-loop's termination class off the tick: no `@throws` is `non-terminating`, a tick that throws on some paths is `unbounded`, and one that throws on every
-path is `bounded` (exactly one tick runs).
-
-```rust
-struct World{@pub{
-	ticks: mut u64
-}}
-
-@event_loop
-@throws
-func start() void{
-	?catch(e){ throw e }
-	let state = mut ? main()
-	loop{
-		state = ? tick(state)
-	}
-}
-
-@with_tick
-@throws
-func main() owns some mut World{
-	?catch(e){ throw e }
-	return ? new World{ticks= 0}
-}
-
-@tick
-func tick(w: owns some mut World) owns some mut World{
-	w.ticks += 1
-	return w
-}
-```
-
-Each call to `tick` is an ordinary terminating function, so it is a total slice in the sense of section 1.1;
-the only unbounded construct is the loop that schedules them. `stdlib/event_loop.caspien` is a ready-made
-`@event_loop` that wraps the call to `main` in `?` and simply returns if `main` throws (so `main` must be
-`@throws`, as a `main` that builds heap state has to be). If `main` takes arguments, the `@event_loop` function receives the raw `argc`
-and `argv` and passes them (or wraps them, in `stdlib/event_loop_safe_args.caspien`) through to `main`.
-The runnable version is `docs/examples/09_event_loop.caspien`.
-
-#### Builtins at a glance
-
-A handful of names look like functions but are built into the compiler. Each is reserved, so a function of
-yours cannot reuse the name, and each is compiled directly instead of being called.
-
-| Builtin | What it does | Notes |
-|---|---|---|
-| `sizeof(T)` | the size of a type in bytes | folded to a constant; also the stride of `raw` pointer arithmetic |
-| `len(x)` | the length of a fixed array, a string literal or a safe dynarray | known at compile time except for a dynarray |
-| `range(x)` | the range `0..len(x)` of an array or safe dynarray | what `for match i in range(d)` iterates |
-| `deref(p)` | reads the value a pointer points to | `unsafe` unless the pointer is `auto`, `some` or inside `match Some`; never an assignment target |
-| `Some(p)` | proof condition: the pointer `p` is alive | only as a `match` condition (`Some(i) in arr` also proves the element alive) |
-| `wrap:<T>(x)`, `sat:<T>(x)` | convert an integer to `T` by keeping the low bits, or by clamping | total, no `unsafe`; `sat` needs a variable, field or literal |
-| `bits_and`, `bits_or`, `bits_xor`, `bits_not`, `bits_left`, `bits_right` | bitwise operations | one shift rule: a count of the width or more gives 0, or sign fill |
-| `bits_rotl(x, n)`, `bits_rotr(x, n)` | rotate the bits of `x` left or right within its own width | one `rol`/`ror`; the count is taken modulo the width (so a count of the width or more wraps instead of giving 0, and a negative signed count rotates the other way); any integer type, `n` the same type as `x` (a literal adapts) |
-| `dyn(...)`, `resize(d, n, fill)` | allocate and grow a dynamic array | can fail, so wrap in `try` or `?` (`unsafe dyn` forms exist) |
-| `memcopy(dest, n, src)` | copy `n` bytes between pointers | `unsafe` only |
-| `call(fp, ...)` | call through a function pointer | `unsafe` only; arity, argument types and result are checked against the pointer's signature |
-| `clone(p)` | a fresh `owns some` copy of what `p` points to | `p` must be proven alive (`auto`, `some`, or inside `match Some`), like `deref`; can fail, so wrap in `try` or `?` |
-| `insecure_rand()` | C's `rand()` as a `u64` | not cryptographic, hence the name; allowed in `@pure` functions |
-
-`new`, `par`, `await` and `yield` are keywords, not builtins, and `sleep` comes from the standard library.
-`clone` makes a deep copy: it follows every `owns` member (and dynarray element) of the pointee, allocates a
-fresh copy of each and registers every new allocation with the ghost table, so the result is an ordinary
-`owns` value that shares nothing with the original. It does not null-check its source (the proof does that);
-it throws "out of memory" if an allocation fails, and in that case it frees whatever it had already copied, so a failed clone leaves nothing behind. You write `clone(p)` whatever the type; the compiler works
-out the per-type copying.
-
-#### Idiomatic Caspien in brief
-
-- Prefer a `for` loop over a recursive function, and a `match` proof over an `unsafe` block. If you cannot
-  prove something, put the smallest possible operation in `unsafe`.
-- Start a function that allocates with `?catch(e){ ... }`, and mark every throwing call with `?`. Mark the
-  function `@throws` if the handler rethrows.
-- Bind every value with `mut` or `imut` before storing it, and bind a computed value to a `let` before
-  passing it to `raw`, `auto` or `swap`. C function arguments need no binding.
-- Choose the pointer kind by who owns the value: `owns` for the single owner, `ref` for a pointer that does not own,
-  checked by `match Some`, `auto` for a local, and `raw` only at the boundary with C.
-- Use an interface when callers should not care about the concrete type, a bounded generic when the type is
-  known at compile time, and composition (a struct member) to share members.
-- Put shared mutable state behind a lock and flags behind an atomic. Keep a `CLOSED` case honest: say
-  whether you retry, give up or leave.
-- Put the `@pure` decorator on functions that can have it, and use the compiler's refusals as the review
-  checklist: each error message in this tour names the rule that was about to be broken.
-
-
-### 1.3 Reading the code
-
-The syntax is deliberately regular. Blocks use braces, statements need no semicolons, `let` introduces a
-binding, `:<T>` supplies a type argument, and comments are `//` and `/** ... */`. A `@decorator` on the line
-above a declaration changes how it is checked or compiled, and a decorator the declaration does not accept
-is an error ("'@x' is not a valid decorator on a function"). This is the full set:
-
-| Decorator | On | Meaning |
-|---|---|---|
-| `@pub` | function, struct, member, `impl`, global | visible outside its file. Required on the methods of an `impl Interface for T` |
-| `@throws` | function | may `throw`; every caller must wrap the call |
-| `@pure` | function | side-effect-free, not referentially transparent: calls only `@pure` functions, reads no mutable global, writes through no pointer, never throws |
-| `@recursive` | function | the one allowed recursion shape (see Bounded loops) |
-| `@async` | function | runs on its own thread when called with `par` or `await` |
-| `@realizes` | method in `impl Interface for T` | fulfils a signature of the interface |
-| `@default` | interface method with a body | an implementation every implementer inherits |
-| `@overrides` | method in `impl Interface for T` | replaces a `@default` method |
-| `@lock(match self.f : OPEN)` | struct, method | the members are reachable only while the lock field `f` is held |
-| `@lock(match i in self.a)` | method | the caller must hold a bounds proof for `i` against `self.a` (`into` for writes) |
-| `@lock`, `@unlock` | method of a `@guard` implementer | the two operations behind `lock x{ ... }` |
-| `@guard` | interface | a generic interface with one `@lock` and one `@unlock` method |
-| `@untyped` | struct | no hidden class id, so no `instanceof` or `implements` |
-| `@non_exhaustive` | enum | its last variant is `default`; a `match` needs a `default` case only when some variant is not named (an error when all are) |
-| `@link_name(sym)` | `extern` | the C symbol, when the Caspien name differs |
-| `@call_convention(c)` | function, `extern` | choose a calling convention from `toolchain.config` |
-| `@inline`, `@dont(inline)` | function | inline every safe call to it even with inlining off / never inline it (see section 2.4 and `docs/COMPILER_REFERENCE.md`) |
-| `@reads(...)`, `@writes(...)` | function | accepted and shape-checked, not yet enforced |
-| `@with_tick`, `@tick`, `@event_loop` | function | the event-loop trio (end of the tour) |
-| `@make_safe_args` | function | builds the safe `main` arguments (`stdlib/make_safe_args.caspien`) |
-| `@gt_init`, `@gt_register`, `@gt_alive_check`, `@gt_destruct`, `@gt_moved`, `@gt_ref_id`, `@gt_ref_resolve` | function | the ghost-table hooks the compiler calls (`stdlib/gt_*.caspien`) |
-| `@par_call`, `@await_call`, `@sleep` | function | the thread and sleep hooks behind `par`, `await` and `sleep` (`stdlib/`) |
-| `@unroll`, `@unroll(N)`, `@dont(unroll)` | `for` loop | unroll this loop fully / by N / never, whatever the `loop-unrolling` preset says; the optimizer reports what it did (see `docs/COMPILER_REFERENCE.md`) |
-| `@par` | `for` loop | accepted; it does not change the generated code today |
-| `@unpadded` | struct | rejected: not supported |
-
-A few more things that surprise newcomers:
-
-- `x swap y` needs a bound value, not an expression. Bind it with `let` first.
-- A dynarray's length is only known at run time, so every index into it, literal or not, needs a proof
-  (`match i in a{ a[i] }`, or `into` to write). Fixed arrays with a literal index need none.
-- `main` takes no arguments by default and must return `void`, `bool` or `s32`; see the entry-point section
-  above for arguments and event loops.
-- Method calls use a colon (`acct:deposit(50)`) or pass the receiver explicitly (`acct.deposit(acct, 50)`).
-
-### 1.4 Termination
-
-**A safe program terminates, unless it is written as an event loop, and then it runs forever only through that declared event loop.** There is no other way
-for safe code to run without end. This is the "run-to-completion total slice" model of section 1.1: the program is a flat loop whose every iteration (a
-slice) is guaranteed to finish, and the loop is the only unbounded construct, in a small place that can be found and audited.
-
-**Every function has a termination class.** The compiler works out the class of each function from the program itself, the way it works out a type: nothing is
-annotated and nothing is taken on trust. Two classes are guarantees that the function terminates. The other four say that no such guarantee is given, and why.
-`--audit` prints the class of every function (see "Auditing a target: `--audit`").
-
-| Class | Terminates? | Meaning | Example |
-|---|---|---|---|
-| `bounded` | Yes, guaranteed | It ends, and the figure is the exact worst-case cost. | A `for` over a literal range. |
-| `finite` | Yes, guaranteed | It ends, but the cost bound is not determined, so the figure is a lower bound (`>= N`) and the reason names what the bound depends on. | `for i in 0..n` where `n` is a parameter. |
-| `unbounded` | Possible, not guaranteed | A `loop{}` with no static bound, but a `break`, `return` or `throw` can leave it (a call that can throw counts). | `loop{ ... if done{ break } }` |
-| `non-terminating` | Never | A `loop{}` that nothing can leave, and every run of the function reaches it. | The loop of an event loop whose `@tick` never throws. |
-| `can diverge` | Not on every run | Some runs never end and others do: some execution paths are non-terminating or unbounded, while others are finite or bounded. | `if n == 0{ forever() }  return n` ends unless `n == 0`. |
-| `unknown` | No claim | The analysis cannot follow it. | An indirect call (`call(fp, ..)`), or recursion it cannot follow. |
-
-A caller has the worst class among what it calls, in the order bounded, finite, unknown, unbounded, can diverge, non-terminating, so a function is only
-`bounded` or `finite` when everything it can reach is. Anything but `bounded` is printed as `>= N`, a lower bound, with the reasons.
-
-**Safe code is `bounded` or `finite` by construction.** The rules that give this are enforced by the compiler:
-
-- Every loop is a `for` over a range that is fixed when the loop starts; the counter cannot be assigned and the bounds are read once.
-- Direct and mutual recursion are rejected. The one exception, `@recursive`, is a tail call on a range that shrinks on every call, and the compiler lowers it to
-  a bounded `for`.
-- The call graph is therefore acyclic, and the stack depth has a static bound.
-- A bare `loop{}` is not available in safe code, except in the `@event_loop` function. Everywhere else it needs `unsafe` (tag `loop`), and so does `call()`
-  through a function pointer.
-
-So a program without an event loop always reaches the end of `main`, and every slice of a program with one always returns. The two operations that wait on
-something outside the program's own computation are the exceptions: `match @lock` retries until the lock is free or its attempt limit `n` is reached (see *Atomics, locks and threads*), and `await` blocks on another thread.
-`--audit` does not yet read that limit, so a function with a `match @lock` still shows `unbounded`.
-The other four classes appear only where `unsafe` is reachable, in your code or in the trusted standard library (the lock and thread code in
-`16_atomics_and_locks` shows `unbounded`, for example). `--audit` lists every `unsafe` block, and gives each of these a fixed price and a "not modelled" note:
-external calls, inline assembly, `memcopy` sizes and waiting (`sleep`, `yield`, `match @lock`, `await`).
-
-**The event loop is the one declared way to run forever.** A program that has to keep running declares one `@event_loop` function, the only place outside
-`unsafe` where a bare `loop{}` is allowed, with `@with_tick` / `@tick` handlers (see "Program entry" below). The loop calls the handlers over and over, and
-each call runs to completion before the next one starts. It can still be left, by `break` or a thrown error. The audit classifies the slices and never lists the loop.
-
-**Termination is not bounded time.** A nested bounded loop with large bounds can still run for years, and a scheduler that must meet deadlines needs a
-worst-case time per slice. That is what `bounded` carries: a worst-case execution cost in *abstract gas*. Every bytecode operation has a fixed price (table in
-`docs/COMPILER_REFERENCE.md`, independent of the machine, the optimiser switches and the target), a branch costs its dearer side, a `try` counts its catch
-bodies, a call costs the callee's worst case, and a `for` with literal bounds costs `bound * (header + worst iteration)`, exactly (checked against an
-independent path-search model, `tests/gas_check.sh`). Time in seconds is not computed. The same report gives a stack-depth estimate, the most heap bytes one run
-can request, and the peak live heap.
-
-**Values the caller knows are used.** A call that passes values the caller knows (literals, locals computed from them, its own parameters, a range such as
-`0..10`) is costed with those values, so `sumTo(5)` is `bounded` even though `sumTo(n)` alone is only `finite`. Values the analysis cannot follow (a call result, a
-variable changed in a loop or a branch) leave the call `finite`.
-
-### 1.5 Where the project stands against the ideal
-
-The ideal is a language in which a type-checked program is *provably* total, memory safe and free of
-runtime exceptions. Those guarantees are made about **safe code**. `unsafe` is the explicit escape hatch,
-and inside it the compiler checks types but promises nothing else. So the state is reported in two layers:
-what the checker enforces in safe code, then what `unsafe` gives up.
-
-#### Safe code
+### 3.5 Where it stands
 
 | Property | Enforced today | Open (still safe code) |
 |---|---|---|
-| **Termination** | Direct and mutual recursion rejected; `@recursive` only as a tail call on a shrinking range, lowered to a bounded `for`; every `for` bound fixed at loop entry; counter immutable; no `loop{}` and no `call()` (both need `unsafe`). See "Termination" (1.4). | `match @lock` waits for another thread, but in safe code only through `CLOSED:default(n)`: at most `n` attempts, then a `break`, so the wait is counted. The counted wait is still not a time bound, and `--audit` does not read `n` yet. `await` blocks on another thread. So safe code is not strictly total. |
-| **Bounded execution time** | Every `for` is bounded by its range and the call graph is acyclic, so a static bound is possible. | `--audit` prints a worst-case cost in abstract gas per function, classed bounded / finite / unbounded / non-terminating / can diverge / unknown, plus stack, heap and peak live heap; see "Termination" (1.4). Time in seconds is not computed. |
-| **Memory safety** | Single ownership with compile-time move checking; array and dynarray indexes proven in bounds; dereferencing a pointer needs a liveness proof. | Liveness of a `ref` is checked at *run time* against the ghost table of live allocations, so a dangling `ref` is skipped rather than rejected at compile time. A plain (nullable) `ref` is a 64-bit id issued by the table, never reused, so a stale `ref` stays dead even when `malloc` hands the same address to a new object (`tests/ref_id_test.caspien` reproduces the old reuse problem and checks it is closed; design in [`fatrefplan_prooffix.md`](fatrefplan_prooffix.md)). A proof ends where something frees (see "Proofs instead of runtime checks") (a `ref some` parameter is proven alive at entry and loses the proof the same way). The price is speed: the three benchmark programs written with nullable `ref` links run about 11x to 40x slower than their index-based twins, and 15x to 21x slower than C (section 4), and `unsafe` code can still hold a `raw` pointer past a free. |
-| **No runtime exceptions** | Division, float operations, narrowing, indexing and null access all need proofs; arithmetic wraps; failures are declared (`@throws`) and handled. | Allocation failure is reported (as a thrown error), not prevented. A throw out of the `OPEN` case of `match @lock` releases the lock before unwinding, like a `return` does (`tests/lock_unwind_test.caspien` prints `PASS`). |
+| **Termination** | Direct and mutual recursion rejected; `@recursive` only as a tail call on a shrinking range, lowered to a bounded `for`; every `for` bound fixed at loop entry; counter immutable; no `loop{}` and no `call()` (both need `unsafe`). See 3.2. | `match @lock` waits for another thread, but in safe code only through `CLOSED:default(n)`: at most `n` attempts, then a `break`, so the wait is counted. The counted wait is still not a time bound, and `--audit` does not read `n` yet. `await` blocks on another thread. So safe code is not strictly total. |
+| **Bounded execution time** | Every `for` is bounded by its range and the call graph is acyclic, so a static bound is possible. | `--audit` prints a worst-case cost in abstract gas per function, classed bounded / finite / unbounded / non-terminating / can diverge / unknown, plus stack, heap and peak live heap; see 3.2. Time in seconds is not computed. |
 | **The single event loop** | `@with_tick` / `@tick` / `@event_loop` give a potentially non-terminating program (`docs/examples/09_event_loop.caspien`). | All three stdlib loops (no arguments, C arguments, safe arguments) have been run. The example is run by hand and is not in `tests/`. `par`/`await` add real threads, which is a deliberate departure from a single loop. |
 
-#### `unsafe` code
+## 4. Auditability
+
+Auditability means a reviewer can see exactly what was not proven. Everything the checker cannot prove goes in
+a marked block, the compiler lists those blocks and prices the rest, and the compiler is small enough to read.
+This part covers the rules for `unsafe`, the `--audit` report, how to use the compiler, and how it works.
+
+### 4.1 The trust boundary
+
+#### `unsafe` blocks and their tags
+
+`unsafe{}` is how a program says "the compiler cannot prove this meets the guarantees of safe code: I have
+either proven it myself, or I am choosing to compile code without those guarantees". It is deliberately small, easy
+to find and easy to count. What needs it:
+
+- calling any C function (an `extern`),
+- making a `raw` pointer (`raw v`), and dereferencing or cloning one (`deref(p)`, `clone(p)`): reading through a `raw`
+  pointer is unsafe even when it is proven alive, so it needs the `deref` or `clone` tag as well as the proof (a `match Some(p)` is a
+  real run-time check against the ghost table, and `raw` pointers into C memory or the stack are not in it,
+  so for those the proof is an `assume match Some(p)`),
+- `memcopy`,
+- inline assembly (`ASM`) and `assume match`,
+- a bare `loop{}`, and an `unsafe dyn` array,
+- reading or writing a `mut` global or static that is not atomic or lock-protected.
+
+Anything that safe code proves with a `match` (a `deref` or `clone` of a pointer, a division, an arithmetic or
+compare operation on a float, a `@lock` method call) is vouched for in an `unsafe assume{` block with `assume match`, which is an assertion to the type checker
+and never runs, so it may name any expression: `assume match Some(p + i)`, `assume match d > 0`, `assume match x : finite`. Nothing else
+in `unsafe` relaxes those checks.
+
+A statement-level `unsafe` block must say why it is unsafe, by naming the reasons after the keyword:
+`unsafe assume extern{`. The reasons are `extern` (a C call), `memcopy`, `raw` (making a `raw` pointer),
+`deref` and `clone` (dereferencing or cloning a `raw` pointer), `global`, `loop`, `udyn` (an unsafe dynarray of plain data) or `udyn:owns` (an unsafe dynarray whose elements own memory: the compiler only frees the block, so you destruct the elements yourself before shrinking or leaving scope), `assume` (`assume match`),
+`call` (calling a function pointer), `asm`, `async` (a pointer across an `@async` boundary), `guard` (using a
+`@guard` type without proving it locked), `atomic` (using an atomic, or touching a `swap` mutex field, outside `match @lock`) and `file` (opening a path the build's file policy has not vouched for, see 2.6). The
+compiler checks the list both ways: a block that needs a reason it does not name is an error, and so is a block
+that names one it does not need, so the line is also what you grep for. A bare `unsafe{}` is an error. The one exception is `unsafe unaudited{`: it stands for every tag at once and says nothing about why, for code nobody has audited yet. It is written alone, is just as easy to grep for, and the standard library may never use it (the compiler refuses it in any file under `stdlib/`). (A
+root-level `unsafe{}` that holds declarations is not a statement block and takes no list.)
+
+One example of every tag (each is compiled and run in `docs/examples/19_unsafe_tags.caspien`, which also
+defines the helpers they use):
+
+```rust
+unsafe extern{ printf("%llu\n", n) }                        // extern: call a C function
+unsafe raw{ let r = mut (raw v) }                           // raw: make a raw pointer
+unsafe memcopy raw{ memcopy(raw dst, mut 8, raw v) }        // memcopy: copy 8 bytes from v to dst
+unsafe assume deref raw{                                    // deref: read through a raw pointer ...
+	let pv = mut (raw v)
+	assume match Some(pv)                                   // assume: ... that you vouch is alive
+	seen = mut deref(pv)
+}
+unsafe clone{ return ?clone(src) }                          // clone: deep copy of a `raw some` pointer
+unsafe global{ counter += 3 }                               // global: a mutable static that is not atomic or locked
+unsafe loop{                                                // loop: a bare `loop{}`
+	loop{
+		n += 1
+		if n == 5{ break }
+	}
+}
+unsafe udyn{ let a = mut unsafe dyn([10, 20, 30]) }         // udyn: an unsafe dynarray of plain data
+unsafe udyn:owns{ let a = mut unsafe dyn([h]) }             // udyn:owns: its elements own memory (here `h` owns a `World`)
+unsafe call{ let r = mut call(fp, mut 10) }                 // call: call through a function pointer
+unsafe asm{                                                 // asm: an inline `ASM` block (see "Inline assembly")
+	ASM relax {
+		pause
+	}
+	relax
+}
+unsafe async raw{                                           // async: a pointer crosses into an @async function
+	let pc = mut (raw cell)
+	got = mut ? await readCell(pc)
+}
+unsafe global guard{                                        // guard: a bare @lock/@unlock call (the safe form is `lock gate{ ... }`)
+	gate.lock()
+	counter += 8
+	gate.unlock()
+}
+unsafe atomic{ m.lockState swap St.CLOSED }                   // atomic: touch an atomic by hand: a swap mutex's state field, or a bare atomic variable
+unsafe unaudited{ counter = mut deref(pc) }                  // unaudited: any of the above, no reasons given (never in the stdlib)
+```
+
+Keep each `unsafe` block as narrow as the unsafe operations in it, so that a reviewer can see exactly what
+was not proven. The standard library follows that rule: its `unsafe` blocks wrap the `malloc`, `memcopy`
+and similar calls and nothing else. These are the errors you will meet:
+
+```
+calling extern 'malloc' requires 'unsafe' code
+'raw' pointers can only be constructed from within 'unsafe' code
+'deref' of a pointer requires 'unsafe' code unless the pointer is proven alive -- ...
+'deref(...)' cannot be the target of an assignment -- it yields a copy of the value, not a place to write; ...
+'loop' can only be used from within 'unsafe' code
+```
+
+#### Vouching for a proof: `assume match`
+
+An ordinary proof is checked: `match i in arr{...}` compiles to a run-time bounds test around the block, and
+the block runs only if the test passes. `assume match` states the same condition as true **without testing
+it**. It takes the conditions `match` takes, it is allowed only inside `unsafe`, and it is the statement to
+reach for when the proof was established somewhere the compiler cannot see, or when the test itself is the
+cost (the inner loop of a numeric kernel, say). With no block, the proof holds for the rest of the scope. With
+a block, it holds inside the block only:
+
+```rust
+unsafe assume{
+	for i in a{
+		assume match i in a             // no block: holds until the end of the loop body
+		total += a[i]                   // no bounds test is emitted for this read
+	}
+	assume match b != 0{                // a block: holds inside it only
+		q = total / b
+	}
+	assume match r.status : LIVE        // the lock form: satisfies `@lock(match self.status : LIVE)`
+	total += r.value
+}
+```
+
+If the assumption is false the program has undefined behaviour: an out-of-bounds read, a division by zero, a
+member that was never initialised. The compiler has been told not to look, so reviewing an `assume match`
+means checking the claim yourself. `18_asm_and_assume` is a runnable version.
+
+```
+'assume match' is only allowed inside 'unsafe' code
+```
+
+#### What each hatch gives up
 
 Inside `unsafe` the guarantees above are the programmer's responsibility. What each hatch gives up:
 
@@ -1778,61 +1619,7 @@ The standard library is built on `unsafe` code (the ghost table, `memcopy`, the 
 guarantee is therefore "safe user code on top of a small trusted `unsafe` core", and that core is tested,
 not proved. Costs inside that core are part of its contract, not of the safe-code guarantees. For example, the liveness check behind `match Some` is a lookup in the ghost table, an open-addressing hash set (expected O(1)) under a spin lock (the id-less set is kept in `stdlib/gt_set/` and the older linear-scan table in `stdlib/gt_linear/`; import one folder's `gt_*.caspien` files instead to use it), and `malloc` has no bound. A timing analysis would take such costs as stated inputs, as it would for any library.
 
-#### Beyond the language
-
-| Property | Enforced today | Open |
-|---|---|---|
-| **Soundness of the checker** | About 170 runtime regression programs, 60 compile-error fixtures and 85 shell checks in [`tests/`](tests), generated tests with expected values from independent Python models, and shell checks for the optimiser passes. | There is no formal proof, mechanised or otherwise. The type checker alone is about 20,000 lines of Java, and "the compiler accepts it" is evidence, not proof. Further compile-error fixtures are kept outside this repository. |
-| **Platforms** | Linux x86-64 is the tested target. | The Windows (`windows_gnu`) output is built with mingw-w64 and the test suite has been run under Wine on Linux; it has not been run on a real Windows machine. |
-
-Known bugs that affect the guarantees are tracked in the `CLAUDE.md` files.
-
----
-
-## 2. Using the compiler
-
-### 2.1 Requirements and build
-
-- A JDK (the compiler is Java; it is built with plain `javac`, no build tool).
-- `gcc` and `as` on the target machine. For the Windows target, mingw-w64.
-
-The repository contains prebuilt class files for the four stages. To build the orchestrator:
-
-```
-javac Compiler.java
-```
-
-To rebuild a stage after changing it, for example the optimiser:
-
-```
-cd Optimizer && javac -d out $(find src/main/java -name '*.java')
-```
-
-### 2.2 Compile and run
-
-```
-java Compiler -i hello.caspien output/hello
-./output/hello
-```
-
-`-i` is the input file; the output path may be in a folder that does not exist yet. Imports are resolved
-relative to the *importing file's* directory, so keep programs next to `stdlib/` or use relative paths
-like `import "../stdlib/libc.caspien"`.
-
-| Flag | Effect |
-|---|---|
-| `--hob` | Stop after the front end and optimiser. The output file is the higher-order bytecode. |
-| `--lob` | Stop after lowering. The output file is the low-order bytecode. |
-| `--asm` | Stop after code generation. The output file is x86-64 assembly. |
-| `--no-warnings` | Hide warnings (errors are always shown). |
-| `--fs-report` | Print every file-system root the program opens and every `unsafe file` use, next to the build's file policy (see 2.6). |
-| `--audit` | Do not build anything: print what the compiler can say about the compilation target (see *Auditing a target*). |
-| `--viz [out.html]` | Do not build anything: write an HTML page that draws the entry function and its direct callees as circles sized by worst-case stack depth. |
-
-The intermediate files of every stage are also kept under `output/.build/`, which is the easiest way to see
-what the compiler did to a program.
-
-#### Auditing a target: `--audit`
+### 4.2 Auditing a target: `--audit`
 
 ```
 java Compiler -i main.caspien --audit
@@ -1900,13 +1687,56 @@ func main() void{
 
 `sumTo` on its own is only *finite*: it always ends, but its loop count depends on `n`, so the figure (`>= 32`) is a lower bound and
 the line names `n`. `main` is *bounded*, because it calls `sumTo` with the literal `10`, so that call is costed with that value.
-Every figure ends in one of six words (`bounded`, `finite`, `unbounded`, `non-terminating`, `can diverge`, `unknown`), explained in "Termination" (1.4).
+Every figure ends in one of six words (`bounded`, `finite`, `unbounded`, `non-terminating`, `can diverge`, `unknown`), explained in 3.2.
 
 The figures are bounds computed from the bytecode, not measurements. Direct calls to C's `malloc` through an `extern` and stack
 used by C functions are not counted. `CASPIEN_AUDIT_ALL=1` in the environment
 lifts the 40-line limit on each section; the cost table and the exact rules are in `docs/COMPILER_REFERENCE.md`.
 
-### 2.3 Choosing a target
+### 4.3 Using the compiler
+
+#### Requirements and build
+
+- A JDK (the compiler is Java; it is built with plain `javac`, no build tool).
+- `gcc` and `as` on the target machine. For the Windows target, mingw-w64.
+
+The repository contains prebuilt class files for the four stages. To build the orchestrator:
+
+```
+javac Compiler.java
+```
+
+To rebuild a stage after changing it, for example the optimiser:
+
+```
+cd Optimizer && javac -d out $(find src/main/java -name '*.java')
+```
+
+#### Compile and run
+
+```
+java Compiler -i hello.caspien output/hello
+./output/hello
+```
+
+`-i` is the input file; the output path may be in a folder that does not exist yet. Imports are resolved
+relative to the *importing file's* directory, so keep programs next to `stdlib/` or use relative paths
+like `import "../stdlib/libc.caspien"`.
+
+| Flag | Effect |
+|---|---|
+| `--hob` | Stop after the front end and optimiser. The output file is the higher-order bytecode. |
+| `--lob` | Stop after lowering. The output file is the low-order bytecode. |
+| `--asm` | Stop after code generation. The output file is x86-64 assembly. |
+| `--no-warnings` | Hide warnings (errors are always shown). |
+| `--fs-report` | Print every file-system root the program opens and every `unsafe file` use, next to the build's file policy (see 4.3). |
+| `--audit` | Do not build anything: print what the compiler can say about the compilation target (see *Auditing a target*). |
+| `--viz [out.html]` | Do not build anything: write an HTML page that draws the entry function and its direct callees as circles sized by worst-case stack depth. |
+
+The intermediate files of every stage are also kept under `output/.build/`, which is the easiest way to see
+what the compiler did to a program.
+
+#### Choosing a target
 
 All settings live in one file, [`toolchain.config`](toolchain.config), which the orchestrator copies into
 each stage before every run. Edit that file, not the per-stage copies.
@@ -1924,80 +1754,7 @@ target linux                 # in ===codegen.config===, was windows_gnu
 | `linux` | ELF executable, System V ABI, GNU assembler syntax |
 | `windows_gnu` | PE executable, win64 ABI, GNU assembler syntax, built with mingw-w64 |
 
-### 2.4 Optimisations
-
-Every optimisation is a switch in the `===compiler.config===` section of `toolchain.config`. **They all ship
-off, except the two register switches.** Turning them on gives large speedups (see
-[section 4](#4-performance)), and every program in `tests/` gives identical output with the switches on
-and off.
-
-| Switch | Values | What it does |
-|---|---|---|
-| `deferred-operands` | on, off | Keeps expression temporaries in registers instead of on the stack. The foundation for most of the speed. (shipped on) |
-| `variables-in-registers` | on, off | Hot scalar locals live in registers. Needs `deferred-operands`. (shipped on) |
-| `float-variables-in-registers` | on, off | Hot float locals live in xmm registers. |
-| `float-temporaries-in-registers` | on, off | Float expression temporaries stay in xmm registers. |
-| `hoist-array-bases` | on, off | In loops where a safe dynarray variable is never reassigned, its pointer is copied once into a register candidate instead of being reloaded from the stack on every access. Needs `variables-in-registers`. |
-| `variables-in-alloc-functions` | on, off | Functions that allocate or resize (`new`, `dyn`, `resize`, `clone`) may keep variables in the callee-saved registers r12-r14 (saved and restored around those instructions). Needs `variables-in-registers`. |
-| `variables-in-arg-registers` | on, off | Lets variables whose live range has no call and does not touch the argument registers also use rsi and rdi (two more variable registers). Needs `variables-in-registers`. |
-| `fuse-length-compare` | on, off | Folds the length load of a safe dynarray bounds check into the compare (`cmpq (%rax), %r9`) and reuses the loaded array pointer for the element access. Needs `deferred-operands: on`. |
-| `loop-rotation` | on, off | Rotates loops: the exit test is copied to the bottom, so each iteration runs one conditional jump instead of a conditional and an unconditional one. Needs `deferred-operands: on`. |
-| `copy-forward` | on, off | Copy forwarding: a temporary that only holds a copy of a register variable is replaced by the variable in its reads and the copy move is deleted. Needs `deferred-operands: on`. |
-| `conditional-move` | on, off | Conditional moves: a simple select (`if c { x = k }` or `if c { x = a } else { x = b }` on a register variable) becomes a compare and a `cmov` instead of a branch. Needs `deferred-operands: on`. |
-| `function-inlining` | off, conservative, balanced, aggressive | Replaces calls with the callee's body. Tunable with `inline-max-callee-lines`, `inline-max-depth`, `inline-max-growth`, `inline-max-multi-callee-lines` (a big callee with several call sites stays a call). |
-| `loop-unrolling` | off, conservative, balanced, aggressive | Unrolls `for` loops with literal bounds. Tunable with the `loop-unroll-*` keys. |
-| `loop-unroll-nested` | on, off | A fully unrolled loop whose body holds another loop gets its loop variable replaced by the literal in each copy (as `@unroll` does), so the inner loop's bounds and the array indexes fold to constants. |
-| `constant-folding` | on, off | Folds operators whose operands are literals. |
-| `variable-elision` | on, off | Replaces a variable assigned once to a literal with the literal. |
-| `variable-shifting` | on, off | Gives each reassignment its own variable so elision can apply. |
-| `struct-unpacking` | on, off | Splits local scalar-only structs into separate variables. |
-| `dead-control-flow-removal` | on, off | Removes branches that `if true` or `if false` makes unreachable. |
-| `dead-function-removal` | on, off | Removes functions that are never called. |
-| `unused-declaration-removal` | on, off | Removes unused externs, statics and strings. |
-| `variable-allocation-reordering` | on, off | Reorders frame slots by alignment to remove padding. |
-| `struct-member-reordering` | on, off | Reorders struct members by alignment to remove padding. |
-
-A larger group of improvements has no switch and is always on: strength reduction (division and modulo by
-a power of two become shifts), compare-and-branch fusion, jump cleanup, a float constant pool, indexed
-addressing for arrays, field access through a pointer as a single displacement instruction, fusion of the bounds-proof test into the loop,
-compare-and-branch on 8, 16 and 32-bit values without widening them first, and multiplication by a constant as shifts, adds and `lea`.
-
-Three more switches, all shipped off, live in the `===codegen.config===` section: `bmi2` (variable shifts use `shlx`/`shrx`; needs a BMI2 CPU), `avx` (scalar float arithmetic uses the three-operand VEX forms, which removes the register copies; needs an AVX CPU; fewer instructions but no measured speed-up) and
-`jcc-padding` (the assembler pads branches so none crosses or ends on a 32-byte boundary, which on Intel Skylake-family CPUs keeps a tight loop
-from losing several percent just because code elsewhere moved it; needs binutils 2.34 or newer, otherwise it is ignored with a warning).
-
-The "everything on" configuration used for the benchmarks in section 4 is:
-
-```
-deferred-operands: on
-variables-in-registers: on
-float-variables-in-registers: on
-float-temporaries-in-registers: on
-hoist-array-bases: on
-variables-in-alloc-functions: on
-variables-in-arg-registers: on
-fuse-length-compare: on
-loop-rotation: on
-copy-forward: on
-conditional-move: on
-loop-unrolling: aggressive
-loop-unroll-nested: on
-function-inlining: aggressive
-constant-folding: on
-variable-elision: on
-variable-shifting: on
-struct-unpacking: on
-dead-control-flow-removal: on
-dead-function-removal: on
-unused-declaration-removal: on
-```
-
-Two cautions. First, `function-inlining: aggressive` has no fixed callee-size or depth limit (it is bounded only by the relative budgets: a caller may grow to at most 30 times its original size, the whole program to at most 10 times), so a program that calls one
-large function from hundreds of places can still make the optimiser slow or exhaust its heap. Use `balanced`, or raise the
-limit with `JAVA_TOOL_OPTIONS=-Xmx8g`. Second, compile time grows with the number of foldable branches in
-one function, so very large generated test programs are better split into several files.
-
-### 2.5 The standard library
+#### The standard library
 
 `stdlib/` is ordinary Caspien source, imported by relative path. There is no prelude: a program imports exactly the files it uses.
 
@@ -2011,37 +1768,47 @@ one function, so very large generated test programs are better split into severa
 | `string.caspien` | `String`: a growable byte string with `concat`, `appendChar`, `sub`, `charAt`, `setCharAt`, `firstIndexOf`. |
 | `insecure_hash.caspien` | `insecure_hashOf<T>` and `insecure_fnv1a64Bytes`: FNV-1a, for hash tables only. |
 | `sha256.caspien` | SHA-256 (one-shot and streaming) on raw buffers. A real cryptographic hash, but a plain one: no constant-time or side-channel claims. |
-| `fs.caspien` | Files and directories, capability style (2.6). |
+| `fs.caspien` | Files and directories, capability style (below). |
 | `process.caspien` | `spawn`, `StdOut.read`, `StdIn.write`, `closeProcess`. |
 | `sleep.caspien`, `par_call.caspien`, `await_call.caspien` | The glue behind the `sleep`, `par` and `await` keywords. |
-| `event_loop*.caspien`, `make_safe_args.caspien` | The program entry points (see "Program entry"). |
+| `event_loop*.caspien`, `make_safe_args.caspien` | The program entry points (see 1.3). |
 | `guard.caspien` | The `Guard<T>` interface for lockable types. |
-| `gt_*.caspien`, `ghost_table.caspien` | The ghost table that tracks live allocations (below). |
+| `gt_*.caspien`, `ghost_table.caspien` | The ghost table that tracks live allocations (see 2.3). |
 
 The older reference documentation, including the full description of every optimisation pass, is in
 [`docs/COMPILER_REFERENCE.md`](docs/COMPILER_REFERENCE.md).
 
-#### Anything that allocates imports the ghost table
+##### A first look at the collections
 
-Every allocation (`new`, `dyn`, `clone`, a growing `resize`, `par`) is registered in a table of live
-allocations, which is how a `ref` can be checked for liveness at run time and how scope-end cleanup finds
-what to free. The table is five small files, and a program that allocates imports all of them next to
-`libc.caspien`:
+The classes below wrap dynarrays, strings and hash maps. Each is in its own file under `stdlib/`:
+
+- `DynamicArray<T>` (`new DynamicArray:<u64>()`) has `get`, `set`, `pushBack`, `pushFront`, `popBack`,
+  `popFront`. `get` and `set` need an index proof against `list.backing`, and the mutating methods are
+  `@throws`, so call them with `?`. The pop methods return the default value you pass when the array is
+  empty. `pushBack` reallocates on every call, so it suits small arrays, not hot loops. For a struct
+  element type use the `...Ptr` variants (`pushBackPtr(list, auto s)`), which take a pointer.
+- `String` (`new String("hello")`) has `appendChar`, `concat`, `charAt`, `setCharAt`, `sub` and
+  `firstIndexOf`, which returns -1 when the character is absent.
+- `HashMap<T>` (`new HashMap:<u64>(defaultKey, defaultValue, capacity)`) has `set`, `get` and `contains`.
+  The capacity is the starting size (rounded up to a power of two; 0 means every `set` is ignored); the table doubles when it is 70% full. There is no remove.
+- `insecure_hash.caspien` (FNV-1a, for hash tables only: it is not a security primitive, hence the name) and
+  `sha256.caspien` (a real SHA-256), `process.caspien` (spawn a process and read or write its
+  pipes), `sleep.caspien`, `par_call.caspien` / `await_call.caspien` (threads).
 
 ```rust
-import "../stdlib/libc.caspien"
-import "../stdlib/gt_init.caspien"
-import "../stdlib/gt_register.caspien"
-import "../stdlib/gt_alive_check.caspien"
-import "../stdlib/gt_destruct.caspien"
-import "../stdlib/gt_moved.caspien"
+let list = mut ? new DynamicArray:<u64>()
+for i in 0..5{
+	let v = mut (i * i)
+	? list.pushBack(list, v)
+}
+let sum = mut 0
+for i in 0..5{
+	match i in list.backing{ sum += list.get(list, i) }
+}
+let top = mut ? list.popBack(list, mut 999)      // 16
 ```
 
-The table is an open-addressing hash set (expected O(1)) that also issues lazy 64-bit ids for nullable `ref`s;
-`stdlib/gt_set/` is the same set without ids and `stdlib/gt_linear/` the older linear-scan version
-(import one folder's files, never mix; only the default folder supports a nullable `ref`).
-
-#### Collections, strings and hashing
+##### Collections, strings and hashing
 
 Allocation can fail, so every constructor and every growing call goes through `?` inside a `?catch` scope. A
 collection method takes the collection as `ref some`, so the caller must have proven it is not null (a value that
@@ -2089,14 +1856,14 @@ nothing else. `sha256.caspien` is the one real hash, and works on raw buffers
 (`sha256(data, byteCount, digest)`, or `sha256Begin/Update/Finish/Release` to stream); `tests/sha256_test.caspien` has
 every call shape, checked against Python's `hashlib`.
 
-#### Files
+##### Files
 
-`fs.caspien` is the only file I/O and is described in 2.6, with the build-time file policy that decides where a
+`fs.caspien` is the only file I/O and is described under Files and directories in 4.3, with the build-time file policy that decides where a
 program may open things. Runnable end to end (create a directory, write, append, read back, replace a file
 atomically, show that a name outside the directory is refused, clean up) in
 [`docs/examples/21_files.caspien`](docs/examples/21_files.caspien).
 
-#### Processes, threads and sleeping
+##### Processes, threads and sleeping
 
 ```rust
 let p = mut ? spawn("echo hello from the child", imut ProcessMode.READ)
@@ -2110,9 +1877,9 @@ let r = mut ? await triple(mut 14)                    // `triple` is an @async f
 All of it in [`docs/examples/22_processes_threads_sleep.caspien`](docs/examples/22_processes_threads_sleep.caspien);
 `par`, locks and atomics are in [`16_atomics_and_locks`](docs/examples/16_atomics_and_locks.caspien).
 
-#### What the compiler holds the library, and your code, to
+##### What the compiler holds the library, and your code, to
 
-These are the rules that shape every use of the standard library. They are the language's guarantees (1.5) seen
+These are the rules that shape every use of the standard library. They are the language's guarantees (2.6, 3.5 and 4.1) seen
 from the library's side.
 
 - **Every allocation can fail and says so.** `new`, `dyn`, `clone`, a growing `resize`, `par` and `await` throw on
@@ -2137,7 +1904,7 @@ from the library's side.
   standard library may never use it: the compiler refuses it in any file under `stdlib/`
   (`tests/unaudited_stdlib_check.sh`). The library's own `unsafe` blocks (the ghost table, `memcopy`, `pthread_*`,
   `popen`) all name their reasons.
-- **The file system is a capability, and a build-time policy** (2.6): names are single components, symlinks are never
+- **The file system is a capability, and a build-time policy** (4.3): names are single components, symlinks are never
   followed, and the paths a program may open are limited by `fs-roots`.
 
 And the limits of the library itself, which are design choices today rather than guarantees:
@@ -2153,9 +1920,9 @@ And the limits of the library itself, which are design choices today rather than
 | Threads | `par` starts a detached thread; there is no thread-pool and no cancellation. `match @lock` spins up to its attempt limit, then gives up. |
 
 On the benchmarks, programs written with these classes run about 1.0x to 9.2x slower than the same program written with
-raw arrays (1.9x on the geometric mean, with string manipulation and the k-nucleotide hash map at the slow end), see section 4.
+raw arrays (1.9x on the geometric mean, with string manipulation and the k-nucleotide hash map at the slow end), see 5.4.
 
-### 2.6 Files and directories
+#### Files and directories
 
 `stdlib/fs.caspien` is the only file I/O. It is capability style: a program gets a `Dir` (an open directory)
 and everything else is relative to it, so code holding a `Dir` can reach what is below it and nothing else. A
@@ -2206,7 +1973,7 @@ roots without a drive letter. The Windows layer has only been run under Wine.
 
 ---
 
-## 3. How the compiler works
+### 4.4 How the compiler works
 
 The compiler is four independent Java programs, each a separate stage that reads and writes a plain-text
 bytecode, plus an orchestrator (`Compiler.java`) that runs them in order and then assembles and links with
@@ -2232,7 +1999,7 @@ bytecode, plus an orchestrator (`Compiler.java`) that runs them in order and the
 ```
 
 **ASTGenerator** is the front end and holds all the language rules. A hand-written lexer and parser
-produce a token tree. The type checker, about 19,000 lines, is where every guarantee in section 1 is
+produce a token tree. The type checker, about 20,000 lines, is where every guarantee in Parts 2 and 3 is
 enforced: mutability, ownership and moves, bounds and nonzero proofs, the call-graph checks that reject
 recursion, and the `@throws` contract. The bytecode emitter then writes a stack-machine program in which
 every instruction states the types it operates on. Generics are expanded by monomorphisation before type
@@ -2252,13 +2019,324 @@ register form, keep the hottest scalar variables in registers, and fuse comparis
 It handles both calling conventions, preserves callee-saved registers, implements the
 unwinding behind `throw`, and calls the system's C library for allocation and threads.
 
-Roughly 63,000 lines of Java make up the four stages. The per-stage `CLAUDE.md` files record the design
+Roughly 71,000 lines of Java make up the four stages. The per-stage `CLAUDE.md` files record the design
 decisions, the bugs found and how each change was verified, and `tests/` holds the runtime programs and
 check scripts.
 
 ---
 
-## 4. Performance
+### 4.5 Where it stands
+
+The ideal is a language in which a type-checked program is *provably* total, memory safe and free of
+runtime exceptions. Those guarantees are made about **safe code**. `unsafe` is the explicit escape hatch,
+and inside it the compiler checks types but promises nothing else. So the state is reported in two layers:
+what the checker enforces in safe code, then what `unsafe` gives up.
+
+The memory-safety and runtime-exception rows are in 2.6, the termination rows in 3.5, and the `unsafe` table in 4.1.
+What remains is the state of the compiler itself:
+
+| Property | Enforced today | Open |
+|---|---|---|
+| **Soundness of the checker** | About 190 runtime regression programs, 100 compile-error fixtures and 95 shell checks in [`tests/`](tests), generated tests with expected values from independent Python models, and shell checks for the optimiser passes. | There is no formal proof, mechanised or otherwise. The type checker alone is about 21,000 lines of Java, and "the compiler accepts it" is evidence, not proof. Further compile-error fixtures are kept outside this repository. |
+| **Platforms** | Linux x86-64 is the tested target. | The Windows (`windows_gnu`) output is built with mingw-w64 and the test suite has been run under Wine on Linux; it has not been run on a real Windows machine. |
+
+Known bugs that affect the guarantees are tracked in the `CLAUDE.md` files.
+
+## 5. Speed
+
+Caspien is a systems language, so the checker's rules can be set aside where you need the machine. This part
+covers the low-level tools (raw pointers, C, assembly), the allocation schemes you can build today, the
+optimiser, and measured performance. The low-level tools give up guarantees of correctness or totality, and
+each of them is an `unsafe` block, named by the rules in 4.1. That is what `unsafe` marks. It does not mark
+speed: the optimiser works on all code.
+
+### 5.1 Low-level access
+
+#### Raw pointers
+
+Passing, returning, casting and stepping a `raw` pointer is safe. `raw x` needs an addressable variable (or a
+string literal), so bind a computed value to a `let` first. Pointer arithmetic is C's: `p++`, `p--`,
+`p += n`, `p -= n`, `p + n` and `p - n` move by `n * sizeof(pointee)` bytes, and `p - q` is the number of
+elements between two pointers of the same type, as an `s64`. Widening the pointee with `as` (a `raw u8` as
+`u64`) gives a pointer that steps by 8. `deref(p)` reads a value, and is never an assignment target: write
+through a pointer with member assignment on a proven pointer, or with `memcopy`.
+
+```rust
+func main() void{
+	let count = mut 5
+	let bytes = mut (count * sizeof(u64))
+	let:<raw mut u8> base = null
+	unsafe extern{
+		base = mut malloc(bytes)                // the only extern call that allocates
+	}
+	let p = mut (base as u64)                   // now a `raw u64`: it steps by 8
+	let start = mut p
+	for i in 0..count{
+		let v = mut (i * 10 + 1)
+		unsafe memcopy raw{
+			memcopy(p, mut 8, raw v)            // memcopy(destination, byteCount, source)
+		}
+		p++
+	}
+	let span = mut (p - start)                  // 5 elements
+	let q = mut start
+	let sum = mut 0
+	for i in 0..count{
+		unsafe assume deref{
+			assume match Some(q)                // vouch that q is alive: it points into C memory, so a real Some(q) would be false
+			sum += deref(q)                     // reading through a raw pointer needs the `deref` tag as well
+		}
+		q++
+	}
+	unsafe extern{
+		free(base)
+	}
+}
+```
+
+#### Unsafe dynamic arrays
+
+An `unsafe dyn` array has no checks at all: no proofs, no `?` on `resize`, and no protection against an
+index past the end. It is for code that has proved the bounds in its own way.
+
+```rust
+unsafe udyn{
+	let us = mut unsafe dyn:<u64>([])
+	us = resize(us, 6)
+	for i in 0..6{ us[i] = i * 3 }
+}
+```
+
+`assume match` states a proof without testing it. It is the tool for dropping a bounds test you have proven
+yourself, such as in the inner loop of a numeric kernel. Its rules are in 4.1.
+
+#### Talking to C: `extern` and `export`
+
+`extern` declares a function the final program will find at link time, almost always a C function. The
+declaration lists the parameter types (no names) and the return type, and `...` as the last parameter marks a
+variadic function:
+
+```rust
+extern abs(mut s32) mut s32                    // int abs(int)
+extern labs(mut s64) mut s64                   // long labs(long)
+extern snprintf(raw mut u8, mut u64, static imut string,...) mut s32   // int snprintf(char *, size_t, const char *, ...)
+
+@link_name(labs)                               // a different Caspien name for the same C symbol
+extern c_abs(mut s64) mut s64
+```
+
+Calling an extern needs `unsafe`, and the compiler does not check an extern's declaration against the real
+C header, so a wrong one is as dangerous as it is in C. Match the C types by size and signedness: `s32` is
+`int`, `s64` is `long`, `u64` is `unsigned long` or `size_t`, a Caspien `string` is a `const char *`, and a
+`raw mut u8` is a byte pointer such as `void *`. `@link_name(symbol)` gives the C symbol when the name you
+want differs from it (a Caspien keyword such as `sleep` cannot be an extern's name), and
+`@call_convention(name)` selects the calling convention of the C side. Two declarations of one extern in a
+program are an error, so shared ones live in a file you import: `stdlib/libc.caspien` declares `printf`,
+`malloc`, `free`, `strlen` and the other C functions the standard library and the examples use.
+
+`export name` goes the other way. It names an ordinary top-level function, and the compiler emits it under its
+own bare name (no mangling) so that C can declare and call it. The function cannot be overloaded or generic,
+because C has neither, and it can be exported once:
+
+```rust
+extern c_apply(mut u64, mut u64) mut u64       // defined in helper.c
+
+func add(a: mut u64, b: mut u64) mut u64{ return a + b }
+export add                                     // C sees `unsigned long add(unsigned long, unsigned long)`
+
+func main() void{
+	let r = mut 0
+	unsafe extern{
+		r = mut c_apply(mut 40, mut 2)         // helper.c: return add(a, b) * 2;
+	}
+	println(r)                                 // 84
+}
+```
+
+The compiler links only the C library (with `-pthread` and `-lm`). To link your own C files, stop after code generation and let
+`gcc` finish the job (with a Linux target in `toolchain.config`):
+
+```
+java Compiler --asm -i docs/c_interop/interop.caspien output/interop.s
+gcc output/interop.s docs/c_interop/helper.c -o output/interop -no-pie -pthread -lm
+```
+
+`docs/c_interop/` has the whole program and a script that builds and runs it. These are the errors:
+
+```
+calling extern 'malloc' requires 'unsafe' code
+'extern strlen' is already declared
+'export add' does not name a declared function
+'export f' is ambiguous -- 'f' has 2 overloads, and C has no overloading; only an overload-free function can be exported
+'f' is generic and can't be exported -- C has no equivalent of a monomorphized function family
+```
+
+#### Inline assembly: `ASM`
+
+`ASM` puts assembly text into the compiler's output exactly as you wrote it. It is the lowest-level hatch in
+the language, so it needs `unsafe` everywhere: a root-level `ASM` sits inside an `unsafe{ }` block, and one in
+a function sits inside an `unsafe` block of that function. The block's text is not parsed or checked. The
+only rules are that its braces balance (braces inside quotes and comments do not count) and that the word
+`ASM_END` does not appear in it. It must be in the assembler syntax of your target, which is AT&T for
+`linux`.
+
+```rust
+// Root level: this defines a C-callable function in assembly. The text is copied where it stands.
+unsafe{
+ASM {
+.text
+.globl asm_add3
+asm_add3:
+	lea (%rdi,%rsi), %rax
+	add %rdx, %rax
+	ret
+}
+}
+extern asm_add3(mut u64, mut u64, mut u64) mut u64    // call it like any other extern
+
+// The same text kept in a file. The path is relative to the source file.
+unsafe{
+ASM "18_asm_helper.s"
+}
+
+func main() void{
+	unsafe asm extern{
+		let s = mut asm_add3(mut 1, mut 2, mut 3)    // 6
+
+		ASM relax {                // inside a function a block can be named,
+			pause
+		}
+		relax                      // and then it is emitted wherever its name stands alone on a line
+		relax
+	}
+}
+```
+
+An unnamed `ASM { ... }` inside a function is emitted at that point. A named block is scoped like a `let`:
+it is visible from its declaration to the end of the enclosing block. The compiler cannot see what the text
+does, so the usual assembly rules are yours to keep: leave the stack as you found it and preserve the
+callee-saved registers (`rbx`, `rbp`, `r12` to `r15`). A function that contains an `ASM` block is
+conservatively left alone by the optimiser: it gets no register variables and its variable passes skip it, and
+a program with any `ASM` in it turns off `unused-declaration-removal` as a whole. `18_asm_and_assume` is a
+runnable version. These are the errors:
+
+```
+declaring 'ASM' requires 'unsafe' code
+invoking 'relax' requires 'unsafe' code
+```
+
+### 5.2 Your own allocation
+
+The ghost table is the one allocation hook the compiler calls. Its functions (`@gt_init`,
+`@gt_register`, `@gt_alive_check`, `@gt_destruct`, `@gt_moved`, and for a nullable `ref` also `@gt_ref_id` and
+`@gt_ref_resolve`) are ordinary Caspien source, so a program can supply its own table, or choose one of the three in
+`stdlib/`: the hash set with ids, which is the default, the same set without ids in `stdlib/gt_set/`, and the
+older linear scan in `stdlib/gt_linear/` (the last two cannot hold a nullable `ref`). This is `gt_destruct` from `stdlib/gt_set/` (the default one also drops the pointer's id), with the table-shrinking step left out:
+
+```rust
+@gt_destruct
+@pub
+func gt_destruct(ptr: raw imut u8) void{
+	if ptr != null{
+		match @lock ghost_table{
+			OPEN:{
+				let at = mut gtFind(ghost_table.base, ghost_table.capacity, ptr)
+				if at != ghost_table.capacity{
+					gtRemoveAt(ghost_table.base, ghost_table.capacity, at)
+					ghost_table.len = mut (ghost_table.len - 1)
+					unsafe extern{
+						free(ptr)
+					}
+				}
+			}
+			CLOSED:{
+				continue
+			}
+		}
+	}
+}
+```
+
+What `new`, `dyn`, `clone` and `resize` use to obtain memory is still `malloc`, called directly by the generated
+code, so the allocator itself cannot be replaced today. What you can build is a pool or an arena in `unsafe`
+code: take one block from `malloc`, hand out pieces of it through `raw` pointers, and free the block once.
+A `ref` can only be made from an `owns` value, so memory you manage yourself is reached through `raw`
+pointers, and reading through one needs `unsafe deref` together with an `assume match Some` (see 4.1).
+
+### 5.3 The optimiser
+
+Every optimisation is a switch in the `===compiler.config===` section of `toolchain.config`. **They all ship
+off, except the two register switches.** Turning them on gives large speedups (see
+[5.4](#54-performance)), and every program in `tests/` gives identical output with the switches on
+and off.
+
+| Switch | Values | What it does |
+|---|---|---|
+| `deferred-operands` | on, off | Keeps expression temporaries in registers instead of on the stack. The foundation for most of the speed. (shipped on) |
+| `variables-in-registers` | on, off | Hot scalar locals live in registers. Needs `deferred-operands`. (shipped on) |
+| `float-variables-in-registers` | on, off | Hot float locals live in xmm registers. |
+| `float-temporaries-in-registers` | on, off | Float expression temporaries stay in xmm registers. |
+| `hoist-array-bases` | on, off | In loops where a safe dynarray variable is never reassigned, its pointer is copied once into a register candidate instead of being reloaded from the stack on every access. Needs `variables-in-registers`. |
+| `variables-in-alloc-functions` | on, off | Functions that allocate or resize (`new`, `dyn`, `resize`, `clone`) may keep variables in the callee-saved registers r12-r14 (saved and restored around those instructions). Needs `variables-in-registers`. |
+| `variables-in-arg-registers` | on, off | Lets variables whose live range has no call and does not touch the argument registers also use rsi and rdi (two more variable registers). Needs `variables-in-registers`. |
+| `fuse-length-compare` | on, off | Folds the length load of a safe dynarray bounds check into the compare (`cmpq (%rax), %r9`) and reuses the loaded array pointer for the element access. Needs `deferred-operands: on`. |
+| `loop-rotation` | on, off | Rotates loops: the exit test is copied to the bottom, so each iteration runs one conditional jump instead of a conditional and an unconditional one. Needs `deferred-operands: on`. |
+| `copy-forward` | on, off | Copy forwarding: a temporary that only holds a copy of a register variable is replaced by the variable in its reads and the copy move is deleted. Needs `deferred-operands: on`. |
+| `conditional-move` | on, off | Conditional moves: a simple select (`if c { x = k }` or `if c { x = a } else { x = b }` on a register variable) becomes a compare and a `cmov` instead of a branch. Needs `deferred-operands: on`. |
+| `function-inlining` | off, conservative, balanced, aggressive | Replaces calls with the callee's body. Tunable with `inline-max-callee-lines`, `inline-max-depth`, `inline-max-growth`, `inline-max-multi-callee-lines` (a big callee with several call sites stays a call). |
+| `loop-unrolling` | off, conservative, balanced, aggressive | Unrolls `for` loops with literal bounds. Tunable with the `loop-unroll-*` keys. |
+| `loop-unroll-nested` | on, off | A fully unrolled loop whose body holds another loop gets its loop variable replaced by the literal in each copy (as `@unroll` does), so the inner loop's bounds and the array indexes fold to constants. |
+| `constant-folding` | on, off | Folds operators whose operands are literals. |
+| `variable-elision` | on, off | Replaces a variable assigned once to a literal with the literal. |
+| `variable-shifting` | on, off | Gives each reassignment its own variable so elision can apply. |
+| `struct-unpacking` | on, off | Splits local scalar-only structs into separate variables. |
+| `dead-control-flow-removal` | on, off | Removes branches that `if true` or `if false` makes unreachable. |
+| `dead-function-removal` | on, off | Removes functions that are never called. |
+| `unused-declaration-removal` | on, off | Removes unused externs, statics and strings. |
+| `variable-allocation-reordering` | on, off | Reorders frame slots by alignment to remove padding. |
+| `struct-member-reordering` | on, off | Reorders struct members by alignment to remove padding. |
+
+A larger group of improvements has no switch and is always on: strength reduction (division and modulo by
+a power of two become shifts), compare-and-branch fusion, jump cleanup, a float constant pool, indexed
+addressing for arrays, field access through a pointer as a single displacement instruction, fusion of the bounds-proof test into the loop,
+compare-and-branch on 8, 16 and 32-bit values without widening them first, and multiplication by a constant as shifts, adds and `lea`.
+
+Three more switches, all shipped off, live in the `===codegen.config===` section: `bmi2` (variable shifts use `shlx`/`shrx`; needs a BMI2 CPU), `avx` (scalar float arithmetic uses the three-operand VEX forms, which removes the register copies; needs an AVX CPU; fewer instructions but no measured speed-up) and
+`jcc-padding` (the assembler pads branches so none crosses or ends on a 32-byte boundary, which on Intel Skylake-family CPUs keeps a tight loop
+from losing several percent just because code elsewhere moved it; needs binutils 2.34 or newer, otherwise it is ignored with a warning).
+
+The "everything on" configuration used for the benchmarks in 5.4 is:
+
+```
+deferred-operands: on
+variables-in-registers: on
+float-variables-in-registers: on
+float-temporaries-in-registers: on
+hoist-array-bases: on
+variables-in-alloc-functions: on
+variables-in-arg-registers: on
+fuse-length-compare: on
+loop-rotation: on
+copy-forward: on
+conditional-move: on
+loop-unrolling: aggressive
+loop-unroll-nested: on
+function-inlining: aggressive
+constant-folding: on
+variable-elision: on
+variable-shifting: on
+struct-unpacking: on
+dead-control-flow-removal: on
+dead-function-removal: on
+unused-declaration-removal: on
+```
+
+Two cautions. First, `function-inlining: aggressive` has no fixed callee-size or depth limit (it is bounded only by the relative budgets: a caller may grow to at most 30 times its original size, the whole program to at most 10 times), so a program that calls one
+large function from hundreds of places can still make the optimiser slow or exhaust its heap. Use `balanced`, or raise the
+limit with `JAVA_TOOL_OPTIONS=-Xmx8g`. Second, compile time grows with the number of foldable branches in
+one function, so very large generated test programs are better split into several files.
+
+### 5.4 Performance
 
 Fourteen programs were timed against 23 other languages on a 2-core Intel Xeon VM (one full run of every language and every build configuration on 8 to 9 October 2026, the compiler at commit `559434c` plus the uncommitted fixes described below; the lru and k-nucleotide rows were re-measured after a stdlib fix). Every output matched the C reference.
 Times are seconds, fastest of three runs. "Caspien" is the fastest Caspien variant with all optimisations on; the stdlib column is the same
@@ -2373,7 +2451,7 @@ structs and arrays as C does. The exception is the `ref` variants (below): they 
   splitting (the one exception is `hoist-array-bases`, which keeps a copy of a dynarray pointer in a register for the
   length of a loop) and no spill code beyond saving float variables around calls. There is also no vectorisation and
   no alias analysis (the loop passes use a simple 'nothing in the loop writes this slot' test), and every `match Some` on a `ref`
-  pays for the ghost-table liveness lookup described in section 1.5 (expected O(1)).
+  pays for the ghost-table liveness lookup described in 2.3 (expected O(1)).
 - The optimisation switches matter more than any single trick. With them off, the same programs are 4.0x
   slower than C on average (best variant of each), and they ship off. That is the biggest single improvement available to users
   today.
@@ -2412,3 +2490,135 @@ bounded growth budgets); make the standard library classes as fast as hand-writt
 32-bit and 8-bit arithmetic in register form. The benchmark harnesses (`benchmarks/bench_suite.py`,
 `benchmarks/bench_program.py`, `benchmarks/nbody/bench.py`) rebuild and re-time everything, and
 [`benchmarks/RESULTS.md`](benchmarks/RESULTS.md) holds the earlier, more detailed measurements.
+
+## Appendices
+
+### A. Builtins at a glance
+
+A handful of names look like functions but are built into the compiler. Each is reserved, so a function of
+yours cannot reuse the name, and each is compiled directly instead of being called.
+
+| Builtin | What it does | Notes |
+|---|---|---|
+| `sizeof(T)` | the size of a type in bytes | folded to a constant; also the stride of `raw` pointer arithmetic |
+| `len(x)` | the length of a fixed array, a string literal or a safe dynarray | known at compile time except for a dynarray |
+| `range(x)` | the range `0..len(x)` of an array or safe dynarray | what `for match i in range(d)` iterates |
+| `deref(p)` | reads the value a pointer points to | `unsafe` unless the pointer is `auto`, `some` or inside `match Some`; never an assignment target |
+| `Some(p)` | proof condition: the pointer `p` is alive | only as a `match` condition (`Some(i) in arr` also proves the element alive) |
+| `wrap:<T>(x)`, `sat:<T>(x)` | convert an integer to `T` by keeping the low bits, or by clamping | total, no `unsafe`; `sat` needs a variable, field or literal |
+| `bits_and`, `bits_or`, `bits_xor`, `bits_not`, `bits_left`, `bits_right` | bitwise operations | one shift rule: a count of the width or more gives 0, or sign fill |
+| `bits_rotl(x, n)`, `bits_rotr(x, n)` | rotate the bits of `x` left or right within its own width | one `rol`/`ror`; the count is taken modulo the width (so a count of the width or more wraps instead of giving 0, and a negative signed count rotates the other way); any integer type, `n` the same type as `x` (a literal adapts) |
+| `dyn(...)`, `resize(d, n, fill)` | allocate and grow a dynamic array | can fail, so wrap in `try` or `?` (`unsafe dyn` forms exist) |
+| `memcopy(dest, n, src)` | copy `n` bytes between pointers | `unsafe` only |
+| `call(fp, ...)` | call through a function pointer | `unsafe` only; arity, argument types and result are checked against the pointer's signature |
+| `clone(p)` | a fresh `owns some` copy of what `p` points to | `p` must be proven alive (`auto`, `some`, or inside `match Some`), like `deref`; can fail, so wrap in `try` or `?` |
+| `insecure_rand()` | C's `rand()` as a `u64` | not cryptographic, hence the name; allowed in `@pure` functions |
+
+`new`, `par`, `await` and `yield` are keywords, not builtins, and `sleep` comes from the standard library.
+`clone` makes a deep copy: it follows every `owns` member (and dynarray element) of the pointee, allocates a
+fresh copy of each and registers every new allocation with the ghost table, so the result is an ordinary
+`owns` value that shares nothing with the original. It does not null-check its source (the proof does that);
+it throws "out of memory" if an allocation fails, and in that case it frees whatever it had already copied, so a failed clone leaves nothing behind. You write `clone(p)` whatever the type; the compiler works
+out the per-type copying.
+
+### B. Idiomatic Caspien in brief
+
+- Prefer a `for` loop over a recursive function, and a `match` proof over an `unsafe` block. If you cannot
+  prove something, put the smallest possible operation in `unsafe`.
+- Start a function that allocates with `?catch(e){ ... }`, and mark every throwing call with `?`. Mark the
+  function `@throws` if the handler rethrows.
+- Bind every value with `mut` or `imut` before storing it, and bind a computed value to a `let` before
+  passing it to `raw`, `auto` or `swap`. C function arguments need no binding.
+- Choose the pointer kind by who owns the value: `owns` for the single owner, `ref` for a pointer that does not own,
+  checked by `match Some`, `auto` for a local, and `raw` only at the boundary with C.
+- Use an interface when callers should not care about the concrete type, a bounded generic when the type is
+  known at compile time, and composition (a struct member) to share members.
+- Put shared mutable state behind a lock and flags behind an atomic. Keep a `CLOSED` case honest: say
+  whether you retry, give up or leave.
+- Put the `@pure` decorator on functions that can have it, and use the compiler's refusals as the review
+  checklist: each error message in this document names the rule that was about to be broken.
+
+### C. Every use of `@lock`
+
+The same decorator appears in several places. Proof locks are described in 2.4 and spin locks in 3.4.
+
+| Form | On | Meaning |
+|---|---|---|
+| `@lock(match self.f : V)`, `f` an `imut` enum | struct | a proof lock: the other members need a `match` on `f` that selects `V` (this section) |
+| `@lock(match self.f : OPEN)`, `f` a `swap` atomic | struct | a spin lock: the other members need `match @lock x{ OPEN:{...} }` |
+| `@lock(match self.f : V)` | method | the caller must already be inside the matching `match` |
+| `@lock(match i in self.a)` | method | the caller must hold a bounds proof for `i` (`into` for writes) |
+| `@lock`, `@unlock` | method of a `@guard` implementer | the two operations behind `lock x{ ... }` |
+
+### D. Reading the code
+
+The syntax is deliberately regular. Blocks use braces, statements need no semicolons, `let` introduces a
+binding, `:<T>` supplies a type argument, and comments are `//` and `/** ... */`. A `@decorator` on the line
+above a declaration changes how it is checked or compiled, and a decorator the declaration does not accept
+is an error ("'@x' is not a valid decorator on a function"). This is the full set:
+
+| Decorator | On | Meaning |
+|---|---|---|
+| `@pub` | function, struct, member, `impl`, global | visible outside its file. Required on the methods of an `impl Interface for T` |
+| `@throws` | function | may `throw`; every caller must wrap the call |
+| `@pure` | function | side-effect-free, not referentially transparent: calls only `@pure` functions, reads no mutable global, writes through no pointer, never throws |
+| `@recursive` | function | the one allowed recursion shape (see 3.1) |
+| `@async` | function | runs on its own thread when called with `par` or `await` |
+| `@realizes` | method in `impl Interface for T` | fulfils a signature of the interface |
+| `@default` | interface method with a body | an implementation every implementer inherits |
+| `@overrides` | method in `impl Interface for T` | replaces a `@default` method |
+| `@lock(match self.f : OPEN)` | struct, method | the members are reachable only while the lock field `f` is held |
+| `@lock(match i in self.a)` | method | the caller must hold a bounds proof for `i` against `self.a` (`into` for writes) |
+| `@lock`, `@unlock` | method of a `@guard` implementer | the two operations behind `lock x{ ... }` |
+| `@guard` | interface | a generic interface with one `@lock` and one `@unlock` method |
+| `@untyped` | struct | no hidden class id, so no `instanceof` or `implements` |
+| `@non_exhaustive` | enum | its last variant is `default`; a `match` needs a `default` case only when some variant is not named (an error when all are) |
+| `@link_name(sym)` | `extern` | the C symbol, when the Caspien name differs |
+| `@call_convention(c)` | function, `extern` | choose a calling convention from `toolchain.config` |
+| `@inline`, `@dont(inline)` | function | inline every safe call to it even with inlining off / never inline it (see 5.3 and `docs/COMPILER_REFERENCE.md`) |
+| `@reads(...)`, `@writes(...)` | function | accepted and shape-checked, not yet enforced |
+| `@with_tick`, `@tick`, `@event_loop` | function | the event-loop trio (see 1.3) |
+| `@make_safe_args` | function | builds the safe `main` arguments (`stdlib/make_safe_args.caspien`) |
+| `@gt_init`, `@gt_register`, `@gt_alive_check`, `@gt_destruct`, `@gt_moved` | function | the five ghost-table hooks the compiler calls (`stdlib/gt_*.caspien`) |
+| `@par_call`, `@await_call`, `@sleep` | function | the thread and sleep hooks behind `par`, `await` and `sleep` (`stdlib/`) |
+| `@unroll`, `@unroll(N)`, `@dont(unroll)` | `for` loop | unroll this loop fully / by N / never, whatever the `loop-unrolling` preset says; the optimizer reports what it did (see `docs/COMPILER_REFERENCE.md`) |
+| `@par` | `for` loop | accepted; it does not change the generated code today |
+| `@unpadded` | struct | rejected: not supported |
+
+A few more things that surprise newcomers:
+
+- `x swap y` needs a bound value, not an expression. Bind it with `let` first.
+- A dynarray's length is only known at run time, so every index into it, literal or not, needs a proof
+  (`match i in a{ a[i] }`, or `into` to write). Fixed arrays with a literal index need none.
+- `main` takes no arguments by default and must return `void`, `bool` or `s32`; see the entry-point section
+  above for arguments and event loops.
+- Method calls use a colon (`acct:deposit(50)`) or pass the receiver explicitly (`acct.deposit(acct, 50)`).
+
+### E. Runnable examples
+
+Each program is complete, compiles, and prints the output shown in its header comment, so you can run it and
+change it.
+
+| Topic | Program |
+|---|---|
+| [Values](#values-mutability-and-types), [structs and enums](#structs-and-enums), [methods](#methods) | [`01_basics`](docs/examples/01_basics.caspien) |
+| [Proofs](#proofs-instead-of-runtime-checks) | [`02_proofs`](docs/examples/02_proofs.caspien) |
+| [Ownership](#ownership-and-pointers) | [`03_ownership`](docs/examples/03_ownership.caspien) |
+| [Termination](#bounded-loops) | [`04_termination`](docs/examples/04_termination.caspien) |
+| [Interfaces](#interfaces), [generics](#generics-and-compile-time-dispatch), [`par`/`await`](#34-concurrency) | [`05_abstraction`](docs/examples/05_abstraction.caspien) |
+| [Locks](#24-locks) | [`06_locks`](docs/examples/06_locks.caspien) |
+| [`main` arguments](#main-arguments), [event loops](#event-loops) | [`07_main_c_args`](docs/examples/07_main_c_args.caspien), [`08_main_safe_args`](docs/examples/08_main_safe_args.caspien), [`09_event_loop`](docs/examples/09_event_loop.caspien) |
+| [Functions and overloading](#functions-and-overloading), [`@pure`](#33-purity), [generics](#generics-and-compile-time-dispatch) | [`10_functions`](docs/examples/10_functions.caspien) |
+| [Composition](#composition-there-is-no-struct-inheritance), [interfaces](#interfaces), [dispatch](#generics-and-compile-time-dispatch) | [`11_types`](docs/examples/11_types.caspien) |
+| [`match`](#the-match-statement), [loops](#bounded-loops), [bounded recursion](#bounded-recursion) | [`12_match_and_loops`](docs/examples/12_match_and_loops.caspien) |
+| [Dynamic arrays](#dynamic-arrays) | [`13_dynamic_arrays`](docs/examples/13_dynamic_arrays.caspien) |
+| [The standard library](#the-standard-library): collections, strings, hashing | [`20_stdlib_tour`](docs/examples/20_stdlib_tour.caspien) |
+| [Files and directories](#files-and-directories) | [`21_files`](docs/examples/21_files.caspien) |
+| [Processes, threads, sleeping](#the-standard-library) | [`22_processes_threads_sleep`](docs/examples/22_processes_threads_sleep.caspien) |
+| [Raw pointers and C](#raw-pointers) | [`14_unsafe_pointers`](docs/examples/14_unsafe_pointers.caspien) |
+| [Every `unsafe` tag](#unsafe-blocks-and-their-tags) | [`19_unsafe_tags`](docs/examples/19_unsafe_tags.caspien) |
+| [`extern`, `export`, linking your own C](#talking-to-c-extern-and-export) | [`docs/c_interop/`](docs/c_interop/) |
+| [Inline assembly](#inline-assembly-asm), [`assume match`](#vouching-for-a-proof-assume-match) | [`18_asm_and_assume`](docs/examples/18_asm_and_assume.caspien) |
+| [`throw`, `try`, `?`](#errors-throw-try-) | [`15_errors`](docs/examples/15_errors.caspien) |
+| [Atomics, locks, threads](#34-concurrency) | [`16_atomics_and_locks`](docs/examples/16_atomics_and_locks.caspien) |
+| [Locked structs, `Result`, constructors](#24-locks) | [`17_locked_results`](docs/examples/17_locked_results.caspien) |
