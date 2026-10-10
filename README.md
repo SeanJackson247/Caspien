@@ -1014,13 +1014,18 @@ many times the loop runs. An empty range (`5..5`) and an inverted one
 
 ```rust
 let n = mut 5
+/*! termination: finite */
 for i in 0..n{              // runs exactly 5 times, whatever `n` becomes
 	n += 100
 }
 
+/*! termination: bound */
 for i in arr{ ... }          // i runs over the indexes 0..len of a fixed array
+/*! termination: finite */
 for match i in v{ s += v[i] }   // only indexes proven to be inside `v`
+/*! termination: finite */
 for i in 0..3{
+	/*! termination: finite */
 	for j in i..3{ ... }     // nested loops may use the outer counter in their range
 }
 ```
@@ -1029,8 +1034,11 @@ The same loop works directly over a dynamic array, and `match` in the header pro
 proves it for writing, and `Some(i)` additionally proves that the element `ps[i]` (a pointer) is alive:
 
 ```rust
+/*! termination: finite */
 for i in d{ n += 1 }                              // i runs over 0..len(d)
+/*! termination: finite */
 for match i in d{ s += d[i] }                     // read d[i]
+/*! termination: finite */
 for match i into d{ d[i] = d[i] * 2 }             // write d[i]
 for match Some(i) in ps{ s += ps[i].a }           // ps is a dynarray of owned pointers: read through ps[i]
 for match Some(i) into ps{ ps[i].b = 7 }          // ... or write through it
@@ -1042,6 +1050,7 @@ function (see 1.3).
 ```rust
 let n = mut 0
 unsafe loop{
+	/*! termination: unbound */
 	loop{                    // runs until something breaks out of it
 		n += 1
 		if n == 5{ break }
@@ -1055,12 +1064,15 @@ unsafe loop{
 any number of `if` or `match` blocks within that loop, and it is the only way to end a loop early:
 
 ```rust
+/*! termination: bound */
 for i in 0..6{
 	if i == 4{ break }           // prints i=0..3, then leaves the loop
 	print("i=")
 	println(i)
 }
+/*! termination: bound */
 for i in 0..3{
+	/*! termination: bound */
 	for j in 0..3{
 		if j == 1{ break }       // leaves the inner loop only: prints j=0 once per i
 		print("i=")
@@ -1080,6 +1092,7 @@ and it can sit inside any `if` or `match` within the loop:
 
 ```rust
 let odd = mut 0
+/*! termination: bound */
 for i in 0..10{
 	if i % 2 == 0{ continue }     // skip the even numbers
 	odd += i                      // 1 + 3 + 5 + 7 + 9 = 25
@@ -1136,6 +1149,7 @@ Recursion is limited to one shape, because the compiler must be able to turn it 
 4. ends that match with an `else` branch.
 
 ```rust
+/*! termination: finite */
 @recursive
 func fact(acc: mut u64, r: imut range) mut u64{
 	match r is base{ return acc }
@@ -1153,9 +1167,11 @@ it does. A range that shrinks by one runs as many steps as it has elements, and 
 both ends runs half as many (rounded up). The equivalent loop is shorter, and is usually what you want:
 
 ```rust
+/*! termination: finite */
 func factLoop(n: mut u64) mut u64{
 	let acc = mut 1
 	let hi = mut (n + 1)
+	/*! termination: finite */
 	for i in 1..hi{ acc *= i }
 	return acc
 }
@@ -1244,9 +1260,11 @@ and running out of memory is part of the program's semantics). The checker enfor
 transitive, so each function in a chain carries the decorator):
 
 ```rust
+/*! termination: bound */
 @pure
 func sq(x: mut u64) mut u64{ return x * x }
 
+/*! termination: bound */
 @pure
 func hyp(a: mut u64, b: mut u64) mut u64{
 	let s = mut sq(a)
@@ -1280,9 +1298,11 @@ carry it); a `@pure(rt)` function cannot call one, and `@pure(rt)` and `@non(det
 on one function.
 
 ```rust
+/*! termination: bound */
 @pure(rt)
 func poly(x: mut u64) mut u64{
 	let s = mut 7
+	/*! termination: bound */
 	for i in 0..8{ s = s * 31 + x + i }
 	return s
 }
@@ -1358,7 +1378,9 @@ struct Counter{@pub{
 
 let static counter = mut Counter{gate= Gate.OPEN, n= mut 0}
 
+/*! termination: bound */
 func bump() void{
+	/*! termination: bound */
 	match @lock counter{
 		OPEN:{ counter.n += 1 }       // the lock is held here, and released when the block ends
 		CLOSED:default(1000000)       // someone else holds it: retry up to a million times, then give up
@@ -1402,6 +1424,7 @@ impl default match @lock Counter{
 	}
 }
 
+/*! termination: bound */
 match @lock counter{
 	OPEN:{ counter.n += 1 }
 	CLOSED:default(3)                 // run the policy, with limit = 3
@@ -1434,8 +1457,10 @@ let answer = mut ? await triple(mut 14)             // 42
 
 let h = mut ? par triple(mut 14)
 let r = mut 0
+/*! termination: bound */
 for i in 0..100000000{
 	let ready = mut false
+	/*! termination: bound */
 	match @lock h{
 		OPEN:{
 			match h.state{

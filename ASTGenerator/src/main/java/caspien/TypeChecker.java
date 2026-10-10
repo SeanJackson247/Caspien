@@ -2264,10 +2264,10 @@ public class TypeChecker {
      * exactly the same width and signage" -- C's own `int` is 32-bit
      * signed on every mainstream platform, which is exactly what
      * `s32` already is here, so no new type was needed for this.
-     * "Support for other signatures should be deferred on account of
-     * varargs not being currently supported fully" -- confirmed
-     * directly as the reason a fuller, argv-style signature isn't
-     * accepted (or attempted) here at all. Runs once, at the very end
+     * Any other signature (for example a varargs-style one) is
+     * rejected; the accepted parameter shapes are described at
+     * `validateAndResolveMainArgShape`.
+     * Runs once, at the very end
      * of `check(...)`, over the final, fully-resolved `functions` map
      * (every import already flattened in by this point) -- not a
      * per-file requirement, a whole-compilation-unit one.
