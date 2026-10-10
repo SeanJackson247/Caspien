@@ -6,15 +6,13 @@ out-of-bounds indexing, null dereference, division by zero and unproven floating
 It compiles to native x86-64 code through a four-stage compiler written in Java.
 
 ```rust
-import "stdlib/libc.caspien"
+import "stdlib/print.caspien"
 import "stdlib/gt_init.caspien"
 import "stdlib/gt_destruct.caspien"
 import "stdlib/gt_moved.caspien"
 
 func main() void{
-	unsafe extern{
-		printf("Hello World!\n")
-	}
+	println("Hello World!")
 	return
 }
 ```
@@ -81,7 +79,7 @@ confused with:
 - **Termination is not bounded time.** A nested bounded loop with large bounds can run for years. A
   scheduler that must meet deadlines also needs a worst-case execution time per handler. Caspien proves the
   first guarantee and `--audit` reports the second in abstract gas units (a fixed cost per operation, not
-  seconds), exact for literal loop bounds and classed finite, unbounded, conditional, none or unknown otherwise (see 3.2).
+  seconds), exact for literal loop bounds and classed finite, unbounded, can diverge, non-terminating or unknown otherwise (see 3.2).
   The shape of the language makes it tractable: loop bounds are ordinary range values, and an acyclic call
   graph gives a static bound on stack depth (estimated by `--audit`).
 - **"Total" is relative to the primitives.** The guarantee is conditional on the escape hatches. A C
@@ -129,7 +127,7 @@ header comment. The code blocks use the `rust` syntax hint only because GitHub h
 ### 1.3 The shape of a program
 
 ```rust
-import "stdlib/libc.caspien"
+import "stdlib/print.caspien"
 import "stdlib/gt_init.caspien"
 import "stdlib/gt_register.caspien"
 import "stdlib/gt_alive_check.caspien"
@@ -143,18 +141,19 @@ func answer() mut u64{
 
 func main() void{
 	let a = mut answer()
-	unsafe extern{ printf("%llu\n", a) }
+	println(a)
 }
 ```
 
 - A file is a list of declarations: `import`, `func`, `struct`, `enum`, `interface`, `impl`, `extern`,
   `let static`. Imports are resolved relative to the importing file.
-- Every program that uses `new`, `owns` or `ref` requires the four `gt_*` decorated functions (`@gt_init`,
-  `@gt_register`, `@gt_alive_check`, `@gt_destruct` and `@gt_moved`) to be defined in the final compilation unit. Basic
+- Every program that uses `new`, `owns` or `ref` requires the `gt_*` decorated functions (`@gt_init`,
+  `@gt_register`, `@gt_alive_check`, `@gt_destruct`, `@gt_moved`, and for a nullable `ref` also `@gt_ref_id` and `@gt_ref_resolve`, which `gt_alive_check.caspien` imports) to be defined in the final compilation unit. Basic
   defaults are available in `stdlib/`, and the examples import them. They implement the runtime registry
   that tracks which heap values are alive (see 2.3), and they are ordinary Caspien source, not compiler magic.
   `libc.caspien` declares the C functions, and calling any C function, `printf` included, needs an `unsafe`
-  block.
+  block. To print without writing `unsafe`, import `stdlib/print.caspien` (and `print_string.caspien` for a `String`):
+  `print(x)` and `println(x)` take text, every integer size, `f32`/`f64`, `bool` and `char`.
 - Blocks use braces and statements need no semicolons. A `@decorator` goes on **its own line** above the
   declaration it changes. Several decorators are several lines. `@pub @realizes func f()` on one line is a
   parse error.
@@ -199,17 +198,23 @@ a heap struct. `@tick` marks a function that takes the state and returns it. `@e
 entry point, which calls `main` once and then calls `tick` until the loop ends. It is the only function allowed a bare
 `loop{}` outside `unsafe`.
 
+`@tick` may also be `@throws` (for example when it allocates). The loop then ends when a tick throws: the stdlib loop writes
+`event loop stopped: <message>` to stderr and the program exits with status 1. A failing `main` ends it the same way. The auditor reads the
+loop's termination class off the tick: no `@throws` is `non-terminating`, a tick that throws on some paths is `unbounded`, and one that throws on every
+path is `bounded` (exactly one tick runs).
+
 ```rust
 struct World{@pub{
 	ticks: mut u64
 }}
 
 @event_loop
+@throws
 func start() void{
-	?catch(e){ return }
+	?catch(e){ throw e }
 	let state = mut ? main()
 	loop{
-		state = tick(state)
+		state = ? tick(state)
 	}
 }
 
@@ -229,8 +234,8 @@ func tick(w: owns some mut World) owns some mut World{
 
 Each call to `tick` is an ordinary terminating function, so it is a total handler in the sense of 1.1;
 the only unbounded construct is the loop that schedules them. `stdlib/event_loop.caspien` is a ready-made
-`@event_loop` that wraps the call to `main` in `?` and simply returns if `main` throws (so `main` must be
-`@throws`, as a `main` that builds heap state has to be). If `main` takes arguments, the `@event_loop` function receives the raw `argc`
+`@event_loop` that wraps the calls to `main` and `tick` in `?`: if either throws, it writes the message to stderr and
+the program exits with status 1 (so `main` must be `@throws`, as a `main` that builds heap state has to be). If `main` takes arguments, the `@event_loop` function receives the raw `argc`
 and `argv` and passes them (or wraps them, in `stdlib/event_loop_safe_args.caspien`) through to `main`.
 The runnable version is `docs/examples/09_event_loop.caspien`.
 
@@ -740,7 +745,7 @@ A `ref some` parameter (including `self`) is alive when the function is entered,
 local, and the same rules end that proof inside the function. An `unsafe` block ends proofs where the block ends, and
 `unsafe`, an unknown call target or an `extern` free end every proof; an assignment, `resize` or owning parameter ends
 only proofs of references whose target type that free can reach by ownership (freeing an `Other` cannot end a proof
-about a `Node`). A `ref` stored in a struct member is proven by `match Some(h.p)` and held to the same rules (the error names the path). Not covered yet: a freed address that is reused. The standard
+about a `Node`). A `ref` stored in a struct member is proven by `match Some(h.p)` and held to the same rules (the error names the path). A plain `ref` is a 64-bit id issued by the ghost table, not an address, so a freed object's ref stays dead even when `malloc` hands the same address to a new object; `ref some` and the binding inside `match Some` are the address. The standard
 library is held to the rule like any other code: a helper with an `unsafe` block ends proofs at its call sites.
 
 #### The ghost table
@@ -759,8 +764,9 @@ import "../stdlib/gt_destruct.caspien"
 import "../stdlib/gt_moved.caspien"
 ```
 
-The table is an open-addressing hash set (expected O(1)); `stdlib/gt_linear/` has the older linear-scan version
-(import its files instead, never mix the two).
+The table is an open-addressing hash set (expected O(1)) that also issues lazy 64-bit ids for nullable `ref`s;
+`stdlib/gt_set/` is the same set without ids and `stdlib/gt_linear/` the older linear-scan version
+(import one folder's files, never mix; only the default folder supports a nullable `ref`).
 
 #### Dynamic arrays
 
@@ -887,7 +893,7 @@ There are no exceptions that arrive unannounced. An error is a `throw` of a mess
 throw says so with `@throws`, and every caller must say what happens when it does.
 
 - A function with a `throw` must be marked `@throws`, and a `@throws` function must contain a `throw`.
-  `throw` takes a string literal, or the `e` of a `catch` to re-throw it.
+  `throw` takes a string literal, or the `e` of a `catch` to re-throw it (a re-throw keeps the original stack trace).
 - Every call to a `@throws` function, and every `new`, must be wrapped, and the wrapper must be needed:
   wrapping a call that cannot throw is an error too.
 - A handler must end in `return`, `throw` or `continue`. It cannot fall through, because a call that threw
@@ -895,7 +901,7 @@ throw says so with `@throws`, and every caller must say what happens when it doe
 - When a throw leaves a function, every `owns` local in it is freed on the way, and the message is
   delivered to the handler unchanged, however many frames up it is.
 
-The long form is `try EXPR catch(e){ ... }`, where `e` is the message. It is an expression, so it can sit
+The long form is `try EXPR catch(e){ ... }`, where `e` is the caught error: `e.msg` is the message (a `static imut string`) and `e.stack_trace` the trace (see below). A bare `e` is a compile error, except in `throw e`. It is an expression, so it can sit
 on the right of a `let`. `?` is shorthand for it. `?catch(e){ ... }` declares a handler, and `? EXPR` is
 `try EXPR catch(e){ <the handler most recently declared> }`. Declare it once at the top of a function and
 mark each throwing call with `?`:
@@ -910,7 +916,9 @@ func parse(x: mut u64) mut u64{
 @throws
 func middle(x: mut u64) mut u64{
 	?catch(e){
-		unsafe extern{ printf("middle: saw '%s', passing it on\n", e.msg) }
+		print("middle: saw '")
+		print(e.msg)
+		println("', passing it on")
 		throw e                                  // re-throw the same message
 	}
 	let p = mut ? new Point{x= mut x, y= mut 1}  // freed during the unwind
@@ -934,19 +942,27 @@ that compiles to nothing, and it must contain at least one real `try`. Its only 
 func run(x: mut u64) void{
 	try{
 		let r = try top(x) catch(e){
-			unsafe extern{ printf("run(%llu): caught '%s'\n", x, e.msg) }
+			print("run(")
+			print(x)
+			print("): caught '")
+			print(e.msg)
+			println("'")
 			continue                 // jump to just past the enclosing try{} block
 		}
-		unsafe extern{ printf("run(%llu): ok, r=%llu\n", x, r) }
+		print("run(")
+		print(x)
+		print("): ok, r=")
+		println(r)
 	}
-	unsafe extern{ printf("run(%llu): done\n", x) }
+	print("run(")
+	print(x)
+	println("): done")
 }
 ```
 
 The most recent `?catch` applies, so one function can switch handlers part-way through. The declaration is
 positional and not scoped, so a `?catch` written inside an `if` stays in effect after it, even when the
-branch did not run. It resets at the start of every function. `throw` is safe code, and a catch parameter
-is a `static imut string`. These are the errors:
+branch did not run. It resets at the start of every function. `throw` is safe code. These are the errors:
 
 ```
 call to 'f', which is decorated '@throws', must be wrapped in 'try ... catch { ... }'
@@ -955,13 +971,42 @@ call to 'f', which is decorated '@throws', must be wrapped in 'try ... catch { .
 'g' uses 'throw' but is not decorated '@throws' -- add '@throws' to this function's declaration
 'catch' must be terminating -- every path through its body must end in a 'return', a 'throw', or a 'continue' ...
 '?' requires a preceding '?catch(e) { ... }' declaration, earlier in this same function, to supply its catch block
+'e' is the caught error -- use 'e.msg' for the message, 'e.stack_trace' for the trace, or 'throw e' to re-throw it
 ```
+
+**Stack traces.** A handler can read where the error came from. `e.stack_trace` is an `auto imut u64[N+1]` of function ids,
+innermost first (the function that threw, then its caller, up to the thread's root), ended by a `0`; `N` is 16 unless
+`java Compiler --trace-depth N` says otherwise (1 to 1024), and a deeper stack keeps the innermost `N` frames. The index must be
+a literal, as for any fixed array. `funcname(id)` from `stdlib/funcname.caspien` gives a name such as `leaf (prog.caspien:10)`
+(a generic instance carries its type, `chk_u8`; a thread's trace ends at its `__trampoline_` entry), and `"?"` for `0` or an id it
+does not know. It cannot fail and allocates nothing, so it is safe to call while reporting an out-of-memory error.
+
+```rust
+import "stdlib/funcname.caspien"
+...
+func main() void{
+	?catch(e){
+		println(e.msg)
+		let t = e.stack_trace
+		println(funcname(t[0]))      // the function that threw
+		println(funcname(t[1]))      // its caller, and so on; 0 ends the trace
+		return
+	}
+	let v = mut ? mid(9)
+}
+```
+
+Tracing costs nothing unless a program mentions `stack_trace` or `funcname`: then every function gets two more frame
+slots, functions are no longer inlined, and each throw and each failed allocation copies the ids into a staging array on the
+root frame of its thread. The handler gets its own copy of the trace, so a throw caught inside the handler cannot overwrite it.
+Allocation-failure traces start in the function that allocated. A program that mentions neither compiles to exactly the same
+code as before. `tests/stack_trace_check.sh` covers the chains, `--trace-depth`, generic instances, threads and allocation failures.
 
 ### 2.6 Where it stands
 
 | Property | Enforced today | Open (still safe code) |
 |---|---|---|
-| **Memory safety** | Single ownership with compile-time move checking; array and dynarray indexes proven in bounds; dereferencing a pointer needs a liveness proof. | Liveness of a `ref` is checked at *run time* against a table of live allocations, so a dangling `ref` is skipped rather than rejected at compile time. A `ref` is also not tied to one allocation: a freed address that `malloc` hands out again makes a stale `ref` look alive and point at the new object (reproduced, designed but not implemented in [`fatrefplan_prooffix.md`](fatrefplan_prooffix.md)), which is a gap in the safe-code guarantee. A proof does end where something frees (see 2.3), except inside a callee for its own `ref some` parameters. |
+| **Memory safety** | Single ownership with compile-time move checking; array and dynarray indexes proven in bounds; dereferencing a pointer needs a liveness proof. | Liveness of a `ref` is checked at *run time* against the ghost table of live allocations, so a dangling `ref` is skipped rather than rejected at compile time. A plain (nullable) `ref` is a 64-bit id issued by the table, never reused, so a stale `ref` stays dead even when `malloc` hands the same address to a new object (`tests/ref_id_test.caspien` reproduces the old reuse problem and checks it is closed; design in [`fatrefplan_prooffix.md`](fatrefplan_prooffix.md)). A proof ends where something frees (see 2.3) (a `ref some` parameter is proven alive at entry and loses the proof the same way). The price is speed: the three benchmark programs written with nullable `ref` links run about 11x to 40x slower than their index-based twins, and 15x to 21x slower than C (5.4), and `unsafe` code can still hold a `raw` pointer past a free. |
 | **No runtime exceptions** | Division, float operations, narrowing, indexing and null access all need proofs; arithmetic wraps; failures are declared (`@throws`) and handled. | Allocation failure is reported (as a thrown error), not prevented. A throw out of the `OPEN` case of `match @lock` releases the lock before unwinding, like a `return` does (`tests/lock_unwind_test.caspien` prints `PASS`). |
 
 ## 3. Totality
@@ -1024,12 +1069,16 @@ any number of `if` or `match` blocks within that loop, and it is the only way to
 ```rust
 for i in 0..6{
 	if i == 4{ break }           // prints i=0..3, then leaves the loop
-	unsafe extern{ printf("i=%llu\n", i) }
+	print("i=")
+	println(i)
 }
 for i in 0..3{
 	for j in 0..3{
 		if j == 1{ break }       // leaves the inner loop only: prints j=0 once per i
-		unsafe extern{ printf("i=%llu j=%llu\n", i, j) }
+		print("i=")
+		print(i)
+		print(" j=")
+		println(j)
 	}
 }
 ```
@@ -1071,7 +1120,8 @@ links can be mixed:
 
 ```rust
 func noisy(name: static imut string, r: mut bool) mut bool{
-	unsafe extern{ printf("  called %s\n", name) }
+	print("  called ")
+	println(name)
 	return r
 }
 
@@ -1151,13 +1201,13 @@ annotated and nothing is taken on trust. Two classes are guarantees that the fun
 | `bounded` | Yes, guaranteed | It ends, and the figure is the exact worst-case cost. | A `for` over a literal range. |
 | `finite` | Yes, guaranteed | It ends, but the cost bound is not determined, so the figure is a lower bound (`>= N`) and the reason names what the bound depends on. | `for i in 0..n` where `n` is a parameter. |
 | `unbounded` | Possible, not guaranteed | A `loop{}` with no static bound, but a `break`, `return` or `throw` can leave it (a call that can throw counts). | `loop{ ... if done{ break } }` |
-| `none` | Never | A `loop{}` that nothing can leave, and every run of the function reaches it: no path terminates. | The loop of an event loop. |
-| `conditional` | Not on every run | Terminates only for some runs: at least one execution path never ends (`none`, or `unbounded`) while others are finite or bounded. | `if n == 0{ forever() }  return n` ends unless `n == 0`. |
+| `non-terminating` | Never | A `loop{}` that nothing can leave, and every run of the function reaches it: no path terminates. | The loop of an event loop whose `@tick` never throws. |
+| `can diverge` | Not on every run | Some runs never end and others do: some execution paths are non-terminating or unbounded, while others are finite or bounded. | `if n == 0{ forever() }  return n` ends unless `n == 0`. |
 | `unknown` | No claim | The analysis cannot follow it. | An indirect call (`call(fp, ..)`), or recursion it cannot follow. |
 
-`unbounded` and `conditional` are close, so side by side: `unbounded` is one loop that has an exit but no known bound; `conditional` is a function where some paths reach a loop with no exit and others do not. `none` means no path terminates; `conditional` means at least one does not.
+`unbounded` and `can diverge` are close, so side by side: `unbounded` is one loop that has an exit but no known bound; `can diverge` is a function where some paths reach a loop with no exit and others do not. `non-terminating` means no path terminates; `can diverge` means at least one does not.
 
-A caller has the worst class among what it calls, in the order bounded, finite, unknown, unbounded, conditional, none, so a function is only
+A caller has the worst class among what it calls, in the order bounded, finite, unknown, unbounded, can diverge, non-terminating, so a function is only
 `bounded` or `finite` when everything it can reach is. Anything but `bounded` is printed as `>= N`, a lower bound, with the reasons.
 
 **Safe code is `bounded` or `finite` by construction.** The rules that give this are enforced by the compiler:
@@ -1368,6 +1418,9 @@ match @lock counter{
 }
 ```
 
+A lock struct cannot contain a `ref` or `auto` anywhere inside it (direct members, nested structs, arrays, dynamic arrays, behind `owns`): a reference taken out of the lock would reach data the lock does not protect. Let the struct own its data (`owns`) and refer to items by index inside the lock.
+An `owns` value that goes into a swap-lock struct (a member, a nested member, an element, or a struct-literal field) must be a fresh allocation: `null`, `new ...`, `dyn(...)` or `clone(...)`, with no owned variable moved into it. A `ref` taken before a move would stay valid and reach the data without the lock. To put an existing value in, write `slot.item = ? clone(x)`.
+
 A method can require the lock too: `@lock(match self.gate : OPEN)` on a method means the caller must already
 be inside the matching `match @lock`, and the standard library uses the same decorator on
 `DynamicArray.get` and `set` to demand an index proof (`@lock(match i in self.backing)`). For a lock that
@@ -1378,8 +1431,12 @@ is not a spin lock, `@guard` marks a generic interface with one `@lock` and one 
 **Threads.** An `@async` function takes at most one parameter, which must fit in a register, and can only
 be called with `par` or `await`. Each call runs on its own OS thread. `await f(x)` blocks and returns the
 result. `par f(x)` starts the thread and returns at once. For a function that returns a value, `par` gives
-a handle with a `state` (`PENDING`, `RUNNING` or `READY`), a `result` and a method `resolve()`.
-`resolve()` does not wait, so poll `state` for `READY` first. A void function gives no handle. `yield` gives
+a handle, and the handle is a lock: the thread publishes its `result` and sets `state` (`PENDING`, `RUNNING` or
+`READY`) while holding it, and you read `state` and call `resolve()` only inside `match @lock h{ OPEN:{ ... } }`,
+so a read can never see a half-written result. Reading them outside the lock does not compile, and neither
+does a handle that is never matched with `match @lock`. `resolve()` does not wait, so poll for `READY`. When a
+handle goes out of scope the program waits for its thread first (the handle's drop hook joins it), so a handle
+is never freed under a running thread. A void function gives no handle. `yield` gives
 up the rest of the time slice, and `sleep(n)` (from `stdlib/sleep.caspien`) sleeps for `n` seconds.
 
 ```rust
@@ -1389,16 +1446,24 @@ func triple(x: mut u64) mut u64{ return x * 3 }
 let answer = mut ? await triple(mut 14)             // 42
 
 let h = mut ? par triple(mut 14)
+let r = mut 0
 for i in 0..100000000{
 	let ready = mut false
-	match h.state{
-		READY:{ ready = true }
-		default:{ ready = false }
+	match @lock h{
+		OPEN:{
+			match h.state{
+				READY:{
+					ready = true
+					r = h:resolve()
+				}
+				default:{ ready = false }
+			}
+		}
+		CLOSED:default(1000)
 	}
 	if ready{ break }
 	yield
 }
-let r = mut h:resolve()
 ```
 
 Safe code shares data between threads only through locks (an atomic flag needs `unsafe atomic{}`): `16_atomics_and_locks` runs two threads that each take
@@ -1410,7 +1475,7 @@ finished.
 | Property | Enforced today | Open (still safe code) |
 |---|---|---|
 | **Termination** | Direct and mutual recursion rejected; `@recursive` only as a tail call on a shrinking range, lowered to a bounded `for`; every `for` bound fixed at loop entry; counter immutable; no `loop{}` and no `call()` (both need `unsafe`). See 3.2. | `match @lock` waits for another thread, but in safe code only through `CLOSED:default(n)`: at most `n` attempts, then a `break`, so the wait is counted. The counted wait is still not a time bound, and `--audit` does not read `n` yet. `await` blocks on another thread. So safe code is not strictly total. |
-| **Bounded execution time** | Every `for` is bounded by its range and the call graph is acyclic, so a static bound is possible. | `--audit` prints a worst-case cost in abstract gas per function, classed bounded / finite / unbounded / conditional / none / unknown, plus stack, heap and peak live heap; see 3.2. Time in seconds is not computed. |
+| **Bounded execution time** | Every `for` is bounded by its range and the call graph is acyclic, so a static bound is possible. | `--audit` prints a worst-case cost in abstract gas per function, classed bounded / finite / unbounded / non-terminating / can diverge / unknown, plus stack, heap and peak live heap; see 3.2. Time in seconds is not computed. |
 | **The single event loop** | `@with_tick` / `@tick` / `@event_loop` give a potentially non-terminating program (`docs/examples/09_event_loop.caspien`). | All three stdlib loops (no arguments, C arguments, safe arguments) have been run. The example is run by hand and is not in `tests/`. `par`/`await` add real threads, which is a deliberate departure from a single loop. |
 
 ## 4. Auditability
@@ -1552,7 +1617,7 @@ Inside `unsafe` the guarantees above are the programmer's responsibility. What e
 The standard library is built on `unsafe` code (the ghost table, `memcopy`, the `pthread_*` calls), and every one of its
 `unsafe` blocks names exactly its reasons; `unsafe unaudited` never appears there and the compiler refuses it. The
 guarantee is therefore "safe user code on top of a small trusted `unsafe` core", and that core is tested,
-not proved. Costs inside that core are part of its contract, not of the safe-code guarantees. For example, the liveness check behind `match Some` is a lookup in the ghost table, an open-addressing hash set (expected O(1)) under a spin lock (the older linear-scan table is kept in `stdlib/gt_linear/`; import its `gt_*.caspien` files instead to use it), and `malloc` has no bound. A timing analysis would take such costs as stated inputs, as it would for any library.
+not proved. Costs inside that core are part of its contract, not of the safe-code guarantees. For example, the liveness check behind `match Some` is a lookup in the ghost table, an open-addressing hash set (expected O(1)) under a spin lock (the id-less set is kept in `stdlib/gt_set/` and the older linear-scan table in `stdlib/gt_linear/`; import one folder's `gt_*.caspien` files instead to use it), and `malloc` has no bound. A timing analysis would take such costs as stated inputs, as it would for any library.
 
 ### 4.2 Auditing a target: `--audit`
 
@@ -1566,7 +1631,7 @@ section ends with `# summary:` lines, so `java Compiler -i main.caspien --audit 
 | Section | What it tells you |
 |---|---|
 | `unsafe audit` | Every `unsafe` block, split into *your code* and the *standard library*, each with its file, line, tags and contents, then counts per tag and the number of `unsafe unaudited` blocks. |
-| `worst-case execution cost` | Abstract gas per function, callees included (a fixed price per operation, independent of machine and optimiser). The word after the figure is `bounded`, `finite`, `unbounded`, `conditional`, `none` or `unknown` (see "Bounded execution time"); anything but `bounded` is `>= N` with the reasons; operations that are not modelled (external calls, inline assembly, waiting) are listed. |
+| `worst-case execution cost` | Abstract gas per function, callees included (a fixed price per operation, independent of machine and optimiser). The word after the figure is `bounded`, `finite`, `unbounded`, `non-terminating`, `can diverge` or `unknown` (see "Bounded execution time"); anything but `bounded` is `>= N` with the reasons; operations that are not modelled (external calls, inline assembly, waiting) are listed. |
 | `stack depth` | An estimate of the stack bytes safe code needs, per function, and the deepest call path from the entry. `par` threads and event-loop `@tick` / `@with_tick` slices are listed as separate roots, never the event loop itself. |
 | `heap memory` | The most bytes one run can request from the allocator, with the number of allocation operations. Frees are not credited. |
 | `peak live heap` | The most bytes alive at once, with frees credited where they are certain, plus `leaves` (bytes still live when the function returns, such as a block it hands back). Never below the real peak, but not always exact. |
@@ -1582,28 +1647,34 @@ func sumTo(n: mut u64) mut u64{
 
 func main() void{
 	let a = mut sumTo(10)
-	unsafe extern{ printf("%llu\n", a) }
+	println(a)
 }
 ```
 
-`--audit` prints (comment lines and the `unsafe` listing shortened):
+`--audit` prints (comment lines and the `unsafe` listing shortened; the `unsafe` blocks counted are `print`'s own, in the standard library):
 
 ```md
-# summary: 1 unsafe blocks (1 in your code, 0 in the standard library) and 0 other uses of the keyword, in 1 files
-# blocks naming each tag: extern=1
+# summary: 22 unsafe blocks (0 in your code, 22 in the standard library) and 0 other uses of the keyword, in 4 files
+# blocks naming each tag: extern=20 memcopy=2 raw=2
 
 # worst-case execution cost (abstract gas; ...)
-  main (entry)                       231  bounded
+  main (entry)                       306  bounded
+  println__sig_imut_u64              122  bounded
+  print__sig_imut_u64                55  bounded
       not modelled: external call printf
+  printNewline                       54  bounded
+      not modelled: external call putchar
   sumTo                              >= 32  finite: `for` runs a number of times only known at run time: depends on `n`
-# summary: main costs 231 gas in the worst case (bounded), 2 functions reachable
+# summary: main costs 306 gas in the worst case (bounded), 5 functions reachable
 
 # stack depth (an estimate ...)
-  main (entry)                       232 bytes  bounded
-      deepest path: main (96) > sumTo (136)
-      not counted: stack used by external calls (printf)
+  main (entry)                       288 bytes  bounded
+      deepest path: main (96) > println__sig_imut_u64 (96) > print__sig_imut_u64 (96)
+  println__sig_imut_u64              192 bytes  bounded
   sumTo                              136 bytes  bounded
-# summary: main needs 232 bytes of stack (bounded) for safe code, 0 thread entries
+  print__sig_imut_u64                96 bytes  bounded
+  printNewline                       88 bytes  bounded
+# summary: main needs 288 bytes of stack (bounded) for safe code, 0 thread entries
 
 # heap memory (...)
   main (entry)                       0 bytes  (0 allocation operations)  bounded
@@ -1616,7 +1687,7 @@ func main() void{
 
 `sumTo` on its own is only *finite*: it always ends, but its loop count depends on `n`, so the figure (`>= 32`) is a lower bound and
 the line names `n`. `main` is *bounded*, because it calls `sumTo` with the literal `10`, so that call is costed with that value.
-Every figure ends in one of six words (`bounded`, `finite`, `unbounded`, `conditional`, `none`, `unknown`), explained in 3.2.
+Every figure ends in one of six words (`bounded`, `finite`, `unbounded`, `non-terminating`, `can diverge`, `unknown`), explained in 3.2.
 
 The figures are bounds computed from the bytecode, not measurements. Direct calls to C's `malloc` through an `extern` and stack
 used by C functions are not counted. `CASPIEN_AUDIT_ALL=1` in the environment
@@ -1690,6 +1761,8 @@ target linux                 # in ===codegen.config===, was windows_gnu
 | File | What it gives you |
 |---|---|
 | `libc.caspien` | `extern` bindings for the C functions the rest builds on (`printf`, `malloc`, `memcpy`, `fgets`, ...). Calling one needs `unsafe extern{`. |
+| `print.caspien` | `print(x)` and `println(x)` for text, `u8`..`u64`, `s8`..`s64`, `f32`/`f64` (`%g`), `bool` (`true`/`false`) and `char`: each wraps one libc call, so the caller needs no `unsafe`. Output goes to stdout. |
+| `print_string.caspien` | `print(s)` / `println(s)` for a `String` (a plain `ref`; null prints `null`). A separate file because `String` allocates, so it needs the `gt_*` runtime. |
 | `dynamic_array.caspien` | `DynamicArray<T>`: `pushBack`, `popBack`, `pushFront`, `popFront`, `get`, `set`, and `...Ptr` twins for struct elements. |
 | `hash_map.caspien` | `HashMap<T>`: `set`, `get`, `contains`; open addressing, starting capacity rounded up to a power of two, grows by doubling at 70% load. |
 | `string.caspien` | `String`: a growable byte string with `concat`, `appendChar`, `sub`, `charAt`, `setCharAt`, `firstIndexOf`. |
@@ -1846,8 +1919,8 @@ And the limits of the library itself, which are design choices today rather than
 | `sha256` | Raw pointers and `unsafe`, because it works on bytes in place. |
 | Threads | `par` starts a detached thread; there is no thread-pool and no cancellation. `match @lock` spins up to its attempt limit, then gives up. |
 
-On the benchmarks, programs written with these classes run about 1.0x to 8.8x slower than the same program written with
-raw arrays (2.0x on the geometric mean, with string manipulation and the k-nucleotide hash map at the slow end), see 5.4.
+On the benchmarks, programs written with these classes run about 1.0x to 9.2x slower than the same program written with
+raw arrays (1.9x on the geometric mean, with string manipulation and the k-nucleotide hash map at the slow end), see 5.4.
 
 #### Files and directories
 
@@ -1926,7 +1999,7 @@ bytecode, plus an orchestrator (`Compiler.java`) that runs them in order and the
 ```
 
 **ASTGenerator** is the front end and holds all the language rules. A hand-written lexer and parser
-produce a token tree. The type checker, about 19,000 lines, is where every guarantee in Parts 2 and 3 is
+produce a token tree. The type checker, about 20,000 lines, is where every guarantee in Parts 2 and 3 is
 enforced: mutability, ownership and moves, bounds and nonzero proofs, the call-graph checks that reject
 recursion, and the `@throws` contract. The bytecode emitter then writes a stack-machine program in which
 every instruction states the types it operates on. Generics are expanded by monomorphisation before type
@@ -1946,7 +2019,7 @@ register form, keep the hottest scalar variables in registers, and fuse comparis
 It handles both calling conventions, preserves callee-saved registers, implements the
 unwinding behind `throw`, and calls the system's C library for allocation and threads.
 
-Roughly 63,000 lines of Java make up the four stages. The per-stage `CLAUDE.md` files record the design
+Roughly 71,000 lines of Java make up the four stages. The per-stage `CLAUDE.md` files record the design
 decisions, the bugs found and how each change was verified, and `tests/` holds the runtime programs and
 check scripts.
 
@@ -1964,7 +2037,7 @@ What remains is the state of the compiler itself:
 
 | Property | Enforced today | Open |
 |---|---|---|
-| **Soundness of the checker** | About 170 runtime regression programs, 60 compile-error fixtures and 85 shell checks in [`tests/`](tests), generated tests with expected values from independent Python models, and shell checks for the optimiser passes. | There is no formal proof, mechanised or otherwise. The type checker alone is about 20,000 lines of Java, and "the compiler accepts it" is evidence, not proof. Further compile-error fixtures are kept outside this repository. |
+| **Soundness of the checker** | About 190 runtime regression programs, 100 compile-error fixtures and 95 shell checks in [`tests/`](tests), generated tests with expected values from independent Python models, and shell checks for the optimiser passes. | There is no formal proof, mechanised or otherwise. The type checker alone is about 21,000 lines of Java, and "the compiler accepts it" is evidence, not proof. Further compile-error fixtures are kept outside this repository. |
 | **Platforms** | Linux x86-64 is the tested target. | The Windows (`windows_gnu`) output is built with mingw-w64 and the test suite has been run under Wine on Linux; it has not been run on a real Windows machine. |
 
 Known bugs that affect the guarantees are tracked in the `CLAUDE.md` files.
@@ -2072,10 +2145,11 @@ func add(a: mut u64, b: mut u64) mut u64{ return a + b }
 export add                                     // C sees `unsigned long add(unsigned long, unsigned long)`
 
 func main() void{
+	let r = mut 0
 	unsafe extern{
-		let r = mut c_apply(mut 40, mut 2)     // helper.c: return add(a, b) * 2;
-		printf("%llu\n", r)                    // 84
+		r = mut c_apply(mut 40, mut 2)         // helper.c: return add(a, b) * 2;
 	}
+	println(r)                                 // 84
 }
 ```
 
@@ -2153,10 +2227,11 @@ invoking 'relax' requires 'unsafe' code
 
 ### 5.2 Your own allocation
 
-The ghost table is the one allocation hook the compiler calls. Its five functions (`@gt_init`,
-`@gt_register`, `@gt_alive_check`, `@gt_destruct`, `@gt_moved`) are ordinary Caspien source, so a program
-can supply its own table, or choose one of the two in `stdlib/`: the hash set, which is the default, and the
-older linear scan in `stdlib/gt_linear/`. This is the real `gt_destruct` from the standard library, trimmed:
+The ghost table is the one allocation hook the compiler calls. Its functions (`@gt_init`,
+`@gt_register`, `@gt_alive_check`, `@gt_destruct`, `@gt_moved`, and for a nullable `ref` also `@gt_ref_id` and
+`@gt_ref_resolve`) are ordinary Caspien source, so a program can supply its own table, or choose one of the three in
+`stdlib/`: the hash set with ids, which is the default, the same set without ids in `stdlib/gt_set/`, and the
+older linear scan in `stdlib/gt_linear/` (the last two cannot hold a nullable `ref`). This is `gt_destruct` from `stdlib/gt_set/` (the default one also drops the pointer's id), with the table-shrinking step left out:
 
 ```rust
 @gt_destruct
@@ -2263,7 +2338,7 @@ one function, so very large generated test programs are better split into severa
 
 ### 5.4 Performance
 
-Fourteen programs were timed against 23 other languages on a 2-core Intel Xeon VM (one full run of every language and every build configuration, 8 October 2026, the compiler at commit `99e8764`). Every output matched the C reference.
+Fourteen programs were timed against 23 other languages on a 2-core Intel Xeon VM (one full run of every language and every build configuration on 8 to 9 October 2026, the compiler at commit `559434c` plus the uncommitted fixes described below; the lru and k-nucleotide rows were re-measured after a stdlib fix). Every output matched the C reference.
 Times are seconds, fastest of three runs. "Caspien" is the fastest Caspien variant with all optimisations on; the stdlib column is the same
 program written with the standard library classes (`DynamicArray`, `HashMap`, `String`), and the last column is the best variant with
 optimisations off, which is how the shipped `toolchain.config` builds.
@@ -2271,7 +2346,7 @@ optimisations off, which is how the shipped `toolchain.config` builds.
 **Summary charts.** Each bar is the geometric mean, over the programs where both exist, of a language's figure divided by the reference's
 on the same program (lower is better, 1x = the reference). For each of the four metrics there are two charts: every language against C -O2,
 and only the memory-safe implementations (Caspien without its unsafe-dynarray variants, runtime-safe languages, and Rust where rustc accepts the
-port under `-F unsafe_code`) against Rust, free build. Compile time and executable size use a log axis. These charts come from the 8 October full run, in which every language and every Caspien configuration (including optimisations off) was measured in the same session, so a ratio no longer mixes two runs; it still carries the VM noise described below. Each Caspien variant has two bars, "everything on" and "tuned per program" (everything on plus the per-program
+port under `-F unsafe_code`) against Rust, free build. Compile time and executable size use a log axis. These charts come from the 8 to 9 October full run, in which every language and every Caspien configuration (including optimisations off) was measured in the same session, so a ratio no longer mixes two runs; it still carries the VM noise described below. Each Caspien variant has two bars, "everything on" and "tuned per program" (everything on plus the per-program
 switch overrides of `benchmarks/specific.json`); today the only override is `jcc-padding: off` for the sieve, so the two bars are
 identical except where that program enters the mean, and the tuned bar is never worse.
 
@@ -2310,23 +2385,23 @@ identical except where that program enters the mean, and the tuned bar is never 
 
 | Program | C -O2 (s) | Caspien (s) | Caspien vs C | stdlib-class version vs C | optimisations off vs C |
 |---|---|---|---|---|---|
-| Binary trees | 0.37 | 0.25 | 0.66x | 2.7x | 3.0x |
-| Heap graph search | 0.20 | 0.17 | 0.86x | 1.7x | 2.5x |
-| Mandelbrot | 0.96 | 0.90 | 0.93x | n/a | 3.9x |
-| Fannkuch-redux | 2.61 | 2.51 | 0.96x | 1.1x | 4.1x |
-| Spectral-norm | 0.20 | 0.20 | 0.99x | 1.4x | 5.3x |
-| Sieve of Eratosthenes | 0.68 | 0.71 | 1.04x | 2.8x | 4.4x |
-| Merkle tree | 0.65 | 0.72 | 1.11x | 1.1x | 11.0x |
-| N-body | 0.24 | 0.27 | 1.13x | 1.5x | 6.0x |
-| LRU cache | 0.76 | 0.87 | 1.15x | 2.6x | 4.2x |
-| FASTA generation | 0.78 | 0.91 | 1.16x | 1.3x | 3.0x |
-| JSON serialise + parse | 0.71 | 0.83 | 1.17x | 2.0x | 4.7x |
-| Sorting and searching | 1.12 | 1.40 | 1.24x | 1.9x | 2.5x |
-| String manipulation | 0.20 | 0.25 | 1.27x | 11.2x | 4.7x |
-| k-nucleotide (hash map) | 0.43 | 0.59 | 1.37x | 4.7x | 6.2x |
+| Binary trees | 0.44 | 0.23 | 0.52x | 2.8x | 2.4x |
+| Heap graph search | 0.22 | 0.18 | 0.80x | 1.3x | 2.2x |
+| Sieve of Eratosthenes | 0.57 | 0.53 | 0.94x | 1.8x | 3.9x |
+| Mandelbrot | 1.22 | 1.18 | 0.96x | n/a | 3.4x |
+| Spectral-norm | 0.22 | 0.22 | 1.00x | 1.4x | 5.3x |
+| Fannkuch-redux | 3.31 | 3.31 | 1.00x | 1.1x | 3.5x |
+| Merkle tree | 0.87 | 0.93 | 1.07x | 1.1x | 10.5x |
+| k-nucleotide (hash map) | 0.61 | 0.68 | 1.13x | 3.7x | 5.0x |
+| Sorting and searching | 1.17 | 1.35 | 1.15x | 1.7x | 2.6x |
+| N-body | 0.25 | 0.30 | 1.18x | 1.6x | 6.2x |
+| FASTA generation | 0.93 | 1.12 | 1.20x | 1.5x | 3.1x |
+| JSON serialise + parse | 0.78 | 0.97 | 1.25x | 1.9x | 4.9x |
+| String manipulation | 0.23 | 0.28 | 1.26x | 11.5x | 4.3x |
+| LRU cache | 0.65 | 0.87 | 1.33x | 2.7x | 4.2x |
 
-Table and figures below: all columns from the 8 October full run (the summary charts above come from the same data; the sieve row is its tuned-per-program build). Geometric mean of time relative to C -O2: Caspien 1.06x with all optimisations on (best variant per program), 2.17x for the stdlib-class
-versions (thirteen programs, Mandelbrot has none), 4.32x with optimisations off. The 7 October run gave 1.06x, 2.23x and 4.23x. The geometric mean barely moved, but individual C times changed by up to 30% between the two runs (binary trees 0.48 s then, 0.37 s now), which is the VM noise described below, so compare ratios within one run, not seconds across runs.
+Table and figures below: all columns from the 8 to 9 October full run (the summary charts above come from the same data; the sieve row is its tuned-per-program build). Geometric mean of time relative to C -O2: Caspien 1.03x with all optimisations on (best variant per program), 2.01x for the stdlib-class
+versions (thirteen programs, Mandelbrot has none), 4.03x with optimisations off. The previous published run (8 October) gave 1.06x, 2.17x and 4.32x. The geometric mean barely moved, but individual C times changed by up to 30% between the two runs (binary trees 0.48 s then, 0.37 s now), which is the VM noise described below, so compare ratios within one run, not seconds across runs.
 
 **Which charts are shown.** The summary charts above use no selection: every language, every program where both rows exist. The three per-program charts
 below were not picked by hand. The rule is mechanical, not a judgement call: for each program take the ratio of Caspien's fastest
@@ -2335,38 +2410,38 @@ all-optimisations-on variant to C -O2, and show the program with the lowest rati
 [`benchmarks/img/`](benchmarks/img/), and the interactive version (hover text, sortable tables, memory, size and compile time) is
 [`benchmarks/charts.html`](https://SeanJackson247.github.io/Caspien/benchmarks/charts.html).
 
-Best for Caspien (binary trees, 0.66x of C), the median (N-body, 1.13x), and the worst (k-nucleotide, 1.37x):
+Best for Caspien (binary trees, 0.52x of C), the median (k-nucleotide, 1.13x), and the worst (LRU cache, 1.33x):
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="benchmarks/img/time_binarytrees-dark.svg">
   <img alt="Execution time: binary trees" src="benchmarks/img/time_binarytrees.svg">
 </picture>
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="benchmarks/img/time_nbody-dark.svg">
-  <img alt="Execution time: N-body" src="benchmarks/img/time_nbody.svg">
-</picture>
-<picture>
   <source media="(prefers-color-scheme: dark)" srcset="benchmarks/img/time_knucleotide-dark.svg">
   <img alt="Execution time: k-nucleotide" src="benchmarks/img/time_knucleotide.svg">
+</picture>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="benchmarks/img/time_lru-dark.svg">
+  <img alt="Execution time: LRU cache" src="benchmarks/img/time_lru.svg">
 </picture>
 
 The gold lines on each bar mark the best time minus and plus the typical run-to-run noise (the median of the three repeats minus the best).
 
-Peak memory is close to C: in the summary chart the Caspien variants sit at 1.10x to 1.11x of C's geometric mean for the array versions and 1.20x for the stdlib-class versions (best variant per program in the 8 October run: 1.08x, ranging from 0.76x to 1.96x per program). That is no
+Peak memory is close to C: in the summary chart the Caspien variants sit at 1.10x to 1.11x of C's geometric mean for the array versions and 1.22x for the stdlib-class versions. That is no
 surprise, because Caspien has no garbage collector and no runtime, allocates with `malloc`, and lays out
-structs and arrays as C does.
+structs and arrays as C does. The exception is the `ref` variants (below): they sit at 4.5x to 4.6x of C, because every object a `ref` points to also gets entries in the id tables.
 
 **An honest reading.**
 
 - With optimisations on and the fastest hand-written variant of each program, Caspien reaches 1.06x of C in the
-  geometric mean (8 October full run; the summary chart's per-variant bars are 1.08x to 1.10x for the unsafe and 1.16x to 1.17x
-  for the safe variants). Rust is 1.10x in the same chart, so Caspien's best variants are level with it or slightly ahead (a difference
-  too small to mean anything on this VM), and ahead of D, Odin, C++ -O2 (1.23x), Go (1.43x), OCaml, C#, Java (1.70x), Kotlin,
-  Swift, Nim and the JavaScript engines; Zig (0.97x), Chapel (1.01x) and Fortran (1.04x) are ahead. Against Rust on the
-  memory-safe implementations the safe Caspien variants are at 1.04x to 1.05x. It is within 1.3x of C on thirteen of the fourteen
-  programs; the worst is k-nucleotide at 1.37x, then string manipulation (1.27x) and sorting (1.24x).
+  geometric mean (8 to 9 October full run; the summary chart's per-variant bars are 1.03x to 1.04x for the unsafe and 1.10x to 1.11x
+  for the safe variants). Rust is 1.06x in the same chart, so Caspien's best variants are level with it or slightly ahead (a difference
+  too small to mean anything on this VM), and ahead of Odin, D, C++ -O2 (1.18x), Go (1.41x), OCaml, C#, Java (1.64x), Kotlin,
+  Swift, Nim and the JavaScript engines; Zig (0.95x) and Chapel (1.01x) are ahead, Fortran (1.05x) is level. Against Rust on the
+  memory-safe implementations the safe Caspien variants are at 1.04x. It is within 1.35x of C on all fourteen
+  programs; the worst are the LRU cache (1.33x), string manipulation (1.26x) and JSON (1.25x).
   That figure picks Caspien's fastest variant per program, while every other language has a single port, so it
-  flatters Caspien somewhat; the standard library versions (2.17x, same programs) are the fairer picture of
+  flatters Caspien somewhat; the standard library versions (2.01x, same programs) are the fairer picture of
   ordinary code.
 - The gap to C and Rust is real. The compiler has no general register allocator. The optimiser marks the
   hottest scalar variables of a function, and those are coloured by liveness over a small fixed register set: two or three
@@ -2377,14 +2452,25 @@ structs and arrays as C does.
   length of a loop) and no spill code beyond saving float variables around calls. There is also no vectorisation and
   no alias analysis (the loop passes use a simple 'nothing in the loop writes this slot' test), and every `match Some` on a `ref`
   pays for the ghost-table liveness lookup described in 2.3 (expected O(1)).
-- The optimisation switches matter more than any single trick. With them off, the same programs are 4.3x
+- The optimisation switches matter more than any single trick. With them off, the same programs are 4.0x
   slower than C on average (best variant of each), and they ship off. That is the biggest single improvement available to users
   today.
-- Code written against the standard library classes is slower than code written against raw arrays: about 2.0x
-  on average over thirteen programs, but about 4.2x for binary trees, 3.4x for k-nucleotide and 8.8x for
+- Code written against the standard library classes is slower than code written against raw arrays: about 1.9x
+  on average over thirteen programs, but about 5.4x for binary trees, 3.3x for k-nucleotide and 9.2x for
   strings (stdlib-class version against the fastest variant of the same program). The classes pay for bounds proofs and wrapper calls. The worst earlier gap, a heap allocation
-  on every call to `insecure_hashOf`, has been removed (k-nucleotide went from 57x slower than C to 8x). That is an
-  engineering gap, not a design limit.
+  on every call to `insecure_hashOf`, has been removed (k-nucleotide went from 57x slower than C to 3.7x). That is an
+  engineering gap, not a design limit. (One of the numbers above briefly regressed: for a day the stdlib `HashMap` re-matched `self`
+  after every call to its `unsafe memcopy` hash helper, which made k-nucleotide's stdlib version 4x slower. The checker now keeps
+  proofs across `unsafe` blocks whose reasons cannot free anything, and the re-matches are gone.)
+- **Nullable `ref` is the expensive pointer.** A plain `ref` is a 64-bit id that the ghost table resolves to an address, so a
+  `match Some` costs a table lookup, storing an address into a `ref` creates the id (first time) and freeing an object that has an id
+  touches three tables. That buys what the old address-valued `ref` could not give: a stale `ref` never looks alive again after
+  `malloc` reuses its address. The price, measured on the three programs that have `ref`-linked variants (graph, binarytrees, lru):
+  4.4 to 10.2 s against 0.18 to 0.87 s for the index versions, i.e. 15x to 21x slower than C and 11x to 40x slower than the
+  index twins, and 4.5x the memory. The stdlib `HashMap` built on `ref` nodes (`stdlib/ref/hash_map.caspien`) is 12x to 19x slower than C. Use
+  indices or `ref some`/`owns` where speed matters; the `ref` variants exist to keep the safe-pointer story honest, not to win
+  benchmarks. Two further optimisations are written down but not built (no id for types no `ref` is ever taken to; skipping a repeated
+  `match Some`), and in the `unsafe` variants `assume match Some` already resolves the id once without a test.
 - The benchmark programs are not Caspien-specific. Twelve are taken from a public collection of
   programming benchmarks, and the other two were written to represent ordinary application work more
   closely than numeric kernels do. All of the ports, in every language including Caspien, were written by
