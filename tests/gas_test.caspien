@@ -1,6 +1,6 @@
 // Worst-case gas report (`--audit`): the functions below have known loop bounds, branches, calls and a try/catch; tests/gas_check.sh compares
 // the report with tests/gas_model.py (a path-enumerating model that runs the control flow of the emitted bytecode). `gas_unbounded` has a
-// variable bound and `gas_forever` a `loop`, both must be reported as unbounded.
+// variable bound and `gas_forever` a `loop`, both must be reported as unbound.
 import "../stdlib/libc.caspien"
 
 func gas_leaf(x: imut u64) mut u64{

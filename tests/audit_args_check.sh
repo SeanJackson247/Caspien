@@ -1,8 +1,8 @@
 #!/bin/bash
 # (needs java, python3, gcc) `--audit` with argument values: a call that passes values the caller knows gets the callee's bound for those values.
 # tests/audit_args_test.caspien: every function's figures equal the concrete-interpreter model in tests/gas_model.py (that comparison runs in gas_check.sh too) and
-# `main` must be bounded in all four sections; its peak live heap must equal what the real allocator measures (tests/alloc_shim.c). The program runs and prints PASS lines.
-# tests/audit_args_unknown_test.caspien: arguments the analysis cannot know (a call result, a variable changed in a loop) must keep `main` finite (not bounded), with the reason.
+# `main` must be bound in all four sections; its peak live heap must equal what the real allocator measures (tests/alloc_shim.c). The program runs and prints PASS lines.
+# tests/audit_args_unknown_test.caspien: arguments the analysis cannot know (a call result, a variable changed in a loop) must keep `main` finite (not bound), with the reason.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 export JAVA_TOOL_OPTIONS=
@@ -21,12 +21,12 @@ model = {l.split()[0]: l.split() for l in open(sys.argv[2])}
 mains = [l for l in rep.splitlines() if re.match(r"  main \(entry\)", l)]
 if len(mains) != 4: print("FAIL: expected a main line in each of the 4 sections, found", len(mains)); sys.exit(1)
 for l in mains:
-    if ">=" in l or not re.search(r"  bounded$", l): print("FAIL: main is not bounded:", l.strip()); sys.exit(1)
-g = int(re.search(r"main \(entry\)\s+(\d+)  bounded$", mains[0]).group(1))
+    if ">=" in l or not re.search(r"  bound$", l): print("FAIL: main is not bound:", l.strip()); sys.exit(1)
+g = int(re.search(r"main \(entry\)\s+(\d+)  bound$", mains[0]).group(1))
 if g != int(model["main"][1]) or "-" != model["main"][2]: print("FAIL: gas of main: report", g, "model", model["main"][1:3]); sys.exit(1)
-for fn in ("sumTo", "sumLocal", "grid", "outer", "tri", "grow", "viaMod"):   # on their own they are unbounded: the figure is a lower bound with the reason
+for fn in ("sumTo", "sumLocal", "grid", "outer", "tri", "grow", "viaMod"):   # on their own they are unbound: the figure is a lower bound with the reason
     if not re.search(r"^  %s\s+>= \d+  finite: " % fn, rep, flags=re.M): print("FAIL:", fn, "alone should be reported finite"); sys.exit(1)
-print("ok audit_args_test: main bounded, gas", g, "equals the model")
+print("ok audit_args_test: main bound, gas", g, "equals the model")
 PY
 want=$(sed -n '/# peak live heap/,$p' a.txt | sed -n 's/^  main (entry) *peak \([0-9]*\) bytes.*/\1/p')
 java -cp . Compiler -i tests/audit_args_test.caspien output/aa > c.log 2>&1 || { echo "FAIL: compile"; tail -3 c.log; exit 1; }
@@ -39,4 +39,4 @@ echo "ok peak live heap $peak bytes == measured"
 grep -qE "^  main \(entry\) +>= [0-9]+  finite: .*calls viaResult( \(defined at [^)]*\))? \(finite\)" u.txt || { echo "FAIL: main in audit_args_unknown_test should be finite because of viaResult"; exit 1; }
 grep -qE "^  main \(entry\) +>= [0-9]+  finite: .*calls viaLoop( \(defined at [^)]*\))? \(finite\)" u.txt || { echo "FAIL: main should also be finite because of viaLoop"; exit 1; }
 grep -qE "^  main \(entry\) +>= [0-9]+  finite: .*calls viaBranch( \(defined at [^)]*\))? \(finite\)" u.txt || { echo "FAIL: main should also be finite because of viaBranch"; exit 1; }
-echo "PASS audit_args_check: bounds from call-site values equal the model and the allocator; unknown arguments stay unbounded"
+echo "PASS audit_args_check: bounds from call-site values equal the model and the allocator; unknown arguments stay unbound"

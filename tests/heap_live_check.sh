@@ -64,5 +64,5 @@ mem_moved_out sc_mem_moved_out() >=
 mem_replaced sc_mem_replaced() >=
 LIST
 # the audit says the loop-of-calls function leaves nothing live and `sc_loop` does not depend on its trip count
-grep -q "^sc_loop - 16$" audit_live.txt || { echo "FAIL: sc_loop is not bounded at 16"; fail=1; }
+grep -q "^sc_loop - 16$" audit_live.txt || { echo "FAIL: sc_loop is not bound at 16"; fail=1; }
 [ $fail = 0 ] && echo "PASS heap_live_check: $n scenarios, audit peak live heap == measured peak" || exit 1

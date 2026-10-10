@@ -1065,6 +1065,9 @@ public class Token {
     /** Set only on the "loop" KEYWORD token `checkLockMatchStatement` lowers a "match @lock" statement into: this loop is a swap-lock spin loop, so a `continue` marked `isLockRetryContinue` inside its CLOSED case retries it (jumps to the loop's start label, after any `preLoopInit`, so retry counters are not reset). */
     public boolean isLockSpinLoop;
 
+    /** On a lowered `match @lock` whose CLOSED case is `default(..)`: the most retries the compiler allows (> 0 a literal limit, -1 a run-time value, 0 not known). The audit uses it as the loop's bound. */
+    public long lockSpinBound;
+
     /** Set only on a "continue" KEYWORD token written directly in the CLOSED case of a "match @lock": it means "retry the acquire", not the try-block `continue` of a catch body. */
     public boolean isLockRetryContinue;
 

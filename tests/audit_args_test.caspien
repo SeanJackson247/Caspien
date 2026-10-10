@@ -1,4 +1,4 @@
-// `--audit` with argument values: a function whose loop bound or allocation size is a PARAMETER is unbounded on its own, but a caller that passes values it
+// `--audit` with argument values: a function whose loop bound or allocation size is a PARAMETER is unbound on its own, but a caller that passes values it
 // knows (literals, locals computed from literals, its own parameters, a range) gets a bound for that call. tests/audit_args_check.sh compares every figure with
 // tests/gas_model.py (a concrete interpreter over the bytecode) and requires the callers below to be BOUNDED; the peak live heap is compared with the
 // real allocator. The program also runs and prints PASS lines.

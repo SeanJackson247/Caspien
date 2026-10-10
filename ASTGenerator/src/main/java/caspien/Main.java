@@ -116,6 +116,7 @@ public class Main {
 
         BytecodeEmitter bytecodeEmitter = new BytecodeEmitter();
         String bytecode = bytecodeEmitter.emit(expanded, typeChecker);
+        GasReport.SPIN.putAll(bytecodeEmitter.spinBounds);
         String fixModes = System.getenv("CASPIEN_FIX_MODE");
         if (fixModes == null && (!bytecodeEmitter.funcTermLabels.isEmpty() || !bytecodeEmitter.loopTermLabels.isEmpty())) {
             GasReport.checkLabels(bytecode, bytecodeEmitter.funcTermLabels, bytecodeEmitter.loopTermLabels);

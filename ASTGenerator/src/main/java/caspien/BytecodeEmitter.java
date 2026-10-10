@@ -3097,6 +3097,8 @@ public class BytecodeEmitter {
     final Map<String, DocComments.Doc> funcTermLabels = new java.util.LinkedHashMap<>();
     final Map<String, DocComments.Doc> loopTermLabels = new java.util.LinkedHashMap<>();
     private String curHobFn;
+    /** "function|loop label" -> most retries of a `match @lock` spin (> 0 literal, -1 run-time value); GasReport uses it as the loop's bound. */
+    final Map<String, Long> spinBounds = new java.util.LinkedHashMap<>();
     /** Every emitted function and loop as {hobFunction, loopLabel or null, file, line, kind}: what `--fix termination` labels. */
     final List<String[]> termSites = new ArrayList<>();
     /** Where every emitted function and loop was written ("function" and "function|label" -> "file:line"), for the causes `--audit` prints. */
@@ -3122,6 +3124,9 @@ public class BytecodeEmitter {
     private void emitLoop(Token loopTok) {
         String startLabel = newLabel("loop");
         noteLoopLabel(loopTok, "loop", startLabel);
+        if (loopTok.lockSpinBound != 0 && curHobFn != null) {
+            spinBounds.put(curHobFn + "|" + startLabel, loopTok.lockSpinBound);
+        }
         String endLabel = newLabel("loop_end");
         loopEndLabels.add(endLabel);
         loopContinueTargets.add(new String[] { startLabel });

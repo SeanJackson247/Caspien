@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Soundness sweep of the `--audit` peak live heap figure: every tests/*.caspien and docs/examples program that compiles and exits cleanly is run under
-tests/alloc_shim.c (the real peak of live heap bytes) and its audited `main` figure must not be below it. Programs whose figure is unbounded, that only
+tests/alloc_shim.c (the real peak of live heap bytes) and its audited `main` figure must not be below it. Programs whose figure is unbound, that only
 end through an event loop, or that start other processes are skipped. Prints one summary line; lists the programs where the audit was exact.
 Uses the persistent scratch tree of tests/run_tests.py (.cache/scratch, stage cache). Takes about 10 minutes."""
 import glob, os, re, subprocess, sys
@@ -30,7 +30,7 @@ for f in files:
     if c.returncode != 0:
         continue
     a = subprocess.run(["java", "-cp", ".", "Compiler", "-i", rel, "--audit"], cwd=R.SCRATCH, env=R.ENV, capture_output=True, text=True, timeout=600)
-    m = re.search(r"# summary: \S+ has at most (\d+) bytes of heap live at once \(bounded\)\n", a.stdout)
+    m = re.search(r"# summary: \S+ has at most (\d+) bytes of heap live at once \(bound\)\n", a.stdout)
     if not m:
         skipped += 1
         continue
@@ -56,5 +56,5 @@ for f in files:
         exact += 1
 for n, peak, bound in bad:
     print("FAIL %s: measured peak %d > audited bound %d" % (n, peak, bound))
-print("%s heap_live_sweep_check: %d programs run, %d skipped (unbounded or not runnable), %d with the audit exact, %d violations" % ("PASS" if not bad else "FAIL", checked, skipped, exact, len(bad)))
+print("%s heap_live_sweep_check: %d programs run, %d skipped (unbound or not runnable), %d with the audit exact, %d violations" % ("PASS" if not bad else "FAIL", checked, skipped, exact, len(bad)))
 sys.exit(1 if bad else 0)

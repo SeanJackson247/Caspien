@@ -1,4 +1,4 @@
-// `--audit` with argument values, the cases that must STAY unbounded: the callee's argument is a function result (unknown to the analysis), or a variable
+// `--audit` with argument values, the cases that must STAY unbound: the callee's argument is a function result (unknown to the analysis), or a variable
 // changed inside a loop. tests/audit_args_check.sh requires `main` to be UNBOUNDED with the reason, and no figure above the model's.
 import "../stdlib/libc.caspien"
 

@@ -1,13 +1,45 @@
-// Doc comments: `/*! justify: .. */` before unsafe blocks, `/*! termination: .. */` / `//! termination: ..` before func, for and loop (checked, exact; tests/doc_comment_check.sh breaks them one by one). Same functions as audit_class_test. Original note: every function must be classed bounded / finite / unbounded / conditional / none / unknown (tests/audit_class_check.sh
+// Doc comments: `/*! justify: .. */` before unsafe blocks, `/*! termination: .. */` / `//! termination: ..` before func, for and loop (checked, exact; tests/doc_comment_check.sh breaks them one by one). Same functions as audit_class_test. Original note: every function must be classed bound / finite / unbound / conditional / none / unknown (tests/audit_class_check.sh
 // holds the expected class of each function, written from the source below, not from the report). The program is only built to be audited (its `a == 12345` branch is never taken).
 import "../stdlib/libc.caspien"
 
 func inc(x: mut u64) mut u64{ return x + 1 }
 
-/*! termination: bounded */
-func k_bounded() mut u64{                 // literal range: bounded
+enum Gate{ OPEN, CLOSED }
+
+@lock(match self.gate : OPEN)
+struct Box{@pub{
+	swap gate: atomic mut Gate
+	n: mut u64
+}}
+let static box = mut Box{gate= Gate.OPEN, n= mut 0}
+
+// a `match @lock` is lowered to a spin loop: `CLOSED:default(n)` retries at most n times (bound), a try-lock form tries once (bound)
+/*! termination: bound */
+func k_lock_retry() mut u64{
+	let got = mut 0
+	/*! termination: bound */
+	match @lock box{
+		OPEN:{ got = mut 1 }
+		CLOSED:default(1000000)
+	}
+	return got
+}
+
+/*! termination: bound */
+func k_lock_try() mut u64{
+	let got = mut 0
+	//! termination: bound
+	match @lock box{
+		OPEN:{ got = mut 1 }
+		CLOSED:{ break }
+	}
+	return got
+}
+
+/*! termination: bound */
+func k_bounded() mut u64{                 // literal range: bound
 	let s = mut 0
-	/*! termination: bounded */
+	/*! termination: bound */
 	for i in 0..4{ s += i }
 	return s
 }
@@ -20,12 +52,12 @@ func k_finite(n: mut u64) mut u64{        // range given by a parameter: always 
 	return s
 }
 
-/*! termination: unbounded */
+/*! termination: unbound */
 func k_unbounded(n: mut u64) mut u64{     // `loop` that a `break` can leave
 	let s = mut 0
 	/*! justify: a bare loop has no bound; this test exists to be audited */
 	unsafe loop{
-		/*! termination: unbounded */
+		/*! termination: unbound */
 		loop{
 			s += 1
 			if s > n{ break }
@@ -35,12 +67,12 @@ func k_unbounded(n: mut u64) mut u64{     // `loop` that a `break` can leave
 }
 
 @throws
-/*! termination: unbounded */
+/*! termination: unbound */
 func k_unbounded_throw(n: mut u64) mut u64{   // `loop` that only a `throw` can leave
 	let s = mut 0
 	/*! justify: a bare loop has no bound; this test exists to be audited */
 	unsafe loop{
-		/*! termination: unbounded */
+		/*! termination: unbound */
 		loop{
 			s += 1
 			if s > n{ throw "done" }
@@ -48,12 +80,12 @@ func k_unbounded_throw(n: mut u64) mut u64{   // `loop` that only a `throw` can 
 	}
 }
 
-/*! termination: unbounded */
+/*! termination: unbound */
 func k_unbounded_return(n: mut u64) mut u64{  // `loop` that only a `return` can leave
 	let s = mut 0
 	/*! justify: a bare loop has no bound; this test exists to be audited */
 	unsafe loop{
-		/*! termination: unbounded */
+		/*! termination: unbound */
 		loop{
 			s += 1
 			if s > n{ return s }
@@ -90,13 +122,13 @@ func k_calls_finite(n: mut u64) mut u64{  // finite callee, unknown argument
 	return r
 }
 
-/*! termination: bounded */
+/*! termination: bound */
 func k_calls_bounded() mut u64{
-	let r = mut k_finite(3)               // the call passes a literal: bounded
+	let r = mut k_finite(3)               // the call passes a literal: bound
 	return r
 }
 
-/*! termination: unknown */
+/*! termination: indirect */
 func k_indirect() mut u64{                // indirect call: the audit cannot analyse it
 	let fp = imut inc
 	let r = mut 0
@@ -106,7 +138,7 @@ func k_indirect() mut u64{                // indirect call: the audit cannot ana
 	return r
 }
 
-/*! termination: unbounded */
+/*! termination: unbound */
 func k_try(n: mut u64) mut u64{           // handles the throw of k_unbounded_throw
 	?catch(e){ return 0 }
 	let v = mut ? k_unbounded_throw(n)
@@ -122,15 +154,16 @@ func main() void{
 	let e = mut k_calls_finite(2)
 	let f = mut k_calls_bounded()
 	let g = mut k_indirect()
+	let h = mut (k_lock_retry() + k_lock_try())
 	if a == 12345{                        // never true: only here so the audit reaches them
 		k_calls_forever()
 		let m = mut k_maybe_forever(0)
 		let t = mut k_try(1)
 		a += m + t
 	}
-	if a == 6 && b == 3 && c == 3 && d == 3 && e == 1 && f == 3 && g == 6{
+	if a == 6 && b == 3 && c == 3 && d == 3 && e == 1 && f == 3 && g == 6 && h == 2{
 		unsafe extern{ printf("PASS doc_comment_test\n") }
 	} else{
-		unsafe extern{ printf("FAIL doc_comment_test %llu %llu %llu %llu %llu %llu %llu\n", a, b, c, d, e, f, g) }
+		unsafe extern{ printf("FAIL doc_comment_test %llu %llu %llu %llu %llu %llu %llu %llu\n", a, b, c, d, e, f, g, h) }
 	}
 }

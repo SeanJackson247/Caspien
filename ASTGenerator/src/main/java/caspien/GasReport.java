@@ -21,7 +21,7 @@ import java.util.Set;
  * <li>branches take the dearer side; a `try` makes every throwing call site a possible jump to its catch block (and a call a possible jump to
  *     its unwind pad), so the catch bodies count on the worst path;</li>
  * <li>a `for` loop whose range has literal bounds costs bound * (header + worst iteration) + the final header test, exactly; any other
- *     loop (`loop {}`, a range with a variable bound, which includes the range argument of a `@recursive` function) is not bounded (classed finite / unbounded / none / unknown, see `tag`), and the
+ *     loop (`loop {}`, a range with a variable bound, which includes the range argument of a `@recursive` function) is not bounded (classed finite / unbound / none / indirect, see `tag`), and the
  *     figure shown is then a lower bound (one iteration) tagged with the reason;</li>
  * <li>a call costs {@link #CALL_COST} plus the callee's worst case; unbounded callees make the caller unbounded;</li>
  * <li>external calls, inline assembly, indirect calls, `memcopy` sizes, sleeping and thread operations are charged a fixed amount and listed as
@@ -106,6 +106,8 @@ final class GasReport {
 
     /** Source positions told by the front end for `--audit` causes: "function" and "function|loop label" -> "file:line". Empty = not known. */
     static final Map<String, String> POS = new HashMap<>();
+    /** "function|loop label" -> the retry limit of a `match @lock` spin (> 0 literal, -1 run-time value), from the compiler's lowering. */
+    static final Map<String, Long> SPIN = new HashMap<>();
 
     private final String[] ln;                // trimmed non-empty lines
     private final Map<String, Fn> fns = new LinkedHashMap<>();
@@ -274,7 +276,7 @@ final class GasReport {
         Val exitCost;               // cost of the paths that leave the loop and continue after it (add the tail); NEG impossible
         Val retCost = Val.NEG;      // cost of the paths that return/throw/exit from inside the loop (no tail)
         boolean done, computing;
-        int ownClass;               // the loop's own termination class (not its callees'): 0 bounded, FIN run-time `for`, UNB `loop` with an exit, NONT `loop` with none
+        int ownClass;               // the loop's own termination class (not its callees'): 0 bound, FIN run-time `for`, UNB `loop` with an exit, NONT `loop` with none
     }
 
     /** Per-function analysis state. */
@@ -325,8 +327,15 @@ final class GasReport {
                 if (lp.back < 0) {
                     continue;
                 }
+                Long spin = lp.isFor ? null : SPIN.get(f.name + "|" + lab);
                 if (!lp.isFor) {
                     lp.why = null;      // classified in solveLoop (needs to know whether the body can leave the loop)
+                    if (spin != null && spin > 0) {
+                        lp.count = BigInteger.valueOf(spin).add(BigInteger.ONE);     // retries 1..limit, then the give-up test breaks on the next pass
+                    } else if (spin != null) {
+                        String at = POS.get(f.name + "|" + lab);
+                        lp.why = R(FIN, "`match @lock` retries a number of times only known at run time (`default(n)` with a run-time n)" + (at != null ? " (" + at + ")" : ""));
+                    }
                 } else {
                     String type = null;
                     for (int i = lp.head + 1; i < lp.back && i < lp.head + 6; i++) {
@@ -384,13 +393,13 @@ final class GasReport {
             } else {
                 // a count or a live-heap figure does not depend on the bound of a loop that does not grow it
                 String why = lp.why;
-                if (!lp.isFor) {
+                if (!lp.isFor && why == null) {
                     boolean exit = !brk.neg || !ret.neg;     // a reachable `break`, `return` or `throw` (also from a call that can throw) inside the body
                     why = exit ? R(UNB, "`loop` with no static bound, it can leave through `break`/`return`/`throw` (" + labelOf(lp) + ")")
                             : R(runsFirst(f, lp.head) ? NONT : DIV, "`loop` with no `break`, `return` or `throw` that leaves it (" + labelOf(lp) + ")");
                 }
                 lp.ownClass = why.charAt(0) - '0';
-                if (!lp.isFor) {
+                if (!lp.isFor && lp.why == null) {
                     lp.ownClass = (!brk.neg || !ret.neg) ? UNB : NONT;
                 }
                 if (mt == GAS || (!cont.neg && cont.n.signum() > 0)) {
@@ -750,7 +759,7 @@ final class GasReport {
         for (Fn r : (eventMode ? slices : List.of(entry))) {
             Set<String> eub = r.ub[GAS];
             sb.append("# summary: ").append(r.name).append(" costs ").append(eub.isEmpty() ? "" : "at least ").append(r.val[GAS]).append(" gas")
-                    .append(eub.isEmpty() ? " in the worst case (bounded)" : " (" + wordOf(worstOf(eub)) + ": " + eub.size() + " reason" + (eub.size() == 1 ? "" : "s") + " above)").append(", ")
+                    .append(eub.isEmpty() ? " in the worst case (bound)" : " (" + wordOf(worstOf(eub)) + ": " + eub.size() + " reason" + (eub.size() == 1 ? "" : "s") + " above)").append(", ")
                     .append(reach.size()).append(" functions reachable\n");
         }
 
@@ -819,7 +828,7 @@ final class GasReport {
         long threadRoots = roots.stream().filter(r -> r.name.startsWith("__trampoline_")).count();
         for (Fn r : (eventMode ? slices : List.of(entry))) {
             sb.append("# summary: ").append(r.name).append(" needs ").append(sub.get(r.name).isEmpty() ? "" : "at least ").append(depth.get(r.name))
-                    .append(" bytes of stack").append(sub.get(r.name).isEmpty() ? " (bounded)" : " (" + wordOf(worstOf(sub.get(r.name))) + ")").append(" for safe code, ")
+                    .append(" bytes of stack").append(sub.get(r.name).isEmpty() ? " (bound)" : " (" + wordOf(worstOf(sub.get(r.name))) + ")").append(" for safe code, ")
                     .append(threadRoots).append(" thread entr").append(threadRoots == 1 ? "y" : "ies").append("\n");
         }
 
@@ -847,7 +856,7 @@ final class GasReport {
         for (Fn r : (eventMode ? slices : List.of(entry))) {
             Set<String> hub = r.ub[HEAP];
             sb.append("# summary: ").append(r.name).append(" requests ").append(hub.isEmpty() ? "at most " : "at least ").append(r.val[HEAP]).append(" bytes of heap")
-                    .append(hub.isEmpty() ? " (bounded)" : " (" + wordOf(worstOf(hub)) + ")").append(" in ").append(r.ub[COUNT].isEmpty() ? "at most " : "at least ").append(r.val[COUNT]).append(" allocation operations\n");
+                    .append(hub.isEmpty() ? " (bound)" : " (" + wordOf(worstOf(hub)) + ")").append(" in ").append(r.ub[COUNT].isEmpty() ? "at most " : "at least ").append(r.val[COUNT]).append(" allocation operations\n");
         }
         sb.append("\n# peak live heap (the most bytes that can be live at the same time during one run: frees are credited where they certainly release a block that this function or a callee\n")
                 .append("#   made, and every `resize` counts as a moving realloc, the old and the new block live together; a block moved into a struct member, a path-dependent slot or code the\n")
@@ -869,7 +878,7 @@ final class GasReport {
         }
         for (Fn r : (eventMode ? slices : List.of(entry))) {
             sb.append("# summary: ").append(r.name).append(r.ub[LIVE].isEmpty() ? " has at most " : " has at least ").append(r.livePeak).append(" bytes of heap live at once")
-                    .append(r.ub[LIVE].isEmpty() ? " (bounded)" : " (" + wordOf(worstOf(r.ub[LIVE])) + ")").append("\n");
+                    .append(r.ub[LIVE].isEmpty() ? " (bound)" : " (" + wordOf(worstOf(r.ub[LIVE])) + ")").append("\n");
         }
         if (eventMode) {
             StringBuilder top = new StringBuilder();
@@ -895,9 +904,9 @@ final class GasReport {
                 if (!tickFn.deco.contains("@throws")) {
                     top.append("#     loop: none (").append(tickFn.name).append(" never throws, the loop has no exit)\n");
                 } else if (canReturn(tickFn)) {
-                    top.append("#     loop: unbounded (").append(tickFn.name).append(" throws on some paths: the loop runs until a tick throws, and no bound on the number of ticks is known)\n");
+                    top.append("#     loop: unbound (").append(tickFn.name).append(" throws on some paths: the loop runs until a tick throws, and no bound on the number of ticks is known)\n");
                 } else {
-                    top.append("#     loop: bounded (").append(tickFn.name).append(" throws on every path: the loop ends with the first tick, exactly one tick runs)\n");
+                    top.append("#     loop: bound (").append(tickFn.name).append(" throws on every path: the loop ends with the first tick, exactly one tick runs)\n");
                 }
             }
             if (mainFn != null && mainFn.deco.contains("@throws")) {
@@ -1020,10 +1029,8 @@ final class GasReport {
                 continue;
             }
             if (stack.contains(c)) {
-                for (int m = 0; m < NMET; m++) {
-                    callUb[m].add(R(UNK, "recursion through " + c));
-                }
-                continue;
+                // The type checker rejects every call cycle (only the @recursive tail self-call survives, and it is a loop by now).
+                throw new IllegalStateException("audit: call cycle through " + c + " in a program that type-checked (compiler bug)");
             }
             Fn use = cf;
             if (unboundedAnywhere(cf) && specs.size() < MAX_SPECS) {
@@ -2152,11 +2159,11 @@ final class GasReport {
     static String wordOf(int cls) {
         switch (cls) {
             case FIN: return "finite";
-            case UNK: return "unknown";
-            case UNB: return "unbounded";
+            case UNK: return "indirect";
+            case UNB: return "unbound";
             case DIV: return "conditional";
             case NONT: return "none";
-            default: return "bounded";
+            default: return "bound";
         }
     }
 
@@ -2167,10 +2174,10 @@ final class GasReport {
         return R(w == NONT && !onEveryPath ? DIV : w, "calls " + callee + (at != null ? " (defined at " + at + ")" : "") + " (" + wordOf(w) + ")");
     }
 
-    /** `bounded`, or the worst class followed by the reasons (those of a milder class carry their own word). */
+    /** `bound`, or the worst class followed by the reasons (those of a milder class carry their own word). */
     static String tag(Set<String> reasons) {
         if (reasons.isEmpty()) {
-            return "bounded";
+            return "bound";
         }
         int w = worstOf(reasons);
         StringBuilder sb = new StringBuilder(wordOf(w)).append(": ");
@@ -2332,8 +2339,7 @@ final class GasReport {
                 continue;
             }
             if (path.contains(c)) {
-                w.add(R(UNK, "recursion through " + c));
-                continue;
+                throw new IllegalStateException("audit: call cycle through " + c + " in a program that type-checked (compiler bug)");
             }
             frame.putIfAbsent(c, frameBytes(cf));
             long d = stackDepth(c, frame, depth, via, why, path);

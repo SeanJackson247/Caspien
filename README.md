@@ -77,7 +77,7 @@ confused with:
 - **Termination is not bounded time.** A nested bounded loop with large bounds can run for years. A
   scheduler that must meet deadlines also needs a worst-case execution time per handler. Caspien proves the
   first guarantee and `--audit` reports the second in abstract gas units (a fixed cost per operation, not
-  seconds), exact for literal loop bounds and classed finite, unbounded, conditional, none or unknown otherwise (see 3.2).
+  seconds), exact for literal loop bounds and classed finite, unbound, conditional, none or indirect otherwise (see 3.2).
   The shape of the language makes it tractable: loop bounds are ordinary range values, and an acyclic call
   graph gives a static bound on stack depth (estimated by `--audit`).
 - **"Total" is relative to the primitives.** The guarantee is conditional on the escape hatches. A C
@@ -193,8 +193,8 @@ entry point, which calls `main` once and then calls `tick` until the loop ends. 
 
 `@tick` may also be `@throws` (for example when it allocates). The loop then ends when a tick throws: the stdlib loop writes
 `event loop stopped: <message>` to stderr and the program exits with status 1. A failing `main` ends it the same way. The auditor reads the
-loop's termination class off the tick: no `@throws` is `none`, a tick that throws on some paths is `unbounded`, and one that throws on every
-path is `bounded` (exactly one tick runs).
+loop's termination class off the tick: no `@throws` is `none`, a tick that throws on some paths is `unbound`, and one that throws on every
+path is `bound` (exactly one tick runs).
 
 ```rust
 struct World{@pub{
@@ -1187,19 +1187,19 @@ annotated and nothing is taken on trust. Two classes are guarantees that the fun
 
 | Class | Terminates? | Meaning | Example |
 |---|---|---|---|
-| `bounded` | Yes, guaranteed | It ends, and the figure is the exact worst-case cost. | A `for` over a literal range. |
+| `bound` | Yes, guaranteed | It ends, and the figure is the exact worst-case cost. | A `for` over a literal range. |
 | `finite` | Yes, guaranteed | It ends, but the cost bound is not determined, so the figure is a lower bound (`>= N`) and the reason names what the bound depends on. | `for i in 0..n` where `n` is a parameter. |
-| `unbounded` | Possible, not guaranteed | A `loop{}` with no static bound, but a `break`, `return` or `throw` can leave it (a call that can throw counts). | `loop{ ... if done{ break } }` |
+| `unbound` | Possible, not guaranteed | A `loop{}` with no static bound, but a `break`, `return` or `throw` can leave it (a call that can throw counts). | `loop{ ... if done{ break } }` |
 | `none` | Never | A `loop{}` that nothing can leave, and every run of the function reaches it: no path terminates. | The loop of an event loop whose `@tick` never throws. |
-| `conditional` | Not on every run | Some runs never end and others do: some execution paths are none or unbounded, while others are finite or bounded. | `if n == 0{ forever() }  return n` ends unless `n == 0`. |
-| `unknown` | No claim | The analysis cannot follow it. | An indirect call (`call(fp, ..)`), or recursion it cannot follow. |
+| `conditional` | Not on every run | Some runs never end and others do: some execution paths are none or unbound, while others are finite or bound. | `if n == 0{ forever() }  return n` ends unless `n == 0`. |
+| `indirect` | No claim | The analysis cannot follow it. | An indirect call (`call(fp, ..)`): the callee is not known. |
 
-`unbounded` and `conditional` are close, so side by side: `unbounded` is one loop that has an exit but no known bound; `conditional` is a function where some paths reach a loop with no exit and others do not. `none` means no path terminates; `conditional` means at least one does not.
+`unbound` and `conditional` are close, so side by side: `unbound` is one loop that has an exit but no known bound; `conditional` is a function where some paths reach a loop with no exit and others do not. `none` means no path terminates; `conditional` means at least one does not.
 
-A caller has the worst class among what it calls, in the order bounded, finite, unknown, unbounded, conditional, none, so a function is only
-`bounded` or `finite` when everything it can reach is. Anything but `bounded` is printed as `>= N`, a lower bound, with the reasons.
+A caller has the worst class among what it calls, in the order bound, finite, indirect, unbound, conditional, none, so a function is only
+`bound` or `finite` when everything it can reach is. Anything but `bound` is printed as `>= N`, a lower bound, with the reasons.
 
-**Safe code is `bounded` or `finite` by construction.** The rules that give this are enforced by the compiler:
+**Safe code is `bound` or `finite` by construction.** The rules that give this are enforced by the compiler:
 
 - Every loop is a `for` over a range that is fixed when the loop starts; the counter cannot be assigned and the bounds are read once.
 - Direct and mutual recursion are rejected. The one exception, `@recursive`, is a tail call on a range that shrinks on every call, and the compiler lowers it to
@@ -1210,24 +1210,24 @@ A caller has the worst class among what it calls, in the order bounded, finite, 
 
 So a program without an event loop always reaches the end of `main`, and every handler of a program with one always returns. The two operations that wait on
 something outside the program's own computation are the exceptions: `match @lock` retries until the lock is free or its attempt limit `n` is reached (see 3.4), and `await` blocks on another thread.
-`--audit` does not yet read that limit, so a function with a `match @lock` still shows `unbounded`.
+`--audit` reads the limit when it is a literal: `CLOSED:default(n)` is `bound` (at most `n` retries), a run-time `n` is `finite`, and a try-lock form (`CLOSED:{ break }`) is a single attempt.
 The other four classes appear only where `unsafe` is reachable, in your code or in the trusted standard library (the lock and thread code in
-`16_atomics_and_locks` shows `unbounded`, for example). `--audit` lists every `unsafe` block, and gives each of these a fixed price and a "not modelled" note:
+`16_atomics_and_locks` shows `unbound`, for example). `--audit` lists every `unsafe` block, and gives each of these a fixed price and a "not modelled" note:
 external calls, inline assembly, `memcopy` sizes and waiting (`sleep`, `yield`, `match @lock`, `await`).
 
 **The event loop is the one declared way to run forever.** A program that has to keep running declares one `@event_loop` function, the only place outside
 `unsafe` where a bare `loop{}` is allowed, with `@with_tick` / `@tick` handlers (see 1.3). The loop calls the handlers over and over, and
 each call runs to completion before the next one starts. It can still be left, by `break` or a thrown error. The audit classifies the handlers and never lists the loop.
 
-**Termination is not bounded time.** A nested bounded loop with large bounds can still run for years, and a scheduler that must meet deadlines needs a
-worst-case time per handler. That is what `bounded` carries: a worst-case execution cost in *abstract gas*. Every bytecode operation has a fixed price (table in
+**Termination is not bound time.** A nested bound loop with large bounds can still run for years, and a scheduler that must meet deadlines needs a
+worst-case time per handler. That is what `bound` carries: a worst-case execution cost in *abstract gas*. Every bytecode operation has a fixed price (table in
 `docs/COMPILER_REFERENCE.md`, independent of the machine, the optimiser switches and the target), a branch costs its dearer side, a `try` counts its catch
 bodies, a call costs the callee's worst case, and a `for` with literal bounds costs `bound * (header + worst iteration)`, exactly (checked against an
 independent path-search model, `tests/gas_check.sh`). Time in seconds is not computed. The same report gives a stack-depth estimate, the most heap bytes one run
 can request, and the peak live heap.
 
 **Values the caller knows are used.** A call that passes values the caller knows (literals, locals computed from them, its own parameters, a range such as
-`0..10`) is costed with those values, so `sumTo(5)` is `bounded` even though `sumTo(n)` alone is only `finite`. Values the analysis cannot follow (a call result, a
+`0..10`) is costed with those values, so `sumTo(5)` is `bound` even though `sumTo(n)` alone is only `finite`. Values the analysis cannot follow (a call result, a
 variable changed in a loop or a branch) leave the call `finite`.
 
 ### 3.3 Purity
@@ -1311,7 +1311,7 @@ it does not. The sections after it describe the mechanisms: atomics, spin locks,
 | Race condition | Not prevented | The language makes every sharing point visible: `match @lock`, or an `unsafe atomic` block that `--audit` lists. | Two critical sections that read and then write can still lose updates. |
 | Deadlock | Prevented | Locks cannot be nested, in the same function or any callee. Nothing may `yield`, `sleep`, `par` or `await` while a lock is held. The error names the call chain. | `call()` through a pointer is not followed. External calls and `unsafe loop` inside a lock are not judged. The ghost table's own lock is exempt. |
 | Livelock | Spins are bounded | A retry is written `CLOSED:default(n)`: after `n` attempts the program breaks out without the lock. A policy is stopped at its limit by the compiler. | The work may not have been done, so code after the `match` must not assume it was. |
-| Hang | Partly | Spin waits are counted by `n`. | `await` blocks on another thread, and `--audit` prints `unbounded` for a `match @lock` because it does not read `n` yet. So safe code is not strictly total. |
+| Hang | Partly | Spin waits are counted by `n`. | `await` blocks on another thread, and `--audit` reads a literal `n` for a `match @lock`. So safe code is not strictly total. |
 
 **Atomics.** `atomic` makes a global or `let static` integer, `bool` or `char` that threads may share
 (floats and pointers cannot be atomic). Each read or plain write is one instruction, and `swap` exchanges a
@@ -1620,7 +1620,7 @@ section ends with `# summary:` lines, so `java Compiler -i main.caspien --audit 
 | Section | What it tells you |
 |---|---|
 | `unsafe audit` | Every `unsafe` block, split into *your code* and the *standard library*, each with its file, line, tags and contents, then counts per tag and the number of `unsafe unaudited` blocks. |
-| `worst-case execution cost` | Abstract gas per function, callees included (a fixed price per operation, independent of machine and optimiser). The word after the figure is `bounded`, `finite`, `unbounded`, `none`, `conditional` or `unknown` (see "Bounded execution time"); anything but `bounded` is `>= N` with the reasons; operations that are not modelled (external calls, inline assembly, waiting) are listed. |
+| `worst-case execution cost` | Abstract gas per function, callees included (a fixed price per operation, independent of machine and optimiser). The word after the figure is `bound`, `finite`, `unbound`, `none`, `conditional` or `indirect` (see "Bounded execution time"); anything but `bound` is `>= N` with the reasons; operations that are not modelled (external calls, inline assembly, waiting) are listed. |
 | `stack depth` | An estimate of the stack bytes safe code needs, per function, and the deepest call path from the entry. `par` threads and event-loop `@tick` / `@with_tick` slices are listed as separate roots, never the event loop itself. |
 | `heap memory` | The most bytes one run can request from the allocator, with the number of allocation operations. Frees are not credited. |
 | `peak live heap` | The most bytes alive at once, with frees credited where they are certain, plus `leaves` (bytes still live when the function returns, such as a block it hands back). Never below the real peak, but not always exact. |
@@ -1647,36 +1647,36 @@ func main() void{
 # blocks naming each tag: extern=20 memcopy=2 raw=2
 
 # worst-case execution cost (abstract gas; ...)
-  main (entry)                       306  bounded
-  println__sig_imut_u64              122  bounded
-  print__sig_imut_u64                55  bounded
+  main (entry)                       306  bound
+  println__sig_imut_u64              122  bound
+  print__sig_imut_u64                55  bound
       not modelled: external call printf
-  printNewline                       54  bounded
+  printNewline                       54  bound
       not modelled: external call putchar
   sumTo                              >= 32  finite: `for` runs a number of times only known at run time: depends on `n`
-# summary: main costs 306 gas in the worst case (bounded), 5 functions reachable
+# summary: main costs 306 gas in the worst case (bound), 5 functions reachable
 
 # stack depth (an estimate ...)
-  main (entry)                       288 bytes  bounded
+  main (entry)                       288 bytes  bound
       deepest path: main (96) > println__sig_imut_u64 (96) > print__sig_imut_u64 (96)
-  println__sig_imut_u64              192 bytes  bounded
-  sumTo                              136 bytes  bounded
-  print__sig_imut_u64                96 bytes  bounded
-  printNewline                       88 bytes  bounded
-# summary: main needs 288 bytes of stack (bounded) for safe code, 0 thread entries
+  println__sig_imut_u64              192 bytes  bound
+  sumTo                              136 bytes  bound
+  print__sig_imut_u64                96 bytes  bound
+  printNewline                       88 bytes  bound
+# summary: main needs 288 bytes of stack (bound) for safe code, 0 thread entries
 
 # heap memory (...)
-  main (entry)                       0 bytes  (0 allocation operations)  bounded
-# summary: main requests at most 0 bytes of heap (bounded) in at most 0 allocation operations
+  main (entry)                       0 bytes  (0 allocation operations)  bound
+# summary: main requests at most 0 bytes of heap (bound) in at most 0 allocation operations
 
 # peak live heap (...)
-  main (entry)                       peak 0 bytes  (leaves 0)  bounded
-# summary: main has at most 0 bytes of heap live at once (bounded)
+  main (entry)                       peak 0 bytes  (leaves 0)  bound
+# summary: main has at most 0 bytes of heap live at once (bound)
 ```
 
 `sumTo` on its own is only *finite*: it always ends, but its loop count depends on `n`, so the figure (`>= 32`) is a lower bound and
-the line names `n`. `main` is *bounded*, because it calls `sumTo` with the literal `10`, so that call is costed with that value.
-Every figure ends in one of six words (`bounded`, `finite`, `unbounded`, `none`, `conditional`, `unknown`), explained in 3.2.
+the line names `n`. `main` is *bound*, because it calls `sumTo` with the literal `10`, so that call is costed with that value.
+Every figure ends in one of six words (`bound`, `finite`, `unbound`, `none`, `conditional`, `indirect`), explained in 3.2.
 
 The figures are bounds computed from the bytecode, not measurements. Direct calls to C's `malloc` through an `extern` and stack
 used by C functions are not counted. `CASPIEN_AUDIT_ALL=1` in the environment
@@ -1688,10 +1688,10 @@ A comment that starts `/*!` (or `//!`) is a doc comment: still commentary, but m
 One character after the opening is all it takes; there is no marker to repeat on every line.
 
 ```rust
-/*! termination: bounded */
+/*! termination: bound */
 func sum4() mut u64{
 	let s = mut 0
-	//! termination: bounded
+	//! termination: bound
 	for i in 0..4{ s += i }
 	return s
 }
@@ -1705,7 +1705,9 @@ unsafe raw{
 | Key | Goes directly before | Text | Checked |
 |---|---|---|---|
 | `justify: ANY TEXT` | an `unsafe` block | Free text saying why the programmer had to use `unsafe`. | No. `--audit` prints it beside the block and counts the blocks that have none. The text `TODO` counts as not yet justified. |
-| `termination: CLASS` | a `func`, a `for` or a `loop` (decorators may stand between) | One of `bounded`, `finite`, `unbounded`, `none`, `conditional`, `unknown` (see 3.2). | Yes, exactly: a label that differs from the class the audit computes, in either direction, is a compile error that names both. |
+| `termination: CLASS` | a `func`, a `for`, a `loop` or a `match @lock` (decorators may stand between) | One of `bound`, `finite`, `unbound`, `none`, `conditional`, `indirect` (see 3.2). | Yes, exactly: a label that differs from the class the audit computes, in either direction, is a compile error that names both. |
+
+A `match @lock` is a retry loop underneath, so its label is the class of that loop: `bound` for `CLOSED:default(n)` with a literal `n` (at most `n` retries) and for a try-lock `CLOSED:{ break }`, `finite` for a run-time `n`.
 
 A doc comment anywhere else, with an unknown key, with no text, or with a class that is not one of the six, is a compile error. A missing
 one is fine. A `func` label describes the whole function, callees included; a `for` or `loop` label describes that loop alone (its bound or

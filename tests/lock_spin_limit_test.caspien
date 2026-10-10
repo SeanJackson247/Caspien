@@ -1,4 +1,4 @@
-// Every `match @lock` retry in safe code is bounded by the compiler. The gate is closed by hand (`unsafe atomic`) to stand for a holder that never lets go.
+// Every `match @lock` retry in safe code is bound by the compiler. The gate is closed by hand (`unsafe atomic`) to stand for a holder that never lets go.
 import "../stdlib/libc.caspien"
 import "../stdlib/gt/*"
 

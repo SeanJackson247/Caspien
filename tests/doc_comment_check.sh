@@ -20,29 +20,32 @@ expect() {
     grep -qF -- "$3" m.log || { tail -4 m.log; fail "$1: expected message containing: $3"; }
 }
 L() { grep -n "$1" $T | head -1 | cut -d: -f1; }
-fl=$(L 'termination: finite \*/'); expect "function label too strong" "${fl}s/finite/bounded/" "function \`k_finite\` is labelled \`bounded\` but its termination class is \`finite\`"
-expect "function label too weak" "$(L 'termination: bounded \*/')s/bounded/finite/" "is labelled \`finite\` but its termination class is \`bounded\`"
-fl=$(L 'termination: none \*/'); expect "none labelled unbounded" "${fl}s/none/unbounded/" "is labelled \`unbounded\` but its termination class is \`none\`"
+fl=$(L 'termination: finite \*/'); expect "function label too strong" "${fl}s/finite/bound/" "function \`k_finite\` is labelled \`bound\` but its termination class is \`finite\`"
+expect "function label too weak" "$(L 'termination: bound \*/')s/bound/finite/" "is labelled \`finite\` but its termination class is \`bound\`"
+fl=$(L 'termination: none \*/'); expect "none labelled unbound" "${fl}s/none/unbound/" "is labelled \`unbound\` but its termination class is \`none\`"
 expect "conditional labelled none" "$(L 'termination: conditional \*/')s/conditional/none/" "labelled \`none\` but its termination class is \`conditional\`"
-expect "for labelled finite" "$(L '	/\*! termination: bounded')s/bounded/finite/" "\`for\` in \`k_bounded\` is labelled \`finite\` but its termination class is \`bounded\`"
-expect "unknown labelled bounded" "$(L 'termination: unknown')s/unknown/bounded/" "labelled \`bounded\` but its termination class is \`unknown\`"
+kb=$(grep -n 'func k_bounded' $T | head -1 | cut -d: -f1); expect "for labelled finite" "$((kb+2))s/bound/finite/" "\`for\` in \`k_bounded\` is labelled \`finite\` but its termination class is \`bound\`"
+expect "indirect labelled bound" "$(L 'termination: indirect')s/indirect/bound/" "labelled \`bound\` but its termination class is \`indirect\`"
 expect "unknown key" "$(L '^[[:space:]]*/\*! justify:')s/justify:/proof:/" "unknown doc comment key 'proof'"
 expect "no colon" "$(L '^[[:space:]]*/\*! justify:')s#/\*!.*\*/#/*! just so */#" "doc comment must read"
 expect "empty text" "$(L '^[[:space:]]*/\*! justify:')s#justify:.*\*/#justify: */#" "has no text"
-expect "bad class" "$(L 'termination: unknown')s/unknown/maybe/" "termination class 'maybe' is not one of"
+expect "bad class" "$(L 'termination: indirect')s/indirect/maybe/" "termination class 'maybe' is not one of"
 expect "old class name" "$(L 'termination: none \*/')s/none/non-terminating/" "termination class 'non-terminating' is not one of"
-expect "duplicate" "$(L 'termination: unknown')a /*! termination: unknown */" "appears twice before the same"
+expect "duplicate" "$(L 'termination: indirect')a /*! termination: indirect */" "appears twice before the same"
 # placement
+ll=$(L '^[[:space:]]*/\*! termination: bound \*/$'); ml=$(grep -n 'match @lock box' $T | head -1 | cut -d: -f1)
+expect "match @lock labelled finite" "$((ml-1))s/bound/finite/" "is labelled \`finite\` but its termination class is \`bound\`"
 P() { printf 'import "stdlib/print.caspien"\nimport "stdlib/gt/*"\n%b\n' "$1" >pl.caspien; if java Compiler -i pl.caspien /dev/null --hob >m.log 2>&1; then fail "placement '$2': compiled"; fi; grep -qF -- "$3" m.log || { tail -3 m.log; fail "placement '$2': expected $3"; }; n=$((n+1)); }
 P 'func main() void{\n\t/*! justify: no reason */\n\tlet a = mut 1\n\tprintln(a)\n}' "justify before let" "'justify:' doc comment is not expected here"
 P '/*! justify: not a block */\nfunc main() void{\n}' "justify before func" "'justify:' doc comment is not expected here"
-P 'func main() void{\n\tlet a = mut 1\n\t/*! termination: bounded */\n\tif a == 1{ println(a) }\n}' "termination before if" "'termination:' doc comment is not expected here"
-P 'func main() void{\n\tlet n = mut 0\n\t/*! termination: unbounded */\n\tunsafe loop{\n\t\tloop{ n += 1\n\t\t\tif n > 2{ break } }\n\t}\n}' "termination before unsafe loop" "(found \`unsafe\`"
-P 'func main() void{\n\t//! termination: bounded\n}' "termination before a brace" "is not expected here"
+P 'func main() void{\n\tlet a = mut 1\n\t/*! termination: bound */\n\tif a == 1{ println(a) }\n}' "termination before if" "'termination:' doc comment is not expected here"
+P 'func main() void{\n\tlet n = mut 0\n\t/*! termination: unbound */\n\tunsafe loop{\n\t\tloop{ n += 1\n\t\t\tif n > 2{ break } }\n\t}\n}' "termination before unsafe loop" "(found \`unsafe\`"
+P 'func main() void{\n\tlet a = mut 1\n\t/*! termination: bound */\n\tmatch a{ default:{ println(a) } }\n}' "termination before a plain match" "'termination:' doc comment is not expected here"
+P 'func main() void{\n\t//! termination: bound\n}' "termination before a brace" "is not expected here"
 P 'func main() void{\n}\n//! justify: trailing' "comment at the end" "nothing follows it"
 P 'func main() void{\n\tprintln(1) //! justify: same line\n}' "trailing comment on a statement" "is not expected here"
 # accepted: no label at all, a decorator between the label and its func, a plain comment between, //! on a func
-printf 'import "stdlib/print.caspien"\nimport "stdlib/gt/*"\n//! termination: bounded\n@inline\nfunc one() mut u64{ return 1 }\n\n/*! termination: bounded */\n// an ordinary comment in between\nfunc two() mut u64{ return 2 }\nfunc main() void{\n\tprintln(one() + two())\n}\n' >ok.caspien
+printf 'import "stdlib/print.caspien"\nimport "stdlib/gt/*"\n//! termination: bound\n@inline\nfunc one() mut u64{ return 1 }\n\n/*! termination: bound */\n// an ordinary comment in between\nfunc two() mut u64{ return 2 }\nfunc main() void{\n\tprintln(one() + two())\n}\n' >ok.caspien
 java Compiler -i ok.caspien okprog >m.log 2>&1 || { tail -3 m.log; fail "decorator/plain comment between label and func"; }
 [ "$(./okprog)" = "3" ] || fail "ok program output"
 # --audit: justify text and the counts

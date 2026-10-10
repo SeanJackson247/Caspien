@@ -1115,11 +1115,25 @@ public class Lexer {
             break;
         }
         String kind = target == null ? null : target.text;
+        if (key.equals("termination") && "match".equals(kind)) {
+            // `match @lock x{ .. }` is lowered to a spin `loop`, so it takes the label of a loop (and nothing else called `match` does)
+            int k = j + 1;
+            while (k < tokens.size() && isDiscardable(tokens.get(k))) {
+                k++;
+            }
+            int k2 = k + 1;
+            while (k2 < tokens.size() && isDiscardable(tokens.get(k2))) {
+                k2++;
+            }
+            if (k2 < tokens.size() && tokens.get(k).text.equals("@") && tokens.get(k2).text.equals("lock")) {
+                kind = "loop";
+            }
+        }
         boolean ok = key.equals("justify") ? "unsafe".equals(kind)
                 : "loop".equals(kind) || "for".equals(kind) || "func".equals(kind);
         if (!ok) {
             throw new CompilerException("lex", file, cl, "'" + key + ":' doc comment is not expected here: it goes directly before "
-                    + (key.equals("justify") ? "an `unsafe` block" : "a `loop`, `for` or `func`")
+                    + (key.equals("justify") ? "an `unsafe` block" : "a `loop`, `for`, `func` or `match @lock`")
                     + (target == null ? " (nothing follows it)" : " (found `" + kind + "` on line " + target.line + ")"));
         }
         if (!DocComments.register(new DocComments.Doc(key, value, file, kind, cl, target.line))) {

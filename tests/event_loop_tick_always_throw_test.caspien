@@ -1,4 +1,4 @@
-// A '@tick' that throws on every path: the loop ends with the first tick (audit class 'bounded', checked by gas_check.sh). A '@tick' (or 'main') that throws ends the event loop: the stdlib 'start' writes "event loop stopped: <message>" to stderr and the
+// A '@tick' that throws on every path: the loop ends with the first tick (audit class 'bound', checked by gas_check.sh). A '@tick' (or 'main') that throws ends the event loop: the stdlib 'start' writes "event loop stopped: <message>" to stderr and the
 // program exits with status 1 (checked by event_loop_throw_check.sh, which also compares live allocations at exit under tests/alloc_shim.c).
 // 'tick' prints one line per call, so stdout shows how many ticks ran.
 import "../stdlib/libc.caspien"

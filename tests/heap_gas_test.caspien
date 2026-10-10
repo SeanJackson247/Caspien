@@ -61,7 +61,7 @@ func heap_dyn() mut u64{
 	return 3
 }
 
-// unbounded: allocates inside a loop bounded by an argument
+// unbound: allocates inside a loop bound by an argument
 func heap_unbounded(n: mut u64) mut u64{
 	?catch(e){ return 0 }
 	let t = mut 0
@@ -80,7 +80,7 @@ func heap_runtime(n: mut u64) mut u64{
 	return 1
 }
 
-// exact 0: an argument-bounded loop that never allocates does not make the count unbounded
+// exact 0: an argument-bound loop that never allocates does not make the count unbound
 func heap_quiet(n: mut u64) mut u64{
 	let t = mut 0
 	for i in 0..n{

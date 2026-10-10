@@ -1,4 +1,4 @@
-// The same with logic before the `continue`: still an unbounded retry written by hand, still an error. Put the logic in an `impl default match @lock` policy.
+// The same with logic before the `continue`: still an unbound retry written by hand, still an error. Put the logic in an `impl default match @lock` policy.
 import "../stdlib/libc.caspien"
 import "../stdlib/gt/*"
 

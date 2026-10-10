@@ -1,10 +1,10 @@
-// `--audit` terminology: every function must be classed bounded / finite / unbounded / conditional / none / unknown (tests/audit_class_check.sh
+// `--audit` terminology: every function must be classed bound / finite / unbound / conditional / none / indirect (tests/audit_class_check.sh
 // holds the expected class of each function, written from the source below, not from the report). The program is only built to be audited (its `a == 12345` branch is never taken).
 import "../stdlib/libc.caspien"
 
 func inc(x: mut u64) mut u64{ return x + 1 }
 
-func k_bounded() mut u64{                 // literal range: bounded
+func k_bounded() mut u64{                 // literal range: bound
 	let s = mut 0
 	for i in 0..4{ s += i }
 	return s
@@ -72,7 +72,7 @@ func k_calls_finite(n: mut u64) mut u64{  // finite callee, unknown argument
 }
 
 func k_calls_bounded() mut u64{
-	let r = mut k_finite(3)               // the call passes a literal: bounded
+	let r = mut k_finite(3)               // the call passes a literal: bound
 	return r
 }
 

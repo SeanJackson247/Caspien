@@ -11,7 +11,7 @@ import java.util.Map;
  * <ul>
  * <li>`justify: ANY TEXT` goes directly before an `unsafe` block; free text, not checked, saying why the programmer had to use unsafe. The
  *     text `TODO` (what `--fix` writes) counts as "not justified yet".</li>
- * <li>`termination: bounded|finite|unbounded|none|conditional|unknown` goes directly before a `loop`, a `for` or a `func` (decorators may stand
+ * <li>`termination: bound|finite|unbound|none|conditional|indirect` goes directly before a `loop`, a `for`, a `func` or a `match @lock` (decorators may stand
  *     in between) and is checked against the termination class the audit computes: a wrong label is a compile error.</li>
  * </ul>
  * A doc comment anywhere else, with an unknown key, or with a bad value is a compile error; an absent one is fine. The Lexer validates and
@@ -26,7 +26,7 @@ final class DocComments {
         }
     }
 
-    static final List<String> CLASSES = java.util.Arrays.asList("bounded", "finite", "unbounded", "none", "conditional", "unknown");
+    static final List<String> CLASSES = java.util.Arrays.asList("bound", "finite", "unbound", "none", "conditional", "indirect");
     private static final Map<String, Doc> BY_TARGET = new HashMap<>();
 
     private DocComments() {

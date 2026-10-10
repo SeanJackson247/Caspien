@@ -15919,6 +15919,7 @@ public class TypeChecker {
         if (substitution != null) {
             closedParentScope = substitution.preLoopScope;
             stmt.preLoopInit = substitution.preLoopInit;
+            stmt.lockSpinBound = substitution.spinBound;
         }
 
         Set<String> closedBranchMoved = new HashSet<>(preState);
@@ -15929,6 +15930,9 @@ public class TypeChecker {
             checkLinesInScope(closedCase.childs, closedBodyScope, func, true);
         } finally {
             lockClosedLoopScope = savedLockClosedScope;
+        }
+        if (substitution == null && lockRetryContinuesSeen == retriesBefore) {
+            stmt.lockSpinBound = 1;         // a try-lock: no CLOSED path retries, so the loop body runs once
         }
         if (substitution == null && lockRetryContinuesSeen > retriesBefore && !isGhostTableFunction(func) && !synthesizingGlueBody) {
             throw new CompilerException("type", closedCase.file, closedCase.line,
@@ -15997,9 +16001,29 @@ public class TypeChecker {
     private static class DefaultPolicySubstitution {
         final List<Token> preLoopInit;
         final Scope preLoopScope;
+        /** Most retries of the spin: > 0 a literal limit, -1 a run-time value (0 = not known). */
+        long spinBound;
         DefaultPolicySubstitution(List<Token> preLoopInit, Scope preLoopScope) {
             this.preLoopInit = preLoopInit;
             this.preLoopScope = preLoopScope;
+        }
+        DefaultPolicySubstitution withBound(long b) {
+            this.spinBound = b;
+            return this;
+        }
+    }
+
+    /** The value of an integer literal token (underscores, 0x/0b allowed), or -1 when it is not a literal or does not fit. */
+    private static long literalLimit(Token t) {
+        if (t == null || t.type != TokenType.INTEGER) {
+            return -1;
+        }
+        try {
+            String s = t.text.replace("_", "").toLowerCase();
+            long v = s.startsWith("0b") ? Long.parseLong(s.substring(2), 2) : Long.decode(s);
+            return v < 0 ? -1 : v;
+        } catch (NumberFormatException e) {
+            return -1;
         }
     }
 
@@ -16113,7 +16137,7 @@ public class TypeChecker {
             builtinBody.add(wrapAsCheckedLine(buildGiveUpCheck(defaultRef, new Token(TokenType.VARREF, "$lm_limit", defaultRef.line, defaultRef.file))));
             builtinBody.add(wrapAsCheckedLine(new Token(TokenType.KEYWORD, "continue", defaultRef.line, defaultRef.file)));
             closedCase.childs = builtinBody;
-            return new DefaultPolicySubstitution(builtinInit, builtinScope);
+            return new DefaultPolicySubstitution(builtinInit, builtinScope).withBound(literalLimit(builtinArgs.get(0)));
         }
         List<Token> callArgNodes = new ArrayList<>();
         if (defaultRef.type == TokenType.OPERATOR && defaultRef.text.equals("CALL")) {
@@ -16200,7 +16224,11 @@ public class TypeChecker {
         }
         closedCase.childs = substitutedChilds;
 
-        return new DefaultPolicySubstitution(preLoopInit, preLoopScope);
+        long bound = LOCK_SPIN_LIMIT;       // a policy without a u64 `limit` parameter is stopped at LOCK_SPIN_LIMIT
+        if (policyParams.size() >= 2 && "u64".equals(policyParams.get(1).type.baseType)) {
+            bound = literalLimit(callArgNodes.get(0));
+        }
+        return new DefaultPolicySubstitution(preLoopInit, preLoopScope).withBound(bound);
     }
 
     /** The attempt limit used when a registered `impl default match @lock` policy has no u64 `limit` parameter. */
