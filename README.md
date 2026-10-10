@@ -1200,16 +1200,14 @@ only unbounded construct, in a small place that can be found and audited.
 annotated and nothing is taken on trust. Two classes are guarantees that the function terminates. The other four say that no such guarantee is given, and why.
 `--audit` prints the class of every function (see 4.2).
 
-| Class | Terminates? | Meaning | Example | Colour |
-|---|---|---|---|---|
-| `bound` | Yes, guaranteed | It ends, and the figure is the exact worst-case cost. | A `for` over a literal range. | blue, solid outline |
-| `finite` | Yes, guaranteed | It ends, but the cost bound is not determined, so the figure is a lower bound (`>= N`) and the reason names what the bound depends on. | `for i in 0..n` where `n` is a parameter. | purple, double outline |
-| `unbound` | Possible, not guaranteed | A `loop{}` with no static bound, but a `break`, `return` or `throw` can leave it (a call that can throw counts). | `loop{ ... if done{ break } }` | red, dashed outline |
-| `none` | Never | A `loop{}` that nothing can leave, and every run of the function reaches it: no path terminates. | The loop of an event loop whose `@tick` never throws. | amber, thick outline |
-| `conditional` | Not on every run | Some runs never end and others do: some execution paths are none or unbound, while others are finite or bound. | `if n == 0{ forever() }  return n` ends unless `n == 0`. | grey, dotted outline |
-| `indirect` | No claim | The analysis cannot follow it. | An indirect call (`call(fp, ..)`): the callee is not known. | dark, bright dash-dot outline |
-
-The colour is how the tools draw a class (`--viz` today, and the same palette for anything graphical later): the hue follows the strength of the guarantee, blue for a known cost, purple for an end without a known cost, red for no guarantee, and the outline style says the class a second time so the colour is never the only signal. `none` is amber rather than red because it is certain, and in an event loop intended; `indirect` is dark because the analysis cannot see inside it. Red means "not guaranteed to end", not "wrong".
+| Class | Terminates? | Meaning | Example |
+|---|---|---|---|
+| `bound` | Yes, guaranteed | It ends, and the figure is the exact worst-case cost. | A `for` over a literal range. |
+| `finite` | Yes, guaranteed | It ends, but the cost bound is not determined, so the figure is a lower bound (`>= N`) and the reason names what the bound depends on. | `for i in 0..n` where `n` is a parameter. |
+| `unbound` | Possible, not guaranteed | A `loop{}` with no static bound, but a `break`, `return` or `throw` can leave it (a call that can throw counts). | `loop{ ... if done{ break } }` |
+| `none` | Never | A `loop{}` that nothing can leave, and every run of the function reaches it: no path terminates. | The loop of an event loop whose `@tick` never throws. |
+| `conditional` | Not on every run | Some runs never end and others do: some execution paths are none or unbound, while others are finite or bound. | `if n == 0{ forever() }  return n` ends unless `n == 0`. |
+| `indirect` | No claim | The analysis cannot follow it. | An indirect call (`call(fp, ..)`): the callee is not known. |
 
 `unbound` and `conditional` are close, so side by side: `unbound` is one loop that has an exit but no known bound; `conditional` is a function where some paths reach a loop with no exit and others do not. `none` means no path terminates; `conditional` means at least one does not.
 
@@ -1797,7 +1795,7 @@ like `import "../stdlib/libc.caspien"`.
 | `--fs-report` | Print every file-system root the program opens and every `unsafe file` use, next to the build's file policy (see 4.3). |
 | `--audit` | Do not build anything: print what the compiler can say about the compilation target (see *Auditing a target*). |
 | `--fix MODES [--write] [--fix-stdlib]` | Do not build anything: insert `termination` / `justify` doc comments or rewrite big `unsafe` blocks into minimal ones (`unsafe-split`, see *Doc comments*); a dry run unless `--write`. |
-| `--viz [out.html]` | Do not build anything: write an HTML page that draws the entry function and its direct callees as circles, sized by worst-case stack depth and coloured by termination class (the colour column in 3.2). |
+| `--viz [out.html]` | Do not build anything: write an HTML page that draws the entry function and its direct callees as circles, sized by worst-case stack depth and marked by termination class. |
 
 The intermediate files of every stage are also kept under `output/.build/`, which is the easiest way to see
 what the compiler did to a program.
