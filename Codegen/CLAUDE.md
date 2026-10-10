@@ -1,6 +1,6 @@
 # CLAUDE.md -- Codegen (stage 4): current state only
 
-Low-order bytecode (text, from LowerOrderGenerator) -> x86-64 assembly text. Config-driven target. All code: `src/main/java/caspien/codegen/X86Backend.java` (~6500 lines); `codegen.config` read from cwd.
+Low-order bytecode (text, from LowerOrderGenerator) -> x86-64 assembly text. Config-driven target. All code: `src/main/java/caspien/codegen/x86backend/` (10 Oct: the old 7358-line `X86Backend.java` split into a chain of abstract classes, no file over 1500 lines: `X86Core` (fields, constants, static helpers) <- `X86Emit` <- `X86Calls` (`emitLine`/`emitLineInner` dispatcher) <- `X86CasesA` <- `X86CasesB` <- `X86RegForm` <- `X86Backend` (public; `generate`, rest of the register form, callee-saved). The mnemonic switch is now `emitCases1..7`, each returning false for a mnemonic it does not own; a part calls a later part's method through an abstract declaration at the top of its class; assembly output was byte-identical to the unsplit class on 802 cached LOB files, configs linux and linux+bmi2+avx); `codegen.config` read from cwd. Method names below ("`X86Backend` `case`s") now live in these files.
 Unknown mnemonics are NOT errors: they emit `# TODO(codegen): ...` in the asm (often a silently wrong program). Always grep the generated .s for `TODO(codegen)`, and rebuild `Codegen/out` after editing (a stale class emits TODO for new `R_*` lines).
 
 ## Build / run / test

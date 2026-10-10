@@ -1413,22 +1413,7 @@ An `owns` value that goes into a swap-lock struct (a member, a nested member, an
 
 A method can require the lock too: `@lock(match self.gate : OPEN)` on a method means the caller must already
 be inside the matching `match @lock`, and the standard library uses the same decorator on
-`DynamicArray.get` and `set` to demand an index proof (`@lock(match i in self.backing)`). For a lock that
-is not a spin lock there is no lock statement (the old `@guard` interface and `lock x{ ... }` block were removed): wrap the lock in an
-owned value whose `@drop` hook releases it, and the hook runs on every way out of the scope (end, `return`, `break`, `continue`, `throw`):
-
-```
-@drop
-func release(h: ref some mut Held) void{ /* unlock here */ }
-
-func work() mut u64{
-	?catch(e){ return 0 }
-	let h = mut ?new Held{id= 1}       // taking the lock; `release` runs when `h` goes out of scope
-	return compute()                    // ... also on this early return
-}
-```
-
-`tests/raii_unlock_test.caspien` checks every exit path.
+`DynamicArray.get` and `set` to demand an index proof (`@lock(match i in self.backing)`).
 
 **Threads.** An `@async` function takes at most one parameter, which must fit in a register, and can only
 be called with `par` or `await`. Each call runs on its own OS thread. `await f(x)` blocks and returns the
