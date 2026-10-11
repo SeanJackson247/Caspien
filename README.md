@@ -385,6 +385,80 @@ to a direct call.
 
 (The `impl` blocks and `_self` receivers in the examples above are described under Methods, below.)
 
+#### Visibility
+
+Everything is private by default. A declaration without `@pub` can be named only in the file that declares it, and
+`@pub` (on its own line above the declaration, like every decorator) lifts that. It applies to functions, structs,
+interfaces, `impl` blocks and root-level `let static` globals. Enums and externs take no `@pub`: an enum is
+visible wherever its file is imported. Members of a struct are public only inside a `@pub{ ... }` block; members
+written outside one are private.
+
+```rust
+// bank.caspien
+@pub
+struct Account{
+	balance: mut u64                // private: not inside a @pub{} block
+	@pub{
+	id: mut u64
+	}
+}
+
+@pub
+impl Account{
+	@pub
+	@throws
+	static func open(id: mut u64) owns some mut Account{
+		?catch(e){ throw e }
+		return ?new Account{balance= 0, id= id}
+	}
+	@pub
+	func deposit(_self: ref some mut self, amount: mut u64) void{
+		_self.balance += _self:net(amount)
+	}
+	@pub
+	func total(_self: ref some imut self) mut u64{ return _self.balance }
+	func net(_self: ref some imut self, amount: mut u64) mut u64{ return amount - 1 }   // private
+}
+
+// main.caspien
+import "bank.caspien"
+...
+	let acct = mut ? Account.open(mut 7)
+	acct:deposit(mut 100)
+	println(acct:total())           // 99
+	println(acct.id)                // 7
+```
+
+Another file cannot read `acct.balance`, write `Account{balance= 0, id= 7}` or call `acct:net(5)`:
+
+```
+'balance' is private -- not accessible outside the file it's declared in
+'net' is private -- it can only be referenced by another func within that same impl
+```
+
+- **Functions, structs, interfaces and globals** are private to their file. Naming a private struct or interface in
+  a type, calling a private function, or reading a private global from another file is a compile error. A `@pub`
+  global still follows the shared-state rules: reading it from safe code needs `unsafe global` (4.1).
+- **Methods have two gates.** The `impl` block must be `@pub` for any of its methods to be reached from another
+  file, and each method must also be `@pub`. An interface `impl` is an impl like any other: its methods are
+  already required to be `@pub`, and the block must be `@pub` before another file can call through it. The
+  methods an interface declares are always public.
+- **Members and private methods are narrower than a file.** A private member can be named only inside an `impl`
+  for its struct (or an `impl` of an interface on it); a free function in the same file cannot. A private method
+  can be called only from another method of the same `impl` block, so an interface `impl` cannot call the bare
+  impl's private helpers.
+- **A struct with a private member can only be built inside an `impl` for it**, because a literal names every
+  member. Write a `static` method such as `open` above. The body of an `impl constructor` is not counted as an
+  `impl` for this rule, so it cannot name a private member.
+- **Private is about use, not about names.** A private function still cannot have the same name and signature as
+  a function in another file.
+
+Visibility is a compile-time check on names. Its use is to make the audit surface small. A member that only the
+`impl` can touch is an invariant a reviewer checks by reading that one block (`balance` above changes only through
+the impl's own methods), a file exposes the few names its callers need and keeps its helpers private so they can
+change freely, and a missing `@pub` is the compiler telling you that another file is reaching into something it
+was not offered.
+
 #### Generics and compile-time dispatch
 
 Generics use `:<T>` at the use site and `<T>` at the declaration. Each instantiation is compiled as its own
@@ -2620,7 +2694,7 @@ is an error ("'@x' is not a valid decorator on a function"). This is the full se
 
 | Decorator | On | Meaning |
 |---|---|---|
-| `@pub` | function, struct, member, `impl`, global | visible outside its file. Required on the methods of an `impl Interface for T` |
+| `@pub` | function, struct, interface, member, `impl`, global | visible outside its file. Required on the methods of an `impl Interface for T` |
 | `@throws` | function | may `throw`; every caller must wrap the call |
 | `@pure` | function | side-effect-free, not referentially transparent: calls only `@pure` functions, reads no mutable global, writes through no pointer, never throws |
 | `@recursive` | function | the one allowed recursion shape (see 3.1) |
