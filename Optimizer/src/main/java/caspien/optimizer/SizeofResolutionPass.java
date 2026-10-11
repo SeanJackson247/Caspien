@@ -1,5 +1,9 @@
 package caspien.optimizer;
 
+import caspien.optimizer.hob.HOBProgram;
+import caspien.optimizer.hob.HOBStatement;
+import caspien.optimizer.hob.HOBToken;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -35,9 +39,9 @@ public class SizeofResolutionPass implements OptimizationPass {
     }
 
     @Override
-    public PassResult run(List<List<BytecodeToken>> lines) {
+    public PassResult run(HOBProgram lines) {
         boolean any = false;
-        for (List<BytecodeToken> l : lines) {
+        for (HOBStatement l : lines) {
             if (isMnemonic(l, "SIZEOF")) {
                 any = true;
                 break;
@@ -47,20 +51,20 @@ public class SizeofResolutionPass implements OptimizationPass {
             return new PassResult(lines, false);
         }
         Sizes sizes = new Sizes(lines);
-        List<List<BytecodeToken>> out = new ArrayList<>(lines.size());
-        for (List<BytecodeToken> l : lines) {
+        HOBProgram out = new HOBProgram(lines.size());
+        for (HOBStatement l : lines) {
             if (isMnemonic(l, "SIZEOF") && l.size() >= 3) {
                 String name = l.get(1).text;
                 long n = sizes.structSize(name, 0);
                 if (n < 0) {
-                    BytecodeToken at = l.get(0);
+                    HOBToken at = l.get(0);
                     throw new IllegalStateException("internal error: SIZEOF names struct '" + name
                             + "' which has no STRUCT declaration (" + at.file + ":" + at.line + ")");
                 }
-                List<BytecodeToken> r = new ArrayList<>(l.size());
-                BytecodeToken m = l.get(0);
-                r.add(new BytecodeToken("PUSH", m.file, m.line, BytecodeToken.Kind.CODE));
-                r.add(new BytecodeToken(Long.toString(n), m.file, m.line, BytecodeToken.Kind.CODE));
+                HOBStatement r = new HOBStatement(l.size());
+                HOBToken m = l.get(0);
+                r.add(new HOBToken("PUSH", m.file, m.line, HOBToken.Kind.CODE));
+                r.add(new HOBToken(Long.toString(n), m.file, m.line, HOBToken.Kind.CODE));
                 for (int i = 2; i < l.size(); i++) {
                     r.add(l.get(i));
                 }
@@ -72,8 +76,8 @@ public class SizeofResolutionPass implements OptimizationPass {
         return new PassResult(out, true);
     }
 
-    private static boolean isMnemonic(List<BytecodeToken> line, String m) {
-        return !line.isEmpty() && line.get(0).kind == BytecodeToken.Kind.CODE && line.get(0).text.equals(m);
+    private static boolean isMnemonic(HOBStatement line, String m) {
+        return !line.isEmpty() && line.get(0).kind == HOBToken.Kind.CODE && line.get(0).text.equals(m);
     }
 
     /** Struct sizes from the STRUCT_START ... STRUCT_END declarations. */
@@ -82,9 +86,9 @@ public class SizeofResolutionPass implements OptimizationPass {
         private final Map<String, List<Object>> decls = new HashMap<>();
         private final Map<String, Long> cache = new HashMap<>();
 
-        Sizes(List<List<BytecodeToken>> lines) {
+        Sizes(HOBProgram lines) {
             String cur = null;
-            for (List<BytecodeToken> l : lines) {
+            for (HOBStatement l : lines) {
                 if (isMnemonic(l, "STRUCT_START") && l.size() >= 2) {
                     cur = l.get(1).text;
                     decls.put(cur, new ArrayList<>());

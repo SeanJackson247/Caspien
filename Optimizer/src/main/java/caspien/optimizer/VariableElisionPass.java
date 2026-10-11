@@ -1,8 +1,11 @@
 package caspien.optimizer;
 
+import caspien.optimizer.hob.HOBProgram;
+import caspien.optimizer.hob.HOBStatement;
+import caspien.optimizer.hob.HOBToken;
+
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -45,7 +48,7 @@ public class VariableElisionPass implements OptimizationPass {
     }
 
     @Override
-    public PassResult run(List<List<BytecodeToken>> lines) {
+    public PassResult run(HOBProgram lines) {
         if (!enabled) {
             return new PassResult(lines, false);
         }
@@ -85,11 +88,11 @@ public class VariableElisionPass implements OptimizationPass {
         if (remove.isEmpty()) {
             return new PassResult(lines, false);
         }
-        List<List<BytecodeToken>> out = new ArrayList<>(lines.size());
+        HOBProgram out = new HOBProgram(lines.size());
         for (int i = 0; i < lines.size(); i++) {
             if (remove.contains(i)) continue;
             String lit = replaceRead.get(i);
-            List<BytecodeToken> row = lit == null ? lines.get(i) : VarAnalysis.withToken(lines.get(i), 1, lit);
+            HOBStatement row = lit == null ? lines.get(i) : VarAnalysis.withToken(lines.get(i), 1, lit);
             Map.Entry<Integer, Object[]> fe = boundLits.floorEntry(i);
             if (fe != null && i <= (Integer) fe.getValue()[0]) {
                 @SuppressWarnings("unchecked")
@@ -106,8 +109,8 @@ public class VariableElisionPass implements OptimizationPass {
      * dangling, and LoopUnrollingPass (which reads literal trip counts only from this text) could not use the known bound. Rewrites
      * such bounds to the literal: {@code imut_range(0,4)}. Every token spelling the type is rewritten the same way, so they stay equal.
      */
-    private static List<BytecodeToken> rewriteRangeTypes(List<BytecodeToken> row, Map<String, String> lits) {
-        List<BytecodeToken> res = row;
+    private static HOBStatement rewriteRangeTypes(HOBStatement row, Map<String, String> lits) {
+        HOBStatement res = row;
         for (int k = 0; k < row.size(); k++) {
             String s = row.get(k).text;
             int open = s.indexOf("range(");
@@ -118,9 +121,9 @@ public class VariableElisionPass implements OptimizationPass {
             String lo = boundText(inner.substring(0, comma), lits), hi = boundText(inner.substring(comma + 1), lits);
             String ns = s.substring(0, open + 6) + lo + "," + hi + ")";
             if (!ns.equals(s)) {
-                if (res == row) res = new ArrayList<>(row);
-                BytecodeToken o = row.get(k);
-                res.set(k, new BytecodeToken(ns, o.file, o.line, o.kind));
+                if (res == row) res = new HOBStatement(row);
+                HOBToken o = row.get(k);
+                res.set(k, new HOBToken(ns, o.file, o.line, o.kind));
             }
         }
         return res;

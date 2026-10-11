@@ -1,30 +1,24 @@
-package caspien.optimizer;
+package caspien.optimizer.hob;
 
-import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Reads already-emitted, plain-text bytecode (BytecodeEmitter's own
- * output) back into the List<List<BytecodeToken>> shape every
- * OptimizationPass works with -- one inner list per line, split on
- * whitespace, with a quoted string kept as a single token (its own
- * spaces included) rather than being split apart -- and a char literal
- * ("' '" included) likewise kept as one token. No regex, hand-scanned
- * character by character, matching this project's own "no regex,
- * anywhere, ever" convention.
+ * HOB text -> HOBProgram. Only tokenises and groups tokens into statements
+ * (one per line, whitespace split, a quoted string or char literal kept as
+ * one token); it does no analysis and no optimisation. Hand-scanned, no regex.
  */
-public class BytecodeParser {
+public final class HOBParser {
 
-    public List<List<BytecodeToken>> parse(List<String> rawLines, String originFile) {
-        List<List<BytecodeToken>> result = new ArrayList<>();
+    public HOBProgram parse(List<String> rawLines, String originFile) {
+        HOBProgram result = new HOBProgram();
         for (int lineNo = 0; lineNo < rawLines.size(); lineNo++) {
             result.add(parseLine(rawLines.get(lineNo), originFile, lineNo + 1));
         }
         return result;
     }
 
-    private List<BytecodeToken> parseLine(String rawLine, String originFile, int lineNumber) {
-        List<BytecodeToken> tokens = new ArrayList<>();
+    private HOBStatement parseLine(String rawLine, String originFile, int lineNumber) {
+        HOBStatement tokens = new HOBStatement();
         int i = 0;
         int len = rawLine.length();
         while (i < len) {
@@ -46,7 +40,7 @@ public class BytecodeParser {
                     i++; // consume closing quote
                 }
                 String text = rawLine.substring(start, Math.min(i, len));
-                tokens.add(new BytecodeToken(text, originFile, lineNumber, BytecodeToken.Kind.STRING));
+                tokens.add(new HOBToken(text, originFile, lineNumber, HOBToken.Kind.STRING));
                 continue;
             }
             if (c == '\'') {
@@ -63,7 +57,7 @@ public class BytecodeParser {
                     end = i + 3;
                 }
                 if (end != -1 && (end == len || Character.isWhitespace(rawLine.charAt(end)))) {
-                    tokens.add(new BytecodeToken(rawLine.substring(i, end), originFile, lineNumber, BytecodeToken.Kind.CODE));
+                    tokens.add(new HOBToken(rawLine.substring(i, end), originFile, lineNumber, HOBToken.Kind.CODE));
                     i = end;
                     continue;
                 }
@@ -72,7 +66,7 @@ public class BytecodeParser {
             while (i < len && !Character.isWhitespace(rawLine.charAt(i))) {
                 i++;
             }
-            tokens.add(new BytecodeToken(rawLine.substring(start, i), originFile, lineNumber, BytecodeToken.Kind.CODE));
+            tokens.add(new HOBToken(rawLine.substring(start, i), originFile, lineNumber, HOBToken.Kind.CODE));
         }
         return tokens;
     }

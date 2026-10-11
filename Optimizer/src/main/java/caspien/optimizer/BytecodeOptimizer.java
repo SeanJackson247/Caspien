@@ -1,6 +1,7 @@
 package caspien.optimizer;
 
-import java.util.List;
+import caspien.optimizer.hob.HOBProgram;
+
 
 /**
  * Top-level orchestrator for the "shallow methods" stage only. This
@@ -107,8 +108,8 @@ public class BytecodeOptimizer {
         this.structMemberReordering = new StructMemberReorderingPass(variableConfig.structReorder);
     }
 
-    public List<List<BytecodeToken>> optimize(List<List<BytecodeToken>> input) {
-        List<List<BytecodeToken>> lines = input;
+    public HOBProgram optimize(HOBProgram input) {
+        HOBProgram lines = input;
 
         boolean outerChanged;
         do {

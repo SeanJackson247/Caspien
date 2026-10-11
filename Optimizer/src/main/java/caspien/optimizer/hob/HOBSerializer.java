@@ -1,13 +1,11 @@
-package caspien.optimizer;
+package caspien.optimizer.hob;
 
-import java.util.List;
+/** HOBProgram -> HOB text: each statement's tokens joined by single spaces, one line per statement. */
+public final class HOBSerializer {
 
-/** The inverse of BytecodeParser -- joins each line's tokens back with a single space, one line per entry. */
-public class BytecodeSerializer {
-
-    public String serialize(List<List<BytecodeToken>> lines) {
+    public String serialize(HOBProgram lines) {
         StringBuilder sb = new StringBuilder();
-        for (List<BytecodeToken> line : lines) {
+        for (HOBStatement line : lines) {
             for (int i = 0; i < line.size(); i++) {
                 if (i > 0) {
                     sb.append(' ');

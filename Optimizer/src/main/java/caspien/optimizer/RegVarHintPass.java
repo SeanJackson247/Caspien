@@ -1,5 +1,9 @@
 package caspien.optimizer;
 
+import caspien.optimizer.hob.HOBProgram;
+import caspien.optimizer.hob.HOBStatement;
+import caspien.optimizer.hob.HOBToken;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -42,8 +46,8 @@ public class RegVarHintPass implements OptimizationPass {
     }
 
     @Override
-    public PassResult run(List<List<BytecodeToken>> lines) {
-        List<List<BytecodeToken>> out = new ArrayList<>();
+    public PassResult run(HOBProgram lines) {
+        HOBProgram out = new HOBProgram();
         boolean changed = false;
         int i = 0;
         while (i < lines.size()) {
@@ -59,8 +63,8 @@ public class RegVarHintPass implements OptimizationPass {
             if (end >= lines.size()) {
                 end = lines.size() - 1;
             }
-            List<List<BytecodeToken>> fn = lines.subList(i, end + 1);
-            List<List<BytecodeToken>> hinted = hintFunction(fn);
+            List<HOBStatement> fn = lines.subList(i, end + 1);
+            HOBProgram hinted = hintFunction(fn);
             if (hinted != null) {
                 changed = true;
                 out.addAll(hinted);
@@ -72,23 +76,23 @@ public class RegVarHintPass implements OptimizationPass {
         return new PassResult(changed ? out : lines, changed);
     }
 
-    private static boolean isMnemonic(List<BytecodeToken> line, String m) {
-        return !line.isEmpty() && line.get(0).kind == BytecodeToken.Kind.CODE && line.get(0).text.equals(m);
+    private static boolean isMnemonic(HOBStatement line, String m) {
+        return !line.isEmpty() && line.get(0).kind == HOBToken.Kind.CODE && line.get(0).text.equals(m);
     }
 
-    private static String mnemonic(List<BytecodeToken> line) {
+    private static String mnemonic(HOBStatement line) {
         return line.isEmpty() ? "" : line.get(0).text;
     }
 
     /** Returns the function's lines with REGVAR lines inserted, or null when nothing changes. */
-    private List<List<BytecodeToken>> hintFunction(List<List<BytecodeToken>> fn) {
+    private HOBProgram hintFunction(List<HOBStatement> fn) {
         Map<String, Integer> allocCount = new HashMap<>();
         Map<String, String> allocType = new HashMap<>();
         Set<String> mixedType = new HashSet<>(); // a name declared more than once with different types
         int lastLeadingAlloc = -1;
         boolean leading = true;
         for (int k = 0; k < fn.size(); k++) {
-            List<BytecodeToken> l = fn.get(k);
+            HOBStatement l = fn.get(k);
             String m = mnemonic(l);
             if (m.equals("REGVAR")) {
                 return null; // already hinted
@@ -127,7 +131,7 @@ public class RegVarHintPass implements OptimizationPass {
         int[] delta = new int[n + 1];
         Map<String, Integer> labelAt = new HashMap<>();
         for (int k = 0; k < n; k++) {
-            List<BytecodeToken> l = fn.get(k);
+            HOBStatement l = fn.get(k);
             if (l.size() == 1 && l.get(0).text.startsWith("@") && l.get(0).text.endsWith(":")) {
                 String t = l.get(0).text;
                 labelAt.put(t.substring(0, t.length() - 1), k);
@@ -147,11 +151,11 @@ public class RegVarHintPass implements OptimizationPass {
         }
         Map<String, Long> weight = new HashMap<>();
         for (int k = 0; k < n; k++) {
-            List<BytecodeToken> l = fn.get(k);
+            HOBStatement l = fn.get(k);
             String m = mnemonic(l);
             for (int t = 1; t < l.size(); t++) {
                 String tok = l.get(t).text;
-                if (!candidates.contains(tok) || l.get(t).kind != BytecodeToken.Kind.CODE) {
+                if (!candidates.contains(tok) || l.get(t).kind != HOBToken.Kind.CODE) {
                     continue;
                 }
                 boolean simple = (m.equals("PUSH") || m.equals("ADDR")) && t == 1;
@@ -180,16 +184,16 @@ public class RegVarHintPass implements OptimizationPass {
             return null;
         }
         java.util.Collections.sort(chosen);
-        BytecodeToken ref = fn.get(lastLeadingAlloc).get(0);
-        List<List<BytecodeToken>> result = new ArrayList<>(fn.subList(0, lastLeadingAlloc + 1));
+        HOBToken ref = fn.get(lastLeadingAlloc).get(0);
+        HOBProgram result = new HOBProgram(fn.subList(0, lastLeadingAlloc + 1));
         for (String c : chosen) {
-            List<BytecodeToken> h = new ArrayList<>();
-            h.add(new BytecodeToken("REGVAR", ref.file, ref.line, BytecodeToken.Kind.CODE));
-            h.add(new BytecodeToken(c, ref.file, ref.line, BytecodeToken.Kind.CODE));
-            h.add(new BytecodeToken(Long.toString(Math.min(weight.get(c), 1_000_000_000L)), ref.file, ref.line, BytecodeToken.Kind.CODE));
+            HOBStatement h = new HOBStatement();
+            h.add(new HOBToken("REGVAR", ref.file, ref.line, HOBToken.Kind.CODE));
+            h.add(new HOBToken(c, ref.file, ref.line, HOBToken.Kind.CODE));
+            h.add(new HOBToken(Long.toString(Math.min(weight.get(c), 1_000_000_000L)), ref.file, ref.line, HOBToken.Kind.CODE));
             if ((allocType.get(c).endsWith("_f32") || allocType.get(c).endsWith("_f64"))) {
                 // a class marker only: "this one is a float". Which register file (if any) holds it is the lowering's business.
-                h.add(new BytecodeToken("f", ref.file, ref.line, BytecodeToken.Kind.CODE));
+                h.add(new HOBToken("f", ref.file, ref.line, HOBToken.Kind.CODE));
             }
             result.add(h);
         }

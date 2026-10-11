@@ -1,5 +1,9 @@
 package caspien.optimizer;
 
+import caspien.optimizer.hob.HOBProgram;
+import caspien.optimizer.hob.HOBParser;
+import caspien.optimizer.hob.HOBSerializer;
+
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
@@ -54,21 +58,18 @@ public class Main {
         String inputPath = args[1];
         String outputPath = args[2];
 
+        // Four strictly separate phases: text -> HOBProgram -> optimised HOBProgram -> text.
         List<String> rawLines = Files.readAllLines(Paths.get(inputPath), StandardCharsets.UTF_8);
-
-        BytecodeParser parser = new BytecodeParser();
-        List<List<BytecodeToken>> parsed = parser.parse(rawLines, inputPath);
+        HOBProgram program = new HOBParser().parse(rawLines, inputPath);
 
         UnrollConfig unrollConfig = UnrollConfig.loadFromWorkingDirectory();
         FoldConfig foldConfig = FoldConfig.loadFromWorkingDirectory();
         VariableConfig variableConfig = VariableConfig.loadFromWorkingDirectory();
         InlineConfig inlineConfig = InlineConfig.loadFromWorkingDirectory();
         System.err.println("[info] optimizer: " + unrollConfig + "; " + foldConfig + "; " + variableConfig + "; " + inlineConfig);
-        BytecodeOptimizer optimizer = new BytecodeOptimizer(unrollConfig, foldConfig, variableConfig, inlineConfig);
-        List<List<BytecodeToken>> result = optimizer.optimize(parsed);
+        HOBProgram optimized = new BytecodeOptimizer(unrollConfig, foldConfig, variableConfig, inlineConfig).optimize(program);
 
-        BytecodeSerializer serializer = new BytecodeSerializer();
-        String bytecode = serializer.serialize(result);
+        String bytecode = new HOBSerializer().serialize(optimized);
 
         System.out.print(bytecode);
 

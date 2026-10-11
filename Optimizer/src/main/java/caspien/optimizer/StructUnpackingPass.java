@@ -1,5 +1,9 @@
 package caspien.optimizer;
 
+import caspien.optimizer.hob.HOBProgram;
+import caspien.optimizer.hob.HOBStatement;
+import caspien.optimizer.hob.HOBToken;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -51,12 +55,12 @@ public class StructUnpackingPass implements OptimizationPass {
     private static final Set<String> UNARY = new HashSet<>(List.of("NEG", "NOT", "BITS_NOT", "TRUNC", "SEXT", "ZEXT", "FCONV"));
 
     /** struct name -> ordered (member name, member type), excluding ___type; only structs whose members are all scalars. */
-    private static Map<String, List<String[]>> structs(List<List<BytecodeToken>> L) {
+    private static Map<String, List<String[]>> structs(HOBProgram L) {
         Map<String, List<String[]>> out = new HashMap<>();
         String cur = null;
         List<String[]> mem = null;
         boolean ok = true;
-        for (List<BytecodeToken> l : L) {
+        for (HOBStatement l : L) {
             String m = VarAnalysis.mnemonic(l);
             if ("STRUCT_START".equals(m) && l.size() == 2) {
                 cur = l.get(1).text;
@@ -75,15 +79,15 @@ public class StructUnpackingPass implements OptimizationPass {
         return out;
     }
 
-    private static boolean mentions(List<BytecodeToken> l, String v) {
-        for (BytecodeToken t : l) {
+    private static boolean mentions(HOBStatement l, String v) {
+        for (HOBToken t : l) {
             if (t.text.equals(v) || t.text.startsWith(v + ".")) return true;
         }
         return false;
     }
 
     /** Stack effect of one expression line, or Integer.MIN_VALUE when the line is not understood. */
-    private static int effect(List<BytecodeToken> l) {
+    private static int effect(HOBStatement l) {
         String m = VarAnalysis.mnemonic(l);
         if (m == null) return Integer.MIN_VALUE;
         if (m.equals("PUSH") && l.size() == 3) return 1;
@@ -93,7 +97,7 @@ public class StructUnpackingPass implements OptimizationPass {
     }
 
     @Override
-    public PassResult run(List<List<BytecodeToken>> lines) {
+    public PassResult run(HOBProgram lines) {
         if (!enabled) {
             return new PassResult(lines, false);
         }
@@ -102,7 +106,7 @@ public class StructUnpackingPass implements OptimizationPass {
             return new PassResult(lines, false);
         }
         Set<Integer> remove = new HashSet<>();
-        Map<Integer, List<List<BytecodeToken>>> replaceWith = new HashMap<>();   // line index -> lines emitted instead (first line of a removed span)
+        Map<Integer, HOBProgram> replaceWith = new HashMap<>();   // line index -> lines emitted instead (first line of a removed span)
         Map<Integer, String> renameRead = new HashMap<>();                       // line index of "PUSH v.m T" -> new name
         boolean changed = false;
         for (int[] f : VarAnalysis.functions(lines)) {
@@ -110,12 +114,12 @@ public class StructUnpackingPass implements OptimizationPass {
             Map<String, Integer> allocCount = new HashMap<>();
             Set<String> allNames = new HashSet<>();
             for (int i = f[0]; i <= f[1]; i++) {
-                List<BytecodeToken> l = lines.get(i);
-                for (BytecodeToken t : l) allNames.add(t.text);
+                HOBStatement l = lines.get(i);
+                for (HOBToken t : l) allNames.add(t.text);
                 if ("ALLOC".equals(VarAnalysis.mnemonic(l)) && l.size() == 3) allocCount.merge(l.get(1).text, 1, Integer::sum);
             }
             for (int i = f[0]; i <= f[1]; i++) {
-                List<BytecodeToken> l = lines.get(i);
+                HOBStatement l = lines.get(i);
                 if (!"ALLOC".equals(VarAnalysis.mnemonic(l)) || l.size() != 3) continue;
                 String v = l.get(1).text, T = l.get(2).text;
                 if (v.startsWith("$") || allocCount.get(v) != 1) continue;
@@ -133,9 +137,9 @@ public class StructUnpackingPass implements OptimizationPass {
         if (!changed) {
             return new PassResult(lines, false);
         }
-        List<List<BytecodeToken>> out = new ArrayList<>(lines.size());
+        HOBProgram out = new HOBProgram(lines.size());
         for (int i = 0; i < lines.size(); i++) {
-            List<List<BytecodeToken>> rep = replaceWith.get(i);
+            HOBProgram rep = replaceWith.get(i);
             if (rep != null) out.addAll(rep);
             if (remove.contains(i)) continue;
             String nn = renameRead.get(i);
@@ -146,18 +150,18 @@ public class StructUnpackingPass implements OptimizationPass {
 
     private static final class Plan {
         final Set<Integer> remove = new HashSet<>();
-        final Map<Integer, List<List<BytecodeToken>>> replace = new HashMap<>();
+        final Map<Integer, HOBProgram> replace = new HashMap<>();
         final Map<Integer, String> rename = new HashMap<>();
     }
 
-    private static List<BytecodeToken> mk(BytecodeToken like, String... toks) {
-        List<BytecodeToken> r = new ArrayList<>();
-        for (String s : toks) r.add(new BytecodeToken(s, like.file, like.line, BytecodeToken.Kind.CODE));
+    private static HOBStatement mk(HOBToken like, String... toks) {
+        HOBStatement r = new HOBStatement();
+        for (String s : toks) r.add(new HOBToken(s, like.file, like.line, HOBToken.Kind.CODE));
         return r;
     }
 
     /** Returns the rewrite for variable v, or null when some mention is not one of the understood shapes. */
-    private static Plan plan(List<List<BytecodeToken>> L, int s, int e, int allocIdx, String v, String T,
+    private static Plan plan(HOBProgram L, int s, int e, int allocIdx, String v, String T,
                              List<String[]> members, Set<String> allNames) {
         Map<String, String> newName = new LinkedHashMap<>();
         Map<String, String> memType = new HashMap<>();
@@ -172,7 +176,7 @@ public class StructUnpackingPass implements OptimizationPass {
         handled.add(allocIdx);
         int n = members.size();
         for (int i = s; i <= e; i++) {
-            List<BytecodeToken> l = L.get(i);
+            HOBStatement l = L.get(i);
             if (i == allocIdx || handled.contains(i)) continue;
             if (!mentions(l, v)) continue;
             String m = VarAnalysis.mnemonic(l);
@@ -188,7 +192,7 @@ public class StructUnpackingPass implements OptimizationPass {
             if (!"ADDR".equals(m) || l.size() != 3 || !l.get(1).text.equals(v) || !l.get(2).text.equals(T)) return null;
             // member write: ADDR v T ; PUSH_FIELDNAME m MT ; DOT_LHS T MT MT
             if (i + 2 <= e) {
-                List<BytecodeToken> a = L.get(i + 1), b = L.get(i + 2);
+                HOBStatement a = L.get(i + 1), b = L.get(i + 2);
                 if ("PUSH_FIELDNAME".equals(VarAnalysis.mnemonic(a)) && a.size() == 3) {
                     String mem = a.get(1).text;
                     if (!newName.containsKey(mem)) return null;
@@ -198,7 +202,7 @@ public class StructUnpackingPass implements OptimizationPass {
                     pl.remove.add(i);
                     pl.remove.add(i + 1);
                     pl.remove.add(i + 2);
-                    List<List<BytecodeToken>> r = new ArrayList<>();
+                    HOBProgram r = new HOBProgram();
                     r.add(mk(l.get(0), "ADDR", newName.get(mem), mt));
                     pl.replace.put(i, r);
                     handled.add(i + 1);
@@ -210,14 +214,14 @@ public class StructUnpackingPass implements OptimizationPass {
             // construction: ADDR v T ; PUSH lit imut_u64 ; n expressions ; STACK_LOCK k ; ASSIGN T T T
             int p = i + 1;
             if (p > e) return null;
-            List<BytecodeToken> ty = L.get(p);
+            HOBStatement ty = L.get(p);
             if (!"PUSH".equals(VarAnalysis.mnemonic(ty)) || ty.size() != 3 || !ty.get(2).text.equals("imut_u64") || !ty.get(1).text.matches("[0-9]+")) return null;
             p++;
             // The member expressions are postfix; simulate a stack of "start line" markers to find where each one begins.
             List<Integer> starts = new ArrayList<>();
             while (true) {
                 if (p > e) return null;
-                List<BytecodeToken> x = L.get(p);
+                HOBStatement x = L.get(p);
                 String xm = VarAnalysis.mnemonic(x);
                 if ("ASSIGN".equals(xm)) break;
                 if (!"STACK_LOCK".equals(xm)) {
@@ -239,9 +243,9 @@ public class StructUnpackingPass implements OptimizationPass {
             for (int k = 0; k < n; k++) {
                 groups.add(new int[] {starts.get(k), k + 1 < n ? starts.get(k + 1) : p});
             }
-            List<BytecodeToken> as = L.get(p);
+            HOBStatement as = L.get(p);
             if (!"ASSIGN".equals(VarAnalysis.mnemonic(as)) || as.size() != 4 || !as.get(1).text.equals(T) || !as.get(2).text.equals(T) || !as.get(3).text.equals(T)) return null;
-            List<List<BytecodeToken>> r = new ArrayList<>();
+            HOBProgram r = new HOBProgram();
             int gi = 0;
             for (String[] mm : members) {
                 int[] g = groups.get(gi++);
@@ -259,7 +263,7 @@ public class StructUnpackingPass implements OptimizationPass {
             // note: expressions inside the groups were checked not to mention v; they may mention other variables freely
         }
         // ALLOC replacement
-        List<List<BytecodeToken>> allocs = new ArrayList<>();
+        HOBProgram allocs = new HOBProgram();
         for (String[] m : members) allocs.add(mk(L.get(allocIdx).get(0), "ALLOC", newName.get(m[0]), m[1]));
         pl.remove.add(allocIdx);
         pl.replace.put(allocIdx, allocs);

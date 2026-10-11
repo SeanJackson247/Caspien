@@ -1,7 +1,8 @@
 # CLAUDE.md -- caspien-optimizer (current state only)
 
 ## What it is
-Stage 2 of the Caspien toolchain: higher-order bytecode (HOB, plain text) in, HOB out; "shallow" passes only. Real lowering is in `LowerOrderGenerator/`. No code shared between stages. Source: `src/main/java/caspien/optimizer/` (one file per pass, `BytecodeOptimizer` = pipeline/order, `Main`, `BytecodeParser/Serializer/Token`).
+Stage 2 of the Caspien toolchain: higher-order bytecode (HOB, plain text) in, HOB out; "shallow" passes only. Real lowering is in `LowerOrderGenerator/`. No code shared between stages. Source: `src/main/java/caspien/optimizer/` (one file per pass, `BytecodeOptimizer` = pipeline/order, `Main`; the HOB representation is its own package `hob/`: `HOBToken`, `HOBStatement`, `HOBProgram`, `HOBParser`, `HOBSerializer`).
+Phases are strictly separate: `Main` = text -> `HOBParser` -> `HOBProgram` -> `BytecodeOptimizer` (all passes work on the `HOBProgram`) -> `HOBSerializer` -> text. Passes never see text I/O, the parser or the serializer; `hob/` imports no pass (`tests/hob_phases_check.sh`). Type text inside tokens (`imut_range(a,b)`) is still a string the passes edit.
 
 ## Build / run / test
     cd Optimizer && javac -d out $(find src/main/java -name '*.java')

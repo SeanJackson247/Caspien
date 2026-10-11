@@ -1,5 +1,9 @@
 package caspien.optimizer;
 
+import caspien.optimizer.hob.HOBProgram;
+import caspien.optimizer.hob.HOBStatement;
+import caspien.optimizer.hob.HOBToken;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -49,12 +53,12 @@ public class VariableAllocationReorderingPass implements OptimizationPass {
     }
 
     @Override
-    public PassResult run(List<List<BytecodeToken>> lines) {
+    public PassResult run(HOBProgram lines) {
         if (!enabled) {
             return new PassResult(lines, false);
         }
         Align table = new Align(lines);
-        List<List<BytecodeToken>> out = new ArrayList<>(lines.size());
+        HOBProgram out = new HOBProgram(lines.size());
         boolean changed = false;
         int i = 0;
         int n = lines.size();
@@ -69,8 +73,8 @@ public class VariableAllocationReorderingPass implements OptimizationPass {
                 end++;
             }
             end = Math.min(end, n - 1);
-            List<List<BytecodeToken>> fn = lines.subList(i, end + 1);
-            List<List<BytecodeToken>> re = reorderFunction(fn, table);
+            List<HOBStatement> fn = lines.subList(i, end + 1);
+            HOBProgram re = reorderFunction(fn, table);
             if (re != null) {
                 changed = true;
                 out.addAll(re);
@@ -82,18 +86,18 @@ public class VariableAllocationReorderingPass implements OptimizationPass {
         return new PassResult(changed ? out : lines, changed);
     }
 
-    private static boolean isMnemonic(List<BytecodeToken> line, String m) {
-        return !line.isEmpty() && line.get(0).kind == BytecodeToken.Kind.CODE && line.get(0).text.equals(m);
+    private static boolean isMnemonic(HOBStatement line, String m) {
+        return !line.isEmpty() && line.get(0).kind == HOBToken.Kind.CODE && line.get(0).text.equals(m);
     }
 
-    private static boolean isAlloc(List<BytecodeToken> l) {
+    private static boolean isAlloc(HOBStatement l) {
         return isMnemonic(l, "ALLOC") && l.size() == 3;
     }
 
     /** The function's lines with the leading ALLOC run reordered, or null when nothing changes. */
-    private List<List<BytecodeToken>> reorderFunction(List<List<BytecodeToken>> fn, Align table) {
+    private HOBProgram reorderFunction(List<HOBStatement> fn, Align table) {
         int n = fn.size();
-        for (List<BytecodeToken> l : fn) {
+        for (HOBStatement l : fn) {
             if (isMnemonic(l, "ASM_START")) {
                 return null;
             }
@@ -101,7 +105,7 @@ public class VariableAllocationReorderingPass implements OptimizationPass {
         // the leading run: the first ALLOC that follows only header lines, and every ALLOC directly after it
         int first = -1;
         for (int k = 0; k < n; k++) {
-            List<BytecodeToken> l = fn.get(k);
+            HOBStatement l = fn.get(k);
             if (isAlloc(l)) {
                 first = k;
                 break;
@@ -137,7 +141,7 @@ public class VariableAllocationReorderingPass implements OptimizationPass {
             }
         }
         for (int k = last + 1; k < n; k++) {
-            List<BytecodeToken> l = fn.get(k);
+            HOBStatement l = fn.get(k);
             if (isAlloc(l)) {
                 String nm = l.get(1).text;
                 if (nm.equals("gt_routine_address") || nm.equals("gt_error_message") || nm.startsWith("gt_trace_")) {
@@ -153,7 +157,7 @@ public class VariableAllocationReorderingPass implements OptimizationPass {
         int[] delta = new int[n + 1];
         Map<String, Integer> labelAt = new HashMap<>();
         for (int k = 0; k < n; k++) {
-            List<BytecodeToken> l = fn.get(k);
+            HOBStatement l = fn.get(k);
             if (l.size() == 1 && l.get(0).text.startsWith("@") && l.get(0).text.endsWith(":")) {
                 String t = l.get(0).text;
                 labelAt.put(t.substring(0, t.length() - 1), k);
@@ -169,24 +173,24 @@ public class VariableAllocationReorderingPass implements OptimizationPass {
         int run = 0;
         for (int k = 0; k < n; k++) {
             run += delta[k];
-            List<BytecodeToken> l = fn.get(k);
+            HOBStatement l = fn.get(k);
             if (isMnemonic(l, "ALLOC") || isMnemonic(l, "FUNC_START")) {
                 continue;
             }
             long w = 1L << (3 * Math.min(run, 4));
             for (int t = 1; t < l.size(); t++) {
-                if (l.get(t).kind == BytecodeToken.Kind.CODE) {
+                if (l.get(t).kind == HOBToken.Kind.CODE) {
                     weights.merge(l.get(t).text, w, Long::sum);
                 }
             }
         }
         final class Slot {
             final int idx;
-            final List<BytecodeToken> line;
+            final HOBStatement line;
             final long align;
             final long weight;
 
-            Slot(int idx, List<BytecodeToken> line) {
+            Slot(int idx, HOBStatement line) {
                 this.idx = idx;
                 this.line = line;
                 this.align = table.of(line.get(2).text);
@@ -218,7 +222,7 @@ public class VariableAllocationReorderingPass implements OptimizationPass {
         if (same) {
             return null;
         }
-        List<List<BytecodeToken>> result = new ArrayList<>(n);
+        HOBProgram result = new HOBProgram(n);
         result.addAll(fn.subList(0, p));
         for (Slot s : sorted) {
             result.add(s.line);
@@ -232,9 +236,9 @@ public class VariableAllocationReorderingPass implements OptimizationPass {
         private final Map<String, List<String>> structMembers = new HashMap<>();
         private final Map<String, Long> structCache = new HashMap<>();
 
-        Align(List<List<BytecodeToken>> lines) {
+        Align(HOBProgram lines) {
             String cur = null;
-            for (List<BytecodeToken> l : lines) {
+            for (HOBStatement l : lines) {
                 if (isMnemonic(l, "STRUCT_START") && l.size() >= 2) {
                     cur = l.get(1).text;
                     structMembers.put(cur, new ArrayList<>());

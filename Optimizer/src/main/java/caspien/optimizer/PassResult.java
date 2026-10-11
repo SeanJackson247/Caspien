@@ -1,6 +1,7 @@
 package caspien.optimizer;
 
-import java.util.List;
+import caspien.optimizer.hob.HOBProgram;
+
 
 /**
  * The result of running one OptimizationPass once: the (possibly
@@ -11,10 +12,10 @@ import java.util.List;
  */
 public class PassResult {
 
-    public final List<List<BytecodeToken>> lines;
+    public final HOBProgram lines;
     public final boolean changed;
 
-    public PassResult(List<List<BytecodeToken>> lines, boolean changed) {
+    public PassResult(HOBProgram lines, boolean changed) {
         this.lines = lines;
         this.changed = changed;
     }

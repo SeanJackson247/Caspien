@@ -6,7 +6,7 @@ loop unrolling, function inlining, the two layout reorderings, `sizeof` resoluti
 lowering, register form, register variables, fusion passes) lives in the next stage, `LowerOrderGenerator/`. The two stages share no
 code; the text bytecode is the only interchange format.
 
-Every pass is a pure function `List<List<BytecodeToken>> -> PassResult` (`OptimizationPass`). Passes know nothing about each other;
+Every pass is a pure function `HOBProgram -> PassResult` (`OptimizationPass`). Passes know nothing about each other;
 ordering and fixed-point looping live only in `BytecodeOptimizer`. No pass is a no-op stub any more.
 
 Contents: [Usage](#usage) | [Input and output format](#input-and-output-format) | [Pipeline](#the-pipeline) | [Pass summary](#pass-summary) |
@@ -42,9 +42,9 @@ those copies).
 
 ## Input and output format
 
-HOB is one instruction per line, tokens separated by whitespace. `BytecodeParser` splits by hand (no regex): a `"quoted string"` (with
+HOB is one instruction per line, tokens separated by whitespace. `HOBParser` (package `hob`) splits by hand (no regex): a `"quoted string"` (with
 backslash escapes) is ONE token of kind `STRING`, a char literal such as `' '` or `'\n'` is one token, everything else is kind `CODE`.
-`BytecodeSerializer` joins tokens back with single spaces. A token remembers the file and line it came from (`BytecodeToken.file/line`);
+`HOBSerializer` joins tokens back with single spaces. A line is a `HOBStatement` (list of `HOBToken`), the program a `HOBProgram` (list of statements). The phases never overlap: the parser finishes before any pass runs, the serializer starts after the last pass; only `Main` touches either. A token remembers the file and line it came from (`HOBToken.file/line`);
 passes that create tokens copy that position from a neighbour so diagnostics keep working. `Kind.COMMENT` is reserved; HOB has no
 comment syntax.
 
@@ -468,8 +468,8 @@ stderr lines the orchestrator collects (`Compiler.runProcess` keeps `[note]` and
 
 - `BytecodeOptimizer`: the pipeline (above) and the constructor chain `BytecodeOptimizer(UnrollConfig, FoldConfig, VariableConfig, InlineConfig)`; the no-argument and partial constructors build an all-off optimizer (used by tests that call it directly).
 - `Main`: CLI (`-i input output`), reads the four configs from `compiler.config`, parse -> optimize -> serialize.
-- `OptimizationPass` (`name()`, `PassResult run(List<List<BytecodeToken>>)`), `PassResult` (`lines`, `changed`; `changed` drives every fixed-point loop and must be false when nothing was done).
-- `BytecodeToken` (`text`, `file`, `line`, `kind` = CODE/STRING/COMMENT), `BytecodeParser` (hand-written scanner: quoted strings and char literals stay one token), `BytecodeSerializer` (single-space join).
+- `OptimizationPass` (`name()`, `PassResult run(HOBProgram)`), `PassResult` (`lines`, `changed`; `changed` drives every fixed-point loop and must be false when nothing was done).
+- `hob/`: `HOBToken` (`text`, `file`, `line`, `kind` = CODE/STRING/COMMENT), `HOBStatement` (one line; `opcode()`, `text(i)`), `HOBProgram`, `HOBParser` (hand-written scanner: quoted strings and char literals stay one token), `HOBSerializer` (single-space join). The package imports nothing from the passes.
 - `VarAnalysis` (package-private; shared by elision, shifting and several others): `functions()` (FUNC_START..FUNC_END index pairs), `mnemonic()`, `hasMnemonic()`, `labels()` (label definition line = one token `@name:`),
   `jumps()` (`JMP @label` as {line, target}; targets outside the function ignored), `dominated(a, m, jumps)` (false when a forward jump before line a lands after a and at or before m), `inLoop(a, jumps)` (true when a backward jump after a lands before it),
   `scan()` (per-function candidate variables and their reads/assignments, described under elision) and `withToken()`. `ConstantFoldingPass` exports `base/isInt/width/lit` helpers that elision, shifting and unpacking use for type tests.
@@ -494,7 +494,7 @@ Things that have bitten before:
 Runtime programs live in the repo-root `tests/` (run with `python3 tests/run_tests.py [--configs shipped,allon,aggressive,alloff] [--checks]`, which sweeps every `tests/*.caspien` and `docs/examples` program through the stage cache under several configs); hand-made-bytecode scripts
 (`*_hob_check.sh`) run the prebuilt `Optimizer/out` on small HOB files with one switch set and count or compare lines:
 `inline_hob_check.sh`, `deadfunc_hob_check.sh`, `unusedecl_hob_check.sh`, `sizeof_hob_check.sh`, `structreorder_hob_check.sh`, `allocreorder_hob_check.sh`. Others touching this stage: `bits_ops_check.sh`, `unroll_decorator_check.sh`, `nested_unroll_check.sh`,
-`inline_decorator_check.sh`, `inline_budget_check.sh`, `inline_multi_callee_check.sh`, `inline_owns_drop_check.sh`, `deadflow_scale_check.sh`, `trace_off_check.sh` (trace mode off gives byte-identical output), `cache_check.sh` / `cache_views_check.py` (stage-2 cache keys and the claim that
+`inline_decorator_check.sh`, `inline_budget_check.sh`, `inline_multi_callee_check.sh`, `inline_owns_drop_check.sh`, `deadflow_scale_check.sh`, `hob_phases_check.sh` (parser/serializer layering and exact round trip), `trace_off_check.sh` (trace mode off gives byte-identical output), `cache_check.sh` / `cache_views_check.py` (stage-2 cache keys and the claim that
 each stage ignores the keys outside its view). Per-pass test names are listed in the pass sections above. The standard check for any change: output of every test program identical with every switch off vs on, at every inlining/unrolling preset, old tree vs new tree.
 
 ## Known gaps and rejected ideas

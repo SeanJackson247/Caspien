@@ -1,6 +1,7 @@
 package caspien.optimizer;
 
-import java.util.List;
+import caspien.optimizer.hob.HOBProgram;
+
 
 /**
  * One optimization pass over the whole, already-emitted bytecode
@@ -15,5 +16,5 @@ public interface OptimizationPass {
     /** A short, stable name for this pass, used only for logging/diagnostics. */
     String name();
 
-    PassResult run(List<List<BytecodeToken>> lines);
+    PassResult run(HOBProgram lines);
 }

@@ -1,6 +1,9 @@
 package caspien.optimizer;
 
-import java.util.ArrayList;
+import caspien.optimizer.hob.HOBProgram;
+import caspien.optimizer.hob.HOBStatement;
+import caspien.optimizer.hob.HOBToken;
+
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -41,12 +44,12 @@ public class VariableShiftingPass implements OptimizationPass {
     }
 
     @Override
-    public PassResult run(List<List<BytecodeToken>> lines) {
+    public PassResult run(HOBProgram lines) {
         if (!enabled) {
             return new PassResult(lines, false);
         }
         Map<Integer, String> rename = new HashMap<>();           // line index -> new variable name (token 1 of that line)
-        Map<Integer, List<List<BytecodeToken>>> insertAfter = new TreeMap<>(); // ALLOC line index -> new ALLOC lines
+        Map<Integer, HOBProgram> insertAfter = new TreeMap<>(); // ALLOC line index -> new ALLOC lines
         for (int[] f : VarAnalysis.functions(lines)) {
             if (VarAnalysis.hasMnemonic(lines, f[0], f[1], "ASM_START") || hasCatchLabel(lines, f[0], f[1])) continue;
             Map<String, VarAnalysis.Var> vars = VarAnalysis.scan(lines, f[0], f[1]);
@@ -54,7 +57,7 @@ public class VariableShiftingPass implements OptimizationPass {
             List<int[]> jumps = VarAnalysis.jumps(lines, f[0], f[1], labels);
             Set<String> used = new HashSet<>();
             for (int i = f[0]; i <= f[1]; i++) {
-                for (BytecodeToken t : lines.get(i)) used.add(t.text);
+                for (HOBToken t : lines.get(i)) used.add(t.text);
             }
             for (VarAnalysis.Var v : vars.values()) {
                 if (v.bad || v.assigns.size() < 2) continue;
@@ -70,7 +73,7 @@ public class VariableShiftingPass implements OptimizationPass {
                 for (int a : v.assigns) mentions.put(a, true);
                 String cur = v.name;
                 int serial = 0;
-                List<List<BytecodeToken>> newAllocs = new ArrayList<>();
+                HOBProgram newAllocs = new HOBProgram();
                 for (Map.Entry<Integer, Boolean> me : mentions.entrySet()) {
                     int idx = me.getKey();
                     if (me.getValue() && idx != first && canSplit(idx, mentions, jumps)) {
@@ -81,8 +84,8 @@ public class VariableShiftingPass implements OptimizationPass {
                         } while (used.contains(nn));
                         used.add(nn);
                         cur = nn;
-                        List<BytecodeToken> al = lines.get(v.allocIdx);
-                        List<BytecodeToken> na = VarAnalysis.withToken(al, 1, nn);
+                        HOBStatement al = lines.get(v.allocIdx);
+                        HOBStatement na = VarAnalysis.withToken(al, 1, nn);
                         newAllocs.add(na);
                     }
                     if (!cur.equals(v.name)) {
@@ -90,18 +93,18 @@ public class VariableShiftingPass implements OptimizationPass {
                     }
                 }
                 if (!newAllocs.isEmpty()) {
-                    insertAfter.computeIfAbsent(v.allocIdx, k -> new ArrayList<>()).addAll(newAllocs);
+                    insertAfter.computeIfAbsent(v.allocIdx, k -> new HOBProgram()).addAll(newAllocs);
                 }
             }
         }
         if (rename.isEmpty()) {
             return new PassResult(lines, false);
         }
-        List<List<BytecodeToken>> out = new ArrayList<>(lines.size() + 8);
+        HOBProgram out = new HOBProgram(lines.size() + 8);
         for (int i = 0; i < lines.size(); i++) {
             String nn = rename.get(i);
             out.add(nn == null ? lines.get(i) : VarAnalysis.withToken(lines.get(i), 1, nn));
-            List<List<BytecodeToken>> extra = insertAfter.get(i);
+            HOBProgram extra = insertAfter.get(i);
             if (extra != null) out.addAll(extra);
         }
         return new PassResult(out, true);
@@ -116,9 +119,9 @@ public class VariableShiftingPass implements OptimizationPass {
         return true;
     }
 
-    private static boolean hasCatchLabel(List<List<BytecodeToken>> L, int s, int e) {
+    private static boolean hasCatchLabel(HOBProgram L, int s, int e) {
         for (int i = s; i <= e; i++) {
-            List<BytecodeToken> l = L.get(i);
+            HOBStatement l = L.get(i);
             if (l.size() == 1 && l.get(0).text.startsWith("@catch_")) return true;
         }
         return false;
