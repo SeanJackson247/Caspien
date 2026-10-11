@@ -1,4 +1,7 @@
 package caspien;
+import caspien.typechecker.TypeChecker;
+import caspien.bytecodeemitter.BytecodeEmitter;
+import caspien.gasreport.GasReport;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;

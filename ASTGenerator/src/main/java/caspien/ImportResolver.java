@@ -1,4 +1,5 @@
 package caspien;
+import caspien.parser.Parser;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;

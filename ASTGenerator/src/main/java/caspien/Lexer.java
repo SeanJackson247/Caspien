@@ -1,4 +1,6 @@
 package caspien;
+import caspien.typechecker.TypeChecker;
+import caspien.parser.Parser;
 
 import java.util.ArrayList;
 import java.util.Arrays;

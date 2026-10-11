@@ -1,4 +1,5 @@
 package caspien;
+import caspien.typechecker.TypeChecker;
 
 import java.util.*;
 
@@ -16,32 +17,32 @@ import java.util.*;
  * then only runs code that depends on no other thread, so it always lets go, and a thread spinning on the lock is waiting on code that cannot be waiting on
  * anything. (Externs and `unsafe` loops are not judged: they are already marked `unsafe` and the programmer vouches for them.)
  */
-final class LockNestingCheck {
-    private static final class Info {
-        final TypeChecker.FuncInfo fn;
-        boolean acquires;                                         // takes a lock directly
-        String waitKind;                                          // first waiting operation in the body ("yield", "sleep", "par", "await"), null if none
-        final Set<String> callees = new LinkedHashSet<>();         // every resolved call target in the body
-        final List<Token> heldCalls = new ArrayList<>();           // calls made while a lock is held
-        Info(TypeChecker.FuncInfo fn) {
+public final class LockNestingCheck {
+    public static final class Info {
+        public final TypeChecker.FuncInfo fn;
+        public boolean acquires;                                         // takes a lock directly
+        public String waitKind;                                          // first waiting operation in the body ("yield", "sleep", "par", "await"), null if none
+        public final Set<String> callees = new LinkedHashSet<>();         // every resolved call target in the body
+        public final List<Token> heldCalls = new ArrayList<>();           // calls made while a lock is held
+        public Info(TypeChecker.FuncInfo fn) {
             this.fn = fn;
         }
     }
 
-    private final Map<String, Info> byName = new LinkedHashMap<>();
-    private final Set<String> exempt;
+    public final Map<String, Info> byName = new LinkedHashMap<>();
+    public final Set<String> exempt;
 
-    private LockNestingCheck(Set<String> exempt) {
+    public LockNestingCheck(Set<String> exempt) {
         this.exempt = exempt;
     }
 
-    static void run(TypeChecker checker, Set<String> exempt) {
+    public static void run(TypeChecker checker, Set<String> exempt) {
         LockNestingCheck c = new LockNestingCheck(exempt);
         c.collect(checker);
         c.check();
     }
 
-    private void add(TypeChecker.FuncInfo f) {
+    public void add(TypeChecker.FuncInfo f) {
         if (f == null || f.funcToken == null || f.mangledName == null || byName.containsKey(f.mangledName) || exempt.contains(f.mangledName)) {
             return;
         }
@@ -50,7 +51,7 @@ final class LockNestingCheck {
         walk(f.funcToken, false, in);
     }
 
-    private void collect(TypeChecker checker) {
+    public void collect(TypeChecker checker) {
         for (List<TypeChecker.FuncInfo> l : checker.getFunctions().values()) {
             l.forEach(this::add);
         }
@@ -68,7 +69,7 @@ final class LockNestingCheck {
         }
     }
 
-    private void walk(Token t, boolean held, Info in) {
+    public void walk(Token t, boolean held, Info in) {
         if (t == null) {
             return;
         }
@@ -111,7 +112,7 @@ final class LockNestingCheck {
     }
 
     /** "yield", "sleep", "par" or "await" when `t` is that operation, else null. */
-    private static String waitKindOf(Token t) {
+    public static String waitKindOf(Token t) {
         if (t.type == TokenType.KEYWORD && t.text.equals("yield")) {
             return "yield";
         }
@@ -124,7 +125,7 @@ final class LockNestingCheck {
         return null;
     }
 
-    private void walkChildren(Token t, boolean held, Info in) {
+    public void walkChildren(Token t, boolean held, Info in) {
         walk(t.left, held, in);
         walk(t.right, held, in);
         if (t.childs != null) {
@@ -139,7 +140,7 @@ final class LockNestingCheck {
         }
     }
 
-    private void acquire(Token t, boolean held, Info in) {
+    public void acquire(Token t, boolean held, Info in) {
         in.acquires = true;
         if (held) {
             throw new CompilerException("type", t.file, t.line, "a lock is taken while another lock is held -- nested locks are not allowed (the lock records no owner, so the same "
@@ -148,7 +149,7 @@ final class LockNestingCheck {
     }
 
     /** The calls a function makes, then (shortest first) the chain down to a function that takes a lock; null when none does. */
-    private List<String> pathToLock(String from, Set<String> seen) {
+    public List<String> pathToLock(String from, Set<String> seen) {
         Info in = byName.get(from);
         if (in == null || !seen.add(from)) {
             return null;
@@ -167,7 +168,7 @@ final class LockNestingCheck {
     }
 
     /** The calls a function makes down to a function that waits, shortest first; null when none does. */
-    private List<String> pathToWait(String from, Set<String> seen) {
+    public List<String> pathToWait(String from, Set<String> seen) {
         Info in = byName.get(from);
         if (in == null || !seen.add(from)) {
             return null;
@@ -185,7 +186,7 @@ final class LockNestingCheck {
         return null;
     }
 
-    private void check() {
+    public void check() {
         for (Info in : byName.values()) {
             for (Token call : in.heldCalls) {
                 List<String> w = pathToWait(call.resolvedCallTarget, new HashSet<>());

@@ -1,4 +1,5 @@
 package caspien;
+import caspien.typechecker.TypeChecker;
 
 import java.util.*;
 
@@ -20,16 +21,16 @@ import java.util.*;
  * `ref some` parameters (incl. `self`) start with an implicit proof like `ref some` locals. A proof knows the struct type it points at; an event knows the
  * types it can destroy (ownership closure), so freeing an unrelated type does not end it. Not covered: refs stored in struct members.
  */
-final class ProofKills {
-    static final class Ev {
-        final int seq;
-        final int[] loops;
-        final Token at;
-        final String what;       // description of a direct kill, or null for a call
-        final String callee;     // mangled name for a call, else null
-        final String skipSlot;   // the destroyed object lies inside what this variable refers to (a member of it): the proof for the variable itself survives
-        final Set<String> types; // struct type names the destroyed object can contain (ownership closure); null = anything
-        Ev(int seq, int[] loops, Token at, String what, String callee, String skipSlot, Set<String> types) {
+public final class ProofKills {
+    public static final class Ev {
+        public final int seq;
+        public final int[] loops;
+        public final Token at;
+        public final String what;       // description of a direct kill, or null for a call
+        public final String callee;     // mangled name for a call, else null
+        public final String skipSlot;   // the destroyed object lies inside what this variable refers to (a member of it): the proof for the variable itself survives
+        public final Set<String> types; // struct type names the destroyed object can contain (ownership closure); null = anything
+        public Ev(int seq, int[] loops, Token at, String what, String callee, String skipSlot, Set<String> types) {
             this.types = types;
             this.seq = seq;
             this.loops = loops;
@@ -40,13 +41,13 @@ final class ProofKills {
         }
     }
 
-    static final class Use {
-        final int seq;
-        final int[] loops;
-        final Token at;
-        final List<Token.MatchPattern> cands;
-        final String name;       // what to call the reference in the error (a member path like "h.p"), null = the token's text
-        Use(int seq, int[] loops, Token at, List<Token.MatchPattern> cands, String name) {
+    public static final class Use {
+        public final int seq;
+        public final int[] loops;
+        public final Token at;
+        public final List<Token.MatchPattern> cands;
+        public final String name;       // what to call the reference in the error (a member path like "h.p"), null = the token's text
+        public Use(int seq, int[] loops, Token at, List<Token.MatchPattern> cands, String name) {
             this.name = name;
             this.seq = seq;
             this.loops = loops;
@@ -55,29 +56,29 @@ final class ProofKills {
         }
     }
 
-    static final class Facts {
-        String directKill;                       // first direct kill description, null if none
-        boolean directAll;                       // some direct kill may destroy anything
-        final Set<String> directTypes = new HashSet<>();   // otherwise the union of the types the direct kills can destroy
-        final Set<String> callees = new LinkedHashSet<>();
+    public static final class Facts {
+        public String directKill;                       // first direct kill description, null if none
+        public boolean directAll;                       // some direct kill may destroy anything
+        public final Set<String> directTypes = new HashSet<>();   // otherwise the union of the types the direct kills can destroy
+        public final Set<String> callees = new LinkedHashSet<>();
     }
 
-    static int suppressReads = 0;
-    private static int seq = 0;
-    private static int loopSerial = 0;
-    private static final ArrayList<Integer> loopIds = new ArrayList<>();
-    private static final IdentityHashMap<Token.MatchPattern, List<Ev>> events = new IdentityHashMap<>();
-    private static final List<Use> uses = new ArrayList<>();
-    private static final Map<String, Facts> facts = new HashMap<>();
-    private static final ArrayDeque<TypeChecker.FuncInfo> funcStack = new ArrayDeque<>();
+    public static int suppressReads = 0;
+    public static int seq = 0;
+    public static int loopSerial = 0;
+    public static final ArrayList<Integer> loopIds = new ArrayList<>();
+    public static final IdentityHashMap<Token.MatchPattern, List<Ev>> events = new IdentityHashMap<>();
+    public static final List<Use> uses = new ArrayList<>();
+    public static final Map<String, Facts> facts = new HashMap<>();
+    public static final ArrayDeque<TypeChecker.FuncInfo> funcStack = new ArrayDeque<>();
     /** Implicit proofs of `ref some` locals: a `ref some` is alive when it is made, exactly like a fresh `match Some`. Keyed "function|slot" and "function". */
-    private static final Map<String, List<Token.MatchPattern>> implicitBySlot = new HashMap<>();
-    private static final Map<String, List<Token.MatchPattern>> implicitByFunc = new HashMap<>();
+    public static final Map<String, List<Token.MatchPattern>> implicitBySlot = new HashMap<>();
+    public static final Map<String, List<Token.MatchPattern>> implicitByFunc = new HashMap<>();
 
-    private ProofKills() {
+    public ProofKills() {
     }
 
-    static void reset() {
+    public static void reset() {
         seq = 0;
         suppressReads = 0;
         loopSerial = 0;
@@ -92,7 +93,7 @@ final class ProofKills {
 
     // ---- recording (called by TypeChecker while it walks) ----
 
-    static void enterFunction(TypeChecker.FuncInfo f) {
+    public static void enterFunction(TypeChecker.FuncInfo f) {
         funcStack.push(f);
         if (f.mangledName != null) {
             Facts fa = facts.computeIfAbsent(f.mangledName, k -> new Facts());
@@ -103,42 +104,42 @@ final class ProofKills {
         }
     }
 
-    static void exitFunction() {
+    public static void exitFunction() {
         funcStack.pop();
     }
 
-    static TypeChecker.FuncInfo currentFunction() {
+    public static TypeChecker.FuncInfo currentFunction() {
         return funcStack.peek();
     }
 
-    static List<Integer> saveLoops() {
+    public static List<Integer> saveLoops() {
         List<Integer> saved = new ArrayList<>(loopIds);
         return saved;
     }
 
     /** A function body is checked from scratch (a lazily checked generic mid-way through another body): its loops are its own. */
-    static void restoreLoops(List<Integer> saved) {
+    public static void restoreLoops(List<Integer> saved) {
         loopIds.clear();
         loopIds.addAll(saved);
     }
 
-    static void clearLoops() {
+    public static void clearLoops() {
         loopIds.clear();
     }
 
-    static void enterLoop() {
+    public static void enterLoop() {
         loopIds.add(++loopSerial);
     }
 
-    static void exitLoop() {
+    public static void exitLoop() {
         loopIds.remove(loopIds.size() - 1);
     }
 
-    static int loopDepth() {
+    public static int loopDepth() {
         return loopIds.size();
     }
 
-    private static int[] snapshot() {
+    public static int[] snapshot() {
         int[] a = new int[loopIds.size()];
         for (int i = 0; i < a.length; i++) {
             a[i] = loopIds.get(i);
@@ -147,7 +148,7 @@ final class ProofKills {
     }
 
     /** Remember how deep in loops the proofs were made, so only loops inside a proof's body count as "shared" later. */
-    static void stamp(List<Token.MatchPattern> patterns) {
+    public static void stamp(List<Token.MatchPattern> patterns) {
         for (Token.MatchPattern p : patterns) {
             if (p.loopDepth < 0) {
                 p.loopDepth = loopIds.size();
@@ -155,13 +156,13 @@ final class ProofKills {
         }
     }
 
-    private static String funcKey() {
+    public static String funcKey() {
         TypeChecker.FuncInfo f = funcStack.peek();
         return f == null || f.mangledName == null ? "?" : f.mangledName;
     }
 
     /** A `ref some` local was just assigned: from here until it is assigned again it is "proven alive" by its own creation. */
-    static void implicit(String slot, String pointee) {
+    public static void implicit(String slot, String pointee) {
         String fk = funcKey();
         List<Token.MatchPattern> old = implicitBySlot.get(fk + "|" + slot);
         if (old != null) {
@@ -177,7 +178,7 @@ final class ProofKills {
     }
 
     /** A read of a `ref some` local: it must still be covered by its creation proof. */
-    static void refSomeRead(Token at, List<Token.MatchPattern> active) {
+    public static void refSomeRead(Token at, List<Token.MatchPattern> active) {
         if (suppressReads > 0) {
             return;
         }
@@ -202,26 +203,26 @@ final class ProofKills {
     }
 
     /** True when something that may destroy was recorded after this alive proof was made (only the post-check pass knows whether it really can). */
-    static boolean hasEvents(Token.MatchPattern p) {
+    public static boolean hasEvents(Token.MatchPattern p) {
         List<Ev> l = events.get(p);
         return l != null && !l.isEmpty();
     }
 
-    static void use(Token at, List<Token.MatchPattern> cands) {
+    public static void use(Token at, List<Token.MatchPattern> cands) {
         use(at, cands, null);
     }
 
-    static void use(Token at, List<Token.MatchPattern> cands, String name) {
+    public static void use(Token at, List<Token.MatchPattern> cands, String name) {
         uses.add(new Use(++seq, snapshot(), at, cands, name));
     }
 
     /** A direct destroying event in the function being checked. */
-    static void kill(List<Token.MatchPattern> active, Token at, String what) {
+    public static void kill(List<Token.MatchPattern> active, Token at, String what) {
         kill(active, at, what, null, null);
     }
 
     /** `memberRoot`: when the freed object is a member reached through variable v (`v.backing`, `v.n[i]`), v's own target is not what is freed. */
-    static void kill(List<Token.MatchPattern> active, Token at, String what, String memberRoot, Set<String> types) {
+    public static void kill(List<Token.MatchPattern> active, Token at, String what, String memberRoot, Set<String> types) {
         TypeChecker.FuncInfo f = funcStack.peek();
         if (f != null && f.mangledName != null) {
             Facts fa = facts.computeIfAbsent(f.mangledName, k -> new Facts());
@@ -237,7 +238,7 @@ final class ProofKills {
         record(active, new Ev(++seq, snapshot(), at, what, null, memberRoot, types));
     }
 
-    static void call(List<Token.MatchPattern> active, Token at, String callee) {
+    public static void call(List<Token.MatchPattern> active, Token at, String callee) {
         TypeChecker.FuncInfo f = funcStack.peek();
         if (f != null && f.mangledName != null) {
             facts.computeIfAbsent(f.mangledName, k -> new Facts()).callees.add(callee);
@@ -245,7 +246,7 @@ final class ProofKills {
         record(active, new Ev(++seq, snapshot(), at, null, callee, null, null));
     }
 
-    private static void record(List<Token.MatchPattern> active, Ev e) {
+    public static void record(List<Token.MatchPattern> active, Ev e) {
         for (Token.MatchPattern p : active) {
             if (p.kind.equals("alive") && !p.invalidated && !(e.skipSlot != null && e.skipSlot.equals(p.slotKey))) {
                 events.computeIfAbsent(p, k -> new ArrayList<>()).add(e);
@@ -263,25 +264,25 @@ final class ProofKills {
 
     // ---- the decision ----
 
-    private static final class Graph {
-        final Map<String, TypeChecker.FuncInfo> known = new HashMap<>();
-        final Set<String> externs;
-        final java.util.function.Function<TypeChecker.TypeInfo, Set<String>> closure;
-        Graph(Set<String> externs, java.util.function.Function<TypeChecker.TypeInfo, Set<String>> closure) {
+    public static final class Graph {
+        public final Map<String, TypeChecker.FuncInfo> known = new HashMap<>();
+        public final Set<String> externs;
+        public final java.util.function.Function<TypeChecker.TypeInfo, Set<String>> closure;
+        public Graph(Set<String> externs, java.util.function.Function<TypeChecker.TypeInfo, Set<String>> closure) {
             this.externs = externs;
             this.closure = closure;
         }
     }
 
     /** What a call can destroy: the chain "f > g" ending in the reason, and the types involved (all = anything). */
-    private static final class Summ {
-        String reason;
-        boolean all;
-        final Set<String> types = new HashSet<>();
+    public static final class Summ {
+        public String reason;
+        public boolean all;
+        public final Set<String> types = new HashSet<>();
     }
 
     /** null when the callee cannot destroy. */
-    private static Summ summarize(String callee, Graph g, Set<String> path) {
+    public static Summ summarize(String callee, Graph g, Set<String> path) {
         if (g.externs.contains(callee)) {
             return null;                                          // an extern call needs `unsafe` at the call site (already a kill there), or is declared safe
         }
@@ -330,11 +331,11 @@ final class ProofKills {
         return s.reason == null ? null : s;
     }
 
-    private static boolean kills(Token.MatchPattern p, boolean all, Set<String> types) {
+    public static boolean kills(Token.MatchPattern p, boolean all, Set<String> types) {
         return all || types == null || p.pointee == null || types.contains(p.pointee);
     }
 
-    private static boolean sharedLoop(Ev e, Use u, int from) {
+    public static boolean sharedLoop(Ev e, Use u, int from) {
         for (int k = Math.max(from, 0); k < e.loops.length && k < u.loops.length; k++) {
             if (e.loops[k] == u.loops[k]) {
                 return true;
@@ -343,7 +344,7 @@ final class ProofKills {
         return false;
     }
 
-    static void check(TypeChecker checker, Collection<TypeChecker.FuncInfo> allFuncs, Set<String> externNames) {
+    public static void check(TypeChecker checker, Collection<TypeChecker.FuncInfo> allFuncs, Set<String> externNames) {
         Graph g = new Graph(externNames, checker::destroyedTypes);
         for (TypeChecker.FuncInfo f : allFuncs) {
             if (f != null && f.mangledName != null) {

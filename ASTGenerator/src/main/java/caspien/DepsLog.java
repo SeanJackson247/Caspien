@@ -13,25 +13,25 @@ import java.util.Set;
  * can tell whether a cached result is still valid. If the environment variable CASPIEN_DEPS_FILE names a file, the list is written
  * there (one absolute path per line) after a successful run; otherwise nothing happens.
  */
-final class DepsLog {
-    private static final Set<String> FILES = new LinkedHashSet<>();
+public final class DepsLog {
+    public static final Set<String> FILES = new LinkedHashSet<>();
 
-    private DepsLog() {
+    public DepsLog() {
     }
 
-    static void record(Path p) {
+    public static void record(Path p) {
         FILES.add(p.toAbsolutePath().normalize().toString());
     }
 
-    static void record(String p) {
+    public static void record(String p) {
         record(Paths.get(p));
     }
 
-    static java.util.List<String> files() {
+    public static java.util.List<String> files() {
         return new java.util.ArrayList<>(FILES);
     }
 
-    static void writeIfRequested() throws IOException {
+    public static void writeIfRequested() throws IOException {
         String target = System.getenv("CASPIEN_DEPS_FILE");
         if (target == null || target.isEmpty()) {
             return;

@@ -12,12 +12,12 @@ package caspien;
  * Order, weakest guarantee last, is the audit's own worst-class order: bound < finite < indirect < unbound < conditional < none. Red means "not guaranteed
  * to end", not "wrong": a `none` loop in an event loop is intended, which is why it has a colour of its own.
  */
-final class Palette {
-    private Palette() {
+public final class Palette {
+    public Palette() {
     }
 
     /** class, fill, outline colour, outline style (solid | double | dashed | thick | dotted | dashdot). */
-    static final String[][] TERMINATION = {
+    public static final String[][] TERMINATION = {
         {"bound",       "#3b82f6", "#3b82f6", "solid"},
         {"finite",      "#8b5cf6", "#8b5cf6", "double"},
         {"indirect",    "#0a0a0a", "#e5e7eb", "dashdot"},
@@ -27,7 +27,7 @@ final class Palette {
     };
 
     /** The table as a JSON object for a page: {"bound":{"fill":..,"line":..,"ring":..}, ...}. */
-    static String terminationJson() {
+    public static String terminationJson() {
         StringBuilder sb = new StringBuilder("{");
         for (int i = 0; i < TERMINATION.length; i++) {
             String[] t = TERMINATION[i];
