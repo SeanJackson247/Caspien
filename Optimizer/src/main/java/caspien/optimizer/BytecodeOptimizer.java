@@ -95,8 +95,13 @@ public class BytecodeOptimizer {
     }
 
     public BytecodeOptimizer(UnrollConfig unrollConfig, FoldConfig foldConfig, VariableConfig variableConfig, InlineConfig inlineConfig) {
-        this.functionInlining = new FunctionInliningPass(inlineConfig);
-        this.loopUnrolling = new LoopUnrollingPass(unrollConfig);
+        this(unrollConfig, foldConfig, variableConfig, inlineConfig, new Messages());
+    }
+
+    /** `messages` receives every note/warning the passes produce. */
+    public BytecodeOptimizer(UnrollConfig unrollConfig, FoldConfig foldConfig, VariableConfig variableConfig, InlineConfig inlineConfig, Messages messages) {
+        this.functionInlining = new FunctionInliningPass(inlineConfig, messages);
+        this.loopUnrolling = new LoopUnrollingPass(unrollConfig, messages);
         this.constantFolding = new ConstantFoldingPass(foldConfig.enabled);
         this.unusedDeclarationRemoval = new UnusedDeclarationRemovalPass(variableConfig.unusedDecls);
         this.deadFunctionRemoval = new DeadFunctionRemovalPass(variableConfig.deadFunctions);

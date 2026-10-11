@@ -1,14 +1,10 @@
 package caspien.lowerorder;
-import caspien.hob.HOBParser;
-import caspien.hob.HOBProgram;
-import caspien.hob.HOBSerializer;
 
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
-import java.util.List;
 
 /**
  * CLI entry point for the LowerOrderGenerator stage -- see
@@ -47,15 +43,20 @@ public class Main {
         String inputPath = args[1];
         String outputPath = args[2];
 
-        // Four strictly separate phases: text -> HOBProgram -> lowered program -> text.
-        List<String> rawLines = Files.readAllLines(Paths.get(inputPath), StandardCharsets.UTF_8);
-        HOBProgram program = new HOBParser().parse(rawLines, inputPath);
-
+        String input = Files.readString(Paths.get(inputPath), StandardCharsets.UTF_8);
         // Fixed path relative to the working directory; hard-required (see CompilerConfig).
-        CompilerConfig config = CompilerConfig.load("compiler.config");
-        HOBProgram lowered = new LowerOrderGenerator(config).generate(program);
+        String config;
+        try {
+            config = Files.readString(Paths.get("compiler.config"), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new RuntimeException("required config file 'compiler.config' could not be read: " + e.getMessage(), e);
+        }
 
-        String bytecode = new HOBSerializer().serialize(lowered);
+        LowerOrder.Result result = LowerOrder.generate(input, inputPath, config);
+        for (String msg : result.messages) {
+            System.err.println(msg);
+        }
+        String bytecode = result.lob;
 
         System.out.print(bytecode);
 

@@ -6,7 +6,7 @@ loop unrolling, function inlining, the two layout reorderings, `sizeof` resoluti
 lowering, register form, register variables, fusion passes) lives in the next stage, `LowerOrderGenerator/`. The two stages share only the HOB
 parser/classes in `HOB/`; the text bytecode is the only interchange format.
 
-Every pass is a pure function `HOBProgram -> PassResult` (`OptimizationPass`). Passes know nothing about each other;
+The stage is a library, `Optimizer.optimize(hobText, origin, compilerConfigText)` -> `Result{hob, messages}` (text in, text out; no files, no stdout); the orchestrator calls it in its own JVM and `Main` is the same call wrapped as a program (`-i in out`, reads `./compiler.config` if present, prints the messages). Every pass is a pure function `HOBProgram -> PassResult` (`OptimizationPass`). Passes know nothing about each other;
 ordering and fixed-point looping live only in `BytecodeOptimizer`. No pass is a no-op stub any more.
 
 Contents: [Usage](#usage) | [Input and output format](#input-and-output-format) | [Pipeline](#the-pipeline) | [Pass summary](#pass-summary) |

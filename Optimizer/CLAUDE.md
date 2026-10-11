@@ -2,7 +2,7 @@
 
 ## What it is
 Stage 2 of the Caspien toolchain: higher-order bytecode (HOB, plain text) in, HOB out; "shallow" passes only. Real lowering is in `LowerOrderGenerator/`. No code shared between stages. Source: `src/main/java/caspien/optimizer/` (one file per pass, `BytecodeOptimizer` = pipeline/order, `Main`; the HOB representation is the shared root folder `HOB/` (package `caspien.hob`: `HOBToken`, `HOBStatement`, `HOBProgram`, `HOBParser`, `HOBSerializer`), also used by LowerOrderGenerator).
-Phases are strictly separate: `Main` = text -> `HOBParser` -> `HOBProgram` -> `BytecodeOptimizer` (all passes work on the `HOBProgram`) -> `HOBSerializer` -> text. Passes never see text I/O, the parser or the serializer; `HOB/` imports no stage (`tests/hob_phases_check.sh`). Type text inside tokens (`imut_range(a,b)`) is still a string the passes edit.
+The orchestrator calls `Optimizer.optimize(hobText, origin, configText)` in its own JVM (class loader on `Optimizer/out`; returns `Result{hob, messages}`; passes report `[note]`/`[warning]` into a `Messages` collector, never print; config classes only parse text); `Main` is the same thing as a stand-alone program (reads the files, prints the messages). Test `library_stage_check.sh`. Phases are strictly separate: `Optimizer.optimize` = text -> `HOBParser` -> `HOBProgram` -> `BytecodeOptimizer` (all passes work on the `HOBProgram`) -> `HOBSerializer` -> text. Passes never see text I/O, the parser or the serializer; only `Main` touches files; `HOB/` imports no stage (`tests/hob_phases_check.sh`). Type text inside tokens (`imut_range(a,b)`) is still a string the passes edit.
 
 ## Build / run / test
     cd Optimizer && javac -d out $(find src/main/java ../HOB/src/main/java -name '*.java')

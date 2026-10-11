@@ -9,7 +9,7 @@ One parser, one set of classes for the plain-text bytecode that the Optimizer an
 - `HOBSerializer`: `HOBProgram` -> text, tokens joined by single spaces, one line per statement.
 
 ## Rules every stage using it follows
-- `Main` is the only place that calls `HOBParser` and `HOBSerializer`. The order is: text -> parse (finished) -> passes on the `HOBProgram` -> serialize (starts after the last pass). Passes do no file or stdout I/O and take their config from `Main`.
+- The stage's library entry class (`Optimizer.optimize`, `LowerOrder.generate`) is the only place that calls `HOBParser` and `HOBSerializer`; only `Main` touches files. The order is: text -> parse (finished) -> passes on the `HOBProgram` -> serialize (starts after the last pass). Passes do no file or stdout I/O and take their config from the entry class.
 - This package imports nothing from any stage.
 - Checked by `tests/hob_phases_check.sh` (layering for both stages + exact round trip).
 

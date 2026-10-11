@@ -54,12 +54,15 @@ public class LoopUnrollingPass implements OptimizationPass {
     private final Map<String, Long> grown = new HashMap<>();
     private int nextLabel = 0;
 
+    private final Messages messages;
+
     public LoopUnrollingPass() {
-        this(UnrollConfig.disabled());
+        this(UnrollConfig.disabled(), new Messages());
     }
 
-    public LoopUnrollingPass(UnrollConfig cfg) {
+    public LoopUnrollingPass(UnrollConfig cfg, Messages messages) {
         this.cfg = cfg;
+        this.messages = messages;
     }
 
     @Override
@@ -402,8 +405,8 @@ public class LoopUnrollingPass implements OptimizationPass {
 
     private final Set<String> noted = new HashSet<>();
 
-    private static void note(String pos, String msg) {
-        System.err.println("[note] " + (pos != null ? pos + " - " : "") + msg);
+    private void note(String pos, String msg) {
+        messages.add("[note] " + (pos != null ? pos + " - " : "") + msg);
     }
 
     /** Applies the chosen unroll to work in place; returns the change in line count, or MIN_VALUE if nothing was done. */
@@ -539,7 +542,7 @@ public class LoopUnrollingPass implements OptimizationPass {
                     reason = "an inner loop that cannot be unrolled is in the way";
                 }
             }
-            System.err.println("[warning] " + (pos != null ? pos + " - " : "") + "@unroll not honoured: " + reason);
+            messages.add("[warning] " + (pos != null ? pos + " - " : "") + "@unroll not honoured: " + reason);
         }
     }
 

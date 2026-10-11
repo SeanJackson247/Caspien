@@ -1,9 +1,5 @@
 package caspien.lowerorder;
 
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -102,17 +98,8 @@ public class CompilerConfig {
         return callingConventions.get(defaultConvention);
     }
 
-    public static CompilerConfig load(String path) {
-        String content;
-        try {
-            content = new String(Files.readAllBytes(Paths.get(path)), StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            throw new RuntimeException("required config file '" + path + "' could not be read: " + e.getMessage(), e);
-        }
-        return parse(content, path);
-    }
-
-    private static CompilerConfig parse(String content, String path) {
+    /** @param content the text of `compiler.config`; @param path its name, for error messages */
+    public static CompilerConfig parse(String content, String path) {
         List<String> lines = splitLines(content);
         CompilerConfig config = new CompilerConfig();
 

@@ -3,6 +3,11 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.PrintWriter;
+import java.io.StringWriter;
+import java.lang.reflect.InvocationTargetException;
+import java.net.URL;
+import java.net.URLClassLoader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -32,11 +37,16 @@ import java.util.Map;
  * This program's own job is: read ONE config file (toolchain.config,
  * next to this file), split it into the individual config files each
  * component expects and write them into that component's own folder;
- * then run the four components as subprocesses in sequence, each with
- * its working directory set to its own folder (so its fixed-relative
- * config lookup finds what was just written there) but given absolute
- * input/output paths (so chaining files between stages, which live
- * outside any one component's folder, works regardless); then, unless
+ * then run the four components in sequence. The ASTGenerator and Codegen
+ * run as subprocesses (own JVM), with their working directory set to
+ * their own folder (so the fixed-relative config lookup finds what was
+ * just written there) and absolute input/output paths. The Optimizer and
+ * the LowerOrderGenerator are libraries: this JVM loads their classes
+ * from their own out/ folders (a private class loader each) and calls
+ * Optimizer.optimize / LowerOrder.generate with text and config text, so
+ * the Optimizer's output string goes straight into the next stage;
+ * their stand-alone Main programs still exist and call the same code.
+ * Then, unless
  * told to stop early, assemble and link the final assembly into a real
  * binary using whatever toolchain the "target" in Codegen's config
  * calls for.
@@ -415,14 +425,17 @@ public class Compiler {
         Path optOut = buildDir.resolve("2_optimizer.hob.txt");
         String key2 = CompilerCache.sha("S2\n" + cache.classesHash(optimizerDir) + "\n" + CompilerCache.configView(compilerCfg, CompilerCache.REG_KEYS)
                 + "\n--in--\n" + CompilerCache.fileHash(hobOut));
-        runStage(cache, "s2", key2, false, optimizerDir, "caspien.optimizer.Main", hobOut, optOut, diag, "Optimizer", null);
+        // The Optimizer and the LowerOrderGenerator run inside this JVM as libraries (text in, text out); stages 1 and 4 stay separate processes.
+        String optText = runLibraryStage(cache, "s2", key2, optimizerDir, "caspien.optimizer.Optimizer", "optimize", "hob",
+                Files.readString(hobOut, StandardCharsets.UTF_8), hobOut.toString(), optOut, diag, "Optimizer");
         if (diag.hasFatalError()) return diag.exitCode();
 
         // ---- Stage 3: LowerOrderGenerator (bytecode -> low-order bytecode) ----
         Path lobOut = stopLob ? output : buildDir.resolve("3_lower_order_generator.lob.txt");
         String key3 = CompilerCache.sha("S3\n" + cache.classesHash(lowerOrderDir) + "\n" + CompilerCache.configView(compilerCfg, CompilerCache.OPT_KEYS)
                 + "\n--in--\n" + CompilerCache.fileHash(optOut));
-        runStage(cache, "s3", key3, false, lowerOrderDir, "caspien.lowerorder.Main", optOut, lobOut, diag, "LowerOrderGenerator", null);
+        runLibraryStage(cache, "s3", key3, lowerOrderDir, "caspien.lowerorder.LowerOrder", "generate", "lob",
+                optText, optOut.toString(), lobOut, diag, "LowerOrderGenerator");   // the Optimizer's text goes straight in
         if (diag.hasFatalError()) return diag.exitCode();
         if (stopLob) {
             printSummary(lobOut, "low-order bytecode", diag);
@@ -524,6 +537,62 @@ public class Compiler {
         if (depsFile != null) {
             Files.deleteIfExists(depsFile);
         }
+    }
+
+    /**
+     * Runs a stage that is a library (Optimizer, LowerOrderGenerator) inside this JVM and returns its output text. Same cache and
+     * diagnostics behaviour as {@link #runStage}: a hit restores the cached output and replays its notes/warnings; a miss calls
+     * `className.method(inputText, origin, configText)`, writes the result to `outputFile` and stores it. The stage's classes are
+     * loaded from its own `out/` by a private class loader, so each stage keeps its own copy of the shared HOB classes. A stage
+     * that throws is reported exactly like a stand-alone stage that crashed (stack trace as the error text, exit 1).
+     *
+     * @param resultField the public String field of the stage's result class holding the output text
+     * @return the output text
+     */
+    private static String runLibraryStage(CompilerCache cache, String stage, String key, Path componentDir, String className, String method,
+                                          String resultField, String inputText, String origin, Path outputFile, Diagnostics diag,
+                                          String stageName) throws IOException {
+        CompilerCache.StageLog log = new CompilerCache.StageLog();
+        if (cache.restore(stage, key, outputFile, false, log)) {
+            for (String n : log.notes) {
+                System.err.println(n);
+            }
+            if (!diag.suppressWarnings()) {
+                for (String w : log.warnings) {
+                    System.err.println(w);
+                }
+            }
+            diag.addWarnings(log.warnings.size());
+            cache.note(stage, true);
+            return Files.readString(outputFile, StandardCharsets.UTF_8);
+        }
+        String config = Files.readString(componentDir.resolve("compiler.config"), StandardCharsets.UTF_8);
+        List<String> messages;
+        String text;
+        URL classes = componentDir.resolve("out").toUri().toURL();
+        try (URLClassLoader loader = new URLClassLoader(new URL[]{classes}, ClassLoader.getPlatformClassLoader())) {
+            Object result = Class.forName(className, true, loader).getMethod(method, String.class, String.class, String.class)
+                    .invoke(null, inputText, origin, config);
+            text = (String) result.getClass().getField(resultField).get(result);
+            @SuppressWarnings("unchecked")
+            List<String> m = (List<String>) result.getClass().getField("messages").get(result);
+            messages = new ArrayList<>(m);
+        } catch (InvocationTargetException e) {
+            StringWriter trace = new StringWriter();
+            e.getCause().printStackTrace(new PrintWriter(trace));
+            // the text a crashed stand-alone stage prints, so a crash is reported the same either way
+            List<String> lines = new ArrayList<>(List.of(("Exception in thread \"main\" " + trace).split("\\R")));
+            reportStageOutput(lines, 1, diag, stageName, null);
+            cache.note(stage, false);
+            return null;
+        } catch (ReflectiveOperationException e) {
+            throw new IOException(stageName + " could not be loaded from " + classes + " (is it built? see its README): " + e, e);
+        }
+        reportStageOutput(messages, 0, diag, stageName, log);
+        Files.writeString(outputFile, text, StandardCharsets.UTF_8);
+        cache.note(stage, false);
+        cache.store(stage, key, outputFile, log, null);
+        return text;
     }
 
     private static Path ensureBuildDir(Path existing, Path output) throws IOException {
@@ -1017,29 +1086,40 @@ public class Compiler {
         stdoutDrain.setDaemon(true);
         stdoutDrain.start();
 
-        List<String> warnings = new ArrayList<>();
-        List<String> infos = new ArrayList<>();
-        List<String> notes = new ArrayList<>();
-        List<String> errors = new ArrayList<>();
+        List<String> stderrLines = new ArrayList<>();
         try (BufferedReader r = new BufferedReader(new InputStreamReader(proc.getErrorStream(), StandardCharsets.UTF_8))) {
             String line;
             while ((line = r.readLine()) != null) {
-                if (line.isBlank()) {
-                    continue;
-                } else if (line.startsWith("[warning]")) {
-                    warnings.add(line);
-                } else if (line.startsWith("[info]")) {
-                    infos.add(line);
-                } else if (line.startsWith("[note]")) {
-                    notes.add(line);
-                } else {
-                    errors.add(line);
-                }
+                stderrLines.add(line);
             }
         }
         int exit = proc.waitFor();
         stdoutDrain.join();
+        reportStageOutput(stderrLines, exit, diag, stageName, log);
+    }
 
+    /**
+     * Classifies a stage's diagnostic lines ("[warning]", "[info]", "[note]", anything else) and prints them the same way for a
+     * stage run as a process (its stderr) and one run as a library (its messages); a nonzero `exit` makes the stage fail.
+     */
+    private static void reportStageOutput(List<String> allLines, int exit, Diagnostics diag, String stageName, CompilerCache.StageLog log) {
+        List<String> warnings = new ArrayList<>();
+        List<String> infos = new ArrayList<>();
+        List<String> notes = new ArrayList<>();
+        List<String> errors = new ArrayList<>();
+        for (String line : allLines) {
+            if (line.isBlank()) {
+                continue;
+            } else if (line.startsWith("[warning]")) {
+                warnings.add(line);
+            } else if (line.startsWith("[info]")) {
+                infos.add(line);
+            } else if (line.startsWith("[note]")) {
+                notes.add(line);
+            } else {
+                errors.add(line);
+            }
+        }
         for (String info : infos) {
             System.err.println(info);
         }

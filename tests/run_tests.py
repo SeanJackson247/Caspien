@@ -128,6 +128,7 @@ def main():
     allow = leak_allow()
     files = sorted(glob.glob(os.path.join(SCRATCH, "tests", "*.caspien")) + glob.glob(os.path.join(SCRATCH, "docs", "examples", "*.caspien")))
     t0 = time.time(); total_fail = 0
+    timings = []   # (seconds, kind, name): where the time goes, printed at the end
     for cfg in a.configs.split(","):
         if cfg not in P:
             sys.exit("unknown preset %s (known: %s)" % (cfg, ", ".join(P)))
@@ -142,7 +143,9 @@ def main():
             exe = os.path.join(SCRATCH, "output", "t_" + name)
             if os.path.exists(exe):
                 os.remove(exe)
+            tc = time.time()
             c = subprocess.run(["java", "-cp", ".", "Compiler", "-i", rel, exe, "--cache-report"], cwd=SCRATCH, env=ENV, capture_output=True, text=True, timeout=600)
+            timings.append((time.time() - tc, "compile " + cfg, name))
             if re.search(r"_error(_test)?$", name):
                 if c.returncode != 0 and "[error]" in c.stderr and "Exception in thread" not in c.stderr:
                     ok += 1
@@ -167,7 +170,9 @@ def main():
                         renv = dict(ENV, LD_PRELOAD=shim)
                         if gaddr:
                             renv["GT_ADDR"] = gaddr; renv["GT_EXE"] = exe
+                    tr = time.time()
                     r = subprocess.run([exe], cwd=SCRATCH, env=renv, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=60, errors="replace")
+                    timings.append((time.time() - tr, "run " + cfg, name))
                     lines = r.stdout.rstrip("\n").split("\n")
                     why = ""
                     if r.returncode != 0:
@@ -196,10 +201,19 @@ def main():
     if a.checks:
         for s in sorted(glob.glob(os.path.join(ROOT, "tests", "*_check.sh")) + glob.glob(os.path.join(ROOT, "tests", "*_check.py"))):
             cmd = ["bash", s] if s.endswith(".sh") else [sys.executable, s]
+            tk = time.time()
             r = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
+            timings.append((time.time() - tk, "check", os.path.basename(s)))
             line = (r.stdout.strip().split("\n") or [""])[-1]
             print("%s %s: %s" % ("ok  " if r.returncode == 0 else "FAIL", os.path.basename(s), line[:120]))
             total_fail += r.returncode != 0
+    by = {}
+    for sec, kind, name in timings:
+        by[kind.split()[0]] = by.get(kind.split()[0], 0) + sec
+    print("time by kind: " + ", ".join("%s %.0f s" % (k, v) for k, v in sorted(by.items(), key=lambda kv: -kv[1])))
+    print("slowest 15:")
+    for sec, kind, name in sorted(timings, reverse=True)[:15]:
+        print("  %6.1f s  %-18s %s" % (sec, kind, name))
     print("done in %.0f s, %s" % (time.time() - t0, "all passed" if not total_fail else "%d FAILED" % total_fail))
     sys.exit(1 if total_fail else 0)
 

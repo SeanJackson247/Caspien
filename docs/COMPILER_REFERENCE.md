@@ -2,7 +2,10 @@
 
 Top-level orchestrator for the Caspien toolchain. It doesn't do any
 compilation itself -- it drives four sibling component projects, each a
-standalone prebuilt Java program, as subprocesses:
+prebuilt Java program. The ASTGenerator and Codegen run as subprocesses (own JVM); the
+Optimizer and LowerOrderGenerator are called as libraries inside the orchestrator's JVM (text in, text out; the Optimizer's
+output string is passed straight to the LowerOrderGenerator; each stage's `Main` remains a stand-alone program around the same
+code; `tests/library_stage_check.sh`):
 
     ASTGenerator        .caspien source        -> higher-order bytecode
     Optimizer           higher-order bytecode   -> higher-order bytecode (optimized)

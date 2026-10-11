@@ -1,10 +1,5 @@
 package caspien.optimizer;
 
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.List;
 
 /**
@@ -71,17 +66,6 @@ public final class VariableConfig {
         return new VariableConfig(false, false, false, false, false, false, false, false);
     }
 
-    public static VariableConfig loadFromWorkingDirectory() {
-        Path p = Paths.get("compiler.config");
-        if (!Files.exists(p)) {
-            return disabled();
-        }
-        try {
-            return parse(Files.readAllLines(p, StandardCharsets.UTF_8), p.toString());
-        } catch (IOException e) {
-            throw new RuntimeException("could not read '" + p + "': " + e.getMessage(), e);
-        }
-    }
 
     public static VariableConfig parse(List<String> lines, String path) {
         boolean elision = false, shifting = false, unpacking = false, deadFlow = false, deadFunctions = false, unusedDecls = false, allocReorder = false, structReorder = false;

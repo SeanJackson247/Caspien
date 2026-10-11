@@ -1,42 +1,17 @@
 package caspien.optimizer;
 
-import caspien.hob.HOBProgram;
-import caspien.hob.HOBParser;
-import caspien.hob.HOBSerializer;
-
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.List;
 
 /**
- * CLI entry point for the (now standalone) "shallow methods" optimizer
- * stage -- split out of the original combined caspien-optimizer project
- * on request ("separate the optimizer into two programs -- the shallow
- * methods architecture at the start of the optimizer will be extracted
- * and be the optimizer, and the actual work thats currently been done
- * in the optimizer will just be called the LowerOrderGenerator").
+ * The Optimizer as a stand-alone program (the orchestrator calls {@link Optimizer} directly instead).
+ * Reads the whole input file as text, hands it to the library, writes the result as text.
  *
- * This project now contains only the fixed-point, still-bytecode-to-
- * bytecode shallow rewrite passes that ran at the very top of the old
- * combined pipeline (struct unpacking, constant folding, variable
- * elision, variable shifting, dead control flow removal, dead function
- * removal, loop unrolling, function inlining), plus the two
- * placeholder reordering passes (struct member reordering, variable
- * allocation reordering) -- see BytecodeOptimizer's own class doc for
- * why those two ended up here rather than in LowerOrderGenerator.
- *
- * None of the real lowering work (membership lowering, clone
- * generation, drop-glue generation, ARG-to-ALLOC lowering, address
- * lowering) lives in this project any more -- that's
- * caspien-lowerordergenerator's job now, run as a separate program
- * against this program's own plain-text output, the same
- * plain-text-interchange convention caspien-compiler -> (this project)
- * already used.
- *
- * Usage: optimizer -i input.txt output.txt
+ * Usage: optimizer -i input.txt output.txt   (reads compiler.config in the working directory if present)
  */
 public class Main {
 
@@ -58,26 +33,21 @@ public class Main {
         String inputPath = args[1];
         String outputPath = args[2];
 
-        // Four strictly separate phases: text -> HOBProgram -> optimised HOBProgram -> text.
-        List<String> rawLines = Files.readAllLines(Paths.get(inputPath), StandardCharsets.UTF_8);
-        HOBProgram program = new HOBParser().parse(rawLines, inputPath);
+        String input = Files.readString(Paths.get(inputPath), StandardCharsets.UTF_8);
+        Path configPath = Paths.get("compiler.config");
+        String config = Files.exists(configPath) ? Files.readString(configPath, StandardCharsets.UTF_8) : null;
 
-        UnrollConfig unrollConfig = UnrollConfig.loadFromWorkingDirectory();
-        FoldConfig foldConfig = FoldConfig.loadFromWorkingDirectory();
-        VariableConfig variableConfig = VariableConfig.loadFromWorkingDirectory();
-        InlineConfig inlineConfig = InlineConfig.loadFromWorkingDirectory();
-        System.err.println("[info] optimizer: " + unrollConfig + "; " + foldConfig + "; " + variableConfig + "; " + inlineConfig);
-        HOBProgram optimized = new BytecodeOptimizer(unrollConfig, foldConfig, variableConfig, inlineConfig).optimize(program);
+        Optimizer.Result result = Optimizer.optimize(input, inputPath, config);
+        for (String m : result.messages) {
+            System.err.println(m);
+        }
 
-        String bytecode = new HOBSerializer().serialize(optimized);
-
-        System.out.print(bytecode);
-
-        writeFile(outputPath, bytecode);
-        writeFile("output.txt", bytecode);
+        System.out.print(result.hob);
+        writeFile(outputPath, result.hob);
+        writeFile("output.txt", result.hob);
 
         System.err.println("\n[info] wrote optimized bytecode to " + outputPath + " and output.txt ("
-                + bytecode.lines().count() + " instructions/lines)");
+                + result.hob.lines().count() + " instructions/lines)");
     }
 
     private static void writeFile(String path, String content) throws IOException {

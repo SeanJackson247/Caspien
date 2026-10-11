@@ -1,10 +1,5 @@
 package caspien.optimizer;
 
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.List;
 
 /**
@@ -41,17 +36,6 @@ public final class UnrollConfig {
     }
 
     /** Loads "compiler.config" from the working directory if it exists; otherwise unrolling is off. */
-    public static UnrollConfig loadFromWorkingDirectory() {
-        Path p = Paths.get("compiler.config");
-        if (!Files.exists(p)) {
-            return disabled();
-        }
-        try {
-            return parse(Files.readAllLines(p, StandardCharsets.UTF_8), p.toString());
-        } catch (IOException e) {
-            throw new RuntimeException("could not read '" + p + "': " + e.getMessage(), e);
-        }
-    }
 
     public static UnrollConfig parse(List<String> lines, String path) {
         String preset = "off";

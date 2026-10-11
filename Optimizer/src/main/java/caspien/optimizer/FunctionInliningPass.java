@@ -64,12 +64,15 @@ public class FunctionInliningPass implements OptimizationPass {
     /** Number of call sites inlined over the whole run (for diagnostics). */
     public int inlinedSites = 0;
 
+    private final Messages messages;
+
     public FunctionInliningPass() {
-        this(InlineConfig.disabled());
+        this(InlineConfig.disabled(), new Messages());
     }
 
-    public FunctionInliningPass(InlineConfig cfg) {
+    public FunctionInliningPass(InlineConfig cfg, Messages messages) {
         this.cfg = cfg;
+        this.messages = messages;
     }
 
     @Override
@@ -599,7 +602,7 @@ public class FunctionInliningPass implements OptimizationPass {
         c.eligible = ok;
         if (c.forced && !ok) forcedWhy.put(c.name, c.why);
         if (c.forced && c.pos != null) forcedPos.putIfAbsent(c.name, c.pos);
-        if (!ok && System.getenv("CASPIEN_INLINE_WHY") != null) System.err.println("[inline] " + c.name + " refused: " + c.why);
+        if (!ok && System.getenv("CASPIEN_INLINE_WHY") != null) messages.add("[inline] " + c.name + " refused: " + c.why);
         return c;
     }
 
@@ -655,9 +658,9 @@ public class FunctionInliningPass implements OptimizationPass {
             String where = e.getValue() == null ? "" : e.getValue() + " - ";
             String shown = f.contains("__") ? f.substring(0, f.indexOf("__")) : f;
             if (inl > 0 && rem == 0) {
-                System.err.println("[note] " + where + "@inline: " + shown + " inlined at " + inl + " call site" + (inl == 1 ? "" : "s"));
+                messages.add("[note] " + where + "@inline: " + shown + " inlined at " + inl + " call site" + (inl == 1 ? "" : "s"));
             } else if (rem > 0) {
-                System.err.println("[warning] " + where + "@inline not honoured at " + rem + " call site" + (rem == 1 ? "" : "s") + " of " + shown + " ("
+                messages.add("[warning] " + where + "@inline not honoured at " + rem + " call site" + (rem == 1 ? "" : "s") + " of " + shown + " ("
                         + inl + " inlined): " + forcedWhy.getOrDefault(f, "the call is somewhere inlined code cannot go: an enclosing expression with values pending, an argument that is not a scalar, ..."));
             }
         }
@@ -975,12 +978,12 @@ public class FunctionInliningPass implements OptimizationPass {
         }
         if (grown.getOrDefault(cx.caller, 0L) + cx.added + est > cap) return false;
         if (!c.forced && cfg.totalFactor > 0 && totalAdded + est > Math.max(InlineConfig.TOTAL_FLOOR, cfg.totalFactor * origProgram)) {
-            if (System.getenv("CASPIEN_INLINE_WHY") != null) System.err.println("[inline] program growth budget reached: " + cx.caller + " keeps a call to " + c.name);
+            if (System.getenv("CASPIEN_INLINE_WHY") != null) messages.add("[inline] program growth budget reached: " + cx.caller + " keeps a call to " + c.name);
             return false;
         }
         // A big callee with several call sites would be copied into each of them; measured to lose more than it gains (see InlineConfig).
         if (!c.forced && cfg.maxMultiCalleeLines > 0 && c.lines > cfg.maxMultiCalleeLines && c.calls > 1) {
-            if (System.getenv("CASPIEN_INLINE_WHY") != null) System.err.println("[inline] " + c.name + " (" + c.lines + " lines, " + c.calls + " call sites) stays a call in " + cx.caller);
+            if (System.getenv("CASPIEN_INLINE_WHY") != null) messages.add("[inline] " + c.name + " (" + c.lines + " lines, " + c.calls + " call sites) stays a call in " + cx.caller);
             return false;
         }
         // A callee with a catch of its own is entered by a real unwind with whatever the statement had pushed at the call still on the

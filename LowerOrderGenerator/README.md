@@ -46,6 +46,7 @@ lowerordergenerator -i input.txt output.txt        # java -cp out caspien.lowero
 * **`compiler.config` must exist in the current working directory** (fixed path, hard-required, no fallback; a copy sits in this
   folder, `Compiler.java` overwrites it on every run from the `===compiler.config===` section of `toolchain.config`). It carries the
   calling conventions and the register switches (section 5).
+* The stage is also a library, `LowerOrder.generate(hobText, origin, compilerConfigText)` -> `Result{lob, messages}` (text in, text out; no files); the orchestrator calls it in its own JVM and `Main` is the same call wrapped as a program (it reads `./compiler.config`).
 * Build, from this folder: `javac -d out $(find src/main/java ../HOB/src/main/java -name '*.java')` (the shared HOB parser/classes in `../HOB/` are compiled into `out/`).
 * Never compile two programs at once in one compiler tree (scratch files are shared).
 
