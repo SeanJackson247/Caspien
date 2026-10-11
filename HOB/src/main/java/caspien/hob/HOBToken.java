@@ -1,4 +1,4 @@
-package caspien.optimizer.hob;
+package caspien.hob;
 
 /**
  * One token of higher-order bytecode (HOB) text: its text, where it came

@@ -9,17 +9,18 @@ mkdir -p $T/caspien/lowerorder
 cat > $T/caspien/lowerorder/Drv.java <<'EOF'
 package caspien.lowerorder;
 import java.util.*;
+import caspien.hob.*;
 public class Drv {
-    static List<List<BytecodeToken>> parse(String s) {
-        List<List<BytecodeToken>> r = new ArrayList<>();
+    static HOBProgram parse(String s) {
+        HOBProgram r = new HOBProgram();
         for (String ln : s.split(" ; ")) {
-            List<BytecodeToken> l = new ArrayList<>();
-            for (String t : ln.trim().split(" ")) l.add(new BytecodeToken(t, "x", 0, BytecodeToken.Kind.CODE));
+            HOBStatement l = new HOBStatement();
+            for (String t : ln.trim().split(" ")) l.add(new HOBToken(t, "x", 0, HOBToken.Kind.CODE));
             r.add(l);
         }
         return r;
     }
-    static String render(List<List<BytecodeToken>> ls) {
+    static String render(HOBProgram ls) {
         StringBuilder b = new StringBuilder();
         for (int i = 0; i < ls.size(); i++) {
             if (i > 0) b.append(" ; ");

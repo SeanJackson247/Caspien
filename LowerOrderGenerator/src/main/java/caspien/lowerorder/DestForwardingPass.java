@@ -1,4 +1,6 @@
 package caspien.lowerorder;
+import caspien.hob.HOBProgram;
+import caspien.hob.HOBStatement;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -38,16 +40,16 @@ public class DestForwardingPass {
     private static final Set<String> BIN_OPS = Set.of("ADD", "SUB", "MUL", "AND", "OR", "BAND", "BOR", "BXOR");
     private static final Set<String> SHIFT_OPS = Set.of("SHL", "SHR", "SAR", "ROTL", "ROTR");
 
-    public List<List<BytecodeToken>> run(List<List<BytecodeToken>> lines) {
+    public HOBProgram run(HOBProgram lines) {
         int n = lines.size();
-        List<List<BytecodeToken>> cur = new ArrayList<>(lines);
+        HOBProgram cur = new HOBProgram(lines);
         boolean[] gone = new boolean[n];
         boolean changed = false;
         for (int i = 0; i + 1 < n; i++) {
             if (gone[i] || gone[i + 1]) {
                 continue;
             }
-            List<BytecodeToken> a = cur.get(i), m = cur.get(i + 1);
+            HOBStatement a = cur.get(i), m = cur.get(i + 1);
             if (m.size() != 4 || !t(m, 0).equals("R_MOV") || !t(m, 1).equals("8") || !t(m, 2).startsWith("%v") || !t(m, 3).startsWith("%t")) {
                 continue;
             }
@@ -59,7 +61,7 @@ public class DestForwardingPass {
             if (!deadAfter(cur, gone, i + 2, tmp)) {
                 continue;
             }
-            List<BytecodeToken> r = new ArrayList<>(a);
+            HOBStatement r = new HOBStatement(a);
             r.set(d, m.get(2));
             cur.set(i, r);
             gone[i + 1] = true;
@@ -70,7 +72,7 @@ public class DestForwardingPass {
             if (gone[i]) {
                 continue;
             }
-            List<BytecodeToken> l = cur.get(i);
+            HOBStatement l = cur.get(i);
             if (l.size() == 4 && t(l, 0).equals("R_MOV") && t(l, 1).equals("8") && t(l, 2).startsWith("%v")
                     && (t(l, 3).startsWith("#") || t(l, 3).startsWith("$") || t(l, 3).startsWith("%"))
                     && overwrittenBeforeRead(cur, gone, i + 1, t(l, 2))) {
@@ -81,7 +83,7 @@ public class DestForwardingPass {
         if (!changed) {
             return lines;
         }
-        List<List<BytecodeToken>> out = new ArrayList<>(n);
+        HOBProgram out = new HOBProgram(n);
         for (int i = 0; i < n; i++) {
             if (!gone[i]) {
                 out.add(cur.get(i));
@@ -90,17 +92,17 @@ public class DestForwardingPass {
         return out;
     }
 
-    private static String t(List<BytecodeToken> l, int i) {
+    private static String t(HOBStatement l, int i) {
         return l.get(i).text;
     }
 
-    private static int destIndex(List<BytecodeToken> l) {
+    private static int destIndex(HOBStatement l) {
         Integer d = DEST.get(t(l, 0));
         return d == null || d >= l.size() ? -1 : d;
     }
 
     /** a producer whose destination register may be a variable register */
-    private static boolean forwardable(List<BytecodeToken> a, String tmp) {
+    private static boolean forwardable(HOBStatement a, String tmp) {
         switch (t(a, 0)) {
             case "R_LD":
                 return a.size() == 4;
@@ -124,12 +126,12 @@ public class DestForwardingPass {
     }
 
     /** x (a temporary) is not read from line `from` on: the next mention is a pure redefinition, or a label / unconditional jump comes first */
-    private static boolean deadAfter(List<List<BytecodeToken>> cur, boolean[] gone, int from, String x) {
+    private static boolean deadAfter(HOBProgram cur, boolean[] gone, int from, String x) {
         for (int j = from; j < cur.size(); j++) {
             if (gone[j]) {
                 continue;
             }
-            List<BytecodeToken> l = cur.get(j);
+            HOBStatement l = cur.get(j);
             if (l.isEmpty()) {
                 return false;
             }
@@ -144,11 +146,11 @@ public class DestForwardingPass {
         return true;
     }
 
-    static boolean deadAfterPublic(List<List<BytecodeToken>> cur, boolean[] gone, int from, String x) {
+    static boolean deadAfterPublic(HOBProgram cur, boolean[] gone, int from, String x) {
         return deadAfter(cur, gone, from, x);
     }
 
-    private static boolean pureRedefinition(List<BytecodeToken> l, String x) {
+    private static boolean pureRedefinition(HOBStatement l, String x) {
         int d = destIndex(l);
         if (d < 0 || !t(l, d).equals(x) || !(t(l, 0).equals("R_MOV") || t(l, 0).equals("R_LD") || t(l, 0).equals("R_LDI")
                 || t(l, 0).equals("R_LDD") || t(l, 0).equals("R_LEA") || t(l, 0).equals("R_BIN") || t(l, 0).equals("R_UN")
@@ -164,12 +166,12 @@ public class DestForwardingPass {
     }
 
     /** straight-line scan: the next line that mentions the variable x redefines it without reading it */
-    private static boolean overwrittenBeforeRead(List<List<BytecodeToken>> cur, boolean[] gone, int from, String x) {
+    private static boolean overwrittenBeforeRead(HOBProgram cur, boolean[] gone, int from, String x) {
         for (int j = from; j < cur.size() && j < from + 60; j++) {
             if (gone[j]) {
                 continue;
             }
-            List<BytecodeToken> l = cur.get(j);
+            HOBStatement l = cur.get(j);
             if (l.isEmpty()) {
                 return false;
             }

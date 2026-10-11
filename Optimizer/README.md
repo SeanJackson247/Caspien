@@ -3,8 +3,8 @@
 Stage 2 of the Caspien toolchain: higher-order bytecode (HOB, plain text) in, higher-order bytecode out. It holds the "shallow" passes
 that rewrite the bytecode before it is lowered: constant folding, variable elision/shifting, struct unpacking, dead code removal,
 loop unrolling, function inlining, the two layout reorderings, `sizeof` resolution and the register hints. All real lowering (address
-lowering, register form, register variables, fusion passes) lives in the next stage, `LowerOrderGenerator/`. The two stages share no
-code; the text bytecode is the only interchange format.
+lowering, register form, register variables, fusion passes) lives in the next stage, `LowerOrderGenerator/`. The two stages share only the HOB
+parser/classes in `HOB/`; the text bytecode is the only interchange format.
 
 Every pass is a pure function `HOBProgram -> PassResult` (`OptimizationPass`). Passes know nothing about each other;
 ordering and fixed-point looping live only in `BytecodeOptimizer`. No pass is a no-op stub any more.
@@ -33,7 +33,7 @@ Contents: [Usage](#usage) | [Input and output format](#input-and-output-format) 
 
 ## Build
 
-    cd Optimizer && javac -d out $(find src/main/java -name '*.java')
+    cd Optimizer && javac -d out $(find src/main/java ../HOB/src/main/java -name '*.java')
 
 Plain JDK, no dependencies. The zip ships `out/` prebuilt (`tests/*_hob_check.sh` use `Optimizer/out`; the stage cache hashes the
 classes in it). Configuration in the whole compiler: `toolchain.config` at the project root; the orchestrator copies its
@@ -42,7 +42,7 @@ those copies).
 
 ## Input and output format
 
-HOB is one instruction per line, tokens separated by whitespace. `HOBParser` (package `hob`) splits by hand (no regex): a `"quoted string"` (with
+HOB is one instruction per line, tokens separated by whitespace. `HOBParser` (shared folder `HOB/`, package `caspien.hob`) splits by hand (no regex): a `"quoted string"` (with
 backslash escapes) is ONE token of kind `STRING`, a char literal such as `' '` or `'\n'` is one token, everything else is kind `CODE`.
 `HOBSerializer` joins tokens back with single spaces. A line is a `HOBStatement` (list of `HOBToken`), the program a `HOBProgram` (list of statements). The phases never overlap: the parser finishes before any pass runs, the serializer starts after the last pass; only `Main` touches either. A token remembers the file and line it came from (`HOBToken.file/line`);
 passes that create tokens copy that position from a neighbour so diagnostics keep working. `Kind.COMMENT` is reserved; HOB has no
@@ -469,7 +469,7 @@ stderr lines the orchestrator collects (`Compiler.runProcess` keeps `[note]` and
 - `BytecodeOptimizer`: the pipeline (above) and the constructor chain `BytecodeOptimizer(UnrollConfig, FoldConfig, VariableConfig, InlineConfig)`; the no-argument and partial constructors build an all-off optimizer (used by tests that call it directly).
 - `Main`: CLI (`-i input output`), reads the four configs from `compiler.config`, parse -> optimize -> serialize.
 - `OptimizationPass` (`name()`, `PassResult run(HOBProgram)`), `PassResult` (`lines`, `changed`; `changed` drives every fixed-point loop and must be false when nothing was done).
-- `hob/`: `HOBToken` (`text`, `file`, `line`, `kind` = CODE/STRING/COMMENT), `HOBStatement` (one line; `opcode()`, `text(i)`), `HOBProgram`, `HOBParser` (hand-written scanner: quoted strings and char literals stay one token), `HOBSerializer` (single-space join). The package imports nothing from the passes.
+- `HOB/` (shared with the LowerOrderGenerator, compiled into this stage's `out/`): `HOBToken` (`text`, `file`, `line`, `kind` = CODE/STRING/COMMENT), `HOBStatement` (one line; `opcode()`, `text(i)`), `HOBProgram`, `HOBParser` (hand-written scanner: quoted strings and char literals stay one token), `HOBSerializer` (single-space join). It imports no stage.
 - `VarAnalysis` (package-private; shared by elision, shifting and several others): `functions()` (FUNC_START..FUNC_END index pairs), `mnemonic()`, `hasMnemonic()`, `labels()` (label definition line = one token `@name:`),
   `jumps()` (`JMP @label` as {line, target}; targets outside the function ignored), `dominated(a, m, jumps)` (false when a forward jump before line a lands after a and at or before m), `inLoop(a, jumps)` (true when a backward jump after a lands before it),
   `scan()` (per-function candidate variables and their reads/assignments, described under elision) and `withToken()`. `ConstantFoldingPass` exports `base/isInt/width/lit` helpers that elision, shifting and unpacking use for type tests.

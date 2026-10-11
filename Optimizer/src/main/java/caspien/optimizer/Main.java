@@ -1,8 +1,8 @@
 package caspien.optimizer;
 
-import caspien.optimizer.hob.HOBProgram;
-import caspien.optimizer.hob.HOBParser;
-import caspien.optimizer.hob.HOBSerializer;
+import caspien.hob.HOBProgram;
+import caspien.hob.HOBParser;
+import caspien.hob.HOBSerializer;
 
 import java.io.IOException;
 import java.io.PrintWriter;

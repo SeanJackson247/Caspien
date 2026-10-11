@@ -26,7 +26,8 @@ its history.
 
 (Plain `javac`, no build tool. The four component folders already contain
 their own prebuilt `out/*.class` files -- you don't need to rebuild those
-unless you change their source.)
+unless you change their source. `Optimizer` and `LowerOrderGenerator` also compile the shared
+`HOB/` sources into their `out/` (`javac -d out $(find src/main/java ../HOB/src/main/java -name '*.java')`).)
 
 ## Run
 

@@ -1,4 +1,5 @@
 package caspien.lowerorder;
+import caspien.hob.HOBProgram;
 
 import java.util.List;
 
@@ -15,5 +16,5 @@ public interface OptimizationPass {
     /** A short, stable name for this pass, used only for logging/diagnostics. */
     String name();
 
-    PassResult run(List<List<BytecodeToken>> lines);
+    PassResult run(HOBProgram lines);
 }

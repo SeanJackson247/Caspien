@@ -1,4 +1,6 @@
 package caspien.lowerorder;
+import caspien.hob.HOBProgram;
+import caspien.hob.HOBStatement;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -71,14 +73,14 @@ public class StructTable {
     private final Map<String, List<LayoutEntry>> layouts = new LinkedHashMap<>();
     private final Map<String, Boolean> ownsBearingCache = new HashMap<>();
 
-    public static StructTable read(List<List<BytecodeToken>> lines) {
+    public static StructTable read(HOBProgram lines) {
         StructTable table = new StructTable();
         String currentStruct = null;
         String currentFunc = null;
         boolean currentFuncIsDrop = false;
         List<Member> currentMembers = null;
         List<LayoutEntry> currentLayout = null;
-        for (List<BytecodeToken> line : lines) {
+        for (HOBStatement line : lines) {
             if (line.isEmpty()) {
                 continue;
             }

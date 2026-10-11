@@ -1,6 +1,6 @@
 package caspien.optimizer;
 
-import caspien.optimizer.hob.HOBProgram;
+import caspien.hob.HOBProgram;
 
 
 /**

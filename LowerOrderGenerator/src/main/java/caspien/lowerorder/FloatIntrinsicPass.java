@@ -1,4 +1,7 @@
 package caspien.lowerorder;
+import caspien.hob.HOBProgram;
+import caspien.hob.HOBStatement;
+import caspien.hob.HOBToken;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -22,9 +25,9 @@ import java.util.Set;
  */
 public class FloatIntrinsicPass {
 
-    public List<List<BytecodeToken>> run(List<List<BytecodeToken>> lines) {
+    public HOBProgram run(HOBProgram lines) {
         Set<String> externs = new HashSet<>();
-        for (List<BytecodeToken> l : lines) {
+        for (HOBStatement l : lines) {
             if (l.size() == 4 && l.get(0).text.equals("EXTERN")) {
                 String name = l.get(1).text;
                 if (name.equals("sqrt") && l.get(2).text.equals("mut_f64") && l.get(3).text.equals("mut_f64")) {
@@ -37,7 +40,7 @@ public class FloatIntrinsicPass {
         if (externs.isEmpty()) {
             return lines;
         }
-        List<List<BytecodeToken>> out = new ArrayList<>(lines.size());
+        HOBProgram out = new HOBProgram(lines.size());
         int i = 0;
         while (i < lines.size()) {
             if (i + 3 < lines.size() && matches(lines, i, externs)) {
@@ -46,7 +49,7 @@ public class FloatIntrinsicPass {
                 int k = out.size() - 1;
                 boolean plain = true;
                 while (k >= 0) {
-                    List<BytecodeToken> o = out.get(k);
+                    HOBStatement o = out.get(k);
                     String m = o.isEmpty() ? "" : o.get(0).text;
                     if (m.equals("CC_START")) break;
                     if (m.equals("CALL") || m.equals("CC_END") || m.equals("INVOKE") || m.equals("EXTERN_CALL") || m.startsWith("@") || m.equals("JMP")
@@ -56,12 +59,12 @@ public class FloatIntrinsicPass {
                     }
                     k--;
                 }
-                List<BytecodeToken> farg = lines.get(i);
-                List<BytecodeToken> get = lines.get(i + 3);
+                HOBStatement farg = lines.get(i);
+                HOBStatement get = lines.get(i + 3);
                 if (plain && k >= 0 && out.get(k).size() == 2 && out.get(k).get(1).text.equals(lines.get(i + 2).get(1).text)) {
-                    List<BytecodeToken> r = new ArrayList<>();
-                    BytecodeToken ref = get.get(0);
-                    r.add(new BytecodeToken("R_FSQRT", ref.file, ref.line, BytecodeToken.Kind.CODE));
+                    HOBStatement r = new HOBStatement();
+                    HOBToken ref = get.get(0);
+                    r.add(new HOBToken("R_FSQRT", ref.file, ref.line, HOBToken.Kind.CODE));
                     r.add(get.get(1));
                     r.add(get.get(2));
                     r.add(farg.get(3));
@@ -82,8 +85,8 @@ public class FloatIntrinsicPass {
     }
 
     /** i = the R_FARG line; the call, CC_END and R_GETRETF follow it. */
-    private static boolean matches(List<List<BytecodeToken>> L, int i, Set<String> externs) {
-        List<BytecodeToken> farg = L.get(i), call = L.get(i + 1), ce = L.get(i + 2), get = L.get(i + 3);
+    private static boolean matches(HOBProgram L, int i, Set<String> externs) {
+        HOBStatement farg = L.get(i), call = L.get(i + 1), ce = L.get(i + 2), get = L.get(i + 3);
         if (farg.size() != 4 || !farg.get(0).text.equals("R_FARG") || !farg.get(1).text.equals("0")) return false;
         if (call.size() != 3 || !call.get(0).text.equals("CALL") || !externs.contains(call.get(1).text) || !call.get(2).text.equals("1")) return false;
         if (ce.size() != 2 || !ce.get(0).text.equals("CC_END")) return false;

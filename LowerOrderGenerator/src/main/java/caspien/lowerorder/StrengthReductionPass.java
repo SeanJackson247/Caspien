@@ -1,4 +1,7 @@
 package caspien.lowerorder;
+import caspien.hob.HOBProgram;
+import caspien.hob.HOBStatement;
+import caspien.hob.HOBToken;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -25,13 +28,13 @@ public class StrengthReductionPass implements OptimizationPass {
     }
 
     @Override
-    public PassResult run(List<List<BytecodeToken>> lines) {
-        List<List<BytecodeToken>> out = new ArrayList<>(lines.size());
+    public PassResult run(HOBProgram lines) {
+        HOBProgram out = new HOBProgram(lines.size());
         boolean changed = false;
         for (int i = 0; i < lines.size(); i++) {
-            List<BytecodeToken> l = lines.get(i);
+            HOBStatement l = lines.get(i);
             if (i + 1 < lines.size() && isConstPush(l)) {
-                List<BytecodeToken> next = lines.get(i + 1);
+                HOBStatement next = lines.get(i + 1);
                 if (next.size() == 2 && next.get(1).text.equals("8")) {
                     String m = next.get(0).text;
                     long k = Long.parseLong(l.get(2).text);
@@ -57,7 +60,7 @@ public class StrengthReductionPass implements OptimizationPass {
     }
 
     /** PUSH 8 <non-negative decimal literal> */
-    private static boolean isConstPush(List<BytecodeToken> l) {
+    private static boolean isConstPush(HOBStatement l) {
         if (l.size() != 3 || !l.get(0).text.equals("PUSH") || !l.get(1).text.equals("8")) {
             return false;
         }
@@ -73,17 +76,17 @@ public class StrengthReductionPass implements OptimizationPass {
         return true;
     }
 
-    private static List<BytecodeToken> push(List<BytecodeToken> old, long v) {
-        List<BytecodeToken> n = new ArrayList<>(old);
-        BytecodeToken t = old.get(2);
-        n.set(2, new BytecodeToken(Long.toString(v), t.file, t.line, t.kind));
+    private static HOBStatement push(HOBStatement old, long v) {
+        HOBStatement n = new HOBStatement(old);
+        HOBToken t = old.get(2);
+        n.set(2, new HOBToken(Long.toString(v), t.file, t.line, t.kind));
         return n;
     }
 
-    private static List<BytecodeToken> mnem(List<BytecodeToken> old, String m) {
-        List<BytecodeToken> n = new ArrayList<>(old);
-        BytecodeToken t = old.get(0);
-        n.set(0, new BytecodeToken(m, t.file, t.line, t.kind));
+    private static HOBStatement mnem(HOBStatement old, String m) {
+        HOBStatement n = new HOBStatement(old);
+        HOBToken t = old.get(0);
+        n.set(0, new HOBToken(m, t.file, t.line, t.kind));
         return n;
     }
 }

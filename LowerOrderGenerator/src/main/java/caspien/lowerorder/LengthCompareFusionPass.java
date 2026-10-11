@@ -1,4 +1,7 @@
 package caspien.lowerorder;
+import caspien.hob.HOBProgram;
+import caspien.hob.HOBStatement;
+import caspien.hob.HOBToken;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -37,16 +40,16 @@ public class LengthCompareFusionPass {
         this.enabled = enabled;
     }
 
-    public List<List<BytecodeToken>> run(List<List<BytecodeToken>> lines) {
+    public HOBProgram run(HOBProgram lines) {
         if (!enabled) {
             return lines;
         }
         int n = lines.size();
-        List<List<BytecodeToken>> cur = new ArrayList<>(lines);
+        HOBProgram cur = new HOBProgram(lines);
         boolean[] gone = new boolean[n];
         Map<String, Integer> labelAt = new HashMap<>();
         for (int i = 0; i < n; i++) {
-            List<BytecodeToken> l = cur.get(i);
+            HOBStatement l = cur.get(i);
             if (l.size() == 1 && t(l, 0).startsWith("@") && t(l, 0).endsWith(":")) {
                 labelAt.put(t(l, 0).substring(0, t(l, 0).length() - 1), i);
             }
@@ -56,10 +59,10 @@ public class LengthCompareFusionPass {
             if (gone[i]) {
                 continue;
             }
-            List<BytecodeToken> a = cur.get(i);
+            HOBStatement a = cur.get(i);
             // form 2: R_LD 8 %tA %vK ; R_BRC op 8 X %tA @L
             if (a.size() == 4 && t(a, 0).equals("R_LD") && t(a, 1).equals("8") && t(a, 2).startsWith("%t") && t(a, 3).startsWith("%v")) {
-                List<BytecodeToken> b = cur.get(i + 1);
+                HOBStatement b = cur.get(i + 1);
                 String tA = t(a, 2);
                 if (isLengthBranch(b, tA, false) && deadAfter(cur, gone, i + 2, tA) && deadAtTarget(cur, gone, labelAt, b, tA)) {
                     cur.set(i + 1, fused(b, t(a, 3)));
@@ -70,8 +73,8 @@ public class LengthCompareFusionPass {
             }
             // form 1: R_MOV 8 %tA $S ; R_LD 8 %tA %tA ; R_BRC op 8 X %tA @L
             if (i + 2 < n && a.size() == 4 && t(a, 0).equals("R_MOV") && t(a, 1).equals("8") && t(a, 2).startsWith("%t") && t(a, 3).startsWith("$")) {
-                List<BytecodeToken> ld = cur.get(i + 1);
-                List<BytecodeToken> b = cur.get(i + 2);
+                HOBStatement ld = cur.get(i + 1);
+                HOBStatement b = cur.get(i + 2);
                 String tA = t(a, 2);
                 if (ld.size() == 4 && t(ld, 0).equals("R_LD") && t(ld, 1).equals("8") && t(ld, 2).equals(tA) && t(ld, 3).equals(tA)
                         && isLengthBranch(b, tA, true) && deadAtTarget(cur, gone, labelAt, b, tA)) {
@@ -90,7 +93,7 @@ public class LengthCompareFusionPass {
         if (!changed) {
             return lines;
         }
-        List<List<BytecodeToken>> out = new ArrayList<>(n);
+        HOBProgram out = new HOBProgram(n);
         for (int i = 0; i < n; i++) {
             if (!gone[i]) {
                 out.add(cur.get(i));
@@ -100,19 +103,19 @@ public class LengthCompareFusionPass {
     }
 
     /** `R_BRC op 8 X %tA @L` with a register X different from %tA: the length (%tA) is the second compared operand */
-    private static boolean isLengthBranch(List<BytecodeToken> b, String tA, boolean slotIndexOk) {
+    private static boolean isLengthBranch(HOBStatement b, String tA, boolean slotIndexOk) {
         return b.size() == 6 && t(b, 0).equals("R_BRC") && t(b, 2).equals("8") && t(b, 4).equals(tA) && t(b, 5).startsWith("@")
                 && (t(b, 3).startsWith("%t") || t(b, 3).startsWith("%v") || (slotIndexOk && t(b, 3).startsWith("$"))) && !t(b, 3).equals(tA);
     }
 
-    private static List<BytecodeToken> fused(List<BytecodeToken> b, String base) {
-        List<BytecodeToken> n = new ArrayList<>(b);
-        n.set(0, new BytecodeToken("R_BRCM", b.get(0).file, b.get(0).line, b.get(0).kind));
-        n.set(4, new BytecodeToken(base, b.get(4).file, b.get(4).line, b.get(4).kind));
+    private static HOBStatement fused(HOBStatement b, String base) {
+        HOBStatement n = new HOBStatement(b);
+        n.set(0, new HOBToken("R_BRCM", b.get(0).file, b.get(0).line, b.get(0).kind));
+        n.set(4, new HOBToken(base, b.get(4).file, b.get(4).line, b.get(4).kind));
         return n;
     }
 
-    private static boolean sameLine(List<BytecodeToken> x, List<BytecodeToken> y) {
+    private static boolean sameLine(HOBStatement x, HOBStatement y) {
         if (x.size() != y.size()) {
             return false;
         }
@@ -125,17 +128,17 @@ public class LengthCompareFusionPass {
     }
 
     /** the temp is dead from line `from` on (never read before a pure redefinition, a label or a jump) */
-    private static boolean deadAfter(List<List<BytecodeToken>> cur, boolean[] gone, int from, String x) {
+    private static boolean deadAfter(HOBProgram cur, boolean[] gone, int from, String x) {
         return IndexedAccessPass.deadAfter(cur, gone, from, x, false);
     }
 
     /** the temp is dead where the branch jumps to (its label must be defined in this function's text; unknown label: not dead) */
-    private static boolean deadAtTarget(List<List<BytecodeToken>> cur, boolean[] gone, Map<String, Integer> labelAt, List<BytecodeToken> b, String x) {
+    private static boolean deadAtTarget(HOBProgram cur, boolean[] gone, Map<String, Integer> labelAt, HOBStatement b, String x) {
         Integer at = labelAt.get(t(b, 5));
         return at != null && deadAfter(cur, gone, at + 1, x);
     }
 
-    private static String t(List<BytecodeToken> l, int i) {
+    private static String t(HOBStatement l, int i) {
         return l.get(i).text;
     }
 }

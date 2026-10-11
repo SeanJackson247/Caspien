@@ -1,4 +1,6 @@
 package caspien.lowerorder;
+import caspien.hob.HOBProgram;
+import caspien.hob.HOBStatement;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -137,7 +139,13 @@ import java.util.Set;
  */
 public class DropGlueGenerationPass implements OptimizationPass {
 
-    private static final BytecodeParser PARSER = new BytecodeParser();
+    private final CompilerConfig config;
+
+    public DropGlueGenerationPass(CompilerConfig config) {
+        this.config = config;
+    }
+
+
 
     @Override
     public String name() {
@@ -145,8 +153,8 @@ public class DropGlueGenerationPass implements OptimizationPass {
     }
 
     @Override
-    public PassResult run(List<List<BytecodeToken>> lines) {
-        return new Worker(StructTable.read(lines)).process(lines);
+    public PassResult run(HOBProgram lines) {
+        return new Worker(StructTable.read(lines), config).process(lines);
     }
 
     /**
@@ -163,18 +171,21 @@ public class DropGlueGenerationPass implements OptimizationPass {
         private int labelCounter = 0;
         private int tempCounter = 0;
 
-        Worker(StructTable structTable) {
+        private final CompilerConfig config;
+
+        Worker(StructTable structTable, CompilerConfig config) {
             this.structTable = structTable;
+            this.config = config;
         }
 
-        PassResult process(List<List<BytecodeToken>> lines) {
-            List<List<BytecodeToken>> rewritten = new ArrayList<>();
+        PassResult process(HOBProgram lines) {
+            HOBProgram rewritten = new HOBProgram();
             boolean changedAnyCallSite = false;
 
             int i = 0;
             int n = lines.size();
             while (i < n) {
-                List<BytecodeToken> line = lines.get(i);
+                HOBStatement line = lines.get(i);
                 if (line.isEmpty() || !line.get(0).text.equals("FUNC_START")) {
                     rewritten.add(line);
                     i++;
@@ -212,7 +223,7 @@ public class DropGlueGenerationPass implements OptimizationPass {
 
                 Map<String, String> localTypes = new HashMap<>();
                 for (int k = start; k <= end; k++) {
-                    List<BytecodeToken> fl = lines.get(k);
+                    HOBStatement fl = lines.get(k);
                     if (!fl.isEmpty() && (fl.get(0).text.equals("ALLOC") || fl.get(0).text.equals("ARG")) && fl.size() >= 3) {
                         // `ARG name type` too: this pass runs BEFORE ArgToAllocLoweringPass, so a parameter is still an ARG line here;
                         // without it an owned parameter's destruct was a bare free (its owns members / elements leaked).
@@ -221,7 +232,7 @@ public class DropGlueGenerationPass implements OptimizationPass {
                 }
 
                 for (int k = start; k <= end; k++) {
-                    List<BytecodeToken> fl = lines.get(k);
+                    HOBStatement fl = lines.get(k);
                     if (!fl.isEmpty() && fl.get(0).text.equals("GT_DROP_ADDR") && fl.size() >= 2) {
                         // "GT_DROP_ADDR structType": the address of an inline owning struct is on top of the stack; drop its
                         // members (the struct itself stays where it is). Becomes a call to the struct's drop routine.
@@ -392,8 +403,8 @@ public class DropGlueGenerationPass implements OptimizationPass {
             return "@" + prefix + "_" + labelCounter;
         }
 
-        private static void emit(List<List<BytecodeToken>> out, String text) {
-            out.addAll(PARSER.parse(Collections.singletonList(text), "<generated-drop-glue>"));
+        private static void emit(HOBProgram out, String text) {
+            out.add(HOBStatement.fromText(text, "<generated-drop-glue>"));
         }
 
         /**
@@ -407,7 +418,7 @@ public class DropGlueGenerationPass implements OptimizationPass {
          * offsets (confirmed directly against its own `run` method), not
          * just ones sitting in a hoisted prologue block.
          */
-        private String newTemp(List<List<BytecodeToken>> out, String tag, String type) {
+        private String newTemp(HOBProgram out, String tag, String type) {
             tempCounter++;
             String name = "$" + tag + tempCounter;
             emit(out, "ALLOC " + name + " " + type);
@@ -441,8 +452,8 @@ public class DropGlueGenerationPass implements OptimizationPass {
          * has no real calling convention and always exactly one
          * stack-passed word.
          */
-        private List<List<BytecodeToken>> generateRoutine(String structName) {
-            List<List<BytecodeToken>> out = new ArrayList<>();
+        private HOBProgram generateRoutine(String structName) {
+            HOBProgram out = new HOBProgram();
             String paramType = "ref_mut_" + structName;
             emit(out, "FUNC_START " + routineNameFor(structName));
             emit(out, "FUNC_DECORATE @drop_glue");
@@ -484,7 +495,7 @@ public class DropGlueGenerationPass implements OptimizationPass {
             String hook = structTable.dropHookOf(structName);
             if (hook != null) {
                 // The struct's `@drop` function runs first, while every member is still intact.
-                String conv = CompilerConfig.load("compiler.config").defaultConvention;
+                String conv = config.defaultConvention;
                 emit(out, "CC_START " + conv);
                 emit(out, "PUSH p " + paramType);
                 emit(out, "POP ARG0 " + paramType);
@@ -509,7 +520,7 @@ public class DropGlueGenerationPass implements OptimizationPass {
          * struct's own top-level members, and each element of an
          * unrolled fixed array.
          */
-        private void emitValueDestruct(List<List<BytecodeToken>> out, String path, String canonicalType) {
+        private void emitValueDestruct(HOBProgram out, String path, String canonicalType) {
             CanonicalType t = CanonicalType.parse(canonicalType);
 
             if (t.isOwnsStorage()) {
@@ -563,7 +574,7 @@ public class DropGlueGenerationPass implements OptimizationPass {
         }
 
         /** Calls the drop routine of `leafStruct` on every element of the fixed array whose address `emitBase` pushes (unrolled; nested dimensions recurse). */
-        private void emitFixedArrayElementDrops(List<List<BytecodeToken>> out, Runnable emitBase, String arrCanonical, String leafStruct) {
+        private void emitFixedArrayElementDrops(HOBProgram out, Runnable emitBase, String arrCanonical, String leafStruct) {
             CanonicalType at = CanonicalType.parse(arrCanonical);
             String elemCanonical = at.fixedArrayElementType();
             int count = at.fixedArrayLength();
@@ -591,7 +602,7 @@ public class DropGlueGenerationPass implements OptimizationPass {
          * the pointer itself (safe even on null -- the runtime's own
          * gt_destruct is a documented no-op there).
          */
-        private void emitOwnsMemberDestruct(List<List<BytecodeToken>> out, String path, String canonicalType, String baseType) {
+        private void emitOwnsMemberDestruct(HOBProgram out, String path, String canonicalType, String baseType) {
             String skipLabel = newLabel("drop_skip");
 
             emit(out, "PUSH " + path + " " + canonicalType);
@@ -683,13 +694,13 @@ public class DropGlueGenerationPass implements OptimizationPass {
          *     all (see the caller): nothing to do, exactly like an
          *     ordinary scalar/no-owns-bearing member.
          */
-        private void emitDynArrayElementDrop(List<List<BytecodeToken>> out, String path, String canonicalType,
+        private void emitDynArrayElementDrop(HOBProgram out, String path, String canonicalType,
                 String dynElem) {
             emitDynArrayElementDrop(out, path, canonicalType, dynElem, null);
         }
 
         /** As above, walking from index `startLocal` (a `mut_u64` local) instead of 0 when it is non-null. */
-        private void emitDynArrayElementDrop(List<List<BytecodeToken>> out, String path, String canonicalType,
+        private void emitDynArrayElementDrop(HOBProgram out, String path, String canonicalType,
                 String dynElem, String startLocal) {
             CanonicalType elemT = CanonicalType.parse(dynElem);
             boolean elemIsOwnsPointer = elemT.isOwnsStorage();

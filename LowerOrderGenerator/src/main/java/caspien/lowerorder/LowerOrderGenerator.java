@@ -1,4 +1,5 @@
 package caspien.lowerorder;
+import caspien.hob.HOBProgram;
 
 import java.util.List;
 
@@ -38,13 +39,21 @@ public class LowerOrderGenerator {
 
     private final MembershipLoweringPass membershipLowering = new MembershipLoweringPass();
     private final CloneGenerationPass cloneGeneration = new CloneGenerationPass();
-    private final DropGlueGenerationPass dropGlueGeneration = new DropGlueGenerationPass();
+    private final DropGlueGenerationPass dropGlueGeneration;
     private final ArgToAllocLoweringPass argToAllocLowering = new ArgToAllocLoweringPass();
-    private final AddressLoweringPass addressLowering = new AddressLoweringPass();
+    private final AddressLoweringPass addressLowering;
     private final RegisterFormPass registerForm = new RegisterFormPass();
+    private final CompilerConfig config;
 
-    public List<List<BytecodeToken>> generate(List<List<BytecodeToken>> input) {
-        List<List<BytecodeToken>> lines = input;
+    /** The config is read once by the caller (Main); no pass reads a file. */
+    public LowerOrderGenerator(CompilerConfig config) {
+        this.config = config;
+        this.dropGlueGeneration = new DropGlueGenerationPass(config);
+        this.addressLowering = new AddressLoweringPass(config);
+    }
+
+    public HOBProgram generate(HOBProgram input) {
+        HOBProgram lines = input;
         lines = membershipLowering.run(lines).lines;
         lines = cloneGeneration.run(lines).lines;
         lines = dropGlueGeneration.run(lines).lines;
@@ -54,7 +63,6 @@ public class LowerOrderGenerator {
         lines = new StrengthReductionPass().run(lines).lines;
         // `match i in arr` bounds test of a literal-bounds range without the range copy (always on, see RangeCheckFusionPass).
         lines = new RangeCheckFusionPass().run(lines);
-        CompilerConfig config = CompilerConfig.load("compiler.config");
         // The end of a `for` range gets its own register hint (see RangeEndHintPass); only useful when variables can live in registers.
         if (config.deferredOperands && config.variablesInRegisters) {
             lines = new RangeEndHintPass().run(lines);

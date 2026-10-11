@@ -1,4 +1,6 @@
 package caspien.lowerorder;
+import caspien.hob.HOBProgram;
+import caspien.hob.HOBStatement;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -166,7 +168,6 @@ import java.util.Set;
  */
 public class CloneGenerationPass implements OptimizationPass {
 
-    private static final BytecodeParser PARSER = new BytecodeParser();
 
     @Override
     public String name() {
@@ -174,7 +175,7 @@ public class CloneGenerationPass implements OptimizationPass {
     }
 
     @Override
-    public PassResult run(List<List<BytecodeToken>> lines) {
+    public PassResult run(HOBProgram lines) {
         return new Worker(StructTable.read(lines)).process(lines);
     }
 
@@ -192,14 +193,14 @@ public class CloneGenerationPass implements OptimizationPass {
             this.structTable = structTable;
         }
 
-        PassResult process(List<List<BytecodeToken>> lines) {
-            List<List<BytecodeToken>> rewritten = new ArrayList<>();
+        PassResult process(HOBProgram lines) {
+            HOBProgram rewritten = new HOBProgram();
             boolean changedAnyCallSite = false;
 
             int i = 0;
             int n = lines.size();
             while (i < n) {
-                List<BytecodeToken> line = lines.get(i);
+                HOBStatement line = lines.get(i);
                 if (line.isEmpty() || !line.get(0).text.equals("FUNC_START")) {
                     rewritten.add(line);
                     i++;
@@ -214,13 +215,13 @@ public class CloneGenerationPass implements OptimizationPass {
                 end = Math.min(end, n - 1);
 
                 for (int k = start; k <= end; k++) {
-                    List<BytecodeToken> fl = lines.get(k);
+                    HOBStatement fl = lines.get(k);
                     if (!fl.isEmpty() && fl.get(0).text.equals("CLONE_FILL") && fl.size() == 4) {
                         // "CLONE_FILL arrLocal arrType fromLocal": after a growing `resize` of a dynarray whose elements own memory,
                         // the new slots are bitwise copies of the fill value (which stays with the caller); each, `from` .. end, is replaced by a deep clone.
                         List<String> replacement = buildFillCloneLoop(fl.get(1).text, fl.get(2).text, fl.get(3).text);
                         if (replacement != null) {
-                            rewritten.addAll(PARSER.parse(replacement, "<generated-clone-glue>"));
+                            rewritten.addAll(HOBStatement.fromTexts(replacement, "<generated-clone-glue>"));
                         }
                         changedAnyCallSite = true;
                         continue;
@@ -229,7 +230,7 @@ public class CloneGenerationPass implements OptimizationPass {
                         String sourceType = fl.get(1).text;
                         List<String> replacement = tryRewriteClone(sourceType);
                         if (replacement != null) {
-                            rewritten.addAll(PARSER.parse(replacement, "<generated-clone-glue>"));
+                            rewritten.addAll(HOBStatement.fromTexts(replacement, "<generated-clone-glue>"));
                             changedAnyCallSite = true;
                             continue;
                         }
@@ -697,7 +698,7 @@ public class CloneGenerationPass implements OptimizationPass {
             }
         }
 
-        private void emitTempDecls(List<List<BytecodeToken>> out, CloneCtx ctx) {
+        private void emitTempDecls(HOBProgram out, CloneCtx ctx) {
             for (int i = 0; i < ctx.tempNames.size(); i++) {
                 String n = ctx.tempNames.get(i);
                 String t = ctx.tempTypes.get(i);
@@ -709,8 +710,8 @@ public class CloneGenerationPass implements OptimizationPass {
         }
 
         /** The shared routine for a pointer to `structName`: clone every owns leaf into a temp, then build the copy; undo everything on failure. */
-        private List<List<BytecodeToken>> generatePointerCloneRoutine(String structName) {
-            List<List<BytecodeToken>> out = new ArrayList<>();
+        private HOBProgram generatePointerCloneRoutine(String structName) {
+            HOBProgram out = new HOBProgram();
             String paramType = "raw_imut_" + structName;
             String ownsType = "owns_mut_" + structName;
             emit(out, "FUNC_START " + pointerRoutineNameFor(structName));
@@ -718,7 +719,7 @@ public class CloneGenerationPass implements OptimizationPass {
             emit(out, "RETURNS " + ownsType);
             String root = emitParamLoad(out, "src", paramType, structName);
             CloneCtx ctx = new CloneCtx(newLabel("clone_fail"));
-            List<List<BytecodeToken>> phase1 = new ArrayList<>();
+            HOBProgram phase1 = new HOBProgram();
             emitCloneLeavesOfStruct(phase1, ctx, structName, root);
             emitTempDecls(out, ctx);
             out.addAll(phase1);
@@ -747,7 +748,7 @@ public class CloneGenerationPass implements OptimizationPass {
         }
 
         /** Phase 1: for every ordinary member of `structName` (read off the local copy at `basePath`), clone each owns leaf into a temp. */
-        private void emitCloneLeavesOfStruct(List<List<BytecodeToken>> out, CloneCtx ctx, String structName, String basePath) {
+        private void emitCloneLeavesOfStruct(HOBProgram out, CloneCtx ctx, String structName, String basePath) {
             List<StructTable.Member> members = structTable.membersOf(structName);
             boolean classIdBearing = !members.isEmpty() && members.get(0).name.equals("___type");
             List<StructTable.Member> ordinary = classIdBearing ? members.subList(1, members.size()) : members;
@@ -756,7 +757,7 @@ public class CloneGenerationPass implements OptimizationPass {
             }
         }
 
-        private void emitCloneLeaves(List<List<BytecodeToken>> out, CloneCtx ctx, String path, String canonicalType) {
+        private void emitCloneLeaves(HOBProgram out, CloneCtx ctx, String path, String canonicalType) {
             CanonicalType t = CanonicalType.parse(canonicalType);
 
             if (t.isOwnsStorage()) {
@@ -823,7 +824,7 @@ public class CloneGenerationPass implements OptimizationPass {
          * and go to the routine's fail label (or, in a by-value routine, carry on with a null member). Otherwise register it
          * with the ghost table and store it in `temp`. Leaves the stack balanced either way.
          */
-        private void emitCheckRegisterStore(List<List<BytecodeToken>> out, CloneCtx ctx, String ownsType, String temp) {
+        private void emitCheckRegisterStore(HOBProgram out, CloneCtx ctx, String ownsType, String temp) {
             // Register first: a failed registration (ghost table can not grow) frees the block and leaves null, so the check
             // below treats it exactly like a failed clone.
             emit(out, "GT_REGISTER");
@@ -844,7 +845,7 @@ public class CloneGenerationPass implements OptimizationPass {
         }
 
         /** Phase 2: push the class id (if any) and every ordinary member in declared order, owns leaves taken from their temps. */
-        private void emitMemberPushSequence(List<List<BytecodeToken>> out, String structName, String basePath, CloneCtx ctx) {
+        private void emitMemberPushSequence(HOBProgram out, String structName, String basePath, CloneCtx ctx) {
             List<StructTable.Member> members = structTable.membersOf(structName);
             boolean classIdBearing = !members.isEmpty() && members.get(0).name.equals("___type");
             List<StructTable.Member> ordinary = classIdBearing ? members.subList(1, members.size()) : members;
@@ -857,7 +858,7 @@ public class CloneGenerationPass implements OptimizationPass {
             }
         }
 
-        private void emitPushValue(List<List<BytecodeToken>> out, String path, String canonicalType, CloneCtx ctx) {
+        private void emitPushValue(HOBProgram out, String path, String canonicalType, CloneCtx ctx) {
             CanonicalType t = CanonicalType.parse(canonicalType);
 
             if (t.isOwnsStorage()) {
@@ -1019,8 +1020,8 @@ public class CloneGenerationPass implements OptimizationPass {
          * (`BytecodeEmitter.emitInstantiate` never emits "NEW" itself --
          * only `emitNew`'s own wrapper around the `new` keyword does).
          */
-        private List<List<BytecodeToken>> generateValueCloneRoutine(String structName) {
-            List<List<BytecodeToken>> out = new ArrayList<>();
+        private HOBProgram generateValueCloneRoutine(String structName) {
+            HOBProgram out = new HOBProgram();
             String paramType = "raw_imut_" + structName;
             String dstParamType = "raw_mut_" + structName;
             emit(out, "FUNC_START " + valueRoutineNameFor(structName));
@@ -1032,7 +1033,7 @@ public class CloneGenerationPass implements OptimizationPass {
             emit(out, "PUSH $24 " + dstParamType); // the destination address: stack word 1
             emit(out, "ASSIGN " + dstParamType + " " + dstParamType + " " + dstParamType);
             CloneCtx ctx = new CloneCtx(newLabel("clone_fail"));
-            List<List<BytecodeToken>> phase1 = new ArrayList<>();
+            HOBProgram phase1 = new HOBProgram();
             emitCloneLeavesOfStruct(phase1, ctx, structName, root);
             emitTempDecls(out, ctx);
             out.addAll(phase1);
@@ -1075,7 +1076,7 @@ public class CloneGenerationPass implements OptimizationPass {
          * gives for its own, structurally identical one-parameter
          * routine.
          */
-        private String emitParamLoad(List<List<BytecodeToken>> out, String name, String type, String structName) {
+        private String emitParamLoad(HOBProgram out, String name, String type, String structName) {
             emit(out, "ALLOC " + name + " " + type);
             emit(out, "ADDR " + name + " " + type);
             emit(out, "PUSH $16 " + type);
@@ -1096,8 +1097,8 @@ public class CloneGenerationPass implements OptimizationPass {
 
 
 
-        private static void emit(List<List<BytecodeToken>> out, String text) {
-            out.addAll(PARSER.parse(Collections.singletonList(text), "<generated-clone-glue>"));
+        private static void emit(HOBProgram out, String text) {
+            out.add(HOBStatement.fromText(text, "<generated-clone-glue>"));
         }
     }
 }

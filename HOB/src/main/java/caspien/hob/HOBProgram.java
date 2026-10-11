@@ -1,4 +1,4 @@
-package caspien.optimizer.hob;
+package caspien.hob;
 
 import java.util.ArrayList;
 import java.util.Collection;

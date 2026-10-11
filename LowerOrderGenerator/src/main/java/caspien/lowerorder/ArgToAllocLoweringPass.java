@@ -1,4 +1,6 @@
 package caspien.lowerorder;
+import caspien.hob.HOBProgram;
+import caspien.hob.HOBStatement;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -98,7 +100,6 @@ import java.util.regex.Pattern;
  */
 public class ArgToAllocLoweringPass implements OptimizationPass {
 
-    private static final BytecodeParser PARSER = new BytecodeParser();
 
     private static final Pattern BY_VALUE_RANGE_ARG =
             Pattern.compile("^(?:imut|mut|indeterminate)_range(?:\\(.*\\))?$");
@@ -109,14 +110,14 @@ public class ArgToAllocLoweringPass implements OptimizationPass {
     }
 
     @Override
-    public PassResult run(List<List<BytecodeToken>> lines) {
-        List<List<BytecodeToken>> out = new ArrayList<>();
+    public PassResult run(HOBProgram lines) {
+        HOBProgram out = new HOBProgram();
         boolean changed = false;
 
         int i = 0;
         int n = lines.size();
         while (i < n) {
-            List<BytecodeToken> line = lines.get(i);
+            HOBStatement line = lines.get(i);
             if (line.isEmpty() || !line.get(0).text.equals("FUNC_START")) {
                 out.add(line);
                 i++;
@@ -140,15 +141,15 @@ public class ArgToAllocLoweringPass implements OptimizationPass {
         return new PassResult(out, changed);
     }
 
-    private boolean sameLines(List<List<BytecodeToken>> lines, int start, int end,
-            List<List<BytecodeToken>> out, int outStart) {
+    private boolean sameLines(HOBProgram lines, int start, int end,
+            HOBProgram out, int outStart) {
         int len = end - start + 1;
         if (out.size() - outStart != len) {
             return false;
         }
         for (int k = 0; k < len; k++) {
-            List<BytecodeToken> a = lines.get(start + k);
-            List<BytecodeToken> b = out.get(outStart + k);
+            HOBStatement a = lines.get(start + k);
+            HOBStatement b = out.get(outStart + k);
             if (a.size() != b.size()) {
                 return false;
             }
@@ -161,13 +162,13 @@ public class ArgToAllocLoweringPass implements OptimizationPass {
         return true;
     }
 
-    private void lowerFunction(List<List<BytecodeToken>> lines, int start, int end, List<List<BytecodeToken>> out) {
+    private void lowerFunction(HOBProgram lines, int start, int end, HOBProgram out) {
         List<String> paramNames = new ArrayList<>();
         List<String> paramTypes = new ArrayList<>();
 
         int idx = start;
         while (idx <= end) {
-            List<BytecodeToken> l = lines.get(idx);
+            HOBStatement l = lines.get(idx);
             String mnemonic = l.get(0).text;
             if (mnemonic.equals("ARG") && l.size() >= 3) {
                 paramNames.add(l.get(1).text);
@@ -186,20 +187,20 @@ public class ArgToAllocLoweringPass implements OptimizationPass {
 
         boolean insertedParamAllocs = false;
         if (idx <= end) {
-            List<BytecodeToken> l = lines.get(idx);
+            HOBStatement l = lines.get(idx);
             if (l.size() >= 2 && l.get(0).text.equals("ALLOC") && l.get(1).text.equals("gt_routine_address")) {
                 out.add(l);
                 idx++;
                 // the second reserved slot (present only in programs that use throw) stays right behind the first, so both sit at a
                 // fixed offset (-8 and -16) in every frame: GT_UNWIND copies the error message up a frame through that fixed slot.
                 if (idx <= end) {
-                    List<BytecodeToken> m2 = lines.get(idx);
+                    HOBStatement m2 = lines.get(idx);
                     if (m2.size() >= 2 && m2.get(0).text.equals("ALLOC") && m2.get(1).text.equals("gt_error_message")) {
                         out.add(m2);
                         idx++;
                         // stack traces: gt_trace_id (rbp-24) and gt_trace_ptr (rbp-32) follow, still before the parameters
                         while (idx <= end) {
-                            List<BytecodeToken> m3 = lines.get(idx);
+                            HOBStatement m3 = lines.get(idx);
                             if (m3.size() >= 2 && m3.get(0).text.equals("ALLOC") && m3.get(1).text.startsWith("gt_trace_")) {
                                 out.add(m3);
                                 idx++;
@@ -218,7 +219,7 @@ public class ArgToAllocLoweringPass implements OptimizationPass {
         }
 
         while (idx <= end) {
-            List<BytecodeToken> l = lines.get(idx);
+            HOBStatement l = lines.get(idx);
             if (l.isEmpty() || !l.get(0).text.equals("ALLOC")) {
                 break;
             }
@@ -234,13 +235,13 @@ public class ArgToAllocLoweringPass implements OptimizationPass {
         }
     }
 
-    private void emitParamAllocs(List<List<BytecodeToken>> out, List<String> paramNames, List<String> paramTypes) {
+    private void emitParamAllocs(HOBProgram out, List<String> paramNames, List<String> paramTypes) {
         for (int i = 0; i < paramNames.size(); i++) {
             emit(out, "ALLOC " + paramNames.get(i) + " " + paramTypes.get(i));
         }
     }
 
-    private void emitParamLoads(List<List<BytecodeToken>> out, List<String> paramNames, List<String> paramTypes) {
+    private void emitParamLoads(HOBProgram out, List<String> paramNames, List<String> paramTypes) {
         // `wordIndex` stays one single, uniformly-incrementing counter
         // across the *whole* parameter list, regardless of which words
         // turn out to be "ARGn" vs "FARGn" -- this pass still has no
@@ -293,7 +294,7 @@ public class ArgToAllocLoweringPass implements OptimizationPass {
         return Collections.singletonList(canonical);
     }
 
-    private static void emit(List<List<BytecodeToken>> out, String text) {
-        out.addAll(PARSER.parse(Collections.singletonList(text), "<arg-to-alloc-lowered>"));
+    private static void emit(HOBProgram out, String text) {
+        out.add(HOBStatement.fromText(text, "<arg-to-alloc-lowered>"));
     }
 }

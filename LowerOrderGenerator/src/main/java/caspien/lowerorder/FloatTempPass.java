@@ -1,4 +1,7 @@
 package caspien.lowerorder;
+import caspien.hob.HOBProgram;
+import caspien.hob.HOBStatement;
+import caspien.hob.HOBToken;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -41,14 +44,14 @@ public class FloatTempPass {
         this.enabled = enabled;
     }
 
-    public List<List<BytecodeToken>> run(List<List<BytecodeToken>> lines) {
+    public HOBProgram run(HOBProgram lines) {
         if (!enabled) {
             return lines;
         }
-        List<List<BytecodeToken>> out = new ArrayList<>(lines.size());
+        HOBProgram out = new HOBProgram(lines.size());
         int i = 0;
         while (i < lines.size()) {
-            List<BytecodeToken> line = lines.get(i);
+            HOBStatement line = lines.get(i);
             if (!line.isEmpty() && line.get(0).text.equals("FUNC_START")) {
                 int end = i;
                 while (end < lines.size() && !(!lines.get(end).isEmpty() && lines.get(end).get(0).text.equals("FUNC_END"))) {
@@ -75,11 +78,11 @@ public class FloatTempPass {
      * and a last R_FBINX "%xD = %yK op b". The variable %xD must not appear anywhere else in the run (so overwriting it early reads
      * nothing stale), and %yK must not be read after the run before it is written again. Anything else stays as it was.
      */
-    private static List<List<BytecodeToken>> coalesceIntoVariables(List<List<BytecodeToken>> lines) {
+    private static HOBProgram coalesceIntoVariables(HOBProgram lines) {
         int n = lines.size();
-        List<List<BytecodeToken>> res = new ArrayList<>(lines);
+        HOBProgram res = new HOBProgram(lines);
         for (int j = 0; j < n; j++) {
-            List<BytecodeToken> lj = res.get(j);
+            HOBStatement lj = res.get(j);
             if (lj.size() != 6 || !lj.get(0).text.equals("R_FBINX") || !lj.get(3).text.startsWith("%x") || !lj.get(4).text.startsWith("%y")) {
                 continue;
             }
@@ -98,7 +101,7 @@ public class FloatTempPass {
             if (k < 0) {
                 continue;
             }
-            List<BytecodeToken> prod = res.get(k);
+            HOBStatement prod = res.get(k);
             boolean prodBinx = prod.size() == 6 && prod.get(0).text.equals("R_FBINX") && prod.get(3).text.equals(y) && prod.get(2).text.equals(w);
             // the producer must start the chain: it may not read %y itself (an earlier definition of it is still needed)
             if (prodBinx && (prod.get(4).text.equals(y) || prod.get(5).text.equals(y))) {
@@ -111,7 +114,7 @@ public class FloatTempPass {
             boolean ok = true;
             int swapAt = -1; // a "%y = %y op %xD" (op commutative) line: becomes "%xD = %xD op %y", the chain continues in %xD after it
             for (int q = k; q < j && ok; q++) {
-                List<BytecodeToken> l = res.get(q);
+                HOBStatement l = res.get(q);
                 int mentions = 0;
                 for (int a = 1; a < l.size(); a++) {
                     if (l.get(a).text.equals(xd)) {
@@ -137,7 +140,7 @@ public class FloatTempPass {
             }
             // %y must be dead after line j (until it is redefined)
             for (int q = j + 1; q < n && ok; q++) {
-                List<BytecodeToken> l = res.get(q);
+                HOBStatement l = res.get(q);
                 boolean mentions = false;
                 for (int a = 1; a < l.size(); a++) {
                     if (l.get(a).text.equals(y)) {
@@ -159,17 +162,17 @@ public class FloatTempPass {
                 continue;
             }
             for (int q = swapAt >= 0 ? swapAt : k; q <= j; q++) {
-                List<BytecodeToken> l = res.get(q);
-                List<BytecodeToken> r = new ArrayList<>(l.size());
+                HOBStatement l = res.get(q);
+                HOBStatement r = new HOBStatement(l.size());
                 for (int a = 0; a < l.size(); a++) {
-                    BytecodeToken b = l.get(a);
+                    HOBToken b = l.get(a);
                     String tx = b.text;
                     if (q == swapAt) {
                         tx = a == 3 || a == 4 ? xd : a == 5 ? y : tx;
                     } else if (tx.equals(y)) {
                         tx = xd;
                     }
-                    r.add(tx.equals(b.text) ? b : new BytecodeToken(tx, b.file, b.line, BytecodeToken.Kind.CODE));
+                    r.add(tx.equals(b.text) ? b : new HOBToken(tx, b.file, b.line, HOBToken.Kind.CODE));
                 }
                 res.set(q, r);
             }
@@ -239,12 +242,12 @@ public class FloatTempPass {
         }
     }
 
-    private void processFunction(List<List<BytecodeToken>> fn, List<List<BytecodeToken>> out) {
+    private void processFunction(List<HOBStatement> fn, List<HOBStatement> out) {
         int n = fn.size();
         List<List<String>> t = new ArrayList<>(n);
-        for (List<BytecodeToken> l : fn) {
+        for (HOBStatement l : fn) {
             List<String> r = new ArrayList<>(l.size());
-            for (BytecodeToken b : l) {
+            for (HOBToken b : l) {
                 r.add(b.text);
             }
             t.add(r);
@@ -446,7 +449,7 @@ public class FloatTempPass {
         }
         for (int i = 0; i < n; i++) {
             List<String> l = t.get(i);
-            List<BytecodeToken> orig = fn.get(i);
+            HOBStatement orig = fn.get(i);
             if (l.size() == 3 && l.get(0).equals("R_XMOV") && l.get(1).equals(l.get(2))) {
                 continue; // an R_XTOG whose uses now read the variable directly
             }
@@ -454,16 +457,16 @@ public class FloatTempPass {
                 out.add(orig);
                 continue;
             }
-            BytecodeToken ref = orig.isEmpty() ? null : orig.get(0);
-            List<BytecodeToken> r = new ArrayList<>(l.size());
+            HOBToken ref = orig.isEmpty() ? null : orig.get(0);
+            HOBStatement r = new HOBStatement(l.size());
             for (String s : l) {
-                r.add(new BytecodeToken(s, ref == null ? null : ref.file, ref == null ? 0 : ref.line, BytecodeToken.Kind.CODE));
+                r.add(new HOBToken(s, ref == null ? null : ref.file, ref == null ? 0 : ref.line, HOBToken.Kind.CODE));
             }
             out.add(r);
         }
     }
 
-    private static boolean sameText(List<String> a, List<BytecodeToken> b) {
+    private static boolean sameText(List<String> a, HOBStatement b) {
         if (a.size() != b.size()) {
             return false;
         }

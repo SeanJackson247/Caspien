@@ -1,4 +1,4 @@
-import caspien.optimizer.hob.*;
+import caspien.hob.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.util.List;

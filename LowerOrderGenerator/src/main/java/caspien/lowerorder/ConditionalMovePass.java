@@ -1,4 +1,7 @@
 package caspien.lowerorder;
+import caspien.hob.HOBProgram;
+import caspien.hob.HOBStatement;
+import caspien.hob.HOBToken;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -24,13 +27,13 @@ public class ConditionalMovePass {
         this.enabled = enabled;
     }
 
-    public List<List<BytecodeToken>> run(List<List<BytecodeToken>> lines) {
+    public HOBProgram run(HOBProgram lines) {
         if (!enabled) {
             return lines;
         }
         int n = lines.size();
         Map<String, Integer> refs = new HashMap<>();
-        for (List<BytecodeToken> l : lines) {
+        for (HOBStatement l : lines) {
             if (l.size() == 6 && (t(l, 0).equals("R_BRC") || t(l, 0).equals("R_BRCM"))) {
                 refs.merge(t(l, 5), 1, Integer::sum);
             } else if (l.size() == 2 && t(l, 0).equals("JMP")) {
@@ -43,11 +46,11 @@ public class ConditionalMovePass {
                 }
             }
         }
-        List<List<BytecodeToken>> out = new ArrayList<>(n);
+        HOBProgram out = new HOBProgram(n);
         boolean changed = false;
         int i = 0;
         while (i < n) {
-            List<BytecodeToken> br = lines.get(i);
+            HOBStatement br = lines.get(i);
             if (br.size() == 6 && t(br, 0).equals("R_BRC") && t(br, 2).matches("[1248]") && i + 2 < n) {
                 String lbl = t(br, 5);
                 // one arm
@@ -79,7 +82,7 @@ public class ConditionalMovePass {
     }
 
     /** {variable, source} of `R_MOV 8 %vK src` (register or immediate) or `R_SETV m %vK #c` (the constant cut to m bytes, zero-extended), else null */
-    private static String[] source(List<BytecodeToken> l) {
+    private static String[] source(HOBStatement l) {
         if (l.size() != 4 || !t(l, 2).matches("%v[0-9]")) {
             return null;
         }
@@ -110,31 +113,31 @@ public class ConditionalMovePass {
         }
     }
 
-    private static List<BytecodeToken> cmov(List<BytecodeToken> br, String v, String x, String y) {
-        BytecodeToken at = br.get(0);
-        List<BytecodeToken> r = new ArrayList<>();
-        r.add(new BytecodeToken("R_CMOV", at.file, at.line, at.kind));
+    private static HOBStatement cmov(HOBStatement br, String v, String x, String y) {
+        HOBToken at = br.get(0);
+        HOBStatement r = new HOBStatement();
+        r.add(new HOBToken("R_CMOV", at.file, at.line, at.kind));
         r.add(br.get(1));
         r.add(br.get(2));
         r.add(br.get(3));
         r.add(br.get(4));
-        r.add(new BytecodeToken(v, at.file, at.line, at.kind));
-        r.add(new BytecodeToken(x, at.file, at.line, at.kind));
+        r.add(new HOBToken(v, at.file, at.line, at.kind));
+        r.add(new HOBToken(x, at.file, at.line, at.kind));
         if (y != null) {
-            r.add(new BytecodeToken(y, at.file, at.line, at.kind));
+            r.add(new HOBToken(y, at.file, at.line, at.kind));
         }
         return r;
     }
 
-    private static boolean isLabel(List<BytecodeToken> l, String name) {
+    private static boolean isLabel(HOBStatement l, String name) {
         return l.size() == 1 && t(l, 0).equals(name + ":");
     }
 
-    private static boolean isJmp(List<BytecodeToken> l) {
+    private static boolean isJmp(HOBStatement l) {
         return l.size() == 2 && t(l, 0).equals("JMP");
     }
 
-    private static String t(List<BytecodeToken> l, int i) {
+    private static String t(HOBStatement l, int i) {
         return l.get(i).text;
     }
 }

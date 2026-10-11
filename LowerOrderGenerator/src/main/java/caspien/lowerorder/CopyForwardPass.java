@@ -1,4 +1,7 @@
 package caspien.lowerorder;
+import caspien.hob.HOBProgram;
+import caspien.hob.HOBStatement;
+import caspien.hob.HOBToken;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -38,16 +41,16 @@ public class CopyForwardPass {
         this.enabled = enabled;
     }
 
-    public List<List<BytecodeToken>> run(List<List<BytecodeToken>> lines) {
+    public HOBProgram run(HOBProgram lines) {
         if (!enabled) {
             return lines;
         }
         int n = lines.size();
-        List<List<BytecodeToken>> cur = new ArrayList<>(lines);
+        HOBProgram cur = new HOBProgram(lines);
         boolean[] gone = new boolean[n];
         boolean changed = false;
         for (int i = 0; i < n; i++) {
-            List<BytecodeToken> m = cur.get(i);
+            HOBStatement m = cur.get(i);
             if (gone[i] || m.size() != 4 || !t(m, 0).equals("R_MOV") || !t(m, 1).equals("8")) {
                 continue;
             }
@@ -59,7 +62,7 @@ public class CopyForwardPass {
             if (!t(m, 2).matches("%t[0-3]") || !t(m, 3).matches("%v[0-5]")) {
                 continue;
             }
-            List<List<BytecodeToken>> edits = plan(cur, gone, i, t(m, 2), m.get(3));
+            HOBProgram edits = plan(cur, gone, i, t(m, 2), m.get(3));
             if (edits == null) {
                 continue;
             }
@@ -74,7 +77,7 @@ public class CopyForwardPass {
         if (!changed) {
             return lines;
         }
-        List<List<BytecodeToken>> out = new ArrayList<>(n);
+        HOBProgram out = new HOBProgram(n);
         for (int i = 0; i < n; i++) {
             if (!gone[i]) {
                 out.add(cur.get(i));
@@ -84,9 +87,9 @@ public class CopyForwardPass {
     }
 
     /** the rewritten lines after `from` (null entries = unchanged), or null when the copy cannot be forwarded */
-    private static List<List<BytecodeToken>> plan(List<List<BytecodeToken>> cur, boolean[] gone, int from, String x, BytecodeToken v) {
+    private static HOBProgram plan(HOBProgram cur, boolean[] gone, int from, String x, HOBToken v) {
         String var = v.text;
-        List<List<BytecodeToken>> edits = new ArrayList<>();
+        HOBProgram edits = new HOBProgram();
         int seen = 0;
         for (int j = from + 1; j < cur.size() && seen < WINDOW; j++) {
             if (gone[j]) {
@@ -94,7 +97,7 @@ public class CopyForwardPass {
                 continue;
             }
             seen++;
-            List<BytecodeToken> l = cur.get(j);
+            HOBStatement l = cur.get(j);
             edits.add(null);
             if (l.isEmpty()) {
                 return null;
@@ -110,7 +113,7 @@ public class CopyForwardPass {
             if (d != null && d >= l.size()) {
                 return null;
             }
-            List<BytecodeToken> r = null;
+            HOBStatement r = null;
             for (int k = 1; k < l.size(); k++) {
                 if (!t(l, k).equals(x) || (d != null && k == d)) {
                     continue;
@@ -119,7 +122,7 @@ public class CopyForwardPass {
                     return null;
                 }
                 if (r == null) {
-                    r = new ArrayList<>(l);
+                    r = new HOBStatement(l);
                 }
                 r.set(k, v);
             }
@@ -138,7 +141,7 @@ public class CopyForwardPass {
     }
 
     /** operand k of line l is a plain value read of a general register that the backend also accepts a variable register for */
-    private static boolean readSlot(List<BytecodeToken> l, int k) {
+    private static boolean readSlot(HOBStatement l, int k) {
         switch (t(l, 0)) {
             case "R_MOV":
                 return l.size() == 4 && k == 3;
@@ -165,7 +168,7 @@ public class CopyForwardPass {
         }
     }
 
-    private static String t(List<BytecodeToken> l, int i) {
+    private static String t(HOBStatement l, int i) {
         return l.get(i).text;
     }
 }

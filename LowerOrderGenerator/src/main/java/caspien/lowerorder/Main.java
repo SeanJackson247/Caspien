@@ -1,4 +1,7 @@
 package caspien.lowerorder;
+import caspien.hob.HOBParser;
+import caspien.hob.HOBProgram;
+import caspien.hob.HOBSerializer;
 
 import java.io.IOException;
 import java.io.PrintWriter;
@@ -44,16 +47,15 @@ public class Main {
         String inputPath = args[1];
         String outputPath = args[2];
 
+        // Four strictly separate phases: text -> HOBProgram -> lowered program -> text.
         List<String> rawLines = Files.readAllLines(Paths.get(inputPath), StandardCharsets.UTF_8);
+        HOBProgram program = new HOBParser().parse(rawLines, inputPath);
 
-        BytecodeParser parser = new BytecodeParser();
-        List<List<BytecodeToken>> parsed = parser.parse(rawLines, inputPath);
+        // Fixed path relative to the working directory; hard-required (see CompilerConfig).
+        CompilerConfig config = CompilerConfig.load("compiler.config");
+        HOBProgram lowered = new LowerOrderGenerator(config).generate(program);
 
-        LowerOrderGenerator generator = new LowerOrderGenerator();
-        List<List<BytecodeToken>> result = generator.generate(parsed);
-
-        BytecodeSerializer serializer = new BytecodeSerializer();
-        String bytecode = serializer.serialize(result);
+        String bytecode = new HOBSerializer().serialize(lowered);
 
         System.out.print(bytecode);
 

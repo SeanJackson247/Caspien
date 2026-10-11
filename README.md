@@ -1940,7 +1940,7 @@ javac Compiler.java
 To rebuild a stage after changing it, for example the optimiser:
 
 ```
-cd Optimizer && javac -d out $(find src/main/java -name '*.java')
+cd Optimizer && javac -d out $(find src/main/java ../HOB/src/main/java -name '*.java')
 ```
 
 #### Compile and run

@@ -1,4 +1,7 @@
 package caspien.lowerorder;
+import caspien.hob.HOBProgram;
+import caspien.hob.HOBStatement;
+import caspien.hob.HOBToken;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -20,16 +23,16 @@ public class GlobalConstAddrPass {
 
     private static final int MAX_GAP = 40;
 
-    public List<List<BytecodeToken>> run(List<List<BytecodeToken>> lines) {
+    public HOBProgram run(HOBProgram lines) {
         int n = lines.size();
-        List<List<BytecodeToken>> cur = new ArrayList<>(lines);
+        HOBProgram cur = new HOBProgram(lines);
         boolean[] gone = new boolean[n];
         boolean changed = false;
         for (int i = 0; i < n; i++) {
             if (gone[i]) {
                 continue;
             }
-            List<BytecodeToken> lea = cur.get(i);
+            HOBStatement lea = cur.get(i);
             String sym = symbolWithOffset(lea);
             if (sym == null) {
                 continue;
@@ -39,14 +42,14 @@ public class GlobalConstAddrPass {
                 if (gone[j]) {
                     continue;
                 }
-                List<BytecodeToken> l = cur.get(j);
+                HOBStatement l = cur.get(j);
                 if (!IndexedAccessPass.mentions(l, x)) {
                     if (!IndexedAccessPass.passable(l, x)) {
                         break;
                     }
                     continue;
                 }
-                List<BytecodeToken> fused = fuse(l, x, sym);
+                HOBStatement fused = fuse(l, x, sym);
                 boolean self = fused != null && fused.get(0).text.equals("R_LD") && t(l, 2).equals(x);
                 if (fused != null && IndexedAccessPass.deadAfter(cur, gone, j + 1, x, self)) {
                     cur.set(j, fused);
@@ -59,7 +62,7 @@ public class GlobalConstAddrPass {
         if (!changed) {
             return lines;
         }
-        List<List<BytecodeToken>> out = new ArrayList<>(n);
+        HOBProgram out = new HOBProgram(n);
         for (int i = 0; i < n; i++) {
             if (!gone[i]) {
                 out.add(cur.get(i));
@@ -68,12 +71,12 @@ public class GlobalConstAddrPass {
         return out;
     }
 
-    private static String t(List<BytecodeToken> l, int i) {
+    private static String t(HOBStatement l, int i) {
         return l.get(i).text;
     }
 
     /** `R_LEA %tX &sym #k scale [extra]` -> "&sym+N" (N = k*scale + extra >= 0), else null */
-    private static String symbolWithOffset(List<BytecodeToken> l) {
+    private static String symbolWithOffset(HOBStatement l) {
         if ((l.size() != 5 && l.size() != 6) || !t(l, 0).equals("R_LEA") || !t(l, 1).startsWith("%t") || !t(l, 2).startsWith("&")
                 || t(l, 2).indexOf('+') >= 0 || !t(l, 3).startsWith("#")) {
             return null;
@@ -99,21 +102,21 @@ public class GlobalConstAddrPass {
         return s.equals("1") || s.equals("2") || s.equals("4") || s.equals("8");
     }
 
-    private static List<BytecodeToken> fuse(List<BytecodeToken> l, String x, String sym) {
-        BytecodeToken h = l.get(0);
-        List<BytecodeToken> n = new ArrayList<>();
+    private static HOBStatement fuse(HOBStatement l, String x, String sym) {
+        HOBToken h = l.get(0);
+        HOBStatement n = new HOBStatement();
         String m = t(l, 0);
         if (m.equals("R_LD") && l.size() == 4 && okWidth(t(l, 1)) && t(l, 3).equals(x)) {
             n.add(h);
             n.add(l.get(1));
             n.add(l.get(2));
-            n.add(new BytecodeToken(sym, h.file, h.line, h.kind));
+            n.add(new HOBToken(sym, h.file, h.line, h.kind));
             return n;
         }
         if (m.equals("R_ST") && l.size() == 4 && okWidth(t(l, 1)) && t(l, 2).equals(x) && !t(l, 3).equals(x)) {
             n.add(h);
             n.add(l.get(1));
-            n.add(new BytecodeToken(sym, h.file, h.line, h.kind));
+            n.add(new HOBToken(sym, h.file, h.line, h.kind));
             n.add(l.get(3));
             return n;
         }
@@ -122,14 +125,14 @@ public class GlobalConstAddrPass {
             n.add(h);
             n.add(l.get(1));
             n.add(l.get(2));
-            n.add(new BytecodeToken(sym, h.file, h.line, h.kind));
+            n.add(new HOBToken(sym, h.file, h.line, h.kind));
             return n;
         }
         if (m.equals("R_STX") && l.size() == 4 && (t(l, 1).equals("4") || t(l, 1).equals("8")) && t(l, 2).equals(x)
                 && (t(l, 3).startsWith("%x") || t(l, 3).startsWith("%y") || t(l, 3).startsWith("%z"))) {
             n.add(h);
             n.add(l.get(1));
-            n.add(new BytecodeToken(sym, h.file, h.line, h.kind));
+            n.add(new HOBToken(sym, h.file, h.line, h.kind));
             n.add(l.get(3));
             return n;
         }

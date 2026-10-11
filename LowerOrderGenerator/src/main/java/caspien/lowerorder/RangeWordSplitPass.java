@@ -1,4 +1,7 @@
 package caspien.lowerorder;
+import caspien.hob.HOBProgram;
+import caspien.hob.HOBStatement;
+import caspien.hob.HOBToken;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -31,8 +34,8 @@ import java.util.Set;
  */
 public class RangeWordSplitPass {
 
-    public List<List<BytecodeToken>> run(List<List<BytecodeToken>> lines) {
-        List<List<BytecodeToken>> out = new ArrayList<>(lines.size());
+    public HOBProgram run(HOBProgram lines) {
+        HOBProgram out = new HOBProgram(lines.size());
         int i = 0;
         int n = lines.size();
         while (i < n) {
@@ -54,17 +57,17 @@ public class RangeWordSplitPass {
 
     private final Set<Long> splitSlots = new HashSet<>();
 
-    private List<List<BytecodeToken>> split(List<List<BytecodeToken>> lines, Set<Long> slots) {
+    private List<HOBStatement> split(List<HOBStatement> lines, Set<Long> slots) {
         slots.clear();
-        List<List<BytecodeToken>> out = new ArrayList<>(lines.size());
+        HOBProgram out = new HOBProgram(lines.size());
         int n = lines.size();
         int i = 0;
         while (i < n) {
             if (i + 3 < n && addr16(lines.get(i)) != null) {
                 long x = addr16(lines.get(i));
-                List<BytecodeToken> l1 = lines.get(i + 1);
-                List<BytecodeToken> l2 = lines.get(i + 2);
-                List<BytecodeToken> l3 = lines.get(i + 3);
+                HOBStatement l1 = lines.get(i + 1);
+                HOBStatement l2 = lines.get(i + 2);
+                HOBStatement l3 = lines.get(i + 3);
                 if (isAssign16(l2) && push16(l1) != null) {
                     long y = push16(l1);
                     if (y == x) {
@@ -72,7 +75,7 @@ public class RangeWordSplitPass {
                         continue;
                     }
                     if (y + 16 <= x || x + 16 <= y) {
-                        BytecodeToken ref = lines.get(i).get(0);
+                        HOBToken ref = lines.get(i).get(0);
                         slots.add(x);
                         out.add(mk(ref, "ADDR", "8", "$" + x));
                         out.add(mk(ref, "PUSH", "8", "$" + y));
@@ -84,7 +87,7 @@ public class RangeWordSplitPass {
                         continue;
                     }
                 } else if (isAssign16(l3) && operand8(l1, x, false) && operand8(l2, x, true)) {
-                    BytecodeToken ref = lines.get(i).get(0);
+                    HOBToken ref = lines.get(i).get(0);
                     slots.add(x);
                     out.add(mk(ref, "ADDR", "8", "$" + x));
                     out.add(l1);
@@ -103,14 +106,14 @@ public class RangeWordSplitPass {
     }
 
     /** REGHINT lines for the two words of every split range whose every mention is a plain 8-byte one (the promotion re-checks all of it). */
-    private List<List<BytecodeToken>> hint(List<List<BytecodeToken>> fn) {
+    private List<HOBStatement> hint(List<HOBStatement> fn) {
         if (splitSlots.isEmpty()) {
             return fn;
         }
         int n = fn.size();
         Map<String, Integer> labelAt = new HashMap<>();
         for (int i = 0; i < n; i++) {
-            List<BytecodeToken> l = fn.get(i);
+            HOBStatement l = fn.get(i);
             if (l.size() == 1 && l.get(0).text.startsWith("@") && l.get(0).text.endsWith(":")) {
                 String tx = l.get(0).text;
                 labelAt.put(tx.substring(0, tx.length() - 1), i);
@@ -118,7 +121,7 @@ public class RangeWordSplitPass {
         }
         int[] depth = new int[n + 1];
         for (int i = 0; i < n; i++) {
-            List<BytecodeToken> l = fn.get(i);
+            HOBStatement l = fn.get(i);
             if (l.size() == 2 && l.get(0).text.equals("JMP")) {
                 Integer a = labelAt.get(l.get(1).text);
                 if (a != null && a < i) {
@@ -129,7 +132,7 @@ public class RangeWordSplitPass {
             }
         }
         Set<Long> hinted = new HashSet<>();
-        for (List<BytecodeToken> l : fn) {
+        for (HOBStatement l : fn) {
             if (l.size() == 4 && l.get(0).text.equals("REGHINT") && num(l.get(1).text) != null) {
                 hinted.add(num(l.get(1).text));
             }
@@ -150,9 +153,9 @@ public class RangeWordSplitPass {
         if (hints.isEmpty()) {
             return fn;
         }
-        List<List<BytecodeToken>> res = new ArrayList<>(n + hints.size());
+        HOBProgram res = new HOBProgram(n + hints.size());
         boolean done = false;
-        for (List<BytecodeToken> l : fn) {
+        for (HOBStatement l : fn) {
             res.add(l);
             if (!done && !l.isEmpty() && l.get(0).text.equals("ALLOC")) {
                 done = true;
@@ -165,10 +168,10 @@ public class RangeWordSplitPass {
     }
 
     /** weights {start word, end word}, or null when some mention is not a plain 8-byte access or a wide access overlaps. */
-    private static long[] usable(List<List<BytecodeToken>> fn, long x, int[] depth) {
+    private static long[] usable(List<HOBStatement> fn, long x, int[] depth) {
         long[] w = new long[2];
         for (int i = 0; i < fn.size(); i++) {
-            List<BytecodeToken> l = fn.get(i);
+            HOBStatement l = fn.get(i);
             boolean plain8 = l.size() >= 3 && (l.get(0).text.equals("PUSH") || l.get(0).text.equals("ADDR")) && l.get(1).text.equals("8");
             for (int k = 1; k < l.size(); k++) {
                 Long o = slotOff(l.get(k).text);
@@ -205,26 +208,26 @@ public class RangeWordSplitPass {
         return v;
     }
 
-    private static Long addr16(List<BytecodeToken> l) {
+    private static Long addr16(HOBStatement l) {
         if (l.size() == 3 && t(l, 0).equals("ADDR") && t(l, 1).equals("16")) {
             return slotOff(t(l, 2));
         }
         return null;
     }
 
-    private static Long push16(List<BytecodeToken> l) {
+    private static Long push16(HOBStatement l) {
         if (l.size() == 3 && t(l, 0).equals("PUSH") && t(l, 1).equals("16")) {
             return slotOff(t(l, 2));
         }
         return null;
     }
 
-    private static boolean isAssign16(List<BytecodeToken> l) {
+    private static boolean isAssign16(HOBStatement l) {
         return l.size() == 4 && t(l, 0).equals("ASSIGN") && t(l, 1).equals("16") && t(l, 2).equals("16") && t(l, 3).equals("16");
     }
 
     /** PUSH 8 of an integer literal, ARGn, or a slot; a slot read after the destination's first word was written must not overlap it. */
-    private static boolean operand8(List<BytecodeToken> l, long x, boolean afterFirstWrite) {
+    private static boolean operand8(HOBStatement l, long x, boolean afterFirstWrite) {
         if (l.size() != 3 || !t(l, 0).equals("PUSH") || !t(l, 1).equals("8")) {
             return false;
         }
@@ -242,7 +245,7 @@ public class RangeWordSplitPass {
         return !afterFirstWrite || s + 8 <= x || x + 16 <= s;
     }
 
-    private static String t(List<BytecodeToken> l, int i) {
+    private static String t(HOBStatement l, int i) {
         return l.get(i).text;
     }
 
@@ -261,10 +264,10 @@ public class RangeWordSplitPass {
         return num(s.substring(1));
     }
 
-    private static List<BytecodeToken> mk(BytecodeToken ref, String... texts) {
-        List<BytecodeToken> r = new ArrayList<>(texts.length);
+    private static HOBStatement mk(HOBToken ref, String... texts) {
+        HOBStatement r = new HOBStatement(texts.length);
         for (String x : texts) {
-            r.add(new BytecodeToken(x, ref.file, ref.line, BytecodeToken.Kind.CODE));
+            r.add(new HOBToken(x, ref.file, ref.line, HOBToken.Kind.CODE));
         }
         return r;
     }

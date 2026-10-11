@@ -1,8 +1,8 @@
 package caspien.optimizer;
 
-import caspien.optimizer.hob.HOBProgram;
-import caspien.optimizer.hob.HOBStatement;
-import caspien.optimizer.hob.HOBToken;
+import caspien.hob.HOBProgram;
+import caspien.hob.HOBStatement;
+import caspien.hob.HOBToken;
 
 import java.util.ArrayList;
 import java.util.Arrays;
