@@ -1,4 +1,5 @@
 #!/bin/bash
+# (the front end is covered too: see the ASTGenerator rules below)
 # The Optimizer is four separate phases: HOB text -> HOBProgram (hob/HOBParser) -> passes on the HOBProgram -> HOB text (hob/HOBSerializer).
 #   1. layering (static), for the Optimizer and the LowerOrderGenerator: both use the one shared HOB/ package; only the library entry class (Optimizer / LowerOrder) touches the parser/serializer, and only Main touches files; no pass reads or writes files; HOB/ imports no stage
 #   2. the parser/serializer round trip is exact (strings with spaces and escaped quotes, char literals, blank lines)
@@ -21,6 +22,11 @@ for stage in "Optimizer optimizer Optimizer" "LowerOrderGenerator lowerorder Low
   # the pass interface speaks HOBProgram only (no raw text lists)
   x=$(grep -nE "List<String>|String\[\] *lines" "$SRC/OptimizationPass.java" "$SRC/PassResult.java"); [ -z "$x" ] && echo "PASS $1: pass signatures carry HOBProgram" || fail "$1 text lists in the pass interface: $x"
 done
+# ASTGenerator (stage 1): the emitter builds a HOBProgram; only Main turns it into text, after emit() returned
+AST="$ROOT/ASTGenerator/src/main/java/caspien"
+x=$(grep -rlE "HOBSerializer|HOBParser" "$AST" | grep -v "/Main.java$"); [ -z "$x" ] && echo "PASS ASTGenerator: only Main serializes the HOB" || fail "ASTGenerator mentions the serializer/parser outside Main: $x"
+x=$(grep -nE "StringBuilder +out\b|String +emit\(" "$AST"/bytecodeemitter/*.java); [ -z "$x" ] && echo "PASS ASTGenerator: the emitter has no text buffer" || fail "emitter builds text: $x"
+x=$(grep -rE "^import caspien\.(optimizer|lowerorder|codegen)" "$AST"); [ -z "$x" ] && echo "PASS ASTGenerator imports no other stage" || fail "ASTGenerator imports a stage: $x"
 # the lower-order config is parsed once, in the library entry class; no pass reads or parses it
 x=$(grep -lE "CompilerConfig\.parse" "$ROOT"/LowerOrderGenerator/src/main/java/caspien/lowerorder/*.java | grep -v "/LowerOrder.java$"); [ -z "$x" ] && echo "PASS LowerOrderGenerator: config parsed only in LowerOrder" || fail "config parsed outside LowerOrder: $x"
 # 2 round trip

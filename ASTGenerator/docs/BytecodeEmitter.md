@@ -5,7 +5,7 @@ Reference notes for `BytecodeEmitter.java` (design, formats and rules). Design h
 ## Instruction shapes
 Covers: class `BytecodeEmitter` header, `emitExpr`/`emitStatement` conventions, if/elseif chains, `++` and compound assignment.
 
-The emitter walks the fully type-checked tree and writes the stack-based higher-order bytecode (HOB) as text.
+The emitter walks the fully type-checked tree and builds the stack-based higher-order bytecode (HOB) as a `HOBProgram` (one `HOBStatement` per instruction; `Main` serializes it once emit is done). The instruction shapes below are written as text lines.
 
 - `PUSH value type`
 - binary operator: `OPNAME leftType rightType returnType`; unary operator: `OPNAME operandType returnType`

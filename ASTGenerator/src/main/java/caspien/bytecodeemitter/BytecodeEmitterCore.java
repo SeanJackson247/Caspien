@@ -2,6 +2,9 @@ package caspien.bytecodeemitter;
 import caspien.typechecker.TypeChecker;
 import caspien.*;
 
+import caspien.hob.HOBProgram;
+import caspien.hob.HOBStatement;
+
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -15,7 +18,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Final front-end stage: walks the type-checked tree and emits the stack-based higher-order bytecode (HOB) as text.
+ * Final front-end stage: walks the type-checked tree and builds the stack-based higher-order bytecode (HOB) as a HOBProgram (text only when the caller serializes it).
  * Instruction shapes, if/elseif chaining and the ++ / compound-assignment desugaring: see docs/BytecodeEmitter.md, "Instruction shapes".
  */
 
@@ -101,7 +104,9 @@ abstract class BytecodeEmitterCore {
         COMPARISON_NAMES.put("!=", "NEQ");
     }
 
-    public final StringBuilder out = new StringBuilder();
+    /** The program being built: one HOBStatement per instruction. Turned into text only by the caller of emit(), once this is complete. */
+    public final HOBProgram out = new HOBProgram();
+    static final String ORIGIN = "ASTGenerator";
     public int labelCounter = 0;
     /** Distinct string literal -> hoisted id ("string_id1", ...), first-occurrence order; char literals are excluded. Filled by literalValueOf, emitted as STRING lines at the very front of the output. */
     public final Map<String, String> hoistedStrings = new LinkedHashMap<>();
@@ -333,7 +338,7 @@ abstract class BytecodeEmitterCore {
     public List<String> dynLiteralTempNames = null;
 
     public int lateAllocPos = -1;
-    public List<String> lateAllocs = null;
+    public List<HOBStatement> lateAllocs = null;
     public int hiddenLocalCounter = 0;
 
     /** Identical string literals anywhere in the program share one id. */
@@ -355,7 +360,7 @@ abstract class BytecodeEmitterCore {
         return out;
     }
 
-    public String emit(List<Token> rootLines, TypeChecker checker) {
+    public HOBProgram emit(List<Token> rootLines, TypeChecker checker) {
         this.checker = checker;
         Map<String, TypeChecker.StructInfo> structs = checker.getStructs();
         Map<String, TypeChecker.EnumInfo> enums = checker.getEnums();
@@ -431,7 +436,8 @@ abstract class BytecodeEmitterCore {
             }
         }
         fillFuncNameTable();
-        return emitHoistedStringsPrefix() + out.toString();
+        out.addAll(0, hoistedStringStatements());
+        return out;
     }
 
     /**
@@ -443,12 +449,12 @@ abstract class BytecodeEmitterCore {
         if (markerId == null) {
             return;
         }
-        String markerPush = "PUSH " + markerId + " static_some_imut_string\n";
-        int at = out.indexOf(markerPush);
+        String markerPush = "PUSH " + markerId + " static_some_imut_string";
+        int at = indexOfStatement(markerPush);
         if (at < 0) {
             return;
         }
-        boolean referenced = out.indexOf("CALL funcname\n") >= 0;
+        boolean referenced = indexOfStatement("CALL funcname") >= 0;
         StringBuilder chain = new StringBuilder();
         if (referenced) {
             for (int i = 0; i < traceFuncNames.size(); i++) {
@@ -461,17 +467,46 @@ abstract class BytecodeEmitterCore {
         }
         String unknownId = hoistedStrings.computeIfAbsent("?", v -> "string_id" + (hoistedStrings.size() + 1));
         chain.append("PUSH ").append(unknownId).append(" static_some_imut_string\n");
-        out.replace(at, at + markerPush.length(), chain.toString());
+        out.remove(at);
+        out.addAll(at, statementsOf(chain.toString()));
+    }
+
+    /** Index of the first statement equal to `text` (tokens joined by one space), or -1. */
+    private int indexOfStatement(String text) {
+        for (int i = 0; i < out.size(); i++) {
+            HOBStatement st = out.get(i);
+            if (st.size() == 0) {
+                continue;
+            }
+            StringBuilder sb = new StringBuilder(st.get(0).text);
+            for (int k = 1; k < st.size(); k++) {
+                sb.append(' ').append(st.get(k).text);
+            }
+            if (sb.toString().equals(text)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /** Text with one instruction per line -> statements. */
+    static List<HOBStatement> statementsOf(String lines) {
+        List<HOBStatement> result = new ArrayList<>();
+        for (String l : lines.split("\n", -1)) {
+            result.add(HOBStatement.fromText(l, ORIGIN));
+        }
+        result.remove(result.size() - 1); // text ends with '\n': the last piece is empty
+        return result;
     }
 
     /** One STRING line per hoisted string literal, prepended to the output (ahead of the GLOBAL lines). */
-    public String emitHoistedStringsPrefix() {
-        StringBuilder prefix = new StringBuilder();
+    public List<HOBStatement> hoistedStringStatements() {
+        List<HOBStatement> prefix = new ArrayList<>();
         for (Map.Entry<String, String> entry : hoistedStrings.entrySet()) {
-            prefix.append("STRING ").append(entry.getValue()).append(" \"")
-                    .append(escapeForBytecode(entry.getKey())).append("\"\n");
+            prefix.add(HOBStatement.fromText("STRING " + entry.getValue() + " \""
+                    + escapeForBytecode(entry.getKey()) + "\"", ORIGIN));
         }
-        return prefix.toString();
+        return prefix;
     }
 
     /**
@@ -568,9 +603,13 @@ abstract class BytecodeEmitterCore {
     /** ASM_START / raw content / ASM_END, shared by every asm emission site. */
     public void emitAsm(String rawContent) {
         line("ASM_START");
-        out.append(rawContent);
-        if (rawContent.isEmpty() || rawContent.charAt(rawContent.length() - 1) != '\n') {
-            out.append('\n');
+        if (!rawContent.isEmpty()) {
+            for (String l : (rawContent.endsWith("\n") ? rawContent : rawContent + "\n").split("\n", -1)) {
+                out.add(HOBStatement.fromText(l, ORIGIN));
+            }
+            out.remove(out.size() - 1); // the piece after the final '\n'
+        } else {
+            out.add(HOBStatement.fromText("", ORIGIN));
         }
         line("ASM_END");
     }
@@ -625,16 +664,13 @@ abstract class BytecodeEmitterCore {
      * when a type needs generated drop glue: the glue pass resolves `GT_DESTRUCT name` through one name -> type map, so two owning types under one
      * name dropped through the wrong layout (a catch parameter `e` plus an owning local `e` leaked). Rename one of them.
      */
-    public void requireOneOwnsTypePerSlotName(TypeChecker.FuncInfo info, String allocLines) {
+    public void requireOneOwnsTypePerSlotName(TypeChecker.FuncInfo info, List<HOBStatement> allocLines) {
         Map<String, String> seen = new HashMap<>();
-        for (String l : allocLines.split("\n")) {
-            if (!l.startsWith("ALLOC ")) {
+        for (HOBStatement st : allocLines) {
+            if (!st.opcode().equals("ALLOC") || st.size() < 3) {
                 continue;
             }
-            String[] parts = l.split(" ", 3);
-            if (parts.length < 3) {
-                continue;
-            }
+            String[] parts = {"ALLOC", st.text(1), st.text(2)};
             String before = seen.putIfAbsent(parts[1], parts[2]);
             if (before != null && !before.equals(parts[2]) && (dropNeedsGlue(before) || dropNeedsGlue(parts[2]))) {
                 throw new CompilerException("type", info.funcToken.file, info.funcToken.line,
@@ -668,7 +704,7 @@ abstract class BytecodeEmitterCore {
     }
 
     public void line(String s) {
-        out.append(s).append('\n');
+        out.add(HOBStatement.fromText(s, ORIGIN));
     }
 
     // ---- top-level declarations ------------------------------------------
@@ -1117,18 +1153,18 @@ abstract class BytecodeEmitterCore {
             r.run();
         }
         emitGtRoutineAlloc(info, emittedName, gtSuppressed);
-        final int allocScanStart = out.length();
+        final int allocScanStart = out.size();
         for (Runnable r : ordinaryAllocs) {
             r.run();
         }
-        requireOneOwnsTypePerSlotName(info, out.substring(allocScanStart));
+        requireOneOwnsTypePerSlotName(info, out.subList(allocScanStart, out.size()));
         // Locals discovered while emitting the body (see `declareHiddenLocal`) get their ALLOC lines spliced in right here once the
         // body is done: a variable cannot be used before it is declared, so no pre-pass is needed to find them.
         final int savedLateAllocPos = lateAllocPos;
-        final List<String> savedLateAllocs = lateAllocs;
+        final List<HOBStatement> savedLateAllocs = lateAllocs;
         final Map<String, String> savedRefAddrSlots = refAddrSlots;
         refAddrSlots = new HashMap<>();
-        lateAllocPos = out.length();
+        lateAllocPos = out.size();
         lateAllocs = new ArrayList<>();
         emitGtRoutineBody(info, emittedName, gtSuppressed);
         emitHoistedCatchBlocks(info);
@@ -1139,11 +1175,7 @@ abstract class BytecodeEmitterCore {
         emitCallSiteUnwindLandingPads(info, emittedName, gtSuppressed);
         line("FUNC_END");
         if (!lateAllocs.isEmpty()) {
-            StringBuilder sb = new StringBuilder();
-            for (String a : lateAllocs) {
-                sb.append(a).append('\n');
-            }
-            out.insert(lateAllocPos, sb);
+            out.addAll(lateAllocPos, lateAllocs);
         }
         lateAllocPos = savedLateAllocPos;
         lateAllocs = savedLateAllocs;

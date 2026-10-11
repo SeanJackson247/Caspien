@@ -1,4 +1,6 @@
 package caspien;
+import caspien.hob.HOBProgram;
+import caspien.hob.HOBSerializer;
 import caspien.typechecker.TypeChecker;
 import caspien.bytecodeemitter.BytecodeEmitter;
 import caspien.parser.Parser;
@@ -119,7 +121,8 @@ public class Main {
         }
 
         BytecodeEmitter bytecodeEmitter = new BytecodeEmitter();
-        String bytecode = bytecodeEmitter.emit(expanded, typeChecker);
+        HOBProgram hob = bytecodeEmitter.emit(expanded, typeChecker);
+        String bytecode = new HOBSerializer().serialize(hob); // the only place the HOB becomes text, after emit() has finished
         GasReport.SPIN.putAll(bytecodeEmitter.spinBounds);
         String fixModes = System.getenv("CASPIEN_FIX_MODE");
         if (fixModes == null && (!bytecodeEmitter.funcTermLabels.isEmpty() || !bytecodeEmitter.loopTermLabels.isEmpty())) {
