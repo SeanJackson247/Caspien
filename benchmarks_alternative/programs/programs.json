@@ -1,0 +1,309 @@
+[
+ {
+  "id": "nbody",
+  "title": "N-body",
+  "count": "%s steps",
+  "what": "naive = small functions and plain loops; optimized = hand-unrolled scalar statics (f64)",
+  "n": 5000000,
+  "env": "NBODY_N",
+  "stem": "nbody",
+  "java_class": "NBody",
+  "prec": "f64",
+  "small": 100000,
+  "extra_c": [{"src": "nbody_f32", "label": "C f32", "prec": "f32"}],
+  "references": {"f64": ["C -O0", "C -O2"], "f32": ["C f32 -O0", "C f32 -O2"]},
+  "tolerance": {"f32": 0.0005},
+  "caspien": [
+   {"src": "nbody_natural_f64", "label": "Caspien natural f64", "desc": "natural (small functions, loops)", "prec": "f64", "role": "naive"},
+   {"src": "nbody_plain_f64", "label": "Caspien plain f64", "desc": "plain loops", "prec": "f64"},
+   {"src": "nbody_loop_f64", "label": "Caspien loop f64", "desc": "looped nested match", "prec": "f64"},
+   {"src": "nbody_arr_f64", "label": "Caspien arr f64", "desc": "hand-unrolled, arrays", "prec": "f64"},
+   {"src": "nbody_f64", "label": "Caspien scalars f64", "desc": "hand-unrolled, scalars", "prec": "f64", "column": "optimized"},
+   {"src": "nbody_aos_safe_f64", "label": "Caspien aos_safe f64", "desc": "array of structs, safe dynarray", "prec": "f64"},
+   {"src": "nbody_aos_unsafe_f64", "label": "Caspien aos_unsafe f64", "desc": "array of structs, unsafe dynarray", "prec": "f64"},
+   {"src": "nbody_plain", "label": "Caspien plain f32", "desc": "plain loops", "prec": "f32"},
+   {"src": "nbody_loop", "label": "Caspien loop f32", "desc": "looped nested match", "prec": "f32"},
+   {"src": "nbody_arr", "label": "Caspien arr f32", "desc": "hand-unrolled, arrays", "prec": "f32"},
+   {"src": "nbody", "label": "Caspien scalars f32", "desc": "hand-unrolled, scalars", "prec": "f32"}
+  ]
+ },
+ {
+  "id": "fannkuchredux",
+  "title": "Fannkuch-redux",
+  "count": "n = %s",
+  "what": "naive = helper functions; optimized = everything hand-inlined into main",
+  "n": 11,
+  "env": "FANNKUCH_N",
+  "stem": "fannkuchredux",
+  "java_class": "FannkuchRedux",
+  "prec": "f64",
+  "small": 8,
+  "caspien": [
+   {"src": "fannkuch_naive", "label": "Caspien naive", "desc": "plain helper functions", "role": "naive"},
+   {"src": "fannkuch_opt", "label": "Caspien optimized", "desc": "everything hand-inlined into main", "column": "optimized"}
+  ]
+ },
+ {
+  "id": "spectralnorm",
+  "title": "Spectral-norm",
+  "count": "N = %s",
+  "what": "naive = A(i,j) through a function; optimized = incremental denominator, no calls",
+  "n": 2000,
+  "env": "SPECTRAL_N",
+  "stem": "spectralnorm",
+  "java_class": "SpectralNorm",
+  "prec": "f64",
+  "small": 200,
+  "caspien": [
+   {"src": "spectralnorm_naive", "label": "Caspien naive", "desc": "A(i,j) computed by a function call", "role": "naive"},
+   {"src": "spectralnorm_opt", "label": "Caspien optimized", "desc": "incremental denominator, no calls in the inner loop", "column": "optimized"}
+  ]
+ },
+ {
+  "id": "sieve",
+  "title": "Sieve of Eratosthenes",
+  "count": "primes up to %s",
+  "what": "naive = stdlib DynamicArray<u8> (get/set under bounds proofs); optimized safe = safe dynarray with bounds proofs; optimized unsafe = unsafe dynarray, no checks. C, C++ and Rust: free = release memory at the end, leak = do not",
+  "n": 100000000,
+  "env": "SIEVE_N",
+  "stem": "sieve",
+  "java_class": "Sieve",
+  "leak": true,
+  "small": 1000000,
+  "caspien": [
+   {"src": "sieve_naive", "label": "Caspien naive (DynamicArray)", "desc": "stdlib DynamicArray<u8>, get/set under bounds proofs", "role": "naive"},
+   {"src": "sieve_safe", "label": "Caspien optimized safe", "desc": "safe dynarray, bounds proofs", "column": "optimized safe"},
+   {"src": "sieve_unsafe", "label": "Caspien optimized unsafe", "desc": "unsafe dynarray, no checks", "column": "optimized unsafe"}
+  ]
+ },
+ {
+  "id": "strings",
+  "title": "String manipulation",
+  "count": "%s characters",
+  "what": "naive = stdlib String (appendChar/charAt/setCharAt per character); optimized = raw byte buffers, safe (bounds proofs) or unsafe. C, C++ and Rust: free or leak",
+  "n": 20000000,
+  "env": "STRINGS_N",
+  "stem": "strings",
+  "java_class": "Strings",
+  "leak": true,
+  "small": 100000,
+  "caspien": [
+   {"src": "strings_naive", "label": "Caspien naive (String class)", "desc": "stdlib String: appendChar/charAt/setCharAt per character", "role": "naive"},
+   {"src": "strings_safe", "label": "Caspien optimized safe", "desc": "safe dynarray<u8> buffers, bounds proofs", "column": "optimized safe"},
+   {"src": "strings_unsafe", "label": "Caspien optimized unsafe", "desc": "unsafe dynarray<u8> buffers, no checks", "column": "optimized unsafe"}
+  ]
+ },
+ {
+  "id": "graph",
+  "title": "Heap graph search",
+  "count": "%s nodes",
+  "what": "N nodes on the heap with four edges each, find a needle by breadth-first search. The other languages allocate every node separately and link them with pointers; Caspien structs may only point at themselves through a plain nullable `ref`, so there are two families: INDEX edges (naive/optimized rows: parallel arrays, or one dynarray of Node structs in the struct-node rows) and REF rows, where every node is its own heap object with four `ref` edges to other nodes, each node access under a ghost-table alive proof",
+  "n": 2000000,
+  "env": "GRAPH_N",
+  "stem": "graph",
+  "java_class": "Graph",
+  "leak": true,
+  "small": 20000,
+  "caspien": [
+   {"src": "graph_naive", "label": "Caspien naive (DynamicArray)", "desc": "stdlib DynamicArray<u64> x4 (index-based edges), get/set under bounds proofs", "role": "naive"},
+   {"src": "graph_safe", "label": "Caspien optimized safe", "desc": "safe dynarrays, bounds proofs", "column": "optimized safe"},
+   {"src": "graph_unsafe", "label": "Caspien optimized unsafe", "desc": "unsafe dynarrays, no checks", "column": "optimized unsafe"},
+   {"src": "graph_struct_safe", "label": "Caspien struct nodes, safe", "desc": "ONE safe dynarray of Node structs (value, dist, 4 edge indices), bounds proofs", "column": "struct nodes, safe"},
+   {"src": "graph_struct_unsafe", "label": "Caspien struct nodes, unsafe", "desc": "ONE unsafe dynarray of Node structs, no checks", "column": "struct nodes, unsafe"},
+   {"src": "graph_ref_naive", "label": "Caspien ref naive", "desc": "REF: every node its own heap object, 4 plain `ref` edges to nodes of the same struct, owned by a dynarray of owns slots; BFS queue = stdlib DynamicArray<QRef>; alive proof per deref", "column": "ref naive"},
+   {"src": "graph_ref_safe", "label": "Caspien ref safe", "desc": "REF: self-referential Node (4 `ref` edges), owner dynarray + queue of refs in safe dynarrays, alive proof per deref", "column": "ref safe"},
+   {"src": "graph_ref_unsafe", "label": "Caspien ref unsafe", "desc": "REF: as ref safe, but the queue of refs is an unsafe dynarray (the owner dynarray must stay safe)", "column": "ref unsafe"}
+  ]
+ },
+ {
+  "id": "sorting",
+  "title": "Sorting and searching",
+  "count": "%s elements",
+  "what": "quicksort, merge sort and heap sort of N random values, N binary searches and 20 linear searches. Caspien elements are u64 (the others use 32-bit ints)",
+  "n": 2000000,
+  "env": "SORT_N",
+  "stem": "sorting",
+  "java_class": "Sorting",
+  "leak": true,
+  "small": 20000,
+  "caspien": [
+   {"src": "sorting_naive", "label": "Caspien naive (DynamicArray)", "desc": "stdlib DynamicArray<u64>, get/set under bounds proofs", "role": "naive"},
+   {"src": "sorting_safe", "label": "Caspien optimized safe", "desc": "safe dynarrays, bounds proofs", "column": "optimized safe"},
+   {"src": "sorting_unsafe", "label": "Caspien optimized unsafe", "desc": "unsafe dynarrays, no checks", "column": "optimized unsafe"}
+  ]
+ },
+ {
+  "id": "binarytrees",
+  "title": "Binary trees",
+  "count": "depth %s",
+  "what": "allocate, walk and free many complete binary trees (a stretch tree, one long-lived tree, then 2^(N-d+4) trees of each depth d = 4, 6, .., N). The other languages use pointer nodes; Caspien has two families: an index-based tree (children are indices, 0 = null) in a dynarray of Node structs with a free list and an explicit work stack (naive uses one stdlib DynamicArray<Node>: get plus the pointer-taking setPtr), and the REF rows, where every node is a real heap object whose l/r are plain `ref` members of the same struct (alive proof per deref, owned by a pool of owns slots)",
+  "n": 17,
+  "env": "BINARYTREES_N",
+  "stem": "binarytrees",
+  "java_class": "BinaryTrees",
+  "leak": true,
+  "small": 12,
+  "caspien": [
+   {"src": "binarytrees_naive", "label": "Caspien naive (DynamicArray)", "desc": "index-based tree: ONE stdlib DynamicArray<Node> pool + DynamicArray<u64> work stack, free-list pool, get/setPtr under bounds proofs", "role": "naive"},
+   {"src": "binarytrees_safe", "label": "Caspien optimized safe", "desc": "index-based tree: ONE safe dynarray of Node structs (l, r indices) + free list, bounds proofs", "column": "optimized safe"},
+   {"src": "binarytrees_unsafe", "label": "Caspien optimized unsafe", "desc": "index-based tree: ONE unsafe dynarray of Node structs + free list, no checks", "column": "optimized unsafe"},
+   {"src": "binarytrees_ref_naive", "label": "Caspien ref naive", "desc": "REF: every node its own heap object (new Node) with `ref` l/r members of the same struct, owned by a pool of owns slots; stacks = stdlib DynamicArray; alive proof per deref", "column": "ref naive"},
+   {"src": "binarytrees_ref_safe", "label": "Caspien ref safe", "desc": "REF: self-referential Node, owner pool + stacks in safe dynarrays, alive proof per deref", "column": "ref safe"},
+   {"src": "binarytrees_ref_unsafe", "label": "Caspien ref unsafe", "desc": "REF: as ref safe, with unsafe dynarray work stacks (the owner pool must stay safe)", "column": "ref unsafe"}
+  ]
+ },
+ {
+  "id": "mandelbrot",
+  "title": "Mandelbrot",
+  "count": "%s per side grid",
+  "what": "escape-time count over an N x N grid, at most 100 iterations per point; f64 scalar maths, no arrays or allocation (a single Caspien variant)",
+  "n": 3000,
+  "env": "MANDELBROT_N",
+  "stem": "mandelbrot",
+  "java_class": "Mandelbrot",
+  "leak": false,
+  "small": 200,
+  "caspien": [
+   {"src": "mandelbrot", "label": "Caspien f64 scalars", "desc": "f64 scalar maths, no arrays or allocation (loop indices mirrored as f64, no int-to-float cast)", "role": "naive"}
+  ]
+ },
+ {
+  "id": "fasta",
+  "title": "FASTA generation",
+  "count": "%s nucleotides",
+  "what": "LCG-driven repeat and weighted random sequences written into one heap buffer; prints length, checksum and letter counts (integer thresholds, no floating point)",
+  "n": 80000000,
+  "env": "FASTA_N",
+  "stem": "fasta",
+  "java_class": "Fasta",
+  "leak": true,
+  "small": 100000,
+  "caspien": [
+   {"src": "fasta_naive", "label": "Caspien naive (DynamicArray)", "desc": "stdlib DynamicArray<u8>/<u64> for the output buffer, constant table and thresholds, get/set under bounds proofs", "role": "naive"},
+   {"src": "fasta_safe", "label": "Caspien optimized safe", "desc": "safe dynarrays, bounds proofs", "column": "optimized safe"},
+   {"src": "fasta_unsafe", "label": "Caspien optimized unsafe", "desc": "unsafe dynarrays, no checks", "column": "optimized unsafe"}
+  ]
+ },
+ {
+  "id": "knucleotide",
+  "title": "k-nucleotide (hash map)",
+  "count": "%s bases",
+  "what": "count k-mer frequencies for k = 1, 2, 3, 4, 6, 12 in a generated DNA sequence. C and the optimized Caspien variants use a hand-written open-addressing table; the other languages use their idiomatic maps; Caspien naive uses the stdlib HashMap. The LCG period is 139,968, so the tables stay small and cache-friendly",
+  "n": 20000000,
+  "env": "KNUC_N",
+  "stem": "knucleotide",
+  "java_class": "Knucleotide",
+  "leak": true,
+  "small": 200000,
+  "caspien": [
+   {"src": "knucleotide_naive", "label": "Caspien naive (stdlib HashMap)", "desc": "stdlib HashMap<u64> (insecure_hashOf per key, fixed capacity) + DynamicArray, get/set under bounds proofs", "role": "naive"},
+   {"src": "knucleotide_safe", "label": "Caspien optimized safe", "desc": "hand-written open-addressing table in safe dynarrays, bounds proofs", "column": "optimized safe"},
+   {"src": "knucleotide_unsafe", "label": "Caspien optimized unsafe", "desc": "hand-written open-addressing table in unsafe dynarrays, no checks", "column": "optimized unsafe"},
+   {"src": "knucleotide_naive_refstd", "label": "Caspien naive, ref in stdlib", "desc": "identical to naive, but the stdlib HashMap is stdlib/ref/hash_map.caspien (separate chaining over `ref` nodes)", "column": "naive, ref in stdlib"}
+  ]
+ },
+ {
+  "id": "lru",
+  "title": "LRU cache",
+  "count": "%s operations",
+  "what": "capacity 262,144 over 1,048,576 keys, 75% of operations on a hot subset, hash map plus recency list. Optimized Caspien: index-based doubly linked list and chained hash map in dynarrays; naive: stdlib DynamicArray + HashMap (no remove, evicted keys map to a sentinel)",
+  "n": 20000000,
+  "env": "LRU_N",
+  "stem": "lru",
+  "java_class": "Lru",
+  "leak": true,
+  "small": 100000,
+  "caspien": [
+   {"src": "lru_naive", "label": "Caspien naive (DynamicArray + HashMap)", "desc": "stdlib DynamicArray<u64> node pool + stdlib HashMap<u64> (key -> node index; no remove, evicted keys map to a NONE sentinel), get/set under bounds proofs", "role": "naive"},
+   {"src": "lru_safe", "label": "Caspien optimized safe", "desc": "safe dynarrays: index-based doubly linked recency list + chained hash map threaded through the node pool, bounds proofs", "column": "optimized safe"},
+   {"src": "lru_unsafe", "label": "Caspien optimized unsafe", "desc": "unsafe dynarrays, same index-based list and chained hash map, no checks", "column": "optimized unsafe"},
+   {"src": "lru_ref_naive", "label": "Caspien ref naive", "desc": "REF: doubly linked list + hash chains of heap Entry nodes with `ref` prv/nxt/hn members; bucket heads in a stdlib DynamicArray<QRef>; alive proof per deref", "column": "ref naive"},
+   {"src": "lru_ref_safe", "label": "Caspien ref safe", "desc": "REF: self-referential Entry (prv/nxt/hn refs), owner pool + bucket heads in safe dynarrays", "column": "ref safe"},
+   {"src": "lru_ref_unsafe", "label": "Caspien ref unsafe", "desc": "REF: as ref safe, bucket heads in an unsafe dynarray", "column": "ref unsafe"},
+   {"src": "lru_naive_refstd", "label": "Caspien naive, ref in stdlib", "desc": "identical to naive, but the stdlib HashMap is stdlib/ref/hash_map.caspien (separate chaining over `ref` nodes)", "column": "naive, ref in stdlib"}
+  ]
+ },
+ {
+  "id": "merkletrees",
+  "title": "Merkle tree",
+  "count": "%s leaves",
+  "what": "build a Merkle tree over N leaves, then generate and verify N/2 proofs (every 4th tampered). The hash is real SHA-256 (FIPS 180-4, hand-written in every language, no crypto library): one compression per leaf, two per internal node",
+  "n": 140000,
+  "env": "MERKLE_N",
+  "stem": "merkletrees",
+  "java_class": "MerkleTrees",
+  "leak": true,
+  "small": 1000,
+  "caspien": [
+   {"src": "merkletrees_naive", "label": "Caspien naive (DynamicArray)", "desc": "real SHA-256; stdlib DynamicArray<u32> x3 (leaf data, flat tree of 8-word digests, proof path), get/set under bounds proofs", "role": "naive"},
+   {"src": "merkletrees_safe", "label": "Caspien optimized safe", "desc": "real SHA-256; safe dynarrays, bounds proofs", "column": "optimized safe"},
+   {"src": "merkletrees_unsafe", "label": "Caspien optimized unsafe", "desc": "real SHA-256; unsafe dynarrays, no checks", "column": "optimized unsafe"}
+  ]
+ },
+ {
+  "id": "helloworld",
+  "title": "Hello World",
+  "count": "N ignored (%s)",
+  "what": "print one line: measures start-up time, compile time and binary size",
+  "n": 1,
+  "env": "HELLOWORLD_N",
+  "stem": "helloworld",
+  "java_class": "HelloWorld",
+  "leak": false,
+  "small": 1,
+  "caspien": [
+   {"src": "helloworld", "label": "Caspien plain printf", "desc": "single printf of the line, no allocation (N ignored); measures startup, compile time and binary size", "role": "naive"}
+  ]
+ },
+ {
+  "id": "json_serde",
+  "title": "JSON serialise + parse",
+  "count": "%s records",
+  "what": "hand-written serialiser writes N records to one text buffer, a hand-written iterative parser reads them back; every language does the same work (no JSON library). Naive keeps the records in one stdlib DynamicArray<Rec>",
+  "n": 4000000,
+  "env": "JSON_SERDE_N",
+  "stem": "json_serde",
+  "java_class": "JsonSerde",
+  "leak": true,
+  "small": 20000,
+  "caspien": [
+   {"src": "json_serde_naive", "label": "Caspien naive (DynamicArray)", "desc": "stdlib DynamicArray<u8> buffers + ONE DynamicArray<Rec> for the records, get/setPtr under bounds proofs", "role": "naive"},
+   {"src": "json_serde_safe", "label": "Caspien optimized safe", "desc": "safe dynarrays (u8 buffers + one dynarray of Rec structs), bounds proofs", "column": "optimized safe"},
+   {"src": "json_serde_unsafe", "label": "Caspien optimized unsafe", "desc": "unsafe dynarrays (u8 buffers + one dynarray of Rec structs), no checks", "column": "optimized unsafe"}
+  ]
+ },
+ {
+  "id": "threads",
+  "title": "Thread spawn",
+  "count": "%s tasks",
+  "what": "N tasks (a multiple of 64) run in waves of 64 OS threads, each thread runs the same integer kernel on its own state and the results are added up after the join. No data is shared between threads. Only languages with OS-level threads are included.",
+  "n": 1024,
+  "env": "THREADS_N",
+  "stem": "threads",
+  "java_class": "Threads",
+  "libs": ["-lpthread"],
+  "languages": ["c", "cpp", "rust", "go", "java"],
+  "overview": false,
+  "caspien": [
+   {"src": "threads_naive", "label": "Caspien naive", "desc": "the kernel step is a function call", "role": "naive"},
+   {"src": "threads_opt", "label": "Caspien optimized", "desc": "kernel inlined by hand and unrolled four times", "column": "optimized"}
+  ]
+ },
+ {
+  "id": "swaplock",
+  "title": "Swap lock contention",
+  "count": "%s updates per thread",
+  "what": "32 OS threads each update one shared (count, sum) struct N times under one lock (Caspien: a swap lock; the others: their standard mutex). The result does not depend on the order of the updates.",
+  "n": 500000,
+  "env": "SWAPLOCK_K",
+  "stem": "swaplock",
+  "java_class": "Swaplock",
+  "libs": ["-lpthread"],
+  "languages": ["c", "cpp", "rust", "go", "java"],
+  "overview": false,
+  "caspien": [
+   {"src": "swaplock_naive", "label": "Caspien naive", "desc": "a CLOSED lock is retried at once (pure spinning)", "role": "naive"},
+   {"src": "swaplock_opt", "label": "Caspien optimized", "desc": "a backoff policy yields the time slice every 16th failed attempt", "column": "optimized"}
+  ]
+ }
+]
