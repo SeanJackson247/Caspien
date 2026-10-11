@@ -1820,8 +1820,102 @@ java Compiler -i main.caspien --fix unsafe-split --write           # break big u
 `--fix unsafe-split` takes a large block (typically an `unsafe unaudited{`) apart: each run of adjacent statements that needs the same reasons becomes its own block
 named with exactly those reasons, a statement that needs none moves out of `unsafe`, and every new block gets a `/*! justify: TODO */` (the block's existing
 justification stays on the first one). A bare `assume match` keeps the rest of its block together, since a proof lives in the scope it was made in. A one-line
-`unsafe unaudited{ .. }` just gets its real tags. After `--write` the program must compile to the same bytecode (source line numbers and unreachable code after
-a `return` aside); a block whose rewrite fails that is left as written while the others go through (`# kept as written`).
+`unsafe unaudited{ .. }` just gets its real tags (and a `/*! justify: TODO */` line of its own). After `--write` the program must compile to the same bytecode (source line numbers
+and unreachable code after a `return` aside); a block whose rewrite fails that is left as written while the others go through (`# kept as written`).
+
+For example, this function has one big block and one one-liner:
+
+```
+func main() void{
+	?catch(e){ return }
+	let base = mut 10
+	/*! justify: the whole demo is deliberately unsafe */
+	unsafe unaudited{
+		// plain arithmetic, needs nothing
+		let a = mut (base + 1)
+		let b = mut (a * 2)
+		// a C call
+		printf("a=%llu b=%llu\n", a, b)
+		putchar(10)
+		// a mutable static
+		counter = mut (counter + b)
+		let c = mut counter
+		let fp = imut inc
+		let r = mut call(fp, mut c)
+		printf("c=%llu r=%llu\n", c, r)
+		for i in 0..3{
+			counter += i
+		}
+		let arr = mut unsafe dyn([5, 6, 7])
+		let v = mut (arr[0] + arr[2])
+		printf("v=%llu\n", v)
+		let w = mut (v + 1)
+	}
+	let t = mut (base + 5)
+	unsafe unaudited{ printf("t=%llu\n", t) }
+}
+```
+
+After `java Compiler -i main.caspien --fix unsafe-split --write`:
+
+```
+func main() void{
+	?catch(e){ return }
+	let base = mut 10
+	// plain arithmetic, needs nothing
+	let a = mut (base + 1)
+	let b = mut (a * 2)
+	/*! justify: the whole demo is deliberately unsafe */
+	unsafe extern{
+		// a C call
+		printf("a=%llu b=%llu\n", a, b)
+		putchar(10)
+	}
+	/*! justify: TODO */
+	unsafe global{
+		// a mutable static
+		counter = mut (counter + b)
+		let c = mut counter
+	}
+	let fp = imut inc
+	/*! justify: TODO */
+	unsafe call{
+		let r = mut call(fp, mut c)
+	}
+	/*! justify: TODO */
+	unsafe extern{
+		printf("c=%llu r=%llu\n", c, r)
+	}
+	/*! justify: TODO */
+	unsafe global{
+		for i in 0..3{
+			counter += i
+		}
+	}
+	/*! justify: TODO */
+	unsafe udyn{
+		let arr = mut unsafe dyn([5, 6, 7])
+		let v = mut (arr[0] + arr[2])
+	}
+	/*! justify: TODO */
+	unsafe extern{
+		printf("v=%llu\n", v)
+	}
+	let w = mut (v + 1)
+	let t = mut (base + 5)
+	/*! justify: TODO */
+	unsafe extern{ printf("t=%llu\n", t) }
+}
+```
+
+The compiler reports `14 statements -> unsafe extern (2), unsafe global (2), unsafe call (1), unsafe extern (1), unsafe global (1), unsafe udyn (2), unsafe extern (1); 4 statements outside`
+and `verified: the program compiles to identical bytecode after the edit`. What changed:
+
+- `a`, `b`, `fp` and `w` need no `unsafe`, so they moved out; their comments went with them.
+- `printf` and `putchar` need the same reason (`extern`), so they share one block. The second `printf` is a separate block because a `global` statement sits between.
+- The original `justify` text stayed on the first block; every new block starts as `TODO`, which `--audit` counts as unjustified until someone writes the reason.
+- `c` is declared in the `unsafe global` block and used in the `unsafe call` block. That is legal because `unsafe` blocks are not scopes.
+- The one-line `unsafe unaudited{ printf(..) }` only changed its tag to `extern`.
 
 `termination` labels every unlabelled `func`, `for` and `loop` in your files with the class the audit computes (a construct whose generic
 instances disagree, or that does not start its line, is listed and left alone). `justify` puts `/*! justify: TODO */` before every
