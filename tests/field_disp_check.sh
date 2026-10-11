@@ -1,5 +1,5 @@
 #!/bin/bash
-# (needs Linux, java, gcc, python3) tests/field_disp_test.caspien in a Linux scratch copy of the repo: everything on (benchmarks/nbody/bench.py FULL), shipped
+# (needs Linux, java, gcc, python3) tests/field_disp_test.caspien in a Linux scratch copy of the repo: everything on (benchmarks/harness/caspien.py FULL), shipped
 # toolchain.config (Linux target) and everything off (bench.py OFF). Output must equal tests/field_disp_test.py each time. FieldDisplacementPass is always on but
 # needs register form: with it the low-order bytecode must contain R_LDD/R_STD/R_LDXD/R_STXD of every width (1, 2, 4, 8; floats 4, 8), with everything off none.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -14,8 +14,8 @@ run() { # label base-dict-name|shipped
 if [ "$2" = shipped ]; then cp toolchain.shipped toolchain.config; else
 python3 - "$2" <<'PY'
 import sys
-sys.path.insert(0, "benchmarks/nbody")
-import bench as B
+sys.path.insert(0, "benchmarks")
+from harness import caspien as B
 B.patch_config("toolchain.config", dict(getattr(B, sys.argv[1])))
 PY
 fi

@@ -13,8 +13,8 @@ for cfg in SHIPPED FULL OFF; do
   cp toolchain.config.shipped toolchain.config
   python3 - $cfg <<'PY'
 import sys
-sys.path.insert(0, "benchmarks/nbody")
-import bench as B
+sys.path.insert(0, "benchmarks")
+from harness import caspien as B
 if sys.argv[1] != "SHIPPED":
     B.patch_config("toolchain.config", getattr(B, sys.argv[1]))
 PY

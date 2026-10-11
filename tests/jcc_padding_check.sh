@@ -15,8 +15,8 @@ python3 tests/narrow_branch_test.py > exp.txt
 setcfg() { # jcc value
 python3 - "$1" <<'PY'
 import sys
-sys.path.insert(0, "benchmarks/nbody")
-import bench as B
+sys.path.insert(0, "benchmarks")
+from harness import caspien as B
 d = dict(B.FULL); d.pop("jcc-padding", None)
 B.patch_config("toolchain.config", d)
 import re

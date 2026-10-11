@@ -1,5 +1,5 @@
 #!/bin/bash
-# (needs Linux, java, gcc, python3, a BMI2 CPU) tests/shift_bmi2_test.caspien built with everything on (benchmarks/nbody/bench.py FULL switches, which
+# (needs Linux, java, gcc, python3, a BMI2 CPU) tests/shift_bmi2_test.caspien built with everything on (benchmarks/harness/caspien.py FULL switches, which
 # include `bmi2 on`) and again with `bmi2 off`: both outputs equal tests/shift_bmi2_test.py; the first binary has shlx/shrx and no `shl/shr %cl`,
 # the second the reverse.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -11,8 +11,8 @@ grep -q bmi2 /proc/cpuinfo || { echo "SKIP shift_bmi2_check: this CPU has no BMI
 sed -i 's/^target .*/target linux/; s/^\( *\)default: win64/\1default: sysv_x64/' toolchain.config
 python3 - <<'PY'
 import sys
-sys.path.insert(0, "benchmarks/nbody")
-import bench as B
+sys.path.insert(0, "benchmarks")
+from harness import caspien as B
 B.patch_config("toolchain.config", B.FULL)
 PY
 python3 tests/shift_bmi2_test.py >exp.txt

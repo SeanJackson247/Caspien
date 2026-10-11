@@ -511,7 +511,7 @@ lines between) is a pure redefinition that does not read it is deleted (`let x =
 `R_BRC C n a b @E ; R_MOV 8 %vK X | R_SETV m %vK #c ; @E:` (one arm) and `R_BRC C n a b @L ; R_MOV 8 %vK X ; JMP @E ; @L: ; R_MOV 8 %vK Y ; @E:` (two arms, labels used only by these
 jumps, X not `%vK`) -> `R_CMOV C n a b %vK X [Y]` = `%vK = (a C b) ? X : Y` (one arm: unchanged when the test fails). n must be 1/2/4/8 (no float compares); X/Y are a
 register or an immediate (a SETV constant is cut to its width); a source that reads memory is never speculated. The backend: `cmp`, `mov Y` (leaves flags alone), `cmovCC X`.
-Measured neutral: strings -3%, sorting +2% (data-dependent selects; candidate for `benchmarks/specific.json`); FULL has it on so sweeps cover it. Test: `cmov_select_test`
+Measured neutral: strings -3%, sorting +2% (data-dependent selects; candidate for `benchmarks/harness/specific.json`); FULL has it on so sweeps cover it. Test: `cmov_select_test`
 (generator `gen_cmov_select.py`, Python model).
 
 #### CopyForwardPass (`copy-forward`, shipped off)
@@ -598,7 +598,7 @@ the header branch's exit label (so a header with a second back edge is rotated a
 * Range-based shift-guard removal (only knucleotide has a hot guard and its counts are run-time values; Codegen).
 * A vectoriser / SLP pass (GCC's SLP gains at most ~12% on the unrolled AoS nbody reference, and only after the scalar gap is closed).
 * r11 as a variable register was not attempted (it is the temp `%t2`; it would shrink the temp pool).
-* `jcc-padding` on in the FULL benchmark config makes sieve ~7-10% slower on this VM (owner decision pending; Codegen/`Compiler.java`, `benchmarks/specific.json` sets it off for sieve).
+* `jcc-padding` on in the FULL benchmark config makes sieve ~7-10% slower on this VM (owner decision pending; Codegen/`Compiler.java`, `benchmarks/harness/specific.json` sets it off for sieve).
 
 **Stale or inaccurate comments found in the source while writing this (code is right, text is old)**
 * `LowerOrderGenerator.java` class comment lists only 11 stages (no hoist, float cache, indexed/displacement fusion, forwarding passes).

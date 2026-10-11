@@ -51,8 +51,8 @@ printf 'in thread\nleaf (stack_trace_par_test.caspien)\nwork (stack_trace_par_te
 diff expected_par.txt got_par.txt >/dev/null || { echo "FAIL: thread trace"; cat got_par.txt; bad=1; }
 # the same chains with every optimizer switch on (inlining aggressive): the trace slots must survive all passes
 python3 - <<'PY'
-import sys; sys.path.insert(0, "benchmarks/nbody")
-import bench as B
+import sys; sys.path.insert(0, "benchmarks")
+from harness import caspien as B
 B.patch_config("toolchain.config", B.FULL)
 PY
 java Compiler -i tests/stack_trace_test.caspien st3 --no-cache >log.txt 2>&1 || { echo "FAIL: all-on does not compile"; tail -3 log.txt; exit 1; }

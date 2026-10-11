@@ -1,7 +1,7 @@
 #!/bin/bash
 # (needs Linux, java, gcc, python3, valgrind) tests/ref_recursive_test.caspien (structs linking to themselves through plain `ref`: list, tree, graph,
 # Ping<->Pong, a generic struct, a dangling ref, growing a dynarray whose elements have a NULL `owns` member) in a Linux scratch copy: everything on
-# (benchmarks/nbody/bench.py FULL), shipped, and everything off (OFF). Output must equal tests/ref_recursive_test.py each time, and valgrind must report no
+# (benchmarks/harness/caspien.py FULL), shipped, and everything off (OFF). Output must equal tests/ref_recursive_test.py each time, and valgrind must report no
 # error and no leak on the shipped build. The six tests/ref_recursive_*_error_test.caspien files must still fail to compile (ref some, owns, raw, auto,
 # plain, and a cycle through owns).
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -14,8 +14,8 @@ python3 tests/ref_recursive_test.py > exp.txt
 run() { # label dict
 python3 - "$2" <<'PY'
 import sys
-sys.path.insert(0, "benchmarks/nbody")
-import bench as B
+sys.path.insert(0, "benchmarks")
+from harness import caspien as B
 if sys.argv[1] != "SHIPPED":
     B.patch_config("toolchain.config", getattr(B, sys.argv[1]))
 PY

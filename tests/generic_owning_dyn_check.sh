@@ -12,8 +12,8 @@ python3 tests/generic_owning_dyn_test.py > exp.txt
 run() { # label dict
 python3 - "$2" <<'PY'
 import sys
-sys.path.insert(0, "benchmarks/nbody")
-import bench as B
+sys.path.insert(0, "benchmarks")
+from harness import caspien as B
 if sys.argv[1] != "SHIPPED":
     B.patch_config("toolchain.config", getattr(B, sys.argv[1]))
 PY

@@ -1,5 +1,5 @@
 #!/bin/bash
-# (needs Linux, java, gcc, python3) tests/length_fuse_test.caspien in a Linux scratch copy of the repo, three ways: everything on (benchmarks/nbody/bench.py FULL,
+# (needs Linux, java, gcc, python3) tests/length_fuse_test.caspien in a Linux scratch copy of the repo, three ways: everything on (benchmarks/harness/caspien.py FULL,
 # which has fuse-length-compare on), the same with it off, and everything off (bench.py OFF). Output must equal tests/length_fuse_test.py each time; with the
 # switch on the low-order bytecode must contain R_BRCM compares (>= 10) and the assembly a `cmpq (%reg), %reg` memory compare, with it off none.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -12,8 +12,8 @@ python3 tests/length_fuse_test.py > exp.txt
 run() { # label base-dict-name overrides-json
 python3 - "$2" "$3" <<'PY'
 import sys, json
-sys.path.insert(0, "benchmarks/nbody")
-import bench as B
+sys.path.insert(0, "benchmarks")
+from harness import caspien as B
 B.patch_config("toolchain.config", dict(getattr(B, sys.argv[1]), **json.loads(sys.argv[2])))
 PY
 java Compiler -i tests/length_fuse_test.caspien prog_$1 --no-cache >compile_$1.log 2>&1 || { echo "FAIL: compile ($1)"; tail -5 compile_$1.log; exit 1; }

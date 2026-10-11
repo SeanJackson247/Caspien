@@ -169,7 +169,7 @@ instead.
 ### `f64`
 
 `f64` (double precision) is supported alongside `f32`, with the same register treatment (register variables, xmm temporaries) and literal adaptation. There is no implicit
-mixing: widen with `x as f64`, narrow with `wrap:<f32>(d)`. Extern libm calls use the real names (`sqrt`, not `sqrtf`). See `tests/f64_test.caspien` and `benchmarks/nbody/RESULTS.md`
+mixing: widen with `x as f64`, narrow with `wrap:<f32>(d)`. Extern libm calls use the real names (`sqrt`, not `sqrtf`). See `tests/f64_test.caspien` and `benchmarks/docs/nbody.md`
 (f64 costs a little more time than f32; it buys precision). Untested: the win64/Wine target for f64 varargs, MASM output.
 
 ### `deferred-operands`
@@ -181,7 +181,7 @@ expressions in registers instead of pushing and popping every operand
 (variables live in their frame slots unless `variables-in-registers` promotes them, below; calls stay stack-based); with `off` the low-order bytecode is exactly what it was before the
 pass existed. Programs give identical output either way -- `tests/regform_test.caspien`
 and `tests/regform2_test.caspien` check that. Measured on a 1e9-iteration `x += 8` loop:
-6.6 s off, 2.1 s on; on the n-body benchmarks (`benchmarks/nbody/`) 1.3-3.5x faster.
+6.6 s off, 2.1 s on; on the n-body benchmarks (`benchmarks/programs/nbody/`) 1.3-3.5x faster.
 Only the AT&T (`linux`, `windows_gnu`) forms of the new instructions have been
 run; the Intel/MASM (`windows`) forms mirror them but are unexecuted.
 
@@ -267,8 +267,8 @@ Functions that throw, catch or call throwing functions ARE inlined (`@throws` is
 reaches the Optimizer (the front end converts it), so it is inlined like any other; scalar and `range` parameters are supported. `@inline` is still an accepted decorator (it is in the front end's decorator list, nothing was removed); the pass does not treat it as a command: a function carrying it is inlined or not by the same rules as any other, under the configured limits.
 A call inside another call's argument list (`check("name", f(x))`) is not inlined once an earlier argument has been loaded into an argument register: inlined code has no register protection (a real nested call saves and restores those registers, but the backend's block copies, shifts and divides use rdi, rsi, rdx and rcx as scratch), so the site stays a call. If the outer call is itself inlined, the inner one is inlined on the next round.
 Tests: `tests/inline_test.caspien` (45 checks, output identical off and on at every preset, on Linux and under Wine), `tests/inline_argreg_test.caspien` (7 checks: range copy, divide and recursion-lowered callees in argument lists), `tests/inline_throwprog_test.caspien` and `tests/inline_throw_test.caspien` (10 + 17 checks: throwing, catching, re-throwing and message propagation through inlined frames) and `tests/inline_owns_test.caspien` (10 checks: calls that move an owns variable into the callee) and `tests/inline_hob_check.sh` (bytecode-level cases, including unwinding callees and owns-move null-outs).
-Measured on the n-body written with small helper functions (`benchmarks/nbody/caspien/nbody_natural_f64.caspien`, 5M steps): 7.5 s with everything off, 2.0 s with unrolling and inlining on.
-See `benchmarks/nbody/RESULTS.md` and `charts.html` (from `bench.py` and `charts.py`) for the full comparison against C, C++, Rust, Go, Java, Node and Bun.
+Measured on the n-body written with small helper functions (`benchmarks/programs/nbody/caspien/nbody_natural_f64.caspien`, 5M steps): 7.5 s with everything off, 2.0 s with unrolling and inlining on.
+See `benchmarks/docs/nbody.md` and the benchmark site (`benchmarks/site/`) for the full comparison against C, C++, Rust, Go, Java, Node and Bun.
 
 #### Per-function control: `@inline`, `@dont(inline)`
 
@@ -277,7 +277,7 @@ See `benchmarks/nbody/RESULTS.md` and `charts.html` (from `bench.py` and `charts
 | `@inline` | inline every call to this function that is safe to inline, even with `function-inlining: off`, past the preset's callee-size limit, depth and growth budgets |
 | `@dont(inline)` | never inline this function, whatever the preset says |
 
-`@inline` ignores the preset's size and growth limits only; the safety rules above still decide (no `@async`, no call cycle, scalar/pointer/`range` parameters, a call inside another call's argument list stays a call, ...). A chain of `@inline` functions needs one round per level (up to 8 rounds when no preset is on). The optimizer prints once, after it has settled, `[note] file:line - @inline: f inlined at N call sites`, and `[warning] file:line - @inline not honoured at N call sites of f (K inlined): <reason>` for a call that stayed a call. The standard library uses `@inline` on `DynamicArray.get/set/setPtr` and `String.charAt/setCharAt`. Measured (best of 3, naive programs that call them in inner loops): `function-inlining: off` or `conservative` 1.1x to 1.9x faster (sorting 4.7 s to 2.7 s, json_serde 4.3 s to 2.4 s, strings 3.8 s to 3.4 s), `aggressive` unchanged (it inlines them anyway). In the aggressive benchmark builds `@inline` helped only where the heuristic left hot calls: the helper functions of `nbody_natural_f64` (-9%) and `advance` in `nbody_arr` / `nbody_arr_f64` (-8% / -17%); in `merkletrees` it changed nothing measurable. Tests: `tests/inline_decorator_test.caspien` and `tests/inline_decorator_check.sh`; before/after chart `benchmarks/charts_decorators.html`.
+`@inline` ignores the preset's size and growth limits only; the safety rules above still decide (no `@async`, no call cycle, scalar/pointer/`range` parameters, a call inside another call's argument list stays a call, ...). A chain of `@inline` functions needs one round per level (up to 8 rounds when no preset is on). The optimizer prints once, after it has settled, `[note] file:line - @inline: f inlined at N call sites`, and `[warning] file:line - @inline not honoured at N call sites of f (K inlined): <reason>` for a call that stayed a call. The standard library uses `@inline` on `DynamicArray.get/set/setPtr` and `String.charAt/setCharAt`. Measured (best of 3, naive programs that call them in inner loops): `function-inlining: off` or `conservative` 1.1x to 1.9x faster (sorting 4.7 s to 2.7 s, json_serde 4.3 s to 2.4 s, strings 3.8 s to 3.4 s), `aggressive` unchanged (it inlines them anyway). In the aggressive benchmark builds `@inline` helped only where the heuristic left hot calls: the helper functions of `nbody_natural_f64` (-9%) and `advance` in `nbody_arr` / `nbody_arr_f64` (-8% / -17%); in `merkletrees` it changed nothing measurable. Tests: `tests/inline_decorator_test.caspien` and `tests/inline_decorator_check.sh`; before/after chart `benchmarks/site/compare.html` (decorators).
 
 ### `dead-function-removal`
 
@@ -479,7 +479,7 @@ float fuzzing are not covered.
 
 Three more code-generation changes with no switch (see the root `CLAUDE.md`): the per-iteration test of a `for` loop is `i < end` only (the counter starts at `start` and is immutable in the body); `if c { break }` no longer produces `jne; jmp; jmp` chains (`JumpCleanupPass`); and a global array element addressed by a variable held in a register is one `lea` plus an indexed `mov` (`IndexedAccessPass`, 8-byte elements only). Programs give identical output (`tests/loopjump_index_test.caspien`, `tests/lob_passes_check.sh`, the whole `tests/` sweep against a build without them). More than three variable registers was first left undone (only caller-saved r8-r10 were left); step 5 added them for call-free regions only (see the next paragraph). Only the AT&T forms have been run.
 
-Benchmarks: `benchmarks/bench_suite.py <sieve|strings|graph|sorting>` runs the four newer programs (naive/safe/unsafe Caspien, free/leak C/C++/Rust, Go, Java, Node, Bun, LuaJIT) and `benchmarks/charts_all.py` draws every program into `charts.html`; results and caveats are at the end of `benchmarks/RESULTS.md`. Lua 5.4 is no longer measured.
+Benchmarks: `python3 -m harness run <program>` (in `benchmarks/`) runs one program (naive/safe/unsafe Caspien, free/leak C/C++/Rust, Go, Java, Node, Bun, LuaJIT) and the static site `benchmarks/site/` draws every program; results and caveats are at the end of `benchmarks/docs/RESULTS.md`. Lua 5.4 is no longer measured.
 
 
 Step 5 (no switch, needs `variables-in-registers` and `deferred-operands`): the hidden `for` range end is promotable (`RangeEndHintPass`), and r8/r9/r10 are extra variable registers (`%v3..%v5`) that `RegVarPromotionPass` gives only to variables that are never live across a call or any mnemonic outside a conservative whitelist; r8/r9 are withheld from functions that use argument 3 or 4, r10 from functions with a float-result stash. They are used only in functions with more hot variables than callee-saved registers, so other output is unchanged. Fannkuch-redux gains about 14-17% (same-session, alternating old/new), the other benchmarks are unchanged within noise; outputs identical (`tests/regvars_volatile_test.caspien`, `tests/regvars_volatile_check.sh`, a 63-program old-vs-new sweep). Linux-run only; windows_gnu builds were assembled and linked, not run; MASM untested. See the root `CLAUDE.md`.
@@ -490,7 +490,7 @@ Step 5 (no switch, needs `variables-in-registers` and `deferred-operands`): the 
 
 ### Dynarray access in register form, r8-r10 in allocating functions, `@lock` inlining (always on)
 
-No switch. `RegisterFormPass` now keeps `LEN`, `LOOKUP_DYN` (value and address form), `ZEXT` and `TRUNC` in registers (the dynarray header is 16 bytes, so an element address is `base + 16 + idx*size`, written as one `R_LEA` with a displacement), a function that allocates (`new`, `resize`) may use r8-r10 for variables that are not live across the allocating line, and `FunctionInliningPass` accepts `@lock`-decorated functions (a compile-time proof contract; the lock code is emitted at the caller), so the stdlib `DynamicArray.get/set` are inlined at `aggressive`. Safe sieve (1e8) 3.24 -> 1.85 s against C -O2 0.85 s in one session, naive 7.24 -> about 3.4 s; across the four new benchmarks the safe variants are now 1.3-1.6x C (strings 4.5x), the naive stdlib versions 2.7-2.9x (the `String` class 24x, not improved). Tests: `tests/regform_dyn_test.caspien`, `tests/regform_dyn_check.sh` (47), `tests/regvars_blocked_test.caspien`, `tests/inline_hob_check.sh` (57), old-vs-new sweeps of 65 programs under 4 configs, 0 differences. Linux-run only. See the root `CLAUDE.md` and `benchmarks/RESULTS.md`.
+No switch. `RegisterFormPass` now keeps `LEN`, `LOOKUP_DYN` (value and address form), `ZEXT` and `TRUNC` in registers (the dynarray header is 16 bytes, so an element address is `base + 16 + idx*size`, written as one `R_LEA` with a displacement), a function that allocates (`new`, `resize`) may use r8-r10 for variables that are not live across the allocating line, and `FunctionInliningPass` accepts `@lock`-decorated functions (a compile-time proof contract; the lock code is emitted at the caller), so the stdlib `DynamicArray.get/set` are inlined at `aggressive`. Safe sieve (1e8) 3.24 -> 1.85 s against C -O2 0.85 s in one session, naive 7.24 -> about 3.4 s; across the four new benchmarks the safe variants are now 1.3-1.6x C (strings 4.5x), the naive stdlib versions 2.7-2.9x (the `String` class 24x, not improved). Tests: `tests/regform_dyn_test.caspien`, `tests/regform_dyn_check.sh` (47), `tests/regvars_blocked_test.caspien`, `tests/inline_hob_check.sh` (57), old-vs-new sweeps of 65 programs under 4 configs, 0 differences. Linux-run only. See the root `CLAUDE.md` and `benchmarks/docs/RESULTS.md`.
 
 ### Dynarray capacity (always on)
 
@@ -517,7 +517,7 @@ instruction the register-form pass could not fuse, a size mismatch) leaves it in
 struct field read wider than a word, an array read from a value block, `resize` or inline assembly keeps everything in memory,
 because the backend uses `r13`/`r14` as scratch there. With `off` the assembly is byte-identical to a build without the feature.
 Programs give identical output either way (`tests/regvars_test.caspien`, `tests/callee_saved_probe.sh`). Gain on the n-body
-benchmarks is small (see `benchmarks/nbody/RESULTS.md`). Only the AT&T forms have been run; the Intel/MASM forms are unexecuted.
+benchmarks is small (see `benchmarks/docs/nbody.md`). Only the AT&T forms have been run; the Intel/MASM forms are unexecuted.
 
 ### Bitwise builtins and integer literals (always on)
 

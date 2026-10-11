@@ -26,8 +26,8 @@ Programs are compiled one after the other: a compiler tree has shared scratch fi
 import argparse, glob, hashlib, json, os, re, shutil, subprocess, sys, time
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-sys.path.insert(0, os.path.join(ROOT, "benchmarks", "nbody"))
-import bench as B   # noqa: E402  (OFF / FULL switch sets, patch_config)
+sys.path.insert(0, os.path.join(ROOT, "benchmarks"))
+from harness import caspien as B   # noqa: E402  (OFF / FULL switch sets, patch_config)
 
 CACHE = os.path.join(ROOT, ".cache")
 SCRATCH = os.path.join(CACHE, "scratch")

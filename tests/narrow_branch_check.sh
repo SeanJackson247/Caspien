@@ -1,5 +1,5 @@
 #!/bin/bash
-# (needs Linux, java, gcc, python3) tests/narrow_branch_test.caspien in a Linux scratch copy of the repo: everything on (benchmarks/nbody/bench.py FULL), the same with deferred-operands off, and
+# (needs Linux, java, gcc, python3) tests/narrow_branch_test.caspien in a Linux scratch copy of the repo: everything on (benchmarks/harness/caspien.py FULL), the same with deferred-operands off, and
 # everything off (bench.py OFF). Output must equal tests/narrow_branch_test.py each time. With register form on, the low-order bytecode must contain narrow
 # `R_BRC <op> 1|2|4` lines (>= 100) and the assembly sized `cmpb/cmpw/cmpl` compares; without register form none.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -12,8 +12,8 @@ python3 tests/narrow_branch_test.py > exp.txt
 run() { # label base-dict-name overrides-json
 python3 - "$2" "$3" <<'PY'
 import sys, json
-sys.path.insert(0, "benchmarks/nbody")
-import bench as B
+sys.path.insert(0, "benchmarks")
+from harness import caspien as B
 B.patch_config("toolchain.config", dict(getattr(B, sys.argv[1]), **json.loads(sys.argv[2])))
 PY
 java Compiler -i tests/narrow_branch_test.caspien prog_$1 --no-cache >compile_$1.log 2>&1 || { echo "FAIL: compile ($1)"; tail -5 compile_$1.log; exit 1; }

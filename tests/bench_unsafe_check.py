@@ -6,7 +6,7 @@ import glob, os, re, sys
 ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 bad = []
 n = 0
-for f in sorted(glob.glob(os.path.join(ROOT, "benchmarks", "*", "caspien", "*unsafe*.caspien"))):
+for f in sorted(glob.glob(os.path.join(ROOT, "benchmarks", "programs", "*", "caspien", "*unsafe*.caspien"))):
     n += 1
     for k, line in enumerate(open(f).read().split("\n"), 1):
         s = line.strip()

@@ -1,6 +1,6 @@
 #!/bin/bash
 # (needs Linux, java, gcc, python3) tests/loop_hoist_test.caspien in a Linux scratch copy of the repo, three ways: everything on with
-# hoist-array-bases on (benchmarks/nbody/bench.py FULL), the same with hoist-array-bases off, and with variables-in-registers off (the switch
+# hoist-array-bases on (benchmarks/harness/caspien.py FULL), the same with hoist-array-bases off, and with variables-in-registers off (the switch
 # is then inert). The output must equal tests/loop_hoist_test.py each time; with the switch on the low-order bytecode must show hoisted
 # length loads (`R_LD 8 %t %v`, the pointer lives in a variable register) and with it off none.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -13,8 +13,8 @@ python3 tests/loop_hoist_test.py > exp.txt
 run() {  # name, python dict of overrides
 python3 - "$2" <<'PY'
 import sys, json
-sys.path.insert(0, "benchmarks/nbody")
-import bench as B
+sys.path.insert(0, "benchmarks")
+from harness import caspien as B
 B.patch_config("toolchain.config", dict(B.FULL, **json.loads(sys.argv[1])))
 PY
 java Compiler -i tests/loop_hoist_test.caspien prog_$1 --no-cache >compile_$1.log 2>&1 || { echo "FAIL: compile ($1)"; tail -5 compile_$1.log; exit 1; }

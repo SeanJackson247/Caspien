@@ -1,5 +1,5 @@
 #!/bin/bash
-# (needs Linux, java, gcc, python3) tests/alloc_vars_test.caspien in a Linux scratch copy of the repo, three ways: everything on (benchmarks/nbody/bench.py FULL,
+# (needs Linux, java, gcc, python3) tests/alloc_vars_test.caspien in a Linux scratch copy of the repo, three ways: everything on (benchmarks/harness/caspien.py FULL,
 # which has variables-in-alloc-functions on), the same with it off, and with variables-in-registers off. Output must equal tests/alloc_vars_test.py each time;
 # with the switch on the assembly must contain the save of r12/r13/r14 to frame slots around the scratch-using instructions (>= 10 such stores),
 # with it off or without register variables none.
@@ -13,8 +13,8 @@ python3 tests/alloc_vars_test.py > exp.txt
 run() {
 python3 - "$2" <<'PY'
 import sys, json
-sys.path.insert(0, "benchmarks/nbody")
-import bench as B
+sys.path.insert(0, "benchmarks")
+from harness import caspien as B
 B.patch_config("toolchain.config", dict(B.FULL, **json.loads(sys.argv[1])))
 PY
 java Compiler -i tests/alloc_vars_test.caspien prog_$1 --no-cache >compile_$1.log 2>&1 || { echo "FAIL: compile ($1)"; tail -5 compile_$1.log; exit 1; }

@@ -15,8 +15,8 @@ for cfg in SHIPPED FULL; do
   cp toolchain.config.shipped toolchain.config
   python3 - $cfg <<'PY'
 import sys
-sys.path.insert(0, "benchmarks/nbody")
-import bench as B
+sys.path.insert(0, "benchmarks")
+from harness import caspien as B
 if sys.argv[1] != "SHIPPED":
     # everything on except inlining and unrolling: inlining merges the frames of callees into their callers, which the call-graph estimate does not model
     B.patch_config("toolchain.config", dict(B.FULL, **{"function-inlining": "off", "loop-unrolling": "off"}))

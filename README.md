@@ -2410,7 +2410,7 @@ optimisations off, which is how the shipped `toolchain.config` builds.
 on the same program (lower is better, 1x = the reference). For each of the four metrics there are two charts: every language against C -O2,
 and only the memory-safe implementations (Caspien without its unsafe-dynarray variants, runtime-safe languages, and Rust where rustc accepts the
 port under `-F unsafe_code`) against Rust, free build. Compile time and executable size use a log axis. These charts come from the 8 to 9 October full run, in which every language and every Caspien configuration (including optimisations off) was measured in the same session, so a ratio no longer mixes two runs; it still carries the VM noise described below. Each Caspien variant has two bars, "everything on" and "tuned per program" (everything on plus the per-program
-switch overrides of `benchmarks/specific.json`); today the only override is `jcc-padding: off` for the sieve, so the two bars are
+switch overrides of `benchmarks/harness/specific.json`); today the only override is `jcc-padding: off` for the sieve, so the two bars are
 identical except where that program enters the mean, and the tuned bar is never worse.
 
 <picture>
@@ -2469,9 +2469,9 @@ versions (thirteen programs, Mandelbrot has none), 4.03x with optimisations off.
 **Which charts are shown.** The summary charts above use no selection: every language, every program where both rows exist. The three per-program charts
 below were not picked by hand. The rule is mechanical, not a judgement call: for each program take the ratio of Caspien's fastest
 all-optimisations-on variant to C -O2, and show the program with the lowest ratio, the median, and the highest.
-`python3 benchmarks/export_svgs.py` prints the ratios and the selection and rewrites the per-program images; `python3 benchmarks/export_summary_svgs.py benchmarks/img` rewrites the summary charts. All 15 programs have a chart in
+`node benchmarks/tools/export_svgs.mjs` prints the ratios and the selection and rewrites the per-program and the summary images. All 15 programs have a chart in
 [`benchmarks/img/`](benchmarks/img/), and the interactive version (hover text, sortable tables, memory, size and compile time) is
-[`benchmarks/charts.html`](https://SeanJackson247.github.io/Caspien/benchmarks/charts.html).
+[`benchmarks/site/`](https://SeanJackson247.github.io/Caspien/benchmarks/site/).
 
 Best for Caspien (binary trees, 0.52x of C), the median (k-nucleotide, 1.13x), and the worst (LRU cache, 1.33x):
 
@@ -2539,7 +2539,7 @@ structs and arrays as C does. The exception is the `ref` variants (below): they 
   closely than numeric kernels do. All of the ports, in every language including Caspien, were written by
   Claude, an LLM, working from the original programs; the language's author made no choices about them.
   Where Caspien deviates from the original shape (graph, binarytrees and lru use indices by default and also have
-  `ref`-linked variants; json_serde works on flat data), the difference is noted in `benchmarks/RESULTS.md`.
+  `ref`-linked variants; json_serde works on flat data), the difference is noted in `benchmarks/docs/RESULTS.md`.
   None of them exercises the event-loop model.
 - Repeats within one run usually agree to about 3% (the gold lines on the charts), but separate runs on
   this VM have differed by 10% to 30%, so differences under 1.3x between two rows are not meaningful.
@@ -2550,9 +2550,8 @@ structs and arrays as C does. The exception is the `ref` variants (below): they 
 
 Planned work, in order of expected payoff: ship the optimiser on by default (the inliner already has
 bounded growth budgets); make the standard library classes as fast as hand-written array code; native
-32-bit and 8-bit arithmetic in register form. The benchmark harnesses (`benchmarks/bench_suite.py`,
-`benchmarks/bench_program.py`, `benchmarks/nbody/bench.py`) rebuild and re-time everything, and
-[`benchmarks/RESULTS.md`](benchmarks/RESULTS.md) holds the earlier, more detailed measurements.
+32-bit and 8-bit arithmetic in register form. The benchmark harness (`python3 -m harness run`, in `benchmarks/`) rebuilds and re-times everything, and
+[`benchmarks/docs/RESULTS.md`](benchmarks/docs/RESULTS.md) holds the earlier, more detailed measurements.
 
 ## Appendices
 

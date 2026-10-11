@@ -1,5 +1,5 @@
 #!/bin/bash
-# (needs Linux, java, gcc, python3) tests/float_direct_test.caspien with everything on (benchmarks/nbody/bench.py FULL switches), Linux target:
+# (needs Linux, java, gcc, python3) tests/float_direct_test.caspien with everything on (benchmarks/harness/caspien.py FULL switches), Linux target:
 # output equals tests/float_direct_test.py, and the unrolled loop has far fewer `movaps` (3203 before the change, 1203 after; 1603 since `2.0*x` became `movaps x,t; addsd t,t` instead of a constant load + mulsd: same count of instructions, no memory load).
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
@@ -9,8 +9,8 @@ cd "$W" || exit 1
 sed -i 's/^target .*/target linux/; s/^\( *\)default: win64/\1default: sysv_x64/' toolchain.config
 python3 - <<'PY'
 import sys
-sys.path.insert(0, "benchmarks/nbody")
-import bench as B
+sys.path.insert(0, "benchmarks")
+from harness import caspien as B
 B.patch_config("toolchain.config", B.FULL)
 PY
 java Compiler -i tests/float_direct_test.caspien prog --no-cache >compile.log 2>&1 || { echo "FAIL: compile"; tail -5 compile.log; exit 1; }

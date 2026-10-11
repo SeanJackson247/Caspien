@@ -1,5 +1,5 @@
 #!/bin/bash
-# (needs Linux, java, gcc, python3) tests/float_branch_test.caspien with everything on (benchmarks/nbody/bench.py FULL switches), Linux target:
+# (needs Linux, java, gcc, python3) tests/float_branch_test.caspien with everything on (benchmarks/harness/caspien.py FULL switches), Linux target:
 # output equals tests/float_branch_test.py and the assembly has no `seta/setb/...` + `movzbq` + `testq` left behind a ucomis.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
@@ -9,8 +9,8 @@ cd "$W" || exit 1
 sed -i 's/^target .*/target linux/; s/^\( *\)default: win64/\1default: sysv_x64/' toolchain.config
 python3 - <<'PY'
 import sys
-sys.path.insert(0, "benchmarks/nbody")
-import bench as B
+sys.path.insert(0, "benchmarks")
+from harness import caspien as B
 B.patch_config("toolchain.config", B.FULL)
 PY
 java Compiler -i tests/float_branch_test.caspien prog --no-cache >compile.log 2>&1 || { echo "FAIL: compile"; tail -5 compile.log; exit 1; }

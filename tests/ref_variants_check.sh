@@ -11,13 +11,13 @@ cd "$W" || exit 1
 sed -i 's/^target .*/target linux/; s/^\( *\)default: win64/\1default: sysv_x64/' toolchain.config
 setcfg() { cp toolchain.config.shipped toolchain.config; if [ "$1" != SHIPPED ]; then python3 - "$1" <<'PY'
 import sys
-sys.path.insert(0, "benchmarks/nbody")
-import bench as B
+sys.path.insert(0, "benchmarks")
+from harness import caspien as B
 B.patch_config("toolchain.config", getattr(B, sys.argv[1]))
 PY
 fi; }
 cp toolchain.config toolchain.config.shipped
-build() { java Compiler -i benchmarks/$1.caspien prog_$2 --no-cache >log_$2.txt 2>&1 || { echo "FAIL: compile $1 ($2)"; tail -5 log_$2.txt; exit 1; }; }
+build() { java Compiler -i benchmarks/programs/$1.caspien prog_$2 --no-cache >log_$2.txt 2>&1 || { echo "FAIL: compile $1 ($2)"; tail -5 log_$2.txt; exit 1; }; }
 # variant | reference | env var | size | valgrind size (0 = none)
 CASES="graph/caspien/graph_ref_naive graph/caspien/graph_safe GRAPH_N 30000 0
 graph/caspien/graph_ref_safe graph/caspien/graph_safe GRAPH_N 30000 3000

@@ -1,4 +1,4 @@
-// The ghost table (default; design E of benchmarks/gt_id/README.md): a hash set of every live allocation's address plus lazily issued 64-bit ids for nullable `ref`s.
+// The ghost table (default; design E of benchmarks/experiments/gt_id/README.md): a hash set of every live allocation's address plus lazily issued 64-bit ids for nullable `ref`s.
 // The earlier id-less hash set is in stdlib/gt_set/, the linear-scan one in stdlib/gt_linear/ (same symbols; import ONE set of gt_*.caspien files, never mix; they lack @gt_ref_id/@gt_ref_resolve, so a program using a nullable `ref` needs this set).
 //
 // Three open-addressing tables (linear probing, backward-shift deletion, power-of-two capacity, load <= 1/2):
