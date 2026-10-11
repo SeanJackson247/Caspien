@@ -1825,7 +1825,7 @@ and unreachable code after a `return` aside); a block whose rewrite fails that i
 
 For example, this function has one big block and one one-liner:
 
-```
+```rust
 func main() void{
 	?catch(e){ return }
 	let base = mut 10
@@ -1858,7 +1858,7 @@ func main() void{
 
 After `java Compiler -i main.caspien --fix unsafe-split --write`:
 
-```
+```rust
 func main() void{
 	?catch(e){ return }
 	let base = mut 10
