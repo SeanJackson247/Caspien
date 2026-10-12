@@ -1,6 +1,7 @@
 package caspien.codegen.x86backend;
 
-import caspien.codegen.BytecodeToken;
+import caspien.hob.HOBStatement;
+import caspien.hob.HOBToken;
 import caspien.codegen.CodegenConfig;
 import caspien.codegen.CodegenException;
 import java.util.ArrayList;
@@ -41,7 +42,7 @@ abstract class X86CasesA extends X86Calls {
     abstract void rfFloatX(String op, int n, String dstTok, String aTok, String bTok);
     abstract void rfRmw(String op, String slotTok, String srcTok);
 
-    boolean emitCases2(String mnemonic, List<BytecodeToken> line, String first, boolean wasCmp, long pendingBlockSize) {
+    boolean emitCases2(String mnemonic, HOBStatement line, String first, boolean wasCmp, long pendingBlockSize) {
         switch (mnemonic) {
 case "R_BRCM": {
                 // "R_BRCM OP 8 a %base @label" -- R_BRC whose second operand is the 8-byte word AT the address in %base (made by the
@@ -537,7 +538,7 @@ case "BITS_NOT": {
         }
     }
 
-    boolean emitCases3(String mnemonic, List<BytecodeToken> line, String first, boolean wasCmp, long pendingBlockSize) {
+    boolean emitCases3(String mnemonic, HOBStatement line, String first, boolean wasCmp, long pendingBlockSize) {
         switch (mnemonic) {
 case "EQ_INT":
             case "NEQ_INT":

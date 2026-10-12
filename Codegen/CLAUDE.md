@@ -4,7 +4,7 @@ Low-order bytecode (text, from LowerOrderGenerator) -> x86-64 assembly text. Con
 Unknown mnemonics are NOT errors: they emit `# TODO(codegen): ...` in the asm (often a silently wrong program). Always grep the generated .s for `TODO(codegen)`, and rebuild `Codegen/out` after editing (a stale class emits TODO for new `R_*` lines).
 
 ## Build / run / test
-- Build: `cd Codegen && javac -d out $(find src/main/java -name '*.java')`. Standalone: `java -cp out caspien.codegen.Main -i in.lob out.s`.
+- Build: `cd Codegen && javac -d out $(find src/main/java ../HOB/src/main/java -name '*.java')` (the LOB is read by the shared `caspien.hob.HOBParser`; `Main` is the only caller, the backend takes the `HOBStatement` list). Standalone: `java -cp out caspien.codegen.Main -i in.lob out.s`.
 - Whole toolchain: root `javac Compiler.java`; `java Compiler -i prog.caspien output/prog` (`--asm`, `--lob`, `--hob` stop early; intermediates in `output/.build/`, asm is `4_codegen.s`). Settings come from root `toolchain.config`, copied into every stage; edit only that file. The repo ships `windows_gnu`/`win64`; for Linux set `target linux` (`===codegen.config===`) and `default: sysv_x64` (`===compiler.config===`).
 - Tests (root `tests/`): programs `tests/*.caspien` print PASS/FAIL lines; shell checks `tests/*_check.sh`. Callee-saved ABI: `tests/callee_saved_probe.sh` (Linux, needs gcc; sentinels in rbx,r12-r15 survive plain/throwing calls; also runs `tests/check_callee_saved.py <file.s>`, a structural save/restore checker, usable on windows_gnu asm too). Sweeps compare output across configs (everything on, shipped, register-form only, everything off). Compile ONE program at a time per compiler tree (shared scratch files).
 

@@ -27,6 +27,10 @@ AST="$ROOT/ASTGenerator/src/main/java/caspien"
 x=$(grep -rlE "HOBSerializer|HOBParser" "$AST" | grep -v "/Main.java$"); [ -z "$x" ] && echo "PASS ASTGenerator: only Main serializes the HOB" || fail "ASTGenerator mentions the serializer/parser outside Main: $x"
 x=$(grep -nE "StringBuilder +out\b|String +emit\(" "$AST"/bytecodeemitter/*.java); [ -z "$x" ] && echo "PASS ASTGenerator: the emitter has no text buffer" || fail "emitter builds text: $x"
 x=$(grep -rE "^import caspien\.(optimizer|lowerorder|codegen)" "$AST"); [ -z "$x" ] && echo "PASS ASTGenerator imports no other stage" || fail "ASTGenerator imports a stage: $x"
+# Codegen (stage 4): the LOB is read by the shared parser, once, in Main; the backend only walks the statements
+CG="$ROOT/Codegen/src/main/java/caspien/codegen"
+x=$(ls "$CG"/Bytecode{Parser,Serializer,Token}.java 2>/dev/null); [ -z "$x" ] && echo "PASS Codegen has no private parser/token" || fail "Codegen still has: $x"
+x=$(grep -rlE "HOBParser|HOBSerializer" "$CG" | grep -v "/Main.java$"); [ -z "$x" ] && echo "PASS Codegen: only Main uses HOBParser" || fail "Codegen parser use outside Main: $x"
 # the lower-order config is parsed once, in the library entry class; no pass reads or parses it
 x=$(grep -lE "CompilerConfig\.parse" "$ROOT"/LowerOrderGenerator/src/main/java/caspien/lowerorder/*.java | grep -v "/LowerOrder.java$"); [ -z "$x" ] && echo "PASS LowerOrderGenerator: config parsed only in LowerOrder" || fail "config parsed outside LowerOrder: $x"
 # 2 round trip

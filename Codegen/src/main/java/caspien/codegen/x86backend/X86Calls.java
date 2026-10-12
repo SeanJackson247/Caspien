@@ -1,6 +1,7 @@
 package caspien.codegen.x86backend;
 
-import caspien.codegen.BytecodeToken;
+import caspien.hob.HOBStatement;
+import caspien.hob.HOBToken;
 import caspien.codegen.CodegenConfig;
 import caspien.codegen.CodegenException;
 import java.util.ArrayList;
@@ -16,19 +17,19 @@ abstract class X86Calls extends X86Emit {
     }
 
     // methods defined in later parts of the chain
-    abstract boolean emitCases2(String mnemonic, List<BytecodeToken> line, String first, boolean wasCmp, long pendingBlockSize);
-    abstract boolean emitCases3(String mnemonic, List<BytecodeToken> line, String first, boolean wasCmp, long pendingBlockSize);
-    abstract boolean emitCases4(String mnemonic, List<BytecodeToken> line, String first, boolean wasCmp, long pendingBlockSize);
-    abstract boolean emitCases5(String mnemonic, List<BytecodeToken> line, String first, boolean wasCmp, long pendingBlockSize);
-    abstract boolean emitCases6(String mnemonic, List<BytecodeToken> line, String first, boolean wasCmp, long pendingBlockSize);
-    abstract boolean emitCases7(String mnemonic, List<BytecodeToken> line, String first, boolean wasCmp, long pendingBlockSize);
+    abstract boolean emitCases2(String mnemonic, HOBStatement line, String first, boolean wasCmp, long pendingBlockSize);
+    abstract boolean emitCases3(String mnemonic, HOBStatement line, String first, boolean wasCmp, long pendingBlockSize);
+    abstract boolean emitCases4(String mnemonic, HOBStatement line, String first, boolean wasCmp, long pendingBlockSize);
+    abstract boolean emitCases5(String mnemonic, HOBStatement line, String first, boolean wasCmp, long pendingBlockSize);
+    abstract boolean emitCases6(String mnemonic, HOBStatement line, String first, boolean wasCmp, long pendingBlockSize);
+    abstract boolean emitCases7(String mnemonic, HOBStatement line, String first, boolean wasCmp, long pendingBlockSize);
     abstract String rfReg(String tok);
     abstract void rfMov(String dst, String src);
     abstract void rfDivConst(boolean mod, int size, String dstTok, String aTok, long k);
     abstract void rfBin(String op, int size, String dstTok, String aTok, String bTok);
     abstract String rfBrcNarrow(String op, int size, String aTok, String bTok, String label);
     abstract String rfBrc(String op, String aTok, String bTok, String label);
-    abstract void rfCmov(List<BytecodeToken> line);
+    abstract void rfCmov(HOBStatement line);
     abstract void rfUn(String op, int size, String dstTok, String aTok);
     abstract void rfXmmToGpr(String xmm, String gpr64, int n);
     abstract String xvReg(String tok);
@@ -50,7 +51,7 @@ abstract class X86Calls extends X86Emit {
         int values = 0;
         for (int back = 1; back <= 4; back++) {
             int idx = currentLineIndex - back;
-            List<BytecodeToken> l = allLines == null || idx < 0 ? null : allLines.get(idx);
+            HOBStatement l = allLines == null || idx < 0 ? null : allLines.get(idx);
             if (l == null || l.isEmpty()) {
                 return -1;
             }
@@ -519,7 +520,7 @@ abstract class X86Calls extends X86Emit {
         xvReloadAll();
     }
 
-    void emitLine(List<BytecodeToken> line) {
+    void emitLine(HOBStatement line) {
         if (!line.isEmpty() && currentLineIndex > asmSkipUntilIndex && line.size() >= 1 && !(line.size() == 1 && line.get(0).text.endsWith(":"))
                 && RF_R13_R14_USERS.contains(line.get(0).text) && !line.get(0).text.equals("ASM_START") && csrFuncStart >= 0) {
             raw(V1314_SAVE);
@@ -530,7 +531,7 @@ abstract class X86Calls extends X86Emit {
         emitLineInner(line);
     }
 
-    void emitLineInner(List<BytecodeToken> line) {
+    void emitLineInner(HOBStatement line) {
         if (line.isEmpty()) {
             return;
         }
@@ -605,7 +606,7 @@ abstract class X86Calls extends X86Emit {
                 return;
     }
 
-    boolean emitCases1(String mnemonic, List<BytecodeToken> line, String first, boolean wasCmp, long pendingBlockSize) {
+    boolean emitCases1(String mnemonic, HOBStatement line, String first, boolean wasCmp, long pendingBlockSize) {
         switch (mnemonic) {
 case "FUNC_START": {
                 String name = line.get(1).text;

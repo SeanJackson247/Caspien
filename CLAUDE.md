@@ -3,7 +3,7 @@
 Old per-change history was removed on purpose (2 Oct 2026); `git log -p CLAUDE.md` has it. Each component folder has its own short CLAUDE.md and README.md. Keep these files SHORT: update facts in place, never append changelogs.
 
 ## What it is
-Caspien: a systems language for auditable code (ownership storage `owns/ref/raw/auto/static`, no GC, proofs via `match`, `unsafe` for the rest). Four-stage compiler, plain JDK, no dependencies (`HOB/` = the one HOB parser/classes shared by stages 1-3, compiled into each `out/`; stage 1 builds a `HOBProgram` and `Main` serializes it; `tests/hob_phases_check.sh`):
+Caspien: a systems language for auditable code (ownership storage `owns/ref/raw/auto/static`, no GC, proofs via `match`, `unsafe` for the rest). Four-stage compiler, plain JDK, no dependencies (`HOB/` = the one HOB parser/classes shared by all four stages (HOB and LOB are one format), compiled into each `out/`; stage 1 builds a `HOBProgram` and `Main` serializes it; `tests/hob_phases_check.sh`):
 1. `ASTGenerator` -> higher-order bytecode (HOB, text). Lex, parse, RPN, tree, imports, dup/generics expansion, type check, emit.
 2. `Optimizer` -> HOB passes (folding, inlining, unrolling, dead code, struct unpacking/reordering, `SizeofResolutionPass`...).
 3. `LowerOrderGenerator` -> low-order bytecode (LOB): address lowering, register-form, register variables, fusion passes.

@@ -1,6 +1,7 @@
 package caspien.codegen.x86backend;
 
-import caspien.codegen.BytecodeToken;
+import caspien.hob.HOBStatement;
+import caspien.hob.HOBToken;
 import caspien.codegen.CodegenConfig;
 import caspien.codegen.CodegenException;
 import java.util.ArrayList;
@@ -22,7 +23,7 @@ abstract class X86CasesB extends X86CasesA {
     abstract void emitResizeGtUpdate();
     abstract void emitResizeWideFillCopy(int elemSize, int words);
 
-    boolean emitCases4(String mnemonic, List<BytecodeToken> line, String first, boolean wasCmp, long pendingBlockSize) {
+    boolean emitCases4(String mnemonic, HOBStatement line, String first, boolean wasCmp, long pendingBlockSize) {
         switch (mnemonic) {
 case "DOT": {
                 // Like LOOKUP_ARRAY vs LOOKUP_ARRAY_LHS above: DOT_LHS's
@@ -548,7 +549,7 @@ case "CLONE_DYN": {
         }
     }
 
-    boolean emitCases5(String mnemonic, List<BytecodeToken> line, String first, boolean wasCmp, long pendingBlockSize) {
+    boolean emitCases5(String mnemonic, HOBStatement line, String first, boolean wasCmp, long pendingBlockSize) {
         switch (mnemonic) {
 case "CLONE": {
                 long size = Long.parseLong(line.get(1).text);
