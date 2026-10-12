@@ -24,60 +24,27 @@ import java.util.Set;
  */
 
 /** TypeCheckerExpressions: expression types, ownership moves, assignment, constants, arithmetic (part 7 of 11; see README.md in this folder). */
-abstract class TypeCheckerExpressions extends TypeCheckerControlFlow {
-    // methods defined in later parts of the chain
-    abstract public String pointeeStructName(TypeInfo ptr);
-    abstract public TypeInfo checkAddressOf(Token op, Scope scope, FuncInfo func);
-    abstract public TypeInfo checkArrayLiteral(Token node, Scope scope, FuncInfo func);
-    abstract public TypeInfo checkAs(Token op, Scope scope, FuncInfo func);
-    abstract public TypeInfo checkAtomicWrapper(Token op, Scope scope, FuncInfo func);
-    abstract public TypeInfo checkAwait(Token op, Scope scope, FuncInfo func);
-    abstract public TypeInfo checkCall(Token op, Scope scope, FuncInfo func, boolean eligibleForRvoHere);
-    abstract public TypeInfo checkDot(Token op, Scope scope, FuncInfo func);
-    abstract public TypeInfo checkImplementsOperator(Token op, Scope scope, FuncInfo func);
-    abstract public TypeInfo checkInstanceof(Token op, Scope scope, FuncInfo func);
-    abstract public TypeInfo checkInstantiate(Token op, Scope scope, FuncInfo func);
-    abstract public TypeInfo checkLookup(Token op, Scope scope, FuncInfo func);
-    abstract public TypeInfo checkMutabilityOf(Token op, Scope scope, FuncInfo func);
-    abstract public TypeInfo checkNew(Token op, Scope scope, FuncInfo func);
-    abstract public TypeInfo checkPar(Token op, Scope scope, FuncInfo func);
-    abstract public TypeInfo checkRange(Token op, Scope scope, FuncInfo func);
-    abstract public TypeInfo checkSwapOperator(Token op, Scope scope, FuncInfo func);
-    abstract public TypeInfo checkUnsafeDynWrapper(Token op, Scope scope, FuncInfo func);
-    abstract public TypeInfo checkWithin(Token op, Scope scope, FuncInfo func);
-    abstract public TypeInfo pointerResultType(TypeInfo ptr);
-    abstract public TypeInfo[] unifyLiteralOperands(Token op, TypeInfo leftType, TypeInfo rightType);
-    abstract public boolean isBareEnumVariantRefNode(Token node, String enumName);
-    abstract public boolean isPointerType(TypeInfo t);
-    abstract public boolean isProvenNonzero(Token targetExpr, Scope scope);
-    abstract public boolean isSwapRhsAllowedShape(Token node);
-    abstract public boolean literalAdapts(TypeInfo expected, TypeInfo actual);
-    abstract public boolean mutabilityCompatible(String expected, String actual);
-    abstract public boolean storageCompatible(String expectedStorage, String actualStorage);
-    abstract public long pointeeSize(TypeInfo ptr, Token at);
-    abstract public void adaptLiteral(Token expr, TypeInfo expected);
-    abstract public void requireBoolOrInteger(TypeInfo t, Token at);
-    abstract public void requireEightByteInteger(TypeInfo t, Token at);
-    abstract public void requireLookupWriteAuthorized(Token lookupOp, Scope scope);
-    abstract public void requireNumeric(TypeInfo t, Token at);
-    abstract public void requireProvenFloatState(Token expr, TypeInfo type, Scope scope, Token op);
+public final class TypeCheckerExpressions {
+    private final TypeChecker hub;
 
+    TypeCheckerExpressions(TypeChecker hub) {
+        this.hub = hub;
+    }
 
-
-    public TypeInfo resolveExprTypeInner(Token node, Scope scope, FuncInfo func) {
+    public TypeCheckerModel.TypeInfo resolveExprTypeInner(Token node, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
         switch (node.type) {
             case STRING:
                 // String literals are 'static imut string' and 'some' (always present); 'some' coerces one-way to plain.
-                return new TypeInfo("static", "imut", "string").withSome(true);
+                return new TypeCheckerModel.TypeInfo("static", "imut", "string").withSome(true);
             case CHAR:
-                return new TypeInfo(null, "indeterminate", "char");
+                return new TypeCheckerModel.TypeInfo(null, "indeterminate", "char");
             case INTEGER:
                 // Built-in limit constants (u64Max, ...) carry a forced concrete type; other integer literals are indeterminate u64.
                 if (node.forcedLiteralType != null) {
-                    return new TypeInfo(null, "imut", node.forcedLiteralType);
+                    return new TypeCheckerModel.TypeInfo(null, "imut", node.forcedLiteralType);
                 }
                 {
-                    TypeInfo literalType = new TypeInfo(null, "indeterminate", "u64");
+                    TypeCheckerModel.TypeInfo literalType = new TypeCheckerModel.TypeInfo(null, "indeterminate", "u64");
                     try {
                         literalType.literalValue = new java.math.BigInteger(node.text);
                     } catch (NumberFormatException notADecimalLiteral) {
@@ -92,21 +59,21 @@ abstract class TypeCheckerExpressions extends TypeCheckerControlFlow {
                 }
             case FLOAT:
                 if (node.forcedLiteralType != null) {
-                    return new TypeInfo(null, "imut", node.forcedLiteralType);
+                    return new TypeCheckerModel.TypeInfo(null, "imut", node.forcedLiteralType);
                 }
                 {
-                    TypeInfo floatLit = new TypeInfo(null, "indeterminate", "f32");
+                    TypeCheckerModel.TypeInfo floatLit = new TypeCheckerModel.TypeInfo(null, "indeterminate", "f32");
                     floatLit.floatLiteral = true;
                     return floatLit;
                 }
             case BOOL:
-                return new TypeInfo(null, "indeterminate", "bool");
+                return new TypeCheckerModel.TypeInfo(null, "indeterminate", "bool");
             case NULL:
-                return new TypeInfo(null, null, "null");
+                return new TypeCheckerModel.TypeInfo(null, null, "null");
             case TEMPLATE_STRING:
                 return resolveTemplateString(node);
             case VARREF: {
-                if (lookupAsmName(node.text, scope) != null) {
+                if (hub.declarations.lookupAsmName(node.text, scope) != null) {
                     throw new CompilerException("type", node.file, node.line,
                             "'" + node.text + "' is an 'ASM' name -- it can only be used as a bare, "
                                     + "whole statement ('" + node.text + ";'), never as part of an "
@@ -116,20 +83,20 @@ abstract class TypeCheckerExpressions extends TypeCheckerControlFlow {
                     throw new CompilerException("type", node.file, node.line,
                             "use of '" + node.text + "' after its ownership was moved");
                 }
-                TypeInfo t = scope.lookup(node.text);
-                if (t != null && activeCatchTries.containsKey(node.text) && node != rethrowOperand) {
+                TypeCheckerModel.TypeInfo t = scope.lookup(node.text);
+                if (t != null && hub.model.activeCatchTries.containsKey(node.text) && node != hub.model.rethrowOperand) {
                     // stack_trace.md, 3.6: the catch parameter is the caught error (message + trace), not the message string
                     throw new CompilerException("type", node.file, node.line,
                             "'" + node.text + "' is the caught error -- use '" + node.text + ".msg' for the message, '" + node.text
                                     + ".stack_trace' for the trace, or 'throw " + node.text + "' to re-throw it");
                 }
                 if (t != null) {
-                    if ("ref".equals(t.storage) && t.isSome && node != assignTargetVar) {
+                    if ("ref".equals(t.storage) && t.isSome && node != hub.model.assignTargetVar) {
                         ProofKills.refSomeRead(node, scope.activeMatchPatterns);
                     }
                     if (scope.isStatic(node.text)) {
-                        requireSharedStateOrUnsafe(t, node.text, scope, node);
-                        requirePureDoesNotReadMutableStatic(t, node.text, func, node);
+                        hub.impls.requireSharedStateOrUnsafe(t, node.text, scope, node);
+                        hub.impls.requirePureDoesNotReadMutableStatic(t, node.text, func, node);
                     }
                     if (t.literalValue != null || t.literalElements != null || t.floatLiteral || t.floatArrayLiteral) {
                         // A variable is never a literal: `let x = mut 5` binds a plain u64 slot whose value can
@@ -142,28 +109,28 @@ abstract class TypeCheckerExpressions extends TypeCheckerControlFlow {
                     }
                     return t;
                 }
-                if (globals.containsKey(node.text)) {
+                if (hub.model.globals.containsKey(node.text)) {
                     // Globals already exist in `globals` while bodies are checked, so use-before-declaration needs an explicit declOrder comparison.
-                    Integer declaredAt = globalDeclOrder.get(node.text);
+                    Integer declaredAt = hub.model.globalDeclOrder.get(node.text);
                     if (func != null && declaredAt != null && declaredAt >= func.declOrder) {
                         throw new CompilerException("type", node.file, node.line,
                                 "'" + node.text + "' is used before its declaration");
                     }
-                    if (!publicGlobals.contains(node.text)) {
+                    if (!hub.model.publicGlobals.contains(node.text)) {
                         // Private globals are visible only in their declaring file (let/static are exempt).
-                        String declFile = globalRhsByName.get(node.text).file;
+                        String declFile = hub.model.globalRhsByName.get(node.text).file;
                         if (!declFile.equals(node.file)) {
                             throw new CompilerException("type", node.file, node.line,
                                     "'" + node.text + "' is private -- not accessible outside the file "
                                             + "it's declared in");
                         }
                     }
-                    TypeInfo globalType = globals.get(node.text);
-                    requireSharedStateOrUnsafe(globalType, node.text, scope, node);
-                    requirePureDoesNotReadMutableStatic(globalType, node.text, func, node);
+                    TypeCheckerModel.TypeInfo globalType = hub.model.globals.get(node.text);
+                    hub.impls.requireSharedStateOrUnsafe(globalType, node.text, scope, node);
+                    hub.impls.requirePureDoesNotReadMutableStatic(globalType, node.text, func, node);
                     return globalType;
                 }
-                if (constExprs.containsKey(node.text)) {
+                if (hub.model.constExprs.containsKey(node.text)) {
                     // Consts are substituted: the VARREF token is mutated in place into the literal, so the emitter needs no const logic.
                     Token literal = resolveConstValue(node.text, node);
                     node.type = literal.type;
@@ -174,15 +141,15 @@ abstract class TypeCheckerExpressions extends TypeCheckerControlFlow {
                     return resolveExprTypeInner(node, scope, func);
                 }
                 // A bare function name used as a value is a function pointer with its own signature and decorators.
-                List<FuncInfo> asFunc = functions.get(node.text);
+                List<TypeCheckerModel.FuncInfo> asFunc = hub.model.functions.get(node.text);
                 if (asFunc != null) {
                     if (asFunc.size() > 1) {
                         throw new CompilerException("type", node.file, node.line,
                                 "'" + node.text + "' has multiple overloads -- a bare function reference "
                                         + "must resolve to exactly one signature");
                     }
-                    FuncInfo target = asFunc.get(0);
-                    if (hasDecorator(target.funcToken.decorators, "event_loop")) {
+                    TypeCheckerModel.FuncInfo target = asFunc.get(0);
+                    if (hub.impls.hasDecorator(target.funcToken.decorators, "event_loop")) {
                         // '@event_loop' cannot be referenced anywhere, same as being called.
                         throw new CompilerException("type", node.file, node.line,
                                 "'" + node.text + "' is '@event_loop' -- it cannot be called or "
@@ -194,7 +161,7 @@ abstract class TypeCheckerExpressions extends TypeCheckerControlFlow {
                             decorators.add(d.name);
                         }
                     }
-                    return TypeInfo.funcPointer("imut", target.paramTypes, target.returnType, decorators,
+                    return TypeCheckerModel.TypeInfo.funcPointer("imut", target.paramTypes, target.returnType, decorators,
                             target.callConvention);
                 }
                 throw new CompilerException("type", node.file, node.line,
@@ -207,7 +174,7 @@ abstract class TypeCheckerExpressions extends TypeCheckerControlFlow {
                 }
                 if (node.text.equals("try")) {
                     // Expression-position `try`; insideLoop is passed as false (see checkTry).
-                    return checkTry(node, scope, func, false);
+                    return hub.controlFlow.checkTry(node, scope, func, false);
                 }
                 break;
             case DELINEATOR:
@@ -215,10 +182,10 @@ abstract class TypeCheckerExpressions extends TypeCheckerControlFlow {
                     if (node.childs.isEmpty()) {
                         throw new CompilerException("type", node.file, node.line, "empty '()' expression");
                     }
-                    return resolveExprType(node.childs.get(0), scope, func);
+                    return hub.controlFlow.resolveExprType(node.childs.get(0), scope, func);
                 }
                 if (node.text.equals("[")) {
-                    return checkArrayLiteral(node, scope, func);
+                    return hub.locksAndProofs.checkArrayLiteral(node, scope, func);
                 }
                 break;
             case OPERATOR:
@@ -230,14 +197,14 @@ abstract class TypeCheckerExpressions extends TypeCheckerControlFlow {
                 "internal error: don't know how to type '" + node.type + "(" + node.text + ")'");
     }
 
-    public TypeInfo resolveOperatorType(Token op, Scope scope, FuncInfo func) {
+    public TypeCheckerModel.TypeInfo resolveOperatorType(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
         // Captured once and reset before dispatch, so a stale 'true' from an enclosing context cannot reach other operators;
         // only checkLogical sees it. See docs/TypeChecker.md, "Operator dispatch context flags".
-        boolean eligibleHere = insideShortCircuitEligiblePosition;
-        insideShortCircuitEligiblePosition = false;
+        boolean eligibleHere = hub.model.insideShortCircuitEligiblePosition;
+        hub.model.insideShortCircuitEligiblePosition = false;
         // Same capture-and-reset for the struct-RVO destination flag; only checkCall consults it.
-        boolean eligibleForRvoHere = insideStructRvoDestinationPosition;
-        insideStructRvoDestinationPosition = false;
+        boolean eligibleForRvoHere = hub.model.insideStructRvoDestinationPosition;
+        hub.model.insideStructRvoDestinationPosition = false;
         switch (op.text) {
             case "=":
                 return checkAssign(op, scope, func);
@@ -257,50 +224,50 @@ abstract class TypeCheckerExpressions extends TypeCheckerControlFlow {
             case "<": case ">": case "<=": case ">=": case "==": case "!=":
                 return checkComparison(op, scope, func);
             case "CALL":
-                return checkCall(op, scope, func, eligibleForRvoHere);
+                return hub.calls.checkCall(op, scope, func, eligibleForRvoHere);
             case "LOOKUP":
-                return checkLookup(op, scope, func);
+                return hub.locksAndProofs.checkLookup(op, scope, func);
             case "as":
-                return checkAs(op, scope, func);
+                return hub.locksAndProofs.checkAs(op, scope, func);
             case ".":
-                return checkDot(op, scope, func);
+                return hub.accessAndAsync.checkDot(op, scope, func);
             case "INSTANTIATE":
-                return checkInstantiate(op, scope, func);
+                return hub.accessAndAsync.checkInstantiate(op, scope, func);
             case "owns": case "ref": case "auto": case "raw": case "static":
-                return checkAddressOf(op, scope, func);
+                return hub.checkAddressOf(op, scope, func);
             case "mut": case "imut":
                 // mut/imut are transparent for the RVO flag: re-armed one level down so the wrapped CALL still sees it.
-                insideStructRvoDestinationPosition = eligibleForRvoHere;
-                return checkMutabilityOf(op, scope, func);
+                hub.model.insideStructRvoDestinationPosition = eligibleForRvoHere;
+                return hub.checkMutabilityOf(op, scope, func);
             case "new":
-                return checkNew(op, scope, func);
+                return hub.accessAndAsync.checkNew(op, scope, func);
             case "await":
-                return checkAwait(op, scope, func);
+                return hub.accessAndAsync.checkAwait(op, scope, func);
             case "par":
-                return checkPar(op, scope, func);
+                return hub.accessAndAsync.checkPar(op, scope, func);
             case "unsafe":
-                return checkUnsafeDynWrapper(op, scope, func);
+                return hub.calls.checkUnsafeDynWrapper(op, scope, func);
             case "atomic":
-                return checkAtomicWrapper(op, scope, func);
+                return hub.accessAndAsync.checkAtomicWrapper(op, scope, func);
             case "swap":
-                return checkSwapOperator(op, scope, func);
+                return hub.accessAndAsync.checkSwapOperator(op, scope, func);
             case "..":
-                return checkRange(op, scope, func);
+                return hub.checkRange(op, scope, func);
             case "in":
-                return checkIn(op, scope, func);
+                return hub.checkIn(op, scope, func);
             case "within":
-                return checkWithin(op, scope, func);
+                return hub.checkWithin(op, scope, func);
             case "instanceof":
-                return checkInstanceof(op, scope, func);
+                return hub.locksAndProofs.checkInstanceof(op, scope, func);
             case "implements":
-                return checkImplementsOperator(op, scope, func);
+                return hub.locksAndProofs.checkImplementsOperator(op, scope, func);
             case "dup":
                 // 'dup' is expanded earlier (DupExpander); reaching here means it was used outside an array literal.
                 throw new CompilerException("type", op.file, op.line,
                         "'dup' can only be used as an element of an array literal");
             case ",":
-                resolveExprType(op.left, scope, func);
-                return resolveExprType(op.right, scope, func);
+                hub.controlFlow.resolveExprType(op.left, scope, func);
+                return hub.controlFlow.resolveExprType(op.right, scope, func);
             case "and":
                 // 'and' is only valid inside a match condition (checkMatchCondition walks the chain itself).
                 throw new CompilerException("type", op.file, op.line,
@@ -351,7 +318,7 @@ abstract class TypeCheckerExpressions extends TypeCheckerControlFlow {
          * Invalidates every active match proof whose slotKey or rightSlotKey is `target`'s slot (or an assumed expression
          * key mentioning it); called from every write. See docs/TypeChecker.md, "Match-proof invalidation".
          */
-    public void invalidateMatchPatternsForWrite(Token target, Scope scope) {
+    public void invalidateMatchPatternsForWrite(Token target, TypeCheckerModel.Scope scope) {
         String key = slotKeyOf(target);
         if (key == null) {
             return;
@@ -405,7 +372,7 @@ abstract class TypeCheckerExpressions extends TypeCheckerControlFlow {
             // a plain call `f(a, b)` keyed by name and argument keys (for 'assume match f(x) : finite')
             List<Token> callArgs = new ArrayList<>();
             if (!node.right.childs.isEmpty()) {
-                collectCommaArgs(node.right.childs.get(0), callArgs);
+                hub.locksAndProofs.collectCommaArgs(node.right.childs.get(0), callArgs);
             }
             StringBuilder sb = new StringBuilder(node.left.text).append("(");
             for (int ai = 0; ai < callArgs.size(); ai++) {
@@ -429,7 +396,7 @@ abstract class TypeCheckerExpressions extends TypeCheckerControlFlow {
     /** The key a proof is recorded under: the slot key, or (in an 'assume match' condition only) the expression key. */
     public String proofKeyOf(Token node) {
         String k = slotKeyOf(node);
-        return (k == null && assumeKeyMode) ? exprKeyOf(node) : k;
+        return (k == null && hub.model.assumeKeyMode) ? exprKeyOf(node) : k;
     }
 
     /** The key a proof is looked up under: the slot key, else the expression key. */
@@ -452,7 +419,7 @@ abstract class TypeCheckerExpressions extends TypeCheckerControlFlow {
      * `dyn([a, a])` passes the read check. A slot that is already moved when its own move is being recorded was moved a moment ago
      * by a sibling operand (a later read of an earlier-moved slot is rejected when it is read): two owners of one block.
      */
-    public void requireNotMovedAlready(String key, Token valueExpr, Scope scope) {
+    public void requireNotMovedAlready(String key, Token valueExpr, TypeCheckerModel.Scope scope) {
         if (scope.movedSlots.contains(key)) {
             throw new CompilerException("type", valueExpr.file, valueExpr.line,
                     "'" + key + "' is moved more than once in the same expression -- two owners of one block");
@@ -460,15 +427,15 @@ abstract class TypeCheckerExpressions extends TypeCheckerControlFlow {
     }
 
     /** Marks the source slot of a value bound to an `owns` type as moved (let, assignment, call argument, struct field). See docs/TypeChecker.md, "Ownership moves". */
-    public void markMovedIfOwned(TypeInfo declaredType, Token valueExpr, Scope scope) {
+    public void markMovedIfOwned(TypeCheckerModel.TypeInfo declaredType, Token valueExpr, TypeCheckerModel.Scope scope) {
         markMovedIfOwnedInner(declaredType, valueExpr, scope);
-        if (newDynDepth > 0 && valueExpr.isOwnershipMoveSource) {
+        if (hub.model.newDynDepth > 0 && valueExpr.isOwnershipMoveSource) {
             ProofKills.kill(scope.activeMatchPatterns, valueExpr, "moving an owner into 'new' or 'dyn' (it is freed if the allocation fails)");
         }
     }
 
-    public void markMovedIfOwnedInner(TypeInfo declaredType, Token valueExpr, Scope scope) {
-        if (isInlineOwningStruct(declaredType)) {
+    public void markMovedIfOwnedInner(TypeCheckerModel.TypeInfo declaredType, Token valueExpr, TypeCheckerModel.Scope scope) {
+        if (hub.declarations.isInlineOwningStruct(declaredType)) {
             // Copying a struct that owns memory would leave two owners: the source slot gives its owned members up
             // (nulled at run time, see BytecodeEmitter.emitOwnershipMoveNullOut) and can not be read afterwards.
             Token inner = valueExpr;
@@ -523,7 +490,7 @@ abstract class TypeCheckerExpressions extends TypeCheckerControlFlow {
             if (key != null) {
                 requireNotMovedAlready(key, valueExpr, scope);
                 scope.movedSlots.add(key);
-                fnEverMoved.add(key);
+                hub.model.fnEverMoved.add(key);
                 valueExpr.isOwnershipMoveSource = true;
             }
         }
@@ -541,7 +508,7 @@ abstract class TypeCheckerExpressions extends TypeCheckerControlFlow {
         }
     }
 
-    public TypeInfo checkAssign(Token op, Scope scope, FuncInfo func) {
+    public TypeCheckerModel.TypeInfo checkAssign(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
         rejectDerefAsWriteTarget(op.left, "an assignment");
         if (op.left.type == TokenType.KEYWORD && op.left.text.equals("let")) {
             Token nameTok = op.left.childs.get(0);
@@ -553,15 +520,15 @@ abstract class TypeCheckerExpressions extends TypeCheckerControlFlow {
                 }
                 checkNoRuntimeConstructs(op.right);
                 // Compile-time constant: resolved in an empty Scope, so any variable reference fails as undeclared.
-                TypeInfo rhsType = resolveExprType(op.right, new Scope(null), func);
-                TypeInfo bound = resolveAndValidateTypeBound(op.left, rhsType, op.right);
+                TypeCheckerModel.TypeInfo rhsType = hub.controlFlow.resolveExprType(op.right, new TypeCheckerModel.Scope(null), func);
+                TypeCheckerModel.TypeInfo bound = resolveAndValidateTypeBound(op.left, rhsType, op.right);
                 if (bound != null) {
                     rhsType = bound;
                 } else {
                     requireStaticMutable(rhsType, op.right);
                 }
                 // A direct atomic declaration is legal for 'let static'; an atomic merely read from elsewhere is stripped.
-                if (rhsType.isAtomic && !isDirectAtomicDeclaration(op.right)) {
+                if (rhsType.isAtomic && !hub.impls.isDirectAtomicDeclaration(op.right)) {
                     rhsType = rhsType.withAtomic(false);
                 }
                 scope.declare(nameTok.text, rhsType, nameTok);
@@ -570,20 +537,20 @@ abstract class TypeCheckerExpressions extends TypeCheckerControlFlow {
                     scope.declScope().constNames.add(nameTok.text);
                 }
                 scope.movedSlots.remove(nameTok.text);
-            partlyMovedSlots.remove(nameTok.text);
+            hub.model.partlyMovedSlots.remove(nameTok.text);
                 op.left.resolvedType = rhsType.canonical();
                 return rhsType;
             }
             // A plain 'let' RHS is always an eligible struct-RVO destination; checkCall decides whether it is such a call.
-            boolean previousRvoEligible = insideStructRvoDestinationPosition;
-            insideStructRvoDestinationPosition = true;
-            TypeInfo rhsType;
+            boolean previousRvoEligible = hub.model.insideStructRvoDestinationPosition;
+            hub.model.insideStructRvoDestinationPosition = true;
+            TypeCheckerModel.TypeInfo rhsType;
             try {
-                rhsType = resolveExprType(op.right, scope, func);
+                rhsType = hub.controlFlow.resolveExprType(op.right, scope, func);
             } finally {
-                insideStructRvoDestinationPosition = previousRvoEligible;
+                hub.model.insideStructRvoDestinationPosition = previousRvoEligible;
             }
-            TypeInfo bound = resolveAndValidateTypeBound(op.left, rhsType, op.right);
+            TypeCheckerModel.TypeInfo bound = resolveAndValidateTypeBound(op.left, rhsType, op.right);
             if (bound != null) {
                 rhsType = bound;
             } else {
@@ -592,7 +559,7 @@ abstract class TypeCheckerExpressions extends TypeCheckerControlFlow {
             // A direct atomic declaration is legal only for a global or 'let static'; an expression that merely resolves to an
             // atomic value is stripped to non-atomic. See docs/TypeChecker.md, "Atomic write rules".
             if (rhsType.isAtomic) {
-                if (isDirectAtomicDeclaration(op.right)) {
+                if (hub.impls.isDirectAtomicDeclaration(op.right)) {
                     throw new CompilerException("type", op.left.file, op.left.line,
                             "an 'atomic' value can only ever be the type of a global or 'let static' "
                                     + "local, never a plain 'let'");
@@ -601,24 +568,24 @@ abstract class TypeCheckerExpressions extends TypeCheckerControlFlow {
             }
             scope.declare(nameTok.text, rhsType, nameTok);
             if ("ref".equals(rhsType.storage) && rhsType.isSome) {
-                ProofKills.implicit(nameTok.text, pointeeOf(rhsType));
+                ProofKills.implicit(nameTok.text, hub.declarations.pointeeOf(rhsType));
             }
             if (op.left.isConst) {
                 scope.declScope().constNames.add(nameTok.text);
             }
             // Recorded in declaration order so this scope drops the owning local at every exit (natural end, return, break).
-            if ("owns".equals(rhsType.storage) || isInlineOwningStruct(rhsType)) {
+            if ("owns".equals(rhsType.storage) || hub.declarations.isInlineOwningStruct(rhsType)) {
                 scope.declScope().ownsDeclaredHere.add(nameTok.text);
                 func.ownsLocalTypes.put(nameTok.text, rhsType);
-                if (isLockedAsyncHandle(rhsType) && !synthesizingGlueBody) {
-                    fnHandleDecls.putIfAbsent(nameTok.text, nameTok);
+                if (hub.statements.isLockedAsyncHandle(rhsType) && !hub.model.synthesizingGlueBody) {
+                    hub.model.fnHandleDecls.putIfAbsent(nameTok.text, nameTok);
                 }
             }
             // A fresh 'let' is a new binding: clear any stale moved-flag from an earlier use of the same name (e.g. a loop body redeclaring it).
             scope.movedSlots.remove(nameTok.text);
-            partlyMovedSlots.remove(nameTok.text);
+            hub.model.partlyMovedSlots.remove(nameTok.text);
             op.left.resolvedType = rhsType.canonical();
-            requireNoAutoContainer(rhsType, nameTok, "'" + nameTok.text + "'");
+            hub.signatures.requireNoAutoContainer(rhsType, nameTok, "'" + nameTok.text + "'");
             markMovedIfOwned(rhsType, op.right, scope);
             return rhsType;
         }
@@ -626,37 +593,37 @@ abstract class TypeCheckerExpressions extends TypeCheckerControlFlow {
         String leftSlotKeyForRevival = slotKeyOf(op.left);
         if (leftSlotKeyForRevival != null) {
             scope.movedSlots.remove(leftSlotKeyForRevival);
-            partlyMovedSlots.remove(leftSlotKeyForRevival);
+            hub.model.partlyMovedSlots.remove(leftSlotKeyForRevival);
         }
-        assignTargetVar = op.left;
-        TypeInfo leftType;
+        hub.model.assignTargetVar = op.left;
+        TypeCheckerModel.TypeInfo leftType;
         try {
-            leftType = resolveExprType(op.left, scope, func);
+            leftType = hub.controlFlow.resolveExprType(op.left, scope, func);
         } finally {
-            assignTargetVar = null;
+            hub.model.assignTargetVar = null;
         }
         // A bare EnumName.Variant is always 'imut' and would not coerce to a 'mut' target; allowed as in checkInstantiate and
         // checkSwapOperator (needed by the synthesized lock-release write).
-        boolean isBareEnumVariantRight = enums.containsKey(leftType.baseType)
-                && isBareEnumVariantRefNode(op.right, leftType.baseType);
+        boolean isBareEnumVariantRight = hub.model.enums.containsKey(leftType.baseType)
+                && hub.accessAndAsync.isBareEnumVariantRefNode(op.right, leftType.baseType);
         // '=' on an atomic target is allowed only for a bare variable, literal or enum variant (isSwapRhsAllowedShape); compound
         // assignment and ++/-- are rejected outright. See docs/TypeChecker.md, "Atomic write rules".
-        if (leftType.isAtomic && !isBareEnumVariantRight && !isSwapRhsAllowedShape(op.right)) {
+        if (leftType.isAtomic && !isBareEnumVariantRight && !hub.accessAndAsync.isSwapRhsAllowedShape(op.right)) {
             throw new CompilerException("type", op.right.file, op.right.line,
                     "an 'atomic' target can only be assigned a bare variable, a literal, or an "
                             + "'EnumName.Variant' reference with '=' -- not a computed expression. Use "
                             + "'swap' instead if the new value needs to be computed");
         }
         // A struct-RVO call is eligible here only when the assignment target is a bare variable.
-        boolean previousRvoEligible = insideStructRvoDestinationPosition;
-        insideStructRvoDestinationPosition = op.left.type == TokenType.VARREF;
-        TypeInfo rightType;
+        boolean previousRvoEligible = hub.model.insideStructRvoDestinationPosition;
+        hub.model.insideStructRvoDestinationPosition = op.left.type == TokenType.VARREF;
+        TypeCheckerModel.TypeInfo rightType;
         try {
-            rightType = resolveExprType(op.right, scope, func);
+            rightType = hub.controlFlow.resolveExprType(op.right, scope, func);
         } finally {
-            insideStructRvoDestinationPosition = previousRvoEligible;
+            hub.model.insideStructRvoDestinationPosition = previousRvoEligible;
         }
-        if (!isBareEnumVariantRight && !acceptsAdaptingLiteral(leftType, rightType, op.right)) {
+        if (!isBareEnumVariantRight && !hub.acceptsAdaptingLiteral(leftType, rightType, op.right)) {
             throw new CompilerException("type", op.file, op.line,
                     "cannot assign '" + rightType.canonical() + "' to '" + leftType.canonical() + "'");
         }
@@ -664,33 +631,33 @@ abstract class TypeCheckerExpressions extends TypeCheckerControlFlow {
         requireNotConst(op.left, leftType, scope, op);
         requireNotLoopImmutable(op.left, scope, op);
         if (op.left.type == TokenType.OPERATOR && op.left.text.equals("LOOKUP")) {
-            requireLookupWriteAuthorized(op.left, scope);
+            hub.accessAndAsync.requireLookupWriteAuthorized(op.left, scope);
         }
         // Revive the target again: `arr = resize(arr, ..)` moves the slot while the RHS is resolved, and this assignment supersedes that move.
         if (leftSlotKeyForRevival != null) {
             scope.movedSlots.remove(leftSlotKeyForRevival);
-            partlyMovedSlots.remove(leftSlotKeyForRevival);
+            hub.model.partlyMovedSlots.remove(leftSlotKeyForRevival);
         }
         invalidateMatchPatternsForWrite(op.left, scope);
         if ("ref".equals(leftType.storage) && leftType.isSome && op.left.type == TokenType.VARREF) {
-            ProofKills.implicit(op.left.text, pointeeOf(leftType));
+            ProofKills.implicit(op.left.text, hub.declarations.pointeeOf(leftType));
         }
-        if (typeOwnsMemory(leftType, new HashSet<>())) {
-            ProofKills.kill(scope.activeMatchPatterns, op, "an assignment over a slot that owns memory (the old value is freed)", memberPathRoot(op.left), destroyedTypes(leftType));
+        if (hub.model.typeOwnsMemory(leftType, new HashSet<>())) {
+            ProofKills.kill(scope.activeMatchPatterns, op, "an assignment over a slot that owns memory (the old value is freed)", TypeCheckerModel.memberPathRoot(op.left), hub.declarations.destroyedTypes(leftType));
         }
-        if (isInlineOwningStruct(leftType)) {
+        if (hub.declarations.isInlineOwningStruct(leftType)) {
             op.left.inlineOwnsStruct = leftType.baseType;
         }
         markMovedIfOwned(leftType, op.right, scope);
-        if (typeOwnsMemory(leftType, new HashSet<>()) && assignsInsideSwapLockStruct(op.left, scope)) {
-            requireFreshIntoSwapLock(op.right, "assigned into", String.valueOf(memberPathRoot(op.left)));
+        if (hub.model.typeOwnsMemory(leftType, new HashSet<>()) && hub.signatures.assignsInsideSwapLockStruct(op.left, scope)) {
+            hub.signatures.requireFreshIntoSwapLock(op.right, "assigned into", String.valueOf(TypeCheckerModel.memberPathRoot(op.left)));
         }
         // Return the target's type (it differs from the value's when assigning 'null').
         return leftType;
     }
 
     /** Rejects compound assignment and ++/-- on an atomic target outright (they are read-then-write; use `swap`). See docs/TypeChecker.md, "Atomic write rules". */
-    public void requireNotAtomicOrdinaryWriteTarget(TypeInfo targetType, Token at, String opText) {
+    public void requireNotAtomicOrdinaryWriteTarget(TypeCheckerModel.TypeInfo targetType, Token at, String opText) {
         if (targetType.isAtomic) {
             throw new CompilerException("type", at.file, at.line,
                     "an 'atomic' value can't be written with '" + opText + "' -- every write to an "
@@ -700,7 +667,7 @@ abstract class TypeCheckerExpressions extends TypeCheckerControlFlow {
     }
 
     /** Rejects assignment to a `let const` local, a const parameter or a const struct member. Struct-literal initialisation goes through checkInstantiate and never reaches here. */
-    public void requireNotConst(Token target, TypeInfo targetType, Scope scope, Token at) {
+    public void requireNotConst(Token target, TypeCheckerModel.TypeInfo targetType, TypeCheckerModel.Scope scope, Token at) {
         if (target.type == TokenType.VARREF && scope.isConstName(target.text)) {
             throw new CompilerException("type", at.file, at.line,
                     "'" + target.text + "' is 'const' -- it can never be assigned outside of its own "
@@ -709,13 +676,13 @@ abstract class TypeCheckerExpressions extends TypeCheckerControlFlow {
         if (targetType.isConst) {
             String name = slotKeyOf(target);
             throw new CompilerException("type", at.file, at.line,
-                    "'" + (name != null ? name : describeConditionForError(target)) + "' is 'const' -- it "
+                    "'" + (name != null ? name : hub.controlFlow.describeConditionForError(target)) + "' is 'const' -- it "
                             + "can never be assigned");
         }
     }
 
     /** Rejects reassigning a for/for-match loop variable or its source expression inside the loop body (`arr[i] = ..` is governed by requireLookupWriteAuthorized). */
-    public void requireNotLoopImmutable(Token target, Scope scope, Token at) {
+    public void requireNotLoopImmutable(Token target, TypeCheckerModel.Scope scope, Token at) {
         String key = slotKeyOf(target);
         if (key != null && scope.isLoopImmutable(key)) {
             throw new CompilerException("type", at.file, at.line,
@@ -760,23 +727,23 @@ abstract class TypeCheckerExpressions extends TypeCheckerControlFlow {
          * the VARREF case substitutes in place. See docs/TypeChecker.md, "Compile-time constants".
          */
     public Token resolveConstValue(String name, Token referencingNode) {
-        Token cached = constResolvedValues.get(name);
+        Token cached = hub.model.constResolvedValues.get(name);
         if (cached != null) {
             return cached;
         }
-        if (constsBeingEvaluated.contains(name)) {
+        if (hub.model.constsBeingEvaluated.contains(name)) {
             throw new CompilerException("type", referencingNode.file, referencingNode.line,
                     "'const " + name + "' is circularly defined (directly or indirectly references "
                             + "its own value)");
         }
-        constsBeingEvaluated.add(name);
+        hub.model.constsBeingEvaluated.add(name);
         Token result;
         try {
-            result = evaluateConstant(constExprs.get(name));
+            result = evaluateConstant(hub.model.constExprs.get(name));
         } finally {
-            constsBeingEvaluated.remove(name);
+            hub.model.constsBeingEvaluated.remove(name);
         }
-        constResolvedValues.put(name, result);
+        hub.model.constResolvedValues.put(name, result);
         return result;
     }
 
@@ -791,7 +758,7 @@ abstract class TypeCheckerExpressions extends TypeCheckerControlFlow {
             case NULL:
                 return node;
             case VARREF:
-                if (!constExprs.containsKey(node.text)) {
+                if (!hub.model.constExprs.containsKey(node.text)) {
                     throw new CompilerException("type", node.file, node.line,
                             "'" + node.text + "' is not a known const -- a compile-time constant "
                                     + "expression can only reference literals and other consts, never a "
@@ -807,7 +774,7 @@ abstract class TypeCheckerExpressions extends TypeCheckerControlFlow {
     }
 
     /** Folds a template literal into a plain STRING token in place; each `${..}` is evaluated by evaluateConstant. See docs/TypeChecker.md, "Compile-time constants". */
-    public TypeInfo resolveTemplateString(Token node) {
+    public TypeCheckerModel.TypeInfo resolveTemplateString(Token node) {
         StringBuilder sb = new StringBuilder();
         for (Token seg : node.childs) {
             if (seg.type == TokenType.OPERATOR && seg.text.equals("TEMPLATE_STRING_PART")) {
@@ -826,7 +793,7 @@ abstract class TypeCheckerExpressions extends TypeCheckerControlFlow {
         node.literalValue = sb.toString();
         node.quoteDelimiter = '`';
         node.childs = new ArrayList<>();
-        return new TypeInfo("static", "imut", "string").withSome(true);
+        return new TypeCheckerModel.TypeInfo("static", "imut", "string").withSome(true);
     }
 
     /** Stringifies one evaluated `${..}` segment; floats are rejected because no formatting convention is settled. */
@@ -1003,8 +970,8 @@ abstract class TypeCheckerExpressions extends TypeCheckerControlFlow {
     }
 
     /** A static/global scalar needs a concrete mutability ('mut' or 'imut'); a struct is already governed by its member declarations. */
-    public void requireStaticMutable(TypeInfo type, Token at) {
-        if (structs.containsKey(type.baseType)) {
+    public void requireStaticMutable(TypeCheckerModel.TypeInfo type, Token at) {
+        if (hub.model.structs.containsKey(type.baseType)) {
             return;
         }
         if (!"mut".equals(type.mutability) && !"imut".equals(type.mutability)) {
@@ -1015,7 +982,7 @@ abstract class TypeCheckerExpressions extends TypeCheckerControlFlow {
     }
 
     /** A variable only accepts a value with concrete mutability; indeterminate values (literals, arithmetic results) need a `mut`/`imut` prefix. */
-    public void requireConcreteMutability(TypeInfo type, Token at) {
+    public void requireConcreteMutability(TypeCheckerModel.TypeInfo type, Token at) {
         if (!"mut".equals(type.mutability) && !"imut".equals(type.mutability)) {
             throw new CompilerException("type", at.file, at.line,
                     "this value's mutability is indeterminate -- write 'mut' or 'imut' before it to "
@@ -1027,15 +994,15 @@ abstract class TypeCheckerExpressions extends TypeCheckerControlFlow {
          * Checks `let:<FullType> name = expr`: the RHS must match the bound exactly, be 'null' for a pointer bound, or implement an
          * interface bound; no other implicit casting. Returns null when no bound is written. See docs/TypeChecker.md, "Let type bounds".
          */
-    public TypeInfo resolveAndValidateTypeBound(Token letTok, TypeInfo rhsType, Token rhsExpr) {
+    public TypeCheckerModel.TypeInfo resolveAndValidateTypeBound(Token letTok, TypeCheckerModel.TypeInfo rhsType, Token rhsExpr) {
         if (letTok.typeBound == null) {
             return null;
         }
-        TypeInfo bound = resolveTypeAnnotationRaw(letTok.typeBound, letTok);
-        TypeInfo result;
+        TypeCheckerModel.TypeInfo bound = hub.signatures.resolveTypeAnnotationRaw(letTok.typeBound, letTok);
+        TypeCheckerModel.TypeInfo result;
         if (rhsType.baseType.equals("null")) {
             // Only pointers (owns/ref/raw, not auto/static) can be null.
-            if (!isPointerType(bound)) {
+            if (!hub.isPointerType(bound)) {
                 throw new CompilerException("type", rhsExpr.file, rhsExpr.line,
                         "'null' can only satisfy a pointer-typed bound ('owns'/'ref'/'raw'), got '"
                                 + bound.canonical() + "'");
@@ -1050,20 +1017,20 @@ abstract class TypeCheckerExpressions extends TypeCheckerControlFlow {
         } else {
             requireConcreteMutability(rhsType, rhsExpr);
             boolean sameOrAncestor = rhsType.baseType.equals(bound.baseType)
-                    || (interfaces.containsKey(bound.baseType) && structs.containsKey(rhsType.baseType)
-                            && structImplementsInterface(rhsType.baseType, bound.baseType));
-            boolean literalOk = literalAdapts(bound, rhsType);
+                    || (hub.model.interfaces.containsKey(bound.baseType) && hub.model.structs.containsKey(rhsType.baseType)
+                            && hub.controlFlow.structImplementsInterface(rhsType.baseType, bound.baseType));
+            boolean literalOk = hub.literalAdapts(bound, rhsType);
             sameOrAncestor = sameOrAncestor || literalOk;
             boolean storageOk = (bound.storage == null && rhsType.storage == null)
                     || (bound.storage != null && rhsType.storage != null
-                            && storageCompatible(bound.storage, rhsType.storage));
-            if (!sameOrAncestor || !storageOk || !mutabilityCompatible(bound.mutability, rhsType.mutability)) {
+                            && hub.storageCompatible(bound.storage, rhsType.storage));
+            if (!sameOrAncestor || !storageOk || !hub.mutabilityCompatible(bound.mutability, rhsType.mutability)) {
                 throw new CompilerException("type", rhsExpr.file, rhsExpr.line,
                         "the initializer's type '" + rhsType.canonical() + "' doesn't satisfy the "
                                 + "declared bound '" + bound.canonical() + "'");
             }
             if (literalOk) {
-                adaptLiteral(rhsExpr, bound);
+                hub.adaptLiteral(rhsExpr, bound);
             }
             result = bound;
         }
@@ -1074,23 +1041,23 @@ abstract class TypeCheckerExpressions extends TypeCheckerControlFlow {
         return result;
     }
 
-    public TypeInfo checkCompoundAssign(Token op, Scope scope, FuncInfo func) {
+    public TypeCheckerModel.TypeInfo checkCompoundAssign(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
         rejectDerefAsWriteTarget(op.left, "a compound assignment");
-        TypeInfo leftType = resolveExprType(op.left, scope, func);
+        TypeCheckerModel.TypeInfo leftType = hub.controlFlow.resolveExprType(op.left, scope, func);
         requireNotAtomicOrdinaryWriteTarget(leftType, op, op.text);
-        TypeInfo rightType = resolveExprType(op.right, scope, func);
+        TypeCheckerModel.TypeInfo rightType = hub.controlFlow.resolveExprType(op.right, scope, func);
         // C-style: "p += n" / "p -= n" on a raw pointer moves by n elements (n * pointee size bytes).
-        boolean pointerCompound = isRawPointerType(leftType) && (op.text.equals("+=") || op.text.equals("-="))
-                && !(pointeeSize(leftType, op) == 1 && leftType.sameBaseType(rightType));
+        boolean pointerCompound = TypeCheckerModel.isRawPointerType(leftType) && (op.text.equals("+=") || op.text.equals("-="))
+                && !(hub.pointeeSize(leftType, op) == 1 && leftType.sameBaseType(rightType));
         if (pointerCompound) {
-            requireEightByteInteger(rightType, op);
-            long scale = pointeeSize(leftType, op);
+            hub.requireEightByteInteger(rightType, op);
+            long scale = hub.pointeeSize(leftType, op);
             op.pointerScale = scale > 1 ? scale : 0;
-            op.pointerScaleStruct = op.pointerScale > 0 ? pointeeStructName(leftType) : null;
+            op.pointerScaleStruct = op.pointerScale > 0 ? hub.pointeeStructName(leftType) : null;
         } else {
-            requireNumeric(leftType, op);
-            requireNumeric(rightType, op);
-            rightType = unifyLiteralOperands(op, leftType, rightType)[1];
+            hub.requireNumeric(leftType, op);
+            hub.requireNumeric(rightType, op);
+            rightType = hub.unifyLiteralOperands(op, leftType, rightType)[1];
             if (!leftType.sameBaseType(rightType)) {
                 throw new CompilerException("type", op.file, op.line,
                         "'" + op.text + "' requires both sides to be the same numeric type, got '"
@@ -1103,21 +1070,21 @@ abstract class TypeCheckerExpressions extends TypeCheckerControlFlow {
         requireMutable(op.left, leftType, scope, func, op);
         requireNotLoopImmutable(op.left, scope, op);
         if (op.left.type == TokenType.OPERATOR && op.left.text.equals("LOOKUP")) {
-            requireLookupWriteAuthorized(op.left, scope);
+            hub.accessAndAsync.requireLookupWriteAuthorized(op.left, scope);
         }
         invalidateMatchPatternsForWrite(op.left, scope);
         return leftType;
     }
 
-    public TypeInfo checkArithmetic(Token op, Scope scope, FuncInfo func) {
-        TypeInfo leftType = resolveExprType(op.left, scope, func);
-        TypeInfo rightType = resolveExprType(op.right, scope, func);
+    public TypeCheckerModel.TypeInfo checkArithmetic(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+        TypeCheckerModel.TypeInfo leftType = hub.controlFlow.resolveExprType(op.left, scope, func);
+        TypeCheckerModel.TypeInfo rightType = hub.controlFlow.resolveExprType(op.right, scope, func);
         // C-style pointer arithmetic on 'raw' pointers: pointer +/- integer and
         // integer + pointer give a pointer moved by n elements; pointer - pointer
         // gives the signed element count between them. Any other operator on a
         // pointer keeps its previous (plain numeric) meaning.
-        boolean leftPtr = isRawPointerType(leftType);
-        boolean rightPtr = isRawPointerType(rightType);
+        boolean leftPtr = TypeCheckerModel.isRawPointerType(leftType);
+        boolean rightPtr = TypeCheckerModel.isRawPointerType(rightType);
         if ((leftPtr || rightPtr) && (op.text.equals("+") || op.text.equals("-"))) {
             if (leftPtr && rightPtr) {
                 if (!op.text.equals("-")) {
@@ -1129,31 +1096,31 @@ abstract class TypeCheckerExpressions extends TypeCheckerControlFlow {
                                     + "' and '" + rightType.canonical() + "')");
                 }
                 op.pointerArithKind = 3;
-                op.pointerScale = pointeeSize(leftType, op);
-                op.pointerScaleStruct = pointeeStructName(leftType);
-                return new TypeInfo(null, "indeterminate", "s64");
+                op.pointerScale = hub.pointeeSize(leftType, op);
+                op.pointerScaleStruct = hub.pointeeStructName(leftType);
+                return new TypeCheckerModel.TypeInfo(null, "indeterminate", "s64");
             }
             if (leftPtr) {
-                requireEightByteInteger(rightType, op);
+                hub.requireEightByteInteger(rightType, op);
                 op.pointerArithKind = 1;
-                op.pointerScale = pointeeSize(leftType, op);
-                op.pointerScaleStruct = pointeeStructName(leftType);
-                return pointerResultType(leftType);
+                op.pointerScale = hub.pointeeSize(leftType, op);
+                op.pointerScaleStruct = hub.pointeeStructName(leftType);
+                return hub.pointerResultType(leftType);
             }
             if (op.text.equals("-")) {
                 throw new CompilerException("type", op.file, op.line, "cannot subtract a 'raw' pointer from an integer");
             }
-            requireEightByteInteger(leftType, op);
+            hub.requireEightByteInteger(leftType, op);
             op.pointerArithKind = 2;
-            op.pointerScale = pointeeSize(rightType, op);
-            op.pointerScaleStruct = pointeeStructName(rightType);
-            return pointerResultType(rightType);
+            op.pointerScale = hub.pointeeSize(rightType, op);
+            op.pointerScaleStruct = hub.pointeeStructName(rightType);
+            return hub.pointerResultType(rightType);
         }
-        requireNumeric(leftType, op);
-        requireNumeric(rightType, op);
+        hub.requireNumeric(leftType, op);
+        hub.requireNumeric(rightType, op);
         // arithmetic between two float literals is itself a float literal (it adapts, as a whole, to f32 or f64)
         boolean bothFloatLiterals = leftType.floatLiteral && rightType.floatLiteral;
-        TypeInfo[] unified = unifyLiteralOperands(op, leftType, rightType);
+        TypeCheckerModel.TypeInfo[] unified = hub.unifyLiteralOperands(op, leftType, rightType);
         leftType = unified[0];
         rightType = unified[1];
         if (!leftType.sameBaseType(rightType)) {
@@ -1161,12 +1128,12 @@ abstract class TypeCheckerExpressions extends TypeCheckerControlFlow {
                     "'" + op.text + "' requires both sides to be the same numeric type, got '"
                             + leftType.canonical() + "' and '" + rightType.canonical() + "'");
         }
-        requireProvenFloatState(op.left, leftType, scope, op);
-        requireProvenFloatState(op.right, rightType, scope, op);
+        hub.locksAndProofs.requireProvenFloatState(op.left, leftType, scope, op);
+        hub.locksAndProofs.requireProvenFloatState(op.right, rightType, scope, op);
         if (op.text.equals("/") || op.text.equals("%")) {
             requireProvenNonzeroDivisor(op.right, rightType, scope, op);
         }
-        TypeInfo arith = new TypeInfo(null, "indeterminate", leftType.baseType);
+        TypeCheckerModel.TypeInfo arith = new TypeCheckerModel.TypeInfo(null, "indeterminate", leftType.baseType);
         if (bothFloatLiterals) {
             arith.floatLiteral = true;
         }
@@ -1177,8 +1144,8 @@ abstract class TypeCheckerExpressions extends TypeCheckerControlFlow {
          * Integer '/' and '%' need a literal nonzero divisor, a live nonzero match proof, or `assume match`; a literal 0 is always an error.
          * Floats are exempt (IEEE gives inf/NaN, no trap). See docs/TypeChecker.md, "Division proofs".
          */
-    public void requireProvenNonzeroDivisor(Token divisorExpr, TypeInfo divisorType, Scope scope, Token op) {
-        if (!INTEGER_TYPES.contains(divisorType.baseType)) {
+    public void requireProvenNonzeroDivisor(Token divisorExpr, TypeCheckerModel.TypeInfo divisorType, TypeCheckerModel.Scope scope, Token op) {
+        if (!TypeCheckerModel.INTEGER_TYPES.contains(divisorType.baseType)) {
             return;
         }
         if (divisorExpr.type == TokenType.INTEGER) {
@@ -1189,7 +1156,7 @@ abstract class TypeCheckerExpressions extends TypeCheckerControlFlow {
             }
             return;
         }
-        if (!isProvenNonzero(divisorExpr, scope)) {
+        if (!hub.locksAndProofs.isProvenNonzero(divisorExpr, scope)) {
             throw new CompilerException("type", op.file, op.line,
                     "'" + op.text + "' requires the divisor to be proven nonzero first (`match "
                             + divisorExpr.text + " != 0{...}` for an unsigned type, or `match "
@@ -1199,12 +1166,12 @@ abstract class TypeCheckerExpressions extends TypeCheckerControlFlow {
         }
     }
 
-    public TypeInfo checkUnaryMinus(Token op, Scope scope, FuncInfo func) {
-        TypeInfo operand = resolveExprType(op.left, scope, func);
-        requireNumeric(operand, op);
-        requireProvenFloatState(op.left, operand, scope, op);
-        String resultBase = UNSIGNED_TO_SIGNED.getOrDefault(operand.baseType, operand.baseType);
-        TypeInfo negated = new TypeInfo(null, "indeterminate", resultBase);
+    public TypeCheckerModel.TypeInfo checkUnaryMinus(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+        TypeCheckerModel.TypeInfo operand = hub.controlFlow.resolveExprType(op.left, scope, func);
+        hub.requireNumeric(operand, op);
+        hub.locksAndProofs.requireProvenFloatState(op.left, operand, scope, op);
+        String resultBase = TypeCheckerModel.UNSIGNED_TO_SIGNED.getOrDefault(operand.baseType, operand.baseType);
+        TypeCheckerModel.TypeInfo negated = new TypeCheckerModel.TypeInfo(null, "indeterminate", resultBase);
         if (operand.literalValue != null && operand.baseType.equals("u64")) {
             // "-5" is still a literal (see TypeInfo.literalValue): its value is -5, its default
             // type s64, and it may adapt to any signed type that holds it.
@@ -1216,40 +1183,40 @@ abstract class TypeCheckerExpressions extends TypeCheckerControlFlow {
         return negated;
     }
 
-    public TypeInfo checkLogicalNot(Token op, Scope scope, FuncInfo func) {
-        TypeInfo operand = resolveExprType(op.left, scope, func);
-        requireBoolOrInteger(operand, op);
-        return new TypeInfo(null, "indeterminate", "bool");
+    public TypeCheckerModel.TypeInfo checkLogicalNot(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+        TypeCheckerModel.TypeInfo operand = hub.controlFlow.resolveExprType(op.left, scope, func);
+        hub.requireBoolOrInteger(operand, op);
+        return new TypeCheckerModel.TypeInfo(null, "indeterminate", "bool");
     }
 
     /** Shared by both "++" and "--" -- identical rules either way (numeric, mutable, not the loop's own immutable slot); only the emitted mnemonic differs, decided later by BytecodeEmitter from op.text alone. */
-    public TypeInfo checkIncrement(Token op, Scope scope, FuncInfo func) {
+    public TypeCheckerModel.TypeInfo checkIncrement(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
         rejectDerefAsWriteTarget(op.left, "'++'/'--'");
-        TypeInfo operand = resolveExprType(op.left, scope, func);
+        TypeCheckerModel.TypeInfo operand = hub.controlFlow.resolveExprType(op.left, scope, func);
         // C-style: "p++" on a raw pointer advances by the pointee size. A
         // one-byte pointee keeps the ordinary path below, byte-identical to before.
-        if (isRawPointerType(operand)) {
-            long scale = pointeeSize(operand, op);
+        if (TypeCheckerModel.isRawPointerType(operand)) {
+            long scale = hub.pointeeSize(operand, op);
             if (scale > 1) {
                 requireNotAtomicOrdinaryWriteTarget(operand, op, op.text);
                 requireMutable(op.left, operand, scope, func, op);
                 requireNotLoopImmutable(op.left, scope, op);
                 invalidateMatchPatternsForWrite(op.left, scope);
                 op.pointerScale = scale;
-                op.pointerScaleStruct = pointeeStructName(operand);
+                op.pointerScaleStruct = hub.pointeeStructName(operand);
                 return operand;
             }
         }
         requireNotAtomicOrdinaryWriteTarget(operand, op, op.text);
-        requireNumeric(operand, op);
+        hub.requireNumeric(operand, op);
         requireMutable(op.left, operand, scope, func, op);
         requireNotLoopImmutable(op.left, scope, op);
         invalidateMatchPatternsForWrite(op.left, scope);
-        return new TypeInfo(null, "indeterminate", operand.baseType);
+        return new TypeCheckerModel.TypeInfo(null, "indeterminate", operand.baseType);
     }
 
     /** Modifying a value needs 'mut' on the target and on every prefix of a dotted/indexed path. */
-    public void requireMutable(Token targetExpr, TypeInfo targetType, Scope scope, FuncInfo func, Token at) {
+    public void requireMutable(Token targetExpr, TypeCheckerModel.TypeInfo targetType, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func, Token at) {
         if (!"mut".equals(targetType.mutability)) {
             throw new CompilerException("type", at.file, at.line,
                     "cannot modify this value -- its mutability is '"
@@ -1257,17 +1224,17 @@ abstract class TypeCheckerExpressions extends TypeCheckerControlFlow {
                             + "', not 'mut'");
         }
         // '@pure' functions may not mutate through any pointer anywhere in the chain; unsafe gives no exemption.
-        if (isPureFunc(func) && targetType.storage != null) {
+        if (hub.impls.isPureFunc(func) && targetType.storage != null) {
             throw new CompilerException("type", at.file, at.line,
                     "'" + func.name + "' is '@pure' and cannot mutate through a pointer -- '"
                             + targetType.canonical() + "' has 'raw'/'owns'/'ref'/'auto'/'static' storage");
         }
         if (targetExpr.type == TokenType.OPERATOR && targetExpr.text.equals(".")) {
-            TypeInfo prefixType = resolveExprType(targetExpr.left, scope, func);
+            TypeCheckerModel.TypeInfo prefixType = hub.controlFlow.resolveExprType(targetExpr.left, scope, func);
             requireMutable(targetExpr.left, prefixType, scope, func, at);
         } else if (targetExpr.type == TokenType.OPERATOR && targetExpr.text.equals("LOOKUP")) {
             // LOOKUP is walked for the '@pure' pointer check, recursing so `p.arr[0]` reaches `p`.
-            TypeInfo prefixType = resolveExprType(targetExpr.left, scope, func);
+            TypeCheckerModel.TypeInfo prefixType = hub.controlFlow.resolveExprType(targetExpr.left, scope, func);
             requireMutable(targetExpr.left, prefixType, scope, func, at);
         }
     }
@@ -1276,7 +1243,7 @@ abstract class TypeCheckerExpressions extends TypeCheckerControlFlow {
          * `&&`/`||` (eager) and `&&then`/`||then` (lazy) share this check; the then-variants are legal only at the top of an
          * if/elseif condition (eligibleHere). See docs/TypeChecker.md, "Operator dispatch context flags".
          */
-    public TypeInfo checkLogical(Token op, Scope scope, FuncInfo func, boolean eligibleHere) {
+    public TypeCheckerModel.TypeInfo checkLogical(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func, boolean eligibleHere) {
         boolean isThenVariant = op.text.equals("&&then") || op.text.equals("||then");
         if (isThenVariant && !eligibleHere) {
             throw new CompilerException("type", op.file, op.line,
@@ -1288,42 +1255,42 @@ abstract class TypeCheckerExpressions extends TypeCheckerControlFlow {
         }
         // Only a then-variant re-arms eligibility for its operands; a plain &&/|| leaves it consumed.
         if (isThenVariant) {
-            insideShortCircuitEligiblePosition = true;
+            hub.model.insideShortCircuitEligiblePosition = true;
         }
-        TypeInfo leftType = resolveExprType(op.left, scope, func);
-        insideShortCircuitEligiblePosition = false;
+        TypeCheckerModel.TypeInfo leftType = hub.controlFlow.resolveExprType(op.left, scope, func);
+        hub.model.insideShortCircuitEligiblePosition = false;
         if (isThenVariant) {
-            insideShortCircuitEligiblePosition = true;
+            hub.model.insideShortCircuitEligiblePosition = true;
         }
-        TypeInfo rightType = resolveExprType(op.right, scope, func);
-        insideShortCircuitEligiblePosition = false;
-        requireBoolOrInteger(leftType, op);
-        requireBoolOrInteger(rightType, op);
-        return new TypeInfo(null, "indeterminate", "bool");
+        TypeCheckerModel.TypeInfo rightType = hub.controlFlow.resolveExprType(op.right, scope, func);
+        hub.model.insideShortCircuitEligiblePosition = false;
+        hub.requireBoolOrInteger(leftType, op);
+        hub.requireBoolOrInteger(rightType, op);
+        return new TypeCheckerModel.TypeInfo(null, "indeterminate", "bool");
     }
 
-    public TypeInfo checkComparison(Token op, Scope scope, FuncInfo func) {
-        TypeInfo leftType = resolveExprType(op.left, scope, func);
-        TypeInfo rightType = resolveExprType(op.right, scope, func);
-        TypeInfo[] unified = unifyLiteralOperands(op, leftType, rightType);
+    public TypeCheckerModel.TypeInfo checkComparison(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+        TypeCheckerModel.TypeInfo leftType = hub.controlFlow.resolveExprType(op.left, scope, func);
+        TypeCheckerModel.TypeInfo rightType = hub.controlFlow.resolveExprType(op.right, scope, func);
+        TypeCheckerModel.TypeInfo[] unified = hub.unifyLiteralOperands(op, leftType, rightType);
         leftType = unified[0];
         rightType = unified[1];
         boolean sameType = leftType.sameBaseType(rightType);
         // '==' and '!=' also allow comparing a pointer with 'null' (either side); ordering comparisons do not.
         boolean nullVsPointer = (op.text.equals("==") || op.text.equals("!="))
-                && ((rightType.baseType.equals("null") && isPointerType(leftType))
-                    || (leftType.baseType.equals("null") && isPointerType(rightType)));
+                && ((rightType.baseType.equals("null") && hub.isPointerType(leftType))
+                    || (leftType.baseType.equals("null") && hub.isPointerType(rightType)));
         if (!sameType && !nullVsPointer) {
             throw new CompilerException("type", op.file, op.line,
                     "'" + op.text + "' requires both sides to be the same type, got '"
                             + leftType.canonical() + "' and '" + rightType.canonical() + "'");
         }
-        requireProvenFloatState(op.left, leftType, scope, op);
-        requireProvenFloatState(op.right, rightType, scope, op);
+        hub.locksAndProofs.requireProvenFloatState(op.left, leftType, scope, op);
+        hub.locksAndProofs.requireProvenFloatState(op.right, rightType, scope, op);
         if (op.text.equals("==") || op.text.equals("!=")) {
             normalizeRefComparison(op, leftType, rightType);
         }
-        return new TypeInfo(null, "indeterminate", "bool");
+        return new TypeCheckerModel.TypeInfo(null, "indeterminate", "bool");
     }
 
     /**
@@ -1331,7 +1298,7 @@ abstract class TypeCheckerExpressions extends TypeCheckerControlFlow {
      * compared with a nullable `ref` becomes an id (GT_REF_ID, equal objects have equal ids); a `raw` pointer compared with one makes the id
      * an address (GT_REF_RESOLVE). A `null` literal is 0 in both forms and needs nothing.
      */
-    public void normalizeRefComparison(Token op, TypeInfo leftType, TypeInfo rightType) {
+    public void normalizeRefComparison(Token op, TypeCheckerModel.TypeInfo leftType, TypeCheckerModel.TypeInfo rightType) {
         boolean leftId = "ref".equals(leftType.storage) && !leftType.isSome;
         boolean rightId = "ref".equals(rightType.storage) && !rightType.isSome;
         if (leftId == rightId || leftType.baseType.equals("null") || rightType.baseType.equals("null")) {
@@ -1339,7 +1306,7 @@ abstract class TypeCheckerExpressions extends TypeCheckerControlFlow {
         }
         Token idSide = leftId ? op.left : op.right;
         Token addrSide = leftId ? op.right : op.left;
-        TypeInfo addrType = leftId ? rightType : leftType;
+        TypeCheckerModel.TypeInfo addrType = leftId ? rightType : leftType;
         if (addrType.storage == null) {
             return;
         }

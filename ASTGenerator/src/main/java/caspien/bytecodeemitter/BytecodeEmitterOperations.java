@@ -1,5 +1,6 @@
 package caspien.bytecodeemitter;
 import caspien.typechecker.TypeChecker;
+import caspien.typechecker.TypeCheckerModel;
 import caspien.*;
 
 import java.util.ArrayDeque;
@@ -20,15 +21,12 @@ import java.util.Set;
  */
 
 /** BytecodeEmitterOperations: assignment, ownership moves, arithmetic, comparisons, calls and arguments (part 3 of 4; see README.md in this folder). */
-abstract class BytecodeEmitterOperations extends BytecodeEmitterStatements {
-    // methods defined in later parts of the chain
-    abstract public void emitAllocFailureCheck(Token op);
-    abstract public void emitAllocFailureCheck(Token op, List<Token> movedSources, List<String> movedTemps);
-    abstract public void emitConvert(Token op);
-    abstract public void emitDestructMovedSources(List<Token> sources);
-    abstract public void emitDestructTempNames(List<String> names, Token at);
+final class BytecodeEmitterOperations {
+    private final BytecodeEmitter hub;
 
-
+    BytecodeEmitterOperations(BytecodeEmitter hub) {
+        this.hub = hub;
+    }
 
     /**
      * Before an owning assignment overwrites its target, destructs the old value (gt_destruct is null-safe); never for a fresh 'let'.
@@ -40,29 +38,29 @@ abstract class BytecodeEmitterOperations extends BytecodeEmitterStatements {
                 || !(target.resolvedType.startsWith("owns") || target.inlineOwnsStruct != null)) {
             return false;
         }
-        if (target.inlineOwnsStruct != null && !isFlatOwnsDestructTarget(target)) {
+        if (target.inlineOwnsStruct != null && !hub.statements.isFlatOwnsDestructTarget(target)) {
             // an inline owning struct reached through a pointer or an index: drop the members of the value at the computed address
-            emitAssignTarget(target);
-            line("DUP_TOP");
-            requireGhostTableFunctionPresent("gt_destruct", target);
-            line("GT_DROP_ADDR " + target.resolvedType);
+            hub.statements.emitAssignTarget(target);
+            hub.core.line("DUP_TOP");
+            hub.core.requireGhostTableFunctionPresent("gt_destruct", target);
+            hub.core.line("GT_DROP_ADDR " + target.resolvedType);
             return true;
         }
         if (target.type == TokenType.VARREF) {
-            requireGhostTableFunctionPresent("gt_destruct", target);
-            line("GT_DESTRUCT " + target.text);
+            hub.core.requireGhostTableFunctionPresent("gt_destruct", target);
+            hub.core.line("GT_DESTRUCT " + target.text);
             return false;
         }
-        if (target.type == TokenType.OPERATOR && target.text.equals(".") && isQualifiedNameableDot(target)) {
-            requireGhostTableFunctionPresent("gt_destruct", target);
-            line("GT_DESTRUCT " + qualifiedDotName(target));
+        if (target.type == TokenType.OPERATOR && target.text.equals(".") && hub.isQualifiedNameableDot(target)) {
+            hub.core.requireGhostTableFunctionPresent("gt_destruct", target);
+            hub.core.line("GT_DESTRUCT " + hub.qualifiedDotName(target));
             return false;
         }
         if (target.type == TokenType.OPERATOR && (target.text.equals(".") || target.text.equals("LOOKUP"))) {
-            emitAssignTarget(target);
-            line("DUP_TOP");
-            requireGhostTableFunctionPresent("gt_destruct", target);
-            line("GT_DESTRUCT_ADDR " + target.resolvedType);
+            hub.statements.emitAssignTarget(target);
+            hub.core.line("DUP_TOP");
+            hub.core.requireGhostTableFunctionPresent("gt_destruct", target);
+            hub.core.line("GT_DESTRUCT_ADDR " + target.resolvedType);
             return true;
         }
         return false; // unreached today -- no other assignment-target shape exists
@@ -74,39 +72,39 @@ abstract class BytecodeEmitterOperations extends BytecodeEmitterStatements {
             return;
         }
         // Flat-named owns target: destruct AFTER the right side ("s = pass(s)" moves the old value into the call, nulling the variable).
-        boolean lateDestruct = isFlatOwnsDestructTarget(op.left);
+        boolean lateDestruct = hub.statements.isFlatOwnsDestructTarget(op.left);
         // Pointer/index-reached owns target (no flat name): the right side is evaluated FIRST into a hidden local, so a move out of
         // the old value nulls it and a throw leaves it untouched.
-        boolean pointerCrossingOwns = !lateDestruct && lateAllocs != null && op.right.resolvedType != null
+        boolean pointerCrossingOwns = !lateDestruct && hub.core.lateAllocs != null && op.right.resolvedType != null
                 && (op.right.resolvedType.startsWith("owns") || op.left.inlineOwnsStruct != null)
-                && isPointerCrossingOwnsTarget(op.left);
+                && hub.statements.isPointerCrossingOwnsTarget(op.left);
         String spilledRight = null;
         if (pointerCrossingOwns) {
             String rightType = op.left.inlineOwnsStruct != null ? op.left.resolvedType : op.right.resolvedType;
-            spilledRight = declareHiddenLocal(rightType);
-            line("ADDR " + spilledRight + " " + rightType);
-            emitExpr(op.right);
-            line("ASSIGN " + rightType + " " + rightType + " " + rightType);
+            spilledRight = hub.declareHiddenLocal(rightType);
+            hub.core.line("ADDR " + spilledRight + " " + rightType);
+            hub.statements.emitExpr(op.right);
+            hub.core.line("ASSIGN " + rightType + " " + rightType + " " + rightType);
         }
         boolean addressAlreadyOnStack = false;
         if (!lateDestruct) {
             addressAlreadyOnStack = emitDestructOldOwnedValue(op.left);
         }
         if (!addressAlreadyOnStack) {
-            emitAssignTarget(op.left);
+            hub.statements.emitAssignTarget(op.left);
         }
         if (spilledRight != null) {
-            line("PUSH " + spilledRight + " " + (op.left.inlineOwnsStruct != null ? op.left.resolvedType : op.right.resolvedType));
+            hub.core.line("PUSH " + spilledRight + " " + (op.left.inlineOwnsStruct != null ? op.left.resolvedType : op.right.resolvedType));
         } else {
-            emitExpr(op.right);
+            hub.statements.emitExpr(op.right);
         }
         if (lateDestruct) {
             emitDestructOldOwnedValue(op.left);
         }
-        String assignMnemonic = isAtomicCanonical(op.left.resolvedType) ? "ATOMIC_ASSIGN" : "ASSIGN";
-        line(assignMnemonic + " " + op.left.resolvedType + " " + op.right.resolvedType + " " + op.resolvedType);
+        String assignMnemonic = BytecodeEmitterCore.isAtomicCanonical(op.left.resolvedType) ? "ATOMIC_ASSIGN" : "ASSIGN";
+        hub.core.line(assignMnemonic + " " + op.left.resolvedType + " " + op.right.resolvedType + " " + op.resolvedType);
         if (op.right.isOwnershipMoveSource) {
-            emitOwnershipMoveNullOut(op.right);
+            hub.statements.emitOwnershipMoveNullOut(op.right);
         }
     }
 
@@ -127,7 +125,7 @@ abstract class BytecodeEmitterOperations extends BytecodeEmitterStatements {
 
     /** The non-block `try` token (of the function being emitted) whose directly wrapped call is `callNode`, or null. */
     public Token ownerTryOf(Token callNode) {
-        for (Token tryTok : tryCatchLabels.keySet()) {
+        for (Token tryTok : hub.core.tryCatchLabels.keySet()) {
             if (!tryTok.isTryBlock && tryTok.sub != null && !tryTok.sub.isEmpty() && tryTok.sub.get(0) == callNode) {
                 return tryTok;
             }
@@ -139,38 +137,38 @@ abstract class BytecodeEmitterOperations extends BytecodeEmitterStatements {
     public void emitStructRvoAssign(Token op) {
         Token callOp = unwrapMutWrappers(op.right);
         String funcName = resolveCallTargetForEmission(callOp.resolvedCallTarget);
-        TypeChecker.FuncInfo targetInfo = findFuncInfoByMangledName(funcName);
+        TypeCheckerModel.FuncInfo targetInfo = hub.core.findFuncInfoByMangledName(funcName);
         String structName = targetInfo != null ? targetInfo.returnType.baseType
                 : op.left.resolvedType.substring(op.left.resolvedType.lastIndexOf('_') + 1);
         String destVarName = destVarNameOf(op.left);
         String destType = op.left.resolvedType;
         String rawPtrType = "raw_indeterminate_" + structName;
-        if (op.left.inlineOwnsStruct != null && lateAllocs != null) {
+        if (op.left.inlineOwnsStruct != null && hub.core.lateAllocs != null) {
             // The destination already owns memory (an inline struct with owns members): the callee builds the new value in a
             // hidden local, then the old members are dropped and the value is copied over. A callee that throws leaves the
             // destination untouched, and an argument that moves a member out of it (`h = f(h.w)`) has already nulled it.
-            String hidden = declareHiddenLocal(destType);
+            String hidden = hub.declareHiddenLocal(destType);
             emitStructRvoCallSequence(callOp, rawPtrType, () -> {
-                line("PUSH " + hidden + " " + destType);
-                line("ADDR_OF RAW " + destType + " " + rawPtrType);
+                hub.core.line("PUSH " + hidden + " " + destType);
+                hub.core.line("ADDR_OF RAW " + destType + " " + rawPtrType);
             });
-            requireGhostTableFunctionPresent("gt_destruct", op.left);
-            line("GT_DESTRUCT " + destVarName);
-            line("ADDR " + destVarName + " " + destType);
-            line("PUSH " + hidden + " " + destType);
-            line("ASSIGN " + destType + " " + destType + " " + destType);
+            hub.core.requireGhostTableFunctionPresent("gt_destruct", op.left);
+            hub.core.line("GT_DESTRUCT " + destVarName);
+            hub.core.line("ADDR " + destVarName + " " + destType);
+            hub.core.line("PUSH " + hidden + " " + destType);
+            hub.core.line("ASSIGN " + destType + " " + destType + " " + destType);
             return;
         }
         emitStructRvoCallSequence(callOp, rawPtrType, () -> {
-            line("PUSH " + destVarName + " " + destType);
-            line("ADDR_OF RAW " + destType + " " + rawPtrType);
+            hub.core.line("PUSH " + destVarName + " " + destType);
+            hub.core.line("ADDR_OF RAW " + destType + " " + rawPtrType);
         });
         // no PUSH_RET/ASSIGN: the callee already wrote the destination
     }
 
     /** "return foo()" tail forwarding: this function's own $ret_dest pointer is the callee's hidden destination (no address-of, no copy). */
     public void emitStructRvoForwardCall(Token callOp, String ptrType) {
-        emitStructRvoCallSequence(callOp, ptrType, () -> line("PUSH $ret_dest " + ptrType));
+        emitStructRvoCallSequence(callOp, ptrType, () -> hub.core.line("PUSH $ret_dest " + ptrType));
     }
 
     /** Shared RVO call site: arguments are transferred as emitCallSequence would, with the hidden destination pointer (pushDestPointer) in register slot 0. */
@@ -184,23 +182,23 @@ abstract class BytecodeEmitterOperations extends BytecodeEmitterStatements {
         String conventionName = callOp.resolvedCallConvention;
         Token ownerTry = ownerTryOf(callOp);
         if (ownerTry != null) {
-            pendingTryCatchLabel = tryCatchLabels.get(ownerTry); // consumed by the staging write just below
+            hub.core.pendingTryCatchLabel = hub.core.tryCatchLabels.get(ownerTry); // consumed by the staging write just below
         }
-        stageCallSiteForUnwind(callOp);
-        pendingTryCatchLabel = null;
-        ArgCounters counters = new ArgCounters(checker.getConfig().callingConventions.get(conventionName));
-        line("CC_START " + conventionName);
+        hub.core.stageCallSiteForUnwind(callOp);
+        hub.core.pendingTryCatchLabel = null;
+        BytecodeEmitterCore.ArgCounters counters = new BytecodeEmitterCore.ArgCounters(hub.core.checker.model.getConfig().callingConventions.get(conventionName));
+        hub.core.line("CC_START " + conventionName);
         pushDestPointer.run();
         emitArgTransferTail(rawPtrType, counters, false);
         for (Token arg : args) {
             emitArgTransfer(arg, counters, false);
             if (arg.isOwnershipMoveSource) {
-                emitOwnershipMoveNullOut(arg);
+                hub.statements.emitOwnershipMoveNullOut(arg);
             }
         }
-        String mnemonic = funcName.equals(currentFuncMangledName) ? "RECURSIVE_CALL" : "CALL";
-        line(mnemonic + " " + funcName);
-        line("CC_END " + conventionName);
+        String mnemonic = funcName.equals(hub.core.currentFuncMangledName) ? "RECURSIVE_CALL" : "CALL";
+        hub.core.line(mnemonic + " " + funcName);
+        hub.core.line("CC_END " + conventionName);
     }
 
     /** Name of the bare-variable destination (a 'let' binding or a plain assignment target). */
@@ -213,18 +211,18 @@ abstract class BytecodeEmitterOperations extends BytecodeEmitterStatements {
 
     /** x += y desugars to the same bytecode as "x = x + y" -- no dedicated compound-assign opcode. */
     public void emitCompoundAssign(Token op) {
-        emitAssignTarget(op.left); // assign target
-        emitExpr(op.left);         // left operand of the arithmetic
-        emitExpr(op.right);        // right operand
+        hub.statements.emitAssignTarget(op.left); // assign target
+        hub.statements.emitExpr(op.left);         // left operand of the arithmetic
+        hub.statements.emitExpr(op.right);        // right operand
         if (op.pointerScale > 1) {
             // "p += n" on a raw pointer: n elements, i.e. n * sizeof(pointee) bytes.
-            line(pointerScaleLine(op, "indeterminate_u64"));
-            line("MUL " + op.right.resolvedType + " indeterminate_u64 " + op.right.resolvedType);
+            hub.core.line(BytecodeEmitterCore.pointerScaleLine(op, "indeterminate_u64"));
+            hub.core.line("MUL " + op.right.resolvedType + " indeterminate_u64 " + op.right.resolvedType);
         }
-        String arithOp = COMPOUND_TO_ARITH.get(op.text);
-        line(ARITH_NAMES.get(arithOp) + " " + op.left.resolvedType + " " + op.right.resolvedType
+        String arithOp = BytecodeEmitterCore.COMPOUND_TO_ARITH.get(op.text);
+        hub.core.line(BytecodeEmitterCore.ARITH_NAMES.get(arithOp) + " " + op.left.resolvedType + " " + op.right.resolvedType
                 + " " + op.left.resolvedType);
-        line("ASSIGN " + op.left.resolvedType + " " + op.left.resolvedType + " " + op.resolvedType);
+        hub.core.line("ASSIGN " + op.left.resolvedType + " " + op.left.resolvedType + " " + op.resolvedType);
     }
 
     public void emitBinaryArith(Token op) {
@@ -232,9 +230,9 @@ abstract class BytecodeEmitterOperations extends BytecodeEmitterStatements {
             emitPointerArith(op);
             return;
         }
-        emitExpr(op.left);
-        emitExpr(op.right);
-        line(ARITH_NAMES.get(op.text) + " " + op.left.resolvedType + " " + op.right.resolvedType
+        hub.statements.emitExpr(op.left);
+        hub.statements.emitExpr(op.right);
+        hub.core.line(BytecodeEmitterCore.ARITH_NAMES.get(op.text) + " " + op.left.resolvedType + " " + op.right.resolvedType
                 + " " + op.resolvedType);
     }
 
@@ -242,28 +240,28 @@ abstract class BytecodeEmitterOperations extends BytecodeEmitterStatements {
     public void emitPointerArith(Token op) {
         String l = op.left.resolvedType;
         String r = op.right.resolvedType;
-        String arith = ARITH_NAMES.get(op.text);
+        String arith = BytecodeEmitterCore.ARITH_NAMES.get(op.text);
         if (op.pointerArithKind == 3) {
-            emitExpr(op.left);
-            emitExpr(op.right);
-            line(arith + " " + l + " " + r + " indeterminate_s64");
+            hub.statements.emitExpr(op.left);
+            hub.statements.emitExpr(op.right);
+            hub.core.line(arith + " " + l + " " + r + " indeterminate_s64");
             if (op.pointerScale > 1) {
-                line(pointerScaleLine(op, "indeterminate_s64"));
-                line("DIV indeterminate_s64 indeterminate_s64 indeterminate_s64");
+                hub.core.line(BytecodeEmitterCore.pointerScaleLine(op, "indeterminate_s64"));
+                hub.core.line("DIV indeterminate_s64 indeterminate_s64 indeterminate_s64");
             }
             return;
         }
-        emitExpr(op.left);
+        hub.statements.emitExpr(op.left);
         if (op.pointerArithKind == 2 && op.pointerScale > 1) {
-            line(pointerScaleLine(op, "indeterminate_u64"));
-            line("MUL " + l + " indeterminate_u64 " + l);
+            hub.core.line(BytecodeEmitterCore.pointerScaleLine(op, "indeterminate_u64"));
+            hub.core.line("MUL " + l + " indeterminate_u64 " + l);
         }
-        emitExpr(op.right);
+        hub.statements.emitExpr(op.right);
         if (op.pointerArithKind == 1 && op.pointerScale > 1) {
-            line(pointerScaleLine(op, "indeterminate_u64"));
-            line("MUL " + r + " indeterminate_u64 " + r);
+            hub.core.line(BytecodeEmitterCore.pointerScaleLine(op, "indeterminate_u64"));
+            hub.core.line("MUL " + r + " indeterminate_u64 " + r);
         }
-        line(arith + " " + l + " " + r + " " + op.resolvedType);
+        hub.core.line(arith + " " + l + " " + r + " " + op.resolvedType);
     }
 
     public void emitUnaryMinus(Token op) {
@@ -271,16 +269,16 @@ abstract class BytecodeEmitterOperations extends BytecodeEmitterStatements {
         // packed array / struct construction run, which any other instruction between pushes would break).
         if (op.left.type == TokenType.INTEGER && op.left.forcedLiteralType == null && op.left.text.matches("[0-9]+")) {
             String digits = op.left.text.replaceFirst("^0+(?=.)", "");
-            line("PUSH " + (digits.equals("0") ? "0" : "-" + digits) + " " + op.resolvedType);
+            hub.core.line("PUSH " + (digits.equals("0") ? "0" : "-" + digits) + " " + op.resolvedType);
             return;
         }
-        emitExpr(op.left);
-        line("NEG " + op.left.resolvedType + " " + op.resolvedType);
+        hub.statements.emitExpr(op.left);
+        hub.core.line("NEG " + op.left.resolvedType + " " + op.resolvedType);
     }
 
     public void emitLogicalNot(Token op) {
-        emitExpr(op.left);
-        line("NOT " + op.left.resolvedType + " " + op.resolvedType);
+        hub.statements.emitExpr(op.left);
+        hub.core.line("NOT " + op.left.resolvedType + " " + op.resolvedType);
     }
 
     /** x++ desugars to the same bytecode shape as "x = x .INC" -- push target, push value, INC, ASSIGN. */
@@ -289,20 +287,20 @@ abstract class BytecodeEmitterOperations extends BytecodeEmitterStatements {
             emitPointerStep(op, "ADD");
             return;
         }
-        emitAssignTarget(op.left); // assign target
-        emitExpr(op.left);         // value to increment
-        line("INC " + op.left.resolvedType + " " + op.resolvedType);
-        line("ASSIGN " + op.left.resolvedType + " " + op.resolvedType + " " + op.resolvedType);
+        hub.statements.emitAssignTarget(op.left); // assign target
+        hub.statements.emitExpr(op.left);         // value to increment
+        hub.core.line("INC " + op.left.resolvedType + " " + op.resolvedType);
+        hub.core.line("ASSIGN " + op.left.resolvedType + " " + op.resolvedType + " " + op.resolvedType);
     }
 
     /** "p++"/"p--" on a raw pointer whose pointee is wider than a byte: p = p +/- sizeof(pointee), as C does. */
     public void emitPointerStep(Token op, String arith) {
         String t = op.left.resolvedType;
-        emitAssignTarget(op.left);
-        emitExpr(op.left);
-        line(pointerScaleLine(op, "indeterminate_u64"));
-        line(arith + " " + t + " indeterminate_u64 " + t);
-        line("ASSIGN " + t + " " + t + " " + t);
+        hub.statements.emitAssignTarget(op.left);
+        hub.statements.emitExpr(op.left);
+        hub.core.line(BytecodeEmitterCore.pointerScaleLine(op, "indeterminate_u64"));
+        hub.core.line(arith + " " + t + " indeterminate_u64 " + t);
+        hub.core.line("ASSIGN " + t + " " + t + " " + t);
     }
 
     /** x-- : emitIncrement's shape with DEC. */
@@ -311,16 +309,16 @@ abstract class BytecodeEmitterOperations extends BytecodeEmitterStatements {
             emitPointerStep(op, "SUB");
             return;
         }
-        emitAssignTarget(op.left); // assign target
-        emitExpr(op.left);         // value to decrement
-        line("DEC " + op.left.resolvedType + " " + op.resolvedType);
-        line("ASSIGN " + op.left.resolvedType + " " + op.resolvedType + " " + op.resolvedType);
+        hub.statements.emitAssignTarget(op.left); // assign target
+        hub.statements.emitExpr(op.left);         // value to decrement
+        hub.core.line("DEC " + op.left.resolvedType + " " + op.resolvedType);
+        hub.core.line("ASSIGN " + op.left.resolvedType + " " + op.resolvedType + " " + op.resolvedType);
     }
 
     public void emitLogical(Token op, String name) {
-        emitExpr(op.left);
-        emitExpr(op.right);
-        line(name + " " + op.left.resolvedType + " " + op.right.resolvedType + " " + op.resolvedType);
+        hub.statements.emitExpr(op.left);
+        hub.statements.emitExpr(op.right);
+        hub.core.line(name + " " + op.left.resolvedType + " " + op.right.resolvedType + " " + op.resolvedType);
     }
 
     /** True for a "&&then"/"||then" node specifically -- never a plain "&&"/"||". */
@@ -336,17 +334,17 @@ abstract class BytecodeEmitterOperations extends BytecodeEmitterStatements {
         if (!isThenVariant(node)) {
             // leaf: any ordinary expression (a plain &&/|| subtree stays eager); only its bool is tested
             // is tested here.
-            emitExpr(node);
-            line("CMP");
+            hub.statements.emitExpr(node);
+            hub.core.line("CMP");
             if (falseLabel != null) {
                 // "CMP; JMP label" = jump if false, fall through if true
-                line("JMP " + falseLabel);
+                hub.core.line("JMP " + falseLabel);
             } else {
                 // jump to trueLabel only if true: there is no jump-if-true opcode, so invert with an extra unconditional JMP
-                String skipLabel = newLabel("short_circuit_leaf_skip");
-                line("JMP " + skipLabel);
-                line("JMP " + trueLabel);
-                line(skipLabel + ":");
+                String skipLabel = hub.statements.newLabel("short_circuit_leaf_skip");
+                hub.core.line("JMP " + skipLabel);
+                hub.core.line("JMP " + trueLabel);
+                hub.core.line(skipLabel + ":");
             }
             return;
         }
@@ -358,11 +356,11 @@ abstract class BytecodeEmitterOperations extends BytecodeEmitterStatements {
                 emitShortCircuit(node.right, falseLabel, null);
             } else {
                 // left operand of an enclosing "||then": jump to trueLabel only if both pass; a failure lands past that jump
-                String bothFailLabel = newLabel("andthen_fail");
+                String bothFailLabel = hub.statements.newLabel("andthen_fail");
                 emitShortCircuit(node.left, bothFailLabel, null);
                 emitShortCircuit(node.right, bothFailLabel, null);
-                line("JMP " + trueLabel);
-                line(bothFailLabel + ":");
+                hub.core.line("JMP " + trueLabel);
+                hub.core.line(bothFailLabel + ":");
             }
         } else { // "||then"
             if (falseLabel == null) {
@@ -373,27 +371,27 @@ abstract class BytecodeEmitterOperations extends BytecodeEmitterStatements {
                 emitShortCircuit(node.right, null, trueLabel);
             } else {
                 // left true: skip the right side and fall through as true; otherwise test the right side against falseLabel
-                String passLabel = newLabel("orthen_pass");
+                String passLabel = hub.statements.newLabel("orthen_pass");
                 emitShortCircuit(node.left, null, passLabel);
                 emitShortCircuit(node.right, falseLabel, null);
-                line(passLabel + ":");
+                hub.core.line(passLabel + ":");
             }
         }
     }
 
     public void emitComparison(Token op) {
-        emitExpr(op.left);
-        emitExpr(op.right);
-        line(COMPARISON_NAMES.get(op.text) + " " + op.left.resolvedType + " " + op.right.resolvedType
+        hub.statements.emitExpr(op.left);
+        hub.statements.emitExpr(op.right);
+        hub.core.line(BytecodeEmitterCore.COMPARISON_NAMES.get(op.text) + " " + op.left.resolvedType + " " + op.right.resolvedType
                 + " " + op.resolvedType);
     }
 
     /** "a swap b": ATOMIC_SWAP, a read-modify-write; the left operand is pushed as an address, the result is the previous value. */
     public void emitSwap(Token op) {
         // ATOMIC_SWAP consumes an ADDRESS (xchg through it); pushing the field's value worked only for statics and segfaulted for a swap-lock struct in a local
-        emitAssignTarget(op.left);
-        emitExpr(op.right);
-        line("ATOMIC_SWAP " + op.left.resolvedType + " " + op.right.resolvedType + " " + op.resolvedType);
+        hub.statements.emitAssignTarget(op.left);
+        hub.statements.emitExpr(op.right);
+        hub.core.line("ATOMIC_SWAP " + op.left.resolvedType + " " + op.right.resolvedType + " " + op.resolvedType);
     }
 
     public void emitCallOrBuiltin(Token op) {
@@ -410,9 +408,9 @@ abstract class BytecodeEmitterOperations extends BytecodeEmitterStatements {
                 case "sizeof":
                     // Direct PUSH; a struct size stays symbolic (SIZEOF) until SizeofResolutionPass.
                     if (op.sizeofStruct != null) {
-                        line("SIZEOF " + op.sizeofStruct + " " + op.resolvedType);
+                        hub.core.line("SIZEOF " + op.sizeofStruct + " " + op.resolvedType);
                     } else {
-                        line("PUSH " + op.builtinConstantValue + " " + op.resolvedType);
+                        hub.core.line("PUSH " + op.builtinConstantValue + " " + op.resolvedType);
                     }
                     return;
                 case "len": {
@@ -422,16 +420,16 @@ abstract class BytecodeEmitterOperations extends BytecodeEmitterStatements {
                         // Unsafe 2-arg terminator scan: never foldable, own LEN_SCAN mnemonic.
                         Token targetArg = lenArgs.get(0);
                         Token termArg = lenArgs.get(1);
-                        emitExpr(targetArg);
-                        emitExpr(termArg);
-                        line("LEN_SCAN " + targetArg.resolvedType + " " + termArg.resolvedType);
+                        hub.statements.emitExpr(targetArg);
+                        hub.statements.emitExpr(termArg);
+                        hub.core.line("LEN_SCAN " + targetArg.resolvedType + " " + termArg.resolvedType);
                     } else if (op.builtinConstantValue != null) {
                         // Fixed array / string literal: folded to a PUSH.
-                        line("PUSH " + op.builtinConstantValue + " " + op.resolvedType);
+                        hub.core.line("PUSH " + op.builtinConstantValue + " " + op.resolvedType);
                     } else {
                         // Safe dynarray: run-time length, read by LEN.
-                        emitExpr(singleBuiltinArg(op));
-                        line("LEN");
+                        hub.statements.emitExpr(singleBuiltinArg(op));
+                        hub.core.line("LEN");
                     }
                     return;
                 }
@@ -439,40 +437,40 @@ abstract class BytecodeEmitterOperations extends BytecodeEmitterStatements {
                     // A range is two u64 words; start is always literal 0.
                     if (op.builtinConstantValue != null) {
                         // String literal / fixed array: constant bounds, no RANGE instruction.
-                        line("PUSH 0 imut_u64");
-                        line("PUSH " + op.builtinConstantValue + " imut_u64");
+                        hub.core.line("PUSH 0 imut_u64");
+                        hub.core.line("PUSH " + op.builtinConstantValue + " imut_u64");
                     } else {
                         // Safe dynarray: length read by LEN.
-                        line("PUSH 0 imut_u64");
-                        emitExpr(singleBuiltinArg(op));
-                        line("LEN");
+                        hub.core.line("PUSH 0 imut_u64");
+                        hub.statements.emitExpr(singleBuiltinArg(op));
+                        hub.core.line("LEN");
                     }
                     return;
                 }
                 case "deref":
                     // DEREF carries the pointee type because it is the copy width (the pushed pointer is always 8 bytes).
-                    emitExpr(singleBuiltinArg(op));
-                    line("DEREF " + op.resolvedType);
+                    hub.statements.emitExpr(singleBuiltinArg(op));
+                    hub.core.line("DEREF " + op.resolvedType);
                     return;
                 case "clone": {
                     // Hold back the pending catch label: a nested call would consume it (see "Allocation failure check").
-                    final String cloneCatchLabel = pendingTryCatchLabel;
-                    pendingTryCatchLabel = null;
+                    final String cloneCatchLabel = hub.core.pendingTryCatchLabel;
+                    hub.core.pendingTryCatchLabel = null;
                     // CLONE carries argument and result types so lowering can size the pointee.
                     Token arg = singleBuiltinArg(op);
-                    emitExpr(arg);
-                    requireGhostTableFunctionPresent("gt_register", op);
-                    line("CLONE " + arg.resolvedType + " " + op.resolvedType);
+                    hub.statements.emitExpr(arg);
+                    hub.core.requireGhostTableFunctionPresent("gt_register", op);
+                    hub.core.line("CLONE " + arg.resolvedType + " " + op.resolvedType);
                     // Same tail as `new`: a null result (failed malloc) jumps to the enclosing catch, otherwise
                     // the copy is registered with the ghost table so `match Some` and the scope-end destruct work.
-                    pendingTryCatchLabel = cloneCatchLabel;
-                    line("GT_REGISTER"); // before the check: a failed registration frees the block and leaves null
-                    emitAllocFailureCheck(op);
+                    hub.core.pendingTryCatchLabel = cloneCatchLabel;
+                    hub.core.line("GT_REGISTER"); // before the check: a failed registration frees the block and leaves null
+                    hub.emitAllocFailureCheck(op);
                     return;
                 }
                 case "Some":
                     // Same GT_ALIVE_CHECK sequence as a match condition; both restrictions apply in any expression position.
-                    if (inGtSuppressedContext) {
+                    if (hub.core.inGtSuppressedContext) {
                         throw new CompilerException("type", op.file, op.line,
                                 "'Some(...)' (which needs '@gt_alive_check') can't be used here -- this "
                                         + "function is a ghost-table-decorated function, or is reachable "
@@ -480,28 +478,28 @@ abstract class BytecodeEmitterOperations extends BytecodeEmitterStatements {
                                         + "in that whole reachable set");
                     }
                     if (op.someOnRef) {
-                        emitSomeOnRef(op, singleBuiltinArg(op), op.someProofKey);
+                        hub.statements.emitSomeOnRef(op, singleBuiltinArg(op), op.someProofKey);
                         return;
                     }
-                    requireGhostTableFunctionPresent("gt_alive_check", op);
-                    emitExpr(singleBuiltinArg(op));
-                    line("GT_ALIVE_CHECK");
+                    hub.core.requireGhostTableFunctionPresent("gt_alive_check", op);
+                    hub.statements.emitExpr(singleBuiltinArg(op));
+                    hub.core.line("GT_ALIVE_CHECK");
                     return;
                 case "wrap":
                 case "sat":
-                    emitConvert(op);
+                    hub.emitConvert(op);
                     return;
                 case "insecure_rand":
                     // rand() through the shared call sequence: no ExternInfo, default convention.
-                    emitCallSequence(null, new ArrayList<>(), () -> line("EXTERN_CALL rand 0"), "mut_u64",
-                            checker.getConfig().defaultConvention);
+                    emitCallSequence(null, new ArrayList<>(), () -> hub.core.line("EXTERN_CALL rand 0"), "mut_u64",
+                            hub.core.checker.model.getConfig().defaultConvention);
                     return;
                 case "bits_not": {
                     // Unary: one operand, one instruction "BITS_NOT argType resultType" (the shape NOT/NEG already have).
                     List<Token> notArgs = new ArrayList<>();
                     collectCommaArgs(op.right.childs.get(0), notArgs);
-                    emitExpr(notArgs.get(0));
-                    line("BITS_NOT " + notArgs.get(0).resolvedType + " " + op.resolvedType);
+                    hub.statements.emitExpr(notArgs.get(0));
+                    hub.core.line("BITS_NOT " + notArgs.get(0).resolvedType + " " + op.resolvedType);
                     return;
                 }
                 case "bits_left": case "bits_right": case "bits_rotl": case "bits_rotr": case "bits_or": case "bits_and": case "bits_xor": {
@@ -510,8 +508,8 @@ abstract class BytecodeEmitterOperations extends BytecodeEmitterStatements {
                     collectCommaArgs(op.right.childs.get(0), bitsArgs);
                     Token bitsLeft = bitsArgs.get(0);
                     Token bitsRight = bitsArgs.get(1);
-                    emitExpr(bitsLeft);
-                    emitExpr(bitsRight);
+                    hub.statements.emitExpr(bitsLeft);
+                    hub.statements.emitExpr(bitsRight);
                     String bitsOpName;
                     switch (op.left.text) {
                         case "bits_left": bitsOpName = "SHL"; break;
@@ -522,7 +520,7 @@ abstract class BytecodeEmitterOperations extends BytecodeEmitterStatements {
                         case "bits_xor": bitsOpName = "BITS_XOR"; break;
                         default: bitsOpName = "BITS_OR"; break;
                     }
-                    line(bitsOpName + " " + bitsLeft.resolvedType + " " + bitsRight.resolvedType + " "
+                    hub.core.line(bitsOpName + " " + bitsLeft.resolvedType + " " + bitsRight.resolvedType + " "
                             + op.resolvedType);
                     return;
                 }
@@ -531,30 +529,30 @@ abstract class BytecodeEmitterOperations extends BytecodeEmitterStatements {
                     List<Token> memcopyArgs = new ArrayList<>();
                     collectCommaArgs(op.right.childs.get(0), memcopyArgs);
                     for (Token arg : memcopyArgs) {
-                        emitExpr(arg);
+                        hub.statements.emitExpr(arg);
                     }
-                    line("MEMCOPY " + memcopyArgs.get(0).resolvedType + " " + memcopyArgs.get(1).resolvedType
+                    hub.core.line("MEMCOPY " + memcopyArgs.get(0).resolvedType + " " + memcopyArgs.get(1).resolvedType
                             + " " + memcopyArgs.get(2).resolvedType + " " + op.resolvedType);
                     return;
                 }
                 case "dyn": {
                     // Hold back the pending catch label (see "Allocation failure check").
-                    final String dynCatchLabel = pendingTryCatchLabel;
-                    pendingTryCatchLabel = null;
+                    final String dynCatchLabel = hub.core.pendingTryCatchLabel;
+                    hub.core.pendingTryCatchLabel = null;
                     if (op.dynFromStringSource) {
                         // dyn(text): NEW_FROM_STRING copies the characters at run time.
                         Token stringArg = singleBuiltinArg(op);
-                        emitExpr(stringArg);
-                        line("NEW_FROM_STRING " + op.resolvedType.substring("owns_".length()) + " "
+                        hub.statements.emitExpr(stringArg);
+                        hub.core.line("NEW_FROM_STRING " + op.resolvedType.substring("owns_".length()) + " "
                                 + stringArg.resolvedType);
                         // Safe dyn(text) throws: same allocation failure check as new.
                         if (!op.resolvedType.substring("owns_".length()).startsWith("indeterminate_unsafe_dynarray(")) {
-                            pendingTryCatchLabel = dynCatchLabel;
+                            hub.core.pendingTryCatchLabel = dynCatchLabel;
                             // The block start is registered with the ghost table (like `new`), so scope-end drop frees it;
                             // a failed registration frees the block and leaves null: the check below takes the OOM path.
-                            requireGhostTableFunctionPresent("gt_register", op);
-                            line("GT_REGISTER");
-                            emitAllocFailureCheck(op);
+                            hub.core.requireGhostTableFunctionPresent("gt_register", op);
+                            hub.core.line("GT_REGISTER");
+                            hub.emitAllocFailureCheck(op);
                         }
                         return;
                     }
@@ -564,10 +562,10 @@ abstract class BytecodeEmitterOperations extends BytecodeEmitterStatements {
                     final List<String> literalTemps = new ArrayList<>();
                     // `dyn:<T>([])` -- nothing to push for an empty literal.
                     if (!arrayLiteral.childs.isEmpty()) {
-                        final List<String> savedDynTemps = dynLiteralTempNames;
-                        dynLiteralTempNames = literalTemps;
-                        emitExpr(arrayLiteral);
-                        dynLiteralTempNames = savedDynTemps;
+                        final List<String> savedDynTemps = hub.core.dynLiteralTempNames;
+                        hub.core.dynLiteralTempNames = literalTemps;
+                        hub.statements.emitExpr(arrayLiteral);
+                        hub.core.dynLiteralTempNames = savedDynTemps;
                         if (arrayLiteral.type == TokenType.DELINEATOR && arrayLiteral.text.equals("[")) {
                             collectCommaArgs(arrayLiteral.childs.get(0), literalElements);
                         }
@@ -575,20 +573,20 @@ abstract class BytecodeEmitterOperations extends BytecodeEmitterStatements {
                     String typeText = op.resolvedType.substring("owns_".length());
                     boolean isUnsafeLiteral = typeText.startsWith("indeterminate_unsafe_dynarray(");
                     String mnemonic = isUnsafeLiteral ? "NEW_UDYN" : "NEW_DYN";
-                    line(mnemonic + " " + typeText + " " + op.builtinConstantValue);
+                    hub.core.line(mnemonic + " " + typeText + " " + op.builtinConstantValue);
                     // Safe dyn([..]) throws like new; NEW_UDYN stays non-throwing.
                     if (!isUnsafeLiteral) {
-                        pendingTryCatchLabel = dynCatchLabel;
-                        requireGhostTableFunctionPresent("gt_register", op);
-                        line("GT_REGISTER");
-                        emitAllocFailureCheck(op, literalElements, literalTemps);
+                        hub.core.pendingTryCatchLabel = dynCatchLabel;
+                        hub.core.requireGhostTableFunctionPresent("gt_register", op);
+                        hub.core.line("GT_REGISTER");
+                        hub.emitAllocFailureCheck(op, literalElements, literalTemps);
                     }
                     return;
                 }
                 case "resize": {
                     // Hold back the pending catch label (see "Allocation failure check").
-                    final String resizeCatchLabel = pendingTryCatchLabel;
-                    pendingTryCatchLabel = null;
+                    final String resizeCatchLabel = hub.core.pendingTryCatchLabel;
+                    hub.core.pendingTryCatchLabel = null;
                     // resize takes ownership of the array and returns a new owns; RESIZE (safe) / URESIZE (unsafe). No CC bracket. see docs/BytecodeEmitter.md, "resize emission".
                     List<Token> resizeArgs = new ArrayList<>();
                     collectCommaArgs(op.right.childs.get(0), resizeArgs);
@@ -600,39 +598,39 @@ abstract class BytecodeEmitterOperations extends BytecodeEmitterStatements {
                     String tailArr = null;
                     String tailCount = null;
                     String tailOld = null;
-                    if (!isUnsafeResize && lateAllocs != null) {
+                    if (!isUnsafeResize && hub.core.lateAllocs != null) {
                         String dynType = dynArrArg.resolvedType;
                         String elemText = dynType.substring(dynType.indexOf("dynarray(") + "dynarray(".length(), dynType.length() - 1);
-                        if (checker.elementTextOwnsMemory(elemText)) {
+                        if (hub.core.checker.declarations.elementTextOwnsMemory(elemText)) {
                             Token countArg = resizeArgs.get(1);
-                            tailArr = declareHiddenLocal(dynType);
-                            line("ADDR " + tailArr + " " + dynType);
-                            emitExpr(dynArrArg);
-                            line("ASSIGN " + dynType + " " + dynType + " " + dynType);
-                            tailCount = declareHiddenLocal("mut_u64");
-                            line("ADDR " + tailCount + " mut_u64");
-                            emitExpr(countArg);
-                            line("ASSIGN mut_u64 " + countArg.resolvedType + " mut_u64");
-                            line("GT_DESTRUCT_TAIL " + tailArr + " " + dynType + " " + tailCount);
-                            tailOld = declareHiddenLocal("mut_u64");
-                            line("ADDR " + tailOld + " mut_u64");
-                            line("PUSH " + tailArr + " " + dynType);
-                            line("LEN");
-                            line("ASSIGN mut_u64 indeterminate_u64 mut_u64");
-                            line("PUSH " + tailArr + " " + dynType);
+                            tailArr = hub.declareHiddenLocal(dynType);
+                            hub.core.line("ADDR " + tailArr + " " + dynType);
+                            hub.statements.emitExpr(dynArrArg);
+                            hub.core.line("ASSIGN " + dynType + " " + dynType + " " + dynType);
+                            tailCount = hub.declareHiddenLocal("mut_u64");
+                            hub.core.line("ADDR " + tailCount + " mut_u64");
+                            hub.statements.emitExpr(countArg);
+                            hub.core.line("ASSIGN mut_u64 " + countArg.resolvedType + " mut_u64");
+                            hub.core.line("GT_DESTRUCT_TAIL " + tailArr + " " + dynType + " " + tailCount);
+                            tailOld = hub.declareHiddenLocal("mut_u64");
+                            hub.core.line("ADDR " + tailOld + " mut_u64");
+                            hub.core.line("PUSH " + tailArr + " " + dynType);
+                            hub.core.line("LEN");
+                            hub.core.line("ASSIGN mut_u64 indeterminate_u64 mut_u64");
+                            hub.core.line("PUSH " + tailArr + " " + dynType);
                         }
                     }
                     // A source that is a temporary (a call result) has no name to free if the realloc fails: it goes through a
                     // hidden local (like a temporary moved into `new`), which the failure branch destructs.
                     final List<String> resizeTemps = new ArrayList<>();
-                    if (tailArr != null && isOwnsTemporary(dynArrArg)) {
+                    if (tailArr != null && hub.isOwnsTemporary(dynArrArg)) {
                         resizeTemps.add(tailArr);
                     }
                     if (tailArr == null) {
-                        if (!isUnsafeResize && isOwnsTemporary(dynArrArg)) {
-                            emitOwnsTemporaryViaLocal(dynArrArg, resizeTemps);
+                        if (!isUnsafeResize && hub.isOwnsTemporary(dynArrArg)) {
+                            hub.emitOwnsTemporaryViaLocal(dynArrArg, resizeTemps);
                         } else {
-                            emitExpr(dynArrArg);
+                            hub.statements.emitExpr(dynArrArg);
                         }
                     }
                     // Safe resize: the source variable is only nulled once the realloc succeeded. When it fails the old block is
@@ -640,37 +638,37 @@ abstract class BytecodeEmitterOperations extends BytecodeEmitterStatements {
                     // failure branch frees it (like a failed `new` frees what was moved into it). Unsafe resize cannot fail.
                     final boolean deferResizeNullOut = !isUnsafeResize && dynArrArg.isOwnershipMoveSource;
                     if (dynArrArg.isOwnershipMoveSource && !deferResizeNullOut) {
-                        emitOwnershipMoveNullOut(dynArrArg);
+                        hub.statements.emitOwnershipMoveNullOut(dynArrArg);
                     }
                     StringBuilder resizeLine = new StringBuilder(isUnsafeResize ? "URESIZE " : "RESIZE ")
                             .append(dynArrArg.resolvedType);
                     for (int i = 1; i < resizeArgs.size(); i++) {
                         Token arg = resizeArgs.get(i);
                         if (i == 1 && tailCount != null) {
-                            line("PUSH " + tailCount + " mut_u64");
+                            hub.core.line("PUSH " + tailCount + " mut_u64");
                         } else {
-                            emitExpr(arg);
+                            hub.statements.emitExpr(arg);
                         }
                         resizeLine.append(' ').append(arg.resolvedType);
                     }
-                    line(resizeLine.toString());
+                    hub.core.line(resizeLine.toString());
                     if (tailOld != null) {
                         // growing: the new slots are bitwise copies of the moved-in fill value; give each its own deep clone
-                        String filled = declareHiddenLocal(dynArrArg.resolvedType);
-                        line("POP " + filled + " " + dynArrArg.resolvedType);
-                        line("CLONE_FILL " + filled + " " + dynArrArg.resolvedType + " " + tailOld);
-                        line("PUSH " + filled + " " + dynArrArg.resolvedType);
+                        String filled = hub.declareHiddenLocal(dynArrArg.resolvedType);
+                        hub.core.line("POP " + filled + " " + dynArrArg.resolvedType);
+                        hub.core.line("CLONE_FILL " + filled + " " + dynArrArg.resolvedType + " " + tailOld);
+                        hub.core.line("PUSH " + filled + " " + dynArrArg.resolvedType);
                     }
                     // Safe resize throws like new; URESIZE stays non-throwing.
                     if (!isUnsafeResize) {
-                        pendingTryCatchLabel = resizeCatchLabel;
+                        hub.core.pendingTryCatchLabel = resizeCatchLabel;
                         List<Token> resizeMoved = new ArrayList<>();
                         if (deferResizeNullOut) {
                             resizeMoved.add(dynArrArg);
                         }
-                        emitAllocFailureCheck(op, resizeMoved, resizeTemps);
+                        hub.emitAllocFailureCheck(op, resizeMoved, resizeTemps);
                         if (deferResizeNullOut) {
-                            emitOwnershipMoveNullOut(dynArrArg);
+                            hub.statements.emitOwnershipMoveNullOut(dynArrArg);
                         }
                     }
                     return;
@@ -682,16 +680,16 @@ abstract class BytecodeEmitterOperations extends BytecodeEmitterStatements {
                     Token funcPtrArg = callArgs.get(0);
                     List<Token> realArgs = callArgs.subList(1, callArgs.size());
                     int invokeArgCount = op.invokeArgCount;
-                    emitCallSequence(() -> emitExpr(funcPtrArg), realArgs,
-                            () -> line("INVOKE " + invokeArgCount), voidSafeReturnType(op), op.resolvedCallConvention);
+                    emitCallSequence(() -> hub.statements.emitExpr(funcPtrArg), realArgs,
+                            () -> hub.core.line("INVOKE " + invokeArgCount), voidSafeReturnType(op), op.resolvedCallConvention);
                     return;
                 }
                 default:
                     break;
             }
         }
-        if (op.left.type == TokenType.VARREF && checker.getExterns().containsKey(op.left.text)) {
-            emitExternCall(op, checker.getExterns().get(op.left.text));
+        if (op.left.type == TokenType.VARREF && hub.core.checker.declarations.getExterns().containsKey(op.left.text)) {
+            emitExternCall(op, hub.core.checker.declarations.getExterns().get(op.left.text));
             return;
         }
         emitCall(op);
@@ -716,8 +714,8 @@ abstract class BytecodeEmitterOperations extends BytecodeEmitterStatements {
     /** varargStartIndex: first true vararg of a variadic extern (-1 = none); only emitExternCall passes one. see docs/BytecodeEmitter.md, "Variadic calls". */
     public void emitCallSequence(Runnable pushFuncPtr, List<Token> regArgs, Runnable emitCallInstruction,
             String returnTypeOrNull, String conventionName, int varargStartIndex) {
-        ArgCounters counters = new ArgCounters(checker.getConfig().callingConventions.get(conventionName));
-        line("CC_START " + conventionName);
+        BytecodeEmitterCore.ArgCounters counters = new BytecodeEmitterCore.ArgCounters(hub.core.checker.model.getConfig().callingConventions.get(conventionName));
+        hub.core.line("CC_START " + conventionName);
         if (pushFuncPtr != null) {
             pushFuncPtr.run();
         }
@@ -730,24 +728,24 @@ abstract class BytecodeEmitterOperations extends BytecodeEmitterStatements {
             if (arg.isOwnershipMoveSource) {
                 // Null the moved owns slot right after its value is captured and before the call, so a throw inside the callee sees it null.
                 // A by-value range is never a move source. Register hazard: see emitOwnershipMoveNullOut.
-                emitOwnershipMoveNullOut(arg);
+                hub.statements.emitOwnershipMoveNullOut(arg);
             }
         }
         if (varargStartIndex >= 0) {
             // SysV varargs: %al = xmm registers used. Only for a variadic call, just before the call instruction; see docs/BytecodeEmitter.md, "Variadic calls".
-            line("VARARGS_XMM_COUNT " + counters.floatRegistersUsed());
+            hub.core.line("VARARGS_XMM_COUNT " + counters.floatRegistersUsed());
         }
         emitCallInstruction.run();
-        line("CC_END " + conventionName);
+        hub.core.line("CC_END " + conventionName);
         if (returnTypeOrNull != null) {
-            line("PUSH_RET " + returnTypeOrNull);
+            hub.core.line("PUSH_RET " + returnTypeOrNull);
         }
     }
 
     /** Transfers one argument into its register(s); a by-value range becomes its two u64 bounds. see docs/BytecodeEmitter.md, "Call sequence". */
-    public void emitArgTransfer(Token arg, ArgCounters counters, boolean promoteToDouble) {
+    public void emitArgTransfer(Token arg, BytecodeEmitterCore.ArgCounters counters, boolean promoteToDouble) {
         Token unwrapped = unwrapParens(arg);
-        if (BY_VALUE_RANGE_ARG.matcher(arg.resolvedType).matches()) {
+        if (BytecodeEmitterCore.BY_VALUE_RANGE_ARG.matcher(arg.resolvedType).matches()) {
             // A range's words are u64 bounds, never float.
             emitRangeArgWords(unwrapped, counters);
             return;
@@ -756,45 +754,45 @@ abstract class BytecodeEmitterOperations extends BytecodeEmitterStatements {
     }
 
     /** Range portion of emitArgTransfer; both words are int-bank u64. */
-    public void emitRangeArgWords(Token unwrapped, ArgCounters counters) {
+    public void emitRangeArgWords(Token unwrapped, BytecodeEmitterCore.ArgCounters counters) {
         if (unwrapped.type == TokenType.OPERATOR && unwrapped.text.equals("..")) {
             emitArgWord(unwrapped.left, counters, false);
             emitArgWord(unwrapped.right, counters, false);
             return;
         }
-        String base = qualifiedDotName(unwrapped);
+        String base = hub.qualifiedDotName(unwrapped);
         emitSyntheticArgWord(base + ".start", "indeterminate_u64", counters);
         emitSyntheticArgWord(base + ".end", "indeterminate_u64", counters);
     }
 
     /** Pushes one word and moves it to the next register of its bank; promoteToDouble inserts PROMOTE_F32_TO_F64 for a true f32 vararg. */
-    public void emitArgWord(Token expr, ArgCounters counters, boolean promoteToDouble) {
-        emitExpr(expr);
-        if (promoteToDouble && isF32Canonical(expr.resolvedType)) {
-            line("PROMOTE_F32_TO_F64");
+    public void emitArgWord(Token expr, BytecodeEmitterCore.ArgCounters counters, boolean promoteToDouble) {
+        hub.statements.emitExpr(expr);
+        if (promoteToDouble && BytecodeEmitterCore.isF32Canonical(expr.resolvedType)) {
+            hub.core.line("PROMOTE_F32_TO_F64");
         }
         // promoteToDouble doubles as the win64 variadic float duplication flag (same precondition).
         emitArgTransferTail(expr.resolvedType, counters, promoteToDouble);
     }
 
     /** Pushes a synthesized qualified-name word (e.g. "x.start") and transfers it; never float. */
-    public void emitSyntheticArgWord(String qualifiedName, String type, ArgCounters counters) {
-        line("PUSH " + qualifiedName + " " + type);
+    public void emitSyntheticArgWord(String qualifiedName, String type, BytecodeEmitterCore.ArgCounters counters) {
+        hub.core.line("PUSH " + qualifiedName + " " + type);
         emitArgTransferTail(type, counters, false);
     }
 
     /** Emits POP ARGn / POP FARGn if the word's bank has a register left, else leaves it on the stack. isTrueVarargFloat additionally duplicates the word into the same-index int register on a shared-position (win64) convention. see docs/BytecodeEmitter.md, "Variadic calls". */
-    public void emitArgTransferTail(String type, ArgCounters counters, boolean isTrueVarargFloat) {
-        boolean isFloat = isFloatCanonical(type);
+    public void emitArgTransferTail(String type, BytecodeEmitterCore.ArgCounters counters, boolean isTrueVarargFloat) {
+        boolean isFloat = BytecodeEmitterCore.isFloatCanonical(type);
         int regIndex = counters.next(isFloat);
         boolean needsWin64VarargDup = isTrueVarargFloat && isFloat && regIndex >= 0 && counters.isShared();
         if (needsWin64VarargDup) {
-            line("DUP_TOP");
+            hub.core.line("DUP_TOP");
         }
         if (regIndex >= 0) {
-            line("POP " + (isFloat ? "FARG" : "ARG") + regIndex + " " + type);
+            hub.core.line("POP " + (isFloat ? "FARG" : "ARG") + regIndex + " " + type);
             if (needsWin64VarargDup) {
-                line("POP ARG" + regIndex + " " + type);
+                hub.core.line("POP ARG" + regIndex + " " + type);
             }
         }
     }
@@ -824,11 +822,11 @@ abstract class BytecodeEmitterOperations extends BytecodeEmitterStatements {
             collectCommaArgs(argsDelineator.childs.get(0), argNodes);
         }
         Token durationArg = argNodes.get(0);
-        emitExpr(durationArg);
-        line("SLEEP " + op.resolvedCallTarget + " " + durationArg.resolvedType);
+        hub.statements.emitExpr(durationArg);
+        hub.core.line("SLEEP " + op.resolvedCallTarget + " " + durationArg.resolvedType);
     }
     /** Extern call; a variadic one carries its pushed-argument count in EXTERN_CALL. see docs/BytecodeEmitter.md, "Variadic calls". */
-    public void emitExternCall(Token op, TypeChecker.ExternInfo info) {
+    public void emitExternCall(Token op, TypeCheckerModel.ExternInfo info) {
         List<Token> args = new ArrayList<>();
         Token argsDelineator = op.right;
         if (!argsDelineator.childs.isEmpty()) {
@@ -836,7 +834,7 @@ abstract class BytecodeEmitterOperations extends BytecodeEmitterStatements {
         }
         int argCount = args.size();
         int varargStartIndex = info.hasVarargs ? info.paramTypes.size() : -1;
-        emitCallSequence(null, args, () -> line("EXTERN_CALL " + info.linkName + " " + argCount),
+        emitCallSequence(null, args, () -> hub.core.line("EXTERN_CALL " + info.linkName + " " + argCount),
                 voidSafeReturnType(op), op.resolvedCallConvention, varargStartIndex);
     }
 
@@ -848,10 +846,10 @@ abstract class BytecodeEmitterOperations extends BytecodeEmitterStatements {
             collectCommaArgs(argsDelineator.childs.get(0), args);
         }
         // par/await are intercepted earlier (emitAsyncCall). A self-call (compared after dunder redirection) is RECURSIVE_CALL.
-        String mnemonic = funcName.equals(currentFuncMangledName) ? "RECURSIVE_CALL" : "CALL";
+        String mnemonic = funcName.equals(hub.core.currentFuncMangledName) ? "RECURSIVE_CALL" : "CALL";
         // Staged before the argument sequence: the slot is only read by a deeper GT_UNWIND, after the real call runs.
-        stageCallSiteForUnwind(op);
-        emitCallSequence(null, args, () -> line(mnemonic + " " + funcName), voidSafeReturnType(op),
+        hub.core.stageCallSiteForUnwind(op);
+        emitCallSequence(null, args, () -> hub.core.line(mnemonic + " " + funcName), voidSafeReturnType(op),
                 op.resolvedCallConvention);
     }
 
@@ -863,30 +861,30 @@ abstract class BytecodeEmitterOperations extends BytecodeEmitterStatements {
         boolean isAwait = "AWAIT".equals(op.asyncCallKind);
         String handleStructName = op.asyncHandleStructName;
         String handleCanonical = op.asyncHandleCanonicalType;
-        TypeChecker.StructInfo handleStructInfo = checker.getStructs().get(handleStructName);
+        TypeCheckerModel.StructInfo handleStructInfo = hub.core.checker.declarations.getStructs().get(handleStructName);
         List<Token> args = new ArrayList<>();
         if (!op.right.childs.isEmpty()) {
             collectCommaArgs(op.right.childs.get(0), args);
         }
-        String tempName = "__async_handle_" + (++asyncHandleTempCounter);
+        String tempName = "__async_handle_" + (++hub.core.asyncHandleTempCounter);
         // The argument may contain calls that would consume the pending catch label: hold it back (as emitNew does).
         // Moved-in owns arguments are only let go once the thread really started; if the handle can not be made or the
         // thread can not be started they are destructed here instead (the failed 'par'/'await' never took them).
-        final String asyncCatchLabel = pendingTryCatchLabel;
-        pendingTryCatchLabel = null;
+        final String asyncCatchLabel = hub.core.pendingTryCatchLabel;
+        hub.core.pendingTryCatchLabel = null;
         final List<Token> movedSources = new ArrayList<>();
         final List<String> movedTemps = new ArrayList<>();
-        final List<Token> savedDeferral = deferredMoveNullOuts;
-        final List<String> savedTempNames = deferredTempNames;
+        final List<Token> savedDeferral = hub.core.deferredMoveNullOuts;
+        final List<String> savedTempNames = hub.core.deferredTempNames;
 
-        line("ALLOC " + tempName + " " + handleCanonical);
-        line("ADDR " + tempName + " " + handleCanonical);
+        hub.core.line("ALLOC " + tempName + " " + handleCanonical);
+        hub.core.line("ADDR " + tempName + " " + handleCanonical);
         if (handleStructInfo.classId != null) {
-            line("PUSH " + handleStructInfo.classId + " imut_u64");
+            hub.core.line("PUSH " + handleStructInfo.classId + " imut_u64");
         }
-        for (StructLayoutEntry entry : computeStructLayout(handleStructInfo).entries) {
+        for (BytecodeEmitterCore.StructLayoutEntry entry : hub.core.computeStructLayout(handleStructInfo).entries) {
             if (entry.memberName == null) {
-                line("STACK_LOCK " + entry.paddingBytes);
+                hub.core.line("STACK_LOCK " + entry.paddingBytes);
                 continue;
             }
             if (entry.memberName.equals("___type")) {
@@ -894,57 +892,57 @@ abstract class BytecodeEmitterOperations extends BytecodeEmitterStatements {
             }
             switch (entry.memberName) {
                 case "state":
-                    line("PUSH AsyncState.PENDING " + entry.canonicalType);
+                    hub.core.line("PUSH AsyncState.PENDING " + entry.canonicalType);
                     break;
                 case "result":
-                    line("STACK_LOCK " + layoutSizeAndAlignOf(entry.canonicalType)[0]);
+                    hub.core.line("STACK_LOCK " + hub.core.layoutSizeAndAlignOf(entry.canonicalType)[0]);
                     break;
                 case "value":
                     if (!args.isEmpty()) {
                         Token argTok = args.get(0);
-                        deferredMoveNullOuts = movedSources;
-                        deferredTempNames = movedTemps;
-                        emitExpr(argTok);
-                        deferredMoveNullOuts = savedDeferral;
-                        deferredTempNames = savedTempNames;
+                        hub.core.deferredMoveNullOuts = movedSources;
+                        hub.core.deferredTempNames = movedTemps;
+                        hub.statements.emitExpr(argTok);
+                        hub.core.deferredMoveNullOuts = savedDeferral;
+                        hub.core.deferredTempNames = savedTempNames;
                         if (argTok.isOwnershipMoveSource && !movedSources.contains(argTok)) {
                             movedSources.add(argTok);
                         }
                     } else {
-                        line("PUSH 0 " + entry.canonicalType);
+                        hub.core.line("PUSH 0 " + entry.canonicalType);
                     }
                     break;
                 case "threadId":
-                    line("PUSH 0 " + entry.canonicalType);
+                    hub.core.line("PUSH 0 " + entry.canonicalType);
                     break;
                 case "gate":
-                    line("PUSH AsyncGate.OPEN " + entry.canonicalType);
+                    hub.core.line("PUSH AsyncGate.OPEN " + entry.canonicalType);
                     break;
                 default:
                     throw new IllegalStateException(
                             "unexpected AsyncHandle_T member '" + entry.memberName + "'");
             }
         }
-        line("NEW " + handleStructName);
-        requireGhostTableFunctionPresent("gt_register", op);
-        line("GT_REGISTER");
+        hub.core.line("NEW " + handleStructName);
+        hub.core.requireGhostTableFunctionPresent("gt_register", op);
+        hub.core.line("GT_REGISTER");
         // Same null check as 'new': a failed malloc or a failed registration leaves null here.
-        line("DUP_TOP");
-        line("PUSH null " + handleCanonical);
-        line("EQ " + handleCanonical + " " + handleCanonical + " imut_bool");
-        line("CMP");
-        String handleOkLabel = newLabel("async_handle_ok");
-        line("JMP " + handleOkLabel);
-        if (!inGtSuppressedContext && asyncCatchLabel != null) {
-            emitDestructMovedSources(movedSources);
-            emitDestructTempNames(movedTemps, op);
+        hub.core.line("DUP_TOP");
+        hub.core.line("PUSH null " + handleCanonical);
+        hub.core.line("EQ " + handleCanonical + " " + handleCanonical + " imut_bool");
+        hub.core.line("CMP");
+        String handleOkLabel = hub.statements.newLabel("async_handle_ok");
+        hub.core.line("JMP " + handleOkLabel);
+        if (!hub.core.inGtSuppressedContext && asyncCatchLabel != null) {
+            hub.emitDestructMovedSources(movedSources);
+            hub.emitDestructTempNames(movedTemps, op);
             emitAsyncFailureJump(asyncCatchLabel, "out of memory");
         }
-        line(handleOkLabel + ":");
-        line("ASSIGN " + handleCanonical + " " + handleCanonical + " " + handleCanonical);
+        hub.core.line(handleOkLabel + ":");
+        hub.core.line("ASSIGN " + handleCanonical + " " + handleCanonical + " " + handleCanonical);
 
         String glueDecorator = isAwait ? "await_call" : "par_call";
-        TypeChecker.FuncInfo glueInfo = checker.getGhostTableFunction(glueDecorator);
+        TypeCheckerModel.FuncInfo glueInfo = hub.core.checker.declarations.getGhostTableFunction(glueDecorator);
         if (glueInfo == null) {
             throw new CompilerException("bytecode", op.file, op.line,
                     "emitting a '" + (isAwait ? "await" : "par") + "' call here requires a function "
@@ -952,64 +950,64 @@ abstract class BytecodeEmitterOperations extends BytecodeEmitterStatements {
                             + "(none was found)");
         }
         String trampolineName = op.asyncTrampolineName;
-        TypeChecker.FuncInfo trampolineInfo = checker.getFunctions().get(trampolineName).get(0);
+        TypeCheckerModel.FuncInfo trampolineInfo = hub.core.checker.declarations.getFunctions().get(trampolineName).get(0);
         String trampolineFuncPtrType = funcPointerCanonicalOf(trampolineInfo);
 
-        line("CC_START " + glueInfo.callConvention);
-        line("PUSH " + trampolineName + " " + trampolineFuncPtrType);
-        line("POP ARG0 " + trampolineFuncPtrType);
-        line("PUSH " + tempName + " " + handleCanonical);
-        line("POP ARG1 " + handleCanonical);
+        hub.core.line("CC_START " + glueInfo.callConvention);
+        hub.core.line("PUSH " + trampolineName + " " + trampolineFuncPtrType);
+        hub.core.line("POP ARG0 " + trampolineFuncPtrType);
+        hub.core.line("PUSH " + tempName + " " + handleCanonical);
+        hub.core.line("POP ARG1 " + handleCanonical);
         if (!isAwait) {
             // par_call also receives where to store the thread id: the handle's own threadId (so the handle's drop hook can join
             // the thread), or null for the hidden fire-and-forget handle (its thread is detached).
             if (handleStructInfo.members.containsKey("gate")) {
-                line("PUSH " + tempName + " " + handleCanonical);
-                line("PUSH_FIELDNAME threadId mut_u64");
-                line("DOT_LHS " + handleCanonical + " mut_u64 mut_u64");
+                hub.core.line("PUSH " + tempName + " " + handleCanonical);
+                hub.core.line("PUSH_FIELDNAME threadId mut_u64");
+                hub.core.line("DOT_LHS " + handleCanonical + " mut_u64 mut_u64");
             } else {
-                line("PUSH null raw_mut_u64");
+                hub.core.line("PUSH null raw_mut_u64");
             }
-            line("POP ARG2 raw_mut_u64");
+            hub.core.line("POP ARG2 raw_mut_u64");
         }
-        line("CALL " + glueInfo.mangledName);
-        line("CC_END " + glueInfo.callConvention);
+        hub.core.line("CALL " + glueInfo.mangledName);
+        hub.core.line("CC_END " + glueInfo.callConvention);
         // The glue returns false when pthread_create failed: nothing runs the trampoline, so nothing else will ever free
         // the handle (or use the moved-in argument).
-        line("PUSH_RET imut_bool");
-        line("CMP");
-        String threadFailLabel = newLabel("async_thread_fail");
-        String threadOkLabel = newLabel("async_thread_ok");
-        line("JMP " + threadFailLabel);
-        line("JMP " + threadOkLabel);
-        line(threadFailLabel + ":");
-        if (!inGtSuppressedContext && asyncCatchLabel != null) {
-            requireGhostTableFunctionPresent("gt_destruct", op);
-            line("GT_DESTRUCT " + tempName);
-            emitDestructMovedSources(movedSources);
-            emitDestructTempNames(movedTemps, op);
+        hub.core.line("PUSH_RET imut_bool");
+        hub.core.line("CMP");
+        String threadFailLabel = hub.statements.newLabel("async_thread_fail");
+        String threadOkLabel = hub.statements.newLabel("async_thread_ok");
+        hub.core.line("JMP " + threadFailLabel);
+        hub.core.line("JMP " + threadOkLabel);
+        hub.core.line(threadFailLabel + ":");
+        if (!hub.core.inGtSuppressedContext && asyncCatchLabel != null) {
+            hub.core.requireGhostTableFunctionPresent("gt_destruct", op);
+            hub.core.line("GT_DESTRUCT " + tempName);
+            hub.emitDestructMovedSources(movedSources);
+            hub.emitDestructTempNames(movedTemps, op);
             emitAsyncFailureJump(asyncCatchLabel, "cannot start thread");
         }
-        line(threadOkLabel + ":");
+        hub.core.line(threadOkLabel + ":");
         for (Token moved : movedSources) {
-            emitOwnershipMoveNullOut(moved); // the thread now owns the argument
+            hub.statements.emitOwnershipMoveNullOut(moved); // the thread now owns the argument
         }
 
         boolean isVoidResult = isVoidCanonical(op.resolvedType);
         if (isAwait) {
             if (!isVoidResult) {
                 String resultCanonical = op.resolvedType;
-                line("PUSH " + tempName + " " + handleCanonical);
-                line("PUSH_FIELDNAME result " + resultCanonical);
-                line("DOT_LHS " + handleCanonical + " " + resultCanonical + " " + resultCanonical);
-                line("DEREF " + resultCanonical);
+                hub.core.line("PUSH " + tempName + " " + handleCanonical);
+                hub.core.line("PUSH_FIELDNAME result " + resultCanonical);
+                hub.core.line("DOT_LHS " + handleCanonical + " " + resultCanonical + " " + resultCanonical);
+                hub.core.line("DEREF " + resultCanonical);
             }
             // Safe for void too: @await_call has already joined, no other thread touches the handle.
-            requireGhostTableFunctionPresent("gt_destruct", op);
-            line("GT_DESTRUCT " + tempName);
+            hub.core.requireGhostTableFunctionPresent("gt_destruct", op);
+            hub.core.line("GT_DESTRUCT " + tempName);
         } else if (!isVoidResult) {
             // Non-void par: the handle is the expression value; the consumer owns it.
-            line("PUSH " + tempName + " " + handleCanonical);
+            hub.core.line("PUSH " + tempName + " " + handleCanonical);
         } else {
             // Void par: the hidden handle is destructed by the trampoline itself (selfDestructHidden), never here: the thread may still be reading it.
         }
@@ -1017,12 +1015,12 @@ abstract class BytecodeEmitterOperations extends BytecodeEmitterStatements {
 
     /** Sets the shared `gt_error_message` and jumps to the catch of the `try`/`?` wrapping a 'par'/'await' (same shape as the 'new' out-of-memory exit). */
     public void emitAsyncFailureJump(String catchLabel, String message) {
-        String messageId = hoistedStringId(message);
-        emitTraceCapture();
-        line("ADDR gt_error_message static_imut_string");
-        line("PUSH " + messageId + " static_imut_string");
-        line("ASSIGN static_imut_string static_imut_string static_imut_string");
-        line("JMP " + catchLabel);
+        String messageId = hub.core.hoistedStringId(message);
+        hub.core.emitTraceCapture();
+        hub.core.line("ADDR gt_error_message static_imut_string");
+        hub.core.line("PUSH " + messageId + " static_imut_string");
+        hub.core.line("ASSIGN static_imut_string static_imut_string static_imut_string");
+        hub.core.line("JMP " + catchLabel);
     }
 
     /** Exact-equality void test, as voidSafeReturnType. */
@@ -1031,7 +1029,7 @@ abstract class BytecodeEmitterOperations extends BytecodeEmitterStatements {
     }
 
     /** Canonical text of a bare function reference ("static_imut_func(params)ret"), mirroring TypeInfo.funcPointer; used for the trampoline address push. */
-    public String funcPointerCanonicalOf(TypeChecker.FuncInfo info) {
+    public String funcPointerCanonicalOf(TypeCheckerModel.FuncInfo info) {
         // Function-pointer values always have static storage.
         StringBuilder sb = new StringBuilder("static_imut_func(");
         for (int i = 0; i < info.paramTypes.size(); i++) {
@@ -1046,11 +1044,11 @@ abstract class BytecodeEmitterOperations extends BytecodeEmitterStatements {
 
     /** Under gt-suppression a CALL to a gt-reachable function is redirected to its "__" duplicate. see docs/BytecodeEmitter.md, "Call target redirection". */
     public String resolveCallTargetForEmission(String mangledName) {
-        if (inGtSuppressedContext && gtReachableMangledNames.contains(mangledName)) {
+        if (hub.core.inGtSuppressedContext && hub.core.gtReachableMangledNames.contains(mangledName)) {
             return "__" + mangledName;
         }
         // main is emitted as __caspien_main when an event loop is the real entry (see emitFunc); redirect calls to it.
-        if (mangledName.equals("main") && checker.getEventLoopFunc() != null) {
+        if (mangledName.equals("main") && hub.core.checker.declarations.getEventLoopFunc() != null) {
             return "__caspien_main";
         }
         return mangledName;

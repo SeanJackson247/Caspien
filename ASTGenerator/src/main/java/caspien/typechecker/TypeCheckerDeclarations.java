@@ -25,64 +25,24 @@ import java.util.Set;
  */
 
 /** TypeCheckerDeclarations: entry point, root declaration collection, struct/enum/interface flattening (part 2 of 11; see README.md in this folder). */
-abstract class TypeCheckerDeclarations extends TypeCheckerModel {
-    // methods defined in later parts of the chain
-    abstract public FuncInfo functionInfoFor(Token funcTok);
-    abstract public List<List<Token>> splitIntoRawGroups(List<Token> flat);
-    abstract public List<NameType> parseNameTypeGroup(List<Token> flat);
-    abstract public List<NameType> parseParamList(List<Token> flat);
-    abstract public String arrayElementType(String baseType);
-    abstract public String resolveAsmRawText(Token t);
-    abstract public String signatureSuffix(List<TypeInfo> paramTypes);
-    abstract public Token.Decorator getDecorator(List<Token.Decorator> decorators, String name);
-    abstract public TypeInfo resolveAndValidateTypeBound(Token letTok, TypeInfo rhsType, Token rhsExpr);
-    abstract public TypeInfo resolveExprType(Token node, Scope scope, FuncInfo func);
-    abstract public boolean definitelyReturns(List<Token> lines);
-    abstract public boolean hasDecorator(List<Token.Decorator> decorators, String name);
-    abstract public boolean isArrayType(String baseType);
-    abstract public boolean isDirectAtomicDeclaration(Token expr);
-    abstract public boolean isDynArrayType(TypeInfo t);
-    abstract public boolean isPlainU64(TypeInfo t);
-    abstract public boolean isRangeType(TypeInfo t);
-    abstract public void checkDynArrayForLoopResizeSafety();
-    abstract public void checkFunctionBody(FuncInfo func);
-    abstract public void checkNoRecursion();
-    abstract public void checkNoRuntimeConstructs(Token node);
-    abstract public void checkSafetyCallGraph();
-    abstract public void collectExport(Token t);
-    abstract public void collectExtern(Token t);
-    abstract public void collectFunc(Token t, String safetyTag);
-    abstract public void collectImpl(Token t, String safetyTag);
-    abstract public void collectLibrary(Token t, String safetyTag);
-    abstract public void flattenLibrary(String name, Set<String> visiting);
-    abstract public void forceGhostTableFunctionNames();
-    abstract public void generateClassHierarchyEnums();
-    abstract public void generateEnumForEnums();
-    abstract public void generateInterfaceDispatchers();
-    abstract public void requireStaticMutable(TypeInfo type, Token at);
-    abstract public void validateDecorators(List<Token.Decorator> decorators, Set<String> allowedNames, String contextDesc);
-    abstract public void validateGenericBounds(List<Token> rootLines);
-    abstract public void validateNoAutoReturns();
-    abstract public void validateNoAutoStructMembers();
-    abstract public void validateNoPointersInLockStructs();
-    abstract public void validateNoRecursiveStructs();
-    abstract public void validateNoRefSomeStructMembers();
-    abstract public void validateNoThrowReachableFromGhostTableFunctions();
-    abstract public void validateUnsafeBlockTags();
+public final class TypeCheckerDeclarations {
+    private final TypeChecker hub;
 
-
+    TypeCheckerDeclarations(TypeChecker hub) {
+        this.hub = hub;
+    }
 
     /** Struct name a `ref` points at, for ProofKills (null when it is not a plain struct: then any destroying event ends the proof). */
-    public String pointeeOf(TypeInfo t) {
+    public String pointeeOf(TypeCheckerModel.TypeInfo t) {
         if (t == null || t.baseType == null) {
             return null;
         }
         String b = stripArrayDims(t.baseType);
-        return structs.containsKey(b) ? b : null;
+        return hub.model.structs.containsKey(b) ? b : null;
     }
 
     /** Names of the types an object of type t can contain by ownership (itself, owned members, inline members, transitively); null = unknown. */
-    public Set<String> destroyedTypes(TypeInfo t) {
+    public Set<String> destroyedTypes(TypeCheckerModel.TypeInfo t) {
         if (t == null || t.baseType == null) {
             return null;
         }
@@ -91,7 +51,7 @@ abstract class TypeCheckerDeclarations extends TypeCheckerModel {
         return out;
     }
 
-    public void collectDestroyed(TypeInfo t, Set<String> out) {
+    public void collectDestroyed(TypeCheckerModel.TypeInfo t, Set<String> out) {
         if (t == null || t.baseType == null || (t.storage != null && !"owns".equals(t.storage))) {
             return;
         }
@@ -99,34 +59,34 @@ abstract class TypeCheckerDeclarations extends TypeCheckerModel {
         if (!out.add(b)) {
             return;
         }
-        StructInfo si = structs.get(b);
+        TypeCheckerModel.StructInfo si = hub.model.structs.get(b);
         if (si != null) {
-            for (TypeInfo m : si.members.values()) {
+            for (TypeCheckerModel.TypeInfo m : si.members.values()) {
                 collectDestroyed(m, out);
             }
         }
     }
 
     /** An inline (no storage keyword) struct value that owns memory through some member: it has to be dropped at scope end and moved, not copied. */
-    public boolean isInlineOwningStruct(TypeInfo t) {
+    public boolean isInlineOwningStruct(TypeCheckerModel.TypeInfo t) {
         if (t == null || t.storage != null || t.baseType == null) {
             return false;
         }
         String elem = stripArrayDims(t.baseType);
-        return structs.containsKey(elem) && elementTextOwnsMemory(elem);
+        return hub.model.structs.containsKey(elem) && elementTextOwnsMemory(elem);
     }
 
     /** `Holder[2][3]` -> `Holder`: a fixed array of inline owning structs is an owned slot too (dropped element by element, moved as a whole). */
     public String stripArrayDims(String baseType) {
-        while (isArrayType(baseType)) {
-            baseType = arrayElementType(baseType);
+        while (hub.isArrayType(baseType)) {
+            baseType = hub.arrayElementType(baseType);
         }
         return baseType;
     }
 
     /** True for a fixed array type (`Holder[2]`). */
     public boolean isFixedArrayTypeText(String baseType) {
-        return baseType != null && isArrayType(baseType);
+        return baseType != null && hub.isArrayType(baseType);
     }
 
     /** True when a dynarray element, given as the canonical text in a dynarray type (`Holder`, `owns_some_mut_World`), owns memory. */
@@ -134,14 +94,14 @@ abstract class TypeCheckerDeclarations extends TypeCheckerModel {
         if (elemText.startsWith("owns_") || elemText.startsWith("dynarray(") || elemText.startsWith("unsafe_dynarray(")) {
             return true;
         }
-        StructInfo si = structs.get(elemText);
+        TypeCheckerModel.StructInfo si = hub.model.structs.get(elemText);
         if (si == null) {
             return false;
         }
         Set<String> visiting = new HashSet<>();
         visiting.add(elemText);
-        for (TypeInfo m : si.members.values()) {
-            if (typeOwnsMemory(m, visiting)) {
+        for (TypeCheckerModel.TypeInfo m : si.members.values()) {
+            if (hub.model.typeOwnsMemory(m, visiting)) {
                 return true;
             }
         }
@@ -149,17 +109,17 @@ abstract class TypeCheckerDeclarations extends TypeCheckerModel {
     }
 
     /** The unsafe tag an operation on this unsafe dynarray needs: `udyn:owns` when its elements own memory (the programmer destructs them by hand), else `udyn`. */
-    public String udynTag(TypeInfo unsafeDynArrayType) {
-        TypeInfo el = unsafeDynArrayType == null ? null : unsafeDynArrayType.unsafeDynArrayElementType;
-        return typeOwnsMemory(el, new HashSet<>()) ? "udyn:owns" : "udyn";
+    public String udynTag(TypeCheckerModel.TypeInfo unsafeDynArrayType) {
+        TypeCheckerModel.TypeInfo el = unsafeDynArrayType == null ? null : unsafeDynArrayType.unsafeDynArrayElementType;
+        return hub.model.typeOwnsMemory(el, new HashSet<>()) ? "udyn:owns" : "udyn";
     }
 
     /** Called where `unsafe` bypasses a rule: true in unsafe context, and records `tag` on the enclosing tagged block. Call only when the bypass is actually exercised. */
-    public boolean unsafeBypass(Scope scope, String tag) {
+    public boolean unsafeBypass(TypeCheckerModel.Scope scope, String tag) {
         if (!"unsafe".equals(scope.currentSafety)) {
             return false;
         }
-        for (Scope sc = scope; sc != null; sc = sc.parent) {
+        for (TypeCheckerModel.Scope sc = scope; sc != null; sc = sc.parent) {
             if (sc.unsafeBlock != null) {
                 sc.unsafeBlock.use(tag);
                 break;
@@ -169,25 +129,25 @@ abstract class TypeCheckerDeclarations extends TypeCheckerModel {
     }
 
     /** Local ASM names (scope chain) first, then root-level; null if unknown. */
-    public AsmInfo lookupAsmName(String name, Scope scope) {
-        for (Scope s = scope; s != null; s = s.parent) {
-            AsmInfo info = s.localAsmNames.get(name);
+    public TypeCheckerModel.AsmInfo lookupAsmName(String name, TypeCheckerModel.Scope scope) {
+        for (TypeCheckerModel.Scope s = scope; s != null; s = s.parent) {
+            TypeCheckerModel.AsmInfo info = s.localAsmNames.get(name);
             if (info != null) {
                 return info;
             }
         }
-        return rootAsms.get(name);
+        return hub.model.rootAsms.get(name);
     }
 
-    public void recordUnavailable(String key, String shownName, String concreteName, boolean ctor, DeferredSignatureException e) {
+    public void recordUnavailable(String key, String shownName, String concreteName, boolean ctor, TypeCheckerModel.DeferredSignatureException e) {
         String msg = (ctor ? "constructor of '" : "method '" + shownName + "' of '") + concreteName
                 + "' is unavailable for this type argument: "
                 + e.raw;
-        unavailableGenericMethods.computeIfAbsent(key, k -> new ArrayList<>()).add(msg);
+        hub.model.unavailableGenericMethods.computeIfAbsent(key, k -> new ArrayList<>()).add(msg);
     }
 
     public String unavailableNote(String key) {
-        List<String> l = unavailableGenericMethods.get(key);
+        List<String> l = hub.model.unavailableGenericMethods.get(key);
         if (l == null) {
             return "";
         }
@@ -195,46 +155,46 @@ abstract class TypeCheckerDeclarations extends TypeCheckerModel {
     }
 
     /** For BytecodeEmitter: the resolved declarations this checker collected, valid after check() runs. */
-    public Map<String, StructInfo> getStructs() { return structs; }
-    public Map<String, EnumInfo> getEnums() { return enums; }
-    public Map<String, List<FuncInfo>> getFunctions() { return functions; }
-    public Map<String, InterfaceInfo> getInterfaces() { return interfaces; }
-    public Map<String, List<ImplInfo>> getImpls() { return implsByConcreteType; }
-    public Map<String, LibraryInfo> getLibraries() { return libraries; }
-    public Map<String, ExternInfo> getExterns() { return externs; }
-    public List<String> getGlobalOrder() { return globalOrder; }
-    public Map<String, TypeInfo> getGlobals() { return globals; }
-    public FuncInfo getEventLoopFunc() { return eventLoopFunc; }
-    public Map<String, Token> getGlobalRhs() { return globalRhsByName; }
+    public Map<String, TypeCheckerModel.StructInfo> getStructs() { return hub.model.structs; }
+    public Map<String, TypeCheckerModel.EnumInfo> getEnums() { return hub.model.enums; }
+    public Map<String, List<TypeCheckerModel.FuncInfo>> getFunctions() { return hub.model.functions; }
+    public Map<String, TypeCheckerModel.InterfaceInfo> getInterfaces() { return hub.model.interfaces; }
+    public Map<String, List<TypeCheckerModel.ImplInfo>> getImpls() { return hub.model.implsByConcreteType; }
+    public Map<String, TypeCheckerModel.LibraryInfo> getLibraries() { return hub.model.libraries; }
+    public Map<String, TypeCheckerModel.ExternInfo> getExterns() { return hub.model.externs; }
+    public List<String> getGlobalOrder() { return hub.model.globalOrder; }
+    public Map<String, TypeCheckerModel.TypeInfo> getGlobals() { return hub.model.globals; }
+    public TypeCheckerModel.FuncInfo getEventLoopFunc() { return hub.model.eventLoopFunc; }
+    public Map<String, Token> getGlobalRhs() { return hub.model.globalRhsByName; }
 
     /** For BytecodeEmitter: the (at most one) function decorated with the given ghost-table decorator name, or null if none exists in this compilation unit. */
-    public FuncInfo getGhostTableFunction(String decoratorName) { return ghostTableFunctions.get(decoratorName); }
-    public boolean usesOwnsRefDynNew() { return usesOwnsRefDynNew; }
+    public TypeCheckerModel.FuncInfo getGhostTableFunction(String decoratorName) { return hub.model.ghostTableFunctions.get(decoratorName); }
+    public boolean usesOwnsRefDynNew() { return hub.model.usesOwnsRefDynNew; }
     /** True when the program throws, or when stack tracing is on (it needs the throw-style frame layout in every function). */
-    public boolean usesThrow() { return usesThrow || TraceConfig.usesTrace; }
+    public boolean usesThrow() { return hub.model.usesThrow || TraceConfig.usesTrace; }
 
     /** Does every path through a 'match @lock' CLOSED body end in continue / return / throw / break? */
     public boolean closedCaseTerminates(List<Token> lines) {
-        boolean saved = breakCountsAsTerminator;
-        breakCountsAsTerminator = true;
+        boolean saved = hub.model.breakCountsAsTerminator;
+        hub.model.breakCountsAsTerminator = true;
         try {
-            return definitelyReturns(lines);
+            return hub.statements.definitelyReturns(lines);
         } finally {
-            breakCountsAsTerminator = saved;
+            hub.model.breakCountsAsTerminator = saved;
         }
     }
 
     /** True once "structName" has at least one declared constructor. */
     public boolean hasConstructors(String structName) {
-        return functions.containsKey(Parser.CONSTRUCTOR_NAME_PREFIX + structName);
+        return hub.model.functions.containsKey(Parser.CONSTRUCTOR_NAME_PREFIX + structName);
     }
 
     /**
      * Flattens root lines through unsafe/safe wrappers into declarations tagged with their safety context;
      * an 'unsafe' nested in 'safe' is an error (the reverse is allowed).
      */
-    public List<FlatDecl> flattenRootLines(List<Token> lines, String currentSafety) {
-        List<FlatDecl> out = new ArrayList<>();
+    public List<TypeCheckerModel.FlatDecl> flattenRootLines(List<Token> lines, String currentSafety) {
+        List<TypeCheckerModel.FlatDecl> out = new ArrayList<>();
         for (Token lineTok : lines) {
             Token t = lineTok.childs.get(0);
             if (t.type == TokenType.KEYWORD && (t.text.equals("unsafe") || t.text.equals("safe"))) {
@@ -244,7 +204,7 @@ abstract class TypeCheckerDeclarations extends TypeCheckerModel {
                 }
                 out.addAll(flattenRootLines(t.childs, t.text));
             } else {
-                out.add(new FlatDecl(lineTok, currentSafety));
+                out.add(new TypeCheckerModel.FlatDecl(lineTok, currentSafety));
             }
         }
         return out;
@@ -252,56 +212,56 @@ abstract class TypeCheckerDeclarations extends TypeCheckerModel {
 
     /** Entry point: type/logic-checks a fully resolved program's top-level statements. */
     public void check(List<Token> rootLines) {
-        rootLinesRef = rootLines;
+        hub.model.rootLinesRef = rootLines;
         collectDeclarations(rootLines);
-        forceGhostTableFunctionNames();
-        validateGenericBounds(rootLines);
-        for (FlatDecl fd : flattenRootLines(rootLines, "indeterminate")) {
+        hub.signatures.forceGhostTableFunctionNames();
+        hub.controlFlow.validateGenericBounds(rootLines);
+        for (TypeCheckerModel.FlatDecl fd : flattenRootLines(rootLines, "indeterminate")) {
             Token t = fd.lineTok.childs.get(0);
             if (t.type == TokenType.KEYWORD && t.text.equals("func")) {
-                checkFunctionBody(functionInfoFor(t));
+                hub.statements.checkFunctionBody(hub.signatures.functionInfoFor(t));
             }
         }
-        for (List<ImplInfo> implList : implsByConcreteType.values()) {
-            for (ImplInfo implInfo : implList) {
-                for (FuncInfo methodInfo : implInfo.methods.values()) {
-                    checkFunctionBody(methodInfo);
+        for (List<TypeCheckerModel.ImplInfo> implList : hub.model.implsByConcreteType.values()) {
+            for (TypeCheckerModel.ImplInfo implInfo : implList) {
+                for (TypeCheckerModel.FuncInfo methodInfo : implInfo.methods.values()) {
+                    hub.statements.checkFunctionBody(methodInfo);
                 }
-                for (FuncInfo methodInfo : implInfo.staticMethods.values()) {
-                    checkFunctionBody(methodInfo);
+                for (TypeCheckerModel.FuncInfo methodInfo : implInfo.staticMethods.values()) {
+                    hub.statements.checkFunctionBody(methodInfo);
                 }
             }
         }
-        for (LibraryInfo libInfo : libraries.values()) {
-            for (List<FuncInfo> overloads : libInfo.ownFunctions.values()) {
-                for (FuncInfo fn : overloads) {
-                    checkFunctionBody(fn);
+        for (TypeCheckerModel.LibraryInfo libInfo : hub.model.libraries.values()) {
+            for (List<TypeCheckerModel.FuncInfo> overloads : libInfo.ownFunctions.values()) {
+                for (TypeCheckerModel.FuncInfo fn : overloads) {
+                    hub.statements.checkFunctionBody(fn);
                 }
             }
         }
         // Generic constructors are in `functions` only, so neither loop above reaches them.
-        for (FuncInfo ctorInfo : genericConstructorFuncInfos) {
-            checkFunctionBody(ctorInfo);
+        for (TypeCheckerModel.FuncInfo ctorInfo : hub.model.genericConstructorFuncInfos) {
+            hub.statements.checkFunctionBody(ctorInfo);
         }
-        checkSafetyCallGraph();
-        checkDynArrayForLoopResizeSafety();
-        checkNoRecursion();
-        validateNoThrowReachableFromGhostTableFunctions();
-        validateNoAutoReturns();
-        validateNoRefSomeStructMembers();
-        validateNoAutoStructMembers();
-        validateNoRecursiveStructs();
-        validateNoPointersInLockStructs();
+        hub.signatures.checkSafetyCallGraph();
+        hub.signatures.checkDynArrayForLoopResizeSafety();
+        hub.signatures.checkNoRecursion();
+        hub.signatures.validateNoThrowReachableFromGhostTableFunctions();
+        hub.signatures.validateNoAutoReturns();
+        hub.signatures.validateNoRefSomeStructMembers();
+        hub.signatures.validateNoAutoStructMembers();
+        hub.signatures.validateNoRecursiveStructs();
+        hub.signatures.validateNoPointersInLockStructs();
         validateMainFunction();
-        validateUnsafeBlockTags();
+        hub.statements.validateUnsafeBlockTags();
     }
 
     /** All top-level funcs (any overload) with the given decorator; @tick/@event_loop/@make_safe_args are found by decorator, not by name. */
-    public List<FuncInfo> findFuncsWithDecorator(String decoratorName) {
-        List<FuncInfo> found = new ArrayList<>();
-        for (List<FuncInfo> overloads : functions.values()) {
-            for (FuncInfo f : overloads) {
-                if (hasDecorator(f.funcToken.decorators, decoratorName)) {
+    public List<TypeCheckerModel.FuncInfo> findFuncsWithDecorator(String decoratorName) {
+        List<TypeCheckerModel.FuncInfo> found = new ArrayList<>();
+        for (List<TypeCheckerModel.FuncInfo> overloads : hub.model.functions.values()) {
+            for (TypeCheckerModel.FuncInfo f : overloads) {
+                if (hub.impls.hasDecorator(f.funcToken.decorators, decoratorName)) {
                     found.add(f);
                 }
             }
@@ -310,9 +270,9 @@ abstract class TypeCheckerDeclarations extends TypeCheckerModel {
     }
 
     /** Requires "owns some mut" of a concrete struct; returns the struct name so callers can compare "same T". */
-    public String requireOwnsSomeMutStruct(TypeInfo t, String context, Token at) {
+    public String requireOwnsSomeMutStruct(TypeCheckerModel.TypeInfo t, String context, Token at) {
         boolean shapeOk = "owns".equals(t.storage) && t.isSome && "mut".equals(t.mutability)
-                && structs.containsKey(t.baseType);
+                && hub.model.structs.containsKey(t.baseType);
         if (!shapeOk) {
             throw new CompilerException("type", at.file, at.line,
                     context + " must be 'owns some mut' a concrete struct type -- got '" + t.canonical()
@@ -322,9 +282,9 @@ abstract class TypeCheckerDeclarations extends TypeCheckerModel {
     }
 
     /** Validates @with_tick, @tick and @event_loop together with main. See docs/TypeChecker.md, "main, @tick, @event_loop, @make_safe_args". */
-    public void validateTickEventLoop(FuncInfo main, boolean withTick) {
-        List<FuncInfo> tickFuncs = findFuncsWithDecorator("tick");
-        List<FuncInfo> eventLoopFuncs = findFuncsWithDecorator("event_loop");
+    public void validateTickEventLoop(TypeCheckerModel.FuncInfo main, boolean withTick) {
+        List<TypeCheckerModel.FuncInfo> tickFuncs = findFuncsWithDecorator("tick");
+        List<TypeCheckerModel.FuncInfo> eventLoopFuncs = findFuncsWithDecorator("event_loop");
         if (!withTick) {
             // Without @with_tick, neither decorator may appear.
             if (!tickFuncs.isEmpty()) {
@@ -349,7 +309,7 @@ abstract class TypeCheckerDeclarations extends TypeCheckerModel {
             throw new CompilerException("type", at.file, at.line,
                     "'@tick' may only be used once in the final compilation unit");
         }
-        FuncInfo tick = tickFuncs.get(0);
+        TypeCheckerModel.FuncInfo tick = tickFuncs.get(0);
         Token tickAt = tick.funcToken;
         if (tick.paramNames.size() != 1) {
             throw new CompilerException("type", tickAt.file, tickAt.line,
@@ -381,7 +341,7 @@ abstract class TypeCheckerDeclarations extends TypeCheckerModel {
             throw new CompilerException("type", at.file, at.line,
                     "'@event_loop' may only be used once in the final compilation unit");
         }
-        FuncInfo eventLoop = eventLoopFuncs.get(0);
+        TypeCheckerModel.FuncInfo eventLoop = eventLoopFuncs.get(0);
         Token elAt = eventLoop.funcToken;
         // @event_loop is the real entry point, so its signature follows main's argument shape; its body is not validated.
         if (main.mainArgShape == null) {
@@ -408,14 +368,14 @@ abstract class TypeCheckerDeclarations extends TypeCheckerModel {
                     "'@event_loop' must return 'imut s32', 'imut bool', or 'void' (one of the 'main' "
                             + "signatures that doesn't return a pointer) -- got '" + elReturn + "'");
         }
-        eventLoopFunc = eventLoop;
+        hub.model.eventLoopFunc = eventLoop;
     }
 
     /** Exactly one 'main' with a valid signature, over the final import-flattened `functions` map. See docs/TypeChecker.md, "main, @tick, @event_loop, @make_safe_args". */
     public void validateMainFunction() {
-        List<FuncInfo> mains = functions.get("main");
+        List<TypeCheckerModel.FuncInfo> mains = hub.model.functions.get("main");
         if (mains == null || mains.isEmpty()) {
-            Token fallback = rootLinesRef.isEmpty() ? null : rootLinesRef.get(0);
+            Token fallback = hub.model.rootLinesRef.isEmpty() ? null : hub.model.rootLinesRef.get(0);
             String file = fallback != null ? fallback.file : "<unknown>";
             int line = fallback != null ? fallback.line : 0;
             throw new CompilerException("type", file, line,
@@ -423,15 +383,15 @@ abstract class TypeCheckerDeclarations extends TypeCheckerModel {
                             + "'func main() imut s32', 'func main() imut bool', or 'func main() void'");
         }
         if (mains.size() > 1) {
-            FuncInfo second = mains.get(1);
+            TypeCheckerModel.FuncInfo second = mains.get(1);
             throw new CompilerException("type", second.funcToken.file, second.funcToken.line,
                     "more than one 'main' function found -- a program can only have exactly one");
         }
-        FuncInfo main = mains.get(0);
+        TypeCheckerModel.FuncInfo main = mains.get(0);
         Token at = main.funcToken;
         main.mainArgShape = validateAndResolveMainArgShape(main, at);
         validateMakeSafeArgs(main);
-        boolean withTick = getDecorator(at.decorators, "with_tick") != null;
+        boolean withTick = hub.impls.getDecorator(at.decorators, "with_tick") != null;
         if (!withTick) {
             String canonicalReturn = main.returnType.canonical();
             boolean validReturn = canonicalReturn.equals("imut_s32") || canonicalReturn.equals("imut_bool")
@@ -447,7 +407,7 @@ abstract class TypeCheckerDeclarations extends TypeCheckerModel {
     }
 
     /** Resolves main's argument shape: none (null), C-ABI "c_args", or the wrapped "safe_args". */
-    public String validateAndResolveMainArgShape(FuncInfo main, Token at) {
+    public String validateAndResolveMainArgShape(TypeCheckerModel.FuncInfo main, Token at) {
         if (main.paramNames.isEmpty()) {
             return null;
         }
@@ -477,17 +437,17 @@ abstract class TypeCheckerDeclarations extends TypeCheckerModel {
     }
 
     /** Type of the safe main argument: owns some mut dynarray of imut dynarrays of imut char. */
-    public TypeInfo safeArgsType() {
-        TypeInfo charType = new TypeInfo(null, "imut", "char");
-        TypeInfo innerDynArray = TypeInfo.dynArray("imut", charType);
-        return TypeInfo.dynArray("mut", innerDynArray).withSome(true);
+    public TypeCheckerModel.TypeInfo safeArgsType() {
+        TypeCheckerModel.TypeInfo charType = new TypeCheckerModel.TypeInfo(null, "imut", "char");
+        TypeCheckerModel.TypeInfo innerDynArray = TypeCheckerModel.TypeInfo.dynArray("imut", charType);
+        return TypeCheckerModel.TypeInfo.dynArray("mut", innerDynArray).withSome(true);
     }
 
     /** @make_safe_args must exist exactly once iff main uses safe_args, with signature (imut s32, raw mut raw mut char) returning safeArgsType(). */
-    public void validateMakeSafeArgs(FuncInfo main) {
-        List<FuncInfo> candidates = findFuncsWithDecorator("make_safe_args");
+    public void validateMakeSafeArgs(TypeCheckerModel.FuncInfo main) {
+        List<TypeCheckerModel.FuncInfo> candidates = findFuncsWithDecorator("make_safe_args");
         if (candidates.size() > 1) {
-            FuncInfo second = candidates.get(1);
+            TypeCheckerModel.FuncInfo second = candidates.get(1);
             throw new CompilerException("type", second.funcToken.file, second.funcToken.line,
                     "'@make_safe_args' may only be used once in the final compilation unit");
         }
@@ -501,7 +461,7 @@ abstract class TypeCheckerDeclarations extends TypeCheckerModel {
         if (candidates.isEmpty()) {
             return;
         }
-        FuncInfo msa = candidates.get(0);
+        TypeCheckerModel.FuncInfo msa = candidates.get(0);
         Token at = msa.funcToken;
         boolean sigOk = msa.paramNames.size() == 2
                 && msa.paramTypes.get(0).canonical().equals("imut_s32")
@@ -517,9 +477,9 @@ abstract class TypeCheckerDeclarations extends TypeCheckerModel {
     // ---- pass 1: collect and validate top-level declarations ------------
 
     public void collectDeclarations(List<Token> rootLines) {
-        List<FlatDecl> flatDecls = flattenRootLines(rootLines, "indeterminate");
+        List<TypeCheckerModel.FlatDecl> flatDecls = flattenRootLines(rootLines, "indeterminate");
         // Pass 1a: register structs, interfaces, enums, libraries, aliases and consts raw (see docs/TypeChecker.md, "collectDeclarations passes").
-        for (FlatDecl fd : flatDecls) {
+        for (TypeCheckerModel.FlatDecl fd : flatDecls) {
             if (globalLetAssignOf(fd.lineTok) != null) {
                 continue;
             }
@@ -535,31 +495,31 @@ abstract class TypeCheckerDeclarations extends TypeCheckerModel {
             }
         }
         // Pass 1a.5: flatten struct members and interface methods (before impls and globals are processed).
-        for (String name : new ArrayList<>(structs.keySet())) {
+        for (String name : new ArrayList<>(hub.model.structs.keySet())) {
             flattenStruct(name, new HashSet<>());
         }
-        for (String name : new ArrayList<>(interfaces.keySet())) {
+        for (String name : new ArrayList<>(hub.model.interfaces.keySet())) {
             flattenInterface(name, new HashSet<>());
         }
         // Pass 1a.6: record each func/impl's root-list position (FuncInfo.declOrder).
-        pendingDeclOrder = new HashMap<>();
+        hub.model.pendingDeclOrder = new HashMap<>();
         for (int i = 0; i < flatDecls.size(); i++) {
             Token t = flatDecls.get(i).lineTok.childs.get(0);
             if (t.type == TokenType.KEYWORD
                     && (t.text.equals("func") || t.text.equals("impl") || t.text.equals("library"))) {
-                pendingDeclOrder.put(t, i);
+                hub.model.pendingDeclOrder.put(t, i);
                 if (t.text.equals("impl") || t.text.equals("library")) {
                     for (Token method : t.childs) {
-                        pendingDeclOrder.put(method, i);
+                        hub.model.pendingDeclOrder.put(method, i);
                     }
                 }
             }
         }
         // Pass 1a.7: externs, before func/impl collection so a colliding function name is caught.
-        for (FlatDecl fd : flatDecls) {
+        for (TypeCheckerModel.FlatDecl fd : flatDecls) {
             Token t = fd.lineTok.childs.get(0);
             if (t.type == TokenType.KEYWORD && t.text.equals("extern")) {
-                collectExtern(t);
+                hub.impls.collectExtern(t);
             }
         }
         // Pass 1a.8: globals, in file order.
@@ -570,38 +530,38 @@ abstract class TypeCheckerDeclarations extends TypeCheckerModel {
             }
         }
         // Pass 1b: func and impl (impl validates against what pass 1a collected)
-        for (FlatDecl fd : flatDecls) {
+        for (TypeCheckerModel.FlatDecl fd : flatDecls) {
             Token t = fd.lineTok.childs.get(0);
             switch (t.text) {
-                case "func": collectFunc(t, fd.safety); break;
-                case "impl": collectImpl(t, fd.safety); break;
+                case "func": hub.impls.collectFunc(t, fd.safety); break;
+                case "impl": hub.impls.collectImpl(t, fd.safety); break;
                 case "impl_default_lock_match": collectDefaultLockMatchPolicy(t); break;
-                case "library": collectLibrary(t, fd.safety); break;
+                case "library": hub.impls.collectLibrary(t, fd.safety); break;
                 default: break; // already handled above
             }
         }
         // Pass 1b.5: flatten library 'extends' chains (needs every library's function set).
-        for (String name : new ArrayList<>(libraries.keySet())) {
-            flattenLibrary(name, new HashSet<>());
+        for (String name : new ArrayList<>(hub.model.libraries.keySet())) {
+            hub.impls.flattenLibrary(name, new HashSet<>());
         }
         // Pass 1c: check every struct's "implements" contract.
-        for (StructInfo info : structs.values()) {
+        for (TypeCheckerModel.StructInfo info : hub.model.structs.values()) {
             checkImplementsContract(info);
         }
         // Pass 1c-bis: synthesize the Class enum and the "enum for X" membership enums (order matters).
-        generateClassHierarchyEnums();
-        generateEnumForEnums();
+        hub.accessAndAsync.generateClassHierarchyEnums();
+        hub.accessAndAsync.generateEnumForEnums();
         // Pass 1c-ter: synthesize interface-method dispatchers (after enum-for and impl validation).
-        generateInterfaceDispatchers();
+        hub.accessAndAsync.generateInterfaceDispatchers();
         // Pass 1d: export statements.
-        for (FlatDecl fd : flatDecls) {
+        for (TypeCheckerModel.FlatDecl fd : flatDecls) {
             Token t = fd.lineTok.childs.get(0);
             if (t.type == TokenType.KEYWORD && t.text.equals("export")) {
-                collectExport(t);
+                hub.impls.collectExport(t);
             }
         }
         // Pass 1e: root-level ASM declarations and invocations, in strict file order.
-        for (FlatDecl fd : flatDecls) {
+        for (TypeCheckerModel.FlatDecl fd : flatDecls) {
             Token t = fd.lineTok.childs.get(0);
             if (t.type == TokenType.KEYWORD && t.text.equals("ASM")) {
                 collectRootAsmDeclaration(t, fd.safety);
@@ -610,12 +570,12 @@ abstract class TypeCheckerDeclarations extends TypeCheckerModel {
             }
         }
         // Pass 1f: mangle overloaded top-level funcs (only a name with more than one overload).
-        for (List<FuncInfo> overloads : functions.values()) {
+        for (List<TypeCheckerModel.FuncInfo> overloads : hub.model.functions.values()) {
             if (overloads.size() <= 1) {
                 continue;
             }
-            for (FuncInfo fi : overloads) {
-                fi.mangledName = fi.name + "__sig_" + signatureSuffix(fi.paramTypes);
+            for (TypeCheckerModel.FuncInfo fi : overloads) {
+                fi.mangledName = fi.name + "__sig_" + hub.impls.signatureSuffix(fi.paramTypes);
             }
         }
     }
@@ -626,21 +586,21 @@ abstract class TypeCheckerDeclarations extends TypeCheckerModel {
             throw new CompilerException("type", t.file, t.line,
                     "declaring 'ASM' requires 'unsafe' code");
         }
-        String rawText = resolveAsmRawText(t);
+        String rawText = hub.statements.resolveAsmRawText(t);
         t.resolvedAsmContent = rawText; // read by BytecodeEmitter directly when unnamed (self-emits here); harmlessly unused otherwise
         if (t.sub.isEmpty()) {
             return; // unnamed -- never registered under any name at all
         }
         String name = t.sub.get(0).text;
-        if (rootAsms.containsKey(name)) {
+        if (hub.model.rootAsms.containsKey(name)) {
             throw new CompilerException("type", t.file, t.line,
                     "'ASM " + name + "' is already declared");
         }
-        AsmInfo info = new AsmInfo();
+        TypeCheckerModel.AsmInfo info = new TypeCheckerModel.AsmInfo();
         info.name = name;
         info.rawText = rawText;
         info.declTok = t;
-        rootAsms.put(name, info);
+        hub.model.rootAsms.put(name, info);
     }
 
     /** A bare "asm_name;" line at the root -- see collectDeclarations' Pass 1e. */
@@ -649,7 +609,7 @@ abstract class TypeCheckerDeclarations extends TypeCheckerModel {
             throw new CompilerException("type", t.file, t.line,
                     "invoking '" + t.text + "' requires 'unsafe' code");
         }
-        AsmInfo info = rootAsms.get(t.text);
+        TypeCheckerModel.AsmInfo info = hub.model.rootAsms.get(t.text);
         if (info == null) {
             throw new CompilerException("type", t.file, t.line,
                     "'" + t.text + "' is not a declared 'ASM' name (or is used before its declaration)");
@@ -680,47 +640,47 @@ abstract class TypeCheckerDeclarations extends TypeCheckerModel {
                     "only 'let static' is allowed at the top level -- a plain 'let' has no meaning "
                             + "outside a function body");
         }
-        validateDecorators(letTok.decorators, GLOBAL_DECORATORS, "a top-level 'let static'");
-        if (getDecorator(letTok.decorators, "pub") != null) {
-            publicGlobals.add(name);
+        hub.impls.validateDecorators(letTok.decorators, TypeCheckerModel.GLOBAL_DECORATORS, "a top-level 'let static'");
+        if (hub.impls.getDecorator(letTok.decorators, "pub") != null) {
+            hub.model.publicGlobals.add(name);
         }
-        if (globals.containsKey(name) || structs.containsKey(name) || enums.containsKey(name)
-                || interfaces.containsKey(name) || aliasRawTargets.containsKey(name)
-                || constExprs.containsKey(name)) {
+        if (hub.model.globals.containsKey(name) || hub.model.structs.containsKey(name) || hub.model.enums.containsKey(name)
+                || hub.model.interfaces.containsKey(name) || hub.model.aliasRawTargets.containsKey(name)
+                || hub.model.constExprs.containsKey(name)) {
             throw new CompilerException("type", letTok.file, letTok.line,
                     "'" + name + "' is already declared");
         }
-        checkNoRuntimeConstructs(assignNode.right);
-        FuncInfo globalCheckContext = new FuncInfo();
+        hub.expressions.checkNoRuntimeConstructs(assignNode.right);
+        TypeCheckerModel.FuncInfo globalCheckContext = new TypeCheckerModel.FuncInfo();
         globalCheckContext.declOrder = declOrder;
-        TypeInfo rhsType = resolveExprType(assignNode.right, new Scope(null), globalCheckContext);
+        TypeCheckerModel.TypeInfo rhsType = hub.controlFlow.resolveExprType(assignNode.right, new TypeCheckerModel.Scope(null), globalCheckContext);
         // `let static:<mut f64> g = mut 0.5` -- an explicit type bound on a global (checked and literal-adapted like a local's)
-        TypeInfo globalBound = resolveAndValidateTypeBound(letTok, rhsType, assignNode.right);
+        TypeCheckerModel.TypeInfo globalBound = hub.expressions.resolveAndValidateTypeBound(letTok, rhsType, assignNode.right);
         if (globalBound != null) {
             rhsType = globalBound;
         }
-        requireStaticMutable(rhsType, assignNode.right);
+        hub.expressions.requireStaticMutable(rhsType, assignNode.right);
         // Direct atomic declaration vs. merely reading an atomic value: see isDirectAtomicDeclaration.
-        if (rhsType.isAtomic && !isDirectAtomicDeclaration(assignNode.right)) {
+        if (rhsType.isAtomic && !hub.impls.isDirectAtomicDeclaration(assignNode.right)) {
             rhsType = rhsType.withAtomic(false);
         }
         letTok.resolvedType = rhsType.canonical();
 
-        globals.put(name, rhsType);
-        globalDeclOrder.put(name, declOrder);
-        globalOrder.add(name);
-        globalRhsByName.put(name, assignNode.right);
+        hub.model.globals.put(name, rhsType);
+        hub.model.globalDeclOrder.put(name, declOrder);
+        hub.model.globalOrder.add(name);
+        hub.model.globalRhsByName.put(name, assignNode.right);
     }
 
-    public void checkImplementsContract(StructInfo info) {
+    public void checkImplementsContract(TypeCheckerModel.StructInfo info) {
         if (info.implementsNames.isEmpty()) {
             return;
         }
-        List<ImplInfo> impls = implsByConcreteType.get(info.name);
+        List<TypeCheckerModel.ImplInfo> impls = hub.model.implsByConcreteType.get(info.name);
         for (String interfaceName : info.implementsNames) {
             boolean satisfied = false;
             if (impls != null) {
-                for (ImplInfo impl : impls) {
+                for (TypeCheckerModel.ImplInfo impl : impls) {
                     if (interfaceName.equals(impl.interfaceName)) {
                         satisfied = true;
                         break;
@@ -770,11 +730,11 @@ abstract class TypeCheckerDeclarations extends TypeCheckerModel {
      */
     public void registerAlias(Token t) {
         String name = t.sub.get(0).text;
-        if (aliasRawTargets.containsKey(name) || structs.containsKey(name) || enums.containsKey(name)
-                || interfaces.containsKey(name) || libraries.containsKey(name)) {
+        if (hub.model.aliasRawTargets.containsKey(name) || hub.model.structs.containsKey(name) || hub.model.enums.containsKey(name)
+                || hub.model.interfaces.containsKey(name) || hub.model.libraries.containsKey(name)) {
             throw new CompilerException("type", t.file, t.line, "'" + name + "' is already declared");
         }
-        aliasRawTargets.put(name, t.sub.subList(1, t.sub.size()));
+        hub.model.aliasRawTargets.put(name, t.sub.subList(1, t.sub.size()));
     }
 
     /**
@@ -783,12 +743,12 @@ abstract class TypeCheckerDeclarations extends TypeCheckerModel {
      */
     public void registerConst(Token t) {
         String name = t.sub.get(0).text;
-        if (constExprs.containsKey(name) || structs.containsKey(name) || enums.containsKey(name)
-                || interfaces.containsKey(name) || aliasRawTargets.containsKey(name)
-                || libraries.containsKey(name)) {
+        if (hub.model.constExprs.containsKey(name) || hub.model.structs.containsKey(name) || hub.model.enums.containsKey(name)
+                || hub.model.interfaces.containsKey(name) || hub.model.aliasRawTargets.containsKey(name)
+                || hub.model.libraries.containsKey(name)) {
             throw new CompilerException("type", t.file, t.line, "'" + name + "' is already declared");
         }
-        constExprs.put(name, t.childs.get(0));
+        hub.model.constExprs.put(name, t.childs.get(0));
     }
 
     /**
@@ -797,41 +757,41 @@ abstract class TypeCheckerDeclarations extends TypeCheckerModel {
      */
     public void registerLibraryName(Token t) {
         String name = t.sub.get(0).text;
-        if (structs.containsKey(name) || enums.containsKey(name) || interfaces.containsKey(name)
-                || libraries.containsKey(name) || aliasRawTargets.containsKey(name)
-                || constExprs.containsKey(name)) {
+        if (hub.model.structs.containsKey(name) || hub.model.enums.containsKey(name) || hub.model.interfaces.containsKey(name)
+                || hub.model.libraries.containsKey(name) || hub.model.aliasRawTargets.containsKey(name)
+                || hub.model.constExprs.containsKey(name)) {
             throw new CompilerException("type", t.file, t.line, "'" + name + "' is already declared");
         }
-        validateDecorators(t.decorators, LIBRARY_DECORATORS, "a 'library'");
-        LibraryInfo info = new LibraryInfo();
+        hub.impls.validateDecorators(t.decorators, TypeCheckerModel.LIBRARY_DECORATORS, "a 'library'");
+        TypeCheckerModel.LibraryInfo info = new TypeCheckerModel.LibraryInfo();
         info.name = name;
         info.declTok = t;
-        info.isPublic = getDecorator(t.decorators, "pub") != null;
+        info.isPublic = hub.impls.getDecorator(t.decorators, "pub") != null;
         info.extendsNames = t.extendsNames != null ? t.extendsNames : new ArrayList<>();
-        libraries.put(name, info);
+        hub.model.libraries.put(name, info);
     }
 
     public void registerStructLike(Token t) {
         String name = t.sub.get(0).text;
-        if (structs.containsKey(name) || enums.containsKey(name) || interfaces.containsKey(name)
-                || libraries.containsKey(name)) {
+        if (hub.model.structs.containsKey(name) || hub.model.enums.containsKey(name) || hub.model.interfaces.containsKey(name)
+                || hub.model.libraries.containsKey(name)) {
             throw new CompilerException("type", t.file, t.line, "'" + name + "' is already declared");
         }
-        validateDecorators(t.decorators, STRUCT_DECORATORS, "a struct");
+        hub.impls.validateDecorators(t.decorators, TypeCheckerModel.STRUCT_DECORATORS, "a struct");
         // @unpadded is recognised but rejected: every struct is compiler-padded (see emitStruct). Kept in
         // STRUCT_DECORATORS to give this specific error.
-        if (getDecorator(t.decorators, "unpadded") != null) {
+        if (hub.impls.getDecorator(t.decorators, "unpadded") != null) {
             throw new CompilerException("type", t.file, t.line,
                     "'@unpadded' is not supported yet -- every struct is compiler-padded to its own "
                             + "natural alignment");
         }
-        StructInfo info = new StructInfo(name);
-        info.isPublic = getDecorator(t.decorators, "pub") != null;
+        TypeCheckerModel.StructInfo info = new TypeCheckerModel.StructInfo(name);
+        info.isPublic = hub.impls.getDecorator(t.decorators, "pub") != null;
         info.implementsNames = t.implementsNames != null ? t.implementsNames : new ArrayList<>();
         info.rawMemberLines = t.childs;
         info.declTok = t;
-        structs.put(name, info);
-        structDeclOrder.add(name);
+        hub.model.structs.put(name, info);
+        hub.model.structDeclOrder.add(name);
     }
 
     /**
@@ -840,7 +800,7 @@ abstract class TypeCheckerDeclarations extends TypeCheckerModel {
      * `swap` mutex field and struct-level `@lock` clause.
      */
     public void flattenStruct(String name, Set<String> visiting) {
-        StructInfo info = structs.get(name);
+        TypeCheckerModel.StructInfo info = hub.model.structs.get(name);
         if (info == null || info.flattened) {
             return;
         }
@@ -849,7 +809,7 @@ abstract class TypeCheckerDeclarations extends TypeCheckerModel {
         Token swapFieldDeclTok = null;
         for (Token memberLine : info.rawMemberLines) {
             boolean linePublic = !memberLine.childs.isEmpty() && memberLine.childs.get(0).isPubBlockMember;
-            for (NameType nt : parseNameTypeGroup(memberLine.childs)) {
+            for (TypeCheckerModel.NameType nt : hub.signatures.parseNameTypeGroup(memberLine.childs)) {
                 if (info.members.containsKey(nt.name)) {
                     throw new CompilerException("type", memberLine.file, memberLine.line,
                             "'" + name + "' already has a member named '" + nt.name + "'");
@@ -914,9 +874,9 @@ abstract class TypeCheckerDeclarations extends TypeCheckerModel {
      * The swap member of a "match @lock" target must be a two-variant enum named exactly OPEN and CLOSED (codegen
      * builds ATOMIC_SWAP calls against those names).
      */
-    public void validateSwapMutexField(StructInfo structInfo, String structName, String fieldName, Token at) {
-        TypeInfo fieldType = structInfo.members.get(fieldName);
-        EnumInfo enumInfo = enums.get(fieldType.baseType);
+    public void validateSwapMutexField(TypeCheckerModel.StructInfo structInfo, String structName, String fieldName, Token at) {
+        TypeCheckerModel.TypeInfo fieldType = structInfo.members.get(fieldName);
+        TypeCheckerModel.EnumInfo enumInfo = hub.model.enums.get(fieldType.baseType);
         if (enumInfo == null) {
             throw new CompilerException("type", at.file, at.line,
                     "'swap " + fieldName + "' must be an enum-typed atomic member, got '"
@@ -935,15 +895,15 @@ abstract class TypeCheckerDeclarations extends TypeCheckerModel {
      * Validates "@lock(match self.x : X)": the field exists, is enum-typed, and every variant belongs to that
      * enum. Shared by struct-level and method-level use.
      */
-    public void validateLockEnumClause(Token.Decorator d, StructInfo structInfo, String structName) {
+    public void validateLockEnumClause(Token.Decorator d, TypeCheckerModel.StructInfo structInfo, String structName) {
         String fieldName = d.lockFieldName;
-        TypeInfo fieldType = structInfo.members.get(fieldName);
+        TypeCheckerModel.TypeInfo fieldType = structInfo.members.get(fieldName);
         if (fieldType == null) {
             throw new CompilerException("type", d.file, d.line,
                     "'@lock(match self." + fieldName + " : ...)' -- '" + structName + "' has no member "
                             + "named '" + fieldName + "'");
         }
-        EnumInfo lockEnumInfo = enums.get(fieldType.baseType);
+        TypeCheckerModel.EnumInfo lockEnumInfo = hub.model.enums.get(fieldType.baseType);
         if (lockEnumInfo == null) {
             throw new CompilerException("type", d.file, d.line,
                     "'@lock(match self." + fieldName + " : ...)' -- '" + fieldName + "' must be an "
@@ -962,12 +922,12 @@ abstract class TypeCheckerDeclarations extends TypeCheckerModel {
      * receivers only. See docs/TypeChecker.md, "Method-level @lock".
      */
     public void validateMethodLocks(List<Token.Decorator> decorators, List<String> paramNames,
-            List<TypeInfo> paramTypes, String concreteName) {
-        if (decorators == null || !structs.containsKey(concreteName)) {
+            List<TypeCheckerModel.TypeInfo> paramTypes, String concreteName) {
+        if (decorators == null || !hub.model.structs.containsKey(concreteName)) {
             return;
         }
         flattenStruct(concreteName, new HashSet<>());
-        StructInfo si = structs.get(concreteName);
+        TypeCheckerModel.StructInfo si = hub.model.structs.get(concreteName);
         for (Token.Decorator d : decorators) {
             if (!d.name.equals("lock")) {
                 continue;
@@ -985,8 +945,8 @@ abstract class TypeCheckerDeclarations extends TypeCheckerModel {
      * Validates "@lock(match x in|within self.f)" against the typing rules of checkIn / checkWithin (chosen per
      * clause by d.lockInOperators).
      */
-    public void validateLockInClause(Token.Decorator d, StructInfo si, String concreteName,
-            List<String> paramNames, List<TypeInfo> paramTypes) {
+    public void validateLockInClause(Token.Decorator d, TypeCheckerModel.StructInfo si, String concreteName,
+            List<String> paramNames, List<TypeCheckerModel.TypeInfo> paramTypes) {
         for (int i = 0; i < d.lockInParams.size(); i++) {
             String paramName = d.lockInParams.get(i);
             String fieldName = d.lockInFields.get(i);
@@ -997,29 +957,29 @@ abstract class TypeCheckerDeclarations extends TypeCheckerModel {
                         "'@lock(match " + paramName + " " + operatorText + " ...)' -- no parameter named '"
                                 + paramName + "'");
             }
-            TypeInfo paramType = paramTypes.get(paramIdx);
+            TypeCheckerModel.TypeInfo paramType = paramTypes.get(paramIdx);
             if (!"imut".equals(paramType.mutability)) {
                 throw new CompilerException("type", d.file, d.line,
                         "'@lock(match " + paramName + " " + operatorText + " ...)' -- '" + paramName
                                 + "' must be an 'imut' parameter, got '" + paramType.canonical() + "'");
             }
-            TypeInfo fieldType = si.members.get(fieldName);
+            TypeCheckerModel.TypeInfo fieldType = si.members.get(fieldName);
             if (fieldType == null) {
                 throw new CompilerException("type", d.file, d.line,
                         "'@lock(match " + paramName + " " + operatorText + " self." + fieldName + ")' -- '"
                                 + concreteName + "' has no member named '" + fieldName + "'");
             }
             boolean isWithin = operatorText.equals("within");
-            boolean leftOk = isWithin ? isRangeType(paramType)
-                    : (isPlainU64(paramType) || isRangeType(paramType));
+            boolean leftOk = isWithin ? hub.isRangeType(paramType)
+                    : (hub.isPlainU64(paramType) || hub.isRangeType(paramType));
             if (!leftOk) {
                 throw new CompilerException("type", d.file, d.line,
                         "'@lock(match " + paramName + " " + operatorText + " ...)' -- '" + operatorText
                                 + "' requires a " + (isWithin ? "range" : "plain 'u64' or a range")
                                 + " on the left, got '" + paramType.canonical() + "'");
             }
-            boolean rightOk = isWithin ? isRangeType(fieldType)
-                    : (isRangeType(fieldType) || isDynArrayType(fieldType));
+            boolean rightOk = isWithin ? hub.isRangeType(fieldType)
+                    : (hub.isRangeType(fieldType) || hub.isDynArrayType(fieldType));
             if (!rightOk) {
                 throw new CompilerException("type", d.file, d.line,
                         "'@lock(match ... " + operatorText + " self." + fieldName + ")' -- '" + operatorText
@@ -1029,7 +989,7 @@ abstract class TypeCheckerDeclarations extends TypeCheckerModel {
             // "Some(i) in self.x" needs self.x to be a dynarray of pointer elements (as checkSomeIndexBoundsCondition
             // requires).
             if (d.lockInSomeWrapped != null && Boolean.TRUE.equals(d.lockInSomeWrapped.get(i))) {
-                if (!isDynArrayType(fieldType) || fieldType.dynArrayElementType == null
+                if (!hub.isDynArrayType(fieldType) || fieldType.dynArrayElementType == null
                         || fieldType.dynArrayElementType.storage == null) {
                     throw new CompilerException("type", d.file, d.line,
                             "'@lock(match Some(" + paramName + ") " + operatorText + " self." + fieldName
@@ -1040,15 +1000,14 @@ abstract class TypeCheckerDeclarations extends TypeCheckerModel {
         }
     }
 
-
     public void collectEnum(Token t) {
         String name = t.sub.get(0).text;
-        if (structs.containsKey(name) || enums.containsKey(name)) {
+        if (hub.model.structs.containsKey(name) || hub.model.enums.containsKey(name)) {
             throw new CompilerException("type", t.file, t.line, "'" + name + "' is already declared");
         }
-        validateDecorators(t.decorators, ENUM_DECORATORS, "an enum");
-        EnumInfo info = new EnumInfo(name);
-        info.isNonExhaustive = getDecorator(t.decorators, "non_exhaustive") != null;
+        hub.impls.validateDecorators(t.decorators, TypeCheckerModel.ENUM_DECORATORS, "an enum");
+        TypeCheckerModel.EnumInfo info = new TypeCheckerModel.EnumInfo(name);
+        info.isNonExhaustive = hub.impls.getDecorator(t.decorators, "non_exhaustive") != null;
         int explicitValueCount = 0;
         int explicitRangeCount = 0;
         for (Token variant : t.childs) {
@@ -1116,7 +1075,7 @@ abstract class TypeCheckerDeclarations extends TypeCheckerModel {
                 info.explicitRangeEnds.add(variant.explicitRangeEnd);
             }
         }
-        enums.put(name, info);
+        hub.model.enums.put(name, info);
     }
 
     /**
@@ -1125,15 +1084,15 @@ abstract class TypeCheckerDeclarations extends TypeCheckerModel {
      */
     public void registerInterface(Token t) {
         String name = t.sub.get(0).text;
-        if (structs.containsKey(name) || enums.containsKey(name) || interfaces.containsKey(name)
-                || libraries.containsKey(name)) {
+        if (hub.model.structs.containsKey(name) || hub.model.enums.containsKey(name) || hub.model.interfaces.containsKey(name)
+                || hub.model.libraries.containsKey(name)) {
             throw new CompilerException("type", t.file, t.line, "'" + name + "' is already declared");
         }
-        validateDecorators(t.decorators, INTERFACE_DECORATORS, "an interface");
-        InterfaceInfo info = new InterfaceInfo();
+        hub.impls.validateDecorators(t.decorators, TypeCheckerModel.INTERFACE_DECORATORS, "an interface");
+        TypeCheckerModel.InterfaceInfo info = new TypeCheckerModel.InterfaceInfo();
         info.name = name;
         info.declTok = t;
-        info.isPublic = getDecorator(t.decorators, "pub") != null;
+        info.isPublic = hub.impls.getDecorator(t.decorators, "pub") != null;
         info.extendsNames = t.extendsNames != null ? t.extendsNames : new ArrayList<>();
         info.ownMethods = new LinkedHashMap<>();
         for (Token methodTok : t.childs) {
@@ -1151,7 +1110,7 @@ abstract class TypeCheckerDeclarations extends TypeCheckerModel {
                 throw new CompilerException("type", methodTok.file, methodTok.line,
                         "interface '" + name + "' already declares a method named '" + methodName + "'");
             }
-            RawMethodSig sig = new RawMethodSig();
+            TypeCheckerModel.RawMethodSig sig = new TypeCheckerModel.RawMethodSig();
             sig.nameTok = methodTok.sub.get(0);
             sig.paramsTok = methodTok.sub.get(1);
             sig.returnTypeTokens = methodTok.sub.subList(2, methodTok.sub.size());
@@ -1164,7 +1123,7 @@ abstract class TypeCheckerDeclarations extends TypeCheckerModel {
             }
             info.ownMethods.put(methodName, sig);
         }
-        interfaces.put(name, info);
+        hub.model.interfaces.put(name, info);
     }
 
     /**
@@ -1174,18 +1133,18 @@ abstract class TypeCheckerDeclarations extends TypeCheckerModel {
     public void validateInterfaceMethodDecorators(Token methodTok, boolean isDefault, String interfaceName) {
         if (isDefault) {
             buildFuncInfoDecoratorsOnly(methodTok); // reuses the generic func-decorator arg-shape validation
-            if (!hasDecorator(methodTok.decorators, "default")) {
+            if (!hub.impls.hasDecorator(methodTok.decorators, "default")) {
                 throw new CompilerException("type", methodTok.file, methodTok.line,
                         "a method with a body inside interface '" + interfaceName
                                 + "' must be labelled '@default'");
             }
-        } else if (hasDecorator(methodTok.decorators, "default")) {
+        } else if (hub.impls.hasDecorator(methodTok.decorators, "default")) {
             throw new CompilerException("type", methodTok.file, methodTok.line,
                     "'@default' requires a method body -- '" + interfaceName + "' declares this one as a "
                             + "signature only");
         }
         for (String forbidden : new String[]{"overrides", "realizes"}) {
-            Token.Decorator bad = getDecorator(methodTok.decorators, forbidden);
+            Token.Decorator bad = hub.impls.getDecorator(methodTok.decorators, forbidden);
             if (bad != null) {
                 throw new CompilerException("type", bad.file, bad.line,
                         "'@" + forbidden + "' decorates an impl's method, not an interface's own "
@@ -1196,7 +1155,7 @@ abstract class TypeCheckerDeclarations extends TypeCheckerModel {
 
     /** Validates just the decorator arg-shapes on a func-shaped token, without building a real FuncInfo (used for interface default methods, which aren't registered as callable functions). */
     public void buildFuncInfoDecoratorsOnly(Token t) {
-        validateDecorators(t.decorators, FUNC_ALL_DECORATORS, "a function");
+        hub.impls.validateDecorators(t.decorators, TypeCheckerModel.FUNC_ALL_DECORATORS, "a function");
     }
 
     /**
@@ -1238,7 +1197,7 @@ abstract class TypeCheckerDeclarations extends TypeCheckerModel {
 
     /** Resolves an interface's flattened method set (any number of extends; name collisions are errors). */
     public void flattenInterface(String name, Set<String> visiting) {
-        InterfaceInfo info = interfaces.get(name);
+        TypeCheckerModel.InterfaceInfo info = hub.model.interfaces.get(name);
         if (info == null || info.flattened) {
             return;
         }
@@ -1249,13 +1208,13 @@ abstract class TypeCheckerDeclarations extends TypeCheckerModel {
         visiting.add(name);
 
         for (String parentName : info.extendsNames) {
-            InterfaceInfo parentInfo = interfaces.get(parentName);
+            TypeCheckerModel.InterfaceInfo parentInfo = hub.model.interfaces.get(parentName);
             if (parentInfo == null) {
                 throw new CompilerException("type", info.declTok.file, info.declTok.line,
                         "'" + parentName + "' is not a known interface");
             }
             flattenInterface(parentName, visiting);
-            for (Map.Entry<String, RawMethodSig> e : parentInfo.methods.entrySet()) {
+            for (Map.Entry<String, TypeCheckerModel.RawMethodSig> e : parentInfo.methods.entrySet()) {
                 if (info.methods.containsKey(e.getKey())) {
                     throw new CompilerException("type", info.declTok.file, info.declTok.line,
                             "interface '" + name + "' inherits a method named '" + e.getKey()
@@ -1265,7 +1224,7 @@ abstract class TypeCheckerDeclarations extends TypeCheckerModel {
             }
         }
 
-        for (Map.Entry<String, RawMethodSig> e : info.ownMethods.entrySet()) {
+        for (Map.Entry<String, TypeCheckerModel.RawMethodSig> e : info.ownMethods.entrySet()) {
             if (info.methods.containsKey(e.getKey())) {
                 throw new CompilerException("type", info.declTok.file, info.declTok.line,
                         "interface '" + name + "' already has a method named '" + e.getKey()
@@ -1278,8 +1237,8 @@ abstract class TypeCheckerDeclarations extends TypeCheckerModel {
         visiting.remove(name);
     }
 
-    public void validateSelfIsPointer(RawMethodSig sig, String interfaceName) {
-        for (List<Token> group : splitIntoRawGroups(sig.paramsTok.childs)) {
+    public void validateSelfIsPointer(TypeCheckerModel.RawMethodSig sig, String interfaceName) {
+        for (List<Token> group : hub.signatures.splitIntoRawGroups(sig.paramsTok.childs)) {
             if (group.size() < 3 || group.get(1).type != TokenType.OPERATOR || !group.get(1).text.equals(":")) {
                 continue; // malformed; the later real parse (at impl-matching time) reports it properly
             }
@@ -1312,7 +1271,7 @@ abstract class TypeCheckerDeclarations extends TypeCheckerModel {
      */
     public void collectDefaultLockMatchPolicy(Token t) {
         String structName = t.sub.get(0).text;
-        StructInfo structInfo = structs.get(structName);
+        TypeCheckerModel.StructInfo structInfo = hub.model.structs.get(structName);
         if (structInfo == null) {
             throw new CompilerException("type", t.file, t.line,
                     "'" + structName + "' is not a known struct");
@@ -1328,20 +1287,20 @@ abstract class TypeCheckerDeclarations extends TypeCheckerModel {
                             + "is allowed per struct");
         }
         Token paramsTok = t.sub.get(1);
-        List<NameType> params = parseParamList(paramsTok.childs);
+        List<TypeCheckerModel.NameType> params = hub.signatures.parseParamList(paramsTok.childs);
         if (params.isEmpty()) {
             throw new CompilerException("type", t.file, t.line,
                     "'impl default match @lock' requires at least one parameter -- its own first parameter is "
                             + "always the automatic, per-iteration 'tries' counter, never supplied by a "
                             + "'CLOSED:default(...)' call site");
         }
-        TypeInfo triesType = params.get(0).type;
+        TypeCheckerModel.TypeInfo triesType = params.get(0).type;
         if (triesType.storage != null || !"imut".equals(triesType.mutability) || !"u64".equals(triesType.baseType)) {
             throw new CompilerException("type", t.file, t.line,
                     "'impl default match @lock's own first parameter ('" + params.get(0).name + "') must be "
                             + "exactly 'imut u64' -- the automatic, per-iteration 'tries' counter -- got '"
                             + triesType.canonical() + "'");
         }
-        structInfo.defaultLockMatchPolicy = new DefaultLockMatchPolicy(structName, paramsTok, t.childs, t);
+        structInfo.defaultLockMatchPolicy = new TypeCheckerModel.DefaultLockMatchPolicy(structName, paramsTok, t.childs, t);
     }
 }

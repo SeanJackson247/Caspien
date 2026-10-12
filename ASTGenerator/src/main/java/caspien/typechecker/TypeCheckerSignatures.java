@@ -23,40 +23,41 @@ import java.util.Set;
  */
 
 /** TypeCheckerSignatures: function signatures, type annotations, whole-program checks (part 4 of 11; see README.md in this folder). */
-abstract class TypeCheckerSignatures extends TypeCheckerImpls {
-    // methods defined in later parts of the chain
-    abstract public TypeInfo lookupDeclaredTypeStructurally(Token node, Scope scope);
+public final class TypeCheckerSignatures {
+    private final TypeChecker hub;
 
+    TypeCheckerSignatures(TypeChecker hub) {
+        this.hub = hub;
+    }
 
-
-    public void buildFuncInfo(Token t, FuncInfo info) {
-        validateDecorators(t.decorators, FUNC_ALL_DECORATORS, "a function");
+    public void buildFuncInfo(Token t, TypeCheckerModel.FuncInfo info) {
+        hub.impls.validateDecorators(t.decorators, TypeCheckerModel.FUNC_ALL_DECORATORS, "a function");
         Token nameTok = t.sub.get(0);
         Token paramsTok = t.sub.get(1);
         List<Token> returnTypeTokens = t.sub.subList(2, t.sub.size());
 
         info.name = nameTok.text;
         info.mangledName = info.name; // overridden for impl methods, see collectImpl
-        info.callConvention = resolveCallConvention(t.decorators);
-        info.isAsync = getDecorator(t.decorators, "async") != null;
-        info.isThrows = getDecorator(t.decorators, "throws") != null;
-        info.isPublic = getDecorator(t.decorators, "pub") != null;
-        for (NameType nt : parseParamList(paramsTok.childs)) {
+        info.callConvention = hub.impls.resolveCallConvention(t.decorators);
+        info.isAsync = hub.impls.getDecorator(t.decorators, "async") != null;
+        info.isThrows = hub.impls.getDecorator(t.decorators, "throws") != null;
+        info.isPublic = hub.impls.getDecorator(t.decorators, "pub") != null;
+        for (TypeCheckerModel.NameType nt : parseParamList(paramsTok.childs)) {
             info.paramNames.add(nt.name);
             info.paramTypes.add(nt.type);
         }
-        if (getDecorator(t.decorators, "drop") != null) {
-            requireDropHookShape(t, info, returnTypeTokens);
+        if (hub.impls.getDecorator(t.decorators, "drop") != null) {
+            hub.impls.requireDropHookShape(t, info, returnTypeTokens);
         }
         if (info.isAsync) {
             requireAsyncParamShape(t, info);
         }
         info.returnType = returnTypeTokens.isEmpty()
-                ? new TypeInfo(null, "imut", "void")
+                ? new TypeCheckerModel.TypeInfo(null, "imut", "void")
                 : resolveTypeAnnotation(returnTypeTokens, t, true);
 
         // Enum/array returns need a storage modifier (struct returns are legal: RVO, see isStructByValueReturn).
-        if ((enums.containsKey(info.returnType.baseType) || isArrayType(info.returnType.baseType))
+        if ((hub.model.enums.containsKey(info.returnType.baseType) || hub.isArrayType(info.returnType.baseType))
                 && info.returnType.storage == null) {
             throw new CompilerException("type", t.file, t.line,
                     "function '" + info.name + "' returns '" + info.returnType.baseType
@@ -66,19 +67,19 @@ abstract class TypeCheckerSignatures extends TypeCheckerImpls {
 
         // Array parameters also need a storage modifier.
         for (int i = 0; i < info.paramTypes.size(); i++) {
-            TypeInfo paramType = info.paramTypes.get(i);
-            if (isArrayType(paramType.baseType) && paramType.storage == null) {
+            TypeCheckerModel.TypeInfo paramType = info.paramTypes.get(i);
+            if (hub.isArrayType(paramType.baseType) && paramType.storage == null) {
                 throw new CompilerException("type", t.file, t.line,
                         "parameter '" + info.paramNames.get(i) + "' of function '" + info.name
                                 + "' is an array without a storage modifier -- arrays can only be "
                                 + "passed as parameters by pointer (owns/ref/raw/auto/static)");
             }
             // A by-value struct parameter is illegal at any size. See docs/TypeChecker.md, "Function signature rules".
-            StructInfo paramStructInfo = structs.get(paramType.baseType);
+            TypeCheckerModel.StructInfo paramStructInfo = hub.model.structs.get(paramType.baseType);
             if (paramStructInfo != null && paramType.storage == null) {
                 if (t.fromGenericInstance) {
                     // Monomorphized generic: the method is only unavailable for this T, an error only if called.
-                    throw new DeferredSignatureException(t.file, t.line,
+                    throw new TypeCheckerModel.DeferredSignatureException(t.file, t.line,
                             "parameter '" + info.paramNames.get(i) + "' of '" + info.name
                                     + "' is a plain (by-value) '" + paramType.baseType + "' (the generic "
                                     + "type argument is a struct) -- passing a struct on the stack, not by "
@@ -96,59 +97,59 @@ abstract class TypeCheckerSignatures extends TypeCheckerImpls {
     }
 
     /** Checks the fixed signature of each ghost-table / async / sleep hook decorator and registers it (behavior is never validated). See docs/TypeChecker.md, "Decorator signature checks". */
-    public void validateGhostTableDecoratorSignatures(Token t, FuncInfo info) {
-        if (getDecorator(t.decorators, "gt_init") != null) {
+    public void validateGhostTableDecoratorSignatures(Token t, TypeCheckerModel.FuncInfo info) {
+        if (hub.impls.getDecorator(t.decorators, "gt_init") != null) {
             requireGhostTableSignature(t, info, "gt_init", 0, "void");
             registerGhostTableFunction(t, info, "gt_init");
         }
-        if (getDecorator(t.decorators, "gt_alive_check") != null) {
+        if (hub.impls.getDecorator(t.decorators, "gt_alive_check") != null) {
             requireGhostTableSignature(t, info, "gt_alive_check", 1, "bool");
             registerGhostTableFunction(t, info, "gt_alive_check");
         }
-        if (getDecorator(t.decorators, "gt_destruct") != null) {
+        if (hub.impls.getDecorator(t.decorators, "gt_destruct") != null) {
             requireGhostTableSignature(t, info, "gt_destruct", 1, "void");
             registerGhostTableFunction(t, info, "gt_destruct");
         }
-        if (getDecorator(t.decorators, "gt_register") != null) {
+        if (hub.impls.getDecorator(t.decorators, "gt_register") != null) {
             requireGhostTableSignature(t, info, "gt_register", 1, "bool");
             registerGhostTableFunction(t, info, "gt_register");
         }
-        if (getDecorator(t.decorators, "gt_moved") != null) {
+        if (hub.impls.getDecorator(t.decorators, "gt_moved") != null) {
             requireGhostTableSignature(t, info, "gt_moved", 1, "void");
             registerGhostTableFunction(t, info, "gt_moved");
         }
         // @gt_ref_id / @gt_ref_resolve: nullable-ref hooks. @par_call / @await_call: async glue; all share the one-function-per-decorator map.
-        if (getDecorator(t.decorators, "gt_ref_id") != null) {
+        if (hub.impls.getDecorator(t.decorators, "gt_ref_id") != null) {
             requireGtRefSignature(t, info, "gt_ref_id", true);
             registerGhostTableFunction(t, info, "gt_ref_id");
         }
-        if (getDecorator(t.decorators, "gt_ref_resolve") != null) {
+        if (hub.impls.getDecorator(t.decorators, "gt_ref_resolve") != null) {
             requireGtRefSignature(t, info, "gt_ref_resolve", false);
             registerGhostTableFunction(t, info, "gt_ref_resolve");
         }
-        if (getDecorator(t.decorators, "par_call") != null) {
+        if (hub.impls.getDecorator(t.decorators, "par_call") != null) {
             requireAsyncGlueSignature(t, info, "par_call");
             registerGhostTableFunction(t, info, "par_call");
         }
-        if (getDecorator(t.decorators, "await_call") != null) {
+        if (hub.impls.getDecorator(t.decorators, "await_call") != null) {
             requireAsyncGlueSignature(t, info, "await_call");
             registerGhostTableFunction(t, info, "await_call");
         }
         // @sleep: call sites resolve it by mangled name (checkSleepCall), so no name forcing is needed.
-        if (getDecorator(t.decorators, "sleep") != null) {
+        if (hub.impls.getDecorator(t.decorators, "sleep") != null) {
             requireSleepSignature(t, info);
             registerGhostTableFunction(t, info, "sleep");
         }
     }
 
     /** @sleep takes one plain u64 and returns a plain u64, like C sleep(unsigned int). */
-    public void requireSleepSignature(Token t, FuncInfo info) {
+    public void requireSleepSignature(Token t, TypeCheckerModel.FuncInfo info) {
         if (info.paramTypes.size() != 1) {
             throw new CompilerException("type", t.file, t.line,
                     "'@sleep' requires exactly 1 parameter (matching the real C 'sleep(unsigned int)'), got "
                             + info.paramTypes.size());
         }
-        TypeInfo paramType = info.paramTypes.get(0);
+        TypeCheckerModel.TypeInfo paramType = info.paramTypes.get(0);
         if (paramType.storage != null || !paramType.baseType.equals("u64")) {
             throw new CompilerException("type", t.file, t.line,
                     "'@sleep's parameter must be a plain 'u64' (matching the real C 'sleep(unsigned int)'), "
@@ -162,7 +163,7 @@ abstract class TypeCheckerSignatures extends TypeCheckerImpls {
     }
 
     /** Fixed shape of @par_call / @await_call. See docs/TypeChecker.md, "Decorator signature checks". */
-    public void requireAsyncGlueSignature(Token t, FuncInfo info, String decoratorName) {
+    public void requireAsyncGlueSignature(Token t, TypeCheckerModel.FuncInfo info, String decoratorName) {
         boolean isPar = decoratorName.equals("par_call");
         if (info.paramTypes.size() != (isPar ? 3 : 2)) {
             throw new CompilerException("type", t.file, t.line,
@@ -172,20 +173,20 @@ abstract class TypeCheckerSignatures extends TypeCheckerImpls {
                             + ", got " + info.paramTypes.size());
         }
         if (isPar) {
-            TypeInfo tidParam = info.paramTypes.get(2);
+            TypeCheckerModel.TypeInfo tidParam = info.paramTypes.get(2);
             if (!"raw".equals(tidParam.storage) || !tidParam.baseType.equals("u64")) {
                 throw new CompilerException("type", t.file, t.line,
                         "'@par_call's third parameter (where the started thread's id is stored, or null) must be "
                                 + "'raw mut u64', got '" + tidParam.canonical() + "'");
             }
         }
-        TypeInfo fnParam = info.paramTypes.get(0);
+        TypeCheckerModel.TypeInfo fnParam = info.paramTypes.get(0);
         if (!"raw".equals(fnParam.storage) || !fnParam.baseType.equals("u8")) {
             throw new CompilerException("type", t.file, t.line,
                     "'@" + decoratorName + "'s first parameter (the trampoline function pointer) must be "
                             + "'raw u8', got '" + fnParam.canonical() + "'");
         }
-        TypeInfo handleParam = info.paramTypes.get(1);
+        TypeCheckerModel.TypeInfo handleParam = info.paramTypes.get(1);
         if (!"raw".equals(handleParam.storage) || !handleParam.baseType.equals("u8")) {
             throw new CompilerException("type", t.file, t.line,
                     "'@" + decoratorName + "'s second parameter (the async handle pointer) must be "
@@ -198,7 +199,7 @@ abstract class TypeCheckerSignatures extends TypeCheckerImpls {
         }
     }
 
-    public void requireAsyncParamShape(Token t, FuncInfo info) {
+    public void requireAsyncParamShape(Token t, TypeCheckerModel.FuncInfo info) {
         if (info.paramTypes.size() > 1) {
             throw new CompilerException("type", t.file, t.line,
                     "'@async' function '" + info.name + "' takes " + info.paramTypes.size()
@@ -207,9 +208,9 @@ abstract class TypeCheckerSignatures extends TypeCheckerImpls {
         if (info.paramTypes.isEmpty()) {
             return;
         }
-        TypeInfo paramType = info.paramTypes.get(0);
+        TypeCheckerModel.TypeInfo paramType = info.paramTypes.get(0);
         boolean fitsInOneRegister = paramType.storage != null
-                || ASYNC_PARAM_ALLOWED_BASE_TYPES.contains(paramType.baseType);
+                || TypeCheckerModel.ASYNC_PARAM_ALLOWED_BASE_TYPES.contains(paramType.baseType);
         if (!fitsInOneRegister) {
             throw new CompilerException("type", t.file, t.line,
                     "'@async' function '" + info.name + "'s parameter must fit in a single register (<=8 "
@@ -225,12 +226,12 @@ abstract class TypeCheckerSignatures extends TypeCheckerImpls {
      */
     public void forceGhostTableFunctionNames() {
         for (String decoratorName : Arrays.asList("gt_init", "gt_alive_check", "gt_destruct", "gt_register", "gt_moved", "gt_ref_id", "gt_ref_resolve")) {
-            FuncInfo decorated = ghostTableFunctions.get(decoratorName);
+            TypeCheckerModel.FuncInfo decorated = hub.model.ghostTableFunctions.get(decoratorName);
             if (decorated == null) {
                 continue;
             }
             if (!decorated.name.equals(decoratorName)) {
-                List<FuncInfo> collision = functions.get(decoratorName);
+                List<TypeCheckerModel.FuncInfo> collision = hub.model.functions.get(decoratorName);
                 if (collision != null && !collision.isEmpty()) {
                     throw new CompilerException("type", decorated.funcToken.file, decorated.funcToken.line,
                             "'" + decorated.name + "' is decorated '@" + decoratorName + "' but a separate "
@@ -245,18 +246,18 @@ abstract class TypeCheckerSignatures extends TypeCheckerImpls {
     }
 
     /** At most one function per ghost-table decorator in the whole compilation unit (imports included). */
-    public void registerGhostTableFunction(Token t, FuncInfo info, String decoratorName) {
-        FuncInfo existing = ghostTableFunctions.get(decoratorName);
+    public void registerGhostTableFunction(Token t, TypeCheckerModel.FuncInfo info, String decoratorName) {
+        TypeCheckerModel.FuncInfo existing = hub.model.ghostTableFunctions.get(decoratorName);
         if (existing != null && existing != info) {
             throw new CompilerException("type", t.file, t.line,
                     "only one function may be decorated '@" + decoratorName + "' in the whole compilation "
                             + "unit -- '" + existing.name + "' already carries it");
         }
-        ghostTableFunctions.put(decoratorName, info);
+        hub.model.ghostTableFunctions.put(decoratorName, info);
     }
 
     /** Parameter count is 0 (gt_init) or 1 (a `raw u8`, either mutability). */
-    public void requireGhostTableSignature(Token t, FuncInfo info, String decoratorName, int expectedParamCount,
+    public void requireGhostTableSignature(Token t, TypeCheckerModel.FuncInfo info, String decoratorName, int expectedParamCount,
             String expectedReturnBaseType) {
         if (info.paramTypes.size() != expectedParamCount) {
             throw new CompilerException("type", t.file, t.line,
@@ -264,7 +265,7 @@ abstract class TypeCheckerSignatures extends TypeCheckerImpls {
                             + info.paramTypes.size());
         }
         if (expectedParamCount == 1) {
-            TypeInfo paramType = info.paramTypes.get(0);
+            TypeCheckerModel.TypeInfo paramType = info.paramTypes.get(0);
             if (!"raw".equals(paramType.storage) || !paramType.baseType.equals("u8")) {
                 throw new CompilerException("type", t.file, t.line,
                         "'@" + decoratorName + "' requires its parameter to be 'raw u8', got '"
@@ -279,11 +280,11 @@ abstract class TypeCheckerSignatures extends TypeCheckerImpls {
     }
 
     /** `@gt_ref_id`: `func(ptr: raw u8) u64`; `@gt_ref_resolve`: `func(id: u64) raw u8`. */
-    public void requireGtRefSignature(Token t, FuncInfo info, String decoratorName, boolean idOfPointer) {
+    public void requireGtRefSignature(Token t, TypeCheckerModel.FuncInfo info, String decoratorName, boolean idOfPointer) {
         boolean ok = info.paramTypes.size() == 1;
         if (ok) {
-            TypeInfo p = info.paramTypes.get(0);
-            TypeInfo r = info.returnType;
+            TypeCheckerModel.TypeInfo p = info.paramTypes.get(0);
+            TypeCheckerModel.TypeInfo r = info.returnType;
             if (idOfPointer) {
                 ok = "raw".equals(p.storage) && p.baseType.equals("u8") && r.storage == null && r.baseType.equals("u64");
             } else {
@@ -297,13 +298,13 @@ abstract class TypeCheckerSignatures extends TypeCheckerImpls {
         }
     }
 
-    public boolean sameSignature(FuncInfo a, FuncInfo b) {
+    public boolean sameSignature(TypeCheckerModel.FuncInfo a, TypeCheckerModel.FuncInfo b) {
         if (a.paramTypes.size() != b.paramTypes.size()) {
             return false;
         }
         for (int i = 0; i < a.paramTypes.size(); i++) {
-            TypeInfo pa = a.paramTypes.get(i);
-            TypeInfo pb = b.paramTypes.get(i);
+            TypeCheckerModel.TypeInfo pa = a.paramTypes.get(i);
+            TypeCheckerModel.TypeInfo pb = b.paramTypes.get(i);
             if (!pa.baseType.equals(pb.baseType)) {
                 return false;
             }
@@ -315,9 +316,9 @@ abstract class TypeCheckerSignatures extends TypeCheckerImpls {
         return true;
     }
 
-    public FuncInfo functionInfoFor(Token funcTok) {
+    public TypeCheckerModel.FuncInfo functionInfoFor(Token funcTok) {
         String name = funcTok.sub.get(0).text;
-        for (FuncInfo info : functions.get(name)) {
+        for (TypeCheckerModel.FuncInfo info : hub.model.functions.get(name)) {
             if (info.funcToken == funcTok) {
                 return info;
             }
@@ -327,17 +328,17 @@ abstract class TypeCheckerSignatures extends TypeCheckerImpls {
     }
 
     /** Splits a flat token list on ',' / stray TERMINATORs into "name : type" groups (param lists may span lines). */
-    public List<NameType> parseParamList(List<Token> flat) {
+    public List<TypeCheckerModel.NameType> parseParamList(List<Token> flat) {
         return parseNameTypeGroupsFrom(flat, false);
     }
 
     /** Struct members only: the one place `swap` is recognized. */
-    public List<NameType> parseNameTypeGroup(List<Token> flat) {
+    public List<TypeCheckerModel.NameType> parseNameTypeGroup(List<Token> flat) {
         return parseNameTypeGroupsFrom(flat, true);
     }
 
-    public List<NameType> parseNameTypeGroupsFrom(List<Token> flat, boolean allowSwap) {
-        List<NameType> result = new ArrayList<>();
+    public List<TypeCheckerModel.NameType> parseNameTypeGroupsFrom(List<Token> flat, boolean allowSwap) {
+        List<TypeCheckerModel.NameType> result = new ArrayList<>();
         for (List<Token> group : splitIntoRawGroups(flat)) {
             result.add(parseOneNameType(group, allowSwap));
         }
@@ -366,7 +367,7 @@ abstract class TypeCheckerSignatures extends TypeCheckerImpls {
         return result;
     }
 
-    public NameType parseOneNameType(List<Token> group, boolean allowSwap) {
+    public TypeCheckerModel.NameType parseOneNameType(List<Token> group, boolean allowSwap) {
         boolean isSwap = false;
         Token swapTok = null;
         if (allowSwap && !group.isEmpty() && group.get(0).type == TokenType.OPERATOR
@@ -384,13 +385,13 @@ abstract class TypeCheckerSignatures extends TypeCheckerImpls {
         }
         String name = group.get(0).text;
         List<Token> typeTokens = group.subList(2, group.size());
-        TypeInfo type = isSwap ? resolveSwapMemberType(typeTokens, group.get(0))
+        TypeCheckerModel.TypeInfo type = isSwap ? resolveSwapMemberType(typeTokens, group.get(0))
                 : resolveTypeAnnotation(typeTokens, group.get(0));
-        return new NameType(name, type, isSwap);
+        return new TypeCheckerModel.NameType(name, type, isSwap);
     }
 
     /** A `swap` member's type must start with `atomic` (accepted only here), be concretely mut and carry no storage. See docs/TypeChecker.md, "Name:type groups and swap members". */
-    public TypeInfo resolveSwapMemberType(List<Token> typeTokens, Token at) {
+    public TypeCheckerModel.TypeInfo resolveSwapMemberType(List<Token> typeTokens, Token at) {
         if (typeTokens.isEmpty() || typeTokens.get(0).type != TokenType.KEYWORD
                 || !typeTokens.get(0).text.equals("atomic")) {
             throw new CompilerException("type", at.file, at.line,
@@ -398,7 +399,7 @@ abstract class TypeCheckerSignatures extends TypeCheckerImpls {
                             + "'swap flag: atomic mut MutexState'");
         }
         List<Token> rest = typeTokens.subList(1, typeTokens.size());
-        TypeInfo resolved = resolveTypeAnnotation(rest, at);
+        TypeCheckerModel.TypeInfo resolved = resolveTypeAnnotation(rest, at);
         if (!"mut".equals(resolved.mutability)) {
             throw new CompilerException("type", at.file, at.line,
                     "a 'swap'-tagged member's atomic type must be concretely 'mut' -- found '"
@@ -423,7 +424,7 @@ abstract class TypeCheckerSignatures extends TypeCheckerImpls {
      * Resolves a type annotation, splicing in `type` aliases first (textual substitution, cycle-checked); the outermost
      * alias name is kept as TypeInfo.aliasName (nominal tag only). See docs/TypeChecker.md, "Type annotation resolution".
      */
-    public TypeInfo resolveTypeAnnotation(List<Token> typeTokens, Token at) {
+    public TypeCheckerModel.TypeInfo resolveTypeAnnotation(List<Token> typeTokens, Token at) {
         return resolveTypeAnnotation(typeTokens, at, false);
     }
 
@@ -431,14 +432,14 @@ abstract class TypeCheckerSignatures extends TypeCheckerImpls {
      * `allowIndeterminateMutability` is true only when resolving a function's own return type (func/impl method, extern,
      * interface method signature); nested resolutions always pass false. See docs/TypeChecker.md, "Type annotation resolution".
      */
-    public TypeInfo resolveTypeAnnotation(List<Token> typeTokens, Token at, boolean allowIndeterminateMutability) {
+    public TypeCheckerModel.TypeInfo resolveTypeAnnotation(List<Token> typeTokens, Token at, boolean allowIndeterminateMutability) {
         String[] aliasNameHolder = new String[1];
         List<Token> expanded = expandAliases(typeTokens, new HashSet<>(), aliasNameHolder, at);
-        TypeInfo resolved = resolveTypeAnnotationRaw(expanded, at, allowIndeterminateMutability);
+        TypeCheckerModel.TypeInfo resolved = resolveTypeAnnotationRaw(expanded, at, allowIndeterminateMutability);
         if (aliasNameHolder[0] == null) {
             return resolved;
         }
-        return new TypeInfo(resolved.storage, resolved.mutability, resolved.baseType, aliasNameHolder[0]);
+        return new TypeCheckerModel.TypeInfo(resolved.storage, resolved.mutability, resolved.baseType, aliasNameHolder[0]);
     }
 
     /** Splices alias base types in place; only the first VARREF counts as the base type, the rest (array suffixes etc.) passes through. */
@@ -448,7 +449,7 @@ abstract class TypeCheckerSignatures extends TypeCheckerImpls {
         for (Token t : tokens) {
             if (t.type == TokenType.VARREF && !sawBaseType) {
                 sawBaseType = true;
-                if (aliasRawTargets.containsKey(t.text)) {
+                if (hub.model.aliasRawTargets.containsKey(t.text)) {
                     if (expanding.contains(t.text)) {
                         throw new CompilerException("type", t.file, t.line,
                                 "circular type alias involving '" + t.text + "'");
@@ -457,7 +458,7 @@ abstract class TypeCheckerSignatures extends TypeCheckerImpls {
                         aliasNameHolder[0] = t.text;
                     }
                     expanding.add(t.text);
-                    result.addAll(expandAliases(aliasRawTargets.get(t.text), expanding, aliasNameHolder, at));
+                    result.addAll(expandAliases(hub.model.aliasRawTargets.get(t.text), expanding, aliasNameHolder, at));
                     expanding.remove(t.text);
                     continue;
                 }
@@ -469,7 +470,7 @@ abstract class TypeCheckerSignatures extends TypeCheckerImpls {
 
     /** A struct/interface named in a type annotation must be @pub or declared in the same file; other names are ignored. */
     public void checkTypeNameVisibility(String baseType, Token at) {
-        StructInfo si = structs.get(baseType);
+        TypeCheckerModel.StructInfo si = hub.model.structs.get(baseType);
         if (si != null) {
             if (!si.isPublic && !si.declTok.file.equals(at.file)) {
                 throw new CompilerException("type", at.file, at.line,
@@ -478,7 +479,7 @@ abstract class TypeCheckerSignatures extends TypeCheckerImpls {
             }
             return;
         }
-        InterfaceInfo ii = interfaces.get(baseType);
+        TypeCheckerModel.InterfaceInfo ii = hub.model.interfaces.get(baseType);
         if (ii != null && !ii.isPublic && !ii.declTok.file.equals(at.file)) {
             throw new CompilerException("type", at.file, at.line,
                     "'" + baseType + "' is private -- not accessible outside the file it's declared "
@@ -496,11 +497,11 @@ abstract class TypeCheckerSignatures extends TypeCheckerImpls {
         }
     }
 
-    public TypeInfo resolveTypeAnnotationRaw(List<Token> typeTokens, Token at) {
+    public TypeCheckerModel.TypeInfo resolveTypeAnnotationRaw(List<Token> typeTokens, Token at) {
         return resolveTypeAnnotationRaw(typeTokens, at, false);
     }
 
-    public TypeInfo resolveTypeAnnotationRaw(List<Token> typeTokens, Token at,
+    public TypeCheckerModel.TypeInfo resolveTypeAnnotationRaw(List<Token> typeTokens, Token at,
             boolean allowIndeterminateMutability) {
         // `const` must be leftmost; stripped before the modifier loop (a let's const is Token.isConst, set earlier).
         boolean isConst = false;
@@ -520,11 +521,11 @@ abstract class TypeCheckerSignatures extends TypeCheckerImpls {
         Token baseTypeTok = null;
         StringBuilder arraySuffix = new StringBuilder();
         boolean baseIsIncompleteRange = false;
-        TypeInfo dynArrayElementType = null;
-        TypeInfo unsafeDynArrayElementType = null;
-        TypeInfo rawPointeeType = null;
-        List<TypeInfo> funcPtrParams = null;
-        TypeInfo funcPtrReturn = null;
+        TypeCheckerModel.TypeInfo dynArrayElementType = null;
+        TypeCheckerModel.TypeInfo unsafeDynArrayElementType = null;
+        TypeCheckerModel.TypeInfo rawPointeeType = null;
+        List<TypeCheckerModel.TypeInfo> funcPtrParams = null;
+        TypeCheckerModel.TypeInfo funcPtrReturn = null;
         Set<String> funcPtrDecorators = null;
         String funcPtrCallConventionName = null;
 
@@ -608,11 +609,11 @@ abstract class TypeCheckerSignatures extends TypeCheckerImpls {
                     storage = t.text;
                     if (storage.equals("owns") || storage.equals("ref")) {
                         // Any annotation that writes owns/ref counts (syntactic presence).
-                        usesOwnsRefDynNew = true;
+                        hub.model.usesOwnsRefDynNew = true;
                     }
                 }
             } else if (t.type == TokenType.VARREF && baseType == null && i + 1 < typeTokens.size()
-                    && isFloatStateName(t.text)) {
+                    && hub.model.isFloatStateName(t.text)) {
                 // Float-state modifier (finite|infinite|nan, chainable with '|'): contextual identifiers, not keywords.
                 // A VARREF that is the last token is the base type instead.
                 if (floatStates != null) {
@@ -622,7 +623,7 @@ abstract class TypeCheckerSignatures extends TypeCheckerImpls {
                 floatStates = new java.util.TreeSet<>();
                 floatStates.add(t.text);
                 while (i + 2 < typeTokens.size() && typeTokens.get(i + 1).type == TokenType.OPERATOR
-                        && typeTokens.get(i + 1).text.equals("|") && isFloatStateName(typeTokens.get(i + 2).text)) {
+                        && typeTokens.get(i + 1).text.equals("|") && hub.model.isFloatStateName(typeTokens.get(i + 2).text)) {
                     String next = typeTokens.get(i + 2).text;
                     if (!floatStates.add(next)) {
                         throw new CompilerException("type", t.file, t.line,
@@ -630,7 +631,7 @@ abstract class TypeCheckerSignatures extends TypeCheckerImpls {
                     }
                     i += 2;
                 }
-                if (floatStates.size() == FLOAT_STATE_NAMES.size()) {
+                if (floatStates.size() == TypeCheckerModel.FLOAT_STATE_NAMES.size()) {
                     throw new CompilerException("type", t.file, t.line,
                             "'" + String.join("|", floatStates) + "' names every possible float state -- "
                                     + "write the bare type instead (with no state modifier at all), which "
@@ -654,7 +655,7 @@ abstract class TypeCheckerSignatures extends TypeCheckerImpls {
                 }
                 unsafeDynArrayElementType = resolveTypeAnnotationRaw(args.get(0), at);
                 checkNotRefSomeElement(unsafeDynArrayElementType, parenTok, "an 'unsafe dynarray' element type");
-                baseType = "unsafe_dynarray(" + TypeInfo.dynArrayElementText(unsafeDynArrayElementType) + ")";
+                baseType = "unsafe_dynarray(" + TypeCheckerModel.TypeInfo.dynArrayElementText(unsafeDynArrayElementType) + ")";
                 i += 2; // consumed 'dynarray' and the '(' token's whole span as one unit
             } else if (t.type == TokenType.VARREF && t.text.equals("dynarray") && baseType == null) {
                 // "dynarray(T)": always complete, no bare form.
@@ -671,7 +672,7 @@ abstract class TypeCheckerSignatures extends TypeCheckerImpls {
                 }
                 dynArrayElementType = resolveTypeAnnotationRaw(args.get(0), at);
                 checkNotRefSomeElement(dynArrayElementType, next, "a 'dynarray' element type");
-                baseType = "dynarray(" + TypeInfo.dynArrayElementText(dynArrayElementType) + ")";
+                baseType = "dynarray(" + TypeCheckerModel.TypeInfo.dynArrayElementText(dynArrayElementType) + ")";
                 i++; // consumed the '(' token's whole span as one unit
             } else if (t.type == TokenType.VARREF && t.text.equals("slice") && baseType == null) {
                 // `slice` was removed from the language; rejected with a dedicated message.
@@ -724,7 +725,7 @@ abstract class TypeCheckerSignatures extends TypeCheckerImpls {
             }
             // No fixed-array-specific `ref some` restriction here. See docs/TypeChecker.md, "Type annotation resolution".
         }
-        if (floatStates != null && !isFloatType(baseType)) {
+        if (floatStates != null && !TypeCheckerModel.isFloatType(baseType)) {
             throw new CompilerException("type", at.file, at.line,
                     "a float-state modifier ('" + String.join("|", floatStates) + "') requires 'f32' or 'f64', got '"
                             + baseType + "'");
@@ -743,9 +744,9 @@ abstract class TypeCheckerSignatures extends TypeCheckerImpls {
                         "type annotations require an explicit 'mut' or 'imut' -- mutability is never "
                                 + "inferred or defaulted here");
             }
-            return TypeInfo.funcPointer(mutability, funcPtrParams, funcPtrReturn,
+            return TypeCheckerModel.TypeInfo.funcPointer(mutability, funcPtrParams, funcPtrReturn,
                     funcPtrDecorators != null ? funcPtrDecorators : new HashSet<>(),
-                    funcPtrCallConventionName != null ? funcPtrCallConventionName : config.defaultConvention)
+                    funcPtrCallConventionName != null ? funcPtrCallConventionName : hub.model.config.defaultConvention)
                     .withSome(isSome).withFloatStates(floatStates).withConst(isConst);
         } else if (!baseType.startsWith("range(")
                 && !baseType.startsWith("dynarray(") && !baseType.startsWith("unsafe_dynarray(")
@@ -769,7 +770,7 @@ abstract class TypeCheckerSignatures extends TypeCheckerImpls {
         // string and interface types require storage; structs/enums may be inline values. Array rules are enforced by the caller.
         // The visibility check is anchored to baseTypeTok (see above).
         checkTypeNameVisibility(baseType, baseTypeTok != null ? baseTypeTok : at);
-        if ((pointerLikeBaseTypes.contains(baseType) || interfaces.containsKey(baseType)) && storage == null) {
+        if ((hub.model.pointerLikeBaseTypes.contains(baseType) || hub.model.interfaces.containsKey(baseType)) && storage == null) {
             throw new CompilerException("type", at.file, at.line,
                     "type '" + baseType + "' is a pointer type and requires a storage modifier "
                             + "(owns/ref/raw/auto/static)");
@@ -784,7 +785,7 @@ abstract class TypeCheckerSignatures extends TypeCheckerImpls {
                                 + "owned value, with no other storage it could have -- '" + storage
                                 + "' can't be written before it");
             }
-            return new TypeInfo("owns", mutability, baseType + arraySuffix, null,
+            return new TypeCheckerModel.TypeInfo("owns", mutability, baseType + arraySuffix, null,
                     null, null, null, null, dynArrayElementType, null)
                             .withSome(isSome).withFloatStates(floatStates).withConst(isConst);
         }
@@ -796,22 +797,22 @@ abstract class TypeCheckerSignatures extends TypeCheckerImpls {
                                 + "heap-allocated, owned value, with no other storage it could have -- '"
                                 + storage + "' can't be written before it");
             }
-            return new TypeInfo("owns", mutability, baseType + arraySuffix, null,
+            return new TypeCheckerModel.TypeInfo("owns", mutability, baseType + arraySuffix, null,
                     null, null, null, null, null, unsafeDynArrayElementType, null, null,
                     isSome, floatStates, isConst, false);
         }
         if (rawPointeeType != null) {
             // Explicit nested raw: keep rawPointeeType.
-            return new TypeInfo(storage, mutability, baseType + arraySuffix, null,
+            return new TypeCheckerModel.TypeInfo(storage, mutability, baseType + arraySuffix, null,
                     null, null, null, null, null, rawPointeeType)
                             .withSome(isSome).withFloatStates(floatStates).withConst(isConst);
         }
-        return new TypeInfo(storage, mutability, baseType + arraySuffix, null)
+        return new TypeCheckerModel.TypeInfo(storage, mutability, baseType + arraySuffix, null)
                 .withSome(isSome).withFloatStates(floatStates).withConst(isConst);
     }
 
     /** `ref some` is rejected as a dynarray / unsafe-dynarray element type (struct members: validateNoRefSomeStructMembers). */
-    public void checkNotRefSomeElement(TypeInfo elementType, Token at, String contextDesc) {
+    public void checkNotRefSomeElement(TypeCheckerModel.TypeInfo elementType, Token at, String contextDesc) {
         if ("ref".equals(elementType.storage) && elementType.isSome) {
             throw new CompilerException("type", at.file, at.line,
                     "'ref some' is not allowed as " + contextDesc);
@@ -835,10 +836,10 @@ abstract class TypeCheckerSignatures extends TypeCheckerImpls {
             throw new CompilerException("type", parenTok.file, parenTok.line,
                     "'@call_convention' takes exactly one argument, e.g. '@call_convention(win64)'");
         }
-        if (!config.callingConventions.containsKey(args.get(0))) {
+        if (!hub.model.config.callingConventions.containsKey(args.get(0))) {
             throw new CompilerException("type", parenTok.file, parenTok.line,
                     "'@call_convention(" + args.get(0) + ")' is not a calling convention declared in "
-                            + "compiler.config (known: " + config.callingConventions.keySet() + ")");
+                            + "compiler.config (known: " + hub.model.config.callingConventions.keySet() + ")");
         }
         return args.get(0);
     }
@@ -892,25 +893,25 @@ abstract class TypeCheckerSignatures extends TypeCheckerImpls {
     }
 
     public boolean isKnownType(String name) {
-        if (NUMERIC_TYPES.contains(name)) {
+        if (TypeCheckerModel.NUMERIC_TYPES.contains(name)) {
             return true;
         }
         switch (name) {
             case "bool": case "char": case "string": case "void": case "null":
                 return true;
             default:
-                return structs.containsKey(name) || enums.containsKey(name) || interfaces.containsKey(name);
+                return hub.model.structs.containsKey(name) || hub.model.enums.containsKey(name) || hub.model.interfaces.containsKey(name);
         }
     }
 
     /** A call made in a "safe" context may not reach "unsafe" code, transitively. Runs after all bodies are checked. See docs/TypeChecker.md, "Whole-program call-graph checks". */
     public void checkSafetyCallGraph() {
-        Map<FuncInfo, List<FuncInfo>> callees = new HashMap<>();
-        for (CallEdge e : callEdges) {
+        Map<TypeCheckerModel.FuncInfo, List<TypeCheckerModel.FuncInfo>> callees = new HashMap<>();
+        for (TypeCheckerModel.CallEdge e : hub.model.callEdges) {
             callees.computeIfAbsent(e.caller, k -> new ArrayList<>()).add(e.callee);
         }
-        Map<FuncInfo, Boolean> reachesUnsafeCache = new HashMap<>();
-        for (CallEdge e : callEdges) {
+        Map<TypeCheckerModel.FuncInfo, Boolean> reachesUnsafeCache = new HashMap<>();
+        for (TypeCheckerModel.CallEdge e : hub.model.callEdges) {
             if (!e.safety.equals("safe")) {
                 continue;
             }
@@ -925,31 +926,31 @@ abstract class TypeCheckerSignatures extends TypeCheckerImpls {
 
     /** Direct recursion needs @recursive; any indirect cycle is an error. `call()` targets are not CallEdges, so they are never seen. See docs/TypeChecker.md, "Whole-program call-graph checks". */
     public void checkNoRecursion() {
-        Map<FuncInfo, List<CallEdge>> outEdges = new HashMap<>();
-        for (CallEdge e : callEdges) {
+        Map<TypeCheckerModel.FuncInfo, List<TypeCheckerModel.CallEdge>> outEdges = new HashMap<>();
+        for (TypeCheckerModel.CallEdge e : hub.model.callEdges) {
             outEdges.computeIfAbsent(e.caller, k -> new ArrayList<>()).add(e);
         }
-        for (CallEdge e : callEdges) {
-            if (e.caller == e.callee && getDecorator(e.caller.funcToken.decorators, "recursive") == null) {
+        for (TypeCheckerModel.CallEdge e : hub.model.callEdges) {
+            if (e.caller == e.callee && hub.impls.getDecorator(e.caller.funcToken.decorators, "recursive") == null) {
                 throw new CompilerException("type", e.at.file, e.at.line,
                         "'" + e.caller.name + "' calls itself -- recursion is not allowed unless the "
                                 + "function is decorated '@recursive'");
             }
         }
-        Set<FuncInfo> visited = new HashSet<>();
-        Set<FuncInfo> onStack = new HashSet<>();
-        for (FuncInfo start : outEdges.keySet()) {
+        Set<TypeCheckerModel.FuncInfo> visited = new HashSet<>();
+        Set<TypeCheckerModel.FuncInfo> onStack = new HashSet<>();
+        for (TypeCheckerModel.FuncInfo start : outEdges.keySet()) {
             if (!visited.contains(start)) {
                 detectIndirectCycle(start, outEdges, visited, onStack);
             }
         }
     }
 
-    public void detectIndirectCycle(FuncInfo f, Map<FuncInfo, List<CallEdge>> outEdges, Set<FuncInfo> visited,
-            Set<FuncInfo> onStack) {
+    public void detectIndirectCycle(TypeCheckerModel.FuncInfo f, Map<TypeCheckerModel.FuncInfo, List<TypeCheckerModel.CallEdge>> outEdges, Set<TypeCheckerModel.FuncInfo> visited,
+            Set<TypeCheckerModel.FuncInfo> onStack) {
         visited.add(f);
         onStack.add(f);
-        for (CallEdge e : outEdges.getOrDefault(f, new ArrayList<>())) {
+        for (TypeCheckerModel.CallEdge e : outEdges.getOrDefault(f, new ArrayList<>())) {
             if (e.caller == e.callee) {
                 continue; // direct self-recursion already checked separately, with its own rule
             }
@@ -969,33 +970,33 @@ abstract class TypeCheckerSignatures extends TypeCheckerImpls {
 
     /** No `throw` may be reachable from a gt_* decorated function (a local try/catch is fine). See docs/TypeChecker.md, "Whole-program call-graph checks". */
     public void validateNoThrowReachableFromGhostTableFunctions() {
-        List<FuncInfo> gtFuncs = new ArrayList<>();
+        List<TypeCheckerModel.FuncInfo> gtFuncs = new ArrayList<>();
         for (String decoratorName : Arrays.asList("gt_init", "gt_alive_check", "gt_destruct", "gt_register", "gt_moved", "gt_ref_id", "gt_ref_resolve")) {
-            FuncInfo f = ghostTableFunctions.get(decoratorName);
+            TypeCheckerModel.FuncInfo f = hub.model.ghostTableFunctions.get(decoratorName);
             if (f != null) {
                 gtFuncs.add(f);
             }
         }
-        if (gtFuncs.isEmpty() || throwSites.isEmpty()) {
+        if (gtFuncs.isEmpty() || hub.model.throwSites.isEmpty()) {
             return;
         }
-        Map<FuncInfo, List<FuncInfo>> callees = new HashMap<>();
-        for (CallEdge e : callEdges) {
+        Map<TypeCheckerModel.FuncInfo, List<TypeCheckerModel.FuncInfo>> callees = new HashMap<>();
+        for (TypeCheckerModel.CallEdge e : hub.model.callEdges) {
             callees.computeIfAbsent(e.caller, k -> new ArrayList<>()).add(e.callee);
         }
-        Set<FuncInfo> gtFuncSet = new HashSet<>(gtFuncs);
-        Set<FuncInfo> reachable = new HashSet<>();
-        List<FuncInfo> stack = new ArrayList<>(gtFuncs);
+        Set<TypeCheckerModel.FuncInfo> gtFuncSet = new HashSet<>(gtFuncs);
+        Set<TypeCheckerModel.FuncInfo> reachable = new HashSet<>();
+        List<TypeCheckerModel.FuncInfo> stack = new ArrayList<>(gtFuncs);
         reachable.addAll(gtFuncs);
         while (!stack.isEmpty()) {
-            FuncInfo current = stack.remove(stack.size() - 1);
-            for (FuncInfo callee : callees.getOrDefault(current, Collections.emptyList())) {
+            TypeCheckerModel.FuncInfo current = stack.remove(stack.size() - 1);
+            for (TypeCheckerModel.FuncInfo callee : callees.getOrDefault(current, Collections.emptyList())) {
                 if (reachable.add(callee)) {
                     stack.add(callee);
                 }
             }
         }
-        for (ThrowSite site : throwSites) {
+        for (TypeCheckerModel.ThrowSite site : hub.model.throwSites) {
             if (reachable.contains(site.func) && !gtFuncSet.contains(site.func)) {
                 throw new CompilerException("type", site.at.file, site.at.line,
                         "'throw' is not allowed here -- '" + site.func.name + "' is (transitively) "
@@ -1009,7 +1010,7 @@ abstract class TypeCheckerSignatures extends TypeCheckerImpls {
     }
 
     /** True when `t` is an `auto`, or an array / dynarray of them (a pointer to a stack slot that cannot outlive its frame). */
-    public boolean typeHoldsAuto(TypeInfo t) {
+    public boolean typeHoldsAuto(TypeCheckerModel.TypeInfo t) {
         if (t == null) {
             return false;
         }
@@ -1026,7 +1027,7 @@ abstract class TypeCheckerSignatures extends TypeCheckerImpls {
         if (base == null) {
             return false;
         }
-        base = stripArrayDims(base);
+        base = hub.declarations.stripArrayDims(base);
         if (base.startsWith("dynarray(") || base.startsWith("unsafe_dynarray(")) {
             int open = base.indexOf('(');
             int close = base.lastIndexOf(')');
@@ -1035,8 +1036,8 @@ abstract class TypeCheckerSignatures extends TypeCheckerImpls {
         return false;
     }
 
-    public TypeInfo parseDynArrayElementTextForCheck(String text) {
-        return text.startsWith("auto_") ? new TypeInfo("auto", "indeterminate", text.substring(5)) : new TypeInfo(null, "indeterminate", text);
+    public TypeCheckerModel.TypeInfo parseDynArrayElementTextForCheck(String text) {
+        return text.startsWith("auto_") ? new TypeCheckerModel.TypeInfo("auto", "indeterminate", text.substring(5)) : new TypeCheckerModel.TypeInfo(null, "indeterminate", text);
     }
 
     /**
@@ -1045,8 +1046,8 @@ abstract class TypeCheckerSignatures extends TypeCheckerImpls {
      * (see `requireNoAutoReturn`). An `auto` parameter or local is fine.
      */
     public void validateNoAutoStructMembers() {
-        for (StructInfo si : structs.values()) {
-            for (Map.Entry<String, TypeInfo> member : si.members.entrySet()) {
+        for (TypeCheckerModel.StructInfo si : hub.model.structs.values()) {
+            for (Map.Entry<String, TypeCheckerModel.TypeInfo> member : si.members.entrySet()) {
                 if (typeHoldsAuto(member.getValue())) {
                     throw new CompilerException("type", si.declTok.file, si.declTok.line,
                             "'" + si.name + "'s member '" + member.getKey() + "' is an 'auto' pointer (" + member.getValue().canonical()
@@ -1058,7 +1059,7 @@ abstract class TypeCheckerSignatures extends TypeCheckerImpls {
     }
 
     /** A container (array / dynarray) of `auto`: a callee could push its own local's address into a longer-lived container. */
-    public void requireNoAutoContainer(TypeInfo t, Token where, String what) {
+    public void requireNoAutoContainer(TypeCheckerModel.TypeInfo t, Token where, String what) {
         if (t != null && !"auto".equals(t.storage) && typeHoldsAuto(t)) {
             throw new CompilerException("type", where.file, where.line,
                     what + " has the type '" + t.canonical() + "', a container of 'auto' pointers: an 'auto' points into a stack frame, "
@@ -1066,7 +1067,7 @@ abstract class TypeCheckerSignatures extends TypeCheckerImpls {
         }
     }
 
-    public void requireNoAutoReturn(FuncInfo f) {
+    public void requireNoAutoReturn(TypeCheckerModel.FuncInfo f) {
         for (int pi = 0; pi < f.paramTypes.size(); pi++) {
             requireNoAutoContainer(f.paramTypes.get(pi), f.funcToken, "parameter '" + f.paramNames.get(pi) + "' of '" + f.name + "'");
         }
@@ -1079,9 +1080,9 @@ abstract class TypeCheckerSignatures extends TypeCheckerImpls {
 
     /** `ref some` is rejected as a struct member type; members bypass checkNotRefSomeElement, hence this post-collection pass. */
     public void validateNoRefSomeStructMembers() {
-        for (StructInfo si : structs.values()) {
-            for (Map.Entry<String, TypeInfo> member : si.members.entrySet()) {
-                TypeInfo mt = member.getValue();
+        for (TypeCheckerModel.StructInfo si : hub.model.structs.values()) {
+            for (Map.Entry<String, TypeCheckerModel.TypeInfo> member : si.members.entrySet()) {
+                TypeCheckerModel.TypeInfo mt = member.getValue();
                 if ("ref".equals(mt.storage) && mt.isSome) {
                     throw new CompilerException("type", si.declTok.file, si.declTok.line,
                             "'" + si.name + "'s member '" + member.getKey() + "' is 'ref some' -- "
@@ -1091,26 +1092,26 @@ abstract class TypeCheckerSignatures extends TypeCheckerImpls {
         }
     }
 
-    public TypeInfo declaredTypeIncludingGlobals(Token node, Scope scope) {
+    public TypeCheckerModel.TypeInfo declaredTypeIncludingGlobals(Token node, TypeCheckerModel.Scope scope) {
         if (node.type == TokenType.VARREF && scope.lookup(node.text) == null) {
-            return globals.get(node.text);
+            return hub.model.globals.get(node.text);
         }
         if (node.type == TokenType.OPERATOR && ".".equals(node.text) && node.right != null && node.right.type == TokenType.VARREF) {
-            TypeInfo l = declaredTypeIncludingGlobals(node.left, scope);
-            StructInfo si = l == null ? null : structs.get(l.baseType);
+            TypeCheckerModel.TypeInfo l = declaredTypeIncludingGlobals(node.left, scope);
+            TypeCheckerModel.StructInfo si = l == null ? null : hub.model.structs.get(l.baseType);
             return si == null ? null : si.members.get(node.right.text);
         }
-        return lookupDeclaredTypeStructurally(node, scope);
+        return hub.statements.lookupDeclaredTypeStructurally(node, scope);
     }
 
     /** Whether the assignment target `a.b.c` / `a.items[i]` lies inside a swap-lock struct. */
-    public boolean assignsInsideSwapLockStruct(Token target, Scope scope) {
+    public boolean assignsInsideSwapLockStruct(Token target, TypeCheckerModel.Scope scope) {
         Token cur = target;
         while (cur != null && cur.type == TokenType.OPERATOR && (".".equals(cur.text) || "LOOKUP".equals(cur.text)) && cur.left != null) {
             if (".".equals(cur.text)) {
-                TypeInfo holder = declaredTypeIncludingGlobals(cur.left, scope);
+                TypeCheckerModel.TypeInfo holder = declaredTypeIncludingGlobals(cur.left, scope);
                 if (holder != null && holder.baseType != null) {
-                    StructInfo si = structs.get(holder.baseType);
+                    TypeCheckerModel.StructInfo si = hub.model.structs.get(holder.baseType);
                     if (si != null && si.swapFieldName != null) {
                         return true;
                     }
@@ -1179,14 +1180,14 @@ abstract class TypeCheckerSignatures extends TypeCheckerImpls {
 
     /** No `ref`/`auto` anywhere inside a `@lock` struct (nested structs, arrays, owns pointees, interface implementers). See docs/TypeChecker.md, "Lock struct rules". */
     public void validateNoPointersInLockStructs() {
-        for (Map.Entry<String, StructInfo> entry : structs.entrySet()) {
-            StructInfo info = entry.getValue();
+        for (Map.Entry<String, TypeCheckerModel.StructInfo> entry : hub.model.structs.entrySet()) {
+            TypeCheckerModel.StructInfo info = entry.getValue();
             if (info.lockFieldName == null) {
                 continue;
             }
             Set<String> visiting = new HashSet<>();
             visiting.add(entry.getKey());
-            for (Map.Entry<String, TypeInfo> member : info.members.entrySet()) {
+            for (Map.Entry<String, TypeCheckerModel.TypeInfo> member : info.members.entrySet()) {
                 String found = findLockForbiddenPointer(member.getValue(), entry.getKey() + "." + member.getKey(), visiting);
                 if (found != null) {
                     throw new CompilerException("type", info.declTok.file, info.declTok.line,
@@ -1199,7 +1200,7 @@ abstract class TypeCheckerSignatures extends TypeCheckerImpls {
     }
 
     /** The path of the first `ref`/`auto` reachable from `t` (through nested structs, fixed arrays, dynarrays and `owns` pointees), or null. */
-    public String findLockForbiddenPointer(TypeInfo t, String path, Set<String> visiting) {
+    public String findLockForbiddenPointer(TypeCheckerModel.TypeInfo t, String path, Set<String> visiting) {
         if (t == null) {
             return null;
         }
@@ -1210,21 +1211,21 @@ abstract class TypeCheckerSignatures extends TypeCheckerImpls {
         if (base == null) {
             return null;
         }
-        base = stripArrayDims(base);
+        base = hub.declarations.stripArrayDims(base);
         if (base.startsWith("dynarray(") || base.startsWith("unsafe_dynarray(")) {
             int open = base.indexOf('(');
             int close = base.lastIndexOf(')');
             if (close > open) {
-                return findLockForbiddenPointer(TypeInfo.parseDynArrayElementText(base.substring(open + 1, close)), path + "[]", visiting);
+                return findLockForbiddenPointer(TypeCheckerModel.TypeInfo.parseDynArrayElementText(base.substring(open + 1, close)), path + "[]", visiting);
             }
             return null;
         }
-        if (interfaces.containsKey(base)) {
+        if (hub.model.interfaces.containsKey(base)) {
             // an interface-typed value can hold any implementer, so every struct that implements it counts (whole program)
-            for (List<ImplInfo> implList : implsByConcreteType.values()) {
-                for (ImplInfo impl : implList) {
+            for (List<TypeCheckerModel.ImplInfo> implList : hub.model.implsByConcreteType.values()) {
+                for (TypeCheckerModel.ImplInfo impl : implList) {
                     if (base.equals(impl.interfaceName)) {
-                        String found = findLockForbiddenPointer(new TypeInfo(null, "imut", impl.concreteName),
+                        String found = findLockForbiddenPointer(new TypeCheckerModel.TypeInfo(null, "imut", impl.concreteName),
                                 path + "<" + impl.concreteName + ">", visiting);
                         if (found != null) {
                             return found;
@@ -1234,12 +1235,12 @@ abstract class TypeCheckerSignatures extends TypeCheckerImpls {
             }
             return null;
         }
-        StructInfo inner = structs.get(base);
+        TypeCheckerModel.StructInfo inner = hub.model.structs.get(base);
         if (inner == null || !visiting.add(base)) {
             return null;
         }
         try {
-            for (Map.Entry<String, TypeInfo> member : inner.members.entrySet()) {
+            for (Map.Entry<String, TypeCheckerModel.TypeInfo> member : inner.members.entrySet()) {
                 String found = findLockForbiddenPointer(member.getValue(), path + "." + member.getKey(), visiting);
                 if (found != null) {
                     return found;
@@ -1255,7 +1256,7 @@ abstract class TypeCheckerSignatures extends TypeCheckerImpls {
     public void validateNoRecursiveStructs() {
         Set<String> visited = new HashSet<>();
         Set<String> onStack = new HashSet<>();
-        for (String structName : structs.keySet()) {
+        for (String structName : hub.model.structs.keySet()) {
             if (!visited.contains(structName)) {
                 detectStructCycle(structName, visited, onStack);
             }
@@ -1265,15 +1266,15 @@ abstract class TypeCheckerSignatures extends TypeCheckerImpls {
     public void detectStructCycle(String structName, Set<String> visited, Set<String> onStack) {
         visited.add(structName);
         onStack.add(structName);
-        StructInfo info = structs.get(structName);
-        for (Map.Entry<String, TypeInfo> member : info.members.entrySet()) {
-            TypeInfo memberType = member.getValue();
+        TypeCheckerModel.StructInfo info = hub.model.structs.get(structName);
+        for (Map.Entry<String, TypeCheckerModel.TypeInfo> member : info.members.entrySet()) {
+            TypeCheckerModel.TypeInfo memberType = member.getValue();
             if ("ref".equals(memberType.storage) && !memberType.isSome) {
                 continue; // a plain (nullable) `ref` member may point back at its own struct: a borrow never owns, drops or clones what it points at
             }
             String memberBaseType = member.getValue().baseType;
-            String referencedStruct = isArrayType(memberBaseType) ? arrayElementType(memberBaseType) : memberBaseType;
-            if (!structs.containsKey(referencedStruct)) {
+            String referencedStruct = hub.isArrayType(memberBaseType) ? hub.arrayElementType(memberBaseType) : memberBaseType;
+            if (!hub.model.structs.containsKey(referencedStruct)) {
                 continue;
             }
             if (onStack.contains(referencedStruct)) {
@@ -1292,24 +1293,24 @@ abstract class TypeCheckerSignatures extends TypeCheckerImpls {
 
     /** Runs `requireNoAutoReturn` over every function and impl method, once all declarations are collected. */
     public void validateNoAutoReturns() {
-        for (List<FuncInfo> overloads : functions.values()) {
-            for (FuncInfo f : overloads) {
+        for (List<TypeCheckerModel.FuncInfo> overloads : hub.model.functions.values()) {
+            for (TypeCheckerModel.FuncInfo f : overloads) {
                 requireNoAutoReturn(f);
             }
         }
-        for (List<ImplInfo> impls : implsByConcreteType.values()) {
-            for (ImplInfo impl : impls) {
-                for (FuncInfo f : impl.methods.values()) {
+        for (List<TypeCheckerModel.ImplInfo> impls : hub.model.implsByConcreteType.values()) {
+            for (TypeCheckerModel.ImplInfo impl : impls) {
+                for (TypeCheckerModel.FuncInfo f : impl.methods.values()) {
                     requireNoAutoReturn(f);
                 }
-                for (FuncInfo f : impl.staticMethods.values()) {
+                for (TypeCheckerModel.FuncInfo f : impl.staticMethods.values()) {
                     requireNoAutoReturn(f);
                 }
             }
         }
     }
 
-    public boolean reachesUnsafe(FuncInfo f, Map<FuncInfo, List<FuncInfo>> callees, Map<FuncInfo, Boolean> cache) {
+    public boolean reachesUnsafe(TypeCheckerModel.FuncInfo f, Map<TypeCheckerModel.FuncInfo, List<TypeCheckerModel.FuncInfo>> callees, Map<TypeCheckerModel.FuncInfo, Boolean> cache) {
         Boolean cached = cache.get(f);
         if (cached != null) {
             return cached;
@@ -1317,7 +1318,7 @@ abstract class TypeCheckerSignatures extends TypeCheckerImpls {
         cache.put(f, false); // break cycles conservatively -- a cycle with no unsafe function in it never reaches one
         boolean result = f.safetyTag.equals("unsafe");
         if (!result) {
-            for (FuncInfo callee : callees.getOrDefault(f, Collections.emptyList())) {
+            for (TypeCheckerModel.FuncInfo callee : callees.getOrDefault(f, Collections.emptyList())) {
                 if (reachesUnsafe(callee, callees, cache)) {
                     result = true;
                     break;
@@ -1330,16 +1331,16 @@ abstract class TypeCheckerSignatures extends TypeCheckerImpls {
 
     /** Calling, from a `for i in dynarrayExpr{}` body, any function that may `resize` is barred outright (conservative: no alias analysis). See docs/TypeChecker.md, "Whole-program call-graph checks". */
     public void checkDynArrayForLoopResizeSafety() {
-        Map<FuncInfo, List<FuncInfo>> callees = new HashMap<>();
-        for (CallEdge e : callEdges) {
+        Map<TypeCheckerModel.FuncInfo, List<TypeCheckerModel.FuncInfo>> callees = new HashMap<>();
+        for (TypeCheckerModel.CallEdge e : hub.model.callEdges) {
             callees.computeIfAbsent(e.caller, k -> new ArrayList<>()).add(e.callee);
         }
-        Map<FuncInfo, Boolean> reachesResizeCache = new HashMap<>();
-        for (CallEdge e : callEdges) {
+        Map<TypeCheckerModel.FuncInfo, Boolean> reachesResizeCache = new HashMap<>();
+        for (TypeCheckerModel.CallEdge e : hub.model.callEdges) {
             if (!e.insideDynArrayForLoop) {
                 continue;
             }
-            if (funcsCallingResizeDirectly.contains(e.callee)
+            if (hub.model.funcsCallingResizeDirectly.contains(e.callee)
                     || reachesResize(e.callee, callees, reachesResizeCache)) {
                 throw new CompilerException("type", e.at.file, e.at.line,
                         "'" + e.caller.name + "' calls '" + e.callee.name + "' from inside a "
@@ -1350,15 +1351,15 @@ abstract class TypeCheckerSignatures extends TypeCheckerImpls {
         }
     }
 
-    public boolean reachesResize(FuncInfo f, Map<FuncInfo, List<FuncInfo>> callees, Map<FuncInfo, Boolean> cache) {
+    public boolean reachesResize(TypeCheckerModel.FuncInfo f, Map<TypeCheckerModel.FuncInfo, List<TypeCheckerModel.FuncInfo>> callees, Map<TypeCheckerModel.FuncInfo, Boolean> cache) {
         Boolean cached = cache.get(f);
         if (cached != null) {
             return cached;
         }
         cache.put(f, false); // break cycles conservatively, same reasoning reachesUnsafe already uses
-        boolean result = funcsCallingResizeDirectly.contains(f);
+        boolean result = hub.model.funcsCallingResizeDirectly.contains(f);
         if (!result) {
-            for (FuncInfo callee : callees.getOrDefault(f, Collections.emptyList())) {
+            for (TypeCheckerModel.FuncInfo callee : callees.getOrDefault(f, Collections.emptyList())) {
                 if (reachesResize(callee, callees, cache)) {
                     result = true;
                     break;

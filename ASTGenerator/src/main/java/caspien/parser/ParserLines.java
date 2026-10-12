@@ -15,11 +15,12 @@ import java.util.Set;
  */
 
 /** ParserLines: fields, nested types and static helpers of Parser (part 1 of 3; see README.md in this folder). */
-abstract class ParserLines {
-    // methods defined in later parts of the chain
-    abstract public List<Token> gatherKeywordBlocks(List<Token> lines, boolean isRoot);
+final class ParserLines {
+    private final Parser hub;
 
-
+    ParserLines(Parser hub) {
+        this.hub = hub;
+    }
 
     public static final String OPEN_CHARS = "([{";
     public static final String CLOSE_CHARS = ")]}";
@@ -115,7 +116,7 @@ abstract class ParserLines {
         collapseGenericInstantiationsInLines(lines);
         insertCallLookupInLines(lines);
 
-        return gatherKeywordBlocks(lines, true);
+        return hub.blocks.gatherKeywordBlocks(lines, true);
     }
 
     // ---- 1. nesting -------------------------------------------------
@@ -1166,6 +1167,6 @@ abstract class ParserLines {
      * "CLOSED:default" use site of an "impl default match @lock" template. See docs/Parser.md, "?catch and ?EXPR sugar".
      */
     public List<Token> gatherStatementLines(List<Token> lines) {
-        return gatherKeywordBlocks(lines, false);
+        return hub.blocks.gatherKeywordBlocks(lines, false);
     }
 }

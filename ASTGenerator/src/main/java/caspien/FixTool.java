@@ -1,5 +1,6 @@
 package caspien;
 import caspien.typechecker.TypeChecker;
+import caspien.typechecker.TypeCheckerModel;
 import caspien.bytecodeemitter.BytecodeEmitter;
 import caspien.gasreport.GasReport;
 
@@ -100,7 +101,7 @@ final class FixTool {
 
     /** `only` (nullable) limits unsafe-split to one block, "file:line". */
     static Run run(String modes, boolean write, boolean includeStdlib, BytecodeEmitter em, String hob, String backupDir,
-                   List<TypeChecker.SplitInfo> splitInfo, String only) throws IOException {
+                   List<TypeCheckerModel.SplitInfo> splitInfo, String only) throws IOException {
         FixTool t = new FixTool();
         Set<String> want = new LinkedHashSet<>(java.util.Arrays.asList(modes.split(",")));
         for (String m : want) {
@@ -240,12 +241,12 @@ final class FixTool {
      * it was made in). Blocks the plan cannot place (a tag used outside every statement, an unusual layout) are listed and left alone. Each new block
      * gets a `justify: TODO` scaffold; the block's existing justification stays on the first one.
      */
-    private void planUnsafeSplit(List<TypeChecker.SplitInfo> infos, List<String> files, String only) throws IOException {
+    private void planUnsafeSplit(List<TypeCheckerModel.SplitInfo> infos, List<String> files, String only) throws IOException {
         Set<String> mine = new LinkedHashSet<>();
         for (String f : files) {
             mine.add(DocComments.norm(f));
         }
-        for (TypeChecker.SplitInfo si : infos) {
+        for (TypeCheckerModel.SplitInfo si : infos) {
             String file = DocComments.norm(si.file);
             if (!mine.contains(file)) {
                 continue;

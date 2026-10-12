@@ -1,5 +1,6 @@
 package caspien.bytecodeemitter;
 import caspien.typechecker.TypeChecker;
+import caspien.typechecker.TypeCheckerModel;
 import caspien.*;
 
 import caspien.bytecode.BytecodeProgram;
@@ -23,27 +24,17 @@ import java.util.Set;
  */
 
 /** BytecodeEmitterCore: fields, nested types and static helpers of BytecodeEmitter (part 1 of 4; see README.md in this folder). */
-abstract class BytecodeEmitterCore {
-    // methods defined in later parts of the chain
-    abstract public String escapeForBytecode(String s);
-    abstract public String newLabel(String prefix);
-    abstract public Token letDeclarationOf(Token stmt);
-    abstract public void collectHoistedAllocs(List<Token> lines, List<Runnable> staticAllocs, List<Runnable> ordinaryAllocs);
-    abstract public void collectTryBlockLabels(List<Token> lines, Deque<Token> enclosingTryBlocks);
-    abstract public void emitCallSequence(Runnable pushFuncPtr, List<Token> regArgs, Runnable emitCallInstruction, String returnTypeOrNull, String conventionName);
-    abstract public void emitCallSequence(Runnable pushFuncPtr, List<Token> regArgs, Runnable emitCallInstruction, String returnTypeOrNull, String conventionName, int varargStartIndex);
-    abstract public void emitExpr(Token node);
-    abstract public void emitHoistedCatchBlocks(TypeChecker.FuncInfo info);
-    abstract public void emitInlineOwnsNullOut(Token base, String structName);
-    abstract public void emitStatement(Token stmt);
-    abstract public void emitStaticAlloc(String mnemonic, String name, String resolvedType, Token rhs);
+final class BytecodeEmitterCore {
+    private final BytecodeEmitter hub;
 
-
+    BytecodeEmitterCore(BytecodeEmitter hub) {
+        this.hub = hub;
+    }
 
     /** The mangled name of the function currently being emitted -- set/cleared around each emitFunc call, read by emitCall to detect a self-call (needed for RECURSIVE_CALL vs CALL). */
     public String currentFuncMangledName;
     /** Same lifetime as `currentFuncMangledName`, set/cleared alongside it -- needed by `emitDestructList` to look up an `owns` local's own type (`TypeChecker.FuncInfo.ownsLocalTypes`) when nulling a slot out after its own natural-end-of-scope destruct. */
-    public TypeChecker.FuncInfo currentFuncInfo;
+    public TypeCheckerModel.FuncInfo currentFuncInfo;
 
     /** Landing pads staged for call sites of the current function, drained before its FUNC_END; reset per emitFuncUnderName. See docs/BytecodeEmitter.md, "Call-site unwinding". */
     public List<PendingUnwindLandingPad> pendingCallSiteUnwindLandingPads = new ArrayList<>();
@@ -128,7 +119,7 @@ abstract class BytecodeEmitterCore {
     public static final String FUNCNAME_MARKER = "@@funcname@@";
 
     /** Source-level name for a trace: the emitted name without its signature suffix, plus where it is defined. */
-    public static String traceDisplayName(TypeChecker.FuncInfo info, String emittedName) {
+    public static String traceDisplayName(TypeCheckerModel.FuncInfo info, String emittedName) {
         int sig = emittedName.indexOf("__sig_");
         String name = sig >= 0 ? emittedName.substring(0, sig) : emittedName;
         String file = info.funcToken != null && info.funcToken.file != null ? info.funcToken.file : "?";
@@ -198,7 +189,7 @@ abstract class BytecodeEmitterCore {
     }
 
     /** A frame whose caller is not a traced Caspien frame: the real `main` (C entry point or event loop), a thread trampoline, an exported function. */
-    public static boolean isTraceRoot(TypeChecker.FuncInfo info, String emittedName) {
+    public static boolean isTraceRoot(TypeCheckerModel.FuncInfo info, String emittedName) {
         return emittedName.equals("main") || emittedName.startsWith("__trampoline_") || info.isExported;
     }
 
@@ -319,7 +310,6 @@ abstract class BytecodeEmitterCore {
         }
     }
 
-
     public static String baseOfCanonical(String canonical) {
         return canonical.substring(canonical.lastIndexOf('_') + 1);
     }
@@ -362,18 +352,18 @@ abstract class BytecodeEmitterCore {
 
     public BytecodeProgram emit(List<Token> rootLines, TypeChecker checker) {
         this.checker = checker;
-        Map<String, TypeChecker.StructInfo> structs = checker.getStructs();
-        Map<String, TypeChecker.EnumInfo> enums = checker.getEnums();
+        Map<String, TypeCheckerModel.StructInfo> structs = checker.declarations.getStructs();
+        Map<String, TypeCheckerModel.EnumInfo> enums = checker.declarations.getEnums();
         computeGtReachableFunctions();
         Set<String> lockExempt = new HashSet<>(gtReachableMangledNames);
         lockExempt.addAll(gtDecoratedFuncMangledNames);
         LockNestingCheck.run(checker, lockExempt);
-        checker.checkProofKills();
+        checker.model.checkProofKills();
 
         // Globals first, wherever they were declared (every GLOBAL line precedes any FUNC_START); same folding as local statics.
-        for (String name : checker.getGlobalOrder()) {
-            emitStaticAlloc("GLOBAL", name, checker.getGlobals().get(name).canonical(),
-                    checker.getGlobalRhs().get(name));
+        for (String name : checker.declarations.getGlobalOrder()) {
+            hub.statements.emitStaticAlloc("GLOBAL", name, checker.declarations.getGlobals().get(name).canonical(),
+                    checker.declarations.getGlobalRhs().get(name));
         }
 
         for (Token lineTok : flattenRootLinesForEmit(rootLines)) {
@@ -419,7 +409,7 @@ abstract class BytecodeEmitterCore {
                     }
                     break;
                 case "extern":
-                    emitExtern(checker.getExterns().get(t.sub.get(0).text));
+                    emitExtern(checker.declarations.getExterns().get(t.sub.get(0).text));
                     break;
                 case "export":
                     break; // folded into the target func's FUNC_START block as an EXPORT line (see emitFunc)
@@ -504,7 +494,7 @@ abstract class BytecodeEmitterCore {
         List<BytecodeStatement> prefix = new ArrayList<>();
         for (Map.Entry<String, String> entry : hoistedStrings.entrySet()) {
             prefix.add(BytecodeStatement.fromText("STRING " + entry.getValue() + " \""
-                    + escapeForBytecode(entry.getKey()) + "\"", ORIGIN));
+                    + hub.escapeForBytecode(entry.getKey()) + "\"", ORIGIN));
         }
         return prefix;
     }
@@ -516,7 +506,7 @@ abstract class BytecodeEmitterCore {
     public void computeGtReachableFunctions() {
         Deque<String> queue = new ArrayDeque<>();
         for (String decoratorName : Arrays.asList("gt_init", "gt_alive_check", "gt_destruct", "gt_register", "gt_moved", "gt_ref_id", "gt_ref_resolve")) {
-            TypeChecker.FuncInfo info = checker.getGhostTableFunction(decoratorName);
+            TypeCheckerModel.FuncInfo info = checker.declarations.getGhostTableFunction(decoratorName);
             if (info == null) {
                 continue;
             }
@@ -528,7 +518,7 @@ abstract class BytecodeEmitterCore {
             if (!gtReachableMangledNames.add(name)) {
                 continue; // already visited
             }
-            TypeChecker.FuncInfo info = findFuncInfoByMangledName(name);
+            TypeCheckerModel.FuncInfo info = findFuncInfoByMangledName(name);
             if (info != null) {
                 collectCallTargetsAndBanInvoke(info.funcToken, queue);
             }
@@ -537,31 +527,31 @@ abstract class BytecodeEmitterCore {
     }
 
     /** The FuncInfo (plain function, impl method or library function) with this mangled name; Token.resolvedCallTarget only carries the name. */
-    public TypeChecker.FuncInfo findFuncInfoByMangledName(String mangledName) {
-        for (List<TypeChecker.FuncInfo> overloads : checker.getFunctions().values()) {
-            for (TypeChecker.FuncInfo info : overloads) {
+    public TypeCheckerModel.FuncInfo findFuncInfoByMangledName(String mangledName) {
+        for (List<TypeCheckerModel.FuncInfo> overloads : checker.declarations.getFunctions().values()) {
+            for (TypeCheckerModel.FuncInfo info : overloads) {
                 if (info.mangledName.equals(mangledName)) {
                     return info;
                 }
             }
         }
-        for (List<TypeChecker.ImplInfo> impls : checker.getImpls().values()) {
-            for (TypeChecker.ImplInfo impl : impls) {
-                for (TypeChecker.FuncInfo info : impl.methods.values()) {
+        for (List<TypeCheckerModel.ImplInfo> impls : checker.declarations.getImpls().values()) {
+            for (TypeCheckerModel.ImplInfo impl : impls) {
+                for (TypeCheckerModel.FuncInfo info : impl.methods.values()) {
                     if (info.mangledName.equals(mangledName)) {
                         return info;
                     }
                 }
-                for (TypeChecker.FuncInfo info : impl.staticMethods.values()) {
+                for (TypeCheckerModel.FuncInfo info : impl.staticMethods.values()) {
                     if (info.mangledName.equals(mangledName)) {
                         return info;
                     }
                 }
             }
         }
-        for (TypeChecker.LibraryInfo lib : checker.getLibraries().values()) {
-            for (List<TypeChecker.FuncInfo> overloads : lib.ownFunctions.values()) {
-                for (TypeChecker.FuncInfo info : overloads) {
+        for (TypeCheckerModel.LibraryInfo lib : checker.declarations.getLibraries().values()) {
+            for (List<TypeCheckerModel.FuncInfo> overloads : lib.ownFunctions.values()) {
+                for (TypeCheckerModel.FuncInfo info : overloads) {
                     if (info.mangledName.equals(mangledName)) {
                         return info;
                     }
@@ -614,21 +604,21 @@ abstract class BytecodeEmitterCore {
         line("ASM_END");
     }
 
-    public TypeChecker.FuncInfo findImplMethodInfo(TypeChecker checker, Token implTok, Token methodTok) {
+    public TypeCheckerModel.FuncInfo findImplMethodInfo(TypeChecker checker, Token implTok, Token methodTok) {
         String concreteName = implTok.sub.get(implTok.sub.size() - 1).text;
-        for (TypeChecker.ImplInfo implInfo : checker.getImpls().get(concreteName)) {
-            for (TypeChecker.FuncInfo info : implInfo.methods.values()) {
+        for (TypeCheckerModel.ImplInfo implInfo : checker.declarations.getImpls().get(concreteName)) {
+            for (TypeCheckerModel.FuncInfo info : implInfo.methods.values()) {
                 if (info.funcToken == methodTok) {
                     return info;
                 }
             }
-            for (TypeChecker.FuncInfo info : implInfo.staticMethods.values()) {
+            for (TypeCheckerModel.FuncInfo info : implInfo.staticMethods.values()) {
                 if (info.funcToken == methodTok) {
                     return info;
                 }
             }
             // Call-site-instantiated residual-generic methods live only in genericMethodInstances.
-            for (TypeChecker.FuncInfo info : implInfo.genericMethodInstances.values()) {
+            for (TypeCheckerModel.FuncInfo info : implInfo.genericMethodInstances.values()) {
                 if (info.funcToken == methodTok) {
                     return info;
                 }
@@ -637,10 +627,10 @@ abstract class BytecodeEmitterCore {
         throw new IllegalStateException("no FuncInfo for impl method '" + methodTok.sub.get(0).text + "'");
     }
 
-    public TypeChecker.FuncInfo findLibraryFuncInfo(TypeChecker checker, Token libraryTok, Token funcTok) {
+    public TypeCheckerModel.FuncInfo findLibraryFuncInfo(TypeChecker checker, Token libraryTok, Token funcTok) {
         String name = libraryTok.sub.get(0).text;
-        for (List<TypeChecker.FuncInfo> overloads : checker.getLibraries().get(name).ownFunctions.values()) {
-            for (TypeChecker.FuncInfo info : overloads) {
+        for (List<TypeCheckerModel.FuncInfo> overloads : checker.declarations.getLibraries().get(name).ownFunctions.values()) {
+            for (TypeCheckerModel.FuncInfo info : overloads) {
                 if (info.funcToken == funcTok) {
                     return info;
                 }
@@ -649,9 +639,9 @@ abstract class BytecodeEmitterCore {
         throw new IllegalStateException("no FuncInfo for library function '" + funcTok.sub.get(0).text + "'");
     }
 
-    public TypeChecker.FuncInfo findFuncInfo(TypeChecker checker, Token funcTok) {
+    public TypeCheckerModel.FuncInfo findFuncInfo(TypeChecker checker, Token funcTok) {
         String name = funcTok.sub.get(0).text;
-        for (TypeChecker.FuncInfo info : checker.getFunctions().get(name)) {
+        for (TypeCheckerModel.FuncInfo info : checker.declarations.getFunctions().get(name)) {
             if (info.funcToken == funcTok) {
                 return info;
             }
@@ -664,7 +654,7 @@ abstract class BytecodeEmitterCore {
      * when a type needs generated drop glue: the glue pass resolves `GT_DESTRUCT name` through one name -> type map, so two owning types under one
      * name dropped through the wrong layout (a catch parameter `e` plus an owning local `e` leaked). Rename one of them.
      */
-    public void requireOneOwnsTypePerSlotName(TypeChecker.FuncInfo info, List<BytecodeStatement> allocLines) {
+    public void requireOneOwnsTypePerSlotName(TypeCheckerModel.FuncInfo info, List<BytecodeStatement> allocLines) {
         Map<String, String> seen = new HashMap<>();
         for (BytecodeStatement st : allocLines) {
             if (!st.opcode().equals("ALLOC") || st.size() < 3) {
@@ -695,12 +685,12 @@ abstract class BytecodeEmitterCore {
             }
         }
         if (t.startsWith("dynarray(") && t.endsWith(")")) {
-            return checker.elementTextOwnsMemory(t.substring("dynarray(".length(), t.length() - 1));
+            return checker.declarations.elementTextOwnsMemory(t.substring("dynarray(".length(), t.length() - 1));
         }
         if (t.startsWith("unsafe_dynarray(")) {
             return false;
         }
-        return checker.elementTextOwnsMemory(t) && !t.startsWith("dynarray(");
+        return checker.declarations.elementTextOwnsMemory(t) && !t.startsWith("dynarray(");
     }
 
     public void line(String s) {
@@ -709,7 +699,7 @@ abstract class BytecodeEmitterCore {
 
     // ---- top-level declarations ------------------------------------------
 
-    public void emitStruct(TypeChecker.StructInfo info) {
+    public void emitStruct(TypeCheckerModel.StructInfo info) {
         line("STRUCT_START " + info.name);
         emitDecorators("STRUCT_DECORATE", info.declTok.decorators);
         // The hidden ___type class id comes first (absent for @untyped): computeStructLayout assigns offsets in this order, so it must precede the
@@ -723,7 +713,7 @@ abstract class BytecodeEmitterCore {
     }
 
     /** `info`'s own real STRUCT_MEMBER/STRUCT_PADDING sequence plus its own total (size, alignment) in bytes -- memoized per struct name; struct types form a DAG (self-referential struct shapes are illegal), so plain recursion is safe and always terminates. */
-    public StructLayout computeStructLayout(TypeChecker.StructInfo info) {
+    public StructLayout computeStructLayout(TypeCheckerModel.StructInfo info) {
         StructLayout cached = structLayoutCache.get(info.name);
         if (cached != null) {
             return cached;
@@ -736,7 +726,7 @@ abstract class BytecodeEmitterCore {
             offset += 8;
             maxAlign = 8;
         }
-        for (Map.Entry<String, TypeChecker.TypeInfo> e : info.members.entrySet()) {
+        for (Map.Entry<String, TypeCheckerModel.TypeInfo> e : info.members.entrySet()) {
             String canonical = e.getValue().canonical();
             long[] sizeAlign = layoutSizeAndAlignOf(canonical);
             long align = sizeAlign[1] <= 0 ? 1 : sizeAlign[1];
@@ -804,7 +794,7 @@ abstract class BytecodeEmitterCore {
         if (baseType.startsWith("dynarray(") || baseType.startsWith("unsafe_dynarray(")) {
             return new long[]{LAYOUT_POINTER_SIZE, LAYOUT_POINTER_SIZE};
         }
-        TypeChecker.StructInfo nested = checker.getStructs().get(baseType);
+        TypeCheckerModel.StructInfo nested = checker.declarations.getStructs().get(baseType);
         if (nested != null) {
             StructLayout nestedLayout = computeStructLayout(nested);
             return new long[]{nestedLayout.size, nestedLayout.align};
@@ -816,7 +806,7 @@ abstract class BytecodeEmitterCore {
         return new long[]{LAYOUT_POINTER_SIZE, LAYOUT_POINTER_SIZE};
     }
 
-    public void emitEnum(TypeChecker.EnumInfo info) {
+    public void emitEnum(TypeCheckerModel.EnumInfo info) {
         // Plain enum: "ENUM name V1 V2"; explicit values: "V1 0 V2 1"; range-valued: "V1 a..b" (exactly one kind per enum).
         StringBuilder sb = new StringBuilder("ENUM ").append(info.name);
         for (int i = 0; i < info.variants.size(); i++) {
@@ -832,17 +822,17 @@ abstract class BytecodeEmitterCore {
     }
 
     /** Synthesizes the real C-ABI `main(argc, argv)`: builds the safe args value with make_safe_args and calls "__caspien_main" with it. See docs/BytecodeEmitter.md, "Entry points". */
-    public void emitSafeArgsMainWrapper(TypeChecker.FuncInfo userMain) {
-        TypeChecker.FuncInfo makeSafeArgs = checker.getFunctions().get("make_safe_args").get(0);
-        TypeChecker.TypeInfo argcType = new TypeChecker.TypeInfo(null, "imut", "s32");
-        TypeChecker.TypeInfo argvType = new TypeChecker.TypeInfo("raw", "mut",
-                new TypeChecker.TypeInfo("raw", "mut", "char").canonical());
-        TypeChecker.TypeInfo argsType = checker.safeArgsType();
+    public void emitSafeArgsMainWrapper(TypeCheckerModel.FuncInfo userMain) {
+        TypeCheckerModel.FuncInfo makeSafeArgs = checker.declarations.getFunctions().get("make_safe_args").get(0);
+        TypeCheckerModel.TypeInfo argcType = new TypeCheckerModel.TypeInfo(null, "imut", "s32");
+        TypeCheckerModel.TypeInfo argvType = new TypeCheckerModel.TypeInfo("raw", "mut",
+                new TypeCheckerModel.TypeInfo("raw", "mut", "char").canonical());
+        TypeCheckerModel.TypeInfo argsType = checker.declarations.safeArgsType();
 
         line("FUNC_START main");
         line("RETURNS " + userMain.returnType.canonical());
 
-        TypeChecker.FuncInfo wrapperInfo = new TypeChecker.FuncInfo();
+        TypeCheckerModel.FuncInfo wrapperInfo = new TypeCheckerModel.FuncInfo();
         wrapperInfo.ownsLocalTypes.put("args", argsType);
         currentFuncMangledName = "main";
         currentFuncInfo = wrapperInfo;
@@ -857,7 +847,7 @@ abstract class BytecodeEmitterCore {
         emitGtRoutineBody(wrapperInfo, "main", false);
 
         // GT_INIT placement of a true main: after the ALLOCs, before the first expression.
-        if (checker.usesOwnsRefDynNew()) {
+        if (checker.declarations.usesOwnsRefDynNew()) {
             requireGhostTableFunctionPresent("gt_init", userMain.funcToken);
             requireGhostTableFunctionPresent("gt_moved", userMain.funcToken);
             line("GT_INIT");
@@ -869,7 +859,7 @@ abstract class BytecodeEmitterCore {
         Token argvTok = syntheticVarref("argv", argvType.canonical());
         // Empty destruct list: "args" does not exist yet.
         stageCallSiteForUnwindNames(Collections.emptyList(), Collections.emptyList(), userMain.funcToken);
-        emitCallSequence(null, Arrays.asList(argcTok, argvTok), () -> line("CALL make_safe_args"),
+        hub.operations.emitCallSequence(null, Arrays.asList(argcTok, argvTok), () -> line("CALL make_safe_args"),
                 argsType.canonical(), makeSafeArgs.callConvention);
         line("ASSIGN " + argsType.canonical() + " " + argsType.canonical() + " " + argsType.canonical());
 
@@ -878,7 +868,7 @@ abstract class BytecodeEmitterCore {
         boolean isVoid = userMain.returnType.canonical().equals("imut_void");
         // Empty destruct list: "args" is moved into this call.
         stageCallSiteForUnwindNames(Collections.emptyList(), Collections.emptyList(), userMain.funcToken);
-        emitCallSequence(null, Arrays.asList(argsTok), () -> line("CALL __caspien_main"),
+        hub.operations.emitCallSequence(null, Arrays.asList(argsTok), () -> line("CALL __caspien_main"),
                 isVoid ? null : userMain.returnType.canonical(), userMain.callConvention);
         if (isVoid) {
             line("RET imut_void");
@@ -900,9 +890,9 @@ abstract class BytecodeEmitterCore {
         return t;
     }
 
-    public void emitFunc(TypeChecker.FuncInfo info) {
+    public void emitFunc(TypeCheckerModel.FuncInfo info) {
         // An @event_loop function is emitted as "main" and the user's main becomes "__caspien_main". See docs/BytecodeEmitter.md, "Entry points".
-        TypeChecker.FuncInfo eventLoop = checker.getEventLoopFunc();
+        TypeCheckerModel.FuncInfo eventLoop = checker.declarations.getEventLoopFunc();
         if (eventLoop != null) {
             if (info == eventLoop) {
                 emitFuncUnderName(info, "main", false, false);
@@ -930,17 +920,17 @@ abstract class BytecodeEmitterCore {
      * gt_error_message (only when the program throws), then the trace slots. Skipped when gt-suppressed or when the program uses neither
      * owns/ref/dyn/new nor throw. The label/destruct/ending half is emitGtRoutineBody. See docs/BytecodeEmitter.md, "gt_routine prologue".
      */
-    public void emitGtRoutineAlloc(TypeChecker.FuncInfo info, String emittedName, boolean gtSuppressed) {
+    public void emitGtRoutineAlloc(TypeCheckerModel.FuncInfo info, String emittedName, boolean gtSuppressed) {
         if (gtSuppressed) {
             return;
         }
-        if (!checker.usesOwnsRefDynNew() && !checker.usesThrow()) {
+        if (!checker.declarations.usesOwnsRefDynNew() && !checker.declarations.usesThrow()) {
             return;
         }
         line("ALLOC gt_routine_address code_addr");
         // gt_error_message: meaningful only with `throw`, hence the narrower gate. Typed static_imut_string like a thrown message. Written by emitThrow,
         // read by emitHoistedCatchBlocks; GT_UNWIND MSG (X86Backend) copies it into the caller's frame. See docs/BytecodeEmitter.md, "gt_routine prologue".
-        if (checker.usesThrow()) {
+        if (checker.declarations.usesThrow()) {
             line("ALLOC gt_error_message static_imut_string");
         }
         // Stack traces (stack_trace.md, 3.2): two more fixed slots right behind the first two, at rbp-24 (this function's id, written once at
@@ -965,7 +955,7 @@ abstract class BytecodeEmitterCore {
      * With tracing on, stores `(id << 1) | isRoot` into this frame's `gt_trace_id` slot. A root is a frame whose caller is not a traced Caspien frame:
      * the real `main` (the C entry point, or the event loop), a thread trampoline, an exported function.
      */
-    public void emitTraceIdStore(TypeChecker.FuncInfo info, String emittedName) {
+    public void emitTraceIdStore(TypeCheckerModel.FuncInfo info, String emittedName) {
         if (!TraceConfig.usesTrace) {
             return;
         }
@@ -991,22 +981,22 @@ abstract class BytecodeEmitterCore {
      * a `catch` in any frame up the chain sees the message that was thrown, not its own never-written slot.
      */
     public String gtUnwindLine() {
-        return checker.usesThrow() ? (TraceConfig.usesTrace ? "GT_UNWIND MSG TRACE" : "GT_UNWIND MSG") : "GT_UNWIND";
+        return checker.declarations.usesThrow() ? (TraceConfig.usesTrace ? "GT_UNWIND MSG TRACE" : "GT_UNWIND MSG") : "GT_UNWIND";
     }
 
     /** The rest of the `gt_routine` prologue -- see `emitGtRoutineAlloc`'s doc comment for why this is split out and why it must run only after every ALLOC/ALLOC_STATIC in the function has already been emitted. */
-    public void emitGtRoutineBody(TypeChecker.FuncInfo info, String emittedName, boolean gtSuppressed) {
+    public void emitGtRoutineBody(TypeCheckerModel.FuncInfo info, String emittedName, boolean gtSuppressed) {
         if (gtSuppressed) {
             return;
         }
         // Gate identical to emitGtRoutineAlloc's: the prologue is needed only if the program uses owns/ref/dyn/new (the GT_INIT trigger) or throw.
-        if (!checker.usesOwnsRefDynNew() && !checker.usesThrow()) {
+        if (!checker.declarations.usesOwnsRefDynNew() && !checker.declarations.usesThrow()) {
             return;
         }
         // With `throw` anywhere in the program this whole-function label is superseded by per-call-site landing pads (stageCallSiteForUnwind,
         // emitCallSiteUnwindLandingPads) and nothing below is emitted. Without throw the old whole-function shape is kept. See docs/BytecodeEmitter.md, "gt_routine prologue".
         emitTraceIdStore(info, emittedName);
-        if (checker.usesThrow()) {
+        if (checker.declarations.usesThrow()) {
             return;
         }
         String gtRoutineLabel = "gt_routine__" + emittedName;
@@ -1042,7 +1032,7 @@ abstract class BytecodeEmitterCore {
 
     /** The staging work of stageCallSiteForUnwind, also used by emitSafeArgsMainWrapper's two hand-built calls with an explicit (empty) destruct list. */
     public void stageCallSiteForUnwindNames(List<String> destructNames, List<Token> unlockCalls, Token at) {
-        if (!checker.usesThrow() || inGtSuppressedContext) {
+        if (!checker.declarations.usesThrow() || inGtSuppressedContext) {
             return;
         }
         String label;
@@ -1051,7 +1041,7 @@ abstract class BytecodeEmitterCore {
             label = pendingTryCatchLabel;
             pendingTryCatchLabel = null;
         } else {
-            label = newLabel("gt_callsite__" + currentFuncMangledName);
+            label = hub.statements.newLabel("gt_callsite__" + currentFuncMangledName);
             pendingCallSiteUnwindLandingPads.add(new PendingUnwindLandingPad(label, destructNames, unlockCalls, at));
         }
         line("ADDR gt_routine_address code_addr");
@@ -1065,7 +1055,7 @@ abstract class BytecodeEmitterCore {
      */
     public void emitTryGuardedCall(Token tryTok) {
         pendingTryCatchLabel = tryCatchLabels.get(tryTok);
-        emitExpr(tryTok.sub.get(0));
+        hub.statements.emitExpr(tryTok.sub.get(0));
         pendingTryCatchLabel = null;
     }
 
@@ -1073,11 +1063,11 @@ abstract class BytecodeEmitterCore {
      * Emits the landing pads staged while the body was emitted, after the natural-end destruct list and ahead of FUNC_END, behind a leading JMP
      * (dead unless an unwind lands there). Each pad: its GT_DESTRUCT list, then EXIT (true main), EXIT_THREAD (@async) or GT_UNWIND.
      */
-    public void emitCallSiteUnwindLandingPads(TypeChecker.FuncInfo info, String emittedName, boolean gtSuppressed) {
+    public void emitCallSiteUnwindLandingPads(TypeCheckerModel.FuncInfo info, String emittedName, boolean gtSuppressed) {
         if (gtSuppressed || pendingCallSiteUnwindLandingPads.isEmpty()) {
             return;
         }
-        String skipLabel = newLabel("end_of_gt_callsites__" + emittedName);
+        String skipLabel = hub.statements.newLabel("end_of_gt_callsites__" + emittedName);
         line("JMP " + skipLabel);
         for (PendingUnwindLandingPad pad : pendingCallSiteUnwindLandingPads) {
             line(pad.label + ":");
@@ -1099,7 +1089,7 @@ abstract class BytecodeEmitterCore {
         line(skipLabel + ":");
     }
 
-    public void emitFuncUnderName(TypeChecker.FuncInfo info, String emittedName, boolean gtSuppressed,
+    public void emitFuncUnderName(TypeCheckerModel.FuncInfo info, String emittedName, boolean gtSuppressed,
             boolean allowExport) {
         boolean previousGtContext = inGtSuppressedContext;
         inGtSuppressedContext = gtSuppressed;
@@ -1114,7 +1104,7 @@ abstract class BytecodeEmitterCore {
         Map<Token, String> previousContinueTargetLabels = continueTargetLabels;
         continueTargetLabels = new HashMap<>();
         // Try-block "after" labels and continue targets are precomputed here (see collectTryBlockLabels).
-        collectTryBlockLabels(info.funcToken.childs, new ArrayDeque<>());
+        hub.statements.collectTryBlockLabels(info.funcToken.childs, new ArrayDeque<>());
         functionCatchParams = new HashSet<>();
         line("FUNC_START " + emittedName);
         curHobFn = emittedName;
@@ -1148,7 +1138,7 @@ abstract class BytecodeEmitterCore {
         // emitBlock and friends emit only the initializing ASSIGNs. Parameters stay ARG lines. See docs/BytecodeEmitter.md, "ALLOC hoisting".
         List<Runnable> staticAllocs = new ArrayList<>();
         List<Runnable> ordinaryAllocs = new ArrayList<>();
-        collectHoistedAllocs(info.funcToken.childs, staticAllocs, ordinaryAllocs);
+        hub.statements.collectHoistedAllocs(info.funcToken.childs, staticAllocs, ordinaryAllocs);
         for (Runnable r : staticAllocs) {
             r.run();
         }
@@ -1167,7 +1157,7 @@ abstract class BytecodeEmitterCore {
         lateAllocPos = out.size();
         lateAllocs = new ArrayList<>();
         emitGtRoutineBody(info, emittedName, gtSuppressed);
-        emitHoistedCatchBlocks(info);
+        hub.statements.emitHoistedCatchBlocks(info);
         // isEntryPointBody is true for the function emitted as "main" (the post-dundering name), i.e. also for an @event_loop function.
         emitBlock(info.funcToken.childs, emittedName.equals("main"));
         emitDestructList(info.funcToken.destructOnExit, info.funcToken);
@@ -1190,14 +1180,14 @@ abstract class BytecodeEmitterCore {
     }
 
     /** True for a plain (no storage modifier) struct type, i.e. TypeChecker.isStructByValueReturn's condition: such a return uses RVO (hidden "$ret_dest", emitReturn, emitStructRvoAssign). */
-    public boolean isStructByValueReturn(TypeChecker.TypeInfo t) {
-        return t.storage == null && checker.getStructs().containsKey(t.baseType);
+    public boolean isStructByValueReturn(TypeCheckerModel.TypeInfo t) {
+        return t.storage == null && checker.declarations.getStructs().containsKey(t.baseType);
     }
 
     /** `info.paramTypes`, each already reduced to its own `canonical()` text -- the shape `emitParamDecls` needs, computed once per call rather than repeated inline at every use site. */
-    public List<String> canonicalParamTypes(TypeChecker.FuncInfo info) {
+    public List<String> canonicalParamTypes(TypeCheckerModel.FuncInfo info) {
         List<String> out = new ArrayList<>();
-        for (TypeChecker.TypeInfo t : info.paramTypes) {
+        for (TypeCheckerModel.TypeInfo t : info.paramTypes) {
             out.add(t.canonical());
         }
         return out;
@@ -1211,11 +1201,11 @@ abstract class BytecodeEmitterCore {
     }
 
     /** One line: "EXTERN linkName returnType paramType... [VARARGS]". Signature only; the linker provides the body. */
-    public void emitExtern(TypeChecker.ExternInfo info) {
+    public void emitExtern(TypeCheckerModel.ExternInfo info) {
         // linkName, not name: it matches the EXTERN_CALL operand, so raw bytecode never shows two names for one extern.
         StringBuilder sb = new StringBuilder("EXTERN ").append(info.linkName)
                 .append(' ').append(info.returnType.canonical());
-        for (TypeChecker.TypeInfo paramType : info.paramTypes) {
+        for (TypeCheckerModel.TypeInfo paramType : info.paramTypes) {
             sb.append(' ').append(paramType.canonical());
         }
         if (info.hasVarargs) {
@@ -1243,14 +1233,14 @@ abstract class BytecodeEmitterCore {
                         sb.append(',');
                     }
                     String a = d.args.get(i);
-                    sb.append(d.argIsString.get(i) ? "\"" + escapeForBytecode(a) + "\"" : a);
+                    sb.append(d.argIsString.get(i) ? "\"" + hub.escapeForBytecode(a) + "\"" : a);
                 }
                 sb.append(')');
             }
             boolean wantsPos = !mnemonic.equals("FUNC_DECORATE")
                     || d.name.equals("inline") || (d.name.equals("dont") && d.args.size() == 1 && d.args.get(0).equals("inline"));
             if (withPos && wantsPos && d.file != null && d.line > 0) {
-                sb.append(" \"").append(escapeForBytecode(d.file + ":" + d.line)).append('"');
+                sb.append(" \"").append(hub.escapeForBytecode(d.file + ":" + d.line)).append('"');
             }
             line(mnemonic + " " + sb);
         }
@@ -1267,7 +1257,7 @@ abstract class BytecodeEmitterCore {
      * after the hoisted ALLOCs and before any expression. A `let` emits only its ASSIGN here; the ALLOC was hoisted.
      */
     public void emitBlock(List<Token> lines, boolean isEntryPointBody) {
-        if (isEntryPointBody && checker.usesOwnsRefDynNew()) {
+        if (isEntryPointBody && checker.declarations.usesOwnsRefDynNew()) {
             Token at = currentFuncInfo != null && currentFuncInfo.funcToken != null ? currentFuncInfo.funcToken
                     : (lines.isEmpty() ? null : lines.get(0));
             requireGhostTableFunctionPresent("gt_init", at);
@@ -1276,11 +1266,11 @@ abstract class BytecodeEmitterCore {
         }
         for (Token lineTok : lines) {
             Token stmt = lineTok.childs.get(0);
-            Token letTok = letDeclarationOf(stmt);
+            Token letTok = hub.statements.letDeclarationOf(stmt);
             if (letTok != null && letTok.isStatic) {
                 continue; // no runtime init to emit -- the value is already baked into ALLOC_STATIC, hoisted to the top of the function
             }
-            emitStatement(stmt);
+            hub.statements.emitStatement(stmt);
         }
     }
 
@@ -1301,12 +1291,12 @@ abstract class BytecodeEmitterCore {
             line("GT_DESTRUCT " + name);
             // Null the slot after its destruct: a loop-body owns local shares one hoisted slot across iterations, and a stale freed pointer could be
             // destructed again after the allocator reused the address.
-            TypeChecker.TypeInfo type = currentFuncInfo != null ? currentFuncInfo.ownsLocalTypes.get(name) : null;
-            if (type != null && checker.isInlineOwningStruct(type)) {
+            TypeCheckerModel.TypeInfo type = currentFuncInfo != null ? currentFuncInfo.ownsLocalTypes.get(name) : null;
+            if (type != null && checker.declarations.isInlineOwningStruct(type)) {
                 // an inline owning struct: its members were dropped by the GT_DESTRUCT above; leave them null
                 Token local = new Token(TokenType.VARREF, name, 0, "");
                 local.resolvedType = type.canonical();
-                emitInlineOwnsNullOut(local, type.baseType);
+                hub.statements.emitInlineOwnsNullOut(local, type.baseType);
             } else if (type != null) {
                 line("ADDR " + name + " " + type.canonical());
                 line("PUSH null " + type.canonical());
@@ -1321,13 +1311,13 @@ abstract class BytecodeEmitterCore {
             return;
         }
         for (Token unlockCall : unlockCalls) {
-            emitExpr(unlockCall);
+            hub.statements.emitExpr(unlockCall);
         }
     }
 
     /** Shared by emitDestructList/emitMatchCondition -- see emitDestructList's own doc comment for the rule this enforces. */
     public void requireGhostTableFunctionPresent(String decoratorName, Token at) {
-        if (checker.getGhostTableFunction(decoratorName) == null) {
+        if (checker.declarations.getGhostTableFunction(decoratorName) == null) {
             throw new CompilerException("bytecode", at.file, at.line,
                     "emitting a '@" + decoratorName + "' ghost-table interaction here requires a function "
                             + "decorated '@" + decoratorName + "' to exist somewhere in the compilation unit "

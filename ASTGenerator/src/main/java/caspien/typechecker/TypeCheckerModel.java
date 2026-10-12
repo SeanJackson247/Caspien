@@ -23,12 +23,12 @@ import java.util.Set;
  */
 
 /** TypeCheckerModel: fields, nested types and static helpers of TypeChecker (part 1 of 11; see README.md in this folder). */
-abstract class TypeCheckerModel {
-    // methods defined in later parts of the chain
-    abstract public String stripArrayDims(String baseType);
-    abstract public void check(List<Token> rootLines);
+public final class TypeCheckerModel {
+    private final TypeChecker hub;
 
-
+    TypeCheckerModel(TypeChecker hub) {
+        this.hub = hub;
+    }
 
     /** The loaded compiler.config (required): validates @call_convention names, supplies the default convention, and is handed to BytecodeEmitter via getConfig. */
     public CompilerConfig config;
@@ -314,7 +314,6 @@ abstract class TypeCheckerModel {
             copy.literalElements = this.literalElements;
             return copy;
         }
-
 
         /** Canonical type string: storage_some_mutability_atomic_states_@decorators_baseType; aliases never appear. See docs/TypeChecker.md, "Type model". */
         public String canonical() {
@@ -1085,7 +1084,6 @@ abstract class TypeCheckerModel {
     public Set<String> fnLockMatched = new HashSet<>();
     public Set<String> fnEverMoved = new HashSet<>();
 
-
     /** Slots moved on only SOME paths into a merge point: still "moved" for use-after-move, but their scope-exit destruct is kept (null-safe). See docs/TypeChecker.md, "Branch merge and partly-moved slots". */
     public final Set<String> partlyMovedSlots = new HashSet<>();
 
@@ -1252,7 +1250,7 @@ abstract class TypeCheckerModel {
             ext.add(e.linkName);
             ext.add(e.name);
         }
-        ProofKills.check((TypeChecker) this, all, ext);
+        ProofKills.check(hub, all, ext);
     }
 
     /** For BytecodeEmitter: the loaded compiler.config this whole compilation is using. */
@@ -1288,7 +1286,7 @@ abstract class TypeCheckerModel {
         if ("owns".equals(t.storage)) {
             return true;
         }
-        String elemBase = t.storage == null ? stripArrayDims(t.baseType) : t.baseType;
+        String elemBase = t.storage == null ? hub.declarations.stripArrayDims(t.baseType) : t.baseType;
         StructInfo si = structs.get(elemBase);
         if (si == null || !visiting.add(elemBase)) {
             return false;

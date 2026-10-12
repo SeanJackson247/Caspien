@@ -6,6 +6,7 @@ import caspien.bytecodeemitter.BytecodeEmitter;
 import caspien.gasreport.GasReport;
 import caspien.parser.Parser;
 import caspien.typechecker.TypeChecker;
+import caspien.typechecker.TypeCheckerModel;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -70,22 +71,22 @@ public final class Frontend {
         Map<String, String> reports = new LinkedHashMap<>();
         String hobText = null;
         boolean failed = false;
-        TypeChecker.WARNINGS.clear();
+        TypeCheckerModel.WARNINGS.clear();
         try {
             hobText = run(inputPath, configs, options, messages, reports);
         } catch (CompilerException ce) {
-            messages.addAll(TypeChecker.WARNINGS);
-            TypeChecker.WARNINGS.clear();
+            messages.addAll(TypeCheckerModel.WARNINGS);
+            TypeCheckerModel.WARNINGS.clear();
             messages.add(ce.getMessage());
             failed = true;
         } catch (Failure f) {
-            messages.addAll(TypeChecker.WARNINGS);
-            TypeChecker.WARNINGS.clear();
+            messages.addAll(TypeCheckerModel.WARNINGS);
+            TypeCheckerModel.WARNINGS.clear();
             messages.add(f.getMessage());
             failed = true;
         } catch (IOException ioe) {
-            messages.addAll(TypeChecker.WARNINGS);
-            TypeChecker.WARNINGS.clear();
+            messages.addAll(TypeCheckerModel.WARNINGS);
+            TypeCheckerModel.WARNINGS.clear();
             messages.add("[io error] " + ioe.getMessage());
             failed = true;
         }
@@ -132,7 +133,7 @@ public final class Frontend {
                     srcs.add(f);
                 }
             }
-            auditReport = AuditReport.build(srcs, ProjectRoot.root(), typeChecker.unsafeTagsNeeded(), on(options, "audit-no-stdlib"));
+            auditReport = AuditReport.build(srcs, ProjectRoot.root(), typeChecker.model.unsafeTagsNeeded(), on(options, "audit-no-stdlib"));
         }
 
         BytecodeEmitter bytecodeEmitter = new BytecodeEmitter();
@@ -142,8 +143,8 @@ public final class Frontend {
         if (fixModes == null && (!bytecodeEmitter.funcTermLabels.isEmpty() || !bytecodeEmitter.loopTermLabels.isEmpty())) {
             GasReport.checkLabels(bytecode, bytecodeEmitter.funcTermLabels, bytecodeEmitter.loopTermLabels);
         }
-        messages.addAll(TypeChecker.WARNINGS);
-        TypeChecker.WARNINGS.clear();
+        messages.addAll(TypeCheckerModel.WARNINGS);
+        TypeCheckerModel.WARNINGS.clear();
 
         if (audit) {
             GasReport.POS.putAll(bytecodeEmitter.sourcePos);
@@ -157,7 +158,7 @@ public final class Frontend {
         if (fixModes != null && !fixModes.isEmpty()) {
             reports.put("fixHash", FixTool.sha(bytecode));
             FixTool.Run fix = FixTool.run(fixModes, on(options, "fix-write"), on(options, "fix-stdlib"), bytecodeEmitter, bytecode,
-                    options.get("fix-backup"), typeChecker.unsafeSplitInfo(), options.get("fix-only"));
+                    options.get("fix-backup"), typeChecker.model.unsafeSplitInfo(), options.get("fix-only"));
             reports.put("fix", fix.report);
             reports.put("fixBlocks", fix.blocks);
         }
@@ -173,7 +174,7 @@ public final class Frontend {
         if (on(options, "fs-report")) {
             ByteArrayOutputStream buf = new ByteArrayOutputStream();
             PrintStream ps = new PrintStream(buf, true, StandardCharsets.UTF_8);
-            typeChecker.printFsReport(ps);
+            typeChecker.impls.printFsReport(ps);
             ps.flush();
             messages.addAll(buf.toString(StandardCharsets.UTF_8).lines().toList());
         }

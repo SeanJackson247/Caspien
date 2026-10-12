@@ -8,20 +8,32 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * Stage 2 of the front end: nests the Lexer's flat tokens, splits them into LINE tokens,
+ * Stage 2 of the front end (public hub; the work is in ParserLines and ParserBlocks, see README.md): nests the Lexer's flat tokens, splits them into LINE tokens,
  * strips decorators, merges let/import/generic syntax and gathers keyword blocks.
  * Pass order is in parse(); see docs/Parser.md, "Pipeline and scoping".
  */
 
-public class Parser extends ParserBlocks {
+public final class Parser {
+    final ParserLines lines = new ParserLines(this);
+    final ParserBlocks blocks = new ParserBlocks(this);
 
+    /** The public entry points: the pipeline and the line gatherer live in ParserLines. */
+    public static final String CONSTRUCTOR_NAME_PREFIX = ParserLines.CONSTRUCTOR_NAME_PREFIX;
+
+    public List<Token> parse(List<Token> lexerOutput) {
+        return lines.parse(lexerOutput);
+    }
+
+    public List<Token> gatherStatementLines(List<Token> statementLines) {
+        return lines.gatherStatementLines(statementLines);
+    }
 
     /**
      * Gathers a constructor declaration into a "func" token named CONSTRUCTOR_NAME_PREFIX + struct name (generic ones are wrapped in an "impl" token).
      * The return type must be written "self" and is replaced by the struct name. See docs/Parser.md, "Constructors".
      */
     public Token gatherConstructorImpl(List<Token> tokens, Token implTok) {
-        TypeParamParseResult implTypeParams = parseOptionalTypeParams(tokens, 1);
+        ParserLines.TypeParamParseResult implTypeParams = lines.parseOptionalTypeParams(tokens, 1);
         int idx = implTypeParams.nextIndex;
         // isConstructorImplStart already confirmed tokens[idx]=="constructor",
         // tokens[idx+1]=="for" using this identical parse.
@@ -34,7 +46,7 @@ public class Parser extends ParserBlocks {
         }
         Token concreteNameTok = tokens.get(idx);
         idx++;
-        TypeArgParseResult concreteArgsResult = parseOptionalTypeArgsRaw(tokens, idx);
+        ParserLines.TypeArgParseResult concreteArgsResult = lines.parseOptionalTypeArgsRaw(tokens, idx);
         idx = concreteArgsResult.nextIndex;
         List<List<Token>> concreteArgs = concreteArgsResult.groups;
 
@@ -57,7 +69,7 @@ public class Parser extends ParserBlocks {
         }
         Token paramsTok = tokens.get(idx);
         idx++;
-        Token blockTok = requireTrailingBlock(tokens, implTok);
+        Token blockTok = blocks.requireTrailingBlock(tokens, implTok);
         int blockIdx = tokens.indexOf(blockTok);
         List<Token> returnTypeTokens = tokens.subList(idx, blockIdx);
         if (returnTypeTokens.size() != 1 || returnTypeTokens.get(0).type != TokenType.VARREF
@@ -72,7 +84,7 @@ public class Parser extends ParserBlocks {
         Token funcKw = new Token(TokenType.KEYWORD, "func", implTok.line, implTok.file);
         funcKw.decorators = implTok.decorators;
         funcKw.pinnedComments = implTok.pinnedComments;
-        Token nameTok = new Token(TokenType.VARREF, CONSTRUCTOR_NAME_PREFIX + concreteNameTok.text,
+        Token nameTok = new Token(TokenType.VARREF, ParserLines.CONSTRUCTOR_NAME_PREFIX + concreteNameTok.text,
                 implTok.line, implTok.file);
         Token returnTypeTok = new Token(TokenType.VARREF, concreteNameTok.text, selfTok.line, selfTok.file);
             // Set genericArgs directly: a one-token return span gives GenericsExpander.scanTypeTokenSpan nothing to match.
@@ -87,7 +99,7 @@ public class Parser extends ParserBlocks {
         synth.add(returnTypeTok);
         synth.add(blockTok);
 
-        Token gathered = gatherFunc(synth, funcKw);
+        Token gathered = blocks.gatherFunc(synth, funcKw);
         gathered.isConstructorDecl = true;
         gathered.constructorConcreteName = concreteNameTok.text;
 
@@ -141,7 +153,7 @@ public class Parser extends ParserBlocks {
                     "expected a struct name after 'impl default match @lock'");
         }
         Token typeNameTok = tokens.get(4);
-        Token blockTok = requireTrailingBlock(tokens, implTok);
+        Token blockTok = blocks.requireTrailingBlock(tokens, implTok);
         if (tokens.indexOf(blockTok) != 5) {
             throw new CompilerException("parse", implTok.file, implTok.line,
                     "unexpected tokens between 'impl default match @lock " + typeNameTok.text + "' and '{'");
@@ -201,8 +213,8 @@ public class Parser extends ParserBlocks {
                     "expected a name after 'library'");
         }
         Token nameTok = tokens.get(1);
-        TypeParamParseResult typeParams = parseOptionalTypeParams(tokens, 2);
-        Token blockTok = requireTrailingBlock(tokens, libraryTok);
+        ParserLines.TypeParamParseResult typeParams = lines.parseOptionalTypeParams(tokens, 2);
+        Token blockTok = blocks.requireTrailingBlock(tokens, libraryTok);
         if (tokens.indexOf(blockTok) != typeParams.nextIndex) {
             throw new CompilerException("parse", libraryTok.file, libraryTok.line,
                     "unexpected tokens between 'library " + nameTok.text + "' and '{'");
@@ -227,7 +239,7 @@ public class Parser extends ParserBlocks {
                         "only 'func' declarations and 'extends' statements are allowed directly inside a "
                                 + "'library' block");
             }
-            functions.add(gatherFunc(lineTokens, lineTokens.get(0)));
+            functions.add(blocks.gatherFunc(lineTokens, lineTokens.get(0)));
         }
 
         Token gathered = new Token(TokenType.KEYWORD, "library", libraryTok.line, libraryTok.file);

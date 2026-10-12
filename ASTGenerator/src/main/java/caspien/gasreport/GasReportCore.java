@@ -32,22 +32,12 @@ import java.util.Set;
  */
 
 /** GasReportCore: fields, nested types and static helpers of GasReport (part 1 of 2; see README.md in this folder). */
-abstract class GasReportCore {
-    // methods defined in later parts of the chain
-    abstract public BigInteger allocBytes(int idx, Fn f);
-    abstract public BigInteger rangeCount(Fn f, Loop lp, String type);
-    abstract public Map<String, V> callArgs(Fn caller, int callLine, Map<String, V> callerArgs, Fn callee);
-    abstract public String funcWord(String name);
-    abstract public String loopWord(String fnName, String label);
-    abstract public String vizPage(String title);
-    abstract public boolean canReturn(Fn f);
-    abstract public boolean runsFirst(Fn f, int w);
-    abstract public long frameBytes(Fn f);
-    abstract public long stackDepth(String n, Map<String, Long> frame, Map<String, Long> depth, Map<String, String> via, Map<String, Set<String>> why, List<String> path);
-    abstract public void analyzeCredits(Fn f);
-    abstract public void mapOkLabels(Fn f);
-    abstract public void verifyLabels(Map<String, DocComments.Doc> funcs, Map<String, DocComments.Doc> loops);
+final class GasReportCore {
+    private final GasReport hub;
 
+    GasReportCore(GasReport hub) {
+        this.hub = hub;
+    }
 
     public static final int CALL_COST = 5;
     /** Lines per section before "(+n more)"; the env var CASPIEN_AUDIT_ALL=1 (used by the tests) lifts the limit. */
@@ -147,7 +137,7 @@ abstract class GasReportCore {
     public static Result build(String hob) {
         GasReport g = new GasReport(hob);
         final Result[] out = new Result[1];
-        Thread t = new Thread(null, () -> out[0] = g.report(), "gas", 1L << 29);   // deep recursion over long functions
+        Thread t = new Thread(null, () -> out[0] = g.core.report(), "gas", 1L << 29);   // deep recursion over long functions
         t.start();
         try {
             t.join();
@@ -349,7 +339,7 @@ abstract class GasReportCore {
                         }
                     }
                     if (c == null && type != null && f.args != null) {
-                        c = rangeCount(f, lp, type);
+                        c = hub.rangeCount(f, lp, type);
                     }
                     lp.count = c;
                     if (c == null) {
@@ -388,7 +378,7 @@ abstract class GasReportCore {
                 if (!lp.isFor && why == null) {
                     boolean exit = !brk.neg || !ret.neg;     // a reachable `break`, `return` or `throw` (also from a call that can throw) inside the body
                     why = exit ? R(UNB, "`loop` with no static bound, it can leave through `break`/`return`/`throw` (" + labelOf(lp) + ")")
-                            : R(runsFirst(f, lp.head) ? NONT : DIV, "`loop` with no `break`, `return` or `throw` that leaves it (" + labelOf(lp) + ")");
+                            : R(hub.runsFirst(f, lp.head) ? NONT : DIV, "`loop` with no `break`, `return` or `throw` that leaves it (" + labelOf(lp) + ")");
                 }
                 lp.ownClass = why.charAt(0) - '0';
                 if (!lp.isFor && lp.why == null) {
@@ -605,7 +595,7 @@ abstract class GasReportCore {
                 if (isAlloc(ao) && (allocAt != null || !f.okLabelAlloc.containsValue(ai))) {
                     // charged on the success edge (the label after the null check) when there is one: a failed allocation holds no block
                     long cr = cred.getOrDefault(ai, 0L);
-                    BigInteger b = allocBytes(ai, f);
+                    BigInteger b = hub.allocBytes(ai, f);
                     // the new block exists before the old one of a `resize` is released: the peak sees both (every resize may move), the net only the difference
                     c = new Val(b.subtract(BigInteger.valueOf(cr)), b, false);
                 } else if (o.equals("GT_DESTRUCT")) {
@@ -614,7 +604,7 @@ abstract class GasReportCore {
                     c = Val.ZERO;
                 }
             } else {
-                c = Val.of(mt == GAS ? BigInteger.valueOf(cost(o)) : !isAlloc(o) ? BigInteger.ZERO : mt == COUNT ? BigInteger.ONE : allocBytes(idx, f));
+                c = Val.of(mt == GAS ? BigInteger.valueOf(cost(o)) : !isAlloc(o) ? BigInteger.ZERO : mt == COUNT ? BigInteger.ONE : hub.allocBytes(idx, f));
             }
             switch (o) {
                 case "CALL": {
@@ -834,8 +824,8 @@ abstract class GasReportCore {
         GasReport g = new GasReport(hob);
         final Map<String, String> out = new LinkedHashMap<>();
         Thread t = new Thread(null, () -> {
-            for (Fn f : g.fns.values()) {
-                g.solve(f, new ArrayList<>());
+            for (Fn f : g.core.fns.values()) {
+                g.core.solve(f, new ArrayList<>());
             }
             for (String[] s : sites) {
                 String w = s[1] == null ? g.funcWord(s[0]) : g.loopWord(s[0], s[1]);
@@ -987,7 +977,6 @@ abstract class GasReportCore {
         "</script></body></html>",
         "");
 
-
     // ---- report ------------------------------------------------------------------------------------------------------------------------
 
     public Fn entryFn() {
@@ -1074,15 +1063,15 @@ abstract class GasReportCore {
         // stack depth
         Map<String, Long> frame = new HashMap<>();
         for (String n : reach) {
-            frame.put(n, frameBytes(fns.get(n)));
+            frame.put(n, hub.frameBytes(fns.get(n)));
         }
         Map<String, Long> depth = new HashMap<>();
         Map<String, String> via = new HashMap<>();
         Map<String, Set<String>> sub = new HashMap<>();     // unbounded reasons for the stack
         for (String n : reach) {
-            stackDepth(n, frame, depth, via, sub, new ArrayList<>());
+            hub.stackDepth(n, frame, depth, via, sub, new ArrayList<>());
         }
-        final long loopFrame = eventMode ? frameBytes(loopFnF) : 0;
+        final long loopFrame = eventMode ? hub.frameBytes(loopFnF) : 0;
         if (eventMode) {
             for (Fn sl : slices) {
                 depth.put(sl.name, depth.get(sl.name) + loopFrame);   // a slice runs below the event loop's own frame
@@ -1211,14 +1200,14 @@ abstract class GasReportCore {
                 top.append("#   The loop ends only when ").append(tickFn.name).append(" throws, so its termination class follows the tick:\n");
                 if (!tickFn.deco.contains("@throws")) {
                     top.append("#     loop: none (").append(tickFn.name).append(" never throws, the loop has no exit)\n");
-                } else if (canReturn(tickFn)) {
+                } else if (hub.canReturn(tickFn)) {
                     top.append("#     loop: unbound (").append(tickFn.name).append(" throws on some paths: the loop runs until a tick throws, and no bound on the number of ticks is known)\n");
                 } else {
                     top.append("#     loop: bound (").append(tickFn.name).append(" throws on every path: the loop ends with the first tick, exactly one tick runs)\n");
                 }
             }
             if (mainFn != null && mainFn.deco.contains("@throws")) {
-                top.append("#   ").append(mainFn.name).append(canReturn(mainFn) ? " may throw before the loop starts (the program then ends with no tick)\n"
+                top.append("#   ").append(mainFn.name).append(hub.canReturn(mainFn) ? " may throw before the loop starts (the program then ends with no tick)\n"
                         : " throws on every path: the loop is never entered\n");
             }
             sb.insert(0, top);
@@ -1299,8 +1288,8 @@ abstract class GasReportCore {
                 solve(cf, stack);
             }
         }
-        mapOkLabels(f);
-        analyzeCredits(f);
+        hub.mapOkLabels(f);
+        hub.analyzeCredits(f);
         runEvals(f, new HashMap<>(), stack);
         f.done = true;
         stack.remove(stack.size() - 1);
@@ -1330,7 +1319,7 @@ abstract class GasReportCore {
             }
             Fn use = cf;
             if (unboundedAnywhere(cf) && specs.size() < MAX_SPECS) {
-                Map<String, V> cc = callArgs(f, i, args, cf);
+                Map<String, V> cc = hub.callArgs(f, i, args, cf);
                 if (!cc.isEmpty()) {
                     String key = c + "|" + new TreeMap<>(cc);
                     use = specs.get(key);
@@ -1346,7 +1335,7 @@ abstract class GasReportCore {
             f.calleeAt.put(i, use);
             for (int m = 0; m < NMET; m++) {
                 if (!use.ub[m].isEmpty()) {
-                    callUb[m].add(callReason(c, use.ub[m], runsFirst(f, i)));
+                    callUb[m].add(callReason(c, use.ub[m], hub.runsFirst(f, i)));
                 }
             }
         }

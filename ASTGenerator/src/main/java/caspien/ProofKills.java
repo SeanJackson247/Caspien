@@ -1,5 +1,6 @@
 package caspien;
 import caspien.typechecker.TypeChecker;
+import caspien.typechecker.TypeCheckerModel;
 
 import java.util.*;
 
@@ -70,7 +71,7 @@ public final class ProofKills {
     public static final IdentityHashMap<Token.MatchPattern, List<Ev>> events = new IdentityHashMap<>();
     public static final List<Use> uses = new ArrayList<>();
     public static final Map<String, Facts> facts = new HashMap<>();
-    public static final ArrayDeque<TypeChecker.FuncInfo> funcStack = new ArrayDeque<>();
+    public static final ArrayDeque<TypeCheckerModel.FuncInfo> funcStack = new ArrayDeque<>();
     /** Implicit proofs of `ref some` locals: a `ref some` is alive when it is made, exactly like a fresh `match Some`. Keyed "function|slot" and "function". */
     public static final Map<String, List<Token.MatchPattern>> implicitBySlot = new HashMap<>();
     public static final Map<String, List<Token.MatchPattern>> implicitByFunc = new HashMap<>();
@@ -93,7 +94,7 @@ public final class ProofKills {
 
     // ---- recording (called by TypeChecker while it walks) ----
 
-    public static void enterFunction(TypeChecker.FuncInfo f) {
+    public static void enterFunction(TypeCheckerModel.FuncInfo f) {
         funcStack.push(f);
         if (f.mangledName != null) {
             Facts fa = facts.computeIfAbsent(f.mangledName, k -> new Facts());
@@ -108,7 +109,7 @@ public final class ProofKills {
         funcStack.pop();
     }
 
-    public static TypeChecker.FuncInfo currentFunction() {
+    public static TypeCheckerModel.FuncInfo currentFunction() {
         return funcStack.peek();
     }
 
@@ -157,7 +158,7 @@ public final class ProofKills {
     }
 
     public static String funcKey() {
-        TypeChecker.FuncInfo f = funcStack.peek();
+        TypeCheckerModel.FuncInfo f = funcStack.peek();
         return f == null || f.mangledName == null ? "?" : f.mangledName;
     }
 
@@ -223,7 +224,7 @@ public final class ProofKills {
 
     /** `memberRoot`: when the freed object is a member reached through variable v (`v.backing`, `v.n[i]`), v's own target is not what is freed. */
     public static void kill(List<Token.MatchPattern> active, Token at, String what, String memberRoot, Set<String> types) {
-        TypeChecker.FuncInfo f = funcStack.peek();
+        TypeCheckerModel.FuncInfo f = funcStack.peek();
         if (f != null && f.mangledName != null) {
             Facts fa = facts.computeIfAbsent(f.mangledName, k -> new Facts());
             if (fa.directKill == null) {
@@ -239,7 +240,7 @@ public final class ProofKills {
     }
 
     public static void call(List<Token.MatchPattern> active, Token at, String callee) {
-        TypeChecker.FuncInfo f = funcStack.peek();
+        TypeCheckerModel.FuncInfo f = funcStack.peek();
         if (f != null && f.mangledName != null) {
             facts.computeIfAbsent(f.mangledName, k -> new Facts()).callees.add(callee);
         }
@@ -265,10 +266,10 @@ public final class ProofKills {
     // ---- the decision ----
 
     public static final class Graph {
-        public final Map<String, TypeChecker.FuncInfo> known = new HashMap<>();
+        public final Map<String, TypeCheckerModel.FuncInfo> known = new HashMap<>();
         public final Set<String> externs;
-        public final java.util.function.Function<TypeChecker.TypeInfo, Set<String>> closure;
-        public Graph(Set<String> externs, java.util.function.Function<TypeChecker.TypeInfo, Set<String>> closure) {
+        public final java.util.function.Function<TypeCheckerModel.TypeInfo, Set<String>> closure;
+        public Graph(Set<String> externs, java.util.function.Function<TypeCheckerModel.TypeInfo, Set<String>> closure) {
             this.externs = externs;
             this.closure = closure;
         }
@@ -286,7 +287,7 @@ public final class ProofKills {
         if (g.externs.contains(callee)) {
             return null;                                          // an extern call needs `unsafe` at the call site (already a kill there), or is declared safe
         }
-        TypeChecker.FuncInfo fi = g.known.get(callee);
+        TypeCheckerModel.FuncInfo fi = g.known.get(callee);
         Summ s = new Summ();
         if (fi == null) {
             s.reason = callee + " (target not known)";
@@ -302,7 +303,7 @@ public final class ProofKills {
             s.all |= fa.directAll;
             s.types.addAll(fa.directTypes);
         }
-        for (TypeChecker.TypeInfo pt : fi.paramTypes) {
+        for (TypeCheckerModel.TypeInfo pt : fi.paramTypes) {
             if (pt != null && "owns".equals(pt.storage)) {
                 if (s.reason == null) {
                     s.reason = callee + ": it takes an owning parameter, which it may drop";
@@ -344,9 +345,9 @@ public final class ProofKills {
         return false;
     }
 
-    public static void check(TypeChecker checker, Collection<TypeChecker.FuncInfo> allFuncs, Set<String> externNames) {
-        Graph g = new Graph(externNames, checker::destroyedTypes);
-        for (TypeChecker.FuncInfo f : allFuncs) {
+    public static void check(TypeChecker checker, Collection<TypeCheckerModel.FuncInfo> allFuncs, Set<String> externNames) {
+        Graph g = new Graph(externNames, checker.declarations::destroyedTypes);
+        for (TypeCheckerModel.FuncInfo f : allFuncs) {
             if (f != null && f.mangledName != null) {
                 g.known.put(f.mangledName, f);
             }

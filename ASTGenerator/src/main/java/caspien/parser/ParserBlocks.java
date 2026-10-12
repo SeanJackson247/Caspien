@@ -15,14 +15,12 @@ import java.util.Set;
  */
 
 /** ParserBlocks: keyword-block gathering: statements, structs, enums, interfaces, impls (part 2 of 3; see README.md in this folder). */
-abstract class ParserBlocks extends ParserLines {
-    // methods defined in later parts of the chain
-    abstract public Token gatherConstructorImpl(List<Token> tokens, Token implTok);
-    abstract public Token gatherDefaultLockMatchImpl(List<Token> tokens, Token implTok);
-    abstract public Token gatherLibrary(List<Token> tokens, Token libraryTok);
-    abstract public boolean isDefaultLockMatchImplStart(List<Token> tokens);
+final class ParserBlocks {
+    private final Parser hub;
 
-
+    ParserBlocks(Parser hub) {
+        this.hub = hub;
+    }
 
     public List<Token> gatherKeywordBlocks(List<Token> lines, boolean isRoot) {
         List<Token> result = new ArrayList<>();
@@ -36,10 +34,10 @@ abstract class ParserBlocks extends ParserLines {
             // See docs/Parser.md, "?catch and ?EXPR sugar"
             if (tokens.size() > 1 && first.type == TokenType.OPERATOR && first.text.equals("?")
                     && tokens.get(1).type == TokenType.KEYWORD && tokens.get(1).text.equals("catch")) {
-                CatchClauseResult decl = gatherCatchClause(tokens, 1, "?catch(...) { ... }",
+                ParserLines.CatchClauseResult decl = gatherCatchClause(tokens, 1, "?catch(...) { ... }",
                         /* gatherBodyNow */ false);
-                pendingOptionalCatchParamName = decl.paramName;
-                pendingOptionalCatchRawBody = decl.body;
+                hub.lines.pendingOptionalCatchParamName = decl.paramName;
+                hub.lines.pendingOptionalCatchRawBody = decl.body;
                 i++;
                 continue;
             }
@@ -58,7 +56,7 @@ abstract class ParserBlocks extends ParserLines {
             boolean expandedOptionalHere = false;
             if (qIdx >= 0) {
                 Token qTok = tokens.get(qIdx);
-                if (pendingOptionalCatchRawBody == null) {
+                if (hub.lines.pendingOptionalCatchRawBody == null) {
                     throw new CompilerException("parse", qTok.file, qTok.line,
                             "'?' requires a preceding '?catch(e) { ... }' declaration, earlier in this same "
                                     + "function, to supply its catch block");
@@ -70,13 +68,13 @@ abstract class ParserBlocks extends ParserLines {
                                     + "immediately after it");
                 }
                 List<Token> clonedRawBody = new ArrayList<>();
-                for (Token bodyLine : pendingOptionalCatchRawBody) {
+                for (Token bodyLine : hub.lines.pendingOptionalCatchRawBody) {
                     clonedRawBody.add(bodyLine.deepCloneRaw());
                 }
                 Token tryGathered = new Token(TokenType.KEYWORD, "try", qTok.line, qTok.file);
                 tryGathered.sub = exprTokens;
                 tryGathered.childs = gatherKeywordBlocks(clonedRawBody, false);
-                tryGathered.catchParamName = pendingOptionalCatchParamName;
+                tryGathered.catchParamName = hub.lines.pendingOptionalCatchParamName;
                 tryGathered.decorators = qTok.decorators;
                 tryGathered.pinnedComments = qTok.pinnedComments;
                 List<Token> replaced = new ArrayList<>(tokens.subList(0, qIdx));
@@ -383,13 +381,13 @@ abstract class ParserBlocks extends ParserLines {
                             tokens = new ArrayList<>(tokens);
                             tokens.remove(3);
                         }
-                        if (isDefaultLockMatchImplStart(tokens)) {
-                            result.add(wrapAsLine(gatherDefaultLockMatchImpl(tokens, first)));
+                        if (hub.isDefaultLockMatchImplStart(tokens)) {
+                            result.add(wrapAsLine(hub.gatherDefaultLockMatchImpl(tokens, first)));
                             i++;
                             continue;
                         }
                         if (isConstructorImplStart(tokens)) {
-                            result.add(wrapAsLine(gatherConstructorImpl(tokens, first)));
+                            result.add(wrapAsLine(hub.gatherConstructorImpl(tokens, first)));
                             i++;
                             continue;
                         }
@@ -399,7 +397,7 @@ abstract class ParserBlocks extends ParserLines {
                     }
                     case "library": {
                         requireRoot(isRoot, first, "library");
-                        result.add(wrapAsLine(gatherLibrary(tokens, first)));
+                        result.add(wrapAsLine(hub.gatherLibrary(tokens, first)));
                         i++;
                         continue;
                     }
@@ -451,7 +449,7 @@ abstract class ParserBlocks extends ParserLines {
             throw new CompilerException("parse", tryTok.file, tryTok.line,
                     "'try' requires an expression (a call to a '@throws' function) before 'catch'");
         }
-        CatchClauseResult catchClause = gatherCatchClause(tokens, catchIdx,
+        ParserLines.CatchClauseResult catchClause = gatherCatchClause(tokens, catchIdx,
                 "try ... catch(...) { ... }", /* gatherBodyNow */ true);
         Token gathered = new Token(TokenType.KEYWORD, "try", tryTok.line, tryTok.file);
         gathered.sub = exprTokens;
@@ -466,7 +464,7 @@ abstract class ParserBlocks extends ParserLines {
      * Parses one "catch(e) { ... }" clause that must end the line. With gatherBodyNow=false the body stays raw
      * (a "?catch" body is deep-cloned per use site). See docs/Parser.md, "Try/catch span and catch clauses".
      */
-    public CatchClauseResult gatherCatchClause(List<Token> tokens, int catchIdx,
+    public ParserLines.CatchClauseResult gatherCatchClause(List<Token> tokens, int catchIdx,
             String trailingContextLabel, boolean gatherBodyNow) {
         Token catchTok = tokens.get(catchIdx);
         if (catchIdx + 1 >= tokens.size() || tokens.get(catchIdx + 1).type != TokenType.DELINEATOR
@@ -500,7 +498,7 @@ abstract class ParserBlocks extends ParserLines {
                     "unexpected token '" + trailing.text + "' after '" + trailingContextLabel + "'");
         }
         List<Token> body = gatherBodyNow ? gatherKeywordBlocks(blockTok.childs, false) : blockTok.childs;
-        return new CatchClauseResult(catchParamName, body);
+        return new ParserLines.CatchClauseResult(catchParamName, body);
     }
 
     /** The trailing '{' block token is always the last token of a gathered construct's line (used by loop/func/struct/enum, which never chain). */
@@ -820,7 +818,7 @@ abstract class ParserBlocks extends ParserLines {
                     "expected function name after 'func'");
         }
         Token nameTok = tokens.get(1);
-        TypeParamParseResult typeParams = parseOptionalTypeParams(tokens, 2);
+        ParserLines.TypeParamParseResult typeParams = hub.lines.parseOptionalTypeParams(tokens, 2);
         int parenIdx = typeParams.nextIndex;
         if (parenIdx >= tokens.size() || tokens.get(parenIdx).type != TokenType.DELINEATOR
                 || !tokens.get(parenIdx).text.equals("(")) {
@@ -833,8 +831,8 @@ abstract class ParserBlocks extends ParserLines {
         int blockIdx = tokens.indexOf(blockTok);
         List<Token> returnTypeTokens = new ArrayList<>(tokens.subList(parenIdx + 1, blockIdx));
             // Reset the pending "?catch" state here, the only reset site (gatherImpl and constructors route through gatherFunc).
-        pendingOptionalCatchParamName = null;
-        pendingOptionalCatchRawBody = null;
+        hub.lines.pendingOptionalCatchParamName = null;
+        hub.lines.pendingOptionalCatchRawBody = null;
         blockTok.childs = gatherKeywordBlocks(blockTok.childs, false);
 
         Token gathered = new Token(TokenType.KEYWORD, "func", funcTok.line, funcTok.file);
@@ -926,10 +924,10 @@ abstract class ParserBlocks extends ParserLines {
     }
 
     /** Parses an optional "implements A, B, ..." clause (a contract checked in TypeChecker). */
-    public ImplementsParseResult parseOptionalImplementsClause(List<Token> tokens, int idx) {
+    public ParserLines.ImplementsParseResult parseOptionalImplementsClause(List<Token> tokens, int idx) {
         if (idx >= tokens.size() || tokens.get(idx).type != TokenType.OPERATOR
                 || !tokens.get(idx).text.equals("implements")) {
-            return new ImplementsParseResult(null, idx);
+            return new ParserLines.ImplementsParseResult(null, idx);
         }
         List<String> names = new ArrayList<>();
         int j = idx + 1;
@@ -955,7 +953,7 @@ abstract class ParserBlocks extends ParserLines {
                 break; // end of clause; whatever follows (the '{') is the caller's concern
             }
         }
-        return new ImplementsParseResult(names, j);
+        return new ParserLines.ImplementsParseResult(names, j);
     }
 
     /** Body for "struct"; a member line starting with "extends" is a parse error (inheritance was removed). */
@@ -965,8 +963,8 @@ abstract class ParserBlocks extends ParserLines {
                     "expected a name after '" + kindText + "'");
         }
         Token nameTok = tokens.get(1);
-        TypeParamParseResult typeParams = parseOptionalTypeParams(tokens, 2);
-        ImplementsParseResult implementsClause = parseOptionalImplementsClause(tokens, typeParams.nextIndex);
+        ParserLines.TypeParamParseResult typeParams = hub.lines.parseOptionalTypeParams(tokens, 2);
+        ParserLines.ImplementsParseResult implementsClause = parseOptionalImplementsClause(tokens, typeParams.nextIndex);
         Token blockTok = requireTrailingBlock(tokens, kwTok);
         if (tokens.indexOf(blockTok) != implementsClause.nextIndex) {
             throw new CompilerException("parse", kwTok.file, kwTok.line,
@@ -1088,11 +1086,11 @@ abstract class ParserBlocks extends ParserLines {
                         if (vi + 4 < lineTokens.size() && lineTokens.get(vi + 3).type == TokenType.OPERATOR
                                 && lineTokens.get(vi + 3).text.equals("..")
                                 && lineTokens.get(vi + 4).type == TokenType.INTEGER) {
-                            t.explicitRangeStart = enumLiteralValue(lineTokens.get(vi + 2));
-                            t.explicitRangeEnd = enumLiteralValue(lineTokens.get(vi + 4));
+                            t.explicitRangeStart = ParserLines.enumLiteralValue(lineTokens.get(vi + 2));
+                            t.explicitRangeEnd = ParserLines.enumLiteralValue(lineTokens.get(vi + 4));
                             vi += 4;
                         } else {
-                            t.explicitEnumValue = enumLiteralValue(lineTokens.get(vi + 2));
+                            t.explicitEnumValue = ParserLines.enumLiteralValue(lineTokens.get(vi + 2));
                             vi += 2;
                         }
                     }
@@ -1164,7 +1162,7 @@ abstract class ParserBlocks extends ParserLines {
                     "expected interface name after 'interface'");
         }
         Token nameTok = tokens.get(1);
-        TypeParamParseResult typeParams = parseOptionalTypeParams(tokens, 2);
+        ParserLines.TypeParamParseResult typeParams = hub.lines.parseOptionalTypeParams(tokens, 2);
         Token blockTok = requireTrailingBlock(tokens, interfaceTok);
         if (tokens.indexOf(blockTok) != typeParams.nextIndex) {
             throw new CompilerException("parse", interfaceTok.file, interfaceTok.line,
@@ -1243,7 +1241,7 @@ abstract class ParserBlocks extends ParserLines {
 
     /** "impl Iface for Concrete{...}" or "impl Concrete{...}"; methods go through gatherFunc directly (impl bodies are exempt from the isRoot check). .sub has 1 or 2 name tokens. */
     public Token gatherImpl(List<Token> tokens, Token implTok) {
-        TypeParamParseResult implTypeParams = parseOptionalTypeParams(tokens, 1);
+        ParserLines.TypeParamParseResult implTypeParams = hub.lines.parseOptionalTypeParams(tokens, 1);
         int idx = implTypeParams.nextIndex;
 
         if (idx >= tokens.size() || tokens.get(idx).type != TokenType.VARREF) {
@@ -1252,7 +1250,7 @@ abstract class ParserBlocks extends ParserLines {
         }
         Token firstNameTok = tokens.get(idx);
         idx++;
-        TypeArgParseResult firstArgs = parseOptionalTypeArgsRaw(tokens, idx);
+        ParserLines.TypeArgParseResult firstArgs = hub.lines.parseOptionalTypeArgsRaw(tokens, idx);
         idx = firstArgs.nextIndex;
 
         Token interfaceNameTok = null;
@@ -1270,7 +1268,7 @@ abstract class ParserBlocks extends ParserLines {
             interfaceArgs = firstArgs.groups;
             concreteNameTok = tokens.get(idx);
             idx++;
-            TypeArgParseResult cArgs = parseOptionalTypeArgsRaw(tokens, idx);
+            ParserLines.TypeArgParseResult cArgs = hub.lines.parseOptionalTypeArgsRaw(tokens, idx);
             idx = cArgs.nextIndex;
             concreteArgs = cArgs.groups;
         } else {
@@ -1324,7 +1322,7 @@ abstract class ParserBlocks extends ParserLines {
     /** True right after "impl" for "impl [<T>] constructor for Name(...) self {...}" (an interface literally named "constructor" is the accepted collision). */
     public boolean isConstructorImplStart(List<Token> tokens) {
             // Peek only: parseOptionalTypeParams has no side effects.
-        TypeParamParseResult implTypeParams = parseOptionalTypeParams(tokens, 1);
+        ParserLines.TypeParamParseResult implTypeParams = hub.lines.parseOptionalTypeParams(tokens, 1);
         int idx = implTypeParams.nextIndex;
         return tokens.size() > idx + 1
                 && tokens.get(idx).type == TokenType.VARREF && tokens.get(idx).text.equals("constructor")

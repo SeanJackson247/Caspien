@@ -1,5 +1,6 @@
 package caspien;
 import caspien.typechecker.TypeChecker;
+import caspien.typechecker.TypeCheckerModel;
 
 import java.util.*;
 
@@ -19,12 +20,12 @@ import java.util.*;
  */
 public final class LockNestingCheck {
     public static final class Info {
-        public final TypeChecker.FuncInfo fn;
+        public final TypeCheckerModel.FuncInfo fn;
         public boolean acquires;                                         // takes a lock directly
         public String waitKind;                                          // first waiting operation in the body ("yield", "sleep", "par", "await"), null if none
         public final Set<String> callees = new LinkedHashSet<>();         // every resolved call target in the body
         public final List<Token> heldCalls = new ArrayList<>();           // calls made while a lock is held
-        public Info(TypeChecker.FuncInfo fn) {
+        public Info(TypeCheckerModel.FuncInfo fn) {
             this.fn = fn;
         }
     }
@@ -42,7 +43,7 @@ public final class LockNestingCheck {
         c.check();
     }
 
-    public void add(TypeChecker.FuncInfo f) {
+    public void add(TypeCheckerModel.FuncInfo f) {
         if (f == null || f.funcToken == null || f.mangledName == null || byName.containsKey(f.mangledName) || exempt.contains(f.mangledName)) {
             return;
         }
@@ -52,18 +53,18 @@ public final class LockNestingCheck {
     }
 
     public void collect(TypeChecker checker) {
-        for (List<TypeChecker.FuncInfo> l : checker.getFunctions().values()) {
+        for (List<TypeCheckerModel.FuncInfo> l : checker.declarations.getFunctions().values()) {
             l.forEach(this::add);
         }
-        for (List<TypeChecker.ImplInfo> l : checker.getImpls().values()) {
-            for (TypeChecker.ImplInfo impl : l) {
+        for (List<TypeCheckerModel.ImplInfo> l : checker.declarations.getImpls().values()) {
+            for (TypeCheckerModel.ImplInfo impl : l) {
                 impl.methods.values().forEach(this::add);
                 impl.staticMethods.values().forEach(this::add);
                 impl.genericMethodInstances.values().forEach(this::add);
             }
         }
-        for (TypeChecker.LibraryInfo lib : checker.getLibraries().values()) {
-            for (List<TypeChecker.FuncInfo> l : lib.ownFunctions.values()) {
+        for (TypeCheckerModel.LibraryInfo lib : checker.declarations.getLibraries().values()) {
+            for (List<TypeCheckerModel.FuncInfo> l : lib.ownFunctions.values()) {
                 l.forEach(this::add);
             }
         }
