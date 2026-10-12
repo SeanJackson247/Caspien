@@ -56,7 +56,7 @@ public class RangeEndHintPass {
                     end++;
                 }
                 int stop = Math.min(end + 1, n);
-                out.addAll(function(lines.subList(i, stop)));
+                out.addAll(function(lines.slice(i, stop)));
                 i = stop;
             } else {
                 out.add(lines.get(i));
@@ -74,7 +74,7 @@ public class RangeEndHintPass {
         long off;
     }
 
-    private List<BytecodeStatement> function(List<BytecodeStatement> fn) {
+    private BytecodeProgram function(BytecodeProgram fn) {
         int n = fn.size();
         List<Site> sites = new ArrayList<>();
         for (int i = 0; i + 3 < n; i++) {
@@ -171,7 +171,7 @@ public class RangeEndHintPass {
      * -1 when the slot cannot be treated this way, else the weight of its end slot. Every other mention of $ro must be PUSH 8 $ro,
      * every mention of $ro+8 PUSH 8 $ro+8 (or the construction itself), and no token may name an offset strictly inside the 16 bytes.
      */
-    private static long usable(List<BytecodeStatement> fn, long ro, List<Site> sites, int[] depth) {
+    private static long usable(BytecodeProgram fn, long ro, List<Site> sites, int[] depth) {
         String rs = "$" + ro;
         String es = "$" + (ro + 8);
         Set<Integer> own = new HashSet<>();
@@ -244,7 +244,7 @@ public class RangeEndHintPass {
     }
 
     /** ADDR 16 $r ; expression ; expression ; ASSIGN 16 16 16 starting at i, or null */
-    private static Site match(List<BytecodeStatement> fn, int i) {
+    private static Site match(BytecodeProgram fn, int i) {
         BytecodeStatement a = fn.get(i);
         if (!(a.size() == 3 && isMn(a, "ADDR") && t(a, 1).equals("16"))) {
             return null;

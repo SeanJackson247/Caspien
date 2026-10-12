@@ -91,7 +91,7 @@ public class StaticFloatCachePass {
                     end++;
                 }
                 int stop = Math.min(end + 1, lines.size());
-                List<BytecodeStatement> fn = lines.subList(i, stop);
+                BytecodeProgram fn = lines.slice(i, stop);
                 out.addAll(fn.size() <= MAX_LINES ? cacheFunction(fn, escaped) : fn);
                 i = stop;
                 continue;
@@ -108,7 +108,7 @@ public class StaticFloatCachePass {
         Set<String> used = new HashSet<>();
     }
 
-    private List<BytecodeStatement> cacheFunction(List<BytecodeStatement> fn, Set<String> escaped) {
+    private BytecodeProgram cacheFunction(BytecodeProgram fn, Set<String> escaped) {
         int n = fn.size();
         Map<String, Integer> labelDef = new HashMap<>();
         int maxX = -1;
@@ -267,7 +267,7 @@ public class StaticFloatCachePass {
     }
 
     /** whitelisted ops only, single entry: no jump to the header from outside, none to an inner label from outside */
-    private boolean loopOk(List<BytecodeStatement> cur, Loop lp, Map<String, Integer> labelDef, int n) {
+    private boolean loopOk(BytecodeProgram cur, Loop lp, Map<String, Integer> labelDef, int n) {
         for (int i = lp.h; i <= lp.b; i++) {
             BytecodeStatement l = cur.get(i);
             if (l.isEmpty()) {

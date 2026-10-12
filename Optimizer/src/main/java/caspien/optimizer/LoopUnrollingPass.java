@@ -425,8 +425,8 @@ public class LoopUnrollingPass implements OptimizationPass {
         int oldSize = lp.endIdx - lp.start + 1;
         BytecodeProgram out = new BytecodeProgram();
         BytecodeToken ref = work.get(lp.start).get(0);
-        BytecodeProgram body = new BytecodeProgram(work.subList(lp.bodyStart, lp.incStart));
-        BytecodeProgram inc = new BytecodeProgram(work.subList(lp.incStart, lp.jmpIdx));
+        BytecodeProgram body = work.slice(lp.bodyStart, lp.incStart);
+        BytecodeProgram inc = work.slice(lp.incStart, lp.jmpIdx);
 
         if (full) {
             for (int k = lp.start; k <= lp.start + 6; k++) out.add(work.get(k));

@@ -45,7 +45,7 @@ public class RangeWordSplitPass {
                     end++;
                 }
                 int stop = Math.min(end + 1, n);
-                out.addAll(hint(split(lines.subList(i, stop), splitSlots)));
+                out.addAll(hint(split(lines.slice(i, stop), splitSlots)));
                 i = stop;
             } else {
                 out.add(lines.get(i));
@@ -57,7 +57,7 @@ public class RangeWordSplitPass {
 
     private final Set<Long> splitSlots = new HashSet<>();
 
-    private List<BytecodeStatement> split(List<BytecodeStatement> lines, Set<Long> slots) {
+    private BytecodeProgram split(BytecodeProgram lines, Set<Long> slots) {
         slots.clear();
         BytecodeProgram out = new BytecodeProgram(lines.size());
         int n = lines.size();
@@ -106,7 +106,7 @@ public class RangeWordSplitPass {
     }
 
     /** REGHINT lines for the two words of every split range whose every mention is a plain 8-byte one (the promotion re-checks all of it). */
-    private List<BytecodeStatement> hint(List<BytecodeStatement> fn) {
+    private BytecodeProgram hint(BytecodeProgram fn) {
         if (splitSlots.isEmpty()) {
             return fn;
         }
@@ -168,7 +168,7 @@ public class RangeWordSplitPass {
     }
 
     /** weights {start word, end word}, or null when some mention is not a plain 8-byte access or a wide access overlaps. */
-    private static long[] usable(List<BytecodeStatement> fn, long x, int[] depth) {
+    private static long[] usable(BytecodeProgram fn, long x, int[] depth) {
         long[] w = new long[2];
         for (int i = 0; i < fn.size(); i++) {
             BytecodeStatement l = fn.get(i);

@@ -154,7 +154,7 @@ public class RegVarPromotionPass {
                     end++;
                 }
                 int stop = Math.min(end + 1, lines.size());
-                processFunction(lines.subList(i, stop), out);
+                processFunction(lines.slice(i, stop), out);
                 i = stop;
                 continue;
             }
@@ -169,7 +169,7 @@ public class RegVarPromotionPass {
     }
 
     /** true when the function text mentions the fourth temporary (%t3 = r12) anywhere */
-    private static boolean usesTemp3(List<BytecodeStatement> fn) {
+    private static boolean usesTemp3(BytecodeProgram fn) {
         for (BytecodeStatement l : fn) {
             for (BytecodeToken t : l) {
                 if (t.text.equals("%t3")) {
@@ -188,7 +188,7 @@ public class RegVarPromotionPass {
         return m.equals("REGHINT") || m.equals("REGVAR");
     }
 
-    private void processFunction(List<BytecodeStatement> fn, List<BytecodeStatement> out) {
+    private void processFunction(BytecodeProgram fn, BytecodeProgram out) {
         Map<Long, Hint> hints = new HashMap<>();
         boolean blocked = false;      // an instruction that uses r13/r14 as backend scratch: no integer variables here
         boolean hardBlocked = false;  // inline assembly: touch nothing
@@ -466,7 +466,7 @@ public class RegVarPromotionPass {
      * register free of its neighbours stays in memory. Floats of different width never share a register (the backend spills a register
      * with one width). Sets {@code Hint.reg} (-1 = not promoted).
      */
-    private void shareRegisters(List<BytecodeStatement> fn, Map<Long, Hint> hints, List<int[]> pairs,
+    private void shareRegisters(BytecodeProgram fn, Map<Long, Hint> hints, List<int[]> pairs,
                                 List<Hint> intCands, List<Hint> xCands, int intLimit) {
         List<Hint> all = new ArrayList<>(intCands.size() + xCands.size());
         all.addAll(intCands);
@@ -699,7 +699,7 @@ public class RegVarPromotionPass {
         }
     }
 
-    private static long pairSlotOf(List<BytecodeStatement> fn, int addrIdx, Map<Long, Hint> hints) {
+    private static long pairSlotOf(BytecodeProgram fn, int addrIdx, Map<Long, Hint> hints) {
         Hint h = slotHint(hints, fn.get(addrIdx).get(2).text);
         return h == null ? Long.MIN_VALUE : h.off;
     }
@@ -716,7 +716,7 @@ public class RegVarPromotionPass {
      * Peephole over the rewritten function: a value that is computed into a temp and immediately moved into a float variable
      * is computed straight into the variable's register instead (the temp must be dead afterwards, see {@link #tempDeadAfter}).
      */
-    private static List<BytecodeStatement> fuse(List<BytecodeStatement> res) {
+    private static BytecodeProgram fuse(BytecodeProgram res) {
         BytecodeProgram o = new BytecodeProgram(res.size());
         int i = 0;
         while (i < res.size()) {
@@ -773,7 +773,7 @@ public class RegVarPromotionPass {
      * end of the straight-line run (a label, a jump, a call bracket, a return) means "dead" too -- the register-form pass flushes
      * its operand model at all of those, so no temp is ever live across them.
      */
-    private static boolean tempDeadAfter(List<BytecodeStatement> res, int from, String t) {
+    private static boolean tempDeadAfter(BytecodeProgram res, int from, String t) {
         for (int i = from; i < res.size() && i < from + 60; i++) {
             BytecodeStatement l = res.get(i);
             if (l.isEmpty()) {

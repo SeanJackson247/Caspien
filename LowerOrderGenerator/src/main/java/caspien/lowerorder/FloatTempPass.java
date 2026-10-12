@@ -58,7 +58,7 @@ public class FloatTempPass {
                     end++;
                 }
                 int stop = Math.min(end + 1, lines.size());
-                processFunction(lines.subList(i, stop), out);
+                processFunction(lines.slice(i, stop), out);
                 i = stop;
                 continue;
             }
@@ -242,7 +242,7 @@ public class FloatTempPass {
         }
     }
 
-    private void processFunction(List<BytecodeStatement> fn, List<BytecodeStatement> out) {
+    private void processFunction(BytecodeProgram fn, BytecodeProgram out) {
         int n = fn.size();
         List<List<String>> t = new ArrayList<>(n);
         for (BytecodeStatement l : fn) {

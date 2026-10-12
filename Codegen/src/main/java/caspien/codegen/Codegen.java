@@ -40,7 +40,7 @@ public final class Codegen {
             BytecodeProgram program = new BytecodeParser().parse(lobText.lines().toList(), origin);
             X86Backend backend = new X86Backend(config.target, config.bmi2);
             backend.avx = config.avx;
-            return new Result(backend.generate(program), List.of(), false);
+            return new Result(backend.generate(program.asList()), List.of(), false);
         } catch (CodegenException e) {
             return new Result(null, List.of(e.getMessage()), true);
         }

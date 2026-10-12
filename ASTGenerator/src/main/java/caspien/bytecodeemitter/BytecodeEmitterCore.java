@@ -654,7 +654,7 @@ final class BytecodeEmitterCore {
      * when a type needs generated drop glue: the glue pass resolves `GT_DESTRUCT name` through one name -> type map, so two owning types under one
      * name dropped through the wrong layout (a catch parameter `e` plus an owning local `e` leaked). Rename one of them.
      */
-    public void requireOneOwnsTypePerSlotName(TypeCheckerModel.FuncInfo info, List<BytecodeStatement> allocLines) {
+    public void requireOneOwnsTypePerSlotName(TypeCheckerModel.FuncInfo info, BytecodeProgram allocLines) {
         Map<String, String> seen = new HashMap<>();
         for (BytecodeStatement st : allocLines) {
             if (!st.opcode().equals("ALLOC") || st.size() < 3) {
@@ -1147,7 +1147,7 @@ final class BytecodeEmitterCore {
         for (Runnable r : ordinaryAllocs) {
             r.run();
         }
-        requireOneOwnsTypePerSlotName(info, out.subList(allocScanStart, out.size()));
+        requireOneOwnsTypePerSlotName(info, out.slice(allocScanStart, out.size()));
         // Locals discovered while emitting the body (see `declareHiddenLocal`) get their ALLOC lines spliced in right here once the
         // body is done: a variable cannot be used before it is declared, so no pre-pass is needed to find them.
         final int savedLateAllocPos = lateAllocPos;

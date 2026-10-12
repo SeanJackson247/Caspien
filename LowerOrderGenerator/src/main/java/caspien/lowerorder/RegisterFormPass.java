@@ -330,7 +330,7 @@ public class RegisterFormPass implements OptimizationPass {
 
         /** Discards this region's output and emits its original input lines [cpIn, upTo) instead. */
         void rollback(BytecodeProgram all, int upTo) {
-            out.subList(cpOut, out.size()).clear();
+            out.removeRange(cpOut, out.size());
             for (int k = cpIn; k < upTo; k++) {
                 out.add(all.get(k));
             }

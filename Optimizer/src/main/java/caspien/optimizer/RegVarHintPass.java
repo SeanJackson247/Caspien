@@ -63,7 +63,7 @@ public class RegVarHintPass implements OptimizationPass {
             if (end >= lines.size()) {
                 end = lines.size() - 1;
             }
-            List<BytecodeStatement> fn = lines.subList(i, end + 1);
+            BytecodeProgram fn = lines.slice(i, end + 1);
             BytecodeProgram hinted = hintFunction(fn);
             if (hinted != null) {
                 changed = true;
@@ -85,7 +85,7 @@ public class RegVarHintPass implements OptimizationPass {
     }
 
     /** Returns the function's lines with REGVAR lines inserted, or null when nothing changes. */
-    private BytecodeProgram hintFunction(List<BytecodeStatement> fn) {
+    private BytecodeProgram hintFunction(BytecodeProgram fn) {
         Map<String, Integer> allocCount = new HashMap<>();
         Map<String, String> allocType = new HashMap<>();
         Set<String> mixedType = new HashSet<>(); // a name declared more than once with different types
@@ -185,7 +185,7 @@ public class RegVarHintPass implements OptimizationPass {
         }
         java.util.Collections.sort(chosen);
         BytecodeToken ref = fn.get(lastLeadingAlloc).get(0);
-        BytecodeProgram result = new BytecodeProgram(fn.subList(0, lastLeadingAlloc + 1));
+        BytecodeProgram result = new BytecodeProgram(fn.slice(0, lastLeadingAlloc + 1));
         for (String c : chosen) {
             BytecodeStatement h = new BytecodeStatement();
             h.add(new BytecodeToken("REGVAR", ref.file, ref.line, BytecodeToken.Kind.CODE));
@@ -197,7 +197,7 @@ public class RegVarHintPass implements OptimizationPass {
             }
             result.add(h);
         }
-        result.addAll(fn.subList(lastLeadingAlloc + 1, fn.size()));
+        result.addAll(fn.slice(lastLeadingAlloc + 1, fn.size()));
         return result;
     }
 }

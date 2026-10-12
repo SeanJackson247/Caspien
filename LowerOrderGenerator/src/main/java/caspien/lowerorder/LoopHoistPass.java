@@ -69,8 +69,8 @@ public class LoopHoistPass {
                     end++;
                 }
                 int stop = Math.min(end + 1, lines.size());
-                List<BytecodeStatement> fn = lines.subList(i, stop);
-                List<BytecodeStatement> res = fn.size() <= MAX_LINES ? hoistFunction(fn) : null;
+                BytecodeProgram fn = lines.slice(i, stop);
+                BytecodeProgram res = fn.size() <= MAX_LINES ? hoistFunction(fn) : null;
                 out.addAll(res != null ? res : fn);
                 i = stop;
                 continue;
@@ -97,7 +97,7 @@ public class LoopHoistPass {
     }
 
     /** returns the new function text, or null when nothing was hoisted */
-    private List<BytecodeStatement> hoistFunction(List<BytecodeStatement> fn) {
+    private BytecodeProgram hoistFunction(BytecodeProgram fn) {
         int n = fn.size();
         int allocIdx = -1;
         long allocSize = 0;
@@ -350,7 +350,7 @@ public class LoopHoistPass {
                 }
                 int stop = Math.min(end + 1, lines.size());
                 Object[] info = hoisted.get(t(line, 1));
-                out.addAll(finishFunction(lines.subList(i, stop), (Long) info[0], (Map<String, String>) info[1]));
+                out.addAll(finishFunction(lines.slice(i, stop), (Long) info[0], (Map<String, String>) info[1]));
                 i = stop;
                 continue;
             }
@@ -360,7 +360,7 @@ public class LoopHoistPass {
         return out;
     }
 
-    private static List<BytecodeStatement> finishFunction(List<BytecodeStatement> fn, long origAlloc, Map<String, String> copyOf) {
+    private static BytecodeProgram finishFunction(BytecodeProgram fn, long origAlloc, Map<String, String> copyOf) {
         // which copy slots still exist as memory slots (every mention is renamed or none is)
         Set<String> alive = new HashSet<>();
         for (BytecodeStatement l : fn) {
@@ -437,7 +437,7 @@ public class LoopHoistPass {
     }
 
     /** the read at i is directly followed by "R_LD 8 %t %t" (length) or "R_LEA %t %t ..." (element address) on the same temp */
-    private static boolean startsAccess(List<BytecodeStatement> cur, int i, int bound) {
+    private static boolean startsAccess(BytecodeProgram cur, int i, int bound) {
         if (i + 1 > bound) {
             return false;
         }
@@ -451,7 +451,7 @@ public class LoopHoistPass {
     }
 
     /** true when no jump from outside [h,b] lands on a label inside it (the header itself is checked by the caller) */
-    private static boolean singleEntry(List<BytecodeStatement> fn, Loop lp, Map<String, Integer> labelDef) {
+    private static boolean singleEntry(BytecodeProgram fn, Loop lp, Map<String, Integer> labelDef) {
         Set<String> inside = new HashSet<>();
         for (int i = lp.h + 1; i <= lp.b; i++) {
             BytecodeStatement l = fn.get(i);

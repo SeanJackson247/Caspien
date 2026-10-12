@@ -3,7 +3,7 @@
 One parser, one set of classes for the plain-text bytecode (HOB and LOB) that the ASTGenerator, Optimizer and LowerOrderGenerator write and the Optimizer, LowerOrderGenerator and Codegen read (package `caspien.bytecode`, sources in `src/main/java/caspien/bytecode/`). The text format stays the only interchange between stages; this folder is just the code that turns it into Java objects and back.
 
 - `BytecodeToken`: text, file, line, kind (CODE / STRING / COMMENT). Immutable.
-- `BytecodeStatement`: one line, a list of tokens (`opcode()`, `text(i)`, `sourceLine()`). `BytecodeStatement.fromText("ALLOC 16", origin)` builds an instruction a pass generates, with the same scanner (never for reading a program).
+- `BytecodeStatement`: one line, a token list it owns (a wrapper around a private list, not a subclass of one) (`opcode()`, `text(i)`, `sourceLine()`). `BytecodeStatement.fromText("ALLOC 16", origin)` builds an instruction a pass generates, with the same scanner (never for reading a program).
 - `BytecodeProgram`: the statements of a whole program in order. The only thing a pass reads or writes.
 - `BytecodeParser`: text lines -> `BytecodeProgram`. Hand-written scanner (no regex): a `"quoted string"` with backslash escapes and a char literal such as `' '` are each ONE token. Tokenises and groups; no analysis.
 - `BytecodeSerializer`: `BytecodeProgram` -> text, tokens joined by single spaces, one line per statement.

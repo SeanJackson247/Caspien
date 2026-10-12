@@ -142,7 +142,7 @@ public class DeadControlFlowRemovalPass implements OptimizationPass {
             }
         }
         int newEnd = s + body.size() - 1;
-        L.subList(s, e + 1).clear();
+        L.removeRange(s, e + 1);
         L.addAll(s, body);
         boolean[] after = reachable(L, s, newEnd);
         boolean[] keep = new boolean[newEnd - s + 1];
@@ -166,7 +166,7 @@ public class DeadControlFlowRemovalPass implements OptimizationPass {
         }
         BytecodeProgram out = new BytecodeProgram();
         for (int k = s; k <= newEnd; k++) if (keep[k - s]) out.add(L.get(k));
-        L.subList(s, newEnd + 1).clear();
+        L.removeRange(s, newEnd + 1);
         L.addAll(s, out);
         int dropped = dropJumpToNext(L, s, s + out.size() - 1);
         return s + out.size() - 1 - dropped;

@@ -73,7 +73,7 @@ public class VariableAllocationReorderingPass implements OptimizationPass {
                 end++;
             }
             end = Math.min(end, n - 1);
-            List<BytecodeStatement> fn = lines.subList(i, end + 1);
+            BytecodeProgram fn = lines.slice(i, end + 1);
             BytecodeProgram re = reorderFunction(fn, table);
             if (re != null) {
                 changed = true;
@@ -95,7 +95,7 @@ public class VariableAllocationReorderingPass implements OptimizationPass {
     }
 
     /** The function's lines with the leading ALLOC run reordered, or null when nothing changes. */
-    private BytecodeProgram reorderFunction(List<BytecodeStatement> fn, Align table) {
+    private BytecodeProgram reorderFunction(BytecodeProgram fn, Align table) {
         int n = fn.size();
         for (BytecodeStatement l : fn) {
             if (isMnemonic(l, "ASM_START")) {
@@ -223,11 +223,11 @@ public class VariableAllocationReorderingPass implements OptimizationPass {
             return null;
         }
         BytecodeProgram result = new BytecodeProgram(n);
-        result.addAll(fn.subList(0, p));
+        result.addAll(fn.slice(0, p));
         for (Slot s : sorted) {
             result.add(s.line);
         }
-        result.addAll(fn.subList(last + 1, n));
+        result.addAll(fn.slice(last + 1, n));
         return result;
     }
 
