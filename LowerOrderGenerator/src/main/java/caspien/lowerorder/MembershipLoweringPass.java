@@ -1,6 +1,6 @@
 package caspien.lowerorder;
-import caspien.hob.HOBProgram;
-import caspien.hob.HOBStatement;
+import caspien.bytecode.BytecodeProgram;
+import caspien.bytecode.BytecodeStatement;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -23,7 +23,7 @@ public class MembershipLoweringPass implements OptimizationPass {
     }
 
     @Override
-    public PassResult run(HOBProgram lines) {
+    public PassResult run(BytecodeProgram lines) {
         return new Worker(StructTable.read(lines), EnumTable.read(lines)).process(lines);
     }
 
@@ -44,14 +44,14 @@ public class MembershipLoweringPass implements OptimizationPass {
             this.enumTable = enumTable;
         }
 
-        PassResult process(HOBProgram lines) {
-            HOBProgram rewritten = new HOBProgram();
+        PassResult process(BytecodeProgram lines) {
+            BytecodeProgram rewritten = new BytecodeProgram();
             boolean changed = false;
 
             int i = 0;
             int n = lines.size();
             while (i < n) {
-                HOBStatement line = lines.get(i);
+                BytecodeStatement line = lines.get(i);
                 if (line.isEmpty() || !line.get(0).text.equals("FUNC_START")) {
                     rewritten.add(line);
                     i++;
@@ -65,7 +65,7 @@ public class MembershipLoweringPass implements OptimizationPass {
                 }
                 end = Math.min(end, n - 1);
 
-                HOBProgram body = new HOBProgram();
+                BytecodeProgram body = new BytecodeProgram();
                 for (int k = start; k <= end; k++) {
                     body.add(lines.get(k));
                 }
@@ -80,17 +80,17 @@ public class MembershipLoweringPass implements OptimizationPass {
         }
 
         private static final class RewriteOutcome {
-            final HOBProgram lines;
+            final BytecodeProgram lines;
             final boolean changed;
-            RewriteOutcome(HOBProgram lines, boolean changed) {
+            RewriteOutcome(BytecodeProgram lines, boolean changed) {
                 this.lines = lines;
                 this.changed = changed;
             }
         }
 
         /** Walks one function's own line range looking for a rewritable IN/INSTANCEOF/IMPLEMENTS line, three lines at a time (the operator plus its two preceding operand pushes). */
-        private RewriteOutcome rewriteFunctionBody(HOBProgram body) {
-            HOBProgram out = new HOBProgram();
+        private RewriteOutcome rewriteFunctionBody(BytecodeProgram body) {
+            BytecodeProgram out = new BytecodeProgram();
             boolean changed = false;
             int k = 0;
             int n = body.size();
@@ -100,7 +100,7 @@ public class MembershipLoweringPass implements OptimizationPass {
             // non-ARG line. See docs/MembershipLoweringPass.md, "Temp declaration".
             allocInsertIndex = 0;
             while (allocInsertIndex < n) {
-                HOBStatement pl = body.get(allocInsertIndex);
+                BytecodeStatement pl = body.get(allocInsertIndex);
                 String ph = pl.isEmpty() ? "" : pl.get(0).text;
                 if (ph.equals("FUNC_START") || ph.equals("EXPORT") || ph.equals("FUNC_DECORATE")
                         || ph.equals("RETURNS") || ph.equals("ARG") || ph.equals("ALLOC")) {
@@ -112,7 +112,7 @@ public class MembershipLoweringPass implements OptimizationPass {
             tempCounter = 0;
 
             while (k < n) {
-                HOBStatement line = body.get(k);
+                BytecodeStatement line = body.get(k);
                 String head = line.isEmpty() ? "" : line.get(0).text;
 
                 if (head.equals("IN") && line.size() == 4 && out.size() >= 2) {
@@ -128,7 +128,7 @@ public class MembershipLoweringPass implements OptimizationPass {
                         if (!match.keepLeftPush) {
                             out.remove(leftIndex);
                         }
-                        out.addAll(HOBStatement.fromTexts(match.lines, "<generated-membership-lowering>"));
+                        out.addAll(BytecodeStatement.fromTexts(match.lines, "<generated-membership-lowering>"));
                         changed = true;
                         k++; // only the IN line itself was consumed from `body` beyond the two already-appended pushes
                         continue;
@@ -145,7 +145,7 @@ public class MembershipLoweringPass implements OptimizationPass {
                         if (!match.keepLeftPush) {
                             out.remove(leftIndex);
                         }
-                        out.addAll(HOBStatement.fromTexts(match.lines, "<generated-membership-lowering>"));
+                        out.addAll(BytecodeStatement.fromTexts(match.lines, "<generated-membership-lowering>"));
                         changed = true;
                         k++; // only the WITHIN line itself was consumed beyond the two already-appended pushes
                         continue;
@@ -155,7 +155,7 @@ public class MembershipLoweringPass implements OptimizationPass {
                     // The left operand's type is written on the operator line itself, not inferred from the
                     // preceding line. See docs/MembershipLoweringPass.md, "INSTANCEOF and IMPLEMENTS".
                     String leftType = line.get(1).text;
-                    HOBStatement targetPushLine = body.get(k - 1);
+                    BytecodeStatement targetPushLine = body.get(k - 1);
                     InstanceofMatch match = tryRewriteInstanceofOrImplements(head, targetPushLine, leftType, out);
                     if (match != null) {
                         // The target-name push is always one bare line, so it is always dropped; the left push is dropped
@@ -164,7 +164,7 @@ public class MembershipLoweringPass implements OptimizationPass {
                         if (!match.keepLeftPush) {
                             out.remove(out.size() - 1);
                         }
-                        out.addAll(HOBStatement.fromTexts(match.lines, "<generated-membership-lowering>"));
+                        out.addAll(BytecodeStatement.fromTexts(match.lines, "<generated-membership-lowering>"));
                         changed = true;
                         k++; // the bare INSTANCEOF/IMPLEMENTS line
                         continue;
@@ -179,7 +179,7 @@ public class MembershipLoweringPass implements OptimizationPass {
                         if (!match.keepLeftPush) {
                             out.remove(out.size() - 1);
                         }
-                        out.addAll(HOBStatement.fromTexts(match.lines, "<generated-membership-lowering>"));
+                        out.addAll(BytecodeStatement.fromTexts(match.lines, "<generated-membership-lowering>"));
                         changed = true;
                         k++; // the bare IS_BASE line
                         continue;
@@ -196,7 +196,7 @@ public class MembershipLoweringPass implements OptimizationPass {
                         if (!match.keepLeftPush) {
                             out.remove(leftIndex);
                         }
-                        out.addAll(HOBStatement.fromTexts(match.lines, "<generated-membership-lowering>"));
+                        out.addAll(BytecodeStatement.fromTexts(match.lines, "<generated-membership-lowering>"));
                         changed = true;
                         k++; // only the IN_SCAN line itself was consumed beyond the two already-appended pushes
                         continue;
@@ -214,7 +214,7 @@ public class MembershipLoweringPass implements OptimizationPass {
                         if (!match.keepLeftPush) {
                             out.remove(leftIndex);
                         }
-                        out.addAll(HOBStatement.fromTexts(match.lines, "<generated-membership-lowering>"));
+                        out.addAll(BytecodeStatement.fromTexts(match.lines, "<generated-membership-lowering>"));
                         changed = true;
                         k++; // only the LEN_SCAN line itself was consumed beyond the two already-appended pushes
                         continue;
@@ -244,13 +244,13 @@ public class MembershipLoweringPass implements OptimizationPass {
          * Returns the replacement, or null for a shape this pass does not lower.
          * See docs/MembershipLoweringPass.md, "IN shapes".
          */
-        private InMatch tryRewriteIn(HOBStatement inLine, HOBProgram outSoFar) {
+        private InMatch tryRewriteIn(BytecodeStatement inLine, BytecodeProgram outSoFar) {
             String t1 = inLine.get(1).text;
             String t2 = inLine.get(2).text;
             String t3 = inLine.get(3).text;
 
-            HOBStatement rightPush = outSoFar.get(outSoFar.size() - 1);
-            HOBStatement leftPush = outSoFar.get(outSoFar.size() - 2);
+            BytecodeStatement rightPush = outSoFar.get(outSoFar.size() - 1);
+            BytecodeStatement leftPush = outSoFar.get(outSoFar.size() - 2);
 
             // Shape 1: u64 in GuaranteedEnum (right side is a bare "PUSH EnumName").
             List<Map.Entry<String, Long>> enumVariants = enumTable.valueVariantsOf(t2);
@@ -364,13 +364,13 @@ public class MembershipLoweringPass implements OptimizationPass {
          * "WITHIN t1 t2 t3": checkWithin guarantees both operands are range-shaped, so there is one shape.
          * Pointer-wrapped sides are dereferenced as in IN's Shape 4. See docs/MembershipLoweringPass.md, "WITHIN".
          */
-        private InMatch tryRewriteWithin(HOBStatement withinLine, HOBProgram outSoFar) {
+        private InMatch tryRewriteWithin(BytecodeStatement withinLine, BytecodeProgram outSoFar) {
             String t1 = withinLine.get(1).text;
             String t2 = withinLine.get(2).text;
             String t3 = withinLine.get(3).text;
 
-            HOBStatement rightPush = outSoFar.get(outSoFar.size() - 1);
-            HOBStatement leftPush = outSoFar.get(outSoFar.size() - 2);
+            BytecodeStatement rightPush = outSoFar.get(outSoFar.size() - 1);
+            BytecodeStatement leftPush = outSoFar.get(outSoFar.size() - 2);
 
             CanonicalType leftCanonical = CanonicalType.parse(t1);
             CanonicalType rightCanonical = CanonicalType.parse(t2);
@@ -419,8 +419,8 @@ public class MembershipLoweringPass implements OptimizationPass {
          * no right side. `leftType` comes from the IS_BASE line itself, because an inline range literal is two
          * scalar pushes. See docs/MembershipLoweringPass.md, "IS_BASE".
          */
-        private InstanceofMatch tryRewriteIsBase(String leftType, HOBProgram outSoFar) {
-            HOBStatement leftPush = outSoFar.get(outSoFar.size() - 1);
+        private InstanceofMatch tryRewriteIsBase(String leftType, BytecodeProgram outSoFar) {
+            BytecodeStatement leftPush = outSoFar.get(outSoFar.size() - 1);
             boolean leftSimple = isSimplePush(leftPush);
             CanonicalType leftCanonical = CanonicalType.parse(leftType);
             // Accept bare "range" as well as "range(...)" (a @recursive range parameter is declared bare).
@@ -451,13 +451,13 @@ public class MembershipLoweringPass implements OptimizationPass {
          * "u64 in string": a byte-by-byte run-time scan to the NUL terminator (see buildStringScanCheck).
          * Operand handling as in IN Shape 2/3. See docs/MembershipLoweringPass.md, "IN_SCAN and LEN_SCAN".
          */
-        private InMatch tryRewriteInScan(HOBStatement inScanLine, HOBProgram outSoFar) {
+        private InMatch tryRewriteInScan(BytecodeStatement inScanLine, BytecodeProgram outSoFar) {
             String t1 = inScanLine.get(1).text;
             String t2 = inScanLine.get(2).text;
             String t3 = inScanLine.get(3).text;
 
-            HOBStatement rightPush = outSoFar.get(outSoFar.size() - 1);
-            HOBStatement leftPush = outSoFar.get(outSoFar.size() - 2);
+            BytecodeStatement rightPush = outSoFar.get(outSoFar.size() - 1);
+            BytecodeStatement leftPush = outSoFar.get(outSoFar.size() - 2);
 
             CanonicalType leftCanonical = CanonicalType.parse(t1);
             CanonicalType rightCanonical = CanonicalType.parse(t2);
@@ -504,7 +504,7 @@ public class MembershipLoweringPass implements OptimizationPass {
          * this is compiler-fabricated bytecode. See docs/MembershipLoweringPass.md, "IN_SCAN and LEN_SCAN".
          */
         private List<String> buildStringScanCheck(String leftName, String leftType, String rightName,
-                String rightType, String resultType, HOBProgram outSoFar) {
+                String rightType, String resultType, BytecodeProgram outSoFar) {
             List<String> lines = new ArrayList<>();
 
             String counter = declareTemp(outSoFar, "mut_u64");
@@ -566,12 +566,12 @@ public class MembershipLoweringPass implements OptimizationPass {
          * type and the result is the index of the first match. No widening or dereference is needed.
          * See docs/MembershipLoweringPass.md, "IN_SCAN and LEN_SCAN".
          */
-        private InMatch tryRewriteLenScan(HOBStatement lenScanLine, HOBProgram outSoFar) {
+        private InMatch tryRewriteLenScan(BytecodeStatement lenScanLine, BytecodeProgram outSoFar) {
             String t1 = lenScanLine.get(1).text; // the unsafe dynarray target's own type
             String t2 = lenScanLine.get(2).text; // the terminator's own type
 
-            HOBStatement rightPush = outSoFar.get(outSoFar.size() - 1); // the terminator -- pushed last, sits on top
-            HOBStatement leftPush = outSoFar.get(outSoFar.size() - 2); // the target -- pushed first
+            BytecodeStatement rightPush = outSoFar.get(outSoFar.size() - 1); // the terminator -- pushed last, sits on top
+            BytecodeStatement leftPush = outSoFar.get(outSoFar.size() - 2); // the target -- pushed first
 
             CanonicalType targetCanonical = CanonicalType.parse(t1);
             if (CanonicalType.unsafeDynArrayElementTypeOf(targetCanonical.baseType) == null) {
@@ -602,7 +602,7 @@ public class MembershipLoweringPass implements OptimizationPass {
 
         /** Walks forward comparing each element with the terminator; the index at the match is the length. */
         private List<String> buildLenScanCheck(String targetName, String targetType, String termName,
-                String termType, HOBProgram outSoFar) {
+                String termType, BytecodeProgram outSoFar) {
             List<String> lines = new ArrayList<>();
 
             String counter = declareTemp(outSoFar, "mut_u64");
@@ -649,7 +649,7 @@ public class MembershipLoweringPass implements OptimizationPass {
          * See docs/MembershipLoweringPass.md, "Pointer-wrapped operands".
          */
         private String[] derefInto(String name, String type, CanonicalType canonical,
-                HOBProgram outSoFar, List<String> lines) {
+                BytecodeProgram outSoFar, List<String> lines) {
             String derefType = canonical.mutability != null
                     ? canonical.mutability + "_" + canonical.baseType
                     : canonical.baseType;
@@ -664,10 +664,10 @@ public class MembershipLoweringPass implements OptimizationPass {
          * Declares a fresh "$in_tmpN" local, inserting its ALLOC at allocInsertIndex. A "$" name cannot clash
          * with a source identifier. See docs/MembershipLoweringPass.md, "Temp declaration".
          */
-        private String declareTemp(HOBProgram out, String type) {
+        private String declareTemp(BytecodeProgram out, String type) {
             String name = "$in_tmp" + (++tempCounter);
             out.add(allocInsertIndex,
-                    HOBStatement.fromText("ALLOC " + name + " " + type, "<generated-membership-lowering>"));
+                    BytecodeStatement.fromText("ALLOC " + name + " " + type, "<generated-membership-lowering>"));
             allocInsertIndex++;
             return name;
         }
@@ -688,15 +688,15 @@ public class MembershipLoweringPass implements OptimizationPass {
          * plus POP) only after every bail-out gate has passed, so no stray ALLOC is left. `leftType` is read from
          * the operator line. See docs/MembershipLoweringPass.md, "INSTANCEOF and IMPLEMENTS".
          */
-        private InstanceofMatch tryRewriteInstanceofOrImplements(String mnemonic, HOBStatement targetPushLine,
-                String leftType, HOBProgram outSoFar) {
+        private InstanceofMatch tryRewriteInstanceofOrImplements(String mnemonic, BytecodeStatement targetPushLine,
+                String leftType, BytecodeProgram outSoFar) {
             if (!isBarePush(targetPushLine)) {
                 return null;
             }
             String targetName = targetPushLine.get(1).text;
 
             // outSoFar's last entry is the target push; the one before it is the left operand's final line.
-            HOBStatement leftPush = outSoFar.get(outSoFar.size() - 2);
+            BytecodeStatement leftPush = outSoFar.get(outSoFar.size() - 2);
             boolean leftSimple = isSimplePush(leftPush);
             String structName = CanonicalType.parse(leftType).baseType;
             // An interface-typed left (members == null) is allowed: ___type is at offset 0 of every struct.
@@ -738,8 +738,8 @@ public class MembershipLoweringPass implements OptimizationPass {
          * Returns the left operand's name: a simple push's own name, or a fresh temp (declareTemp, with the
          * "POP" appended to `lines`) for a non-simple one.
          */
-        private String resolveLeftName(boolean leftSimple, HOBStatement leftPush, String leftType,
-                HOBProgram outSoFar, List<String> lines) {
+        private String resolveLeftName(boolean leftSimple, BytecodeStatement leftPush, String leftType,
+                BytecodeProgram outSoFar, List<String> lines) {
             if (leftSimple) {
                 return leftPush.get(1).text;
             }
@@ -753,7 +753,7 @@ public class MembershipLoweringPass implements OptimizationPass {
          * `storage != null`, not isGenuinePointer): AddressLoweringPass.resolveAddress leaves a dotted name
          * rooted in a storage-qualified local unresolved. See docs/MembershipLoweringPass.md, "INSTANCEOF and IMPLEMENTS".
          */
-        private String typeFieldPathFor(String leftName, String leftType, HOBProgram outSoFar,
+        private String typeFieldPathFor(String leftName, String leftType, BytecodeProgram outSoFar,
                 List<String> lines) {
             CanonicalType canonical = CanonicalType.parse(leftType);
             if (canonical.storage != null) {
@@ -807,12 +807,12 @@ public class MembershipLoweringPass implements OptimizationPass {
         }
 
         /** A plain "PUSH name" (no type): how a bare type/interface/enum name is pushed. */
-        private static boolean isBarePush(HOBStatement line) {
+        private static boolean isBarePush(BytecodeStatement line) {
             return line.size() == 2 && line.get(0).text.equals("PUSH") && isRealNameToken(line.get(1).text);
         }
 
         /** A plain "PUSH name type": the whole emission of a variable reference, dotted field access or hoisted string id. Bare literals of the same shape are excluded (see isRealNameToken). */
-        private static boolean isSimplePush(HOBStatement line) {
+        private static boolean isSimplePush(BytecodeStatement line) {
             return line.size() == 3 && line.get(0).text.equals("PUSH") && isRealNameToken(line.get(1).text);
         }
 

@@ -1,8 +1,8 @@
 package caspien.optimizer;
 
-import caspien.hob.HOBProgram;
-import caspien.hob.HOBStatement;
-import caspien.hob.HOBToken;
+import caspien.bytecode.BytecodeProgram;
+import caspien.bytecode.BytecodeStatement;
+import caspien.bytecode.BytecodeToken;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -52,25 +52,25 @@ public class DeadControlFlowRemovalPass implements OptimizationPass {
         return false;
     }
 
-    private static boolean isLabelDef(HOBStatement l) {
-        return l.size() == 1 && l.get(0).kind == HOBToken.Kind.CODE && l.get(0).text.startsWith("@") && l.get(0).text.endsWith(":");
+    private static boolean isLabelDef(BytecodeStatement l) {
+        return l.size() == 1 && l.get(0).kind == BytecodeToken.Kind.CODE && l.get(0).text.startsWith("@") && l.get(0).text.endsWith(":");
     }
 
-    private static String labelName(HOBStatement l) {
+    private static String labelName(BytecodeStatement l) {
         String t = l.get(0).text;
         return t.substring(0, t.length() - 1);
     }
 
-    private static boolean isBoolLit(HOBStatement l, String lit) {
+    private static boolean isBoolLit(BytecodeStatement l, String lit) {
         return "PUSH".equals(VarAnalysis.mnemonic(l)) && l.size() == 3 && l.get(1).text.equals(lit);
     }
 
     @Override
-    public PassResult run(HOBProgram input) {
+    public PassResult run(BytecodeProgram input) {
         if (!enabled) {
             return new PassResult(input, false);
         }
-        HOBProgram lines = new HOBProgram(input);
+        BytecodeProgram lines = new BytecodeProgram(input);
         boolean changed = false;
         // Last function first: a rewrite only changes the lines of its own function, so the ranges of the functions before it stay valid.
         List<int[]> fns = VarAnalysis.functions(lines);
@@ -93,13 +93,13 @@ public class DeadControlFlowRemovalPass implements OptimizationPass {
      * list), so the cost is linear in the function size per round instead of per folded branch. Returns the new end index, or -1 when
      * nothing was foldable. Rounds repeat until nothing is left (a removal can expose another pattern).
      */
-    private static List<Integer> findHits(HOBProgram L, int s, int e) {
+    private static List<Integer> findHits(BytecodeProgram L, int s, int e) {
         List<Integer> hits = new ArrayList<>();
         for (int i = s + 1; i + 2 <= e; i++) {
-            HOBStatement p = L.get(i);
+            BytecodeStatement p = L.get(i);
             boolean isTrue = isBoolLit(p, "true"), isFalse = isBoolLit(p, "false");
             if (!isTrue && !isFalse) continue;
-            HOBStatement c = L.get(i + 1), j = L.get(i + 2);
+            BytecodeStatement c = L.get(i + 1), j = L.get(i + 2);
             if (!"CMP".equals(VarAnalysis.mnemonic(c)) || c.size() != 1) continue;
             if (!"JMP".equals(VarAnalysis.mnemonic(j)) || j.size() != 2) continue;
             hits.add(i);
@@ -108,7 +108,7 @@ public class DeadControlFlowRemovalPass implements OptimizationPass {
         return hits;
     }
 
-    private static int rewriteAll(HOBProgram L, int s, int e) {
+    private static int rewriteAll(BytecodeProgram L, int s, int e) {
         List<Integer> hits = findHits(L, s, e);
         if (hits.isEmpty()) return -1;
         // A jump straight to the label that follows it is dropped first (the one-at-a-time version did this after every rewrite, so
@@ -122,17 +122,17 @@ public class DeadControlFlowRemovalPass implements OptimizationPass {
             }
         }
         // Lines that are already unreachable before the rewrites are none of this pass's business.
-        Set<HOBStatement> alreadyDead = newIdentitySet();
+        Set<BytecodeStatement> alreadyDead = newIdentitySet();
         boolean[] before = reachable(L, s, e);
         for (int k = s; k <= e; k++) {
             if (!before[k - s]) alreadyDead.add(L.get(k));
         }
         // Rebuild the function body with every pattern rewritten.
-        HOBProgram body = new HOBProgram(e - s + 1);
+        BytecodeProgram body = new BytecodeProgram(e - s + 1);
         int h = 0;
         for (int k = s; k <= e; k++) {
             if (h < hits.size() && hits.get(h) == k) {
-                HOBStatement jmp = L.get(k + 2);
+                BytecodeStatement jmp = L.get(k + 2);
                 if (isBoolLit(L.get(k), "false")) body.add(jmp);    // always jumps
                                                                       // (true: never jumps, the three lines vanish)
                 k += 2;
@@ -147,7 +147,7 @@ public class DeadControlFlowRemovalPass implements OptimizationPass {
         boolean[] after = reachable(L, s, newEnd);
         boolean[] keep = new boolean[newEnd - s + 1];
         for (int k = s; k <= newEnd; k++) {
-            HOBStatement l = L.get(k);
+            BytecodeStatement l = L.get(k);
             boolean dead = !after[k - s] && !alreadyDead.contains(l);
             String m = VarAnalysis.mnemonic(l);
             if (dead && m != null && (DECLS.contains(m) || m.equals("FUNC_START") || m.equals("FUNC_END"))) dead = false;
@@ -157,14 +157,14 @@ public class DeadControlFlowRemovalPass implements OptimizationPass {
         // follows an inlined early return) is left alone, and it may still refer to a label whose only reachable jumps just vanished.
         Set<String> named = new HashSet<>();
         for (int k = s; k <= newEnd; k++) {
-            HOBStatement l = L.get(k);
+            BytecodeStatement l = L.get(k);
             if (!keep[k - s] || isLabelDef(l)) continue;
-            for (HOBToken t : l) if (t.text.startsWith("@")) named.add(t.text);
+            for (BytecodeToken t : l) if (t.text.startsWith("@")) named.add(t.text);
         }
         for (int k = s; k <= newEnd; k++) {
             if (!keep[k - s] && isLabelDef(L.get(k)) && named.contains(labelName(L.get(k)))) keep[k - s] = true;
         }
-        HOBProgram out = new HOBProgram();
+        BytecodeProgram out = new BytecodeProgram();
         for (int k = s; k <= newEnd; k++) if (keep[k - s]) out.add(L.get(k));
         L.subList(s, newEnd + 1).clear();
         L.addAll(s, out);
@@ -172,7 +172,7 @@ public class DeadControlFlowRemovalPass implements OptimizationPass {
         return s + out.size() - 1 - dropped;
     }
 
-    private static Set<HOBStatement> newIdentitySet() {
+    private static Set<BytecodeStatement> newIdentitySet() {
         return java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
     }
 
@@ -181,19 +181,19 @@ public class DeadControlFlowRemovalPass implements OptimizationPass {
      * structured control-flow labels or that is referenced by anything other than a JMP (catch entries, unwinding callsites, ...). A line
      * flows into the next one unless it is RET, THROW or a JMP that is not the second half of "CMP ; JMP" (which also flows on); JMP flows to its label.
      */
-    private static boolean[] reachable(HOBProgram L, int s, int e) {
+    private static boolean[] reachable(BytecodeProgram L, int s, int e) {
         int n = e - s + 1;
         boolean[] seen = new boolean[n];
         Map<String, Integer> labels = new HashMap<>();
         Set<String> otherRefs = new HashSet<>();
         for (int k = s; k <= e; k++) {
-            HOBStatement l = L.get(k);
+            BytecodeStatement l = L.get(k);
             if (isLabelDef(l)) {
                 labels.put(labelName(l), k);
                 continue;
             }
             if ("JMP".equals(VarAnalysis.mnemonic(l))) continue;
-            for (HOBToken t : l) {
+            for (BytecodeToken t : l) {
                 if (t.text.startsWith("@")) otherRefs.add(t.text);
             }
         }
@@ -206,7 +206,7 @@ public class DeadControlFlowRemovalPass implements OptimizationPass {
             int k = work.poll();
             while (k <= e && !seen[k - s]) {
                 seen[k - s] = true;
-                HOBStatement l = L.get(k);
+                BytecodeStatement l = L.get(k);
                 String m = VarAnalysis.mnemonic(l);
                 if ("FUNC_END".equals(m) || "RET".equals(m) || "THROW".equals(m)) break;
                 if ("JMP".equals(m) && l.size() == 2) {
@@ -222,12 +222,12 @@ public class DeadControlFlowRemovalPass implements OptimizationPass {
     }
 
     /** Removes an unconditional "JMP L" directly followed by "L:" in [s, e]. */
-    private static int dropJumpToNext(HOBProgram L, int s, int e) {
+    private static int dropJumpToNext(BytecodeProgram L, int s, int e) {
         int fs = Math.min(s, L.size() - 1);
         int fe = Math.min(e, L.size() - 1);
         int removed = 0;
         for (int k = fe - 1; k > fs; k--) {
-            HOBStatement l = L.get(k), nx = L.get(k + 1);
+            BytecodeStatement l = L.get(k), nx = L.get(k + 1);
             if (!"JMP".equals(VarAnalysis.mnemonic(l)) || l.size() != 2 || !isLabelDef(nx)) continue;
             if (!l.get(1).text.equals(labelName(nx))) continue;
             if ("CMP".equals(VarAnalysis.mnemonic(L.get(k - 1)))) continue;

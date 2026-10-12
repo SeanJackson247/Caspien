@@ -1,7 +1,7 @@
 package caspien.lowerorder;
-import caspien.hob.HOBProgram;
-import caspien.hob.HOBStatement;
-import caspien.hob.HOBToken;
+import caspien.bytecode.BytecodeProgram;
+import caspien.bytecode.BytecodeStatement;
+import caspien.bytecode.BytecodeToken;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -49,7 +49,7 @@ public class LoopRotationPass {
         this.enabled = enabled;
     }
 
-    public HOBProgram run(HOBProgram lines) {
+    public BytecodeProgram run(BytecodeProgram lines) {
         if (!enabled) {
             return lines;
         }
@@ -61,11 +61,11 @@ public class LoopRotationPass {
                 labelAt.put(t.substring(0, t.length() - 1), i);
             }
         }
-        Map<Integer, HOBProgram> replaceAt = new HashMap<>();   // index of the back edge JMP -> lines that replace it
+        Map<Integer, BytecodeProgram> replaceAt = new HashMap<>();   // index of the back edge JMP -> lines that replace it
         Map<Integer, String> bodyLabelAfter = new HashMap<>();                  // index of the header branch -> new label inserted after it
         int counter = 0;
         for (int j = 0; j < n; j++) {
-            HOBStatement jmp = lines.get(j);
+            BytecodeStatement jmp = lines.get(j);
             if (!isJmp(jmp)) {
                 continue;
             }
@@ -86,7 +86,7 @@ public class LoopRotationPass {
             if (b >= j || pure > MAX_HEADER_PURE_LINES) {
                 continue;
             }
-            HOBStatement br = lines.get(b);
+            BytecodeStatement br = lines.get(b);
             if (!isBranch(br) || !OPPOSITE.containsKey(t(br, 1))) {
                 continue;
             }
@@ -103,23 +103,23 @@ public class LoopRotationPass {
                 body = "@loop_rot_" + (counter++);
                 bodyLabelAfter.put(b, body);
             }
-            HOBProgram copy = new HOBProgram();
+            BytecodeProgram copy = new BytecodeProgram();
             for (int k = h; k < b; k++) {
                 copy.add(lines.get(k));
             }
-            HOBStatement inv = new HOBStatement(br);
-            HOBToken c = br.get(1);
-            inv.set(1, new HOBToken(OPPOSITE.get(c.text), c.file, c.line, c.kind));
-            inv.set(5, new HOBToken(body, br.get(5).file, br.get(5).line, br.get(5).kind));
+            BytecodeStatement inv = new BytecodeStatement(br);
+            BytecodeToken c = br.get(1);
+            inv.set(1, new BytecodeToken(OPPOSITE.get(c.text), c.file, c.line, c.kind));
+            inv.set(5, new BytecodeToken(body, br.get(5).file, br.get(5).line, br.get(5).kind));
             copy.add(inv);
             replaceAt.put(j, copy);
         }
         if (replaceAt.isEmpty()) {
             return lines;
         }
-        HOBProgram out = new HOBProgram(n + replaceAt.size() * 3);
+        BytecodeProgram out = new BytecodeProgram(n + replaceAt.size() * 3);
         for (int i = 0; i < n; i++) {
-            HOBProgram rep = replaceAt.get(i);
+            BytecodeProgram rep = replaceAt.get(i);
             if (rep != null) {
                 out.addAll(rep);
             } else {
@@ -127,17 +127,17 @@ public class LoopRotationPass {
             }
             String lab = bodyLabelAfter.get(i);
             if (lab != null && usedBy(replaceAt, lab)) {
-                HOBToken ref = lines.get(i).get(0);
-                HOBStatement l = new HOBStatement();
-                l.add(new HOBToken(lab + ":", ref.file, ref.line, ref.kind));
+                BytecodeToken ref = lines.get(i).get(0);
+                BytecodeStatement l = new BytecodeStatement();
+                l.add(new BytecodeToken(lab + ":", ref.file, ref.line, ref.kind));
                 out.add(l);
             }
         }
         return out;
     }
 
-    private static boolean usedBy(Map<Integer, HOBProgram> replaceAt, String label) {
-        for (HOBProgram r : replaceAt.values()) {
+    private static boolean usedBy(Map<Integer, BytecodeProgram> replaceAt, String label) {
+        for (BytecodeProgram r : replaceAt.values()) {
             if (t(r.get(r.size() - 1), 5).equals(label)) {
                 return true;
             }
@@ -146,9 +146,9 @@ public class LoopRotationPass {
     }
 
     /** True when the lines starting at `from` are labels only (up to the first non-label) and one of them is `label:`. */
-    private static boolean labelRunAfterContains(HOBProgram in, int from, String label) {
+    private static boolean labelRunAfterContains(BytecodeProgram in, int from, String label) {
         for (int j = from; j < in.size(); j++) {
-            HOBStatement l = in.get(j);
+            BytecodeStatement l = in.get(j);
             if (!isLabel(l)) {
                 return false;
             }
@@ -159,7 +159,7 @@ public class LoopRotationPass {
         return false;
     }
 
-    private static boolean isPure(HOBStatement l) {
+    private static boolean isPure(BytecodeStatement l) {
         if (l.isEmpty()) {
             return false;
         }
@@ -183,19 +183,19 @@ public class LoopRotationPass {
         return s.length() == 3 && s.startsWith("%t");
     }
 
-    private static boolean isBranch(HOBStatement l) {
+    private static boolean isBranch(BytecodeStatement l) {
         return l.size() == 6 && (t(l, 0).equals("R_BRC") || t(l, 0).equals("R_BRCM")) && t(l, 5).startsWith("@");
     }
 
-    private static boolean isLabel(HOBStatement l) {
+    private static boolean isLabel(BytecodeStatement l) {
         return l.size() == 1 && t(l, 0).startsWith("@") && t(l, 0).endsWith(":");
     }
 
-    private static boolean isJmp(HOBStatement l) {
+    private static boolean isJmp(BytecodeStatement l) {
         return l.size() == 2 && t(l, 0).equals("JMP") && t(l, 1).startsWith("@");
     }
 
-    private static String t(HOBStatement l, int i) {
+    private static String t(BytecodeStatement l, int i) {
         return l.get(i).text;
     }
 }

@@ -1,7 +1,7 @@
 package caspien.codegen.x86backend;
 
-import caspien.hob.HOBStatement;
-import caspien.hob.HOBToken;
+import caspien.bytecode.BytecodeStatement;
+import caspien.bytecode.BytecodeToken;
 import caspien.codegen.CodegenConfig;
 import caspien.codegen.CodegenException;
 import java.util.ArrayList;
@@ -27,7 +27,7 @@ abstract class X86Emit extends X86Core {
         if (allLines == null || idx < 0 || idx >= allLines.size()) {
             return false;
         }
-        HOBStatement l = allLines.get(idx);
+        BytecodeStatement l = allLines.get(idx);
         return !l.isEmpty() && l.get(0).text.equals("ATOMIC_SWAP");
     }
 
@@ -79,7 +79,7 @@ abstract class X86Emit extends X86Core {
         long total = 0;
         int idx = endExclusive;
         while (total < targetSize && idx > 0) {
-            HOBStatement prev = allLines.get(idx - 1);
+            BytecodeStatement prev = allLines.get(idx - 1);
             if (prev.isEmpty()) {
                 return -1;
             }
@@ -211,7 +211,7 @@ abstract class X86Emit extends X86Core {
         RunEntries entries = new RunEntries();
         int idx = start;
         while (idx < endExclusive) {
-            HOBStatement l = allLines.get(idx);
+            BytecodeStatement l = allLines.get(idx);
             String m = l.get(0).text;
             if ((m.equals("PUSH") || m.equals("ATOMIC_PUSH")) && l.size() >= 2) {
                 entries.sizes.add(Long.parseLong(l.get(1).text));
@@ -262,7 +262,7 @@ abstract class X86Emit extends X86Core {
      * entry's true offset in the buffer. Unlike the packed path this needs
      * to know the layout, which LowerOrderGenerator appends to the line.
      */
-    void emitNewRepack(long size, HOBStatement line) {
+    void emitNewRepack(long size, BytecodeStatement line) {
         // Chunk sizes on the stack, in push order (first field first).
         List<Long> chunk = new ArrayList<>();
         List<Long> fieldSize = new ArrayList<>();   // 0 for a padding gap
@@ -341,7 +341,7 @@ abstract class X86Emit extends X86Core {
      * true offset from that address, then drops the field words and the address. Uses only the scratch registers %r10 (source
      * base), %r11 (destination) and %rax.
      */
-    void emitAssignRepack(long size, HOBStatement line) {
+    void emitAssignRepack(long size, BytecodeStatement line) {
         // One entry per layout token: chunk = bytes it occupies on the stack, fieldSize = real bytes (0 for a padding gap),
         // elemSize/count > 0 for "a<elemBytes>x<n>" (a fixed array written element by element: n whole words, one per element).
         List<Long> chunk = new ArrayList<>();
@@ -489,7 +489,7 @@ abstract class X86Emit extends X86Core {
         constructionScopedAssign.clear();
         packedNewLines.clear();
         for (int i = 0; i < allLines.size(); i++) {
-            HOBStatement l = allLines.get(i);
+            BytecodeStatement l = allLines.get(i);
             if (l.isEmpty()) {
                 continue;
             }
@@ -527,14 +527,14 @@ abstract class X86Emit extends X86Core {
 
     // ---- Pass 1: declarations -------------------------------------------------
 
-    void collectDeclarations(List<HOBStatement> lines) {
+    void collectDeclarations(List<BytecodeStatement> lines) {
         // Pass 1: every plain (non-dotted) GLOBAL/ALLOC_STATIC name, so
         // pass 2 below can tell a dotted "parent.field" declaration
         // apart from one whose "parent" isn't actually a separately
         // declared whole-block global (in which case it keeps its own
         // independent storage, the pre-existing behavior).
         java.util.Set<String> plainGlobalNames = new java.util.HashSet<>();
-        for (HOBStatement line : lines) {
+        for (BytecodeStatement line : lines) {
             if (line.isEmpty()) {
                 continue;
             }
@@ -552,7 +552,7 @@ abstract class X86Emit extends X86Core {
         // Pass 2: real declarations, aliasing dotted fields of a known
         // parent block instead of giving them their own storage.
         Map<String, Long> parentRunningOffset = new LinkedHashMap<>();
-        for (HOBStatement line : lines) {
+        for (BytecodeStatement line : lines) {
             if (line.isEmpty()) {
                 continue;
             }

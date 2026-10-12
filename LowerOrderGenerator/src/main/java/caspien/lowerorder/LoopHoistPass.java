@@ -1,7 +1,7 @@
 package caspien.lowerorder;
-import caspien.hob.HOBProgram;
-import caspien.hob.HOBStatement;
-import caspien.hob.HOBToken;
+import caspien.bytecode.BytecodeProgram;
+import caspien.bytecode.BytecodeStatement;
+import caspien.bytecode.BytecodeToken;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -55,22 +55,22 @@ public class LoopHoistPass {
         this.enabled = enabled;
     }
 
-    public HOBProgram run(HOBProgram lines) {
+    public BytecodeProgram run(BytecodeProgram lines) {
         if (!enabled) {
             return lines;
         }
-        HOBProgram out = new HOBProgram(lines.size() + 16);
+        BytecodeProgram out = new BytecodeProgram(lines.size() + 16);
         int i = 0;
         while (i < lines.size()) {
-            HOBStatement line = lines.get(i);
+            BytecodeStatement line = lines.get(i);
             if (!line.isEmpty() && line.get(0).text.equals("FUNC_START")) {
                 int end = i;
                 while (end < lines.size() && !(!lines.get(end).isEmpty() && lines.get(end).get(0).text.equals("FUNC_END"))) {
                     end++;
                 }
                 int stop = Math.min(end + 1, lines.size());
-                List<HOBStatement> fn = lines.subList(i, stop);
-                List<HOBStatement> res = fn.size() <= MAX_LINES ? hoistFunction(fn) : null;
+                List<BytecodeStatement> fn = lines.subList(i, stop);
+                List<BytecodeStatement> res = fn.size() <= MAX_LINES ? hoistFunction(fn) : null;
                 out.addAll(res != null ? res : fn);
                 i = stop;
                 continue;
@@ -81,11 +81,11 @@ public class LoopHoistPass {
         return out;
     }
 
-    private static String t(HOBStatement l, int i) {
+    private static String t(BytecodeStatement l, int i) {
         return l.get(i).text;
     }
 
-    private static boolean isLabelDef(HOBStatement l) {
+    private static boolean isLabelDef(BytecodeStatement l) {
         return l.size() == 1 && t(l, 0).startsWith("@") && t(l, 0).endsWith(":");
     }
 
@@ -97,14 +97,14 @@ public class LoopHoistPass {
     }
 
     /** returns the new function text, or null when nothing was hoisted */
-    private List<HOBStatement> hoistFunction(List<HOBStatement> fn) {
+    private List<BytecodeStatement> hoistFunction(List<BytecodeStatement> fn) {
         int n = fn.size();
         int allocIdx = -1;
         long allocSize = 0;
         Map<String, Integer> labelDef = new HashMap<>();
         List<Long> exposedOffsets = new ArrayList<>();
         for (int i = 0; i < n; i++) {
-            HOBStatement l = fn.get(i);
+            BytecodeStatement l = fn.get(i);
             if (l.isEmpty()) {
                 continue;
             }
@@ -139,7 +139,7 @@ public class LoopHoistPass {
         Map<String, Integer> lastRef = new HashMap<>();
         Map<String, Integer> firstRef = new HashMap<>();
         for (int i = 0; i < n; i++) {
-            HOBStatement l = fn.get(i);
+            BytecodeStatement l = fn.get(i);
             if (l.isEmpty() || isLabelDef(l)) {
                 continue;
             }
@@ -178,16 +178,16 @@ public class LoopHoistPass {
         // outermost (longest) first; ties broken by position for a stable result
         loops.sort((x, y) -> (y.b - y.h) != (x.b - x.h) ? Integer.compare(y.b - y.h, x.b - x.h) : Integer.compare(x.h, y.h));
 
-        HOBProgram cur = new HOBProgram(fn);
+        BytecodeProgram cur = new BytecodeProgram(fn);
         Map<String, String> copyOf = new HashMap<>();
-        Map<Integer, HOBProgram> before = new HashMap<>();
-        HOBProgram hints = new HOBProgram();
+        Map<Integer, BytecodeProgram> before = new HashMap<>();
+        BytecodeProgram hints = new BytecodeProgram();
         int extra = 0;
         for (Loop lp : loops) {
             Map<String, Integer> starts = new HashMap<>();
             List<long[]> writes = new ArrayList<>(); // {offset, width}: bytes the loop may store to, [offset, offset+width)
             for (int i = lp.h; i <= lp.b; i++) {
-                HOBStatement l = cur.get(i);
+                BytecodeStatement l = cur.get(i);
                 if (l.isEmpty()) {
                     continue;
                 }
@@ -217,13 +217,13 @@ public class LoopHoistPass {
                 extra++;
                 String x = "$" + (-(allocSize + 8L * extra));
                 for (int i = lp.h; i <= lp.b; i++) {
-                    HOBStatement l = cur.get(i);
+                    BytecodeStatement l = cur.get(i);
                     if (l.size() == 4 && t(l, 0).equals("R_MOV") && t(l, 1).equals("8") && t(l, 2).startsWith("%t") && t(l, 3).equals(s)) {
                         cur.set(i, mk(l.get(0), "R_MOV", "8", t(l, 2), x));
                     }
                 }
                 copyOf.put(x, s);
-                before.computeIfAbsent(lp.h, q -> new HOBProgram()).add(mk(cur.get(lp.h).get(0), "R_MOV", "8", x, s));
+                before.computeIfAbsent(lp.h, q -> new BytecodeProgram()).add(mk(cur.get(lp.h).get(0), "R_MOV", "8", x, s));
                 long w = 1L;
                 for (int d = 0; d <= Math.min(lp.depth, 3); d++) {
                     w *= 8;
@@ -237,13 +237,13 @@ public class LoopHoistPass {
         hoisted.put(t(fn.get(0), 1), new Object[] {allocSize, copyOf});
         long newAlloc = allocSize + 8L * extra;
         newAlloc = (newAlloc + 15) / 16 * 16;
-        HOBProgram res = new HOBProgram(n + 2 * extra + 2);
+        BytecodeProgram res = new BytecodeProgram(n + 2 * extra + 2);
         for (int i = 0; i < n; i++) {
-            HOBProgram ins = before.get(i);
+            BytecodeProgram ins = before.get(i);
             if (ins != null) {
                 res.addAll(ins);
             }
-            HOBStatement l = cur.get(i);
+            BytecodeStatement l = cur.get(i);
             if (i == allocIdx) {
                 res.add(mk(l.get(0), "ALLOC", String.valueOf(newAlloc)));
                 res.addAll(hints);
@@ -260,7 +260,7 @@ public class LoopHoistPass {
      * their width; any other shape is unknown and counts as "everything from the slot upward" (a variable occupies the bytes
      * above its offset, so an unknown access at T can reach any slot at or above T).
      */
-    private static long writeWidth(String m, HOBStatement l, int k) {
+    private static long writeWidth(String m, BytecodeStatement l, int k) {
         switch (m) {
             case "R_MOV":
                 return l.size() == 4 && k == 3 ? 0 : (l.size() == 4 && k == 2 ? 8 : UNKNOWN);
@@ -335,14 +335,14 @@ public class LoopHoistPass {
      * (the temp is redefined by the second line, so nothing else can have read the copy).
      */
     @SuppressWarnings("unchecked")
-    public HOBProgram finish(HOBProgram lines) {
+    public BytecodeProgram finish(BytecodeProgram lines) {
         if (!enabled || hoisted.isEmpty()) {
             return lines;
         }
-        HOBProgram out = new HOBProgram(lines.size());
+        BytecodeProgram out = new BytecodeProgram(lines.size());
         int i = 0;
         while (i < lines.size()) {
-            HOBStatement line = lines.get(i);
+            BytecodeStatement line = lines.get(i);
             if (!line.isEmpty() && line.get(0).text.equals("FUNC_START") && line.size() >= 2 && hoisted.containsKey(t(line, 1))) {
                 int end = i;
                 while (end < lines.size() && !(!lines.get(end).isEmpty() && lines.get(end).get(0).text.equals("FUNC_END"))) {
@@ -360,10 +360,10 @@ public class LoopHoistPass {
         return out;
     }
 
-    private static List<HOBStatement> finishFunction(List<HOBStatement> fn, long origAlloc, Map<String, String> copyOf) {
+    private static List<BytecodeStatement> finishFunction(List<BytecodeStatement> fn, long origAlloc, Map<String, String> copyOf) {
         // which copy slots still exist as memory slots (every mention is renamed or none is)
         Set<String> alive = new HashSet<>();
-        for (HOBStatement l : fn) {
+        for (BytecodeStatement l : fn) {
             boolean isCopyLine = l.size() == 4 && t(l, 0).equals("R_MOV") && copyOf.containsKey(t(l, 2)) && t(l, 3).equals(copyOf.get(t(l, 2)));
             if (isCopyLine) {
                 continue;
@@ -374,8 +374,8 @@ public class LoopHoistPass {
                 }
             }
         }
-        HOBProgram undone = new HOBProgram(fn.size());
-        for (HOBStatement l : fn) {
+        BytecodeProgram undone = new BytecodeProgram(fn.size());
+        for (BytecodeStatement l : fn) {
             if (l.size() == 4 && t(l, 0).equals("R_MOV") && alive.contains(t(l, 2)) && t(l, 3).equals(copyOf.get(t(l, 2)))) {
                 continue; // the copy of a slot that stayed in memory
             }
@@ -388,10 +388,10 @@ public class LoopHoistPass {
                 touch = alive.contains(t(l, k));
             }
             if (touch) {
-                HOBStatement n = new HOBStatement(l);
+                BytecodeStatement n = new BytecodeStatement(l);
                 for (int k = 1; k < n.size(); k++) {
                     if (alive.contains(t(l, k))) {
-                        n.set(k, new HOBToken(copyOf.get(t(l, k)), l.get(k).file, l.get(k).line, HOBToken.Kind.CODE));
+                        n.set(k, new BytecodeToken(copyOf.get(t(l, k)), l.get(k).file, l.get(k).line, BytecodeToken.Kind.CODE));
                     }
                 }
                 undone.add(n);
@@ -399,13 +399,13 @@ public class LoopHoistPass {
                 undone.add(l);
             }
         }
-        HOBProgram lines = undone;
-        HOBProgram out = new HOBProgram(lines.size());
+        BytecodeProgram lines = undone;
+        BytecodeProgram out = new BytecodeProgram(lines.size());
         for (int i = 0; i < lines.size(); i++) {
-            HOBStatement a = lines.get(i);
+            BytecodeStatement a = lines.get(i);
             if (i + 1 < lines.size() && a.size() == 4 && t(a, 0).equals("R_MOV") && t(a, 1).equals("8") && t(a, 2).startsWith("%t")
                     && t(a, 3).startsWith("%v")) {
-                HOBStatement b = lines.get(i + 1);
+                BytecodeStatement b = lines.get(i + 1);
                 String tA = t(a, 2);
                 String vK = t(a, 3);
                 if (b.size() == 4 && t(b, 0).equals("R_LD") && t(b, 2).equals(tA) && t(b, 3).equals(tA)) {
@@ -415,8 +415,8 @@ public class LoopHoistPass {
                 }
                 if ((b.size() == 5 || b.size() == 6) && t(b, 0).equals("R_LEA") && t(b, 1).equals(tA) && t(b, 2).equals(tA)
                         && !t(b, 3).equals(tA)) {
-                    HOBStatement n = new HOBStatement(b);
-                    n.set(2, new HOBToken(vK, b.get(2).file, b.get(2).line, HOBToken.Kind.CODE));
+                    BytecodeStatement n = new BytecodeStatement(b);
+                    n.set(2, new BytecodeToken(vK, b.get(2).file, b.get(2).line, BytecodeToken.Kind.CODE));
                     out.add(n);
                     i++;
                     continue;
@@ -437,12 +437,12 @@ public class LoopHoistPass {
     }
 
     /** the read at i is directly followed by "R_LD 8 %t %t" (length) or "R_LEA %t %t ..." (element address) on the same temp */
-    private static boolean startsAccess(List<HOBStatement> cur, int i, int bound) {
+    private static boolean startsAccess(List<BytecodeStatement> cur, int i, int bound) {
         if (i + 1 > bound) {
             return false;
         }
-        HOBStatement r = cur.get(i);
-        HOBStatement nx = cur.get(i + 1);
+        BytecodeStatement r = cur.get(i);
+        BytecodeStatement nx = cur.get(i + 1);
         String tmp = t(r, 2);
         if (nx.size() == 4 && t(nx, 0).equals("R_LD") && t(nx, 1).equals("8") && t(nx, 2).equals(tmp) && t(nx, 3).equals(tmp)) {
             return true;
@@ -451,10 +451,10 @@ public class LoopHoistPass {
     }
 
     /** true when no jump from outside [h,b] lands on a label inside it (the header itself is checked by the caller) */
-    private static boolean singleEntry(List<HOBStatement> fn, Loop lp, Map<String, Integer> labelDef) {
+    private static boolean singleEntry(List<BytecodeStatement> fn, Loop lp, Map<String, Integer> labelDef) {
         Set<String> inside = new HashSet<>();
         for (int i = lp.h + 1; i <= lp.b; i++) {
-            HOBStatement l = fn.get(i);
+            BytecodeStatement l = fn.get(i);
             if (isLabelDef(l)) {
                 inside.add(t(l, 0).substring(0, t(l, 0).length() - 1));
             }
@@ -466,7 +466,7 @@ public class LoopHoistPass {
             if (i >= lp.h && i <= lp.b) {
                 continue;
             }
-            HOBStatement l = fn.get(i);
+            BytecodeStatement l = fn.get(i);
             if (l.isEmpty() || isLabelDef(l)) {
                 continue;
             }
@@ -479,10 +479,10 @@ public class LoopHoistPass {
         return true;
     }
 
-    private static HOBStatement mk(HOBToken ref, String... texts) {
-        HOBStatement l = new HOBStatement(texts.length);
+    private static BytecodeStatement mk(BytecodeToken ref, String... texts) {
+        BytecodeStatement l = new BytecodeStatement(texts.length);
         for (String s : texts) {
-            l.add(new HOBToken(s, ref.file, ref.line, HOBToken.Kind.CODE));
+            l.add(new BytecodeToken(s, ref.file, ref.line, BytecodeToken.Kind.CODE));
         }
         return l;
     }

@@ -1,8 +1,8 @@
 package caspien.optimizer;
 
-import caspien.hob.HOBParser;
-import caspien.hob.HOBProgram;
-import caspien.hob.HOBSerializer;
+import caspien.bytecode.BytecodeParser;
+import caspien.bytecode.BytecodeProgram;
+import caspien.bytecode.BytecodeSerializer;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -10,7 +10,7 @@ import java.util.List;
 /**
  * The Optimizer as a library: HOB text in, optimised HOB text out, no files, no process state. The
  * orchestrator calls this in its own JVM; `Main` is the same thing as a stand-alone program.
- * Phases: parse the whole text into a HOBProgram, run every pass on it, serialize.
+ * Phases: parse the whole text into a BytecodeProgram, run every pass on it, serialize.
  */
 public final class Optimizer {
 
@@ -34,7 +34,7 @@ public final class Optimizer {
      * @param configText the contents of `compiler.config`, or null for "every switch off"
      */
     public static Result optimize(String hobText, String origin, String configText) {
-        HOBProgram program = new HOBParser().parse(hobText.lines().toList(), origin);
+        BytecodeProgram program = new BytecodeParser().parse(hobText.lines().toList(), origin);
 
         List<String> cfg = configText == null ? new ArrayList<>() : configText.lines().toList();
         String cfgName = "compiler.config";
@@ -45,8 +45,8 @@ public final class Optimizer {
 
         Messages messages = new Messages();
         messages.add("[info] optimizer: " + unrollConfig + "; " + foldConfig + "; " + variableConfig + "; " + inlineConfig);
-        HOBProgram optimized = new BytecodeOptimizer(unrollConfig, foldConfig, variableConfig, inlineConfig, messages).optimize(program);
+        BytecodeProgram optimized = new BytecodeOptimizer(unrollConfig, foldConfig, variableConfig, inlineConfig, messages).optimize(program);
 
-        return new Result(new HOBSerializer().serialize(optimized), messages.lines());
+        return new Result(new BytecodeSerializer().serialize(optimized), messages.lines());
     }
 }

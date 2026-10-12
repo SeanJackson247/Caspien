@@ -47,7 +47,7 @@ lowerordergenerator -i input.txt output.txt        # java -cp out caspien.lowero
   folder, `Compiler.java` overwrites it on every run from the `===compiler.config===` section of `toolchain.config`). It carries the
   calling conventions and the register switches (section 5).
 * The stage is also a library, `LowerOrder.generate(hobText, origin, compilerConfigText)` -> `Result{lob, messages}` (text in, text out; no files); the orchestrator calls it in its own JVM and `Main` is the same call wrapped as a program (it reads `./compiler.config`).
-* Build, from this folder: `javac -d out $(find src/main/java ../HOB/src/main/java -name '*.java')` (the shared HOB parser/classes in `../HOB/` are compiled into `out/`).
+* Build, from this folder: `javac -d out $(find src/main/java ../BytecodeParser/src/main/java -name '*.java')` (the shared HOB parser/classes in `../BytecodeParser/` are compiled into `out/`).
 * Never compile two programs at once in one compiler tree (scratch files are shared).
 
 Source layout (`src/main/java/caspien/lowerorder/`): `Main`, `LowerOrderGenerator` (the pipeline), one class per pass, and the
@@ -533,8 +533,8 @@ the header branch's exit label (so a header with a second back edge is rotated a
 
 | Class | Role |
 |---|---|
-| `HOBToken` / `HOBStatement` / `HOBProgram` (shared `HOB/`, package `caspien.hob`) | token (`text`, `file`, `line`, `kind`), one line (list of tokens; empty = blank line), whole program (list of statements). Every pass reads and writes a `HOBProgram`. Generated instructions are built with `HOBStatement.fromText(text, origin)` |
-| `HOBParser` / `HOBSerializer` (shared `HOB/`) | whitespace split, `"..."` and `'c'` (incl. `' '`) kept whole, no regex; serializer joins tokens with one space. Used only by `Main` (text -> program, program -> text); the config is also loaded there and handed to `LowerOrderGenerator(config)`. Optimizer uses the same classes; Codegen still has its own copy |
+| `BytecodeToken` / `BytecodeStatement` / `BytecodeProgram` (shared `BytecodeParser/`, package `caspien.bytecode`) | token (`text`, `file`, `line`, `kind`), one line (list of tokens; empty = blank line), whole program (list of statements). Every pass reads and writes a `BytecodeProgram`. Generated instructions are built with `BytecodeStatement.fromText(text, origin)` |
+| `BytecodeParser` / `BytecodeSerializer` (shared `BytecodeParser/`) | whitespace split, `"..."` and `'c'` (incl. `' '`) kept whole, no regex; serializer joins tokens with one space. Used only by `Main` (text -> program, program -> text); the config is also loaded there and handed to `LowerOrderGenerator(config)`. Optimizer uses the same classes; Codegen still has its own copy |
 | `OptimizationPass` / `PassResult` | `String name(); PassResult run(lines)`; `PassResult{lines, changed}`. Implemented by the first five passes, `StrengthReductionPass` and `RegisterFormPass`; the others are plain classes with `run(lines)` returning the list (`RegVarPromotionPass`, `LoopHoistPass` also have constructor switches) |
 | `CanonicalType` | parses `storage_some_mutability_atomic_base` text; peels `dynarray(..)`, `unsafe_dynarray(..)`, `elem[N]`; `sanitizeForLabel` for generated routine names |
 | `StructTable` | reads `STRUCT_*` blocks: `membersOf`, `layoutOf` (members plus padding entries), `isOwnsBearing`, `dropHookOf` (from `FUNC_DECORATE @drop`) |
@@ -543,7 +543,7 @@ the header branch's exit label (so a header with a second back edge is rotated a
 | `AddressLoweringPass.SizeCalculator` | sizes/alignments from canonical text plus `StructTable` (struct size = padded layout; alignment mirrors the compiler's `BytecodeEmitter`) |
 
 **Adding a pass**
-1. Write `XPass` with `run(HOBProgram)`. Work per function (`FUNC_START`..`FUNC_END`), return the input list unchanged when nothing applies
+1. Write `XPass` with `run(BytecodeProgram)`. Work per function (`FUNC_START`..`FUNC_END`), return the input list unchanged when nothing applies
    (so a disabled/non-matching pass is byte-identical). A switch goes in the constructor.
 2. Put it in `LowerOrderGenerator.generate` at the right place (section 4's order constraints). Add a key to `CompilerConfig` (field + parse branch + error text),
    to `toolchain.config` (with a comment), to the ASTGenerator's `CompilerConfig` and to `CompilerCache.REG_KEYS`, and to the benchmark `OFF`/`FULL` dictionaries.

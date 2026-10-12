@@ -1,8 +1,8 @@
 package caspien.optimizer;
 
-import caspien.hob.HOBProgram;
-import caspien.hob.HOBStatement;
-import caspien.hob.HOBToken;
+import caspien.bytecode.BytecodeProgram;
+import caspien.bytecode.BytecodeStatement;
+import caspien.bytecode.BytecodeToken;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -53,12 +53,12 @@ public class VariableAllocationReorderingPass implements OptimizationPass {
     }
 
     @Override
-    public PassResult run(HOBProgram lines) {
+    public PassResult run(BytecodeProgram lines) {
         if (!enabled) {
             return new PassResult(lines, false);
         }
         Align table = new Align(lines);
-        HOBProgram out = new HOBProgram(lines.size());
+        BytecodeProgram out = new BytecodeProgram(lines.size());
         boolean changed = false;
         int i = 0;
         int n = lines.size();
@@ -73,8 +73,8 @@ public class VariableAllocationReorderingPass implements OptimizationPass {
                 end++;
             }
             end = Math.min(end, n - 1);
-            List<HOBStatement> fn = lines.subList(i, end + 1);
-            HOBProgram re = reorderFunction(fn, table);
+            List<BytecodeStatement> fn = lines.subList(i, end + 1);
+            BytecodeProgram re = reorderFunction(fn, table);
             if (re != null) {
                 changed = true;
                 out.addAll(re);
@@ -86,18 +86,18 @@ public class VariableAllocationReorderingPass implements OptimizationPass {
         return new PassResult(changed ? out : lines, changed);
     }
 
-    private static boolean isMnemonic(HOBStatement line, String m) {
-        return !line.isEmpty() && line.get(0).kind == HOBToken.Kind.CODE && line.get(0).text.equals(m);
+    private static boolean isMnemonic(BytecodeStatement line, String m) {
+        return !line.isEmpty() && line.get(0).kind == BytecodeToken.Kind.CODE && line.get(0).text.equals(m);
     }
 
-    private static boolean isAlloc(HOBStatement l) {
+    private static boolean isAlloc(BytecodeStatement l) {
         return isMnemonic(l, "ALLOC") && l.size() == 3;
     }
 
     /** The function's lines with the leading ALLOC run reordered, or null when nothing changes. */
-    private HOBProgram reorderFunction(List<HOBStatement> fn, Align table) {
+    private BytecodeProgram reorderFunction(List<BytecodeStatement> fn, Align table) {
         int n = fn.size();
-        for (HOBStatement l : fn) {
+        for (BytecodeStatement l : fn) {
             if (isMnemonic(l, "ASM_START")) {
                 return null;
             }
@@ -105,7 +105,7 @@ public class VariableAllocationReorderingPass implements OptimizationPass {
         // the leading run: the first ALLOC that follows only header lines, and every ALLOC directly after it
         int first = -1;
         for (int k = 0; k < n; k++) {
-            HOBStatement l = fn.get(k);
+            BytecodeStatement l = fn.get(k);
             if (isAlloc(l)) {
                 first = k;
                 break;
@@ -141,7 +141,7 @@ public class VariableAllocationReorderingPass implements OptimizationPass {
             }
         }
         for (int k = last + 1; k < n; k++) {
-            HOBStatement l = fn.get(k);
+            BytecodeStatement l = fn.get(k);
             if (isAlloc(l)) {
                 String nm = l.get(1).text;
                 if (nm.equals("gt_routine_address") || nm.equals("gt_error_message") || nm.startsWith("gt_trace_")) {
@@ -157,7 +157,7 @@ public class VariableAllocationReorderingPass implements OptimizationPass {
         int[] delta = new int[n + 1];
         Map<String, Integer> labelAt = new HashMap<>();
         for (int k = 0; k < n; k++) {
-            HOBStatement l = fn.get(k);
+            BytecodeStatement l = fn.get(k);
             if (l.size() == 1 && l.get(0).text.startsWith("@") && l.get(0).text.endsWith(":")) {
                 String t = l.get(0).text;
                 labelAt.put(t.substring(0, t.length() - 1), k);
@@ -173,24 +173,24 @@ public class VariableAllocationReorderingPass implements OptimizationPass {
         int run = 0;
         for (int k = 0; k < n; k++) {
             run += delta[k];
-            HOBStatement l = fn.get(k);
+            BytecodeStatement l = fn.get(k);
             if (isMnemonic(l, "ALLOC") || isMnemonic(l, "FUNC_START")) {
                 continue;
             }
             long w = 1L << (3 * Math.min(run, 4));
             for (int t = 1; t < l.size(); t++) {
-                if (l.get(t).kind == HOBToken.Kind.CODE) {
+                if (l.get(t).kind == BytecodeToken.Kind.CODE) {
                     weights.merge(l.get(t).text, w, Long::sum);
                 }
             }
         }
         final class Slot {
             final int idx;
-            final HOBStatement line;
+            final BytecodeStatement line;
             final long align;
             final long weight;
 
-            Slot(int idx, HOBStatement line) {
+            Slot(int idx, BytecodeStatement line) {
                 this.idx = idx;
                 this.line = line;
                 this.align = table.of(line.get(2).text);
@@ -222,7 +222,7 @@ public class VariableAllocationReorderingPass implements OptimizationPass {
         if (same) {
             return null;
         }
-        HOBProgram result = new HOBProgram(n);
+        BytecodeProgram result = new BytecodeProgram(n);
         result.addAll(fn.subList(0, p));
         for (Slot s : sorted) {
             result.add(s.line);
@@ -236,9 +236,9 @@ public class VariableAllocationReorderingPass implements OptimizationPass {
         private final Map<String, List<String>> structMembers = new HashMap<>();
         private final Map<String, Long> structCache = new HashMap<>();
 
-        Align(HOBProgram lines) {
+        Align(BytecodeProgram lines) {
             String cur = null;
-            for (HOBStatement l : lines) {
+            for (BytecodeStatement l : lines) {
                 if (isMnemonic(l, "STRUCT_START") && l.size() >= 2) {
                     cur = l.get(1).text;
                     structMembers.put(cur, new ArrayList<>());

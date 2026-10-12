@@ -1,7 +1,7 @@
 package caspien.lowerorder;
-import caspien.hob.HOBProgram;
-import caspien.hob.HOBStatement;
-import caspien.hob.HOBToken;
+import caspien.bytecode.BytecodeProgram;
+import caspien.bytecode.BytecodeStatement;
+import caspien.bytecode.BytecodeToken;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -27,16 +27,16 @@ public class FieldDisplacementPass {
 
     private static final int MAX_GAP = 40;
 
-    public HOBProgram run(HOBProgram lines) {
+    public BytecodeProgram run(BytecodeProgram lines) {
         int n = lines.size();
-        HOBProgram cur = new HOBProgram(lines);
+        BytecodeProgram cur = new BytecodeProgram(lines);
         boolean[] gone = new boolean[n];
         boolean changed = false;
         for (int i = 0; i < n; i++) {
             if (gone[i]) {
                 continue;
             }
-            HOBStatement lea = cur.get(i);
+            BytecodeStatement lea = cur.get(i);
             long disp = displacement(lea);
             if (disp == Long.MIN_VALUE) {
                 continue;
@@ -46,14 +46,14 @@ public class FieldDisplacementPass {
                 if (gone[j]) {
                     continue;
                 }
-                HOBStatement l = cur.get(j);
+                BytecodeStatement l = cur.get(j);
                 if (!IndexedAccessPass.mentions(l, x)) {
                     if (!IndexedAccessPass.passable(l, base)) {
                         break;
                     }
                     continue;
                 }
-                HOBStatement fused = fuse(l, x, base, disp);
+                BytecodeStatement fused = fuse(l, x, base, disp);
                 boolean self = fused != null && fused.get(0).text.equals("R_LDD") && t(l, 2).equals(x);
                 if (fused != null && IndexedAccessPass.deadAfter(cur, gone, j + 1, x, self)) {
                     cur.set(j, fused);
@@ -66,7 +66,7 @@ public class FieldDisplacementPass {
         if (!changed) {
             return lines;
         }
-        HOBProgram out = new HOBProgram(n);
+        BytecodeProgram out = new BytecodeProgram(n);
         for (int i = 0; i < n; i++) {
             if (!gone[i]) {
                 out.add(cur.get(i));
@@ -76,7 +76,7 @@ public class FieldDisplacementPass {
     }
 
     /** the byte displacement of `R_LEA %tX %base #k scale [disp]` (register base, immediate index), or Long.MIN_VALUE when the line has another shape */
-    private static long displacement(HOBStatement l) {
+    private static long displacement(BytecodeStatement l) {
         if ((l.size() != 5 && l.size() != 6) || !t(l, 0).equals("R_LEA") || !t(l, 1).startsWith("%t")
                 || !(t(l, 2).startsWith("%t") || t(l, 2).startsWith("%v")) || !t(l, 3).startsWith("#")) {
             return Long.MIN_VALUE;
@@ -101,11 +101,11 @@ public class FieldDisplacementPass {
     }
 
     /** the fused line for consumer l of the address in x, or null */
-    private static HOBStatement fuse(HOBStatement l, String x, String base, long disp) {
+    private static BytecodeStatement fuse(BytecodeStatement l, String x, String base, long disp) {
         if (l.size() != 4) {
             return null;
         }
-        HOBToken h = l.get(0);
+        BytecodeToken h = l.get(0);
         String m = t(l, 0);
         if (m.equals("R_LD") && okWidth(t(l, 1)) && t(l, 2).startsWith("%t") && t(l, 3).equals(x)) {
             return line(h, "R_LDD", t(l, 1), t(l, 2), base, String.valueOf(disp));
@@ -123,10 +123,10 @@ public class FieldDisplacementPass {
         return null;
     }
 
-    private static HOBStatement line(HOBToken h, String... parts) {
-        HOBStatement n = new HOBStatement(parts.length);
+    private static BytecodeStatement line(BytecodeToken h, String... parts) {
+        BytecodeStatement n = new BytecodeStatement(parts.length);
         for (String p : parts) {
-            n.add(new HOBToken(p, h.file, h.line, h.kind));
+            n.add(new BytecodeToken(p, h.file, h.line, h.kind));
         }
         return n;
     }
@@ -135,7 +135,7 @@ public class FieldDisplacementPass {
         return tok.startsWith("%x") || tok.startsWith("%y");
     }
 
-    private static String t(HOBStatement l, int i) {
+    private static String t(BytecodeStatement l, int i) {
         return l.get(i).text;
     }
 }

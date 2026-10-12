@@ -1,7 +1,7 @@
 package caspien.bytecodeemitter;
 import caspien.typechecker.TypeChecker;
 import caspien.*;
-import caspien.hob.HOBStatement;
+import caspien.bytecode.BytecodeStatement;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -304,7 +304,7 @@ public class BytecodeEmitter extends BytecodeEmitterOperations {
     /** Declares a compiler-internal local of canonical type `type` in the function being emitted; its ALLOC is added to the function's alloc block when the function ends. */
     public String declareHiddenLocal(String type) {
         String name = "$mv" + (++hiddenLocalCounter);
-        lateAllocs.add(HOBStatement.fromText("ALLOC " + name + " " + type, ORIGIN));
+        lateAllocs.add(BytecodeStatement.fromText("ALLOC " + name + " " + type, ORIGIN));
         return name;
     }
 

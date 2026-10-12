@@ -1,6 +1,6 @@
 package caspien.lowerorder;
-import caspien.hob.HOBProgram;
-import caspien.hob.HOBStatement;
+import caspien.bytecode.BytecodeProgram;
+import caspien.bytecode.BytecodeStatement;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -63,9 +63,9 @@ public class EnumTable {
     private final Map<String, List<String>> valueVariantOrder = new LinkedHashMap<>();
     private final Map<String, List<String>> plainEnumVariantOrder = new LinkedHashMap<>();
 
-    public static EnumTable read(HOBProgram lines) {
+    public static EnumTable read(BytecodeProgram lines) {
         EnumTable table = new EnumTable();
-        for (HOBStatement line : lines) {
+        for (BytecodeStatement line : lines) {
             if (line.isEmpty() || !line.get(0).text.equals("ENUM") || line.size() < 2) {
                 continue;
             }

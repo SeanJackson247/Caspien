@@ -1,7 +1,7 @@
 package caspien.lowerorder;
-import caspien.hob.HOBProgram;
-import caspien.hob.HOBStatement;
-import caspien.hob.HOBToken;
+import caspien.bytecode.BytecodeProgram;
+import caspien.bytecode.BytecodeStatement;
+import caspien.bytecode.BytecodeToken;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -30,13 +30,13 @@ import java.util.List;
  */
 public class RangeCheckFusionPass {
 
-    public HOBProgram run(HOBProgram lines) {
-        HOBProgram out = new HOBProgram(lines.size());
+    public BytecodeProgram run(BytecodeProgram lines) {
+        BytecodeProgram out = new BytecodeProgram(lines.size());
         int n = lines.size();
         int funcStart = 0;
         int funcEnd = n - 1;
         for (int i = 0; i < n; i++) {
-            HOBStatement l = lines.get(i);
+            BytecodeStatement l = lines.get(i);
             if (isMn(l, "FUNC_START")) {
                 funcStart = i;
                 funcEnd = i;
@@ -45,7 +45,7 @@ public class RangeCheckFusionPass {
                 }
                 if (funcEnd == i) { funcEnd = n - 1; }
             }
-            HOBProgram rep = i + 13 < n ? match(lines, i, funcStart, funcEnd) : null;
+            BytecodeProgram rep = i + 13 < n ? match(lines, i, funcStart, funcEnd) : null;
             if (rep != null) {
                 out.addAll(rep);
                 i += 13;
@@ -56,8 +56,8 @@ public class RangeCheckFusionPass {
         return out;
     }
 
-    private static HOBProgram match(HOBProgram ls, int i, int fs, int fe) {
-        HOBStatement a0 = ls.get(i), a1 = ls.get(i + 1), a2 = ls.get(i + 2), a3 = ls.get(i + 3), a4 = ls.get(i + 4);
+    private static BytecodeProgram match(BytecodeProgram ls, int i, int fs, int fe) {
+        BytecodeStatement a0 = ls.get(i), a1 = ls.get(i + 1), a2 = ls.get(i + 2), a3 = ls.get(i + 3), a4 = ls.get(i + 4);
         if (!(isPush8(a0) && isSlot(t(a0, 2)))) { return null; }
         Long k0 = lit(a1), k1 = lit(a2);
         if (k0 == null || k1 == null) { return null; }
@@ -67,7 +67,7 @@ public class RangeCheckFusionPass {
         Long ro = off(r), lo = off(lt);
         if (ro == null || lo == null) { return null; }
         String r8 = "$" + (ro + 8);
-        HOBStatement b0 = ls.get(i + 5), b1 = ls.get(i + 6), b2 = ls.get(i + 7), b3 = ls.get(i + 8), b4 = ls.get(i + 9),
+        BytecodeStatement b0 = ls.get(i + 5), b1 = ls.get(i + 6), b2 = ls.get(i + 7), b3 = ls.get(i + 8), b4 = ls.get(i + 9),
                 b5 = ls.get(i + 10), b6 = ls.get(i + 11), b7 = ls.get(i + 12), b8 = ls.get(i + 13);
         if (!(isPush8(b0) && t(b0, 2).equals(lt) && isPush8(b1) && t(b1, 2).equals(r) && isOp(b2, "GT_EQ_INT", "8"))) { return null; }
         if (!(isPush8(b3) && t(b3, 2).equals(lt) && isPush8(b4) && t(b4, 2).equals(r8) && isOp(b5, "LT_INT", "8"))) { return null; }
@@ -75,13 +75,13 @@ public class RangeCheckFusionPass {
         // the three temp slots must be mentioned nowhere else in this function
         for (int j = fs; j <= fe && j < ls.size(); j++) {
             if (j >= i && j <= i + 13) { continue; }
-            for (HOBToken tk : ls.get(j)) {
+            for (BytecodeToken tk : ls.get(j)) {
                 String s = tk.text;
                 if (s.equals(r) || s.equals(lt) || s.equals(r8)) { return null; }
             }
         }
         String idx = t(a0, 2);
-        HOBProgram rep = new HOBProgram();
+        BytecodeProgram rep = new BytecodeProgram();
         boolean dropLower = k0 == 0;
         if (!dropLower) {
             rep.add(a0);
@@ -101,14 +101,14 @@ public class RangeCheckFusionPass {
         return rep;
     }
 
-    private static HOBStatement copy(HOBStatement l, String unused) {
-        return new HOBStatement(l);
+    private static BytecodeStatement copy(BytecodeStatement l, String unused) {
+        return new BytecodeStatement(l);
     }
 
-    private static boolean isMn(HOBStatement l, String m) { return !l.isEmpty() && t(l, 0).equals(m); }
-    private static String t(HOBStatement l, int i) { return l.get(i).text; }
-    private static boolean isPush8(HOBStatement l) { return l.size() == 3 && t(l, 0).equals("PUSH") && t(l, 1).equals("8"); }
-    private static boolean isOp(HOBStatement l, String m, String sz) { return l.size() == 2 && t(l, 0).equals(m) && t(l, 1).equals(sz); }
+    private static boolean isMn(BytecodeStatement l, String m) { return !l.isEmpty() && t(l, 0).equals(m); }
+    private static String t(BytecodeStatement l, int i) { return l.get(i).text; }
+    private static boolean isPush8(BytecodeStatement l) { return l.size() == 3 && t(l, 0).equals("PUSH") && t(l, 1).equals("8"); }
+    private static boolean isOp(BytecodeStatement l, String m, String sz) { return l.size() == 2 && t(l, 0).equals(m) && t(l, 1).equals(sz); }
     private static boolean isSlot(String s) { return off(s) != null; }
 
     private static Long off(String s) {
@@ -117,7 +117,7 @@ public class RangeCheckFusionPass {
     }
 
     /** `PUSH 8 <decimal literal in 0..2^31-1>` -> the literal, else null. */
-    private static Long lit(HOBStatement l) {
+    private static Long lit(BytecodeStatement l) {
         if (!isPush8(l)) { return null; }
         String s = t(l, 2);
         for (int i = 0; i < s.length(); i++) { if (!Character.isDigit(s.charAt(i))) { return null; } }

@@ -1,5 +1,5 @@
 package caspien.lowerorder;
-import caspien.hob.HOBProgram;
+import caspien.bytecode.BytecodeProgram;
 
 import java.util.List;
 
@@ -52,8 +52,8 @@ public class LowerOrderGenerator {
         this.addressLowering = new AddressLoweringPass(config);
     }
 
-    public HOBProgram generate(HOBProgram input) {
-        HOBProgram lines = input;
+    public BytecodeProgram generate(BytecodeProgram input) {
+        BytecodeProgram lines = input;
         lines = membershipLowering.run(lines).lines;
         lines = cloneGeneration.run(lines).lines;
         lines = dropGlueGeneration.run(lines).lines;

@@ -1,8 +1,8 @@
 package caspien.optimizer;
 
-import caspien.hob.HOBProgram;
-import caspien.hob.HOBStatement;
-import caspien.hob.HOBToken;
+import caspien.bytecode.BytecodeProgram;
+import caspien.bytecode.BytecodeStatement;
+import caspien.bytecode.BytecodeToken;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -83,29 +83,29 @@ public class FunctionInliningPass implements OptimizationPass {
     // ------------------------------------------------------------------------------------------------------------------
     // small helpers
 
-    private static String mn(HOBStatement l) {
-        return l.isEmpty() || l.get(0).kind != HOBToken.Kind.CODE ? null : l.get(0).text;
+    private static String mn(BytecodeStatement l) {
+        return l.isEmpty() || l.get(0).kind != BytecodeToken.Kind.CODE ? null : l.get(0).text;
     }
 
-    private static String tok(HOBStatement l, int i) {
+    private static String tok(BytecodeStatement l, int i) {
         return i < l.size() ? l.get(i).text : null;
     }
 
-    private static boolean is(HOBStatement l, int size, String first) {
+    private static boolean is(BytecodeStatement l, int size, String first) {
         return l.size() == size && first.equals(mn(l));
     }
 
-    private static boolean isLabelDef(HOBStatement l) {
-        return l.size() == 1 && l.get(0).kind == HOBToken.Kind.CODE && l.get(0).text.startsWith("@") && l.get(0).text.endsWith(":");
+    private static boolean isLabelDef(BytecodeStatement l) {
+        return l.size() == 1 && l.get(0).kind == BytecodeToken.Kind.CODE && l.get(0).text.startsWith("@") && l.get(0).text.endsWith(":");
     }
 
-    private static HOBToken retext(HOBToken t, String text) {
-        return new HOBToken(text, t.file, t.line, t.kind);
+    private static BytecodeToken retext(BytecodeToken t, String text) {
+        return new BytecodeToken(text, t.file, t.line, t.kind);
     }
 
-    private static HOBStatement mk(HOBToken ref, String... parts) {
-        HOBStatement l = new HOBStatement(parts.length);
-        for (String p : parts) l.add(new HOBToken(p, ref.file, ref.line, HOBToken.Kind.CODE));
+    private static BytecodeStatement mk(BytecodeToken ref, String... parts) {
+        BytecodeStatement l = new BytecodeStatement(parts.length);
+        for (String p : parts) l.add(new BytecodeToken(p, ref.file, ref.line, BytecodeToken.Kind.CODE));
         return l;
     }
 
@@ -217,7 +217,7 @@ public class FunctionInliningPass implements OptimizationPass {
         String name;
         List<String[]> params = new ArrayList<>();
         List<String[]> allocs = new ArrayList<>();
-        HOBProgram code = new HOBProgram();
+        BytecodeProgram code = new BytecodeProgram();
         boolean eligible;
         int scaffoldSlots;
         /** the body contains THROW / GT_UNWIND: it can leave through the caller's call-site label. */
@@ -252,9 +252,9 @@ public class FunctionInliningPass implements OptimizationPass {
      * leaves its PUSH_RET word on the stack: harmless in a frame of its own (RET resets rsp), but once the body runs inline in the middle of
      * an expression that word sits between the pending operands and the code that consumes them.
      */
-    private static boolean stackBalanced(HOBProgram code) {
+    private static boolean stackBalanced(BytecodeProgram code) {
         int depth = 0;
-        for (HOBStatement l : code) {
+        for (BytecodeStatement l : code) {
             if (isLabelDef(l)) continue;
             String m = mn(l);
             if (m == null) return false;
@@ -298,17 +298,17 @@ public class FunctionInliningPass implements OptimizationPass {
         return depth == 0;
     }
 
-    private static boolean pureLine(HOBStatement l) {
+    private static boolean pureLine(BytecodeStatement l) {
         String m = mn(l);
         return m != null && (PUSH1.contains(m) || BINARY.contains(m) || UNARY.contains(m));
     }
 
     /** Walks back from line `tail` over an expression that leaves one value; returns its first line, or -1 if the shape is not understood. */
-    private static int walkBack(HOBProgram code, int tail) {
+    private static int walkBack(BytecodeProgram code, int tail) {
         int need = 1;
         int k = tail;
         while (k >= 0) {
-            HOBStatement l = code.get(k);
+            BytecodeStatement l = code.get(k);
             if (isLabelDef(l)) {
                 // a label of a body that was inlined into this expression: no effect on the operand stack
                 k--;
@@ -382,13 +382,13 @@ public class FunctionInliningPass implements OptimizationPass {
         return -1;
     }
 
-    private Callee analyse(HOBProgram L, int s, int e, Set<String> cyclic) {
+    private Callee analyse(BytecodeProgram L, int s, int e, Set<String> cyclic) {
         Callee c = new Callee();
         c.name = L.get(s).get(1).text;
         String retType = null;
         boolean ok = true;
         for (int i = s + 1; i < e; i++) {
-            HOBStatement l = L.get(i);
+            BytecodeStatement l = L.get(i);
             String m = mn(l);
             if (m == null) {
                 c.why = "non-code line";
@@ -397,7 +397,7 @@ public class FunctionInliningPass implements OptimizationPass {
             }
             if (m.equals("FUNC_DECORATE")) {
                 String dt = tok(l, 1);
-                boolean posOk = l.size() == 3 && l.get(2).kind == HOBToken.Kind.STRING;   // an optional "file:line" operand
+                boolean posOk = l.size() == 3 && l.get(2).kind == BytecodeToken.Kind.STRING;   // an optional "file:line" operand
                 if (!(l.size() == 2 || posOk) || !(OK_DECORATORS.contains(dt) || "@dont(inline)".equals(dt))) {
                     c.why = "decorator " + dt;
                     ok = false;
@@ -473,11 +473,11 @@ public class FunctionInliningPass implements OptimizationPass {
             }
             c.code.add(l);
         }
-        for (HOBStatement l : c.code) {
+        for (BytecodeStatement l : c.code) {
             for (int t = 1; t < l.size(); t++) {
-                HOBToken tk = l.get(t);
-                if (tk.kind == HOBToken.Kind.CODE && tk.text.equals("gt_routine_address")) c.usesAddr = true;
-                if (tk.kind == HOBToken.Kind.CODE && tk.text.equals("gt_error_message")) c.usesMsg = true;
+                BytecodeToken tk = l.get(t);
+                if (tk.kind == BytecodeToken.Kind.CODE && tk.text.equals("gt_routine_address")) c.usesAddr = true;
+                if (tk.kind == BytecodeToken.Kind.CODE && tk.text.equals("gt_error_message")) c.usesMsg = true;
             }
         }
         c.lines = e - s - 1;
@@ -518,7 +518,7 @@ public class FunctionInliningPass implements OptimizationPass {
             ok = false;
         }
         // labels, jumps, names
-        for (HOBStatement l : c.code) {
+        for (BytecodeStatement l : c.code) {
             if (isLabelDef(l)) {
                 String t = l.get(0).text;
                 c.labels.add(t.substring(0, t.length() - 1));
@@ -527,7 +527,7 @@ public class FunctionInliningPass implements OptimizationPass {
         }
         boolean flow = false;
         boolean simple = true;
-        for (HOBStatement l : c.code) {
+        for (BytecodeStatement l : c.code) {
             String m = mn(l);
             if (isLabelDef(l) || "JMP".equals(m) || "CMP".equals(m)) flow = true;
             if (!isLabelDef(l) && !SIMPLE.contains(m)) simple = false;
@@ -535,8 +535,8 @@ public class FunctionInliningPass implements OptimizationPass {
             if ("ADDR".equals(m) && l.size() == 3 && !scalarType(l.get(2).text)) simple = false;
             if ("PUSH".equals(m) && l.size() == 3 && !scalarType(l.get(2).text)) simple = false;
             for (int t = 1; t < l.size(); t++) {
-                HOBToken tk = l.get(t);
-                if (tk.kind != HOBToken.Kind.CODE) {
+                BytecodeToken tk = l.get(t);
+                if (tk.kind != BytecodeToken.Kind.CODE) {
                     continue;
                 }
                 String x = tk.text;
@@ -570,7 +570,7 @@ public class FunctionInliningPass implements OptimizationPass {
         c.simple = simple;
         // returns
         for (int i = 0; i < c.code.size(); i++) {
-            HOBStatement l = c.code.get(i);
+            BytecodeStatement l = c.code.get(i);
             if (!"RET".equals(mn(l))) continue;
             if (l.size() != 2) {
                 c.why = "RET shape";
@@ -610,15 +610,15 @@ public class FunctionInliningPass implements OptimizationPass {
     // the pass
 
     @Override
-    public PassResult run(HOBProgram lines) {
+    public PassResult run(BytecodeProgram lines) {
         int maxRounds = cfg.enabled ? Math.max(cfg.maxDepth, anyInlineDecorator(lines) ? FORCED_ROUNDS : 0) : (anyInlineDecorator(lines) ? FORCED_ROUNDS : 0);
         if (roundsDone >= maxRounds) {
             return new PassResult(lines, false);
         }
-        HOBProgram work = lines;
+        BytecodeProgram work = lines;
         boolean any = false;
         while (roundsDone < maxRounds) {
-            HOBProgram next = round(work);
+            BytecodeProgram next = round(work);
             if (next == null) break;
             work = next;
             any = true;
@@ -639,11 +639,11 @@ public class FunctionInliningPass implements OptimizationPass {
      * Run once after the optimizer has settled: what @inline did. "[note] file:line - @inline: f inlined at K call sites"; a call to an
      * @inline function that is still a call is a "[warning] ... @inline not honoured at N call sites: <reason>".
      */
-    public void reportForced(HOBProgram L) {
+    public void reportForced(BytecodeProgram L) {
         Map<String, Integer> remaining = new HashMap<>();
         Map<String, String> pos = new LinkedHashMap<>(forcedPos);
         for (int i = 0; i < L.size(); i++) {
-            HOBStatement l = L.get(i);
+            BytecodeStatement l = L.get(i);
             if (is(l, 2, "CALL")) remaining.merge(l.get(1).text, 1, Integer::sum);
             if ("FUNC_DECORATE".equals(mn(l)) && l.size() == 3 && "@inline".equals(l.get(1).text)) {
                 // the nearest FUNC_START above names the function
@@ -669,8 +669,8 @@ public class FunctionInliningPass implements OptimizationPass {
     /** Rounds of inlining available to @inline functions (a chain of marked functions needs one round per level). */
     private static final int FORCED_ROUNDS = 8;
 
-    private static boolean anyInlineDecorator(HOBProgram lines) {
-        for (HOBStatement l : lines) {
+    private static boolean anyInlineDecorator(BytecodeProgram lines) {
+        for (BytecodeStatement l : lines) {
             if ("FUNC_DECORATE".equals(mn(l)) && l.size() >= 2 && "@inline".equals(l.get(1).text)) return true;
         }
         return false;
@@ -680,17 +680,17 @@ public class FunctionInliningPass implements OptimizationPass {
         String caller;
         Set<String> callerNames = new HashSet<>();
         Map<String, Callee> callees;
-        HOBProgram newAllocs = new HOBProgram();
+        BytecodeProgram newAllocs = new BytecodeProgram();
         long added = 0;
         boolean changed = false;
     }
 
     /** One round: every call site whose callee (as it stands now) is eligible is inlined. Returns null if nothing changed. */
-    private HOBProgram round(HOBProgram L) {
+    private BytecodeProgram round(BytecodeProgram L) {
         int maxNum = 0;
-        for (HOBStatement l : L) {
-            for (HOBToken t : l) {
-                if (t.kind != HOBToken.Kind.CODE) continue;
+        for (BytecodeStatement l : L) {
+            for (BytecodeToken t : l) {
+                if (t.kind != BytecodeToken.Kind.CODE) continue;
                 String x = t.text;
                 if (!(x.startsWith("@") || x.startsWith("$for_range_"))) continue;
                 if (x.endsWith(":")) x = x.substring(0, x.length() - 1);
@@ -712,7 +712,7 @@ public class FunctionInliningPass implements OptimizationPass {
         for (int[] f : fns) {
             Set<String> out = new HashSet<>();
             for (int i = f[0] + 1; i < f[1]; i++) {
-                HOBStatement l = L.get(i);
+                BytecodeStatement l = L.get(i);
                 if (is(l, 2, "CALL")) out.add(l.get(1).text);
             }
             graph.put(L.get(f[0]).get(1).text, out);
@@ -738,12 +738,12 @@ public class FunctionInliningPass implements OptimizationPass {
             callees.put(c.name, c);
         }
         Map<String, Integer> callCount = new HashMap<>();
-        for (HOBStatement l : L) {
+        for (BytecodeStatement l : L) {
             if (is(l, 2, "CALL")) callCount.merge(l.get(1).text, 1, Integer::sum);
         }
         for (Callee c : callees.values()) c.calls = callCount.getOrDefault(c.name, 0);
 
-        HOBProgram out = new HOBProgram(L.size());
+        BytecodeProgram out = new BytecodeProgram(L.size());
         boolean changed = false;
         int pos = 0;
         for (int[] f : fns) {
@@ -752,16 +752,16 @@ public class FunctionInliningPass implements OptimizationPass {
             cx.caller = L.get(f[0]).get(1).text;
             cx.callees = callees;
             for (int i = f[0] + 1; i < f[1]; i++) {
-                HOBStatement l = L.get(i);
+                BytecodeStatement l = L.get(i);
                 String m = mn(l);
                 if (("ALLOC".equals(m) || "ARG".equals(m)) && l.size() >= 3) {
                     cx.callerNames.add(l.get(1).text);
                 }
             }
-            HOBProgram body = expandRange(L, f[0] + 1, f[1], cx, true, false);
+            BytecodeProgram body = expandRange(L, f[0] + 1, f[1], cx, true, false);
             if (cx.changed) {
                 changed = true;
-                HOBProgram fn = new HOBProgram();
+                BytecodeProgram fn = new BytecodeProgram();
                 fn.add(L.get(f[0]));
                 int p = 0;
                 while (p < body.size()) {
@@ -788,7 +788,7 @@ public class FunctionInliningPass implements OptimizationPass {
     }
 
     /** Index of the CC_END matching the CC_START at k, or -1. */
-    private static int matchEnd(HOBProgram L, int k, int to) {
+    private static int matchEnd(BytecodeProgram L, int k, int to) {
         int depth = 0;
         for (int i = k; i < to; i++) {
             String m = mn(L.get(i));
@@ -802,7 +802,7 @@ public class FunctionInliningPass implements OptimizationPass {
     }
 
     /** What is on the operand stack beneath a call site whose CC_START would be appended to `out`: 0 = nothing, 1 = one address, 2 = other. */
-    private int classify(HOBProgram out, int cut, boolean baseClean) {
+    private int classify(BytecodeProgram out, int cut, boolean baseClean) {
         int n = out.size() - cut;
         if (!baseClean) return 2;
         if (n == 0) return 0;
@@ -812,9 +812,9 @@ public class FunctionInliningPass implements OptimizationPass {
     }
 
     /** True if a "POP ARGn" / "POP FARGn" of the bracket being built (depth 0 of `out`) has already put a value in an argument register. */
-    private static boolean argRegisterLoaded(HOBProgram out) {
+    private static boolean argRegisterLoaded(BytecodeProgram out) {
         int depth = 0;
-        for (HOBStatement l : out) {
+        for (BytecodeStatement l : out) {
             String m = mn(l);
             if ("CC_START".equals(m)) depth++;
             else if ("CC_END".equals(m)) depth--;
@@ -828,11 +828,11 @@ public class FunctionInliningPass implements OptimizationPass {
      * runs with no register protection (a real nested call saves and restores the loaded argument registers around itself; the backend's own
      * block copies, shifts and divides use rdi, rsi, rdx, rcx as scratch), so a call site in that position is never inlined.
      */
-    private HOBProgram expandRange(HOBProgram L, int from, int to, Ctx cx, boolean baseClean, boolean regsLoaded) {
-        HOBProgram out = new HOBProgram();
+    private BytecodeProgram expandRange(BytecodeProgram L, int from, int to, Ctx cx, boolean baseClean, boolean regsLoaded) {
+        BytecodeProgram out = new BytecodeProgram();
         int k = from;
         while (k < to) {
-            HOBStatement line = L.get(k);
+            BytecodeStatement line = L.get(k);
             if (!is(line, 2, "CC_START")) {
                 out.add(line);
                 k++;
@@ -844,13 +844,13 @@ public class FunctionInliningPass implements OptimizationPass {
                 k++;
                 continue;
             }
-            HOBStatement callLine = L.get(e - 1);
+            BytecodeStatement callLine = L.get(e - 1);
             boolean isCall = e - 1 > k && is(callLine, 2, "CALL");
             int argsEnd = isCall ? e - 1 : e; // exclusive end of the argument region
             int cut = stagedLabel(out) != null ? 3 : 0;
             int cls = classify(out, cut, baseClean);
             boolean loaded = regsLoaded || argRegisterLoaded(out);
-            HOBProgram args = expandRange(L, k + 1, argsEnd, cx, cls == 0, loaded);
+            BytecodeProgram args = expandRange(L, k + 1, argsEnd, cx, cls == 0, loaded);
             boolean hasRet = e + 1 < to && is(L.get(e + 1), 2, "PUSH_RET");
             boolean done = false;
             if (isCall) {
@@ -873,39 +873,39 @@ public class FunctionInliningPass implements OptimizationPass {
     }
 
     /** True if `l` is empty or made only of null-out triples "ADDR name T / PUSH null T / ASSIGN T T T" (a moved owns variable being cleared). */
-    private static boolean moveNullOuts(HOBProgram l) {
+    private static boolean moveNullOuts(BytecodeProgram l) {
         if (l.size() % 3 != 0) return false;
         for (int i = 0; i < l.size(); i += 3) {
-            HOBStatement a = l.get(i), b = l.get(i + 1), c = l.get(i + 2);
+            BytecodeStatement a = l.get(i), b = l.get(i + 1), c = l.get(i + 2);
             if (!(is(a, 3, "ADDR") && is(b, 3, "PUSH") && b.get(1).text.equals("null") && is(c, 4, "ASSIGN"))) return false;
         }
         return true;
     }
 
     /** The label staged for this call site by "ADDR gt_routine_address / PUSH_LABEL X / ASSIGN" (a landing pad or a catch), or null. */
-    private String stagedLabel(HOBProgram out) {
+    private String stagedLabel(BytecodeProgram out) {
         int n = out.size();
         if (n < 3) return null;
-        HOBStatement a = out.get(n - 3), b = out.get(n - 2), c = out.get(n - 1);
+        BytecodeStatement a = out.get(n - 3), b = out.get(n - 2), c = out.get(n - 1);
         boolean ok = is(a, 3, "ADDR") && a.get(1).text.equals("gt_routine_address") && is(b, 3, "PUSH_LABEL")
                 && (b.get(1).text.startsWith("@gt_callsite__") || b.get(1).text.startsWith("@catch_")) && is(c, 4, "ASSIGN");
         return ok ? b.get(1).text : null;
     }
 
-    private static boolean boundary(HOBStatement l) {
+    private static boolean boundary(BytecodeStatement l) {
         if (l.isEmpty()) return false;
         if (isLabelDef(l)) return true;
         return BOUNDARY.contains(mn(l));
     }
 
-    private boolean tryInline(Callee c, HOBStatement ccStart, HOBProgram args, HOBStatement pushRet,
-            HOBProgram out, int cut, int cls, Ctx cx) {
+    private boolean tryInline(Callee c, BytecodeStatement ccStart, BytecodeProgram args, BytecodeStatement pushRet,
+            BytecodeProgram out, int cut, int cls, Ctx cx) {
         // ---- split the argument region into per-parameter segments
-        List<HOBProgram> segs = new ArrayList<>();
-        HOBProgram pops = new HOBProgram();
-        HOBProgram cur = new HOBProgram();
+        List<BytecodeProgram> segs = new ArrayList<>();
+        BytecodeProgram pops = new BytecodeProgram();
+        BytecodeProgram cur = new BytecodeProgram();
         int depth = 0;
-        for (HOBStatement l : args) {
+        for (BytecodeStatement l : args) {
             String m = mn(l);
             if ("CC_START".equals(m)) depth++;
             if (depth == 0) {
@@ -914,7 +914,7 @@ public class FunctionInliningPass implements OptimizationPass {
                     if (l.size() != 3 || !(l.get(1).text.startsWith("ARG") || l.get(1).text.startsWith("FARG"))) return false;
                     segs.add(cur);
                     pops.add(l);
-                    cur = new HOBProgram();
+                    cur = new BytecodeProgram();
                     continue;
                 }
             }
@@ -923,7 +923,7 @@ public class FunctionInliningPass implements OptimizationPass {
         }
         // What follows the last POP: the owns-move null-out of the variable just passed (`ADDR o / PUSH null / ASSIGN`, one triple per moved
         // owns argument). It runs after the argument is read and before the callee starts, so it goes right after the parameter copies.
-        HOBProgram post = cur;
+        BytecodeProgram post = cur;
         if (depth != 0 || !moveNullOuts(post)) return false;
         int words = 0;
         for (String[] pp : c.params) words += wordsOf(pp[1]);
@@ -936,7 +936,7 @@ public class FunctionInliningPass implements OptimizationPass {
         boolean clean = cls == 0;
         boolean addr1 = cls == 1;
         int n = out.size() - cut;
-        HOBStatement addrLine = addr1 ? out.get(n - 1) : null;
+        BytecodeStatement addrLine = addr1 ? out.get(n - 1) : null;
         if (addr1 && !valueMode) return false;
         // ---- callee shape vs. site
         boolean voidCallee = c.rets.isEmpty() || c.rets.get(0).isVoid;
@@ -1010,10 +1010,10 @@ public class FunctionInliningPass implements OptimizationPass {
         Map<String, String> lab = new HashMap<>();
         for (String lb : c.labels) lab.put(lb, renameLabel(lb, inst));
         String endLabel = "@inl_end_" + (fresh++);
-        HOBToken ref = ccStart.get(0);
+        BytecodeToken ref = ccStart.get(0);
         String retVar = "__ret_i" + inst;
 
-        HOBProgram blk = new HOBProgram();
+        BytecodeProgram blk = new BytecodeProgram();
         int sg = 0;
         for (String[] pp : c.params) {
             String pn = local.get(pp[0]);
@@ -1037,16 +1037,16 @@ public class FunctionInliningPass implements OptimizationPass {
             if (!r.isVoid) retT = r.type;
         }
         Set<Integer> skip = new HashSet<>();
-        Map<Integer, HOBProgram> before = new HashMap<>();
-        Map<Integer, HOBProgram> after = new HashMap<>();
+        Map<Integer, BytecodeProgram> before = new HashMap<>();
+        Map<Integer, BytecodeProgram> after = new HashMap<>();
         boolean usesEnd = false;
         for (Ret r : c.rets) {
             if (!r.isVoid && mode.equals("DISCARD")) {
                 for (int q = r.vStart; q <= r.vTail; q++) skip.add(q);
             }
             if (!r.isVoid && mode.equals("TEMP")) {
-                before.computeIfAbsent(r.vStart, z -> new HOBProgram()).add(mk(ref, "ADDR", retVar, retT));
-                after.computeIfAbsent(r.vTail, z -> new HOBProgram()).add(mk(ref, "ASSIGN", retT, retT, retT));
+                before.computeIfAbsent(r.vStart, z -> new BytecodeProgram()).add(mk(ref, "ADDR", retVar, retT));
+                after.computeIfAbsent(r.vTail, z -> new BytecodeProgram()).add(mk(ref, "ASSIGN", retT, retT, retT));
             }
             if (mode.equals("STACK")) {
                 skip.add(r.idx);
@@ -1057,10 +1057,10 @@ public class FunctionInliningPass implements OptimizationPass {
             }
         }
         for (int i = 0; i < c.code.size(); i++) {
-            HOBProgram b = before.get(i);
+            BytecodeProgram b = before.get(i);
             if (b != null) blk.addAll(b);
             if (!skip.contains(i)) {
-                HOBStatement l = c.code.get(i);
+                BytecodeStatement l = c.code.get(i);
                 Ret rr = null;
                 for (Ret r : c.rets) {
                     if (r.idx == i) rr = r;
@@ -1073,7 +1073,7 @@ public class FunctionInliningPass implements OptimizationPass {
                     blk.add(rename(l, local, lab));
                 }
             }
-            HOBProgram a = after.get(i);
+            BytecodeProgram a = after.get(i);
             if (a != null) blk.addAll(a);
         }
         if (usesEnd) blk.add(mk(ref, endLabel + ":"));
@@ -1118,13 +1118,13 @@ public class FunctionInliningPass implements OptimizationPass {
         return "@" + x + "_i" + inst + "_" + (fresh++);
     }
 
-    private static HOBStatement rename(HOBStatement l, Map<String, String> local, Map<String, String> lab) {
+    private static BytecodeStatement rename(BytecodeStatement l, Map<String, String> local, Map<String, String> lab) {
         boolean touch = false;
-        HOBStatement out = new HOBStatement(l.size());
+        BytecodeStatement out = new BytecodeStatement(l.size());
         String m = mn(l);
         for (int t = 0; t < l.size(); t++) {
-            HOBToken tk = l.get(t);
-            if (tk.kind != HOBToken.Kind.CODE || t == 0 && !isLabelDef(l)) {
+            BytecodeToken tk = l.get(t);
+            if (tk.kind != BytecodeToken.Kind.CODE || t == 0 && !isLabelDef(l)) {
                 out.add(tk);
                 continue;
             }

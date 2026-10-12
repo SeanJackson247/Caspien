@@ -1,7 +1,7 @@
 package caspien.lowerorder;
-import caspien.hob.HOBProgram;
-import caspien.hob.HOBStatement;
-import caspien.hob.HOBToken;
+import caspien.bytecode.BytecodeProgram;
+import caspien.bytecode.BytecodeStatement;
+import caspien.bytecode.BytecodeToken;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -41,16 +41,16 @@ public class CopyForwardPass {
         this.enabled = enabled;
     }
 
-    public HOBProgram run(HOBProgram lines) {
+    public BytecodeProgram run(BytecodeProgram lines) {
         if (!enabled) {
             return lines;
         }
         int n = lines.size();
-        HOBProgram cur = new HOBProgram(lines);
+        BytecodeProgram cur = new BytecodeProgram(lines);
         boolean[] gone = new boolean[n];
         boolean changed = false;
         for (int i = 0; i < n; i++) {
-            HOBStatement m = cur.get(i);
+            BytecodeStatement m = cur.get(i);
             if (gone[i] || m.size() != 4 || !t(m, 0).equals("R_MOV") || !t(m, 1).equals("8")) {
                 continue;
             }
@@ -62,7 +62,7 @@ public class CopyForwardPass {
             if (!t(m, 2).matches("%t[0-3]") || !t(m, 3).matches("%v[0-5]")) {
                 continue;
             }
-            HOBProgram edits = plan(cur, gone, i, t(m, 2), m.get(3));
+            BytecodeProgram edits = plan(cur, gone, i, t(m, 2), m.get(3));
             if (edits == null) {
                 continue;
             }
@@ -77,7 +77,7 @@ public class CopyForwardPass {
         if (!changed) {
             return lines;
         }
-        HOBProgram out = new HOBProgram(n);
+        BytecodeProgram out = new BytecodeProgram(n);
         for (int i = 0; i < n; i++) {
             if (!gone[i]) {
                 out.add(cur.get(i));
@@ -87,9 +87,9 @@ public class CopyForwardPass {
     }
 
     /** the rewritten lines after `from` (null entries = unchanged), or null when the copy cannot be forwarded */
-    private static HOBProgram plan(HOBProgram cur, boolean[] gone, int from, String x, HOBToken v) {
+    private static BytecodeProgram plan(BytecodeProgram cur, boolean[] gone, int from, String x, BytecodeToken v) {
         String var = v.text;
-        HOBProgram edits = new HOBProgram();
+        BytecodeProgram edits = new BytecodeProgram();
         int seen = 0;
         for (int j = from + 1; j < cur.size() && seen < WINDOW; j++) {
             if (gone[j]) {
@@ -97,7 +97,7 @@ public class CopyForwardPass {
                 continue;
             }
             seen++;
-            HOBStatement l = cur.get(j);
+            BytecodeStatement l = cur.get(j);
             edits.add(null);
             if (l.isEmpty()) {
                 return null;
@@ -113,7 +113,7 @@ public class CopyForwardPass {
             if (d != null && d >= l.size()) {
                 return null;
             }
-            HOBStatement r = null;
+            BytecodeStatement r = null;
             for (int k = 1; k < l.size(); k++) {
                 if (!t(l, k).equals(x) || (d != null && k == d)) {
                     continue;
@@ -122,7 +122,7 @@ public class CopyForwardPass {
                     return null;
                 }
                 if (r == null) {
-                    r = new HOBStatement(l);
+                    r = new BytecodeStatement(l);
                 }
                 r.set(k, v);
             }
@@ -141,7 +141,7 @@ public class CopyForwardPass {
     }
 
     /** operand k of line l is a plain value read of a general register that the backend also accepts a variable register for */
-    private static boolean readSlot(HOBStatement l, int k) {
+    private static boolean readSlot(BytecodeStatement l, int k) {
         switch (t(l, 0)) {
             case "R_MOV":
                 return l.size() == 4 && k == 3;
@@ -168,7 +168,7 @@ public class CopyForwardPass {
         }
     }
 
-    private static String t(HOBStatement l, int i) {
+    private static String t(BytecodeStatement l, int i) {
         return l.get(i).text;
     }
 }

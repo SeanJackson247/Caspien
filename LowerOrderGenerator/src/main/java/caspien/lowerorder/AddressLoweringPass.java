@@ -1,6 +1,6 @@
 package caspien.lowerorder;
-import caspien.hob.HOBProgram;
-import caspien.hob.HOBStatement;
+import caspien.bytecode.BytecodeProgram;
+import caspien.bytecode.BytecodeStatement;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -33,17 +33,17 @@ public class AddressLoweringPass implements OptimizationPass {
     }
 
     @Override
-    public PassResult run(HOBProgram lines) {
+    public PassResult run(BytecodeProgram lines) {
         StructTable structTable = StructTable.read(lines);
         SizeCalculator sizes = new SizeCalculator(structTable);
         EnumTable enumTable = EnumTable.read(lines);
-        HOBProgram out = new HOBProgram();
+        BytecodeProgram out = new BytecodeProgram();
         boolean changed = false;
 
         int i = 0;
         int n = lines.size();
         while (i < n) {
-            HOBStatement line = lines.get(i);
+            BytecodeStatement line = lines.get(i);
             if (line.isEmpty() || !line.get(0).text.equals("FUNC_START")) {
                 // Top-level decorator lines are dropped: metadata already consumed upstream (docs/AddressLoweringPass.md, "Dropped declarations").
                 if (!line.isEmpty() && line.get(0).text.equals("STRUCT_DECORATE")) {
@@ -61,7 +61,7 @@ public class AddressLoweringPass implements OptimizationPass {
                     continue;
                 }
                 // A top-level GLOBAL declaration is a rewrite target of its own (ALLOC_STATIC is inside a function, handled in tryRewrite).
-                HOBStatement staticRewrite = rewriteStaticOrGlobalDecl(line, sizes, enumTable);
+                BytecodeStatement staticRewrite = rewriteStaticOrGlobalDecl(line, sizes, enumTable);
                 if (staticRewrite != null) {
                     out.add(staticRewrite);
                     changed = true;
@@ -86,7 +86,7 @@ public class AddressLoweringPass implements OptimizationPass {
             Map<String, String> localTypes = new LinkedHashMap<>();
             long cursor = 0;
             for (int k = start; k <= end; k++) {
-                HOBStatement fl = lines.get(k);
+                BytecodeStatement fl = lines.get(k);
                 if (!fl.isEmpty() && fl.get(0).text.equals("ALLOC") && fl.size() >= 3) {
                     String varName = fl.get(1).text;
                     String varType = fl.get(2).text;
@@ -126,19 +126,19 @@ public class AddressLoweringPass implements OptimizationPass {
 
             // The preceding line in ORIGINAL (pre-rewrite) form: PUSH_FIELDNAME needs the struct type that an already-lowered
             // predecessor no longer carries.
-            HOBStatement previousLine = null;
+            BytecodeStatement previousLine = null;
             boolean combinedAllocEmitted = false;
             Map<Integer, Integer> literalAssigns = findStructLiteralAssigns(lines, start, end, structTable);
             Map<Integer, Integer> arrayAssigns = findArrayLiteralAssigns(lines, start, end, sizes, structTable);
             for (int k = start; k <= end; k++) {
-                HOBStatement fl = lines.get(k);
+                BytecodeStatement fl = lines.get(k);
                 // Every ALLOC line collapses into one combined "ALLOC totalAllocSize" emitted in place of the first; later ones are dropped.
                 // previousLine still tracks the original ALLOC line (PUSH_FIELDNAME reads its type).
                 if (!fl.isEmpty() && fl.get(0).text.equals("ALLOC") && fl.size() == 3) {
                     changed = true;
                     if (!combinedAllocEmitted) {
                         combinedAllocEmitted = true;
-                        out.add(HOBStatement.fromText("ALLOC " + totalAllocSize, "<address-lowered>"));
+                        out.add(BytecodeStatement.fromText("ALLOC " + totalAllocSize, "<address-lowered>"));
                     }
                     previousLine = fl;
                     continue;
@@ -150,7 +150,7 @@ public class AddressLoweringPass implements OptimizationPass {
                     Long hintOff = offsets.get(fl.get(1).text);
                     String hintType = localTypes.get(fl.get(1).text);
                     if (hintOff != null && hintType != null) {
-                        out.add(HOBStatement.fromText(
+                        out.add(BytecodeStatement.fromText(
                                 "REGHINT " + hintOff + " " + sizes.sizeOf(hintType) + " " + fl.get(2).text + (fl.size() == 4 ? " " + fl.get(3).text : ""), "<address-lowered>"));
                     }
                     continue;
@@ -177,7 +177,7 @@ public class AddressLoweringPass implements OptimizationPass {
                     previousLine = fl;
                     continue;
                 }
-                HOBStatement rewritten = tryRewrite(fl, offsets, localTypes, sizes, structTable, enumTable,
+                BytecodeStatement rewritten = tryRewrite(fl, offsets, localTypes, sizes, structTable, enumTable,
                         convention, previousLine, argWordSlots);
                 if (rewritten != null && literalAssigns.containsKey(k) && rewritten.size() == 4) {
                     // A stack struct literal's own top-level store: append the struct's physical layout (see the "NEW" rewrite
@@ -190,7 +190,7 @@ public class AddressLoweringPass implements OptimizationPass {
                             sb.append(' ').append(rewritten.get(q).text);
                         }
                         sb.append(layoutTokens(lit, lines, literalAssigns.get(k), k, sizes, structTable, enumTable));
-                        rewritten = HOBStatement.fromText(sb.toString(), "<address-lowered>");
+                        rewritten = BytecodeStatement.fromText(sb.toString(), "<address-lowered>");
                     }
                 }
                 if (rewritten != null && arrayAssigns.containsKey(k) && rewritten.size() == 4) {
@@ -207,7 +207,7 @@ public class AddressLoweringPass implements OptimizationPass {
                             wholeCopy |= lines.get(u).get(lines.get(u).size() - 1).text.equals(at);
                         }
                         if (computed && !wholeCopy) {
-                            rewritten = HOBStatement.fromText(fl.get(0).text + " " + rewritten.get(1).text + " " + rewritten.get(2).text
+                            rewritten = BytecodeStatement.fromText(fl.get(0).text + " " + rewritten.get(1).text + " " + rewritten.get(2).text
                                     + " " + rewritten.get(3).text + " a" + sizes.sizeOf(elemT) + "x" + arrN, "<address-lowered>");
                         }
                     }
@@ -217,7 +217,7 @@ public class AddressLoweringPass implements OptimizationPass {
                     int runStart = findNewRunStart(lines, start, k, structTable, enumTable);
                     List<StructTable.LayoutEntry> nl = structTable.layoutOf(CanonicalType.parse(fl.get(1).text).baseType);
                     if (runStart >= 0 && nl != null) {
-                        rewritten = HOBStatement.fromText("NEW " + rewritten.get(1).text
+                        rewritten = BytecodeStatement.fromText("NEW " + rewritten.get(1).text
                                 + layoutTokens(nl, lines, runStart, k, sizes, structTable, enumTable), "<address-lowered>");
                     }
                 }
@@ -241,19 +241,19 @@ public class AddressLoweringPass implements OptimizationPass {
      * "ADDR v T", "PUSH <digits> imut_u64" (the struct's ___type id), the member values, then "ASSIGN T T T". A whole-value copy
      * ("ADDR v T", "PUSH w T", "ASSIGN T T T") has no such type-id push and is not matched.
      */
-    private static Map<Integer, Integer> findStructLiteralAssigns(HOBProgram lines, int start, int end, StructTable structTable) {
+    private static Map<Integer, Integer> findStructLiteralAssigns(BytecodeProgram lines, int start, int end, StructTable structTable) {
         Map<Integer, Integer> result = new HashMap<>();   // ASSIGN line index -> index of the literal's own "ADDR v T" line
         java.util.ArrayDeque<String> pending = new java.util.ArrayDeque<>();
         java.util.ArrayDeque<Integer> pendingStart = new java.util.ArrayDeque<>();
         Map<String, Integer> untypedAddr = new HashMap<>();   // struct type -> latest "ADDR v T" of an '@untyped' struct (no class id push)
         for (int k = start; k <= end; k++) {
-            HOBStatement l = lines.get(k);
+            BytecodeStatement l = lines.get(k);
             if (l.isEmpty()) {
                 continue;
             }
             String m = l.get(0).text;
             if (m.equals("ADDR") && l.size() == 3 && k + 1 <= end) {
-                HOBStatement nx = lines.get(k + 1);
+                BytecodeStatement nx = lines.get(k + 1);
                 if (nx.size() == 3 && nx.get(0).text.equals("PUSH") && nx.get(2).text.equals("imut_u64")
                         && nx.get(1).text.matches("[0-9]+")) {
                     CanonicalType ct = CanonicalType.parse(l.get(2).text);
@@ -275,7 +275,7 @@ public class AddressLoweringPass implements OptimizationPass {
                 // Return value optimisation: the literal is stored through the hidden destination pointer
                 // ("PUSH $ret_dest raw_mut_S / classId / members / ASSIGN mut_S indeterminate_S mut_S"). The pointer value sits where an
                 // "ADDR v" would, so the store is the same repack.
-                HOBStatement nx = lines.get(k + 1);
+                BytecodeStatement nx = lines.get(k + 1);
                 // (the type id is a literal, or -- in a generated clone routine -- read off the source copy's own `.___type`)
                 if (nx.size() == 3 && nx.get(0).text.equals("PUSH") && nx.get(2).text.equals("imut_u64")
                         && (nx.get(1).text.matches("[0-9]+") || nx.get(1).text.endsWith(".___type"))) {
@@ -315,13 +315,13 @@ public class AddressLoweringPass implements OptimizationPass {
      * literal's "ADDR v T" line. Each element is pushed as its own whole word; when one of them is computed Codegen cannot treat the run as a packed
      * image, so the ASSIGN gets an "a<elemBytes>x<n>" token (same repack as an array member of a struct literal).
      */
-    private static Map<Integer, Integer> findArrayLiteralAssigns(HOBProgram lines, int start, int end, SizeCalculator sizes,
+    private static Map<Integer, Integer> findArrayLiteralAssigns(BytecodeProgram lines, int start, int end, SizeCalculator sizes,
             StructTable structTable) {
         Map<Integer, Integer> result = new HashMap<>();
         java.util.ArrayDeque<String> pending = new java.util.ArrayDeque<>();
         java.util.ArrayDeque<Integer> pendingStart = new java.util.ArrayDeque<>();
         for (int k = start; k <= end; k++) {
-            HOBStatement l = lines.get(k);
+            BytecodeStatement l = lines.get(k);
             if (l.isEmpty()) {
                 continue;
             }
@@ -353,10 +353,10 @@ public class AddressLoweringPass implements OptimizationPass {
      * literal collapses at its NEW. Returns, for each top-level value in order, the index of the line that produced it (its last token is the
      * value's type); null if any line is not understood, in which case the caller falls back to counting.
      */
-    private static List<Integer> splitValueUnits(HOBProgram lines, int from, int to, EnumTable enumTable) {
+    private static List<Integer> splitValueUnits(BytecodeProgram lines, int from, int to, EnumTable enumTable) {
         java.util.ArrayList<int[]> stack = new java.util.ArrayList<>();   // {producer line, 1 if a struct type-id push}
         for (int j = from + 1; j < to; j++) {
-            HOBStatement l = lines.get(j);
+            BytecodeStatement l = lines.get(j);
             if (l.isEmpty()) {
                 continue;
             }
@@ -454,7 +454,7 @@ public class AddressLoweringPass implements OptimizationPass {
      * the line that produced it has an array type, otherwise it is n element values. If the lines cannot be split, it falls back to counting
      * array-typed value lines; that is only decisive when no array type is shared by two members, otherwise the literal is rejected.
      */
-    private static String layoutTokens(List<StructTable.LayoutEntry> layout, HOBProgram lines, int from, int to,
+    private static String layoutTokens(List<StructTable.LayoutEntry> layout, BytecodeProgram lines, int from, int to,
             SizeCalculator sizes, StructTable structTable, EnumTable enumTable) {
         List<Integer> units = splitValueUnits(lines, from, to, enumTable);
         StringBuilder sb = new StringBuilder();
@@ -486,7 +486,7 @@ public class AddressLoweringPass implements OptimizationPass {
      * Appends the descriptor tokens for one struct layout, consuming the literal's top-level value units (u[0] is the next unit). Returns false
      * if the units do not fit the layout (the caller then falls back to counting).
      */
-    private static boolean layoutFromUnits(List<StructTable.LayoutEntry> layout, HOBProgram lines, List<Integer> units, int[] u,
+    private static boolean layoutFromUnits(List<StructTable.LayoutEntry> layout, BytecodeProgram lines, List<Integer> units, int[] u,
             List<String> tokens, SizeCalculator sizes, StructTable structTable) {
         for (StructTable.LayoutEntry entry : layout) {
             if (entry.member == null) {
@@ -522,12 +522,12 @@ public class AddressLoweringPass implements OptimizationPass {
      * already has exactly this type is one whole block (a variable): "m<size>". Otherwise an array is its elements one after another (a narrow scalar
      * array is the single token "a<elemBytes>x<n>", n words) and a struct literal is its own layout (type id, members, padding), recursively.
      */
-    private static boolean valueFromUnits(String base, HOBProgram lines, List<Integer> units, int[] u, List<String> tokens,
+    private static boolean valueFromUnits(String base, BytecodeProgram lines, List<Integer> units, int[] u, List<String> tokens,
             SizeCalculator sizes, StructTable structTable) {
         if (u[0] >= units.size()) {
             return false;
         }
-        HOBStatement producer = lines.get(units.get(u[0]));
+        BytecodeStatement producer = lines.get(units.get(u[0]));
         String last = producer.get(producer.size() - 1).text;
         boolean isArray = ARRAY_TYPE.matcher(base).matches();
         List<StructTable.LayoutEntry> structLayout = isArray ? null : structTable.layoutOf(base);
@@ -576,12 +576,12 @@ public class AddressLoweringPass implements OptimizationPass {
      * Index of the line just before a heap struct literal's own type-id push ("PUSH <digits> imut_u64") for the "NEW" at `newIdx`, walking
      * back and skipping nested literals (each nested "NEW" has its own type-id push); -1 if it is not found within [start, newIdx).
      */
-    private static int findNewRunStart(HOBProgram lines, int start, int newIdx, StructTable structTable, EnumTable enumTable) {
+    private static int findNewRunStart(BytecodeProgram lines, int start, int newIdx, StructTable structTable, EnumTable enumTable) {
         String self = lines.get(newIdx).size() >= 2 ? CanonicalType.parse(lines.get(newIdx).get(1).text).baseType : null;
         Long wanted = self == null ? null : classIdOf(self, enumTable);
         int depth = 1;
         for (int j = newIdx - 1; j >= start; j--) {
-            HOBStatement l = lines.get(j);
+            BytecodeStatement l = lines.get(j);
             if (l.isEmpty()) {
                 continue;
             }
@@ -608,7 +608,7 @@ public class AddressLoweringPass implements OptimizationPass {
         return enumTable == null ? null : enumTable.variantValue("Class", structBaseType);
     }
 
-    private static Long typeIdValue(HOBStatement pushLine) {
+    private static Long typeIdValue(BytecodeStatement pushLine) {
         try {
             return pushLine.size() >= 2 ? Long.valueOf(pushLine.get(1).text) : Long.valueOf(-1);
         } catch (NumberFormatException e) {
@@ -617,10 +617,10 @@ public class AddressLoweringPass implements OptimizationPass {
     }
 
     /** Number of lines in (from, to) whose last token is an array type, keyed by that array's base type text (a whole array value pushed as one block). */
-    private static Map<String, Integer> countArrayValueLines(HOBProgram lines, int from, int to) {
+    private static Map<String, Integer> countArrayValueLines(BytecodeProgram lines, int from, int to) {
         Map<String, Integer> counts = new HashMap<>();
         for (int j = from + 1; j < to; j++) {
-            HOBStatement l = lines.get(j);
+            BytecodeStatement l = lines.get(j);
             if (l.size() < 2) {
                 continue;
             }
@@ -667,11 +667,11 @@ public class AddressLoweringPass implements OptimizationPass {
      * This function's calling convention: its "FUNC_DECORATE @call_convention(name)" line, else the config default (same rule as
      * TypeChecker.resolveCallConvention). See docs/AddressLoweringPass.md, "Calling convention and parameter words".
      */
-    private CompilerConfig.CallingConvention resolveConvention(HOBProgram lines, int start, int end,
+    private CompilerConfig.CallingConvention resolveConvention(BytecodeProgram lines, int start, int end,
             CompilerConfig config) {
         String name = null;
         for (int k = start; k <= end && name == null; k++) {
-            HOBStatement fl = lines.get(k);
+            BytecodeStatement fl = lines.get(k);
             if (fl.isEmpty() || !fl.get(0).text.equals("FUNC_DECORATE") || fl.size() < 2) {
                 continue;
             }
@@ -784,7 +784,7 @@ public class AddressLoweringPass implements OptimizationPass {
      * Needs the whole list because int and float words interleave and overflow words share one stack sequence.
      * See docs/AddressLoweringPass.md, "Calling convention and parameter words".
      */
-    private Map<String, ArgWordSlot> resolveArgWordSlots(HOBProgram lines, int start, int end,
+    private Map<String, ArgWordSlot> resolveArgWordSlots(BytecodeProgram lines, int start, int end,
             CompilerConfig.CallingConvention convention) {
         Map<String, ArgWordSlot> slots = new HashMap<>();
         int intCount = convention.argumentRegisters.size();
@@ -795,7 +795,7 @@ public class AddressLoweringPass implements OptimizationPass {
         int floatIdx = 0;
         int stackWordsSoFar = 0;
         for (int k = start; k <= end; k++) {
-            HOBStatement fl = lines.get(k);
+            BytecodeStatement fl = lines.get(k);
             if (fl.size() != 3 || !fl.get(0).text.equals("PUSH")) {
                 continue;
             }
@@ -833,7 +833,7 @@ public class AddressLoweringPass implements OptimizationPass {
      * top-level GLOBAL sits outside every function and never reaches tryRewrite; the value goes through resolveLiteralOrEnumValue.
      * See docs/AddressLoweringPass.md, "Static and global declarations".
      */
-    private static HOBStatement rewriteStaticOrGlobalDecl(HOBStatement line, SizeCalculator sizes,
+    private static BytecodeStatement rewriteStaticOrGlobalDecl(BytecodeStatement line, SizeCalculator sizes,
             EnumTable enumTable) {
         if (line.isEmpty()) {
             return null;
@@ -847,7 +847,7 @@ public class AddressLoweringPass implements OptimizationPass {
         long size = sizes.sizeOf(line.get(2).text);
         String rewritten = mnemonic + " " + staticName + " " + size
                 + (line.size() == 4 ? " " + resolveLiteralOrEnumValue(line.get(3).text, enumTable) : "");
-        return HOBStatement.fromText(rewritten, "<address-lowered>");
+        return BytecodeStatement.fromText(rewritten, "<address-lowered>");
     }
 
     /**
@@ -869,9 +869,9 @@ public class AddressLoweringPass implements OptimizationPass {
      * Rewrites one in-function line by erasing type operands to byte sizes (and splitting mnemonics where the runtime meaning differs);
      * null leaves the line alone. See docs/AddressLoweringPass.md, "Per-mnemonic rewrites".
      */
-    private HOBStatement tryRewrite(HOBStatement line, Map<String, Long> offsets,
+    private BytecodeStatement tryRewrite(BytecodeStatement line, Map<String, Long> offsets,
             Map<String, String> localTypes, SizeCalculator sizes, StructTable structTable, EnumTable enumTable,
-            CompilerConfig.CallingConvention convention, HOBStatement previousLine,
+            CompilerConfig.CallingConvention convention, BytecodeStatement previousLine,
             Map<String, ArgWordSlot> argWordSlots) {
         if (line.isEmpty()) {
             return null;
@@ -884,7 +884,7 @@ public class AddressLoweringPass implements OptimizationPass {
             for (int k = 1; k < 4; k++) {
                 sb.append(' ').append(sizes.sizeOf(line.get(k).text));
             }
-            return HOBStatement.fromText(sb.toString(), "<address-lowered>");
+            return BytecodeStatement.fromText(sb.toString(), "<address-lowered>");
         }
 
         // RET type -> RET size / RET_FLOAT size (integer vs float return register).
@@ -892,7 +892,7 @@ public class AddressLoweringPass implements OptimizationPass {
             String retType = line.get(1).text;
             long size = sizes.sizeOf(retType);
             String outMnemonic = isFloatBaseType(CanonicalType.parse(retType).baseType) ? "RET_FLOAT" : "RET";
-            return HOBStatement.fromText(outMnemonic + " " + size, "<address-lowered>");
+            return BytecodeStatement.fromText(outMnemonic + " " + size, "<address-lowered>");
         }
 
         // PUSH_RET type -> PUSH_RET_INT|PUSH_RET_FLOAT size (caller-side mirror of RET; never emitted for void calls).
@@ -900,7 +900,7 @@ public class AddressLoweringPass implements OptimizationPass {
             String retType = line.get(1).text;
             long size = sizes.sizeOf(retType);
             String suffix = isFloatBaseType(CanonicalType.parse(retType).baseType) ? "_FLOAT" : "_INT";
-            return HOBStatement.fromText("PUSH_RET" + suffix + " " + size, "<address-lowered>");
+            return BytecodeStatement.fromText("PUSH_RET" + suffix + " " + size, "<address-lowered>");
         }
 
         // NEW TypeName -> NEW size [layout tokens] (see docs/AddressLoweringPass.md, "NEW layout descriptor").
@@ -917,7 +917,7 @@ public class AddressLoweringPass implements OptimizationPass {
                             : "p" + entry.paddingBytes);
                 }
             }
-            return HOBStatement.fromText(lowered.toString(), "<address-lowered>");
+            return BytecodeStatement.fromText(lowered.toString(), "<address-lowered>");
         }
 
         // NEW_UDYN typeText count -> NEW_UDYN count*elemSize (headerless, so size alone is the contract).
@@ -927,7 +927,7 @@ public class AddressLoweringPass implements OptimizationPass {
             long elementSize = sizes.sizeOf(elementBaseType);
             long count = Long.parseLong(line.get(2).text);
             long size = elementSize * count;
-            return HOBStatement.fromText("NEW_UDYN " + size, "<address-lowered>");
+            return BytecodeStatement.fromText("NEW_UDYN " + size, "<address-lowered>");
         }
 
         // NEW_DYN typeText count -> NEW_DYN size count; size excludes the length header (added by the allocator); count stays on the line.
@@ -937,7 +937,7 @@ public class AddressLoweringPass implements OptimizationPass {
             long elementSize = sizes.sizeOf(elementBaseType);
             long count = Long.parseLong(line.get(2).text);
             long size = elementSize * count;
-            return HOBStatement.fromText("NEW_DYN " + size + " " + count, "<address-lowered>");
+            return BytecodeStatement.fromText("NEW_DYN " + size + " " + count, "<address-lowered>");
         }
 
         // RESIZE dynArrType countType fillType -> RESIZE size; only the fill type's size (= element size) carries information.
@@ -945,7 +945,7 @@ public class AddressLoweringPass implements OptimizationPass {
             // A pointer fill (owns/ref/raw/auto) is one 8-byte element whatever it points at: size the canonical type, not just its base.
             CanonicalType fillType = CanonicalType.parse(line.get(3).text);
             long size = fillType.storage != null ? 8 : sizes.sizeOf(fillType.baseType);
-            return HOBStatement.fromText("RESIZE " + size, "<address-lowered>");
+            return BytecodeStatement.fromText("RESIZE " + size, "<address-lowered>");
         }
 
         // URESIZE dynArrType countType -> URESIZE elemSize. The unsafe form is tried first, then the safe one: CloneGenerationPass.buildCloneLoop
@@ -957,7 +957,7 @@ public class AddressLoweringPass implements OptimizationPass {
                 elementBaseType = CanonicalType.dynArrayElementTypeOf(baseType);
             }
             long size = sizes.sizeOf(elementBaseType);
-            return HOBStatement.fromText("URESIZE " + size, "<address-lowered>");
+            return BytecodeStatement.fromText("URESIZE " + size, "<address-lowered>");
         }
 
         // STACK_LOCK structName -> STACK_LOCK size = struct size - 8 (if it has ___type) - 8 (the lock word); the rest is what the instruction reserves.
@@ -978,7 +978,7 @@ public class AddressLoweringPass implements OptimizationPass {
                 size -= 8;
             }
             size -= 8; // the lock field's own value, always one enum word
-            return HOBStatement.fromText("STACK_LOCK " + size, "<address-lowered>");
+            return BytecodeStatement.fromText("STACK_LOCK " + size, "<address-lowered>");
         }
 
         // LOOKUP targetType indexType returnType -> LOOKUP_ARRAY|LOOKUP_DYN size.
@@ -1001,7 +1001,7 @@ public class AddressLoweringPass implements OptimizationPass {
                         && sizes.sizeOf(returnType) < 8) {
                     total += " ra";   // the element is itself a small fixed array held by value: Codegen tags it for the next lookup
                 }
-                return HOBStatement.fromText(newMnemonic + " " + size + total, "<address-lowered>");
+                return BytecodeStatement.fromText(newMnemonic + " " + size + total, "<address-lowered>");
             }
         }
 
@@ -1012,7 +1012,7 @@ public class AddressLoweringPass implements OptimizationPass {
             String newMnemonic = lookupMnemonicFor(targetType);
             if (newMnemonic != null) {
                 long size = sizes.sizeOf(returnType);
-                return HOBStatement.fromText(newMnemonic + "_LHS " + size, "<address-lowered>");
+                return BytecodeStatement.fromText(newMnemonic + "_LHS " + size, "<address-lowered>");
             }
         }
 
@@ -1024,13 +1024,13 @@ public class AddressLoweringPass implements OptimizationPass {
             String suffix = isFloatBaseType(CanonicalType.parse(leftType).baseType) ? "_FLOAT" : "_INT";
             String signedPrefix = (suffix.equals("_INT") && isSignedIntBaseType(CanonicalType.parse(leftType).baseType)
                     && !mnemonic.equals("EQ") && !mnemonic.equals("NEQ")) ? "S" : "";
-            return HOBStatement.fromText(signedPrefix + mnemonic + suffix + " " + size, "<address-lowered>");
+            return BytecodeStatement.fromText(signedPrefix + mnemonic + suffix + " " + size, "<address-lowered>");
         }
 
         // AND/OR -> AND|OR size: width-independent bitwise op, no int/float split.
         if ((mnemonic.equals("AND") || mnemonic.equals("OR")) && line.size() == 4) {
             long size = sizes.sizeOf(line.get(1).text);
-            return HOBStatement.fromText(mnemonic + " " + size, "<address-lowered>");
+            return BytecodeStatement.fromText(mnemonic + " " + size, "<address-lowered>");
         }
 
         // SHL/SHR/ROTL/ROTR/BITS_OR/BITS_AND/BITS_XOR -> mnemonic + size of the left operand (integers only, so no float split).
@@ -1041,19 +1041,19 @@ public class AddressLoweringPass implements OptimizationPass {
             // bits_right on a signed operand is an arithmetic shift (SAR); unsigned stays logical (SHR).
             String outMnemonic = (mnemonic.equals("SHR")
                     && isSignedIntBaseType(CanonicalType.parse(line.get(1).text).baseType)) ? "SAR" : mnemonic;
-            return HOBStatement.fromText(outMnemonic + " " + size, "<address-lowered>");
+            return BytecodeStatement.fromText(outMnemonic + " " + size, "<address-lowered>");
         }
 
         // BITS_NOT leftType returnType -> BITS_NOT size (complement of the low `size` bytes; backend re-truncates). Not the logical NOT below.
         if (mnemonic.equals("BITS_NOT") && line.size() == 3) {
             long size = sizes.sizeOf(line.get(1).text);
-            return HOBStatement.fromText("BITS_NOT " + size, "<address-lowered>");
+            return BytecodeStatement.fromText("BITS_NOT " + size, "<address-lowered>");
         }
 
         // NOT leftType returnType -> NOT size (bool or integer only, so no float split).
         if (mnemonic.equals("NOT") && line.size() == 3) {
             long size = sizes.sizeOf(line.get(1).text);
-            return HOBStatement.fromText("NOT " + size, "<address-lowered>");
+            return BytecodeStatement.fromText("NOT " + size, "<address-lowered>");
         }
 
         // CLONE argType returnType -> CLONE size, where size is the POINTEE's size (argType is a pointer, so strip the storage first, never
@@ -1065,10 +1065,10 @@ public class AddressLoweringPass implements OptimizationPass {
             if (dynElemText != null) {
                 // a safe dynarray is a 16-byte header plus length*elemSize bytes: the size is only known at run time
                 long elemSize = sizes.sizeOf(dynElemText);
-                return HOBStatement.fromText("CLONE_DYN " + elemSize, "<address-lowered>");
+                return BytecodeStatement.fromText("CLONE_DYN " + elemSize, "<address-lowered>");
             }
             long size = sizes.sizeOf(pointeeBaseType);
-            return HOBStatement.fromText("CLONE " + size, "<address-lowered>");
+            return BytecodeStatement.fromText("CLONE " + size, "<address-lowered>");
         }
 
         // "DEREF pointeeType" -> "DEREF size". The pointee type rides on the DEREF line itself (not inferred
@@ -1076,7 +1076,7 @@ public class AddressLoweringPass implements OptimizationPass {
         // storage-bearing operands. See docs/AddressLoweringPass.md, "Size-erasing rewrites".
         if (mnemonic.equals("DEREF") && line.size() == 2) {
             long size = sizes.sizeOf(line.get(1).text);
-            return HOBStatement.fromText("DEREF " + size, "<address-lowered>");
+            return BytecodeStatement.fromText("DEREF " + size, "<address-lowered>");
         }
 
         // "NEG leftType returnType" -> "NEG size"; leftType alone suffices (unary minus never changes byte width).
@@ -1085,7 +1085,7 @@ public class AddressLoweringPass implements OptimizationPass {
             long size = sizes.sizeOf(line.get(1).text);
         // A float operand gets NEG_FLOAT (sign-bit flip); integer NEG would corrupt the IEEE-754 pattern.
             String negSuffix = isFloatBaseType(CanonicalType.parse(line.get(1).text).baseType) ? "_FLOAT" : "";
-            return HOBStatement.fromText("NEG" + negSuffix + " " + size, "<address-lowered>");
+            return BytecodeStatement.fromText("NEG" + negSuffix + " " + size, "<address-lowered>");
         }
 
         // SEXT/ZEXT/TRUNC/FCONV keep both source and destination sizes (they genuinely differ).
@@ -1093,7 +1093,7 @@ public class AddressLoweringPass implements OptimizationPass {
         if ((mnemonic.equals("SEXT") || mnemonic.equals("ZEXT") || mnemonic.equals("TRUNC") || mnemonic.equals("FCONV")) && line.size() == 3) {
             long sourceSize = sizes.sizeOf(line.get(1).text);
             long destSize = sizes.sizeOf(line.get(2).text);
-            return HOBStatement.fromText(mnemonic + " " + sourceSize + " " + destSize, "<address-lowered>");
+            return BytecodeStatement.fromText(mnemonic + " " + sourceSize + " " + destSize, "<address-lowered>");
         }
 
         // "ATOMIC_SWAP l r ret" -> "ATOMIC_SWAP size", read from the LAST operand: leftType carries an
@@ -1101,7 +1101,7 @@ public class AddressLoweringPass implements OptimizationPass {
         // See docs/AddressLoweringPass.md, "Size-erasing rewrites".
         if (mnemonic.equals("ATOMIC_SWAP") && line.size() == 4) {
             long size = sizes.sizeOf(line.get(3).text);
-            return HOBStatement.fromText("ATOMIC_SWAP " + size, "<address-lowered>");
+            return BytecodeStatement.fromText("ATOMIC_SWAP " + size, "<address-lowered>");
         }
 
         // "ADD/SUB/MUL/DIV/MOD l r ret" -> "<op>_INT|_FLOAT size" from leftType only.
@@ -1114,7 +1114,7 @@ public class AddressLoweringPass implements OptimizationPass {
             // Signed division/modulo are different machine operations (idiv, not div): own mnemonics.
             String signedPrefix = (suffix.equals("_INT") && isSignedIntBaseType(CanonicalType.parse(leftType).baseType)
                     && (mnemonic.equals("DIV") || mnemonic.equals("MOD"))) ? "S" : "";
-            return HOBStatement.fromText(signedPrefix + mnemonic + suffix + " " + size, "<address-lowered>");
+            return BytecodeStatement.fromText(signedPrefix + mnemonic + suffix + " " + size, "<address-lowered>");
         }
 
         // "INC/DEC l ret" -> "INC_INT|INC_FLOAT size" (same _INT/_FLOAT split as the arithmetic ops).
@@ -1122,19 +1122,19 @@ public class AddressLoweringPass implements OptimizationPass {
             String leftType = line.get(1).text;
             long size = sizes.sizeOf(leftType);
             String suffix = isFloatBaseType(CanonicalType.parse(leftType).baseType) ? "_FLOAT" : "_INT";
-            return HOBStatement.fromText(mnemonic + suffix + " " + size, "<address-lowered>");
+            return BytecodeStatement.fromText(mnemonic + suffix + " " + size, "<address-lowered>");
         }
 
         // "RECURSIVE_CALL f" -> "CALL f": a bare rename. AWAIT_CALL/PAR_CALL stay (different runtime mechanism).
         // See docs/AddressLoweringPass.md, "Call rewrites".
         if (mnemonic.equals("RECURSIVE_CALL") && line.size() == 2) {
-            return HOBStatement.fromText("CALL " + line.get(1).text, "<address-lowered>");
+            return BytecodeStatement.fromText("CALL " + line.get(1).text, "<address-lowered>");
         }
 
         // "EXTERN_CALL name argCount" -> "CALL name argCount": argCount is kept (varargs need it).
         // See docs/AddressLoweringPass.md, "Call rewrites".
         if (mnemonic.equals("EXTERN_CALL") && line.size() == 3) {
-            return HOBStatement.fromText("CALL " + line.get(1).text + " " + line.get(2).text, "<address-lowered>");
+            return BytecodeStatement.fromText("CALL " + line.get(1).text + " " + line.get(2).text, "<address-lowered>");
         }
 
         // "POP name type" -> "POP $offset size"; ARGn names are not in offsets and stay verbatim.
@@ -1143,7 +1143,7 @@ public class AddressLoweringPass implements OptimizationPass {
             long size = sizes.sizeOf(line.get(2).text);
             Long popAddress = resolveAddress(line.get(1).text, offsets, localTypes, sizes, structTable);
             String nameOperand = popAddress != null ? "$" + popAddress : line.get(1).text;
-            return HOBStatement.fromText("POP " + nameOperand + " " + size, "<address-lowered>");
+            return BytecodeStatement.fromText("POP " + nameOperand + " " + size, "<address-lowered>");
         }
 
         // "PUSH_FIELDNAME f type" -> "PUSH_FIELDNAME memberOffset size". The struct comes from the previous
@@ -1162,7 +1162,7 @@ public class AddressLoweringPass implements OptimizationPass {
                 return null;
             }
             long size = sizes.sizeOf(fieldType);
-            return HOBStatement.fromText("PUSH_FIELDNAME " + loc.offset + " " + size, "<address-lowered>");
+            return BytecodeStatement.fromText("PUSH_FIELDNAME " + loc.offset + " " + size, "<address-lowered>");
         }
 
         // "DOT/DOT_LHS l ret ret" -> "DOT size": the field size (returnType); leftType is dropped.
@@ -1176,7 +1176,7 @@ public class AddressLoweringPass implements OptimizationPass {
             if (mnemonic.equals("DOT") && ft.storage == null && CanonicalType.fixedArrayElementTypeOf(ft.baseType) != null && size <= 8) {
                 smallArray = " ra";
             }
-            return HOBStatement.fromText(mnemonic + " " + size + smallArray, "<address-lowered>");
+            return BytecodeStatement.fromText(mnemonic + " " + size + smallArray, "<address-lowered>");
         }
 
         // "ADDR_OF opText l ret" -> "ADDR_OF opText $address", when the previous line is a plain not-yet-lowered
@@ -1188,13 +1188,13 @@ public class AddressLoweringPass implements OptimizationPass {
             if (address == null) {
                 return null;
             }
-            return HOBStatement.fromText("ADDR_OF " + line.get(1).text + " $" + address, "<address-lowered>");
+            return BytecodeStatement.fromText("ADDR_OF " + line.get(1).text + " $" + address, "<address-lowered>");
         }
 
         // "MEMCOPY d c s ret" -> bare "MEMCOPY": all four operands are always 8 bytes, so no information is lost.
         // See docs/AddressLoweringPass.md, "MEMCOPY and NEW_FROM_STRING".
         if (mnemonic.equals("MEMCOPY") && line.size() == 5) {
-            return HOBStatement.fromText("MEMCOPY", "<address-lowered>");
+            return BytecodeStatement.fromText("MEMCOPY", "<address-lowered>");
         }
 
         // "NEW_FROM_STRING dyn src" -> bare "NEW_FROM_STRING" (same reasoning as MEMCOPY).
@@ -1202,7 +1202,7 @@ public class AddressLoweringPass implements OptimizationPass {
         if (mnemonic.equals("NEW_FROM_STRING") && line.size() == 3) {
             // an unsafe dynarray is headerless (see Codegen NEW_UDYN): its own mnemonic
             boolean unsafeTarget = line.get(1).text.contains("unsafe_dynarray(");
-            return HOBStatement.fromText(unsafeTarget ? "NEW_FROM_USTRING" : "NEW_FROM_STRING", "<address-lowered>");
+            return BytecodeStatement.fromText(unsafeTarget ? "NEW_FROM_USTRING" : "NEW_FROM_STRING", "<address-lowered>");
         }
 
         // "GT_DESTRUCT name" -> "GT_DESTRUCT $offset"; name may be a dotted chain. Untouched when unresolved.
@@ -1211,11 +1211,11 @@ public class AddressLoweringPass implements OptimizationPass {
             if (address == null) {
                 return null;
             }
-            return HOBStatement.fromText("GT_DESTRUCT $" + address, "<address-lowered>");
+            return BytecodeStatement.fromText("GT_DESTRUCT $" + address, "<address-lowered>");
         }
 
         // ALLOC_STATIC / GLOBAL declarations: see rewriteStaticOrGlobalDecl (also called from run() for top-level GLOBAL).
-        HOBStatement staticRewrite = rewriteStaticOrGlobalDecl(line, sizes, enumTable);
+        BytecodeStatement staticRewrite = rewriteStaticOrGlobalDecl(line, sizes, enumTable);
         if (staticRewrite != null) {
             return staticRewrite;
         }
@@ -1239,7 +1239,7 @@ public class AddressLoweringPass implements OptimizationPass {
             if (slot != null) {
                 if (!slot.isRegister) {
                     String rewritten = mnemonic + " " + size + " $" + slot.stackOffset;
-                    return HOBStatement.fromText(rewritten, "<address-lowered>");
+                    return BytecodeStatement.fromText(rewritten, "<address-lowered>");
                 }
                         // Register-transferred: rewrite the digit to the per-bank register index (a no-op for win64;
                         // SysV/arm64 count int and float words independently). See resolveArgWordSlots.
@@ -1260,7 +1260,7 @@ public class AddressLoweringPass implements OptimizationPass {
             secondOperand = resolveLiteralOrEnumValue(firstOperand, enumTable);
         }
         String rewrittenText = mnemonic + " " + size + " " + secondOperand;
-        return HOBStatement.fromText(rewrittenText, "<address-lowered>");
+        return BytecodeStatement.fromText(rewrittenText, "<address-lowered>");
     }
 
     /** "true"/"false" -> "1"/"0"; "Enum.Variant" -> its integer value; anything else unchanged. See docs/AddressLoweringPass.md, "Literal and enum resolution". */

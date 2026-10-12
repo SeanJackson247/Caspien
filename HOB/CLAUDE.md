@@ -1,3 +1,0 @@
-# CLAUDE.md -- HOB (shared bytecode representation)
-
-Package `caspien.hob` (`HOBToken`, `HOBStatement`, `HOBProgram`, `HOBParser`, `HOBSerializer`), used by `ASTGenerator/` (builds a `HOBProgram`; `Main` serializes), `Optimizer/`, `LowerOrderGenerator/` and `Codegen/` (`Main` parses the LOB once, the backend walks the `HOBStatement`s); `README.md` has the rules. Sources only: each stage compiles `../HOB/src/main/java` into its own `out/` (rebuild all four after a change here). Imports no stage. A stage's library entry class (`Optimizer`, `LowerOrder`) is the only caller of parser/serializer; passes build generated lines with `HOBStatement.fromText`. Codegen still has a private parser copy (not moved). Check: `tests/hob_phases_check.sh`.

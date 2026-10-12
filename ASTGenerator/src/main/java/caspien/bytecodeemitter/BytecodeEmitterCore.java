@@ -2,8 +2,8 @@ package caspien.bytecodeemitter;
 import caspien.typechecker.TypeChecker;
 import caspien.*;
 
-import caspien.hob.HOBProgram;
-import caspien.hob.HOBStatement;
+import caspien.bytecode.BytecodeProgram;
+import caspien.bytecode.BytecodeStatement;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -18,7 +18,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Final front-end stage: walks the type-checked tree and builds the stack-based higher-order bytecode (HOB) as a HOBProgram (text only when the caller serializes it).
+ * Final front-end stage: walks the type-checked tree and builds the stack-based higher-order bytecode (HOB) as a BytecodeProgram (text only when the caller serializes it).
  * Instruction shapes, if/elseif chaining and the ++ / compound-assignment desugaring: see docs/BytecodeEmitter.md, "Instruction shapes".
  */
 
@@ -104,8 +104,8 @@ abstract class BytecodeEmitterCore {
         COMPARISON_NAMES.put("!=", "NEQ");
     }
 
-    /** The program being built: one HOBStatement per instruction. Turned into text only by the caller of emit(), once this is complete. */
-    public final HOBProgram out = new HOBProgram();
+    /** The program being built: one BytecodeStatement per instruction. Turned into text only by the caller of emit(), once this is complete. */
+    public final BytecodeProgram out = new BytecodeProgram();
     static final String ORIGIN = "ASTGenerator";
     public int labelCounter = 0;
     /** Distinct string literal -> hoisted id ("string_id1", ...), first-occurrence order; char literals are excluded. Filled by literalValueOf, emitted as STRING lines at the very front of the output. */
@@ -338,7 +338,7 @@ abstract class BytecodeEmitterCore {
     public List<String> dynLiteralTempNames = null;
 
     public int lateAllocPos = -1;
-    public List<HOBStatement> lateAllocs = null;
+    public List<BytecodeStatement> lateAllocs = null;
     public int hiddenLocalCounter = 0;
 
     /** Identical string literals anywhere in the program share one id. */
@@ -360,7 +360,7 @@ abstract class BytecodeEmitterCore {
         return out;
     }
 
-    public HOBProgram emit(List<Token> rootLines, TypeChecker checker) {
+    public BytecodeProgram emit(List<Token> rootLines, TypeChecker checker) {
         this.checker = checker;
         Map<String, TypeChecker.StructInfo> structs = checker.getStructs();
         Map<String, TypeChecker.EnumInfo> enums = checker.getEnums();
@@ -474,7 +474,7 @@ abstract class BytecodeEmitterCore {
     /** Index of the first statement equal to `text` (tokens joined by one space), or -1. */
     private int indexOfStatement(String text) {
         for (int i = 0; i < out.size(); i++) {
-            HOBStatement st = out.get(i);
+            BytecodeStatement st = out.get(i);
             if (st.size() == 0) {
                 continue;
             }
@@ -490,20 +490,20 @@ abstract class BytecodeEmitterCore {
     }
 
     /** Text with one instruction per line -> statements. */
-    static List<HOBStatement> statementsOf(String lines) {
-        List<HOBStatement> result = new ArrayList<>();
+    static List<BytecodeStatement> statementsOf(String lines) {
+        List<BytecodeStatement> result = new ArrayList<>();
         for (String l : lines.split("\n", -1)) {
-            result.add(HOBStatement.fromText(l, ORIGIN));
+            result.add(BytecodeStatement.fromText(l, ORIGIN));
         }
         result.remove(result.size() - 1); // text ends with '\n': the last piece is empty
         return result;
     }
 
     /** One STRING line per hoisted string literal, prepended to the output (ahead of the GLOBAL lines). */
-    public List<HOBStatement> hoistedStringStatements() {
-        List<HOBStatement> prefix = new ArrayList<>();
+    public List<BytecodeStatement> hoistedStringStatements() {
+        List<BytecodeStatement> prefix = new ArrayList<>();
         for (Map.Entry<String, String> entry : hoistedStrings.entrySet()) {
-            prefix.add(HOBStatement.fromText("STRING " + entry.getValue() + " \""
+            prefix.add(BytecodeStatement.fromText("STRING " + entry.getValue() + " \""
                     + escapeForBytecode(entry.getKey()) + "\"", ORIGIN));
         }
         return prefix;
@@ -605,11 +605,11 @@ abstract class BytecodeEmitterCore {
         line("ASM_START");
         if (!rawContent.isEmpty()) {
             for (String l : (rawContent.endsWith("\n") ? rawContent : rawContent + "\n").split("\n", -1)) {
-                out.add(HOBStatement.fromText(l, ORIGIN));
+                out.add(BytecodeStatement.fromText(l, ORIGIN));
             }
             out.remove(out.size() - 1); // the piece after the final '\n'
         } else {
-            out.add(HOBStatement.fromText("", ORIGIN));
+            out.add(BytecodeStatement.fromText("", ORIGIN));
         }
         line("ASM_END");
     }
@@ -664,9 +664,9 @@ abstract class BytecodeEmitterCore {
      * when a type needs generated drop glue: the glue pass resolves `GT_DESTRUCT name` through one name -> type map, so two owning types under one
      * name dropped through the wrong layout (a catch parameter `e` plus an owning local `e` leaked). Rename one of them.
      */
-    public void requireOneOwnsTypePerSlotName(TypeChecker.FuncInfo info, List<HOBStatement> allocLines) {
+    public void requireOneOwnsTypePerSlotName(TypeChecker.FuncInfo info, List<BytecodeStatement> allocLines) {
         Map<String, String> seen = new HashMap<>();
-        for (HOBStatement st : allocLines) {
+        for (BytecodeStatement st : allocLines) {
             if (!st.opcode().equals("ALLOC") || st.size() < 3) {
                 continue;
             }
@@ -704,7 +704,7 @@ abstract class BytecodeEmitterCore {
     }
 
     public void line(String s) {
-        out.add(HOBStatement.fromText(s, ORIGIN));
+        out.add(BytecodeStatement.fromText(s, ORIGIN));
     }
 
     // ---- top-level declarations ------------------------------------------
@@ -1161,7 +1161,7 @@ abstract class BytecodeEmitterCore {
         // Locals discovered while emitting the body (see `declareHiddenLocal`) get their ALLOC lines spliced in right here once the
         // body is done: a variable cannot be used before it is declared, so no pre-pass is needed to find them.
         final int savedLateAllocPos = lateAllocPos;
-        final List<HOBStatement> savedLateAllocs = lateAllocs;
+        final List<BytecodeStatement> savedLateAllocs = lateAllocs;
         final Map<String, String> savedRefAddrSlots = refAddrSlots;
         refAddrSlots = new HashMap<>();
         lateAllocPos = out.size();

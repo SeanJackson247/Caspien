@@ -1,7 +1,7 @@
 package caspien.lowerorder;
-import caspien.hob.HOBProgram;
-import caspien.hob.HOBStatement;
-import caspien.hob.HOBToken;
+import caspien.bytecode.BytecodeProgram;
+import caspien.bytecode.BytecodeStatement;
+import caspien.bytecode.BytecodeToken;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -28,16 +28,16 @@ public class BranchFusionPass {
 
     private static final Set<String> CMP = Set.of("EQ", "NEQ", "LT", "LT_EQ", "GT", "GT_EQ", "SLT", "SLT_EQ", "SGT", "SGT_EQ");
 
-    public HOBProgram run(HOBProgram lines) {
-        HOBProgram out = new HOBProgram(lines.size());
+    public BytecodeProgram run(BytecodeProgram lines) {
+        BytecodeProgram out = new BytecodeProgram(lines.size());
         int i = 0;
         while (i < lines.size()) {
-            HOBStatement l = lines.get(i);
+            BytecodeStatement l = lines.get(i);
             // shape 2
             if (i + 3 < lines.size() && isCmp(l)) {
-                HOBStatement l2 = lines.get(i + 1);
-                HOBStatement l3 = lines.get(i + 2);
-                HOBStatement l4 = lines.get(i + 3);
+                BytecodeStatement l2 = lines.get(i + 1);
+                BytecodeStatement l3 = lines.get(i + 2);
+                BytecodeStatement l4 = lines.get(i + 3);
                 if (isCmp(l2) && isAnd(l3) && isBrf(l4)) {
                     String x = t(l, 3), y = t(l2, 3);
                     String r = t(l3, 3);
@@ -54,9 +54,9 @@ public class BranchFusionPass {
             }
             // shape 0: float compare + branch, `R_FCMP C n %tD a b ; R_BRF %tD @L` -> `R_BRC C Fn a b @L` (size "F4"/"F8" = a float compare)
             if (i + 1 < lines.size() && isFcmp(l) && isBrf(lines.get(i + 1)) && t(lines.get(i + 1), 1).equals(t(l, 3)) && notBothImm(l)) {
-                HOBStatement n = brc(l, lines.get(i + 1));
-                HOBToken sz = l.get(2);
-                n.set(2, new HOBToken("F" + sz.text, sz.file, sz.line, sz.kind));
+                BytecodeStatement n = brc(l, lines.get(i + 1));
+                BytecodeToken sz = l.get(2);
+                n.set(2, new BytecodeToken("F" + sz.text, sz.file, sz.line, sz.kind));
                 out.add(n);
                 i += 2;
                 continue;
@@ -73,11 +73,11 @@ public class BranchFusionPass {
         return out;
     }
 
-    private static String t(HOBStatement l, int i) {
+    private static String t(BytecodeStatement l, int i) {
         return l.get(i).text;
     }
 
-    private static boolean isCmp(HOBStatement l) {
+    private static boolean isCmp(BytecodeStatement l) {
         if (l.size() != 6 || !t(l, 0).equals("R_BIN") || !CMP.contains(t(l, 1)) || !t(l, 3).startsWith("%t")) {
             return false;
         }
@@ -89,32 +89,32 @@ public class BranchFusionPass {
         return (sz.equals("1") || sz.equals("2") || sz.equals("4")) && !t(l, 4).startsWith("$") && !t(l, 5).startsWith("$");
     }
 
-    private static boolean isFcmp(HOBStatement l) {
+    private static boolean isFcmp(BytecodeStatement l) {
         return l.size() == 6 && t(l, 0).equals("R_FCMP") && CMP.contains(t(l, 1)) && (t(l, 2).equals("4") || t(l, 2).equals("8"))
                 && t(l, 3).startsWith("%t");
     }
 
-    private static boolean isAnd(HOBStatement l) {
+    private static boolean isAnd(BytecodeStatement l) {
         return l.size() == 6 && t(l, 0).equals("R_BIN") && t(l, 1).equals("AND") && t(l, 2).equals("1")
                 && t(l, 3).startsWith("%t") && t(l, 4).startsWith("%t") && t(l, 5).startsWith("%t");
     }
 
-    private static boolean isBrf(HOBStatement l) {
+    private static boolean isBrf(BytecodeStatement l) {
         return l.size() == 3 && t(l, 0).equals("R_BRF") && t(l, 1).startsWith("%t");
     }
 
-    private static boolean notBothImm(HOBStatement l) {
+    private static boolean notBothImm(BytecodeStatement l) {
         return !(t(l, 4).startsWith("#") && t(l, 5).startsWith("#"));
     }
 
-    private static boolean mentions(HOBStatement l, String tok) {
+    private static boolean mentions(BytecodeStatement l, String tok) {
         return t(l, 4).equals(tok) || t(l, 5).equals(tok);
     }
 
-    private static HOBStatement brc(HOBStatement cmp, HOBStatement brf) {
-        HOBToken h = cmp.get(0);
-        HOBStatement n = new HOBStatement();
-        n.add(new HOBToken("R_BRC", h.file, h.line, h.kind));
+    private static BytecodeStatement brc(BytecodeStatement cmp, BytecodeStatement brf) {
+        BytecodeToken h = cmp.get(0);
+        BytecodeStatement n = new BytecodeStatement();
+        n.add(new BytecodeToken("R_BRC", h.file, h.line, h.kind));
         n.add(cmp.get(1));
         n.add(cmp.get(2));
         n.add(cmp.get(4));

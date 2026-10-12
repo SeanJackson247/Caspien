@@ -1,6 +1,6 @@
 package caspien.optimizer;
 
-import caspien.hob.HOBProgram;
+import caspien.bytecode.BytecodeProgram;
 
 
 /**
@@ -12,10 +12,10 @@ import caspien.hob.HOBProgram;
  */
 public class PassResult {
 
-    public final HOBProgram lines;
+    public final BytecodeProgram lines;
     public final boolean changed;
 
-    public PassResult(HOBProgram lines, boolean changed) {
+    public PassResult(BytecodeProgram lines, boolean changed) {
         this.lines = lines;
         this.changed = changed;
     }

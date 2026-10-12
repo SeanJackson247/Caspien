@@ -1,7 +1,7 @@
 package caspien.lowerorder;
-import caspien.hob.HOBProgram;
-import caspien.hob.HOBStatement;
-import caspien.hob.HOBToken;
+import caspien.bytecode.BytecodeProgram;
+import caspien.bytecode.BytecodeStatement;
+import caspien.bytecode.BytecodeToken;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -143,11 +143,11 @@ public class RegVarPromotionPass {
         boolean rcxOk;
     }
 
-    public HOBProgram run(HOBProgram lines) {
-        HOBProgram out = new HOBProgram(lines.size());
+    public BytecodeProgram run(BytecodeProgram lines) {
+        BytecodeProgram out = new BytecodeProgram(lines.size());
         int i = 0;
         while (i < lines.size()) {
-            HOBStatement line = lines.get(i);
+            BytecodeStatement line = lines.get(i);
             if (!line.isEmpty() && line.get(0).text.equals("FUNC_START")) {
                 int end = i;
                 while (end < lines.size() && !(!lines.get(end).isEmpty() && lines.get(end).get(0).text.equals("FUNC_END"))) {
@@ -169,9 +169,9 @@ public class RegVarPromotionPass {
     }
 
     /** true when the function text mentions the fourth temporary (%t3 = r12) anywhere */
-    private static boolean usesTemp3(List<HOBStatement> fn) {
-        for (HOBStatement l : fn) {
-            for (HOBToken t : l) {
+    private static boolean usesTemp3(List<BytecodeStatement> fn) {
+        for (BytecodeStatement l : fn) {
+            for (BytecodeToken t : l) {
                 if (t.text.equals("%t3")) {
                     return true;
                 }
@@ -180,7 +180,7 @@ public class RegVarPromotionPass {
         return false;
     }
 
-    private static boolean isHint(HOBStatement line) {
+    private static boolean isHint(BytecodeStatement line) {
         if (line.isEmpty()) {
             return false;
         }
@@ -188,11 +188,11 @@ public class RegVarPromotionPass {
         return m.equals("REGHINT") || m.equals("REGVAR");
     }
 
-    private void processFunction(List<HOBStatement> fn, List<HOBStatement> out) {
+    private void processFunction(List<BytecodeStatement> fn, List<BytecodeStatement> out) {
         Map<Long, Hint> hints = new HashMap<>();
         boolean blocked = false;      // an instruction that uses r13/r14 as backend scratch: no integer variables here
         boolean hardBlocked = false;  // inline assembly: touch nothing
-        for (HOBStatement l : fn) {
+        for (BytecodeStatement l : fn) {
             if (l.isEmpty()) {
                 continue;
             }
@@ -219,7 +219,7 @@ public class RegVarPromotionPass {
             }
         }
         if (!enabled || hardBlocked || hints.isEmpty()) {
-            for (HOBStatement l : fn) {
+            for (BytecodeStatement l : fn) {
                 if (!isHint(l)) {
                     out.add(l);
                 }
@@ -238,7 +238,7 @@ public class RegVarPromotionPass {
         Map<Integer, Long> pairSlot = new HashMap<>();
         java.util.Set<Integer> approvedAddr = new HashSet<>();
         for (int i = 0; i + 1 < fn.size(); i++) {
-            HOBStatement l = fn.get(i);
+            BytecodeStatement l = fn.get(i);
             if (!(l.size() == 3 && l.get(0).text.equals("ADDR") && (l.get(1).text.equals("1") || l.get(1).text.equals("2") || l.get(1).text.equals("4") || l.get(1).text.equals("8")) && l.get(2).text.startsWith("$"))) {
                 continue;
             }
@@ -250,7 +250,7 @@ public class RegVarPromotionPass {
             int j = i + 1;
             boolean ok = true;
             for (; j < fn.size(); j++) {
-                HOBStatement jl = fn.get(j);
+                BytecodeStatement jl = fn.get(j);
                 if (jl.isEmpty()) {
                     continue;
                 }
@@ -275,7 +275,7 @@ public class RegVarPromotionPass {
             if (!ok || j >= fn.size() || c != 0) {
                 continue;
             }
-            HOBStatement asg = fn.get(j);
+            BytecodeStatement asg = fn.get(j);
             String hw = String.valueOf(h.size);
             if (!(asg.size() == 4 && asg.get(0).text.equals("ASSIGN") && asg.get(1).text.equals(hw)
                     && asg.get(2).text.equals(hw) && asg.get(3).text.equals(hw))) {
@@ -284,7 +284,7 @@ public class RegVarPromotionPass {
             int direct = 0;
             int retIdx = -1;
             if (j - 1 > i + 1 && fn.get(i + 1).get(0).text.equals("CC_START") && fn.get(j - 2).get(0).text.equals("CC_END")) {
-                HOBStatement ret = fn.get(j - 1);
+                BytecodeStatement ret = fn.get(j - 1);
                 if (ret.size() == 2 && ret.get(0).text.equals(h.xmm ? "PUSH_RET_FLOAT" : "PUSH_RET_INT") && ret.get(1).text.equals(hw)) {
                     // the bracket that opens right after the ADDR must be the one that closes right before PUSH_RET_FLOAT
                     int depth = 0;
@@ -314,7 +314,7 @@ public class RegVarPromotionPass {
 
         // Pass 1: ban every hinted slot with a mention we cannot rewrite.
         for (int idx = 0; idx < fn.size(); idx++) {
-            HOBStatement l = fn.get(idx);
+            BytecodeStatement l = fn.get(idx);
             if (l.isEmpty() || isHint(l) || approvedAddr.contains(idx)) {
                 continue;
             }
@@ -362,7 +362,7 @@ public class RegVarPromotionPass {
             }
         }
         if (chosenInt.isEmpty() && chosenX.isEmpty()) {
-            for (HOBStatement l : fn) {
+            for (BytecodeStatement l : fn) {
                 if (!isHint(l)) {
                     out.add(l);
                 }
@@ -390,13 +390,13 @@ public class RegVarPromotionPass {
                 assignReplace.put(pr[1], h);
             }
         }
-        HOBProgram res = new HOBProgram();
+        BytecodeProgram res = new BytecodeProgram();
         for (int idx = 0; idx < fn.size(); idx++) {
-            HOBStatement l = fn.get(idx);
+            BytecodeStatement l = fn.get(idx);
             if (isHint(l) || dropped.contains(idx)) {
                 continue;
             }
-            HOBToken ref = l.isEmpty() ? null : l.get(0);
+            BytecodeToken ref = l.isEmpty() ? null : l.get(0);
             if (retReplace.containsKey(idx)) {
                 Hint rh = retReplace.get(idx);
                 res.add(rh.xmm ? mk(ref, "R_GETRETF", String.valueOf(rh.size), "%x" + rh.reg) : mk(ref, "R_GETRET", String.valueOf(rh.size), "%v" + rh.reg));
@@ -434,7 +434,7 @@ public class RegVarPromotionPass {
     }
 
     /** True for a jump or branch line whose target is a `@catch_` label (a direct jump, not an unwind through a call). */
-    private static boolean jumpsToCatchLabel(HOBStatement l) {
+    private static boolean jumpsToCatchLabel(BytecodeStatement l) {
         if (l.size() < 2) {
             return false;
         }
@@ -452,7 +452,7 @@ public class RegVarPromotionPass {
     private static final Set<String> NO_FALLTHROUGH = new HashSet<>(Arrays.asList(
             "RET", "RET_FLOAT", "R_RET", "R_RETF", "GT_UNWIND", "EXIT", "EXIT_THREAD", "FUNC_END"));
 
-    private static boolean isLabelDefLine(HOBStatement l) {
+    private static boolean isLabelDefLine(BytecodeStatement l) {
         return l.size() == 1 && l.get(0).text.startsWith("@") && l.get(0).text.endsWith(":");
     }
 
@@ -466,7 +466,7 @@ public class RegVarPromotionPass {
      * register free of its neighbours stays in memory. Floats of different width never share a register (the backend spills a register
      * with one width). Sets {@code Hint.reg} (-1 = not promoted).
      */
-    private void shareRegisters(List<HOBStatement> fn, Map<Long, Hint> hints, List<int[]> pairs,
+    private void shareRegisters(List<BytecodeStatement> fn, Map<Long, Hint> hints, List<int[]> pairs,
                                 List<Hint> intCands, List<Hint> xCands, int intLimit) {
         List<Hint> all = new ArrayList<>(intCands.size() + xCands.size());
         all.addAll(intCands);
@@ -488,7 +488,7 @@ public class RegVarPromotionPass {
         }
         List<Integer> padTargets = new ArrayList<>();
         java.util.Set<String> seenPad = new HashSet<>();
-        for (HOBStatement l : fn) {
+        for (BytecodeStatement l : fn) {
             if (l.isEmpty() || isLabelDefLine(l)) continue;
             String m = l.get(0).text;
             if (m.equals("JMP") || m.equals("R_BRC") || m.equals("R_BRF")) continue;
@@ -500,7 +500,7 @@ public class RegVarPromotionPass {
         // successors
         int[][] succ = new int[n][];
         for (int i = 0; i < n; i++) {
-            HOBStatement l = fn.get(i);
+            BytecodeStatement l = fn.get(i);
             String m = l.isEmpty() ? "" : l.get(0).text;
             List<Integer> sc = new ArrayList<>(2);
             boolean fall = !NO_FALLTHROUGH.contains(m);
@@ -532,7 +532,7 @@ public class RegVarPromotionPass {
             def[pr[2] == 1 ? pr[3] : pr[1]].set(id);   // the store happens where the value lands: R_GETRETF / R_POPX
         }
         for (int i = 0; i < n; i++) {
-            HOBStatement l = fn.get(i);
+            BytecodeStatement l = fn.get(i);
             if (l.isEmpty() || isHint(l) || approved.contains(i)) continue;
             String m = l.get(0).text;
             for (int k = 1; k < l.size(); k++) {
@@ -583,11 +583,11 @@ public class RegVarPromotionPass {
         }
         // which candidates may use the caller-saved registers
         boolean sysv = true;
-        for (HOBStatement l : fn) {
+        for (BytecodeStatement l : fn) {
             if (!l.isEmpty() && l.get(0).text.equals("CC_START") && l.size() > 1 && !l.get(1).text.equals("sysv_x64")) sysv = false;
         }
         boolean[] volRegOk = {true, true, true, argRegs, argRegs, argRegs && sysv, argRegs && sysv};   // r8, r9, r10, rsi, rdi, rdx, rcx
-        for (HOBStatement l : fn) {
+        for (BytecodeStatement l : fn) {
             if (l.isEmpty()) continue;
             String m = l.get(0).text;
             if (m.equals("PUSH_RET_FLOAT") || m.equals("R_GETRETF")) volRegOk[2] = false;
@@ -605,7 +605,7 @@ public class RegVarPromotionPass {
         boolean[] volOk = new boolean[nh];
         java.util.Arrays.fill(volOk, true);
         for (int i = 0; i < n; i++) {
-            HOBStatement l = fn.get(i);
+            BytecodeStatement l = fn.get(i);
             if (l.isEmpty() || isHint(l) || isLabelDefLine(l) || VOL_SAFE.contains(l.get(0).text)) continue;
             for (int v = 0; v < nh; v++) {
                 if (in[i].get(v) || out[i].get(v) || def[i].get(v)) volOk[v] = false;
@@ -618,7 +618,7 @@ public class RegVarPromotionPass {
         if (argRegs) {
             int depth = 0;
             for (int i = 0; i < n; i++) {
-                HOBStatement l = fn.get(i);
+                BytecodeStatement l = fn.get(i);
                 String m = l.isEmpty() ? "" : l.get(0).text;
                 if (m.equals("CC_START")) depth++;
                 if (depth > 0) {
@@ -636,7 +636,7 @@ public class RegVarPromotionPass {
         java.util.Arrays.fill(rdxOk, true);
         java.util.Arrays.fill(rcxOk, true);
         for (int i = 0; i < n; i++) {
-            HOBStatement l = fn.get(i);
+            BytecodeStatement l = fn.get(i);
             if (l.isEmpty()) continue;
             String m = l.get(0).text;
             boolean usesRdx = m.equals("R_DIVC");
@@ -699,15 +699,15 @@ public class RegVarPromotionPass {
         }
     }
 
-    private static long pairSlotOf(List<HOBStatement> fn, int addrIdx, Map<Long, Hint> hints) {
+    private static long pairSlotOf(List<BytecodeStatement> fn, int addrIdx, Map<Long, Hint> hints) {
         Hint h = slotHint(hints, fn.get(addrIdx).get(2).text);
         return h == null ? Long.MIN_VALUE : h.off;
     }
 
-    private static HOBStatement mk(HOBToken ref, String... texts) {
-        HOBStatement r = new HOBStatement(texts.length);
+    private static BytecodeStatement mk(BytecodeToken ref, String... texts) {
+        BytecodeStatement r = new BytecodeStatement(texts.length);
         for (String t : texts) {
-            r.add(new HOBToken(t, ref.file, ref.line, HOBToken.Kind.CODE));
+            r.add(new BytecodeToken(t, ref.file, ref.line, BytecodeToken.Kind.CODE));
         }
         return r;
     }
@@ -716,12 +716,12 @@ public class RegVarPromotionPass {
      * Peephole over the rewritten function: a value that is computed into a temp and immediately moved into a float variable
      * is computed straight into the variable's register instead (the temp must be dead afterwards, see {@link #tempDeadAfter}).
      */
-    private static List<HOBStatement> fuse(List<HOBStatement> res) {
-        HOBProgram o = new HOBProgram(res.size());
+    private static List<BytecodeStatement> fuse(List<BytecodeStatement> res) {
+        BytecodeProgram o = new BytecodeProgram(res.size());
         int i = 0;
         while (i < res.size()) {
-            HOBStatement a = res.get(i);
-            HOBStatement b = i + 1 < res.size() ? res.get(i + 1) : null;
+            BytecodeStatement a = res.get(i);
+            BytecodeStatement b = i + 1 < res.size() ? res.get(i + 1) : null;
             String am = a.isEmpty() ? "" : a.get(0).text;
             // R_GTOX n %xK %tN
             if (b != null && b.size() == 4 && b.get(0).text.equals("R_GTOX") && b.get(3).text.startsWith("%t")) {
@@ -773,9 +773,9 @@ public class RegVarPromotionPass {
      * end of the straight-line run (a label, a jump, a call bracket, a return) means "dead" too -- the register-form pass flushes
      * its operand model at all of those, so no temp is ever live across them.
      */
-    private static boolean tempDeadAfter(List<HOBStatement> res, int from, String t) {
+    private static boolean tempDeadAfter(List<BytecodeStatement> res, int from, String t) {
         for (int i = from; i < res.size() && i < from + 60; i++) {
-            HOBStatement l = res.get(i);
+            BytecodeStatement l = res.get(i);
             if (l.isEmpty()) {
                 continue;
             }
@@ -844,7 +844,7 @@ public class RegVarPromotionPass {
     }
 
     /** May operand k of this line name the hinted slot h (and be renamed to its register)? */
-    private static boolean mentionOk(String m, HOBStatement l, int k, Hint h) {
+    private static boolean mentionOk(String m, BytecodeStatement l, int k, Hint h) {
         switch (m) {
             case "R_MOV": // R_MOV 8 dst src
                 return h.size == 8 && l.size() == 4 && (k == 2 || k == 3);
@@ -879,7 +879,7 @@ public class RegVarPromotionPass {
     }
 
     /** May operand k of this line name the float-variable slot h (and be renamed to its xmm register)? */
-    private static boolean mentionOkX(String m, HOBStatement l, int k, Hint h) {
+    private static boolean mentionOkX(String m, BytecodeStatement l, int k, Hint h) {
         switch (m) {
             case "R_LD": // R_LD n %tD $x
                 return l.size() == 4 && k == 3 && intOf(l.get(1).text) == h.size;
@@ -906,7 +906,7 @@ public class RegVarPromotionPass {
         }
     }
 
-    private static HOBStatement rewrite(HOBStatement l, Map<Long, Hint> chosenInt, Map<Long, Hint> chosenX) {
+    private static BytecodeStatement rewrite(BytecodeStatement l, Map<Long, Hint> chosenInt, Map<Long, Hint> chosenX) {
         if (l.isEmpty()) {
             return l;
         }
@@ -954,10 +954,10 @@ public class RegVarPromotionPass {
                 t.set(0, "R_SETV");
             }
         }
-        HOBToken a = l.get(0);
-        HOBStatement r = new HOBStatement(t.size());
+        BytecodeToken a = l.get(0);
+        BytecodeStatement r = new BytecodeStatement(t.size());
         for (String s : t) {
-            r.add(new HOBToken(s, a.file, a.line, HOBToken.Kind.CODE));
+            r.add(new BytecodeToken(s, a.file, a.line, BytecodeToken.Kind.CODE));
         }
         return r;
     }

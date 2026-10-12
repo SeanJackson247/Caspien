@@ -1,7 +1,7 @@
 package caspien.lowerorder;
-import caspien.hob.HOBProgram;
-import caspien.hob.HOBStatement;
-import caspien.hob.HOBToken;
+import caspien.bytecode.BytecodeProgram;
+import caspien.bytecode.BytecodeStatement;
+import caspien.bytecode.BytecodeToken;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -45,8 +45,8 @@ public class RangeEndHintPass {
 
     private static final Set<String> BIN = new HashSet<>(java.util.Arrays.asList("ADD_INT", "SUB_INT", "MUL_INT", "SHR", "SHL", "SAR", "BITS_AND", "BITS_OR", "BITS_XOR"));
 
-    public HOBProgram run(HOBProgram lines) {
-        HOBProgram out = new HOBProgram(lines.size());
+    public BytecodeProgram run(BytecodeProgram lines) {
+        BytecodeProgram out = new BytecodeProgram(lines.size());
         int i = 0;
         int n = lines.size();
         while (i < n) {
@@ -74,7 +74,7 @@ public class RangeEndHintPass {
         long off;
     }
 
-    private List<HOBStatement> function(List<HOBStatement> fn) {
+    private List<BytecodeStatement> function(List<BytecodeStatement> fn) {
         int n = fn.size();
         List<Site> sites = new ArrayList<>();
         for (int i = 0; i + 3 < n; i++) {
@@ -89,7 +89,7 @@ public class RangeEndHintPass {
         // loop depth per line: a backward jump to an earlier label defines a span
         Map<String, Integer> labelAt = new HashMap<>();
         for (int i = 0; i < n; i++) {
-            HOBStatement l = fn.get(i);
+            BytecodeStatement l = fn.get(i);
             if (l.size() == 1 && l.get(0).text.startsWith("@") && l.get(0).text.endsWith(":")) {
                 String t = l.get(0).text;
                 labelAt.put(t.substring(0, t.length() - 1), i);
@@ -97,7 +97,7 @@ public class RangeEndHintPass {
         }
         int[] depth = new int[n + 1];
         for (int i = 0; i < n; i++) {
-            HOBStatement l = fn.get(i);
+            BytecodeStatement l = fn.get(i);
             if (l.size() == 2 && l.get(0).text.equals("JMP")) {
                 Integer a = labelAt.get(l.get(1).text);
                 if (a != null && a < i) {
@@ -133,10 +133,10 @@ public class RangeEndHintPass {
         for (Site s : accepted) {
             byAddr.put(s.addr, s);
         }
-        HOBProgram res = new HOBProgram(n + 4 + hints.size());
+        BytecodeProgram res = new BytecodeProgram(n + 4 + hints.size());
         boolean hinted = false;
         for (int i = 0; i < n; i++) {
-            HOBStatement l = fn.get(i);
+            BytecodeStatement l = fn.get(i);
             Site s = byAddr.get(i);
             if (s != null) {
                 // ADDR 8 $r ; <a> ; ASSIGN 8 8 8 ; ADDR 8 $r+8 ; <b> ; ASSIGN 8 8 8
@@ -171,7 +171,7 @@ public class RangeEndHintPass {
      * -1 when the slot cannot be treated this way, else the weight of its end slot. Every other mention of $ro must be PUSH 8 $ro,
      * every mention of $ro+8 PUSH 8 $ro+8 (or the construction itself), and no token may name an offset strictly inside the 16 bytes.
      */
-    private static long usable(List<HOBStatement> fn, long ro, List<Site> sites, int[] depth) {
+    private static long usable(List<BytecodeStatement> fn, long ro, List<Site> sites, int[] depth) {
         String rs = "$" + ro;
         String es = "$" + (ro + 8);
         Set<Integer> own = new HashSet<>();
@@ -187,7 +187,7 @@ public class RangeEndHintPass {
             weight += w(depth[s.addr]); // the store of the end
         }
         for (int i = 0; i < fn.size(); i++) {
-            HOBStatement l = fn.get(i);
+            BytecodeStatement l = fn.get(i);
             if (own.contains(i)) {
                 // inside a construction: the two value expressions may not name the range at all (the ADDR line itself may)
                 if (!addrLines.contains(i)) {
@@ -244,8 +244,8 @@ public class RangeEndHintPass {
     }
 
     /** ADDR 16 $r ; expression ; expression ; ASSIGN 16 16 16 starting at i, or null */
-    private static Site match(List<HOBStatement> fn, int i) {
-        HOBStatement a = fn.get(i);
+    private static Site match(List<BytecodeStatement> fn, int i) {
+        BytecodeStatement a = fn.get(i);
         if (!(a.size() == 3 && isMn(a, "ADDR") && t(a, 1).equals("16"))) {
             return null;
         }
@@ -256,7 +256,7 @@ public class RangeEndHintPass {
         int depth = 0;
         int split = -1;
         for (int j = i + 1; j < fn.size() && j <= i + 24; j++) {
-            HOBStatement l = fn.get(j);
+            BytecodeStatement l = fn.get(j);
             if (isMn(l, "ASSIGN")) {
                 if (depth == 2 && split > 0 && l.size() == 4 && t(l, 1).equals("16") && t(l, 2).equals("16") && t(l, 3).equals("16")) {
                     Site s = new Site();
@@ -288,15 +288,15 @@ public class RangeEndHintPass {
         return null;
     }
 
-    private static boolean isMn(HOBStatement l, String m) {
+    private static boolean isMn(BytecodeStatement l, String m) {
         return !l.isEmpty() && l.get(0).text.equals(m);
     }
 
-    private static String t(HOBStatement l, int i) {
+    private static String t(BytecodeStatement l, int i) {
         return l.get(i).text;
     }
 
-    private static boolean isPush8(HOBStatement l) {
+    private static boolean isPush8(BytecodeStatement l) {
         return l.size() == 3 && t(l, 0).equals("PUSH") && t(l, 1).equals("8");
     }
 
@@ -315,10 +315,10 @@ public class RangeEndHintPass {
         return num(s.substring(1));
     }
 
-    private static HOBStatement mk(HOBToken ref, String... texts) {
-        HOBStatement r = new HOBStatement(texts.length);
+    private static BytecodeStatement mk(BytecodeToken ref, String... texts) {
+        BytecodeStatement r = new BytecodeStatement(texts.length);
         for (String x : texts) {
-            r.add(new HOBToken(x, ref.file, ref.line, HOBToken.Kind.CODE));
+            r.add(new BytecodeToken(x, ref.file, ref.line, BytecodeToken.Kind.CODE));
         }
         return r;
     }

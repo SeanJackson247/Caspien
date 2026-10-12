@@ -1,7 +1,7 @@
 package caspien.codegen.x86backend;
 
-import caspien.hob.HOBStatement;
-import caspien.hob.HOBToken;
+import caspien.bytecode.BytecodeStatement;
+import caspien.bytecode.BytecodeToken;
 import caspien.codegen.CodegenConfig;
 import caspien.codegen.CodegenException;
 import java.util.ArrayList;
@@ -133,7 +133,7 @@ abstract class X86Core {
     // it's feeding an ATOMIC_SWAP (needs the global's address) or
     // anything else (needs its value) -- see that PUSH case's own doc
     // comment for why both are genuinely needed here.
-    List<HOBStatement> allLines;
+    List<BytecodeStatement> allLines;
 
 
     int currentLineIndex;
@@ -556,7 +556,7 @@ abstract class X86Core {
      * "char", 1L)` in the front end), so the result is always a single
      * 0-255 value, never a multi-byte sequence.
      */
-    static long decodeCharLiteral(HOBToken operandTok) {
+    static long decodeCharLiteral(BytecodeToken operandTok) {
         String operand = operandTok.text;
         String content = operand.substring(1, operand.length() - 1);
         char value;
@@ -928,9 +928,9 @@ abstract class X86Core {
     }
 
 
-    static List<String> textsOf(HOBStatement line) {
+    static List<String> textsOf(BytecodeStatement line) {
         List<String> out = new ArrayList<>();
-        for (HOBToken t : line) {
+        for (BytecodeToken t : line) {
             out.add(t.text);
         }
         return out;

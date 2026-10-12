@@ -1,7 +1,7 @@
 package caspien.codegen.x86backend;
 
-import caspien.hob.HOBStatement;
-import caspien.hob.HOBToken;
+import caspien.bytecode.BytecodeStatement;
+import caspien.bytecode.BytecodeToken;
 import caspien.codegen.CodegenConfig;
 import caspien.codegen.CodegenException;
 import java.util.ArrayList;
@@ -16,7 +16,7 @@ abstract class X86RegForm extends X86CasesB {
         super(target, bmi2);
     }
 
-    boolean emitCases6(String mnemonic, HOBStatement line, String first, boolean wasCmp, long pendingBlockSize) {
+    boolean emitCases6(String mnemonic, BytecodeStatement line, String first, boolean wasCmp, long pendingBlockSize) {
         switch (mnemonic) {
 case "GT_INIT": {
                 // The compiler's own ghost-table bootstrap opcode --
@@ -543,7 +543,7 @@ case "RET_FLOAT": {
         }
     }
 
-    boolean emitCases7(String mnemonic, HOBStatement line, String first, boolean wasCmp, long pendingBlockSize) {
+    boolean emitCases7(String mnemonic, BytecodeStatement line, String first, boolean wasCmp, long pendingBlockSize) {
         switch (mnemonic) {
 case "VARARGS_XMM_COUNT": {
                 // Pure compile-time metadata, emitted by the front end
@@ -662,7 +662,7 @@ case "ASM_START": {
                 // bytecode lines.
                 int end = currentLineIndex + 1;
                 while (end < allLines.size()) {
-                    HOBStatement candidate = allLines.get(end);
+                    BytecodeStatement candidate = allLines.get(end);
                     if (candidate.size() == 1 && candidate.get(0).text.equals("ASM_END")) {
                         break;
                     }

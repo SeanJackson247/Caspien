@@ -1,5 +1,5 @@
 package caspien.lowerorder;
-import caspien.hob.HOBProgram;
+import caspien.bytecode.BytecodeProgram;
 
 import java.util.List;
 
@@ -12,10 +12,10 @@ import java.util.List;
  */
 public class PassResult {
 
-    public final HOBProgram lines;
+    public final BytecodeProgram lines;
     public final boolean changed;
 
-    public PassResult(HOBProgram lines, boolean changed) {
+    public PassResult(BytecodeProgram lines, boolean changed) {
         this.lines = lines;
         this.changed = changed;
     }

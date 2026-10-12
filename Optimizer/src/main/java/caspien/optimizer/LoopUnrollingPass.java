@@ -1,8 +1,8 @@
 package caspien.optimizer;
 
-import caspien.hob.HOBProgram;
-import caspien.hob.HOBStatement;
-import caspien.hob.HOBToken;
+import caspien.bytecode.BytecodeProgram;
+import caspien.bytecode.BytecodeStatement;
+import caspien.bytecode.BytecodeToken;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -72,16 +72,16 @@ public class LoopUnrollingPass implements OptimizationPass {
 
     // ---- small helpers over the token lines --------------------------------------------------------------
 
-    private static String tok(HOBStatement line, int i) {
+    private static String tok(BytecodeStatement line, int i) {
         return i < line.size() ? line.get(i).text : null;
     }
 
-    private static boolean is(HOBStatement line, int size, String first) {
-        return line.size() == size && line.get(0).kind == HOBToken.Kind.CODE && line.get(0).text.equals(first);
+    private static boolean is(BytecodeStatement line, int size, String first) {
+        return line.size() == size && line.get(0).kind == BytecodeToken.Kind.CODE && line.get(0).text.equals(first);
     }
 
-    private static boolean isLabelDef(HOBStatement line) {
-        return line.size() == 1 && line.get(0).kind == HOBToken.Kind.CODE
+    private static boolean isLabelDef(BytecodeStatement line) {
+        return line.size() == 1 && line.get(0).kind == BytecodeToken.Kind.CODE
                 && line.get(0).text.startsWith("@") && line.get(0).text.endsWith(":");
     }
 
@@ -103,13 +103,13 @@ public class LoopUnrollingPass implements OptimizationPass {
         return s.endsWith(":") ? s.substring(0, s.length() - 1) : s;
     }
 
-    private static boolean labelWithPrefix(HOBStatement line, String prefix) {
+    private static boolean labelWithPrefix(BytecodeStatement line, String prefix) {
         return isLabelDef(line) && allDigits(labelName(line.get(0).text).startsWith(prefix)
                 ? labelName(line.get(0).text).substring(prefix.length()) : null);
     }
 
-    private static HOBToken retext(HOBToken t, String text) {
-        return new HOBToken(text, t.file, t.line, t.kind);
+    private static BytecodeToken retext(BytecodeToken t, String text) {
+        return new BytecodeToken(text, t.file, t.line, t.kind);
     }
 
     // ---- candidate loop ----------------------------------------------------------------------------------
@@ -132,17 +132,17 @@ public class LoopUnrollingPass implements OptimizationPass {
     /** The most lines one @unroll may add to a function (a safety net; the preset budgets do not apply to a forced unroll). */
     static final long HARD_CAP = 20000L;
 
-    private static boolean isForDeco(HOBStatement l) {
-        return (l.size() == 2 || l.size() == 3) && l.get(0).kind == HOBToken.Kind.CODE && l.get(0).text.equals("FOR_DECORATE");
+    private static boolean isForDeco(BytecodeStatement l) {
+        return (l.size() == 2 || l.size() == 3) && l.get(0).kind == BytecodeToken.Kind.CODE && l.get(0).text.equals("FOR_DECORATE");
     }
 
     private static String stripQuotes(String t) {
         return t.length() >= 2 && t.startsWith("\"") && t.endsWith("\"") ? t.substring(1, t.length() - 1) : t;
     }
 
-    private static Loop match(HOBProgram L, int s, int fnEnd) {
+    private static Loop match(BytecodeProgram L, int s, int fnEnd) {
         if (s + 13 >= fnEnd) return null;
-        HOBStatement a = L.get(s);
+        BytecodeStatement a = L.get(s);
         if (!is(a, 3, "ADDR") || !a.get(1).text.startsWith("$for_range_")) return null;
         String rangeName = a.get(1).text, T = a.get(2).text;
         int open = T.indexOf("range(");
@@ -154,16 +154,16 @@ public class LoopUnrollingPass implements OptimizationPass {
         if (!allDigits(loS) || !allDigits(hiS)) return null;
         long lo = Long.parseLong(loS), hi = Long.parseLong(hiS);
         if (hi < lo) return null;   // hi == lo: an empty range, removed by a full unroll of zero copies
-        HOBStatement p1 = L.get(s + 1), p2 = L.get(s + 2), as = L.get(s + 3);
+        BytecodeStatement p1 = L.get(s + 1), p2 = L.get(s + 2), as = L.get(s + 3);
         if (!is(p1, 3, "PUSH") || !p1.get(1).text.equals(loS)) return null;
         if (!is(p2, 3, "PUSH") || !p2.get(1).text.equals(hiS)) return null;
         if (!is(as, 4, "ASSIGN") || !as.get(1).text.equals(T) || !as.get(2).text.equals(T) || !as.get(3).text.equals(T)) return null;
-        HOBStatement av = L.get(s + 4);
+        BytecodeStatement av = L.get(s + 4);
         if (!is(av, 3, "ADDR") || av.get(1).text.startsWith("$")) return null;
         String var = av.get(1).text, vt = av.get(2).text;
-        HOBStatement st = L.get(s + 5);
+        BytecodeStatement st = L.get(s + 5);
         if (!is(st, 3, "PUSH") || !st.get(1).text.equals(rangeName + ".start")) return null;
-        HOBStatement as2 = L.get(s + 6);
+        BytecodeStatement as2 = L.get(s + 6);
         if (!is(as2, 4, "ASSIGN") || !as2.get(1).text.equals(vt) || !as2.get(2).text.equals(vt) || !as2.get(3).text.equals(vt)) return null;
         int h = s + 7;
         boolean forced = false, dont = false;
@@ -186,7 +186,7 @@ public class LoopUnrollingPass implements OptimizationPass {
         if (!labelWithPrefix(L.get(h), "for_")) return null;
         String head = L.get(h).get(0).text;
         head = head.substring(0, head.length() - 1);
-        HOBStatement t1 = L.get(h + 1), t2 = L.get(h + 2), t3 = L.get(h + 3), t4 = L.get(h + 4), t5 = L.get(h + 5);
+        BytecodeStatement t1 = L.get(h + 1), t2 = L.get(h + 2), t3 = L.get(h + 3), t4 = L.get(h + 4), t5 = L.get(h + 5);
         if (!is(t1, 3, "PUSH") || !t1.get(1).text.equals(var) || !t1.get(2).text.equals(vt)) return null;
         if (!is(t2, 3, "PUSH") || !t2.get(1).text.equals(rangeName) || !t2.get(2).text.equals(T)) return null;
         if (!is(t3, 4, "IN") || !t3.get(1).text.equals(vt) || !t3.get(2).text.equals(T)) return null;
@@ -195,7 +195,7 @@ public class LoopUnrollingPass implements OptimizationPass {
         String endLabel = t5.get(1).text;
         int endIdx = -1;
         for (int k = h + 6; k < fnEnd; k++) {
-            HOBStatement l = L.get(k);
+            BytecodeStatement l = L.get(k);
             if (isLabelDef(l) && l.get(0).text.equals(endLabel + ":")) {
                 endIdx = k;
                 break;
@@ -205,7 +205,7 @@ public class LoopUnrollingPass implements OptimizationPass {
         int jmp = endIdx - 1;
         if (!is(L.get(jmp), 2, "JMP") || !L.get(jmp).get(1).text.equals(head)) return null;
         int inc = jmp - 4;
-        HOBStatement i1 = L.get(inc), i2 = L.get(inc + 1), i3 = L.get(inc + 2), i4 = L.get(inc + 3);
+        BytecodeStatement i1 = L.get(inc), i2 = L.get(inc + 1), i3 = L.get(inc + 2), i4 = L.get(inc + 3);
         if (!is(i1, 3, "ADDR") || !i1.get(1).text.equals(var) || !i1.get(2).text.equals(vt)) return null;
         if (!is(i2, 3, "PUSH") || !i2.get(1).text.equals(var) || !i2.get(2).text.equals(vt)) return null;
         if (!is(i3, 3, "INC") || !i3.get(1).text.equals(vt)) return null;
@@ -233,18 +233,18 @@ public class LoopUnrollingPass implements OptimizationPass {
     }
 
     /** Is this candidate safe to copy? Also fills in allocIdx. */
-    private static boolean copyable(HOBProgram L, Loop lp, int fnStart, int fnEnd) {
+    private static boolean copyable(BytecodeProgram L, Loop lp, int fnStart, int fnEnd) {
         Set<String> defined = new HashSet<>();
         for (int k = lp.bodyStart; k < lp.incStart; k++) {
-            HOBStatement l = L.get(k);
+            BytecodeStatement l = L.get(k);
             if (l.isEmpty()) continue;
             String f = l.get(0).text;
-            if (l.get(0).kind == HOBToken.Kind.CODE && (f.equals("ALLOC") || f.equals("ALLOC_STATIC") || f.equals("FUNC_START")
+            if (l.get(0).kind == BytecodeToken.Kind.CODE && (f.equals("ALLOC") || f.equals("ALLOC_STATIC") || f.equals("FUNC_START")
                     || f.equals("FUNC_END") || f.equals("STRUCT_START") || f.equals("GLOBAL") || f.equals("REGVAR"))) {
                 return false;
             }
-            for (HOBToken t : l) {
-                if (t.kind != HOBToken.Kind.CODE) continue;
+            for (BytecodeToken t : l) {
+                if (t.kind != BytecodeToken.Kind.CODE) continue;
                 if (t.text.equals(lp.headLabel) || t.text.equals(lp.headLabel + ":") || t.text.equals(lp.rangeName) || t.text.startsWith(lp.rangeName + ".")) return false;
             }
             if (isLabelDef(l)) {
@@ -254,15 +254,15 @@ public class LoopUnrollingPass implements OptimizationPass {
         if (!defined.isEmpty()) {
             for (int k = fnStart; k < fnEnd; k++) {
                 if (k >= lp.bodyStart && k < lp.incStart) continue;
-                for (HOBToken t : L.get(k)) {
-                    if (t.kind == HOBToken.Kind.CODE && t.text.startsWith("@") && defined.contains(labelName(t.text))) {
+                for (BytecodeToken t : L.get(k)) {
+                    if (t.kind == BytecodeToken.Kind.CODE && t.text.startsWith("@") && defined.contains(labelName(t.text))) {
                         return false; // a label of the body is used from outside it (try block, etc.)
                     }
                 }
             }
         }
         for (int k = fnStart; k < lp.start; k++) {
-            HOBStatement l = L.get(k);
+            BytecodeStatement l = L.get(k);
             if (is(l, 3, "ALLOC") && l.get(1).text.equals(lp.rangeName)) {
                 lp.allocIdx = k;
                 break;
@@ -274,14 +274,14 @@ public class LoopUnrollingPass implements OptimizationPass {
     // ---- the pass ----------------------------------------------------------------------------------------
 
     @Override
-    public PassResult run(HOBProgram lines) {
+    public PassResult run(BytecodeProgram lines) {
         if (!cfg.enabled && !anyUnrollDecorator(lines)) {
             return new PassResult(lines, false);
         }
         int maxNum = 0;
-        for (HOBStatement l : lines) {
-            for (HOBToken t : l) {
-                if (t.kind == HOBToken.Kind.CODE && t.text.startsWith("@")) {
+        for (BytecodeStatement l : lines) {
+            for (BytecodeToken t : l) {
+                if (t.kind == BytecodeToken.Kind.CODE && t.text.startsWith("@")) {
                     String n = labelName(t.text);
                     int us = n.lastIndexOf('_');
                     if (us >= 0 && allDigits(n.substring(us + 1))) {
@@ -292,11 +292,11 @@ public class LoopUnrollingPass implements OptimizationPass {
         }
         nextLabel = Math.max(nextLabel, maxNum + 1);
 
-        HOBProgram work = new HOBProgram(lines);
+        BytecodeProgram work = new BytecodeProgram(lines);
         boolean changed = false;
         int i = 0;
         while (i < work.size()) {
-            HOBStatement l = work.get(i);
+            BytecodeStatement l = work.get(i);
             if (!is(l, 2, "FUNC_START")) {
                 i++;
                 continue;
@@ -354,8 +354,8 @@ public class LoopUnrollingPass implements OptimizationPass {
         }
     }
 
-    private static boolean anyUnrollDecorator(HOBProgram lines) {
-        for (HOBStatement l : lines) {
+    private static boolean anyUnrollDecorator(BytecodeProgram lines) {
+        for (BytecodeStatement l : lines) {
             if (isForDeco(l) && l.get(1).text.startsWith("@unroll")) return true;
         }
         return false;
@@ -410,7 +410,7 @@ public class LoopUnrollingPass implements OptimizationPass {
     }
 
     /** Applies the chosen unroll to work in place; returns the change in line count, or MIN_VALUE if nothing was done. */
-    private int apply(HOBProgram work, Loop lp, String fname) {
+    private int apply(BytecodeProgram work, Loop lp, String fname) {
         long n = lp.hi - lp.lo;
         Plan pl = plan(lp, fname);
         if (pl == null) {
@@ -423,10 +423,10 @@ public class LoopUnrollingPass implements OptimizationPass {
         int u = pl.u;
         long rem = pl.rem;
         int oldSize = lp.endIdx - lp.start + 1;
-        HOBProgram out = new HOBProgram();
-        HOBToken ref = work.get(lp.start).get(0);
-        HOBProgram body = new HOBProgram(work.subList(lp.bodyStart, lp.incStart));
-        HOBProgram inc = new HOBProgram(work.subList(lp.incStart, lp.jmpIdx));
+        BytecodeProgram out = new BytecodeProgram();
+        BytecodeToken ref = work.get(lp.start).get(0);
+        BytecodeProgram body = new BytecodeProgram(work.subList(lp.bodyStart, lp.incStart));
+        BytecodeProgram inc = new BytecodeProgram(work.subList(lp.incStart, lp.jmpIdx));
 
         if (full) {
             for (int k = lp.start; k <= lp.start + 6; k++) out.add(work.get(k));
@@ -436,7 +436,7 @@ public class LoopUnrollingPass implements OptimizationPass {
             boolean subst = onlyReadsVar(body, lp, lp.forced || cfg.nested);
             List<String> locals = subst ? bodyLocals(work, lp) : new ArrayList<>();
             for (long c = 0; c < n; c++) {
-                HOBProgram copy = c == 0 ? body : freshCopy(body);
+                BytecodeProgram copy = c == 0 ? body : freshCopy(body);
                 if (c > 0 && !locals.isEmpty()) copy = renameLocals(work, lp, copy, locals);
                 out.addAll(subst ? substVar(copy, lp, lp.lo + c) : copy);
                 if (!subst && c < n - 1) out.addAll(inc);
@@ -447,9 +447,9 @@ public class LoopUnrollingPass implements OptimizationPass {
             long newHi = lp.lo + trips * u;
             String newType = lp.rangeType.substring(0, lp.rangeType.indexOf('(') + 1) + lp.lo + "," + newHi + ")";
             for (int k = lp.start; k <= lp.start + 6; k++) {
-                HOBStatement src = work.get(k);
-                HOBStatement row = new HOBStatement();
-                for (HOBToken t : src) {
+                BytecodeStatement src = work.get(k);
+                BytecodeStatement row = new BytecodeStatement();
+                for (BytecodeToken t : src) {
                     if (t.text.equals(lp.rangeType)) row.add(retext(t, newType));
                     else if (k == lp.start + 2 && t.text.equals(Long.toString(lp.hi)) && row.size() == 1) row.add(retext(t, Long.toString(newHi)));
                     else row.add(t);
@@ -460,9 +460,9 @@ public class LoopUnrollingPass implements OptimizationPass {
             String remLabel = "@for_rem_" + (nextLabel++);
             out.add(label(ref, fuLabel + ":"));
             for (int k = lp.headIdx + 1; k <= lp.headIdx + 5; k++) {
-                HOBStatement src = work.get(k);
-                HOBStatement row = new HOBStatement();
-                for (HOBToken t : src) {
+                BytecodeStatement src = work.get(k);
+                BytecodeStatement row = new BytecodeStatement();
+                for (BytecodeToken t : src) {
                     if (t.text.equals(lp.rangeType)) row.add(retext(t, newType));
                     else if (k == lp.headIdx + 5 && t.text.equals(lp.endLabel)) row.add(retext(t, remLabel));
                     else row.add(t);
@@ -473,7 +473,7 @@ public class LoopUnrollingPass implements OptimizationPass {
                 out.addAll(c == 0 ? body : freshCopy(body));
                 out.addAll(inc);
             }
-            HOBStatement back = new HOBStatement();
+            BytecodeStatement back = new BytecodeStatement();
             back.add(retext(ref, "JMP"));
             back.add(retext(ref, fuLabel));
             out.add(back);
@@ -484,8 +484,8 @@ public class LoopUnrollingPass implements OptimizationPass {
             }
             out.add(work.get(lp.endIdx));
             if (lp.allocIdx >= 0) {
-                HOBStatement al = new HOBStatement();
-                for (HOBToken t : work.get(lp.allocIdx)) {
+                BytecodeStatement al = new BytecodeStatement();
+                for (BytecodeToken t : work.get(lp.allocIdx)) {
                     al.add(t.text.equals(lp.rangeType) ? retext(t, newType) : t);
                 }
                 work.set(lp.allocIdx, al);
@@ -506,9 +506,9 @@ public class LoopUnrollingPass implements OptimizationPass {
      * Run once after the optimizer has settled: every @unroll still sitting on a loop was not honoured, so say why
      * ("[warning] file:line - ..."). Only now, because a bound that is a variable early on can turn into a literal in a later round.
      */
-    public void reportUnhonoured(HOBProgram L) {
+    public void reportUnhonoured(BytecodeProgram L) {
         for (int d = 0; d < L.size(); d++) {
-            HOBStatement dl = L.get(d);
+            BytecodeStatement dl = L.get(d);
             if (!isForDeco(dl) || !dl.get(1).text.startsWith("@unroll")) continue;
             String pos = dl.size() == 3 ? stripQuotes(dl.get(2).text) : null;
             int first = d;
@@ -547,17 +547,17 @@ public class LoopUnrollingPass implements OptimizationPass {
     }
 
     /** True when every mention of the loop variable in the body is a plain "PUSH var vt" that is not directly followed by ADDR_OF. */
-    private static boolean onlyReadsVar(HOBProgram body, Loop lp, boolean nestedOk) {
+    private static boolean onlyReadsVar(BytecodeProgram body, Loop lp, boolean nestedOk) {
         // Innermost loops only unless `nestedOk` (@unroll, or `loop-unroll-nested: on`): substituting a literal into a body that holds another loop
         // gives that loop literal bounds, and the nested full unrolling that follows multiplies the code (n-body: 2.5x the code). Range proofs on the literal are folded away by ConstantFoldingPass (`IN`).
-        for (HOBStatement l : body) {
+        for (BytecodeStatement l : body) {
             if (!nestedOk && l.size() == 1 && (l.get(0).text.startsWith("@for_") || l.get(0).text.startsWith("@fu_"))) return false;
         }
         for (int k = 0; k < body.size(); k++) {
-            HOBStatement l = body.get(k);
+            BytecodeStatement l = body.get(k);
             boolean mentions = false;
             for (int t = 1; t < l.size(); t++) {
-                if (l.get(t).kind == HOBToken.Kind.CODE && l.get(t).text.equals(lp.var)) {
+                if (l.get(t).kind == BytecodeToken.Kind.CODE && l.get(t).text.equals(lp.var)) {
                     mentions = true;
                     if (t != 1) return false;
                 }
@@ -575,7 +575,7 @@ public class LoopUnrollingPass implements OptimizationPass {
     // get their own slots (`name__uK`, new ALLOC lines queued in `pendingAllocs`, inserted after the original ALLOC once the function is done).
 
     /** [function start, function end] around line idx of work */
-    private static int[] functionOf(HOBProgram work, int idx) {
+    private static int[] functionOf(BytecodeProgram work, int idx) {
         int s = idx;
         while (s > 0 && !is(work.get(s), 2, "FUNC_START")) s--;
         int e = idx;
@@ -626,11 +626,11 @@ public class LoopUnrollingPass implements OptimizationPass {
     }
 
     /** Locals declared in the body: ALLOC'd in this function, mentioned only inside the body span, body holding an inner loop. */
-    private List<String> bodyLocals(HOBProgram work, Loop lp) {
+    private List<String> bodyLocals(BytecodeProgram work, Loop lp) {
         List<String> res = new ArrayList<>();
         boolean nested = false;
         for (int k = lp.bodyStart; k < lp.incStart && !nested; k++) {
-            for (HOBToken t : work.get(k)) {
+            for (BytecodeToken t : work.get(k)) {
                 if (t.text.startsWith("$for_range_")) {
                     nested = true;
                     break;
@@ -640,7 +640,7 @@ public class LoopUnrollingPass implements OptimizationPass {
         if (!nested) return res;
         int[] f = functionOf(work, lp.start);
         for (int a = f[0]; a <= f[1]; a++) {
-            HOBStatement l = work.get(a);
+            BytecodeStatement l = work.get(a);
             if (!is(l, 3, "ALLOC")) continue;
             String name = l.get(1).text;
             if (name.equals(lp.var) || name.equals(lp.rangeName) || name.equals("gt_routine_address") || name.equals("gt_error_message") || name.startsWith("gt_trace_")) continue;
@@ -648,9 +648,9 @@ public class LoopUnrollingPass implements OptimizationPass {
             for (int k = f[0]; k <= f[1] && !outside; k++) {
                 if (k == a || is(work.get(k), 3, "ALLOC")) continue;   // other ALLOC lines only spell the name in a range type; they are renamed with their variable
                 boolean in = k >= lp.bodyStart && k < lp.incStart;
-                HOBStatement row = work.get(k);
+                BytecodeStatement row = work.get(k);
                 for (int t = 1; t < row.size(); t++) {
-                    if (row.get(t).kind != HOBToken.Kind.CODE || !namesVar(row.get(t).text, name)) continue;
+                    if (row.get(t).kind != BytecodeToken.Kind.CODE || !namesVar(row.get(t).text, name)) continue;
                     if (in) inside = true; else { outside = true; break; }
                 }
             }
@@ -660,30 +660,30 @@ public class LoopUnrollingPass implements OptimizationPass {
     }
 
     /** `copy` with the given locals renamed to fresh names; queues the matching ALLOC lines. */
-    private HOBProgram renameLocals(HOBProgram work, Loop lp, HOBProgram copy, List<String> locals) {
+    private BytecodeProgram renameLocals(BytecodeProgram work, Loop lp, BytecodeProgram copy, List<String> locals) {
         Map<String, String> map = new HashMap<>();
         int[] f = functionOf(work, lp.start);
         for (String nm : locals) {
             map.put(nm, nm + "__u" + (nextLabel++));
         }
         for (int a = f[0]; a <= f[1]; a++) {
-            HOBStatement l = work.get(a);
+            BytecodeStatement l = work.get(a);
             if (is(l, 3, "ALLOC") && map.containsKey(l.get(1).text)) {
-                HOBStatement na = new HOBStatement(l);
+                BytecodeStatement na = new BytecodeStatement(l);
                 na.set(1, retext(l.get(1), map.get(l.get(1).text)));
                 na.set(2, retext(l.get(2), renameTok(l.get(2).text, map)));
                 pendingAllocs.add(new Object[] {l, na});
             }
         }
-        HOBProgram out = new HOBProgram(copy.size());
-        for (HOBStatement l : copy) {
-            HOBStatement row = null;
+        BytecodeProgram out = new BytecodeProgram(copy.size());
+        for (BytecodeStatement l : copy) {
+            BytecodeStatement row = null;
             for (int t = 1; t < l.size(); t++) {
-                HOBToken tok = l.get(t);
-                if (tok.kind != HOBToken.Kind.CODE) continue;
+                BytecodeToken tok = l.get(t);
+                if (tok.kind != BytecodeToken.Kind.CODE) continue;
                 String r = renameTok(tok.text, map);
                 if (!r.equals(tok.text)) {
-                    if (row == null) row = new HOBStatement(l);
+                    if (row == null) row = new BytecodeStatement(l);
                     row.set(t, retext(tok, r));
                 }
             }
@@ -695,13 +695,13 @@ public class LoopUnrollingPass implements OptimizationPass {
     private final List<Object[]> pendingAllocs = new ArrayList<>();
 
     /** inserts the queued ALLOC lines after their originals (by identity); returns how many lines were added */
-    private int flushAllocs(HOBProgram work, int fnStart) {
+    private int flushAllocs(BytecodeProgram work, int fnStart) {
         int added = 0;
         for (Object[] pa : pendingAllocs) {
             @SuppressWarnings("unchecked")
-            HOBStatement orig = (HOBStatement) pa[0];
+            BytecodeStatement orig = (BytecodeStatement) pa[0];
             @SuppressWarnings("unchecked")
-            HOBStatement na = (HOBStatement) pa[1];
+            BytecodeStatement na = (BytecodeStatement) pa[1];
             for (int k = fnStart; k < work.size(); k++) {
                 if (work.get(k) == orig) {
                     work.add(k + 1, na);
@@ -715,11 +715,11 @@ public class LoopUnrollingPass implements OptimizationPass {
     }
 
     /** The body with every "PUSH var vt" turned into "PUSH value vt". */
-    private static HOBProgram substVar(HOBProgram body, Loop lp, long value) {
-        HOBProgram out = new HOBProgram(body.size());
-        for (HOBStatement l : body) {
+    private static BytecodeProgram substVar(BytecodeProgram body, Loop lp, long value) {
+        BytecodeProgram out = new BytecodeProgram(body.size());
+        for (BytecodeStatement l : body) {
             if (is(l, 3, "PUSH") && l.get(1).text.equals(lp.var) && l.get(2).text.equals(lp.varType)) {
-                HOBStatement row = new HOBStatement(l);
+                BytecodeStatement row = new BytecodeStatement(l);
                 row.set(1, retext(l.get(1), Long.toString(value)));
                 out.add(row);
             } else {
@@ -729,16 +729,16 @@ public class LoopUnrollingPass implements OptimizationPass {
         return out;
     }
 
-    private static HOBStatement label(HOBToken ref, String text) {
-        HOBStatement l = new HOBStatement();
+    private static BytecodeStatement label(BytecodeToken ref, String text) {
+        BytecodeStatement l = new BytecodeStatement();
         l.add(retext(ref, text));
         return l;
     }
 
     /** A copy of the body in which every label it defines (and every use of one) gets a fresh name. */
-    private HOBProgram freshCopy(HOBProgram body) {
+    private BytecodeProgram freshCopy(BytecodeProgram body) {
         Map<String, String> map = new HashMap<>();
-        for (HOBStatement l : body) {
+        for (BytecodeStatement l : body) {
             if (isLabelDef(l)) {
                 String old = labelName(l.get(0).text);
                 int us = old.lastIndexOf('_');
@@ -748,15 +748,15 @@ public class LoopUnrollingPass implements OptimizationPass {
                 map.put(old, fresh);
             }
         }
-        HOBProgram out = new HOBProgram(body.size());
-        for (HOBStatement l : body) {
+        BytecodeProgram out = new BytecodeProgram(body.size());
+        for (BytecodeStatement l : body) {
             if (map.isEmpty()) {
                 out.add(l);
                 continue;
             }
-            HOBStatement row = new HOBStatement(l.size());
-            for (HOBToken t : l) {
-                if (t.kind == HOBToken.Kind.CODE && t.text.startsWith("@")) {
+            BytecodeStatement row = new BytecodeStatement(l.size());
+            for (BytecodeToken t : l) {
+                if (t.kind == BytecodeToken.Kind.CODE && t.text.startsWith("@")) {
                     boolean colon = t.text.endsWith(":");
                     String repl = map.get(labelName(t.text));
                     row.add(repl == null ? t : retext(t, "@" + repl + (colon ? ":" : "")));

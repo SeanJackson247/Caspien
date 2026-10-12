@@ -1,6 +1,6 @@
 package caspien.optimizer;
 
-import caspien.hob.HOBProgram;
+import caspien.bytecode.BytecodeProgram;
 
 
 /**
@@ -113,8 +113,8 @@ public class BytecodeOptimizer {
         this.structMemberReordering = new StructMemberReorderingPass(variableConfig.structReorder);
     }
 
-    public HOBProgram optimize(HOBProgram input) {
-        HOBProgram lines = input;
+    public BytecodeProgram optimize(BytecodeProgram input) {
+        BytecodeProgram lines = input;
 
         boolean outerChanged;
         do {

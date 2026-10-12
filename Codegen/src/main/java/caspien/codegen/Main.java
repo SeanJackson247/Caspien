@@ -2,8 +2,8 @@ package caspien.codegen;
 
 import caspien.codegen.x86backend.X86Backend;
 
-import caspien.hob.HOBParser;
-import caspien.hob.HOBProgram;
+import caspien.bytecode.BytecodeParser;
+import caspien.bytecode.BytecodeProgram;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
@@ -52,7 +52,7 @@ public class Main {
         CodegenConfig config = CodegenConfig.load("codegen.config");
 
         List<String> rawLines = Files.readAllLines(Paths.get(inputPath), StandardCharsets.UTF_8);
-        HOBProgram parsed = new HOBParser().parse(rawLines, inputPath);
+        BytecodeProgram parsed = new BytecodeParser().parse(rawLines, inputPath);
 
         X86Backend backend = new X86Backend(config.target, config.bmi2);
         backend.avx = config.avx;

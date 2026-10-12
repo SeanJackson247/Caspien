@@ -1,8 +1,8 @@
 package caspien.optimizer;
 
-import caspien.hob.HOBProgram;
-import caspien.hob.HOBStatement;
-import caspien.hob.HOBToken;
+import caspien.bytecode.BytecodeProgram;
+import caspien.bytecode.BytecodeStatement;
+import caspien.bytecode.BytecodeToken;
 
 import java.util.ArrayDeque;
 import java.util.HashMap;
@@ -47,7 +47,7 @@ public class DeadFunctionRemovalPass implements OptimizationPass {
     private static final Set<String> INERT_DECORATORS = new HashSet<>(List.of("@pub", "@throws", "@recursive", "@pure", "@pure(rt)", "@non(deterministic)", "@inline", "@dont(inline)"));
 
     @Override
-    public PassResult run(HOBProgram lines) {
+    public PassResult run(BytecodeProgram lines) {
         if (!enabled) {
             return new PassResult(lines, false);
         }
@@ -57,13 +57,13 @@ public class DeadFunctionRemovalPass implements OptimizationPass {
         }
         Map<String, Integer> byName = new HashMap<>();   // function name -> index into funcs
         for (int k = 0; k < funcs.size(); k++) {
-            HOBStatement st = lines.get(funcs.get(k)[0]);
+            BytecodeStatement st = lines.get(funcs.get(k)[0]);
             if (st.size() >= 2) byName.put(st.get(1).text, k);
         }
         if (!byName.containsKey("main")) {
             return new PassResult(lines, false);
         }
-        for (HOBStatement l : lines) {
+        for (BytecodeStatement l : lines) {
             if ("INVOKE".equals(VarAnalysis.mnemonic(l))) {
                 return new PassResult(lines, false);
             }
@@ -83,8 +83,8 @@ public class DeadFunctionRemovalPass implements OptimizationPass {
             while (fi < funcs.size() && funcs.get(fi)[1] < i) fi++;
             boolean inside = fi < funcs.size() && funcs.get(fi)[0] <= i && i <= funcs.get(fi)[1];
             if (inside) continue;
-            for (HOBToken t : lines.get(i)) {
-                if (t.kind != HOBToken.Kind.CODE) continue;
+            for (BytecodeToken t : lines.get(i)) {
+                if (t.kind != BytecodeToken.Kind.CODE) continue;
                 Integer k = byName.get(t.text);
                 if (k != null) markLive(live, work, k);
             }
@@ -93,8 +93,8 @@ public class DeadFunctionRemovalPass implements OptimizationPass {
             int k = work.poll();
             int[] f = funcs.get(k);
             for (int i = f[0] + 1; i < f[1]; i++) {
-                for (HOBToken t : lines.get(i)) {
-                    if (t.kind != HOBToken.Kind.CODE) continue;
+                for (BytecodeToken t : lines.get(i)) {
+                    if (t.kind != BytecodeToken.Kind.CODE) continue;
                     Integer c = byName.get(t.text);
                     if (c != null) markLive(live, work, c);
                 }
@@ -110,7 +110,7 @@ public class DeadFunctionRemovalPass implements OptimizationPass {
         if (!any) {
             return new PassResult(lines, false);
         }
-        HOBProgram out = new HOBProgram(lines.size());
+        BytecodeProgram out = new BytecodeProgram(lines.size());
         for (int i = 0; i < lines.size(); i++) {
             if (!remove.contains(i)) out.add(lines.get(i));
         }
@@ -125,7 +125,7 @@ public class DeadFunctionRemovalPass implements OptimizationPass {
     }
 
     /** An `export`ed function (it carries an EXPORT line) is called from C, so it is a root even when nothing in Caspien calls it. */
-    private static boolean isExported(HOBProgram L, int[] f) {
+    private static boolean isExported(BytecodeProgram L, int[] f) {
         for (int i = f[0] + 1; i < f[1]; i++) {
             if ("EXPORT".equals(VarAnalysis.mnemonic(L.get(i)))) return true;
         }
@@ -133,9 +133,9 @@ public class DeadFunctionRemovalPass implements OptimizationPass {
     }
 
     /** A function is a root when one of the FUNC_DECORATE lines right after its FUNC_START is not one of the inert ones. */
-    private static boolean hasActiveDecorator(HOBProgram L, int[] f) {
+    private static boolean hasActiveDecorator(BytecodeProgram L, int[] f) {
         for (int i = f[0] + 1; i < f[1]; i++) {
-            HOBStatement l = L.get(i);
+            BytecodeStatement l = L.get(i);
             if (!"FUNC_DECORATE".equals(VarAnalysis.mnemonic(l))) break;
             if (l.size() >= 2 && !INERT_DECORATORS.contains(l.get(1).text)) return true;
         }

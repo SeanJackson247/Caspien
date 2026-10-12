@@ -1,8 +1,8 @@
 package caspien.optimizer;
 
-import caspien.hob.HOBProgram;
-import caspien.hob.HOBStatement;
-import caspien.hob.HOBToken;
+import caspien.bytecode.BytecodeProgram;
+import caspien.bytecode.BytecodeStatement;
+import caspien.bytecode.BytecodeToken;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
@@ -50,14 +50,14 @@ public class ConstantFoldingPass implements OptimizationPass {
     }
 
     @Override
-    public PassResult run(HOBProgram lines) {
+    public PassResult run(BytecodeProgram lines) {
         if (!enabled) {
             return new PassResult(lines, false);
         }
-        HOBProgram out = new HOBProgram(lines.size());
+        BytecodeProgram out = new BytecodeProgram(lines.size());
         boolean changed = false;
-        for (HOBStatement line : lines) {
-            HOBStatement folded = tryFold(out, line);
+        for (BytecodeStatement line : lines) {
+            BytecodeStatement folded = tryFold(out, line);
             if (folded != null) {
                 changed = true; // tryFold already removed the operand lines from `out`
                 out.add(folded);
@@ -142,8 +142,8 @@ public class ConstantFoldingPass implements OptimizationPass {
     }
 
     /** A literal PUSH: "PUSH <literal> <type>" whose literal really is one of the type's kind; else null. */
-    static Lit lit(HOBStatement line) {
-        if (line.size() != 3 || line.get(0).kind != HOBToken.Kind.CODE || !line.get(0).text.equals("PUSH")) return null;
+    static Lit lit(BytecodeStatement line) {
+        if (line.size() != 3 || line.get(0).kind != BytecodeToken.Kind.CODE || !line.get(0).text.equals("PUSH")) return null;
         String text = line.get(1).text, type = line.get(2).text, b = base(type);
         if (b == null) return null;
         Lit l = new Lit();
@@ -187,21 +187,21 @@ public class ConstantFoldingPass implements OptimizationPass {
         return Double.isNaN(v) || Double.isInfinite(v) || (v == 0.0 && 1.0 / v < 0);
     }
 
-    private static HOBStatement push(HOBToken at, String value, String type) {
-        HOBStatement l = new HOBStatement(3);
-        l.add(new HOBToken("PUSH", at.file, at.line, HOBToken.Kind.CODE));
-        l.add(new HOBToken(value, at.file, at.line, HOBToken.Kind.CODE));
-        l.add(new HOBToken(type, at.file, at.line, HOBToken.Kind.CODE));
+    private static BytecodeStatement push(BytecodeToken at, String value, String type) {
+        BytecodeStatement l = new BytecodeStatement(3);
+        l.add(new BytecodeToken("PUSH", at.file, at.line, BytecodeToken.Kind.CODE));
+        l.add(new BytecodeToken(value, at.file, at.line, BytecodeToken.Kind.CODE));
+        l.add(new BytecodeToken(type, at.file, at.line, BytecodeToken.Kind.CODE));
         return l;
     }
 
     // ---- the fold ---------------------------------------------------------------------------------------------------
 
     /** If `line` is an operator whose operand PUSH lines are the last ones in `out`, removes them and returns the result PUSH. */
-    private static HOBStatement tryFold(HOBProgram out, HOBStatement line) {
-        if (line.isEmpty() || line.get(0).kind != HOBToken.Kind.CODE) return null;
-        for (HOBToken t : line) {
-            if (t.kind != HOBToken.Kind.CODE) return null;
+    private static BytecodeStatement tryFold(BytecodeProgram out, BytecodeStatement line) {
+        if (line.isEmpty() || line.get(0).kind != BytecodeToken.Kind.CODE) return null;
+        for (BytecodeToken t : line) {
+            if (t.kind != BytecodeToken.Kind.CODE) return null;
         }
         String op = line.get(0).text;
         int n = out.size();
@@ -210,7 +210,7 @@ public class ConstantFoldingPass implements OptimizationPass {
                 if (line.size() != 3 || n < 1) return null;
                 Lit a = lit(out.get(n - 1));
                 if (a == null) return null;
-                HOBStatement r = unary(op, a, line);
+                BytecodeStatement r = unary(op, a, line);
                 if (r != null) out.remove(n - 1);
                 return r;
             }
@@ -219,7 +219,7 @@ public class ConstantFoldingPass implements OptimizationPass {
                 if (line.size() != 4 || n < 2) return null;
                 Lit a = lit(out.get(n - 2)), b = lit(out.get(n - 1));
                 if (a == null || b == null) return null;
-                HOBStatement r = binary(op, a, b, line);
+                BytecodeStatement r = binary(op, a, b, line);
                 if (r != null) {
                     out.remove(n - 1);
                     out.remove(n - 2);
@@ -248,8 +248,8 @@ public class ConstantFoldingPass implements OptimizationPass {
         }
     }
 
-    private static HOBStatement unary(String op, Lit a, HOBStatement line) {
-        HOBToken at = line.get(0);
+    private static BytecodeStatement unary(String op, Lit a, BytecodeStatement line) {
+        BytecodeToken at = line.get(0);
         String t1 = line.get(1).text, t2 = line.get(2).text;
         switch (op) {
             case "NOT": {
@@ -329,8 +329,8 @@ public class ConstantFoldingPass implements OptimizationPass {
         return wrap(r, b);
     }
 
-    private static HOBStatement binary(String op, Lit a, Lit b, HOBStatement line) {
-        HOBToken at = line.get(0);
+    private static BytecodeStatement binary(String op, Lit a, Lit b, BytecodeStatement line) {
+        BytecodeToken at = line.get(0);
         String lt = line.get(1).text, rt = line.get(2).text, res = line.get(3).text;
         String lb = base(lt), rb = base(rt), resB = base(res);
         if (lb == null || resB == null || !lb.equals(rb) || !lb.equals(a.base) || !lb.equals(b.base)) return null;

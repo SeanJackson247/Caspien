@@ -1,7 +1,7 @@
 package caspien.lowerorder;
-import caspien.hob.HOBProgram;
-import caspien.hob.HOBStatement;
-import caspien.hob.HOBToken;
+import caspien.bytecode.BytecodeProgram;
+import caspien.bytecode.BytecodeStatement;
+import caspien.bytecode.BytecodeToken;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -31,10 +31,10 @@ public class JumpCleanupPass {
             Map.entry("SLT", "SGT_EQ"), Map.entry("SGT_EQ", "SLT"),
             Map.entry("SLT_EQ", "SGT"), Map.entry("SGT", "SLT_EQ"));
 
-    public HOBProgram run(HOBProgram lines) {
-        HOBProgram cur = lines;
+    public BytecodeProgram run(BytecodeProgram lines) {
+        BytecodeProgram cur = lines;
         for (int round = 0; round < 8; round++) {
-            HOBProgram next = step(cur);
+            BytecodeProgram next = step(cur);
             boolean same = next.size() == cur.size();
             cur = next;
             if (same) {
@@ -44,11 +44,11 @@ public class JumpCleanupPass {
         return cur;
     }
 
-    private HOBProgram step(HOBProgram in) {
-        HOBProgram out = new HOBProgram(in.size());
+    private BytecodeProgram step(BytecodeProgram in) {
+        BytecodeProgram out = new BytecodeProgram(in.size());
         int n = in.size();
         for (int i = 0; i < n; i++) {
-            HOBStatement l = in.get(i);
+            BytecodeStatement l = in.get(i);
             // 1. dead jump right after an unconditional jump
             if (!out.isEmpty() && isJmp(out.get(out.size() - 1)) && !followsCmp(out, out.size() - 1) && (isJmp(l) || isBrc(l))) {
                 continue;
@@ -60,9 +60,9 @@ public class JumpCleanupPass {
             // 3. conditional jump over an unconditional one
             if (isBrc(l) && i + 2 < n && isJmp(in.get(i + 1)) && isLabelDef(in.get(i + 2), t(l, 5)) && OPPOSITE.containsKey(t(l, 1))
                     && !t(in.get(i + 1), 1).equals(t(l, 5))) {
-                HOBStatement inv = new HOBStatement(l);
-                HOBToken c = l.get(1);
-                inv.set(1, new HOBToken(OPPOSITE.get(c.text), c.file, c.line, c.kind));
+                BytecodeStatement inv = new BytecodeStatement(l);
+                BytecodeToken c = l.get(1);
+                inv.set(1, new BytecodeToken(OPPOSITE.get(c.text), c.file, c.line, c.kind));
                 inv.set(5, in.get(i + 1).get(1));
                 out.add(inv);
                 i++; // the JMP is consumed
@@ -74,13 +74,13 @@ public class JumpCleanupPass {
     }
 
     /** In stack form a `JMP` right after a bare `CMP` is the conditional jump (jump when the compared value is false), not a plain one. */
-    private static boolean followsCmp(HOBProgram list, int idx) {
+    private static boolean followsCmp(BytecodeProgram list, int idx) {
         return idx > 0 && list.get(idx - 1).size() == 1 && t(list.get(idx - 1), 0).equals("CMP");
     }
 
-    private static boolean nextLabelsContain(HOBProgram in, int from, String label) {
+    private static boolean nextLabelsContain(BytecodeProgram in, int from, String label) {
         for (int j = from; j < in.size(); j++) {
-            HOBStatement l = in.get(j);
+            BytecodeStatement l = in.get(j);
             if (!isLabel(l)) {
                 return false;
             }
@@ -91,23 +91,23 @@ public class JumpCleanupPass {
         return false;
     }
 
-    private static boolean isLabel(HOBStatement l) {
+    private static boolean isLabel(BytecodeStatement l) {
         return l.size() == 1 && t(l, 0).startsWith("@") && t(l, 0).endsWith(":");
     }
 
-    private static boolean isLabelDef(HOBStatement l, String label) {
+    private static boolean isLabelDef(BytecodeStatement l, String label) {
         return isLabel(l) && t(l, 0).equals(label + ":");
     }
 
-    private static boolean isJmp(HOBStatement l) {
+    private static boolean isJmp(BytecodeStatement l) {
         return l.size() == 2 && t(l, 0).equals("JMP") && t(l, 1).startsWith("@");
     }
 
-    private static boolean isBrc(HOBStatement l) {
+    private static boolean isBrc(BytecodeStatement l) {
         return l.size() == 6 && t(l, 0).equals("R_BRC") && t(l, 5).startsWith("@");
     }
 
-    private static String t(HOBStatement l, int i) {
+    private static String t(BytecodeStatement l, int i) {
         return l.get(i).text;
     }
 }

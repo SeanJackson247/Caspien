@@ -1,7 +1,7 @@
 package caspien.lowerorder;
-import caspien.hob.HOBProgram;
-import caspien.hob.HOBStatement;
-import caspien.hob.HOBToken;
+import caspien.bytecode.BytecodeProgram;
+import caspien.bytecode.BytecodeStatement;
+import caspien.bytecode.BytecodeToken;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -38,15 +38,15 @@ public class IndexedAccessPass {
 
     static final Set<String> PURE_DEF = Set.of("R_MOV", "R_LD", "R_LDI", "R_LEA", "R_BIN", "R_UN", "R_FBIN", "R_FCMP", "R_XTOG");
 
-    public HOBProgram run(HOBProgram lines) {
+    public BytecodeProgram run(BytecodeProgram lines) {
         int n = lines.size();
-        HOBProgram cur = new HOBProgram(lines);
+        BytecodeProgram cur = new BytecodeProgram(lines);
         boolean[] gone = new boolean[n];
         for (int i = 0; i < n; i++) {
             if (gone[i]) {
                 continue;
             }
-            HOBStatement lea = cur.get(i);
+            BytecodeStatement lea = cur.get(i);
             if (!isIndexedLea(lea)) {
                 continue;
             }
@@ -57,14 +57,14 @@ public class IndexedAccessPass {
                 if (gone[j]) {
                     continue;
                 }
-                HOBStatement l = cur.get(j);
+                BytecodeStatement l = cur.get(j);
                 if (!mentions(l, x)) {
                     if (!passable(l, idx) || (base != null && !passable(l, base))) {
                         break;
                     }
                     continue;
                 }
-                HOBStatement fused = fuse(lea, l, x);
+                BytecodeStatement fused = fuse(lea, l, x);
                 if (fused != null && deadAfter(cur, gone, j + 1, x, fused.get(0).text.equals("R_LDI") && t(l, 2).equals(x))) {
                     cur.set(j, fused);
                     gone[i] = true;
@@ -72,7 +72,7 @@ public class IndexedAccessPass {
                 break;
             }
         }
-        HOBProgram out = new HOBProgram(n);
+        BytecodeProgram out = new BytecodeProgram(n);
         for (int i = 0; i < n; i++) {
             if (!gone[i]) {
                 out.add(cur.get(i));
@@ -81,7 +81,7 @@ public class IndexedAccessPass {
         return out;
     }
 
-    private static boolean isIndexedLea(HOBStatement l) {
+    private static boolean isIndexedLea(BytecodeStatement l) {
         if ((l.size() != 5 && l.size() != 6) || !t(l, 0).equals("R_LEA") || !t(l, 1).startsWith("%t") || !t(l, 3).startsWith("%v")) {
             return false;
         }
@@ -116,15 +116,15 @@ public class IndexedAccessPass {
     }
 
     /** the fused line for consumer l of the address in x, or null */
-    private static HOBStatement fuse(HOBStatement lea, HOBStatement l, String x) {
+    private static BytecodeStatement fuse(BytecodeStatement lea, BytecodeStatement l, String x) {
         if (l.size() != 4) {
             return null;
         }
-        HOBToken h = l.get(0);
-        HOBStatement n = new HOBStatement();
+        BytecodeToken h = l.get(0);
+        BytecodeStatement n = new BytecodeStatement();
         // float element (f32: scale 4, f64: scale 8): the access width must equal the scale
         if (t(l, 0).equals("R_LDX") && floatWidthOk(t(l, 1), t(lea, 4)) && isXmm(t(l, 2)) && t(l, 3).equals(x)) {
-            n.add(new HOBToken("R_LDXI", h.file, h.line, h.kind));
+            n.add(new BytecodeToken("R_LDXI", h.file, h.line, h.kind));
             n.add(l.get(1));
             n.add(l.get(2));
             n.add(lea.get(2));
@@ -134,7 +134,7 @@ public class IndexedAccessPass {
             return n;
         }
         if (t(l, 0).equals("R_STX") && floatWidthOk(t(l, 1), t(lea, 4)) && t(l, 2).equals(x) && isXmm(t(l, 3))) {
-            n.add(new HOBToken("R_STXI", h.file, h.line, h.kind));
+            n.add(new BytecodeToken("R_STXI", h.file, h.line, h.kind));
             n.add(l.get(1));
             n.add(lea.get(2));
             n.add(lea.get(3));
@@ -148,7 +148,7 @@ public class IndexedAccessPass {
             return null;
         }
         if (t(l, 0).equals("R_LD") && t(l, 2).startsWith("%t") && t(l, 3).equals(x)) {
-            n.add(new HOBToken("R_LDI", h.file, h.line, h.kind));
+            n.add(new BytecodeToken("R_LDI", h.file, h.line, h.kind));
             n.add(l.get(1));
             n.add(l.get(2));
             n.add(lea.get(2));
@@ -159,7 +159,7 @@ public class IndexedAccessPass {
         }
         if (t(l, 0).equals("R_ST") && t(l, 2).equals(x) && !t(l, 3).equals(x)
                 && (t(l, 3).startsWith("#") || t(l, 3).startsWith("%t") || t(l, 3).startsWith("%v"))) {
-            n.add(new HOBToken("R_STI", h.file, h.line, h.kind));
+            n.add(new BytecodeToken("R_STI", h.file, h.line, h.kind));
             n.add(l.get(1));
             n.add(lea.get(2));
             n.add(lea.get(3));
@@ -172,7 +172,7 @@ public class IndexedAccessPass {
     }
 
     /** the lea's displacement (6th token, e.g. the 16-byte safe dynarray header) rides along as the fused line's last token */
-    private static void addDisp(HOBStatement n, HOBStatement lea) {
+    private static void addDisp(BytecodeStatement n, BytecodeStatement lea) {
         if (lea.size() == 6) {
             n.add(lea.get(5));
         }
@@ -192,7 +192,7 @@ public class IndexedAccessPass {
     }
 
     /** a line that may sit between the lea and its consumer: known mnemonic, does not write the index register */
-    static boolean passable(HOBStatement l, String idx) {
+    static boolean passable(BytecodeStatement l, String idx) {
         Integer d = DEST.get(t(l, 0));
         if (d == null) {
             return false;
@@ -200,7 +200,7 @@ public class IndexedAccessPass {
         return d < 0 || d >= l.size() || !t(l, d).equals(idx);
     }
 
-    static boolean mentions(HOBStatement l, String tok) {
+    static boolean mentions(BytecodeStatement l, String tok) {
         for (int k = 1; k < l.size(); k++) {
             if (t(l, k).equals(tok)) {
                 return true;
@@ -210,7 +210,7 @@ public class IndexedAccessPass {
     }
 
     /** x is dead from line `from` on; selfDefined: the consumer itself redefines x */
-    static boolean deadAfter(HOBProgram cur, boolean[] gone, int from, String x, boolean selfDefined) {
+    static boolean deadAfter(BytecodeProgram cur, boolean[] gone, int from, String x, boolean selfDefined) {
         if (selfDefined) {
             return true;
         }
@@ -218,7 +218,7 @@ public class IndexedAccessPass {
             if (gone[j]) {
                 continue;
             }
-            HOBStatement l = cur.get(j);
+            BytecodeStatement l = cur.get(j);
             if (l.size() == 1 && t(l, 0).startsWith("@")) {
                 return true;
             }
@@ -245,7 +245,7 @@ public class IndexedAccessPass {
         return true;
     }
 
-    private static String t(HOBStatement l, int i) {
+    private static String t(BytecodeStatement l, int i) {
         return l.get(i).text;
     }
 }

@@ -4,9 +4,9 @@ Stage 2 of the Caspien toolchain: higher-order bytecode (HOB, plain text) in, hi
 that rewrite the bytecode before it is lowered: constant folding, variable elision/shifting, struct unpacking, dead code removal,
 loop unrolling, function inlining, the two layout reorderings, `sizeof` resolution and the register hints. All real lowering (address
 lowering, register form, register variables, fusion passes) lives in the next stage, `LowerOrderGenerator/`. The two stages share only the HOB
-parser/classes in `HOB/`; the text bytecode is the only interchange format.
+parser/classes in `BytecodeParser/`; the text bytecode is the only interchange format.
 
-The stage is a library, `Optimizer.optimize(hobText, origin, compilerConfigText)` -> `Result{hob, messages}` (text in, text out; no files, no stdout); the orchestrator calls it in its own JVM and `Main` is the same call wrapped as a program (`-i in out`, reads `./compiler.config` if present, prints the messages). Every pass is a pure function `HOBProgram -> PassResult` (`OptimizationPass`). Passes know nothing about each other;
+The stage is a library, `Optimizer.optimize(hobText, origin, compilerConfigText)` -> `Result{hob, messages}` (text in, text out; no files, no stdout); the orchestrator calls it in its own JVM and `Main` is the same call wrapped as a program (`-i in out`, reads `./compiler.config` if present, prints the messages). Every pass is a pure function `BytecodeProgram -> PassResult` (`OptimizationPass`). Passes know nothing about each other;
 ordering and fixed-point looping live only in `BytecodeOptimizer`. No pass is a no-op stub any more.
 
 Contents: [Usage](#usage) | [Input and output format](#input-and-output-format) | [Pipeline](#the-pipeline) | [Pass summary](#pass-summary) |
@@ -33,7 +33,7 @@ Contents: [Usage](#usage) | [Input and output format](#input-and-output-format) 
 
 ## Build
 
-    cd Optimizer && javac -d out $(find src/main/java ../HOB/src/main/java -name '*.java')
+    cd Optimizer && javac -d out $(find src/main/java ../BytecodeParser/src/main/java -name '*.java')
 
 Plain JDK, no dependencies. The zip ships `out/` prebuilt (`tests/*_hob_check.sh` use `Optimizer/out`; the stage cache hashes the
 classes in it). Configuration in the whole compiler: `toolchain.config` at the project root; the orchestrator copies its
@@ -42,9 +42,9 @@ those copies).
 
 ## Input and output format
 
-HOB is one instruction per line, tokens separated by whitespace. `HOBParser` (shared folder `HOB/`, package `caspien.hob`) splits by hand (no regex): a `"quoted string"` (with
+HOB is one instruction per line, tokens separated by whitespace. `BytecodeParser` (shared folder `BytecodeParser/`, package `caspien.bytecode`) splits by hand (no regex): a `"quoted string"` (with
 backslash escapes) is ONE token of kind `STRING`, a char literal such as `' '` or `'\n'` is one token, everything else is kind `CODE`.
-`HOBSerializer` joins tokens back with single spaces. A line is a `HOBStatement` (list of `HOBToken`), the program a `HOBProgram` (list of statements). The phases never overlap: the parser finishes before any pass runs, the serializer starts after the last pass; only `Main` touches either. A token remembers the file and line it came from (`HOBToken.file/line`);
+`BytecodeSerializer` joins tokens back with single spaces. A line is a `BytecodeStatement` (list of `BytecodeToken`), the program a `BytecodeProgram` (list of statements). The phases never overlap: the parser finishes before any pass runs, the serializer starts after the last pass; only `Main` touches either. A token remembers the file and line it came from (`BytecodeToken.file/line`);
 passes that create tokens copy that position from a neighbour so diagnostics keep working. `Kind.COMMENT` is reserved; HOB has no
 comment syntax.
 
@@ -468,8 +468,8 @@ stderr lines the orchestrator collects (`Compiler.runProcess` keeps `[note]` and
 
 - `BytecodeOptimizer`: the pipeline (above) and the constructor chain `BytecodeOptimizer(UnrollConfig, FoldConfig, VariableConfig, InlineConfig)`; the no-argument and partial constructors build an all-off optimizer (used by tests that call it directly).
 - `Main`: CLI (`-i input output`), reads the four configs from `compiler.config`, parse -> optimize -> serialize.
-- `OptimizationPass` (`name()`, `PassResult run(HOBProgram)`), `PassResult` (`lines`, `changed`; `changed` drives every fixed-point loop and must be false when nothing was done).
-- `HOB/` (shared with the LowerOrderGenerator, compiled into this stage's `out/`): `HOBToken` (`text`, `file`, `line`, `kind` = CODE/STRING/COMMENT), `HOBStatement` (one line; `opcode()`, `text(i)`), `HOBProgram`, `HOBParser` (hand-written scanner: quoted strings and char literals stay one token), `HOBSerializer` (single-space join). It imports no stage.
+- `OptimizationPass` (`name()`, `PassResult run(BytecodeProgram)`), `PassResult` (`lines`, `changed`; `changed` drives every fixed-point loop and must be false when nothing was done).
+- `BytecodeParser/` (shared with the LowerOrderGenerator, compiled into this stage's `out/`): `BytecodeToken` (`text`, `file`, `line`, `kind` = CODE/STRING/COMMENT), `BytecodeStatement` (one line; `opcode()`, `text(i)`), `BytecodeProgram`, `BytecodeParser` (hand-written scanner: quoted strings and char literals stay one token), `BytecodeSerializer` (single-space join). It imports no stage.
 - `VarAnalysis` (package-private; shared by elision, shifting and several others): `functions()` (FUNC_START..FUNC_END index pairs), `mnemonic()`, `hasMnemonic()`, `labels()` (label definition line = one token `@name:`),
   `jumps()` (`JMP @label` as {line, target}; targets outside the function ignored), `dominated(a, m, jumps)` (false when a forward jump before line a lands after a and at or before m), `inLoop(a, jumps)` (true when a backward jump after a lands before it),
   `scan()` (per-function candidate variables and their reads/assignments, described under elision) and `withToken()`. `ConstantFoldingPass` exports `base/isInt/width/lit` helpers that elision, shifting and unpacking use for type tests.
@@ -494,7 +494,7 @@ Things that have bitten before:
 Runtime programs live in the repo-root `tests/` (run with `python3 tests/run_tests.py [--configs shipped,allon,aggressive,alloff] [--checks]`, which sweeps every `tests/*.caspien` and `docs/examples` program through the stage cache under several configs); hand-made-bytecode scripts
 (`*_hob_check.sh`) run the prebuilt `Optimizer/out` on small HOB files with one switch set and count or compare lines:
 `inline_hob_check.sh`, `deadfunc_hob_check.sh`, `unusedecl_hob_check.sh`, `sizeof_hob_check.sh`, `structreorder_hob_check.sh`, `allocreorder_hob_check.sh`. Others touching this stage: `bits_ops_check.sh`, `unroll_decorator_check.sh`, `nested_unroll_check.sh`,
-`inline_decorator_check.sh`, `inline_budget_check.sh`, `inline_multi_callee_check.sh`, `inline_owns_drop_check.sh`, `deadflow_scale_check.sh`, `hob_phases_check.sh` (parser/serializer layering and exact round trip), `trace_off_check.sh` (trace mode off gives byte-identical output), `cache_check.sh` / `cache_views_check.py` (stage-2 cache keys and the claim that
+`inline_decorator_check.sh`, `inline_budget_check.sh`, `inline_multi_callee_check.sh`, `inline_owns_drop_check.sh`, `deadflow_scale_check.sh`, `bytecode_phases_check.sh` (parser/serializer layering and exact round trip), `trace_off_check.sh` (trace mode off gives byte-identical output), `cache_check.sh` / `cache_views_check.py` (stage-2 cache keys and the claim that
 each stage ignores the keys outside its view). Per-pass test names are listed in the pass sections above. The standard check for any change: output of every test program identical with every switch off vs on, at every inlining/unrolling preset, old tree vs new tree.
 
 ## Known gaps and rejected ideas

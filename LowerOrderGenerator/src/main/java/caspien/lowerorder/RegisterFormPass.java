@@ -1,7 +1,7 @@
 package caspien.lowerorder;
-import caspien.hob.HOBProgram;
-import caspien.hob.HOBStatement;
-import caspien.hob.HOBToken;
+import caspien.bytecode.BytecodeProgram;
+import caspien.bytecode.BytecodeStatement;
+import caspien.bytecode.BytecodeToken;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -93,7 +93,7 @@ public class RegisterFormPass implements OptimizationPass {
     static final class Entry {
         Kind kind;
         /** the original line (K, M, A) so a flush can re-emit it verbatim */
-        HOBStatement orig;
+        BytecodeStatement orig;
         /** K: literal text; M: the "$off" text; A: "$off" or "&sym" */
         String text;
         /** M/A(frame): parsed frame offset */
@@ -110,7 +110,7 @@ public class RegisterFormPass implements OptimizationPass {
 
     /** One fusable mnemonic. Returns how many input lines it consumed, or 0 to decline (caller flushes/rolls back and passes through). A handler must not emit anything before it returns 0. */
     interface Handler {
-        int tryFuse(State st, HOBStatement line, HOBProgram all, int idx);
+        int tryFuse(State st, BytecodeStatement line, BytecodeProgram all, int idx);
     }
 
     private final Map<String, Handler> handlers = new HashMap<>();
@@ -204,9 +204,9 @@ public class RegisterFormPass implements OptimizationPass {
     }
 
     @Override
-    public PassResult run(HOBProgram lines) {
+    public PassResult run(BytecodeProgram lines) {
         globalNames.clear();
-        for (HOBStatement l : lines) {
+        for (BytecodeStatement l : lines) {
             if (l.size() >= 2 && (l.get(0).text.equals("GLOBAL") || l.get(0).text.equals("ALLOC_STATIC"))) {
                 // Dotted names are member aliases into a parent block; the backend's alias handling stays on the stack path.
                 if (l.get(1).text.indexOf('.') < 0) {
@@ -218,7 +218,7 @@ public class RegisterFormPass implements OptimizationPass {
         boolean changed = false;
         int i = 0;
         while (i < lines.size()) {
-            HOBStatement line = lines.get(i);
+            BytecodeStatement line = lines.get(i);
             if (line.isEmpty()) {
                 st.out.add(line);
                 i++;
@@ -262,7 +262,7 @@ public class RegisterFormPass implements OptimizationPass {
      * or array construction run by scanning back). Without this, one call in the middle of a statement
      * (an inlined sqrt under a pending "e = e - ...") threw away the whole region, including the loads already fused.
      */
-    private static boolean flushIsFaithful(HOBStatement line) {
+    private static boolean flushIsFaithful(BytecodeStatement line) {
         String m = line.get(0).text;
         return m.equals("CC_START") || m.endsWith("_FLOAT") || m.endsWith("_INT")
                 || m.equals("SHL") || m.equals("SHR") || m.equals("SAR") || m.equals("ROTL") || m.equals("ROTR") || m.startsWith("BITS_");
@@ -273,10 +273,10 @@ public class RegisterFormPass implements OptimizationPass {
     // ------------------------------------------------------------------
 
     static final class State {
-        final HOBProgram out = new HOBProgram();
+        final BytecodeProgram out = new BytecodeProgram();
         final List<Entry> stack = new ArrayList<>();
         final boolean[] tempUsed = new boolean[TEMP_COUNT];
-        private HOBToken anchor; // any token, for file/line of synthesized lines
+        private BytecodeToken anchor; // any token, for file/line of synthesized lines
         /** region start: the input line index and output size at the last empty-model point */
         int cpIn = 0;
         int cpOut = 0;
@@ -309,11 +309,11 @@ public class RegisterFormPass implements OptimizationPass {
             out.add(mk(texts));
         }
 
-        HOBStatement mk(String... texts) {
-            HOBStatement l = new HOBStatement(texts.length);
-            HOBToken a = anchor;
+        BytecodeStatement mk(String... texts) {
+            BytecodeStatement l = new BytecodeStatement(texts.length);
+            BytecodeToken a = anchor;
             for (String t : texts) {
-                l.add(new HOBToken(t, a == null ? "<register-form>" : a.file, a == null ? 0 : a.line, HOBToken.Kind.CODE));
+                l.add(new BytecodeToken(t, a == null ? "<register-form>" : a.file, a == null ? 0 : a.line, BytecodeToken.Kind.CODE));
             }
             return l;
         }
@@ -329,7 +329,7 @@ public class RegisterFormPass implements OptimizationPass {
         }
 
         /** Discards this region's output and emits its original input lines [cpIn, upTo) instead. */
-        void rollback(HOBProgram all, int upTo) {
+        void rollback(BytecodeProgram all, int upTo) {
             out.subList(cpOut, out.size()).clear();
             for (int k = cpIn; k < upTo; k++) {
                 out.add(all.get(k));
@@ -416,7 +416,7 @@ public class RegisterFormPass implements OptimizationPass {
     // Small helpers
     // ------------------------------------------------------------------
 
-    private static boolean is(HOBStatement line, int n) {
+    private static boolean is(BytecodeStatement line, int n) {
         return line.size() == n;
     }
 
@@ -505,7 +505,7 @@ public class RegisterFormPass implements OptimizationPass {
     // Handlers
     // ------------------------------------------------------------------
 
-    private int fusePush(State st, HOBStatement line, HOBProgram all, int idx) {
+    private int fusePush(State st, BytecodeStatement line, BytecodeProgram all, int idx) {
         if (!is(line, 3)) {
             return 0;
         }
@@ -555,11 +555,11 @@ public class RegisterFormPass implements OptimizationPass {
      * Declined (stack form) when an atomic swap follows two lines later (the backend reads that push as an address)
      * or no temp is free.
      */
-    private int fuseGlobalRead(State st, HOBStatement line, HOBProgram all, int idx, int n, String sym) {
+    private int fuseGlobalRead(State st, BytecodeStatement line, BytecodeProgram all, int idx, int n, String sym) {
         // The backend decides a global push by looking TWO lines ahead: "PUSH address / PUSH newValue / ATOMIC_SWAP" pushes
         // the global's ADDRESS, not its value (X86Backend lineAtOffsetIsAtomicSwap(2)).
         if (idx + 2 < all.size()) {
-            HOBStatement swap = all.get(idx + 2);
+            BytecodeStatement swap = all.get(idx + 2);
             if (!swap.isEmpty() && swap.get(0).text.equals("ATOMIC_SWAP")) {
                 return 0;
             }
@@ -575,7 +575,7 @@ public class RegisterFormPass implements OptimizationPass {
         return 1;
     }
 
-    private int fuseAddr(State st, HOBStatement line, HOBProgram all, int idx) {
+    private int fuseAddr(State st, BytecodeStatement line, BytecodeProgram all, int idx) {
         if (!is(line, 3)) {
             return 0;
         }
@@ -605,7 +605,7 @@ public class RegisterFormPass implements OptimizationPass {
         return e.kind == Kind.M && (e.size != 8 || n < 8);
     }
 
-    private int fuseBinary(State st, HOBStatement line, HOBProgram all, int idx) {
+    private int fuseBinary(State st, BytecodeStatement line, BytecodeProgram all, int idx) {
         String mnemonic = line.get(0).text;
         boolean logical = mnemonic.equals("AND") || mnemonic.equals("OR");
         if (!is(line, 2)) {
@@ -679,7 +679,7 @@ public class RegisterFormPass implements OptimizationPass {
      * which the backend turns into a multiplication by the reciprocal. Only the unsigned 8-byte forms and a literal divisor of
      * at least 3; any other division stays in the stack form.
      */
-    private int fuseDivConst(State st, HOBStatement line, HOBProgram all, int idx) {
+    private int fuseDivConst(State st, BytecodeStatement line, BytecodeProgram all, int idx) {
         if (!is(line, 2)) {
             return 0;
         }
@@ -720,7 +720,7 @@ public class RegisterFormPass implements OptimizationPass {
         return 1;
     }
 
-    private int fuseUnary(State st, HOBStatement line, HOBProgram all, int idx) {
+    private int fuseUnary(State st, BytecodeStatement line, BytecodeProgram all, int idx) {
         String mnemonic = line.get(0).text;
         boolean isNot = mnemonic.equals("NOT");
         boolean isBitsNot = mnemonic.equals("BITS_NOT");
@@ -772,15 +772,15 @@ public class RegisterFormPass implements OptimizationPass {
         return e.kind == Kind.M && e.size != n;
     }
 
-    private int fuseFloatBin(State st, HOBStatement line, HOBProgram all, int idx) {
+    private int fuseFloatBin(State st, BytecodeStatement line, BytecodeProgram all, int idx) {
         return fuseFloatOp(st, line, "R_FBIN", FLOAT_BIN.get(line.get(0).text));
     }
 
-    private int fuseFloatCmp(State st, HOBStatement line, HOBProgram all, int idx) {
+    private int fuseFloatCmp(State st, BytecodeStatement line, BytecodeProgram all, int idx) {
         return fuseFloatOp(st, line, "R_FCMP", FLOAT_CMP.get(line.get(0).text));
     }
 
-    private int fuseFloatOp(State st, HOBStatement line, String rmn, String op) {
+    private int fuseFloatOp(State st, BytecodeStatement line, String rmn, String op) {
         if (!is(line, 2)) {
             return 0;
         }
@@ -835,7 +835,7 @@ public class RegisterFormPass implements OptimizationPass {
 
     // ---- pointers, loads, computed addresses ---------------------------
 
-    private int fuseDeref(State st, HOBStatement line, HOBProgram all, int idx) {
+    private int fuseDeref(State st, BytecodeStatement line, BytecodeProgram all, int idx) {
         if (!is(line, 2)) {
             return 0;
         }
@@ -844,14 +844,14 @@ public class RegisterFormPass implements OptimizationPass {
     }
 
     /** LEN -- the dynarray header's len field: an 8-byte load through the pointer on top of the stack. */
-    private int fuseLen(State st, HOBStatement line, HOBProgram all, int idx) {
+    private int fuseLen(State st, BytecodeStatement line, BytecodeProgram all, int idx) {
         if (!is(line, 1)) {
             return 0;
         }
         return derefN(st, line, 8);
     }
 
-    private int derefN(State st, HOBStatement line, int n) {
+    private int derefN(State st, BytecodeStatement line, int n) {
         if (!isWidth(n)) {
             return 0;
         }
@@ -886,7 +886,7 @@ public class RegisterFormPass implements OptimizationPass {
     }
 
     /** base + idx*scale into one temp. base: A, T or an 8-byte M; idx: K, T or an M (loaded when narrow). */
-    private int fuseLookupArrayLhs(State st, HOBStatement line, HOBProgram all, int idx) {
+    private int fuseLookupArrayLhs(State st, BytecodeStatement line, BytecodeProgram all, int idx) {
         if (!is(line, 2)) {
             return 0;
         }
@@ -915,7 +915,7 @@ public class RegisterFormPass implements OptimizationPass {
      * value (a frame slot or a temp); a fixed array pushed by value is never one of these (bigger ones are pushed as blocks, an 8-byte one carries
      * the "t8" token, smaller ones are tagged), so only the plain two-token line is taken. Element types that are not 1/2/4/8 bytes stay stack form.
      */
-    private int fuseLookupPtrRead(State st, HOBStatement line, HOBProgram all, int idx) {
+    private int fuseLookupPtrRead(State st, BytecodeStatement line, BytecodeProgram all, int idx) {
         if (!is(line, 2)) {
             return 0;
         }
@@ -923,8 +923,8 @@ public class RegisterFormPass implements OptimizationPass {
         if (idx + 2 < all.size() && n > 0) {
             // "LOOKUP_ARRAY n ; PUSH_FIELDNAME off w ; DOT w" -- one scalar field of a struct element behind a pointer (unsafe dynarray of structs):
             // address = pointer + index*n + off, then load w bytes. (Without this the whole n-byte element was pushed and the field cut out of it.)
-            HOBStatement fl = all.get(idx + 1);
-            HOBStatement dl = all.get(idx + 2);
+            BytecodeStatement fl = all.get(idx + 1);
+            BytecodeStatement dl = all.get(idx + 2);
             if (is(fl, 3) && fl.get(0).text.equals("PUSH_FIELDNAME") && is(dl, 2) && dl.get(0).text.equals("DOT")) {
                 Long off = parseIntLiteral(fl.get(1).text);
                 int fw = parseSize(fl.get(2).text);
@@ -949,7 +949,7 @@ public class RegisterFormPass implements OptimizationPass {
             return 0;
         }
         if (idx + 1 < all.size()) {
-            HOBStatement nx = all.get(idx + 1);
+            BytecodeStatement nx = all.get(idx + 1);
             String nm = nx.isEmpty() ? "" : nx.get(0).text;
             // a following DOT takes a struct element apart; a following LOOKUP_ARRAY tagged "t8" indexes an 8-byte fixed array held by value
             // (this element, pushed as one word); any other following lookup just uses this scalar as its index or its pointer
@@ -977,12 +977,12 @@ public class RegisterFormPass implements OptimizationPass {
         return r;
     }
 
-    private int emitLea(State st, HOBStatement line, Entry base, Entry ix, int scale, int sz) {
+    private int emitLea(State st, BytecodeStatement line, Entry base, Entry ix, int scale, int sz) {
         return emitLea(st, line, base, ix, scale, sz, 0);
     }
 
     /** as above, plus a constant byte displacement (a sixth R_LEA operand, written only when non-zero). */
-    private int emitLea(State st, HOBStatement line, Entry base, Entry ix, int scale, int sz, long disp) {
+    private int emitLea(State st, BytecodeStatement line, Entry base, Entry ix, int scale, int sz, long disp) {
         boolean loadBase = base.kind == Kind.M;
         boolean loadIx = ix.kind == Kind.M && ix.size != 8;
         boolean baseReg = base.kind == Kind.T || loadBase;
@@ -1027,7 +1027,7 @@ public class RegisterFormPass implements OptimizationPass {
      * LOOKUP_DYN n / LOOKUP_DYN_LHS n -- element address = pointer + 16 + index*n (the dynarray header is len, cap). The LHS form
      * leaves that address; the value form also loads n bytes (n = 1, 2, 4, 8) straight away, zero-extended.
      */
-    private int fuseLookupDyn(State st, HOBStatement line, HOBProgram all, int idx) {
+    private int fuseLookupDyn(State st, BytecodeStatement line, BytecodeProgram all, int idx) {
         if (!is(line, 2)) {
             return 0;
         }
@@ -1039,8 +1039,8 @@ public class RegisterFormPass implements OptimizationPass {
         if (!lhs && idx + 2 < all.size()) {
             // "LOOKUP_DYN n ; PUSH_FIELDNAME off w ; DOT w" -- one scalar field of an element: address = pointer + 16 + index*n + off, then
             // load w bytes. (Without this the whole n-byte element was pushed and the field cut out of the pushed block.)
-            HOBStatement fl = all.get(idx + 1);
-            HOBStatement dl = all.get(idx + 2);
+            BytecodeStatement fl = all.get(idx + 1);
+            BytecodeStatement dl = all.get(idx + 2);
             if (is(fl, 3) && fl.get(0).text.equals("PUSH_FIELDNAME") && is(dl, 2) && dl.get(0).text.equals("DOT")) {
                 Long off = parseIntLiteral(fl.get(1).text);
                 int fw = parseSize(fl.get(2).text);
@@ -1067,7 +1067,7 @@ public class RegisterFormPass implements OptimizationPass {
             }
             // the backend tags the pushed element for a following LOOKUP_ARRAY / DOT: leave those shapes alone
             if (idx + 1 < all.size()) {
-                HOBStatement nx = all.get(idx + 1);
+                BytecodeStatement nx = all.get(idx + 1);
                 String nm = nx.isEmpty() ? "" : nx.get(0).text;
                 if (nm.startsWith("LOOKUP") || nm.startsWith("DOT")) {
                     return 0;
@@ -1099,7 +1099,7 @@ public class RegisterFormPass implements OptimizationPass {
      * src bytes is already zero-extended (R_LD does it), so only its recorded width changes; a computed temp (a narrow ADD keeps carry
      * bits above its width) is masked (src 1 or 2) or left to the stack form (src 4: the mask does not fit an immediate).
      */
-    private int fuseZext(State st, HOBStatement line, HOBProgram all, int idx) {
+    private int fuseZext(State st, BytecodeStatement line, BytecodeProgram all, int idx) {
         if (!is(line, 3)) {
             return 0;
         }
@@ -1149,7 +1149,7 @@ public class RegisterFormPass implements OptimizationPass {
      * TRUNC src dst -- keep the low `dst` bytes, zero-filled (a wrap:<T> or a proven narrowing). A frame value of at least dst bytes
      * is just read narrower (little endian: same address); a temp is masked in place (dst 1 or 2: the mask is an immediate).
      */
-    private int fuseTrunc(State st, HOBStatement line, HOBProgram all, int idx) {
+    private int fuseTrunc(State st, BytecodeStatement line, BytecodeProgram all, int idx) {
         if (!is(line, 3)) {
             return 0;
         }
@@ -1179,7 +1179,7 @@ public class RegisterFormPass implements OptimizationPass {
     }
 
     /** PUSH_FIELDNAME off size -- the field offset, an immediate that the DOT_LHS right after it adds to a base address. */
-    private int fuseFieldName(State st, HOBStatement line, HOBProgram all, int idx) {
+    private int fuseFieldName(State st, BytecodeStatement line, BytecodeProgram all, int idx) {
         if (!is(line, 3)) {
             return 0;
         }
@@ -1197,7 +1197,7 @@ public class RegisterFormPass implements OptimizationPass {
         return 1;
     }
 
-    private int fuseDotLhs(State st, HOBStatement line, HOBProgram all, int idx) {
+    private int fuseDotLhs(State st, BytecodeStatement line, BytecodeProgram all, int idx) {
         if (!is(line, 2)) {
             return 0;
         }
@@ -1233,7 +1233,7 @@ public class RegisterFormPass implements OptimizationPass {
 
     // ---- stores ---------------------------------------------------------
 
-    private int fuseAssign(State st, HOBStatement line, HOBProgram all, int idx) {
+    private int fuseAssign(State st, BytecodeStatement line, BytecodeProgram all, int idx) {
         if (!is(line, 4) || !line.get(0).text.equals("ASSIGN")) {
             return 0;
         }
@@ -1347,7 +1347,7 @@ public class RegisterFormPass implements OptimizationPass {
         if (st.out.isEmpty() || st.out.size() <= st.cpOut) {
             return false;
         }
-        HOBStatement last = st.out.get(st.out.size() - 1);
+        BytecodeStatement last = st.out.get(st.out.size() - 1);
         String vt = "%t" + val.temp;
         if (last.size() == 6 && last.get(0).text.equals("R_BIN") && last.get(2).text.equals("8") && last.get(3).text.equals(vt)) {
             String op = last.get(1).text;
@@ -1385,7 +1385,7 @@ public class RegisterFormPass implements OptimizationPass {
     // ---- argument registers and returns ---------------------------------
 
     /** POP ARGn size / POP FARGn size -- straight into the argument register; anything else (POP $slot ...) is left alone. */
-    private int fusePop(State st, HOBStatement line, HOBProgram all, int idx) {
+    private int fusePop(State st, BytecodeStatement line, BytecodeProgram all, int idx) {
         if (!is(line, 3)) {
             return 0;
         }
@@ -1433,7 +1433,7 @@ public class RegisterFormPass implements OptimizationPass {
      * POP $slot n with a remembered value on top: the same store as "ADDR $slot; value; ASSIGN n n n", so it goes through
      * fuseAssign with a transient address entry placed under the value (removed again if fuseAssign declines).
      */
-    private int fusePopToSlot(State st, HOBStatement line, HOBProgram all, int idx, String dest, long slot) {
+    private int fusePopToSlot(State st, BytecodeStatement line, BytecodeProgram all, int idx, String dest, long slot) {
         int n = parseSize(line.get(2).text);
         int sz = st.stack.size();
         if (!isWidth(n) || sz < 1 || !isValue(st.stack.get(sz - 1))) {
@@ -1445,12 +1445,12 @@ public class RegisterFormPass implements OptimizationPass {
         a.text = dest;
         a.off = slot;
         st.stack.add(sz - 1, a);
-        HOBToken h = line.get(0);
+        BytecodeToken h = line.get(0);
         String w = String.valueOf(n);
-        HOBStatement assign = new HOBStatement();
-        assign.add(new HOBToken("ASSIGN", h.file, h.line, h.kind));
+        BytecodeStatement assign = new BytecodeStatement();
+        assign.add(new BytecodeToken("ASSIGN", h.file, h.line, h.kind));
         for (int k = 0; k < 3; k++) {
-            assign.add(new HOBToken(w, h.file, h.line, h.kind));
+            assign.add(new BytecodeToken(w, h.file, h.line, h.kind));
         }
         int r = fuseAssign(st, assign, all, idx);
         if (r == 0) {
@@ -1460,7 +1460,7 @@ public class RegisterFormPass implements OptimizationPass {
     }
 
     /** RET size / RET_FLOAT size with exactly one remembered value: move it into rax / xmm0 and leave. */
-    private int fuseRet(State st, HOBStatement line, HOBProgram all, int idx) {
+    private int fuseRet(State st, BytecodeStatement line, BytecodeProgram all, int idx) {
         if (!is(line, 2)) {
             return 0;
         }
@@ -1495,11 +1495,11 @@ public class RegisterFormPass implements OptimizationPass {
 
     // ---- conditional branches ---------------------------------------------
 
-    private int fuseCmpJmp(State st, HOBStatement line, HOBProgram all, int idx) {
+    private int fuseCmpJmp(State st, BytecodeStatement line, BytecodeProgram all, int idx) {
         if (!is(line, 1) || idx + 1 >= all.size()) {
             return 0;
         }
-        HOBStatement next = all.get(idx + 1);
+        BytecodeStatement next = all.get(idx + 1);
         if (next.size() != 2 || !next.get(0).text.equals("JMP")) {
             return 0;
         }

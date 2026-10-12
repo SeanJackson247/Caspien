@@ -1,8 +1,8 @@
 package caspien.optimizer;
 
-import caspien.hob.HOBProgram;
-import caspien.hob.HOBStatement;
-import caspien.hob.HOBToken;
+import caspien.bytecode.BytecodeProgram;
+import caspien.bytecode.BytecodeStatement;
+import caspien.bytecode.BytecodeToken;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -35,7 +35,7 @@ final class VarAnalysis {
     }
 
     /** [start, end] line indices (FUNC_START .. FUNC_END inclusive) of every function. */
-    static List<int[]> functions(HOBProgram L) {
+    static List<int[]> functions(BytecodeProgram L) {
         List<int[]> out = new ArrayList<>();
         int start = -1;
         for (int i = 0; i < L.size(); i++) {
@@ -50,12 +50,12 @@ final class VarAnalysis {
         return out;
     }
 
-    static String mnemonic(HOBStatement line) {
-        if (line.isEmpty() || line.get(0).kind != HOBToken.Kind.CODE) return null;
+    static String mnemonic(BytecodeStatement line) {
+        if (line.isEmpty() || line.get(0).kind != BytecodeToken.Kind.CODE) return null;
         return line.get(0).text;
     }
 
-    static boolean hasMnemonic(HOBProgram L, int s, int e, String m) {
+    static boolean hasMnemonic(BytecodeProgram L, int s, int e, String m) {
         for (int i = s; i <= e; i++) {
             if (m.equals(mnemonic(L.get(i)))) return true;
         }
@@ -63,11 +63,11 @@ final class VarAnalysis {
     }
 
     /** A label definition line is one token "@name:". */
-    static Map<String, Integer> labels(HOBProgram L, int s, int e) {
+    static Map<String, Integer> labels(BytecodeProgram L, int s, int e) {
         Map<String, Integer> m = new HashMap<>();
         for (int i = s; i <= e; i++) {
-            HOBStatement l = L.get(i);
-            if (l.size() == 1 && l.get(0).kind == HOBToken.Kind.CODE && l.get(0).text.startsWith("@") && l.get(0).text.endsWith(":")) {
+            BytecodeStatement l = L.get(i);
+            if (l.size() == 1 && l.get(0).kind == BytecodeToken.Kind.CODE && l.get(0).text.startsWith("@") && l.get(0).text.endsWith(":")) {
                 String t = l.get(0).text;
                 m.put(t.substring(0, t.length() - 1), i);
             }
@@ -76,10 +76,10 @@ final class VarAnalysis {
     }
 
     /** Every "JMP @label" as {lineIndex, targetLabelLineIndex}; a target outside the function is ignored. */
-    static List<int[]> jumps(HOBProgram L, int s, int e, Map<String, Integer> labels) {
+    static List<int[]> jumps(BytecodeProgram L, int s, int e, Map<String, Integer> labels) {
         List<int[]> out = new ArrayList<>();
         for (int i = s; i <= e; i++) {
-            HOBStatement l = L.get(i);
+            BytecodeStatement l = L.get(i);
             if (l.size() == 2 && "JMP".equals(mnemonic(l))) {
                 Integer t = labels.get(l.get(1).text);
                 if (t != null) out.add(new int[] {i, t});
@@ -103,10 +103,10 @@ final class VarAnalysis {
     }
 
     /** The scan described in the class comment, for the function spanning lines s..e. */
-    static Map<String, Var> scan(HOBProgram L, int s, int e) {
+    static Map<String, Var> scan(BytecodeProgram L, int s, int e) {
         Map<String, Var> vars = new LinkedHashMap<>();
         for (int i = s; i <= e; i++) {
-            HOBStatement l = L.get(i);
+            BytecodeStatement l = L.get(i);
             if (l.size() == 3 && "ALLOC".equals(mnemonic(l)) && !l.get(1).text.startsWith("$") && ConstantFoldingPass.base(l.get(2).text) != null) {
                 Var v = vars.computeIfAbsent(l.get(1).text, k -> new Var());
                 v.name = l.get(1).text;
@@ -119,10 +119,10 @@ final class VarAnalysis {
             if (v.allocs != 1) v.bad = true;
         }
         for (int i = s; i <= e; i++) {
-            HOBStatement l = L.get(i);
+            BytecodeStatement l = L.get(i);
             for (int t = 1; t < l.size(); t++) {
-                HOBToken tok = l.get(t);
-                if (tok.kind != HOBToken.Kind.CODE) continue;
+                BytecodeToken tok = l.get(t);
+                if (tok.kind != BytecodeToken.Kind.CODE) continue;
                 String txt = tok.text;
                 Var v = vars.get(txt);
                 if (v == null) {
@@ -145,7 +145,7 @@ final class VarAnalysis {
     }
 
     /** "ADDR x T" at i, "PUSH literal T2" at i+1 (same base type as x), "ASSIGN ..." at i+2. */
-    private static boolean isConstAssign(HOBProgram L, int i, Var v) {
+    private static boolean isConstAssign(BytecodeProgram L, int i, Var v) {
         ConstantFoldingPass.Lit lit = ConstantFoldingPass.lit(L.get(i + 1));
         if (lit == null) return false;
         String vb = ConstantFoldingPass.base(v.type);
@@ -154,10 +154,10 @@ final class VarAnalysis {
         return "ASSIGN".equals(mnemonic(L.get(i + 2)));
     }
 
-    static HOBStatement withToken(HOBStatement line, int idx, String text) {
-        HOBStatement out = new HOBStatement(line);
-        HOBToken o = line.get(idx);
-        out.set(idx, new HOBToken(text, o.file, o.line, o.kind));
+    static BytecodeStatement withToken(BytecodeStatement line, int idx, String text) {
+        BytecodeStatement out = new BytecodeStatement(line);
+        BytecodeToken o = line.get(idx);
+        out.set(idx, new BytecodeToken(text, o.file, o.line, o.kind));
         return out;
     }
 }

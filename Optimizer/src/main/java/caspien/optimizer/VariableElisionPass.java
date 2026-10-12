@@ -1,8 +1,8 @@
 package caspien.optimizer;
 
-import caspien.hob.HOBProgram;
-import caspien.hob.HOBStatement;
-import caspien.hob.HOBToken;
+import caspien.bytecode.BytecodeProgram;
+import caspien.bytecode.BytecodeStatement;
+import caspien.bytecode.BytecodeToken;
 
 import java.util.HashMap;
 import java.util.HashSet;
@@ -48,7 +48,7 @@ public class VariableElisionPass implements OptimizationPass {
     }
 
     @Override
-    public PassResult run(HOBProgram lines) {
+    public PassResult run(BytecodeProgram lines) {
         if (!enabled) {
             return new PassResult(lines, false);
         }
@@ -88,11 +88,11 @@ public class VariableElisionPass implements OptimizationPass {
         if (remove.isEmpty()) {
             return new PassResult(lines, false);
         }
-        HOBProgram out = new HOBProgram(lines.size());
+        BytecodeProgram out = new BytecodeProgram(lines.size());
         for (int i = 0; i < lines.size(); i++) {
             if (remove.contains(i)) continue;
             String lit = replaceRead.get(i);
-            HOBStatement row = lit == null ? lines.get(i) : VarAnalysis.withToken(lines.get(i), 1, lit);
+            BytecodeStatement row = lit == null ? lines.get(i) : VarAnalysis.withToken(lines.get(i), 1, lit);
             Map.Entry<Integer, Object[]> fe = boundLits.floorEntry(i);
             if (fe != null && i <= (Integer) fe.getValue()[0]) {
                 @SuppressWarnings("unchecked")
@@ -109,8 +109,8 @@ public class VariableElisionPass implements OptimizationPass {
      * dangling, and LoopUnrollingPass (which reads literal trip counts only from this text) could not use the known bound. Rewrites
      * such bounds to the literal: {@code imut_range(0,4)}. Every token spelling the type is rewritten the same way, so they stay equal.
      */
-    private static HOBStatement rewriteRangeTypes(HOBStatement row, Map<String, String> lits) {
-        HOBStatement res = row;
+    private static BytecodeStatement rewriteRangeTypes(BytecodeStatement row, Map<String, String> lits) {
+        BytecodeStatement res = row;
         for (int k = 0; k < row.size(); k++) {
             String s = row.get(k).text;
             int open = s.indexOf("range(");
@@ -121,9 +121,9 @@ public class VariableElisionPass implements OptimizationPass {
             String lo = boundText(inner.substring(0, comma), lits), hi = boundText(inner.substring(comma + 1), lits);
             String ns = s.substring(0, open + 6) + lo + "," + hi + ")";
             if (!ns.equals(s)) {
-                if (res == row) res = new HOBStatement(row);
-                HOBToken o = row.get(k);
-                res.set(k, new HOBToken(ns, o.file, o.line, o.kind));
+                if (res == row) res = new BytecodeStatement(row);
+                BytecodeToken o = row.get(k);
+                res.set(k, new BytecodeToken(ns, o.file, o.line, o.kind));
             }
         }
         return res;

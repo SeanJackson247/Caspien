@@ -1,8 +1,8 @@
 package caspien.optimizer;
 
-import caspien.hob.HOBProgram;
-import caspien.hob.HOBStatement;
-import caspien.hob.HOBToken;
+import caspien.bytecode.BytecodeProgram;
+import caspien.bytecode.BytecodeStatement;
+import caspien.bytecode.BytecodeToken;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -69,9 +69,9 @@ public class StructMemberReorderingPass implements OptimizationPass {
         final long padBytes;
         final String name;
         final String type;
-        final HOBStatement line;   // the original declaration line
+        final BytecodeStatement line;   // the original declaration line
 
-        Entry(boolean pad, long padBytes, String name, String type, HOBStatement line) {
+        Entry(boolean pad, long padBytes, String name, String type, BytecodeStatement line) {
             this.pad = pad;
             this.padBytes = padBytes;
             this.name = name;
@@ -84,7 +84,7 @@ public class StructMemberReorderingPass implements OptimizationPass {
         String name;
         int start;                       // index of STRUCT_START
         int end;                         // index of STRUCT_END
-        HOBProgram head = new HOBProgram();   // STRUCT_START, STRUCT_DECORATE..., the ___type member
+        BytecodeProgram head = new BytecodeProgram();   // STRUCT_START, STRUCT_DECORATE..., the ___type member
         List<Entry> entries = new ArrayList<>();              // everything after ___type, in order
         boolean hasType;
         boolean typeFirst;
@@ -99,19 +99,19 @@ public class StructMemberReorderingPass implements OptimizationPass {
         int start;
         int end;                         // exclusive
         Decl decl;
-        Map<String, HOBProgram> units = new HashMap<>();   // member name -> its lines
+        Map<String, BytecodeProgram> units = new HashMap<>();   // member name -> its lines
     }
 
     // ------------------------------------------------------------- helpers
 
     private final Set<String> pinnedEver = new HashSet<>();
 
-    private static boolean isMn(HOBStatement l, String m) {
-        return !l.isEmpty() && l.get(0).kind == HOBToken.Kind.CODE && l.get(0).text.equals(m);
+    private static boolean isMn(BytecodeStatement l, String m) {
+        return !l.isEmpty() && l.get(0).kind == BytecodeToken.Kind.CODE && l.get(0).text.equals(m);
     }
 
-    private static HOBToken tok(HOBToken near, String text) {
-        return new HOBToken(text, near.file, near.line, HOBToken.Kind.CODE);
+    private static BytecodeToken tok(BytecodeToken near, String text) {
+        return new BytecodeToken(text, near.file, near.line, BytecodeToken.Kind.CODE);
     }
 
     private static String stripMut(String t) {
@@ -147,8 +147,8 @@ public class StructMemberReorderingPass implements OptimizationPass {
             "NEG", "NOT", "BITS_NOT", "TRUNC", "SEXT", "ZEXT", "FCONV", "NEG_FLOAT"));
 
     /** Stack effect of one member-expression line, or Integer.MIN_VALUE when the line is not allowed in one. */
-    private static int effect(HOBStatement l) {
-        if (l.isEmpty() || l.get(0).kind != HOBToken.Kind.CODE) {
+    private static int effect(BytecodeStatement l) {
+        if (l.isEmpty() || l.get(0).kind != BytecodeToken.Kind.CODE) {
             return Integer.MIN_VALUE;
         }
         String m = l.get(0).text;
@@ -164,27 +164,27 @@ public class StructMemberReorderingPass implements OptimizationPass {
         return Integer.MIN_VALUE;
     }
 
-    private static String resultType(HOBStatement l) {
+    private static String resultType(BytecodeStatement l) {
         return l.get(l.size() - 1).text;
     }
 
     // ------------------------------------------------------------------ run
 
     @Override
-    public PassResult run(HOBProgram lines) {
+    public PassResult run(BytecodeProgram lines) {
         // STRUCT_PIN lines: read, then always removed.
         Set<String> pinned = pinnedEver; // the pass instance lives across outer-loop rounds; the lines are stripped in round one, the pins must outlive them
         boolean stripped = false;
-        HOBProgram work = lines;
-        for (HOBStatement l : lines) {
+        BytecodeProgram work = lines;
+        for (BytecodeStatement l : lines) {
             if (isMn(l, "STRUCT_PIN")) {
                 stripped = true;
                 break;
             }
         }
         if (stripped) {
-            work = new HOBProgram(lines.size());
-            for (HOBStatement l : lines) {
+            work = new BytecodeProgram(lines.size());
+            for (BytecodeStatement l : lines) {
                 if (isMn(l, "STRUCT_PIN")) {
                     if (l.size() >= 2) {
                         pinned.add(l.get(1).text);
@@ -201,7 +201,7 @@ public class StructMemberReorderingPass implements OptimizationPass {
         return new PassResult(r.lines, r.changed || stripped);
     }
 
-    private PassResult reorder(HOBProgram L, Set<String> pinned) {
+    private PassResult reorder(BytecodeProgram L, Set<String> pinned) {
         Map<String, Decl> decls = readDecls(L);
         if (decls.isEmpty()) {
             return new PassResult(L, false);
@@ -282,15 +282,15 @@ public class StructMemberReorderingPass implements OptimizationPass {
                 declAt.put(d.start, d);
             }
         }
-        HOBProgram out = new HOBProgram(L.size());
+        BytecodeProgram out = new BytecodeProgram(L.size());
         for (int i = 0; i < L.size(); i++) {
             Decl d = declAt.get(i);
             if (d != null) {
                 out.addAll(d.head);
                 for (Entry e : d.newEntries) {
                     if (e.pad) {
-                        HOBToken near = d.head.get(0).get(0);
-                        HOBStatement pl = new HOBStatement();
+                        BytecodeToken near = d.head.get(0).get(0);
+                        BytecodeStatement pl = new BytecodeStatement();
                         pl.add(tok(near, "STRUCT_PADDING"));
                         pl.add(tok(near, Long.toString(e.padBytes)));
                         out.add(pl);
@@ -307,7 +307,7 @@ public class StructMemberReorderingPass implements OptimizationPass {
                 out.add(L.get(i));   // the class id push
                 for (Entry e : s.decl.newEntries) {
                     if (e.pad) {
-                        HOBStatement pl = new HOBStatement();
+                        BytecodeStatement pl = new BytecodeStatement();
                         pl.add(tok(L.get(i).get(0), "STACK_LOCK"));
                         pl.add(tok(L.get(i).get(0), Long.toString(e.padBytes)));
                         out.add(pl);
@@ -325,11 +325,11 @@ public class StructMemberReorderingPass implements OptimizationPass {
 
     // ---------------------------------------------------------- declarations
 
-    private static Map<String, Decl> readDecls(HOBProgram L) {
+    private static Map<String, Decl> readDecls(BytecodeProgram L) {
         Map<String, Decl> out = new LinkedHashMap<>();
         Decl cur = null;
         for (int i = 0; i < L.size(); i++) {
-            HOBStatement l = L.get(i);
+            BytecodeStatement l = L.get(i);
             if (isMn(l, "STRUCT_START") && l.size() == 2) {
                 cur = new Decl();
                 cur.name = l.get(1).text;
@@ -378,8 +378,8 @@ public class StructMemberReorderingPass implements OptimizationPass {
     }
 
     /** Class id of each struct, from the flat "Class" enum. */
-    private static void readClassIds(HOBProgram L, Map<String, Decl> decls) {
-        for (HOBStatement l : L) {
+    private static void readClassIds(BytecodeProgram L, Map<String, Decl> decls) {
+        for (BytecodeStatement l : L) {
             if (isMn(l, "ENUM") && l.size() >= 3 && l.get(1).text.equals("Class")) {
                 for (int i = 2; i + 1 < l.size(); i += 2) {
                     Decl d = decls.get(l.get(i).text);
@@ -427,7 +427,7 @@ public class StructMemberReorderingPass implements OptimizationPass {
         return namesStruct(text, s);
     }
 
-    private static void blockByUses(HOBProgram L, Map<String, Decl> decls) {
+    private static void blockByUses(BytecodeProgram L, Map<String, Decl> decls) {
         // struct used as a member of another struct (by value or array)
         for (Decl d : decls.values()) {
             for (Entry e : d.members) {
@@ -449,7 +449,7 @@ public class StructMemberReorderingPass implements OptimizationPass {
         // functions that declare a hidden destination pointer
         Set<String> rvo = new HashSet<>();
         String fn = null;
-        for (HOBStatement l : L) {
+        for (BytecodeStatement l : L) {
             if (isMn(l, "FUNC_START") && l.size() >= 2) {
                 fn = l.get(1).text;
             } else if (isMn(l, "ARG") && l.size() == 3 && l.get(1).text.equals("$ret_dest") && fn != null) {
@@ -457,8 +457,8 @@ public class StructMemberReorderingPass implements OptimizationPass {
             }
         }
         for (int i = 0; i < L.size(); i++) {
-            HOBStatement l = L.get(i);
-            if (l.isEmpty() || l.get(0).kind != HOBToken.Kind.CODE) {
+            BytecodeStatement l = L.get(i);
+            if (l.isEmpty() || l.get(0).kind != BytecodeToken.Kind.CODE) {
                 continue;
             }
             String m = l.get(0).text;
@@ -495,7 +495,7 @@ public class StructMemberReorderingPass implements OptimizationPass {
                 } else if ((m.equals("ADDR_OF") || (m.equals("POP") && l.size() >= 2 && l.get(1).text.equals("ARG0")))) {
                     // the address handed to a struct-returning callee: a CALL of one before the bracket closes
                     for (int j = i + 1; j < L.size() && j < i + 12; j++) {
-                        HOBStatement n = L.get(j);
+                        BytecodeStatement n = L.get(j);
                         if (isMn(n, "CC_END")) {
                             break;
                         }
@@ -512,7 +512,7 @@ public class StructMemberReorderingPass implements OptimizationPass {
         }
     }
 
-    private static boolean lineNames(HOBStatement l, String s) {
+    private static boolean lineNames(BytecodeStatement l, String s) {
         for (int k = 1; k < l.size(); k++) {
             if (namesStruct(l.get(k).text, s)) {
                 return true;
@@ -521,7 +521,7 @@ public class StructMemberReorderingPass implements OptimizationPass {
         return false;
     }
 
-    private static boolean lineHasArrayOf(HOBStatement l, String s) {
+    private static boolean lineHasArrayOf(BytecodeStatement l, String s) {
         for (int k = 1; k < l.size(); k++) {
             String t = l.get(k).text;
             if (t.indexOf('[') > 0 && namesStruct(t, s)) {
@@ -533,7 +533,7 @@ public class StructMemberReorderingPass implements OptimizationPass {
 
     // ------------------------------------------------------ construction sites
 
-    private static Decl classIdPush(HOBStatement l, Map<Long, Decl> byId) {
+    private static Decl classIdPush(BytecodeStatement l, Map<Long, Decl> byId) {
         if (isMn(l, "PUSH") && l.size() == 3 && l.get(2).text.equals("imut_u64")) {
             try {
                 return byId.get(Long.parseLong(l.get(1).text));
@@ -546,21 +546,21 @@ public class StructMemberReorderingPass implements OptimizationPass {
 
     private static final int MAX_UNIT = 64;
 
-    private Site parseSite(HOBProgram L, int i, Decl d, Map<Long, Decl> byId) {
+    private Site parseSite(BytecodeProgram L, int i, Decl d, Map<Long, Decl> byId) {
         List<Entry> order = d.entries;
         List<Site> found = new ArrayList<>();
         walk(L, i + 1, order, 0, 0, new ArrayList<>(), d, byId, i, found);
         return found.size() == 1 ? found.get(0) : null;
     }
 
-    private void walk(HOBProgram L, int j, List<Entry> order, int idx, int membersDone,
-            List<HOBProgram> acc, Decl d, Map<Long, Decl> byId, int start, List<Site> found) {
+    private void walk(BytecodeProgram L, int j, List<Entry> order, int idx, int membersDone,
+            List<BytecodeProgram> acc, Decl d, Map<Long, Decl> byId, int start, List<Site> found) {
         if (found.size() > 1) {
             return;
         }
         if (idx == order.size()) {
             if (j < L.size()) {
-                HOBStatement t = L.get(j);
+                BytecodeStatement t = L.get(j);
                 if (isMn(t, "ASSIGN") || isMn(t, "NEW") || classIdPush(t, byId) != null) {
                     Site s = new Site();
                     s.start = start;
@@ -586,9 +586,9 @@ public class StructMemberReorderingPass implements OptimizationPass {
             return;
         }
         int depth = membersDone;
-        HOBProgram unit = new HOBProgram();
+        BytecodeProgram unit = new BytecodeProgram();
         for (int p = j; p < L.size() && unit.size() < MAX_UNIT; p++) {
-            HOBStatement l = L.get(p);
+            BytecodeStatement l = L.get(p);
             int ef = effect(l);
             if (ef == Integer.MIN_VALUE) {
                 return;
@@ -602,8 +602,8 @@ public class StructMemberReorderingPass implements OptimizationPass {
             }
             unit.add(l);
             if (depth == membersDone + 1 && typeMatches(resultType(l), e.type)) {
-                List<HOBProgram> next = new ArrayList<>(acc);
-                next.add(new HOBProgram(unit));
+                List<BytecodeProgram> next = new ArrayList<>(acc);
+                next.add(new BytecodeProgram(unit));
                 walk(L, p + 1, order, idx + 1, membersDone + 1, next, d, byId, start, found);
                 if (found.size() > 1) {
                     return;

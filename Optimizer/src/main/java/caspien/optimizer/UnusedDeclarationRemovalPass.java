@@ -1,8 +1,8 @@
 package caspien.optimizer;
 
-import caspien.hob.HOBProgram;
-import caspien.hob.HOBStatement;
-import caspien.hob.HOBToken;
+import caspien.bytecode.BytecodeProgram;
+import caspien.bytecode.BytecodeStatement;
+import caspien.bytecode.BytecodeToken;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -50,12 +50,12 @@ public class UnusedDeclarationRemovalPass implements OptimizationPass {
     }
 
     @Override
-    public PassResult run(HOBProgram lines) {
+    public PassResult run(BytecodeProgram lines) {
         if (!enabled) {
             return new PassResult(lines, false);
         }
         boolean hasMain = false;
-        for (HOBStatement l : lines) {
+        for (BytecodeStatement l : lines) {
             String m = VarAnalysis.mnemonic(l);
             if ("ASM_START".equals(m)) return new PassResult(lines, false);
             if ("FUNC_START".equals(m) && l.size() == 2 && l.get(1).text.equals("main")) hasMain = true;
@@ -68,7 +68,7 @@ public class UnusedDeclarationRemovalPass implements OptimizationPass {
         Map<String, Integer> staticBaseCount = new HashMap<>();
         Set<String> staticNames = new HashSet<>();
         for (int i = 0; i < lines.size(); i++) {
-            HOBStatement l = lines.get(i);
+            BytecodeStatement l = lines.get(i);
             String m = VarAnalysis.mnemonic(l);
             if (m == null || l.size() < 2) continue;
             String n = l.get(1).text;
@@ -95,14 +95,14 @@ public class UnusedDeclarationRemovalPass implements OptimizationPass {
         // every name mentioned by a CODE token on a line that does not itself declare it
         Set<String> used = new HashSet<>();
         for (int i = 0; i < lines.size(); i++) {
-            HOBStatement l = lines.get(i);
+            BytecodeStatement l = lines.get(i);
             String m = VarAnalysis.mnemonic(l);
             String own = null;
             if (m != null && l.size() >= 2 && (m.equals("EXTERN") || m.equals("STRING"))) own = m + ":" + l.get(1).text;
             else if (m != null && l.size() >= 2 && (m.equals("GLOBAL") || m.equals("ALLOC_STATIC"))) own = m + ":" + base(l.get(1).text);
             for (int k = 0; k < l.size(); k++) {
-                HOBToken t = l.get(k);
-                if (t.kind != HOBToken.Kind.CODE) continue;
+                BytecodeToken t = l.get(k);
+                if (t.kind != BytecodeToken.Kind.CODE) continue;
                 if (k == 0 && own != null) continue;   // the mnemonic itself
                 String b = base(t.text);
                 for (String key : new String[] {"EXTERN:" + t.text, "STRING:" + t.text, "GLOBAL:" + b, "ALLOC_STATIC:" + b}) {
@@ -124,7 +124,7 @@ public class UnusedDeclarationRemovalPass implements OptimizationPass {
         if (remove.isEmpty()) {
             return new PassResult(lines, false);
         }
-        HOBProgram out = new HOBProgram(lines.size());
+        BytecodeProgram out = new BytecodeProgram(lines.size());
         for (int i = 0; i < lines.size(); i++) {
             if (!remove.contains(i)) out.add(lines.get(i));
         }

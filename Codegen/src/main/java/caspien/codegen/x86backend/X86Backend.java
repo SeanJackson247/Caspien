@@ -1,7 +1,7 @@
 package caspien.codegen.x86backend;
 
-import caspien.hob.HOBStatement;
-import caspien.hob.HOBToken;
+import caspien.bytecode.BytecodeStatement;
+import caspien.bytecode.BytecodeToken;
 import caspien.codegen.CodegenConfig;
 import caspien.codegen.CodegenException;
 import java.util.ArrayList;
@@ -81,7 +81,7 @@ public class X86Backend extends X86RegForm {
         super(target, bmi2);
     }
 
-    public String generate(List<HOBStatement> lines) {
+    public String generate(List<BytecodeStatement> lines) {
         out.setLength(0);
         globalsSizeInit.clear();
         globalsHasInit.clear();
@@ -101,7 +101,7 @@ public class X86Backend extends X86RegForm {
         argTrackSuspendDepth = 0;
         for (int lineIndex = 0; lineIndex < lines.size(); lineIndex++) {
             currentLineIndex = lineIndex;
-            HOBStatement line = lines.get(lineIndex);
+            BytecodeStatement line = lines.get(lineIndex);
             emitLine(line);
         }
         emitFloatPool();
@@ -398,7 +398,7 @@ public class X86Backend extends X86RegForm {
      * "R_CMOV OP n a b %vK X [Y]" -- the select made by the LowerOrderGenerator's ConditionalMovePass: %vK = (a OP b) ? X : Y (Y absent = %vK keeps its
      * value). X and Y are a register or an immediate (already cut to the variable's width). One compare, then `mov Y` (flags untouched) and `cmovCC X`.
      */
-    void rfCmov(HOBStatement line) {
+    void rfCmov(BytecodeStatement line) {
         String op = line.get(1).text;
         int size = (int) Long.parseLong(line.get(2).text);
         String a = line.get(3).text, b = line.get(4).text, v = line.get(5).text, x = line.get(6).text;
