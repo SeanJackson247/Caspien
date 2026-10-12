@@ -10,42 +10,41 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/** Emission helpers: output buffering, stack tracking, construction runs, sized loads/stores, block copies, shifts (see X86Backend for how the parts fit together). */
-abstract class X86Emit extends X86Core {
-    X86Emit(CodegenConfig.Target target, boolean bmi2) {
-        super(target, bmi2);
-    }
+/** Emission helpers: output buffering, stack tracking, construction runs, sized loads/stores, block copies, shifts (see X86Generator for how the parts fit together). */
+final class X86Emit {
+    private final X86Backend hub;
+    private final X86Core core;
 
-    // methods defined in later parts of the chain
-    abstract void emitMallocCall(long size);
-    abstract String newInternalLabel(String prefix);
-    abstract String rfMemOperand(String baseReg);
+    X86Emit(X86Backend hub) {
+        this.hub = hub;
+        this.core = hub.core;
+    }
 
     /** True when the bytecode line `offset` lines after the current one is a bare "ATOMIC_SWAP" -- used to spot the "PUSH addressOperand / PUSH newValue / ATOMIC_SWAP" shape genuinely seen in this pipeline's own ghost-table lock (see PUSH's global-name fallback). */
     boolean lineAtOffsetIsAtomicSwap(int offset) {
-        int idx = currentLineIndex + offset;
-        if (allLines == null || idx < 0 || idx >= allLines.size()) {
+        int idx = core.currentLineIndex + offset;
+        if (core.allLines == null || idx < 0 || idx >= core.allLines.size()) {
             return false;
         }
-        BytecodeStatement l = allLines.get(idx);
+        BytecodeStatement l = core.allLines.get(idx);
         return !l.isEmpty() && l.get(0).text.equals("ATOMIC_SWAP");
     }
 
     void noteArgRegLoaded(String tag) {
-        if (!loadedArgRegsStack.isEmpty() && !loadedArgRegsStack.peek().contains(tag)) {
-            loadedArgRegsStack.peek().add(tag);
+        if (!core.loadedArgRegsStack.isEmpty() && !core.loadedArgRegsStack.peek().contains(tag)) {
+            core.loadedArgRegsStack.peek().add(tag);
         }
     }
 
     /** Current sink for `raw()` -- the innermost open call's own buffer, or `out` directly when no "CC_START"/"CC_END" bracket is currently open. */
     StringBuilder currentSink() {
-        return callBufferStack.isEmpty() ? out : callBufferStack.peek();
+        return core.callBufferStack.isEmpty() ? core.out : core.callBufferStack.peek();
     }
 
     /** Consumes (reads and clears) `pendingVarargsXmmCount`, defaulting to 0 (correct for a wholly non-variadic call, or an already-conservative "no floats" guess if this is somehow reached for a variadic call whose count was never set -- should not happen, but 0 is what this backend always assumed before this field existed at all). */
     int consumeVarargsXmmCount() {
-        int count = pendingVarargsXmmCount < 0 ? 0 : pendingVarargsXmmCount;
-        pendingVarargsXmmCount = -1;
+        int count = core.pendingVarargsXmmCount < 0 ? 0 : core.pendingVarargsXmmCount;
+        core.pendingVarargsXmmCount = -1;
         return count;
     }
 
@@ -79,7 +78,7 @@ abstract class X86Emit extends X86Core {
         long total = 0;
         int idx = endExclusive;
         while (total < targetSize && idx > 0) {
-            BytecodeStatement prev = allLines.get(idx - 1);
+            BytecodeStatement prev = core.allLines.get(idx - 1);
             if (prev.isEmpty()) {
                 return -1;
             }
@@ -124,7 +123,7 @@ abstract class X86Emit extends X86Core {
      * on its own by `precomputeConstructionOffsets`.
      */
     void populateDirectMembers(int start, int endExclusive, long runTotal) {
-        RunEntries entries = collectRunEntries(start, endExclusive);
+        X86Core.RunEntries entries = collectRunEntries(start, endExclusive);
         long before = 0;
         long after = runTotal;
         for (int i = 0; i < entries.sizes.size(); i++) {
@@ -132,7 +131,7 @@ abstract class X86Emit extends X86Core {
             after -= sz;
             int lineIdx = entries.storeLines.get(i);
             if (lineIdx >= 0) {
-                pushStoreOffsetByLine.put(lineIdx, before - after);
+                core.pushStoreOffsetByLine.put(lineIdx, before - after);
             }
             before += sz;
         }
@@ -167,7 +166,7 @@ abstract class X86Emit extends X86Core {
      * and one frame-loaded ("index") entry).
      */
     void storeConstructionOrPlainPush(String regName, int size) {
-        Long constructionOffset = pushStoreOffsetByLine.get(currentLineIndex);
+        Long constructionOffset = core.pushStoreOffsetByLine.get(core.currentLineIndex);
         if (constructionOffset == null) {
             pushReg(regName);
             return;
@@ -175,7 +174,7 @@ abstract class X86Emit extends X86Core {
         raw(("    subq $" + size + ", %rsp"));
         if (constructionOffset == 0) {
             storeSizedToAddr(regName, "rsp", size);
-        } else if (isOddSize(size)) {
+        } else if (X86Core.isOddSize(size)) {
             storeOddSize(regName, "rsp", constructionOffset, size);
         } else {
             raw("    mov" + movSuffix(size) + " %" + sizedReg(regName, size) + ", " + constructionOffset
@@ -207,11 +206,11 @@ abstract class X86Emit extends X86Core {
      * own plain, ordinary, always-8-byte `pushReg` -- never eligible
      * for a store offset of its own).
      */
-    RunEntries collectRunEntries(int start, int endExclusive) {
-        RunEntries entries = new RunEntries();
+    X86Core.RunEntries collectRunEntries(int start, int endExclusive) {
+        X86Core.RunEntries entries = new X86Core.RunEntries();
         int idx = start;
         while (idx < endExclusive) {
-            BytecodeStatement l = allLines.get(idx);
+            BytecodeStatement l = core.allLines.get(idx);
             String m = l.get(0).text;
             if ((m.equals("PUSH") || m.equals("ATOMIC_PUSH")) && l.size() >= 2) {
                 entries.sizes.add(Long.parseLong(l.get(1).text));
@@ -296,10 +295,10 @@ abstract class X86Emit extends X86Core {
             total += c;
         }
         raw("    movq %rsp, %r12"); // r12: the reversed field words on the stack
-        emitMallocCall(size);
+        hub.regForm.emitMallocCall(size);
         raw("    movq %rax, %r14"); // r14: the fresh buffer
         // A failed malloc leaves r14 null: skip every copy into it; the null is pushed and the bytecode's own check throws.
-        String newRepackDone = newInternalLabel("new_done");
+        String newRepackDone = hub.regForm.newInternalLabel("new_done");
         raw("    testq %r14, %r14");
         raw("    jz " + newRepackDone);
         long dst = 0;      // running true offset in the buffer
@@ -485,11 +484,11 @@ abstract class X86Emit extends X86Core {
      * construction" and left on the old, already-correct blind path.
      */
     void precomputeConstructionOffsets() {
-        pushStoreOffsetByLine.clear();
-        constructionScopedAssign.clear();
-        packedNewLines.clear();
-        for (int i = 0; i < allLines.size(); i++) {
-            BytecodeStatement l = allLines.get(i);
+        core.pushStoreOffsetByLine.clear();
+        core.constructionScopedAssign.clear();
+        core.packedNewLines.clear();
+        for (int i = 0; i < core.allLines.size(); i++) {
+            BytecodeStatement l = core.allLines.get(i);
             if (l.isEmpty()) {
                 continue;
             }
@@ -506,23 +505,23 @@ abstract class X86Emit extends X86Core {
                 continue;
             }
             if (isBlockAssign) {
-                RunEntries entries = collectRunEntries(runStart, i);
+                X86Core.RunEntries entries = collectRunEntries(runStart, i);
                 if (entries.sizes.size() <= 1) {
                     continue; // a single PUSH feeding this ASSIGN: an ordinary scalar assign or a whole-block copy, not a construction
                 }
             }
             populateDirectMembers(runStart, i, declaredSize);
             if (isBlockAssign) {
-                constructionScopedAssign.add(i);
+                core.constructionScopedAssign.add(i);
             } else {
-                packedNewLines.add(i);
+                core.packedNewLines.add(i);
             }
         }
     }
 
     /** True for the Windows target (windows_gnu: GNU as + mingw-w64): gates win64 ABI choices (argument registers, 32-byte shadow space, no SysV varargs %al convention). The assembly syntax is AT&T on every target. */
     boolean isWinAbi() {
-        return target == CodegenConfig.Target.WINDOWS_GNU_X64;
+        return core.target == CodegenConfig.Target.WINDOWS_GNU_X64;
     }
 
     // ---- Pass 1: declarations -------------------------------------------------
@@ -546,7 +545,7 @@ abstract class X86Emit extends X86Core {
                 }
             }
             if (mnemonic.equals("FUNC_START") && line.size() >= 2) {
-                declaredFunctionNames.add(line.get(1).text);
+                core.declaredFunctionNames.add(line.get(1).text);
             }
         }
         // Pass 2: real declarations, aliasing dotted fields of a known
@@ -571,12 +570,12 @@ abstract class X86Emit extends X86Core {
                 // A nested member ("b.0.x" of a static array of structs) has an already-aliased direct parent ("b.0"): it lives in the ROOT
                 // global at (parent's offset + running offset inside the parent). Before, only a plain parent was aliased, so the members of
                 // every struct element kept their own stray storage and the array itself was emitted zeroed.
-                if (direct != null && (plainGlobalNames.contains(direct) || globalAliasOffset.containsKey(direct)) && !globalAliasOffset.containsKey(name)) {
-                    boolean nested = globalAliasOffset.containsKey(direct);
-                    String parent = nested ? globalAliasParent.get(direct) : direct;
-                    long offset = (nested ? globalAliasOffset.get(direct) : 0L) + parentRunningOffset.getOrDefault(direct, 0L);
-                    globalAliasOffset.put(name, offset);
-                    globalAliasParent.put(name, parent);
+                if (direct != null && (plainGlobalNames.contains(direct) || core.globalAliasOffset.containsKey(direct)) && !core.globalAliasOffset.containsKey(name)) {
+                    boolean nested = core.globalAliasOffset.containsKey(direct);
+                    String parent = nested ? core.globalAliasParent.get(direct) : direct;
+                    long offset = (nested ? core.globalAliasOffset.get(direct) : 0L) + parentRunningOffset.getOrDefault(direct, 0L);
+                    core.globalAliasOffset.put(name, offset);
+                    core.globalAliasParent.put(name, parent);
                     parentRunningOffset.put(direct, parentRunningOffset.getOrDefault(direct, 0L) + size);
                     if (line.size() >= 4) {
                         // The element's own initial value (a static array
@@ -584,18 +583,18 @@ abstract class X86Emit extends X86Core {
                         // -- kept so the parent's storage can be emitted with
                         // them; before, they were dropped and every static
                         // array started zeroed.
-                        aliasInits.computeIfAbsent(parent, k -> new ArrayList<>())
+                        core.aliasInits.computeIfAbsent(parent, k -> new ArrayList<>())
                                 .add(new long[]{offset, size, initBits(line.get(3).text, size)});
                     }
                     continue;
                 }
                 if (line.size() >= 4) {
                     long init = initBits(line.get(3).text, size);
-                    globalsSizeInit.put(name, new long[]{size, init});
-                    globalsHasInit.put(name, true);
-                } else if (!globalsSizeInit.containsKey(name)) {
-                    globalsSizeInit.put(name, new long[]{size, 0});
-                    globalsHasInit.put(name, false);
+                    core.globalsSizeInit.put(name, new long[]{size, init});
+                    core.globalsHasInit.put(name, true);
+                } else if (!core.globalsSizeInit.containsKey(name)) {
+                    core.globalsSizeInit.put(name, new long[]{size, 0});
+                    core.globalsHasInit.put(name, false);
                 }
             } else if (mnemonic.equals("STRING") && line.size() >= 3) {
                 String id = line.get(1).text;
@@ -605,14 +604,14 @@ abstract class X86Emit extends X86Core {
                 if (text.length() >= 2 && text.startsWith("\"") && text.endsWith("\"")) {
                     text = text.substring(1, text.length() - 1);
                 }
-                stringLiterals.put(id, text);
+                core.stringLiterals.put(id, text);
             }
         }
     }
 
     /** A GLOBAL initialiser's bit pattern for a slot of `size` bytes: null/integer as before, a float literal as its IEEE-754 bits (4 bytes: single, otherwise double) -- previously any float initialiser was silently zero. */
     long initBits(String text, long size) {
-        if (!text.equals("null") && !isInteger(text) && isFloatLiteral(text)) {
+        if (!text.equals("null") && !X86Core.isInteger(text) && X86Core.isFloatLiteral(text)) {
             return size <= 4
                     ? Integer.toUnsignedLong(Float.floatToRawIntBits(Float.parseFloat(text)))
                     : Double.doubleToRawLongBits(Double.parseDouble(text));
@@ -624,7 +623,7 @@ abstract class X86Emit extends X86Core {
         if (text.equals("null")) {
             return 0;
         }
-        if (isInteger(text)) {
+        if (X86Core.isInteger(text)) {
             return Long.parseLong(text);
         }
         // A float initializer, or anything else this first version
@@ -634,16 +633,16 @@ abstract class X86Emit extends X86Core {
     }
 
     void emitDataSections() {
-        if (!globalsSizeInit.isEmpty()) {
+        if (!core.globalsSizeInit.isEmpty()) {
             raw(".data");
-            for (Map.Entry<String, long[]> e : globalsSizeInit.entrySet()) {
+            for (Map.Entry<String, long[]> e : core.globalsSizeInit.entrySet()) {
                 String label = mangleGlobalName(e.getKey());
                 long size = e.getValue()[0];
                 long init = e.getValue()[1];
-                boolean hasInit = globalsHasInit.getOrDefault(e.getKey(), false);
+                boolean hasInit = core.globalsHasInit.getOrDefault(e.getKey(), false);
                 raw((".globl " + label));
                 raw(label + ":");
-                List<long[]> parts = aliasInits.get(e.getKey());
+                List<long[]> parts = core.aliasInits.get(e.getKey());
                 if (parts != null) {
                     // A whole-block global whose elements carry initial
                     // values: lay the bytes out little-endian.
@@ -663,9 +662,9 @@ abstract class X86Emit extends X86Core {
                 }
             }
         }
-        if (!stringLiterals.isEmpty()) {
+        if (!core.stringLiterals.isEmpty()) {
             raw(".section .rodata");
-            for (Map.Entry<String, String> e : stringLiterals.entrySet()) {
+            for (Map.Entry<String, String> e : core.stringLiterals.entrySet()) {
                 raw(e.getKey() + ":");
                 raw(("    .asciz \"" + e.getValue() + "\""));
             }
@@ -693,12 +692,12 @@ abstract class X86Emit extends X86Core {
     }
 
     void emitHeader() {
-        if (target == CodegenConfig.Target.WINDOWS_GNU_X64) {
-            out.append("# Generated by caspien-codegen (target: windows_gnu x86-64, mingw-w64/GNU as)\n");
-            out.append("# GAS AT&T syntax, win64 ABI -- assemble/link with x86_64-w64-mingw32-gcc.\n");
+        if (core.target == CodegenConfig.Target.WINDOWS_GNU_X64) {
+            core.out.append("# Generated by caspien-codegen (target: windows_gnu x86-64, mingw-w64/GNU as)\n");
+            core.out.append("# GAS AT&T syntax, win64 ABI -- assemble/link with x86_64-w64-mingw32-gcc.\n");
         } else {
-            out.append("# Generated by caspien-codegen (target: linux x86-64)\n");
-            out.append("# GAS AT&T syntax -- assemblable/runnable directly with as/ld/gcc.\n");
+            core.out.append("# Generated by caspien-codegen (target: linux x86-64)\n");
+            core.out.append("# GAS AT&T syntax -- assemblable/runnable directly with as/ld/gcc.\n");
         }
     }
 
@@ -706,7 +705,7 @@ abstract class X86Emit extends X86Core {
     }
 
     void comment(String text) {
-        out.append("# ").append(text).append('\n');
+        core.out.append("# ").append(text).append('\n');
     }
 
     /**
@@ -729,7 +728,7 @@ abstract class X86Emit extends X86Core {
     void raw(String text) {
         currentSink().append(text).append('\n');
         trackStackDelta(text);
-        if (strideKeySink != null) {
+        if (core.strideKeySink != null) {
             strideKeyAfter(text);
         }
     }
@@ -738,8 +737,8 @@ abstract class X86Emit extends X86Core {
         String t = text.trim();
         int sp = t.indexOf(' ');
         String op = sp < 0 ? t : t.substring(0, sp);
-        if (t.indexOf('\n') >= 0 || t.endsWith(":") || !STRIDE_KEEP_OPS.contains(op)) {
-            strideKeySink = null;
+        if (t.indexOf('\n') >= 0 || t.endsWith(":") || !X86Core.STRIDE_KEEP_OPS.contains(op)) {
+            core.strideKeySink = null;
             return;
         }
         // destination = the last operand outside parentheses
@@ -757,8 +756,8 @@ abstract class X86Emit extends X86Core {
         if (dest.startsWith("%xmm")) {
             return;
         }
-        if (regAliasOf(dest.substring(1), RF_SCRATCH) || regAliasOf(dest.substring(1), strideKeyIdx)) {
-            strideKeySink = null;
+        if (X86Core.regAliasOf(dest.substring(1), X86Core.RF_SCRATCH) || X86Core.regAliasOf(dest.substring(1), core.strideKeyIdx)) {
+            core.strideKeySink = null;
         }
     }
 
@@ -777,7 +776,7 @@ abstract class X86Emit extends X86Core {
      * across it is exactly zero.
      */
     void trackStackDelta(String rawText) {
-        if (argTrackSuspendDepth > 0 || argTrackDeltaStack.isEmpty()) {
+        if (core.argTrackSuspendDepth > 0 || core.argTrackDeltaStack.isEmpty()) {
             return;
         }
         String t = rawText.trim();
@@ -796,7 +795,7 @@ abstract class X86Emit extends X86Core {
             delta = -Long.parseLong(t.substring("add rsp, ".length()).trim());
         }
         if (delta != 0) {
-            argTrackDeltaStack.push(argTrackDeltaStack.pop() + delta);
+            core.argTrackDeltaStack.push(core.argTrackDeltaStack.pop() + delta);
         }
     }
 
@@ -830,13 +829,13 @@ abstract class X86Emit extends X86Core {
     }
 
     void leaGlobalToReg(String reg, String globalName) {
-        if (globalAliasOffset.containsKey(globalName)) {
+        if (core.globalAliasOffset.containsKey(globalName)) {
             // An alias into a parent block's own storage (see
             // globalAliasOffset's doc comment) -- load the parent's
             // address and add the field's fixed offset, rather than
             // referencing a separate (nonexistent) label of its own.
-            String parentLabel = mangleGlobalName(globalAliasParent.get(globalName));
-            long offset = globalAliasOffset.get(globalName);
+            String parentLabel = mangleGlobalName(core.globalAliasParent.get(globalName));
+            long offset = core.globalAliasOffset.get(globalName);
             raw("    leaq " + parentLabel + (offset != 0 ? "+" + offset : "") + "(%rip), %" + reg);
             
             return;
@@ -855,9 +854,9 @@ abstract class X86Emit extends X86Core {
             extra = Long.parseLong(globalName.substring(plus + 1));
             globalName = globalName.substring(0, plus);
         }
-        if (globalAliasOffset.containsKey(globalName)) {
-            String parentLabel = mangleGlobalName(globalAliasParent.get(globalName));
-            long offset = globalAliasOffset.get(globalName) + extra;
+        if (core.globalAliasOffset.containsKey(globalName)) {
+            String parentLabel = mangleGlobalName(core.globalAliasParent.get(globalName));
+            long offset = core.globalAliasOffset.get(globalName) + extra;
             return parentLabel + (offset != 0 ? "+" + offset : "") + "(%rip)";
         }
         return mangleGlobalName(globalName) + (extra != 0 ? "+" + extra : "") + "(%rip)";
@@ -915,9 +914,9 @@ abstract class X86Emit extends X86Core {
         if (op.equals("SAR")) {
             signExtendReg(v, size);
             // count = min(count, 63)
-            movImmToReg(RF_SCRATCH, 63);
-            raw("    cmpq %" + RF_SCRATCH + ", %rcx");
-            raw("    cmovaq %" + RF_SCRATCH + ", %rcx");
+            movImmToReg(X86Core.RF_SCRATCH, 63);
+            raw("    cmpq %" + X86Core.RF_SCRATCH + ", %rcx");
+            raw("    cmovaq %" + X86Core.RF_SCRATCH + ", %rcx");
             raw("    sarq %cl, %" + v);
             
             zeroExtendReg(v, size);
@@ -973,7 +972,7 @@ abstract class X86Emit extends X86Core {
 
     /** zero-extending load of `size` bytes at (%rbp+offset) into the full 64-bit `reg64`. */
     void loadSizedFromFrame(String reg64, long offset, int size) {
-        int loadSize = roundUpToLoadableWidth(size);
+        int loadSize = X86Core.roundUpToLoadableWidth(size);
         if (loadSize == 8) {
             raw("    movq " + offset + "(%rbp), %" + reg64);
         } else if (loadSize == 4) {
@@ -986,7 +985,7 @@ abstract class X86Emit extends X86Core {
 
     /** store the low `size` bytes of `reg64` to (%rbp+offset). */
     void storeSizedToFrame(String reg64, long offset, int size) {
-        if (isOddSize(size)) {
+        if (X86Core.isOddSize(size)) {
             storeOddSize(reg64, "rbp", offset, size);
             return;
         }
@@ -995,8 +994,8 @@ abstract class X86Emit extends X86Core {
 
     /** zero-extending load of `size` bytes at (%addrReg) into `destReg64`. Same over-read-past-a-non-power-of-2-size reasoning as `loadSizedFromFrame` -- see `roundUpToLoadableWidth`'s own doc comment. */
     void loadSizedFromAddr(String destReg64, String addrReg64, int size) {
-        int loadSize = roundUpToLoadableWidth(size);
-        String mem = rfMemOperand(addrReg64);
+        int loadSize = X86Core.roundUpToLoadableWidth(size);
+        String mem = hub.gen.rfMemOperand(addrReg64);
         if (loadSize == 8) {
             raw("    movq " + mem + ", %" + destReg64);
         } else if (loadSize == 4) {
@@ -1078,11 +1077,11 @@ abstract class X86Emit extends X86Core {
 
     /** store the low `size` bytes of `srcReg64` to (%addrReg64). */
     void storeSizedToAddr(String srcReg64, String addrReg64, int size) {
-        if (isOddSize(size)) {
+        if (X86Core.isOddSize(size)) {
             storeOddSize(srcReg64, addrReg64, 0, size);
             return;
         }
-        raw("    mov" + movSuffix(size) + " %" + sizedReg(srcReg64, size) + ", " + rfMemOperand(addrReg64));
+        raw("    mov" + movSuffix(size) + " %" + sizedReg(srcReg64, size) + ", " + hub.gen.rfMemOperand(addrReg64));
     }
 
     /** pushes a >8-byte value stored at (%rbp+baseOffset), one whole word at a time, lowest source offset first -- the highest-offset word ends up on top of the real stack. Mirror of `assignBlock`/POP's own block-store below. */
@@ -1115,7 +1114,7 @@ abstract class X86Emit extends X86Core {
      * not-yet-consumed incoming parameter.
      */
     void pushBlockFromFrameConstructionAware(long baseOffset, long size) {
-        Long constructionOffset = pushStoreOffsetByLine.get(currentLineIndex);
+        Long constructionOffset = core.pushStoreOffsetByLine.get(core.currentLineIndex);
         if (constructionOffset == null) {
             pushBlockFromFrame(baseOffset, size);
             return;
@@ -1153,7 +1152,7 @@ abstract class X86Emit extends X86Core {
             if (n == 8) {
                 raw("    movq %rax, " + (destOff == 0 ? "" : String.valueOf(destOff)) + "(%r15)");
                 
-            } else if (isOddSize((int) n)) {
+            } else if (X86Core.isOddSize((int) n)) {
                 storeOddSize("rax", "r15", destOff, (int) n);
             } else {
                 storePiece("rax", "r15", destOff, (int) n);

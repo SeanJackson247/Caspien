@@ -7,7 +7,7 @@ Caspien: a systems language for auditable code (ownership storage `owns/ref/raw/
 1. `ASTGenerator` -> higher-order bytecode (HOB, text). Lex, parse, RPN, tree, imports, dup/generics expansion, type check, emit.
 2. `Optimizer` -> HOB passes (folding, inlining, unrolling, dead code, struct unpacking/reordering, `SizeofResolutionPass`...).
 3. `LowerOrderGenerator` -> low-order bytecode (LOB): address lowering, register-form, register variables, fusion passes.
-4. `Codegen` -> x86-64 asm (`X86Backend`), assembled/linked with gcc/as.
+4. `Codegen` -> x86-64 asm (`X86Backend` hub + parts, composition), assembled/linked with gcc/as.
 `Compiler.java` orchestrates all four (all four stages are in-process libraries, text in/text out: `Frontend.compile`, `Optimizer.optimize`, `LowerOrder.generate`, `Codegen.generate`, each loaded from its `out/` by a private class loader; only `as`/`gcc` are child processes; their `Main`s stay stand-alone programs that do the file I/O) and runs them through a content-addressed stage cache (`CompilerCache.java`, `.cache/`, keys chained like a Merkle tree; `--no-cache`, `--cache-report`, `--clear-cache`; details in `docs/COMPILER_REFERENCE.md`); `toolchain.config` selects target and every optimizer switch. Stdlib in `stdlib/`, examples in `docs/examples/`, tests in `tests/`, benchmarks in `benchmarks/` (`harness/` measures, `site/` presents, `tools/` glue; see its README).
 
 ## Working rules

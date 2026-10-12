@@ -10,18 +10,15 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/** Mnemonic groups 4 and 5 of the stack-form instruction set (see X86Backend for how the parts fit together). */
-abstract class X86CasesB extends X86CasesA {
-    X86CasesB(CodegenConfig.Target target, boolean bmi2) {
-        super(target, bmi2);
-    }
+/** Mnemonic groups 4 and 5 of the stack-form instruction set (see X86Generator for how the parts fit together). */
+final class X86CasesB {
+    private final X86Backend hub;
+    private final X86Core core;
 
-    // methods defined in later parts of the chain
-    abstract void storeSizedToAddr_withOffsetImm(String baseReg64, long offset, long value, int size);
-    abstract void storeSizedToAddr_reg(String baseReg64, long offset, String srcReg64, int size);
-    abstract void emitGtCall(String fn, String reg);
-    abstract void emitResizeGtUpdate();
-    abstract void emitResizeWideFillCopy(int elemSize, int words);
+    X86CasesB(X86Backend hub) {
+        this.hub = hub;
+        this.core = hub.core;
+    }
 
     boolean emitCases4(String mnemonic, BytecodeStatement line, String first, boolean wasCmp, long pendingBlockSize) {
         switch (mnemonic) {
@@ -42,77 +39,77 @@ case "DOT": {
                     // or untagged: an element read through a pointer base is just loaded): the field is a shift and a mask, no address. (This used to fall into the placeholder below, which
                     // silently read 0: `d[i].a0` on an unsafe dynarray of a 3-byte struct with the register-form passes off.)
                     boolean fieldIsSmallArrayV = line.size() > 2 && line.get(2).text.equals("ra");
-                    popReg("rbx"); // field offset in bytes
-                    popReg("rax"); // the whole value
-                    raw("    pushq %rcx");   // %rcx is the shift count and may hold an already-popped call argument
-                    raw("    movq %rbx, %rcx");
-                    raw("    shlq $3, %rcx");
-                    raw("    shrq %cl, %rax");
-                    raw("    popq %rcx");
+                    hub.emit.popReg("rbx"); // field offset in bytes
+                    hub.emit.popReg("rax"); // the whole value
+                    hub.emit.raw("    pushq %rcx");   // %rcx is the shift count and may hold an already-popped call argument
+                    hub.emit.raw("    movq %rbx, %rcx");
+                    hub.emit.raw("    shlq $3, %rcx");
+                    hub.emit.raw("    shrq %cl, %rax");
+                    hub.emit.raw("    popq %rcx");
                     if (size < 8) {
-                        if (isOddSize(size)) {
+                        if (X86Core.isOddSize(size)) {
                             int sh = 64 - size * 8;
-                            raw("    shlq $" + sh + ", %rax");
-                            raw("    shrq $" + sh + ", %rax");
+                            hub.emit.raw("    shlq $" + sh + ", %rax");
+                            hub.emit.raw("    shrq $" + sh + ", %rax");
                         } else {
-                            raw(size == 4 ? "    movl %eax, %eax" : size == 2 ? "    movzwl %ax, %eax" : "    movzbl %al, %eax");
+                            hub.emit.raw(size == 4 ? "    movl %eax, %eax" : size == 2 ? "    movzwl %ax, %eax" : "    movzbl %al, %eax");
                         }
                     }
-                    pushReg("rax");
+                    hub.emit.pushReg("rax");
                     if (fieldIsSmallArrayV) {
-                        lastValueBlockSize = -size;
+                        core.lastValueBlockSize = -size;
                     }
                     return true;
                 }
                 long totalWords = (pendingBlockSize + 7) / 8;
-                popReg("rbx"); // field offset (in bytes, from the value's own front)
+                hub.emit.popReg("rbx"); // field offset (in bytes, from the value's own front)
                 if (size <= 8) {
                     // A field inside one word. The block's words are reversed (the front word is the deepest), so the byte at struct offset X lives at
                     // rsp + (totalWords-1-X/8)*8 + X%8. (The formula below is right only for a whole aligned word or a wider field: for a narrower field it
                     // pointed into the wrong half of a word, e.g. `arr[i].a` for a u32 at offset 8 read the byte at offset 12.)
-                    raw("    movq %rbx, %rax");
-                    raw("    andq $-8, %rax");
-                    raw("    negq %rax");
-                    raw("    addq $" + ((totalWords - 1) * 8) + ", %rax");
-                    raw("    andq $7, %rbx");
-                    raw("    addq %rbx, %rax");
-                    raw("    addq %rsp, %rax");
+                    hub.emit.raw("    movq %rbx, %rax");
+                    hub.emit.raw("    andq $-8, %rax");
+                    hub.emit.raw("    negq %rax");
+                    hub.emit.raw("    addq $" + ((totalWords - 1) * 8) + ", %rax");
+                    hub.emit.raw("    andq $7, %rbx");
+                    hub.emit.raw("    addq %rbx, %rax");
+                    hub.emit.raw("    addq %rsp, %rax");
                     
                 } else {
-                    raw("    movq %rbx, %r14");
-                    raw("    andq $7, %r14");
-                    raw("    shrq $3, %rbx");
-                    raw("    imulq $8, %rbx, %rbx");
-                    raw("    movq $" + (totalWords * 8) + ", %rax");
-                    raw("    subq $8, %rax");
-                    raw("    subq %rbx, %rax");
-                    raw("    addq %r14, %rax");
-                    raw("    addq %rsp, %rax");
+                    hub.emit.raw("    movq %rbx, %r14");
+                    hub.emit.raw("    andq $7, %r14");
+                    hub.emit.raw("    shrq $3, %rbx");
+                    hub.emit.raw("    imulq $8, %rbx, %rbx");
+                    hub.emit.raw("    movq $" + (totalWords * 8) + ", %rax");
+                    hub.emit.raw("    subq $8, %rax");
+                    hub.emit.raw("    subq %rbx, %rax");
+                    hub.emit.raw("    addq %r14, %rax");
+                    hub.emit.raw("    addq %rsp, %rax");
                 }
                 boolean fieldIsSmallArray = line.size() > 2 && line.get(2).text.equals("ra");
                 if (size <= 8 && fieldIsSmallArray) {
                     // A fixed array of at most 8 bytes: its bytes may straddle two of the block's (reversed) words, so they are not contiguous in
                     // memory. rax = address of the field's first byte, rbx = its offset within its word. Read the word it starts in and the next
                     // struct word (the next-lower address) -- only when the field really straddles, otherwise the same word again, so nothing below the pushed block is read -- and shift the pair together (shrd); bytes past the field are junk, as for any small array.
-                    raw("    movq %rcx, %r14");
-                    raw("    movq %rbx, %rcx");
-                    raw("    shlq $3, %rcx");
-                    raw("    subq %rbx, %rax");
-                    raw("    leaq -8(%rax), %r11");
-                    raw("    cmpq $" + (8 - size) + ", %rbx");
-                    raw("    cmovbeq %rax, %r11");   // no straddle: read the same word again, never the word below the block
-                    raw("    movq (%r11), %r11");
-                    raw("    movq (%rax), %rax");
-                    raw("    shrdq %cl, %r11, %rax");
-                    raw("    movq %r14, %rcx");
-                    raw("    addq $" + (totalWords * 8) + ", %rsp");
+                    hub.emit.raw("    movq %rcx, %r14");
+                    hub.emit.raw("    movq %rbx, %rcx");
+                    hub.emit.raw("    shlq $3, %rcx");
+                    hub.emit.raw("    subq %rbx, %rax");
+                    hub.emit.raw("    leaq -8(%rax), %r11");
+                    hub.emit.raw("    cmpq $" + (8 - size) + ", %rbx");
+                    hub.emit.raw("    cmovbeq %rax, %r11");   // no straddle: read the same word again, never the word below the block
+                    hub.emit.raw("    movq (%r11), %r11");
+                    hub.emit.raw("    movq (%rax), %rax");
+                    hub.emit.raw("    shrdq %cl, %r11, %rax");
+                    hub.emit.raw("    movq %r14, %rcx");
+                    hub.emit.raw("    addq $" + (totalWords * 8) + ", %rsp");
                     
-                    pushReg("rax");
-                    lastValueBlockSize = -size;
+                    hub.emit.pushReg("rax");
+                    core.lastValueBlockSize = -size;
                 } else if (size <= 8) {
-                    loadSizedFromAddr("rax", "rax", size);
-                    raw(("    addq $" + (totalWords * 8) + ", %rsp"));
-                    pushReg("rax");
+                    hub.emit.loadSizedFromAddr("rax", "rax", size);
+                    hub.emit.raw(("    addq $" + (totalWords * 8) + ", %rsp"));
+                    hub.emit.pushReg("rax");
                 } else {
                     // A multi-word nested field (a struct- or array-typed
                     // field read off a base that arrived as a whole pushed
@@ -159,8 +156,8 @@ case "DOT": {
                     // moving rsp afterward, so this ordering is always
                     // safe and guarantees the copy's own destination is
                     // the address range that will actually still be live).
-                    extractWordsFromReversedBlock(totalWords, size);
-                    lastValueBlockSize = size; // for a chained DOT right after this
+                    hub.emit.extractWordsFromReversedBlock(totalWords, size);
+                    core.lastValueBlockSize = size; // for a chained DOT right after this
                 }
                 return true;
             }
@@ -171,12 +168,12 @@ case "LOOKUP_ARRAY_LHS": {
                 // against array_lookup_cg_test.caspien's own real
                 // low-order output -- ordinary address arithmetic.
                 int elemSize = (int) Long.parseLong(line.get(1).text);
-                popReg("rbx"); // index
-                popReg("rax"); // base address
-                raw("    imulq $" + elemSize + ", %rbx, %rbx");
-                raw("    addq %rbx, %rax");
+                hub.emit.popReg("rbx"); // index
+                hub.emit.popReg("rax"); // base address
+                hub.emit.raw("    imulq $" + elemSize + ", %rbx, %rbx");
+                hub.emit.raw("    addq %rbx, %rax");
                 
-                pushReg("rax");
+                hub.emit.pushReg("rax");
                 return true;
             }
             
@@ -221,33 +218,33 @@ case "LOOKUP_ARRAY": {
                     // just below does, and exactly what corrupted this
                     // case before this branch existed -- a small array's
                     // own packed *value* is not a pointer).
-                    popReg("rbx"); // index
-                    popReg("rax"); // the whole small array's own packed value
+                    hub.emit.popReg("rbx"); // index
+                    hub.emit.popReg("rax"); // the whole small array's own packed value
                     // %rcx is both the shift-count register and an argument register (4th SysV, 1st win64): a finished earlier argument
                     // of the call being assembled may already sit in it (`printf(fmt, a, s[0], s[1], s[2])` popped s[0]/s[1] into their
                     // registers before this lookup runs), so save and restore it around the shift.
-                    raw("    imulq $" + (elemSize * 8) + ", %rbx, %rbx"); // index*elemSize, in bits
-                    raw("    pushq %rcx");
-                    raw("    movq %rbx, %rcx");
-                    raw("    shrq %cl, %rax");
-                    raw("    popq %rcx");
+                    hub.emit.raw("    imulq $" + (elemSize * 8) + ", %rbx, %rbx"); // index*elemSize, in bits
+                    hub.emit.raw("    pushq %rcx");
+                    hub.emit.raw("    movq %rbx, %rcx");
+                    hub.emit.raw("    shrq %cl, %rax");
+                    hub.emit.raw("    popq %rcx");
                     
-                    if (isOddSize(elemSize)) {
+                    if (X86Core.isOddSize(elemSize)) {
                         // 3, 5, 6, 7 bytes (a row of a `u8[3][2]`): keep exactly those bytes. (The 1-byte `movzbl` used to be applied here too,
                         // cutting a row down to its first element.)
                         int sh = 64 - elemSize * 8;
-                        raw(("    shlq $" + sh + ", %rax"));
-                        raw(("    shrq $" + sh + ", %rax"));
+                        hub.emit.raw(("    shlq $" + sh + ", %rax"));
+                        hub.emit.raw(("    shrq $" + sh + ", %rax"));
                     } else if (elemSize < 8) {
                         // `andq` takes only a sign-extended 32-bit immediate, so a 4-byte
                         // mask (0xFFFFFFFF) was rejected by the assembler; a zero-extending
                         // move does the same job for 1, 2 and 4 bytes.
-                        raw(elemSize == 4 ? "    movl %eax, %eax" : elemSize == 2 ? "    movzwl %ax, %eax" : "    movzbl %al, %eax");
+                        hub.emit.raw(elemSize == 4 ? "    movl %eax, %eax" : elemSize == 2 ? "    movzwl %ax, %eax" : "    movzbl %al, %eax");
                         
                     }
-                    pushReg("rax");
+                    hub.emit.pushReg("rax");
                     if (resultIsSmallArray) {
-                        lastValueBlockSize = -elemSize;
+                        core.lastValueBlockSize = -elemSize;
                     }
                     return true;
                 }
@@ -265,22 +262,22 @@ case "LOOKUP_ARRAY": {
                     // pre-existing single-word logic this pass shipped
                     // with originally -- so that's the fallback here,
                     // not a guess.
-                    popReg("rbx"); // index
-                    popReg("rax"); // base address (a plain pointer value)
-                    raw("    imulq $" + elemSize + ", %rbx, %rbx");
-                    raw("    addq %rbx, %rax");
+                    hub.emit.popReg("rbx"); // index
+                    hub.emit.popReg("rax"); // base address (a plain pointer value)
+                    hub.emit.raw("    imulq $" + elemSize + ", %rbx, %rbx");
+                    hub.emit.raw("    addq %rbx, %rax");
                     
-                    pushSizedOrBlockFromAddr("rax", elemSize);
+                    hub.calls.pushSizedOrBlockFromAddr("rax", elemSize);
                     if (resultIsSmallArray) {
-                        lastValueBlockSize = -elemSize;
+                        core.lastValueBlockSize = -elemSize;
                     } else if (elemSize > 8) {
-                        lastValueBlockSize = elemSize; // a struct element read through a pointer base: the DOT that follows needs the block size
+                        core.lastValueBlockSize = elemSize; // a struct element read through a pointer base: the DOT that follows needs the block size
                     }
                     return true;
                 }
                 long totalWords = (pendingBlockSize + 7) / 8;
-                popReg("rbx"); // index
-                raw("    imulq $" + elemSize + ", %rbx, %rbx");
+                hub.emit.popReg("rbx"); // index
+                hub.emit.raw("    imulq $" + elemSize + ", %rbx, %rbx");
                 
                 // rbx now holds the target element's byte offset from the
                 // array's own front (source-offset order). The pushed
@@ -346,44 +343,44 @@ case "LOOKUP_ARRAY": {
                 // register in either ABI, and (unlike `%rdx`) never used
                 // to carry a live, not-yet-consumed value across separate
                 // LOOKUP_ARRAY invocations anywhere else in this file.
-                raw("    movq %rbx, %r14");
-                raw("    andq $7, %r14");
-                raw("    shrq $3, %rbx");
-                raw("    imulq $8, %rbx, %rbx");
-                raw("    movq $" + (totalWords * 8) + ", %rax");
-                raw("    subq $8, %rax");
-                raw("    subq %rbx, %rax");
-                raw("    addq %r14, %rax");
-                raw("    addq %rsp, %rax");
+                hub.emit.raw("    movq %rbx, %r14");
+                hub.emit.raw("    andq $7, %r14");
+                hub.emit.raw("    shrq $3, %rbx");
+                hub.emit.raw("    imulq $8, %rbx, %rbx");
+                hub.emit.raw("    movq $" + (totalWords * 8) + ", %rax");
+                hub.emit.raw("    subq $8, %rax");
+                hub.emit.raw("    subq %rbx, %rax");
+                hub.emit.raw("    addq %r14, %rax");
+                hub.emit.raw("    addq %rsp, %rax");
                 
-                if (isOddSize(elemSize)) {
+                if (X86Core.isOddSize(elemSize)) {
                     // A 3, 5, 6 or 7 byte element (a row of a `u16[3][2]`) can start in one source word and end in the next, and the words of
                     // the pushed block are in reverse order (word k+1 sits 8 bytes BELOW word k), so its bytes are not contiguous in memory and a
                     // plain load at `rax` reads the bytes above the block instead of the second word. Same shrd extraction as the multi-word case
                     // below, for one result word: `rax` = address of the element's first byte, `r14` = its offset inside the word (0..7).
-                    raw("    movq %rax, %r11");
-                    raw("    subq %r14, %r11");
-                    raw("    shlq $3, %r14");
-                    raw("    movq %rcx, %r13");
-                    raw("    movq %r14, %rcx");
-                    raw("    movq (%r11), %rax");
-                    raw("    movq -8(%r11), %r14");
-                    raw("    shrdq %cl, %r14, %rax");
-                    raw("    movq %r13, %rcx");
-                    raw("    addq $" + (totalWords * 8) + ", %rsp");
+                    hub.emit.raw("    movq %rax, %r11");
+                    hub.emit.raw("    subq %r14, %r11");
+                    hub.emit.raw("    shlq $3, %r14");
+                    hub.emit.raw("    movq %rcx, %r13");
+                    hub.emit.raw("    movq %r14, %rcx");
+                    hub.emit.raw("    movq (%r11), %rax");
+                    hub.emit.raw("    movq -8(%r11), %r14");
+                    hub.emit.raw("    shrdq %cl, %r14, %rax");
+                    hub.emit.raw("    movq %r13, %rcx");
+                    hub.emit.raw("    addq $" + (totalWords * 8) + ", %rsp");
                     
-                    pushReg("rax");
+                    hub.emit.pushReg("rax");
                     if (resultIsSmallArray) {
-                        lastValueBlockSize = -elemSize;
+                        core.lastValueBlockSize = -elemSize;
                     }
                 } else if (elemSize <= 8) {
-                    loadSizedFromAddr("rax", "rax", elemSize);
+                    hub.emit.loadSizedFromAddr("rax", "rax", elemSize);
                     // discard the whole original block now that the one
                     // element we need is safely copied into rax.
-                    raw(("    addq $" + (totalWords * 8) + ", %rsp"));
-                    pushReg("rax");
+                    hub.emit.raw(("    addq $" + (totalWords * 8) + ", %rsp"));
+                    hub.emit.pushReg("rax");
                     if (resultIsSmallArray) {
-                        lastValueBlockSize = -elemSize;
+                        core.lastValueBlockSize = -elemSize;
                     }
                 } else {
                     // A multi-word element (an array of structs, or a nested array, say). `rax` is the address of the element's first BYTE
@@ -398,8 +395,8 @@ case "LOOKUP_ARRAY": {
                     // The word past the block end (read for the last, possibly partial, result word) lies just below rsp: valid stack, and
                     // only bytes beyond the element come from it.
                     // %rcx is the shift count register and may hold an already-loaded call argument: stash it in r13 (backend scratch).
-                    extractWordsFromReversedBlock(totalWords, elemSize);
-                    lastValueBlockSize = elemSize; // for a chained DOT right after this
+                    hub.emit.extractWordsFromReversedBlock(totalWords, elemSize);
+                    core.lastValueBlockSize = elemSize; // for a chained DOT right after this
                 }
                 return true;
             }
@@ -410,30 +407,30 @@ case "LOOKUP_DYN":
                 // [elements...] -- see class doc comment. The element
                 // offset is 16 + index*elemSize.
                 int elemSize = (int) Long.parseLong(line.get(1).text);
-                popReg("rbx"); // index
-                popReg("rax"); // dynarray pointer
-                raw("    imulq $" + elemSize + ", %rbx, %rbx");
-                raw("    addq %rbx, %rax");
-                raw("    addq $16, %rax");
+                hub.emit.popReg("rbx"); // index
+                hub.emit.popReg("rax"); // dynarray pointer
+                hub.emit.raw("    imulq $" + elemSize + ", %rbx, %rbx");
+                hub.emit.raw("    addq %rbx, %rax");
+                hub.emit.raw("    addq $16, %rax");
                 
                 if (mnemonic.equals("LOOKUP_DYN_LHS")) {
-                    pushReg("rax");
+                    hub.emit.pushReg("rax");
                 } else {
-                    pushSizedOrBlockFromAddr("rax", elemSize);
+                    hub.calls.pushSizedOrBlockFromAddr("rax", elemSize);
                     // An element wider than a word (a struct) is now a pushed value block: tell a DOT / LOOKUP that follows (`es[i].to`) how big it
                     // is, exactly as LOOKUP_ARRAY does for an array element. Without this the DOT found no pending block ("DOT with no preceding
                     // pushed value") and pushed 0, so any read of a field of a dynarray-of-struct element was wrong or crashed.
                     if (elemSize > 8) {
-                        lastValueBlockSize = elemSize;
+                        core.lastValueBlockSize = elemSize;
                     }
                 }
                 return true;
             }
             
 case "LEN": {
-                popReg("rax"); // dynarray pointer
-                loadSizedFromAddr("rax", "rax", 8); // the header's own len field, offset 0
-                pushReg("rax");
+                hub.emit.popReg("rax"); // dynarray pointer
+                hub.emit.loadSizedFromAddr("rax", "rax", 8); // the header's own len field, offset 0
+                hub.emit.pushReg("rax");
                 return true;
             }
             
@@ -457,7 +454,7 @@ case "STACK_LOCK":
                 // wasn't checked.
                 if (mnemonic.equals("STACK_LOCK")) {
                     long n = Long.parseLong(line.get(1).text);
-                    raw(("    subq $" + n + ", %rsp"));
+                    hub.emit.raw(("    subq $" + n + ", %rsp"));
                 }
                 return true;
             }
@@ -495,25 +492,25 @@ case "NEW": {
                 // uses for its own whole-buffer copy, just from the
                 // stack instead of from another heap pointer.
                 long size = Long.parseLong(line.get(1).text);
-                if (!packedNewLines.contains(currentLineIndex) && line.size() > 2) {
-                    emitNewRepack(size, line);
+                if (!core.packedNewLines.contains(core.currentLineIndex) && line.size() > 2) {
+                    hub.emit.emitNewRepack(size, line);
                     return true;
                 }
-                raw("    movq %rsp, %r12"); // r12: source address -- the construction's own tightly-packed image already sitting on the stack, callee-saved, survives the malloc call below
-                emitMallocCall(size);
-                raw("    movq %rax, %r14"); // r14: the fresh buffer, also callee-saved
+                hub.emit.raw("    movq %rsp, %r12"); // r12: source address -- the construction's own tightly-packed image already sitting on the stack, callee-saved, survives the malloc call below
+                hub.regForm.emitMallocCall(size);
+                hub.emit.raw("    movq %rax, %r14"); // r14: the fresh buffer, also callee-saved
                 // A failed malloc leaves r14 null: skip the copy (it would fault on address 0); the bytecode's own null check throws.
-                String newDone = newInternalLabel("new_done");
-                raw("    testq %r14, %r14");
-                raw("    jz " + newDone);
-                raw("    movq %r14, %rdi");
-                raw("    movq %r12, %rsi");
-                raw("    movq $" + size + ", %rcx");
-                raw("    rep movsb");
+                String newDone = hub.regForm.newInternalLabel("new_done");
+                hub.emit.raw("    testq %r14, %r14");
+                hub.emit.raw("    jz " + newDone);
+                hub.emit.raw("    movq %r14, %rdi");
+                hub.emit.raw("    movq %r12, %rsi");
+                hub.emit.raw("    movq $" + size + ", %rcx");
+                hub.emit.raw("    rep movsb");
                 
-                raw(newDone + ":");
-                raw(("    addq $" + size + ", %rsp"));
-                pushReg("r14");
+                hub.emit.raw(newDone + ":");
+                hub.emit.raw(("    addq $" + size + ", %rsp"));
+                hub.emit.pushReg("r14");
                 return true;
             }
             
@@ -521,26 +518,26 @@ case "CLONE_DYN": {
                 // A safe dynarray pointee: the block is a 16-byte header (length, capacity) plus length*elemSize bytes of
                 // elements, so the size is only known at run time. Same null handling as CLONE.
                 long elemSize = Long.parseLong(line.get(1).text);
-                popReg("r12"); // source block start
-                raw("    movq (%r12), %r15");
-                raw("    imulq $" + elemSize + ", %r15, %r15");
-                raw("    addq $16, %r15");
-                raw("    movq %r15, %" + argReg(0));
+                hub.emit.popReg("r12"); // source block start
+                hub.emit.raw("    movq (%r12), %r15");
+                hub.emit.raw("    imulq $" + elemSize + ", %r15, %r15");
+                hub.emit.raw("    addq $16, %r15");
+                hub.emit.raw("    movq %r15, %" + hub.calls.argReg(0));
                 
-                emitAlignedCall(() -> emitCallByName("malloc"));
-                raw("    movq %rax, %r14");
-                String cloneDynDone = newInternalLabel("clone_dyn_done");
-                raw("    testq %r14, %r14");
-                raw("    jz " + cloneDynDone);
-                raw("    movq %r14, %rdi");
-                raw("    movq %r12, %rsi");
-                raw("    movq %r15, %rcx");
-                raw("    rep movsb");
-                raw("    movq (%r14), %rax"); // the copy holds exactly length elements: capacity = length
-                raw("    movq %rax, 8(%r14)");
+                hub.calls.emitAlignedCall(() -> hub.calls.emitCallByName("malloc"));
+                hub.emit.raw("    movq %rax, %r14");
+                String cloneDynDone = hub.regForm.newInternalLabel("clone_dyn_done");
+                hub.emit.raw("    testq %r14, %r14");
+                hub.emit.raw("    jz " + cloneDynDone);
+                hub.emit.raw("    movq %r14, %rdi");
+                hub.emit.raw("    movq %r12, %rsi");
+                hub.emit.raw("    movq %r15, %rcx");
+                hub.emit.raw("    rep movsb");
+                hub.emit.raw("    movq (%r14), %rax"); // the copy holds exactly length elements: capacity = length
+                hub.emit.raw("    movq %rax, 8(%r14)");
                 
-                raw(cloneDynDone + ":");
-                pushReg("r14");
+                hub.emit.raw(cloneDynDone + ":");
+                hub.emit.pushReg("r14");
                 return true;
             }
             
@@ -553,21 +550,21 @@ case "CLONE_DYN": {
         switch (mnemonic) {
 case "CLONE": {
                 long size = Long.parseLong(line.get(1).text);
-                popReg("r12"); // source address (r12: callee-saved, survives the call below)
-                emitMallocCall(size);
-                raw("    movq %rax, %r14"); // r14: new pointer, also callee-saved
+                hub.emit.popReg("r12"); // source address (r12: callee-saved, survives the call below)
+                hub.regForm.emitMallocCall(size);
+                hub.emit.raw("    movq %rax, %r14"); // r14: new pointer, also callee-saved
                 // A failed malloc leaves r14 null: skip the copy (it would fault on address 0) and push the null,
                 // which the bytecode's own null check right after CLONE turns into a throw.
-                String cloneDone = newInternalLabel("clone_done");
-                raw("    testq %r14, %r14");
-                raw("    jz " + cloneDone);
-                raw("    movq %r14, %rdi");
-                raw("    movq %r12, %rsi");
-                raw("    movq $" + size + ", %rcx");
-                raw("    rep movsb");
+                String cloneDone = hub.regForm.newInternalLabel("clone_done");
+                hub.emit.raw("    testq %r14, %r14");
+                hub.emit.raw("    jz " + cloneDone);
+                hub.emit.raw("    movq %r14, %rdi");
+                hub.emit.raw("    movq %r12, %rsi");
+                hub.emit.raw("    movq $" + size + ", %rcx");
+                hub.emit.raw("    rep movsb");
                 
-                raw(cloneDone + ":");
-                pushReg("r14");
+                hub.emit.raw(cloneDone + ":");
+                hub.emit.pushReg("r14");
                 return true;
             }
             
@@ -577,10 +574,10 @@ case "MEMCOPY": {
                 // immediately around every real MEMCOPY site this pass
                 // was checked against re-read their own variables
                 // separately afterward, confirmed directly).
-                long constSize = memcopyConstantSize();
-                popReg("rsi"); // src
-                popReg("rcx"); // size
-                popReg("rdi"); // dest
+                long constSize = hub.calls.memcopyConstantSize();
+                hub.emit.popReg("rsi"); // src
+                hub.emit.popReg("rcx"); // size
+                hub.emit.popReg("rdi"); // dest
                 if (constSize >= 0) {
                     // A small compile-time size (a char, an integer, a key being hashed) is copied with plain moves: `rep movsb` costs a
                     // few dozen cycles of start-up however short the copy is. rax is free here (every sequence of this backend uses it as scratch).
@@ -588,27 +585,27 @@ case "MEMCOPY": {
                     while (pos < constSize) {
                         long left = constSize - pos;
                         int w = left >= 8 ? 8 : left >= 4 ? 4 : left >= 2 ? 2 : 1;
-                        raw("    mov" + movSuffix(w) + " " + pos + "(%rsi), %" + sizedReg("rax", w));
-                        raw("    mov" + movSuffix(w) + " %" + sizedReg("rax", w) + ", " + pos + "(%rdi)");
+                        hub.emit.raw("    mov" + hub.emit.movSuffix(w) + " " + pos + "(%rsi), %" + hub.emit.sizedReg("rax", w));
+                        hub.emit.raw("    mov" + hub.emit.movSuffix(w) + " %" + hub.emit.sizedReg("rax", w) + ", " + pos + "(%rdi)");
                         pos += w;
                     }
                     return true;
                 }
-                raw("    rep movsb");
+                hub.emit.raw("    rep movsb");
                 return true;
             }
             
 case "DEREF": {
                 int size = (int) Long.parseLong(line.get(1).text);
-                popReg("rbx"); // pointer
+                hub.emit.popReg("rbx"); // pointer
                 // The value this leaves is a whole aggregate by value when a LOOKUP_ARRAY/DOT follows (an array member read through an
                 // owning pointer: "DOT_LHS / DEREF 24 / PUSH idx / LOOKUP_ARRAY 8"), so record its shape the way PUSH does for a value read
                 // from the frame: > 8 bytes is a pushed word block, < 8 bytes a single natural-order word (negative tag). Without this
                 // LOOKUP_ARRAY took its "bare pointer" fallback and dereferenced the array's own contents as an address.
-                lastValueBlockSize = size > 8 ? size : (size < 8 ? -size : 0);
+                core.lastValueBlockSize = size > 8 ? size : (size < 8 ? -size : 0);
                 if (size <= 8) {
-                    loadSizedFromAddr("rax", "rbx", size);
-                    pushReg("rax");
+                    hub.emit.loadSizedFromAddr("rax", "rbx", size);
+                    hub.emit.pushReg("rax");
                 } else {
                     // A multi-word (>8 byte) aggregate dereference --
                     // pushes ceil(size/8) whole words, lowest source
@@ -620,11 +617,11 @@ case "DEREF": {
                     // never observed and isn't specially handled.
                     long words = (size + 7) / 8;
                     for (long i = 0; i < words; i++) {
-                        loadSizedFromAddr("rax", "rbx", 8);
+                        hub.emit.loadSizedFromAddr("rax", "rbx", 8);
                         if (i < words - 1) {
-                            raw("    addq $8, %rbx");
+                            hub.emit.raw("    addq $8, %rbx");
                         }
-                        pushReg("rax");
+                        hub.emit.pushReg("rax");
                     }
                 }
                 return true;
@@ -686,14 +683,14 @@ case "ADDR_OF": {
                 String kind = line.get(1).text;
                 String operand = line.get(2).text;
                 long discardBytes = pendingBlockSize > 8 ? ((pendingBlockSize + 7) / 8) * 8 : 8;
-                raw(("    addq $" + discardBytes + ", %rsp")); // discard the dead pushed value
+                hub.emit.raw(("    addq $" + discardBytes + ", %rsp")); // discard the dead pushed value
                 if ((kind.equals("RAW") || kind.equals("AUTO")) && operand.startsWith("$")) {
-                    leaMemToReg("rax", Long.parseLong(operand.substring(1)));
-                    pushReg("rax");
+                    hub.emit.leaMemToReg("rax", Long.parseLong(operand.substring(1)));
+                    hub.emit.pushReg("rax");
                 } else {
-                    comment("TODO(codegen): '" + String.join(" ", textsOf(line)) + "' not yet implemented -- pushing 0 as a placeholder");
-                    movImmToReg("rax", 0);
-                    pushReg("rax");
+                    hub.emit.comment("TODO(codegen): '" + String.join(" ", X86Core.textsOf(line)) + "' not yet implemented -- pushing 0 as a placeholder");
+                    hub.emit.movImmToReg("rax", 0);
+                    hub.emit.pushReg("rax");
                 }
                 return true;
             }
@@ -720,31 +717,31 @@ case "NEW_DYN": {
                 }
                 long elemWords = elemBytes / 8;
                 long dataBytes = count * elemBytes;
-                emitMallocCall(16 + dataBytes);
-                raw("    movq %rax, %r12");
+                hub.regForm.emitMallocCall(16 + dataBytes);
+                hub.emit.raw("    movq %rax, %r12");
                 // A failed malloc leaves r12 null: write nothing into it, drop the element words and push the null so the
                 // bytecode's own null check can throw.
-                String newDynNull = newInternalLabel("newdyn_null");
-                String newDynDone = newInternalLabel("newdyn_done");
-                raw("    testq %r12, %r12");
-                raw("    jz " + newDynNull);
-                storeSizedToAddr_withOffsetImm("r12", 0, count, 8);
-                storeSizedToAddr_withOffsetImm("r12", 8, count, 8);
+                String newDynNull = hub.regForm.newInternalLabel("newdyn_null");
+                String newDynDone = hub.regForm.newInternalLabel("newdyn_done");
+                hub.emit.raw("    testq %r12, %r12");
+                hub.emit.raw("    jz " + newDynNull);
+                hub.regForm.storeSizedToAddr_withOffsetImm("r12", 0, count, 8);
+                hub.regForm.storeSizedToAddr_withOffsetImm("r12", 8, count, 8);
                 for (long i = count - 1; i >= 0; i--) {
                     for (long w = elemWords - 1; w >= 0; w--) {
-                        popReg("rax");
+                        hub.emit.popReg("rax");
                         long off = 16 + i * elemBytes + w * 8;
-                        raw("    movq %rax, " + off + "(%r12)");
+                        hub.emit.raw("    movq %rax, " + off + "(%r12)");
                         
                     }
                 }
-                raw("    jmp " + newDynDone);
-                raw(newDynNull + ":");
+                hub.emit.raw("    jmp " + newDynDone);
+                hub.emit.raw(newDynNull + ":");
                 if (count > 0) {
-                    raw(("    addq $" + count * elemWords * 8 + ", %rsp"));
+                    hub.emit.raw(("    addq $" + count * elemWords * 8 + ", %rsp"));
                 }
-                raw(newDynDone + ":");
-                pushReg("r12");
+                hub.emit.raw(newDynDone + ":");
+                hub.emit.pushReg("r12");
                 return true;
             }
             
@@ -757,27 +754,27 @@ case "NEW_UDYN": {
                 // no len(); never allocates 0 bytes (an empty one gets 1) so a live array is never a NULL/zero-size block.
                 long totalBytes = Long.parseLong(line.get(1).text);
                 long count = totalBytes / 8;
-                emitMallocCall(Math.max(totalBytes, 1));
-                raw("    movq %rax, %r12");
+                hub.regForm.emitMallocCall(Math.max(totalBytes, 1));
+                hub.emit.raw("    movq %rax, %r12");
                 // Failed malloc: r12 stays null (see NEW_DYN); nothing is written.
-                String newUdynNull = newInternalLabel("newudyn_null");
-                String newUdynDone = newInternalLabel("newudyn_done");
-                raw("    testq %r12, %r12");
-                raw("    jz " + newUdynNull);
+                String newUdynNull = hub.regForm.newInternalLabel("newudyn_null");
+                String newUdynDone = hub.regForm.newInternalLabel("newudyn_done");
+                hub.emit.raw("    testq %r12, %r12");
+                hub.emit.raw("    jz " + newUdynNull);
                 for (long i = count - 1; i >= 0; i--) {
-                    popReg("rax");
+                    hub.emit.popReg("rax");
                     long off = i * 8;
-                    raw("    movq %rax, " + off + "(%r12)");
+                    hub.emit.raw("    movq %rax, " + off + "(%r12)");
                     
                 }
-                emitGtCall("gt_register", "r12");
-                raw("    jmp " + newUdynDone);
-                raw(newUdynNull + ":");
+                hub.regForm.emitGtCall("gt_register", "r12");
+                hub.emit.raw("    jmp " + newUdynDone);
+                hub.emit.raw(newUdynNull + ":");
                 if (count > 0) {
-                    raw(("    addq $" + count * 8 + ", %rsp"));
+                    hub.emit.raw(("    addq $" + count * 8 + ", %rsp"));
                 }
-                raw(newUdynDone + ":");
-                pushReg("r12");
+                hub.emit.raw(newUdynDone + ":");
+                hub.emit.pushReg("r12");
                 return true;
             }
             
@@ -793,45 +790,45 @@ case "NEW_FROM_USTRING":
                 // NEW_FROM_USTRING: the unsafe, headerless form -- malloc'd block = the bytes plus a NUL terminator (so
                 // len(arr, '\0') works), pointer = block, registered with the ghost table.
                 final boolean ustr = mnemonic.equals("NEW_FROM_USTRING");
-                popReg("r12"); // address of the string literal
+                hub.emit.popReg("r12"); // address of the string literal
                 // The argument register is an ABI question (win64: rcx,
                 // SysV: rdi), not a syntax one -- argReg(0) resolves
                 // that; hardcoding "rdi" here (as this used to) is only
                 // right for `linux` and silently wrong for
                 // `windows_gnu` (AT&T syntax, win64 ABI).
-                raw("    movq %r12, %" + argReg(0));
+                hub.emit.raw("    movq %r12, %" + hub.calls.argReg(0));
                 
-                emitAlignedCall(() -> emitCallByName("strlen"));
+                hub.calls.emitAlignedCall(() -> hub.calls.emitCallByName("strlen"));
                 // rax now holds the string length.
-                raw("    movq %rax, %r13"); // r13: length, callee-saved
-                raw("    addq $" + (ustr ? 1 : 16) + ", %rax");
+                hub.emit.raw("    movq %rax, %r13"); // r13: length, callee-saved
+                hub.emit.raw("    addq $" + (ustr ? 1 : 16) + ", %rax");
                 
-                raw("    movq %rax, %" + argReg(0));
+                hub.emit.raw("    movq %rax, %" + hub.calls.argReg(0));
                 
-                emitAlignedCall(() -> emitCallByName("malloc"));
-                raw("    movq %rax, %r14"); // r14: new block
+                hub.calls.emitAlignedCall(() -> hub.calls.emitCallByName("malloc"));
+                hub.emit.raw("    movq %rax, %r14"); // r14: new block
                 if (ustr) {
-                    String ustrDone = newInternalLabel("newustr_done");
-                    raw("    testq %r14, %r14");
-                    raw("    jz " + ustrDone);
-                    raw("    movq %r14, %rdi");
-                    raw("    movq %r12, %rsi");
-                    raw("    leaq 1(%r13), %rcx");
-                    raw("    rep movsb");
+                    String ustrDone = hub.regForm.newInternalLabel("newustr_done");
+                    hub.emit.raw("    testq %r14, %r14");
+                    hub.emit.raw("    jz " + ustrDone);
+                    hub.emit.raw("    movq %r14, %rdi");
+                    hub.emit.raw("    movq %r12, %rsi");
+                    hub.emit.raw("    leaq 1(%r13), %rcx");
+                    hub.emit.raw("    rep movsb");
                     
-                    emitGtCall("gt_register", "r14");
-                    raw(ustrDone + ":");
-                    pushReg("r14");
+                    hub.regForm.emitGtCall("gt_register", "r14");
+                    hub.emit.raw(ustrDone + ":");
+                    hub.emit.pushReg("r14");
                     return true;
                 }
-                raw("    movq %r13, (%r14)");
-                raw("    movq %r13, 8(%r14)");
-                raw("    leaq 16(%r14), %rdi");
-                raw("    movq %r12, %rsi");
-                raw("    movq %r13, %rcx");
-                raw("    rep movsb");
+                hub.emit.raw("    movq %r13, (%r14)");
+                hub.emit.raw("    movq %r13, 8(%r14)");
+                hub.emit.raw("    leaq 16(%r14), %rdi");
+                hub.emit.raw("    movq %r12, %rsi");
+                hub.emit.raw("    movq %r13, %rcx");
+                hub.emit.raw("    rep movsb");
                 
-                pushReg("r14");
+                hub.emit.pushReg("r14");
                 return true;
             }
             
@@ -863,21 +860,21 @@ case "RESIZE":
                 final int fillWords = (elemSize + 7) / 8;
                 final boolean wideFill = hasFill && elemSize > 8;
                 if (wideFill) {
-                    raw("    movq " + (fillWords * 8) + "(%rsp), %r12");
-                    raw("    movq " + (fillWords * 8 + 8) + "(%rsp), %rax");
+                    hub.emit.raw("    movq " + (fillWords * 8) + "(%rsp), %r12");
+                    hub.emit.raw("    movq " + (fillWords * 8 + 8) + "(%rsp), %rax");
                     
                 } else {
                     if (hasFill) {
-                        popReg("r14"); // fill value
+                        hub.emit.popReg("r14"); // fill value
                     }
-                    popReg("r12"); // newCount
-                    popReg("rax"); // old pointer (scratch; moved into the call's arg reg below)
+                    hub.emit.popReg("r12"); // newCount
+                    hub.emit.popReg("rax"); // old pointer (scratch; moved into the call's arg reg below)
                 }
                 // An unsafe dynarray is headerless: its pointer IS the malloc'd block (nothing to subtract, no length to read).
                 // The old block start is kept on the stack across the realloc: if the block moves, the ghost table
                 // entry for it is dropped (gt_moved: no free, realloc already released it) and the new address registered.
-                pushReg("rax");
-                resizeExtraStack = 8;
+                hub.emit.pushReg("rax");
+                core.resizeExtraStack = 8;
                 // oldLen must survive the emitAlignedCall below, which
                 // internally saves/restores %rsp through %r13 -- so it
                 // cannot be kept in r13 (that was the actual bug behind a
@@ -889,7 +886,7 @@ case "RESIZE":
                 // and emitAlignedCall never touches it, so oldLen lives
                 // there instead across the call.
                 if (hasFill) {
-                    loadSizedFromAddr("rbx", "rax", 8); // rbx = oldLen
+                    hub.emit.loadSizedFromAddr("rbx", "rax", 8); // rbx = oldLen
                 }
                 // The two argument registers are an ABI question (win64:
                 // rcx/rdx, SysV: rdi/rsi), independent of syntax --
@@ -902,137 +899,137 @@ case "RESIZE":
                 // max(newCount, 2 * capacity), so a run of one-element growths costs O(1) amortised reallocs; one that leaves
                 // fewer than a quarter of the capacity in use reallocs down to exactly newCount. r15 carries the new
                 // capacity across the realloc call (callee-saved); the old block's header is never touched before the call.
-                String resizeGrow = newInternalLabel("resize_grow");
-                String resizeHdr = newInternalLabel("resize_hdr");
-                String resizeShrink = newInternalLabel("resize_shrink");
-                String resizeCall = newInternalLabel("resize_call");
+                String resizeGrow = hub.regForm.newInternalLabel("resize_grow");
+                String resizeHdr = hub.regForm.newInternalLabel("resize_hdr");
+                String resizeShrink = hub.regForm.newInternalLabel("resize_shrink");
+                String resizeCall = hub.regForm.newInternalLabel("resize_call");
                 if (hasFill) {
-                    raw("    movq 8(%rax), %rcx"); // rcx = old capacity
-                    raw("    cmpq %rcx, %r12");
-                    raw("    ja " + resizeGrow);
-                    raw("    leaq 0(,%r12,4), %rdx");
-                    raw("    cmpq %rcx, %rdx");
-                    raw("    jb " + resizeShrink); // newCount < capacity / 4: give the memory back
-                    raw("    movq %rax, %r15"); // fits: same block, capacity unchanged (rcx)
-                    raw("    jmp " + resizeHdr);
-                    raw(resizeShrink + ":");
-                    raw("    movq %r12, %r15"); // shrink to exactly newCount
-                    raw("    jmp " + resizeCall);
-                    raw(resizeGrow + ":");
-                    raw("    leaq (%rcx,%rcx), %rdx");
-                    raw("    cmpq %rdx, %r12");
-                    raw("    cmovaq %r12, %rdx"); // rdx = max(newCount, 2 * capacity)
-                    raw("    movq %rdx, %r15"); // r15 = new capacity
-                    raw(resizeCall + ":");
+                    hub.emit.raw("    movq 8(%rax), %rcx"); // rcx = old capacity
+                    hub.emit.raw("    cmpq %rcx, %r12");
+                    hub.emit.raw("    ja " + resizeGrow);
+                    hub.emit.raw("    leaq 0(,%r12,4), %rdx");
+                    hub.emit.raw("    cmpq %rcx, %rdx");
+                    hub.emit.raw("    jb " + resizeShrink); // newCount < capacity / 4: give the memory back
+                    hub.emit.raw("    movq %rax, %r15"); // fits: same block, capacity unchanged (rcx)
+                    hub.emit.raw("    jmp " + resizeHdr);
+                    hub.emit.raw(resizeShrink + ":");
+                    hub.emit.raw("    movq %r12, %r15"); // shrink to exactly newCount
+                    hub.emit.raw("    jmp " + resizeCall);
+                    hub.emit.raw(resizeGrow + ":");
+                    hub.emit.raw("    leaq (%rcx,%rcx), %rdx");
+                    hub.emit.raw("    cmpq %rdx, %r12");
+                    hub.emit.raw("    cmovaq %r12, %rdx"); // rdx = max(newCount, 2 * capacity)
+                    hub.emit.raw("    movq %rdx, %r15"); // r15 = new capacity
+                    hub.emit.raw(resizeCall + ":");
                 }
-                raw("    movq %rax, %" + argReg(0)); // arg1 = old (block-start) pointer
-                raw("    movq %" + (hasFill ? "r15" : "r12") + ", %" + argReg(1));
-                raw("    imulq $" + elemSize + ", %" + argReg(1) + ", %" + argReg(1));
+                hub.emit.raw("    movq %rax, %" + hub.calls.argReg(0)); // arg1 = old (block-start) pointer
+                hub.emit.raw("    movq %" + (hasFill ? "r15" : "r12") + ", %" + hub.calls.argReg(1));
+                hub.emit.raw("    imulq $" + elemSize + ", %" + hub.calls.argReg(1) + ", %" + hub.calls.argReg(1));
                 if (hasFill) {
-                    raw("    addq $16, %" + argReg(1));
+                    hub.emit.raw("    addq $16, %" + hub.calls.argReg(1));
                 } else {
-                    String nz = newInternalLabel("uresize_nz");
-                    raw("    testq %" + argReg(1) + ", %" + argReg(1));
-                    raw("    jnz " + nz);
-                    raw("    movq $1, %" + argReg(1));
-                    raw(nz + ":");
+                    String nz = hub.regForm.newInternalLabel("uresize_nz");
+                    hub.emit.raw("    testq %" + hub.calls.argReg(1) + ", %" + hub.calls.argReg(1));
+                    hub.emit.raw("    jnz " + nz);
+                    hub.emit.raw("    movq $1, %" + hub.calls.argReg(1));
+                    hub.emit.raw(nz + ":");
                 }
                 
                 // realloc(oldBlockPtr, newTotalBytes) -- args already
                 // staged into the ABI's own first two argument registers
                 // just above (rdi/rsi for SysV, rcx/rdx for win64).
-                emitAlignedCall(() -> emitCallByName("realloc"));
+                hub.calls.emitAlignedCall(() -> hub.calls.emitCallByName("realloc"));
                 if (hasFill) {
-                    raw("    movq %r15, %rcx"); // rcx = the new capacity (saved in r15 across the call)
+                    hub.emit.raw("    movq %r15, %rcx"); // rcx = the new capacity (saved in r15 across the call)
                 }
-                raw("    movq %rax, %r15"); // r15: new block-start pointer
+                hub.emit.raw("    movq %rax, %r15"); // r15: new block-start pointer
                 // A failed realloc leaves r15 null (the old block stays valid): write nothing, skip the fill and the
                 // data-start offset, and push the null so the bytecode's own check can throw.
-                String resizeEnd = newInternalLabel("resize_end");
-                raw("    testq %r15, %r15");
-                raw("    jz " + resizeEnd);
+                String resizeEnd = hub.regForm.newInternalLabel("resize_end");
+                hub.emit.raw("    testq %r15, %r15");
+                hub.emit.raw("    jz " + resizeEnd);
                 if (hasFill) {
-                    raw(resizeHdr + ":");
-                    storeSizedToAddr_reg("r15", 0, "r12", 8); // length = newCount
-                    storeSizedToAddr_reg("r15", 8, "rcx", 8); // capacity
+                    hub.emit.raw(resizeHdr + ":");
+                    hub.regForm.storeSizedToAddr_reg("r15", 0, "r12", 8); // length = newCount
+                    hub.regForm.storeSizedToAddr_reg("r15", 8, "rcx", 8); // capacity
                 }
                 if (!hasFill) {
-                    raw(resizeEnd + ":");
-                    emitResizeGtUpdate();
+                    hub.emit.raw(resizeEnd + ":");
+                    hub.regForm.emitResizeGtUpdate();
                 }
                 if (hasFill) {
                     // for (i = oldLen; i < newCount; i++) data[i] = fill;
-                    String loop = newInternalLabel("resize_fill");
+                    String loop = hub.regForm.newInternalLabel("resize_fill");
                     String end = resizeEnd;
                     if (!wideFill && (elemSize == 1 || elemSize == 2 || elemSize == 4 || elemSize == 8)) {
                         // A big fill of zero bytes (any zero element, or any 1-byte element) is one `rep stosb`; a small one, or any other
                         // value, runs the pointer loop below (rdi/rcx/rdx are free here: the realloc call above already clobbered them).
-                        String generic = newInternalLabel("resize_fill_loop");
-                        raw("    cmpq %r12, %rbx");
-                        raw("    jge " + end);
-                        raw("    movq %r12, %rdx");
-                        raw("    subq %rbx, %rdx");
+                        String generic = hub.regForm.newInternalLabel("resize_fill_loop");
+                        hub.emit.raw("    cmpq %r12, %rbx");
+                        hub.emit.raw("    jge " + end);
+                        hub.emit.raw("    movq %r12, %rdx");
+                        hub.emit.raw("    subq %rbx, %rdx");
                         if (elemSize > 1) {
-                            raw("    imulq $" + elemSize + ", %rdx, %rdx");
+                            hub.emit.raw("    imulq $" + elemSize + ", %rdx, %rdx");
                         }
-                        boolean useRep = !isWinAbi(); // rdi is callee-saved on win64: only the pointer loop there
+                        boolean useRep = !hub.emit.isWinAbi(); // rdi is callee-saved on win64: only the pointer loop there
                         if (useRep) {
-                        raw("    cmpq $64, %rdx");
-                        raw("    jb " + generic);
+                        hub.emit.raw("    cmpq $64, %rdx");
+                        hub.emit.raw("    jb " + generic);
                         if (elemSize > 1) {
-                            raw("    test" + movSuffix(elemSize) + " %" + sizedReg("r14", elemSize) + ", %" + sizedReg("r14", elemSize));
-                            raw("    jnz " + generic);
-                            raw("    xorl %eax, %eax");
+                            hub.emit.raw("    test" + hub.emit.movSuffix(elemSize) + " %" + hub.emit.sizedReg("r14", elemSize) + ", %" + hub.emit.sizedReg("r14", elemSize));
+                            hub.emit.raw("    jnz " + generic);
+                            hub.emit.raw("    xorl %eax, %eax");
                         } else {
-                            raw("    movq %r14, %rax");
+                            hub.emit.raw("    movq %r14, %rax");
                         }
-                        raw("    movq %rbx, %rdi");
+                        hub.emit.raw("    movq %rbx, %rdi");
                         if (elemSize > 1) {
-                            raw("    imulq $" + elemSize + ", %rdi, %rdi");
+                            hub.emit.raw("    imulq $" + elemSize + ", %rdi, %rdi");
                         }
-                        raw("    leaq 16(%r15,%rdi), %rdi");
-                        raw("    movq %rdx, %rcx");
-                        raw("    rep stosb");
-                        raw("    movq %r12, %rbx");
-                        raw("    jmp " + end);
+                        hub.emit.raw("    leaq 16(%r15,%rdi), %rdi");
+                        hub.emit.raw("    movq %rdx, %rcx");
+                        hub.emit.raw("    rep stosb");
+                        hub.emit.raw("    movq %r12, %rbx");
+                        hub.emit.raw("    jmp " + end);
                         }
-                        raw(generic + ":");
-                        raw("    movq %rbx, %rax");
+                        hub.emit.raw(generic + ":");
+                        hub.emit.raw("    movq %rbx, %rax");
                         if (elemSize > 1) {
-                            raw("    imulq $" + elemSize + ", %rax, %rax");
+                            hub.emit.raw("    imulq $" + elemSize + ", %rax, %rax");
                         }
-                        raw("    leaq 16(%r15,%rax), %rax");
-                        raw(loop + ":");
-                        storeSizedToAddr("r14", "rax", elemSize);
-                        raw("    addq $" + elemSize + ", %rax");
-                        raw("    incq %rbx");
-                        raw("    cmpq %r12, %rbx");
-                        raw("    jl " + loop);
-                        raw(end + ":");
+                        hub.emit.raw("    leaq 16(%r15,%rax), %rax");
+                        hub.emit.raw(loop + ":");
+                        hub.emit.storeSizedToAddr("r14", "rax", elemSize);
+                        hub.emit.raw("    addq $" + elemSize + ", %rax");
+                        hub.emit.raw("    incq %rbx");
+                        hub.emit.raw("    cmpq %r12, %rbx");
+                        hub.emit.raw("    jl " + loop);
+                        hub.emit.raw(end + ":");
                     } else {
-                    raw(loop + ":");
-                    raw("    cmpq %r12, %rbx");
-                    raw("    jge " + end);
-                    raw("    movq %rbx, %rax");
-                    raw("    imulq $" + elemSize + ", %rax, %rax");
-                    raw("    leaq 16(%r15,%rax), %rax");
+                    hub.emit.raw(loop + ":");
+                    hub.emit.raw("    cmpq %r12, %rbx");
+                    hub.emit.raw("    jge " + end);
+                    hub.emit.raw("    movq %rbx, %rax");
+                    hub.emit.raw("    imulq $" + elemSize + ", %rax, %rax");
+                    hub.emit.raw("    leaq 16(%r15,%rax), %rax");
                     if (wideFill) {
-                        emitResizeWideFillCopy(elemSize, fillWords);
+                        hub.regForm.emitResizeWideFillCopy(elemSize, fillWords);
                     } else {
-                        storeSizedToAddr("r14", "rax", elemSize);
+                        hub.emit.storeSizedToAddr("r14", "rax", elemSize);
                     }
-                    raw("    incq %rbx");
+                    hub.emit.raw("    incq %rbx");
                     
-                    raw(("    jmp " + loop));
-                    raw(end + ":");
+                    hub.emit.raw(("    jmp " + loop));
+                    hub.emit.raw(end + ":");
                     }
-                    emitResizeGtUpdate();
+                    hub.regForm.emitResizeGtUpdate();
                     if (wideFill) {
                         long drop = fillWords * 8L + 16;
-                        raw(("    addq $" + drop + ", %rsp"));
+                        hub.emit.raw(("    addq $" + drop + ", %rsp"));
                     }
                 }
-                pushReg("r15");
+                hub.emit.pushReg("r15");
                 return true;
             }
             
@@ -1042,9 +1039,9 @@ case "ATOMIC_PUSH": {
                 // needed for a plain read.
                 int size = (int) Long.parseLong(line.get(1).text);
                 String name = line.get(2).text;
-                leaGlobalToReg("rbx", name);
-                loadSizedFromAddr("rax", "rbx", size);
-                pushReg("rax");
+                hub.emit.leaGlobalToReg("rbx", name);
+                hub.emit.loadSizedFromAddr("rax", "rbx", size);
+                hub.emit.pushReg("rax");
                 return true;
             }
             
@@ -1056,11 +1053,11 @@ case "ATOMIC_SWAP": {
                 // pass was checked against immediately compares against
                 // something (confirmed directly).
                 int size = (int) Long.parseLong(line.get(1).text);
-                popReg("rax"); // new value
-                popReg("rbx"); // address
-                raw("    xchg" + movSuffix(size) + " %" + sizedReg("rax", size) + ", (%rbx)");
+                hub.emit.popReg("rax"); // new value
+                hub.emit.popReg("rbx"); // address
+                hub.emit.raw("    xchg" + hub.emit.movSuffix(size) + " %" + hub.emit.sizedReg("rax", size) + ", (%rbx)");
                 
-                pushReg("rax");
+                hub.emit.pushReg("rax");
                 return true;
             }
             

@@ -10,37 +10,15 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/** Argument registers, aligned calls with stack-passed arguments, and the mnemonic dispatcher (emitLine, first mnemonic group) (see X86Backend for how the parts fit together). */
-abstract class X86Calls extends X86Emit {
-    X86Calls(CodegenConfig.Target target, boolean bmi2) {
-        super(target, bmi2);
-    }
+/** Argument registers, aligned calls with stack-passed arguments, and the mnemonic dispatcher (emitLine, first mnemonic group) (see X86Generator for how the parts fit together). */
+final class X86Calls {
+    private final X86Backend hub;
+    private final X86Core core;
 
-    // methods defined in later parts of the chain
-    abstract boolean emitCases2(String mnemonic, BytecodeStatement line, String first, boolean wasCmp, long pendingBlockSize);
-    abstract boolean emitCases3(String mnemonic, BytecodeStatement line, String first, boolean wasCmp, long pendingBlockSize);
-    abstract boolean emitCases4(String mnemonic, BytecodeStatement line, String first, boolean wasCmp, long pendingBlockSize);
-    abstract boolean emitCases5(String mnemonic, BytecodeStatement line, String first, boolean wasCmp, long pendingBlockSize);
-    abstract boolean emitCases6(String mnemonic, BytecodeStatement line, String first, boolean wasCmp, long pendingBlockSize);
-    abstract boolean emitCases7(String mnemonic, BytecodeStatement line, String first, boolean wasCmp, long pendingBlockSize);
-    abstract String rfReg(String tok);
-    abstract void rfMov(String dst, String src);
-    abstract void rfDivConst(boolean mod, int size, String dstTok, String aTok, long k);
-    abstract void rfBin(String op, int size, String dstTok, String aTok, String bTok);
-    abstract String rfBrcNarrow(String op, int size, String aTok, String bTok, String label);
-    abstract String rfBrc(String op, String aTok, String bTok, String label);
-    abstract void rfCmov(BytecodeStatement line);
-    abstract void rfUn(String op, int size, String dstTok, String aTok);
-    abstract void rfXmmToGpr(String xmm, String gpr64, int n);
-    abstract String xvReg(String tok);
-    abstract void xvSpillAll();
-    abstract void xvReloadAll();
-    abstract void rfFloat(boolean compare, String op, int n, String dstTok, String aTok, String bTok);
-    abstract void rfFloat(boolean compare, String op, int n, String dstTok, String aTok, String bTok, String branchLabel);
-    abstract String mangleLabel(String text);
-    abstract void movRegToRegRbpFromRsp();
-    abstract void finishCalleeSaved();
-    abstract void emitFunctionEpilogue();
+    X86Calls(X86Backend hub) {
+        this.hub = hub;
+        this.core = hub.core;
+    }
 
     /**
      * The byte count of the MEMCOPY on the current line when it is a literal of at most 64 bytes, else -1. The line shape is
@@ -50,8 +28,8 @@ abstract class X86Calls extends X86Emit {
     long memcopyConstantSize() {
         int values = 0;
         for (int back = 1; back <= 4; back++) {
-            int idx = currentLineIndex - back;
-            BytecodeStatement l = allLines == null || idx < 0 ? null : allLines.get(idx);
+            int idx = core.currentLineIndex - back;
+            BytecodeStatement l = core.allLines == null || idx < 0 ? null : core.allLines.get(idx);
             if (l == null || l.isEmpty()) {
                 return -1;
             }
@@ -97,11 +75,11 @@ abstract class X86Calls extends X86Emit {
     // (CLAUDE.md, "What's implemented").
 
     void movRegToXmm(String gpr64, String xmmReg) {
-        raw(("    movq %" + gpr64 + ", %" + xmmReg));
+        hub.emit.raw(("    movq %" + gpr64 + ", %" + xmmReg));
     }
 
     void movXmmToReg(String xmmReg, String gpr64) {
-        raw(("    movq %" + xmmReg + ", %" + gpr64));
+        hub.emit.raw(("    movq %" + xmmReg + ", %" + gpr64));
     }
 
     /** "ss" (single-precision, 4-byte) vs "sd" (double-precision, 8-byte) SSE instruction suffix for a given byte size. `f32` is the only floating-point type this language has at all (checked directly, not assumed -- see FLOAT_CHECK's own doc comment below), so every real call site passes 4 here; the 8-byte ("sd") branch is kept only so this doesn't silently mishandle a size this pass has never actually seen, not because anything in the language can produce one today. */
@@ -112,8 +90,8 @@ abstract class X86Calls extends X86Emit {
     /** reads `size` bytes at (%addrReg64) and pushes them: a single sized load+push for size<=8, or a whole-word-at-a-time block push (lowest source offset first, highest last/top) for a larger aggregate -- the read-side counterpart of DOT/LOOKUP_ARRAY/LOOKUP_DYN's own "_LHS" (address-only) variants, generalized to structs/array elements bigger than one register. `addrReg64` is clobbered. */
     void pushSizedOrBlockFromAddr(String addrReg64, int size) {
         if (size <= 8) {
-            loadSizedFromAddr("rax", addrReg64, size);
-            pushReg("rax");
+            hub.emit.loadSizedFromAddr("rax", addrReg64, size);
+            hub.emit.pushReg("rax");
             return;
         }
         long words = (size + 7) / 8;
@@ -123,16 +101,16 @@ abstract class X86Calls extends X86Emit {
         // second word was read (every dynarray element wider than one
         // word -- any struct -- read back garbage).
         for (long i = 0; i < words; i++) {
-            loadSizedFromAddr("r11", addrReg64, 8);
+            hub.emit.loadSizedFromAddr("r11", addrReg64, 8);
             if (i < words - 1) {
-                raw(("    addq $8, %" + addrReg64));
+                hub.emit.raw(("    addq $8, %" + addrReg64));
             }
-            pushReg("r11");
+            hub.emit.pushReg("r11");
         }
     }
 
     String argReg(int index) {
-        String[] table = isWinAbi() ? WIN_ARG_REGS : LINUX_ARG_REGS; // register choice is an ABI question, not a syntax one -- WINDOWS_GNU_X64 uses these same win64 registers, just named/referenced in AT&T syntax
+        String[] table = hub.emit.isWinAbi() ? X86Core.WIN_ARG_REGS : X86Core.LINUX_ARG_REGS; // register choice is an ABI question, not a syntax one -- WINDOWS_GNU_X64 uses these same win64 registers, just named/referenced in AT&T syntax
         if (index < table.length) {
             return table[index];
         }
@@ -144,7 +122,7 @@ abstract class X86Calls extends X86Emit {
 
     /** The float-bank counterpart of `argReg` -- `ARGn`/`FARGn`'s own real per-bank index already accounts for the two conventions' different counting rules (see `AddressLoweringPass.resolveArgWordSlots`/`CompilerConfig.CallingConvention.sharedArgumentPosition` on the sibling lowering project), so this is a plain, dumb table lookup, exactly like `argReg` -- no convention-mode awareness needed here at all. */
     String argFloatReg(int index) {
-        String[] table = isWinAbi() ? WIN_ARG_REGS_FLOAT : LINUX_ARG_REGS_FLOAT;
+        String[] table = hub.emit.isWinAbi() ? X86Core.WIN_ARG_REGS_FLOAT : X86Core.LINUX_ARG_REGS_FLOAT;
         if (index < table.length) {
             return table[index];
         }
@@ -319,7 +297,7 @@ abstract class X86Calls extends X86Emit {
         // address. `emitAlignedCall`'s own original restore ("movq
         // 8(%rsp), %rsp") already avoided this trap the same way; this
         // mirrors it exactly, just at a variable offset.
-        raw(("    movq " + stackArgBytes + "(%rsp), %rsp"));
+        hub.emit.raw(("    movq " + stackArgBytes + "(%rsp), %rsp"));
     }
 
     /**
@@ -370,10 +348,10 @@ abstract class X86Calls extends X86Emit {
         for (long i = 0; i < words / 2; i++) {
             long lo = i * 8;
             long hi = (words - 1 - i) * 8;
-            raw("    movq " + lo + "(%rsp), %rax");
-            raw("    movq " + hi + "(%rsp), %r11");
-            raw("    movq %r11, " + lo + "(%rsp)");
-            raw("    movq %rax, " + hi + "(%rsp)");
+            hub.emit.raw("    movq " + lo + "(%rsp), %rax");
+            hub.emit.raw("    movq " + hi + "(%rsp), %r11");
+            hub.emit.raw("    movq %r11, " + lo + "(%rsp)");
+            hub.emit.raw("    movq %rax, " + hi + "(%rsp)");
             
         }
     }
@@ -393,7 +371,7 @@ abstract class X86Calls extends X86Emit {
      * implements.
      */
     void resolveStackArgBytesAndCall(Runnable callBody) {
-        if (argTrackDeltaStack.isEmpty() || callBufferStack.isEmpty()) {
+        if (core.argTrackDeltaStack.isEmpty() || core.callBufferStack.isEmpty()) {
             // No open "CC_START" bracket at all -- shouldn't happen for a
             // real bytecode-level "CALL"/"INVOKE" (every one is always
             // wrapped in its own "CC_START"/"CC_END"), but falls back to
@@ -401,9 +379,9 @@ abstract class X86Calls extends X86Emit {
             emitAlignedCall(callBody);
             return;
         }
-        long stackArgBytes = argTrackDeltaStack.peek();
+        long stackArgBytes = core.argTrackDeltaStack.peek();
         if (stackArgBytes > 0) {
-            callBufferStack.peek().insert(0, buildStackArgReservation(stackArgBytes));
+            core.callBufferStack.peek().insert(0, buildStackArgReservation(stackArgBytes));
             // win64 always reserves its own fixed 32-byte "shadow space"
             // immediately below the return address, *in addition to* any
             // real stack-passed arguments (`AddressLoweringPass.
@@ -421,12 +399,12 @@ abstract class X86Calls extends X86Emit {
             // suspends its own identical reservation: it's fully undone
             // before this call's own bracket closes, so it has zero real
             // net effect worth attributing to anything.
-            boolean winAbi = isWinAbi();
-            argTrackSuspendDepth++;
+            boolean winAbi = hub.emit.isWinAbi();
+            core.argTrackSuspendDepth++;
             try {
                 reverseStackArgWords(stackArgBytes);
                 if (winAbi) {
-                    raw("    subq $32, %rsp");
+                    hub.emit.raw("    subq $32, %rsp");
                 } else {
                     // Identical SysV "%al = vector registers used" rule as
                     // `emitAlignedCall`'s own non-win64 branch -- see that
@@ -440,14 +418,14 @@ abstract class X86Calls extends X86Emit {
                     // syntax `linux` target -- the win64 path is
                     // unconditionally `winAbi`, so it can never reach this
                     // `else`).
-                    raw("    movl $" + consumeVarargsXmmCount() + ", %eax");
+                    hub.emit.raw("    movl $" + hub.emit.consumeVarargsXmmCount() + ", %eax");
                 }
                 callBody.run();
                 if (winAbi) {
-                    raw("    addq $32, %rsp");
+                    hub.emit.raw("    addq $32, %rsp");
                 }
             } finally {
-                argTrackSuspendDepth--;
+                core.argTrackSuspendDepth--;
             }
             emitStackArgRestore(stackArgBytes);
         } else {
@@ -466,15 +444,15 @@ abstract class X86Calls extends X86Emit {
         // never recognizes as a relative move) and wrongly counted toward
         // an *enclosing* "CC_START"/"CALL" bracket's own stack-passed-
         // argument tally.
-        argTrackSuspendDepth++;
+        core.argTrackSuspendDepth++;
         try {
-            boolean winAbi = isWinAbi(); // shadow space vs SysV varargs %al -- an ABI question, independent of syntax
-            raw("    movq %rsp, %rax");
-            raw("    andq $-16, %rsp");
-            raw("    subq $16, %rsp"); // reserved slot for the pre-align rsp -- keeps 16-alignment (subtracting a multiple of 16)
-            raw("    movq %rax, 8(%rsp)");
+            boolean winAbi = hub.emit.isWinAbi(); // shadow space vs SysV varargs %al -- an ABI question, independent of syntax
+            hub.emit.raw("    movq %rsp, %rax");
+            hub.emit.raw("    andq $-16, %rsp");
+            hub.emit.raw("    subq $16, %rsp"); // reserved slot for the pre-align rsp -- keeps 16-alignment (subtracting a multiple of 16)
+            hub.emit.raw("    movq %rax, 8(%rsp)");
             if (winAbi) {
-                raw("    subq $32, %rsp"); // win64 shadow space (WINDOWS_GNU_X64, AT&T syntax)
+                hub.emit.raw("    subq $32, %rsp"); // win64 shadow space (WINDOWS_GNU_X64, AT&T syntax)
             } else {
                 // SysV varargs rule: %al must hold the number of vector
                 // (xmm) registers used for a varargs call (printf, most
@@ -495,37 +473,37 @@ abstract class X86Calls extends X86Emit {
                 // -- see its own doc comment) instead of a hardcoded
                 // constant. Win64 has no equivalent convention at all,
                 // so this whole branch stays SysV-only.
-                raw("    movl $" + consumeVarargsXmmCount() + ", %eax");
+                hub.emit.raw("    movl $" + hub.emit.consumeVarargsXmmCount() + ", %eax");
             }
             body.run();
             if (winAbi) {
-                raw("    addq $32, %rsp"); // undo shadow space -- rsp is back at the reserved slot
+                hub.emit.raw("    addq $32, %rsp"); // undo shadow space -- rsp is back at the reserved slot
             }
-            raw("    movq 8(%rsp), %rsp"); // load the pre-align rsp straight into rsp -- also discards the reserved slot
+            hub.emit.raw("    movq 8(%rsp), %rsp"); // load the pre-align rsp straight into rsp -- also discards the reserved slot
             
         } finally {
-            argTrackSuspendDepth--;
+            core.argTrackSuspendDepth--;
         }
     }
 
     void emitCallByName(String name) {
-        xvSpillAll();
-        raw(("    call " + name));
-        xvReloadAll();
+        hub.gen.xvSpillAll();
+        hub.emit.raw(("    call " + name));
+        hub.gen.xvReloadAll();
     }
 
     void emitCallIndirect(String reg64) {
-        xvSpillAll();
-        raw(("    call *%" + reg64));
-        xvReloadAll();
+        hub.gen.xvSpillAll();
+        hub.emit.raw(("    call *%" + reg64));
+        hub.gen.xvReloadAll();
     }
 
     void emitLine(BytecodeStatement line) {
-        if (!line.isEmpty() && currentLineIndex > asmSkipUntilIndex && line.size() >= 1 && !(line.size() == 1 && line.get(0).text.endsWith(":"))
-                && RF_R13_R14_USERS.contains(line.get(0).text) && !line.get(0).text.equals("ASM_START") && csrFuncStart >= 0) {
-            raw(V1314_SAVE);
+        if (!line.isEmpty() && core.currentLineIndex > core.asmSkipUntilIndex && line.size() >= 1 && !(line.size() == 1 && line.get(0).text.endsWith(":"))
+                && X86Core.RF_R13_R14_USERS.contains(line.get(0).text) && !line.get(0).text.equals("ASM_START") && core.csrFuncStart >= 0) {
+            hub.emit.raw(X86Core.V1314_SAVE);
             emitLineInner(line);
-            raw(V1314_REST);
+            hub.emit.raw(X86Core.V1314_REST);
             return;
         }
         emitLineInner(line);
@@ -535,7 +513,7 @@ abstract class X86Calls extends X86Emit {
         if (line.isEmpty()) {
             return;
         }
-        if (currentLineIndex <= asmSkipUntilIndex) {
+        if (core.currentLineIndex <= core.asmSkipUntilIndex) {
             // Already copied verbatim by the "ASM_START" case below.
             return;
         }
@@ -547,62 +525,62 @@ abstract class X86Calls extends X86Emit {
         // used unchanged, which is exactly what a JMP to the same text
         // must also do -- see mangleLabel).
         if (first.endsWith(":") && line.size() == 1) {
-            raw(mangleLabel(first.substring(0, first.length() - 1)) + ":");
-            if (first.contains("catch_") && csrFuncStart >= 0) {
-                raw(RSP_MARK); // a catch entry: the unwind left rsp wherever the callee's frame ended (finishCalleeSaved fixes it)
+            hub.emit.raw(hub.gen.mangleLabel(first.substring(0, first.length() - 1)) + ":");
+            if (first.contains("catch_") && core.csrFuncStart >= 0) {
+                hub.emit.raw(X86Core.RSP_MARK); // a catch entry: the unwind left rsp wherever the callee's frame ended (finishCalleeSaved fixes it)
             }
             return;
         }
 
-        boolean wasCmp = lastWasCmp;
-        lastWasCmp = false;
+        boolean wasCmp = core.lastWasCmp;
+        core.lastWasCmp = false;
 
         // See "value-block" handling in PUSH/LOOKUP_ARRAY/DOT below:
         // captured and reset by default on every instruction, and only
         // restored where it needs to survive (an intervening small
         // PUSH, e.g. an index or a field offset).
-        long pendingBlockSize = lastValueBlockSize;
-        lastValueBlockSize = 0;
+        long pendingBlockSize = core.lastValueBlockSize;
+        core.lastValueBlockSize = 0;
         // A pending value tag survives ONE intervening PUSH of a word (the index of `PUSH arr; PUSH idx; LOOKUP_ARRAY`), not two: in
         // `z + d[i].a` the small `PUSH 4 z` before `PUSH 8 d; PUSH 8 i` used to tag the pointer lookup as an in-register small array (a float
         // sum silently kept its old value with the register-form passes off). A word PUSH that passed a tag on is remembered; a second
         // PUSH right after it drops the tag.
         if (first.equals("PUSH") && line.size() > 1 && line.get(1).text.matches("\\d+")) {
-            if (pendingBlockSize != 0 && pushedWordWithTag) {
+            if (pendingBlockSize != 0 && core.pushedWordWithTag) {
                 pendingBlockSize = 0;
             }
-            pushedWordWithTag = pendingBlockSize != 0 && line.get(1).text.equals("8");
+            core.pushedWordWithTag = pendingBlockSize != 0 && line.get(1).text.equals("8");
         } else {
-            pushedWordWithTag = false;
+            core.pushedWordWithTag = false;
         }
 
         String mnemonic = first;
         if (mnemonic.equals("ASM_START")) {
-            rfClobberSeen = true; // inline assembly may use anything; the other scratch users are bracketed by V1314 marks
+            core.rfClobberSeen = true; // inline assembly may use anything; the other scratch users are bracketed by V1314 marks
         }
         
         if (emitCases1(mnemonic, line, first, wasCmp, pendingBlockSize)) {
             return;
         }
-        if (emitCases2(mnemonic, line, first, wasCmp, pendingBlockSize)) {
+        if (hub.casesA.emitCases2(mnemonic, line, first, wasCmp, pendingBlockSize)) {
             return;
         }
-        if (emitCases3(mnemonic, line, first, wasCmp, pendingBlockSize)) {
+        if (hub.casesA.emitCases3(mnemonic, line, first, wasCmp, pendingBlockSize)) {
             return;
         }
-        if (emitCases4(mnemonic, line, first, wasCmp, pendingBlockSize)) {
+        if (hub.casesB.emitCases4(mnemonic, line, first, wasCmp, pendingBlockSize)) {
             return;
         }
-        if (emitCases5(mnemonic, line, first, wasCmp, pendingBlockSize)) {
+        if (hub.casesB.emitCases5(mnemonic, line, first, wasCmp, pendingBlockSize)) {
             return;
         }
-        if (emitCases6(mnemonic, line, first, wasCmp, pendingBlockSize)) {
+        if (hub.regForm.emitCases6(mnemonic, line, first, wasCmp, pendingBlockSize)) {
             return;
         }
-        if (emitCases7(mnemonic, line, first, wasCmp, pendingBlockSize)) {
+        if (hub.regForm.emitCases7(mnemonic, line, first, wasCmp, pendingBlockSize)) {
             return;
         }
-        comment("TODO(codegen): '" + String.join(" ", textsOf(line)) + "' not yet implemented");
+        hub.emit.comment("TODO(codegen): '" + String.join(" ", X86Core.textsOf(line)) + "' not yet implemented");
                 return;
     }
 
@@ -610,22 +588,22 @@ abstract class X86Calls extends X86Emit {
         switch (mnemonic) {
 case "FUNC_START": {
                 String name = line.get(1).text;
-                currentFuncName = name;
-                rfVarUsed = false;
-                rfVarMask = 0;
-                rfClobberSeen = false;
-                xvHome.clear();
-                xvWidth.clear();
-                raw("");
-                raw(".globl " + name);
-                raw(name + ":");
+                core.currentFuncName = name;
+                core.rfVarUsed = false;
+                core.rfVarMask = 0;
+                core.rfClobberSeen = false;
+                core.xvHome.clear();
+                core.xvWidth.clear();
+                hub.emit.raw("");
+                hub.emit.raw(".globl " + name);
+                hub.emit.raw(name + ":");
                 
-                pushReg("rbp");
-                movRegToRegRbpFromRsp();
-                csrFuncStart = out.length();
-                csrAllocSum = 0;
-                csrAllocPos = -1;
-                csrAllocLine = null;
+                hub.emit.pushReg("rbp");
+                hub.gen.movRegToRegRbpFromRsp();
+                core.csrFuncStart = core.out.length();
+                core.csrAllocSum = 0;
+                core.csrAllocPos = -1;
+                core.csrAllocLine = null;
                 return true;
             }
             
@@ -654,26 +632,26 @@ case "FUNC_END": {
                 // and is otherwise this same harmless "dead code after an
                 // already-emitted RET" this method's own doc comment
                 // already describes.
-                movImmToReg("rax", 0);
-                emitFunctionEpilogue();
-                if (rfVarUsed && rfClobberSeen) {
-                    throw new RuntimeException("codegen internal error: '" + currentFuncName
+                hub.emit.movImmToReg("rax", 0);
+                hub.gen.emitFunctionEpilogue();
+                if (core.rfVarUsed && core.rfClobberSeen) {
+                    throw new RuntimeException("codegen internal error: '" + core.currentFuncName
                             + "' keeps variables in r13/r14 but also has an instruction that uses them as scratch");
                 }
-                finishCalleeSaved();
+                hub.gen.finishCalleeSaved();
                 return true;
             }
             
 case "ALLOC": {
                 long size = Long.parseLong(line.get(1).text);
                 long aligned = (size + 15) & ~15L;
-                csrAllocSum += aligned;
-                if (csrAllocPos < 0 && callBufferStack.isEmpty() && csrFuncStart >= 0) {
-                    csrAllocPos = out.length();
-                    csrAllocBytes = aligned;
-                    csrAllocLine = ("    subq $" + aligned + ", %rsp\n");
+                core.csrAllocSum += aligned;
+                if (core.csrAllocPos < 0 && core.callBufferStack.isEmpty() && core.csrFuncStart >= 0) {
+                    core.csrAllocPos = core.out.length();
+                    core.csrAllocBytes = aligned;
+                    core.csrAllocLine = ("    subq $" + aligned + ", %rsp\n");
                 }
-                raw("    subq $" + aligned + ", %rsp");
+                hub.emit.raw("    subq $" + aligned + ", %rsp");
                 
                 return true;
             }
@@ -683,11 +661,11 @@ case "ADDR": {
                 // "ADDR size globalName" -> push that global's address.
                 String operand = line.get(2).text;
                 if (operand.startsWith("$")) {
-                    leaMemToReg("rax", Long.parseLong(operand.substring(1)));
+                    hub.emit.leaMemToReg("rax", Long.parseLong(operand.substring(1)));
                 } else {
-                    leaGlobalToReg("rax", operand);
+                    hub.emit.leaGlobalToReg("rax", operand);
                 }
-                pushReg("rax");
+                hub.emit.pushReg("rax");
                 return true;
             }
             
@@ -703,7 +681,7 @@ case "PUSH": {
                     // there is nothing safe to push here either; flagged,
                     // not guessed at (this used to crash outright --
                     // "fix that bug," confirmed directly -- now it doesn't).
-                    comment("TODO(codegen): PUSH (2-token form) '" + String.join(" ", textsOf(line)) + "' not yet implemented");
+                    hub.emit.comment("TODO(codegen): PUSH (2-token form) '" + String.join(" ", X86Core.textsOf(line)) + "' not yet implemented");
                     return true;
                 }
                 int size = (int) Long.parseLong(line.get(1).text);
@@ -713,11 +691,11 @@ case "PUSH": {
                     long offset = fromXvar ? 0 : Long.parseLong(operand.substring(1));
                     if (size <= 8) {
                         if (fromXvar) {
-                            rfXmmToGpr(xvReg(operand), "rax", size == 8 ? 8 : 4); // movd/movq: the variable's bits, zero-extended -- what the frame load gave
+                            hub.gen.rfXmmToGpr(hub.gen.xvReg(operand), "rax", size == 8 ? 8 : 4); // movd/movq: the variable's bits, zero-extended -- what the frame load gave
                         } else {
-                            loadSizedFromFrame("rax", offset, size);
+                            hub.emit.loadSizedFromFrame("rax", offset, size);
                         }
-                        storeConstructionOrPlainPush("rax", size);
+                        hub.emit.storeConstructionOrPlainPush("rax", size);
                         if (pendingBlockSize == 0 && size < 8) {
                             // Nothing was already pending, and this value
                             // is narrower than a full 8-byte pointer --
@@ -755,7 +733,7 @@ case "PUSH": {
                             // Confirmed as a real, live segfault via
                             // `struct_array_member_narrow_elem_cg_test`'s
                             // own `letters: mut char[3]` member.
-                            lastValueBlockSize = -size;
+                            core.lastValueBlockSize = -size;
                         } else {
                             // A small push right after a pushed value-block
                             // is always the index/field-offset that a
@@ -763,7 +741,7 @@ case "PUSH": {
                             // consumes *alongside* that block -- preserve
                             // the pending block size across it rather than
                             // treating it as unrelated.
-                            lastValueBlockSize = pendingBlockSize;
+                            core.lastValueBlockSize = pendingBlockSize;
                         }
                     } else {
                         // A multi-word (>8 byte) value pushed by plain
@@ -831,15 +809,15 @@ case "PUSH": {
                         // one line), so the terminator's own straight,
                         // order-preserving copy sees exactly the bytes it
                         // already assumes.
-                        pushBlockFromFrameConstructionAware(offset, size);
-                        lastValueBlockSize = size;
+                        hub.emit.pushBlockFromFrameConstructionAware(offset, size);
+                        core.lastValueBlockSize = size;
                     }
                     return true;
                 } else if (operand.equals("null")) {
-                    movImmToReg("rax", 0);
-                } else if (isInteger(operand)) {
-                    movImmToReg("rax", operand.startsWith("-") ? Long.parseLong(operand) : Long.parseUnsignedLong(operand));
-                } else if (isFloatLiteral(operand)) {
+                    hub.emit.movImmToReg("rax", 0);
+                } else if (X86Core.isInteger(operand)) {
+                    hub.emit.movImmToReg("rax", operand.startsWith("-") ? Long.parseLong(operand) : Long.parseUnsignedLong(operand));
+                } else if (X86Core.isFloatLiteral(operand)) {
                     // A float literal's own IEEE-754 bit pattern is just
                     // as pushable as an int's bits through this exact
                     // same integer-immediate/pushq mechanism -- this
@@ -865,7 +843,7 @@ case "PUSH": {
                     long bits = size <= 4
                             ? Integer.toUnsignedLong(Float.floatToRawIntBits(Float.parseFloat(operand)))
                             : Double.doubleToRawLongBits(Double.parseDouble(operand));
-                    movImmToReg("rax", bits);
+                    hub.emit.movImmToReg("rax", bits);
                 } else if (operand.matches("\\d+\\.(start|end)")) {
                     // A synthesized pseudo-member push against an
                     // *incomplete* range value ("5.start"/"5.end") --
@@ -874,8 +852,8 @@ case "PUSH": {
                     // pipeline leaves this operand as a symbolic,
                     // non-address form even at "low order"); flagged
                     // rather than mismangled into a bogus symbol.
-                    comment("TODO(codegen): PUSH of incomplete-range pseudo-member '" + operand + "' not yet implemented -- pushing 0 as a placeholder");
-                    movImmToReg("rax", 0);
+                    hub.emit.comment("TODO(codegen): PUSH of incomplete-range pseudo-member '" + operand + "' not yet implemented -- pushing 0 as a placeholder");
+                    hub.emit.movImmToReg("rax", 0);
                 } else if (operand.startsWith("ARG")) {
                     // A calling-convention register-transfer slot read
                     // directly as a value -- the callee side of the same
@@ -886,7 +864,7 @@ case "PUSH": {
                     // its own local), so the argument register still
                     // holds its true incoming value here untouched.
                     int idx = Integer.parseInt(operand.substring(3));
-                    raw(("    movq %" + argReg(idx) + ", %rax"));
+                    hub.emit.raw(("    movq %" + argReg(idx) + ", %rax"));
                 } else if (operand.startsWith("FARG")) {
                     // The float-bank counterpart of the "ARG" branch just
                     // above -- the incoming parameter's own real bits are
@@ -898,7 +876,7 @@ case "PUSH": {
                     // than reading a GPR that was never written.
                     int idx = Integer.parseInt(operand.substring(4));
                     movXmmToReg(argFloatReg(idx), "rax");
-                } else if (stringLiterals.containsKey(operand)) {
+                } else if (core.stringLiterals.containsKey(operand)) {
                     // A string-pool id -- always its address (a string
                     // literal decays to a pointer to its own .rodata
                     // bytes, exactly like a real array/struct global;
@@ -906,8 +884,8 @@ case "PUSH": {
                     // confirmed directly against every real string-
                     // literal PUSH site, e.g. printf's format-string
                     // argument and NEW_FROM_STRING's source operand).
-                    leaGlobalToReg("rax", operand);
-                } else if (globalsSizeInit.containsKey(operand) || globalAliasOffset.containsKey(operand)) {
+                    hub.emit.leaGlobalToReg("rax", operand);
+                } else if (core.globalsSizeInit.containsKey(operand) || core.globalAliasOffset.containsKey(operand)) {
                     // A bare (possibly dotted) declared GLOBAL/
                     // ALLOC_STATIC name -- ordinarily its *value* (the
                     // same "read what's stored there" semantics a local
@@ -937,8 +915,8 @@ case "PUSH": {
                     // confirmed wants that) -- everywhere else (ASSIGN,
                     // arithmetic, comparisons, ARG passing) it's the
                     // value.
-                    if (lineAtOffsetIsAtomicSwap(2)) {
-                        leaGlobalToReg("rax", operand);
+                    if (hub.emit.lineAtOffsetIsAtomicSwap(2)) {
+                        hub.emit.leaGlobalToReg("rax", operand);
                     } else if (size > 8) {
                         // A multi-word global (a static array, most often,
                         // about to feed LOOKUP_ARRAY) is pushed as a whole
@@ -949,29 +927,29 @@ case "PUSH": {
                         // LOOKUP_ARRAY indexed into (and dereferenced) that
                         // word as if it were the array: reading any element
                         // of a static array segfaulted.
-                        leaGlobalToReg("rax", operand);
+                        hub.emit.leaGlobalToReg("rax", operand);
                         pushSizedOrBlockFromAddr("rax", size);
-                        lastValueBlockSize = size;
+                        core.lastValueBlockSize = size;
                         return true;
                     } else {
-                        leaGlobalToReg("rax", operand);
-                        loadSizedFromAddr("rax", "rax", size);
+                        hub.emit.leaGlobalToReg("rax", operand);
+                        hub.emit.loadSizedFromAddr("rax", "rax", size);
                         if (pendingBlockSize == 0 && size < 8) {
                             // Same tag as the local "PUSH size $offset" case:
                             // a narrow value may be a whole small static array
                             // about to feed LOOKUP_ARRAY (see that case).
-                            lastValueBlockSize = -size;
-                            storeConstructionOrPlainPush("rax", size);
+                            core.lastValueBlockSize = -size;
+                            hub.emit.storeConstructionOrPlainPush("rax", size);
                             return true;
                         }
                     }
-                } else if (declaredFunctionNames.contains(operand)) {
+                } else if (core.declaredFunctionNames.contains(operand)) {
                     // A real function's own address -- see
                     // "declaredFunctionNames"'s own doc comment. Never
                     // dereferenced afterward, unlike a global: the value
                     // *is* the address.
-                    leaGlobalToReg("rax", operand);
-                } else if (isCharLiteral(operand)) {
+                    hub.emit.leaGlobalToReg("rax", operand);
+                } else if (X86Core.isCharLiteral(operand)) {
                     // A char literal -- "'a'", "'\n'", "'\0'", ... --
                     // BytecodeEmitter.escapeForBytecode's own serialized
                     // form: a single quote, one real character's worth of
@@ -1000,18 +978,18 @@ case "PUSH": {
                     // above: to its real numeric byte value, immediate-
                     // loaded into %rax, no runtime work needed (a char is
                     // always exactly one compile-time-known byte).
-                    movImmToReg("rax", decodeCharLiteral(line.get(2)));
+                    hub.emit.movImmToReg("rax", X86Core.decodeCharLiteral(line.get(2)));
                 } else {
-                    comment("TODO(codegen): PUSH of '" + operand + "' (not a declared global) not yet implemented -- pushing 0 as a placeholder");
-                    movImmToReg("rax", 0);
+                    hub.emit.comment("TODO(codegen): PUSH of '" + operand + "' (not a declared global) not yet implemented -- pushing 0 as a placeholder");
+                    hub.emit.movImmToReg("rax", 0);
                 }
                 // Any of these forms (a literal index, "null", an ARG
                 // read, a global address) can legitimately be the
                 // index/offset half of a LOOKUP_ARRAY/DOT chain, so a
                 // pending value-block from just before is preserved
                 // through it, same as the small "$offset" branch above.
-                lastValueBlockSize = pendingBlockSize;
-                storeConstructionOrPlainPush("rax", size);
+                core.lastValueBlockSize = pendingBlockSize;
+                hub.emit.storeConstructionOrPlainPush("rax", size);
                 return true;
             }
             
@@ -1026,7 +1004,7 @@ case "ASSIGN":
                 // on x86-64, so ATOMIC_ASSIGN needs no different
                 // instruction, just the same width-aware store.
                 int size = (int) Long.parseLong(line.get(1).text);
-                if (constructionScopedAssign.contains(currentLineIndex)) {
+                if (core.constructionScopedAssign.contains(core.currentLineIndex)) {
                     // A plain, stack-resident struct/array/primitive
                     // literal's own top-level store -- see
                     // `constructionScopedAssign`'s own doc comment. %rsp
@@ -1047,16 +1025,16 @@ case "ASSIGN":
                     // path below would desynchronize with it (popping 8
                     // bytes of a 4-byte-reserved value block spills into
                     // the address word sitting right above it).
-                    assignConstructionBlock(size);
+                    hub.emit.assignConstructionBlock(size);
                 } else if (line.size() > 4) {
                     // A stack struct literal whose field values were not all plain pushes (an expression, a call, ...): every
                     // field was pushed as a whole 8-byte word, so the block-copy paths below would misread the stack. The layout
                     // descriptor LowerOrderGenerator appended tells us where each field really goes.
-                    emitAssignRepack(size, line);
+                    hub.emit.emitAssignRepack(size, line);
                 } else if (size <= 8) {
-                    popReg("rax"); // value
-                    popReg("rbx"); // address
-                    storeSizedToAddr("rax", "rbx", size);
+                    hub.emit.popReg("rax"); // value
+                    hub.emit.popReg("rbx"); // address
+                    hub.emit.storeSizedToAddr("rax", "rbx", size);
                 } else {
                     // Not a recognized construction -- an ordinary
                     // whole-value block copy (`let b = a`, passing a
@@ -1064,40 +1042,40 @@ case "ASSIGN":
                     // came from `pushBlockFromFrame`'s uniform, always-
                     // whole-8-byte-word convention instead. Handled the
                     // old way, popping one word at a time.
-                    assignBlock(size);
+                    hub.emit.assignBlock(size);
                 }
                 return true;
             }
             
 case "R_MOV": {
                 // Register-form (see the LowerOrderGenerator's RegisterFormPass): "R_MOV 8 dst src".
-                rfMov(line.get(2).text, line.get(3).text);
+                hub.regForm.rfMov(line.get(2).text, line.get(3).text);
                 return true;
             }
             
 case "R_BIN": {
                 // "R_BIN OP size %tD a b" -- %tD = a OP b.
-                rfBin(line.get(1).text, (int) Long.parseLong(line.get(2).text), line.get(3).text, line.get(4).text, line.get(5).text);
+                hub.gen.rfBin(line.get(1).text, (int) Long.parseLong(line.get(2).text), line.get(3).text, line.get(4).text, line.get(5).text);
                 return true;
             }
             
 case "R_DIVC": {
                 // "R_DIVC DIV|MOD 8 %tD a #k" -- unsigned division / remainder by a constant, by multiplying with the reciprocal.
-                rfDivConst(line.get(1).text.equals("MOD"), (int) Long.parseLong(line.get(2).text), line.get(3).text, line.get(4).text, rfImm(line.get(5).text));
+                hub.regForm.rfDivConst(line.get(1).text.equals("MOD"), (int) Long.parseLong(line.get(2).text), line.get(3).text, line.get(4).text, X86Core.rfImm(line.get(5).text));
                 return true;
             }
             
 case "R_UN": {
                 // "R_UN OP size %tD a" -- %tD = OP a.
-                rfUn(line.get(1).text, (int) Long.parseLong(line.get(2).text), line.get(3).text, line.get(4).text);
+                hub.gen.rfUn(line.get(1).text, (int) Long.parseLong(line.get(2).text), line.get(3).text, line.get(4).text);
                 return true;
             }
             
 case "R_BRF": {
                 // "R_BRF %tN @label" -- jump if the temp is zero (replaces CMP + JMP).
-                String reg = rfReg(line.get(1).text);
-                raw(("    testq %" + reg + ", %" + reg));
-                raw("    je " + mangleLabel(line.get(2).text));
+                String reg = hub.regForm.rfReg(line.get(1).text);
+                hub.emit.raw(("    testq %" + reg + ", %" + reg));
+                hub.emit.raw("    je " + hub.gen.mangleLabel(line.get(2).text));
                 return true;
             }
             
@@ -1105,21 +1083,21 @@ case "R_BRC": {
                 // "R_BRC OP 8 a b @label" -- compare a with b and jump to the label when NOT (a OP b) (the fused form of
                 // R_BIN cmp + R_BRF, made by the LowerOrderGenerator's BranchFusionPass; the compare result never exists).
                 if (line.get(2).text.startsWith("F")) { // "R_BRC OP F4|F8 a b @label": float compare (ucomiss/ucomisd) + jump
-                    rfFloat(true, line.get(1).text, Integer.parseInt(line.get(2).text.substring(1)), null, line.get(3).text, line.get(4).text,
-                            mangleLabel(line.get(5).text));
+                    hub.gen.rfFloat(true, line.get(1).text, Integer.parseInt(line.get(2).text.substring(1)), null, line.get(3).text, line.get(4).text,
+                            hub.gen.mangleLabel(line.get(5).text));
                     return true;
                 }
                 int brcSize = (int) Long.parseLong(line.get(2).text);
                 if (brcSize < 8) {
-                    rfBrcNarrow(line.get(1).text, brcSize, line.get(3).text, line.get(4).text, mangleLabel(line.get(5).text));
+                    hub.gen.rfBrcNarrow(line.get(1).text, brcSize, line.get(3).text, line.get(4).text, hub.gen.mangleLabel(line.get(5).text));
                     return true;
                 }
-                rfBrc(line.get(1).text, line.get(3).text, line.get(4).text, mangleLabel(line.get(5).text));
+                hub.gen.rfBrc(line.get(1).text, line.get(3).text, line.get(4).text, hub.gen.mangleLabel(line.get(5).text));
                 return true;
             }
             
 case "R_CMOV": {
-                rfCmov(line);
+                hub.gen.rfCmov(line);
                 return true;
             }
             

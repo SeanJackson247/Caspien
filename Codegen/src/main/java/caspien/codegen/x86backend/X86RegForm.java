@@ -10,10 +10,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/** Last stack-form mnemonic groups, allocation/resize helpers, and the first register-form (R_*) helpers (see X86Backend for how the parts fit together). */
-abstract class X86RegForm extends X86CasesB {
-    X86RegForm(CodegenConfig.Target target, boolean bmi2) {
-        super(target, bmi2);
+/** Last stack-form mnemonic groups, allocation/resize helpers, and the first register-form (R_*) helpers (see X86Generator for how the parts fit together). */
+final class X86RegForm {
+    private final X86Backend hub;
+    private final X86Core core;
+
+    X86RegForm(X86Backend hub) {
+        this.hub = hub;
+        this.core = hub.core;
     }
 
     boolean emitCases6(String mnemonic, BytecodeStatement line, String first, boolean wasCmp, long pendingBlockSize) {
@@ -28,7 +32,7 @@ case "GT_INIT": {
                 // directly by the exact, unmistakable name match (and
                 // the identical pattern for GT_ALIVE_CHECK/GT_DESTRUCT
                 // below).
-                emitAlignedCall(() -> emitCallByName("gt_init"));
+                hub.calls.emitAlignedCall(() -> hub.calls.emitCallByName("gt_init"));
                 return true;
             }
             
@@ -70,48 +74,48 @@ case "GT_REGISTER": {
                 // first copy sitting undisturbed underneath, already
                 // exactly where the next real instruction expects "NEW"'s
                 // own result to be.
-                popReg("rax");
-                pushReg("rax"); // the surviving copy -- left alone, underneath the call
-                pushReg("rax"); // the throwaway copy -- this one becomes the argument
-                popReg("rax");
-                raw(("    movq %rax, %" + argReg(0)));
-                emitAlignedCall(() -> emitCallByName("gt_register"));
+                hub.emit.popReg("rax");
+                hub.emit.pushReg("rax"); // the surviving copy -- left alone, underneath the call
+                hub.emit.pushReg("rax"); // the throwaway copy -- this one becomes the argument
+                hub.emit.popReg("rax");
+                hub.emit.raw(("    movq %rax, %" + hub.calls.argReg(0)));
+                hub.calls.emitAlignedCall(() -> hub.calls.emitCallByName("gt_register"));
                 // gt_register returns false when the table could not grow (the pointer is then NOT registered): free the
                 // block and leave null in its place, exactly what a failed allocation leaves, so the allocation site's own
                 // null check takes the out-of-memory path. A null pointer registers as success (and stays null).
                 String regOk = newInternalLabel("gtreg_ok");
-                raw("    testb %al, %al");
-                raw("    jnz " + regOk);
-                popReg("rax"); // the surviving copy
-                raw(("    movq %rax, %" + argReg(0)));
-                emitAlignedCall(() -> emitCallByName("free"));
-                raw("    xorq %rax, %rax");
-                pushReg("rax");
-                raw(regOk + ":");
+                hub.emit.raw("    testb %al, %al");
+                hub.emit.raw("    jnz " + regOk);
+                hub.emit.popReg("rax"); // the surviving copy
+                hub.emit.raw(("    movq %rax, %" + hub.calls.argReg(0)));
+                hub.calls.emitAlignedCall(() -> hub.calls.emitCallByName("free"));
+                hub.emit.raw("    xorq %rax, %rax");
+                hub.emit.pushReg("rax");
+                hub.emit.raw(regOk + ":");
                 return true;
             }
             
 case "GT_ALIVE_CHECK": {
-                popReg("rax"); // the pointer being checked
-                raw(("    movq %rax, %" + argReg(0)));
-                emitAlignedCall(() -> emitCallByName("gt_alive_check"));
-                pushReg("rax"); // its bool result
+                hub.emit.popReg("rax"); // the pointer being checked
+                hub.emit.raw(("    movq %rax, %" + hub.calls.argReg(0)));
+                hub.calls.emitAlignedCall(() -> hub.calls.emitCallByName("gt_alive_check"));
+                hub.emit.pushReg("rax"); // its bool result
                 return true;
             }
             
 case "GT_REF_ID": {
-                popReg("rax"); // an address (ref some / owns) being stored into a nullable ref
-                raw(("    movq %rax, %" + argReg(0)));
-                emitAlignedCall(() -> emitCallByName("gt_ref_id"));
-                pushReg("rax"); // its 64-bit id (0 for null / dead)
+                hub.emit.popReg("rax"); // an address (ref some / owns) being stored into a nullable ref
+                hub.emit.raw(("    movq %rax, %" + hub.calls.argReg(0)));
+                hub.calls.emitAlignedCall(() -> hub.calls.emitCallByName("gt_ref_id"));
+                hub.emit.pushReg("rax"); // its 64-bit id (0 for null / dead)
                 return true;
             }
             
 case "GT_REF_RESOLVE": {
-                popReg("rax"); // an id
-                raw(("    movq %rax, %" + argReg(0)));
-                emitAlignedCall(() -> emitCallByName("gt_ref_resolve"));
-                pushReg("rax"); // the object's address, null when it is no longer registered
+                hub.emit.popReg("rax"); // an id
+                hub.emit.raw(("    movq %rax, %" + hub.calls.argReg(0)));
+                hub.calls.emitAlignedCall(() -> hub.calls.emitCallByName("gt_ref_resolve"));
+                hub.emit.pushReg("rax"); // the object's address, null when it is no longer registered
                 return true;
             }
             
@@ -124,11 +128,11 @@ case "GT_DESTRUCT": {
                 // parameter to a local, ordinary by-value handling).
                 String operand = line.get(1).text;
                 if (operand.startsWith("$")) {
-                    loadSizedFromFrame("rax", Long.parseLong(operand.substring(1)), 8);
-                    raw(("    movq %rax, %" + argReg(0)));
-                    emitAlignedCall(() -> emitCallByName("gt_destruct"));
+                    hub.emit.loadSizedFromFrame("rax", Long.parseLong(operand.substring(1)), 8);
+                    hub.emit.raw(("    movq %rax, %" + hub.calls.argReg(0)));
+                    hub.calls.emitAlignedCall(() -> hub.calls.emitCallByName("gt_destruct"));
                 } else {
-                    comment("TODO(codegen): 'GT_DESTRUCT " + operand + "' (non-stack-offset operand) not yet implemented");
+                    hub.emit.comment("TODO(codegen): 'GT_DESTRUCT " + operand + "' (non-stack-offset operand) not yet implemented");
                 }
                 return true;
             }
@@ -159,10 +163,10 @@ case "GT_DESTRUCT_ADDR": {
                 // directly from its own body: "PUSH ARG0 / ASSIGN",
                 // ordinary by-value handling -- identical to the plain
                 // case above).
-                popReg("rax"); // the computed address itself
-                loadSizedFromAddr("rax", "rax", 8); // dereference: the owns pointer's own value
-                raw(("    movq %rax, %" + argReg(0)));
-                emitAlignedCall(() -> emitCallByName("gt_destruct"));
+                hub.emit.popReg("rax"); // the computed address itself
+                hub.emit.loadSizedFromAddr("rax", "rax", 8); // dereference: the owns pointer's own value
+                hub.emit.raw(("    movq %rax, %" + hub.calls.argReg(0)));
+                hub.calls.emitAlignedCall(() -> hub.calls.emitCallByName("gt_destruct"));
                 return true;
             }
             
@@ -200,7 +204,7 @@ case "YIELD": {
                 // no return value read by anything -- "sched_yield"
                 // itself returns an int (0 on success) that nothing
                 // downstream of "yield" ever consumes.
-                emitAlignedCall(() -> emitCallByName("sched_yield"));
+                hub.calls.emitAlignedCall(() -> hub.calls.emitCallByName("sched_yield"));
                 return true;
             }
             
@@ -232,10 +236,10 @@ case "SLEEP": {
                 // sleep(duration) where duration is the duration type C
                 // expects," confirmed directly.
                 String realFuncName = line.get(1).text;
-                popReg("rax"); // the pushed duration argument
-                raw(("    movq %rax, %" + argReg(0)));
-                emitAlignedCall(() -> emitCallByName(realFuncName));
-                pushReg("rax"); // the real C "sleep"'s own u64 result (remaining, unslept seconds)
+                hub.emit.popReg("rax"); // the pushed duration argument
+                hub.emit.raw(("    movq %rax, %" + hub.calls.argReg(0)));
+                hub.calls.emitAlignedCall(() -> hub.calls.emitCallByName(realFuncName));
+                hub.emit.pushReg("rax"); // the real C "sleep"'s own u64 result (remaining, unslept seconds)
                 return true;
             }
             
@@ -267,8 +271,8 @@ case "EXIT": {
                 // needed for codegen to call it by name) is the
                 // straightforward way to actually end the process here,
                 // with that exact distinct status.
-                raw(("    movq $1, %" + argReg(0)));
-                emitAlignedCall(() -> emitCallByName("exit"));
+                hub.emit.raw(("    movq $1, %" + hub.calls.argReg(0)));
+                hub.calls.emitAlignedCall(() -> hub.calls.emitCallByName("exit"));
                 return true;
             }
             
@@ -305,8 +309,8 @@ case "EXIT_THREAD": {
                 // back a thread's own real exit-value pointer -- see
                 // "stdlib/await_call.caspien"'s own "pthread_join(tid,
                 // null)") ever consumes it.
-                raw(("    movq $0, %" + argReg(0)));
-                emitAlignedCall(() -> emitCallByName("pthread_exit"));
+                hub.emit.raw(("    movq $0, %" + hub.calls.argReg(0)));
+                hub.calls.emitAlignedCall(() -> hub.calls.emitCallByName("pthread_exit"));
                 return true;
             }
             
@@ -316,44 +320,44 @@ case "TRACE_CAPTURE": {
                 // staging array. Second pass: store the innermost min(count, DEPTH) ids, then a 0 terminator. Nothing else is touched: the
                 // scratch registers are saved and restored, because variable registers may be live across this instruction.
                 int depth = Integer.parseInt(line.get(1).text);
-                raw("    pushq %rax");
-                raw("    pushq %rcx");
-                raw("    pushq %rdx");
-                raw("    pushq %rsi");
-                raw("    pushq %r11");
-                raw("    movq %rbp, %rcx");
-                raw("    xorl %edx, %edx");
-                raw("1:");
-                raw("    incq %rdx");
-                raw("    movq -24(%rcx), %rax");
-                raw("    testb $1, %al");
-                raw("    jnz 2f");
-                raw("    movq (%rcx), %rcx");
-                raw("    jmp 1b");
-                raw("2:");
-                raw("    movq -32(%rcx), %rsi");
-                raw("    movq $" + depth + ", %rax");
-                raw("    cmpq %rax, %rdx");
-                raw("    cmova %rax, %rdx");
-                raw("    movq %rbp, %rcx");
-                raw("    xorl %eax, %eax");
-                raw("3:");
-                raw("    cmpq %rdx, %rax");
-                raw("    jae 4f");
-                raw("    movq -24(%rcx), %r11");
-                raw("    shrq $1, %r11");
-                raw("    movq %r11, (%rsi,%rax,8)");
-                raw("    incq %rax");
-                raw("    movq (%rcx), %rcx");
-                raw("    jmp 3b");
-                raw("4:");
-                raw("    movq $0, (%rsi,%rdx,8)");
-                raw("    movq %rsi, -32(%rbp)");   // this frame's trace pointer = the root's array (a catch in this same frame reads it)
-                raw("    popq %r11");
-                raw("    popq %rsi");
-                raw("    popq %rdx");
-                raw("    popq %rcx");
-                raw("    popq %rax");
+                hub.emit.raw("    pushq %rax");
+                hub.emit.raw("    pushq %rcx");
+                hub.emit.raw("    pushq %rdx");
+                hub.emit.raw("    pushq %rsi");
+                hub.emit.raw("    pushq %r11");
+                hub.emit.raw("    movq %rbp, %rcx");
+                hub.emit.raw("    xorl %edx, %edx");
+                hub.emit.raw("1:");
+                hub.emit.raw("    incq %rdx");
+                hub.emit.raw("    movq -24(%rcx), %rax");
+                hub.emit.raw("    testb $1, %al");
+                hub.emit.raw("    jnz 2f");
+                hub.emit.raw("    movq (%rcx), %rcx");
+                hub.emit.raw("    jmp 1b");
+                hub.emit.raw("2:");
+                hub.emit.raw("    movq -32(%rcx), %rsi");
+                hub.emit.raw("    movq $" + depth + ", %rax");
+                hub.emit.raw("    cmpq %rax, %rdx");
+                hub.emit.raw("    cmova %rax, %rdx");
+                hub.emit.raw("    movq %rbp, %rcx");
+                hub.emit.raw("    xorl %eax, %eax");
+                hub.emit.raw("3:");
+                hub.emit.raw("    cmpq %rdx, %rax");
+                hub.emit.raw("    jae 4f");
+                hub.emit.raw("    movq -24(%rcx), %r11");
+                hub.emit.raw("    shrq $1, %r11");
+                hub.emit.raw("    movq %r11, (%rsi,%rax,8)");
+                hub.emit.raw("    incq %rax");
+                hub.emit.raw("    movq (%rcx), %rcx");
+                hub.emit.raw("    jmp 3b");
+                hub.emit.raw("4:");
+                hub.emit.raw("    movq $0, (%rsi,%rdx,8)");
+                hub.emit.raw("    movq %rsi, -32(%rbp)");   // this frame's trace pointer = the root's array (a catch in this same frame reads it)
+                hub.emit.raw("    popq %r11");
+                hub.emit.raw("    popq %rsi");
+                hub.emit.raw("    popq %rdx");
+                hub.emit.raw("    popq %rcx");
+                hub.emit.raw("    popq %rax");
                 return true;
             }
             
@@ -421,7 +425,7 @@ case "GT_UNWIND": {
                 // further the same way, or (the true root -- main/
                 // @event_loop/@async) terminates via EXIT/EXIT_THREAD
                 // instead of a further GT_UNWIND.
-                raw(CSR_MARK);
+                hub.emit.raw(X86Core.CSR_MARK);
                 // "GT_UNWIND MSG": the compiler reserved a second slot, gt_error_message, at rbp-16 in every frame (right behind
                 // gt_routine_address; ArgToAllocLoweringPass keeps it ahead of the parameters). Carry this frame's message up to the
                 // caller's slot, so a catch anywhere up the chain sees what was thrown. rax is free here (it is loaded with the jump
@@ -431,24 +435,24 @@ case "GT_UNWIND": {
                 // (a variable in rcx lives only in a call-free region, and an unwind always follows a call).
                 boolean carryTrace = carryMessage && line.size() > 2 && "TRACE".equals(line.get(2).text);
                 if (carryMessage) {
-                    movMemToReg("rax", -16);
+                    hub.emit.movMemToReg("rax", -16);
                 }
                 if (carryTrace) {
-                    movMemToReg("rcx", -32);
+                    hub.emit.movMemToReg("rcx", -32);
                 }
-                raw("    movq %rbp, %rsp");
+                hub.emit.raw("    movq %rbp, %rsp");
                 
-                popReg("rbp");
-                raw("    addq $8, %rsp");
+                hub.emit.popReg("rbp");
+                hub.emit.raw("    addq $8, %rsp");
                 
                 if (carryMessage) {
-                    movRegToMem("rax", -16); // the caller's gt_error_message slot
+                    hub.emit.movRegToMem("rax", -16); // the caller's gt_error_message slot
                 }
                 if (carryTrace) {
-                    movRegToMem("rcx", -32); // the caller's gt_trace_ptr slot
+                    hub.emit.movRegToMem("rcx", -32); // the caller's gt_trace_ptr slot
                 }
-                movMemToReg("rax", -8); // the caller's own gt_routine_address slot
-                raw("    jmp *%rax");
+                hub.emit.movMemToReg("rax", -8); // the caller's own gt_routine_address slot
+                hub.emit.raw("    jmp *%rax");
                 
                 return true;
             }
@@ -496,9 +500,9 @@ case "RET": {
                 // caller wasn't meant to look at.
                 long size = Long.parseLong(line.get(1).text);
                 if (size > 0) {
-                    popReg("rax");
+                    hub.emit.popReg("rax");
                 } else {
-                    movImmToReg("rax", 0);
+                    hub.emit.movImmToReg("rax", 0);
                 }
                 // RET can occur anywhere in a function's body -- nested
                 // inside an if/match/loop, not just as the unconditional
@@ -517,7 +521,7 @@ case "RET": {
                 // RET already was the last statement (FUNC_END's own
                 // copy simply becomes unreachable), correct and required
                 // everywhere else.
-                emitFunctionEpilogue();
+                hub.gen.emitFunctionEpilogue();
                 return true;
             }
             
@@ -529,12 +533,12 @@ case "RET_FLOAT": {
                 // void return (RET_FLOAT only exists for a real,
                 // non-void, f32-returning function), so there's no
                 // "leave it zeroed" case to mirror RET's own.
-                popReg("rax");
-                movRegToXmm("rax", "xmm0");
+                hub.emit.popReg("rax");
+                hub.calls.movRegToXmm("rax", "xmm0");
                 // See RET's own identical comment just above -- the same
                 // "must actually leave the function here" fix applies
                 // equally to a float return.
-                emitFunctionEpilogue();
+                hub.gen.emitFunctionEpilogue();
                 return true;
             }
             
@@ -555,17 +559,17 @@ case "VARARGS_XMM_COUNT": {
                 // varargs rule) rather than being computed here. Emits no
                 // assembly of its own -- just records the value for
                 // whichever call site's own preamble consumes it next.
-                pendingVarargsXmmCount = Integer.parseInt(line.get(1).text);
+                core.pendingVarargsXmmCount = Integer.parseInt(line.get(1).text);
                 return true;
             }
             
 case "CALL": {
                 String name = line.get(1).text;
-                if ((name.startsWith("__drop_") || name.startsWith("__clone_")) && callBufferStack.isEmpty()) {
+                if ((name.startsWith("__drop_") || name.startsWith("__clone_")) && core.callBufferStack.isEmpty()) {
                     emitDropGlueCall(name);
                     return true;
                 }
-                resolveStackArgBytesAndCall(() -> emitCallByName(name));
+                hub.calls.resolveStackArgBytesAndCall(() -> hub.calls.emitCallByName(name));
                 return true;
             }
             
@@ -576,8 +580,8 @@ case "INVOKE": {
                 // register not used by any argument slot and call
                 // through it. The numeric operand (arg count) is purely
                 // informational here.
-                popReg("r10");
-                resolveStackArgBytesAndCall(() -> emitCallIndirect("r10"));
+                hub.emit.popReg("r10");
+                hub.calls.resolveStackArgBytesAndCall(() -> hub.calls.emitCallIndirect("r10"));
                 return true;
             }
             
@@ -586,8 +590,8 @@ case "POP": {
                 int size = (int) Long.parseLong(line.get(2).text);
                 if (dest.startsWith("ARG")) {
                     int idx = Integer.parseInt(dest.substring(3));
-                    popReg(argReg(idx));
-                    noteArgRegLoaded("i" + idx);
+                    hub.emit.popReg(hub.calls.argReg(idx));
+                    hub.emit.noteArgRegLoaded("i" + idx);
                 } else if (dest.startsWith("FARG")) {
                     // The float-bank counterpart of "ARG" just above --
                     // there's no real "pop directly into an xmm register"
@@ -596,14 +600,14 @@ case "POP": {
                     // into the real argument xmm register via the same
                     // bit-copying `movq` every other float op here uses.
                     int idx = Integer.parseInt(dest.substring(4));
-                    popReg("rax");
-                    movRegToXmm("rax", argFloatReg(idx));
-                    noteArgRegLoaded("f" + idx);
+                    hub.emit.popReg("rax");
+                    hub.calls.movRegToXmm("rax", hub.calls.argFloatReg(idx));
+                    hub.emit.noteArgRegLoaded("f" + idx);
                 } else if (dest.startsWith("$")) {
                     long addr = Long.parseLong(dest.substring(1));
                     if (size <= 8) {
-                        popReg("rax");
-                        storeSizedToFrame("rax", addr, size);
+                        hub.emit.popReg("rax");
+                        hub.emit.storeSizedToFrame("rax", addr, size);
                     } else {
                         // Mirror of DEREF's own multi-word push, above:
                         // the *first* pop is the highest-address word
@@ -611,25 +615,25 @@ case "POP": {
                         // back down to addr+0 for the final pop.
                         long words = (size + 7) / 8;
                         for (long i = 0; i < words; i++) {
-                            popReg("rax");
-                            storeSizedToFrame("rax", addr + size - 8 - i * 8, 8);
+                            hub.emit.popReg("rax");
+                            hub.emit.storeSizedToFrame("rax", addr + size - 8 - i * 8, 8);
                         }
                     }
                 } else {
-                    comment("TODO(codegen): 'POP " + dest + " " + size + "' not yet implemented");
+                    hub.emit.comment("TODO(codegen): 'POP " + dest + " " + size + "' not yet implemented");
                 }
                 return true;
             }
             
 case "PUSH_LABEL": {
                 String name = line.get(1).text;
-                leaGlobalToReg("rax", mangleLabel(name));
-                pushReg("rax");
+                hub.emit.leaGlobalToReg("rax", hub.gen.mangleLabel(name));
+                hub.emit.pushReg("rax");
                 return true;
             }
             
 case "PUSH_RET_INT": {
-                pushReg("rax"); // the call result already sitting in rax
+                hub.emit.pushReg("rax"); // the call result already sitting in rax
                 return true;
             }
             
@@ -638,15 +642,15 @@ case "PUSH_RET_FLOAT": {
                 // function's float result is sitting in xmm0 (the same
                 // shared win64/SysV convention), not rax -- move it over
                 // and push it exactly like PUSH_RET_INT does for rax.
-                if (floatResultInR10) {
+                if (core.floatResultInR10) {
                     // xmm0 was already restored for the enclosing call's
                     // argument 0 (see "CC_END"); the real result is in r10.
-                    raw("    movq %r10, %rax");
-                    floatResultInR10 = false;
+                    hub.emit.raw("    movq %r10, %rax");
+                    core.floatResultInR10 = false;
                 } else {
-                    movXmmToReg("xmm0", "rax");
+                    hub.calls.movXmmToReg("xmm0", "rax");
                 }
-                pushReg("rax");
+                hub.emit.pushReg("rax");
                 return true;
             }
             
@@ -660,18 +664,18 @@ case "ASM_START": {
                 // unchanged, in order, and skip past them here so the
                 // main dispatch above doesn't also see them as ordinary
                 // bytecode lines.
-                int end = currentLineIndex + 1;
-                while (end < allLines.size()) {
-                    BytecodeStatement candidate = allLines.get(end);
+                int end = core.currentLineIndex + 1;
+                while (end < core.allLines.size()) {
+                    BytecodeStatement candidate = core.allLines.get(end);
                     if (candidate.size() == 1 && candidate.get(0).text.equals("ASM_END")) {
                         break;
                     }
                     end++;
                 }
-                for (int i = currentLineIndex + 1; i < end; i++) {
-                    raw(String.join(" ", textsOf(allLines.get(i))));
+                for (int i = core.currentLineIndex + 1; i < end; i++) {
+                    hub.emit.raw(String.join(" ", X86Core.textsOf(core.allLines.get(i))));
                 }
-                asmSkipUntilIndex = end; // skips the raw lines and ASM_END itself
+                core.asmSkipUntilIndex = end; // skips the raw lines and ASM_END itself
                 return true;
             }
             
@@ -711,15 +715,15 @@ case "FLOAT_CHECK": {
                 // always follows a match branch condition.
                 String[] categories = line.get(1).text.split("\\|");
                 boolean f64Check = line.size() > 2 && line.get(2).text.equals("8");
-                popReg("rax");
+                hub.emit.popReg("rax");
                 if (f64Check) {
                     // double: strip the sign bit (bit 63) by shifting it out, compare against the +-Inf exponent pattern 0x7ff0000000000000
-                    raw("    btrq $63, %rax");
-                    movImmToReg("rdx", 0x7ff0000000000000L);
-                    raw("    cmpq %rdx, %rax");
+                    hub.emit.raw("    btrq $63, %rax");
+                    hub.emit.movImmToReg("rdx", 0x7ff0000000000000L);
+                    hub.emit.raw("    cmpq %rdx, %rax");
                 } else {
-                raw("    andl $2147483647, %eax"); // strip the sign bit -> |bits|
-                raw("    cmpl $2139095040, %eax"); // vs. the shared +-Inf/NaN exponent pattern
+                hub.emit.raw("    andl $2147483647, %eax"); // strip the sign bit -> |bits|
+                hub.emit.raw("    cmpl $2139095040, %eax"); // vs. the shared +-Inf/NaN exponent pattern
                 }
                 boolean firstCategory = true;
                 for (String category : categories) {
@@ -727,15 +731,15 @@ case "FLOAT_CHECK": {
                             : category.equals("infinite") ? "sete"
                             : "seta"; // "nan"
                     String reg = firstCategory ? "rax" : "rdx";
-                    raw("    " + setcc + " %" + sizedReg(reg, 1));
-                    raw("    movzbq %" + sizedReg(reg, 1) + ", %" + reg);
+                    hub.emit.raw("    " + setcc + " %" + hub.emit.sizedReg(reg, 1));
+                    hub.emit.raw("    movzbq %" + hub.emit.sizedReg(reg, 1) + ", %" + reg);
                     
                     if (!firstCategory) {
-                        raw("    orq %rdx, %rax");
+                        hub.emit.raw("    orq %rdx, %rax");
                     }
                     firstCategory = false;
                 }
-                pushReg("rax");
+                hub.emit.pushReg("rax");
                 return true;
             }
             
@@ -761,21 +765,21 @@ case "CC_START": {
                 // this call's "CC_END" cancel them exactly, so the outer
                 // call's stack-passed-byte accounting is unchanged.)
                 java.util.List<String> saved = new java.util.ArrayList<>();
-                if (!loadedArgRegsStack.isEmpty()) {
-                    saved.addAll(loadedArgRegsStack.peek());
+                if (!core.loadedArgRegsStack.isEmpty()) {
+                    saved.addAll(core.loadedArgRegsStack.peek());
                 }
                 for (String r : saved) {
                     if (r.charAt(0) == 'i') {
-                        pushReg(argReg(Integer.parseInt(r.substring(1))));
+                        hub.emit.pushReg(hub.calls.argReg(Integer.parseInt(r.substring(1))));
                     } else {
-                        movXmmToReg(argFloatReg(Integer.parseInt(r.substring(1))), "r11");
-                        pushReg("r11");
+                        hub.calls.movXmmToReg(hub.calls.argFloatReg(Integer.parseInt(r.substring(1))), "r11");
+                        hub.emit.pushReg("r11");
                     }
                 }
-                savedOuterArgRegsStack.push(saved);
-                loadedArgRegsStack.push(new java.util.ArrayList<>());
-                callBufferStack.push(new StringBuilder());
-                argTrackDeltaStack.push(0L);
+                core.savedOuterArgRegsStack.push(saved);
+                core.loadedArgRegsStack.push(new java.util.ArrayList<>());
+                core.callBufferStack.push(new StringBuilder());
+                core.argTrackDeltaStack.push(0L);
                 return true;
             }
             
@@ -788,29 +792,29 @@ case "CC_END": {
                 // -- the enclosing call's own still-open buffer, if this
                 // call was itself nested inside another call's own
                 // argument expression, or `out` directly otherwise.
-                StringBuilder finished = callBufferStack.pop();
-                argTrackDeltaStack.pop();
-                loadedArgRegsStack.pop();
-                currentSink().append(finished);
-                strideKeySink = null;
+                StringBuilder finished = core.callBufferStack.pop();
+                core.argTrackDeltaStack.pop();
+                core.loadedArgRegsStack.pop();
+                hub.emit.currentSink().append(finished);
+                core.strideKeySink = null;
                 // Restore the enclosing call's already-loaded argument
                 // registers (saved at this call's "CC_START"), in reverse
                 // order. rax (an integer result) is never touched; r11 is
                 // the scratch for float-bank restores; a possible float
                 // result in xmm0 is stashed in r10 first, only when xmm0
                 // itself is about to be overwritten.
-                java.util.List<String> saved = savedOuterArgRegsStack.pop();
+                java.util.List<String> saved = core.savedOuterArgRegsStack.pop();
                 if (saved.contains("f0")) {
-                    movXmmToReg("xmm0", "r10");
-                    floatResultInR10 = true;
+                    hub.calls.movXmmToReg("xmm0", "r10");
+                    core.floatResultInR10 = true;
                 }
                 for (int k = saved.size() - 1; k >= 0; k--) {
                     String r = saved.get(k);
                     if (r.charAt(0) == 'i') {
-                        popReg(argReg(Integer.parseInt(r.substring(1))));
+                        hub.emit.popReg(hub.calls.argReg(Integer.parseInt(r.substring(1))));
                     } else {
-                        popReg("r11");
-                        movRegToXmm("r11", argFloatReg(Integer.parseInt(r.substring(1))));
+                        hub.emit.popReg("r11");
+                        hub.calls.movRegToXmm("r11", hub.calls.argFloatReg(Integer.parseInt(r.substring(1))));
                     }
                 }
                 return true;
@@ -836,12 +840,12 @@ case "GLOBAL":
     }
 
     void storeSizedToAddr_withOffsetImm(String baseReg64, long offset, long value, int size) {
-        raw("    movq $" + value + ", " + offset + "(%" + baseReg64 + ")");
+        hub.emit.raw("    movq $" + value + ", " + offset + "(%" + baseReg64 + ")");
         
     }
 
     void storeSizedToAddr_reg(String baseReg64, long offset, String srcReg64, int size) {
-        raw("    movq %" + srcReg64 + ", " + offset + "(%" + baseReg64 + ")");
+        hub.emit.raw("    movq %" + srcReg64 + ", " + offset + "(%" + baseReg64 + ")");
         
     }
 
@@ -863,32 +867,32 @@ case "GLOBAL":
     void emitDropGlueCall(String name) {
         // `__clone_value_T(dst, src)` takes two words (dst pushed first, src on top): same dance with both words kept.
         boolean twoWords = name.startsWith("__clone_value_");
-        popReg("rax");
+        hub.emit.popReg("rax");
         if (twoWords) {
-            popReg("rcx");
+            hub.emit.popReg("rcx");
         }
-        raw("    movq %rsp, %rdx");
-        raw("    andq $-16, %rsp");
-        raw("    subq $8, %rsp");
-        raw("    movq %rdx, (%rsp)");
+        hub.emit.raw("    movq %rsp, %rdx");
+        hub.emit.raw("    andq $-16, %rsp");
+        hub.emit.raw("    subq $8, %rsp");
+        hub.emit.raw("    movq %rdx, (%rsp)");
         
         if (twoWords) {
-            pushReg("rcx");
+            hub.emit.pushReg("rcx");
         }
-        pushReg("rax");
-        emitCallByName(name);
+        hub.emit.pushReg("rax");
+        hub.calls.emitCallByName(name);
         int argBytes = twoWords ? 16 : 8;
-        raw("    addq $" + argBytes + ", %rsp");
-        raw("    movq (%rsp), %rsp");
+        hub.emit.raw("    addq $" + argBytes + ", %rsp");
+        hub.emit.raw("    movq (%rsp), %rsp");
         
     }
 
     /** Push `reg`, pass it as the first argument to the ghost table function `fn`, restore `reg`. */
     void emitGtCall(String fn, String reg) {
-        pushReg(reg);
-        raw(("    movq %" + reg + ", %" + argReg(0)));
-        emitAlignedCall(() -> emitCallByName(fn));
-        popReg(reg);
+        hub.emit.pushReg(reg);
+        hub.emit.raw(("    movq %" + reg + ", %" + hub.calls.argReg(0)));
+        hub.calls.emitAlignedCall(() -> hub.calls.emitCallByName(fn));
+        hub.emit.popReg(reg);
     }
 
     /**
@@ -898,16 +902,16 @@ case "GLOBAL":
      * nothing. Clobbers rbx.
      */
     void emitResizeGtUpdate() {
-        resizeExtraStack = 0;
-        popReg("rbx");
+        core.resizeExtraStack = 0;
+        hub.emit.popReg("rbx");
         String skip = newInternalLabel("resize_gt_skip");
-        raw("    testq %r15, %r15");
-        raw("    jz " + skip);
-        raw("    cmpq %rbx, %r15");
-        raw("    je " + skip);
+        hub.emit.raw("    testq %r15, %r15");
+        hub.emit.raw("    jz " + skip);
+        hub.emit.raw("    cmpq %rbx, %r15");
+        hub.emit.raw("    je " + skip);
         emitGtCall("gt_moved", "rbx");
         emitGtCall("gt_register", "r15");
-        raw(skip + ":");
+        hub.emit.raw(skip + ":");
     }
 
     /**
@@ -919,17 +923,17 @@ case "GLOBAL":
      */
     void emitResizeWideFillCopy(int elemSize, int words) {
         for (int k = 0; k < words; k++) {
-            long srcOff = (long) (words - 1 - k) * 8 + resizeExtraStack;
+            long srcOff = (long) (words - 1 - k) * 8 + core.resizeExtraStack;
             int n = Math.min(8, elemSize - 8 * k);
-            raw("    movq " + srcOff + "(%rsp), %rdx");
+            hub.emit.raw("    movq " + srcOff + "(%rsp), %rdx");
             
             long dst = 8L * k;
             for (int b = 0; b < n;) {
                 int chunk = n - b >= 8 ? 8 : n - b >= 4 ? 4 : n - b >= 2 ? 2 : 1;
-                raw("    mov" + movSuffix(chunk) + " %" + sizedReg("rdx", chunk) + ", " + (dst + b) + "(%rax)");
+                hub.emit.raw("    mov" + hub.emit.movSuffix(chunk) + " %" + hub.emit.sizedReg("rdx", chunk) + ", " + (dst + b) + "(%rax)");
                 
                 if (b + chunk < n) {
-                    raw(("    shrq $" + (chunk * 8) + ", %rdx"));
+                    hub.emit.raw(("    shrq $" + (chunk * 8) + ", %rdx"));
                 }
                 b += chunk;
             }
@@ -948,28 +952,28 @@ case "GLOBAL":
         // wild/failed allocation surfaced downstream as a null-pointer
         // or wild-pointer fault (`NEW`'s own "rep movsb", most
         // visibly).
-        raw("    movq $" + size + ", %" + argReg(0));
+        hub.emit.raw("    movq $" + size + ", %" + hub.calls.argReg(0));
         
-        emitAlignedCall(() -> emitCallByName("malloc"));
+        hub.calls.emitAlignedCall(() -> hub.calls.emitCallByName("malloc"));
     }
 
     String newInternalLabel(String prefix) {
-        return "L_cg_" + prefix + "_" + (internalLabelCounter++);
+        return "L_cg_" + prefix + "_" + (core.internalLabelCounter++);
     }
 
     String rfReg(String tok) {
         if (tok.equals("%s")) {
-            return RF_SCRATCH; // the spare scratch register, usable as an operand only inside the backend
+            return X86Core.RF_SCRATCH; // the spare scratch register, usable as an operand only inside the backend
         }
         if (tok.startsWith("%v")) {
             int vi = Integer.parseInt(tok.substring(2));
             if (vi < 3) {
-                rfVarMask |= 1 << vi;
-                rfVarUsed = true; // %v3..%v5 are r8/r9/r10: caller-saved, no save/restore, no clash with the r13/r14 scratch uses
+                core.rfVarMask |= 1 << vi;
+                core.rfVarUsed = true; // %v3..%v5 are r8/r9/r10: caller-saved, no save/restore, no clash with the r13/r14 scratch uses
             }
-            return RF_VAR_REGS[vi];
+            return X86Core.RF_VAR_REGS[vi];
         }
-        return RF_TEMP_REGS[Integer.parseInt(tok.substring(2))];
+        return X86Core.RF_TEMP_REGS[Integer.parseInt(tok.substring(2))];
     }
 
     String rfRegText(String reg) {
@@ -982,57 +986,57 @@ case "GLOBAL":
 
     /** Source-operand text for a two-operand instruction; a 64-bit immediate that will not fit imm32 goes through the scratch register. */
     String rfSrc(String tok) {
-        if (rfIsTemp(tok)) {
+        if (X86Core.rfIsTemp(tok)) {
             return rfRegText(rfReg(tok));
         }
-        if (rfIsSlot(tok)) {
-            return rfMemText(rfSlot(tok));
+        if (X86Core.rfIsSlot(tok)) {
+            return rfMemText(X86Core.rfSlot(tok));
         }
-        long v = rfImm(tok);
-        if (!rfFitsImm32(v)) {
-            movImmToReg(RF_SCRATCH, v);
-            return rfRegText(RF_SCRATCH);
+        long v = X86Core.rfImm(tok);
+        if (!X86Core.rfFitsImm32(v)) {
+            hub.emit.movImmToReg(X86Core.RF_SCRATCH, v);
+            return rfRegText(X86Core.RF_SCRATCH);
         }
         return ("$" + v);
     }
 
     /** "op src, dst" in the active syntax (AT&T gets the q suffix and reversed operand order). */
     void rfOp2(String op, String dstText, String srcText) {
-        raw(("    " + op + "q " + srcText + ", " + dstText));
+        hub.emit.raw(("    " + op + "q " + srcText + ", " + dstText));
     }
 
     void rfRegToReg(String dst, String src) {
         if (!dst.equals(src)) {
-            raw(("    movq %" + src + ", %" + dst));
+            hub.emit.raw(("    movq %" + src + ", %" + dst));
         }
     }
 
     void rfMov(String dst, String src) {
-        if (rfIsTemp(dst)) {
+        if (X86Core.rfIsTemp(dst)) {
             String d = rfReg(dst);
-            if (rfIsImm(src)) {
-                movImmToReg(d, rfImm(src));
-            } else if (rfIsSlot(src)) {
-                movMemToReg(d, rfSlot(src));
+            if (X86Core.rfIsImm(src)) {
+                hub.emit.movImmToReg(d, X86Core.rfImm(src));
+            } else if (X86Core.rfIsSlot(src)) {
+                hub.emit.movMemToReg(d, X86Core.rfSlot(src));
             } else {
                 rfRegToReg(d, rfReg(src));
             }
             return;
         }
-        long off = rfSlot(dst);
-        if (rfIsTemp(src)) {
-            movRegToMem(rfReg(src), off);
-        } else if (rfIsImm(src)) {
-            long v = rfImm(src);
-            if (rfFitsImm32(v)) {
-                raw(("    movq $" + v + ", " + off + "(%rbp)"));
+        long off = X86Core.rfSlot(dst);
+        if (X86Core.rfIsTemp(src)) {
+            hub.emit.movRegToMem(rfReg(src), off);
+        } else if (X86Core.rfIsImm(src)) {
+            long v = X86Core.rfImm(src);
+            if (X86Core.rfFitsImm32(v)) {
+                hub.emit.raw(("    movq $" + v + ", " + off + "(%rbp)"));
             } else {
-                movImmToReg(RF_SCRATCH, v);
-                movRegToMem(RF_SCRATCH, off);
+                hub.emit.movImmToReg(X86Core.RF_SCRATCH, v);
+                hub.emit.movRegToMem(X86Core.RF_SCRATCH, off);
             }
         } else {
-            movMemToReg(RF_SCRATCH, rfSlot(src));
-            movRegToMem(RF_SCRATCH, off);
+            hub.emit.movMemToReg(X86Core.RF_SCRATCH, X86Core.rfSlot(src));
+            hub.emit.movRegToMem(X86Core.RF_SCRATCH, off);
         }
     }
 
@@ -1049,95 +1053,95 @@ case "GLOBAL":
      */
     void rfRotate(String op, int size, String dstTok, String aTok, String bTok) {
         String d = rfReg(dstTok);
-        boolean aIsD = rfIsTemp(aTok) && rfReg(aTok).equals(d);
+        boolean aIsD = X86Core.rfIsTemp(aTok) && rfReg(aTok).equals(d);
         String mn = op.equals("ROTL") ? "rol" : "ror";
-        if (rfIsImm(bTok)) {
-            long c = rfExtImm(rfImm(bTok), size, false) & (size * 8L - 1);
+        if (X86Core.rfIsImm(bTok)) {
+            long c = X86Core.rfExtImm(X86Core.rfImm(bTok), size, false) & (size * 8L - 1);
             if (!aIsD) {
                 rfMov(dstTok, aTok);
             }
             if (c != 0) {
                 if (size < 4) {
-                    zeroExtendReg(d, size);
+                    hub.emit.zeroExtendReg(d, size);
                 }
-                raw("    " + mn + movSuffix(size) + " $" + c + ", %" + sizedReg(d, size));
+                hub.emit.raw("    " + mn + hub.emit.movSuffix(size) + " $" + c + ", %" + hub.emit.sizedReg(d, size));
             }
-            zeroExtendReg(d, size);
+            hub.emit.zeroExtendReg(d, size);
             return;
         }
-        pushReg("rcx");
-        if (rfIsTemp(bTok)) {
+        hub.emit.pushReg("rcx");
+        if (X86Core.rfIsTemp(bTok)) {
             rfRegToReg("rcx", rfReg(bTok));
         } else {
-            movMemToReg("rcx", rfSlot(bTok));
+            hub.emit.movMemToReg("rcx", X86Core.rfSlot(bTok));
         }
         if (!aIsD) {
             rfMov(dstTok, aTok);
         }
-        zeroExtendReg(d, size);
-        raw("    " + mn + movSuffix(size) + " %cl, %" + sizedReg(d, size));
-        popReg("rcx");
+        hub.emit.zeroExtendReg(d, size);
+        hub.emit.raw("    " + mn + hub.emit.movSuffix(size) + " %cl, %" + hub.emit.sizedReg(d, size));
+        hub.emit.popReg("rcx");
     }
 
     void rfShift(String op, int size, String dstTok, String aTok, String bTok) {
         String d = rfReg(dstTok);
-        boolean aIsD = rfIsTemp(aTok) && rfReg(aTok).equals(d);
-        if (rfIsImm(bTok)) {
-            long c = rfExtImm(rfImm(bTok), size, false);
+        boolean aIsD = X86Core.rfIsTemp(aTok) && rfReg(aTok).equals(d);
+        if (X86Core.rfIsImm(bTok)) {
+            long c = X86Core.rfExtImm(X86Core.rfImm(bTok), size, false);
             boolean wide = Long.compareUnsigned(c, 63) > 0;
             if (!aIsD) {
                 rfMov(dstTok, aTok);
             }
             if (wide && !op.equals("SAR")) {
                 // shifted out entirely
-                raw(("    xorl %" + sizedReg(d, 4) + ", %" + sizedReg(d, 4)));
+                hub.emit.raw(("    xorl %" + hub.emit.sizedReg(d, 4) + ", %" + hub.emit.sizedReg(d, 4)));
                 return;
             }
             if (wide) {
                 c = 63;
             }
             if (op.equals("SHR")) {
-                zeroExtendReg(d, size);
+                hub.emit.zeroExtendReg(d, size);
             } else if (op.equals("SAR")) {
-                signExtendReg(d, size);
+                hub.emit.signExtendReg(d, size);
             }
             if (c != 0) {
                 String sop = op.equals("SHL") ? "shl" : op.equals("SHR") ? "shr" : "sar";
-                raw(("    " + sop + "q $" + c + ", %" + d));
+                hub.emit.raw(("    " + sop + "q $" + c + ", %" + d));
             }
             if (!op.equals("SHR")) {
-                zeroExtendReg(d, size);
+                hub.emit.zeroExtendReg(d, size);
             }
             return;
         }
-        if (bmi2 && !op.equals("SAR")) {
+        if (core.bmi2 && !op.equals("SAR")) {
             // BMI2: the count goes into the scratch register (b may sit in d's own register, which the move of `a` below overwrites); no %rcx traffic.
             // rfMov into a temp never touches the scratch register, so the count survives it.
-            if (rfIsTemp(bTok)) {
-                rfRegToReg(RF_SCRATCH, rfReg(bTok));
+            if (X86Core.rfIsTemp(bTok)) {
+                rfRegToReg(X86Core.RF_SCRATCH, rfReg(bTok));
             } else {
-                movMemToReg(RF_SCRATCH, rfSlot(bTok));
+                hub.emit.movMemToReg(X86Core.RF_SCRATCH, X86Core.rfSlot(bTok));
             }
-            zeroExtendReg(RF_SCRATCH, size);
+            hub.emit.zeroExtendReg(X86Core.RF_SCRATCH, size);
             if (!aIsD) {
                 rfMov(dstTok, aTok);
             }
-            emitShiftBmi2(op, size, d, RF_SCRATCH);
+            hub.emit.emitShiftBmi2(op, size, d, X86Core.RF_SCRATCH);
             return;
         }
         // variable count: it goes into %rcx first (b may sit in d's own register, which the move of `a` below overwrites)
-        pushReg("rcx");
-        if (rfIsTemp(bTok)) {
+        hub.emit.pushReg("rcx");
+        if (X86Core.rfIsTemp(bTok)) {
             rfRegToReg("rcx", rfReg(bTok));
         } else {
-            movMemToReg("rcx", rfSlot(bTok));
+            hub.emit.movMemToReg("rcx", X86Core.rfSlot(bTok));
         }
-        zeroExtendReg("rcx", size);
+        hub.emit.zeroExtendReg("rcx", size);
         if (!aIsD) {
             rfMov(dstTok, aTok);
         }
-        emitShiftCore(op, size, d);
-        popReg("rcx");
+        hub.emit.emitShiftCore(op, size, d);
+        hub.emit.popReg("rcx");
     }
 
     /**
@@ -1148,81 +1152,81 @@ case "GLOBAL":
      */
     void rfDivConst(boolean mod, int size, String dstTok, String aTok, long k) {
         String d = rfReg(dstTok);
-        long[] ms0 = divMagicSimple(k);
+        long[] ms0 = X86Core.divMagicSimple(k);
         if (ms0 != null && !mod) {
             // a plain quotient needs no copy of the dividend: it goes straight into rdx (shifted by the pre-shift), before rax is parked in d
-            if (rfIsTemp(aTok)) {
+            if (X86Core.rfIsTemp(aTok)) {
                 rfRegToReg("rdx", rfReg(aTok));
-            } else if (rfIsImm(aTok)) {
-                movImmToReg("rdx", rfExtImm(rfImm(aTok), size, false));
+            } else if (X86Core.rfIsImm(aTok)) {
+                hub.emit.movImmToReg("rdx", X86Core.rfExtImm(X86Core.rfImm(aTok), size, false));
             } else {
-                movMemToReg("rdx", rfSlot(aTok));
+                hub.emit.movMemToReg("rdx", X86Core.rfSlot(aTok));
             }
-            if (size < 8 && !rfIsImm(aTok)) {
-                zeroExtendReg("rdx", size);   // a narrow dividend: only its low `size` bytes count (the register may hold more)
+            if (size < 8 && !X86Core.rfIsImm(aTok)) {
+                hub.emit.zeroExtendReg("rdx", size);   // a narrow dividend: only its low `size` bytes count (the register may hold more)
             }
             if (ms0[0] > 0) {
-                raw("    shrq $" + ms0[0] + ", %rdx");
+                hub.emit.raw("    shrq $" + ms0[0] + ", %rdx");
             }
             boolean inRax0 = d.equals("rax");
             if (!inRax0) {
-                raw("    xchgq %rax, %" + d);
+                hub.emit.raw("    xchgq %rax, %" + d);
             }
-            movImmToReg("rax", ms0[1]);
-            raw("    mulq %rdx");
+            hub.emit.movImmToReg("rax", ms0[1]);
+            hub.emit.raw("    mulq %rdx");
             if (ms0[2] > 0) {
-                raw("    shrq $" + ms0[2] + ", %rdx");
+                hub.emit.raw("    shrq $" + ms0[2] + ", %rdx");
             }
-            raw("    movq %rdx, %rax");
+            hub.emit.raw("    movq %rdx, %rax");
             if (!inRax0) {
-                raw("    xchgq %rax, %" + d);
+                hub.emit.raw("    xchgq %rax, %" + d);
             }
             return;
         }
-        if (rfIsTemp(aTok)) {
-            rfRegToReg(RF_SCRATCH, rfReg(aTok));
-        } else if (rfIsImm(aTok)) {
-            movImmToReg(RF_SCRATCH, rfExtImm(rfImm(aTok), size, false));
+        if (X86Core.rfIsTemp(aTok)) {
+            rfRegToReg(X86Core.RF_SCRATCH, rfReg(aTok));
+        } else if (X86Core.rfIsImm(aTok)) {
+            hub.emit.movImmToReg(X86Core.RF_SCRATCH, X86Core.rfExtImm(X86Core.rfImm(aTok), size, false));
         } else {
-            movMemToReg(RF_SCRATCH, rfSlot(aTok));
+            hub.emit.movMemToReg(X86Core.RF_SCRATCH, X86Core.rfSlot(aTok));
         }
-        if (size < 8 && !rfIsImm(aTok)) {
-            zeroExtendReg(RF_SCRATCH, size);
+        if (size < 8 && !X86Core.rfIsImm(aTok)) {
+            hub.emit.zeroExtendReg(X86Core.RF_SCRATCH, size);
         }
         boolean inRax = d.equals("rax");
-        long[] ms = divMagicSimple(k);
+        long[] ms = X86Core.divMagicSimple(k);
         if (ms != null) {
             // q = mulhi(a >> pre, magic) >> post, no fix-up: the dividend a is kept in r15, the shifted copy goes to rdx (mulq may read the register it overwrites)
             int pre = (int) ms[0];
             int post = (int) ms[2];
             if (!inRax) {
-                raw("    xchgq %rax, %" + d);
+                hub.emit.raw("    xchgq %rax, %" + d);
             }
-            String src = RF_SCRATCH;
+            String src = X86Core.RF_SCRATCH;
             if (pre > 0) {
-                raw("    movq %" + RF_SCRATCH + ", %rdx");
-                raw("    shrq $" + pre + ", %rdx");
+                hub.emit.raw("    movq %" + X86Core.RF_SCRATCH + ", %rdx");
+                hub.emit.raw("    shrq $" + pre + ", %rdx");
                 src = "rdx";
             }
-            movImmToReg("rax", ms[1]);
-            raw("    mulq %" + src);
+            hub.emit.movImmToReg("rax", ms[1]);
+            hub.emit.raw("    mulq %" + src);
             if (post > 0) {
-                raw("    shrq $" + post + ", %rdx");
+                hub.emit.raw("    shrq $" + post + ", %rdx");
             }
             if (mod) {
-                if (rfFitsImm32(k)) {
-                    raw("    imulq $" + k + ", %rdx, %rax");
+                if (X86Core.rfFitsImm32(k)) {
+                    hub.emit.raw("    imulq $" + k + ", %rdx, %rax");
                 } else {
-                    movImmToReg("rax", k);
-                    raw("    imulq %rdx, %rax");
+                    hub.emit.movImmToReg("rax", k);
+                    hub.emit.raw("    imulq %rdx, %rax");
                 }
-                raw("    subq %rax, %" + RF_SCRATCH);
-                raw("    movq %" + RF_SCRATCH + ", %rax");
+                hub.emit.raw("    subq %rax, %" + X86Core.RF_SCRATCH);
+                hub.emit.raw("    movq %" + X86Core.RF_SCRATCH + ", %rax");
             } else {
-                raw("    movq %rdx, %rax");
+                hub.emit.raw("    movq %rdx, %rax");
             }
             if (!inRax) {
-                raw("    xchgq %rax, %" + d);
+                hub.emit.raw("    xchgq %rax, %" + d);
             }
             return;
         }
@@ -1232,30 +1236,30 @@ case "GLOBAL":
         java.math.BigInteger m = java.math.BigInteger.ONE.shiftLeft(l).subtract(bk).shiftLeft(64).divide(bk).add(java.math.BigInteger.ONE);
         long magic = m.mod(two64).longValue();
         if (!inRax) {
-            raw("    xchgq %rax, %" + d);
+            hub.emit.raw("    xchgq %rax, %" + d);
         }
-        movImmToReg("rax", magic);
-        raw("    mulq %" + RF_SCRATCH);
-        raw("    movq %" + RF_SCRATCH + ", %rax");
-        raw("    subq %rdx, %rax");
-        raw("    shrq $1, %rax");
-        raw("    addq %rdx, %rax");
+        hub.emit.movImmToReg("rax", magic);
+        hub.emit.raw("    mulq %" + X86Core.RF_SCRATCH);
+        hub.emit.raw("    movq %" + X86Core.RF_SCRATCH + ", %rax");
+        hub.emit.raw("    subq %rdx, %rax");
+        hub.emit.raw("    shrq $1, %rax");
+        hub.emit.raw("    addq %rdx, %rax");
         if (l > 1) {
-            raw("    shrq $" + (l - 1) + ", %rax");
+            hub.emit.raw("    shrq $" + (l - 1) + ", %rax");
         }
         if (mod) {
-            movImmToReg("rdx", k);
-            raw("    imulq %rdx, %rax");
-            raw("    movq %" + RF_SCRATCH + ", %rdx");
-            raw("    subq %rax, %rdx");
+            hub.emit.movImmToReg("rdx", k);
+            hub.emit.raw("    imulq %rdx, %rax");
+            hub.emit.raw("    movq %" + X86Core.RF_SCRATCH + ", %rdx");
+            hub.emit.raw("    subq %rax, %rdx");
             if (inRax) {
-                raw("    movq %rdx, %rax");
+                hub.emit.raw("    movq %rdx, %rax");
             } else {
-                raw("    movq %" + d + ", %rax");
-                raw("    movq %rdx, %" + d);
+                hub.emit.raw("    movq %" + d + ", %rax");
+                hub.emit.raw("    movq %rdx, %" + d);
             }
         } else if (!inRax) {
-            raw("    xchgq %rax, %" + d);
+            hub.emit.raw("    xchgq %rax, %" + d);
         }
     }
 }

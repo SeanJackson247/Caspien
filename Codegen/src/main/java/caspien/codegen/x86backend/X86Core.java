@@ -12,11 +12,10 @@ import java.util.Set;
 
 /**
  * State and static helpers shared by every part of the x86-64 backend (see X86Backend for the overview).
- * The backend is one class split over a chain of abstract classes, because Java has no partial classes:
- * X86Core (fields, constants, static helpers) <- X86Emit <- X86Calls <- X86CasesA <- X86CasesB <- X86RegForm <- X86Backend. A part may call a method defined in a later part
- * through an abstract declaration at the top of its own class.
+ * Plain state holder: no behaviour beyond a few static helpers. The six parts (X86Emit .. X86Generator) are
+ * separate classes that reach this state and each other through the X86Backend hub (see X86Generator for the overview).
  */
-abstract class X86Core {
+final class X86Core {
 
     X86Core(CodegenConfig.Target target, boolean bmi2) {
         this.target = target;
@@ -25,9 +24,7 @@ abstract class X86Core {
 
     final CodegenConfig.Target target;
 
-
     final StringBuilder out = new StringBuilder();
-
 
     // ---- callee-saved register preservation (per function) ----
     // Any generated function that touches a callee-saved register of the target ABI (SysV: rbx, r12-r15; win64 also
@@ -36,26 +33,19 @@ abstract class X86Core {
     // (finishCalleeSaved) replaces each mark with the restores, or with nothing, and grows the single ALLOC.
     static final String CSR_MARK = "@@CSR@@";
 
-
     int csrFuncStart = -1;
-
 
     int csrAllocPos = -1;
 
-
     long csrAllocBytes = 0;
 
-
     String csrAllocLine = null;
-
 
     /** Sum of every ALLOC (16-aligned) of the current function: the frame size below rbp, once the callee-saved area is added (finishCalleeSaved). */
     long csrAllocSum = 0;
 
-
     /** A catch landing is reached by an unwind that skipped the call's own rsp restore (and any operand words pushed): the mark becomes `rsp = rbp - frame` once the frame size is final. */
     static final String RSP_MARK = "@@RSP@@";
-
 
     // Declarations collected on a first pass so they can be emitted
     // into proper .data/.rodata/.bss sections ahead of .text, instead
@@ -65,20 +55,16 @@ abstract class X86Core {
     // can't be interleaved the same way).
     final Map<String, long[]> globalsSizeInit = new LinkedHashMap<>();
 
-
  // name -> [size, init] (init may be absent -> bss)
     final Map<String, Boolean> globalsHasInit = new LinkedHashMap<>();
 
-
     final Map<String, String> stringLiterals = new LinkedHashMap<>();
-
 
  // id -> text
     // Float-constant pool (AT&T targets only): every float immediate a register-form float op needs is stored once, in a
     // read-only section, and used as a memory operand (`mulsd .LFC3(%rip), %xmm0`) or loaded with one `movsd`, instead of
     // `movabs $bits, %r15 ; movq %r15, %xmm` on every use. Key "n:bits" -> label; n = 4 or 8.
     final Map<String, String> floatPool = new LinkedHashMap<>();
-
 
     // Every real function this compilation unit defines ("FUNC_START
     // name" lines, collected on the same declarations pass as globals/
@@ -96,7 +82,6 @@ abstract class X86Core {
     // reason -- never followed by a `loadSizedFromAddr` the way an
     // ordinary global PUSH is.
     final java.util.Set<String> declaredFunctionNames = new java.util.HashSet<>();
-
 
     // "parent.field"-shaped GLOBAL declarations where "parent" is *also*
     // separately declared as its own whole-block global (e.g. "GLOBAL
@@ -118,14 +103,11 @@ abstract class X86Core {
     // PUSH_FIELDNAME offsets used elsewhere for the same struct).
     final Map<String, Long> globalAliasOffset = new LinkedHashMap<>();
 
-
  // dotted name -> byte offset into its parent
     final Map<String, List<long[]>> aliasInits = new LinkedHashMap<>();
 
-
  // parent -> [offset, size, bits] of each initialised element
     final Map<String, String> globalAliasParent = new LinkedHashMap<>();
-
 
  // dotted name -> parent global name
     // Set only while generate() is walking the line list, so a bare
@@ -135,9 +117,7 @@ abstract class X86Core {
     // comment for why both are genuinely needed here.
     List<BytecodeStatement> allLines;
 
-
     int currentLineIndex;
-
 
     /** Set by the "ASM_START" case to the index of the "ASM_END" line that
      * closes the block it just copied verbatim, so every raw line in
@@ -145,7 +125,6 @@ abstract class X86Core {
      * the main per-line dispatch instead of falling through to the
      * generic TODO comment a second time. -1 when no block is open. */
     int asmSkipUntilIndex = -1;
-
 
     // ---- Construction-scoped push detection --------------------------------
     //
@@ -201,7 +180,6 @@ abstract class X86Core {
     // `case "PUSH"` below does a plain map lookup rather than re-scanning
     // per instruction.
     final Map<Integer, Long> pushStoreOffsetByLine = new java.util.HashMap<>();
-
 
     /**
      * The real fix for a real segfault
@@ -289,7 +267,6 @@ abstract class X86Core {
      */
     final java.util.Deque<Long> argTrackDeltaStack = new java.util.ArrayDeque<>();
 
-
     /**
      * Suppresses `argTrackDeltaStack` tracking for the duration of a call
      * wrapped by `emitAlignedCall` (a counter, not a boolean, since one
@@ -305,7 +282,6 @@ abstract class X86Core {
      */
     int argTrackSuspendDepth = 0;
 
-
     /**
      * One level of buffered, not-yet-flushed assembly text per currently-
      * open "CC_START"/"CC_END" bracket, paired one-to-one with
@@ -320,7 +296,6 @@ abstract class X86Core {
      * looks at *its* tally, so the two never interfere.
      */
     final java.util.Deque<StringBuilder> callBufferStack = new java.util.ArrayDeque<>();
-
 
     /**
      * Per open "CC_START"/"CC_END" bracket (paired one-to-one with
@@ -338,14 +313,12 @@ abstract class X86Core {
      */
     final java.util.Deque<java.util.List<String>> loadedArgRegsStack = new java.util.ArrayDeque<>();
 
-
     /**
      * The registers each currently-open nested call saved at its own "CC_START"
      * (the enclosing call's already-loaded argument registers, in push order),
      * one list per open bracket, popped at the matching "CC_END".
      */
     final java.util.Deque<java.util.List<String>> savedOuterArgRegsStack = new java.util.ArrayDeque<>();
-
 
     /**
      * True when the last "CC_END" had to restore xmm0 (the float-bank
@@ -355,7 +328,6 @@ abstract class X86Core {
      * instead of xmm0.
      */
     boolean floatResultInR10 = false;
-
 
     /**
      * The real number of xmm (float-bank) argument registers this
@@ -379,7 +351,6 @@ abstract class X86Core {
      * leftover count belonging to an unrelated, earlier call.
      */
     int pendingVarargsXmmCount = -1;
-
 
     /**
      * Line indices of an "ASSIGN size size size"/"ATOMIC_ASSIGN size
@@ -433,7 +404,6 @@ abstract class X86Core {
      */
     final Set<Integer> constructionScopedAssign = new java.util.HashSet<>();
 
-
     /**
      * "NEW" lines whose run of field pushes `precomputeConstructionOffsets`
      * resolved into one clean, packed image (every direct field a plain
@@ -450,20 +420,16 @@ abstract class X86Core {
      */
     final Set<Integer> packedNewLines = new java.util.HashSet<>();
 
-
     /** Plain data holder for {@link #collectRunEntries}: parallel lists of each direct entry's own size and its store-instruction line index (-1 when it has none of its own -- a `STACK_LOCK` padding gap, or a nested `NEW`'s own opaque pointer). */
     static final class RunEntries {
         final List<Long> sizes = new ArrayList<>();
         final List<Integer> storeLines = new ArrayList<>();
     }
 
-
     final boolean bmi2;
-
 
     /** `avx on`: R_FBINX uses VEX 3-operand scalar forms */
     public boolean avx;
-
 
     // ---- common subexpression: the stride multiply `imulq $stride, %idx, %r15` of an indexed access (rfSetIndex) ----
     // After the multiply r15 holds idx*stride. A following access with the same index register and stride reuses it when every line emitted in
@@ -471,22 +437,17 @@ abstract class X86Core {
     // Anything else (label, jump, call, lea, integer arithmetic ..., a buffer append) forgets it. Flags: only the skipped imul would have set them.
     int strideCseHits = 0;
 
-
     StringBuilder strideKeySink = null;
-
 
     String strideKeyIdx = null;
 
-
     long strideKeyScale = 0;
-
 
     static final java.util.Set<String> STRIDE_KEEP_OPS = new java.util.HashSet<>(java.util.Arrays.asList(
             "movq", "movl", "movw", "movb", "movzbq", "movzwq", "movzbl", "movzwl", "movslq", "movsbq", "movswq", "movsbl", "movswl",
             "movsd", "movss", "movd", "movaps", "movapd", "addsd", "addss", "subsd", "subss", "mulsd", "mulss", "divsd", "divss",
             "addq", "subq", "addl", "subl", "leaq", "andq", "orq", "xorq", "shlq", "shrq", "sarq", "incq", "decq", "negq", "notq",
             "sqrtsd", "sqrtss", "ucomisd", "ucomiss", "comisd", "comiss", "cvtss2sd", "cvtsd2ss", "xorps", "xorpd", "andps", "andpd"));
-
 
     /** whether the register spelling `r` (rax, eax, ax, al, r13d, r13b ...) names (part of) the 64-bit register `full` */
     static boolean regAliasOf(String r, String full) {
@@ -503,7 +464,6 @@ abstract class X86Core {
         }
         return r.equals("e" + base) || r.equals(base) || r.equals(base + "l");
     }
-
 
     /**
      * Rounds a byte count up to a real, loadable hardware width -- 1, 2,
@@ -527,23 +487,19 @@ abstract class X86Core {
         return size <= 2 ? size : size <= 4 ? 4 : 8;
     }
 
-
     /** 3, 5, 6 and 7 bytes: no single x86 store has these widths. */
     static boolean isOddSize(int size) {
         return size == 3 || (size >= 5 && size <= 7);
     }
 
-
     static boolean isFloatLiteral(String s) {
         return s.matches("-?\\d+\\.\\d+([eE][+-]?\\d+)?");
     }
-
 
     /** "'a'", "'\n'", "'\0'", ... -- a char-literal PUSH operand, exactly as `BytecodeEmitter.escapeForBytecode` serializes one: an opening single quote, one real character's worth of content, a closing single quote. Deliberately checked structurally (quote ... quote) rather than by first ruling out every other operand shape, since a bare identifier can never itself start *and* end with `'`. */
     static boolean isCharLiteral(String s) {
         return s.length() >= 3 && s.charAt(0) == '\'' && s.charAt(s.length() - 1) == '\'';
     }
-
 
     /**
      * Decodes a char-literal PUSH operand back to its real byte value --
@@ -585,21 +541,16 @@ abstract class X86Core {
         return value;
     }
 
-
     // ---- Calling convention ------------------------------------------------
 
     static final String[] LINUX_ARG_REGS = {"rdi", "rsi", "rdx", "rcx", "r8", "r9"};
 
-
     static final String[] WIN_ARG_REGS = {"rcx", "rdx", "r8", "r9"};
-
 
     static final String[] LINUX_ARG_REGS_FLOAT =
             {"xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7"};
 
-
     static final String[] WIN_ARG_REGS_FLOAT = {"xmm0", "xmm1", "xmm2", "xmm3"};
-
 
     // ---- Main per-line dispatch --------------------------------------------
 
@@ -610,30 +561,22 @@ abstract class X86Core {
      */
     static final String V1314_SAVE = "@@V1314S@@";
 
-
     static final String V1314_REST = "@@V1314R@@";
-
 
     /** Bytes pushed on top of RESIZE's wide fill block while its fill loop runs (the saved old block start). */
     int resizeExtraStack = 0;
 
-
     boolean lastWasCmp = false;
-
 
     /** See the "value-block" handling threaded through PUSH/LOOKUP_ARRAY/DOT: the byte size of a multi-word value most recently pushed *by value* (as opposed to by address), still sitting on top of the real stack, for a following LOOKUP_ARRAY/DOT to extract a sub-range from -- 0 means "no pending value-block; use the ordinary address-based path." */
     long lastValueBlockSize = 0;
 
-
     boolean pushedWordWithTag = false;
-
 
  // the previous line was an 8-byte PUSH that passed a pending value tag on (see the line emitter prologue)
     String currentFuncName;
 
-
     int internalLabelCounter = 0;
-
 
     /** "@name" -> "L_name" (a real label can't contain '@'); a bare name with no '@' passes through unchanged -- the identical rule a label *definition* and every JMP/PUSH_LABEL *reference* to it must both apply, so they always agree. */
     // ---- Register-form instructions (R_MOV / R_BIN / R_UN / R_BRF / R_PUSH) ----
@@ -649,9 +592,7 @@ abstract class X86Core {
 
     static final String[] RF_TEMP_REGS = { "rax", "rbx", "r11", "r12" };
 
-
     static final String RF_SCRATCH = "r15";
-
 
     /** %v0..%v2: promoted variables (RegVarPromotionPass), callee-saved, so finishCalleeSaved saves/restores them like any other.
      *  %v3..%v5 (r8, r9, r10) are caller-saved: the promotion only puts a variable there that is never live across a call or any
@@ -660,43 +601,34 @@ abstract class X86Core {
      *  %v8, %v9 (rdx, rcx: SysV argument registers 2 and 3, SysV only) too, and are never live at a constant divide (rdx) / variable-count shift (rcx). */
     static final String[] RF_VAR_REGS = { "r13", "r14", "r12", "r8", "r9", "r10", "rsi", "rdi", "rdx", "rcx" };
 
-
     /** set when this function uses a %vN; checked against rfClobberSeen at FUNC_END */
     boolean rfVarUsed = false;
-
 
     /** bit i set when this function uses %vi (i < 3: r13, r14, r12), see finishCalleeSaved / V1314_SAVE */
     int rfVarMask = 0;
 
-
     /** set when this function has an instruction whose code uses r13/r14 internally (see RegVarPromotionPass.R13_R14_USERS) */
     boolean rfClobberSeen = false;
 
-
     static final java.util.Set<String> RF_R13_R14_USERS = new java.util.HashSet<>(java.util.Arrays.asList(
             "NEW", "NEW_DYN", "NEW_UDYN", "NEW_FROM_STRING", "NEW_FROM_USTRING", "CLONE", "CLONE_DYN", "RESIZE", "URESIZE", "DOT", "LOOKUP_ARRAY", "ASM_START"));
-
 
     /** a register operand: a temp, the scratch register or a promoted variable */
     static boolean rfIsTemp(String tok) {
         return tok.startsWith("%t") || tok.startsWith("%v") || tok.equals("%s");
     }
 
-
     static boolean rfIsVar(String tok) {
         return tok.startsWith("%v");
     }
-
 
     static boolean rfIsImm(String tok) {
         return tok.startsWith("#");
     }
 
-
     static boolean rfIsSlot(String tok) {
         return tok.startsWith("$");
     }
-
 
     static long rfImm(String tok) {
         String t = tok.substring(1);
@@ -707,16 +639,13 @@ abstract class X86Core {
         }
     }
 
-
     static long rfSlot(String tok) {
         return Long.parseLong(tok.substring(1));
     }
 
-
     static boolean rfFitsImm32(long v) {
         return v >= Integer.MIN_VALUE && v <= Integer.MAX_VALUE;
     }
-
 
     /**
      * Single-multiply unsigned division by k (not a power of two, k >= 3): {pre, magic, post} with q = mulhi(a >> pre, magic) >> post for every
@@ -751,7 +680,6 @@ abstract class X86Core {
         return null;
     }
 
-
     /** the constants rfMulByConst turns into shifts / lea / shift+add (kept in step with it) */
     static boolean mulByConstShape(long k) {
         if (k < 2 || k > (1L << 31)) {
@@ -759,7 +687,6 @@ abstract class X86Core {
         }
         return Long.bitCount(k) == 1 || k == 3 || k == 5 || k == 9 || Long.bitCount(k - 1) == 1 || Long.bitCount(k + 1) == 1;
     }
-
 
     /** The conditional jump taken when `a OP b` is false (unsigned and signed compares; shared by R_BRC and R_BRCM). */
     static String rfFalseJump(String op) {
@@ -779,7 +706,6 @@ abstract class X86Core {
         }
     }
 
-
     /** Jump to `label` when NOT (a op b), for an 8-byte compare; a and b are %t/%v registers, $off slots or #imm (never both #imm). */
     /** the jump condition after swapping the two compared operands (a < b is b > a) */
     static String rfMirrorJump(String cc) {
@@ -795,7 +721,6 @@ abstract class X86Core {
             default: return cc; // je / jne are symmetric
         }
     }
-
 
     /** the condition-code suffix that is TRUE exactly when the false-jump `jcc` is not taken ("jne" -> "e") */
     static String rfTrueSuffix(String falseJump) {
@@ -815,7 +740,6 @@ abstract class X86Core {
         }
     }
 
-
     static long rfExtImm(long v, int size, boolean signed) {
         if (size >= 8) {
             return v;
@@ -824,13 +748,11 @@ abstract class X86Core {
         return signed ? t : (t & ((1L << (8 * size)) - 1));
     }
 
-
     // ---- register-form: memory, address, float, read-modify-write helpers ----------------------------------------
 
     static boolean rfIsGlobal(String tok) {
         return tok.startsWith("&");
     }
-
 
     static long rfTrunc(long v, int n) {
         if (n >= 8) {
@@ -840,26 +762,20 @@ abstract class X86Core {
         return (v << sh) >> sh;
     }
 
-
     /** When set, loadSizedFromAddr / storeSizedToAddr address "(base + index*scale)" instead of "(base)" (R_LDI / R_STI only; sizes 1, 2, 4, 8). */
     String rfIdxReg = null;
 
-
     long rfIdxScale = 1;
-
 
     /** constant displacement added to the next indexed memory operand (a frame-slot base: `off(%rbp,%idx,scale)`) */
     long rfIdxDisp = 0;
 
-
     /** When set, the memory operand of the next sized load/store is this text (a RIP-relative global), whatever the address register. */
     String rfMemOverride = null;
-
 
     static boolean rfHwScale(long s) {
         return s == 1 || s == 2 || s == 4 || s == 8;
     }
-
 
     // ---- float variables in xmm registers (RegVarPromotionPass, "float-variables-in-registers: on") ----
     //
@@ -872,21 +788,16 @@ abstract class X86Core {
 
     static final int XV_COUNT = 6;
 
-
     final java.util.Map<Integer, Long> xvHome = new java.util.TreeMap<>();
 
-
     final java.util.Map<Integer, Integer> xvWidth = new java.util.TreeMap<>();
-
 
     static boolean rfIsXvar(String tok) {
         return tok.startsWith("%x") || tok.startsWith("%y") || tok.startsWith("%z");
     }
 
-
     /** float temporaries %y0..%y3 (FloatTempPass): SysV xmm4-7, win64 xmm12-15 (win64 keeps them; a temp is never live across a call anyway). */
     static final int YT_COUNT = 4;
-
 
     /**
      * The real function epilogue -- restore %rsp from %rbp (discarding
@@ -910,7 +821,6 @@ abstract class X86Core {
     /** frame slot of the saved copy of r13, r14, r12 (null: the function keeps no variable there) */
     final String[] vSlots = new String[3];
 
-
     static boolean isInteger(String s) {
         if (s.isEmpty()) {
             return false;
@@ -926,7 +836,6 @@ abstract class X86Core {
         }
         return true;
     }
-
 
     static List<String> textsOf(BytecodeStatement line) {
         List<String> out = new ArrayList<>();

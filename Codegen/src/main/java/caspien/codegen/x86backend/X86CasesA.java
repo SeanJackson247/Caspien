@@ -10,44 +10,22 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/** Mnemonic groups 2 and 3 of the stack-form instruction set (one switch per group, false = not mine) (see X86Backend for how the parts fit together). */
-abstract class X86CasesA extends X86Calls {
-    X86CasesA(CodegenConfig.Target target, boolean bmi2) {
-        super(target, bmi2);
-    }
+/** Mnemonic groups 2 and 3 of the stack-form instruction set (one switch per group, false = not mine) (see X86Generator for how the parts fit together). */
+final class X86CasesA {
+    private final X86Backend hub;
+    private final X86Core core;
 
-    // methods defined in later parts of the chain
-    abstract void rfRegToReg(String dst, String src);
-    abstract void rfBrcMem(String op, String aTok, String baseTok, String label);
-    abstract void rfAddrToReg(String reg, String tok);
-    abstract String rfArgReg(int idx);
-    abstract void rfLoad(int n, String dstTok, String srcTok);
-    abstract void rfLoadDisp(int n, String dstTok, String baseTok, long disp);
-    abstract void rfStoreDisp(int n, String baseTok, long disp, String srcTok);
-    abstract void rfLoadXDisp(String xmm, String baseTok, long disp, int n);
-    abstract void rfStoreXDisp(String baseTok, long disp, String xmm, int n);
-    abstract void rfStore(int n, String addrTok, String srcTok);
-    abstract void rfLoadIndexed(int n, String dstTok, String baseTok, String idxTok, long scale, long disp);
-    abstract void rfStoreIndexed(int n, String baseTok, String idxTok, long scale, String srcTok, long disp);
-    abstract void rfLoadXIndexed(int n, String xTok, String baseTok, String idxTok, long scale, long disp);
-    abstract void rfStoreXIndexed(int n, String baseTok, String idxTok, long scale, String xTok, long disp);
-    abstract void rfLea(String dstTok, String baseTok, String idxTok, long scale, long extra);
-    abstract String rfXmmA();
-    abstract String rfXmmB();
-    abstract void rfGprToXmm(String xmm, String gpr64, int n);
-    abstract void rfLoadXmm(String tok, String xmm, int n);
-    abstract void rfMovaps(String dst, String src);
-    abstract void rfLoadX(String xmm, String addrTok, int n);
-    abstract void rfStoreX(String addrTok, String xmm, int n);
-    abstract void rfFloatX(String op, int n, String dstTok, String aTok, String bTok);
-    abstract void rfRmw(String op, String slotTok, String srcTok);
+    X86CasesA(X86Backend hub) {
+        this.hub = hub;
+        this.core = hub.core;
+    }
 
     boolean emitCases2(String mnemonic, BytecodeStatement line, String first, boolean wasCmp, long pendingBlockSize) {
         switch (mnemonic) {
 case "R_BRCM": {
                 // "R_BRCM OP 8 a %base @label" -- R_BRC whose second operand is the 8-byte word AT the address in %base (made by the
                 // LowerOrderGenerator's LengthCompareFusionPass from `R_LD 8 %t %base ; R_BRC OP 8 a %t @label`).
-                rfBrcMem(line.get(1).text, line.get(3).text, line.get(4).text, mangleLabel(line.get(5).text));
+                hub.gen.rfBrcMem(line.get(1).text, line.get(3).text, line.get(4).text, hub.gen.mangleLabel(line.get(5).text));
                 return true;
             }
             
@@ -55,111 +33,111 @@ case "R_PUSH": {
                 // "R_PUSH 8 src" -- materialise an operand (%tN, $off or #imm) on the real stack. Goes through
                 // pushReg so the stack-delta tracker sees it; memory/immediate sources use the spare scratch.
                 String src = line.get(2).text;
-                if (rfIsTemp(src)) {
-                    pushReg(rfReg(src));
+                if (X86Core.rfIsTemp(src)) {
+                    hub.emit.pushReg(hub.regForm.rfReg(src));
                 } else {
-                    rfMov("%s", src);
-                    pushReg(RF_SCRATCH);
+                    hub.regForm.rfMov("%s", src);
+                    hub.emit.pushReg(X86Core.RF_SCRATCH);
                 }
                 return true;
             }
             
 case "R_PUSHA": {
                 // "R_PUSHA 8 $off" / "R_PUSHA 8 &sym" -- push the address of a frame slot / a global.
-                rfAddrToReg(RF_SCRATCH, line.get(2).text);
-                pushReg(RF_SCRATCH);
+                hub.gen.rfAddrToReg(X86Core.RF_SCRATCH, line.get(2).text);
+                hub.emit.pushReg(X86Core.RF_SCRATCH);
                 return true;
             }
             
 case "R_SETV": {
                 // "R_SETV n %vK src" -- n bytes of src (#imm, %tN or %vN) into a promoted variable, zero-extended to 64 bits.
                 int n = (int) Long.parseLong(line.get(1).text);
-                String vr = rfReg(line.get(2).text);
+                String vr = hub.regForm.rfReg(line.get(2).text);
                 String src = line.get(3).text;
-                if (rfIsImm(src)) {
-                    movImmToReg(vr, rfExtImm(rfImm(src), n, false));
+                if (X86Core.rfIsImm(src)) {
+                    hub.emit.movImmToReg(vr, X86Core.rfExtImm(X86Core.rfImm(src), n, false));
                 } else if (n == 4 || n == 2 || n == 1) {
                     // one instruction: movl / movzwl / movzbl from the source's sub-register straight into the 32-bit destination
                     // (writing a 32-bit register clears bits 32..63), instead of a 64-bit copy followed by an in-place zero-extension
-                    String sr = rfReg(src);
+                    String sr = hub.regForm.rfReg(src);
                     if (n == 4) {
-                        raw("    movl %" + sizedReg(sr, 4) + ", %" + sizedReg(vr, 4));
+                        hub.emit.raw("    movl %" + hub.emit.sizedReg(sr, 4) + ", %" + hub.emit.sizedReg(vr, 4));
                     } else {
-                        raw("    movz" + movSuffix(n) + "l %" + sizedReg(sr, n) + ", %" + sizedReg(vr, 4));
+                        hub.emit.raw("    movz" + hub.emit.movSuffix(n) + "l %" + hub.emit.sizedReg(sr, n) + ", %" + hub.emit.sizedReg(vr, 4));
                     }
                 } else {
-                    rfRegToReg(vr, rfReg(src));
+                    hub.regForm.rfRegToReg(vr, hub.regForm.rfReg(src));
                 }
                 return true;
             }
             
 case "R_LD": {
                 // "R_LD n %tD addr" -- %tD = n bytes at addr (a frame slot, a global or the pointer in a temp), zero-extended.
-                rfLoad((int) Long.parseLong(line.get(1).text), line.get(2).text, line.get(3).text);
+                hub.gen.rfLoad((int) Long.parseLong(line.get(1).text), line.get(2).text, line.get(3).text);
                 return true;
             }
             
 case "R_ST": {
                 // "R_ST n addr src" -- n bytes at addr = src (#imm or %tN).
-                rfStore((int) Long.parseLong(line.get(1).text), line.get(2).text, line.get(3).text);
+                hub.gen.rfStore((int) Long.parseLong(line.get(1).text), line.get(2).text, line.get(3).text);
                 return true;
             }
             
 case "R_LDI": {
                 // "R_LDI n %tD &sym %vK scale" -- %tD = n bytes at sym + vK*scale (an R_LEA folded into the load that used it).
-                rfLoadIndexed((int) Long.parseLong(line.get(1).text), line.get(2).text, line.get(3).text, line.get(4).text, Long.parseLong(line.get(5).text),
+                hub.gen.rfLoadIndexed((int) Long.parseLong(line.get(1).text), line.get(2).text, line.get(3).text, line.get(4).text, Long.parseLong(line.get(5).text),
                         line.size() > 6 ? Long.parseLong(line.get(6).text) : 0L);
                 return true;
             }
             
 case "R_STI": {
                 // "R_STI n &sym %vK scale src" -- n bytes at sym + vK*scale = src (#imm or %tN).
-                rfStoreIndexed((int) Long.parseLong(line.get(1).text), line.get(2).text, line.get(3).text, Long.parseLong(line.get(4).text), line.get(5).text,
+                hub.gen.rfStoreIndexed((int) Long.parseLong(line.get(1).text), line.get(2).text, line.get(3).text, Long.parseLong(line.get(4).text), line.get(5).text,
                         line.size() > 6 ? Long.parseLong(line.get(6).text) : 0L);
                 return true;
             }
             
 case "R_LDXI": {
                 // "R_LDXI n %xK &sym %vK scale" -- variable K = the float (n = 4 or 8 bytes) at sym + vK*scale (an R_LEA folded into R_LDX).
-                rfLoadXIndexed(Integer.parseInt(line.get(1).text), line.get(2).text, line.get(3).text, line.get(4).text, Long.parseLong(line.get(5).text),
+                hub.gen.rfLoadXIndexed(Integer.parseInt(line.get(1).text), line.get(2).text, line.get(3).text, line.get(4).text, Long.parseLong(line.get(5).text),
                         line.size() > 6 ? Long.parseLong(line.get(6).text) : 0L);
                 return true;
             }
             
 case "R_STXI": {
                 // "R_STXI n &sym %vK scale %xK" -- the float in variable K stored at sym + vK*scale (an R_LEA folded into R_STX).
-                rfStoreXIndexed(Integer.parseInt(line.get(1).text), line.get(2).text, line.get(3).text, Long.parseLong(line.get(4).text), line.get(5).text,
+                hub.gen.rfStoreXIndexed(Integer.parseInt(line.get(1).text), line.get(2).text, line.get(3).text, Long.parseLong(line.get(4).text), line.get(5).text,
                         line.size() > 6 ? Long.parseLong(line.get(6).text) : 0L);
                 return true;
             }
             
 case "R_LDD": {
                 // "R_LDD n %tD %base disp" -- %tD = n bytes at base + disp, zero-extended (an `R_LEA %t base #k 1` folded into the load: a field read).
-                rfLoadDisp((int) Long.parseLong(line.get(1).text), line.get(2).text, line.get(3).text, Long.parseLong(line.get(4).text));
+                hub.gen.rfLoadDisp((int) Long.parseLong(line.get(1).text), line.get(2).text, line.get(3).text, Long.parseLong(line.get(4).text));
                 return true;
             }
             
 case "R_STD": {
                 // "R_STD n %base disp src" -- n bytes at base + disp = src (#imm or %tN): a field write.
-                rfStoreDisp((int) Long.parseLong(line.get(1).text), line.get(2).text, Long.parseLong(line.get(3).text), line.get(4).text);
+                hub.gen.rfStoreDisp((int) Long.parseLong(line.get(1).text), line.get(2).text, Long.parseLong(line.get(3).text), line.get(4).text);
                 return true;
             }
             
 case "R_LDXD": {
                 // "R_LDXD n %xK %base disp" -- variable K = the float (n = 4 or 8 bytes) at base + disp.
-                rfLoadXDisp(xvReg(line.get(2).text), line.get(3).text, Long.parseLong(line.get(4).text), Integer.parseInt(line.get(1).text));
+                hub.gen.rfLoadXDisp(hub.gen.xvReg(line.get(2).text), line.get(3).text, Long.parseLong(line.get(4).text), Integer.parseInt(line.get(1).text));
                 return true;
             }
             
 case "R_STXD": {
                 // "R_STXD n %base disp %xK" -- the float in variable K stored at base + disp.
-                rfStoreXDisp(line.get(2).text, Long.parseLong(line.get(3).text), xvReg(line.get(4).text), Integer.parseInt(line.get(1).text));
+                hub.gen.rfStoreXDisp(line.get(2).text, Long.parseLong(line.get(3).text), hub.gen.xvReg(line.get(4).text), Integer.parseInt(line.get(1).text));
                 return true;
             }
             
 case "R_LEA": {
                 // "R_LEA %tD base idx scale [disp]" -- %tD = base + idx*scale + disp.
-                rfLea(line.get(1).text, line.get(2).text, line.get(3).text, Long.parseLong(line.get(4).text),
+                hub.gen.rfLea(line.get(1).text, line.get(2).text, line.get(3).text, Long.parseLong(line.get(4).text),
                         line.size() > 5 ? Long.parseLong(line.get(5).text) : 0L);
                 return true;
             }
@@ -167,7 +145,7 @@ case "R_LEA": {
 case "R_FBIN":
             case "R_FCMP": {
                 // "R_FBIN OP size %tD a b" / "R_FCMP OP size %tD a b" -- scalar float arithmetic / compare on raw bit patterns.
-                rfFloat(mnemonic.equals("R_FCMP"), line.get(1).text, (int) Long.parseLong(line.get(2).text), line.get(3).text, line.get(4).text, line.get(5).text);
+                hub.gen.rfFloat(mnemonic.equals("R_FCMP"), line.get(1).text, (int) Long.parseLong(line.get(2).text), line.get(3).text, line.get(4).text, line.get(5).text);
                 return true;
             }
             
@@ -176,33 +154,33 @@ case "R_XVAR": {
                 // home frame slot, used to spill/reload around calls where the ABI does not preserve xmm registers; n is the
                 // variable's width (4 = f32, the default; 8 = f64).
                 int xk = Integer.parseInt(line.get(1).text.substring(2));
-                xvHome.put(xk, rfSlot(line.get(2).text));
-                xvWidth.put(xk, line.size() > 3 ? Integer.parseInt(line.get(3).text) : 4);
+                core.xvHome.put(xk, X86Core.rfSlot(line.get(2).text));
+                core.xvWidth.put(xk, line.size() > 3 ? Integer.parseInt(line.get(3).text) : 4);
                 return true;
             }
             
 case "R_XMOV": {
                 // "R_XMOV %xK|%yK %xJ|%yJ" -- register copy of a float value (FloatTempPass).
-                rfMovaps(xvReg(line.get(1).text), xvReg(line.get(2).text));
+                hub.gen.rfMovaps(hub.gen.xvReg(line.get(1).text), hub.gen.xvReg(line.get(2).text));
                 return true;
             }
             
 case "R_XSPILL": {
                 // write every float variable to its home slot: emitted before a direct jump into a catch label (no call spills them)
-                xvSpillAll();
+                hub.gen.xvSpillAll();
                 return true;
             }
             
 case "R_XRELOAD": {
                 // reload every float variable from its home slot: emitted where control can arrive from an unwind (catch entry),
                 // after which the register-held copies are gone on ABIs whose xmm registers do not survive a call.
-                xvReloadAll();
+                hub.gen.xvReloadAll();
                 return true;
             }
             
 case "R_XTOG": {
                 // "R_XTOG n %tD %xK" -- %tD = the n*8 float bits of variable K, zero-extended.
-                rfXmmToGpr(xvReg(line.get(3).text), rfReg(line.get(2).text), Integer.parseInt(line.get(1).text));
+                hub.gen.rfXmmToGpr(hub.gen.xvReg(line.get(3).text), hub.regForm.rfReg(line.get(2).text), Integer.parseInt(line.get(1).text));
                 return true;
             }
             
@@ -210,129 +188,129 @@ case "R_GTOX": {
                 // "R_GTOX n %xK src" -- variable K = the float bits in src (%tN or #imm).
                 int gn = Integer.parseInt(line.get(1).text);
                 String src = line.get(3).text;
-                if (rfIsImm(src)) {
-                    rfLoadXmm(src, xvReg(line.get(2).text), gn);
+                if (X86Core.rfIsImm(src)) {
+                    hub.gen.rfLoadXmm(src, hub.gen.xvReg(line.get(2).text), gn);
                     
                 } else {
-                    rfGprToXmm(xvReg(line.get(2).text), rfReg(src), gn);
+                    hub.gen.rfGprToXmm(hub.gen.xvReg(line.get(2).text), hub.regForm.rfReg(src), gn);
                 }
                 return true;
             }
             
 case "R_LDX": {
                 // "R_LDX n %xK addr" -- variable K = the float at addr (a frame slot, a global or the pointer in a temp).
-                rfLoadX(xvReg(line.get(2).text), line.get(3).text, Integer.parseInt(line.get(1).text));
+                hub.gen.rfLoadX(hub.gen.xvReg(line.get(2).text), line.get(3).text, Integer.parseInt(line.get(1).text));
                 return true;
             }
             
 case "R_STX": {
                 // "R_STX n addr %xK" -- the float in variable K stored at addr.
-                rfStoreX(line.get(2).text, xvReg(line.get(3).text), Integer.parseInt(line.get(1).text));
+                hub.gen.rfStoreX(line.get(2).text, hub.gen.xvReg(line.get(3).text), Integer.parseInt(line.get(1).text));
                 return true;
             }
             
 case "R_FBINX": {
                 // "R_FBINX OP 4 %xK a b" -- variable K = a OP b, computed in place when it can be.
-                rfFloatX(line.get(1).text, (int) Long.parseLong(line.get(2).text), line.get(3).text, line.get(4).text, line.get(5).text);
+                hub.gen.rfFloatX(line.get(1).text, (int) Long.parseLong(line.get(2).text), line.get(3).text, line.get(4).text, line.get(5).text);
                 return true;
             }
             
 case "R_FSQRT": {
                 // "R_FSQRT n DST SRC" -- DST = sqrt(SRC), both xmm-register operands (FloatIntrinsicPass).
                 int fn = (int) Long.parseLong(line.get(1).text);
-                String xd = xvReg(line.get(2).text);
-                String xs = xvReg(line.get(3).text);
+                String xd = hub.gen.xvReg(line.get(2).text);
+                String xs = hub.gen.xvReg(line.get(3).text);
                 // sqrtsd/sqrtss keep the upper bits of DST, so they depend on DST's old value; zeroing DST first (when it is not SRC) breaks that chain.
-                if (!xd.equals(xs)) raw("    xorps %" + xd + ", %" + xd);
-                raw("    sqrt" + (fn == 4 ? "ss" : "sd") + " %" + xs + ", %" + xd);
+                if (!xd.equals(xs)) hub.emit.raw("    xorps %" + xd + ", %" + xd);
+                hub.emit.raw("    sqrt" + (fn == 4 ? "ss" : "sd") + " %" + xs + ", %" + xd);
                 return true;
             }
             
 case "R_POPV": {
                 // "R_POPV n %vK" -- integer variable K = the n-byte word on top of the real stack (what ASSIGN n n n stored through its address).
-                popReg("rax");
-                zeroExtendReg("rax", Integer.parseInt(line.get(1).text));
-                rfRegToReg(rfReg(line.get(2).text), "rax");
+                hub.emit.popReg("rax");
+                hub.emit.zeroExtendReg("rax", Integer.parseInt(line.get(1).text));
+                hub.regForm.rfRegToReg(hub.regForm.rfReg(line.get(2).text), "rax");
                 return true;
             }
             
 case "R_GETRET": {
                 // "R_GETRET n %vK" -- integer variable K = the n-byte integer a just-finished call returned (what PUSH_RET_INT + ASSIGN did).
-                zeroExtendReg("rax", Integer.parseInt(line.get(1).text));
-                rfRegToReg(rfReg(line.get(2).text), "rax");
+                hub.emit.zeroExtendReg("rax", Integer.parseInt(line.get(1).text));
+                hub.regForm.rfRegToReg(hub.regForm.rfReg(line.get(2).text), "rax");
                 return true;
             }
             
 case "R_POPX": {
                 // "R_POPX n %xK" -- variable K = the float word on top of the real stack (what ASSIGN n n n stored through its address).
-                popReg("rax");
-                rfGprToXmm(xvReg(line.get(2).text), "rax", Integer.parseInt(line.get(1).text));
+                hub.emit.popReg("rax");
+                hub.gen.rfGprToXmm(hub.gen.xvReg(line.get(2).text), "rax", Integer.parseInt(line.get(1).text));
                 return true;
             }
             
 case "R_GETRETF": {
                 // "R_GETRETF 4 %xK" -- variable K = the float a just-finished call returned (what PUSH_RET_FLOAT + ASSIGN did).
-                String xk = xvReg(line.get(2).text);
-                if (floatResultInR10) {
-                    rfGprToXmm(xk, "r10", 8);
-                    floatResultInR10 = false;
+                String xk = hub.gen.xvReg(line.get(2).text);
+                if (core.floatResultInR10) {
+                    hub.gen.rfGprToXmm(xk, "r10", 8);
+                    core.floatResultInR10 = false;
                 } else {
-                    raw(("    movaps %xmm0, %" + xk));
+                    hub.emit.raw(("    movaps %xmm0, %" + xk));
                 }
                 return true;
             }
             
 case "R_RMW": {
                 // "R_RMW OP 8 $x [b]" -- one memory-operand read-modify-write on an 8-byte frame slot.
-                rfRmw(line.get(1).text, line.get(3).text, line.size() > 4 ? line.get(4).text : null);
+                hub.gen.rfRmw(line.get(1).text, line.get(3).text, line.size() > 4 ? line.get(4).text : null);
                 return true;
             }
             
 case "R_ARG": {
                 // "R_ARG n size src" -- integer argument register n = src (what "PUSH src / POP ARGn" did).
-                String reg = rfArgReg(Integer.parseInt(line.get(1).text));
+                String reg = hub.gen.rfArgReg(Integer.parseInt(line.get(1).text));
                 int asize = (int) Long.parseLong(line.get(2).text);
                 String src = line.get(3).text;
-                if (rfIsXvar(src)) {
-                    rfXmmToGpr(xvReg(src), reg, asize == 8 ? 8 : 4);
-                } else if (rfIsTemp(src)) {
-                    rfRegToReg(reg, rfReg(src));
-                } else if (rfIsImm(src)) {
-                    movImmToReg(reg, rfImm(src));
+                if (X86Core.rfIsXvar(src)) {
+                    hub.gen.rfXmmToGpr(hub.gen.xvReg(src), reg, asize == 8 ? 8 : 4);
+                } else if (X86Core.rfIsTemp(src)) {
+                    hub.regForm.rfRegToReg(reg, hub.regForm.rfReg(src));
+                } else if (X86Core.rfIsImm(src)) {
+                    hub.emit.movImmToReg(reg, X86Core.rfImm(src));
                 } else {
-                    loadSizedFromFrame(reg, rfSlot(src), asize);
+                    hub.emit.loadSizedFromFrame(reg, X86Core.rfSlot(src), asize);
                 }
-                noteArgRegLoaded("i" + Integer.parseInt(line.get(1).text));
+                hub.emit.noteArgRegLoaded("i" + Integer.parseInt(line.get(1).text));
                 return true;
             }
             
 case "R_ARGA": {
                 // "R_ARGA n addr" -- integer argument register n = an address ($off or &sym).
-                String reg = rfArgReg(Integer.parseInt(line.get(1).text));
-                rfAddrToReg(reg, line.get(2).text);
-                noteArgRegLoaded("i" + Integer.parseInt(line.get(1).text));
+                String reg = hub.gen.rfArgReg(Integer.parseInt(line.get(1).text));
+                hub.gen.rfAddrToReg(reg, line.get(2).text);
+                hub.emit.noteArgRegLoaded("i" + Integer.parseInt(line.get(1).text));
                 return true;
             }
             
 case "R_FARG": {
                 // "R_FARG n size src" -- float argument register n = the bit pattern src.
                 int fidx = Integer.parseInt(line.get(1).text);
-                String xr = argFloatReg(fidx);
+                String xr = hub.calls.argFloatReg(fidx);
                 int fsize = (int) Long.parseLong(line.get(2).text);
                 String src = line.get(3).text;
-                if (rfIsXvar(src)) {
-                    raw(("    movaps %" + xvReg(src) + ", %" + xr));
-                } else if (rfIsTemp(src)) {
-                    movRegToXmm(rfReg(src), xr);
+                if (X86Core.rfIsXvar(src)) {
+                    hub.emit.raw(("    movaps %" + hub.gen.xvReg(src) + ", %" + xr));
+                } else if (X86Core.rfIsTemp(src)) {
+                    hub.calls.movRegToXmm(hub.regForm.rfReg(src), xr);
                 } else {
-                    if (rfIsImm(src)) {
-                        movImmToReg(RF_SCRATCH, rfImm(src));
+                    if (X86Core.rfIsImm(src)) {
+                        hub.emit.movImmToReg(X86Core.RF_SCRATCH, X86Core.rfImm(src));
                     } else {
-                        loadSizedFromFrame(RF_SCRATCH, rfSlot(src), fsize);
+                        hub.emit.loadSizedFromFrame(X86Core.RF_SCRATCH, X86Core.rfSlot(src), fsize);
                     }
-                    movRegToXmm(RF_SCRATCH, xr);
+                    hub.calls.movRegToXmm(X86Core.RF_SCRATCH, xr);
                 }
-                noteArgRegLoaded("f" + fidx);
+                hub.emit.noteArgRegLoaded("f" + fidx);
                 return true;
             }
             
@@ -341,38 +319,38 @@ case "R_RET":
                 // "R_RET src" / "R_RETF src" -- the return value into rax / xmm0, then the function epilogue.
                 String src = line.get(1).text;
                 if (mnemonic.equals("R_RET")) {
-                    if (rfIsTemp(src)) {
-                        rfRegToReg("rax", rfReg(src));
-                    } else if (rfIsImm(src)) {
-                        movImmToReg("rax", rfImm(src));
+                    if (X86Core.rfIsTemp(src)) {
+                        hub.regForm.rfRegToReg("rax", hub.regForm.rfReg(src));
+                    } else if (X86Core.rfIsImm(src)) {
+                        hub.emit.movImmToReg("rax", X86Core.rfImm(src));
                     } else {
-                        movMemToReg("rax", rfSlot(src));
+                        hub.emit.movMemToReg("rax", X86Core.rfSlot(src));
                     }
-                } else if (rfIsXvar(src)) {
-                    raw(("    movaps %" + xvReg(src) + ", %xmm0"));
-                } else if (rfIsTemp(src)) {
-                    movRegToXmm(rfReg(src), "xmm0");
+                } else if (X86Core.rfIsXvar(src)) {
+                    hub.emit.raw(("    movaps %" + hub.gen.xvReg(src) + ", %xmm0"));
+                } else if (X86Core.rfIsTemp(src)) {
+                    hub.calls.movRegToXmm(hub.regForm.rfReg(src), "xmm0");
                 } else {
-                    if (rfIsImm(src)) {
-                        movImmToReg(RF_SCRATCH, rfImm(src));
+                    if (X86Core.rfIsImm(src)) {
+                        hub.emit.movImmToReg(X86Core.RF_SCRATCH, X86Core.rfImm(src));
                     } else {
-                        movMemToReg(RF_SCRATCH, rfSlot(src));
+                        hub.emit.movMemToReg(X86Core.RF_SCRATCH, X86Core.rfSlot(src));
                     }
-                    movRegToXmm(RF_SCRATCH, "xmm0");
+                    hub.calls.movRegToXmm(X86Core.RF_SCRATCH, "xmm0");
                 }
-                emitFunctionEpilogue();
+                hub.gen.emitFunctionEpilogue();
                 return true;
             }
             
 case "ADD_INT":
             case "SUB_INT":
             case "MUL_INT": {
-                popReg("rbx");
-                popReg("rax");
+                hub.emit.popReg("rbx");
+                hub.emit.popReg("rax");
                 String op = mnemonic.equals("ADD_INT") ? "add" : mnemonic.equals("SUB_INT") ? "sub" : "imul";
-                raw("    " + op + "q %rbx, %rax");
+                hub.emit.raw("    " + op + "q %rbx, %rax");
                 
-                pushReg("rax");
+                hub.emit.pushReg("rax");
                 return true;
             }
             
@@ -381,32 +359,32 @@ case "SDIV_INT":
                 // Signed division/modulo (s8/s16/s32/s64 operands): sign-extend both operands from
                 // their declared width, then cqto/idiv (remainder takes the dividend's sign, as in C).
                 int size = (int) Long.parseLong(line.get(1).text);
-                popReg("rbx");
-                popReg("rax");
-                signExtendReg("rax", size);
-                signExtendReg("rbx", size);
+                hub.emit.popReg("rbx");
+                hub.emit.popReg("rax");
+                hub.emit.signExtendReg("rax", size);
+                hub.emit.signExtendReg("rbx", size);
                 // MIN / -1 overflows and traps (SIGFPE) in idiv: a divisor of -1 is handled
                 // without idiv (x / -1 = -x wrapping, x % -1 = 0).
                 boolean isDiv = mnemonic.equals("SDIV_INT");
-                String notMinusOne = newInternalLabel("sdiv_normal");
-                String doneLabel = newInternalLabel("sdiv_done");
-                raw("    cmpq $-1, %rbx");
-                raw("    jne " + notMinusOne);
+                String notMinusOne = hub.regForm.newInternalLabel("sdiv_normal");
+                String doneLabel = hub.regForm.newInternalLabel("sdiv_done");
+                hub.emit.raw("    cmpq $-1, %rbx");
+                hub.emit.raw("    jne " + notMinusOne);
                 if (isDiv) {
-                    raw("    negq %rax");
+                    hub.emit.raw("    negq %rax");
                 } else {
-                    raw("    xorq %rax, %rax");
+                    hub.emit.raw("    xorq %rax, %rax");
                 }
-                raw("    jmp " + doneLabel);
-                raw(notMinusOne + ":");
-                raw("    cqto");
-                raw("    idivq %rbx");
+                hub.emit.raw("    jmp " + doneLabel);
+                hub.emit.raw(notMinusOne + ":");
+                hub.emit.raw("    cqto");
+                hub.emit.raw("    idivq %rbx");
                 if (!isDiv) {
-                    raw("    movq %rdx, %rax");
+                    hub.emit.raw("    movq %rdx, %rax");
                 }
-                raw(doneLabel + ":");
+                hub.emit.raw(doneLabel + ":");
                 
-                pushReg("rax");
+                hub.emit.pushReg("rax");
                 return true;
             }
             
@@ -416,19 +394,19 @@ case "SLT_INT":
             case "SGT_INT": {
                 // Signed comparisons: sign-extend both operands from their declared width first.
                 int size = (int) Long.parseLong(line.get(1).text);
-                popReg("rbx");
-                popReg("rax");
-                signExtendReg("rax", size);
-                signExtendReg("rbx", size);
+                hub.emit.popReg("rbx");
+                hub.emit.popReg("rax");
+                hub.emit.signExtendReg("rax", size);
+                hub.emit.signExtendReg("rbx", size);
                 String scc = mnemonic.equals("SLT_INT") ? "setl"
                         : mnemonic.equals("SLT_EQ_INT") ? "setle"
                         : mnemonic.equals("SGT_EQ_INT") ? "setge"
                         : "setg";
-                raw("    cmpq %rbx, %rax");
-                raw("    " + scc + " %al");
-                raw("    movzbq %al, %rax");
+                hub.emit.raw("    cmpq %rbx, %rax");
+                hub.emit.raw("    " + scc + " %al");
+                hub.emit.raw("    movzbq %al, %rax");
                 
-                pushReg("rax");
+                hub.emit.pushReg("rax");
                 return true;
             }
             
@@ -445,21 +423,21 @@ case "DIV_INT":
                 // for the (much more common, in this language) unsigned
                 // case.
                 int dsize = line.size() > 1 ? (int) Long.parseLong(line.get(1).text) : 8;
-                popReg("rbx");
-                popReg("rax");
-                zeroExtendReg("rax", dsize);
-                zeroExtendReg("rbx", dsize);
+                hub.emit.popReg("rbx");
+                hub.emit.popReg("rax");
+                hub.emit.zeroExtendReg("rax", dsize);
+                hub.emit.zeroExtendReg("rbx", dsize);
                 if (dsize <= 4) {
                     // both operands were zero-extended from at most 32 bits: the 32-bit divide gives the same quotient and remainder,
                     // several times faster than divq on most x86 cores (a divl clears the upper halves of rax and rdx itself)
-                    raw("    xorl %edx, %edx");
-                    raw("    divl %ebx");
+                    hub.emit.raw("    xorl %edx, %edx");
+                    hub.emit.raw("    divl %ebx");
                 } else {
-                    raw("    xorq %rdx, %rdx");
-                    raw("    divq %rbx");
+                    hub.emit.raw("    xorq %rdx, %rdx");
+                    hub.emit.raw("    divq %rbx");
                 }
                 
-                pushReg(mnemonic.equals("DIV_INT") ? "rax" : "rdx");
+                hub.emit.pushReg(mnemonic.equals("DIV_INT") ? "rax" : "rdx");
                 return true;
             }
             
@@ -473,21 +451,21 @@ case "SHL":
                 // sign-extended from its width first); SHR zero-extends first. A narrow result is re-truncated, so the stack
                 // word keeps holding the zero-extended value.
                 int ssize = line.size() > 1 ? (int) Long.parseLong(line.get(1).text) : 8;
-                popReg("rbx"); // shift count
-                popReg("rax"); // value
-                if (bmi2 && !mnemonic.equals("SAR")) {
-                    zeroExtendReg("rbx", ssize);
-                    emitShiftBmi2(mnemonic, ssize, "rax", "rbx");
-                    pushReg("rax");
+                hub.emit.popReg("rbx"); // shift count
+                hub.emit.popReg("rax"); // value
+                if (core.bmi2 && !mnemonic.equals("SAR")) {
+                    hub.emit.zeroExtendReg("rbx", ssize);
+                    hub.emit.emitShiftBmi2(mnemonic, ssize, "rax", "rbx");
+                    hub.emit.pushReg("rax");
                     return true;
                 }
                 // %rcx is the shift-count register but also an argument register: save it around the shift (see LOOKUP_ARRAY's small-array path).
-                pushReg("rcx");
-                raw("    movq %rbx, %rcx");
-                zeroExtendReg("rcx", ssize);
-                emitShiftCore(mnemonic, ssize, "rax");
-                popReg("rcx");
-                pushReg("rax");
+                hub.emit.pushReg("rcx");
+                hub.emit.raw("    movq %rbx, %rcx");
+                hub.emit.zeroExtendReg("rcx", ssize);
+                hub.emit.emitShiftCore(mnemonic, ssize, "rax");
+                hub.emit.popReg("rcx");
+                hub.emit.pushReg("rax");
                 return true;
             }
             
@@ -497,14 +475,14 @@ case "ROTL":
                 // bits, and a 1/2-byte rotate by (count mod 32) is the same as by (count mod width)). The value is zero-extended first so the
                 // untouched upper bits of a 1/2-byte sub-register stay zero.
                 int rsize = line.size() > 1 ? (int) Long.parseLong(line.get(1).text) : 8;
-                popReg("rbx"); // count
-                popReg("rax"); // value
-                zeroExtendReg("rax", rsize);
-                pushReg("rcx");
-                raw("    movq %rbx, %rcx");
-                raw("    " + (mnemonic.equals("ROTL") ? "rol" : "ror") + movSuffix(rsize) + " %cl, %" + sizedReg("rax", rsize));
-                popReg("rcx");
-                pushReg("rax");
+                hub.emit.popReg("rbx"); // count
+                hub.emit.popReg("rax"); // value
+                hub.emit.zeroExtendReg("rax", rsize);
+                hub.emit.pushReg("rcx");
+                hub.emit.raw("    movq %rbx, %rcx");
+                hub.emit.raw("    " + (mnemonic.equals("ROTL") ? "rol" : "ror") + hub.emit.movSuffix(rsize) + " %cl, %" + hub.emit.sizedReg("rax", rsize));
+                hub.emit.popReg("rcx");
+                hub.emit.pushReg("rax");
                 return true;
             }
             
@@ -514,22 +492,22 @@ case "BITS_OR":
                 // "BITS_xxx size": pop two, and/or/xor, push. Size 8 is also what StrengthReductionPass makes of x % 2^n. A narrow
                 // result is re-truncated, so the stack word keeps holding the zero-extended value (like the shifts).
                 int bsize = line.size() > 1 ? (int) Long.parseLong(line.get(1).text) : 8;
-                popReg("rbx");
-                popReg("rax");
+                hub.emit.popReg("rbx");
+                hub.emit.popReg("rax");
                 String bop = mnemonic.equals("BITS_OR") ? "or" : mnemonic.equals("BITS_AND") ? "and" : "xor";
-                raw(("    " + bop + "q %rbx, %rax"));
-                zeroExtendReg("rax", bsize);
-                pushReg("rax");
+                hub.emit.raw(("    " + bop + "q %rbx, %rax"));
+                hub.emit.zeroExtendReg("rax", bsize);
+                hub.emit.pushReg("rax");
                 return true;
             }
             
 case "BITS_NOT": {
                 // "BITS_NOT size": the bitwise complement, truncated to the operand width (u8: ~0 = 255).
                 int nsize = line.size() > 1 ? (int) Long.parseLong(line.get(1).text) : 8;
-                popReg("rax");
-                raw("    notq %rax");
-                zeroExtendReg("rax", nsize);
-                pushReg("rax");
+                hub.emit.popReg("rax");
+                hub.emit.raw("    notq %rax");
+                hub.emit.zeroExtendReg("rax", nsize);
+                hub.emit.pushReg("rax");
                 return true;
             }
             
@@ -559,21 +537,21 @@ case "EQ_INT":
                 // unsigned-only scope as its five siblings (see DIV_INT's
                 // own note).
                 int csize = line.size() > 1 ? (int) Long.parseLong(line.get(1).text) : 8;
-                popReg("rbx");
-                popReg("rax");
-                zeroExtendReg("rax", csize);
-                zeroExtendReg("rbx", csize);
+                hub.emit.popReg("rbx");
+                hub.emit.popReg("rax");
+                hub.emit.zeroExtendReg("rax", csize);
+                hub.emit.zeroExtendReg("rbx", csize);
                 String setcc = mnemonic.equals("EQ_INT") ? "sete"
                         : mnemonic.equals("NEQ_INT") ? "setne"
                         : mnemonic.equals("LT_INT") ? "setb"
                         : mnemonic.equals("LT_EQ_INT") ? "setbe"
                         : mnemonic.equals("GT_EQ_INT") ? "setae"
                         : "seta"; // GT_INT (unsigned; see DIV_INT's own note on signedness)
-                raw("    cmpq %rbx, %rax");
-                raw("    " + setcc + " %al");
-                raw("    movzbq %al, %rax");
+                hub.emit.raw("    cmpq %rbx, %rax");
+                hub.emit.raw("    " + setcc + " %al");
+                hub.emit.raw("    movzbq %al, %rax");
                 
-                pushReg("rax");
+                hub.emit.pushReg("rax");
                 return true;
             }
             
@@ -582,11 +560,11 @@ case "ADD_FLOAT":
             case "MUL_FLOAT":
             case "DIV_FLOAT": {
                 int size = (int) Long.parseLong(line.get(1).text);
-                String sfx = sseSuffix(size);
-                popReg("rbx"); // right operand bits
-                popReg("rax"); // left operand bits
-                movRegToXmm("rax", rfXmmA());
-                movRegToXmm("rbx", rfXmmB());
+                String sfx = hub.calls.sseSuffix(size);
+                hub.emit.popReg("rbx"); // right operand bits
+                hub.emit.popReg("rax"); // left operand bits
+                hub.calls.movRegToXmm("rax", hub.gen.rfXmmA());
+                hub.calls.movRegToXmm("rbx", hub.gen.rfXmmB());
                 String op = mnemonic.equals("ADD_FLOAT") ? "add"
                         : mnemonic.equals("SUB_FLOAT") ? "sub"
                         : mnemonic.equals("MUL_FLOAT") ? "mul"
@@ -597,9 +575,9 @@ case "ADD_FLOAT":
                 // above), xmm1 the right, so "opss %xmm1, %xmm0" gives
                 // left-OP-right, in the correct order for the
                 // non-commutative SUB_FLOAT/DIV_FLOAT cases.
-                raw(("    " + op + sfx + " %" + rfXmmB() + ", %" + rfXmmA()));
-                movXmmToReg(rfXmmA(), "rax");
-                pushReg("rax");
+                hub.emit.raw(("    " + op + sfx + " %" + hub.gen.rfXmmB() + ", %" + hub.gen.rfXmmA()));
+                hub.calls.movXmmToReg(hub.gen.rfXmmA(), "rax");
+                hub.emit.pushReg("rax");
                 return true;
             }
             
@@ -621,44 +599,44 @@ case "EQ_FLOAT":
                 // NaN-aware.
                 int size = (int) Long.parseLong(line.get(1).text);
                 String cmp = size <= 4 ? "ucomiss" : "ucomisd";
-                popReg("rbx");
-                popReg("rax");
-                movRegToXmm("rax", rfXmmA());
-                movRegToXmm("rbx", rfXmmB());
-                raw(("    " + cmp + " %" + rfXmmB() + ", %" + rfXmmA()));
+                hub.emit.popReg("rbx");
+                hub.emit.popReg("rax");
+                hub.calls.movRegToXmm("rax", hub.gen.rfXmmA());
+                hub.calls.movRegToXmm("rbx", hub.gen.rfXmmB());
+                hub.emit.raw(("    " + cmp + " %" + hub.gen.rfXmmB() + ", %" + hub.gen.rfXmmA()));
                 String setcc = mnemonic.equals("EQ_FLOAT") ? "sete"
                         : mnemonic.equals("NEQ_FLOAT") ? "setne"
                         : mnemonic.equals("LT_FLOAT") ? "setb"
                         : mnemonic.equals("LT_EQ_FLOAT") ? "setbe"
                         : mnemonic.equals("GT_EQ_FLOAT") ? "setae"
                         : "seta"; // GT_FLOAT
-                raw("    " + setcc + " %al");
-                raw("    movzbq %al, %rax");
+                hub.emit.raw("    " + setcc + " %al");
+                hub.emit.raw("    movzbq %al, %rax");
                 
-                pushReg("rax");
+                hub.emit.pushReg("rax");
                 return true;
             }
             
 case "AND":
             case "OR": {
-                popReg("rbx");
-                popReg("rax");
-                raw(("    " + (mnemonic.equals("AND") ? "and" : "or") + "b %bl, %al"));
-                pushReg("rax");
+                hub.emit.popReg("rbx");
+                hub.emit.popReg("rax");
+                hub.emit.raw(("    " + (mnemonic.equals("AND") ? "and" : "or") + "b %bl, %al"));
+                hub.emit.pushReg("rax");
                 return true;
             }
             
 case "NOT": {
-                popReg("rax");
-                raw("    xorb $1, %al");
-                pushReg("rax");
+                hub.emit.popReg("rax");
+                hub.emit.raw("    xorb $1, %al");
+                hub.emit.pushReg("rax");
                 return true;
             }
             
 case "NEG": {
-                popReg("rax");
-                raw("    negq %rax");
-                pushReg("rax");
+                hub.emit.popReg("rax");
+                hub.emit.raw("    negq %rax");
+                hub.emit.pushReg("rax");
                 return true;
             }
             
@@ -666,22 +644,22 @@ case "NEG_FLOAT": {
                 // Float negation flips the IEEE-754 sign bit; an integer `neg`
                 // would two's-complement the bit pattern (wrong value).
                 int size = (int) Long.parseLong(line.get(1).text);
-                popReg("rax");
+                hub.emit.popReg("rax");
                 if (size <= 4) {
-                    raw("    xorl $0x80000000, %eax");
+                    hub.emit.raw("    xorl $0x80000000, %eax");
                 } else {
-                    movImmToReg("rbx", Long.MIN_VALUE);
-                    raw("    xorq %rbx, %rax");
+                    hub.emit.movImmToReg("rbx", Long.MIN_VALUE);
+                    hub.emit.raw("    xorq %rbx, %rax");
                 }
-                pushReg("rax");
+                hub.emit.pushReg("rax");
                 return true;
             }
             
 case "INC_INT":
             case "DEC_INT": {
-                popReg("rax");
-                raw(("    " + (mnemonic.equals("INC_INT") ? "inc" : "dec") + "q %rax"));
-                pushReg("rax");
+                hub.emit.popReg("rax");
+                hub.emit.raw(("    " + (mnemonic.equals("INC_INT") ? "inc" : "dec") + "q %rax"));
+                hub.emit.pushReg("rax");
                 return true;
             }
             
@@ -697,15 +675,15 @@ case "INC_FLOAT":
                 long oneBits = size <= 4
                         ? Integer.toUnsignedLong(Float.floatToRawIntBits(1.0f))
                         : Double.doubleToRawLongBits(1.0);
-                popReg("rax");
-                movRegToXmm("rax", rfXmmA());
-                movImmToReg("rbx", oneBits);
-                movRegToXmm("rbx", rfXmmB());
-                String sfx = sseSuffix(size);
+                hub.emit.popReg("rax");
+                hub.calls.movRegToXmm("rax", hub.gen.rfXmmA());
+                hub.emit.movImmToReg("rbx", oneBits);
+                hub.calls.movRegToXmm("rbx", hub.gen.rfXmmB());
+                String sfx = hub.calls.sseSuffix(size);
                 String op = mnemonic.equals("INC_FLOAT") ? "add" : "sub";
-                raw(("    " + op + sfx + " %" + rfXmmB() + ", %" + rfXmmA()));
-                movXmmToReg(rfXmmA(), "rax");
-                pushReg("rax");
+                hub.emit.raw(("    " + op + sfx + " %" + hub.gen.rfXmmB() + ", %" + hub.gen.rfXmmA()));
+                hub.calls.movXmmToReg(hub.gen.rfXmmA(), "rax");
+                hub.emit.pushReg("rax");
                 return true;
             }
             
@@ -718,42 +696,42 @@ case "CMP": {
                 // output this pass was checked against) -- so the
                 // *next* JMP becomes a conditional "jump if false"
                 // rather than an unconditional jump; see the JMP case.
-                popReg("rax");
-                raw("    testq %rax, %rax");
-                lastWasCmp = true;
+                hub.emit.popReg("rax");
+                hub.emit.raw("    testq %rax, %rax");
+                core.lastWasCmp = true;
                 return true;
             }
             
 case "JMP": {
-                String label = mangleLabel(line.get(1).text);
+                String label = hub.gen.mangleLabel(line.get(1).text);
                 if (wasCmp) {
-                    raw(("    je " + label));
+                    hub.emit.raw(("    je " + label));
                 } else {
-                    raw(("    jmp " + label));
+                    hub.emit.raw(("    jmp " + label));
                 }
                 return true;
             }
             
 case "SEXT": {
                 int srcSize = (int) Long.parseLong(line.get(1).text);
-                popReg("rax");
+                hub.emit.popReg("rax");
                 if (srcSize == 4) {
-                    raw("    movslq %eax, %rax");
+                    hub.emit.raw("    movslq %eax, %rax");
                 } else {
-                    raw("    movs" + movSuffix(srcSize) + "q %" + sizedReg("rax", srcSize) + ", %rax");
+                    hub.emit.raw("    movs" + hub.emit.movSuffix(srcSize) + "q %" + hub.emit.sizedReg("rax", srcSize) + ", %rax");
                 }
                 if (line.size() > 2) {
                     // Narrow results are kept zero-extended in the stack word: drop the sign bits above dstSize.
                     int sextDst = (int) Long.parseLong(line.get(2).text);
                     if (sextDst < 8) {
                         if (sextDst == 4) {
-                            raw("    movl %eax, %eax");
+                            hub.emit.raw("    movl %eax, %eax");
                         } else {
-                            raw("    movz" + movSuffix(sextDst) + "q %" + sizedReg("rax", sextDst) + ", %rax");
+                            hub.emit.raw("    movz" + hub.emit.movSuffix(sextDst) + "q %" + hub.emit.sizedReg("rax", sextDst) + ", %rax");
                         }
                     }
                 }
-                pushReg("rax");
+                hub.emit.pushReg("rax");
                 return true;
             }
             
@@ -762,27 +740,27 @@ case "TRUNC": {
                 // `match x fits T` proof shows the value is representable in T). Keeps the low
                 // destSize bytes and zero-fills the rest of the stack word.
                 int dstSize = (int) Long.parseLong(line.get(2).text);
-                popReg("rax");
+                hub.emit.popReg("rax");
                 if (dstSize < 8) {
                     if (dstSize == 4) {
-                        raw("    movl %eax, %eax");
+                        hub.emit.raw("    movl %eax, %eax");
                     } else {
-                        raw("    movz" + movSuffix(dstSize) + "q %" + sizedReg("rax", dstSize) + ", %rax");
+                        hub.emit.raw("    movz" + hub.emit.movSuffix(dstSize) + "q %" + hub.emit.sizedReg("rax", dstSize) + ", %rax");
                     }
                 }
-                pushReg("rax");
+                hub.emit.pushReg("rax");
                 return true;
             }
             
 case "ZEXT": {
                 int srcSize = (int) Long.parseLong(line.get(1).text);
-                popReg("rax");
+                hub.emit.popReg("rax");
                 if (srcSize == 4) {
-                    raw("    movl %eax, %eax"); // writing the 32-bit half auto-zeroes the upper 32 bits
+                    hub.emit.raw("    movl %eax, %eax"); // writing the 32-bit half auto-zeroes the upper 32 bits
                 } else if (srcSize < 8) {
-                    raw("    movz" + movSuffix(srcSize) + "q %" + sizedReg("rax", srcSize) + ", %rax");
+                    hub.emit.raw("    movz" + hub.emit.movSuffix(srcSize) + "q %" + hub.emit.sizedReg("rax", srcSize) + ", %rax");
                 }
-                pushReg("rax");
+                hub.emit.pushReg("rax");
                 return true;
             }
             
@@ -802,9 +780,9 @@ case "DUP_TOP": {
                 // the top of stack" primitive, not itself float-specific
                 // -- nothing about this mnemonic cares what the 8 bytes
                 // mean.
-                popReg("rax");
-                pushReg("rax");
-                pushReg("rax");
+                hub.emit.popReg("rax");
+                hub.emit.pushReg("rax");
+                hub.emit.pushReg("rax");
                 return true;
             }
             
@@ -816,16 +794,16 @@ case "FCONV": {
                 if (fromSize == toSize) {
                     return true;
                 }
-                popReg("rax");
-                movRegToXmm("rax", rfXmmA());
+                hub.emit.popReg("rax");
+                hub.calls.movRegToXmm("rax", hub.gen.rfXmmA());
                 String cv = fromSize == 4 ? "cvtss2sd" : "cvtsd2ss";
-                raw(("    " + cv + " %" + rfXmmA() + ", %" + rfXmmA()));
+                hub.emit.raw(("    " + cv + " %" + hub.gen.rfXmmA() + ", %" + hub.gen.rfXmmA()));
                 if (toSize == 4) {
-                    rfXmmToGpr(rfXmmA(), "rax", 4); // movd: zero-extends the 32 result bits
+                    hub.gen.rfXmmToGpr(hub.gen.rfXmmA(), "rax", 4); // movd: zero-extends the 32 result bits
                 } else {
-                    movXmmToReg(rfXmmA(), "rax");
+                    hub.calls.movXmmToReg(hub.gen.rfXmmA(), "rax");
                 }
-                pushReg("rax");
+                hub.emit.pushReg("rax");
                 return true;
             }
             
@@ -898,11 +876,11 @@ case "PROMOTE_F32_TO_F64": {
                 // has or how many of them have already landed in their
                 // own real argument register by the time this mnemonic
                 // runs for a later one.
-                popReg("rax");
-                movRegToXmm("rax", rfXmmA());
-                raw(("    cvtss2sd %" + rfXmmA() + ", %" + rfXmmA()));
-                movXmmToReg(rfXmmA(), "rax");
-                pushReg("rax");
+                hub.emit.popReg("rax");
+                hub.calls.movRegToXmm("rax", hub.gen.rfXmmA());
+                hub.emit.raw(("    cvtss2sd %" + hub.gen.rfXmmA() + ", %" + hub.gen.rfXmmA()));
+                hub.calls.movXmmToReg(hub.gen.rfXmmA(), "rax");
+                hub.emit.pushReg("rax");
                 return true;
             }
             
@@ -913,22 +891,22 @@ case "PUSH_FIELDNAME": {
                 // always immediately follows to add to the base address
                 // already on the stack.
                 long offset = Long.parseLong(line.get(1).text);
-                movImmToReg("rax", offset);
-                pushReg("rax");
+                hub.emit.movImmToReg("rax", offset);
+                hub.emit.pushReg("rax");
                 // Preserve a pending value-block across this (see PUSH's
                 // own note above) -- e.g. a DOT chained right after a
                 // LOOKUP_ARRAY read needs to know the element value
                 // LOOKUP_ARRAY just left on the stack is still there.
-                lastValueBlockSize = pendingBlockSize;
+                core.lastValueBlockSize = pendingBlockSize;
                 return true;
             }
             
 case "DOT_LHS": {
                 int size = (int) Long.parseLong(line.get(1).text);
-                popReg("rbx"); // field offset (from PUSH_FIELDNAME)
-                popReg("rax"); // base address
-                raw("    addq %rbx, %rax");
-                pushReg("rax"); // the computed field address itself
+                hub.emit.popReg("rbx"); // field offset (from PUSH_FIELDNAME)
+                hub.emit.popReg("rax"); // base address
+                hub.emit.raw("    addq %rbx, %rax");
+                hub.emit.pushReg("rax"); // the computed field address itself
                 return true;
             }
             
