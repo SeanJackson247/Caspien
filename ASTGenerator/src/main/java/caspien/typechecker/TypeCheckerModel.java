@@ -988,10 +988,10 @@ abstract class TypeCheckerModel {
             "lock", "async", "pub", "with_tick", "tick", "event_loop", "make_safe_args", "throws", "drop", "fs_root", "fs_unsafe", "non"));
     public final Map<String, String> dropHookOwners = new HashMap<>();
 
-    /** True for a file inside the compiler's own stdlib folder (../stdlib from the ASTGenerator working directory). */
+    /** True for a file inside the compiler's own stdlib folder (the project's stdlib, see ProjectRoot). */
     public static boolean isStdlibFile(String file) {
         try {
-            java.nio.file.Path stdlib = java.nio.file.Paths.get("..", "stdlib").toAbsolutePath().normalize();
+            java.nio.file.Path stdlib = caspien.ProjectRoot.stdlib();
             return java.nio.file.Paths.get(file).toAbsolutePath().normalize().startsWith(stdlib);
         } catch (RuntimeException e) {
             return false;
@@ -1143,9 +1143,10 @@ abstract class TypeCheckerModel {
     public static final long LOCK_SPIN_LIMIT = 1_000_000_000L;
 
     /**
-     * Non-fatal diagnostic: prints "[warning] file:line - message" to stderr and checking continues.
-     * No collection/counting machinery on purpose.
+     * Non-fatal diagnostic: records "[warning] file:line - message" in {@link #WARNINGS} (the caller reports them) and checking continues.
      */
+    public static final java.util.List<String> WARNINGS = new java.util.ArrayList<>();
+
     public static void warn(String file, int line, String message) {
         StringBuilder sb = new StringBuilder("[warning] ");
         if (file != null) {
@@ -1156,7 +1157,7 @@ abstract class TypeCheckerModel {
             sb.append(" - ");
         }
         sb.append(message);
-        System.err.println(sb);
+        WARNINGS.add(sb.toString());
     }
 
     /** Names the integer types that can hold `v`, for "no overload matches" messages about a literal argument. */

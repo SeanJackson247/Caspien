@@ -214,8 +214,8 @@ final class CompilerCache {
         }
     }
 
-    /** Stores a successful stage's output; depsFile (stage 1) is the front end's list of files it read. Failures are ignored. */
-    void store(String stage, String key, Path outFile, StageLog log, Path depsFile) {
+    /** Stores a successful stage's output; `deps` (stage 1) is the list of source files the front end read, or null. Failures are ignored. */
+    void store(String stage, String key, Path outFile, StageLog log, List<String> deps) {
         if (!enabled || key == null) {
             return;
         }
@@ -232,14 +232,14 @@ final class CompilerCache {
                 meta.append("N\t").append(n).append('\n');
             }
             Files.writeString(tmp.resolve("meta"), meta.toString(), StandardCharsets.UTF_8);
-            if (depsFile != null) {
-                StringBuilder deps = new StringBuilder();
-                for (String f : Files.readAllLines(depsFile, StandardCharsets.UTF_8)) {
+            if (deps != null) {
+                StringBuilder lines = new StringBuilder();
+                for (String f : deps) {
                     if (!f.isEmpty()) {
-                        deps.append(depHash(Path.of(f))).append('\t').append(f).append('\n');
+                        lines.append(depHash(Path.of(f))).append('\t').append(f).append('\n');
                     }
                 }
-                Files.writeString(tmp.resolve("deps"), deps.toString(), StandardCharsets.UTF_8);
+                Files.writeString(tmp.resolve("deps"), lines.toString(), StandardCharsets.UTF_8);
             }
             Path target = entryDir(stage, key);
             if (Files.exists(target)) {

@@ -89,18 +89,8 @@ public class CompilerConfig {
         return callingConventions.get(defaultConvention);
     }
 
-    public static CompilerConfig load(String path) {
-        String content;
-        try {
-            content = new String(Files.readAllBytes(Paths.get(path)), StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            throw new CompilerException("config", path, 0,
-                    "required config file '" + path + "' could not be read: " + e.getMessage());
-        }
-        return parse(content, path);
-    }
-
-    private static CompilerConfig parse(String content, String path) {
+    /** Parses the text of `compiler.config` (required: calling conventions); `path` names it in error messages. Reads no file. */
+    public static CompilerConfig parse(String content, String path) {
         List<String> lines = splitLines(content);
         CompilerConfig config = new CompilerConfig();
 

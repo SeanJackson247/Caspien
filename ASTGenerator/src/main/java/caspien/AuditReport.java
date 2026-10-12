@@ -45,7 +45,7 @@ final class AuditReport {
     }
 
     static boolean isStdlib(Path p) {
-        return p.startsWith(Paths.get("..", "stdlib").toAbsolutePath().normalize());
+        return p.startsWith(ProjectRoot.stdlib());
     }
 
     static String build(List<String> files, Path base, Map<String, Set<String>> needed, boolean hideStdlib) throws IOException {
@@ -153,7 +153,7 @@ final class AuditReport {
 
     private static String show(Path p, Path base) {
         Path abs = p.toAbsolutePath().normalize();
-        if (abs.startsWith(Paths.get("..", "stdlib").toAbsolutePath().normalize().getParent())) {
+        if (abs.startsWith(ProjectRoot.root())) {
             return base.relativize(abs).toString();
         }
         return abs.startsWith(base) ? base.relativize(abs).toString() : abs.toString();

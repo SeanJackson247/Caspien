@@ -9,7 +9,7 @@ One parser, one set of classes for the plain-text bytecode (HOB and LOB) that th
 - `BytecodeSerializer`: `BytecodeProgram` -> text, tokens joined by single spaces, one line per statement.
 
 ## Rules every stage using it follows
-- Per stage, one class calls `BytecodeParser`/`BytecodeSerializer`: the library entry class (`Optimizer.optimize`, `LowerOrder.generate`) for stages 2-3, `Main` for stage 1 (serializes) and stage 4 (parses); only `Main` touches files. The order is: text -> parse (finished) -> passes on the `BytecodeProgram` -> serialize (starts after the last pass). Passes do no file or stdout I/O and take their config from the entry class.
+- Per stage, one class calls `BytecodeParser`/`BytecodeSerializer`: the library entry class (`Frontend.compile` serializes, `Optimizer.optimize`, `LowerOrder.generate`, `Codegen.generate` parses); only `Main` touches files. The order is: text -> parse (finished) -> passes on the `BytecodeProgram` -> serialize (starts after the last pass). Passes do no file or stdout I/O and take their config from the entry class.
 - This package imports nothing from any stage.
 - Checked by `tests/bytecode_phases_check.sh` (layering for all four stages + exact round trip).
 

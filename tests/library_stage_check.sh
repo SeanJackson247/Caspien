@@ -1,6 +1,6 @@
 #!/bin/bash
-# The Optimizer and the LowerOrderGenerator are libraries the orchestrator calls in its own JVM (text in, text out); the ASTGenerator and
-# Codegen stay separate processes. Also checks that each library is still the same program as its stand-alone Main. Needs Linux, java, gcc.
+# All four stages (ASTGenerator `Frontend`, Optimizer, LowerOrderGenerator, Codegen) are libraries the orchestrator calls in its own JVM;
+# only the assembler/linker are separate processes. Also checks that each library is still the same program as its stand-alone Main. Needs Linux, java, gcc.
 # Runs in a scratch copy of the tree.   tests/library_stage_check.sh
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
@@ -12,12 +12,12 @@ mkdir -p t; fails=0
 fail(){ echo "FAIL: $*"; fails=$((fails+1)); }
 ok(){ echo "PASS $*"; }
 
-# 1. the orchestrator no longer launches stages 2 and 3 as programs
-if grep -q '"caspien\.optimizer\.Main"\|"caspien\.lowerorder\.Main"' Compiler.java; then fail "Compiler.java still launches the Optimizer/LowerOrderGenerator Main"; else ok "Compiler.java launches no Optimizer/LowerOrderGenerator process"; fi
-grep -q 'runLibraryStage(cache, "s2"' Compiler.java && grep -q 'runLibraryStage(cache, "s3"' Compiler.java && ok "stages 2 and 3 go through runLibraryStage" || fail "runLibraryStage is not used for both stages"
+# 1. the orchestrator launches no stage as a program
+if grep -q '\.Main"' Compiler.java; then fail "Compiler.java still names a stage Main class"; else ok "Compiler.java launches no stage Main"; fi
+grep -q 'runLibraryStage(cache, "s2"' Compiler.java && grep -q 'runLibraryStage(cache, "s3"' Compiler.java && grep -q 'runLibraryStage(cache, "s4"' Compiler.java && grep -q 'caspien.Frontend' Compiler.java && ok "all four stages go through library calls" || fail "a stage is not a library call"
 grep -q 'optText, optOut.toString(), lobOut' Compiler.java && ok "the Optimizer's text is passed straight to the LowerOrderGenerator" || fail "stage 3 does not take the in-memory Optimizer text"
 
-# 2. a real build: only the front end and Codegen are separate JVMs
+# 2. a real build: no child JVM at all (the one `java` is the orchestrator itself)
 cat > t/p.caspien <<'P'
 import "../stdlib/libc.caspien"
 func main() void{
@@ -28,8 +28,8 @@ func main() void{
 P
 if command -v strace >/dev/null; then
   strace -f -e trace=execve -o t/ex.log java Compiler -i t/p.caspien t/p --no-cache >t/build.log 2>&1
-  m=$(grep -o 'caspien[.a-z]*Main' t/ex.log | sort | tr '\n' ' ')
-  [ "$m" = "caspien.Main caspien.codegen.Main " ] && ok "only ASTGenerator and Codegen run as separate JVMs ($m)" || fail "processes started: $m"
+  n=$(grep -c 'execve("[^"]*/java"' t/ex.log)
+  [ "$n" = 1 ] && ok "no stage runs as a separate JVM" || fail "java started $n times"
 else
   java Compiler -i t/p.caspien t/p --no-cache >t/build.log 2>&1; echo "SKIP process count (no strace)"
 fi
@@ -39,10 +39,16 @@ fi
 B=t/.build
 java Compiler -i t/p.caspien t/p2 --no-cache >/dev/null 2>&1
 java Compiler -i t/p.caspien t/h --hob --no-cache >/dev/null 2>&1
+cp t/.build/1_*.txt t/hob_lib.txt 2>/dev/null
 ( cd Optimizer && java -cp out caspien.optimizer.Main -i "$W/t/h" "$W/t/opt_standalone.txt" >/dev/null 2>&1 ; rm -f output.txt )
 cmp -s t/opt_standalone.txt t/.build/2_optimizer.hob.txt && ok "Optimizer library == stand-alone Main" || fail "Optimizer library output differs from its Main"
 ( cd LowerOrderGenerator && java -cp out caspien.lowerorder.Main -i "$W/t/.build/2_optimizer.hob.txt" "$W/t/lob_standalone.txt" >/dev/null 2>&1 ; rm -f output.txt )
 cmp -s t/lob_standalone.txt t/.build/3_lower_order_generator.lob.txt && ok "LowerOrderGenerator library == stand-alone Main" || fail "LowerOrderGenerator library output differs from its Main"
+
+( cd ASTGenerator && java -cp out caspien.Main -i "$W/t/p.caspien" "$W/t/hob_standalone.txt" >/dev/null 2>&1 ; rm -f output.txt debug.txt )
+cmp -s t/hob_standalone.txt t/.build/1_ast_generator.hob.txt && ok "ASTGenerator library == stand-alone Main" || fail "ASTGenerator library output differs from its Main"
+( cd Codegen && java -cp out caspien.codegen.Main -i "$W/t/.build/3_lower_order_generator.lob.txt" "$W/t/asm_standalone.s" >/dev/null 2>&1 ; rm -f output.txt )
+cmp -s t/asm_standalone.s t/.build/4_codegen.s && ok "Codegen library == stand-alone Main" || fail "Codegen library output differs from its Main"
 
 # 4. notes from a library stage reach the user, on a miss and replayed from the cache
 cat > t/n.caspien <<'P'

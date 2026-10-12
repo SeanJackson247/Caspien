@@ -20,6 +20,8 @@ public final class LowerOrder {
     public static final class Result {
         public final String lob;
         public final List<String> messages;
+        /** A stage that cannot finish throws; the field exists so every stage's Result can be read the same way. */
+        public final boolean failed = false;
 
         Result(String lob, List<String> messages) {
             this.lob = lob;

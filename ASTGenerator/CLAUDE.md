@@ -5,7 +5,7 @@ Stage 1 of the toolchain: Caspien source -> plain-text high-order bytecode (HOB)
 Struct `extends`/`abstract` are gone (`0345aaa`): composition plus interfaces only, flat `Class` enum, `x instanceof Struct` (x interface-typed, struct name only), `x implements IFace` (x struct-typed, interface name only), the `cast` statement is removed.
 
 ## CLI and pipeline
-`java caspien.Main -i main.caspien out.txt` (normally driven by root `Compiler.java`, which chains all four stages). The output file, stdout and `output.txt` get the HOB. `compiler.config` (CWD-relative, REQUIRED, no fallback) lists calling conventions and the default one.
+`java caspien.Main -i main.caspien out.txt` (stand-alone; reads CWD configs and env vars). `Compiler.java` calls the library `Frontend.compile(input, configs, options)` instead (configs as strings, options map incl. `root`; `Result{hob,messages,failed,deps,reports}`; no file/env/cwd access besides sources and the `--fix` writes; project folder = `ProjectRoot`). The output file, stdout and `output.txt` get the HOB. `compiler.config` (CWD-relative, REQUIRED, no fallback) lists calling conventions and the default one.
 Stages in `src/main/java/caspien/`:
 - `Lexer`, `Token`, `TokenType`: tokens; hex/binary/`_` integer literals are normalised to decimal here (`Token.radixLiteral` only blocks float merging).
 - `Parser` (package `parser/`, 3-file chain): lines to nested tokens; gathers keyword blocks (`gatherKeywordBlocks`), constructors, impls, `match @lock`, `&&then`/`||then` merge, `?` sugar expansion.

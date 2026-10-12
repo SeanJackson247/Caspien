@@ -223,7 +223,7 @@ abstract class BytecodeEmitterCore {
 
     public static String shownPos(Token t) {
         java.nio.file.Path abs = java.nio.file.Paths.get(t.file).toAbsolutePath().normalize();
-        java.nio.file.Path base = java.nio.file.Paths.get("..").toAbsolutePath().normalize();
+        java.nio.file.Path base = caspien.ProjectRoot.root();
         return (abs.startsWith(base) ? base.relativize(abs).toString() : abs.toString()) + ":" + t.line;
     }
 

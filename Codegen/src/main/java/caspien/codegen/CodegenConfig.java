@@ -1,8 +1,5 @@
 package caspien.codegen;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Paths;
 import java.util.List;
 
 /**
@@ -44,14 +41,9 @@ public class CodegenConfig {
         this.avx = avx;
     }
 
-    public static CodegenConfig load(String path) {
-        List<String> lines;
-        try {
-            lines = Files.readAllLines(Paths.get(path));
-        } catch (IOException e) {
-            throw new CodegenException("config", path, 0,
-                    "required config file '" + path + "' could not be read: " + e.getMessage());
-        }
+    /** Parses the text of `codegen.config`; `path` names it in error messages. Reads no file. */
+    public static CodegenConfig parse(String text, String path) {
+        List<String> lines = text.lines().toList();
         Target target = null;
         boolean bmi2 = false;
         boolean avx = false;

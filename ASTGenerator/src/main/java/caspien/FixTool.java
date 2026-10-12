@@ -83,12 +83,24 @@ final class FixTool {
 
     private static String show(String file) {
         Path abs = Paths.get(file).toAbsolutePath().normalize();
-        Path base = Paths.get("..").toAbsolutePath().normalize();
+        Path base = ProjectRoot.root();
         return abs.startsWith(base) ? base.relativize(abs).toString() : abs.toString();
     }
 
-    static String run(String modes, boolean write, boolean includeStdlib, BytecodeEmitter em, String hob, String backupDir,
-                      List<TypeChecker.SplitInfo> splitInfo) throws IOException {
+    /** What a run found: the text report, and the unsafe blocks that would change ("file\tline" per line, for the per-block fallback). */
+    static final class Run {
+        final String report;
+        final String blocks;
+
+        Run(String report, String blocks) {
+            this.report = report;
+            this.blocks = blocks;
+        }
+    }
+
+    /** `only` (nullable) limits unsafe-split to one block, "file:line". */
+    static Run run(String modes, boolean write, boolean includeStdlib, BytecodeEmitter em, String hob, String backupDir,
+                   List<TypeChecker.SplitInfo> splitInfo, String only) throws IOException {
         FixTool t = new FixTool();
         Set<String> want = new LinkedHashSet<>(java.util.Arrays.asList(modes.split(",")));
         for (String m : want) {
@@ -106,15 +118,12 @@ final class FixTool {
             t.planTermination(em, hob, files);
         }
         if (want.contains("unsafe-split")) {
-            t.planUnsafeSplit(splitInfo, files, System.getenv("CASPIEN_FIX_ONLY"));
+            t.planUnsafeSplit(splitInfo, files, only);
         }
         if (want.contains("justify")) {
             t.planJustify(files);
         }
-        String blocksFile = System.getenv("CASPIEN_FIX_BLOCKS");
-        if (blocksFile != null && !blocksFile.isEmpty()) {
-            Files.write(Paths.get(blocksFile), (String.join("\n", t.splitBlocks) + "\n").getBytes(StandardCharsets.UTF_8));
-        }
+        String blocks = String.join("\n", t.splitBlocks) + "\n";
         StringBuilder sb = new StringBuilder();
         sb.append("# fix ").append(modes).append(write ? " (writing)" : " (dry run: nothing written, add --write)").append('\n');
         for (String p : t.plan) {
@@ -132,7 +141,7 @@ final class FixTool {
         if (write && (t.count > 0 || t.splits > 0)) {
             t.apply(backupDir);
         }
-        return sb.toString();
+        return new Run(sb.toString(), blocks);
     }
 
     private void planTermination(BytecodeEmitter em, String hob, List<String> files) throws IOException {

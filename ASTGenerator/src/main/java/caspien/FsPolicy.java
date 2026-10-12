@@ -31,12 +31,12 @@ public final class FsPolicy {
     /** The codegen target ("linux", "windows_gnu"), read from platform.config; used to pick platform-specific stdlib files ("{target}" in an import path). */
     public static String platform = "linux";
 
-    public static void loadPlatform(String file) throws IOException {
-        Path path = Paths.get(file);
-        if (!Files.exists(path)) {
+    /** Reads the text of `platform.config` (null = absent: the default platform). */
+    public static void parsePlatform(String text) {
+        if (text == null) {
             return;
         }
-        for (String line : Files.readAllLines(path, StandardCharsets.UTF_8)) {
+        for (String line : text.lines().toList()) {
             String t = line.trim();
             if (t.startsWith("target:")) {
                 platform = t.substring("target:".length()).trim();
@@ -50,14 +50,14 @@ public final class FsPolicy {
     public boolean rootsEnforced;
     public final List<String> report = new ArrayList<>();
 
-    public static FsPolicy load(String file) throws IOException {
+    /** Reads the text of `fs.config` (null = absent: no restriction); `file` names it in error messages. */
+    public static FsPolicy parse(String text, String file) {
         FsPolicy p = new FsPolicy();
-        Path path = Paths.get(file);
-        if (!Files.exists(path)) {
+        if (text == null) {
             return p;
         }
         int lineNo = 0;
-        for (String raw : Files.readAllLines(path, StandardCharsets.UTF_8)) {
+        for (String raw : text.lines().toList()) {
             lineNo++;
             String line = raw.trim();
             if (line.isEmpty() || line.startsWith("#")) {

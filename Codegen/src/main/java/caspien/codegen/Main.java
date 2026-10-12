@@ -1,15 +1,10 @@
 package caspien.codegen;
 
-import caspien.codegen.x86backend.X86Backend;
-
-import caspien.bytecode.BytecodeParser;
-import caspien.bytecode.BytecodeProgram;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
-import java.util.List;
 
 /**
  * CLI entry point for the (new, just-starting) caspien-codegen stage --
@@ -49,20 +44,28 @@ public class Main {
         String inputPath = args[1];
         String outputPath = args[2];
 
-        CodegenConfig config = CodegenConfig.load("codegen.config");
+        String config;
+        try {
+            config = Files.readString(Paths.get("codegen.config"), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new CodegenException("config", "codegen.config", 0,
+                    "required config file 'codegen.config' could not be read: " + e.getMessage());
+        }
+        String input = Files.readString(Paths.get(inputPath), StandardCharsets.UTF_8);
 
-        List<String> rawLines = Files.readAllLines(Paths.get(inputPath), StandardCharsets.UTF_8);
-        BytecodeProgram parsed = new BytecodeParser().parse(rawLines, inputPath);
-
-        X86Backend backend = new X86Backend(config.target, config.bmi2);
-        backend.avx = config.avx;
-        String assembly = backend.generate(parsed);
+        Codegen.Result result = Codegen.generate(input, inputPath, config);
+        for (String msg : result.messages) {
+            System.err.println(msg);
+        }
+        if (result.failed) {
+            System.exit(1);
+        }
+        String assembly = result.asm;
 
         System.out.print(assembly);
         writeFile(outputPath, assembly);
 
-        System.err.println("\n[info] wrote " + config.target + " assembly to " + outputPath + " ("
-                + assembly.lines().count() + " lines)");
+        System.err.println("\n[info] wrote assembly to " + outputPath + " (" + assembly.lines().count() + " lines)");
     }
 
     private static void writeFile(String path, String content) throws IOException {

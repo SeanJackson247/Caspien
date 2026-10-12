@@ -21,6 +21,8 @@ public final class Optimizer {
     public static final class Result {
         public final String hob;
         public final List<String> messages;
+        /** A stage that cannot finish throws; the field exists so every stage's Result can be read the same way. */
+        public final boolean failed = false;
 
         Result(String hob, List<String> messages) {
             this.hob = hob;

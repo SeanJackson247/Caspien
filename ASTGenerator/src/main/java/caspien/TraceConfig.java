@@ -28,14 +28,14 @@ public final class TraceConfig {
 
     private TraceConfig() { }
 
-    public static void load(String file) throws IOException {
+    /** Reads the text of `trace.config` (null = absent: defaults). */
+    public static void parse(String text) throws IOException {
         depth = DEFAULT_DEPTH;
         usesTrace = false;
-        Path path = Paths.get(file);
-        if (!Files.exists(path)) {
+        if (text == null) {
             return;
         }
-        for (String line : Files.readAllLines(path, StandardCharsets.UTF_8)) {
+        for (String line : text.lines().toList()) {
             String t = line.trim();
             if (t.startsWith("trace-depth:")) {
                 String v = t.substring("trace-depth:".length()).trim();
