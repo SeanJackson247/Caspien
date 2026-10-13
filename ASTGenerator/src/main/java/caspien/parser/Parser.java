@@ -1,5 +1,5 @@
 package caspien.parser;
-import caspien.lexer.Lexeme;
+import caspien.Lexeme;
 import caspien.CompilerException;
 import caspien.Token;
 import caspien.TokenType;

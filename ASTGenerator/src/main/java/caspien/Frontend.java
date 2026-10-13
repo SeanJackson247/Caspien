@@ -1,5 +1,4 @@
 package caspien;
-import caspien.lexer.Lexeme;
 import caspien.bytecode.BytecodeProgram;
 import caspien.bytecode.BytecodeSerializer;
 import caspien.bytecodeemitter.BytecodeEmitter;

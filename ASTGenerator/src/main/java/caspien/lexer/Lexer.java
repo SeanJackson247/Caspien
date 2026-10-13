@@ -1,4 +1,5 @@
 package caspien.lexer;
+import caspien.Lexeme;
 import caspien.CompilerException;
 import caspien.DocComments;
 import caspien.FsPolicy;

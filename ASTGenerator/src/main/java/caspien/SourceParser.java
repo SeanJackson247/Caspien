@@ -1,6 +1,5 @@
 package caspien;
 
-import caspien.lexer.Lexeme;
 import caspien.lexer.Lexer;
 import caspien.parser.Parser;
 import caspien.rpnconverter.RpnConverter;

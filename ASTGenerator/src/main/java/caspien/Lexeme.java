@@ -1,6 +1,5 @@
-package caspien.lexer;
+package caspien;
 
-import caspien.TokenType;
 
 import java.util.ArrayList;
 import java.util.List;
