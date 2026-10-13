@@ -520,146 +520,200 @@ public final class TypeCheckerSignatures {
 
     public TypeCheckerModel.TypeInfo resolveTypeAnnotationRaw(List<Token> typeTokens, Token at,
             boolean allowIndeterminateMutability) {
-        // `const` must be leftmost; stripped before the modifier loop (a let's const is Token.isConst, set earlier).
-        boolean isConst = false;
-        if (!typeTokens.isEmpty() && typeTokens.get(0).type == TokenType.KEYWORD
-                && typeTokens.get(0).text.equals("const")) {
-            isConst = true;
-            typeTokens = typeTokens.subList(1, typeTokens.size());
+        // One frame per (nested) annotation; a nested one (func params/return, raw pointee, dynarray element) is resolved on top, then delivered back.
+        Deque<AnnotationFrame> stack = new ArrayDeque<>();
+        stack.push(newAnnotationFrame(typeTokens, allowIndeterminateMutability));
+        TypeCheckerModel.TypeInfo delivered = null;
+        while (true) {
+            AnnotationFrame f = stack.peek();
+            if (delivered != null) {
+                AnnotationFrame next = deliverAnnotation(f, delivered, at);
+                delivered = null;
+                if (next != null) {
+                    stack.push(next);
+                    continue;
+                }
+            }
+            AnnotationFrame child = stepAnnotation(f, at);
+            if (child != null) {
+                stack.push(child);
+                continue;
+            }
+            TypeCheckerModel.TypeInfo result = finishAnnotation(f, at);
+            stack.pop();
+            if (stack.isEmpty()) {
+                return result;
+            }
+            delivered = result;
         }
-        String mutability = null;
-        String storage = null;
-        boolean isSome = false;
-        // modifierRank: storage 1, some 2, mutability 3 (const is handled above); only modifiers present are compared.
-        int modifierRank = 0;
-        java.util.TreeSet<String> floatStates = null;
-        String baseType = null;
-        // Token the base type came from: the visibility check anchors to its file, not `at` (matters for monomorphized generics).
-        Token baseTypeTok = null;
-        StringBuilder arraySuffix = new StringBuilder();
-        boolean baseIsIncompleteRange = false;
-        TypeCheckerModel.TypeInfo dynArrayElementType = null;
-        TypeCheckerModel.TypeInfo unsafeDynArrayElementType = null;
-        TypeCheckerModel.TypeInfo rawPointeeType = null;
-        List<TypeCheckerModel.TypeInfo> funcPtrParams = null;
-        TypeCheckerModel.TypeInfo funcPtrReturn = null;
-        Set<String> funcPtrDecorators = null;
-        String funcPtrCallConventionName = null;
+    }
 
-        for (int i = 0; i < typeTokens.size(); i++) {
-            Token t = typeTokens.get(i);
+    private AnnotationFrame newAnnotationFrame(List<Token> typeTokens, boolean allowIndeterminateMutability) {
+        AnnotationFrame f = new AnnotationFrame(typeTokens, allowIndeterminateMutability);
+        // `const` must be leftmost; stripped before the modifier loop (a let's const is Token.isConst, set earlier).
+        if (!typeTokens.isEmpty() && typeTokens.get(0).type == TokenType.KEYWORD && typeTokens.get(0).text.equals("const")) {
+            f.isConst = true;
+            f.typeTokens = typeTokens.subList(1, typeTokens.size());
+        }
+        return f;
+    }
+
+    /** Next parameter span of a `func(..) R` annotation, else its return span; null never (the return type always follows). */
+    private AnnotationFrame nextFuncChild(AnnotationFrame f, Token at) {
+        if (f.paramNext < f.paramSpans.size()) {
+            f.wait = AnnotationFrame.WAIT_FUNC_PARAM;
+            return new AnnotationFrame(f.paramSpans.get(f.paramNext++), false);
+        }
+        if (f.returnSpan.isEmpty()) {
+            throw new CompilerException("type", f.waitTok.file, f.waitTok.line, "'func(...)' requires a return type");
+        }
+        f.wait = AnnotationFrame.WAIT_FUNC_RETURN;
+        return new AnnotationFrame(new ArrayList<>(f.returnSpan), false);
+    }
+
+    /** Takes the result of the nested annotation the frame waited for; returns another nested frame to resolve, or null to go on with the token loop. */
+    private AnnotationFrame deliverAnnotation(AnnotationFrame f, TypeCheckerModel.TypeInfo r, Token at) {
+        int wait = f.wait;
+        f.wait = AnnotationFrame.WAIT_NONE;
+        switch (wait) {
+            case AnnotationFrame.WAIT_FUNC_PARAM:
+                f.funcPtrParams.add(r);
+                return nextFuncChild(f, at);
+            case AnnotationFrame.WAIT_FUNC_RETURN:
+                f.funcPtrReturn = r;
+                f.baseType = "func"; // placeholder -- TypeInfo.funcPointer builds the real baseType
+                f.i = f.typeTokens.size() + 1; // consumed everything remaining
+                return null;
+            case AnnotationFrame.WAIT_RAW:
+                f.rawPointeeType = r;
+                f.baseType = r.canonical();
+                f.i = f.typeTokens.size() + 1;
+                return null;
+            case AnnotationFrame.WAIT_UNSAFE_DYN:
+                f.unsafeDynArrayElementType = r;
+                checkNotRefSomeElement(r, f.waitTok, "an 'unsafe dynarray' element type");
+                f.baseType = "unsafe_dynarray(" + TypeCheckerModel.TypeInfo.dynArrayElementText(r) + ")";
+                f.i += 3; // 'unsafe', 'dynarray' and the '(' span
+                return null;
+            case AnnotationFrame.WAIT_DYN:
+                f.dynArrayElementType = r;
+                checkNotRefSomeElement(r, f.waitTok, "a 'dynarray' element type");
+                f.baseType = "dynarray(" + TypeCheckerModel.TypeInfo.dynArrayElementText(r) + ")";
+                f.i += 2; // 'dynarray' and the '(' span
+                return null;
+            default:
+                throw new IllegalStateException("annotation frame delivered with nothing awaited");
+        }
+    }
+
+    /** Runs the token loop from f.i; returns a nested annotation to resolve first (the frame then waits), or null when the tokens are used up. */
+    private AnnotationFrame stepAnnotation(AnnotationFrame f, Token at) {
+        for (; f.i < f.typeTokens.size(); f.i++) {
+
+            Token t = f.typeTokens.get(f.i);
             if (t.type == TokenType.OPERATOR && t.text.equals("@")) {
                 // Inline `@name` inside a function-pointer annotation (normal decorators attach to a statement line).
-                if (i + 1 >= typeTokens.size() || typeTokens.get(i + 1).type != TokenType.VARREF) {
+                if (f.i + 1 >= f.typeTokens.size() || f.typeTokens.get(f.i + 1).type != TokenType.VARREF) {
                     throw new CompilerException("type", t.file, t.line,
                             "'@' must be followed by a decorator name");
                 }
-                String decoratorName = typeTokens.get(i + 1).text;
-                if (funcPtrDecorators == null) {
-                    funcPtrDecorators = new HashSet<>();
+                String decoratorName = f.typeTokens.get(f.i + 1).text;
+                if (f.funcPtrDecorators == null) {
+                    f.funcPtrDecorators = new HashSet<>();
                 }
-                funcPtrDecorators.add(decoratorName);
-                i++; // consumed the decorator name token too
+                f.funcPtrDecorators.add(decoratorName);
+                f.i++; // consumed the decorator name token too
                 // Optional "(args)": only @call_convention carries a value.
-                if (i + 1 < typeTokens.size() && typeTokens.get(i + 1).type == TokenType.DELINEATOR
-                        && typeTokens.get(i + 1).text.equals("(")) {
-                    Token parenTok = typeTokens.get(i + 1);
-                    i++;
+                if (f.i + 1 < f.typeTokens.size() && f.typeTokens.get(f.i + 1).type == TokenType.DELINEATOR
+                        && f.typeTokens.get(f.i + 1).text.equals("(")) {
+                    Token parenTok = f.typeTokens.get(f.i + 1);
+                    f.i++;
                     if (decoratorName.equals("call_convention")) {
-                        funcPtrCallConventionName = parseInlineCallConventionArg(parenTok);
+                        f.funcPtrCallConventionName = parseInlineCallConventionArg(parenTok);
                     }
                 }
-            } else if (t.type == TokenType.KEYWORD && t.text.equals("func") && baseType == null) {
+            } else if (t.type == TokenType.KEYWORD && t.text.equals("func") && f.baseType == null) {
                 // "func(P1,P2,...) R": the return type is everything after the parameter list.
-                if (i + 1 >= typeTokens.size() || typeTokens.get(i + 1).type != TokenType.DELINEATOR
-                        || !typeTokens.get(i + 1).text.equals("(")) {
+                if (f.i + 1 >= f.typeTokens.size() || f.typeTokens.get(f.i + 1).type != TokenType.DELINEATOR
+                        || !f.typeTokens.get(f.i + 1).text.equals("(")) {
                     throw new CompilerException("type", t.file, t.line,
                             "'func' requires a parenthesized parameter list");
                 }
-                Token paramsParen = typeTokens.get(i + 1);
-                funcPtrParams = new ArrayList<>();
-                if (!paramsParen.childs.isEmpty()) {
-                    for (List<Token> paramSpan : splitTopLevelArgGroups(paramsParen.childs)) {
-                        funcPtrParams.add(resolveTypeAnnotationRaw(paramSpan, at));
-                    }
-                }
-                List<Token> returnSpan = typeTokens.subList(i + 2, typeTokens.size());
-                if (returnSpan.isEmpty()) {
-                    throw new CompilerException("type", t.file, t.line, "'func(...)' requires a return type");
-                }
-                funcPtrReturn = resolveTypeAnnotationRaw(new ArrayList<>(returnSpan), at);
-                baseType = "func"; // placeholder -- TypeInfo.funcPointer builds the real baseType below
-                i = typeTokens.size(); // consumed everything remaining
+                Token paramsParen = f.typeTokens.get(f.i + 1);
+                f.funcPtrParams = new ArrayList<>();
+                f.paramSpans = paramsParen.childs.isEmpty() ? new ArrayList<>() : splitTopLevelArgGroups(paramsParen.childs);
+                f.paramNext = 0;
+                f.returnSpan = f.typeTokens.subList(f.i + 2, f.typeTokens.size());
+                f.waitTok = t;
+                return nextFuncChild(f, at);
             } else if (t.type == TokenType.MODIFIER) {
                 if (t.text.equals("mut") || t.text.equals("imut")) {
-                    if (mutability != null) {
+                    if (f.mutability != null) {
                         throw new CompilerException("type", t.file, t.line,
                                 "duplicate mutability modifier in type annotation");
                     }
-                    requireModifierOrder(modifierRank, 3, "mutability", t);
-                    modifierRank = 3;
-                    mutability = t.text;
+                    requireModifierOrder(f.modifierRank, 3, "mutability", t);
+                    f.modifierRank = 3;
+                    f.mutability = t.text;
                 } else if (t.text.equals("some")) {
                     // `some` is a presence flag, not a storage; rank 2.
-                    if (isSome) {
+                    if (f.isSome) {
                         throw new CompilerException("type", t.file, t.line,
                                 "duplicate 'some' modifier in type annotation");
                     }
-                    requireModifierOrder(modifierRank, 2, "presence", t);
-                    modifierRank = 2;
-                    isSome = true;
+                    requireModifierOrder(f.modifierRank, 2, "presence", t);
+                    f.modifierRank = 2;
+                    f.isSome = true;
                 } else {
-                    if (storage != null) {
-                        if (storage.equals("raw") && t.text.equals("raw")) {
+                    if (f.storage != null) {
+                        if (f.storage.equals("raw") && t.text.equals("raw")) {
                             // A second `raw` starts a nested annotation ("raw mut raw mut char"), resolved recursively.
-                            List<Token> pointeeSpan = new ArrayList<>(typeTokens.subList(i, typeTokens.size()));
-                            rawPointeeType = resolveTypeAnnotationRaw(pointeeSpan, at);
-                            baseType = rawPointeeType.canonical();
-                            i = typeTokens.size(); // consumed everything remaining
-                            continue;
+                            List<Token> pointeeSpan = new ArrayList<>(f.typeTokens.subList(f.i, f.typeTokens.size()));
+                            f.wait = AnnotationFrame.WAIT_RAW;
+                            return new AnnotationFrame(pointeeSpan, false);
                         }
                         throw new CompilerException("type", t.file, t.line,
                                 "duplicate storage modifier in type annotation");
                     }
-                    requireModifierOrder(modifierRank, 1, "storage", t);
-                    modifierRank = 1;
-                    storage = t.text;
-                    if (storage.equals("owns") || storage.equals("ref")) {
+                    requireModifierOrder(f.modifierRank, 1, "storage", t);
+                    f.modifierRank = 1;
+                    f.storage = t.text;
+                    if (f.storage.equals("owns") || f.storage.equals("ref")) {
                         // Any annotation that writes owns/ref counts (syntactic presence).
                         hub.model.usesOwnsRefDynNew = true;
                     }
                 }
-            } else if (t.type == TokenType.VARREF && baseType == null && i + 1 < typeTokens.size()
+            } else if (t.type == TokenType.VARREF && f.baseType == null && f.i + 1 < f.typeTokens.size()
                     && hub.model.isFloatStateName(t.text)) {
                 // Float-state modifier (finite|infinite|nan, chainable with '|'): contextual identifiers, not keywords.
                 // A VARREF that is the last token is the base type instead.
-                if (floatStates != null) {
+                if (f.floatStates != null) {
                     throw new CompilerException("type", t.file, t.line,
                             "duplicate float-state modifier in type annotation");
                 }
-                floatStates = new java.util.TreeSet<>();
-                floatStates.add(t.text);
-                while (i + 2 < typeTokens.size() && typeTokens.get(i + 1).type == TokenType.OPERATOR
-                        && typeTokens.get(i + 1).text.equals("|") && hub.model.isFloatStateName(typeTokens.get(i + 2).text)) {
-                    String next = typeTokens.get(i + 2).text;
-                    if (!floatStates.add(next)) {
+                f.floatStates = new java.util.TreeSet<>();
+                f.floatStates.add(t.text);
+                while (f.i + 2 < f.typeTokens.size() && f.typeTokens.get(f.i + 1).type == TokenType.OPERATOR
+                        && f.typeTokens.get(f.i + 1).text.equals("|") && hub.model.isFloatStateName(f.typeTokens.get(f.i + 2).text)) {
+                    String next = f.typeTokens.get(f.i + 2).text;
+                    if (!f.floatStates.add(next)) {
                         throw new CompilerException("type", t.file, t.line,
                                 "'" + next + "' repeated in a float-state modifier chain");
                     }
-                    i += 2;
+                    f.i += 2;
                 }
-                if (floatStates.size() == TypeCheckerModel.FLOAT_STATE_NAMES.size()) {
+                if (f.floatStates.size() == TypeCheckerModel.FLOAT_STATE_NAMES.size()) {
                     throw new CompilerException("type", t.file, t.line,
-                            "'" + String.join("|", floatStates) + "' names every possible float state -- "
+                            "'" + String.join("|", f.floatStates) + "' names every possible float state -- "
                                     + "write the bare type instead (with no state modifier at all), which "
                                     + "already means exactly that");
                 }
-            } else if (t.type == TokenType.KEYWORD && t.text.equals("unsafe") && baseType == null
-                    && i + 1 < typeTokens.size() && typeTokens.get(i + 1).type == TokenType.VARREF
-                    && typeTokens.get(i + 1).text.equals("dynarray")) {
+            } else if (t.type == TokenType.KEYWORD && t.text.equals("unsafe") && f.baseType == null
+                    && f.i + 1 < f.typeTokens.size() && f.typeTokens.get(f.i + 1).type == TokenType.VARREF
+                    && f.typeTokens.get(f.i + 1).text.equals("dynarray")) {
                 // "unsafe dynarray(T)": the element type must be spelled out.
-                Token dynTok = typeTokens.get(i + 1);
-                Token parenTok = (i + 2 < typeTokens.size()) ? typeTokens.get(i + 2) : null;
+                Token dynTok = f.typeTokens.get(f.i + 1);
+                Token parenTok = (f.i + 2 < f.typeTokens.size()) ? f.typeTokens.get(f.i + 2) : null;
                 if (parenTok == null || parenTok.type != TokenType.DELINEATOR || !parenTok.text.equals("(")) {
                     throw new CompilerException("type", dynTok.file, dynTok.line,
                             "'unsafe dynarray' requires its element type spelled out, e.g. "
@@ -670,13 +724,12 @@ public final class TypeCheckerSignatures {
                     throw new CompilerException("type", parenTok.file, parenTok.line,
                             "'unsafe dynarray(...)' requires exactly one argument: the element type");
                 }
-                unsafeDynArrayElementType = resolveTypeAnnotationRaw(args.get(0), at);
-                checkNotRefSomeElement(unsafeDynArrayElementType, parenTok, "an 'unsafe dynarray' element type");
-                baseType = "unsafe_dynarray(" + TypeCheckerModel.TypeInfo.dynArrayElementText(unsafeDynArrayElementType) + ")";
-                i += 2; // consumed 'dynarray' and the '(' token's whole span as one unit
-            } else if (t.type == TokenType.VARREF && t.text.equals("dynarray") && baseType == null) {
+                f.wait = AnnotationFrame.WAIT_UNSAFE_DYN;
+                f.waitTok = parenTok;
+                return new AnnotationFrame(args.get(0), false);
+            } else if (t.type == TokenType.VARREF && t.text.equals("dynarray") && f.baseType == null) {
                 // "dynarray(T)": always complete, no bare form.
-                Token next = (i + 1 < typeTokens.size()) ? typeTokens.get(i + 1) : null;
+                Token next = (f.i + 1 < f.typeTokens.size()) ? f.typeTokens.get(f.i + 1) : null;
                 if (next == null || next.type != TokenType.DELINEATOR || !next.text.equals("(")) {
                     throw new CompilerException("type", t.file, t.line,
                             "'dynarray' requires its element type spelled out, e.g. 'dynarray(u64)' -- "
@@ -687,36 +740,35 @@ public final class TypeCheckerSignatures {
                     throw new CompilerException("type", next.file, next.line,
                             "'dynarray(...)' requires exactly one argument: the element type");
                 }
-                dynArrayElementType = resolveTypeAnnotationRaw(args.get(0), at);
-                checkNotRefSomeElement(dynArrayElementType, next, "a 'dynarray' element type");
-                baseType = "dynarray(" + TypeCheckerModel.TypeInfo.dynArrayElementText(dynArrayElementType) + ")";
-                i++; // consumed the '(' token's whole span as one unit
-            } else if (t.type == TokenType.VARREF && t.text.equals("slice") && baseType == null) {
+                f.wait = AnnotationFrame.WAIT_DYN;
+                f.waitTok = next;
+                return new AnnotationFrame(args.get(0), false);
+            } else if (t.type == TokenType.VARREF && t.text.equals("slice") && f.baseType == null) {
                 // `slice` was removed from the language; rejected with a dedicated message.
                 throw new CompilerException("type", t.file, t.line,
                         "'slice' is no longer a valid type -- Caspien has removed the slice type; use a "
                                 + "scalar index or a range/pointer pair explicitly");
-            } else if (t.type == TokenType.VARREF && t.text.equals("range") && baseType == null) {
-                Token next = (i + 1 < typeTokens.size()) ? typeTokens.get(i + 1) : null;
+            } else if (t.type == TokenType.VARREF && t.text.equals("range") && f.baseType == null) {
+                Token next = (f.i + 1 < f.typeTokens.size()) ? f.typeTokens.get(f.i + 1) : null;
                 if (next != null && next.type == TokenType.DELINEATOR && next.text.equals("(")) {
                     // "range(a,b)": bounds as in rangeBoundDescriptor.
-                    baseType = parseRangeAnnotationArgs(next, at);
-                    i++; // consumed the '(' token's whole span as one unit
+                    f.baseType = parseRangeAnnotationArgs(next, at);
+                    f.i++; // consumed the '(' token's whole span as one unit
                 } else {
                     // Bare "range": legal by value without storage (two u64 bounds, unknown at compile time).
-                    baseType = t.text;
-                    baseIsIncompleteRange = true;
+                    f.baseType = t.text;
+                    f.baseIsIncompleteRange = true;
                 }
             } else if (t.type == TokenType.VARREF) {
-                if (baseType != null) {
+                if (f.baseType != null) {
                     throw new CompilerException("type", t.file, t.line,
                             "unexpected extra token '" + t.text + "' in type annotation");
                 }
-                baseType = t.text;
-                baseTypeTok = t;
+                f.baseType = t.text;
+                f.baseTypeTok = t;
             } else if (t.type == TokenType.DELINEATOR && t.text.equals("[")) {
                 // "T[N]": N is one integer literal; repeatable for multi-dimensional arrays.
-                if (baseType == null) {
+                if (f.baseType == null) {
                     throw new CompilerException("type", t.file, t.line,
                             "array length annotation '[...]' with no base type before it");
                 }
@@ -724,12 +776,33 @@ public final class TypeCheckerSignatures {
                     throw new CompilerException("type", t.file, t.line,
                             "array length must be a single integer literal");
                 }
-                arraySuffix.append('[').append(t.childs.get(0).text).append(']');
+                f.arraySuffix.append('[').append(t.childs.get(0).text).append(']');
             } else {
                 throw new CompilerException("type", t.file, t.line,
                         "unexpected token '" + t.text + "' in type annotation");
             }
         }
+        return null;
+    }
+
+    private TypeCheckerModel.TypeInfo finishAnnotation(AnnotationFrame f, Token at) {
+        String mutability = f.mutability;
+        String storage = f.storage;
+        boolean isSome = f.isSome;
+        java.util.TreeSet<String> floatStates = f.floatStates;
+        String baseType = f.baseType;
+        Token baseTypeTok = f.baseTypeTok;
+        StringBuilder arraySuffix = f.arraySuffix;
+        boolean baseIsIncompleteRange = f.baseIsIncompleteRange;
+        TypeCheckerModel.TypeInfo dynArrayElementType = f.dynArrayElementType;
+        TypeCheckerModel.TypeInfo unsafeDynArrayElementType = f.unsafeDynArrayElementType;
+        TypeCheckerModel.TypeInfo rawPointeeType = f.rawPointeeType;
+        List<TypeCheckerModel.TypeInfo> funcPtrParams = f.funcPtrParams;
+        TypeCheckerModel.TypeInfo funcPtrReturn = f.funcPtrReturn;
+        Set<String> funcPtrDecorators = f.funcPtrDecorators;
+        String funcPtrCallConventionName = f.funcPtrCallConventionName;
+        boolean isConst = f.isConst;
+        boolean allowIndeterminateMutability = f.allowIndeterminateMutability;
         if (baseType == null) {
             throw new CompilerException("type", at.file, at.line, "type annotation is missing a base type");
         }
