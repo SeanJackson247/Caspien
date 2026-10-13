@@ -3,7 +3,9 @@ import caspien.config.CompilerException;
 import caspien.token.Token;
 import caspien.token.TokenType;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.List;
 
 /**
@@ -24,13 +26,100 @@ import java.util.List;
  */
 public class TreeBuilder {
 
-    public void buildLines(List<Token> lines) {
-        for (Token lineTok : lines) {
-            processStatement(lineTok);
+    // Work items of the explicit task stack (no recursion): the order they run in is the order the old recursive walk visited things.
+    private static final int LINES = 1;          // list: statements to build, in order
+    private static final int STMT = 2;           // tok: one statement line
+    private static final int FINISH_STMT = 3;    // tok = line, tok2 = leading return/throw or null, list = its flat expression
+    private static final int GATHERED = 4;       // tok: a gathered keyword block
+    private static final int NEXT = 5;           // tok: continue with tok.next (elseif/else/elsematch chain)
+    private static final int NESTED = 6;         // list: flat tokens whose nested groups are resolved first
+    private static final int BUILD_GROUP = 7;    // tok: a '(' '[' group, its childs become one tree
+    private static final int BUILD_SUB = 8;      // tok: its .sub becomes one tree
+    private static final int BUILD_CHILDS = 9;   // tok: its .childs become one tree (const)
+
+    private static final class Task {
+        final int kind;
+        final Token tok;
+        final Token tok2;
+        final List<Token> list;
+        Task(int kind, Token tok, Token tok2, List<Token> list) {
+            this.kind = kind;
+            this.tok = tok;
+            this.tok2 = tok2;
+            this.list = list;
         }
     }
 
-    private void processStatement(Token lineTok) {
+    public void buildLines(List<Token> lines) {
+        run(new Task(LINES, null, null, lines));
+    }
+
+    private void run(Task root) {
+        Deque<Task> stack = new ArrayDeque<>();
+        stack.push(root);
+        List<Task> out = new ArrayList<>();
+        while (!stack.isEmpty()) {
+            Task t = stack.pop();
+            out.clear();
+            step(t, out);
+            for (int i = out.size() - 1; i >= 0; i--) {
+                stack.push(out.get(i));
+            }
+        }
+    }
+
+    /** Runs one task; the tasks it needs next are appended to `out` in the order they must run. */
+    private void step(Task t, List<Task> out) {
+        switch (t.kind) {
+            case LINES:
+                for (Token lineTok : t.list) {
+                    out.add(new Task(STMT, lineTok, null, null));
+                }
+                return;
+            case STMT:
+                processStatement(t.tok, out);
+                return;
+            case FINISH_STMT: {
+                Token lineTok = t.tok;
+                Token root = buildTree(t.list, lineTok.file, lineTok.line);
+                if (t.tok2 != null) {
+                    t.tok2.sub = singleton(root);
+                    lineTok.childs = singleton(t.tok2);
+                } else {
+                    lineTok.childs = singleton(root);
+                }
+                return;
+            }
+            case GATHERED:
+                processGathered(t.tok, out);
+                return;
+            case NEXT:
+                if (t.tok.next != null) {
+                    out.add(new Task(GATHERED, t.tok.next, null, null));
+                }
+                return;
+            case NESTED:
+                resolveNestedGroups(t.list, out);
+                return;
+            case BUILD_GROUP:
+                if (!t.tok.childs.isEmpty()) {
+                    t.tok.childs = singleton(buildTree(t.tok.childs, t.tok.file, t.tok.line));
+                }
+                return;
+            case BUILD_SUB:
+                if (!t.tok.sub.isEmpty()) {
+                    t.tok.sub = singleton(buildTree(t.tok.sub, t.tok.file, t.tok.line));
+                }
+                return;
+            case BUILD_CHILDS:
+                t.tok.childs = singleton(buildTree(t.tok.childs, t.tok.file, t.tok.line));
+                return;
+            default:
+                throw new IllegalStateException("unknown tree task " + t.kind);
+        }
+    }
+
+    private void processStatement(Token lineTok, List<Task> out) {
         List<Token> tokens = lineTok.childs;
         if (tokens.isEmpty()) {
             return;
@@ -60,7 +149,7 @@ public class TreeBuilder {
                 case "assume":
                 case "lock":
                 case "try":
-                    processGathered(first);
+                    out.add(new Task(GATHERED, first, null, null));
                     return;
                 case "import":
                     return; // nothing to build
@@ -87,19 +176,12 @@ public class TreeBuilder {
         if (exprTokens.isEmpty()) {
             return;
         }
-        resolveNestedGroups(exprTokens);
-        Token root = buildTree(exprTokens, lineTok.file, lineTok.line);
-
-        if (returnTok != null) {
-            returnTok.sub = singleton(root);
-            lineTok.childs = singleton(returnTok);
-        } else {
-            lineTok.childs = singleton(root);
-        }
+        out.add(new Task(NESTED, null, null, exprTokens));
+        out.add(new Task(FINISH_STMT, lineTok, returnTok, exprTokens));
     }
 
     /** Handles an already-gathered if/elseif/else/loop/func/struct/enum/for token. */
-    private void processGathered(Token t) {
+    private void processGathered(Token t, List<Task> out) {
         switch (t.text) {
             case "if":
             case "elseif":
@@ -107,59 +189,47 @@ public class TreeBuilder {
             case "match":
             case "elsematch":
             case "lock":
-                resolveNestedGroups(t.sub);
-                if (!t.sub.isEmpty()) {
-                    t.sub = singleton(buildTree(t.sub, t.file, t.line));
-                }
+                out.add(new Task(NESTED, null, null, t.sub));
+                out.add(new Task(BUILD_SUB, t, null, null));
                 if (t.isCaseMatch) {
                     // Same reasoning as RpnConverter's own identical fix
                     // -- t.childs here holds one Token per case, not
                     // ordinary "line" tokens; each case's own real body
                     // is one level deeper, in that case's own .childs.
                     for (Token caseTok : t.childs) {
-                        buildLines(caseTok.childs);
+                        out.add(new Task(LINES, null, null, caseTok.childs));
                     }
                 } else {
-                    buildLines(t.childs);
+                    out.add(new Task(LINES, null, null, t.childs));
                 }
                 break;
             case "else":
-                buildLines(t.childs);
+                out.add(new Task(LINES, null, null, t.childs));
                 break;
             case "assume":
-                // Mirrors RpnConverter's own identical "assume" case --
                 // t.sub always holds the condition (built into a real
-                // tree the exact same way an "if"'s own is, just above);
-                // t.childs only exists (and only needs walking) for the
-                // block form.
-                resolveNestedGroups(t.sub);
-                if (!t.sub.isEmpty()) {
-                    t.sub = singleton(buildTree(t.sub, t.file, t.line));
-                }
+                // tree the same way an "if"'s own is); t.childs only
+                // exists (and only needs walking) for the block form.
+                out.add(new Task(NESTED, null, null, t.sub));
+                out.add(new Task(BUILD_SUB, t, null, null));
                 if (t.hasBlock) {
-                    buildLines(t.childs);
+                    out.add(new Task(LINES, null, null, t.childs));
                 }
                 break;
             case "loop":
             case "func":
             case "unsafe":
             case "safe":
-                buildLines(t.childs);
+                out.add(new Task(LINES, null, null, t.childs));
                 break;
             case "try":
-                // Mirrors RpnConverter's own identical "try" case: t.sub
-                // holds the wrapped call's already-RPN'd tokens, reduced
-                // here to a single tree root (the established "one
-                // expression" convention, same as "if"/"assume" just
-                // above) -- TypeChecker.checkTry is what actually
-                // requires that root be a real call. t.childs (the
-                // catch block, always present -- 'catch { ... }' is
-                // mandatory) gets the ordinary recursive buildLines walk.
-                resolveNestedGroups(t.sub);
-                if (!t.sub.isEmpty()) {
-                    t.sub = singleton(buildTree(t.sub, t.file, t.line));
-                }
-                buildLines(t.childs);
+                // t.sub holds the wrapped call's already-RPN'd tokens,
+                // reduced to a single tree root -- TypeChecker.checkTry
+                // requires that root be a real call. t.childs (the catch
+                // block, always present) gets the ordinary walk.
+                out.add(new Task(NESTED, null, null, t.sub));
+                out.add(new Task(BUILD_SUB, t, null, null));
+                out.add(new Task(LINES, null, null, t.childs));
                 break;
             case "struct":
             case "enum":
@@ -168,85 +238,59 @@ public class TreeBuilder {
             case "export":
             case "ASM":
             case "impl_default_lock_match":
-                // Mirrors RpnConverter's own identical case -- a pure
-                // template declaration, never itself built here.
+                // a pure template declaration, never itself built here.
                 return;
             case "const":
-                // Mirrors 'if''s own condition build -- resolve, build a
-                // real tree, then replace the flat list with a single-
-                // element one holding just the root (the established
-                // convention wherever a "one expression" slot exists).
-                resolveNestedGroups(t.childs);
-                t.childs = singleton(buildTree(t.childs, t.file, t.line));
+                // resolve, build a real tree, then replace the flat list with a
+                // single-element one holding just the root.
+                out.add(new Task(NESTED, null, null, t.childs));
+                out.add(new Task(BUILD_CHILDS, t, null, null));
                 return;
             case "interface":
                 return; // pure declarations, nothing to build
             case "impl":
                 for (Token method : t.childs) {
-                    processGathered(method);
+                    out.add(new Task(GATHERED, method, null, null));
                 }
                 return;
             case "library":
                 for (Token func : t.childs) {
-                    processGathered(func);
+                    out.add(new Task(GATHERED, func, null, null));
                 }
                 return;
             default:
                 throw new CompilerException("parse", t.file, t.line,
                         "internal error: unexpected gathered keyword '" + t.text + "'");
         }
-        if (t.next != null) {
-            processGathered(t.next);
-        }
+        out.add(new Task(NEXT, t, null, null));
     }
 
-    /** Bottom-up: resolves every nested '('/'[' delineator's flat RPN childs into a single tree root first. */
     /**
-     * Also handles a struct-literal '{' whose childs (from RpnConverter's
-     * resolveStructLiteralMembers) is a List of LINE tokens, one per
-     * member assignment, each still holding a flat "name value... ="
-     * RPN sequence. Running that straight through buildLines works with
-     * zero new logic: a bare "name = value" flat sequence is exactly
-     * the shape the ordinary plain-expression-statement path already
-     * builds correctly (VARREF as the left operand, the value as the
-     * right operand of the '=' node) -- a member assignment doesn't
-     * need to be told apart from an ordinary reassignment statement at
-     * this stage.
+     * Bottom-up: every nested '('/'[' delineator's flat RPN childs are resolved into a single tree root first.
+     * Also handles a struct-literal '{' whose childs (from RpnConverter's resolveStructLiteralMembers) are LINE tokens,
+     * one per member assignment: running them through buildLines works unchanged, since a bare "name = value" flat
+     * sequence is exactly the shape the ordinary expression-statement path already builds.
      */
-    private void resolveNestedGroups(List<Token> tokens) {
+    private void resolveNestedGroups(List<Token> tokens, List<Task> out) {
         for (Token t : tokens) {
             if (t.type == TokenType.DELINEATOR && (t.text.equals("(") || t.text.equals("["))) {
-                resolveNestedGroups(t.childs);
-                if (!t.childs.isEmpty()) {
-                    t.childs = singleton(buildTree(t.childs, t.file, t.line));
-                }
+                out.add(new Task(NESTED, null, null, t.childs));
+                out.add(new Task(BUILD_GROUP, t, null, null));
             } else if (t.type == TokenType.DELINEATOR && t.text.equals("{")) {
-                buildLines(t.childs);
+                out.add(new Task(LINES, null, null, t.childs));
             } else if (t.type == TokenType.TEMPLATE_STRING) {
-                // Same reasoning as RpnConverter's own identical case --
-                // each "${...}" segment is a synthesized '(' group one
-                // level deeper than this function's own top-level
-                // `tokens` list.
+                // each "${...}" segment is a synthesized '(' group one level deeper
                 for (Token seg : t.childs) {
                     if (seg.type == TokenType.DELINEATOR && seg.text.equals("(")) {
-                        resolveNestedGroups(seg.childs);
-                        if (!seg.childs.isEmpty()) {
-                            seg.childs = singleton(buildTree(seg.childs, seg.file, seg.line));
-                        }
+                        out.add(new Task(NESTED, null, null, seg.childs));
+                        out.add(new Task(BUILD_GROUP, seg, null, null));
                     }
                 }
             } else if (t.type == TokenType.KEYWORD && t.text.equals("try")) {
-                // Same reasoning as RpnConverter's own identical case --
-                // a 'try' embedded inside a larger expression (e.g.
-                // "let x = try foo() catch{...}") still needs its own
-                // `.sub`/`.childs` built, the same way the bare-
-                // statement form's own "try" case in processGathered
-                // just above already does.
-                resolveNestedGroups(t.sub);
-                if (!t.sub.isEmpty()) {
-                    t.sub = singleton(buildTree(t.sub, t.file, t.line));
-                }
-                buildLines(t.childs);
+                // a 'try' embedded in a larger expression still needs its own .sub/.childs built
+                out.add(new Task(NESTED, null, null, t.sub));
+                out.add(new Task(BUILD_SUB, t, null, null));
+                out.add(new Task(LINES, null, null, t.childs));
             }
         }
     }
