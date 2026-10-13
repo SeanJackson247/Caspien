@@ -1,7 +1,7 @@
 package caspien.postpasses;
 
-import caspien.Token;
-import caspien.TokenType;
+import caspien.token.Token;
+import caspien.token.TokenType;
 
 import java.util.List;
 

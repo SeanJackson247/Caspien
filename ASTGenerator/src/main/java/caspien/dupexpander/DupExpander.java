@@ -1,7 +1,7 @@
 package caspien.dupexpander;
-import caspien.CompilerException;
-import caspien.Token;
-import caspien.TokenType;
+import caspien.config.CompilerException;
+import caspien.token.Token;
+import caspien.token.TokenType;
 
 import java.util.ArrayList;
 import java.util.List;

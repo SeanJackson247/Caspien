@@ -1,10 +1,10 @@
 package caspien.importresolver;
 import caspien.parser.SourceParser;
-import caspien.CompilerException;
-import caspien.DepsLog;
-import caspien.FsPolicy;
-import caspien.Token;
-import caspien.TokenType;
+import caspien.config.CompilerException;
+import caspien.config.DepsLog;
+import caspien.config.FsPolicy;
+import caspien.token.Token;
+import caspien.token.TokenType;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;

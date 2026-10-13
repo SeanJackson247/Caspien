@@ -1,9 +1,9 @@
 package caspien.postpasses;
 import caspien.bytecodeemitter.BytecodeEmitter;
-import caspien.CompilerException;
-import caspien.DepsLog;
-import caspien.DocComments;
-import caspien.ProjectRoot;
+import caspien.config.CompilerException;
+import caspien.config.DepsLog;
+import caspien.config.DocComments;
+import caspien.config.ProjectRoot;
 import caspien.bytecodeemitter.BytecodeEmitter;
 import caspien.postpasses.gasreport.GasReport;
 import caspien.typechecker.TypeCheckerModel;

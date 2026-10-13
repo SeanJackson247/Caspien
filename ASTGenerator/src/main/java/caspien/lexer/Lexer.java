@@ -1,9 +1,9 @@
 package caspien.lexer;
-import caspien.Lexeme;
-import caspien.CompilerException;
-import caspien.DocComments;
-import caspien.FsPolicy;
-import caspien.TokenType;
+import caspien.token.Lexeme;
+import caspien.config.CompilerException;
+import caspien.config.DocComments;
+import caspien.config.FsPolicy;
+import caspien.token.TokenType;
 
 import java.util.ArrayList;
 import java.util.Arrays;

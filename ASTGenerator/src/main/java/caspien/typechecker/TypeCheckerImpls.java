@@ -1,9 +1,9 @@
 package caspien.typechecker;
-import caspien.TokenCloner;
-import caspien.CompilerException;
-import caspien.FsPolicy;
-import caspien.Token;
-import caspien.TokenType;
+import caspien.token.TokenCloner;
+import caspien.config.CompilerException;
+import caspien.config.FsPolicy;
+import caspien.token.Token;
+import caspien.token.TokenType;
 import caspien.rpnconverter.RpnConverter;
 import caspien.treebuilder.TreeBuilder;
 

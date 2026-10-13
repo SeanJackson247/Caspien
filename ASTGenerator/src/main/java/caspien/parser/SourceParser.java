@@ -1,8 +1,8 @@
 package caspien.parser;
 
 import caspien.lexer.Lexer;
-import caspien.Lexeme;
-import caspien.Token;
+import caspien.token.Lexeme;
+import caspien.token.Token;
 import caspien.rpnconverter.RpnConverter;
 import caspien.treebuilder.TreeBuilder;
 

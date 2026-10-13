@@ -1,6 +1,6 @@
 package caspien.postpasses.gasreport;
-import caspien.CompilerException;
-import caspien.DocComments;
+import caspien.config.CompilerException;
+import caspien.config.DocComments;
 import caspien.postpasses.Palette;
 
 import java.math.BigInteger;

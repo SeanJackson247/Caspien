@@ -1,6 +1,6 @@
 package caspien.typechecker;
-import caspien.CompilerException;
-import caspien.Token;
+import caspien.config.CompilerException;
+import caspien.token.Token;
 
 import java.util.*;
 

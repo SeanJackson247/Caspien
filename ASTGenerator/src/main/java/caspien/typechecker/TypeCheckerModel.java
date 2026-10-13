@@ -1,8 +1,8 @@
 package caspien.typechecker;
-import caspien.CompilerConfig;
-import caspien.CompilerException;
-import caspien.Token;
-import caspien.TokenType;
+import caspien.config.CompilerConfig;
+import caspien.config.CompilerException;
+import caspien.token.Token;
+import caspien.token.TokenType;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -993,7 +993,7 @@ public final class TypeCheckerModel {
     /** True for a file inside the compiler's own stdlib folder (the project's stdlib, see ProjectRoot). */
     public static boolean isStdlibFile(String file) {
         try {
-            java.nio.file.Path stdlib = caspien.ProjectRoot.stdlib();
+            java.nio.file.Path stdlib = caspien.config.ProjectRoot.stdlib();
             return java.nio.file.Paths.get(file).toAbsolutePath().normalize().startsWith(stdlib);
         } catch (RuntimeException e) {
             return false;

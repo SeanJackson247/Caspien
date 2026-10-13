@@ -1,5 +1,5 @@
 package caspien.postpasses.gasreport;
-import caspien.DocComments;
+import caspien.config.DocComments;
 
 import java.math.BigInteger;
 import java.util.ArrayDeque;

@@ -1,12 +1,12 @@
 package caspien.bytecodeemitter;
 import caspien.bytecode.BytecodeProgram;
 import caspien.bytecode.BytecodeStatement;
-import caspien.CompilerConfig;
-import caspien.CompilerException;
-import caspien.DocComments;
-import caspien.Token;
-import caspien.TokenType;
-import caspien.TraceConfig;
+import caspien.config.CompilerConfig;
+import caspien.config.CompilerException;
+import caspien.config.DocComments;
+import caspien.token.Token;
+import caspien.token.TokenType;
+import caspien.config.TraceConfig;
 import caspien.typechecker.LockNestingCheck;
 import caspien.typechecker.TypeChecker;
 import caspien.typechecker.TypeCheckerModel;
@@ -220,7 +220,7 @@ final class BytecodeEmitterCore {
 
     public static String shownPos(Token t) {
         java.nio.file.Path abs = java.nio.file.Paths.get(t.file).toAbsolutePath().normalize();
-        java.nio.file.Path base = caspien.ProjectRoot.root();
+        java.nio.file.Path base = caspien.config.ProjectRoot.root();
         return (abs.startsWith(base) ? base.relativize(abs).toString() : abs.toString()) + ":" + t.line;
     }
 

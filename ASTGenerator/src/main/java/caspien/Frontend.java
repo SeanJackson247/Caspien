@@ -1,7 +1,15 @@
 package caspien;
+
+import caspien.config.CompilerConfig;
+import caspien.config.CompilerException;
+import caspien.config.DepsLog;
+import caspien.config.FsPolicy;
+import caspien.config.ProjectRoot;
+import caspien.config.TraceConfig;
+import caspien.token.Lexeme;
+import caspien.token.Token;
 import caspien.bytecode.BytecodeProgram;
 import caspien.bytecode.BytecodeSerializer;
-import caspien.bytecodeemitter.BytecodeEmitter;
 import caspien.bytecodeemitter.BytecodeEmitter;
 import caspien.dupexpander.DupExpander;
 import caspien.genericsexpander.GenericsExpander;

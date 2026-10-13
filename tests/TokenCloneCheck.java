@@ -1,4 +1,4 @@
-import caspien.*;
+import caspien.token.*;
 import java.lang.reflect.*;
 import java.util.*;
 
@@ -22,8 +22,8 @@ public class TokenCloneCheck {
         if (t == TokenType.class) return TokenType.KEYWORD;
         if (t == List.class) {
             String g = f.getGenericType().getTypeName();
-            if (g.contains("List<java.util.List<caspien.Token>>")) return new ArrayList<>(List.of(new ArrayList<>(List.of(leaf("g")))));
-            if (g.contains("List<caspien.Token>")) { return new ArrayList<>(List.of(leaf("a-" + f.getName()))); }
+            if (g.contains("List<java.util.List<caspien.token.Token>>")) return new ArrayList<>(List.of(new ArrayList<>(List.of(leaf("g")))));
+            if (g.contains("List<caspien.token.Token>")) { return new ArrayList<>(List.of(leaf("a-" + f.getName()))); }
             if (g.contains("List<java.lang.String>")) return new ArrayList<>(List.of("x-" + f.getName()));
             return new ArrayList<>(Arrays.asList(new Object[]{null}));   // records (Decorator, MatchPattern, ...): shared, one placeholder
         }

@@ -1,8 +1,8 @@
 package caspien.typechecker;
-import caspien.CompilerException;
-import caspien.DepsLog;
-import caspien.Token;
-import caspien.TokenType;
+import caspien.config.CompilerException;
+import caspien.config.DepsLog;
+import caspien.token.Token;
+import caspien.token.TokenType;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;

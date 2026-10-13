@@ -1,7 +1,7 @@
 package caspien.bytecodeemitter;
-import caspien.CompilerException;
-import caspien.Token;
-import caspien.TokenType;
+import caspien.config.CompilerException;
+import caspien.token.Token;
+import caspien.token.TokenType;
 import caspien.typechecker.TypeCheckerModel;
 
 import java.util.ArrayDeque;

@@ -1,8 +1,8 @@
 package caspien.genericsexpander;
-import caspien.TokenCloner;
-import caspien.CompilerException;
-import caspien.Token;
-import caspien.TokenType;
+import caspien.token.TokenCloner;
+import caspien.config.CompilerException;
+import caspien.token.Token;
+import caspien.token.TokenType;
 import caspien.parser.Parser;
 
 import java.util.ArrayList;

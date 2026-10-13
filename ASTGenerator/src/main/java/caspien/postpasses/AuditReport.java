@@ -1,6 +1,6 @@
 package caspien.postpasses;
-import caspien.DocComments;
-import caspien.ProjectRoot;
+import caspien.config.DocComments;
+import caspien.config.ProjectRoot;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;

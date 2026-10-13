@@ -1,10 +1,10 @@
 package caspien.bytecodeemitter;
 import caspien.bytecode.BytecodeProgram;
 import caspien.bytecode.BytecodeStatement;
-import caspien.DocComments;
-import caspien.Token;
-import caspien.TokenType;
-import caspien.TraceConfig;
+import caspien.config.DocComments;
+import caspien.token.Token;
+import caspien.token.TokenType;
+import caspien.config.TraceConfig;
 import caspien.typechecker.TypeChecker;
 import caspien.typechecker.TypeCheckerModel;
 
