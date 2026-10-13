@@ -19,6 +19,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import caspien.typechecker.FuncInfo;
+import caspien.typechecker.StructInfo;
 
 /**
  * Final front-end stage: walks the type-checked tree and emits the stack-based higher-order bytecode (HOB) as text.
@@ -271,7 +273,7 @@ public final class BytecodeEmitter {
     /** Struct literal: optional hidden ___type push, then members in padded layout order (declaration order, not literal order). Single choke point for `new X{..}` and bare `X{..}`. see docs/BytecodeEmitter.md, "Struct literals". */
     public void emitInstantiate(Token op) {
         String structName = op.left.text;
-        TypeCheckerModel.StructInfo structInfo = core.checker.declarations.getStructs().get(structName);
+        StructInfo structInfo = core.checker.declarations.getStructs().get(structName);
         if (structInfo.classId != null) {
             core.line("PUSH " + structInfo.classId + " imut_u64");
         }
@@ -370,7 +372,7 @@ public final class BytecodeEmitter {
     public void emitNewFromStructRvoCall(Token callOp) {
         // Struct name from the callee return type, else from the call node's resolvedType.
         String funcName = operations.resolveCallTargetForEmission(callOp.chk.resolvedCallTarget);
-        TypeCheckerModel.FuncInfo targetInfo = core.findFuncInfoByMangledName(funcName);
+        FuncInfo targetInfo = core.findFuncInfoByMangledName(funcName);
         String structName = targetInfo != null ? targetInfo.returnType.baseType
                 : callOp.chk.resolvedType.substring(callOp.chk.resolvedType.lastIndexOf('_') + 1);
         String tempName = "$new_ctor_tmp" + (++core.labelCounter);
@@ -399,7 +401,7 @@ public final class BytecodeEmitter {
         if (unwrapped.chk.isStructRvoCall) {
             // A '@throws' constructor is itself the call the try/'?' guards: it must stage the catch label (an unstaged
             // throw would unwind past this function's own catch into the caller). The label is restored for the allocation check below.
-            TypeCheckerModel.FuncInfo ctorInfo = core.findFuncInfoByMangledName(operations.resolveCallTargetForEmission(unwrapped.chk.resolvedCallTarget));
+            FuncInfo ctorInfo = core.findFuncInfoByMangledName(operations.resolveCallTargetForEmission(unwrapped.chk.resolvedCallTarget));
             if (ctorInfo != null && ctorInfo.isThrows) {
                 core.pendingTryCatchLabel = newCatchLabel;
             }

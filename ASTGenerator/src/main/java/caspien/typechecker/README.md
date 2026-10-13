@@ -10,7 +10,7 @@ The semantic checker: every type, ownership, proof, lock and purity rule of the 
       model -> declarations -> impls -> signatures -> statements -> controlFlow
       -> expressions -> calls -> locksAndProofs -> accessAndAsync   (the hub field names)
 
-- A part reaches another part as `hub.<field>.x` (hub members as `hub.x`); the hub reaches its parts as `<field>.x`. The state (fields, nested types such as `TypeInfo`/`FuncInfo`/`Scope`, constants) is in `TypeCheckerModel`; nested types and statics are qualified by their class (`TypeCheckerModel.TypeInfo`).
+- A part reaches another part as `hub.<field>.x` (hub members as `hub.x`); the hub reaches its parts as `<field>.x`. The state (fields, constants, static helpers) is in `TypeCheckerModel`; its data types are top-level classes of this package, one per file (`TypeInfo`, `FuncInfo`, `Scope`, `StructInfo` ...), likewise the helper records of `ProofKills` (`ProofKillsEv` ...), `LockNestingCheck` (`LockNestingInfo`) and the phase-state classes of the frame steps (`BranchMerge`, `ForState`, `LockState`, `SubstState`).
 - The parts and their fields are public because other stages read the checker's results (`BytecodeEmitter`, `ProofKills`, `LockNestingCheck`, `Frontend`, `FixTool`): they write `checker.model.structs`, `checker.declarations.usesThrow()`, `TypeCheckerModel.WARNINGS`. `check(..)` is the entry point on `TypeChecker` itself.
 - The output (HOB, warnings and error messages) is byte-identical to the old chain (checked on every test, example and benchmark source in three configs).
 

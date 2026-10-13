@@ -20,18 +20,9 @@ import java.util.*;
  * anything. (Externs and `unsafe` loops are not judged: they are already marked `unsafe` and the programmer vouches for them.)
  */
 public final class LockNestingCheck {
-    public static final class Info {
-        public final TypeCheckerModel.FuncInfo fn;
-        public boolean acquires;                                         // takes a lock directly
-        public String waitKind;                                          // first waiting operation in the body ("yield", "sleep", "par", "await"), null if none
-        public final Set<String> callees = new LinkedHashSet<>();         // every resolved call target in the body
-        public final List<Token> heldCalls = new ArrayList<>();           // calls made while a lock is held
-        public Info(TypeCheckerModel.FuncInfo fn) {
-            this.fn = fn;
-        }
-    }
 
-    public final Map<String, Info> byName = new LinkedHashMap<>();
+
+    public final Map<String, LockNestingInfo> byName = new LinkedHashMap<>();
     public final Set<String> exempt;
 
     public LockNestingCheck(Set<String> exempt) {
@@ -44,35 +35,35 @@ public final class LockNestingCheck {
         c.check();
     }
 
-    public void add(TypeCheckerModel.FuncInfo f) {
+    public void add(FuncInfo f) {
         if (f == null || f.funcToken == null || f.mangledName == null || byName.containsKey(f.mangledName) || exempt.contains(f.mangledName)) {
             return;
         }
-        Info in = new Info(f);
+        LockNestingInfo in = new LockNestingInfo(f);
         byName.put(f.mangledName, in);
         walk(f.funcToken, false, in);
     }
 
     public void collect(TypeChecker checker) {
-        for (List<TypeCheckerModel.FuncInfo> l : checker.declarations.getFunctions().values()) {
+        for (List<FuncInfo> l : checker.declarations.getFunctions().values()) {
             l.forEach(this::add);
         }
-        for (List<TypeCheckerModel.ImplInfo> l : checker.declarations.getImpls().values()) {
-            for (TypeCheckerModel.ImplInfo impl : l) {
+        for (List<ImplInfo> l : checker.declarations.getImpls().values()) {
+            for (ImplInfo impl : l) {
                 impl.methods.values().forEach(this::add);
                 impl.staticMethods.values().forEach(this::add);
                 impl.genericMethodInstances.values().forEach(this::add);
             }
         }
-        for (TypeCheckerModel.LibraryInfo lib : checker.declarations.getLibraries().values()) {
-            for (List<TypeCheckerModel.FuncInfo> l : lib.ownFunctions.values()) {
+        for (LibraryInfo lib : checker.declarations.getLibraries().values()) {
+            for (List<FuncInfo> l : lib.ownFunctions.values()) {
                 l.forEach(this::add);
             }
         }
     }
 
     /** Pre-order walk with an explicit stack ({token, held}); children are pushed in reverse so the visiting order is the recursive one. */
-    public void walk(Token start, boolean startHeld, Info in) {
+    public void walk(Token start, boolean startHeld, LockNestingInfo in) {
         Deque<Object[]> work = new ArrayDeque<>();
         work.push(new Object[]{start, startHeld});
         while (!work.isEmpty()) {
@@ -152,7 +143,7 @@ public final class LockNestingCheck {
         return null;
     }
 
-    public void acquire(Token t, boolean held, Info in) {
+    public void acquire(Token t, boolean held, LockNestingInfo in) {
         in.acquires = true;
         if (held) {
             throw new CompilerException("type", t.file, t.line, "a lock is taken while another lock is held -- nested locks are not allowed (the lock records no owner, so the same "
@@ -171,13 +162,13 @@ public final class LockNestingCheck {
     }
 
     /** Depth-first search over callees; the open frames are the path. */
-    private List<String> pathTo(String from, Set<String> seen, java.util.function.Predicate<Info> hit) {
+    private List<String> pathTo(String from, Set<String> seen, java.util.function.Predicate<LockNestingInfo> hit) {
         List<String> names = new ArrayList<>();
         Deque<Iterator<String>> iters = new ArrayDeque<>();
         String enter = from;
         while (true) {
             if (enter != null) {
-                Info in = byName.get(enter);
+                LockNestingInfo in = byName.get(enter);
                 if (in == null || !seen.add(enter)) {
                     enter = null;
                 } else if (hit.test(in)) {
@@ -203,7 +194,7 @@ public final class LockNestingCheck {
     }
 
     public void check() {
-        for (Info in : byName.values()) {
+        for (LockNestingInfo in : byName.values()) {
             for (Token call : in.heldCalls) {
                 List<String> w = pathToWait(call.chk.resolvedCallTarget, new HashSet<>());
                 if (w != null) {

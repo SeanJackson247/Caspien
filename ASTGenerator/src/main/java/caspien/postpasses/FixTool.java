@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
+import caspien.typechecker.SplitInfo;
 
 /**
  * `--fix MODE[,MODE] [--write] [--fix-stdlib]`: the compiler as a tool that edits source, text only (it inserts whole comment lines and changes
@@ -105,7 +106,7 @@ public final class FixTool {
 
     /** `only` (nullable) limits unsafe-split to one block, "file:line". */
     public static Run run(String modes, boolean write, boolean includeStdlib, BytecodeEmitter em, String hob, String backupDir,
-                   List<TypeCheckerModel.SplitInfo> splitInfo, String only) throws IOException {
+                   List<SplitInfo> splitInfo, String only) throws IOException {
         FixTool t = new FixTool();
         Set<String> want = new LinkedHashSet<>(java.util.Arrays.asList(modes.split(",")));
         for (String m : want) {
@@ -245,12 +246,12 @@ public final class FixTool {
      * it was made in). Blocks the plan cannot place (a tag used outside every statement, an unusual layout) are listed and left alone. Each new block
      * gets a `justify: TODO` scaffold; the block's existing justification stays on the first one.
      */
-    private void planUnsafeSplit(List<TypeCheckerModel.SplitInfo> infos, List<String> files, String only) throws IOException {
+    private void planUnsafeSplit(List<SplitInfo> infos, List<String> files, String only) throws IOException {
         Set<String> mine = new LinkedHashSet<>();
         for (String f : files) {
             mine.add(DocComments.norm(f));
         }
-        for (TypeCheckerModel.SplitInfo si : infos) {
+        for (SplitInfo si : infos) {
             String file = DocComments.norm(si.file);
             if (!mine.contains(file)) {
                 continue;

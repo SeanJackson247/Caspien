@@ -15,6 +15,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import caspien.typechecker.ExternInfo;
+import caspien.typechecker.FuncInfo;
+import caspien.typechecker.StructInfo;
+import caspien.typechecker.TypeInfo;
 
 /**
  * Final front-end stage: walks the type-checked tree and emits the stack-based higher-order bytecode (HOB) as text.
@@ -138,7 +142,7 @@ final class BytecodeEmitterOperations {
     public void emitStructRvoAssign(Token op) {
         Token callOp = unwrapMutWrappers(op.right);
         String funcName = resolveCallTargetForEmission(callOp.chk.resolvedCallTarget);
-        TypeCheckerModel.FuncInfo targetInfo = hub.core.findFuncInfoByMangledName(funcName);
+        FuncInfo targetInfo = hub.core.findFuncInfoByMangledName(funcName);
         String structName = targetInfo != null ? targetInfo.returnType.baseType
                 : op.left.chk.resolvedType.substring(op.left.chk.resolvedType.lastIndexOf('_') + 1);
         String destVarName = destVarNameOf(op.left);
@@ -827,7 +831,7 @@ final class BytecodeEmitterOperations {
         hub.core.line("SLEEP " + op.chk.resolvedCallTarget + " " + durationArg.chk.resolvedType);
     }
     /** Extern call; a variadic one carries its pushed-argument count in EXTERN_CALL. see docs/BytecodeEmitter.md, "Variadic calls". */
-    public void emitExternCall(Token op, TypeCheckerModel.ExternInfo info) {
+    public void emitExternCall(Token op, ExternInfo info) {
         List<Token> args = new ArrayList<>();
         Token argsDelineator = op.right;
         if (!argsDelineator.childs.isEmpty()) {
@@ -862,7 +866,7 @@ final class BytecodeEmitterOperations {
         boolean isAwait = "AWAIT".equals(op.chk.asyncCallKind);
         String handleStructName = op.chk.asyncHandleStructName;
         String handleCanonical = op.chk.asyncHandleCanonicalType;
-        TypeCheckerModel.StructInfo handleStructInfo = hub.core.checker.declarations.getStructs().get(handleStructName);
+        StructInfo handleStructInfo = hub.core.checker.declarations.getStructs().get(handleStructName);
         List<Token> args = new ArrayList<>();
         if (!op.right.childs.isEmpty()) {
             collectCommaArgs(op.right.childs.get(0), args);
@@ -943,7 +947,7 @@ final class BytecodeEmitterOperations {
         hub.core.line("ASSIGN " + handleCanonical + " " + handleCanonical + " " + handleCanonical);
 
         String glueDecorator = isAwait ? "await_call" : "par_call";
-        TypeCheckerModel.FuncInfo glueInfo = hub.core.checker.declarations.getGhostTableFunction(glueDecorator);
+        FuncInfo glueInfo = hub.core.checker.declarations.getGhostTableFunction(glueDecorator);
         if (glueInfo == null) {
             throw new CompilerException("bytecode", op.file, op.line,
                     "emitting a '" + (isAwait ? "await" : "par") + "' call here requires a function "
@@ -951,7 +955,7 @@ final class BytecodeEmitterOperations {
                             + "(none was found)");
         }
         String trampolineName = op.chk.asyncTrampolineName;
-        TypeCheckerModel.FuncInfo trampolineInfo = hub.core.checker.declarations.getFunctions().get(trampolineName).get(0);
+        FuncInfo trampolineInfo = hub.core.checker.declarations.getFunctions().get(trampolineName).get(0);
         String trampolineFuncPtrType = funcPointerCanonicalOf(trampolineInfo);
 
         hub.core.line("CC_START " + glueInfo.callConvention);
@@ -1030,7 +1034,7 @@ final class BytecodeEmitterOperations {
     }
 
     /** Canonical text of a bare function reference ("static_imut_func(params)ret"), mirroring TypeInfo.funcPointer; used for the trampoline address push. */
-    public String funcPointerCanonicalOf(TypeCheckerModel.FuncInfo info) {
+    public String funcPointerCanonicalOf(FuncInfo info) {
         // Function-pointer values always have static storage.
         StringBuilder sb = new StringBuilder("static_imut_func(");
         for (int i = 0; i < info.paramTypes.size(); i++) {

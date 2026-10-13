@@ -11,7 +11,7 @@ public final class CheckDriver {
         this.hub = hub;
     }
 
-    public TypeCheckerModel.TypeInfo run(CheckFrame root) {
+    public TypeInfo run(CheckFrame root) {
         Deque<CheckFrame> stack = new ArrayDeque<>();
         stack.push(root);
         while (true) {

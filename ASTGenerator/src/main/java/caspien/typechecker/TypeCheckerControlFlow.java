@@ -34,18 +34,7 @@ public final class TypeCheckerControlFlow {
         this.hub = hub;
     }
 
-    /** Move-tracking state shared by the cases of one match (the cases are checked one after the other). */
-    private static final class BranchMerge {
-        final Set<String> preState;
-        final Set<String> union = new HashSet<>();
-        final List<Set<String>> survivors = new ArrayList<>();
-        Set<String> branchMoved;
-        TypeCheckerModel.Scope branchScope;
 
-        BranchMerge(Set<String> preState) {
-            this.preState = preState;
-        }
-    }
 
     private void finishCase(BranchMerge m, Token caseTok) {
         caseTok.chk.destructOnExit = hub.statements.collectNaturalEndDestruct(caseTok.childs, m.branchScope, m.branchScope);
@@ -53,11 +42,11 @@ public final class TypeCheckerControlFlow {
         if (!hub.declarations.closedCaseTerminates(caseTok.childs)) { m.survivors.add(m.branchMoved); }
     }
 
-    public void checkCaseMatch(Token matchTok, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func, boolean insideLoop) {
+    public void checkCaseMatch(Token matchTok, Scope scope, FuncInfo func, boolean insideLoop) {
         hub.driver.run(caseMatchFrame(matchTok, scope, func, insideLoop));
     }
 
-    public CheckFrame caseMatchFrame(Token matchTok, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func, boolean insideLoop) {
+    public CheckFrame caseMatchFrame(Token matchTok, Scope scope, FuncInfo func, boolean insideLoop) {
         CheckFrame f = new CheckFrame(CheckFrame.CASE_MATCH, matchTok, scope, func);
         f.q = insideLoop;
         return f;
@@ -66,8 +55,8 @@ public final class TypeCheckerControlFlow {
     /** "match e{ A:{..} B:{..} }" on an enum: records no proof; each case body is an ordinary child scope. See docs/TypeChecker.md, "Float and enum case matches". */
     public int stepCaseMatch(CheckFrame f) {
         Token matchTok = f.node;
-        TypeCheckerModel.Scope scope = f.scope;
-        TypeCheckerModel.FuncInfo func = f.func;
+        Scope scope = f.scope;
+        FuncInfo func = f.func;
         if (f.phase == 9) {
             return f.done(null);
         }
@@ -84,8 +73,8 @@ public final class TypeCheckerControlFlow {
             f.phase = 1;
             return f.call(conditionExpr);
         }
-        TypeCheckerModel.TypeInfo conditionType = f.got;
-        TypeCheckerModel.EnumInfo enumInfo = hub.model.enums.get(conditionType.baseType);
+        TypeInfo conditionType = f.got;
+        EnumInfo enumInfo = hub.model.enums.get(conditionType.baseType);
         if (enumInfo != null) {
             CheckFrame c = new CheckFrame(CheckFrame.ENUM_MATCH, matchTok, scope, func);
             c.x = conditionExpr;
@@ -109,8 +98,8 @@ public final class TypeCheckerControlFlow {
     }
 
 
-    public void checkFloatMatch(Token matchTok, Token conditionExpr, TypeCheckerModel.TypeInfo conditionType, TypeCheckerModel.Scope scope,
-            TypeCheckerModel.FuncInfo func, boolean insideLoop) {
+    public void checkFloatMatch(Token matchTok, Token conditionExpr, TypeInfo conditionType, Scope scope,
+            FuncInfo func, boolean insideLoop) {
         CheckFrame f = new CheckFrame(CheckFrame.FLOAT_MATCH, matchTok, scope, func);
         f.x = conditionExpr;
         f.a = conditionType;
@@ -122,9 +111,9 @@ public final class TypeCheckerControlFlow {
     public int stepFloatMatch(CheckFrame f) {
         Token matchTok = f.node;
         Token conditionExpr = f.x;
-        TypeCheckerModel.TypeInfo conditionType = f.a;
-        TypeCheckerModel.Scope scope = f.scope;
-        TypeCheckerModel.FuncInfo func = f.func;
+        TypeInfo conditionType = f.a;
+        Scope scope = f.scope;
+        FuncInfo func = f.func;
         // Exhaustive over the type-level state set if it has one, else all three states.
         Set<String> required = conditionType.floatStates != null
                 ? conditionType.floatStates : TypeCheckerModel.FLOAT_STATE_NAMES;
@@ -178,7 +167,7 @@ public final class TypeCheckerControlFlow {
             if (conditionSlotKey != null) {
                 branchPatterns.add(new Token.MatchPattern(conditionSlotKey, "float_state", null));
             }
-            m.branchScope = new TypeCheckerModel.Scope(scope, m.branchMoved, branchPatterns, false);
+            m.branchScope = new Scope(scope, m.branchMoved, branchPatterns, false);
             f.phase = 1;
             return f.call(hub.statements.linesInScopeFrame(caseTok.childs, m.branchScope, func, f.q));
         }
@@ -204,7 +193,7 @@ public final class TypeCheckerControlFlow {
      * node (result type set by hand; no resolveExprType case) whose right text is the alphabetically sorted chain
      * ("finite|nan"), built from a TreeSet so source order never matters. See docs/TypeChecker.md, "Float and enum case matches".
      */
-    public void lowerFloatMatchToIfChain(Token matchTok, Token conditionExpr, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+    public void lowerFloatMatchToIfChain(Token matchTok, Token conditionExpr, Scope scope, FuncInfo func) {
         List<Token> cases = matchTok.childs;
         List<Token> branches = new ArrayList<>();
         for (int i = 0; i < cases.size(); i++) {
@@ -254,8 +243,8 @@ public final class TypeCheckerControlFlow {
         return sb.toString();
     }
 
-    public void checkEnumMatch(Token matchTok, Token conditionExpr, TypeCheckerModel.TypeInfo conditionType, TypeCheckerModel.EnumInfo enumInfo,
-            TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func, boolean insideLoop) {
+    public void checkEnumMatch(Token matchTok, Token conditionExpr, TypeInfo conditionType, EnumInfo enumInfo,
+            Scope scope, FuncInfo func, boolean insideLoop) {
         CheckFrame f = new CheckFrame(CheckFrame.ENUM_MATCH, matchTok, scope, func);
         f.x = conditionExpr;
         f.a = conditionType;
@@ -268,14 +257,14 @@ public final class TypeCheckerControlFlow {
     public int stepEnumMatch(CheckFrame f) {
         Token matchTok = f.node;
         Token conditionExpr = f.x;
-        TypeCheckerModel.Scope scope = f.scope;
-        TypeCheckerModel.FuncInfo func = f.func;
-        TypeCheckerModel.EnumInfo enumInfo;
+        Scope scope = f.scope;
+        FuncInfo func = f.func;
+        EnumInfo enumInfo;
         BranchMerge m;
         Set<String> covered;
         boolean[] sawDefaultBox;
         if (f.phase == 0) {
-            enumInfo = (TypeCheckerModel.EnumInfo) f.data;
+            enumInfo = (EnumInfo) f.data;
             covered = new HashSet<>();
             sawDefaultBox = new boolean[]{false};
             m = new BranchMerge(scope.movedSlots);
@@ -287,7 +276,7 @@ public final class TypeCheckerControlFlow {
             Set<String> c0 = (Set<String>) st[1];
             covered = c0;
             sawDefaultBox = (boolean[]) st[2];
-            enumInfo = (TypeCheckerModel.EnumInfo) st[3];
+            enumInfo = (EnumInfo) st[3];
             if (f.phase == 9) {
                 return f.done(null);
             }
@@ -351,7 +340,7 @@ public final class TypeCheckerControlFlow {
                             conditionExpr.right.text, caseVariants));
                 }
             }
-            m.branchScope = new TypeCheckerModel.Scope(scope, m.branchMoved, branchPatterns, false);
+            m.branchScope = new Scope(scope, m.branchMoved, branchPatterns, false);
             f.phase = 1;
             return f.call(hub.statements.linesInScopeFrame(caseTok.childs, m.branchScope, func, f.q));
         }
@@ -390,8 +379,8 @@ public final class TypeCheckerControlFlow {
 
 
     /** Lowering step of checkEnumMatch: one type-checked "conditionExpr == Enum.Variant" per case except the last, via the ordinary "==" dispatch. */
-    public void lowerEnumMatchToIfChain(Token matchTok, Token conditionExpr, TypeCheckerModel.EnumInfo enumInfo, TypeCheckerModel.Scope scope,
-            TypeCheckerModel.FuncInfo func) {
+    public void lowerEnumMatchToIfChain(Token matchTok, Token conditionExpr, EnumInfo enumInfo, Scope scope,
+            FuncInfo func) {
         CheckFrame f = new CheckFrame(CheckFrame.LOWER_ENUM_MATCH, matchTok, scope, func);
         f.x = conditionExpr;
         f.data = enumInfo;
@@ -402,7 +391,7 @@ public final class TypeCheckerControlFlow {
         Token matchTok = f.node;
         if (f.phase == 0) {
             Token conditionExpr = f.x;
-            TypeCheckerModel.EnumInfo enumInfo = (TypeCheckerModel.EnumInfo) f.data;
+            EnumInfo enumInfo = (EnumInfo) f.data;
 
             List<Token> cases = matchTok.childs;
             List<Token> branches = new ArrayList<>();
@@ -475,7 +464,7 @@ public final class TypeCheckerControlFlow {
                 && right.right.text.equals("enum");
     }
 
-    public void checkEnumForMatch(Token matchTok, Token conditionExpr, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func,
+    public void checkEnumForMatch(Token matchTok, Token conditionExpr, Scope scope, FuncInfo func,
             boolean insideLoop) {
         CheckFrame f = new CheckFrame(CheckFrame.ENUM_FOR_MATCH, matchTok, scope, func);
         f.x = conditionExpr;
@@ -492,8 +481,8 @@ public final class TypeCheckerControlFlow {
     public int stepEnumForMatch(CheckFrame f) {
         Token matchTok = f.node;
         Token conditionExpr = f.x;
-        TypeCheckerModel.Scope scope = f.scope;
-        TypeCheckerModel.FuncInfo func = f.func;
+        Scope scope = f.scope;
+        FuncInfo func = f.func;
         Token xExpr = conditionExpr.left;
         String ownerName = conditionExpr.right.left.text;
         BranchMerge m;
@@ -520,7 +509,7 @@ public final class TypeCheckerControlFlow {
                     throw new CompilerException("type", conditionExpr.right.file, conditionExpr.right.line,
                             "'" + ownerName + "' is not a known interface");
                 }
-                TypeCheckerModel.EnumInfo enumForInfo = hub.model.enums.get("$enum_for_" + ownerName);
+                EnumInfo enumForInfo = hub.model.enums.get("$enum_for_" + ownerName);
                 if (enumForInfo == null) {
                     throw new CompilerException("type", conditionExpr.right.file, conditionExpr.right.line,
                             "'" + ownerName + "' has no known implementers -- '.enum' requires at least one");
@@ -583,7 +572,7 @@ public final class TypeCheckerControlFlow {
                 branchPatterns = new ArrayList<>(branchPatterns);
                 branchPatterns.add(new Token.MatchPattern(xSlotKey, "instanceof", labels.get(0).text));
             }
-            m.branchScope = new TypeCheckerModel.Scope(scope, m.branchMoved, branchPatterns, false);
+            m.branchScope = new Scope(scope, m.branchMoved, branchPatterns, false);
             // Same instanceof shadowing as checkMatchChain (narrowInstanceofSlots), so "c.foo()" in an "A:" case resolves as A's method.
             hub.statements.narrowInstanceofSlots(branchPatterns, scope, m.branchScope);
             f.phase = 1;
@@ -608,7 +597,7 @@ public final class TypeCheckerControlFlow {
 
 
     /** Lowering step of checkEnumForMatch: like lowerEnumMatchToIfChain but each comparison is an INSTANCEOF node (OR-combined for "|" chains). */
-    public void lowerEnumForMatchToIfChain(Token matchTok, Token xExpr, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+    public void lowerEnumForMatchToIfChain(Token matchTok, Token xExpr, Scope scope, FuncInfo func) {
         CheckFrame f = new CheckFrame(CheckFrame.LOWER_ENUM_FOR, matchTok, scope, func);
         f.x = xExpr;
         hub.driver.run(f);
@@ -678,11 +667,11 @@ public final class TypeCheckerControlFlow {
      * Match condition grammar: left instanceof right, left implements right, left in right, a bare expression, chained with
      * "and". Each leaf is checked through resolveExprType and records one MatchPattern. See docs/TypeChecker.md, "Match chains".
      */
-    public void checkMatchCondition(Token node, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func, List<Token.MatchPattern> out) {
+    public void checkMatchCondition(Token node, Scope scope, FuncInfo func, List<Token.MatchPattern> out) {
         hub.driver.run(matchConditionFrame(node, scope, func, out));
     }
 
-    public CheckFrame matchConditionFrame(Token node, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func, List<Token.MatchPattern> out) {
+    public CheckFrame matchConditionFrame(Token node, Scope scope, FuncInfo func, List<Token.MatchPattern> out) {
         CheckFrame f = new CheckFrame(CheckFrame.MATCH_CONDITION, node, scope, func);
         f.data = out;
         return f;
@@ -694,8 +683,8 @@ public final class TypeCheckerControlFlow {
      */
     public int stepMatchCondition(CheckFrame f) {
         Token node = f.node;
-        TypeCheckerModel.Scope scope = f.scope;
-        TypeCheckerModel.FuncInfo func = f.func;
+        Scope scope = f.scope;
+        FuncInfo func = f.func;
         @SuppressWarnings("unchecked")
         List<Token.MatchPattern> out = (List<Token.MatchPattern>) f.data;
         if (f.phase != 0) {
@@ -788,8 +777,8 @@ public final class TypeCheckerControlFlow {
 
     private int matchConditionResume(CheckFrame f, List<Token.MatchPattern> out) {
         Token node = f.node;
-        TypeCheckerModel.Scope scope = f.scope;
-        TypeCheckerModel.FuncInfo func = f.func;
+        Scope scope = f.scope;
+        FuncInfo func = f.func;
         switch (f.s1) {
             case "and1":
                 f.s1 = "and2";
@@ -799,7 +788,7 @@ public final class TypeCheckerControlFlow {
                 node.chk.resolvedType = "imut_bool";
                 return f.done(null);
             case "zero": {
-                TypeCheckerModel.TypeInfo leftType = f.got;
+                TypeInfo leftType = f.got;
                 boolean isInteger = TypeCheckerModel.INTEGER_TYPES.contains(leftType.baseType);
                 if (!isInteger) {
                     // Not an integer after all: let the ordinary comparison check report its own error.
@@ -845,7 +834,7 @@ public final class TypeCheckerControlFlow {
                 out.add(new Token.MatchPattern(hub.accessAndAsync.boundsSlotKeyOf(node.left), "in", null, boundsTargetSlotOf(node.right)));
                 return f.done(null);
             case "into": {
-                TypeCheckerModel.TypeInfo intoCondType = f.got;
+                TypeInfo intoCondType = f.got;
                 node.chk.resolvedType = intoCondType.canonical();
                 if (node.chk.isGuaranteedEnumMembershipCheck) {
                     throw new CompilerException("type", node.file, node.line,
@@ -864,7 +853,7 @@ public final class TypeCheckerControlFlow {
                 out.add(new Token.MatchPattern(hub.accessAndAsync.boundsSlotKeyOf(node.left), "in", null, boundsTargetSlotOf(node.right)));
                 return f.done(null);
             case "fits": {
-                TypeCheckerModel.TypeInfo fitsLeft = f.got;
+                TypeInfo fitsLeft = f.got;
                 if (fitsLeft.storage != null || !TypeCheckerModel.INTEGER_TYPES.contains(fitsLeft.baseType)) {
                     throw new CompilerException("type", node.left.file, node.left.line,
                             "'fits' requires a plain integer value on the left, got '" + fitsLeft.canonical() + "'");
@@ -885,7 +874,7 @@ public final class TypeCheckerControlFlow {
                 return f.done(null);
             }
             case "is": {
-                TypeCheckerModel.TypeInfo leftType = f.got;
+                TypeInfo leftType = f.got;
                 if (!hub.isRangeType(leftType)) {
                     throw new CompilerException("type", node.left.file, node.left.line,
                             "'is' requires a 'range' on the left, got '" + leftType.canonical() + "'");
@@ -921,12 +910,12 @@ public final class TypeCheckerControlFlow {
      * element-alive proof for x[i] at once. `i` must be a variable or a "."-chain. Also used by the "for match Some(i)" header
      * (checkForLoop) and the @lock(match Some(i) in self.field) qualifier. See docs/TypeChecker.md, "Match chains".
      */
-    public void checkSomeIndexBoundsCondition(Token node, String kind, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func,
+    public void checkSomeIndexBoundsCondition(Token node, String kind, Scope scope, FuncInfo func,
             List<Token.MatchPattern> out) {
         hub.driver.run(someIndexBoundsFrame(node, kind, scope, func, out));
     }
 
-    public CheckFrame someIndexBoundsFrame(Token node, String kind, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func, List<Token.MatchPattern> out) {
+    public CheckFrame someIndexBoundsFrame(Token node, String kind, Scope scope, FuncInfo func, List<Token.MatchPattern> out) {
         CheckFrame f = new CheckFrame(CheckFrame.SOME_INDEX_BOUNDS, node, scope, func);
         f.s1 = kind;
         f.data = out;
@@ -937,8 +926,8 @@ public final class TypeCheckerControlFlow {
     public int stepSomeIndexBoundsCondition(CheckFrame f) {
         Token node = f.node;
         String kind = f.s1;
-        TypeCheckerModel.Scope scope = f.scope;
-        TypeCheckerModel.FuncInfo func = f.func;
+        Scope scope = f.scope;
+        FuncInfo func = f.func;
         if (f.phase == 0) {
             @SuppressWarnings("unchecked")
             List<Token.MatchPattern> out = (List<Token.MatchPattern>) f.data;
@@ -969,7 +958,7 @@ public final class TypeCheckerControlFlow {
         Token indexExpr = f.x;
         if (f.phase == 1) {
             Token boundsOp = (Token) st[1];
-            TypeCheckerModel.TypeInfo condType = f.got;
+            TypeInfo condType = f.got;
             node.chk.resolvedType = condType.canonical();
             someCall.chk.resolvedType = "imut_bool";
             if (boundsOp.chk.isGuaranteedEnumMembershipCheck) {
@@ -993,7 +982,7 @@ public final class TypeCheckerControlFlow {
             lookupNode.right = bracket;
             List<Token.MatchPattern> withBounds = new ArrayList<>(scope.activeMatchPatterns);
             withBounds.add(boundsPattern);
-            TypeCheckerModel.Scope probeScope = new TypeCheckerModel.Scope(scope, withBounds, false);
+            Scope probeScope = new Scope(scope, withBounds, false);
             f.sc1 = probeScope;
             f.y = lookupNode;
             f.data = new Object[]{out, boundsOp};
@@ -1001,7 +990,7 @@ public final class TypeCheckerControlFlow {
             return f.call(new CheckFrame(CheckFrame.EXPR, lookupNode, probeScope, func));
         }
         Token lookupNode = f.y;
-        TypeCheckerModel.TypeInfo elemType = f.got;
+        TypeInfo elemType = f.got;
         if (elemType.storage == null) {
             throw new CompilerException("type", indexExpr.file, indexExpr.line,
                     "'Some(...)' requires the element type to be a pointer, got '" + elemType.canonical()
@@ -1071,7 +1060,7 @@ public final class TypeCheckerControlFlow {
 
     /** True if the struct implements the interface directly or through an interface that extends it, including standalone "impl X for Y" blocks (implsByConcreteType). */
     public boolean structImplementsInterface(String structName, String interfaceName) {
-        TypeCheckerModel.StructInfo info = hub.model.structs.get(structName);
+        StructInfo info = hub.model.structs.get(structName);
         if (info == null) {
             return false;
         }
@@ -1080,9 +1069,9 @@ public final class TypeCheckerControlFlow {
                 return true;
             }
         }
-        List<TypeCheckerModel.ImplInfo> impls = hub.model.implsByConcreteType.get(structName);
+        List<ImplInfo> impls = hub.model.implsByConcreteType.get(structName);
         if (impls != null) {
-            for (TypeCheckerModel.ImplInfo impl : impls) {
+            for (ImplInfo impl : impls) {
                 if (impl.interfaceName != null && interfaceExtendsOrIs(impl.interfaceName, interfaceName)) {
                     return true;
                 }
@@ -1100,7 +1089,7 @@ public final class TypeCheckerControlFlow {
             if (name.equals(targetInterfaceName)) {
                 return true;
             }
-            TypeCheckerModel.InterfaceInfo info = hub.model.interfaces.get(name);
+            InterfaceInfo info = hub.model.interfaces.get(name);
             if (info != null && seen.add(name)) {
                 info.extendsNames.forEach(work::push);
             }
@@ -1108,11 +1097,11 @@ public final class TypeCheckerControlFlow {
         return false;
     }
 
-    public void checkIfChain(Token ifTok, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func, boolean insideLoop) {
+    public void checkIfChain(Token ifTok, Scope scope, FuncInfo func, boolean insideLoop) {
         hub.driver.run(ifChainFrame(ifTok, scope, func, insideLoop));
     }
 
-    public CheckFrame ifChainFrame(Token ifTok, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func, boolean insideLoop) {
+    public CheckFrame ifChainFrame(Token ifTok, Scope scope, FuncInfo func, boolean insideLoop) {
         CheckFrame f = new CheckFrame(CheckFrame.IF_CHAIN, ifTok, scope, func);
         f.q = insideLoop;
         return f;
@@ -1121,8 +1110,8 @@ public final class TypeCheckerControlFlow {
     /** If chain: each branch is checked against its own copy of the pre-if moved set; the shared set becomes their union. See docs/TypeChecker.md, "Branch merge and partly-moved slots". f.x = the branch; phase 1 = its condition resolved (f.p = saved short-circuit flag), 2 = its body checked. */
     public int stepIfChain(CheckFrame f) {
         Token ifTok = f.node;
-        TypeCheckerModel.Scope scope = f.scope;
-        TypeCheckerModel.FuncInfo func = f.func;
+        Scope scope = f.scope;
+        FuncInfo func = f.func;
         BranchMerge m;
         boolean condDone = false;
         if (f.phase == 0) {
@@ -1137,7 +1126,7 @@ public final class TypeCheckerControlFlow {
                 requireBoolOrNumericCondition(f.got, branch.condition());
                 condDone = true;
             } else {
-                TypeCheckerModel.Scope branchBodyScope = (TypeCheckerModel.Scope) f.gotFrame.out;
+                Scope branchBodyScope = (Scope) f.gotFrame.out;
                 // A branch's natural end is not a function/loop boundary: only its own locals are destructed.
                 branch.chk.destructOnExit = hub.statements.collectNaturalEndDestruct(branch.childs, branchBodyScope, branchBodyScope);
                 m.union.addAll(m.branchMoved);
@@ -1156,7 +1145,7 @@ public final class TypeCheckerControlFlow {
                 return f.call(condNode);
             }
             m.branchMoved = new HashSet<>(m.preState);
-            TypeCheckerModel.Scope branchScope = new TypeCheckerModel.Scope(scope, m.branchMoved);
+            Scope branchScope = new Scope(scope, m.branchMoved);
             // if / else do not change loop context.
             f.phase = 2;
             return f.call(hub.statements.linesFrame(branch.childs, branchScope, func, f.q));
@@ -1167,7 +1156,7 @@ public final class TypeCheckerControlFlow {
 
 
     /** An if/elseif condition must be bool or a numeric type (integer, f32, char; C-style "zero is false"); no truthy pointers or collections. See docs/TypeChecker.md, "Conditions". */
-    public void requireBoolOrNumericCondition(TypeCheckerModel.TypeInfo t, Token at) {
+    public void requireBoolOrNumericCondition(TypeInfo t, Token at) {
         // Storage-less only: a pointer to a bool/number is not a condition (null checks use "match Some(x)").
         if (t.storage == null && (t.baseType.equals("bool") || t.baseType.equals("char")
                 || TypeCheckerModel.NUMERIC_TYPES.contains(t.baseType))) {
@@ -1183,34 +1172,21 @@ public final class TypeCheckerControlFlow {
      * "for x in range{..}" desugars into real AST nodes: let $range = ..; let x = $range.start; condition "x in $range"; step x++.
      * The "in" condition is byte-for-byte what an ordinary "in" expression emits. See docs/TypeChecker.md, "For loop desugaring".
      */
-    public void checkForLoop(Token forTok, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+    public void checkForLoop(Token forTok, Scope scope, FuncInfo func) {
         hub.driver.run(forLoopFrame(forTok, scope, func));
     }
 
-    public CheckFrame forLoopFrame(Token forTok, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+    public CheckFrame forLoopFrame(Token forTok, Scope scope, FuncInfo func) {
         return new CheckFrame(CheckFrame.FOR_LOOP, forTok, scope, func);
     }
 
-    /** The values of the `for` check that live from one phase to the next. */
-    private static final class ForState {
-        Token loopVarTok;
-        Token rangeExpr;
-        boolean rootIsInto;
-        boolean isSomeIndexForm;
-        boolean isDynArraySource;
-        TypeCheckerModel.Scope forScope;
-        Token rangeAssign;
-        Token loopVarAssign;
-        Token conditionIn;
-        Token increment;
-        TypeCheckerModel.TypeInfo rangeType;
-    }
+
 
     /** Phases: 0 header, 1 range typed, 2 array range re-typed, 3..6 the desugared pieces checked (range let, variable let, condition, increment), 7 body checked. */
     public int stepForLoop(CheckFrame f) {
         Token forTok = f.node;
-        TypeCheckerModel.Scope scope = f.scope;
-        TypeCheckerModel.FuncInfo func = f.func;
+        Scope scope = f.scope;
+        FuncInfo func = f.func;
         ForState st;
         switch (f.phase) {
             case 0: {
@@ -1268,7 +1244,7 @@ public final class TypeCheckerControlFlow {
             }
             case 1: {
                 st = (ForState) f.data;
-                TypeCheckerModel.TypeInfo rangeType = f.got;
+                TypeInfo rangeType = f.got;
                 Token rangeExpr = st.rangeExpr;
             if (hub.isUnsafeDynArrayType(rangeType)) {
                 // Banned: an unsafe dynarray has no compiler-known length; iterate by hand with loop{} in unsafe code.
@@ -1296,12 +1272,12 @@ public final class TypeCheckerControlFlow {
             }
             case 3: {
                 st = (ForState) f.data;
-                TypeCheckerModel.TypeInfo rangeAssignType = f.got;
+                TypeInfo rangeAssignType = f.got;
                 Token rangeAssign = st.rangeAssign;
                 Token loopVarTok = st.loopVarTok;
                 Token rangeExpr = st.rangeExpr;
                 boolean isDynArraySource = st.isDynArraySource;
-                TypeCheckerModel.Scope forScope = st.forScope;
+                Scope forScope = st.forScope;
                 String rangeVarName = (String) f.out;
                 rangeAssign.chk.resolvedType = rangeAssignType.canonical();
 
@@ -1332,10 +1308,10 @@ public final class TypeCheckerControlFlow {
             }
             case 4: {
                 st = (ForState) f.data;
-                TypeCheckerModel.TypeInfo loopVarAssignType = f.got;
+                TypeInfo loopVarAssignType = f.got;
                 Token loopVarAssign = st.loopVarAssign;
                 Token loopVarTok = st.loopVarTok;
-                TypeCheckerModel.Scope forScope = st.forScope;
+                Scope forScope = st.forScope;
                 String rangeVarName = (String) f.out;
                 loopVarAssign.chk.resolvedType = loopVarAssignType.canonical();
 
@@ -1351,10 +1327,10 @@ public final class TypeCheckerControlFlow {
             }
             case 5: {
                 st = (ForState) f.data;
-                TypeCheckerModel.TypeInfo condType = f.got;
+                TypeInfo condType = f.got;
                 Token conditionIn = st.conditionIn;
                 Token loopVarTok = st.loopVarTok;
-                TypeCheckerModel.Scope forScope = st.forScope;
+                Scope forScope = st.forScope;
                 conditionIn.chk.resolvedType = condType.canonical();
 
                 // increment: x++ (a real postfix '++' node)
@@ -1368,19 +1344,19 @@ public final class TypeCheckerControlFlow {
             }
             case 6: {
                 st = (ForState) f.data;
-                TypeCheckerModel.TypeInfo incType = f.got;
+                TypeInfo incType = f.got;
                 Token increment = st.increment;
                 Token loopVarTok = st.loopVarTok;
                 Token rangeExpr = st.rangeExpr;
                 boolean rootIsInto = st.rootIsInto;
                 boolean isSomeIndexForm = st.isSomeIndexForm;
                 boolean isDynArraySource = st.isDynArraySource;
-                TypeCheckerModel.Scope forScope = st.forScope;
+                Scope forScope = st.forScope;
                 increment.chk.resolvedType = incType.canonical();
 
                 // "for match i in x{..}": same bytecode, but the body scope also carries the "i in x" proof, built against the ORIGINAL
                 // rangeExpr (not $range) so indexing in the body names the same slot; wrapped in a fresh Scope, forScope stays untouched.
-                TypeCheckerModel.Scope forScopeForBody = forScope;
+                Scope forScopeForBody = forScope;
                 if (forTok.isForMatch) {
                     String iSlotKey = hub.expressions.slotKeyOf(loopVarTok);
                     if (iSlotKey != null) {
@@ -1388,13 +1364,13 @@ public final class TypeCheckerControlFlow {
                         // "into" also grants everything "in" does; only the recorded kind differs.
                         String kind = rootIsInto ? "into" : "in";
                         extended.add(new Token.MatchPattern(iSlotKey, kind, null, boundsTargetSlotOf(rangeExpr)));
-                        forScopeForBody = new TypeCheckerModel.Scope(forScope, forScope.movedSlots, extended, false);
+                        forScopeForBody = new Scope(forScope, forScope.movedSlots, extended, false);
                     }
                 }
                 // The loop variable and the source slot are immutable inside the body (all for forms). A fresh scope is wrapped even without
                 // for-match so the synthesized pieces above, which do reassign the variable, are unaffected.
                 if (forScopeForBody == forScope) {
-                    forScopeForBody = new TypeCheckerModel.Scope(forScope);
+                    forScopeForBody = new Scope(forScope);
                 }
                 Set<String> immutableHere = new HashSet<>();
                 immutableHere.add(loopVarTok.text);
@@ -1434,7 +1410,7 @@ public final class TypeCheckerControlFlow {
             }
             default: {
                 st = (ForState) f.data;
-                TypeCheckerModel.Scope forBodyScope = (TypeCheckerModel.Scope) f.gotFrame.out;
+                Scope forBodyScope = (Scope) f.gotFrame.out;
                 Token rangeAssign = st.rangeAssign;
                 Token loopVarAssign = st.loopVarAssign;
                 Token conditionIn = st.conditionIn;
@@ -1455,9 +1431,9 @@ public final class TypeCheckerControlFlow {
     /** After the range type is known (also for a fixed array re-typed as a range): checks, then the first desugared piece (the range let). */
     private int forAfterRange(CheckFrame f, ForState st) {
         Token forTok = f.node;
-        TypeCheckerModel.Scope scope = f.scope;
-        TypeCheckerModel.FuncInfo func = f.func;
-        TypeCheckerModel.TypeInfo rangeType = st.rangeType;
+        Scope scope = f.scope;
+        FuncInfo func = f.func;
+        TypeInfo rangeType = st.rangeType;
         Token rangeExpr = st.rangeExpr;
         Token loopVarTok = st.loopVarTok;
         boolean isDynArraySource = hub.isDynArrayType(rangeType);
@@ -1471,7 +1447,7 @@ public final class TypeCheckerControlFlow {
 
         hub.model.forVarCounter++;
         String rangeVarName = "$for_range_" + hub.model.forVarCounter;
-        TypeCheckerModel.Scope forScope = new TypeCheckerModel.Scope(scope);
+        Scope forScope = new Scope(scope);
 
         // let $range = <rangeExpr>; for a dynarray "let $range = mut ref <rangeExpr>" so the owns source is borrowed, not moved.
         Token rangeSourceExpr = rangeExpr;
@@ -1499,19 +1475,19 @@ public final class TypeCheckerControlFlow {
     }
 
 
-    public void checkReturn(Token returnTok, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+    public void checkReturn(Token returnTok, Scope scope, FuncInfo func) {
         hub.driver.run(returnStmtFrame(returnTok, scope, func));
     }
 
-    public CheckFrame returnStmtFrame(Token returnTok, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+    public CheckFrame returnStmtFrame(Token returnTok, Scope scope, FuncInfo func) {
         return new CheckFrame(CheckFrame.RETURN, returnTok, scope, func);
     }
 
     /** f.x / f.p keep the flags the operand's check overrides (restored when it is back). */
     public int stepReturn(CheckFrame f) {
         Token returnTok = f.node;
-        TypeCheckerModel.Scope scope = f.scope;
-        TypeCheckerModel.FuncInfo func = f.func;
+        Scope scope = f.scope;
+        FuncInfo func = f.func;
         if (f.phase == 0) {
 
             if (returnTok.sub.isEmpty()) {
@@ -1536,7 +1512,7 @@ public final class TypeCheckerControlFlow {
         }
         hub.model.directReturnExprNode = f.x;
         hub.model.insideStructRvoDestinationPosition = f.p;
-        TypeCheckerModel.TypeInfo exprType = f.got;
+        TypeInfo exprType = f.got;
         if (func.returnType.isSome && !exprType.isSome && hub.locksAndProofs.isProvenAlive(returnTok.operand(), scope)) {
             // A return expression proven alive by an active `match Some` counts as 'some' for a 'some' return type.
             // A bare `new` never does (malloc can fail). See docs/TypeChecker.md, "Returning owns some".
@@ -1597,18 +1573,18 @@ public final class TypeCheckerControlFlow {
          * `throw <string>`: unconditional termination that unwinds to the nearest `try`/`catch`, destructing the owns locals
          * alive at this throw site (no preserved slot). See docs/TypeChecker.md, "throw, try and catch".
          */
-    public void checkThrow(Token throwTok, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+    public void checkThrow(Token throwTok, Scope scope, FuncInfo func) {
         hub.driver.run(throwStmtFrame(throwTok, scope, func));
     }
 
-    public CheckFrame throwStmtFrame(Token throwTok, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+    public CheckFrame throwStmtFrame(Token throwTok, Scope scope, FuncInfo func) {
         return new CheckFrame(CheckFrame.THROW, throwTok, scope, func);
     }
 
     public int stepThrow(CheckFrame f) {
         Token throwTok = f.node;
-        TypeCheckerModel.Scope scope = f.scope;
-        TypeCheckerModel.FuncInfo func = f.func;
+        Scope scope = f.scope;
+        FuncInfo func = f.func;
         if (f.phase == 0) {
 
             if (throwTok.sub.isEmpty()) {
@@ -1639,8 +1615,8 @@ public final class TypeCheckerControlFlow {
             return f.call(throwTok.operand());
         }
         hub.model.rethrowOperand = null;
-        TypeCheckerModel.TypeInfo exprType = f.got;
-        TypeCheckerModel.TypeInfo requiredType = new TypeCheckerModel.TypeInfo("static", "imut", "string");
+        TypeInfo exprType = f.got;
+        TypeInfo requiredType = new TypeInfo("static", "imut", "string");
         if (!hub.typesCompatible(requiredType, exprType)) {
             throw new CompilerException("type", throwTok.file, throwTok.line,
                     "'throw' requires a 'static imut string' -- got '" + exprType.canonical() + "'");
@@ -1648,7 +1624,7 @@ public final class TypeCheckerControlFlow {
         // Any valid `throw` needs the per-throw-site destruct-and-unwind sequence to exist in the bytecode.
         hub.model.usesThrow = true;
         func.sawThrow = true;
-        hub.model.throwSites.add(new TypeCheckerModel.ThrowSite(func, throwTok));
+        hub.model.throwSites.add(new ThrowSite(func, throwTok));
         // Per-throw-site destruct list and held-lock releases (a throw out of an OPEN case must not leave the lock held).
         throwTok.chk.destructOnExit = hub.statements.collectOwnsToDestruct(scope, scope.functionRootScope, null);
         throwTok.chk.unlockOnExit = hub.statements.collectLockReleasesToBoundary(scope, scope.functionRootScope);
@@ -1668,11 +1644,11 @@ public final class TypeCheckerControlFlow {
          * `try CALL catch(e){..}`: wraps exactly one call, `new`, `par`/`await` or `dyn`/`resize`/`clone`, type-checks it as usual
          * and checks the catch body as a nested block. See docs/TypeChecker.md, "throw, try and catch".
          */
-    public TypeCheckerModel.TypeInfo checkTry(Token tryTok, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func, boolean insideLoop) {
+    public TypeInfo checkTry(Token tryTok, Scope scope, FuncInfo func, boolean insideLoop) {
         return hub.driver.run(tryStmtFrame(tryTok, scope, func, insideLoop));
     }
 
-    public CheckFrame tryStmtFrame(Token tryTok, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func, boolean insideLoop) {
+    public CheckFrame tryStmtFrame(Token tryTok, Scope scope, FuncInfo func, boolean insideLoop) {
         CheckFrame f = new CheckFrame(CheckFrame.TRY, tryTok, scope, func);
         f.q = insideLoop;
         return f;
@@ -1681,8 +1657,8 @@ public final class TypeCheckerControlFlow {
     /** Phases: 0 head (the wrapped call is next), 1 call resolved (f.p = saved alloc-context flag), 2 catch body checked (f.data = saved catch state). */
     public int stepTry(CheckFrame f) {
         Token tryTok = f.node;
-        TypeCheckerModel.Scope scope = f.scope;
-        TypeCheckerModel.FuncInfo func = f.func;
+        Scope scope = f.scope;
+        FuncInfo func = f.func;
         if (f.phase == 0) {
 
             if (tryTok.sub == null || tryTok.sub.isEmpty()) {
@@ -1717,17 +1693,17 @@ public final class TypeCheckerControlFlow {
         }
         if (f.phase == 1) {
             hub.model.insideThrowingAllocContext = f.p;
-            TypeCheckerModel.TypeInfo resultType = f.got;
+            TypeInfo resultType = f.got;
             f.a = resultType;
             // Declare the catch parameter in a scope around the catch body. A bare use is rejected in the VARREF case
             // (`e.msg`, `e.stack_trace`, or `throw e`).
-            TypeCheckerModel.Scope catchBodyScope = new TypeCheckerModel.Scope(scope);
-            catchBodyScope.vars.put(tryTok.catchParamName, new TypeCheckerModel.TypeInfo("static", "imut", "string"));
+            Scope catchBodyScope = new Scope(scope);
+            catchBodyScope.vars.put(tryTok.catchParamName, new TypeInfo("static", "imut", "string"));
             Token previousActiveCatchTry = hub.model.activeCatchTries.put(tryTok.catchParamName, tryTok);
             // insideCatchBody / catchEnclosingLoopBoundary are saved and restored around the catch body, so a `continue`
             // at any depth inside it is recognised, and a nested catch restores the outer values.
             boolean previousInsideCatchBody = hub.model.insideCatchBody;
-            TypeCheckerModel.Scope previousCatchLoopBoundary = hub.model.catchEnclosingLoopBoundary;
+            Scope previousCatchLoopBoundary = hub.model.catchEnclosingLoopBoundary;
             hub.model.insideCatchBody = true;
             hub.model.catchEnclosingLoopBoundary = scope.loopBoundaryScope;
             f.data = new Object[]{previousActiveCatchTry, previousInsideCatchBody, previousCatchLoopBoundary};
@@ -1737,13 +1713,13 @@ public final class TypeCheckerControlFlow {
         Object[] saved = (Object[]) f.data;
         Token previousActiveCatchTry = (Token) saved[0];
         hub.model.insideCatchBody = (Boolean) saved[1];
-        hub.model.catchEnclosingLoopBoundary = (TypeCheckerModel.Scope) saved[2];
+        hub.model.catchEnclosingLoopBoundary = (Scope) saved[2];
         if (previousActiveCatchTry == null) {
             hub.model.activeCatchTries.remove(tryTok.catchParamName);
         } else {
             hub.model.activeCatchTries.put(tryTok.catchParamName, previousActiveCatchTry);
         }
-        TypeCheckerModel.TypeInfo resultType = f.a;
+        TypeInfo resultType = f.a;
         // No destructOnExit: a catch body never reaches its natural end (it must terminate, checked below).
         tryTok.chk.resolvedType = resultType.canonical();
         // A catch body must end every path in return, throw or continue: a caught throw jumps straight into it,
@@ -1763,7 +1739,7 @@ public final class TypeCheckerControlFlow {
 
 
     /** The two-way @throws contract, checked at each call-resolution site once the callee is known: an '@throws' callee must be in try/`?`, a non-throwing one must not be. */
-    public void requireThrowsWrapping(TypeCheckerModel.FuncInfo candidate, Token op) {
+    public void requireThrowsWrapping(FuncInfo candidate, Token op) {
         if (candidate.isThrows && !op.chk.insideTry && !op.chk.coveredByThrowingNew) {
             throw new CompilerException("type", op.file, op.line,
                     "call to '" + candidate.name + "', which is decorated '@throws', must be wrapped in "
@@ -1780,7 +1756,7 @@ public final class TypeCheckerControlFlow {
     // ---- expression type resolution -----------------------------------
 
     /** Type of an expression; runs on the check driver, which resolves nested expressions without recursion. */
-    public TypeCheckerModel.TypeInfo resolveExprType(Token node, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+    public TypeInfo resolveExprType(Token node, Scope scope, FuncInfo func) {
         return hub.driver.run(new CheckFrame(CheckFrame.EXPR, node, scope, func));
     }
 }

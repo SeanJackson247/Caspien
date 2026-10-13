@@ -50,7 +50,7 @@ public final class TypeCheckerImpls {
             throw new CompilerException("type", t.file, t.line,
                     "'" + concreteName + "' is not a known struct or enum");
         }
-        TypeCheckerModel.InterfaceInfo interfaceInfo = null;
+        InterfaceInfo interfaceInfo = null;
         if (interfaceName != null) {
             interfaceInfo = hub.model.interfaces.get(interfaceName);
             if (interfaceInfo == null) {
@@ -63,7 +63,7 @@ public final class TypeCheckerImpls {
             }
         }
 
-        TypeCheckerModel.ImplInfo implInfo = new TypeCheckerModel.ImplInfo();
+        ImplInfo implInfo = new ImplInfo();
         implInfo.interfaceName = interfaceName;
         implInfo.concreteName = concreteName;
         implInfo.declTok = t;
@@ -81,11 +81,11 @@ public final class TypeCheckerImpls {
                 // Generic constructor wrapped by Parser.gatherConstructorImpl: registered as an ordinary overload in
                 // `functions` (like collectFunc) but left in t.childs for BytecodeEmitter. See docs/TypeChecker.md,
                 // "Impl collection".
-                TypeCheckerModel.FuncInfo ctorInfo = new TypeCheckerModel.FuncInfo();
+                FuncInfo ctorInfo = new FuncInfo();
                 ctorInfo.funcToken = methodTok;
                 try {
                     hub.signatures.buildFuncInfo(methodTok, ctorInfo);
-                } catch (TypeCheckerModel.DeferredSignatureException e) {
+                } catch (DeferredSignatureException e) {
                     hub.declarations.recordUnavailable(methodTok.declName().text, "constructor", concreteName, true, e);
                     genericTemplateTokensToRemove.add(methodTok);
                     droppedUnavailable = true;
@@ -104,8 +104,8 @@ public final class TypeCheckerImpls {
                             "'" + ctorInfo.name + "' collides with an already-declared 'const "
                                     + ctorInfo.name + "'");
                 }
-                List<TypeCheckerModel.FuncInfo> ctorOverloads = hub.model.functions.computeIfAbsent(ctorInfo.name, k -> new ArrayList<>());
-                for (TypeCheckerModel.FuncInfo existing : ctorOverloads) {
+                List<FuncInfo> ctorOverloads = hub.model.functions.computeIfAbsent(ctorInfo.name, k -> new ArrayList<>());
+                for (FuncInfo existing : ctorOverloads) {
                     if (hub.signatures.sameSignature(existing, ctorInfo)) {
                         throw new CompilerException("type", methodTok.file, methodTok.line,
                                 "constructor '" + t.sub.get(t.sub.size() - 1).text
@@ -163,11 +163,11 @@ public final class TypeCheckerImpls {
                 }
             }
 
-            TypeCheckerModel.FuncInfo info = new TypeCheckerModel.FuncInfo();
+            FuncInfo info = new FuncInfo();
             info.funcToken = methodTok;
             try {
                 hub.signatures.buildFuncInfo(methodTok, info);
-            } catch (TypeCheckerModel.DeferredSignatureException e) {
+            } catch (DeferredSignatureException e) {
                 hub.declarations.recordUnavailable(concreteName + "." + methodTok.declName().text, methodTok.declName().text,
                         concreteName, false, e);
                 genericTemplateTokensToRemove.add(methodTok);
@@ -190,11 +190,11 @@ public final class TypeCheckerImpls {
         t.childs.removeAll(genericTemplateTokensToRemove);
 
         if (interfaceInfo != null) {
-            for (Map.Entry<String, TypeCheckerModel.RawMethodSig> entry : interfaceInfo.methods.entrySet()) {
+            for (Map.Entry<String, RawMethodSig> entry : interfaceInfo.methods.entrySet()) {
                 String methodName = entry.getKey();
-                TypeCheckerModel.RawMethodSig ifaceSig = entry.getValue();
+                RawMethodSig ifaceSig = entry.getValue();
                 boolean ifaceIsStatic = ifaceSig.isStatic;
-                LinkedHashMap<String, TypeCheckerModel.FuncInfo> implMap = ifaceIsStatic ? implInfo.staticMethods : implInfo.methods;
+                LinkedHashMap<String, FuncInfo> implMap = ifaceIsStatic ? implInfo.staticMethods : implInfo.methods;
                 if (!implMap.containsKey(methodName)) {
                     // An omitted method is an error unless the interface gave it a @default body (materialized below).
                     if (ifaceSig.isDefault) {
@@ -205,9 +205,9 @@ public final class TypeCheckerImpls {
                                     + (ifaceIsStatic ? "static " : "") + "method '" + methodName + "'");
                 }
             }
-            for (Map.Entry<String, TypeCheckerModel.FuncInfo> entry : implInfo.methods.entrySet()) {
+            for (Map.Entry<String, FuncInfo> entry : implInfo.methods.entrySet()) {
                 String methodName = entry.getKey();
-                TypeCheckerModel.RawMethodSig ifaceSig = interfaceInfo.methods.get(methodName);
+                RawMethodSig ifaceSig = interfaceInfo.methods.get(methodName);
                 if (ifaceSig == null || ifaceSig.isStatic) {
                     throw new CompilerException("type", t.file, t.line,
                             "impl of '" + interfaceName + "' for '" + concreteName + "' declares '"
@@ -219,9 +219,9 @@ public final class TypeCheckerImpls {
                 requireIdenticalLocks(entry.getValue(), ifaceSig, concreteName, interfaceName);
                 requirePublicInterfaceImpl(entry.getValue(), methodName, concreteName, interfaceName);
             }
-            for (Map.Entry<String, TypeCheckerModel.FuncInfo> entry : implInfo.staticMethods.entrySet()) {
+            for (Map.Entry<String, FuncInfo> entry : implInfo.staticMethods.entrySet()) {
                 String methodName = entry.getKey();
-                TypeCheckerModel.RawMethodSig ifaceSig = interfaceInfo.methods.get(methodName);
+                RawMethodSig ifaceSig = interfaceInfo.methods.get(methodName);
                 if (ifaceSig == null || !ifaceSig.isStatic) {
                     throw new CompilerException("type", t.file, t.line,
                             "impl of '" + interfaceName + "' for '" + concreteName + "' declares static '"
@@ -235,10 +235,10 @@ public final class TypeCheckerImpls {
             }
 
             // Materialize omitted @default methods last, after every written method has been validated.
-            for (Map.Entry<String, TypeCheckerModel.RawMethodSig> entry : interfaceInfo.methods.entrySet()) {
+            for (Map.Entry<String, RawMethodSig> entry : interfaceInfo.methods.entrySet()) {
                 String methodName = entry.getKey();
-                TypeCheckerModel.RawMethodSig ifaceSig = entry.getValue();
-                LinkedHashMap<String, TypeCheckerModel.FuncInfo> implMap = ifaceSig.isStatic ? implInfo.staticMethods : implInfo.methods;
+                RawMethodSig ifaceSig = entry.getValue();
+                LinkedHashMap<String, FuncInfo> implMap = ifaceSig.isStatic ? implInfo.staticMethods : implInfo.methods;
                 if (!implMap.containsKey(methodName) && ifaceSig.isDefault) {
                     materializeDefaultMethod(implInfo, concreteName, interfaceName, methodName, ifaceSig,
                             safetyTag, t);
@@ -260,8 +260,8 @@ public final class TypeCheckerImpls {
         if (constructorsOnlyImpl) {
             return;
         }
-        List<TypeCheckerModel.ImplInfo> existingImpls = hub.model.implsByConcreteType.computeIfAbsent(concreteName, k -> new ArrayList<>());
-        for (TypeCheckerModel.ImplInfo existing : existingImpls) {
+        List<ImplInfo> existingImpls = hub.model.implsByConcreteType.computeIfAbsent(concreteName, k -> new ArrayList<>());
+        for (ImplInfo existing : existingImpls) {
             if (interfaceName == null && existing.interfaceName == null) {
                 throw new CompilerException("type", t.file, t.line,
                         "'" + concreteName + "' already has a bare 'impl' block");
@@ -270,9 +270,9 @@ public final class TypeCheckerImpls {
                 throw new CompilerException("type", t.file, t.line,
                         "'" + concreteName + "' already implements '" + interfaceName + "'");
             }
-            for (Map.Entry<String, TypeCheckerModel.FuncInfo> entry : implInfo.methods.entrySet()) {
-                TypeCheckerModel.FuncInfo mine = entry.getValue();
-                for (TypeCheckerModel.FuncInfo existingMethod : existing.candidates(mine.name, false)) {
+            for (Map.Entry<String, FuncInfo> entry : implInfo.methods.entrySet()) {
+                FuncInfo mine = entry.getValue();
+                for (FuncInfo existingMethod : existing.candidates(mine.name, false)) {
                     if (hub.signatures.sameSignature(existingMethod, mine)) {
                         throw new CompilerException("type", t.file, t.line,
                                 "method '" + mine.name + "' for '" + concreteName + "' is ambiguous: "
@@ -283,9 +283,9 @@ public final class TypeCheckerImpls {
                     }
                 }
             }
-            for (Map.Entry<String, TypeCheckerModel.FuncInfo> entry : implInfo.staticMethods.entrySet()) {
-                TypeCheckerModel.FuncInfo mine = entry.getValue();
-                for (TypeCheckerModel.FuncInfo existingMethod : existing.candidates(mine.name, true)) {
+            for (Map.Entry<String, FuncInfo> entry : implInfo.staticMethods.entrySet()) {
+                FuncInfo mine = entry.getValue();
+                for (FuncInfo existingMethod : existing.candidates(mine.name, true)) {
                     if (hub.signatures.sameSignature(existingMethod, mine)) {
                         throw new CompilerException("type", t.file, t.line,
                                 "static method '" + mine.name + "' for '" + concreteName + "' is ambiguous: "
@@ -305,8 +305,8 @@ public final class TypeCheckerImpls {
      * deep-cloned per impl and none of the user-impl validations apply. See docs/TypeChecker.md, "Default
      * interface methods".
      */
-    public void materializeDefaultMethod(TypeCheckerModel.ImplInfo implInfo, String concreteName, String interfaceName,
-            String methodName, TypeCheckerModel.RawMethodSig ifaceSig, String safetyTag, Token implDeclTok) {
+    public void materializeDefaultMethod(ImplInfo implInfo, String concreteName, String interfaceName,
+            String methodName, RawMethodSig ifaceSig, String safetyTag, Token implDeclTok) {
         // The default body was never RPN-converted or tree-built (RpnConverter/TreeBuilder skip "interface"), so wrap
         // the clone and convert it here.
         Token methodTok = deepCloneCheckedTree(ifaceSig.defaultBodyTok);
@@ -320,7 +320,7 @@ public final class TypeCheckerImpls {
             substituteSelfInPlace(methodTok.paramsTok().childs, concreteName);
             substituteSelfInPlace(methodTok.returnTypeTokens(), concreteName);
         }
-        TypeCheckerModel.FuncInfo info = new TypeCheckerModel.FuncInfo();
+        FuncInfo info = new FuncInfo();
         info.funcToken = methodTok;
         hub.signatures.buildFuncInfo(methodTok, info);
         // Must be public to satisfy the interface; forced because the @default source need not carry @pub.
@@ -331,7 +331,7 @@ public final class TypeCheckerImpls {
         String methodNamePart = methodTok.isStaticMethod ? "static_" + info.name : info.name;
         info.mangledName = concreteName + "__" + interfaceName + "_" + methodNamePart;
         hub.declarations.validateMethodLocks(methodTok.decorators, info.paramNames, info.paramTypes, concreteName);
-        LinkedHashMap<String, TypeCheckerModel.FuncInfo> targetMap = methodTok.isStaticMethod
+        LinkedHashMap<String, FuncInfo> targetMap = methodTok.isStaticMethod
                 ? implInfo.staticMethods : implInfo.methods;
         targetMap.put(info.name, info);
         // BytecodeEmitter emits impl methods by walking the impl token's childs (matching FuncInfo by Token identity),
@@ -352,7 +352,7 @@ public final class TypeCheckerImpls {
      */
     public void collectLibrary(Token t, String safetyTag) {
         String name = t.declName().text;
-        TypeCheckerModel.LibraryInfo info = hub.model.libraries.get(name);
+        LibraryInfo info = hub.model.libraries.get(name);
         info.ownFunctions = new LinkedHashMap<>();
         for (Token funcTok : t.childs) {
             hub.declarations.forbidSelfReference(funcTok, "a library function");
@@ -364,7 +364,7 @@ public final class TypeCheckerImpls {
                                     + "not a library function");
                 }
             }
-            TypeCheckerModel.FuncInfo fi = new TypeCheckerModel.FuncInfo();
+            FuncInfo fi = new FuncInfo();
             fi.funcToken = funcTok;
             hub.signatures.buildFuncInfo(funcTok, fi);
             fi.enclosingLibrary = info;
@@ -372,8 +372,8 @@ public final class TypeCheckerImpls {
             fi.safetyTag = safetyTag;
             fi.mangledName = name + "_" + fi.name + "__sig_" + signatureSuffix(fi.paramTypes);
 
-            List<TypeCheckerModel.FuncInfo> overloads = info.ownFunctions.computeIfAbsent(fi.name, k -> new ArrayList<>());
-            for (TypeCheckerModel.FuncInfo existing : overloads) {
+            List<FuncInfo> overloads = info.ownFunctions.computeIfAbsent(fi.name, k -> new ArrayList<>());
+            for (FuncInfo existing : overloads) {
                 if (hub.signatures.sameSignature(existing, fi)) {
                     throw new CompilerException("type", funcTok.file, funcTok.line,
                             "library '" + name + "' already declares a function named '" + fi.name
@@ -389,21 +389,21 @@ public final class TypeCheckerImpls {
      * "<first>__sig_<signature>"; the first keeps its name). An interface impl cannot overload. See
      * docs/TypeChecker.md, "Impl method overloading".
      */
-    public void registerImplMethod(TypeCheckerModel.ImplInfo implInfo, TypeCheckerModel.FuncInfo info, Token methodTok, String concreteName,
+    public void registerImplMethod(ImplInfo implInfo, FuncInfo info, Token methodTok, String concreteName,
             boolean hasInterface) {
         boolean isStatic = methodTok.isStaticMethod;
-        LinkedHashMap<String, TypeCheckerModel.FuncInfo> targetMap = isStatic ? implInfo.staticMethods : implInfo.methods;
-        LinkedHashMap<String, List<TypeCheckerModel.FuncInfo>> overloadMap =
+        LinkedHashMap<String, FuncInfo> targetMap = isStatic ? implInfo.staticMethods : implInfo.methods;
+        LinkedHashMap<String, List<FuncInfo>> overloadMap =
                 isStatic ? implInfo.staticMethodOverloads : implInfo.methodOverloads;
         String kind = isStatic ? "static " : "";
-        List<TypeCheckerModel.FuncInfo> existing = overloadMap.get(info.name);
+        List<FuncInfo> existing = overloadMap.get(info.name);
         if (existing == null && targetMap.containsKey(info.name)) {
             existing = new ArrayList<>();
             existing.add(targetMap.get(info.name));
         }
         if (existing == null) {
             targetMap.put(info.name, info);
-            List<TypeCheckerModel.FuncInfo> fresh = new ArrayList<>();
+            List<FuncInfo> fresh = new ArrayList<>();
             fresh.add(info);
             overloadMap.put(info.name, fresh);
             return;
@@ -413,7 +413,7 @@ public final class TypeCheckerImpls {
                     "'" + concreteName + "' already has a " + kind + "method named '" + info.name
                             + "' in this impl block");
         }
-        for (TypeCheckerModel.FuncInfo other : existing) {
+        for (FuncInfo other : existing) {
             if (hub.signatures.sameSignature(other, info)) {
                 throw new CompilerException("type", methodTok.file, methodTok.line,
                         "'" + concreteName + "' already has a " + kind + "method named '" + info.name
@@ -432,7 +432,7 @@ public final class TypeCheckerImpls {
      * Parameter-type suffix for overload mangled names; always appended for library functions so same-named
      * overloads never collide at FUNC_START/CALL.
      */
-    public String signatureSuffix(List<TypeCheckerModel.TypeInfo> paramTypes) {
+    public String signatureSuffix(List<TypeInfo> paramTypes) {
         if (paramTypes.isEmpty()) {
             return "void";
         }
@@ -460,7 +460,7 @@ public final class TypeCheckerImpls {
         while (!stack.isEmpty()) {
             Object[] f = stack.peek();
             String name = (String) f[0];
-            TypeCheckerModel.LibraryInfo info = hub.model.libraries.get(name);
+            LibraryInfo info = hub.model.libraries.get(name);
             if (f[1] == null) {
                 if (info == null || info.flattened) {
                     stack.pop();
@@ -474,9 +474,9 @@ public final class TypeCheckerImpls {
                 f[1] = info.extendsNames.iterator();
             }
             if (f[2] != null) {
-                TypeCheckerModel.LibraryInfo parentInfo = hub.model.libraries.get((String) f[2]);
+                LibraryInfo parentInfo = hub.model.libraries.get((String) f[2]);
                 f[2] = null;
-                for (Map.Entry<String, List<TypeCheckerModel.FuncInfo>> e : parentInfo.functions.entrySet()) {
+                for (Map.Entry<String, List<FuncInfo>> e : parentInfo.functions.entrySet()) {
                     mergeLibraryOverloads(info, name, e.getKey(), e.getValue());
                 }
             }
@@ -492,7 +492,7 @@ public final class TypeCheckerImpls {
                 stack.push(new Object[]{parentName, null, null});
                 continue;
             }
-            for (Map.Entry<String, List<TypeCheckerModel.FuncInfo>> e : info.ownFunctions.entrySet()) {
+            for (Map.Entry<String, List<FuncInfo>> e : info.ownFunctions.entrySet()) {
                 mergeLibraryOverloads(info, name, e.getKey(), e.getValue());
             }
             info.flattened = true;
@@ -505,10 +505,10 @@ public final class TypeCheckerImpls {
      * Merges one function name's overloads into `info.functions`, rejecting only a full-signature collision (see
      * flattenLibrary).
      */
-    public void mergeLibraryOverloads(TypeCheckerModel.LibraryInfo info, String name, String funcName, List<TypeCheckerModel.FuncInfo> incoming) {
-        List<TypeCheckerModel.FuncInfo> existing = info.functions.computeIfAbsent(funcName, k -> new ArrayList<>());
-        for (TypeCheckerModel.FuncInfo candidate : incoming) {
-            for (TypeCheckerModel.FuncInfo already : existing) {
+    public void mergeLibraryOverloads(LibraryInfo info, String name, String funcName, List<FuncInfo> incoming) {
+        List<FuncInfo> existing = info.functions.computeIfAbsent(funcName, k -> new ArrayList<>());
+        for (FuncInfo candidate : incoming) {
+            for (FuncInfo already : existing) {
                 if (hub.signatures.sameSignature(already, candidate)) {
                     throw new CompilerException("type", info.declTok.file, info.declTok.line,
                             "library '" + name + "' inherits a function named '" + funcName
@@ -524,8 +524,8 @@ public final class TypeCheckerImpls {
      * Library visibility, mirroring checkImplMethodVisibility: the declaring library must be @pub (or in the same
      * file), then the function must be public or called from the same library.
      */
-    public void requireLibraryVisibility(TypeCheckerModel.FuncInfo candidate, String funcName, Token at, TypeCheckerModel.FuncInfo callerFunc) {
-        TypeCheckerModel.LibraryInfo declLib = candidate.enclosingLibrary;
+    public void requireLibraryVisibility(FuncInfo candidate, String funcName, Token at, FuncInfo callerFunc) {
+        LibraryInfo declLib = candidate.enclosingLibrary;
         String declFile = candidate.funcToken.file;
         boolean sameFile = declFile.equals(at.file);
         if (!declLib.isPublic && !sameFile) {
@@ -543,7 +543,7 @@ public final class TypeCheckerImpls {
         }
     }
 
-    public TypeCheckerModel.TypeInfo checkLibraryCall(Token op, String libName, String funcName, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+    public TypeInfo checkLibraryCall(Token op, String libName, String funcName, Scope scope, FuncInfo func) {
         CheckFrame f = new CheckFrame(CheckFrame.LIBRARY_CALL, op, scope, func);
         f.s1 = libName;
         f.s2 = funcName;
@@ -552,14 +552,14 @@ public final class TypeCheckerImpls {
 
     public int stepLibraryCall(CheckFrame f) {
         Token op = f.node;
-        TypeCheckerModel.Scope scope = f.scope;
-        TypeCheckerModel.FuncInfo func = f.func;
+        Scope scope = f.scope;
+        FuncInfo func = f.func;
         String libName = f.s1;
         String funcName = f.s2;
         if (f.phase == 0) {
 
-            TypeCheckerModel.LibraryInfo lib = hub.model.libraries.get(libName);
-            List<TypeCheckerModel.FuncInfo> overloads = lib.functions.get(funcName);
+            LibraryInfo lib = hub.model.libraries.get(libName);
+            List<FuncInfo> overloads = lib.functions.get(funcName);
             if (overloads == null) {
                 throw new CompilerException("type", op.file, op.line,
                         "'" + libName + "' has no function named '" + funcName + "'");
@@ -575,14 +575,14 @@ public final class TypeCheckerImpls {
             return f.callAll(f.toks);
         }
         @SuppressWarnings("unchecked")
-        List<TypeCheckerModel.FuncInfo> overloads = (List<TypeCheckerModel.FuncInfo>) f.data;
+        List<FuncInfo> overloads = (List<FuncInfo>) f.data;
         return f.done(libraryCallTail(op, scope, func, libName, funcName, overloads, f.toks, f.gotFrame.list));
     }
 
-    private TypeCheckerModel.TypeInfo libraryCallTail(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func, String libName, String funcName,
-            List<TypeCheckerModel.FuncInfo> overloads, List<Token> argNodes, List<TypeCheckerModel.TypeInfo> argTypes) {
+    private TypeInfo libraryCallTail(Token op, Scope scope, FuncInfo func, String libName, String funcName,
+            List<FuncInfo> overloads, List<Token> argNodes, List<TypeInfo> argTypes) {
 
-        for (TypeCheckerModel.FuncInfo candidate : hub.orderByLiteralExactness(overloads, argTypes)) {
+        for (FuncInfo candidate : hub.orderByLiteralExactness(overloads, argTypes)) {
             if (candidate.paramTypes.size() != argTypes.size()) {
                 continue;
             }
@@ -616,7 +616,7 @@ public final class TypeCheckerImpls {
                     hub.statements.requireRecursiveCallWithinProof(func, op, argNodes, argTypes, scope);
                 }
                 requirePureCalleeIfPure(func, candidate, op);
-                hub.model.callEdges.add(new TypeCheckerModel.CallEdge(func, candidate, scope.currentSafety, op, scope.insideDynArrayForLoopBody));
+                hub.model.callEdges.add(new CallEdge(func, candidate, scope.currentSafety, op, scope.insideDynArrayForLoopBody));
                 return candidate.returnType;
             }
         }
@@ -626,7 +626,7 @@ public final class TypeCheckerImpls {
         }
 
 
-    public String describeImplSource(TypeCheckerModel.ImplInfo info) {
+    public String describeImplSource(ImplInfo info) {
         return info.interfaceName != null
                 ? "impl " + info.interfaceName + " for " + info.concreteName
                 : "impl " + info.concreteName;
@@ -654,7 +654,7 @@ public final class TypeCheckerImpls {
     }
 
     /** Every method satisfying an interface must be @pub (interface members are public). */
-    public void requirePublicInterfaceImpl(TypeCheckerModel.FuncInfo implMethod, String methodName, String concreteName,
+    public void requirePublicInterfaceImpl(FuncInfo implMethod, String methodName, String concreteName,
             String interfaceName) {
         if (!implMethod.isPublic) {
             throw new CompilerException("type", implMethod.funcToken.file, implMethod.funcToken.line,
@@ -667,7 +667,7 @@ public final class TypeCheckerImpls {
      * Each interface-impl method must carry exactly one of @overrides (the interface method is @default) or
      * @realizes (it is a plain signature).
      */
-    public void validateOverridesRealizes(TypeCheckerModel.FuncInfo implMethod, TypeCheckerModel.RawMethodSig interfaceMethod,
+    public void validateOverridesRealizes(FuncInfo implMethod, RawMethodSig interfaceMethod,
             String concreteName, String interfaceName) {
         List<Token.Decorator> decorators = implMethod.funcToken.decorators;
         boolean hasOverrides = hasDecorator(decorators, "overrides");
@@ -707,7 +707,7 @@ public final class TypeCheckerImpls {
      * An interface method's "@lock(match ...)" qualifiers must be repeated exactly, in order, by each implementing
      * method; "in"-style clauses match by parameter position, not name.
      */
-    public void requireIdenticalLocks(TypeCheckerModel.FuncInfo actual, TypeCheckerModel.RawMethodSig ifaceSig, String concreteName,
+    public void requireIdenticalLocks(FuncInfo actual, RawMethodSig ifaceSig, String concreteName,
             String interfaceName) {
         List<Token.Decorator> ifaceLocks = filterQualifiedLockDecorators(ifaceSig.decorators);
         List<Token.Decorator> implLocks = filterQualifiedLockDecorators(actual.funcToken.decorators);
@@ -799,8 +799,8 @@ public final class TypeCheckerImpls {
      * True when `t` is a struct with a swap-tagged mutex field: the only kind of global/static safe code may touch
      * directly.
      */
-    public boolean isSwapLockStructType(TypeCheckerModel.TypeInfo t) {
-        TypeCheckerModel.StructInfo structInfo = hub.model.structs.get(t.baseType);
+    public boolean isSwapLockStructType(TypeInfo t) {
+        StructInfo structInfo = hub.model.structs.get(t.baseType);
         return structInfo != null && structInfo.swapFieldName != null;
     }
 
@@ -821,7 +821,7 @@ public final class TypeCheckerImpls {
      * (`isAtomic`, and then only from `unsafe atomic{}`) or a struct declaring a 'swap'-tagged atomic mutex-state field
      * (`isSwapLockStructType`, touched through its own `match @lock`).
      */
-    public void requireSharedStateOrUnsafe(TypeCheckerModel.TypeInfo t, String name, TypeCheckerModel.Scope scope, Token at) {
+    public void requireSharedStateOrUnsafe(TypeInfo t, String name, Scope scope, Token at) {
         if (t.isAtomic) {
             // An atomic primitive: each access is one atomic step but program correctness cannot be checked, so every
             // access needs an audited `unsafe atomic{}`.
@@ -843,7 +843,7 @@ public final class TypeCheckerImpls {
      * A @pure function may not read mutable globals/statics (imut ones are fine); @pure(rt) may read none. Unsafe
      * code is not exempt. See docs/TypeChecker.md, "Purity".
      */
-    public void requirePureDoesNotReadMutableStatic(TypeCheckerModel.TypeInfo t, String name, TypeCheckerModel.FuncInfo func, Token at) {
+    public void requirePureDoesNotReadMutableStatic(TypeInfo t, String name, FuncInfo func, Token at) {
         if (isPureRtFunc(func)) {
             throw new CompilerException("type", at.file, at.line,
                     "'" + func.name + "' is '@pure(rt)' and cannot read '" + name
@@ -856,7 +856,7 @@ public final class TypeCheckerImpls {
         }
     }
 
-    public void validateExactSignatureMatch(TypeCheckerModel.RawMethodSig rawSig, TypeCheckerModel.FuncInfo actual, String concreteName,
+    public void validateExactSignatureMatch(RawMethodSig rawSig, FuncInfo actual, String concreteName,
             String interfaceName) {
         List<List<Token>> rawParamGroups = hub.signatures.splitIntoRawGroups(rawSig.paramsTok.childs);
         if (rawParamGroups.size() != actual.paramTypes.size()) {
@@ -868,8 +868,8 @@ public final class TypeCheckerImpls {
         for (int i = 0; i < rawParamGroups.size(); i++) {
             List<Token> group = rawParamGroups.get(i);
             List<Token> typeTokens = substituteSelfCopy(group.subList(2, group.size()), concreteName);
-            TypeCheckerModel.TypeInfo expected = hub.signatures.resolveTypeAnnotation(typeTokens, group.get(0));
-            TypeCheckerModel.TypeInfo got = actual.paramTypes.get(i);
+            TypeInfo expected = hub.signatures.resolveTypeAnnotation(typeTokens, group.get(0));
+            TypeInfo got = actual.paramTypes.get(i);
             if (!expected.canonical().equals(got.canonical())) {
                 throw new CompilerException("type", actual.funcToken.file, actual.funcToken.line,
                         "method '" + actual.name + "' parameter " + (i + 1) + " must be exactly '"
@@ -878,8 +878,8 @@ public final class TypeCheckerImpls {
             }
         }
         List<Token> returnTypeTokens = substituteSelfCopy(rawSig.returnTypeTokens, concreteName);
-        TypeCheckerModel.TypeInfo expectedReturn = returnTypeTokens.isEmpty()
-                ? new TypeCheckerModel.TypeInfo(null, "imut", "void")
+        TypeInfo expectedReturn = returnTypeTokens.isEmpty()
+                ? new TypeInfo(null, "imut", "void")
                 : hub.signatures.resolveTypeAnnotation(returnTypeTokens, rawSig.nameTok, true);
         if (!expectedReturn.canonical().equals(actual.returnType.canonical())) {
             throw new CompilerException("type", actual.funcToken.file, actual.funcToken.line,
@@ -889,8 +889,8 @@ public final class TypeCheckerImpls {
         }
     }
     /** `@drop` marks a struct's cleanup function: the drop glue calls it with the struct's address just before the struct (an `owns` value) is freed, so a handle type can close what it holds. It takes exactly one parameter, `ref some mut S` for a struct S, returns void and does not throw. */
-    public void requireDropHookShape(Token t, TypeCheckerModel.FuncInfo info, List<Token> returnTypeTokens) {
-        TypeCheckerModel.TypeInfo p = info.paramTypes.size() == 1 ? info.paramTypes.get(0) : null;
+    public void requireDropHookShape(Token t, FuncInfo info, List<Token> returnTypeTokens) {
+        TypeInfo p = info.paramTypes.size() == 1 ? info.paramTypes.get(0) : null;
         boolean shapeOk = p != null && "ref".equals(p.storage) && p.isSome && hub.model.structs.containsKey(p.baseType);
         if (!shapeOk || info.isThrows || info.isAsync) {
             throw new CompilerException("type", t.file, t.line,
@@ -915,7 +915,7 @@ public final class TypeCheckerImpls {
     }
 
     /** Checks the file-system rules of a call to a static method carrying '@fs_root' (literal path, checked against fs-roots) or '@fs_unsafe' (needs 'unsafe file'). */
-    public void checkFsPolicyAtCall(TypeCheckerModel.FuncInfo callee, Token op, List<Token> argNodes, TypeCheckerModel.Scope scope) {
+    public void checkFsPolicyAtCall(FuncInfo callee, Token op, List<Token> argNodes, Scope scope) {
         Token.Decorator root = getDecorator(callee.funcToken.decorators, "fs_root");
         if (root != null) {
             boolean rw = !root.args.isEmpty() && root.args.get(0).equals("rw");
@@ -961,10 +961,10 @@ public final class TypeCheckerImpls {
             if (hub.model.dropHookOwners.containsKey(id)) {
                 return true;
             }
-            TypeCheckerModel.StructInfo si = hub.model.structs.get(id);
+            StructInfo si = hub.model.structs.get(id);
             if (si != null) {
                 List<String> memberIds = new ArrayList<>();
-                for (TypeCheckerModel.TypeInfo m : si.members.values()) {
+                for (TypeInfo m : si.members.values()) {
                     if (m.baseType != null) {
                         memberIds.addAll(Arrays.asList(m.baseType.split("[^A-Za-z0-9_]+")));
                     }
@@ -1000,12 +1000,12 @@ public final class TypeCheckerImpls {
         return d != null ? d.args.get(0) : hub.model.config.defaultConvention;
     }
 
-    public boolean isPureFunc(TypeCheckerModel.FuncInfo f) {
+    public boolean isPureFunc(FuncInfo f) {
         return f != null && f.funcToken != null && getDecorator(f.funcToken.decorators, "pure") != null;
     }
 
     /** `@pure(rt)`: referentially transparent (the argument was validated to be exactly `rt`). */
-    public boolean isPureRtFunc(TypeCheckerModel.FuncInfo f) {
+    public boolean isPureRtFunc(FuncInfo f) {
         if (f == null || f.funcToken == null) {
             return false;
         }
@@ -1014,7 +1014,7 @@ public final class TypeCheckerImpls {
     }
 
     /** Things a plain `@pure` function (and therefore a `@pure(rt)` one) may not do: unsafe code, the `match @lock` spin lock, threads. Compiler-synthesized unsafe blocks never reach this. */
-    public void requireNotPure(TypeCheckerModel.FuncInfo func, Token at, String what, String why) {
+    public void requireNotPure(FuncInfo func, Token at, String what, String why) {
         if (isPureFunc(func)) {
             throw new CompilerException("type", at.file, at.line,
                     "'" + func.name + "' is '" + TypeCheckerModel.pureKind(isPureRtFunc(func)) + "' and cannot use " + what + " -- " + why);
@@ -1022,7 +1022,7 @@ public final class TypeCheckerImpls {
     }
 
     /** Things only a `@pure(rt)` function may not do: allocation, randomness, reading through a pointer. A plain `@pure` function may (they are non-deterministic, not side effects). */
-    public void requireNotPureRt(TypeCheckerModel.FuncInfo func, Token at, String what, String why) {
+    public void requireNotPureRt(FuncInfo func, Token at, String what, String why) {
         if (isPureRtFunc(func)) {
             throw new CompilerException("type", at.file, at.line,
                     "'" + func.name + "' is '@pure(rt)' (referentially transparent) and cannot use " + what + " -- " + why);
@@ -1030,7 +1030,7 @@ public final class TypeCheckerImpls {
     }
 
     /** A `@pure(rt)` function never holds a pointer: no `ref`/`raw`/`owns`/`auto`/`static` typed value and no dynarray (reading through one depends on memory the arguments do not determine). */
-    public void requirePureRtNoPointer(TypeCheckerModel.TypeInfo t, Token at, TypeCheckerModel.FuncInfo func, String where) {
+    public void requirePureRtNoPointer(TypeInfo t, Token at, FuncInfo func, String where) {
         if (t != null && (t.storage != null || t.dynArrayElementType != null)) {
             throw new CompilerException("type", at.file, at.line,
                     "'" + func.name + "' is '@pure(rt)' (referentially transparent) and cannot have a pointer or dynamic array ('"
@@ -1042,7 +1042,7 @@ public final class TypeCheckerImpls {
      * Per-edge rule (not transitive): a @pure caller may only call @pure callees, a @pure(rt) caller only
      * @pure(rt) ones. Checked even in unsafe code. See docs/TypeChecker.md, "Purity".
      */
-    public void requirePureCalleeIfPure(TypeCheckerModel.FuncInfo caller, TypeCheckerModel.FuncInfo callee, Token at) {
+    public void requirePureCalleeIfPure(FuncInfo caller, FuncInfo callee, Token at) {
         if (isPureFunc(caller) && !isPureFunc(callee)) {
             throw new CompilerException("type", at.file, at.line,
                     "'" + caller.name + "' is '" + TypeCheckerModel.pureKind(isPureRtFunc(caller)) + "' and can only call other '@pure' functions -- '"
@@ -1182,7 +1182,7 @@ public final class TypeCheckerImpls {
      * Constructor bookkeeping shared by collectFunc (plain constructor) and collectImpl (monomorphized generic
      * constructor).
      */
-    public void registerConstructorFuncInfo(Token t, TypeCheckerModel.FuncInfo info) {
+    public void registerConstructorFuncInfo(Token t, FuncInfo info) {
         if (!hub.model.structs.containsKey(t.constructorConcreteName)) {
             throw new CompilerException("type", t.file, t.line,
                     "'impl constructor for " + t.constructorConcreteName + "' -- '"
@@ -1207,7 +1207,7 @@ public final class TypeCheckerImpls {
                                 + "not a plain top-level function");
             }
         }
-        TypeCheckerModel.FuncInfo info = new TypeCheckerModel.FuncInfo();
+        FuncInfo info = new FuncInfo();
         info.funcToken = t;
         hub.signatures.buildFuncInfo(t, info);
         if (t.isConstructorDecl) {
@@ -1232,8 +1232,8 @@ public final class TypeCheckerImpls {
                     "'" + info.name + "' collides with an already-declared 'const " + info.name
                             + "' -- a const and a function can't share a name");
         }
-        List<TypeCheckerModel.FuncInfo> overloads = hub.model.functions.computeIfAbsent(info.name, k -> new ArrayList<>());
-        for (TypeCheckerModel.FuncInfo existing : overloads) {
+        List<FuncInfo> overloads = hub.model.functions.computeIfAbsent(info.name, k -> new ArrayList<>());
+        for (FuncInfo existing : overloads) {
             if (hub.signatures.sameSignature(existing, info)) {
                 throw new CompilerException("type", t.file, t.line,
                         "function '" + info.name + "' with this parameter signature is already declared");
@@ -1268,7 +1268,7 @@ public final class TypeCheckerImpls {
                             + "' -- an extern and an ordinary function can't share a name");
         }
 
-        TypeCheckerModel.ExternInfo info = new TypeCheckerModel.ExternInfo();
+        ExternInfo info = new ExternInfo();
         info.name = name;
         Token.Decorator linkNameDecorator = getDecorator(t.decorators, "link_name");
         info.linkName = linkNameDecorator != null ? linkNameDecorator.args.get(0) : name;
@@ -1279,11 +1279,11 @@ public final class TypeCheckerImpls {
                     "extern '" + name + "' (links to '" + info.linkName + "') is forbidden by fs-deny-externs in the compiler's fs.config -- "
                             + "use the stdlib's fs API (Dir/File) instead");
         }
-        TypeCheckerModel.ExternParamParseResult params = parseExternParamList(paramsTok.childs, t);
+        ExternParamParseResult params = parseExternParamList(paramsTok.childs, t);
         info.paramTypes.addAll(params.fixedTypes);
         info.hasVarargs = params.hasVarargs;
         info.returnType = returnTypeTokens.isEmpty()
-                ? new TypeCheckerModel.TypeInfo(null, "imut", "void")
+                ? new TypeInfo(null, "imut", "void")
                 : hub.signatures.resolveTypeAnnotation(returnTypeTokens, t, true);
 
         // Same by-pointer-only return rule as ordinary functions.
@@ -1301,9 +1301,9 @@ public final class TypeCheckerImpls {
      * Splits an extern's params into bare types (no "name :"); a final '...' marks varargs and is rejected
      * anywhere else.
      */
-    public TypeCheckerModel.ExternParamParseResult parseExternParamList(List<Token> flat, Token at) {
+    public ExternParamParseResult parseExternParamList(List<Token> flat, Token at) {
         List<List<Token>> groups = hub.signatures.splitIntoRawGroups(flat);
-        List<TypeCheckerModel.TypeInfo> types = new ArrayList<>();
+        List<TypeInfo> types = new ArrayList<>();
         boolean hasVarargs = false;
         for (int i = 0; i < groups.size(); i++) {
             List<Token> group = groups.get(i);
@@ -1319,14 +1319,14 @@ public final class TypeCheckerImpls {
             }
             types.add(hub.signatures.resolveTypeAnnotation(group, at));
         }
-        return new TypeCheckerModel.ExternParamParseResult(types, hasVarargs);
+        return new ExternParamParseResult(types, hasVarargs);
     }
 
     /** "export foo": foo must be a declared, overload-free, non-generic top-level func. */
     public void collectExport(Token t) {
         Token nameTok = t.declName();
         String name = nameTok.text;
-        List<TypeCheckerModel.FuncInfo> overloads = hub.model.functions.get(name);
+        List<FuncInfo> overloads = hub.model.functions.get(name);
         if (overloads == null || overloads.isEmpty()) {
             throw new CompilerException("type", t.file, t.line,
                     "'export " + name + "' does not name a declared function");
@@ -1337,7 +1337,7 @@ public final class TypeCheckerImpls {
                             + " overloads, and C has no overloading; only an overload-free function "
                             + "can be exported");
         }
-        TypeCheckerModel.FuncInfo info = overloads.get(0);
+        FuncInfo info = overloads.get(0);
         if (info.funcToken.typeParams != null && !info.funcToken.typeParams.isEmpty()) {
             throw new CompilerException("type", t.file, t.line,
                     "'" + name + "' is generic and can't be exported -- C has no equivalent of a "

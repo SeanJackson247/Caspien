@@ -40,7 +40,7 @@ public final class TypeCheckerAccessAndAsync {
      * True if a live "in" (or "into") proof covers this exact index slot AND this exact lookup target
      * (the target named in the match's `in` clause, not just any array in the block).
      */
-    public boolean isProvenInBounds(Token lookupTarget, Token indexExpr, TypeCheckerModel.Scope scope) {
+    public boolean isProvenInBounds(Token lookupTarget, Token indexExpr, Scope scope) {
         String indexKey = boundsSlotKeyOf(indexExpr);
         String targetKey = boundsSlotKeyOf(lookupTarget);
         if (indexKey == null || targetKey == null) {
@@ -57,7 +57,7 @@ public final class TypeCheckerAccessAndAsync {
     }
 
     /** Write counterpart of isProvenInBounds: only an "into" proof for the exact (index, target) pair. Mutability is checked separately by requireMutable. */
-    public boolean isProvenWritable(Token lookupTarget, Token indexExpr, TypeCheckerModel.Scope scope) {
+    public boolean isProvenWritable(Token lookupTarget, Token indexExpr, Scope scope) {
         String indexKey = boundsSlotKeyOf(indexExpr);
         String targetKey = boundsSlotKeyOf(lookupTarget);
         if (indexKey == null || targetKey == null) {
@@ -77,7 +77,7 @@ public final class TypeCheckerAccessAndAsync {
      * LOOKUP target: a literal provably-safe access needs nothing more, everything else needs an "into"
      * proof for this exact (index, target) ("arr[i+1] = .." does not qualify).
      */
-    public void requireLookupWriteAuthorized(Token lookupOp, TypeCheckerModel.Scope scope) {
+    public void requireLookupWriteAuthorized(Token lookupOp, Scope scope) {
         if (!lookupOp.chk.isLookupProofReliant) {
             return;
         }
@@ -109,8 +109,8 @@ public final class TypeCheckerAccessAndAsync {
     }
 
     /** A non-public struct member is referenceable only in an impl for that struct (or an interface impl on it). */
-    public void checkStructMemberVisibility(TypeCheckerModel.StructInfo structInfo, String receiverStructName, String memberName,
-            Token at, TypeCheckerModel.FuncInfo callerFunc) {
+    public void checkStructMemberVisibility(StructInfo structInfo, String receiverStructName, String memberName,
+            Token at, FuncInfo callerFunc) {
         if (structInfo.publicMembers.contains(memberName)) {
             return;
         }
@@ -134,7 +134,7 @@ public final class TypeCheckerAccessAndAsync {
      * acquire/release access (Token.isCompilerSynthesizedSwapAccess). Struct-literal construction is a
      * separate path and needs no unsafe.
      */
-    public void requireSwapFieldAccessAuthorized(TypeCheckerModel.StructInfo structInfo, String memberName, TypeCheckerModel.Scope scope, Token op) {
+    public void requireSwapFieldAccessAuthorized(StructInfo structInfo, String memberName, Scope scope, Token op) {
         if (!memberName.equals(structInfo.swapFieldName)) {
             return;
         }
@@ -151,13 +151,13 @@ public final class TypeCheckerAccessAndAsync {
      * enum) or instance.member (left resolved as an expression; chains work as '.' is left-associative).
      * A declared local shadows an enum of the same name.
      */
-    public TypeCheckerModel.TypeInfo checkDot(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+    public TypeInfo checkDot(Token op, Scope scope, FuncInfo func) {
         return hub.driver.run(new CheckFrame(CheckFrame.DOT, op, scope, func));
     }
 
     public int stepDot(CheckFrame f) {
         if (f.phase == 0) {
-            TypeCheckerModel.TypeInfo early = dotHead(f.node, f.scope, f.func);
+            TypeInfo early = dotHead(f.node, f.scope, f.func);
             if (early != null) {
                 return f.done(early);
             }
@@ -167,7 +167,7 @@ public final class TypeCheckerAccessAndAsync {
         return f.done(dotTail(f.node, f.scope, f.func, f.got));
     }
 
-    private TypeCheckerModel.TypeInfo dotHead(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+    private TypeInfo dotHead(Token op, Scope scope, FuncInfo func) {
         boolean leftIsBareName = op.left.type == TokenType.VARREF;
         boolean leftIsDeclaredVar = leftIsBareName && scope.lookup(op.left.text) != null;
 
@@ -179,10 +179,10 @@ public final class TypeCheckerAccessAndAsync {
             op.chk.catchMember = op.right.text;
             op.chk.catchTry = tryTok;
             if (op.right.text.equals("msg")) {
-                return new TypeCheckerModel.TypeInfo("static", "imut", "string");
+                return new TypeInfo("static", "imut", "string");
             }
             tryTok.chk.catchUsesStackTrace = true;
-            return new TypeCheckerModel.TypeInfo("auto", "imut", "u64[" + (TraceConfig.depth + 1) + "]");
+            return new TypeInfo("auto", "imut", "u64[" + (TraceConfig.depth + 1) + "]");
         }
 
         // "X.enum" is only legal as a match condition (handled before dispatch in checkCaseMatch);
@@ -198,7 +198,7 @@ public final class TypeCheckerAccessAndAsync {
 
         if (leftIsBareName && !leftIsDeclaredVar && hub.model.enums.containsKey(op.left.text)) {
             String enumName = op.left.text;
-            TypeCheckerModel.EnumInfo enumInfo = hub.model.enums.get(enumName);
+            EnumInfo enumInfo = hub.model.enums.get(enumName);
             if (op.right.type != TokenType.VARREF) {
                 throw new CompilerException("type", op.right.file, op.right.line,
                         "expected an enum variant name after '.'");
@@ -213,16 +213,16 @@ public final class TypeCheckerAccessAndAsync {
                 // Range-valued enum variant: resolves to a literal-bounds range value (not enum-typed, not fungible).
                 long start = enumInfo.explicitRangeStarts.get(variantIdx);
                 long end = enumInfo.explicitRangeEnds.get(variantIdx);
-                return new TypeCheckerModel.TypeInfo(null, "imut", "range(" + start + "," + end + ")");
+                return new TypeInfo(null, "imut", "range(" + start + "," + end + ")");
             }
-            return new TypeCheckerModel.TypeInfo(null, "imut", enumName);
+            return new TypeInfo(null, "imut", enumName);
         }
 
         // instance.member
         return null;
     }
 
-    private TypeCheckerModel.TypeInfo dotTail(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func, TypeCheckerModel.TypeInfo leftType) {
+    private TypeInfo dotTail(Token op, Scope scope, FuncInfo func, TypeInfo leftType) {
         if (hub.isRangeType(leftType)) {
             // A plain `..` range has null storage; non-null storage only comes from an explicit annotation (e.g. "raw range(0,5)"), which still needs the alive proof.
             if (hub.locksAndProofs.requiresAliveProof(leftType, op.left, scope)) {
@@ -237,10 +237,10 @@ public final class TypeCheckerAccessAndAsync {
                         "a range only has 'start' and 'end', got '" + op.right.text + "'");
             }
             // Derived value: "indeterminate" (checkForLoop's desugared loop variable coerces it to 'mut').
-            return new TypeCheckerModel.TypeInfo(null, "indeterminate", "u64");
+            return new TypeInfo(null, "indeterminate", "u64");
         }
 
-        TypeCheckerModel.StructInfo structInfo = hub.model.structs.get(leftType.baseType);
+        StructInfo structInfo = hub.model.structs.get(leftType.baseType);
         if (structInfo == null) {
             if (hub.model.enums.containsKey(leftType.baseType)) {
                 throw new CompilerException("type", op.left.file, op.left.line,
@@ -263,7 +263,7 @@ public final class TypeCheckerAccessAndAsync {
                     "expected a member name after '.'");
         }
         String memberName = op.right.text;
-        TypeCheckerModel.TypeInfo memberType = structInfo.members.get(memberName);
+        TypeInfo memberType = structInfo.members.get(memberName);
         if (memberType == null) {
             throw new CompilerException("type", op.right.file, op.right.line,
                     "struct '" + leftType.baseType + "' has no member named '" + memberName + "'");
@@ -284,7 +284,7 @@ public final class TypeCheckerAccessAndAsync {
      * "StructName{ member= value, ... }" under the one-true-constructor policy: every member exactly
      * once, none unknown. Member names are read off the raw tokens. See docs/TypeChecker.md, "Struct literals".
      */
-    public TypeCheckerModel.TypeInfo checkInstantiate(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+    public TypeInfo checkInstantiate(Token op, Scope scope, FuncInfo func) {
         return hub.driver.run(new CheckFrame(CheckFrame.INSTANTIATE, op, scope, func));
     }
 
@@ -312,7 +312,7 @@ public final class TypeCheckerAccessAndAsync {
                     "struct instantiation expects a struct name (e.g. 'Point{ x= 1, y= 2 }')");
         }
         String structName = op.left.text;
-        TypeCheckerModel.StructInfo structInfo = hub.model.structs.get(structName);
+        StructInfo structInfo = hub.model.structs.get(structName);
         if (structInfo == null) {
             if (hub.model.enums.containsKey(structName)) {
                 throw new CompilerException("type", op.left.file, op.left.line,
@@ -338,9 +338,9 @@ public final class TypeCheckerAccessAndAsync {
     @SuppressWarnings("unchecked")
     private void instantiateMemberCheck(CheckFrame f, Token assignNode) {
         Token op = f.node;
-        TypeCheckerModel.FuncInfo func = f.func;
+        FuncInfo func = f.func;
         String structName = op.left.text;
-        TypeCheckerModel.StructInfo structInfo = hub.model.structs.get(structName);
+        StructInfo structInfo = hub.model.structs.get(structName);
         Set<String> provided = (Set<String>) ((Object[]) f.data)[0];
         if (assignNode.type != TokenType.OPERATOR
                 || !(assignNode.text.equals("=") || assignNode.text.equals(":"))
@@ -350,7 +350,7 @@ public final class TypeCheckerAccessAndAsync {
                             + structName + "'");
         }
         String memberName = assignNode.left.text;
-        TypeCheckerModel.TypeInfo declaredType = structInfo.members.get(memberName);
+        TypeInfo declaredType = structInfo.members.get(memberName);
         if (declaredType == null) {
             throw new CompilerException("type", assignNode.left.file, assignNode.left.line,
                     "struct '" + structName + "' has no member named '" + memberName + "'");
@@ -364,14 +364,14 @@ public final class TypeCheckerAccessAndAsync {
     }
 
     /** What follows resolving one member's value. */
-    private void instantiateMemberDone(CheckFrame f, Token assignNode, TypeCheckerModel.TypeInfo valueType) {
+    private void instantiateMemberDone(CheckFrame f, Token assignNode, TypeInfo valueType) {
         Token op = f.node;
-        TypeCheckerModel.Scope scope = f.scope;
+        Scope scope = f.scope;
         String structName = op.left.text;
-        TypeCheckerModel.StructInfo structInfo = hub.model.structs.get(structName);
+        StructInfo structInfo = hub.model.structs.get(structName);
         Object[] st = (Object[]) f.data;
         String memberName = assignNode.left.text;
-        TypeCheckerModel.TypeInfo declaredType = structInfo.members.get(memberName);
+        TypeInfo declaredType = structInfo.members.get(memberName);
         boolean isSwapFieldBareVariantLiteral = memberName.equals(structInfo.swapFieldName)
                 && isBareEnumVariantRefNode(assignNode.right, declaredType.baseType);
         if (!isSwapFieldBareVariantLiteral && !hub.acceptsAdaptingLiteral(declaredType, valueType, assignNode.right)) {
@@ -394,10 +394,10 @@ public final class TypeCheckerAccessAndAsync {
     }
 
     @SuppressWarnings("unchecked")
-    private TypeCheckerModel.TypeInfo instantiateTail(CheckFrame f) {
+    private TypeInfo instantiateTail(CheckFrame f) {
         Token op = f.node;
         String structName = op.left.text;
-        TypeCheckerModel.StructInfo structInfo = hub.model.structs.get(structName);
+        StructInfo structInfo = hub.model.structs.get(structName);
         Object[] st = (Object[]) f.data;
         Set<String> provided = (Set<String>) st[0];
         Token lockFieldValueNode = (Token) st[1];
@@ -427,7 +427,7 @@ public final class TypeCheckerAccessAndAsync {
         }
 
         // A literal's top-level mutability is indeterminate until stated; member mutability comes from the definition.
-        return new TypeCheckerModel.TypeInfo(null, "indeterminate", structName);
+        return new TypeInfo(null, "indeterminate", structName);
     }
 
 
@@ -435,9 +435,9 @@ public final class TypeCheckerAccessAndAsync {
      * Swap-flavoured construction rule: a literal 'EnumName.CLOSED' value is rejected (a fresh mutex is
      * never handed out held); non-literal values pass unchecked. See docs/TypeChecker.md, "Struct literals".
      */
-    public void checkSwapFieldNotConstructedClosed(TypeCheckerModel.StructInfo structInfo, String structName,
+    public void checkSwapFieldNotConstructedClosed(StructInfo structInfo, String structName,
             Token swapFieldValueNode) {
-        TypeCheckerModel.TypeInfo swapFieldType = structInfo.members.get(structInfo.swapFieldName);
+        TypeInfo swapFieldType = structInfo.members.get(structInfo.swapFieldName);
         boolean isBareEnumVariantRef = isBareEnumVariantRefNode(swapFieldValueNode, swapFieldType.baseType);
         if (isBareEnumVariantRef && swapFieldValueNode.right.text.equals("CLOSED")) {
             throw new CompilerException("type", swapFieldValueNode.file, swapFieldValueNode.line,
@@ -488,9 +488,9 @@ public final class TypeCheckerAccessAndAsync {
      * Validates the lock-struct OTC exception (only the lock field provided, with a value that does not
      * satisfy the lock). See docs/TypeChecker.md, "Struct literals".
      */
-    public void checkOtcLockViolation(Token op, TypeCheckerModel.StructInfo structInfo, String structName,
+    public void checkOtcLockViolation(Token op, StructInfo structInfo, String structName,
             Token lockFieldValueNode) {
-        TypeCheckerModel.TypeInfo lockFieldType = structInfo.members.get(structInfo.lockFieldName);
+        TypeInfo lockFieldType = structInfo.members.get(structInfo.lockFieldName);
         if (!"imut".equals(lockFieldType.mutability)) {
             throw new CompilerException("type", op.file, op.line,
                     "'" + structName + "' cannot be constructed by omitting its other members -- "
@@ -512,7 +512,7 @@ public final class TypeCheckerAccessAndAsync {
                             + "call result, so the mismatch can be proven at compile time");
         }
         String variantName = lockFieldValueNode.right.text;
-        TypeCheckerModel.EnumInfo lockEnumInfo = hub.model.enums.get(lockFieldType.baseType);
+        EnumInfo lockEnumInfo = hub.model.enums.get(lockFieldType.baseType);
         if (!lockEnumInfo.variants.contains(variantName)) {
             throw new CompilerException("type", lockFieldValueNode.file, lockFieldValueNode.line,
                     "'" + lockFieldType.baseType + "' has no variant named '" + variantName + "'");
@@ -536,7 +536,7 @@ public final class TypeCheckerAccessAndAsync {
      * destructOnExit is computed: the catch is always local to this frame.
      * See docs/TypeChecker.md, "Storage constructors and new".
      */
-    public TypeCheckerModel.TypeInfo checkNew(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+    public TypeInfo checkNew(Token op, Scope scope, FuncInfo func) {
         return hub.driver.run(new CheckFrame(CheckFrame.NEW, op, scope, func));
     }
 
@@ -555,11 +555,11 @@ public final class TypeCheckerAccessAndAsync {
         }
         hub.model.insideStructRvoDestinationPosition = f.q;
         hub.model.newDynDepth--;
-        TypeCheckerModel.TypeInfo operandType = f.got;
-        return f.done(new TypeCheckerModel.TypeInfo("owns", operandType.mutability, operandType.baseType).withSome(true));
+        TypeInfo operandType = f.got;
+        return f.done(new TypeInfo("owns", operandType.mutability, operandType.baseType).withSome(true));
     }
 
-    private void newChecks(Token op, TypeCheckerModel.FuncInfo func) {
+    private void newChecks(Token op, FuncInfo func) {
         hub.impls.requireNotPureRt(func, op, "'new'", "allocation depends on heap state (it can fail), so the result is not a function of the arguments");
         hub.model.usesOwnsRefDynNew = true;
         hub.model.usesThrow = true;
@@ -585,7 +585,7 @@ public final class TypeCheckerAccessAndAsync {
      * "atomic x": tags a plain scalar's type as atomic (TypeInfo.isAtomic). Mutability is preserved
      * (still needs an explicit mut/imut wrap to bind); only integer/bool/char, no storage.
      */
-    public TypeCheckerModel.TypeInfo checkAtomicWrapper(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+    public TypeInfo checkAtomicWrapper(Token op, Scope scope, FuncInfo func) {
         return hub.driver.run(new CheckFrame(CheckFrame.ATOMIC_WRAPPER, op, scope, func));
     }
 
@@ -597,7 +597,7 @@ public final class TypeCheckerAccessAndAsync {
         return f.done(atomicTail(f.node, f.scope, f.func, f.got));
     }
 
-    private TypeCheckerModel.TypeInfo atomicTail(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func, TypeCheckerModel.TypeInfo operandType) {        if (operandType.storage != null) {
+    private TypeInfo atomicTail(Token op, Scope scope, FuncInfo func, TypeInfo operandType) {        if (operandType.storage != null) {
             throw new CompilerException("type", op.left.file, op.left.line,
                     "'atomic' can only wrap a plain (no-storage) scalar value, not a pointer");
         }
@@ -606,7 +606,7 @@ public final class TypeCheckerAccessAndAsync {
                     "'" + operandType.baseType + "' cannot be made 'atomic' -- only an integer, 'bool', "
                             + "or 'char' type can be backed by a real atomic instruction");
         }
-        return new TypeCheckerModel.TypeInfo(null, operandType.mutability, operandType.baseType).withAtomic(true);
+        return new TypeInfo(null, operandType.mutability, operandType.baseType).withAtomic(true);
     }
 
 
@@ -614,13 +614,13 @@ public final class TypeCheckerAccessAndAsync {
      * "a swap b": atomic read-modify-write, yields the previous value (dedicated ATOMIC_SWAP, it cannot
      * be decomposed into PUSH + ASSIGN atomically).
      */
-    public TypeCheckerModel.TypeInfo checkSwapOperator(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+    public TypeInfo checkSwapOperator(Token op, Scope scope, FuncInfo func) {
         return hub.driver.run(new CheckFrame(CheckFrame.SWAP, op, scope, func));
     }
 
     public int stepSwap(CheckFrame f) {
         Token op = f.node;
-        TypeCheckerModel.Scope scope = f.scope;
+        Scope scope = f.scope;
         switch (f.phase) {
             case 0:
                 swapHead(op);
@@ -650,7 +650,7 @@ public final class TypeCheckerAccessAndAsync {
     }
 
     /** Checks on the left operand's type; returns whether the right operand is a bare enum variant. */
-    private boolean swapMid(Token op, TypeCheckerModel.TypeInfo leftType) {        if (!leftType.isAtomic) {
+    private boolean swapMid(Token op, TypeInfo leftType) {        if (!leftType.isAtomic) {
             throw new CompilerException("type", op.left.file, op.left.line,
                     "the left operand of 'swap' must be an 'atomic'-typed value");
         }
@@ -675,14 +675,14 @@ public final class TypeCheckerAccessAndAsync {
         return isBareEnumVariantRight;
     }
 
-    private TypeCheckerModel.TypeInfo swapTail(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.TypeInfo leftType, boolean isBareEnumVariantRight, TypeCheckerModel.TypeInfo rightType) {        if (!isBareEnumVariantRight && !hub.typesCompatible(leftType, rightType)) {
+    private TypeInfo swapTail(Token op, Scope scope, TypeInfo leftType, boolean isBareEnumVariantRight, TypeInfo rightType) {        if (!isBareEnumVariantRight && !hub.typesCompatible(leftType, rightType)) {
             throw new CompilerException("type", op.right.file, op.right.line,
                     "'swap' requires the right operand to be type-compatible with the atomic's own value "
                             + "type ('" + leftType.canonical() + "'), but found '" + rightType.canonical() + "'");
         }
         hub.expressions.invalidateMatchPatternsForWrite(op.left, scope);
         // A plain (never atomic) snapshot of the old value, "indeterminate" like any computed result.
-        return new TypeCheckerModel.TypeInfo(null, "indeterminate", leftType.baseType);
+        return new TypeInfo(null, "indeterminate", leftType.baseType);
         }
 
 
@@ -690,7 +690,7 @@ public final class TypeCheckerAccessAndAsync {
      * "await f(args)": blocks and yields the callee's own return type (no handle). The CALL is marked
      * `asyncCallKind = "AWAIT"` before dispatch so checkCall enforces the @async requirement in one place.
      */
-    public TypeCheckerModel.TypeInfo checkAwait(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+    public TypeInfo checkAwait(Token op, Scope scope, FuncInfo func) {
         return hub.driver.run(new CheckFrame(CheckFrame.AWAIT, op, scope, func));
     }
 
@@ -703,7 +703,7 @@ public final class TypeCheckerAccessAndAsync {
         }
         if (f.phase == 1) {
             f.a = f.got;
-            f.data = new ArrayList<TypeCheckerModel.FuncInfo>();
+            f.data = new ArrayList<FuncInfo>();
             prepareAsyncCallSite(op.left, f.a, glueOf(f));
             f.phase = 2;
         }
@@ -714,7 +714,7 @@ public final class TypeCheckerAccessAndAsync {
         return f.done(f.a);
     }
 
-    private void awaitChecks(Token op, TypeCheckerModel.FuncInfo func) {
+    private void awaitChecks(Token op, FuncInfo func) {
         hub.impls.requireNotPure(func, op, "'await'", "it waits on another thread");
         if (op.left.type != TokenType.OPERATOR || !op.left.text.equals("CALL")) {
             throw new CompilerException("type", op.left.file, op.left.line,
@@ -738,8 +738,8 @@ public final class TypeCheckerAccessAndAsync {
      * token for BytecodeEmitter.emitAsyncCall, and synthesizes the (memoized) trampoline.
      */
     @SuppressWarnings("unchecked")
-    private List<TypeCheckerModel.FuncInfo> glueOf(CheckFrame f) {
-        return (List<TypeCheckerModel.FuncInfo>) f.data;
+    private List<FuncInfo> glueOf(CheckFrame f) {
+        return (List<FuncInfo>) f.data;
     }
 
     /**
@@ -747,7 +747,7 @@ public final class TypeCheckerAccessAndAsync {
      * glue flag). True when a child was started; the caller returns CALL. Each finished body is added as a root token before the next starts.
      */
     private boolean nextGlueBody(CheckFrame f) {
-        List<TypeCheckerModel.FuncInfo> pend = glueOf(f);
+        List<FuncInfo> pend = glueOf(f);
         if (f.i > 0) {
             hub.model.synthesizingGlueBody = f.p;
             appendSynthesizedRootToken(pend.get(f.i - 1).funcToken);
@@ -762,14 +762,14 @@ public final class TypeCheckerAccessAndAsync {
         return false;
     }
 
-    public TypeCheckerModel.TypeInfo prepareAsyncCallSite(Token callTok, TypeCheckerModel.TypeInfo calleeReturnType, List<TypeCheckerModel.FuncInfo> glue) {
+    public TypeInfo prepareAsyncCallSite(Token callTok, TypeInfo calleeReturnType, List<FuncInfo> glue) {
         // par/await need the ghost table even if the program never writes owns/ref/new/dyn: without this
         // flag GT_INIT never runs and gt_register grows from capacity 0 forever (heap corruption).
         hub.model.usesOwnsRefDynNew = true;
-        TypeCheckerModel.FuncInfo asyncFuncInfo = findTopLevelAsyncFuncInfo(callTok);
-        TypeCheckerModel.TypeInfo paramType = asyncFuncInfo.paramTypes.isEmpty() ? null : asyncFuncInfo.paramTypes.get(0);
+        FuncInfo asyncFuncInfo = findTopLevelAsyncFuncInfo(callTok);
+        TypeInfo paramType = asyncFuncInfo.paramTypes.isEmpty() ? null : asyncFuncInfo.paramTypes.get(0);
         boolean isVoid = calleeReturnType.baseType.equals("void");
-        TypeCheckerModel.TypeInfo handleType = getOrCreateAsyncHandleType(isVoid ? null : calleeReturnType, paramType, callTok,
+        TypeInfo handleType = getOrCreateAsyncHandleType(isVoid ? null : calleeReturnType, paramType, callTok,
                 "PAR".equals(callTok.chk.asyncCallKind));
         callTok.chk.asyncHandleStructName = handleType.baseType;
         callTok.chk.asyncHandleCanonicalType = handleType.canonical();
@@ -792,9 +792,9 @@ public final class TypeCheckerAccessAndAsync {
      * Finds the FuncInfo of the resolved @async call target (plain top-level functions only: there is no
      * way to take a method's function-pointer value for "@par_call"/"@await_call").
      */
-    public TypeCheckerModel.FuncInfo findTopLevelAsyncFuncInfo(Token callTok) {
-        for (List<TypeCheckerModel.FuncInfo> overloads : hub.model.functions.values()) {
-            for (TypeCheckerModel.FuncInfo fi : overloads) {
+    public FuncInfo findTopLevelAsyncFuncInfo(Token callTok) {
+        for (List<FuncInfo> overloads : hub.model.functions.values()) {
+            for (FuncInfo fi : overloads) {
                 if (fi.mangledName.equals(callTok.chk.resolvedCallTarget)) {
                     return fi;
                 }
@@ -814,7 +814,7 @@ public final class TypeCheckerAccessAndAsync {
             return;
         }
         hub.model.asyncStateEnumEnsured = true;
-        TypeCheckerModel.EnumInfo info = new TypeCheckerModel.EnumInfo("AsyncState");
+        EnumInfo info = new EnumInfo("AsyncState");
         info.variants.add("PENDING");
         info.variants.add("RUNNING");
         info.variants.add("READY");
@@ -835,7 +835,7 @@ public final class TypeCheckerAccessAndAsync {
             return;
         }
         hub.model.asyncGateEnumEnsured = true;
-        TypeCheckerModel.EnumInfo info = new TypeCheckerModel.EnumInfo("AsyncGate");
+        EnumInfo info = new EnumInfo("AsyncGate");
         info.variants.add("OPEN");
         info.variants.add("CLOSED");
         hub.model.enums.put("AsyncGate", info);
@@ -861,7 +861,7 @@ public final class TypeCheckerAccessAndAsync {
                     "'Class' is reserved for the compiler-generated enum of every struct -- "
                             + "rename the conflicting declaration");
         }
-        TypeCheckerModel.EnumInfo classInfo = new TypeCheckerModel.EnumInfo("Class");
+        EnumInfo classInfo = new EnumInfo("Class");
         classInfo.explicitValues = new ArrayList<>();
         long next = 0;
         for (String name : hub.model.structDeclOrder) {
@@ -898,15 +898,15 @@ public final class TypeCheckerAccessAndAsync {
         for (String interfaceName : hub.model.interfaces.keySet()) {
             List<String> implementers = new ArrayList<>();
             for (String structName : hub.model.structDeclOrder) {
-                TypeCheckerModel.StructInfo si = hub.model.structs.get(structName);
+                StructInfo si = hub.model.structs.get(structName);
                 if (si.classId == null) {
                     continue;
                 }
-                List<TypeCheckerModel.ImplInfo> impls = hub.model.implsByConcreteType.get(structName);
+                List<ImplInfo> impls = hub.model.implsByConcreteType.get(structName);
                 if (impls == null) {
                     continue;
                 }
-                for (TypeCheckerModel.ImplInfo impl : impls) {
+                for (ImplInfo impl : impls) {
                     if (interfaceName.equals(impl.interfaceName)) {
                         implementers.add(structName);
                         break;
@@ -921,7 +921,7 @@ public final class TypeCheckerAccessAndAsync {
 
     public void registerEnumForEnum(String ownerName, List<String> memberNames) {
         String syntheticName = "$enum_for_" + ownerName;
-        TypeCheckerModel.EnumInfo info = new TypeCheckerModel.EnumInfo(syntheticName);
+        EnumInfo info = new EnumInfo(syntheticName);
         info.explicitValues = new ArrayList<>();
         for (String memberName : memberNames) {
             info.variants.add(memberName);
@@ -944,14 +944,14 @@ public final class TypeCheckerAccessAndAsync {
         if (!hasGtAliveCheckFunction()) {
             return;
         }
-        for (Map.Entry<String, TypeCheckerModel.InterfaceInfo> ifaceEntry : hub.model.interfaces.entrySet()) {
+        for (Map.Entry<String, InterfaceInfo> ifaceEntry : hub.model.interfaces.entrySet()) {
             String interfaceName = ifaceEntry.getKey();
-            TypeCheckerModel.EnumInfo enumForInfo = hub.model.enums.get("$enum_for_" + interfaceName);
+            EnumInfo enumForInfo = hub.model.enums.get("$enum_for_" + interfaceName);
             if (enumForInfo == null || enumForInfo.variants.isEmpty()) {
                 continue; // no real implementers -- nothing to dispatch to
             }
-            for (Map.Entry<String, TypeCheckerModel.RawMethodSig> methodEntry : ifaceEntry.getValue().methods.entrySet()) {
-                TypeCheckerModel.RawMethodSig sig = methodEntry.getValue();
+            for (Map.Entry<String, RawMethodSig> methodEntry : ifaceEntry.getValue().methods.entrySet()) {
+                RawMethodSig sig = methodEntry.getValue();
                 if (sig.isStatic) {
                     continue; // no receiver -- "TypeName.method()" is already unambiguous, needs no dispatcher
                 }
@@ -966,8 +966,8 @@ public final class TypeCheckerAccessAndAsync {
 
     /** Whether any function is decorated '@gt_alive_check' (gates generateInterfaceDispatchers). */
     public boolean hasGtAliveCheckFunction() {
-        for (List<TypeCheckerModel.FuncInfo> overloads : hub.model.functions.values()) {
-            for (TypeCheckerModel.FuncInfo fi : overloads) {
+        for (List<FuncInfo> overloads : hub.model.functions.values()) {
+            for (FuncInfo fi : overloads) {
                 if (hub.impls.getDecorator(fi.funcToken.decorators, "gt_alive_check") != null) {
                     return true;
                 }
@@ -981,7 +981,7 @@ public final class TypeCheckerAccessAndAsync {
         return "__iface_dispatch__" + interfaceName + "__" + methodName;
     }
 
-    public void generateOneInterfaceDispatcher(String interfaceName, String methodName, TypeCheckerModel.RawMethodSig sig,
+    public void generateOneInterfaceDispatcher(String interfaceName, String methodName, RawMethodSig sig,
             List<String> implementers) {
         String dispatcherName = interfaceDispatcherName(interfaceName, methodName);
         if (hub.model.functions.containsKey(dispatcherName)) {
@@ -989,7 +989,7 @@ public final class TypeCheckerAccessAndAsync {
         }
         List<List<Token>> rawGroups = hub.signatures.splitIntoRawGroups(sig.paramsTok.childs);
         List<String> paramNames = new ArrayList<>();
-        List<TypeCheckerModel.TypeInfo> paramTypes = new ArrayList<>();
+        List<TypeInfo> paramTypes = new ArrayList<>();
         int selfIdx = -1;
         for (List<Token> group : rawGroups) {
             String pname = group.get(0).text;
@@ -1007,8 +1007,8 @@ public final class TypeCheckerAccessAndAsync {
             return; // no 'self'-typed parameter anywhere -- see this method's own doc comment for why this can't be dispatched
         }
         List<Token> substitutedReturn = hub.impls.substituteSelfCopy(sig.returnTypeTokens, interfaceName);
-        TypeCheckerModel.TypeInfo returnType = substitutedReturn.isEmpty()
-                ? new TypeCheckerModel.TypeInfo(null, "imut", "void")
+        TypeInfo returnType = substitutedReturn.isEmpty()
+                ? new TypeInfo(null, "imut", "void")
                 : hub.signatures.resolveTypeAnnotation(substitutedReturn, sig.nameTok, true);
         Token fallbackReturnLiteral = returnType.baseType.equals("void") ? null
                 : buildDefaultLiteralFor(returnType, sig.nameTok);
@@ -1110,7 +1110,7 @@ public final class TypeCheckerAccessAndAsync {
             funcTok.childs.add(fallbackLine);
         }
 
-        TypeCheckerModel.FuncInfo info = new TypeCheckerModel.FuncInfo();
+        FuncInfo info = new FuncInfo();
         info.name = dispatcherName;
         info.mangledName = dispatcherName;
         info.paramNames.addAll(paramNames);
@@ -1124,7 +1124,7 @@ public final class TypeCheckerAccessAndAsync {
     }
 
     /** Trivial well-typed default literal for a dispatcher's unreachable fallback return; null (skip the dispatcher) outside {non-'some' pointer, bool, integer, float}. */
-    public Token buildDefaultLiteralFor(TypeCheckerModel.TypeInfo t, Token at) {
+    public Token buildDefaultLiteralFor(TypeInfo t, Token at) {
         if (t.storage != null) {
             return t.isSome ? null : new Token(TokenType.NULL, "null", at.line, at.file);
         }
@@ -1141,7 +1141,7 @@ public final class TypeCheckerAccessAndAsync {
     }
 
     /** "mut 0"/"imut 0" in the unary-prefix shape RpnConverter builds (OPERATOR, unary, operand on `.left`). */
-    public Token mutabilityWrap(TypeCheckerModel.TypeInfo t, Token literal) {
+    public Token mutabilityWrap(TypeInfo t, Token literal) {
         String mutability = "mut".equals(t.mutability) ? "mut" : "imut";
         Token op = new Token(TokenType.OPERATOR, mutability, literal.line, literal.file);
         op.unary = true;
@@ -1157,14 +1157,14 @@ public final class TypeCheckerAccessAndAsync {
      * hidden internal shape (`value`, `threadId` only). `locked` makes a `par` handle a swap-lock struct.
      * Memoized by (result|void, param|none[, par]). See docs/TypeChecker.md, "Async: await, par, handles".
      */
-    public TypeCheckerModel.TypeInfo getOrCreateAsyncHandleType(TypeCheckerModel.TypeInfo resultType, TypeCheckerModel.TypeInfo paramType, Token at, boolean locked) {
+    public TypeInfo getOrCreateAsyncHandleType(TypeInfo resultType, TypeInfo paramType, Token at, boolean locked) {
         boolean hidden = resultType == null;
         // A handle that `par` hands to the caller (non-void) is a real swap-lock struct: `gate` first, every other member behind
         // `match @lock`. `await`'s handle is compiler-internal (joined before anyone reads it) and stays a plain struct.
         locked = locked && !hidden;
         String key = (hidden ? "void" : resultType.canonical()) + "|" + (paramType == null ? "none" : paramType.canonical())
                 + (locked ? "|par" : "");
-        TypeCheckerModel.TypeInfo cached = hub.model.asyncHandleTypesByResultCanonical.get(key);
+        TypeInfo cached = hub.model.asyncHandleTypesByResultCanonical.get(key);
         if (cached != null) {
             return cached;
         }
@@ -1172,10 +1172,10 @@ public final class TypeCheckerAccessAndAsync {
         // misreads underscore names shaped like "..._mutability_baseType" as canonical types and mis-sizes NEW.
         String structName = "AsyncHandle" + Integer.toHexString(key.hashCode() & 0xFFFFFFF);
 
-        TypeCheckerModel.StructInfo si = new TypeCheckerModel.StructInfo(structName);
+        StructInfo si = new StructInfo(structName);
         if (locked) {
             ensureAsyncGateEnum();
-            si.members.put("gate", new TypeCheckerModel.TypeInfo(null, "mut", "AsyncGate").withAtomic(true));
+            si.members.put("gate", new TypeInfo(null, "mut", "AsyncGate").withAtomic(true));
             si.publicMembers.add("gate");
             si.lockFieldName = "gate";
             si.lockVariants = new ArrayList<>(List.of("OPEN"));
@@ -1183,14 +1183,14 @@ public final class TypeCheckerAccessAndAsync {
         }
         if (!hidden) {
             ensureAsyncStateEnum();
-            si.members.put("state", new TypeCheckerModel.TypeInfo(null, "mut", "AsyncState"));
+            si.members.put("state", new TypeInfo(null, "mut", "AsyncState"));
             si.publicMembers.add("state");
         }
         // "value" has the parameter's own exact type (casts only widen, so a uniform u64 slot could not be
         // unpacked); a plain unused "mut u64" for a 0-parameter function.
-        si.members.put("value", paramType != null ? paramType : new TypeCheckerModel.TypeInfo(null, "mut", "u64"));
+        si.members.put("value", paramType != null ? paramType : new TypeInfo(null, "mut", "u64"));
         // "threadId": written by "@par_call"/"@await_call" (pthread_create out-parameter), never by the trampoline.
-        si.members.put("threadId", new TypeCheckerModel.TypeInfo(null, "mut", "u64"));
+        si.members.put("threadId", new TypeInfo(null, "mut", "u64"));
         if (!hidden) {
             si.members.put("result", resultType.withMutability("mut"));
             si.publicMembers.add("result");
@@ -1209,7 +1209,7 @@ public final class TypeCheckerAccessAndAsync {
         hub.model.structs.put(structName, si);
         appendSynthesizedRootToken(structTok);
 
-        TypeCheckerModel.TypeInfo handleType = new TypeCheckerModel.TypeInfo("owns", "indeterminate", structName).withSome(true);
+        TypeInfo handleType = new TypeInfo("owns", "indeterminate", structName).withSome(true);
 
         if (!hidden) {
             // "return _self.result" as a raw unresolved tree (type-checked later); not needed for the hidden shape.
@@ -1235,18 +1235,18 @@ public final class TypeCheckerAccessAndAsync {
             methodTok.childs = new ArrayList<>();
             methodTok.childs.add(bodyLine);
 
-            TypeCheckerModel.FuncInfo resolveFunc = new TypeCheckerModel.FuncInfo();
+            FuncInfo resolveFunc = new FuncInfo();
             resolveFunc.name = "resolve";
             resolveFunc.mangledName = structName + "_resolve";
             resolveFunc.paramNames.add("_self");
-            resolveFunc.paramTypes.add(new TypeCheckerModel.TypeInfo("ref", "imut", structName).withSome(true));
+            resolveFunc.paramTypes.add(new TypeInfo("ref", "imut", structName).withSome(true));
             resolveFunc.returnType = resultType;
             resolveFunc.callConvention = hub.model.config.defaultConvention;
             // Public: called from outside this synthesized impl.
             resolveFunc.isPublic = true;
             resolveFunc.funcToken = methodTok;
 
-            TypeCheckerModel.ImplInfo implInfo = new TypeCheckerModel.ImplInfo();
+            ImplInfo implInfo = new ImplInfo();
             implInfo.concreteName = structName;
             // Public regardless of which file first triggers the (memoized) synthesis.
             implInfo.isPublic = true;
@@ -1269,7 +1269,7 @@ public final class TypeCheckerAccessAndAsync {
     }
 
     /** Type of `par call(..)`: void for a void '@async' callee (bare statement), else an `owns some AsyncHandle_<T>`. See docs/TypeChecker.md, "par / await and trampolines". */
-    public TypeCheckerModel.TypeInfo checkPar(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+    public TypeInfo checkPar(Token op, Scope scope, FuncInfo func) {
         return hub.driver.run(new CheckFrame(CheckFrame.PAR, op, scope, func));
     }
 
@@ -1282,22 +1282,22 @@ public final class TypeCheckerAccessAndAsync {
         }
         if (f.phase == 1) {
             f.a = f.got;
-            f.data = new ArrayList<TypeCheckerModel.FuncInfo>();
+            f.data = new ArrayList<FuncInfo>();
             f.b = prepareAsyncCallSite(op.left, f.a, glueOf(f));
             f.phase = 2;
         }
         if (nextGlueBody(f)) {
             return CheckFrame.CALL;
         }
-        TypeCheckerModel.TypeInfo calleeReturnType = f.a;
-        TypeCheckerModel.TypeInfo handleType = f.b;
-        TypeCheckerModel.TypeInfo result = calleeReturnType.baseType.equals("void") ? calleeReturnType : handleType;
+        TypeInfo calleeReturnType = f.a;
+        TypeInfo handleType = f.b;
+        TypeInfo result = calleeReturnType.baseType.equals("void") ? calleeReturnType : handleType;
         op.left.chk.resolvedType = result.canonical();
         ProofKills.kill(f.scope.activeMatchPatterns, op, "'par' (another thread starts)");
         return f.done(result);
     }
 
-    private void parChecks(Token op, TypeCheckerModel.FuncInfo func) {
+    private void parChecks(Token op, FuncInfo func) {
         hub.impls.requireNotPure(func, op, "'par'", "it starts another thread");
         if (op.left.type != TokenType.OPERATOR || !op.left.text.equals("CALL")) {
             throw new CompilerException("type", op.left.file, op.left.line,
@@ -1319,9 +1319,9 @@ public final class TypeCheckerAccessAndAsync {
      * Synthesizes (once per function) the pthread-shaped trampoline `raw mut u8 __trampoline_<name>(raw mut u8)` as Caspien source text run through the front end,
      * and checks its body eagerly (check()'s sweep worklist is already fixed). See docs/TypeChecker.md, "par / await and trampolines".
      */
-    public void synthesizeAsyncTrampoline(TypeCheckerModel.FuncInfo asyncFuncInfo, TypeCheckerModel.TypeInfo handleType, TypeCheckerModel.TypeInfo paramType,
-            TypeCheckerModel.TypeInfo resultTypeOrNull, String trampolineName, boolean selfDestructHidden, boolean lockedHandle,
-            List<TypeCheckerModel.FuncInfo> glue) {
+    public void synthesizeAsyncTrampoline(FuncInfo asyncFuncInfo, TypeInfo handleType, TypeInfo paramType,
+            TypeInfo resultTypeOrNull, String trampolineName, boolean selfDestructHidden, boolean lockedHandle,
+            List<FuncInfo> glue) {
         if (!hub.model.asyncTrampolinesSynthesized.add(trampolineName)) {
             return; // already synthesized (either ordinarily, or for this exact self-destructing shape)
         }
@@ -1388,7 +1388,7 @@ public final class TypeCheckerAccessAndAsync {
         }
         callNode.chk.isTrampolineOwnCall = true;
 
-        TypeCheckerModel.FuncInfo trampolineInfo = new TypeCheckerModel.FuncInfo();
+        FuncInfo trampolineInfo = new FuncInfo();
         trampolineInfo.funcToken = funcTok;
         hub.signatures.buildFuncInfo(funcTok, trampolineInfo);
         trampolineInfo.declOrder = Integer.MAX_VALUE;
@@ -1402,7 +1402,7 @@ public final class TypeCheckerAccessAndAsync {
      * its thread by joining it, so the handle's memory never goes away under a running thread. `threadId` is 0 when no thread was started
      * (pthread_create failed), then there is nothing to join. Written as Caspien source like the trampoline; trusted glue code.
      */
-    public void synthesizeAsyncDropHook(String handleStructName, String file, List<TypeCheckerModel.FuncInfo> glue) {
+    public void synthesizeAsyncDropHook(String handleStructName, String file, List<FuncInfo> glue) {
         if (!hub.model.asyncDropHooksSynthesized.add(handleStructName)) {
             return;
         }
@@ -1420,7 +1420,7 @@ public final class TypeCheckerAccessAndAsync {
         List<Token> parsed = SourceParser.parse(src.toString(), file, file);
         Token funcTok = parsed.get(0).childs.get(0);
         markSynthesizedUnsafe(funcTok);
-        TypeCheckerModel.FuncInfo hookInfo = new TypeCheckerModel.FuncInfo();
+        FuncInfo hookInfo = new FuncInfo();
         hookInfo.funcToken = funcTok;
         hub.signatures.buildFuncInfo(funcTok, hookInfo);
         hookInfo.declOrder = Integer.MAX_VALUE;

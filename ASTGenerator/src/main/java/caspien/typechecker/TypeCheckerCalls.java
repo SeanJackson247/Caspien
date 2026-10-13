@@ -35,7 +35,7 @@ public final class TypeCheckerCalls {
         this.hub = hub;
     }
 
-    public TypeCheckerModel.TypeInfo checkCall(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func, boolean eligibleForRvoHere) {
+    public TypeInfo checkCall(Token op, Scope scope, FuncInfo func, boolean eligibleForRvoHere) {
         CheckFrame f = new CheckFrame(CheckFrame.CALL_EXPR, op, scope, func);
         f.p = eligibleForRvoHere;
         return hub.driver.run(f);
@@ -54,8 +54,8 @@ public final class TypeCheckerCalls {
     /** f.p = eligibleForRvoHere; head in phase 0, argument types in phase 1 (f.s1 = callee name, f.q = event-loop redirect). */
     public int stepCall(CheckFrame f) {
         Token op = f.node;
-        TypeCheckerModel.Scope scope = f.scope;
-        TypeCheckerModel.FuncInfo func = f.func;
+        Scope scope = f.scope;
+        FuncInfo func = f.func;
         if (f.phase == 9) {
             return f.done(f.got);
         }
@@ -75,7 +75,7 @@ public final class TypeCheckerCalls {
             boolean wasEventLoopRedirect = false;
             if (funcName.equals("tick") && func != null && hub.impls.hasDecorator(func.funcToken.decorators, "event_loop")) {
                 // Inside '@event_loop', a literal `tick(..)` redirects to the function decorated '@tick' (neither has a fixed name).
-                List<TypeCheckerModel.FuncInfo> tickFuncs = hub.declarations.findFuncsWithDecorator("tick");
+                List<FuncInfo> tickFuncs = hub.declarations.findFuncsWithDecorator("tick");
                 if (!tickFuncs.isEmpty()) {
                     funcName = tickFuncs.get(0).name;
                     wasEventLoopRedirect = true;
@@ -88,12 +88,12 @@ public final class TypeCheckerCalls {
             if (TypeCheckerModel.BUILTIN_NAMES.contains(funcName)) {
                 return delegate(f, CheckFrame.BUILTIN_CALL, funcName);
             }
-            TypeCheckerModel.ExternInfo externInfo = hub.model.externs.get(funcName);
+            ExternInfo externInfo = hub.model.externs.get(funcName);
             if (externInfo != null) {
                 f.data = externInfo;
                 return delegate(f, CheckFrame.EXTERN_CALL, null);
             }
-            List<TypeCheckerModel.FuncInfo> overloads = hub.model.functions.get(funcName);
+            List<FuncInfo> overloads = hub.model.functions.get(funcName);
             boolean isConstructorCallShape = false;
             if (overloads == null && hub.model.structs.containsKey(funcName)) {
                 // `MyClass(..)` resolves against the struct's constructors (CONSTRUCTOR_NAME_PREFIX + name) via the normal overload loop.
@@ -121,13 +121,13 @@ public final class TypeCheckerCalls {
         }
         Object[] saved = (Object[]) f.data;
         @SuppressWarnings("unchecked")
-        List<TypeCheckerModel.FuncInfo> overloads = (List<TypeCheckerModel.FuncInfo>) saved[0];
+        List<FuncInfo> overloads = (List<FuncInfo>) saved[0];
         return f.done(callTail(op, scope, func, f.p, f.s1, f.q, overloads, (Boolean) saved[1], f.toks, f.gotFrame.list));
     }
 
-    private TypeCheckerModel.TypeInfo callTail(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func, boolean eligibleForRvoHere, String funcName, boolean wasEventLoopRedirect,
-            List<TypeCheckerModel.FuncInfo> overloads, boolean isConstructorCallShape, List<Token> argNodes, List<TypeCheckerModel.TypeInfo> argTypes) {
-        for (TypeCheckerModel.FuncInfo candidate : hub.orderByLiteralExactness(overloads, argTypes)) {
+    private TypeInfo callTail(Token op, Scope scope, FuncInfo func, boolean eligibleForRvoHere, String funcName, boolean wasEventLoopRedirect,
+            List<FuncInfo> overloads, boolean isConstructorCallShape, List<Token> argNodes, List<TypeInfo> argTypes) {
+        for (FuncInfo candidate : hub.orderByLiteralExactness(overloads, argTypes)) {
             if (candidate.paramTypes.size() != argTypes.size()) {
                 continue;
             }
@@ -209,7 +209,7 @@ public final class TypeCheckerCalls {
                     hub.statements.requireRecursiveCallWithinProof(func, op, argNodes, argTypes, scope);
                 }
                 hub.impls.requirePureCalleeIfPure(func, candidate, op);
-                hub.model.callEdges.add(new TypeCheckerModel.CallEdge(func, candidate, scope.currentSafety, op, scope.insideDynArrayForLoopBody));
+                hub.model.callEdges.add(new CallEdge(func, candidate, scope.currentSafety, op, scope.insideDynArrayForLoopBody));
                 // Struct-by-value return: legal only at a 'let' RHS or a bare-variable assignment RHS (insideStructRvoDestinationPosition).
                 // See docs/TypeChecker.md, "Struct return values (RVO)".
                 if (hub.isStructByValueReturn(candidate.returnType)) {
@@ -234,7 +234,7 @@ public final class TypeCheckerCalls {
         }
 
 
-    public TypeCheckerModel.TypeInfo checkExternCall(TypeCheckerModel.ExternInfo info, Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+    public TypeInfo checkExternCall(ExternInfo info, Token op, Scope scope, FuncInfo func) {
         CheckFrame f = new CheckFrame(CheckFrame.EXTERN_CALL, op, scope, func);
         f.data = info;
         return hub.driver.run(f);
@@ -243,9 +243,9 @@ public final class TypeCheckerCalls {
     /** Calling an extern needs `unsafe extern` and is banned in '@pure'. Fixed parameters are checked like an ordinary call; varargs only need a concrete (non-indeterminate) type. */
     public int stepExternCall(CheckFrame f) {
         Token op = f.node;
-        TypeCheckerModel.Scope scope = f.scope;
-        TypeCheckerModel.FuncInfo func = f.func;
-        TypeCheckerModel.ExternInfo info = (TypeCheckerModel.ExternInfo) f.data;
+        Scope scope = f.scope;
+        FuncInfo func = f.func;
+        ExternInfo info = (ExternInfo) f.data;
         if (f.phase == 0) {
             if (!hub.declarations.unsafeBypass(scope, "extern")) {
                 throw new CompilerException("type", op.file, op.line,
@@ -273,9 +273,9 @@ public final class TypeCheckerCalls {
         } else {
             int i = f.i++;
             Token argNode = f.toks.get(i);
-            TypeCheckerModel.TypeInfo argType = f.got;
+            TypeInfo argType = f.got;
             if (i < info.paramTypes.size()) {
-                TypeCheckerModel.TypeInfo expected = info.paramTypes.get(i);
+                TypeInfo expected = info.paramTypes.get(i);
                 if (!hub.acceptsAdaptingLiteral(expected, argType, argNode)) {
                     throw new CompilerException("type", argNode.file, argNode.line,
                             "argument " + (i + 1) + " to extern '" + info.name + "' expects '"
@@ -296,16 +296,16 @@ public final class TypeCheckerCalls {
     }
 
 
-    public TypeCheckerModel.TypeInfo checkSleepCall(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+    public TypeInfo checkSleepCall(Token op, Scope scope, FuncInfo func) {
         return hub.driver.run(new CheckFrame(CheckFrame.SLEEP_CALL, op, scope, func));
     }
 
     /** `sleep(...)`: always resolves to the function carrying `@sleep` (ghost-table function registry); fixed arity and types, no overloads. See docs/TypeChecker.md, "Builtin calls". */
     public int stepSleepCall(CheckFrame f) {
         Token op = f.node;
-        TypeCheckerModel.Scope scope = f.scope;
-        TypeCheckerModel.FuncInfo func = f.func;
-        TypeCheckerModel.FuncInfo sleepFunc = hub.declarations.getGhostTableFunction("sleep");
+        Scope scope = f.scope;
+        FuncInfo func = f.func;
+        FuncInfo sleepFunc = hub.declarations.getGhostTableFunction("sleep");
         if (f.phase == 0) {
             if (sleepFunc == null) {
                 throw new CompilerException("type", op.file, op.line,
@@ -328,8 +328,8 @@ public final class TypeCheckerCalls {
         } else {
             int i = f.i++;
             Token argNode = f.toks.get(i);
-            TypeCheckerModel.TypeInfo argType = f.got;
-            TypeCheckerModel.TypeInfo expected = sleepFunc.paramTypes.get(i);
+            TypeInfo argType = f.got;
+            TypeInfo expected = sleepFunc.paramTypes.get(i);
             if (!hub.acceptsAdaptingLiteral(expected, argType, argNode)) {
                 throw new CompilerException("type", argNode.file, argNode.line,
                         "argument " + (i + 1) + " to 'sleep' expects '" + expected.canonical() + "', got '"
@@ -349,7 +349,7 @@ public final class TypeCheckerCalls {
     }
 
 
-    public TypeCheckerModel.TypeInfo checkBuiltinCall(String name, Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+    public TypeInfo checkBuiltinCall(String name, Token op, Scope scope, FuncInfo func) {
         CheckFrame f = new CheckFrame(CheckFrame.BUILTIN_CALL, op, scope, func);
         f.s1 = name;
         return hub.driver.run(f);
@@ -358,8 +358,8 @@ public final class TypeCheckerCalls {
     /** Dispatches a reserved builtin name to its checker; builtins never use the user-function overload table. */
     public int stepBuiltinCall(CheckFrame f) {
         Token op = f.node;
-        TypeCheckerModel.Scope scope = f.scope;
-        TypeCheckerModel.FuncInfo func = f.func;
+        Scope scope = f.scope;
+        FuncInfo func = f.func;
         String name = f.s1;
         if (f.phase == 1) {
             return f.done(f.got);
@@ -394,15 +394,15 @@ public final class TypeCheckerCalls {
 
 
     /** `Some(x)`: an ordinary bool builtin; checkMatchCondition adds the alive proof when it is a match condition. */
-    public TypeCheckerModel.TypeInfo checkSomeBuiltin(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+    public TypeInfo checkSomeBuiltin(Token op, Scope scope, FuncInfo func) {
         CheckFrame f = new CheckFrame(CheckFrame.SOME_BUILTIN, op, scope, func);
         return hub.driver.run(f);
     }
 
     public int stepSomeBuiltin(CheckFrame f) {
         Token op = f.node;
-        TypeCheckerModel.Scope scope = f.scope;
-        TypeCheckerModel.FuncInfo func = f.func;
+        Scope scope = f.scope;
+        FuncInfo func = f.func;
         if (f.phase == 0) {
             f.x = someHead(op, scope, func);
             f.phase = 1;
@@ -411,17 +411,17 @@ public final class TypeCheckerCalls {
         return f.done(someTail(op, scope, func, f.x, f.got));
     }
 
-    private Token someHead(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+    private Token someHead(Token op, Scope scope, FuncInfo func) {
         Token argExpr = collectSingleBuiltinArg(op, "Some", scope, func).get(0);
         return argExpr;
     }
 
-    private TypeCheckerModel.TypeInfo someTail(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func, Token argExpr, TypeCheckerModel.TypeInfo argType) {        if (argType.storage == null) {
+    private TypeInfo someTail(Token op, Scope scope, FuncInfo func, Token argExpr, TypeInfo argType) {        if (argType.storage == null) {
             throw new CompilerException("type", argExpr.file, argExpr.line,
                     "'Some' requires a pointer, got '" + argType.canonical() + "'");
         }
         op.chk.someOnRef = "ref".equals(argType.storage) && !argType.isSome;
-        return new TypeCheckerModel.TypeInfo(null, "indeterminate", "bool");
+        return new TypeInfo(null, "indeterminate", "bool");
     }
 
 
@@ -432,7 +432,7 @@ public final class TypeCheckerCalls {
      * `sat` evaluates its argument more than once in the emitted code, so the argument must be
      * side-effect free (a variable, field chain, or literal, optionally negated).
      */
-    public TypeCheckerModel.TypeInfo checkConvertBuiltin(String name, Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+    public TypeInfo checkConvertBuiltin(String name, Token op, Scope scope, FuncInfo func) {
         CheckFrame f = new CheckFrame(CheckFrame.CONVERT_BUILTIN, op, scope, func);
         f.s1 = name;
         return hub.driver.run(f);
@@ -442,8 +442,8 @@ public final class TypeCheckerCalls {
     public int stepConvertBuiltin(CheckFrame f) {
         Token op = f.node;
         String name = f.s1;
-        TypeCheckerModel.Scope scope = f.scope;
-        TypeCheckerModel.FuncInfo func = f.func;
+        Scope scope = f.scope;
+        FuncInfo func = f.func;
         if (f.phase == 0) {
             List<List<Token>> targs = op.left == null ? null : op.left.genericArgs;
             if (name.equals("wrap") && targs != null && targs.size() == 1 && targs.get(0).size() == 1
@@ -472,20 +472,20 @@ public final class TypeCheckerCalls {
         return f.done(convertIntType(op, name, f.s2, f.x, f.got));
     }
 
-    private TypeCheckerModel.TypeInfo convertFloatType(Token op, String floatTarget, Token floatArg, TypeCheckerModel.TypeInfo floatArgType) {
+    private TypeInfo convertFloatType(Token op, String floatTarget, Token floatArg, TypeInfo floatArgType) {
         if (floatArgType.storage != null || !TypeCheckerModel.isFloatType(floatArgType.baseType)) {
             throw new CompilerException("type", floatArg.file, floatArg.line,
                     "'wrap:<" + floatTarget + ">' converts a float, got '" + floatArgType.canonical() + "'");
         }
         if (floatArgType.floatLiteral) {
-            hub.adaptLiteral(floatArg, new TypeCheckerModel.TypeInfo(null, floatArgType.mutability, floatTarget));
+            hub.adaptLiteral(floatArg, new TypeInfo(null, floatArgType.mutability, floatTarget));
         } else {
             op.chk.isFloatConvert = true;
         }
-        return new TypeCheckerModel.TypeInfo(null, "indeterminate", floatTarget);
+        return new TypeInfo(null, "indeterminate", floatTarget);
     }
 
-    private TypeCheckerModel.TypeInfo convertIntType(Token op, String name, String target, Token argExpr, TypeCheckerModel.TypeInfo argType) {
+    private TypeInfo convertIntType(Token op, String name, String target, Token argExpr, TypeInfo argType) {
         if (argType.storage != null || !TypeCheckerModel.INTEGER_TYPES.contains(argType.baseType)) {
             throw new CompilerException("type", argExpr.file, argExpr.line,
                     "'" + name + "' converts an integer, got '" + argType.canonical() + "'");
@@ -495,7 +495,7 @@ public final class TypeCheckerCalls {
                     "'sat' evaluates its argument several times, so it must be a plain variable, field "
                             + "or literal -- bind a computed value to a 'let' first");
         }
-        return new TypeCheckerModel.TypeInfo(null, "indeterminate", target);
+        return new TypeInfo(null, "indeterminate", target);
     }
 
     public boolean isPureSimpleOperand(Token t) {
@@ -516,7 +516,7 @@ public final class TypeCheckerCalls {
         }
     }
 
-    public List<Token> collectSingleBuiltinArg(Token op, String name, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+    public List<Token> collectSingleBuiltinArg(Token op, String name, Scope scope, FuncInfo func) {
         List<Token> args = new ArrayList<>();
         Token argsDelineator = op.right;
         if (!argsDelineator.childs.isEmpty()) {
@@ -530,7 +530,7 @@ public final class TypeCheckerCalls {
     }
 
     /** `insecure_rand()`: non-crypto u64 (C `rand()`). A compiler builtin, so it needs no `unsafe` and is allowed in `@pure`. See docs/TypeChecker.md, "Builtin calls". */
-    public TypeCheckerModel.TypeInfo checkInsecureRandBuiltin(Token op) {
+    public TypeInfo checkInsecureRandBuiltin(Token op) {
         Token argsDelineator = op.right;
         if (!argsDelineator.childs.isEmpty()) {
             List<Token> args = new ArrayList<>();
@@ -540,11 +540,11 @@ public final class TypeCheckerCalls {
                         "'insecure_rand' takes no arguments, got " + args.size());
             }
         }
-        return new TypeCheckerModel.TypeInfo(null, "indeterminate", "u64");
+        return new TypeInfo(null, "indeterminate", "u64");
     }
 
     /** `sizeof(T)` or `sizeof(expr)`: for an array, the base element type's size; the result is an indeterminate u64. */
-    public TypeCheckerModel.TypeInfo checkSizeofBuiltin(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+    public TypeInfo checkSizeofBuiltin(Token op, Scope scope, FuncInfo func) {
         return hub.driver.run(new CheckFrame(CheckFrame.SIZEOF_BUILTIN, op, scope, func));
     }
 
@@ -552,7 +552,7 @@ public final class TypeCheckerCalls {
         Token op = f.node;
         if (f.phase == 0) {
             Token argExpr = collectSingleBuiltinArg(op, "sizeof", f.scope, f.func).get(0);
-            TypeCheckerModel.TypeInfo argType = tryResolveAsTypeDescriptor(argExpr);
+            TypeInfo argType = tryResolveAsTypeDescriptor(argExpr);
             if (argType != null) {
                 return f.done(sizeofType(op, argType));
             }
@@ -562,11 +562,11 @@ public final class TypeCheckerCalls {
         return f.done(sizeofType(op, f.got));
     }
 
-    private TypeCheckerModel.TypeInfo sizeofType(Token op, TypeCheckerModel.TypeInfo argType) {
+    private TypeInfo sizeofType(Token op, TypeInfo argType) {
         long size = computeSizeOf(argType, op);
         op.chk.builtinConstantValue = size;
         op.chk.sizeofStruct = sizedStructName(argType);
-        return new TypeCheckerModel.TypeInfo(null, "indeterminate", "u64");
+        return new TypeInfo(null, "indeterminate", "u64");
     }
 
 
@@ -575,7 +575,7 @@ public final class TypeCheckerCalls {
      * here (a primitive, a pointer, a range). An array gives its element's struct (sizeof an array is its
      * element's size). Such a size is left symbolic (`SIZEOF name`) for the Optimizer to resolve.
      */
-    public String sizedStructName(TypeCheckerModel.TypeInfo t) {
+    public String sizedStructName(TypeInfo t) {
         if (t == null || t.storage != null || hub.isRangeType(t)) {
             return null;
         }
@@ -587,7 +587,7 @@ public final class TypeCheckerCalls {
     }
 
     /** Reads a (storage/mutability-prefixed) bare type name as a TypeInfo; null if it is not a known type, so the caller treats it as an expression. */
-    public TypeCheckerModel.TypeInfo tryResolveAsTypeDescriptor(Token node) {
+    public TypeInfo tryResolveAsTypeDescriptor(Token node) {
         String storage = null;
         Token cur = node;
         while (cur.type == TokenType.OPERATOR
@@ -605,16 +605,16 @@ public final class TypeCheckerCalls {
         if (cur.type != TokenType.VARREF || !hub.signatures.isKnownType(cur.text)) {
             return null;
         }
-        return new TypeCheckerModel.TypeInfo(storage, "imut", cur.text);
+        return new TypeInfo(storage, "imut", cur.text);
     }
 
     /** Size of a type: any pointer = POINTER_SIZE, range = 16, array = its base element. See docs/TypeChecker.md, "Builtin calls". */
-    public long computeSizeOf(TypeCheckerModel.TypeInfo root, Token at) {
+    public long computeSizeOf(TypeInfo root, Token at) {
         long total = 0;
-        Deque<TypeCheckerModel.TypeInfo> work = new java.util.LinkedList<>();
+        Deque<TypeInfo> work = new java.util.LinkedList<>();
         work.push(root);
         while (!work.isEmpty()) {
-            TypeCheckerModel.TypeInfo t = work.pop();
+            TypeInfo t = work.pop();
             if (t.storage != null) {
                 total += TypeCheckerModel.POINTER_SIZE;
                 continue;
@@ -628,16 +628,16 @@ public final class TypeCheckerCalls {
                 while (hub.isArrayType(elem)) {
                     elem = hub.arrayElementType(elem);
                 }
-                work.push(new TypeCheckerModel.TypeInfo(null, "imut", elem));
+                work.push(new TypeInfo(null, "imut", elem));
                 continue;
             }
-            TypeCheckerModel.StructInfo si = hub.model.structs.get(t.baseType);
+            StructInfo si = hub.model.structs.get(t.baseType);
             if (si != null) {
                 // A rough estimate only (the real size, with padding and the layout the Optimizer finally
                 // settles on, is resolved by SizeofResolutionPass from the symbolic SIZEOF): the hidden
                 // ___type word plus the members, so it is never below 8 and never claims a one-byte stride.
                 total += 8;
-                List<TypeCheckerModel.TypeInfo> members = new ArrayList<>(si.members.values());
+                List<TypeInfo> members = new ArrayList<>(si.members.values());
                 for (int i = members.size() - 1; i >= 0; i--) {
                     work.push(members.get(i));
                 }
@@ -654,15 +654,15 @@ public final class TypeCheckerCalls {
         return total;
     }
 
-    public TypeCheckerModel.TypeInfo checkLenBuiltin(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+    public TypeInfo checkLenBuiltin(Token op, Scope scope, FuncInfo func) {
         return hub.driver.run(new CheckFrame(CheckFrame.LEN_BUILTIN, op, scope, func));
     }
 
     /** `len(x)`: constant for arrays and direct string literals, run-time for dynarrays; the 2-arg form scans an unsafe dynarray. See docs/TypeChecker.md, "len and range". */
     public int stepLenBuiltin(CheckFrame f) {
         Token op = f.node;
-        TypeCheckerModel.Scope scope = f.scope;
-        TypeCheckerModel.FuncInfo func = f.func;
+        Scope scope = f.scope;
+        FuncInfo func = f.func;
         if (f.phase == 0) {
             List<Token> args = new ArrayList<>();
             Token argsDelineator = op.right;
@@ -689,7 +689,7 @@ public final class TypeCheckerCalls {
         }
         if (f.phase == 1) {
             Token targetExpr = f.toks.get(0);
-            TypeCheckerModel.TypeInfo targetType = f.got;
+            TypeInfo targetType = f.got;
             if (!hub.isUnsafeDynArrayType(targetType)) {
                 throw new CompilerException("type", targetExpr.file, targetExpr.line,
                         "'len' with a terminator argument requires an 'unsafe dynarray', got '"
@@ -702,8 +702,8 @@ public final class TypeCheckerCalls {
         }
         if (f.phase == 2) {
             Token termExpr = f.toks.get(1);
-            TypeCheckerModel.TypeInfo targetType = f.a;
-            TypeCheckerModel.TypeInfo termType = f.got;
+            TypeInfo targetType = f.a;
+            TypeInfo termType = f.got;
             if (!termType.baseType.equals(targetType.unsafeDynArrayElementType.baseType)) {
                 throw new CompilerException("type", termExpr.file, termExpr.line,
                         "'len' terminator must match the unsafe dynarray's own element type ('"
@@ -711,10 +711,10 @@ public final class TypeCheckerCalls {
                                 + termType.baseType + "'");
             }
             // builtinConstantValue stays unset: BytecodeEmitter then emits a real scan.
-            return f.done(new TypeCheckerModel.TypeInfo(null, "indeterminate", "u64"));
+            return f.done(new TypeInfo(null, "indeterminate", "u64"));
         }
         Token argExpr = f.toks.get(0);
-        TypeCheckerModel.TypeInfo argType = f.got;
+        TypeInfo argType = f.got;
         if (hub.isUnsafeDynArrayType(argType)) {
             // A bare 1-arg `len` on an unsafe dynarray has no length to read; a specific error beats the generic one below.
             throw new CompilerException("type", argExpr.file, argExpr.line,
@@ -723,7 +723,7 @@ public final class TypeCheckerCalls {
         }
         if (hub.isDynArrayType(argType)) {
             // Run-time length: builtinConstantValue stays unset so BytecodeEmitter emits LEN.
-            return f.done(new TypeCheckerModel.TypeInfo(null, "indeterminate", "u64"));
+            return f.done(new TypeInfo(null, "indeterminate", "u64"));
         }
         long length;
         if (hub.isArrayType(argType.baseType)) {
@@ -740,20 +740,20 @@ public final class TypeCheckerCalls {
                     "'len' requires a string, an array, or a dynarray, got '" + argType.canonical() + "'");
         }
         op.chk.builtinConstantValue = length;
-        return f.done(new TypeCheckerModel.TypeInfo(null, "indeterminate", "u64"));
+        return f.done(new TypeInfo(null, "indeterminate", "u64"));
     }
 
 
     /** `range(x)`: 0..len for a string literal / fixed array (bounds baked into the type), plain `range` for a safe dynarray, error for an unsafe one. See docs/TypeChecker.md, "len and range". */
-    public TypeCheckerModel.TypeInfo checkRangeBuiltin(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+    public TypeInfo checkRangeBuiltin(Token op, Scope scope, FuncInfo func) {
         CheckFrame f = new CheckFrame(CheckFrame.RANGE_BUILTIN, op, scope, func);
         return hub.driver.run(f);
     }
 
     public int stepRangeBuiltin(CheckFrame f) {
         Token op = f.node;
-        TypeCheckerModel.Scope scope = f.scope;
-        TypeCheckerModel.FuncInfo func = f.func;
+        Scope scope = f.scope;
+        FuncInfo func = f.func;
         if (f.phase == 0) {
             f.x = rangeBuiltinHead(op, scope, func);
             f.phase = 1;
@@ -762,19 +762,19 @@ public final class TypeCheckerCalls {
         return f.done(rangeBuiltinTail(op, scope, func, f.x, f.got));
     }
 
-    private Token rangeBuiltinHead(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+    private Token rangeBuiltinHead(Token op, Scope scope, FuncInfo func) {
         Token argExpr = collectSingleBuiltinArg(op, "range", scope, func).get(0);
         return argExpr;
     }
 
-    private TypeCheckerModel.TypeInfo rangeBuiltinTail(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func, Token argExpr, TypeCheckerModel.TypeInfo argType) {        if (hub.isUnsafeDynArrayType(argType)) {
+    private TypeInfo rangeBuiltinTail(Token op, Scope scope, FuncInfo func, Token argExpr, TypeInfo argType) {        if (hub.isUnsafeDynArrayType(argType)) {
             throw new CompilerException("type", argExpr.file, argExpr.line,
                     "'range' on an 'unsafe dynarray' has no hidden length to read -- it has no "
                             + "terminator argument to scan for one either, unlike 'len'");
         }
         if (hub.isDynArrayType(argType)) {
             // Run-time length: no builtinConstantValue, no baked-in bounds.
-            return new TypeCheckerModel.TypeInfo(null, "imut", "range");
+            return new TypeInfo(null, "imut", "range");
         }
         long length;
         if (hub.isArrayType(argType.baseType)) {
@@ -791,20 +791,20 @@ public final class TypeCheckerCalls {
                     "'range' requires a string, an array, or a dynarray, got '" + argType.canonical() + "'");
         }
         op.chk.builtinConstantValue = length;
-        return new TypeCheckerModel.TypeInfo(null, "imut", "range(0," + length + ")");
+        return new TypeInfo(null, "imut", "range(0," + length + ")");
     }
 
 
     /** `deref(p)`: the pointee value with storage stripped (usable with `.` directly). */
-    public TypeCheckerModel.TypeInfo checkDerefBuiltin(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+    public TypeInfo checkDerefBuiltin(Token op, Scope scope, FuncInfo func) {
         CheckFrame f = new CheckFrame(CheckFrame.DEREF_BUILTIN, op, scope, func);
         return hub.driver.run(f);
     }
 
     public int stepDerefBuiltin(CheckFrame f) {
         Token op = f.node;
-        TypeCheckerModel.Scope scope = f.scope;
-        TypeCheckerModel.FuncInfo func = f.func;
+        Scope scope = f.scope;
+        FuncInfo func = f.func;
         if (f.phase == 0) {
             f.x = derefHead(op, scope, func);
             f.phase = 1;
@@ -813,13 +813,13 @@ public final class TypeCheckerCalls {
         return f.done(derefTail(op, scope, func, f.x, f.got));
     }
 
-    private Token derefHead(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+    private Token derefHead(Token op, Scope scope, FuncInfo func) {
         hub.impls.requireNotPureRt(func, op, "'deref'", "it reads memory through a pointer");
         Token argExpr = collectSingleBuiltinArg(op, "deref", scope, func).get(0);
         return argExpr;
     }
 
-    private TypeCheckerModel.TypeInfo derefTail(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func, Token argExpr, TypeCheckerModel.TypeInfo argType) {        if (argType.storage == null) {
+    private TypeInfo derefTail(Token op, Scope scope, FuncInfo func, Token argExpr, TypeInfo argType) {        if (argType.storage == null) {
             throw new CompilerException("type", argExpr.file, argExpr.line,
                     "'deref' requires a pointer, got '" + argType.canonical() + "'");
         }
@@ -839,20 +839,20 @@ public final class TypeCheckerCalls {
                     "'deref' of a 'raw' pointer is inherently unsafe -- it needs an 'unsafe deref' block (and the "
                             + "alive proof as well: 'match Some(...)', or 'assume match Some(...)' in an 'unsafe assume' block)");
         }
-        return new TypeCheckerModel.TypeInfo(null, argType.mutability, argType.baseType, argType.aliasName);
+        return new TypeInfo(null, argType.mutability, argType.baseType, argType.aliasName);
     }
 
 
     /** `clone(p)`: any storage accepted; the result is `owns some`, pointee type and mutability kept. */
-    public TypeCheckerModel.TypeInfo checkCloneBuiltin(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+    public TypeInfo checkCloneBuiltin(Token op, Scope scope, FuncInfo func) {
         CheckFrame f = new CheckFrame(CheckFrame.CLONE_BUILTIN, op, scope, func);
         return hub.driver.run(f);
     }
 
     public int stepCloneBuiltin(CheckFrame f) {
         Token op = f.node;
-        TypeCheckerModel.Scope scope = f.scope;
-        TypeCheckerModel.FuncInfo func = f.func;
+        Scope scope = f.scope;
+        FuncInfo func = f.func;
         if (f.phase == 0) {
             f.x = cloneHead(op, scope, func);
             f.phase = 1;
@@ -861,7 +861,7 @@ public final class TypeCheckerCalls {
         return f.done(cloneTail(op, scope, func, f.x, f.got));
     }
 
-    private Token cloneHead(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+    private Token cloneHead(Token op, Scope scope, FuncInfo func) {
         hub.impls.requireNotPureRt(func, op, "'clone'", "allocation depends on heap state (it can fail), so the result is not a function of the arguments");
         // Allocates and registers like `new`: same try/catch discipline and same program-wide flags.
         hub.model.usesOwnsRefDynNew = true;
@@ -875,7 +875,7 @@ public final class TypeCheckerCalls {
         return argExpr;
     }
 
-    private TypeCheckerModel.TypeInfo cloneTail(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func, Token argExpr, TypeCheckerModel.TypeInfo argType) {        if (argType.storage == null) {
+    private TypeInfo cloneTail(Token op, Scope scope, FuncInfo func, Token argExpr, TypeInfo argType) {        if (argType.storage == null) {
             throw new CompilerException("type", argExpr.file, argExpr.line,
                     "'clone' requires a pointer, got '" + argType.canonical() + "'");
         }
@@ -905,15 +905,15 @@ public final class TypeCheckerCalls {
     }
 
 
-    public TypeCheckerModel.TypeInfo checkCallBuiltin(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+    public TypeInfo checkCallBuiltin(Token op, Scope scope, FuncInfo func) {
         return hub.driver.run(new CheckFrame(CheckFrame.CALL_BUILTIN, op, scope, func));
     }
 
     /** `call(fp, args...)`: variable arity, unsafe only; arity, argument types and result type come from the pointer's recorded signature. */
     public int stepCallBuiltin(CheckFrame f) {
         Token op = f.node;
-        TypeCheckerModel.Scope scope = f.scope;
-        TypeCheckerModel.FuncInfo func = f.func;
+        Scope scope = f.scope;
+        FuncInfo func = f.func;
         if (f.phase == 0) {
             if (!hub.declarations.unsafeBypass(scope, "call")) {
                 throw new CompilerException("type", op.file, op.line,
@@ -939,7 +939,7 @@ public final class TypeCheckerCalls {
         }
         if (f.phase == 1) {
             Token funcPtrExpr = f.toks.get(0);
-            TypeCheckerModel.TypeInfo funcPtrType = f.got;
+            TypeInfo funcPtrType = f.got;
             if (funcPtrType.funcPtrParamTypes == null) {
                 throw new CompilerException("type", funcPtrExpr.file, funcPtrExpr.line,
                         "'call''s first argument must be a function pointer, got '"
@@ -956,9 +956,9 @@ public final class TypeCheckerCalls {
         } else {
             List<Token> callArgs = f.toks.subList(1, f.toks.size());
             int i = f.i++;
-            TypeCheckerModel.TypeInfo funcPtrType = f.a;
-            TypeCheckerModel.TypeInfo argType = f.got;
-            TypeCheckerModel.TypeInfo paramType = funcPtrType.funcPtrParamTypes.get(i);
+            TypeInfo funcPtrType = f.a;
+            TypeInfo argType = f.got;
+            TypeInfo paramType = funcPtrType.funcPtrParamTypes.get(i);
             if (!hub.acceptsAdaptingLiteral(paramType, argType, callArgs.get(i))) {
                 throw new CompilerException("type", callArgs.get(i).file, callArgs.get(i).line,
                         "'call' argument " + (i + 1) + " expects '" + paramType.canonical() + "', got '"
@@ -970,14 +970,14 @@ public final class TypeCheckerCalls {
             f.phase = 2;
             return f.call(f.toks.get(f.i + 1));
         }
-        TypeCheckerModel.TypeInfo funcPtrType = f.a;
+        TypeInfo funcPtrType = f.a;
         op.chk.invokeArgCount = f.toks.size() - 1;
         op.chk.resolvedCallConvention = funcPtrType.funcPtrCallConvention;
         return f.done(funcPtrType.funcPtrReturnType);
     }
 
 
-    public TypeCheckerModel.TypeInfo checkBitsBuiltin(String name, Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+    public TypeInfo checkBitsBuiltin(String name, Token op, Scope scope, FuncInfo func) {
         CheckFrame f = new CheckFrame(CheckFrame.BITS_BUILTIN, op, scope, func);
         f.s1 = name;
         return hub.driver.run(f);
@@ -986,8 +986,8 @@ public final class TypeCheckerCalls {
     /** `bits_*` builtins: integer operands only, both sides one type (literals adapt), result that type; `bits_not` is unary. */
     public int stepBitsBuiltin(CheckFrame f) {
         Token op = f.node;
-        TypeCheckerModel.Scope scope = f.scope;
-        TypeCheckerModel.FuncInfo func = f.func;
+        Scope scope = f.scope;
+        FuncInfo func = f.func;
         String name = f.s1;
         if (f.phase == 0) {
             List<Token> args = new ArrayList<>();
@@ -1013,7 +1013,7 @@ public final class TypeCheckerCalls {
         }
         List<Token> args = f.toks;
         if (f.phase == 1) {
-            TypeCheckerModel.TypeInfo only = f.got;
+            TypeInfo only = f.got;
             if (!TypeCheckerModel.INTEGER_TYPES.contains(only.baseType)) {
                 throw new CompilerException("type", args.get(0).file, args.get(0).line,
                         "'" + name + "' requires an integer type, got '" + only.canonical() + "'");
@@ -1022,19 +1022,19 @@ public final class TypeCheckerCalls {
                 throw new CompilerException("type", args.get(0).file, args.get(0).line,
                         "'" + name + "': literal " + only.literalValue + " does not fit in '" + only.baseType + "'");
             }
-            return f.done(new TypeCheckerModel.TypeInfo(null, "indeterminate", only.baseType));
+            return f.done(new TypeInfo(null, "indeterminate", only.baseType));
         }
         if (f.phase == 2) {
             f.a = f.got;
             f.phase = 3;
             return f.call(args.get(1));
         }
-        TypeCheckerModel.TypeInfo leftType = f.a;
-        TypeCheckerModel.TypeInfo rightType = f.got;
+        TypeInfo leftType = f.a;
+        TypeInfo rightType = f.got;
         return f.done(bitsTail(name, op, args, leftType, rightType));
     }
 
-    private TypeCheckerModel.TypeInfo bitsTail(String name, Token op, List<Token> args, TypeCheckerModel.TypeInfo leftType, TypeCheckerModel.TypeInfo rightType) {
+    private TypeInfo bitsTail(String name, Token op, List<Token> args, TypeInfo leftType, TypeInfo rightType) {
         if (!TypeCheckerModel.INTEGER_TYPES.contains(leftType.baseType)) {
             throw new CompilerException("type", args.get(0).file, args.get(0).line,
                     "'" + name + "' requires an integer type, got '" + leftType.canonical() + "'");
@@ -1069,19 +1069,19 @@ public final class TypeCheckerCalls {
                     "'" + name + "' requires both sides to be the same integer type, got '"
                             + leftType.canonical() + "' and '" + rightType.canonical() + "'");
         }
-        return new TypeCheckerModel.TypeInfo(null, "indeterminate", leftType.baseType);
+        return new TypeInfo(null, "indeterminate", leftType.baseType);
         }
 
 
-    public TypeCheckerModel.TypeInfo checkMemcopyBuiltin(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+    public TypeInfo checkMemcopyBuiltin(Token op, Scope scope, FuncInfo func) {
         return hub.driver.run(new CheckFrame(CheckFrame.MEMCOPY_BUILTIN, op, scope, func));
     }
 
     /** `memcopy(raw dest, u64 bytes, src)`: unsafe only; returns the destination's type. Constructing a `raw` is what is gated, not holding one. */
     public int stepMemcopyBuiltin(CheckFrame f) {
         Token op = f.node;
-        TypeCheckerModel.Scope scope = f.scope;
-        TypeCheckerModel.FuncInfo func = f.func;
+        Scope scope = f.scope;
+        FuncInfo func = f.func;
         if (f.phase == 0) {
             if (!hub.declarations.unsafeBypass(scope, "memcopy")) {
                 throw new CompilerException("type", op.file, op.line,
@@ -1102,7 +1102,7 @@ public final class TypeCheckerCalls {
         }
         List<Token> args = f.toks;
         if (f.phase == 1) {
-            TypeCheckerModel.TypeInfo destType = f.got;
+            TypeInfo destType = f.got;
             if (!"raw".equals(destType.storage)) {
                 throw new CompilerException("type", args.get(0).file, args.get(0).line,
                         "'memcopy''s destination must be a 'raw' pointer, got '" + destType.canonical() + "'");
@@ -1112,7 +1112,7 @@ public final class TypeCheckerCalls {
             return f.call(args.get(1));
         }
         if (f.phase == 2) {
-            TypeCheckerModel.TypeInfo countType = f.got;
+            TypeInfo countType = f.got;
             if (!hub.isPlainU64(countType)) {
                 throw new CompilerException("type", args.get(1).file, args.get(1).line,
                         "'memcopy''s byte count must be a plain 'u64', got '" + countType.canonical() + "'");
@@ -1120,7 +1120,7 @@ public final class TypeCheckerCalls {
             f.phase = 3;
             return f.call(args.get(2));
         }
-        TypeCheckerModel.TypeInfo sourceType = f.got;
+        TypeInfo sourceType = f.got;
         if (sourceType.storage == null) {
             throw new CompilerException("type", args.get(2).file, args.get(2).line,
                     "'memcopy''s source must be a pointer (any storage), got '" + sourceType.canonical() + "'");
@@ -1136,12 +1136,12 @@ public final class TypeCheckerCalls {
 
 
     /** `dyn([..])`: a fresh owns dynarray from an array literal (checkArrayLiteral validates it); builtinConstantValue carries the element count to BytecodeEmitter. */
-    public TypeCheckerModel.TypeInfo checkDynBuiltin(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+    public TypeInfo checkDynBuiltin(Token op, Scope scope, FuncInfo func) {
         hub.impls.requireNotPureRt(func, op, "'dyn'", "allocation depends on heap state (it can fail), so the result is not a function of the arguments");
         return checkDynBuiltinCore(op, scope, func, false);
     }
 
-    public TypeCheckerModel.TypeInfo checkDynBuiltinCore(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func, boolean isUnsafe) {
+    public TypeInfo checkDynBuiltinCore(Token op, Scope scope, FuncInfo func, boolean isUnsafe) {
         CheckFrame f = new CheckFrame(CheckFrame.DYN_BUILTIN, op, scope, func);
         f.p = isUnsafe;
         return hub.driver.run(f);
@@ -1153,8 +1153,8 @@ public final class TypeCheckerCalls {
      */
     public int stepDynBuiltin(CheckFrame f) {
         Token op = f.node;
-        TypeCheckerModel.Scope scope = f.scope;
-        TypeCheckerModel.FuncInfo func = f.func;
+        Scope scope = f.scope;
+        FuncInfo func = f.func;
         boolean isUnsafe = f.p;
         if (f.phase == 0) {
             hub.model.newDynDepth++;
@@ -1187,11 +1187,11 @@ public final class TypeCheckerCalls {
                     throw new CompilerException("type", elemTok.file, elemTok.line,
                             "'dyn:<" + elemTok.text + ">': '" + elemTok.text + "' is not a known type");
                 }
-                TypeCheckerModel.TypeInfo emptyElementType = new TypeCheckerModel.TypeInfo(null, "mut", elemTok.text);
+                TypeInfo emptyElementType = new TypeInfo(null, "mut", elemTok.text);
                 op.chk.builtinConstantValue = 0L;
                 hub.model.newDynDepth--;
-                return f.done(isUnsafe ? TypeCheckerModel.TypeInfo.unsafeDynArray("indeterminate", emptyElementType)
-                        : TypeCheckerModel.TypeInfo.dynArray("indeterminate", emptyElementType).withSome(true));
+                return f.done(isUnsafe ? TypeInfo.unsafeDynArray("indeterminate", emptyElementType)
+                        : TypeInfo.dynArray("indeterminate", emptyElementType).withSome(true));
             }
             if (argIsArrayLiteral && argExpr.childs.isEmpty()) {
                 throw new CompilerException("type", argExpr.file, argExpr.line,
@@ -1208,36 +1208,36 @@ public final class TypeCheckerCalls {
         }
         Token argExpr = f.x;
         if (f.phase == 1) {
-            TypeCheckerModel.TypeInfo argType = f.got;
+            TypeInfo argType = f.got;
             if (argType.baseType.equals("string")) {
                 op.chk.dynFromStringSource = true;
-                TypeCheckerModel.TypeInfo elementType = new TypeCheckerModel.TypeInfo(null, "imut", "char");
+                TypeInfo elementType = new TypeInfo(null, "imut", "char");
                 hub.model.newDynDepth--;
-                return f.done(isUnsafe ? TypeCheckerModel.TypeInfo.unsafeDynArray("indeterminate", elementType)
-                        : TypeCheckerModel.TypeInfo.dynArray("indeterminate", elementType).withSome(true));
+                return f.done(isUnsafe ? TypeInfo.unsafeDynArray("indeterminate", elementType)
+                        : TypeInfo.dynArray("indeterminate", elementType).withSome(true));
             }
             throw new CompilerException("type", argExpr.file, argExpr.line,
                     "'dyn' requires an array literal or a string argument, e.g. 'dyn([0,1,2,3])' or 'dyn(text)'");
         }
-        TypeCheckerModel.TypeInfo fixedArrayType = f.got;
+        TypeInfo fixedArrayType = f.got;
         int count = hub.arrayLength(fixedArrayType.baseType);
         // Reuse the element type checkArrayLiteral already computed: resolving the elements again re-ran the move check and wrongly reported `dyn([a, b])`.
-        TypeCheckerModel.TypeInfo elementType = fixedArrayType.arrayElementType;
+        TypeInfo elementType = fixedArrayType.arrayElementType;
         op.chk.builtinConstantValue = (long) count;
         hub.model.newDynDepth--;
-        return f.done(isUnsafe ? TypeCheckerModel.TypeInfo.unsafeDynArray("indeterminate", elementType)
-                : TypeCheckerModel.TypeInfo.dynArray("indeterminate", elementType).withSome(true));
+        return f.done(isUnsafe ? TypeInfo.unsafeDynArray("indeterminate", elementType)
+                : TypeInfo.dynArray("indeterminate", elementType).withSome(true));
     }
 
-    public TypeCheckerModel.TypeInfo checkUnsafeDynWrapper(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+    public TypeInfo checkUnsafeDynWrapper(Token op, Scope scope, FuncInfo func) {
         return hub.driver.run(new CheckFrame(CheckFrame.UNSAFE_DYN_WRAPPER, op, scope, func));
     }
 
     /** `unsafe dyn(..)`: runs the dyn core directly (the inner CALL must resolve to the unsafe type) and sets op.left.resolvedType by hand. */
     public int stepUnsafeDynWrapper(CheckFrame f) {
         Token op = f.node;
-        TypeCheckerModel.Scope scope = f.scope;
-        TypeCheckerModel.FuncInfo func = f.func;
+        Scope scope = f.scope;
+        FuncInfo func = f.func;
         if (f.phase == 0) {
             hub.impls.requireNotPure(func, op, "'unsafe dyn(...)'", "unsafe code can do anything the compiler cannot check, so purity could not be guaranteed");
             if (!"unsafe".equals(scope.currentSafety)) {
@@ -1254,22 +1254,22 @@ public final class TypeCheckerCalls {
             f.phase = 1;
             return f.call(core);
         }
-        TypeCheckerModel.TypeInfo result = f.got;
+        TypeInfo result = f.got;
         hub.declarations.unsafeBypass(scope, hub.declarations.udynTag(result));
         op.left.chk.resolvedType = result.canonical();
         return f.done(result);
     }
 
 
-    public TypeCheckerModel.TypeInfo checkResizeBuiltin(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+    public TypeInfo checkResizeBuiltin(Token op, Scope scope, FuncInfo func) {
         return hub.driver.run(new CheckFrame(CheckFrame.RESIZE_BUILTIN, op, scope, func));
     }
 
     /** `resize(d, n, fill)`: needs a `mut` dynarray, allowed in safe code; growing needs an explicit fill. Moves the source. See docs/TypeChecker.md, "dyn and resize". */
     public int stepResizeBuiltin(CheckFrame f) {
         Token op = f.node;
-        TypeCheckerModel.Scope scope = f.scope;
-        TypeCheckerModel.FuncInfo func = f.func;
+        Scope scope = f.scope;
+        FuncInfo func = f.func;
         if (f.phase == 0) {
             hub.impls.requireNotPureRt(func, op, "'resize'", "allocation depends on heap state (it can fail), so the result is not a function of the arguments");
             // A direct `resize` in a dynarray `for` body is rejected here; indirect ones by checkDynArrayForLoopResizeSafety.
@@ -1296,7 +1296,7 @@ public final class TypeCheckerCalls {
         }
         List<Token> args = f.toks;
         if (f.phase == 1) {
-            TypeCheckerModel.TypeInfo dynArrType = f.got;
+            TypeInfo dynArrType = f.got;
             boolean isUnsafeTarget = hub.isUnsafeDynArrayType(dynArrType);
             if (!isUnsafeTarget && !hub.isDynArrayType(dynArrType)) {
                 throw new CompilerException("type", args.get(0).file, args.get(0).line,
@@ -1345,11 +1345,11 @@ public final class TypeCheckerCalls {
             f.phase = 2;
             return f.call(args.get(1));
         }
-        TypeCheckerModel.TypeInfo dynArrType = f.a;
+        TypeInfo dynArrType = f.a;
         boolean isUnsafeTarget = f.p;
-        TypeCheckerModel.TypeInfo elementType;
+        TypeInfo elementType;
         if (f.phase == 2) {
-            TypeCheckerModel.TypeInfo countType = f.got;
+            TypeInfo countType = f.got;
             if (!hub.isPlainU64(countType)) {
                 throw new CompilerException("type", args.get(1).file, args.get(1).line,
                         "'resize''s new count must be a plain 'u64', got '" + countType.canonical() + "'");
@@ -1361,7 +1361,7 @@ public final class TypeCheckerCalls {
             elementType = dynArrType.unsafeDynArrayElementType;
         } else {
             elementType = dynArrType.dynArrayElementType;
-            TypeCheckerModel.TypeInfo fillType = f.got;
+            TypeInfo fillType = f.got;
             if (!fillType.baseType.equals(elementType.baseType)) {
                 throw new CompilerException("type", args.get(2).file, args.get(2).line,
                         "'resize''s fill value must match the dynarray's own element type ('"
@@ -1370,8 +1370,8 @@ public final class TypeCheckerCalls {
         }
         // `resize` takes ownership and returns a new owns (a realloc may move): the source is moved by hand via markMovedIfOwned, both variants.
         hub.expressions.markMovedIfOwned(dynArrType, args.get(0), scope);
-        TypeCheckerModel.TypeInfo result = isUnsafeTarget ? TypeCheckerModel.TypeInfo.unsafeDynArray("indeterminate", elementType)
-                : TypeCheckerModel.TypeInfo.dynArray("indeterminate", elementType).withSome(true);
+        TypeInfo result = isUnsafeTarget ? TypeInfo.unsafeDynArray("indeterminate", elementType)
+                : TypeInfo.dynArray("indeterminate", elementType).withSome(true);
         ProofKills.kill(scope.activeMatchPatterns, op, "'resize' (the block may move or shrink, freeing what was in it)",
                 args.isEmpty() ? null : TypeCheckerModel.memberPathRoot(args.get(0)), hub.declarations.destroyedTypes(result));
         return f.done(result);
@@ -1381,8 +1381,8 @@ public final class TypeCheckerCalls {
 
 
     /** Visibility: the impl-level gate (impl must be `@pub` outside its file) comes first; a private method is callable only from the same impl block (identity, since a struct can have several). */
-    public void checkImplMethodVisibility(TypeCheckerModel.FuncInfo candidate, TypeCheckerModel.ImplInfo impl, String methodName, Token at,
-            TypeCheckerModel.FuncInfo callerFunc) {
+    public void checkImplMethodVisibility(FuncInfo candidate, ImplInfo impl, String methodName, Token at,
+            FuncInfo callerFunc) {
         String declFile = candidate.funcToken.file;
         boolean sameFile = declFile.equals(at.file);
         if (!impl.isPublic && !sameFile) {
@@ -1401,7 +1401,7 @@ public final class TypeCheckerCalls {
     }
 
     /** RVO for a method call returning a struct: legal only as a `let` RHS or bare-variable assignment RHS (same rule and message as `checkCall`). */
-    public void markStructRvoMethodCall(Token op, TypeCheckerModel.FuncInfo candidate, boolean eligibleForRvoHere) {
+    public void markStructRvoMethodCall(Token op, FuncInfo candidate, boolean eligibleForRvoHere) {
         if (!hub.isStructByValueReturn(candidate.returnType)) {
             return;
         }
@@ -1416,7 +1416,7 @@ public final class TypeCheckerCalls {
         op.chk.isStructRvoCall = true;
     }
 
-    public TypeCheckerModel.TypeInfo checkMethodCall(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func, boolean eligibleForRvoHere) {
+    public TypeInfo checkMethodCall(Token op, Scope scope, FuncInfo func, boolean eligibleForRvoHere) {
         CheckFrame f = new CheckFrame(CheckFrame.METHOD_CALL, op, scope, func);
         f.p = eligibleForRvoHere;
         return hub.driver.run(f);
@@ -1425,8 +1425,8 @@ public final class TypeCheckerCalls {
     /** `receiver.method(args)`: the receiver only selects the impls to search and is not injected as an argument; resolved at compile time, no run-time dispatch. See docs/TypeChecker.md, "Method calls". */
     public int stepMethodCall(CheckFrame f) {
         Token op = f.node;
-        TypeCheckerModel.Scope scope = f.scope;
-        TypeCheckerModel.FuncInfo func = f.func;
+        Scope scope = f.scope;
+        FuncInfo func = f.func;
         boolean eligibleForRvoHere = f.p;
         Token dotNode = op.left;
         if (f.phase == 9) {
@@ -1465,7 +1465,7 @@ public final class TypeCheckerCalls {
         Token methodNameTok = dotNode.right;
         String methodName = methodNameTok.text;
         if (f.phase == 1) {
-            TypeCheckerModel.TypeInfo receiverType = f.got;
+            TypeInfo receiverType = f.got;
 
             if (hub.model.interfaces.containsKey(receiverType.baseType)) {
                 CheckFrame disp = new CheckFrame(CheckFrame.INTERFACE_DISPATCH, op, scope, func);
@@ -1475,7 +1475,7 @@ public final class TypeCheckerCalls {
                 return f.call(disp);
             }
 
-            List<TypeCheckerModel.ImplInfo> impls = hub.model.implsByConcreteType.get(receiverType.baseType);
+            List<ImplInfo> impls = hub.model.implsByConcreteType.get(receiverType.baseType);
             if (impls == null) {
                 throw new CompilerException("type", op.file, op.line,
                         "'" + receiverType.baseType + "' has no method named '" + methodName + "'");
@@ -1502,23 +1502,23 @@ public final class TypeCheckerCalls {
             return f.callAll(f.toks);
         }
         @SuppressWarnings("unchecked")
-        List<TypeCheckerModel.ImplInfo> impls = (List<TypeCheckerModel.ImplInfo>) f.data;
+        List<ImplInfo> impls = (List<ImplInfo>) f.data;
         return f.done(methodCallTail(op, dotNode, scope, func, eligibleForRvoHere, methodName, f.a, impls, f.toks, f.gotFrame.list));
     }
 
-    private TypeCheckerModel.TypeInfo methodCallTail(Token op, Token dotNode, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func, boolean eligibleForRvoHere,
-            String methodName, TypeCheckerModel.TypeInfo receiverType, List<TypeCheckerModel.ImplInfo> impls, List<Token> argNodes, List<TypeCheckerModel.TypeInfo> argTypes) {
+    private TypeInfo methodCallTail(Token op, Token dotNode, Scope scope, FuncInfo func, boolean eligibleForRvoHere,
+            String methodName, TypeInfo receiverType, List<ImplInfo> impls, List<Token> argNodes, List<TypeInfo> argTypes) {
 
         boolean nameExistsAsStatic = false;
-        for (TypeCheckerModel.ImplInfo impl : impls) {
-            List<TypeCheckerModel.FuncInfo> overloadCandidates = impl.candidates(methodName, false);
+        for (ImplInfo impl : impls) {
+            List<FuncInfo> overloadCandidates = impl.candidates(methodName, false);
             if (overloadCandidates.isEmpty()) {
                 if (impl.staticMethods.containsKey(methodName)) {
                     nameExistsAsStatic = true;
                 }
                 continue;
             }
-            for (TypeCheckerModel.FuncInfo candidate : hub.orderByLiteralExactness(overloadCandidates, argTypes)) {
+            for (FuncInfo candidate : hub.orderByLiteralExactness(overloadCandidates, argTypes)) {
             if (candidate.paramTypes.size() != argTypes.size()) {
                 continue;
             }
@@ -1552,7 +1552,7 @@ public final class TypeCheckerCalls {
                 }
                 hub.locksAndProofs.requireMethodLockProofs(candidate, dotNode.left, argNodes, scope, op);
                 hub.impls.requirePureCalleeIfPure(func, candidate, op);
-                hub.model.callEdges.add(new TypeCheckerModel.CallEdge(func, candidate, scope.currentSafety, op, scope.insideDynArrayForLoopBody));
+                hub.model.callEdges.add(new CallEdge(func, candidate, scope.currentSafety, op, scope.insideDynArrayForLoopBody));
                 markStructRvoMethodCall(op, candidate, eligibleForRvoHere);
                 return candidate.returnType;
             }
@@ -1572,8 +1572,8 @@ public final class TypeCheckerCalls {
         }
 
 
-    public TypeCheckerModel.TypeInfo checkGenericMethodCall(Token op, Token dotNode, TypeCheckerModel.TypeInfo receiverType, List<TypeCheckerModel.ImplInfo> impls,
-            String methodName, Token methodNameTok, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func, boolean eligibleForRvoHere) {
+    public TypeInfo checkGenericMethodCall(Token op, Token dotNode, TypeInfo receiverType, List<ImplInfo> impls,
+            String methodName, Token methodNameTok, Scope scope, FuncInfo func, boolean eligibleForRvoHere) {
         CheckFrame f = new CheckFrame(CheckFrame.GENERIC_METHOD_CALL, op, scope, func);
         f.p = eligibleForRvoHere;
         f.s1 = methodName;
@@ -1584,21 +1584,21 @@ public final class TypeCheckerCalls {
     /** `recv.method:<U>(..)`: instantiates (memoized) the residual-generic method and matches the arguments against that single candidate. */
     public int stepGenericMethodCall(CheckFrame f) {
         Token op = f.node;
-        TypeCheckerModel.Scope scope = f.scope;
-        TypeCheckerModel.FuncInfo func = f.func;
+        Scope scope = f.scope;
+        FuncInfo func = f.func;
         boolean eligibleForRvoHere = f.p;
         String methodName = f.s1;
         Token dotNode = op.left;
         Token methodNameTok = dotNode.right;
         if (f.phase == 0) {
             Object[] in = (Object[]) f.data;
-            TypeCheckerModel.TypeInfo receiverType = (TypeCheckerModel.TypeInfo) in[0];
+            TypeInfo receiverType = (TypeInfo) in[0];
             @SuppressWarnings("unchecked")
-            List<TypeCheckerModel.ImplInfo> impls = (List<TypeCheckerModel.ImplInfo>) in[1];
+            List<ImplInfo> impls = (List<ImplInfo>) in[1];
 
-            TypeCheckerModel.ImplInfo owningImpl = null;
+            ImplInfo owningImpl = null;
             Token template = null;
-            for (TypeCheckerModel.ImplInfo impl : impls) {
+            for (ImplInfo impl : impls) {
                 Token t = impl.genericMethodTemplates.get(methodName);
                 if (t != null) {
                     owningImpl = impl;
@@ -1626,8 +1626,8 @@ public final class TypeCheckerCalls {
                                 + argNames.size());
             }
 
-            List<TypeCheckerModel.FuncInfo> toCheck = new ArrayList<>();
-            TypeCheckerModel.FuncInfo candidate = instantiateGenericMethod(owningImpl, template, argNames, methodNameTok, toCheck);
+            List<FuncInfo> toCheck = new ArrayList<>();
+            FuncInfo candidate = instantiateGenericMethod(owningImpl, template, argNames, methodNameTok, toCheck);
             f.data = new Object[]{candidate, owningImpl};
             if (!toCheck.isEmpty()) {
                 f.phase = 2;
@@ -1645,11 +1645,11 @@ public final class TypeCheckerCalls {
             return f.callAll(f.toks);
         }
         Object[] st = (Object[]) f.data;
-        return f.done(genericMethodTail(op, dotNode, scope, func, eligibleForRvoHere, methodName, (TypeCheckerModel.FuncInfo) st[0], (TypeCheckerModel.ImplInfo) st[1], f.toks, f.gotFrame.list));
+        return f.done(genericMethodTail(op, dotNode, scope, func, eligibleForRvoHere, methodName, (FuncInfo) st[0], (ImplInfo) st[1], f.toks, f.gotFrame.list));
     }
 
-    private TypeCheckerModel.TypeInfo genericMethodTail(Token op, Token dotNode, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func, boolean eligibleForRvoHere,
-            String methodName, TypeCheckerModel.FuncInfo candidate, TypeCheckerModel.ImplInfo owningImpl, List<Token> argNodes, List<TypeCheckerModel.TypeInfo> argTypes) {
+    private TypeInfo genericMethodTail(Token op, Token dotNode, Scope scope, FuncInfo func, boolean eligibleForRvoHere,
+            String methodName, FuncInfo candidate, ImplInfo owningImpl, List<Token> argNodes, List<TypeInfo> argTypes) {
         if (candidate.paramTypes.size() != argTypes.size()) {
             throw new CompilerException("type", op.file, op.line,
                     "'" + methodName + "' expects " + candidate.paramTypes.size() + " argument(s), got "
@@ -1677,17 +1677,17 @@ public final class TypeCheckerCalls {
         op.chk.unlockOnExit = hub.statements.collectLockReleasesToBoundary(scope, scope.functionRootScope);
         hub.locksAndProofs.requireMethodLockProofs(candidate, dotNode.left, argNodes, scope, op);
         hub.impls.requirePureCalleeIfPure(func, candidate, op);
-        hub.model.callEdges.add(new TypeCheckerModel.CallEdge(func, candidate, scope.currentSafety, op, scope.insideDynArrayForLoopBody));
+        hub.model.callEdges.add(new CallEdge(func, candidate, scope.currentSafety, op, scope.insideDynArrayForLoopBody));
         markStructRvoMethodCall(op, candidate, eligibleForRvoHere);
         return candidate.returnType;
         }
 
 
     /** Materializes (memoized per type-argument list) a callable FuncInfo for a residual-generic method template; the template is already tree-built, so deepCloneCheckedTree is used. */
-    public TypeCheckerModel.FuncInfo instantiateGenericMethod(TypeCheckerModel.ImplInfo impl, Token template, List<String> argNames, Token usageTok,
-            List<TypeCheckerModel.FuncInfo> toCheck) {
+    public FuncInfo instantiateGenericMethod(ImplInfo impl, Token template, List<String> argNames, Token usageTok,
+            List<FuncInfo> toCheck) {
         String key = template.declName().text + "<" + String.join(",", argNames) + ">";
-        TypeCheckerModel.FuncInfo existing = impl.genericMethodInstances.get(key);
+        FuncInfo existing = impl.genericMethodInstances.get(key);
         if (existing != null) {
             return existing;
         }
@@ -1717,7 +1717,7 @@ public final class TypeCheckerCalls {
         clone.typeParams = null;
         clone.typeParamBounds = null;
 
-        TypeCheckerModel.FuncInfo info = new TypeCheckerModel.FuncInfo();
+        FuncInfo info = new FuncInfo();
         info.funcToken = clone;
         hub.signatures.buildFuncInfo(clone, info);
         info.enclosingImpl = impl;
@@ -1773,8 +1773,8 @@ public final class TypeCheckerCalls {
         }
     }
 
-    public TypeCheckerModel.TypeInfo checkInterfaceMethodDispatch(Token op, Token dotNode, String interfaceName, String methodName,
-            TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+    public TypeInfo checkInterfaceMethodDispatch(Token op, Token dotNode, String interfaceName, String methodName,
+            Scope scope, FuncInfo func) {
         CheckFrame f = new CheckFrame(CheckFrame.INTERFACE_DISPATCH, op, scope, func);
         f.s1 = interfaceName;
         f.s2 = methodName;
@@ -1784,14 +1784,14 @@ public final class TypeCheckerCalls {
     /** `c.foo(args)` on a bare interface type: uses the synthesized dispatcher for (interface, method); one candidate, no overloads, no impl bookkeeping. See docs/TypeChecker.md, "Method calls". */
     public int stepInterfaceDispatch(CheckFrame f) {
         Token op = f.node;
-        TypeCheckerModel.Scope scope = f.scope;
-        TypeCheckerModel.FuncInfo func = f.func;
+        Scope scope = f.scope;
+        FuncInfo func = f.func;
         String interfaceName = f.s1;
         String methodName = f.s2;
         if (f.phase == 0) {
 
-            List<TypeCheckerModel.FuncInfo> overloads = hub.model.functions.get(hub.accessAndAsync.interfaceDispatcherName(interfaceName, methodName));
-            TypeCheckerModel.FuncInfo dispatcher = (overloads == null || overloads.isEmpty()) ? null : overloads.get(0);
+            List<FuncInfo> overloads = hub.model.functions.get(hub.accessAndAsync.interfaceDispatcherName(interfaceName, methodName));
+            FuncInfo dispatcher = (overloads == null || overloads.isEmpty()) ? null : overloads.get(0);
             if (dispatcher == null) {
                 throw new CompilerException("type", op.file, op.line,
                         "could not resolve implementation: the receiver is only known by its interface "
@@ -1811,11 +1811,11 @@ public final class TypeCheckerCalls {
             f.phase = 1;
             return f.callAll(f.toks);
         }
-        return f.done(interfaceDispatchTail(op, scope, func, interfaceName, methodName, (TypeCheckerModel.FuncInfo) f.data, f.toks, f.gotFrame.list));
+        return f.done(interfaceDispatchTail(op, scope, func, interfaceName, methodName, (FuncInfo) f.data, f.toks, f.gotFrame.list));
     }
 
-    private TypeCheckerModel.TypeInfo interfaceDispatchTail(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func, String interfaceName, String methodName,
-            TypeCheckerModel.FuncInfo dispatcher, List<Token> argNodes, List<TypeCheckerModel.TypeInfo> argTypes) {
+    private TypeInfo interfaceDispatchTail(Token op, Scope scope, FuncInfo func, String interfaceName, String methodName,
+            FuncInfo dispatcher, List<Token> argNodes, List<TypeInfo> argTypes) {
         if (dispatcher.paramTypes.size() != argTypes.size()) {
             throw new CompilerException("type", op.file, op.line,
                     "'" + methodName + "' on interface '" + interfaceName + "' expects "
@@ -1836,7 +1836,7 @@ public final class TypeCheckerCalls {
             hub.expressions.markMovedIfOwned(dispatcher.paramTypes.get(i), argNodes.get(i), scope);
         }
         hub.impls.requirePureCalleeIfPure(func, dispatcher, op);
-        hub.model.callEdges.add(new TypeCheckerModel.CallEdge(func, dispatcher, scope.currentSafety, op, scope.insideDynArrayForLoopBody));
+        hub.model.callEdges.add(new CallEdge(func, dispatcher, scope.currentSafety, op, scope.insideDynArrayForLoopBody));
         return dispatcher.returnType;
         }
 

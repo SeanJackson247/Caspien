@@ -17,6 +17,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import caspien.typechecker.FuncInfo;
+import caspien.typechecker.StructInfo;
+import caspien.typechecker.TypeInfo;
 
 /**
  * Final front-end stage: walks the type-checked tree and emits the stack-based higher-order bytecode (HOB) as text.
@@ -41,7 +44,7 @@ final class BytecodeEmitterStatements {
         String structName = staticStructNameOf(unwrapped);
         if (structName != null) {
             hub.core.line(mnemonic + " " + name + " imut_" + structName);
-            TypeCheckerModel.StructInfo structInfo = hub.core.checker.declarations.getStructs().get(structName);
+            StructInfo structInfo = hub.core.checker.declarations.getStructs().get(structName);
             // Hidden ___type (classId) first, as emitInstantiate pushes it; absent for @untyped. Without it a classId-bearing static was left uninitialised.
             Map<String, Token> valueByMember = new HashMap<>();
             for (Token lineTok : unwrapped.right.childs) {
@@ -367,7 +370,7 @@ final class BytecodeEmitterStatements {
      * code that must end in return/throw, so no resume label exists). Labels are assigned before any statement is emitted
      * so call sites can redirect unwinds into them. See docs/BytecodeEmitter.md, "Hoisted catch blocks".
      */
-    public void emitHoistedCatchBlocks(TypeCheckerModel.FuncInfo info) {
+    public void emitHoistedCatchBlocks(FuncInfo info) {
         List<Token> tryNodes = new ArrayList<>();
         collectTryCatchNodes(info.funcToken.childs, tryNodes);
         if (tryNodes.isEmpty()) {
@@ -1297,7 +1300,7 @@ final class BytecodeEmitterStatements {
     }
 
     /** A synthesized `base.member` access, enough for `emitAssignTarget`/`DOT_LHS`. */
-    public Token syntheticMember(Token base, String member, TypeCheckerModel.TypeInfo memberType) {
+    public Token syntheticMember(Token base, String member, TypeInfo memberType) {
         Token dot = new Token(TokenType.OPERATOR, ".", base.line, base.file);
         Token name = new Token(TokenType.VARREF, member, base.line, base.file);
         name.chk.resolvedType = memberType.canonical();
@@ -1332,12 +1335,12 @@ final class BytecodeEmitterStatements {
             }
             return;
         }
-        TypeCheckerModel.StructInfo si = hub.core.checker.declarations.getStructs().get(structName);
-        for (Map.Entry<String, TypeCheckerModel.TypeInfo> m : si.members.entrySet()) {
+        StructInfo si = hub.core.checker.declarations.getStructs().get(structName);
+        for (Map.Entry<String, TypeInfo> m : si.members.entrySet()) {
             if (m.getKey().equals("___type")) {
                 continue;
             }
-            TypeCheckerModel.TypeInfo mt = m.getValue();
+            TypeInfo mt = m.getValue();
             if ("owns".equals(mt.storage)) {
                 Token target = syntheticMember(base, m.getKey(), mt);
                 emitAssignTarget(target);

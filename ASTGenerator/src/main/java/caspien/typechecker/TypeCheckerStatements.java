@@ -36,25 +36,25 @@ public final class TypeCheckerStatements {
         this.hub = hub;
     }
 
-    public boolean isLockedAsyncHandle(TypeCheckerModel.TypeInfo t) {
+    public boolean isLockedAsyncHandle(TypeInfo t) {
         if (t == null || !"owns".equals(t.storage) || t.baseType == null || !t.baseType.startsWith("AsyncHandle")) {
             return false;
         }
-        TypeCheckerModel.StructInfo si = hub.model.structs.get(t.baseType);
+        StructInfo si = hub.model.structs.get(t.baseType);
         return si != null && "gate".equals(si.swapFieldName);
     }
 
-    public void checkFunctionBody(TypeCheckerModel.FuncInfo func) {
+    public void checkFunctionBody(FuncInfo func) {
         hub.driver.run(functionBodyFrame(func));
     }
 
-    public CheckFrame functionBodyFrame(TypeCheckerModel.FuncInfo func) {
+    public CheckFrame functionBodyFrame(FuncInfo func) {
         return new CheckFrame(CheckFrame.FUNCTION_BODY, func.funcToken, null, func);
     }
 
     /** One function body: per-function state is saved here and restored at the end (phases: 0 head, 1 after the body lines, 2 after the recursion lowering). */
     public int stepFunctionBody(CheckFrame f) {
-        TypeCheckerModel.FuncInfo func = f.func;
+        FuncInfo func = f.func;
         if (f.phase == 0) {
             Map<String, Token> savedDecls = hub.model.fnHandleDecls;
             Set<String> savedMatched = hub.model.fnLockMatched;
@@ -72,9 +72,9 @@ public final class TypeCheckerStatements {
                 }
                 hub.impls.requirePureRtNoPointer(func.returnType, func.funcToken, func, "as its return type");
             }
-            TypeCheckerModel.Scope scope = new TypeCheckerModel.Scope(null, func.safetyTag);
+            Scope scope = new Scope(null, func.safetyTag);
             for (int i = 0; i < func.paramNames.size(); i++) {
-                TypeCheckerModel.TypeInfo paramType = func.paramTypes.get(i);
+                TypeInfo paramType = func.paramTypes.get(i);
                 if ("ref".equals(paramType.storage) && paramType.isSome) {
                     ProofKills.implicit(func.paramNames.get(i), hub.declarations.pointeeOf(paramType));   // the caller guarantees it is alive at entry
                 }
@@ -88,15 +88,15 @@ public final class TypeCheckerStatements {
             validateStaticLetPlacement(func.funcToken.childs);
             validateRecursiveFuncRequirements(func);
             List<Token.MatchPattern> assumedLocks = hub.locksAndProofs.assumedLockPatterns(func);
-            TypeCheckerModel.Scope bodyCheckScope = assumedLocks.isEmpty() ? scope : new TypeCheckerModel.Scope(scope, assumedLocks, false);
+            Scope bodyCheckScope = assumedLocks.isEmpty() ? scope : new Scope(scope, assumedLocks, false);
             hub.model.insideConstructorBodyForStruct = func.isConstructor ? func.constructorConcreteName : null;
             f.sc1 = scope;
             f.phase = 1;
             return f.call(linesFrame(func.funcToken.childs, bodyCheckScope, func, false));
         }
-        TypeCheckerModel.Scope scope = f.sc1;
+        Scope scope = f.sc1;
         if (f.phase == 1) {
-            TypeCheckerModel.Scope bodyScope = (TypeCheckerModel.Scope) f.gotFrame.out;
+            Scope bodyScope = (Scope) f.gotFrame.out;
             hub.model.insideConstructorBodyForStruct = null;
             // `@throws` is required exactly when the body has a validated `throw` (func.sawThrow).
             if (func.isThrows && !func.sawThrow) {
@@ -148,7 +148,7 @@ public final class TypeCheckerStatements {
 
 
 
-    public boolean isVoidReturnType(TypeCheckerModel.TypeInfo t) {
+    public boolean isVoidReturnType(TypeInfo t) {
         return t.baseType.equals("void");
     }
 
@@ -386,11 +386,11 @@ public final class TypeCheckerStatements {
         return false;
     }
 
-    public void checkTryBlock(Token stmt, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func, boolean insideLoop) {
+    public void checkTryBlock(Token stmt, Scope scope, FuncInfo func, boolean insideLoop) {
         hub.driver.run(tryBlockFrame(stmt, scope, func, insideLoop));
     }
 
-    public CheckFrame tryBlockFrame(Token stmt, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func, boolean insideLoop) {
+    public CheckFrame tryBlockFrame(Token stmt, Scope scope, FuncInfo func, boolean insideLoop) {
         CheckFrame f = new CheckFrame(CheckFrame.TRY_BLOCK, stmt, scope, func);
         f.q = insideLoop;
         return f;
@@ -409,7 +409,7 @@ public final class TypeCheckerStatements {
                                 + "somewhere inside it");
             }
             // TryBlockBoundaryMarker makes this scope the target a nested `continue` resolves via tryBlockBoundaryScope.
-            f.sc1 = new TypeCheckerModel.Scope(f.scope, TypeCheckerModel.TryBlockBoundaryMarker.MARK);
+            f.sc1 = new Scope(f.scope, TryBlockBoundaryMarker.MARK);
             f.phase = 1;
             return f.call(linesInScopeFrame(stmt.childs, f.sc1, f.func, f.q));
         }
@@ -419,7 +419,7 @@ public final class TypeCheckerStatements {
 
 
     /** A `@recursive` function needs a final `imut range` parameter (any name) and a first statement (after `let static`s) of `match PARAM is base{...}`; structural checks only. See docs/TypeChecker.md, "@recursive functions". */
-    public void validateRecursiveFuncRequirements(TypeCheckerModel.FuncInfo func) {
+    public void validateRecursiveFuncRequirements(FuncInfo func) {
         if (hub.impls.getDecorator(func.funcToken.decorators, "recursive") == null) {
             return;
         }
@@ -459,7 +459,7 @@ public final class TypeCheckerStatements {
     }
 
     /** A self-call to a `@recursive` function may only be the sole expression of a `return`, checked by node identity with directReturnExprNode. See docs/TypeChecker.md, "@recursive functions". */
-    public void requireRecursiveCallReturnSiteOnly(TypeCheckerModel.FuncInfo func, Token op) {
+    public void requireRecursiveCallReturnSiteOnly(FuncInfo func, Token op) {
         if (op != hub.model.directReturnExprNode) {
             throw new CompilerException("type", op.file, op.line,
                     "a recursive call to '" + func.name + "' may only appear as the sole expression of "
@@ -470,13 +470,13 @@ public final class TypeCheckerStatements {
     }
 
     /** Every self-call must sit inside `match x within RANGEPARAM{}` with x an imut range; absolute rule, no unsafe bypass. See docs/TypeChecker.md, "@recursive functions". */
-    public void requireRecursiveCallWithinProof(TypeCheckerModel.FuncInfo func, Token op, List<Token> argNodes,
-            List<TypeCheckerModel.TypeInfo> argTypes, TypeCheckerModel.Scope scope) {
+    public void requireRecursiveCallWithinProof(FuncInfo func, Token op, List<Token> argNodes,
+            List<TypeInfo> argTypes, Scope scope) {
         // The last parameter is an imut range (validateRecursiveFuncRequirements).
         String rangeParamName = func.paramNames.get(func.paramNames.size() - 1);
         Token finalArg = argNodes.get(argNodes.size() - 1);
         // Reuse the argTypes from overload matching; do not resolve the node again.
-        TypeCheckerModel.TypeInfo finalArgType = argTypes.get(argTypes.size() - 1);
+        TypeInfo finalArgType = argTypes.get(argTypes.size() - 1);
         if (!"imut".equals(finalArgType.mutability)) {
             throw new CompilerException("type", finalArg.file, finalArg.line,
                     "a recursive call's own range argument must be 'imut', got '"
@@ -507,23 +507,23 @@ public final class TypeCheckerStatements {
      * Rewrites a validated `@recursive` function body into a bounded `for` loop over shadow locals; each tail-call return site becomes
      * a reassignment of the shadows. See docs/TypeChecker.md, "@recursive functions".
      */
-    public void lowerRecursiveFunctionToLoop(TypeCheckerModel.FuncInfo func, TypeCheckerModel.Scope paramScope) {
+    public void lowerRecursiveFunctionToLoop(FuncInfo func, Scope paramScope) {
         hub.driver.run(recursiveLoweringFrame(func, paramScope));
     }
 
-    public CheckFrame recursiveLoweringFrame(TypeCheckerModel.FuncInfo func, TypeCheckerModel.Scope paramScope) {
+    public CheckFrame recursiveLoweringFrame(FuncInfo func, Scope paramScope) {
         CheckFrame f = new CheckFrame(CheckFrame.RECURSIVE_LOWER, func.funcToken, paramScope, func);
         return f;
     }
 
     /** f.data = {newChilds, restLines, wrapperScope, lets (name, value pairs, checked in order), forTok, baseCaseAfterLoop}; f.i = next let, f.phase 1 = let done, 2 = loop header done. */
     public int stepRecursiveLower(CheckFrame f) {
-        TypeCheckerModel.FuncInfo func = f.func;
+        FuncInfo func = f.func;
         int line = func.funcToken.line;
         String file = func.funcToken.file;
         Object[] st;
         if (f.phase == 0) {
-            TypeCheckerModel.Scope paramScope = f.scope;
+            Scope paramScope = f.scope;
         List<Token> original = func.funcToken.childs;
         int splitIdx = 0;
         while (splitIdx < original.size() && staticLetTokenOf(original.get(splitIdx).childs.get(0)) != null) {
@@ -532,7 +532,7 @@ public final class TypeCheckerStatements {
         List<Token> leadingStatics = new ArrayList<>(original.subList(0, splitIdx));
         List<Token> restLines = new ArrayList<>(original.subList(splitIdx, original.size()));
 
-        TypeCheckerModel.Scope wrapperScope = new TypeCheckerModel.Scope(paramScope);
+        Scope wrapperScope = new Scope(paramScope);
 
         List<Token> newChilds = new ArrayList<>(leadingStatics);
 
@@ -579,7 +579,7 @@ public final class TypeCheckerStatements {
         List<Token> newChilds = (List<Token>) st[0];
         @SuppressWarnings("unchecked")
         List<Token> restLines = (List<Token>) st[1];
-        TypeCheckerModel.Scope wrapperScope = (TypeCheckerModel.Scope) st[2];
+        Scope wrapperScope = (Scope) st[2];
         @SuppressWarnings("unchecked")
         List<Object[]> lets = (List<Object[]>) st[3];
         if (f.phase < 2) {
@@ -619,14 +619,14 @@ public final class TypeCheckerStatements {
     }
 
 
-    public Token buildCheckedLetAssign(String name, Token valueExpr, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+    public Token buildCheckedLetAssign(String name, Token valueExpr, Scope scope, FuncInfo func) {
         CheckFrame f = letAssignFrame(name, valueExpr, scope, func);
         hub.driver.run(f);
         return (Token) f.out;
     }
 
     /** Builds `let name = valueExpr` and checks it; the finished frame's `out` is the checked `=` token. */
-    public CheckFrame letAssignFrame(String name, Token valueExpr, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+    public CheckFrame letAssignFrame(String name, Token valueExpr, Scope scope, FuncInfo func) {
         CheckFrame f = new CheckFrame(CheckFrame.LET_ASSIGN, valueExpr, scope, func);
         f.s1 = name;
         return f;
@@ -661,7 +661,7 @@ public final class TypeCheckerStatements {
      * Replaces every "return SELFCALL(..)" marked isRecursiveTailCallSite, wherever it nests, with the reassignment
      * lines; any number of call sites. See docs/TypeChecker.md, "Recursive tail-call lowering".
      */
-    public void replaceRecursiveReturnsInLines(List<Token> rootLines, TypeCheckerModel.FuncInfo func) {
+    public void replaceRecursiveReturnsInLines(List<Token> rootLines, FuncInfo func) {
         // frames: {line list, int[]{next index}}; nested lists are visited in document order (the replacement lines are numbered as they are built)
         Deque<Object[]> frames = new ArrayDeque<>();
         frames.push(new Object[]{rootLines, new int[]{0}});
@@ -717,7 +717,7 @@ public final class TypeCheckerStatements {
      * before any parameter changes), then an unchecked "paramN = __recur_tmpN" per parameter.
      * See docs/TypeChecker.md, "Recursive tail-call lowering".
      */
-    public List<Token> buildTailCallReplacementLines(Token returnTok, TypeCheckerModel.FuncInfo func) {
+    public List<Token> buildTailCallReplacementLines(Token returnTok, FuncInfo func) {
         Token callOp = returnTok.operand();
         List<Token> argNodes = new ArrayList<>();
         if (!callOp.right.childs.isEmpty()) {
@@ -789,14 +789,14 @@ public final class TypeCheckerStatements {
         return null;
     }
 
-    public TypeCheckerModel.Scope checkLines(List<Token> lines, TypeCheckerModel.Scope parentScope, TypeCheckerModel.FuncInfo func, boolean insideLoop) {
+    public Scope checkLines(List<Token> lines, Scope parentScope, FuncInfo func, boolean insideLoop) {
         CheckFrame f = linesFrame(lines, parentScope, func, insideLoop);
         hub.driver.run(f);
-        return (TypeCheckerModel.Scope) f.out;
+        return (Scope) f.out;
     }
 
     /** Checks `lines` in a new child scope of `parentScope`; the finished frame's `out` is that scope. */
-    public CheckFrame linesFrame(List<Token> lines, TypeCheckerModel.Scope parentScope, TypeCheckerModel.FuncInfo func, boolean insideLoop) {
+    public CheckFrame linesFrame(List<Token> lines, Scope parentScope, FuncInfo func, boolean insideLoop) {
         CheckFrame f = new CheckFrame(CheckFrame.LINES, null, parentScope, func);
         f.toks = lines;
         f.q = insideLoop;
@@ -805,7 +805,7 @@ public final class TypeCheckerStatements {
 
     public int stepLines(CheckFrame f) {
         if (f.phase == 0) {
-            f.sc1 = new TypeCheckerModel.Scope(f.scope);
+            f.sc1 = new Scope(f.scope);
             f.phase = 1;
             return f.call(linesInScopeFrame(f.toks, f.sc1, f.func, f.q));
         }
@@ -814,19 +814,19 @@ public final class TypeCheckerStatements {
     }
 
 
-    public TypeCheckerModel.Scope checkLinesAsLoopBody(List<Token> lines, TypeCheckerModel.Scope parentScope, TypeCheckerModel.FuncInfo func) {
+    public Scope checkLinesAsLoopBody(List<Token> lines, Scope parentScope, FuncInfo func) {
         return checkLinesAsLoopBody(lines, parentScope, func, false);
     }
 
 
-    public TypeCheckerModel.Scope checkLinesAsLoopBody(List<Token> lines, TypeCheckerModel.Scope parentScope, TypeCheckerModel.FuncInfo func, boolean isDynArrayForLoopBody) {
+    public Scope checkLinesAsLoopBody(List<Token> lines, Scope parentScope, FuncInfo func, boolean isDynArrayForLoopBody) {
         CheckFrame f = loopBodyFrame(lines, parentScope, func, isDynArrayForLoopBody);
         hub.driver.run(f);
-        return (TypeCheckerModel.Scope) f.out;
+        return (Scope) f.out;
     }
 
     /** `isDynArrayForLoopBody` is true only for a "for i in dynarrayExpr{...}" loop's own body specifically -- see Scope.insideDynArrayForLoopBody's own comment. The finished frame's `out` is the body scope. */
-    public CheckFrame loopBodyFrame(List<Token> lines, TypeCheckerModel.Scope parentScope, TypeCheckerModel.FuncInfo func, boolean isDynArrayForLoopBody) {
+    public CheckFrame loopBodyFrame(List<Token> lines, Scope parentScope, FuncInfo func, boolean isDynArrayForLoopBody) {
         CheckFrame f = new CheckFrame(CheckFrame.LOOP_BODY, null, parentScope, func);
         f.toks = lines;
         f.p = isDynArrayForLoopBody;
@@ -835,7 +835,7 @@ public final class TypeCheckerStatements {
 
     public int stepLoopBody(CheckFrame f) {
         if (f.phase == 0) {
-            f.sc1 = new TypeCheckerModel.Scope(f.scope, true, f.p);
+            f.sc1 = new Scope(f.scope, true, f.p);
             hub.model.userLoopScopes.add(f.sc1);
             ProofKills.enterLoop();
             f.phase = 1;
@@ -848,7 +848,7 @@ public final class TypeCheckerStatements {
 
 
     /** Lock-release calls owed from `from` up to (not past) `boundary`, in LIFO order (activeLockReleases is extended by copy, so the span is a suffix). */
-    public List<Token> collectLockReleasesToBoundary(TypeCheckerModel.Scope from, TypeCheckerModel.Scope boundary) {
+    public List<Token> collectLockReleasesToBoundary(Scope from, Scope boundary) {
         List<Token> slice = new ArrayList<>(from.activeLockReleases.subList(
                 boundary.activeLockReleases.size(), from.activeLockReleases.size()));
         Collections.reverse(slice);
@@ -890,9 +890,9 @@ public final class TypeCheckerStatements {
      * Owns slots to GT_DESTRUCT, innermost scope and most recent declaration first, up to `boundary`; skips moved slots and
      * `preservedSlotKey` (a return statement's returned slot). One flat entry per slot. See docs/TypeChecker.md, "Scope exit: destruct and unlock lists".
      */
-    public List<String> collectOwnsToDestruct(TypeCheckerModel.Scope from, TypeCheckerModel.Scope boundary, String preservedSlotKey) {
+    public List<String> collectOwnsToDestruct(Scope from, Scope boundary, String preservedSlotKey) {
         List<String> result = new ArrayList<>();
-        for (TypeCheckerModel.Scope s = from; s != null; s = s.parent) {
+        for (Scope s = from; s != null; s = s.parent) {
             for (int i = s.ownsDeclaredHere.size() - 1; i >= 0; i--) {
                 String name = s.ownsDeclaredHere.get(i);
                 if ((s.movedSlots.contains(name) && !hub.model.partlyMovedSlots.contains(name)) || name.equals(preservedSlotKey)) {
@@ -908,7 +908,7 @@ public final class TypeCheckerStatements {
     }
 
     /** Natural-end destruct list; empty when the last statement is a literal return/break (the list would be dead code). Deliberately no full reachability analysis. */
-    public List<String> collectNaturalEndDestruct(List<Token> lines, TypeCheckerModel.Scope from, TypeCheckerModel.Scope boundary) {
+    public List<String> collectNaturalEndDestruct(List<Token> lines, Scope from, Scope boundary) {
         if (!lines.isEmpty()) {
             Token last = lines.get(lines.size() - 1).childs.get(0);
             if (last.type == TokenType.KEYWORD && (last.text.equals("return") || last.text.equals("break"))) {
@@ -918,11 +918,11 @@ public final class TypeCheckerStatements {
         return collectOwnsToDestruct(from, boundary, null);
     }
 
-    public void checkLinesInScope(List<Token> lines, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func, boolean insideLoop) {
+    public void checkLinesInScope(List<Token> lines, Scope scope, FuncInfo func, boolean insideLoop) {
         hub.driver.run(linesInScopeFrame(lines, scope, func, insideLoop));
     }
 
-    public CheckFrame linesInScopeFrame(List<Token> lines, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func, boolean insideLoop) {
+    public CheckFrame linesInScopeFrame(List<Token> lines, Scope scope, FuncInfo func, boolean insideLoop) {
         CheckFrame f = new CheckFrame(CheckFrame.LINES_IN_SCOPE, null, scope, func);
         f.toks = lines;
         f.q = insideLoop;
@@ -940,9 +940,9 @@ public final class TypeCheckerStatements {
             List<Token.MatchPattern> assumePatterns = (List<Token.MatchPattern>) f.gotFrame.out;
             List<Token.MatchPattern> assumeExtended = new ArrayList<>(f.scope.activeMatchPatterns);
             assumeExtended.addAll(assumePatterns);
-            f.scope = new TypeCheckerModel.Scope(f.scope, assumeExtended, false);
+            f.scope = new Scope(f.scope, assumeExtended, false);
         }
-        TypeCheckerModel.UnsafeBlockRecord blockRec = (TypeCheckerModel.UnsafeBlockRecord) f.data;
+        UnsafeBlockRecord blockRec = (UnsafeBlockRecord) f.data;
         while (f.i < lines.size()) {
             Token stmt = lines.get(f.i).childs.get(0);
             if (blockRec != null) {
@@ -1001,13 +1001,13 @@ public final class TypeCheckerStatements {
      * one real pass sees cross-iteration use-after-move. Call arguments only count for a name with exactly one overload.
      * See docs/TypeChecker.md, "Loop move pre-scan".
      */
-    public void collectLoopMoves(List<Token> lines, TypeCheckerModel.Scope scope, Set<String> out) {
+    public void collectLoopMoves(List<Token> lines, Scope scope, Set<String> out) {
         for (Token lineTok : lines) {
             collectMovesInNode(lineTok.childs.get(0), scope, out);
         }
     }
 
-    public void collectMovesInNode(Token root, TypeCheckerModel.Scope scope, Set<String> out) {
+    public void collectMovesInNode(Token root, Scope scope, Set<String> out) {
         Deque<Token> work = new java.util.LinkedList<>();   // may hold null children
         work.push(root);
         while (!work.isEmpty()) {
@@ -1018,7 +1018,7 @@ public final class TypeCheckerStatements {
             if (node.type == TokenType.OPERATOR && node.text.equals("=")) {
                 Token destTok = node.left;
                 if (destTok.type == TokenType.KEYWORD && destTok.text.equals("let")) {
-                    TypeCheckerModel.TypeInfo rhsDeclared = lookupDeclaredTypeStructurally(node.right, scope);
+                    TypeInfo rhsDeclared = lookupDeclaredTypeStructurally(node.right, scope);
                     if (rhsDeclared != null && "owns".equals(rhsDeclared.storage)) {
                         String key = hub.expressions.slotKeyOf(node.right);
                         if (key != null) {
@@ -1026,7 +1026,7 @@ public final class TypeCheckerStatements {
                         }
                     }
                 } else {
-                    TypeCheckerModel.TypeInfo declared = lookupDeclaredTypeStructurally(destTok, scope);
+                    TypeInfo declared = lookupDeclaredTypeStructurally(destTok, scope);
                     if (declared != null && "owns".equals(declared.storage)) {
                         String key = hub.expressions.slotKeyOf(node.right);
                         if (key != null) {
@@ -1035,11 +1035,11 @@ public final class TypeCheckerStatements {
                     }
                 }
             } else if (node.type == TokenType.OPERATOR && node.text.equals("CALL") && node.left.type == TokenType.VARREF) {
-                List<TypeCheckerModel.FuncInfo> overloads = hub.model.functions.get(node.left.text);
+                List<FuncInfo> overloads = hub.model.functions.get(node.left.text);
                 if (overloads != null && overloads.size() == 1 && !node.right.childs.isEmpty()) {
                     List<Token> argNodes = new ArrayList<>();
                     hub.locksAndProofs.collectCommaArgs(node.right.childs.get(0), argNodes);
-                    TypeCheckerModel.FuncInfo only = overloads.get(0);
+                    FuncInfo only = overloads.get(0);
                     for (int i = 0; i < argNodes.size() && i < only.paramTypes.size(); i++) {
                         if ("owns".equals(only.paramTypes.get(i).storage)) {
                             String key = hub.expressions.slotKeyOf(argNodes.get(i));
@@ -1068,10 +1068,10 @@ public final class TypeCheckerStatements {
     }
 
     /** Structural-only type lookup (Scope/StructInfo, no expression resolution) -- used solely by collectLoopMoves's cheap pre-scan and checkAddressOf's 'ref' validation. */
-    public TypeCheckerModel.TypeInfo lookupDeclaredTypeStructurally(Token node, TypeCheckerModel.Scope scope) {
+    public TypeInfo lookupDeclaredTypeStructurally(Token node, Scope scope) {
         // walk down the `.member` / `[index]` spine to its root, then apply the steps back up
         Deque<Token> steps = new ArrayDeque<>();
-        TypeCheckerModel.TypeInfo cur;
+        TypeInfo cur;
         while (true) {
             if (node.type == TokenType.DELINEATOR && node.text.equals("(") && !node.childs.isEmpty()) {
                 node = node.childs.get(0);
@@ -1091,7 +1091,7 @@ public final class TypeCheckerStatements {
         while (!steps.isEmpty() && cur != null) {
             Token step = steps.pop();
             if (step.text.equals(".")) {
-                TypeCheckerModel.StructInfo si = hub.model.structs.get(cur.baseType);
+                StructInfo si = hub.model.structs.get(cur.baseType);
                 cur = si == null ? null : si.members.get(step.right.text);
             } else {
                 cur = cur.dynArrayElementType != null ? cur.dynArrayElementType : cur.arrayElementType;
@@ -1100,11 +1100,11 @@ public final class TypeCheckerStatements {
         return cur;
     }
 
-    public void checkStatement(Token stmt, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func, boolean insideLoop) {
+    public void checkStatement(Token stmt, Scope scope, FuncInfo func, boolean insideLoop) {
         hub.driver.run(statementFrame(stmt, scope, func, insideLoop));
     }
 
-    public CheckFrame statementFrame(Token stmt, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func, boolean insideLoop) {
+    public CheckFrame statementFrame(Token stmt, Scope scope, FuncInfo func, boolean insideLoop) {
         CheckFrame f = new CheckFrame(CheckFrame.STATEMENT, stmt, scope, func);
         f.q = insideLoop;
         return f;
@@ -1113,8 +1113,8 @@ public final class TypeCheckerStatements {
     /** One statement. Phase 0 dispatches; a statement with a nested block resumes in phase 1 (and 2); phase 99 = the delegate finished. */
     public int stepStatement(CheckFrame f) {
         Token stmt = f.node;
-        TypeCheckerModel.Scope scope = f.scope;
-        TypeCheckerModel.FuncInfo func = f.func;
+        Scope scope = f.scope;
+        FuncInfo func = f.func;
         boolean insideLoop = f.q;
         if (f.phase == 99) {
             return f.done(null);
@@ -1180,7 +1180,7 @@ public final class TypeCheckerStatements {
                         throw new CompilerException("type", stmt.file, stmt.line,
                                 "'unsafe' cannot be nested inside 'safe'");
                     }
-                    TypeCheckerModel.Scope safetyBlockScope = new TypeCheckerModel.Scope(scope, stmt.text);
+                    Scope safetyBlockScope = new Scope(scope, stmt.text);
                     safetyBlockScope.transparent = true;
                     if (stmt.text.equals("unsafe")) {
                         if (!stmt.chk.synthesizedUnsafe) {
@@ -1265,7 +1265,7 @@ public final class TypeCheckerStatements {
         }
         // A bare identifier statement naming a known ASM invokes it (takes priority over variable resolution).
         if (stmt.type == TokenType.VARREF) {
-            TypeCheckerModel.AsmInfo info = hub.declarations.lookupAsmName(stmt.text, scope);
+            AsmInfo info = hub.declarations.lookupAsmName(stmt.text, scope);
             if (info != null) {
                 if (!hub.declarations.unsafeBypass(scope, "asm")) {
                     throw new CompilerException("type", stmt.file, stmt.line,
@@ -1283,12 +1283,12 @@ public final class TypeCheckerStatements {
     /** The statements with a nested block, after the nested check finished (loop, assume block, unsafe/safe block). */
     private int stepStatementResume(CheckFrame f) {
         Token stmt = f.node;
-        TypeCheckerModel.Scope scope = f.scope;
-        TypeCheckerModel.FuncInfo func = f.func;
+        Scope scope = f.scope;
+        FuncInfo func = f.func;
         boolean insideLoop = f.q;
         switch (stmt.text) {
             case "loop": {
-                TypeCheckerModel.Scope loopBodyScope = (TypeCheckerModel.Scope) f.gotFrame.out;
+                Scope loopBodyScope = (Scope) f.gotFrame.out;
                 // Every iteration is its own scope exit: owns locals are destructed at the natural bottom of the body.
                 stmt.chk.destructOnExit = collectNaturalEndDestruct(stmt.childs, loopBodyScope, loopBodyScope);
                 return f.done(null);
@@ -1299,7 +1299,7 @@ public final class TypeCheckerStatements {
                     List<Token.MatchPattern> assumePatterns = (List<Token.MatchPattern>) f.gotFrame.out;
                     List<Token.MatchPattern> assumeExtended = new ArrayList<>(scope.activeMatchPatterns);
                     assumeExtended.addAll(assumePatterns);
-                    TypeCheckerModel.Scope assumeBlockScope = new TypeCheckerModel.Scope(scope, assumeExtended, false);
+                    Scope assumeBlockScope = new Scope(scope, assumeExtended, false);
                     f.sc1 = assumeBlockScope;
                     f.phase = 2;
                     return f.call(linesInScopeFrame(stmt.childs, assumeBlockScope, func, insideLoop));
@@ -1329,7 +1329,7 @@ public final class TypeCheckerStatements {
      * "ASM name {..}" / "ASM name \"path\"" as a statement. Unnamed: content is stashed on the token and emitted in place.
      * Named: registered in the current scope only. See docs/TypeChecker.md, "ASM declarations".
      */
-    public void checkAsmDeclaration(Token stmt, TypeCheckerModel.Scope scope) {
+    public void checkAsmDeclaration(Token stmt, Scope scope) {
         if (!hub.declarations.unsafeBypass(scope, "asm")) {
             throw new CompilerException("type", stmt.file, stmt.line,
                     "declaring 'ASM' requires 'unsafe' code");
@@ -1345,7 +1345,7 @@ public final class TypeCheckerStatements {
             throw new CompilerException("type", stmt.file, stmt.line,
                     "'ASM " + name + "' is already declared in this scope");
         }
-        TypeCheckerModel.AsmInfo info = new TypeCheckerModel.AsmInfo();
+        AsmInfo info = new AsmInfo();
         info.name = name;
         info.rawText = rawText;
         info.declTok = stmt;
@@ -1436,14 +1436,14 @@ public final class TypeCheckerStatements {
     }
 
     /** Registers (or finds) the record of a statement-level `unsafe` block and validates its tag words. */
-    public TypeCheckerModel.UnsafeBlockRecord recordUnsafeBlock(Token stmt) {
+    public UnsafeBlockRecord recordUnsafeBlock(Token stmt) {
         if (stmt.chk.synthesizedUnsafe) {
             return null;
         }
         String key = stmt.file + ":" + stmt.line + ":" + (stmt.unsafeTags == null ? "" : String.join(",", stmt.unsafeTags));
-        TypeCheckerModel.UnsafeBlockRecord rec = hub.model.unsafeBlockRecords.get(key);
+        UnsafeBlockRecord rec = hub.model.unsafeBlockRecords.get(key);
         if (rec == null) {
-            rec = new TypeCheckerModel.UnsafeBlockRecord(stmt);
+            rec = new UnsafeBlockRecord(stmt);
             if (stmt.unsafeTags != null) {
                 if (stmt.unsafeTags.contains("unaudited")) {
                     if (stmt.unsafeTags.size() != 1) {
@@ -1479,7 +1479,7 @@ public final class TypeCheckerStatements {
         String reportPath = System.getenv("CASPIEN_UNSAFE_REPORT");
         if (reportPath != null && !reportPath.isEmpty()) {
             StringBuilder sb = new StringBuilder();
-            for (TypeCheckerModel.UnsafeBlockRecord rec : hub.model.unsafeBlockRecords.values()) {
+            for (UnsafeBlockRecord rec : hub.model.unsafeBlockRecords.values()) {
                 sb.append(rec.tok.file).append('\t').append(rec.tok.line).append('\t').append(String.join(" ", rec.used)).append('\n');
             }
             try {
@@ -1490,7 +1490,7 @@ public final class TypeCheckerStatements {
             }
             return;
         }
-        for (TypeCheckerModel.UnsafeBlockRecord rec : hub.model.unsafeBlockRecords.values()) {
+        for (UnsafeBlockRecord rec : hub.model.unsafeBlockRecords.values()) {
             if (rec.declared.contains("unaudited")) {
                 continue;   // vouches for everything, needed or not
             }
@@ -1512,7 +1512,7 @@ public final class TypeCheckerStatements {
         }
     }
 
-    public List<Token.MatchPattern> checkAssumeMatchCondition(Token stmt, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+    public List<Token.MatchPattern> checkAssumeMatchCondition(Token stmt, Scope scope, FuncInfo func) {
         CheckFrame f = assumeCondFrame(stmt, scope, func);
         hub.driver.run(f);
         @SuppressWarnings("unchecked")
@@ -1521,7 +1521,7 @@ public final class TypeCheckerStatements {
     }
 
     /** The finished frame's `out` is the list of proofs the `assume match` makes. */
-    public CheckFrame assumeCondFrame(Token stmt, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+    public CheckFrame assumeCondFrame(Token stmt, Scope scope, FuncInfo func) {
         return new CheckFrame(CheckFrame.ASSUME_COND, stmt, scope, func);
     }
 
@@ -1553,7 +1553,7 @@ public final class TypeCheckerStatements {
     }
 
 
-    public void checkAssumeFieldVariant(Token stmt, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func, List<Token.MatchPattern> out) {
+    public void checkAssumeFieldVariant(Token stmt, Scope scope, FuncInfo func, List<Token.MatchPattern> out) {
         CheckFrame f = new CheckFrame(CheckFrame.ASSUME_FIELD, stmt, scope, func);
         f.data = out;
         hub.driver.run(f);
@@ -1562,7 +1562,7 @@ public final class TypeCheckerStatements {
     /** "assume match x.field : V1|V2" and the float-state form; `stmt.sub.get(0)` is the built x.field tree, assumeFieldVariants the parsed variant names. f.data = the output proof list. */
     public int stepAssumeField(CheckFrame f) {
         Token stmt = f.node;
-        TypeCheckerModel.Scope scope = f.scope;
+        Scope scope = f.scope;
         @SuppressWarnings("unchecked")
         List<Token.MatchPattern> out = (List<Token.MatchPattern>) f.data;
         Token fieldAccess = stmt.operand();
@@ -1575,7 +1575,7 @@ public final class TypeCheckerStatements {
             return f.call(fieldAccess);
         }
         if (f.phase == 1) {
-            TypeCheckerModel.TypeInfo floatType = f.got;
+            TypeInfo floatType = f.got;
             if (TypeCheckerModel.isFloatType(floatType.baseType)) {
                 Set<String> allowed = floatType.floatStates != null ? floatType.floatStates : TypeCheckerModel.FLOAT_STATE_NAMES;
                 for (String state : stmt.assumeFieldVariants) {
@@ -1605,8 +1605,8 @@ public final class TypeCheckerStatements {
             f.phase = 2;
             return f.call(fieldAccess);
         }
-        TypeCheckerModel.TypeInfo fieldType = f.got;
-        TypeCheckerModel.EnumInfo enumInfo = hub.model.enums.get(fieldType.baseType);
+        TypeInfo fieldType = f.got;
+        EnumInfo enumInfo = hub.model.enums.get(fieldType.baseType);
         if (enumInfo == null) {
             throw new CompilerException("type", fieldAccess.file, fieldAccess.line,
                     "'assume match x.field : VARIANT' requires an enum-typed field, got '"
@@ -1631,7 +1631,7 @@ public final class TypeCheckerStatements {
      * Safe code: a match/elsematch branch must add at least one proof not already active (an alive proof with kill events
      * since it was made counts as stale). Never called for a bare else or for case matches. See docs/TypeChecker.md, "Match chains".
      */
-    public void requireNewTypeAssertion(List<Token.MatchPattern> newPatterns, TypeCheckerModel.Scope scope, Token at) {
+    public void requireNewTypeAssertion(List<Token.MatchPattern> newPatterns, Scope scope, Token at) {
         if (scope.currentSafety.equals("unsafe") || newPatterns.isEmpty()) {
             return;
         }
@@ -1655,11 +1655,11 @@ public final class TypeCheckerStatements {
                 && java.util.Objects.equals(a.provenVariants, b.provenVariants);
     }
 
-    public void checkMatchChain(Token matchTok, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func, boolean insideLoop) {
+    public void checkMatchChain(Token matchTok, Scope scope, FuncInfo func, boolean insideLoop) {
         hub.driver.run(matchChainFrame(matchTok, scope, func, insideLoop));
     }
 
-    public CheckFrame matchChainFrame(Token matchTok, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func, boolean insideLoop) {
+    public CheckFrame matchChainFrame(Token matchTok, Scope scope, FuncInfo func, boolean insideLoop) {
         CheckFrame f = new CheckFrame(CheckFrame.MATCH_CHAIN, matchTok, scope, func);
         f.q = insideLoop;
         return f;
@@ -1668,8 +1668,8 @@ public final class TypeCheckerStatements {
     /** match / elsematch / else chain: union move-tracking like checkIfChain, per-branch proof scoping. See docs/TypeChecker.md, "Match chains". f.x = the branch being checked. */
     public int stepMatchChain(CheckFrame f) {
         Token matchTok = f.node;
-        TypeCheckerModel.Scope scope = f.scope;
-        TypeCheckerModel.FuncInfo func = f.func;
+        Scope scope = f.scope;
+        FuncInfo func = f.func;
         Object[] st;
         if (f.phase == 0) {
             st = new Object[]{scope.movedSlots, new HashSet<String>(), new ArrayList<Set<String>>(), null, null, null};
@@ -1684,7 +1684,7 @@ public final class TypeCheckerStatements {
             List<Set<String>> survivorMoves = (List<Set<String>>) st[2];
             @SuppressWarnings("unchecked")
             Set<String> branchMoved = (Set<String>) st[3];
-            TypeCheckerModel.Scope branchScope = (TypeCheckerModel.Scope) st[4];
+            Scope branchScope = (Scope) st[4];
             // Natural end of a branch is not a function/loop boundary.
             branch.chk.destructOnExit = collectNaturalEndDestruct(branch.childs, branchScope, branchScope);
             union.addAll(branchMoved);
@@ -1716,7 +1716,7 @@ public final class TypeCheckerStatements {
             List<Token.MatchPattern> extended = new ArrayList<>(scope.activeMatchPatterns);
             extended.addAll(patterns);
             Set<String> branchMoved = new HashSet<>(preState);
-            TypeCheckerModel.Scope branchScope = new TypeCheckerModel.Scope(scope, branchMoved, extended, isBaseCaseMatch);
+            Scope branchScope = new Scope(scope, branchMoved, extended, isBaseCaseMatch);
             narrowInstanceofSlots(patterns, scope, branchScope);
             st[3] = branchMoved;
             st[4] = branchScope;
@@ -1735,16 +1735,16 @@ public final class TypeCheckerStatements {
 
 
     /** Shadows a plain local variable with the concrete type proven by an "instanceof" proof for the branch (not for dotted/indexed slots). See docs/TypeChecker.md, "Match chains". */
-    public void narrowInstanceofSlots(List<Token.MatchPattern> patterns, TypeCheckerModel.Scope outerScope, TypeCheckerModel.Scope branchScope) {
+    public void narrowInstanceofSlots(List<Token.MatchPattern> patterns, Scope outerScope, Scope branchScope) {
         for (Token.MatchPattern p : patterns) {
             if (!"instanceof".equals(p.kind) || p.slotKey == null || p.slotKey.contains(".") || p.slotKey.contains("[")) {
                 continue;
             }
-            TypeCheckerModel.TypeInfo currentType = outerScope.lookup(p.slotKey);
+            TypeInfo currentType = outerScope.lookup(p.slotKey);
             if (currentType == null) {
                 continue;
             }
-            branchScope.vars.put(p.slotKey, new TypeCheckerModel.TypeInfo(currentType.storage, currentType.mutability, p.targetName));
+            branchScope.vars.put(p.slotKey, new TypeInfo(currentType.storage, currentType.mutability, p.targetName));
         }
     }
 }

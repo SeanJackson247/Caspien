@@ -28,11 +28,11 @@ public final class AnnotationFrame {
     public Token baseTypeTok;                      // the visibility check anchors to its file, not `at`
     public final StringBuilder arraySuffix = new StringBuilder();
     public boolean baseIsIncompleteRange;
-    public TypeCheckerModel.TypeInfo dynArrayElementType;
-    public TypeCheckerModel.TypeInfo unsafeDynArrayElementType;
-    public TypeCheckerModel.TypeInfo rawPointeeType;
-    public List<TypeCheckerModel.TypeInfo> funcPtrParams;
-    public TypeCheckerModel.TypeInfo funcPtrReturn;
+    public TypeInfo dynArrayElementType;
+    public TypeInfo unsafeDynArrayElementType;
+    public TypeInfo rawPointeeType;
+    public List<TypeInfo> funcPtrParams;
+    public TypeInfo funcPtrReturn;
     public Set<String> funcPtrDecorators;
     public String funcPtrCallConventionName;
 

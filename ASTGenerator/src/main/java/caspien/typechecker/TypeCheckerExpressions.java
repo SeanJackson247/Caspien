@@ -34,21 +34,21 @@ public final class TypeCheckerExpressions {
         this.hub = hub;
     }
 
-    public TypeCheckerModel.TypeInfo resolveExprTypeInner(Token node, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+    public TypeInfo resolveExprTypeInner(Token node, Scope scope, FuncInfo func) {
         while (true) {
         switch (node.type) {
             case STRING:
                 // String literals are 'static imut string' and 'some' (always present); 'some' coerces one-way to plain.
-                return new TypeCheckerModel.TypeInfo("static", "imut", "string").withSome(true);
+                return new TypeInfo("static", "imut", "string").withSome(true);
             case CHAR:
-                return new TypeCheckerModel.TypeInfo(null, "indeterminate", "char");
+                return new TypeInfo(null, "indeterminate", "char");
             case INTEGER:
                 // Built-in limit constants (u64Max, ...) carry a forced concrete type; other integer literals are indeterminate u64.
                 if (node.forcedLiteralType != null) {
-                    return new TypeCheckerModel.TypeInfo(null, "imut", node.forcedLiteralType);
+                    return new TypeInfo(null, "imut", node.forcedLiteralType);
                 }
                 {
-                    TypeCheckerModel.TypeInfo literalType = new TypeCheckerModel.TypeInfo(null, "indeterminate", "u64");
+                    TypeInfo literalType = new TypeInfo(null, "indeterminate", "u64");
                     try {
                         literalType.literalValue = new java.math.BigInteger(node.text);
                     } catch (NumberFormatException notADecimalLiteral) {
@@ -63,17 +63,17 @@ public final class TypeCheckerExpressions {
                 }
             case FLOAT:
                 if (node.forcedLiteralType != null) {
-                    return new TypeCheckerModel.TypeInfo(null, "imut", node.forcedLiteralType);
+                    return new TypeInfo(null, "imut", node.forcedLiteralType);
                 }
                 {
-                    TypeCheckerModel.TypeInfo floatLit = new TypeCheckerModel.TypeInfo(null, "indeterminate", "f32");
+                    TypeInfo floatLit = new TypeInfo(null, "indeterminate", "f32");
                     floatLit.floatLiteral = true;
                     return floatLit;
                 }
             case BOOL:
-                return new TypeCheckerModel.TypeInfo(null, "indeterminate", "bool");
+                return new TypeInfo(null, "indeterminate", "bool");
             case NULL:
-                return new TypeCheckerModel.TypeInfo(null, null, "null");
+                return new TypeInfo(null, null, "null");
             case TEMPLATE_STRING:
                 return resolveTemplateString(node);
             case VARREF: {
@@ -87,7 +87,7 @@ public final class TypeCheckerExpressions {
                     throw new CompilerException("type", node.file, node.line,
                             "use of '" + node.text + "' after its ownership was moved");
                 }
-                TypeCheckerModel.TypeInfo t = scope.lookup(node.text);
+                TypeInfo t = scope.lookup(node.text);
                 if (t != null && hub.model.activeCatchTries.containsKey(node.text) && node != hub.model.rethrowOperand) {
                     // stack_trace.md, 3.6: the catch parameter is the caught error (message + trace), not the message string
                     throw new CompilerException("type", node.file, node.line,
@@ -129,7 +129,7 @@ public final class TypeCheckerExpressions {
                                             + "it's declared in");
                         }
                     }
-                    TypeCheckerModel.TypeInfo globalType = hub.model.globals.get(node.text);
+                    TypeInfo globalType = hub.model.globals.get(node.text);
                     hub.impls.requireSharedStateOrUnsafe(globalType, node.text, scope, node);
                     hub.impls.requirePureDoesNotReadMutableStatic(globalType, node.text, func, node);
                     return globalType;
@@ -144,14 +144,14 @@ public final class TypeCheckerExpressions {
                     continue;   // re-dispatch the substituted literal
                 }
                 // A bare function name used as a value is a function pointer with its own signature and decorators.
-                List<TypeCheckerModel.FuncInfo> asFunc = hub.model.functions.get(node.text);
+                List<FuncInfo> asFunc = hub.model.functions.get(node.text);
                 if (asFunc != null) {
                     if (asFunc.size() > 1) {
                         throw new CompilerException("type", node.file, node.line,
                                 "'" + node.text + "' has multiple overloads -- a bare function reference "
                                         + "must resolve to exactly one signature");
                     }
-                    TypeCheckerModel.FuncInfo target = asFunc.get(0);
+                    FuncInfo target = asFunc.get(0);
                     if (hub.impls.hasDecorator(target.funcToken.decorators, "event_loop")) {
                         // '@event_loop' cannot be referenced anywhere, same as being called.
                         throw new CompilerException("type", node.file, node.line,
@@ -164,7 +164,7 @@ public final class TypeCheckerExpressions {
                             decorators.add(d.name);
                         }
                     }
-                    return TypeCheckerModel.TypeInfo.funcPointer("imut", target.paramTypes, target.returnType, decorators,
+                    return TypeInfo.funcPointer("imut", target.paramTypes, target.returnType, decorators,
                             target.callConvention);
                 }
                 throw new CompilerException("type", node.file, node.line,
@@ -187,7 +187,7 @@ public final class TypeCheckerExpressions {
     }
 
     /** The operators that are never valid as ordinary expressions (everything else has its own frame kind, see stepExpr). */
-    public TypeCheckerModel.TypeInfo resolveOperatorType(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func,
+    public TypeInfo resolveOperatorType(Token op, Scope scope, FuncInfo func,
             boolean eligibleForRvoHere) {
         switch (op.text) {
             case "dup":
@@ -292,7 +292,7 @@ public final class TypeCheckerExpressions {
         return f.call(handler);
     }
 
-    private int finishExpr(CheckFrame f, TypeCheckerModel.TypeInfo result) {
+    private int finishExpr(CheckFrame f, TypeInfo result) {
         Token node = f.node;
         if (node.chk.resolvedCallTarget != null && node.type == TokenType.OPERATOR && "CALL".equals(node.text)) {
             ProofKills.call(f.scope.activeMatchPatterns, node, node.chk.resolvedCallTarget);
@@ -346,7 +346,7 @@ public final class TypeCheckerExpressions {
             return f.call(f.node.left);
         }
         hub.requireBoolOrInteger(f.got, f.node);
-        return f.done(new TypeCheckerModel.TypeInfo(null, "indeterminate", "bool"));
+        return f.done(new TypeInfo(null, "indeterminate", "bool"));
     }
 
     public int stepComparison(CheckFrame f) {
@@ -398,7 +398,7 @@ public final class TypeCheckerExpressions {
                 hub.model.insideShortCircuitEligiblePosition = false;
                 hub.requireBoolOrInteger(f.a, op);
                 hub.requireBoolOrInteger(f.got, op);
-                return f.done(new TypeCheckerModel.TypeInfo(null, "indeterminate", "bool"));
+                return f.done(new TypeInfo(null, "indeterminate", "bool"));
         }
     }
 
@@ -411,7 +411,7 @@ public final class TypeCheckerExpressions {
                 f.phase = 1;
                 return f.call(op.left);
             case 1: {
-                TypeCheckerModel.TypeInfo operand = f.got;
+                TypeInfo operand = f.got;
                 f.a = operand;
                 // C-style: "p++" on a raw pointer advances by the pointee size. A
                 // one-byte pointee keeps the ordinary path below, byte-identical to before.
@@ -430,7 +430,7 @@ public final class TypeCheckerExpressions {
                 return f.call(requireMutableFrame(f, op.left, operand, op));
             }
             default: {
-                TypeCheckerModel.TypeInfo operand = f.a;
+                TypeInfo operand = f.a;
                 requireNotLoopImmutable(op.left, f.scope, op);
                 invalidateMatchPatternsForWrite(op.left, f.scope);
                 if (f.p) {
@@ -438,12 +438,12 @@ public final class TypeCheckerExpressions {
                     op.chk.pointerScaleStruct = hub.pointeeStructName(operand);
                     return f.done(operand);
                 }
-                return f.done(new TypeCheckerModel.TypeInfo(null, "indeterminate", operand.baseType));
+                return f.done(new TypeInfo(null, "indeterminate", operand.baseType));
             }
         }
     }
 
-    private CheckFrame requireMutableFrame(CheckFrame f, Token targetExpr, TypeCheckerModel.TypeInfo targetType, Token at) {
+    private CheckFrame requireMutableFrame(CheckFrame f, Token targetExpr, TypeInfo targetType, Token at) {
         CheckFrame m = new CheckFrame(CheckFrame.REQUIRE_MUTABLE, targetExpr, f.scope, f.func);
         m.a = targetType;
         m.y = at;
@@ -457,7 +457,7 @@ public final class TypeCheckerExpressions {
             f.a = f.got;
         }
         Token targetExpr = f.node;
-        TypeCheckerModel.TypeInfo targetType = f.a;
+        TypeInfo targetType = f.a;
         Token at = f.y;
         if (!"mut".equals(targetType.mutability)) {
             throw new CompilerException("type", at.file, at.line,
@@ -494,12 +494,12 @@ public final class TypeCheckerExpressions {
     }
 
     /** checkIncrement for code that is not a frame itself. */
-    public TypeCheckerModel.TypeInfo checkIncrement(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+    public TypeInfo checkIncrement(Token op, Scope scope, FuncInfo func) {
         return hub.driver.run(new CheckFrame(CheckFrame.INCREMENT, op, scope, func));
     }
 
     /** requireMutable for code that is not a frame itself. */
-    public void requireMutable(Token targetExpr, TypeCheckerModel.TypeInfo targetType, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func, Token at) {
+    public void requireMutable(Token targetExpr, TypeInfo targetType, Scope scope, FuncInfo func, Token at) {
         CheckFrame m = new CheckFrame(CheckFrame.REQUIRE_MUTABLE, targetExpr, scope, func);
         m.a = targetType;
         m.y = at;
@@ -551,7 +551,7 @@ public final class TypeCheckerExpressions {
          * Invalidates every active match proof whose slotKey or rightSlotKey is `target`'s slot (or an assumed expression
          * key mentioning it); called from every write. See docs/TypeChecker.md, "Match-proof invalidation".
          */
-    public void invalidateMatchPatternsForWrite(Token target, TypeCheckerModel.Scope scope) {
+    public void invalidateMatchPatternsForWrite(Token target, Scope scope) {
         String key = slotKeyOf(target);
         if (key == null) {
             return;
@@ -691,7 +691,7 @@ public final class TypeCheckerExpressions {
      * `dyn([a, a])` passes the read check. A slot that is already moved when its own move is being recorded was moved a moment ago
      * by a sibling operand (a later read of an earlier-moved slot is rejected when it is read): two owners of one block.
      */
-    public void requireNotMovedAlready(String key, Token valueExpr, TypeCheckerModel.Scope scope) {
+    public void requireNotMovedAlready(String key, Token valueExpr, Scope scope) {
         if (scope.movedSlots.contains(key)) {
             throw new CompilerException("type", valueExpr.file, valueExpr.line,
                     "'" + key + "' is moved more than once in the same expression -- two owners of one block");
@@ -699,14 +699,14 @@ public final class TypeCheckerExpressions {
     }
 
     /** Marks the source slot of a value bound to an `owns` type as moved (let, assignment, call argument, struct field). See docs/TypeChecker.md, "Ownership moves". */
-    public void markMovedIfOwned(TypeCheckerModel.TypeInfo declaredType, Token valueExpr, TypeCheckerModel.Scope scope) {
+    public void markMovedIfOwned(TypeInfo declaredType, Token valueExpr, Scope scope) {
         markMovedIfOwnedInner(declaredType, valueExpr, scope);
         if (hub.model.newDynDepth > 0 && valueExpr.chk.isOwnershipMoveSource) {
             ProofKills.kill(scope.activeMatchPatterns, valueExpr, "moving an owner into 'new' or 'dyn' (it is freed if the allocation fails)");
         }
     }
 
-    public void markMovedIfOwnedInner(TypeCheckerModel.TypeInfo declaredType, Token valueExpr, TypeCheckerModel.Scope scope) {
+    public void markMovedIfOwnedInner(TypeInfo declaredType, Token valueExpr, Scope scope) {
         if (hub.declarations.isInlineOwningStruct(declaredType)) {
             // Copying a struct that owns memory would leave two owners: the source slot gives its owned members up
             // (nulled at run time, see BytecodeEmitter.emitOwnershipMoveNullOut) and can not be read afterwards.
@@ -780,7 +780,7 @@ public final class TypeCheckerExpressions {
         }
     }
 
-    public TypeCheckerModel.TypeInfo checkAssign(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+    public TypeInfo checkAssign(Token op, Scope scope, FuncInfo func) {
         return hub.driver.run(new CheckFrame(CheckFrame.ASSIGN, op, scope, func));
     }
 
@@ -790,8 +790,8 @@ public final class TypeCheckerExpressions {
      */
     public int stepAssign(CheckFrame f) {
         Token op = f.node;
-        TypeCheckerModel.Scope scope = f.scope;
-        TypeCheckerModel.FuncInfo func = f.func;
+        Scope scope = f.scope;
+        FuncInfo func = f.func;
         switch (f.phase) {
             case 0:
                 rejectDerefAsWriteTarget(op.left, "an assignment");
@@ -805,7 +805,7 @@ public final class TypeCheckerExpressions {
                         checkNoRuntimeConstructs(op.right);
                         // Compile-time constant: resolved in an empty Scope, so any variable reference fails as undeclared.
                         f.phase = 10;
-                        return f.call(new CheckFrame(CheckFrame.EXPR, op.right, new TypeCheckerModel.Scope(null), func));
+                        return f.call(new CheckFrame(CheckFrame.EXPR, op.right, new Scope(null), func));
                     }
             // A plain 'let' RHS is always an eligible struct-RVO destination; checkCall decides whether it is such a call.
             f.q = hub.model.insideStructRvoDestinationPosition;
@@ -828,7 +828,7 @@ public final class TypeCheckerExpressions {
                 hub.model.insideStructRvoDestinationPosition = f.q;
                 return f.done(assignPlainLet(op, scope, func, f.got));
             case 30: {
-                TypeCheckerModel.TypeInfo leftType = f.got;
+                TypeInfo leftType = f.got;
                 hub.model.assignTargetVar = null;
                 f.a = leftType;
                 // A bare EnumName.Variant is always 'imut' and would not coerce to a 'mut' target; allowed as in checkInstantiate and
@@ -852,8 +852,8 @@ public final class TypeCheckerExpressions {
             }
             case 31: {
                 hub.model.insideStructRvoDestinationPosition = f.q;
-                TypeCheckerModel.TypeInfo leftType = f.a;
-                TypeCheckerModel.TypeInfo rightType = f.got;
+                TypeInfo leftType = f.a;
+                TypeInfo rightType = f.got;
                 boolean isBareEnumVariantRight = f.p;
                 if (!isBareEnumVariantRight && !hub.acceptsAdaptingLiteral(leftType, rightType, op.right)) {
                     throw new CompilerException("type", op.file, op.line,
@@ -863,7 +863,7 @@ public final class TypeCheckerExpressions {
                 return f.call(requireMutableFrame(f, op.left, leftType, op));
             }
             default: {
-                TypeCheckerModel.TypeInfo leftType = f.a;
+                TypeInfo leftType = f.a;
                 String leftSlotKeyForRevival = f.s1;
                 requireNotConst(op.left, leftType, scope, op);
                 requireNotLoopImmutable(op.left, scope, op);
@@ -895,9 +895,9 @@ public final class TypeCheckerExpressions {
         }
     }
 
-    private TypeCheckerModel.TypeInfo assignStaticLet(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.TypeInfo rhsType) {
+    private TypeInfo assignStaticLet(Token op, Scope scope, TypeInfo rhsType) {
         Token nameTok = op.left.childs.get(0);
-        TypeCheckerModel.TypeInfo bound = resolveAndValidateTypeBound(op.left, rhsType, op.right);
+        TypeInfo bound = resolveAndValidateTypeBound(op.left, rhsType, op.right);
         if (bound != null) {
             rhsType = bound;
         } else {
@@ -918,9 +918,9 @@ public final class TypeCheckerExpressions {
         return rhsType;
     }
 
-    private TypeCheckerModel.TypeInfo assignPlainLet(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func, TypeCheckerModel.TypeInfo rhsType) {
+    private TypeInfo assignPlainLet(Token op, Scope scope, FuncInfo func, TypeInfo rhsType) {
         Token nameTok = op.left.childs.get(0);
-        TypeCheckerModel.TypeInfo bound = resolveAndValidateTypeBound(op.left, rhsType, op.right);
+        TypeInfo bound = resolveAndValidateTypeBound(op.left, rhsType, op.right);
         if (bound != null) {
             rhsType = bound;
         } else {
@@ -962,7 +962,7 @@ public final class TypeCheckerExpressions {
 
 
     /** Rejects compound assignment and ++/-- on an atomic target outright (they are read-then-write; use `swap`). See docs/TypeChecker.md, "Atomic write rules". */
-    public void requireNotAtomicOrdinaryWriteTarget(TypeCheckerModel.TypeInfo targetType, Token at, String opText) {
+    public void requireNotAtomicOrdinaryWriteTarget(TypeInfo targetType, Token at, String opText) {
         if (targetType.isAtomic) {
             throw new CompilerException("type", at.file, at.line,
                     "an 'atomic' value can't be written with '" + opText + "' -- every write to an "
@@ -972,7 +972,7 @@ public final class TypeCheckerExpressions {
     }
 
     /** Rejects assignment to a `let const` local, a const parameter or a const struct member. Struct-literal initialisation goes through checkInstantiate and never reaches here. */
-    public void requireNotConst(Token target, TypeCheckerModel.TypeInfo targetType, TypeCheckerModel.Scope scope, Token at) {
+    public void requireNotConst(Token target, TypeInfo targetType, Scope scope, Token at) {
         if (target.type == TokenType.VARREF && scope.isConstName(target.text)) {
             throw new CompilerException("type", at.file, at.line,
                     "'" + target.text + "' is 'const' -- it can never be assigned outside of its own "
@@ -987,7 +987,7 @@ public final class TypeCheckerExpressions {
     }
 
     /** Rejects reassigning a for/for-match loop variable or its source expression inside the loop body (`arr[i] = ..` is governed by requireLookupWriteAuthorized). */
-    public void requireNotLoopImmutable(Token target, TypeCheckerModel.Scope scope, Token at) {
+    public void requireNotLoopImmutable(Token target, Scope scope, Token at) {
         String key = slotKeyOf(target);
         if (key != null && scope.isLoopImmutable(key)) {
             throw new CompilerException("type", at.file, at.line,
@@ -1182,7 +1182,7 @@ public final class TypeCheckerExpressions {
     }
 
     /** Folds a template literal into a plain STRING token in place; each `${..}` is evaluated by evaluateConstant. See docs/TypeChecker.md, "Compile-time constants". */
-    public TypeCheckerModel.TypeInfo resolveTemplateString(Token node) {
+    public TypeInfo resolveTemplateString(Token node) {
         StringBuilder sb = new StringBuilder();
         for (Token seg : node.childs) {
             if (seg.type == TokenType.OPERATOR && seg.text.equals("TEMPLATE_STRING_PART")) {
@@ -1200,7 +1200,7 @@ public final class TypeCheckerExpressions {
         node.text = sb.toString();
         node.literalValue = sb.toString();
         node.childs = new ArrayList<>();
-        return new TypeCheckerModel.TypeInfo("static", "imut", "string").withSome(true);
+        return new TypeInfo("static", "imut", "string").withSome(true);
     }
 
     /** Stringifies one evaluated `${..}` segment; floats are rejected because no formatting convention is settled. */
@@ -1331,7 +1331,7 @@ public final class TypeCheckerExpressions {
     }
 
     /** A static/global scalar needs a concrete mutability ('mut' or 'imut'); a struct is already governed by its member declarations. */
-    public void requireStaticMutable(TypeCheckerModel.TypeInfo type, Token at) {
+    public void requireStaticMutable(TypeInfo type, Token at) {
         if (hub.model.structs.containsKey(type.baseType)) {
             return;
         }
@@ -1343,7 +1343,7 @@ public final class TypeCheckerExpressions {
     }
 
     /** A variable only accepts a value with concrete mutability; indeterminate values (literals, arithmetic results) need a `mut`/`imut` prefix. */
-    public void requireConcreteMutability(TypeCheckerModel.TypeInfo type, Token at) {
+    public void requireConcreteMutability(TypeInfo type, Token at) {
         if (!"mut".equals(type.mutability) && !"imut".equals(type.mutability)) {
             throw new CompilerException("type", at.file, at.line,
                     "this value's mutability is indeterminate -- write 'mut' or 'imut' before it to "
@@ -1355,12 +1355,12 @@ public final class TypeCheckerExpressions {
          * Checks `let:<FullType> name = expr`: the RHS must match the bound exactly, be 'null' for a pointer bound, or implement an
          * interface bound; no other implicit casting. Returns null when no bound is written. See docs/TypeChecker.md, "Let type bounds".
          */
-    public TypeCheckerModel.TypeInfo resolveAndValidateTypeBound(Token letTok, TypeCheckerModel.TypeInfo rhsType, Token rhsExpr) {
+    public TypeInfo resolveAndValidateTypeBound(Token letTok, TypeInfo rhsType, Token rhsExpr) {
         if (letTok.typeBound == null) {
             return null;
         }
-        TypeCheckerModel.TypeInfo bound = hub.signatures.resolveTypeAnnotationRaw(letTok.typeBound, letTok);
-        TypeCheckerModel.TypeInfo result;
+        TypeInfo bound = hub.signatures.resolveTypeAnnotationRaw(letTok.typeBound, letTok);
+        TypeInfo result;
         if (rhsType.baseType.equals("null")) {
             // Only pointers (owns/ref/raw, not auto/static) can be null.
             if (!hub.isPointerType(bound)) {
@@ -1402,14 +1402,14 @@ public final class TypeCheckerExpressions {
         return result;
     }
 
-    public TypeCheckerModel.TypeInfo checkCompoundAssign(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+    public TypeInfo checkCompoundAssign(Token op, Scope scope, FuncInfo func) {
         return hub.driver.run(new CheckFrame(CheckFrame.COMPOUND_ASSIGN, op, scope, func));
     }
 
     public int stepCompoundAssign(CheckFrame f) {
         Token op = f.node;
-        TypeCheckerModel.Scope scope = f.scope;
-        TypeCheckerModel.FuncInfo func = f.func;
+        Scope scope = f.scope;
+        FuncInfo func = f.func;
         switch (f.phase) {
             case 0:
                 rejectDerefAsWriteTarget(op.left, "a compound assignment");
@@ -1421,8 +1421,8 @@ public final class TypeCheckerExpressions {
                 f.phase = 2;
                 return f.call(op.right);
             case 2: {
-                TypeCheckerModel.TypeInfo leftType = f.a;
-                TypeCheckerModel.TypeInfo rightType = f.got;
+                TypeInfo leftType = f.a;
+                TypeInfo rightType = f.got;
                 // C-style: "p += n" / "p -= n" on a raw pointer moves by n elements (n * pointee size bytes).
                 boolean pointerCompound = TypeCheckerModel.isRawPointerType(leftType) && (op.text.equals("+=") || op.text.equals("-="))
                         && !(hub.pointeeSize(leftType, op) == 1 && leftType.sameBaseType(rightType));
@@ -1448,7 +1448,7 @@ public final class TypeCheckerExpressions {
                 return f.call(requireMutableFrame(f, op.left, leftType, op));
             }
             default: {
-                TypeCheckerModel.TypeInfo leftType = f.a;
+                TypeInfo leftType = f.a;
                 requireNotLoopImmutable(op.left, scope, op);
                 if (op.left.type == TokenType.OPERATOR && op.left.text.equals("LOOKUP")) {
                     hub.accessAndAsync.requireLookupWriteAuthorized(op.left, scope);
@@ -1461,7 +1461,7 @@ public final class TypeCheckerExpressions {
 
 
     /** The type of `l op r` once both operands are resolved. */
-    public TypeCheckerModel.TypeInfo arithmeticType(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.TypeInfo leftType, TypeCheckerModel.TypeInfo rightType) {
+    public TypeInfo arithmeticType(Token op, Scope scope, TypeInfo leftType, TypeInfo rightType) {
         // C-style pointer arithmetic on 'raw' pointers: pointer +/- integer and
         // integer + pointer give a pointer moved by n elements; pointer - pointer
         // gives the signed element count between them. Any other operator on a
@@ -1481,7 +1481,7 @@ public final class TypeCheckerExpressions {
                 op.chk.pointerArithKind = 3;
                 op.chk.pointerScale = hub.pointeeSize(leftType, op);
                 op.chk.pointerScaleStruct = hub.pointeeStructName(leftType);
-                return new TypeCheckerModel.TypeInfo(null, "indeterminate", "s64");
+                return new TypeInfo(null, "indeterminate", "s64");
             }
             if (leftPtr) {
                 hub.requireEightByteInteger(rightType, op);
@@ -1503,7 +1503,7 @@ public final class TypeCheckerExpressions {
         hub.requireNumeric(rightType, op);
         // arithmetic between two float literals is itself a float literal (it adapts, as a whole, to f32 or f64)
         boolean bothFloatLiterals = leftType.floatLiteral && rightType.floatLiteral;
-        TypeCheckerModel.TypeInfo[] unified = hub.unifyLiteralOperands(op, leftType, rightType);
+        TypeInfo[] unified = hub.unifyLiteralOperands(op, leftType, rightType);
         leftType = unified[0];
         rightType = unified[1];
         if (!leftType.sameBaseType(rightType)) {
@@ -1516,7 +1516,7 @@ public final class TypeCheckerExpressions {
         if (op.text.equals("/") || op.text.equals("%")) {
             requireProvenNonzeroDivisor(op.right, rightType, scope, op);
         }
-        TypeCheckerModel.TypeInfo arith = new TypeCheckerModel.TypeInfo(null, "indeterminate", leftType.baseType);
+        TypeInfo arith = new TypeInfo(null, "indeterminate", leftType.baseType);
         if (bothFloatLiterals) {
             arith.floatLiteral = true;
         }
@@ -1527,7 +1527,7 @@ public final class TypeCheckerExpressions {
          * Integer '/' and '%' need a literal nonzero divisor, a live nonzero match proof, or `assume match`; a literal 0 is always an error.
          * Floats are exempt (IEEE gives inf/NaN, no trap). See docs/TypeChecker.md, "Division proofs".
          */
-    public void requireProvenNonzeroDivisor(Token divisorExpr, TypeCheckerModel.TypeInfo divisorType, TypeCheckerModel.Scope scope, Token op) {
+    public void requireProvenNonzeroDivisor(Token divisorExpr, TypeInfo divisorType, Scope scope, Token op) {
         if (!TypeCheckerModel.INTEGER_TYPES.contains(divisorType.baseType)) {
             return;
         }
@@ -1549,11 +1549,11 @@ public final class TypeCheckerExpressions {
         }
     }
 
-    public TypeCheckerModel.TypeInfo unaryMinusType(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.TypeInfo operand) {
+    public TypeInfo unaryMinusType(Token op, Scope scope, TypeInfo operand) {
         hub.requireNumeric(operand, op);
         hub.locksAndProofs.requireProvenFloatState(op.left, operand, scope, op);
         String resultBase = TypeCheckerModel.UNSIGNED_TO_SIGNED.getOrDefault(operand.baseType, operand.baseType);
-        TypeCheckerModel.TypeInfo negated = new TypeCheckerModel.TypeInfo(null, "indeterminate", resultBase);
+        TypeInfo negated = new TypeInfo(null, "indeterminate", resultBase);
         if (operand.literalValue != null && operand.baseType.equals("u64")) {
             // "-5" is still a literal (see TypeInfo.literalValue): its value is -5, its default
             // type s64, and it may adapt to any signed type that holds it.
@@ -1565,8 +1565,8 @@ public final class TypeCheckerExpressions {
         return negated;
     }
 
-    public TypeCheckerModel.TypeInfo comparisonType(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.TypeInfo leftType, TypeCheckerModel.TypeInfo rightType) {
-        TypeCheckerModel.TypeInfo[] unified = hub.unifyLiteralOperands(op, leftType, rightType);
+    public TypeInfo comparisonType(Token op, Scope scope, TypeInfo leftType, TypeInfo rightType) {
+        TypeInfo[] unified = hub.unifyLiteralOperands(op, leftType, rightType);
         leftType = unified[0];
         rightType = unified[1];
         boolean sameType = leftType.sameBaseType(rightType);
@@ -1584,7 +1584,7 @@ public final class TypeCheckerExpressions {
         if (op.text.equals("==") || op.text.equals("!=")) {
             normalizeRefComparison(op, leftType, rightType);
         }
-        return new TypeCheckerModel.TypeInfo(null, "indeterminate", "bool");
+        return new TypeInfo(null, "indeterminate", "bool");
     }
 
     /**
@@ -1592,7 +1592,7 @@ public final class TypeCheckerExpressions {
      * compared with a nullable `ref` becomes an id (GT_REF_ID, equal objects have equal ids); a `raw` pointer compared with one makes the id
      * an address (GT_REF_RESOLVE). A `null` literal is 0 in both forms and needs nothing.
      */
-    public void normalizeRefComparison(Token op, TypeCheckerModel.TypeInfo leftType, TypeCheckerModel.TypeInfo rightType) {
+    public void normalizeRefComparison(Token op, TypeInfo leftType, TypeInfo rightType) {
         boolean leftId = "ref".equals(leftType.storage) && !leftType.isSome;
         boolean rightId = "ref".equals(rightType.storage) && !rightType.isSome;
         if (leftId == rightId || leftType.baseType.equals("null") || rightType.baseType.equals("null")) {
@@ -1600,7 +1600,7 @@ public final class TypeCheckerExpressions {
         }
         Token idSide = leftId ? op.left : op.right;
         Token addrSide = leftId ? op.right : op.left;
-        TypeCheckerModel.TypeInfo addrType = leftId ? rightType : leftType;
+        TypeInfo addrType = leftId ? rightType : leftType;
         if (addrType.storage == null) {
             return;
         }

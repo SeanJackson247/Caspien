@@ -45,13 +45,13 @@ public final class TypeChecker {
         declarations.check(rootLines);
     }
 
-    public TypeCheckerModel.TypeInfo checkAddressOf(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+    public TypeInfo checkAddressOf(Token op, Scope scope, FuncInfo func) {
         return driver.run(new CheckFrame(CheckFrame.ADDRESS_OF, op, scope, func));
     }
 
     public int stepAddressOf(CheckFrame f) {
         if (f.phase == 0) {
-            TypeCheckerModel.TypeInfo early = addressOfHead(f.node, f.scope, f.func);
+            TypeInfo early = addressOfHead(f.node, f.scope, f.func);
             if (early != null) {
                 return f.done(early);
             }
@@ -61,7 +61,7 @@ public final class TypeChecker {
         return f.done(addressOfTail(f.node, f.scope, f.func, f.got));
     }
 
-    private TypeCheckerModel.TypeInfo addressOfHead(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+    private TypeInfo addressOfHead(Token op, Scope scope, FuncInfo func) {
         String storage = op.text;
         if (storage.equals("raw") && !declarations.unsafeBypass(scope, "raw")) {
             throw new CompilerException("type", op.file, op.line,
@@ -81,7 +81,7 @@ public final class TypeChecker {
         }
         if (storage.equals("ref")) {
             // a 'ref' can only be taken from an existing 'owns' value (already heap-resident)
-            TypeCheckerModel.TypeInfo operandDeclaredType = statements.lookupDeclaredTypeStructurally(op.left, scope);
+            TypeInfo operandDeclaredType = statements.lookupDeclaredTypeStructurally(op.left, scope);
             if (operandDeclaredType == null || !"owns".equals(operandDeclaredType.storage)) {
                 throw new CompilerException("type", op.file, op.line,
                         "'ref' can only be constructed from an existing 'owns'-typed value -- this "
@@ -98,7 +98,7 @@ public final class TypeChecker {
         if (storage.equals("static") && op.left.type == TokenType.VARREF) {
             // `static x` of a struct-typed global is lowered as a copy of the struct into an 8-byte pointer slot (stack corruption, or a
             // garbage pointer): a struct static is reached by its own name (a swap-lock static under `match @lock`), never by a pointer.
-            TypeCheckerModel.TypeInfo staticOperand = scope.lookup(op.left.text) != null ? scope.lookup(op.left.text) : model.globals.get(op.left.text);
+            TypeInfo staticOperand = scope.lookup(op.left.text) != null ? scope.lookup(op.left.text) : model.globals.get(op.left.text);
             if (staticOperand != null && staticOperand.baseType != null && model.structs.containsKey(declarations.stripArrayDims(staticOperand.baseType))) {
                 throw new CompilerException("type", op.left.file, op.left.line,
                         "'static " + op.left.text + "' is not supported: '" + op.left.text + "' is a struct, and a struct static is reached "
@@ -128,7 +128,7 @@ public final class TypeChecker {
         return null;
     }
 
-    private TypeCheckerModel.TypeInfo addressOfTail(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func, TypeCheckerModel.TypeInfo operandType) {
+    private TypeInfo addressOfTail(Token op, Scope scope, FuncInfo func, TypeInfo operandType) {
         String storage = op.text;        if (storage.equals("auto") && operandType.storage != null && !"static".equals(operandType.storage)) {
             // `auto c` of a variable that is itself a pointer (`owns`/`ref`/`raw`/`auto`) was typed as a pointer to the pointee but produced the
             // address of the VARIABLE, so writes through it landed in the neighbouring stack slots (9 Oct demo: `auto c.n += 1` left c.n at 41).
@@ -137,7 +137,7 @@ public final class TypeChecker {
                             + operandType.canonical() + "): use the pointer itself, or 'ref' for a borrow of an owned value");
         }
         // the result is a fresh value: indeterminate mutability, needing mut/imut before a 'let' binds it
-        TypeCheckerModel.TypeInfo prefixResult = operandType.withMutability("indeterminate").withStorage(storage);
+        TypeInfo prefixResult = operandType.withMutability("indeterminate").withStorage(storage);
         if (storage.equals("ref") && !prefixResult.isSome) {
             op.chk.refToId = true;   // `ref x` of a nullable owner is a nullable `ref`: an id, not the address
         }
@@ -188,7 +188,7 @@ public final class TypeChecker {
             return f.call(op.left);
         }
         String target = op.text;
-        TypeCheckerModel.TypeInfo operandType = f.got;
+        TypeInfo operandType = f.got;
         if ("imut".equals(operandType.mutability) && target.equals("mut")) {
             throw new CompilerException("type", op.file, op.line,
                     "cannot make an 'imut' value 'mut' -- only an indeterminate or already-'mut' "
@@ -211,8 +211,8 @@ public final class TypeChecker {
             default:
                 break;
         }
-        TypeCheckerModel.TypeInfo leftType = f.a;
-        TypeCheckerModel.TypeInfo rightType = f.got;
+        TypeInfo leftType = f.a;
+        TypeInfo rightType = f.got;
         if (!isPlainU64(leftType)) {
             throw new CompilerException("type", op.left.file, op.left.line,
                     "'..' operands must resolve to a plain 'u64', got '" + leftType.canonical() + "'");
@@ -224,14 +224,14 @@ public final class TypeChecker {
         String leftDesc = rangeBoundDescriptor(op.left, leftType);
         String rightDesc = rangeBoundDescriptor(op.right, rightType);
         String baseType = "range(" + leftDesc + "," + rightDesc + ")";
-        return f.done(new TypeCheckerModel.TypeInfo(null, "imut", baseType));
+        return f.done(new TypeInfo(null, "imut", baseType));
     }
 
-    public boolean isPlainU64(TypeCheckerModel.TypeInfo t) {
+    public boolean isPlainU64(TypeInfo t) {
         return t.storage == null && t.baseType.equals("u64");
     }
 
-    public String rangeBoundDescriptor(Token boundExpr, TypeCheckerModel.TypeInfo boundType) {
+    public String rangeBoundDescriptor(Token boundExpr, TypeInfo boundType) {
         if (boundExpr.type == TokenType.INTEGER) {
             return boundExpr.text;
         }
@@ -244,22 +244,22 @@ public final class TypeChecker {
     }
 
     /** True for "dynarray(T)" (not the "unsafe dynarray(T)" variant, see isUnsafeDynArrayType). */
-    public boolean isDynArrayType(TypeCheckerModel.TypeInfo t) {
+    public boolean isDynArrayType(TypeInfo t) {
         return t.dynArrayElementType != null;
     }
 
     /** True for "unsafe dynarray(T)"; never true together with isDynArrayType. */
-    public boolean isUnsafeDynArrayType(TypeCheckerModel.TypeInfo t) {
+    public boolean isUnsafeDynArrayType(TypeInfo t) {
         return t.unsafeDynArrayElementType != null;
     }
 
     /** True for any range type, complete or incomplete (bare "range" behind a pointer). */
-    public boolean isRangeType(TypeCheckerModel.TypeInfo t) {
+    public boolean isRangeType(TypeInfo t) {
         return t.baseType.equals("range") || t.baseType.startsWith("range(");
     }
 
     /** True only for a fully-specified range -- false for a bare, incomplete "range" pointer. */
-    public boolean isCompleteRange(TypeCheckerModel.TypeInfo t) {
+    public boolean isCompleteRange(TypeInfo t) {
         return t.baseType.startsWith("range(");
     }
 
@@ -275,7 +275,7 @@ public final class TypeChecker {
     }
 
     /** `x in R`: u64 or range on the left; range, dynarray, fixed array, string or guaranteed enum on the right. See docs/TypeChecker.md, "Ranges and membership operators". */
-    public TypeCheckerModel.TypeInfo checkIn(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+    public TypeInfo checkIn(Token op, Scope scope, FuncInfo func) {
         return driver.run(new CheckFrame(CheckFrame.IN, op, scope, func));
     }
 
@@ -310,7 +310,7 @@ public final class TypeChecker {
         }
     }
 
-    private TypeCheckerModel.TypeInfo inType(Token op, TypeCheckerModel.TypeInfo leftType, TypeCheckerModel.TypeInfo rightType) {
+    private TypeInfo inType(Token op, TypeInfo leftType, TypeInfo rightType) {
         // `u64 in string`: runtime byte scan up to the NUL (IN_SCAN)
         if (rightType.baseType.equals("string")) {
             if (!isPlainU64(leftType)) {
@@ -319,7 +319,7 @@ public final class TypeChecker {
                                 + leftType.canonical() + "'");
             }
             op.chk.isStringMembershipCheck = true;
-            return new TypeCheckerModel.TypeInfo(null, "indeterminate", "bool");
+            return new TypeInfo(null, "indeterminate", "bool");
         }
         if (!isPlainU64(leftType) && !isRangeType(leftType)) {
             throw new CompilerException("type", op.left.file, op.left.line,
@@ -337,12 +337,12 @@ public final class TypeChecker {
                     "'in' requires a range or a dynarray on the right, got '"
                             + rightType.canonical() + "'");
         }
-        return new TypeCheckerModel.TypeInfo(null, "indeterminate", "bool");
+        return new TypeInfo(null, "indeterminate", "bool");
     }
 
 
     /** `u64 in EnumName`: the enum must be "guaranteed" (every variant has an explicit discriminant). See docs/TypeChecker.md, "Ranges and membership operators". */
-    public TypeCheckerModel.TypeInfo checkGuaranteedEnumMembership(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+    public TypeInfo checkGuaranteedEnumMembership(Token op, Scope scope, FuncInfo func) {
         return driver.run(new CheckFrame(CheckFrame.GUARANTEED_ENUM, op, scope, func));
     }
 
@@ -354,13 +354,13 @@ public final class TypeChecker {
         return f.done(enumMembershipTail(f.node, f.scope, f.func, f.got));
     }
 
-    private TypeCheckerModel.TypeInfo enumMembershipTail(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func, TypeCheckerModel.TypeInfo leftType) {        if (!isPlainU64(leftType)) {
+    private TypeInfo enumMembershipTail(Token op, Scope scope, FuncInfo func, TypeInfo leftType) {        if (!isPlainU64(leftType)) {
             throw new CompilerException("type", op.left.file, op.left.line,
                     "'in' against a guaranteed enum requires a plain 'u64' on the left, got '"
                             + leftType.canonical() + "'");
         }
         String enumName = op.right.text;
-        TypeCheckerModel.EnumInfo enumInfo = model.enums.get(enumName);
+        EnumInfo enumInfo = model.enums.get(enumName);
         if (enumInfo.explicitValues == null) {
             throw new CompilerException("type", op.right.file, op.right.line,
                     "'" + enumName + "' is not a guaranteed enum -- 'u64 in " + enumName + "' requires "
@@ -369,12 +369,12 @@ public final class TypeChecker {
         }
         op.right.chk.resolvedType = enumName;
         op.chk.isGuaranteedEnumMembershipCheck = true;
-        return new TypeCheckerModel.TypeInfo(null, "indeterminate", "bool");
+        return new TypeInfo(null, "indeterminate", "bool");
     }
 
 
     /** `within`: like `in` but range on both sides; strict proper subrange (IN-style typing, WITHIN opcode). See docs/TypeChecker.md, "Ranges and membership operators". */
-    public TypeCheckerModel.TypeInfo checkWithin(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+    public TypeInfo checkWithin(Token op, Scope scope, FuncInfo func) {
         return driver.run(new CheckFrame(CheckFrame.WITHIN, op, scope, func));
     }
 
@@ -392,7 +392,7 @@ public final class TypeChecker {
         }
     }
 
-    private TypeCheckerModel.TypeInfo withinType(Token op, TypeCheckerModel.TypeInfo leftType, TypeCheckerModel.TypeInfo rightType) {
+    private TypeInfo withinType(Token op, TypeInfo leftType, TypeInfo rightType) {
         if (!isRangeType(leftType)) {
             throw new CompilerException("type", op.left.file, op.left.line,
                     "'within' requires a range on the left, got '"
@@ -403,7 +403,7 @@ public final class TypeChecker {
                     "'within' requires a range on the right, got '"
                             + rightType.canonical() + "'");
         }
-        return new TypeCheckerModel.TypeInfo(null, "indeterminate", "bool");
+        return new TypeInfo(null, "indeterminate", "bool");
     }
 
 
@@ -413,7 +413,7 @@ public final class TypeChecker {
     }
 
     /** True for a storage-less struct-typed value (the Return Value Optimization shape). */
-    public boolean isStructByValueReturn(TypeCheckerModel.TypeInfo t) {
+    public boolean isStructByValueReturn(TypeInfo t) {
         return t.storage == null && model.structs.containsKey(t.baseType);
     }
 
@@ -428,19 +428,19 @@ public final class TypeChecker {
     }
 
     /** True for any type with a storage modifier. */
-    public boolean isPointerType(TypeCheckerModel.TypeInfo t) {
+    public boolean isPointerType(TypeInfo t) {
         return t.storage != null;
     }
 
     /** Argument matching: like typesCompatible, but a `some` parameter also accepts a not-`some` argument proven alive by `match Some`. See docs/TypeChecker.md, "Type compatibility". */
-    public boolean argSatisfiesParam(TypeCheckerModel.TypeInfo paramType, TypeCheckerModel.TypeInfo argType, Token argExpr, TypeCheckerModel.Scope scope) {
+    public boolean argSatisfiesParam(TypeInfo paramType, TypeInfo argType, Token argExpr, Scope scope) {
         if (typesCompatible(paramType, argType)) {
             return true;
         }
         if (argExpr == null || !paramType.isSome || argType.isSome) {
             return false;
         }
-        TypeCheckerModel.TypeInfo relaxed = argType.withSome(true);
+        TypeInfo relaxed = argType.withSome(true);
         return typesCompatible(paramType, relaxed) && locksAndProofs.isProvenAlive(argExpr, scope);
     }
 
@@ -449,7 +449,7 @@ public final class TypeChecker {
      * side's concrete integer type when its value fits (`a + 1` with `a: u8`). Returns the operand types
      * to use afterwards (unchanged when nothing adapted); the literal's expression is retagged.
      */
-    public TypeCheckerModel.TypeInfo[] unifyLiteralOperands(Token op, TypeCheckerModel.TypeInfo leftType, TypeCheckerModel.TypeInfo rightType) {
+    public TypeInfo[] unifyLiteralOperands(Token op, TypeInfo leftType, TypeInfo rightType) {
         // operand mutability never matters for arithmetic, so test adaptation with the slot's own mutability
         if ((rightType.literalValue != null || rightType.floatLiteral) && leftType.literalValue == null && !leftType.floatLiteral && literalAdapts(leftType, rightType.withMutability(leftType.mutability))) {
             adaptLiteral(op.right, leftType);
@@ -458,13 +458,13 @@ public final class TypeChecker {
             adaptLiteral(op.left, rightType);
             leftType = rightType;
         }
-        return new TypeCheckerModel.TypeInfo[]{leftType, rightType};
+        return new TypeInfo[]{leftType, rightType};
     }
 
     /** After an overload is chosen: retag every integer-literal argument that adapted to its parameter's type. */
-    public void retagLiteralArgs(List<TypeCheckerModel.TypeInfo> paramTypes, List<TypeCheckerModel.TypeInfo> argTypes, List<Token> argNodes) {
+    public void retagLiteralArgs(List<TypeInfo> paramTypes, List<TypeInfo> argTypes, List<Token> argNodes) {
         for (int i = 0; i < argTypes.size() && i < paramTypes.size(); i++) {
-            TypeCheckerModel.TypeInfo a = argTypes.get(i);
+            TypeInfo a = argTypes.get(i);
             markRefConversion(paramTypes.get(i), a, argNodes.get(i));
             if ((a.literalValue != null || a.literalElements != null || a.floatLiteral) && literalAdapts(paramTypes.get(i), a) && argNodes.get(i) != null) {
                 adaptLiteral(argNodes.get(i), paramTypes.get(i));
@@ -476,14 +476,14 @@ public final class TypeChecker {
      * Overload preference: a candidate the arguments fit WITHOUT any literal adapting comes before one that
      * needs a literal to adapt, so `f(5)` with `f(u64)` and `f(u8)` picks `f(u64)`. Stable otherwise.
      */
-    public List<TypeCheckerModel.FuncInfo> orderByLiteralExactness(List<TypeCheckerModel.FuncInfo> candidates, List<TypeCheckerModel.TypeInfo> argTypes) {
-        List<TypeCheckerModel.FuncInfo> exact = new ArrayList<>();
-        List<TypeCheckerModel.FuncInfo> rest = new ArrayList<>();
-        for (TypeCheckerModel.FuncInfo c : candidates) {
+    public List<FuncInfo> orderByLiteralExactness(List<FuncInfo> candidates, List<TypeInfo> argTypes) {
+        List<FuncInfo> exact = new ArrayList<>();
+        List<FuncInfo> rest = new ArrayList<>();
+        for (FuncInfo c : candidates) {
             boolean needsAdapt = false;
             if (c.paramTypes.size() == argTypes.size()) {
                 for (int i = 0; i < argTypes.size(); i++) {
-                    TypeCheckerModel.TypeInfo a = argTypes.get(i);
+                    TypeInfo a = argTypes.get(i);
                     if ((a.literalValue != null || a.literalElements != null || a.floatLiteral) && !c.paramTypes.get(i).baseType.equals(a.baseType)) {
                         needsAdapt = true;
                         break;
@@ -502,7 +502,7 @@ public final class TypeChecker {
      * literal has no width of its own, so the slot decides. The caller must follow a successful match
      * with `adaptLiteral` on the literal's expression so its node is retagged with the slot's type.
      */
-    public boolean literalAdapts(TypeCheckerModel.TypeInfo expected, TypeCheckerModel.TypeInfo actual) {
+    public boolean literalAdapts(TypeInfo expected, TypeInfo actual) {
         if (actual.literalElements != null) {
             return arrayLiteralAdapts(expected, actual);
         }
@@ -526,7 +526,7 @@ public final class TypeChecker {
     }
 
     /** An all-integer-literal array literal satisfies a same-length `T[n]` slot (T a plain integer type) that holds every element. */
-    public boolean arrayLiteralAdapts(TypeCheckerModel.TypeInfo expected, TypeCheckerModel.TypeInfo actual) {
+    public boolean arrayLiteralAdapts(TypeInfo expected, TypeInfo actual) {
         if (expected.storage != null || expected.isSome || !mutabilityCompatible(expected.mutability, actual.mutability)) {
             return false;
         }
@@ -553,7 +553,7 @@ public final class TypeChecker {
     }
 
     /** An all-float-literal array literal (possibly nested) satisfies a same-shape `f32[n]..`/`f64[n]..` slot. */
-    public boolean floatArrayLiteralAdapts(TypeCheckerModel.TypeInfo expected, TypeCheckerModel.TypeInfo actual) {
+    public boolean floatArrayLiteralAdapts(TypeInfo expected, TypeInfo actual) {
         if (expected.storage != null || expected.isSome || !mutabilityCompatible(expected.mutability, actual.mutability)) {
             return false;
         }
@@ -572,7 +572,7 @@ public final class TypeChecker {
      * signedness instead of the literal's `u64`/`s64` default. Safe to call on an expression whose type
      * was already the slot's type. A no-op unless `actualType.literalValue` was set.
      */
-    public void adaptLiteral(Token root, TypeCheckerModel.TypeInfo rootExpected) {
+    public void adaptLiteral(Token root, TypeInfo rootExpected) {
         // work items: {token, expected, null} = retag it; {token, null, type} = set its type once its subtree is done
         Deque<Object[]> work = new ArrayDeque<>();
         work.push(new Object[]{root, rootExpected, null});
@@ -583,7 +583,7 @@ public final class TypeChecker {
                 expr.chk.resolvedType = (String) w[2];
                 continue;
             }
-            TypeCheckerModel.TypeInfo expected = (TypeCheckerModel.TypeInfo) w[1];
+            TypeInfo expected = (TypeInfo) w[1];
             if (expr == null || expr.chk.resolvedType == null) {
                 continue;
             }
@@ -631,7 +631,7 @@ public final class TypeChecker {
                 List<Token> elements = new ArrayList<>();
                 locksAndProofs.collectCommaArgs(expr.childs.get(0), elements);
                 for (int i = elements.size() - 1; i >= 0; i--) {
-                    work.push(new Object[]{elements.get(i), new TypeCheckerModel.TypeInfo(null, "indeterminate", elem), null});
+                    work.push(new Object[]{elements.get(i), new TypeInfo(null, "indeterminate", elem), null});
                 }
                 expr.chk.resolvedType = mutPrefix + "_" + expected.baseType;
             }
@@ -644,7 +644,7 @@ public final class TypeChecker {
      * is accepted by a `raw` slot it is resolved to its current address (GT_REF_RESOLVE; null when dead). Called only for the finally chosen
      * parameter/target, never for a rejected overload candidate.
      */
-    public void markRefConversion(TypeCheckerModel.TypeInfo expected, TypeCheckerModel.TypeInfo actual, Token expr) {
+    public void markRefConversion(TypeInfo expected, TypeInfo actual, Token expr) {
         if (expr == null || expected == null || actual == null || actual.storage == null || expected.storage == null) {
             return;
         }
@@ -659,7 +659,7 @@ public final class TypeChecker {
     }
 
     /** `typesCompatible`, plus the retagging `adaptLiteral` a literal that adapted needs. Use wherever the argument expression is in hand. */
-    public boolean acceptsAdaptingLiteral(TypeCheckerModel.TypeInfo expected, TypeCheckerModel.TypeInfo actual, Token expr) {
+    public boolean acceptsAdaptingLiteral(TypeInfo expected, TypeInfo actual, Token expr) {
         if (!typesCompatible(expected, actual)) {
             return false;
         }
@@ -671,7 +671,7 @@ public final class TypeChecker {
     }
 
     /** Directional: may `actual` be used where `expected` is required. See docs/TypeChecker.md, "Type compatibility". */
-    public boolean typesCompatible(TypeCheckerModel.TypeInfo expected, TypeCheckerModel.TypeInfo actual) {
+    public boolean typesCompatible(TypeInfo expected, TypeInfo actual) {
         if (literalAdapts(expected, actual)) {
             return true;
         }
@@ -766,15 +766,15 @@ public final class TypeChecker {
     }
 
     /** The type of `ptr +/- n`: the same raw pointer type, with indeterminate mutability (a fresh value). */
-    public TypeCheckerModel.TypeInfo pointerResultType(TypeCheckerModel.TypeInfo ptr) {
+    public TypeInfo pointerResultType(TypeInfo ptr) {
         return ptr.rawPointeeType != null
-                ? TypeCheckerModel.TypeInfo.rawPointer("indeterminate", ptr.rawPointeeType)
-                : new TypeCheckerModel.TypeInfo("raw", "indeterminate", ptr.baseType);
+                ? TypeInfo.rawPointer("indeterminate", ptr.rawPointeeType)
+                : new TypeInfo("raw", "indeterminate", ptr.baseType);
     }
 
     /** Pointee size of a 'raw' pointer for C-style arithmetic (void and unknown sizes step by one byte). */
-    public long pointeeSize(TypeCheckerModel.TypeInfo ptr, Token at) {
-        TypeCheckerModel.TypeInfo pointee = ptr.rawPointeeType != null ? ptr.rawPointeeType : new TypeCheckerModel.TypeInfo(null, "imut", ptr.baseType);
+    public long pointeeSize(TypeInfo ptr, Token at) {
+        TypeInfo pointee = ptr.rawPointeeType != null ? ptr.rawPointeeType : new TypeInfo(null, "imut", ptr.baseType);
         if (pointee.storage != null) {
             return TypeCheckerModel.POINTER_SIZE;
         }
@@ -785,13 +785,13 @@ public final class TypeChecker {
     }
 
     /** The struct a raw pointer points to (through any array dimensions), or null: its scale is symbolic (`SIZEOF name`), see Token.pointerScaleStruct. */
-    public String pointeeStructName(TypeCheckerModel.TypeInfo ptr) {
-        TypeCheckerModel.TypeInfo pointee = ptr.rawPointeeType != null ? ptr.rawPointeeType : new TypeCheckerModel.TypeInfo(null, "imut", ptr.baseType);
+    public String pointeeStructName(TypeInfo ptr) {
+        TypeInfo pointee = ptr.rawPointeeType != null ? ptr.rawPointeeType : new TypeInfo(null, "imut", ptr.baseType);
         return calls.sizedStructName(pointee);
     }
 
     /** The integer half of pointer +/- integer: an 8-byte integer (u64/s64), so it can be added straight to the 8-byte address; narrower integers need an explicit 'as u64' first. */
-    public void requireEightByteInteger(TypeCheckerModel.TypeInfo t, Token at) {
+    public void requireEightByteInteger(TypeInfo t, Token at) {
         if (!t.baseType.equals("u64") && !t.baseType.equals("s64")) {
             throw new CompilerException("type", at.file, at.line,
                     "'" + at.text + "' on a 'raw' pointer requires a 'u64' or 's64' integer on the other side, got '"
@@ -799,14 +799,14 @@ public final class TypeChecker {
         }
     }
 
-    public void requireNumeric(TypeCheckerModel.TypeInfo t, Token at) {
+    public void requireNumeric(TypeInfo t, Token at) {
         if (!TypeCheckerModel.NUMERIC_TYPES.contains(t.baseType)) {
             throw new CompilerException("type", at.file, at.line,
                     "'" + at.text + "' requires a numeric type, got '" + t.canonical() + "'");
         }
     }
 
-    public void requireBoolOrInteger(TypeCheckerModel.TypeInfo t, Token at) {
+    public void requireBoolOrInteger(TypeInfo t, Token at) {
         if (!t.baseType.equals("bool") && !TypeCheckerModel.INTEGER_TYPES.contains(t.baseType)) {
             throw new CompilerException("type", at.file, at.line,
                     "'" + at.text + "' requires a bool or integer type, got '" + t.canonical() + "'");

@@ -97,18 +97,18 @@ public final class CheckFrame {
     public final int kind;
     public int phase;
     public Token node;
-    public TypeCheckerModel.Scope scope;
-    public TypeCheckerModel.FuncInfo func;
+    public Scope scope;
+    public FuncInfo func;
 
-    public TypeCheckerModel.TypeInfo got;      // result of the nested check this frame asked for
-    public TypeCheckerModel.TypeInfo result;   // this frame's own result, once done
+    public TypeInfo got;      // result of the nested check this frame asked for
+    public TypeInfo result;   // this frame's own result, once done
     public CheckFrame pending;                 // nested check to run next
     public CheckFrame gotFrame;                // the finished nested check itself (for results beyond one TypeInfo)
 
-    public TypeCheckerModel.Scope sc1;
-    public TypeCheckerModel.Scope sc2;
-    public TypeCheckerModel.TypeInfo a;
-    public TypeCheckerModel.TypeInfo b;
+    public Scope sc1;
+    public Scope sc2;
+    public TypeInfo a;
+    public TypeInfo b;
     public Token x;
     public Token y;
     public boolean p;
@@ -117,11 +117,11 @@ public final class CheckFrame {
     public String s2;
     public int i;
     public java.util.List<Token> toks;
-    public java.util.List<TypeCheckerModel.TypeInfo> list;   // EXPR_LIST result
+    public java.util.List<TypeInfo> list;   // EXPR_LIST result
     public Object data;
     public Object out;                          // result of a frame whose value is not a TypeInfo
 
-    public CheckFrame(int kind, Token node, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+    public CheckFrame(int kind, Token node, Scope scope, FuncInfo func) {
         this.kind = kind;
         this.node = node;
         this.scope = scope;
@@ -147,7 +147,7 @@ public final class CheckFrame {
         return CALL;
     }
 
-    public int done(TypeCheckerModel.TypeInfo r) {
+    public int done(TypeInfo r) {
         result = r;
         return DONE;
     }

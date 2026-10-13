@@ -23,55 +23,20 @@ import java.util.*;
  * types it can destroy (ownership closure), so freeing an unrelated type does not end it. Not covered: refs stored in struct members.
  */
 public final class ProofKills {
-    public static final class Ev {
-        public final int seq;
-        public final int[] loops;
-        public final Token at;
-        public final String what;       // description of a direct kill, or null for a call
-        public final String callee;     // mangled name for a call, else null
-        public final String skipSlot;   // the destroyed object lies inside what this variable refers to (a member of it): the proof for the variable itself survives
-        public final Set<String> types; // struct type names the destroyed object can contain (ownership closure); null = anything
-        public Ev(int seq, int[] loops, Token at, String what, String callee, String skipSlot, Set<String> types) {
-            this.types = types;
-            this.seq = seq;
-            this.loops = loops;
-            this.at = at;
-            this.what = what;
-            this.callee = callee;
-            this.skipSlot = skipSlot;
-        }
-    }
 
-    public static final class Use {
-        public final int seq;
-        public final int[] loops;
-        public final Token at;
-        public final List<Token.MatchPattern> cands;
-        public final String name;       // what to call the reference in the error (a member path like "h.p"), null = the token's text
-        public Use(int seq, int[] loops, Token at, List<Token.MatchPattern> cands, String name) {
-            this.name = name;
-            this.seq = seq;
-            this.loops = loops;
-            this.at = at;
-            this.cands = cands;
-        }
-    }
 
-    public static final class Facts {
-        public String directKill;                       // first direct kill description, null if none
-        public boolean directAll;                       // some direct kill may destroy anything
-        public final Set<String> directTypes = new HashSet<>();   // otherwise the union of the types the direct kills can destroy
-        public final Set<String> callees = new LinkedHashSet<>();
-    }
+
+
+
 
     public static int suppressReads = 0;
     public static int seq = 0;
     public static int loopSerial = 0;
     public static final ArrayList<Integer> loopIds = new ArrayList<>();
-    public static final IdentityHashMap<Token.MatchPattern, List<Ev>> events = new IdentityHashMap<>();
-    public static final List<Use> uses = new ArrayList<>();
-    public static final Map<String, Facts> facts = new HashMap<>();
-    public static final ArrayDeque<TypeCheckerModel.FuncInfo> funcStack = new ArrayDeque<>();
+    public static final IdentityHashMap<Token.MatchPattern, List<ProofKillsEv>> events = new IdentityHashMap<>();
+    public static final List<ProofKillsUse> uses = new ArrayList<>();
+    public static final Map<String, ProofKillsFacts> facts = new HashMap<>();
+    public static final ArrayDeque<FuncInfo> funcStack = new ArrayDeque<>();
     /** Implicit proofs of `ref some` locals: a `ref some` is alive when it is made, exactly like a fresh `match Some`. Keyed "function|slot" and "function". */
     public static final Map<String, List<Token.MatchPattern>> implicitBySlot = new HashMap<>();
     public static final Map<String, List<Token.MatchPattern>> implicitByFunc = new HashMap<>();
@@ -94,10 +59,10 @@ public final class ProofKills {
 
     // ---- recording (called by TypeChecker while it walks) ----
 
-    public static void enterFunction(TypeCheckerModel.FuncInfo f) {
+    public static void enterFunction(FuncInfo f) {
         funcStack.push(f);
         if (f.mangledName != null) {
-            Facts fa = facts.computeIfAbsent(f.mangledName, k -> new Facts());
+            ProofKillsFacts fa = facts.computeIfAbsent(f.mangledName, k -> new ProofKillsFacts());
             if ("unsafe".equals(f.safetyTag) && fa.directKill == null) {
                 fa.directKill = "it is declared inside unsafe{}";
                 fa.directAll = true;
@@ -109,7 +74,7 @@ public final class ProofKills {
         funcStack.pop();
     }
 
-    public static TypeCheckerModel.FuncInfo currentFunction() {
+    public static FuncInfo currentFunction() {
         return funcStack.peek();
     }
 
@@ -158,7 +123,7 @@ public final class ProofKills {
     }
 
     public static String funcKey() {
-        TypeCheckerModel.FuncInfo f = funcStack.peek();
+        FuncInfo f = funcStack.peek();
         return f == null || f.mangledName == null ? "?" : f.mangledName;
     }
 
@@ -205,7 +170,7 @@ public final class ProofKills {
 
     /** True when something that may destroy was recorded after this alive proof was made (only the post-check pass knows whether it really can). */
     public static boolean hasEvents(Token.MatchPattern p) {
-        List<Ev> l = events.get(p);
+        List<ProofKillsEv> l = events.get(p);
         return l != null && !l.isEmpty();
     }
 
@@ -214,7 +179,7 @@ public final class ProofKills {
     }
 
     public static void use(Token at, List<Token.MatchPattern> cands, String name) {
-        uses.add(new Use(++seq, snapshot(), at, cands, name));
+        uses.add(new ProofKillsUse(++seq, snapshot(), at, cands, name));
     }
 
     /** A direct destroying event in the function being checked. */
@@ -224,9 +189,9 @@ public final class ProofKills {
 
     /** `memberRoot`: when the freed object is a member reached through variable v (`v.backing`, `v.n[i]`), v's own target is not what is freed. */
     public static void kill(List<Token.MatchPattern> active, Token at, String what, String memberRoot, Set<String> types) {
-        TypeCheckerModel.FuncInfo f = funcStack.peek();
+        FuncInfo f = funcStack.peek();
         if (f != null && f.mangledName != null) {
-            Facts fa = facts.computeIfAbsent(f.mangledName, k -> new Facts());
+            ProofKillsFacts fa = facts.computeIfAbsent(f.mangledName, k -> new ProofKillsFacts());
             if (fa.directKill == null) {
                 fa.directKill = what + " at " + at.file + ":" + at.line;
             }
@@ -236,18 +201,18 @@ public final class ProofKills {
                 fa.directTypes.addAll(types);
             }
         }
-        record(active, new Ev(++seq, snapshot(), at, what, null, memberRoot, types));
+        record(active, new ProofKillsEv(++seq, snapshot(), at, what, null, memberRoot, types));
     }
 
     public static void call(List<Token.MatchPattern> active, Token at, String callee) {
-        TypeCheckerModel.FuncInfo f = funcStack.peek();
+        FuncInfo f = funcStack.peek();
         if (f != null && f.mangledName != null) {
-            facts.computeIfAbsent(f.mangledName, k -> new Facts()).callees.add(callee);
+            facts.computeIfAbsent(f.mangledName, k -> new ProofKillsFacts()).callees.add(callee);
         }
-        record(active, new Ev(++seq, snapshot(), at, null, callee, null, null));
+        record(active, new ProofKillsEv(++seq, snapshot(), at, null, callee, null, null));
     }
 
-    public static void record(List<Token.MatchPattern> active, Ev e) {
+    public static void record(List<Token.MatchPattern> active, ProofKillsEv e) {
         for (Token.MatchPattern p : active) {
             if (p.kind.equals("alive") && !p.invalidated && !(e.skipSlot != null && e.skipSlot.equals(p.slotKey))) {
                 events.computeIfAbsent(p, k -> new ArrayList<>()).add(e);
@@ -265,39 +230,26 @@ public final class ProofKills {
 
     // ---- the decision ----
 
-    public static final class Graph {
-        public final Map<String, TypeCheckerModel.FuncInfo> known = new HashMap<>();
-        public final Set<String> externs;
-        public final java.util.function.Function<TypeCheckerModel.TypeInfo, Set<String>> closure;
-        public Graph(Set<String> externs, java.util.function.Function<TypeCheckerModel.TypeInfo, Set<String>> closure) {
-            this.externs = externs;
-            this.closure = closure;
-        }
-    }
 
-    /** What a call can destroy: the chain "f > g" ending in the reason, and the types involved (all = anything). */
-    public static final class Summ {
-        public String reason;
-        public boolean all;
-        public final Set<String> types = new HashSet<>();
-    }
+
+
 
     /** null when the callee cannot destroy. */
-    public static Summ summarize(String root, Graph g, Set<String> path) {
-        // frames: {callee, its Summ, iterator over the callees it still has to visit}
+    public static ProofKillsSumm summarize(String root, ProofKillsGraph g, Set<String> path) {
+        // frames: {callee, its ProofKillsSumm, iterator over the callees it still has to visit}
         java.util.Deque<Object[]> frames = new java.util.ArrayDeque<>();
         String enter = root;
-        Summ ret = null;
+        ProofKillsSumm ret = null;
         boolean haveRet = false;
         while (true) {
             if (enter != null) {
                 String callee = enter;
                 enter = null;
-                TypeCheckerModel.FuncInfo fi = g.known.get(callee);
+                FuncInfo fi = g.known.get(callee);
                 if (g.externs.contains(callee)) {
                     haveRet = true;                               // an extern call needs `unsafe` at the call site (already a kill there), or is declared safe
                 } else if (fi == null) {
-                    Summ unknown = new Summ();
+                    ProofKillsSumm unknown = new ProofKillsSumm();
                     unknown.reason = callee + " (target not known)";
                     unknown.all = true;
                     ret = unknown;
@@ -305,14 +257,14 @@ public final class ProofKills {
                 } else if (!path.add(callee)) {
                     haveRet = true;
                 } else {
-                    Summ s = new Summ();
-                    Facts fa = facts.get(callee);
+                    ProofKillsSumm s = new ProofKillsSumm();
+                    ProofKillsFacts fa = facts.get(callee);
                     if (fa != null && fa.directKill != null) {
                         s.reason = callee + ": " + fa.directKill;
                         s.all |= fa.directAll;
                         s.types.addAll(fa.directTypes);
                     }
-                    for (TypeCheckerModel.TypeInfo pt : fi.paramTypes) {
+                    for (TypeInfo pt : fi.paramTypes) {
                         if (pt != null && "owns".equals(pt.storage)) {
                             if (s.reason == null) {
                                 s.reason = callee + ": it takes an owning parameter, which it may drop";
@@ -336,7 +288,7 @@ public final class ProofKills {
                 }
                 Object[] parent = frames.peek();
                 if (ret != null) {
-                    Summ s = (Summ) parent[1];
+                    ProofKillsSumm s = (ProofKillsSumm) parent[1];
                     if (s.reason == null) {
                         s.reason = parent[0] + " > " + ret.reason;
                     }
@@ -354,7 +306,7 @@ public final class ProofKills {
             }
             frames.pop();
             path.remove((String) fr[0]);
-            Summ s = (Summ) fr[1];
+            ProofKillsSumm s = (ProofKillsSumm) fr[1];
             ret = s.reason == null ? null : s;
             haveRet = true;
         }
@@ -364,7 +316,7 @@ public final class ProofKills {
         return all || types == null || p.pointee == null || types.contains(p.pointee);
     }
 
-    public static boolean sharedLoop(Ev e, Use u, int from) {
+    public static boolean sharedLoop(ProofKillsEv e, ProofKillsUse u, int from) {
         for (int k = Math.max(from, 0); k < e.loops.length && k < u.loops.length; k++) {
             if (e.loops[k] == u.loops[k]) {
                 return true;
@@ -373,20 +325,20 @@ public final class ProofKills {
         return false;
     }
 
-    public static void check(TypeChecker checker, Collection<TypeCheckerModel.FuncInfo> allFuncs, Set<String> externNames) {
-        Graph g = new Graph(externNames, checker.declarations::destroyedTypes);
-        for (TypeCheckerModel.FuncInfo f : allFuncs) {
+    public static void check(TypeChecker checker, Collection<FuncInfo> allFuncs, Set<String> externNames) {
+        ProofKillsGraph g = new ProofKillsGraph(externNames, checker.declarations::destroyedTypes);
+        for (FuncInfo f : allFuncs) {
             if (f != null && f.mangledName != null) {
                 g.known.put(f.mangledName, f);
             }
         }
-        for (Use u : uses) {
+        for (ProofKillsUse u : uses) {
             boolean ok = false;
             String reason = null;
-            Ev last = null;
+            ProofKillsEv last = null;
             for (Token.MatchPattern p : u.cands) {
                 boolean killed = false;
-                for (Ev e : events.getOrDefault(p, Collections.emptyList())) {
+                for (ProofKillsEv e : events.getOrDefault(p, Collections.emptyList())) {
                     boolean before = e.seq < u.seq;
                     if (!before && !sharedLoop(e, u, p.loopDepth)) {
                         continue;
@@ -399,7 +351,7 @@ public final class ProofKills {
                         all = e.types == null;
                         types = e.types;
                     } else {
-                        Summ sm = summarize(e.callee, g, new HashSet<>());
+                        ProofKillsSumm sm = summarize(e.callee, g, new HashSet<>());
                         why = sm == null ? null : "the call to " + sm.reason;
                         all = sm != null && sm.all;
                         types = sm == null ? null : sm.types;
