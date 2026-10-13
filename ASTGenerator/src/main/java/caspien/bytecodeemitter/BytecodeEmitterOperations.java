@@ -35,16 +35,16 @@ final class BytecodeEmitterOperations {
      * must not compute it again. See docs/BytecodeEmitter.md, "Moves and owning assignment".
      */
     public boolean emitDestructOldOwnedValue(Token target) {
-        if (target.type == TokenType.KEYWORD || target.resolvedType == null
-                || !(target.resolvedType.startsWith("owns") || target.inlineOwnsStruct != null)) {
+        if (target.type == TokenType.KEYWORD || target.chk.resolvedType == null
+                || !(target.chk.resolvedType.startsWith("owns") || target.chk.inlineOwnsStruct != null)) {
             return false;
         }
-        if (target.inlineOwnsStruct != null && !hub.statements.isFlatOwnsDestructTarget(target)) {
+        if (target.chk.inlineOwnsStruct != null && !hub.statements.isFlatOwnsDestructTarget(target)) {
             // an inline owning struct reached through a pointer or an index: drop the members of the value at the computed address
             hub.statements.emitAssignTarget(target);
             hub.core.line("DUP_TOP");
             hub.core.requireGhostTableFunctionPresent("gt_destruct", target);
-            hub.core.line("GT_DROP_ADDR " + target.resolvedType);
+            hub.core.line("GT_DROP_ADDR " + target.chk.resolvedType);
             return true;
         }
         if (target.type == TokenType.VARREF) {
@@ -61,14 +61,14 @@ final class BytecodeEmitterOperations {
             hub.statements.emitAssignTarget(target);
             hub.core.line("DUP_TOP");
             hub.core.requireGhostTableFunctionPresent("gt_destruct", target);
-            hub.core.line("GT_DESTRUCT_ADDR " + target.resolvedType);
+            hub.core.line("GT_DESTRUCT_ADDR " + target.chk.resolvedType);
             return true;
         }
         return false; // unreached today -- no other assignment-target shape exists
     }
 
     public void emitAssign(Token op) {
-        if (unwrapMutWrappers(op.right).isStructRvoCall) {
+        if (unwrapMutWrappers(op.right).chk.isStructRvoCall) {
             emitStructRvoAssign(op);
             return;
         }
@@ -76,12 +76,12 @@ final class BytecodeEmitterOperations {
         boolean lateDestruct = hub.statements.isFlatOwnsDestructTarget(op.left);
         // Pointer/index-reached owns target (no flat name): the right side is evaluated FIRST into a hidden local, so a move out of
         // the old value nulls it and a throw leaves it untouched.
-        boolean pointerCrossingOwns = !lateDestruct && hub.core.lateAllocs != null && op.right.resolvedType != null
-                && (op.right.resolvedType.startsWith("owns") || op.left.inlineOwnsStruct != null)
+        boolean pointerCrossingOwns = !lateDestruct && hub.core.lateAllocs != null && op.right.chk.resolvedType != null
+                && (op.right.chk.resolvedType.startsWith("owns") || op.left.chk.inlineOwnsStruct != null)
                 && hub.statements.isPointerCrossingOwnsTarget(op.left);
         String spilledRight = null;
         if (pointerCrossingOwns) {
-            String rightType = op.left.inlineOwnsStruct != null ? op.left.resolvedType : op.right.resolvedType;
+            String rightType = op.left.chk.inlineOwnsStruct != null ? op.left.chk.resolvedType : op.right.chk.resolvedType;
             spilledRight = hub.declareHiddenLocal(rightType);
             hub.core.line("ADDR " + spilledRight + " " + rightType);
             hub.statements.emitExpr(op.right);
@@ -95,16 +95,16 @@ final class BytecodeEmitterOperations {
             hub.statements.emitAssignTarget(op.left);
         }
         if (spilledRight != null) {
-            hub.core.line("PUSH " + spilledRight + " " + (op.left.inlineOwnsStruct != null ? op.left.resolvedType : op.right.resolvedType));
+            hub.core.line("PUSH " + spilledRight + " " + (op.left.chk.inlineOwnsStruct != null ? op.left.chk.resolvedType : op.right.chk.resolvedType));
         } else {
             hub.statements.emitExpr(op.right);
         }
         if (lateDestruct) {
             emitDestructOldOwnedValue(op.left);
         }
-        String assignMnemonic = BytecodeEmitterCore.isAtomicCanonical(op.left.resolvedType) ? "ATOMIC_ASSIGN" : "ASSIGN";
-        hub.core.line(assignMnemonic + " " + op.left.resolvedType + " " + op.right.resolvedType + " " + op.resolvedType);
-        if (op.right.isOwnershipMoveSource) {
+        String assignMnemonic = BytecodeEmitterCore.isAtomicCanonical(op.left.chk.resolvedType) ? "ATOMIC_ASSIGN" : "ASSIGN";
+        hub.core.line(assignMnemonic + " " + op.left.chk.resolvedType + " " + op.right.chk.resolvedType + " " + op.chk.resolvedType);
+        if (op.right.chk.isOwnershipMoveSource) {
             hub.statements.emitOwnershipMoveNullOut(op.right);
         }
     }
@@ -117,7 +117,7 @@ final class BytecodeEmitterOperations {
             } else if (t.type == TokenType.KEYWORD && t.text.equals("try") && !t.isTryBlock
                     && t.sub != null && !t.sub.isEmpty()) {
                 // the isStructRvoCall flag travels through try; emitStructRvoCallSequence re-attaches the try's catch label (ownerTryOf)
-                t = t.sub.get(0);
+                t = t.operand();
             } else {
                 return t;
             }
@@ -137,14 +137,14 @@ final class BytecodeEmitterOperations {
     /** Caller half of struct RVO: the callee gets the destination's address as a hidden first argument; no PUSH_RET/ASSIGN copy. See docs/BytecodeEmitter.md, "Return and struct return (RVO)". */
     public void emitStructRvoAssign(Token op) {
         Token callOp = unwrapMutWrappers(op.right);
-        String funcName = resolveCallTargetForEmission(callOp.resolvedCallTarget);
+        String funcName = resolveCallTargetForEmission(callOp.chk.resolvedCallTarget);
         TypeCheckerModel.FuncInfo targetInfo = hub.core.findFuncInfoByMangledName(funcName);
         String structName = targetInfo != null ? targetInfo.returnType.baseType
-                : op.left.resolvedType.substring(op.left.resolvedType.lastIndexOf('_') + 1);
+                : op.left.chk.resolvedType.substring(op.left.chk.resolvedType.lastIndexOf('_') + 1);
         String destVarName = destVarNameOf(op.left);
-        String destType = op.left.resolvedType;
+        String destType = op.left.chk.resolvedType;
         String rawPtrType = "raw_indeterminate_" + structName;
-        if (op.left.inlineOwnsStruct != null && hub.core.lateAllocs != null) {
+        if (op.left.chk.inlineOwnsStruct != null && hub.core.lateAllocs != null) {
             // The destination already owns memory (an inline struct with owns members): the callee builds the new value in a
             // hidden local, then the old members are dropped and the value is copied over. A callee that throws leaves the
             // destination untouched, and an argument that moves a member out of it (`h = f(h.w)`) has already nulled it.
@@ -174,13 +174,13 @@ final class BytecodeEmitterOperations {
 
     /** Shared RVO call site: arguments are transferred as emitCallSequence would, with the hidden destination pointer (pushDestPointer) in register slot 0. */
     public void emitStructRvoCallSequence(Token callOp, String rawPtrType, Runnable pushDestPointer) {
-        String funcName = resolveCallTargetForEmission(callOp.resolvedCallTarget);
+        String funcName = resolveCallTargetForEmission(callOp.chk.resolvedCallTarget);
         List<Token> args = new ArrayList<>();
         Token argsDelineator = callOp.right;
         if (!argsDelineator.childs.isEmpty()) {
             collectCommaArgs(argsDelineator.childs.get(0), args);
         }
-        String conventionName = callOp.resolvedCallConvention;
+        String conventionName = callOp.chk.resolvedCallConvention;
         Token ownerTry = ownerTryOf(callOp);
         if (ownerTry != null) {
             hub.core.pendingTryCatchLabel = hub.core.tryCatchLabels.get(ownerTry); // consumed by the staging write just below
@@ -193,7 +193,7 @@ final class BytecodeEmitterOperations {
         emitArgTransferTail(rawPtrType, counters, false);
         for (Token arg : args) {
             emitArgTransfer(arg, counters, false);
-            if (arg.isOwnershipMoveSource) {
+            if (arg.chk.isOwnershipMoveSource) {
                 hub.statements.emitOwnershipMoveNullOut(arg);
             }
         }
@@ -215,54 +215,54 @@ final class BytecodeEmitterOperations {
         hub.statements.emitAssignTarget(op.left); // assign target
         hub.statements.emitExpr(op.left);         // left operand of the arithmetic
         hub.statements.emitExpr(op.right);        // right operand
-        if (op.pointerScale > 1) {
+        if (op.chk.pointerScale > 1) {
             // "p += n" on a raw pointer: n elements, i.e. n * sizeof(pointee) bytes.
             hub.core.line(BytecodeEmitterCore.pointerScaleLine(op, "indeterminate_u64"));
-            hub.core.line("MUL " + op.right.resolvedType + " indeterminate_u64 " + op.right.resolvedType);
+            hub.core.line("MUL " + op.right.chk.resolvedType + " indeterminate_u64 " + op.right.chk.resolvedType);
         }
         String arithOp = BytecodeEmitterCore.COMPOUND_TO_ARITH.get(op.text);
-        hub.core.line(BytecodeEmitterCore.ARITH_NAMES.get(arithOp) + " " + op.left.resolvedType + " " + op.right.resolvedType
-                + " " + op.left.resolvedType);
-        hub.core.line("ASSIGN " + op.left.resolvedType + " " + op.left.resolvedType + " " + op.resolvedType);
+        hub.core.line(BytecodeEmitterCore.ARITH_NAMES.get(arithOp) + " " + op.left.chk.resolvedType + " " + op.right.chk.resolvedType
+                + " " + op.left.chk.resolvedType);
+        hub.core.line("ASSIGN " + op.left.chk.resolvedType + " " + op.left.chk.resolvedType + " " + op.chk.resolvedType);
     }
 
     public void emitBinaryArith(Token op) {
-        if (op.pointerArithKind != 0) {
+        if (op.chk.pointerArithKind != 0) {
             emitPointerArith(op);
             return;
         }
         hub.statements.emitExpr(op.left);
         hub.statements.emitExpr(op.right);
-        hub.core.line(BytecodeEmitterCore.ARITH_NAMES.get(op.text) + " " + op.left.resolvedType + " " + op.right.resolvedType
-                + " " + op.resolvedType);
+        hub.core.line(BytecodeEmitterCore.ARITH_NAMES.get(op.text) + " " + op.left.chk.resolvedType + " " + op.right.chk.resolvedType
+                + " " + op.chk.resolvedType);
     }
 
     /** C-style pointer arithmetic: p +/- n and n + p scale n by the pointee size; p - q is (p - q) / sizeof(pointee), signed. */
     public void emitPointerArith(Token op) {
-        String l = op.left.resolvedType;
-        String r = op.right.resolvedType;
+        String l = op.left.chk.resolvedType;
+        String r = op.right.chk.resolvedType;
         String arith = BytecodeEmitterCore.ARITH_NAMES.get(op.text);
-        if (op.pointerArithKind == 3) {
+        if (op.chk.pointerArithKind == 3) {
             hub.statements.emitExpr(op.left);
             hub.statements.emitExpr(op.right);
             hub.core.line(arith + " " + l + " " + r + " indeterminate_s64");
-            if (op.pointerScale > 1) {
+            if (op.chk.pointerScale > 1) {
                 hub.core.line(BytecodeEmitterCore.pointerScaleLine(op, "indeterminate_s64"));
                 hub.core.line("DIV indeterminate_s64 indeterminate_s64 indeterminate_s64");
             }
             return;
         }
         hub.statements.emitExpr(op.left);
-        if (op.pointerArithKind == 2 && op.pointerScale > 1) {
+        if (op.chk.pointerArithKind == 2 && op.chk.pointerScale > 1) {
             hub.core.line(BytecodeEmitterCore.pointerScaleLine(op, "indeterminate_u64"));
             hub.core.line("MUL " + l + " indeterminate_u64 " + l);
         }
         hub.statements.emitExpr(op.right);
-        if (op.pointerArithKind == 1 && op.pointerScale > 1) {
+        if (op.chk.pointerArithKind == 1 && op.chk.pointerScale > 1) {
             hub.core.line(BytecodeEmitterCore.pointerScaleLine(op, "indeterminate_u64"));
             hub.core.line("MUL " + r + " indeterminate_u64 " + r);
         }
-        hub.core.line(arith + " " + l + " " + r + " " + op.resolvedType);
+        hub.core.line(arith + " " + l + " " + r + " " + op.chk.resolvedType);
     }
 
     public void emitUnaryMinus(Token op) {
@@ -270,33 +270,33 @@ final class BytecodeEmitterOperations {
         // packed array / struct construction run, which any other instruction between pushes would break).
         if (op.left.type == TokenType.INTEGER && op.left.forcedLiteralType == null && op.left.text.matches("[0-9]+")) {
             String digits = op.left.text.replaceFirst("^0+(?=.)", "");
-            hub.core.line("PUSH " + (digits.equals("0") ? "0" : "-" + digits) + " " + op.resolvedType);
+            hub.core.line("PUSH " + (digits.equals("0") ? "0" : "-" + digits) + " " + op.chk.resolvedType);
             return;
         }
         hub.statements.emitExpr(op.left);
-        hub.core.line("NEG " + op.left.resolvedType + " " + op.resolvedType);
+        hub.core.line("NEG " + op.left.chk.resolvedType + " " + op.chk.resolvedType);
     }
 
     public void emitLogicalNot(Token op) {
         hub.statements.emitExpr(op.left);
-        hub.core.line("NOT " + op.left.resolvedType + " " + op.resolvedType);
+        hub.core.line("NOT " + op.left.chk.resolvedType + " " + op.chk.resolvedType);
     }
 
     /** x++ desugars to the same bytecode shape as "x = x .INC" -- push target, push value, INC, ASSIGN. */
     public void emitIncrement(Token op) {
-        if (op.pointerScale > 1) {
+        if (op.chk.pointerScale > 1) {
             emitPointerStep(op, "ADD");
             return;
         }
         hub.statements.emitAssignTarget(op.left); // assign target
         hub.statements.emitExpr(op.left);         // value to increment
-        hub.core.line("INC " + op.left.resolvedType + " " + op.resolvedType);
-        hub.core.line("ASSIGN " + op.left.resolvedType + " " + op.resolvedType + " " + op.resolvedType);
+        hub.core.line("INC " + op.left.chk.resolvedType + " " + op.chk.resolvedType);
+        hub.core.line("ASSIGN " + op.left.chk.resolvedType + " " + op.chk.resolvedType + " " + op.chk.resolvedType);
     }
 
     /** "p++"/"p--" on a raw pointer whose pointee is wider than a byte: p = p +/- sizeof(pointee), as C does. */
     public void emitPointerStep(Token op, String arith) {
-        String t = op.left.resolvedType;
+        String t = op.left.chk.resolvedType;
         hub.statements.emitAssignTarget(op.left);
         hub.statements.emitExpr(op.left);
         hub.core.line(BytecodeEmitterCore.pointerScaleLine(op, "indeterminate_u64"));
@@ -306,20 +306,20 @@ final class BytecodeEmitterOperations {
 
     /** x-- : emitIncrement's shape with DEC. */
     public void emitDecrement(Token op) {
-        if (op.pointerScale > 1) {
+        if (op.chk.pointerScale > 1) {
             emitPointerStep(op, "SUB");
             return;
         }
         hub.statements.emitAssignTarget(op.left); // assign target
         hub.statements.emitExpr(op.left);         // value to decrement
-        hub.core.line("DEC " + op.left.resolvedType + " " + op.resolvedType);
-        hub.core.line("ASSIGN " + op.left.resolvedType + " " + op.resolvedType + " " + op.resolvedType);
+        hub.core.line("DEC " + op.left.chk.resolvedType + " " + op.chk.resolvedType);
+        hub.core.line("ASSIGN " + op.left.chk.resolvedType + " " + op.chk.resolvedType + " " + op.chk.resolvedType);
     }
 
     public void emitLogical(Token op, String name) {
         hub.statements.emitExpr(op.left);
         hub.statements.emitExpr(op.right);
-        hub.core.line(name + " " + op.left.resolvedType + " " + op.right.resolvedType + " " + op.resolvedType);
+        hub.core.line(name + " " + op.left.chk.resolvedType + " " + op.right.chk.resolvedType + " " + op.chk.resolvedType);
     }
 
     /** True for a "&&then"/"||then" node specifically -- never a plain "&&"/"||". */
@@ -383,8 +383,8 @@ final class BytecodeEmitterOperations {
     public void emitComparison(Token op) {
         hub.statements.emitExpr(op.left);
         hub.statements.emitExpr(op.right);
-        hub.core.line(BytecodeEmitterCore.COMPARISON_NAMES.get(op.text) + " " + op.left.resolvedType + " " + op.right.resolvedType
-                + " " + op.resolvedType);
+        hub.core.line(BytecodeEmitterCore.COMPARISON_NAMES.get(op.text) + " " + op.left.chk.resolvedType + " " + op.right.chk.resolvedType
+                + " " + op.chk.resolvedType);
     }
 
     /** "a swap b": ATOMIC_SWAP, a read-modify-write; the left operand is pushed as an address, the result is the previous value. */
@@ -392,15 +392,15 @@ final class BytecodeEmitterOperations {
         // ATOMIC_SWAP consumes an ADDRESS (xchg through it); pushing the field's value worked only for statics and segfaulted for a swap-lock struct in a local
         hub.statements.emitAssignTarget(op.left);
         hub.statements.emitExpr(op.right);
-        hub.core.line("ATOMIC_SWAP " + op.left.resolvedType + " " + op.right.resolvedType + " " + op.resolvedType);
+        hub.core.line("ATOMIC_SWAP " + op.left.chk.resolvedType + " " + op.right.chk.resolvedType + " " + op.chk.resolvedType);
     }
 
     public void emitCallOrBuiltin(Token op) {
-        if (op.isSleepCall) {
+        if (op.chk.isSleepCall) {
             emitSleepCall(op);
             return;
         }
-        if ("AWAIT".equals(op.asyncCallKind) || "PAR".equals(op.asyncCallKind)) {
+        if ("AWAIT".equals(op.chk.asyncCallKind) || "PAR".equals(op.chk.asyncCallKind)) {
             emitAsyncCall(op);
             return;
         }
@@ -408,10 +408,10 @@ final class BytecodeEmitterOperations {
             switch (op.left.text) {
                 case "sizeof":
                     // Direct PUSH; a struct size stays symbolic (SIZEOF) until SizeofResolutionPass.
-                    if (op.sizeofStruct != null) {
-                        hub.core.line("SIZEOF " + op.sizeofStruct + " " + op.resolvedType);
+                    if (op.chk.sizeofStruct != null) {
+                        hub.core.line("SIZEOF " + op.chk.sizeofStruct + " " + op.chk.resolvedType);
                     } else {
-                        hub.core.line("PUSH " + op.builtinConstantValue + " " + op.resolvedType);
+                        hub.core.line("PUSH " + op.chk.builtinConstantValue + " " + op.chk.resolvedType);
                     }
                     return;
                 case "len": {
@@ -423,10 +423,10 @@ final class BytecodeEmitterOperations {
                         Token termArg = lenArgs.get(1);
                         hub.statements.emitExpr(targetArg);
                         hub.statements.emitExpr(termArg);
-                        hub.core.line("LEN_SCAN " + targetArg.resolvedType + " " + termArg.resolvedType);
-                    } else if (op.builtinConstantValue != null) {
+                        hub.core.line("LEN_SCAN " + targetArg.chk.resolvedType + " " + termArg.chk.resolvedType);
+                    } else if (op.chk.builtinConstantValue != null) {
                         // Fixed array / string literal: folded to a PUSH.
-                        hub.core.line("PUSH " + op.builtinConstantValue + " " + op.resolvedType);
+                        hub.core.line("PUSH " + op.chk.builtinConstantValue + " " + op.chk.resolvedType);
                     } else {
                         // Safe dynarray: run-time length, read by LEN.
                         hub.statements.emitExpr(singleBuiltinArg(op));
@@ -436,10 +436,10 @@ final class BytecodeEmitterOperations {
                 }
                 case "range": {
                     // A range is two u64 words; start is always literal 0.
-                    if (op.builtinConstantValue != null) {
+                    if (op.chk.builtinConstantValue != null) {
                         // String literal / fixed array: constant bounds, no RANGE instruction.
                         hub.core.line("PUSH 0 imut_u64");
-                        hub.core.line("PUSH " + op.builtinConstantValue + " imut_u64");
+                        hub.core.line("PUSH " + op.chk.builtinConstantValue + " imut_u64");
                     } else {
                         // Safe dynarray: length read by LEN.
                         hub.core.line("PUSH 0 imut_u64");
@@ -451,7 +451,7 @@ final class BytecodeEmitterOperations {
                 case "deref":
                     // DEREF carries the pointee type because it is the copy width (the pushed pointer is always 8 bytes).
                     hub.statements.emitExpr(singleBuiltinArg(op));
-                    hub.core.line("DEREF " + op.resolvedType);
+                    hub.core.line("DEREF " + op.chk.resolvedType);
                     return;
                 case "clone": {
                     // Hold back the pending catch label: a nested call would consume it (see "Allocation failure check").
@@ -461,7 +461,7 @@ final class BytecodeEmitterOperations {
                     Token arg = singleBuiltinArg(op);
                     hub.statements.emitExpr(arg);
                     hub.core.requireGhostTableFunctionPresent("gt_register", op);
-                    hub.core.line("CLONE " + arg.resolvedType + " " + op.resolvedType);
+                    hub.core.line("CLONE " + arg.chk.resolvedType + " " + op.chk.resolvedType);
                     // Same tail as `new`: a null result (failed malloc) jumps to the enclosing catch, otherwise
                     // the copy is registered with the ghost table so `match Some` and the scope-end destruct work.
                     hub.core.pendingTryCatchLabel = cloneCatchLabel;
@@ -478,8 +478,8 @@ final class BytecodeEmitterOperations {
                                         + "from one, and ghost-table instructions can never be generated "
                                         + "in that whole reachable set");
                     }
-                    if (op.someOnRef) {
-                        hub.statements.emitSomeOnRef(op, singleBuiltinArg(op), op.someProofKey);
+                    if (op.chk.someOnRef) {
+                        hub.statements.emitSomeOnRef(op, singleBuiltinArg(op), op.chk.someProofKey);
                         return;
                     }
                     hub.core.requireGhostTableFunctionPresent("gt_alive_check", op);
@@ -500,7 +500,7 @@ final class BytecodeEmitterOperations {
                     List<Token> notArgs = new ArrayList<>();
                     collectCommaArgs(op.right.childs.get(0), notArgs);
                     hub.statements.emitExpr(notArgs.get(0));
-                    hub.core.line("BITS_NOT " + notArgs.get(0).resolvedType + " " + op.resolvedType);
+                    hub.core.line("BITS_NOT " + notArgs.get(0).chk.resolvedType + " " + op.chk.resolvedType);
                     return;
                 }
                 case "bits_left": case "bits_right": case "bits_rotl": case "bits_rotr": case "bits_or": case "bits_and": case "bits_xor": {
@@ -521,8 +521,8 @@ final class BytecodeEmitterOperations {
                         case "bits_xor": bitsOpName = "BITS_XOR"; break;
                         default: bitsOpName = "BITS_OR"; break;
                     }
-                    hub.core.line(bitsOpName + " " + bitsLeft.resolvedType + " " + bitsRight.resolvedType + " "
-                            + op.resolvedType);
+                    hub.core.line(bitsOpName + " " + bitsLeft.chk.resolvedType + " " + bitsRight.chk.resolvedType + " "
+                            + op.chk.resolvedType);
                     return;
                 }
                 case "memcopy": {
@@ -532,22 +532,22 @@ final class BytecodeEmitterOperations {
                     for (Token arg : memcopyArgs) {
                         hub.statements.emitExpr(arg);
                     }
-                    hub.core.line("MEMCOPY " + memcopyArgs.get(0).resolvedType + " " + memcopyArgs.get(1).resolvedType
-                            + " " + memcopyArgs.get(2).resolvedType + " " + op.resolvedType);
+                    hub.core.line("MEMCOPY " + memcopyArgs.get(0).chk.resolvedType + " " + memcopyArgs.get(1).chk.resolvedType
+                            + " " + memcopyArgs.get(2).chk.resolvedType + " " + op.chk.resolvedType);
                     return;
                 }
                 case "dyn": {
                     // Hold back the pending catch label (see "Allocation failure check").
                     final String dynCatchLabel = hub.core.pendingTryCatchLabel;
                     hub.core.pendingTryCatchLabel = null;
-                    if (op.dynFromStringSource) {
+                    if (op.chk.dynFromStringSource) {
                         // dyn(text): NEW_FROM_STRING copies the characters at run time.
                         Token stringArg = singleBuiltinArg(op);
                         hub.statements.emitExpr(stringArg);
-                        hub.core.line("NEW_FROM_STRING " + op.resolvedType.substring("owns_".length()) + " "
-                                + stringArg.resolvedType);
+                        hub.core.line("NEW_FROM_STRING " + op.chk.resolvedType.substring("owns_".length()) + " "
+                                + stringArg.chk.resolvedType);
                         // Safe dyn(text) throws: same allocation failure check as new.
-                        if (!op.resolvedType.substring("owns_".length()).startsWith("indeterminate_unsafe_dynarray(")) {
+                        if (!op.chk.resolvedType.substring("owns_".length()).startsWith("indeterminate_unsafe_dynarray(")) {
                             hub.core.pendingTryCatchLabel = dynCatchLabel;
                             // The block start is registered with the ghost table (like `new`), so scope-end drop frees it;
                             // a failed registration frees the block and leaves null: the check below takes the OOM path.
@@ -571,10 +571,10 @@ final class BytecodeEmitterOperations {
                             collectCommaArgs(arrayLiteral.childs.get(0), literalElements);
                         }
                     }
-                    String typeText = op.resolvedType.substring("owns_".length());
+                    String typeText = op.chk.resolvedType.substring("owns_".length());
                     boolean isUnsafeLiteral = typeText.startsWith("indeterminate_unsafe_dynarray(");
                     String mnemonic = isUnsafeLiteral ? "NEW_UDYN" : "NEW_DYN";
-                    hub.core.line(mnemonic + " " + typeText + " " + op.builtinConstantValue);
+                    hub.core.line(mnemonic + " " + typeText + " " + op.chk.builtinConstantValue);
                     // Safe dyn([..]) throws like new; NEW_UDYN stays non-throwing.
                     if (!isUnsafeLiteral) {
                         hub.core.pendingTryCatchLabel = dynCatchLabel;
@@ -592,7 +592,7 @@ final class BytecodeEmitterOperations {
                     List<Token> resizeArgs = new ArrayList<>();
                     collectCommaArgs(op.right.childs.get(0), resizeArgs);
                     Token dynArrArg = resizeArgs.get(0);
-                    boolean isUnsafeResize = dynArrArg.resolvedType.startsWith("owns_mut_unsafe_dynarray(");
+                    boolean isUnsafeResize = dynArrArg.chk.resolvedType.startsWith("owns_mut_unsafe_dynarray(");
                     // A safe dynarray whose elements own memory: a shrink must drop the owns members of the elements it cuts
                     // off. The array pointer and the new count are evaluated once into hidden locals, the elements at index
                     // >= count are dropped (GT_DESTRUCT_TAIL, expanded by DropGlueGenerationPass), then the RESIZE runs on them.
@@ -600,7 +600,7 @@ final class BytecodeEmitterOperations {
                     String tailCount = null;
                     String tailOld = null;
                     if (!isUnsafeResize && hub.core.lateAllocs != null) {
-                        String dynType = dynArrArg.resolvedType;
+                        String dynType = dynArrArg.chk.resolvedType;
                         String elemText = dynType.substring(dynType.indexOf("dynarray(") + "dynarray(".length(), dynType.length() - 1);
                         if (hub.core.checker.declarations.elementTextOwnsMemory(elemText)) {
                             Token countArg = resizeArgs.get(1);
@@ -611,7 +611,7 @@ final class BytecodeEmitterOperations {
                             tailCount = hub.declareHiddenLocal("mut_u64");
                             hub.core.line("ADDR " + tailCount + " mut_u64");
                             hub.statements.emitExpr(countArg);
-                            hub.core.line("ASSIGN mut_u64 " + countArg.resolvedType + " mut_u64");
+                            hub.core.line("ASSIGN mut_u64 " + countArg.chk.resolvedType + " mut_u64");
                             hub.core.line("GT_DESTRUCT_TAIL " + tailArr + " " + dynType + " " + tailCount);
                             tailOld = hub.declareHiddenLocal("mut_u64");
                             hub.core.line("ADDR " + tailOld + " mut_u64");
@@ -637,12 +637,12 @@ final class BytecodeEmitterOperations {
                     // Safe resize: the source variable is only nulled once the realloc succeeded. When it fails the old block is
                     // still allocated and registered (realloc leaves it intact) but nothing else would ever reach it, so the
                     // failure branch frees it (like a failed `new` frees what was moved into it). Unsafe resize cannot fail.
-                    final boolean deferResizeNullOut = !isUnsafeResize && dynArrArg.isOwnershipMoveSource;
-                    if (dynArrArg.isOwnershipMoveSource && !deferResizeNullOut) {
+                    final boolean deferResizeNullOut = !isUnsafeResize && dynArrArg.chk.isOwnershipMoveSource;
+                    if (dynArrArg.chk.isOwnershipMoveSource && !deferResizeNullOut) {
                         hub.statements.emitOwnershipMoveNullOut(dynArrArg);
                     }
                     StringBuilder resizeLine = new StringBuilder(isUnsafeResize ? "URESIZE " : "RESIZE ")
-                            .append(dynArrArg.resolvedType);
+                            .append(dynArrArg.chk.resolvedType);
                     for (int i = 1; i < resizeArgs.size(); i++) {
                         Token arg = resizeArgs.get(i);
                         if (i == 1 && tailCount != null) {
@@ -650,15 +650,15 @@ final class BytecodeEmitterOperations {
                         } else {
                             hub.statements.emitExpr(arg);
                         }
-                        resizeLine.append(' ').append(arg.resolvedType);
+                        resizeLine.append(' ').append(arg.chk.resolvedType);
                     }
                     hub.core.line(resizeLine.toString());
                     if (tailOld != null) {
                         // growing: the new slots are bitwise copies of the moved-in fill value; give each its own deep clone
-                        String filled = hub.declareHiddenLocal(dynArrArg.resolvedType);
-                        hub.core.line("POP " + filled + " " + dynArrArg.resolvedType);
-                        hub.core.line("CLONE_FILL " + filled + " " + dynArrArg.resolvedType + " " + tailOld);
-                        hub.core.line("PUSH " + filled + " " + dynArrArg.resolvedType);
+                        String filled = hub.declareHiddenLocal(dynArrArg.chk.resolvedType);
+                        hub.core.line("POP " + filled + " " + dynArrArg.chk.resolvedType);
+                        hub.core.line("CLONE_FILL " + filled + " " + dynArrArg.chk.resolvedType + " " + tailOld);
+                        hub.core.line("PUSH " + filled + " " + dynArrArg.chk.resolvedType);
                     }
                     // Safe resize throws like new; URESIZE stays non-throwing.
                     if (!isUnsafeResize) {
@@ -680,9 +680,9 @@ final class BytecodeEmitterOperations {
                     collectCommaArgs(op.right.childs.get(0), callArgs);
                     Token funcPtrArg = callArgs.get(0);
                     List<Token> realArgs = callArgs.subList(1, callArgs.size());
-                    int invokeArgCount = op.invokeArgCount;
+                    int invokeArgCount = op.chk.invokeArgCount;
                     emitCallSequence(() -> hub.statements.emitExpr(funcPtrArg), realArgs,
-                            () -> hub.core.line("INVOKE " + invokeArgCount), voidSafeReturnType(op), op.resolvedCallConvention);
+                            () -> hub.core.line("INVOKE " + invokeArgCount), voidSafeReturnType(op), op.chk.resolvedCallConvention);
                     return;
                 }
                 default:
@@ -726,7 +726,7 @@ final class BytecodeEmitterOperations {
             boolean isTrueVararg = varargStartIndex >= 0 && argIndex >= varargStartIndex;
             boolean promoteToDouble = isTrueVararg; // "in the ... part of a variadic call": an f32 is widened, any float gets win64's register duplication
             emitArgTransfer(arg, counters, promoteToDouble);
-            if (arg.isOwnershipMoveSource) {
+            if (arg.chk.isOwnershipMoveSource) {
                 // Null the moved owns slot right after its value is captured and before the call, so a throw inside the callee sees it null.
                 // A by-value range is never a move source. Register hazard: see emitOwnershipMoveNullOut.
                 hub.statements.emitOwnershipMoveNullOut(arg);
@@ -746,7 +746,7 @@ final class BytecodeEmitterOperations {
     /** Transfers one argument into its register(s); a by-value range becomes its two u64 bounds. see docs/BytecodeEmitter.md, "Call sequence". */
     public void emitArgTransfer(Token arg, BytecodeEmitterCore.ArgCounters counters, boolean promoteToDouble) {
         Token unwrapped = unwrapParens(arg);
-        if (BytecodeEmitterCore.BY_VALUE_RANGE_ARG.matcher(arg.resolvedType).matches()) {
+        if (BytecodeEmitterCore.BY_VALUE_RANGE_ARG.matcher(arg.chk.resolvedType).matches()) {
             // A range's words are u64 bounds, never float.
             emitRangeArgWords(unwrapped, counters);
             return;
@@ -769,11 +769,11 @@ final class BytecodeEmitterOperations {
     /** Pushes one word and moves it to the next register of its bank; promoteToDouble inserts PROMOTE_F32_TO_F64 for a true f32 vararg. */
     public void emitArgWord(Token expr, BytecodeEmitterCore.ArgCounters counters, boolean promoteToDouble) {
         hub.statements.emitExpr(expr);
-        if (promoteToDouble && BytecodeEmitterCore.isF32Canonical(expr.resolvedType)) {
+        if (promoteToDouble && BytecodeEmitterCore.isF32Canonical(expr.chk.resolvedType)) {
             hub.core.line("PROMOTE_F32_TO_F64");
         }
         // promoteToDouble doubles as the win64 variadic float duplication flag (same precondition).
-        emitArgTransferTail(expr.resolvedType, counters, promoteToDouble);
+        emitArgTransferTail(expr.chk.resolvedType, counters, promoteToDouble);
     }
 
     /** Pushes a synthesized qualified-name word (e.g. "x.start") and transfers it; never float. */
@@ -808,7 +808,7 @@ final class BytecodeEmitterOperations {
 
     /** Null for void ("imut_void"/"mut_void", exact match) so no PUSH_RET is emitted. */
     public String voidSafeReturnType(Token op) {
-        String t = op.resolvedType;
+        String t = op.chk.resolvedType;
         if (t == null || t.equals("imut_void") || t.equals("mut_void")) {
             return null;
         }
@@ -824,7 +824,7 @@ final class BytecodeEmitterOperations {
         }
         Token durationArg = argNodes.get(0);
         hub.statements.emitExpr(durationArg);
-        hub.core.line("SLEEP " + op.resolvedCallTarget + " " + durationArg.resolvedType);
+        hub.core.line("SLEEP " + op.chk.resolvedCallTarget + " " + durationArg.chk.resolvedType);
     }
     /** Extern call; a variadic one carries its pushed-argument count in EXTERN_CALL. see docs/BytecodeEmitter.md, "Variadic calls". */
     public void emitExternCall(Token op, TypeCheckerModel.ExternInfo info) {
@@ -836,11 +836,11 @@ final class BytecodeEmitterOperations {
         int argCount = args.size();
         int varargStartIndex = info.hasVarargs ? info.paramTypes.size() : -1;
         emitCallSequence(null, args, () -> hub.core.line("EXTERN_CALL " + info.linkName + " " + argCount),
-                voidSafeReturnType(op), op.resolvedCallConvention, varargStartIndex);
+                voidSafeReturnType(op), op.chk.resolvedCallConvention, varargStartIndex);
     }
 
     public void emitCall(Token op) {
-        String funcName = resolveCallTargetForEmission(op.resolvedCallTarget);
+        String funcName = resolveCallTargetForEmission(op.chk.resolvedCallTarget);
         List<Token> args = new ArrayList<>();
         Token argsDelineator = op.right;
         if (!argsDelineator.childs.isEmpty()) {
@@ -851,7 +851,7 @@ final class BytecodeEmitterOperations {
         // Staged before the argument sequence: the slot is only read by a deeper GT_UNWIND, after the real call runs.
         hub.core.stageCallSiteForUnwind(op);
         emitCallSequence(null, args, () -> hub.core.line(mnemonic + " " + funcName), voidSafeReturnType(op),
-                op.resolvedCallConvention);
+                op.chk.resolvedCallConvention);
     }
 
     /**
@@ -859,9 +859,9 @@ final class BytecodeEmitterOperations {
      * see docs/BytecodeEmitter.md, "par / await desugaring".
      */
     public void emitAsyncCall(Token op) {
-        boolean isAwait = "AWAIT".equals(op.asyncCallKind);
-        String handleStructName = op.asyncHandleStructName;
-        String handleCanonical = op.asyncHandleCanonicalType;
+        boolean isAwait = "AWAIT".equals(op.chk.asyncCallKind);
+        String handleStructName = op.chk.asyncHandleStructName;
+        String handleCanonical = op.chk.asyncHandleCanonicalType;
         TypeCheckerModel.StructInfo handleStructInfo = hub.core.checker.declarations.getStructs().get(handleStructName);
         List<Token> args = new ArrayList<>();
         if (!op.right.childs.isEmpty()) {
@@ -906,7 +906,7 @@ final class BytecodeEmitterOperations {
                         hub.statements.emitExpr(argTok);
                         hub.core.deferredMoveNullOuts = savedDeferral;
                         hub.core.deferredTempNames = savedTempNames;
-                        if (argTok.isOwnershipMoveSource && !movedSources.contains(argTok)) {
+                        if (argTok.chk.isOwnershipMoveSource && !movedSources.contains(argTok)) {
                             movedSources.add(argTok);
                         }
                     } else {
@@ -950,7 +950,7 @@ final class BytecodeEmitterOperations {
                             + "decorated '@" + glueDecorator + "' to exist somewhere in the compilation unit "
                             + "(none was found)");
         }
-        String trampolineName = op.asyncTrampolineName;
+        String trampolineName = op.chk.asyncTrampolineName;
         TypeCheckerModel.FuncInfo trampolineInfo = hub.core.checker.declarations.getFunctions().get(trampolineName).get(0);
         String trampolineFuncPtrType = funcPointerCanonicalOf(trampolineInfo);
 
@@ -994,10 +994,10 @@ final class BytecodeEmitterOperations {
             hub.statements.emitOwnershipMoveNullOut(moved); // the thread now owns the argument
         }
 
-        boolean isVoidResult = isVoidCanonical(op.resolvedType);
+        boolean isVoidResult = isVoidCanonical(op.chk.resolvedType);
         if (isAwait) {
             if (!isVoidResult) {
-                String resultCanonical = op.resolvedType;
+                String resultCanonical = op.chk.resolvedType;
                 hub.core.line("PUSH " + tempName + " " + handleCanonical);
                 hub.core.line("PUSH_FIELDNAME result " + resultCanonical);
                 hub.core.line("DOT_LHS " + handleCanonical + " " + resultCanonical + " " + resultCanonical);

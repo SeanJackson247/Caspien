@@ -1,4 +1,5 @@
 package caspien.parser;
+import caspien.lexer.Lexeme;
 import caspien.CompilerException;
 import caspien.Token;
 import caspien.TokenType;
@@ -6,6 +7,7 @@ import caspien.TokenType;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Set;
 
@@ -103,8 +105,8 @@ final class ParserLines {
     public static final String CONSTRUCTOR_NAME_PREFIX = "__ctor__";
 
     /** Runs the whole parse pipeline; returns the file's top level as gathered LINE tokens. */
-    public List<Token> parse(List<Token> lexerOutput) {
-        List<Token> nested = nest(lexerOutput);
+    public List<Token> parse(List<Lexeme> lexerOutput) {
+        List<Token> nested = nest(toTokens(lexerOutput));
         gatherTemplateStringsDeep(nested);
         List<Token> lines = splitIntoLines(nested);
 
@@ -121,6 +123,31 @@ final class ParserLines {
     }
 
     // ---- 1. nesting -------------------------------------------------
+
+    /** Each Lexeme becomes the Token that will carry it through the tree stages (pinned comments keep their identity). */
+    public List<Token> toTokens(List<Lexeme> lexemes) {
+        IdentityHashMap<Lexeme, Token> made = new IdentityHashMap<>();
+        List<Token> out = new ArrayList<>(lexemes.size());
+        for (Lexeme l : lexemes) {
+            out.add(tokenOf(l, made));
+        }
+        return out;
+    }
+
+    private Token tokenOf(Lexeme l, IdentityHashMap<Lexeme, Token> made) {
+        Token t = made.get(l);
+        if (t != null) {
+            return t;
+        }
+        t = new Token(l.type, l.text, l.line, l.file);
+        made.put(l, t);
+        t.literalValue = l.literalValue;
+        t.forcedLiteralType = l.forcedLiteralType;
+        for (Lexeme c : l.pinnedComments) {
+            t.pinnedComments.add(tokenOf(c, made));
+        }
+        return t;
+    }
 
     public List<Token> nest(List<Token> flat) {
         List<Token> root = new ArrayList<>();

@@ -56,6 +56,7 @@ public class DupExpander {
         }
         walk(node.left);
         walk(node.right);
+        walk(node.next);
         if (node.childs != null) {
             for (Token c : node.childs) {
                 walk(c);

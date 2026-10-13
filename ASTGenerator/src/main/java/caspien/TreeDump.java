@@ -26,8 +26,8 @@ public class TreeDump {
             out.append(" [unary]");
         }
         out.append(" [").append(t.file).append(":").append(t.line).append("]");
-        if (t.resolvedType != null) {
-            out.append(" : ").append(t.resolvedType);
+        if (t.chk.resolvedType != null) {
+            out.append(" : ").append(t.chk.resolvedType);
         }
         if (!t.pinnedComments.isEmpty()) {
             out.append(" //").append(t.pinnedComments.size()).append(" comment(s)");
@@ -64,12 +64,12 @@ public class TreeDump {
                 out.append("right:\n");
                 dumpToken(out, t.right, indent + 2);
             }
-        } else if (t.right != null) {
-            // Non-operator use of .right: the next branch in an
-            // if/elseif/else chain.
+        }
+        if (t.next != null) {
+            // The following branch of an if/elseif/else or match/elsematch chain.
             pad(out, indent);
             out.append("-- chained branch --\n");
-            dumpToken(out, t.right, indent);
+            dumpToken(out, t.next, indent);
         }
     }
 

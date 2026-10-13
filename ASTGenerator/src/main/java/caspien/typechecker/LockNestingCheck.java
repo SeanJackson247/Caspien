@@ -75,7 +75,7 @@ public final class LockNestingCheck {
         if (t == null) {
             return;
         }
-        if (t.isLockSpinLoop) {
+        if (t.chk.isLockSpinLoop) {
             acquire(t, held, in);
             Token ifTok = t.childs != null && !t.childs.isEmpty() && !t.childs.get(0).childs.isEmpty() ? t.childs.get(0).childs.get(0) : null;
             if (ifTok == null) {
@@ -86,9 +86,9 @@ public final class LockNestingCheck {
             for (Token c : ifTok.childs) {
                 walk(c, true, in);                                                                // OPEN case: the lock is held
             }
-            walk(ifTok.right, held, in);                                                          // CLOSED case: not held
-            if (t.preLoopInit != null) {
-                for (Token c : t.preLoopInit) {
+            walk(ifTok.next, held, in);                                                          // CLOSED case: not held
+            if (t.chk.preLoopInit != null) {
+                for (Token c : t.chk.preLoopInit) {
                     walk(c, held, in);
                 }
             }
@@ -104,8 +104,8 @@ public final class LockNestingCheck {
                 in.waitKind = waitKind;
             }
         }
-        if (t.resolvedCallTarget != null) {
-            in.callees.add(t.resolvedCallTarget);
+        if (t.chk.resolvedCallTarget != null) {
+            in.callees.add(t.chk.resolvedCallTarget);
             if (held) {
                 in.heldCalls.add(t);
             }
@@ -130,6 +130,7 @@ public final class LockNestingCheck {
     public void walkChildren(Token t, boolean held, Info in) {
         walk(t.left, held, in);
         walk(t.right, held, in);
+        walk(t.next, held, in);
         if (t.childs != null) {
             for (Token c : t.childs) {
                 walk(c, held, in);
@@ -191,14 +192,14 @@ public final class LockNestingCheck {
     public void check() {
         for (Info in : byName.values()) {
             for (Token call : in.heldCalls) {
-                List<String> w = pathToWait(call.resolvedCallTarget, new HashSet<>());
+                List<String> w = pathToWait(call.chk.resolvedCallTarget, new HashSet<>());
                 if (w != null) {
-                    throw new CompilerException("type", call.file, call.line, "'" + call.resolvedCallTarget + "' is called while a lock is held, and it waits ('"
+                    throw new CompilerException("type", call.file, call.line, "'" + call.chk.resolvedCallTarget + "' is called while a lock is held, and it waits ('"
                             + byName.get(w.get(w.size() - 1)).waitKind + "'" + (w.size() > 1 ? ", through " + String.join(" > ", w) : "") + ") -- nothing may wait inside a critical section");
                 }
-                List<String> p = pathToLock(call.resolvedCallTarget, new HashSet<>());
+                List<String> p = pathToLock(call.chk.resolvedCallTarget, new HashSet<>());
                 if (p != null) {
-                    throw new CompilerException("type", call.file, call.line, "'" + call.resolvedCallTarget + "' is called while a lock is held, and it takes a lock"
+                    throw new CompilerException("type", call.file, call.line, "'" + call.chk.resolvedCallTarget + "' is called while a lock is held, and it takes a lock"
                             + (p.size() > 1 ? " (through " + String.join(" > ", p) + ")" : "") + " -- nested locks are not allowed, directly or through calls; the standard "
                             + "library's own allocation lock is the only exception");
                 }

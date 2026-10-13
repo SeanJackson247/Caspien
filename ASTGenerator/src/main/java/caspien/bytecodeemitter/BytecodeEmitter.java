@@ -42,28 +42,28 @@ public final class BytecodeEmitter {
     }
 
     public void emitLookup(Token op) {
-        String leftType = op.left.resolvedType;
+        String leftType = op.left.chk.resolvedType;
         if (op.left.type == TokenType.VARREF && leftType != null && !BytecodeEmitterCore.hasStorage(leftType)
                 && leftType.endsWith("]") && !leftType.contains("dynarray")
-                && op.resolvedType != null && op.resolvedType.matches("(mut|imut|indeterminate)_(u8|u16|u32|u64|s8|s16|s32|s64|f32|f64|bool|char)")) {
+                && op.chk.resolvedType != null && op.chk.resolvedType.matches("(mut|imut|indeterminate)_(u8|u16|u32|u64|s8|s16|s32|s64|f32|f64|bool|char)")) {
             // Scalar element of a fixed array variable: take the element address (ADDR + LOOKUP_LHS) and load only it, instead of pushing the whole array. Aggregate elements keep the old path (DEREF carries no size).
             core.line("ADDR " + op.left.text + " " + leftType);
             Token idx = op.right.childs.get(0);
             statements.emitExpr(idx);
-            core.line("LOOKUP_LHS " + leftType + " " + idx.resolvedType + " " + op.resolvedType);
-            core.line("DEREF " + op.resolvedType);
+            core.line("LOOKUP_LHS " + leftType + " " + idx.chk.resolvedType + " " + op.chk.resolvedType);
+            core.line("DEREF " + op.chk.resolvedType);
             return;
         }
         statements.emitExpr(op.left);
         Token indexExpr = op.right.childs.get(0);
         statements.emitExpr(indexExpr);
-        core.line("LOOKUP " + op.left.resolvedType + " " + indexExpr.resolvedType + " " + op.resolvedType);
+        core.line("LOOKUP " + op.left.chk.resolvedType + " " + indexExpr.chk.resolvedType + " " + op.chk.resolvedType);
     }
 
     /** 'x fits T' as unsigned 64-bit compares only; see docs/BytecodeEmitter.md, "fits". */
     public void emitFits(Token node) {
-        String xb = node.fitsSourceBase;
-        String tb = node.fitsTargetBase;
+        String xb = node.chk.fitsSourceBase;
+        String tb = node.chk.fitsTargetBase;
         boolean xSigned = xb.charAt(0) == 's';
         boolean tSigned = tb.charAt(0) == 's';
         int xw = Integer.parseInt(xb.substring(1));
@@ -71,7 +71,7 @@ public final class BytecodeEmitter {
         String u64 = "indeterminate_u64";
         statements.emitExpr(node.left);
         if (xw < 64) {
-            core.line((xSigned ? "SEXT " : "ZEXT ") + node.left.resolvedType + " " + u64);
+            core.line((xSigned ? "SEXT " : "ZEXT ") + node.left.chk.resolvedType + " " + u64);
         }
         java.math.BigInteger one = java.math.BigInteger.ONE;
         java.math.BigInteger tmax = tSigned ? one.shiftLeft(tw - 1).subtract(one) : one.shiftLeft(tw).subtract(one);
@@ -109,31 +109,31 @@ public final class BytecodeEmitter {
     /** wrap:<T>(x) / sat:<T>(x), total integer conversions; see docs/BytecodeEmitter.md, "wrap and sat". */
     public void emitConvert(Token op) {
         final Token arg = operations.singleBuiltinArg(op);
-        if (op.isFloatConvert || (op.resolvedType != null && BytecodeEmitterCore.isFloatCanonical(op.resolvedType))) {
+        if (op.chk.isFloatConvert || (op.chk.resolvedType != null && BytecodeEmitterCore.isFloatCanonical(op.chk.resolvedType))) {
             // wrap:<f32>(x) / wrap:<f64>(x): a float conversion (a literal argument was already retagged in place).
             statements.emitExpr(arg);
-            if (op.isFloatConvert) {
-                core.line("FCONV " + arg.resolvedType + " " + op.resolvedType);
+            if (op.chk.isFloatConvert) {
+                core.line("FCONV " + arg.chk.resolvedType + " " + op.chk.resolvedType);
             }
             return;
         }
         final boolean isSat = op.left.text.equals("sat");
-        final String xb = BytecodeEmitterCore.baseOfCanonical(arg.resolvedType);
-        final String tb = BytecodeEmitterCore.baseOfCanonical(op.resolvedType);
+        final String xb = BytecodeEmitterCore.baseOfCanonical(arg.chk.resolvedType);
+        final String tb = BytecodeEmitterCore.baseOfCanonical(op.chk.resolvedType);
         final boolean xs = xb.charAt(0) == 's';
         final boolean ts = tb.charAt(0) == 's';
         final int xw = Integer.parseInt(xb.substring(1));
         final int tw = Integer.parseInt(tb.substring(1));
         final String u64 = "indeterminate_u64";
-        final String ext = (xs ? "SEXT " : "ZEXT ") + arg.resolvedType + " " + u64;
+        final String ext = (xs ? "SEXT " : "ZEXT ") + arg.chk.resolvedType + " " + u64;
         final java.math.BigInteger one = java.math.BigInteger.ONE;
         boolean alwaysFits = tw >= xw && (xs ? ts : (!ts || tw > xw));
         if (!isSat || alwaysFits) {
             statements.emitExpr(arg);
             if (tw > xw) {
-                core.line((xs ? "SEXT " : "ZEXT ") + arg.resolvedType + " " + op.resolvedType);
+                core.line((xs ? "SEXT " : "ZEXT ") + arg.chk.resolvedType + " " + op.chk.resolvedType);
             } else if (tw < xw) {
-                core.line("TRUNC " + arg.resolvedType + " " + op.resolvedType);
+                core.line("TRUNC " + arg.chk.resolvedType + " " + op.chk.resolvedType);
             }
             return;
         }
@@ -201,31 +201,31 @@ public final class BytecodeEmitter {
             bin.accept("ADD");                                 // X + notInside*(fallback-X)
         }
         if (tw < 64) {
-            core.line("TRUNC " + u64 + " " + op.resolvedType);
+            core.line("TRUNC " + u64 + " " + op.chk.resolvedType);
         }
     }
     /** "as": no instruction for an alias cast, FCONV / TRUNC / SEXT / ZEXT otherwise. see docs/BytecodeEmitter.md, "as casts". */
     public void emitAs(Token op) {
         statements.emitExpr(op.left);
-        if (op.isFloatConvert) {
-            core.line("FCONV " + op.left.resolvedType + " " + op.resolvedType);
+        if (op.chk.isFloatConvert) {
+            core.line("FCONV " + op.left.chk.resolvedType + " " + op.chk.resolvedType);
             return;
         }
-        if (op.isTruncCast) {
-            core.line("TRUNC " + op.left.resolvedType + " " + op.resolvedType);
+        if (op.chk.isTruncCast) {
+            core.line("TRUNC " + op.left.chk.resolvedType + " " + op.chk.resolvedType);
             return;
         }
-        if (op.isAliasCast) {
+        if (op.chk.isAliasCast) {
             return;
         }
-        core.line((op.isSignedWideningCast ? "SEXT " : "ZEXT ") + op.left.resolvedType + " " + op.resolvedType);
+        core.line((op.chk.isSignedWideningCast ? "SEXT " : "ZEXT ") + op.left.chk.resolvedType + " " + op.chk.resolvedType);
     }
 
     /** Both EnumName.Variant and instance.member chains: one PUSH of the dot-joined name when the chain is nameable, else base + DOT / DOT_LHS+DEREF. see docs/BytecodeEmitter.md, "Dot access". */
     public void emitDot(Token op) {
-        if (op.catchMember != null) {
-            String param = op.catchTry.catchParamName;
-            if (op.catchMember.equals("msg")) {
+        if (op.chk.catchMember != null) {
+            String param = op.chk.catchTry.catchParamName;
+            if (op.chk.catchMember.equals("msg")) {
                 core.line("PUSH " + param + " static_imut_string");
             } else {
                 String arr = "mut_u64[" + (TraceConfig.depth + 1) + "]";
@@ -235,30 +235,30 @@ public final class BytecodeEmitter {
             return;
         }
         if (isQualifiedNameableDot(op)) {
-            core.line("PUSH " + qualifiedDotName(op) + " " + op.resolvedType);
+            core.line("PUSH " + qualifiedDotName(op) + " " + op.chk.resolvedType);
             return;
         }
         // Not nameable (base is a LOOKUP/call, or a segment is a pointer): emit the base, then DOT (inline base) or DOT_LHS+DEREF (pointer base), decided per level.
         statements.emitExpr(op.left);
-        core.line("PUSH_FIELDNAME " + op.right.text + " " + op.resolvedType);
-        if (BytecodeEmitterCore.hasStorage(op.left.resolvedType)) {
-            core.line("DOT_LHS " + op.left.resolvedType + " " + op.resolvedType + " " + op.resolvedType);
-            core.line("DEREF " + op.resolvedType);
+        core.line("PUSH_FIELDNAME " + op.right.text + " " + op.chk.resolvedType);
+        if (BytecodeEmitterCore.hasStorage(op.left.chk.resolvedType)) {
+            core.line("DOT_LHS " + op.left.chk.resolvedType + " " + op.chk.resolvedType + " " + op.chk.resolvedType);
+            core.line("DEREF " + op.chk.resolvedType);
         } else {
-            core.line("DOT " + op.left.resolvedType + " " + op.resolvedType + " " + op.resolvedType);
+            core.line("DOT " + op.left.chk.resolvedType + " " + op.chk.resolvedType + " " + op.chk.resolvedType);
         }
     }
 
     /** True when the whole chain is storage-free and rooted at a VARREF (a LOOKUP/CALL .text is a marker, not a name). */
     public boolean isQualifiedNameableDot(Token node) {
-        if (node.catchMember != null) {
+        if (node.chk.catchMember != null) {
             return false;
         }
         if (node.type == TokenType.OPERATOR && node.text.equals(".")) {
             // Per level: the segment dotted into must be storage-free too, the same bail-out AddressLoweringPass.resolveAddress applies.
-            return isQualifiedNameableDot(node.left) && !BytecodeEmitterCore.hasStorage(node.left.resolvedType);
+            return isQualifiedNameableDot(node.left) && !BytecodeEmitterCore.hasStorage(node.left.chk.resolvedType);
         }
-        return node.type == TokenType.VARREF && !BytecodeEmitterCore.hasStorage(node.resolvedType);
+        return node.type == TokenType.VARREF && !BytecodeEmitterCore.hasStorage(node.chk.resolvedType);
     }
 
     public String qualifiedDotName(Token node) {
@@ -276,12 +276,12 @@ public final class BytecodeEmitter {
             core.line("PUSH " + structInfo.classId + " imut_u64");
         }
 
-        if (op.isLockViolationConstruct) {
+        if (op.chk.isLockViolationConstruct) {
             // OTC lock violation: only the lock/discriminant value is pushed, then STACK_LOCK <structName>.
             Token lockAssignNode = op.right.childs.get(0).childs.get(0);
             Token lockValue = lockAssignNode.right;
             statements.emitExpr(lockValue);
-            if (lockValue.isOwnershipMoveSource) {
+            if (lockValue.chk.isOwnershipMoveSource) {
                 statements.emitOwnershipMoveNullOut(lockValue);
             }
             core.line("STACK_LOCK " + structName);
@@ -308,7 +308,7 @@ public final class BytecodeEmitter {
                 continue;
             }
             statements.emitExpr(value);
-            if (value.isOwnershipMoveSource) {
+            if (value.chk.isOwnershipMoveSource) {
                 // Null the move source right away: a later field value may contain a throwing call.
                 if (core.deferredMoveNullOuts != null) {
                     core.deferredMoveNullOuts.add(value); // inside `new`: nulled only once the allocation has succeeded
@@ -328,13 +328,13 @@ public final class BytecodeEmitter {
 
     /** An `owns` value that exists only as a computed result (a call), not in any variable or field. */
     public boolean isOwnsTemporary(Token value) {
-        return value.resolvedType != null && value.resolvedType.startsWith("owns_") && !value.isOwnershipMoveSource
+        return value.chk.resolvedType != null && value.chk.resolvedType.startsWith("owns_") && !value.chk.isOwnershipMoveSource
                 && value.type == TokenType.OPERATOR && !value.text.equals(".") && core.lateAllocs != null;
     }
 
     /** Evaluates the temporary into a hidden local and pushes it from there, so a failing allocation can still free it. */
     public void emitOwnsTemporaryViaLocal(Token value, List<String> tempNames) {
-        String type = value.resolvedType;
+        String type = value.chk.resolvedType;
         String tmp = declareHiddenLocal(type);
         core.line("ADDR " + tmp + " " + type);
         statements.emitExpr(value);
@@ -353,7 +353,7 @@ public final class BytecodeEmitter {
     /** `GT_DESTRUCT` for each moved-in source that is a plain `owns` variable or field path; temporaries are not addressable and are skipped. */
     public void emitDestructMovedSources(List<Token> sources) {
         for (Token t : sources) {
-            if (t.resolvedType == null || !t.resolvedType.startsWith("owns")) {
+            if (t.chk.resolvedType == null || !t.chk.resolvedType.startsWith("owns")) {
                 continue;
             }
             if (t.type == TokenType.VARREF) {
@@ -369,10 +369,10 @@ public final class BytecodeEmitter {
     /** `new ctor(..)`: construct into a hidden inline local through emitStructRvoCallSequence, then push it whole. see docs/BytecodeEmitter.md, "new". */
     public void emitNewFromStructRvoCall(Token callOp) {
         // Struct name from the callee return type, else from the call node's resolvedType.
-        String funcName = operations.resolveCallTargetForEmission(callOp.resolvedCallTarget);
+        String funcName = operations.resolveCallTargetForEmission(callOp.chk.resolvedCallTarget);
         TypeCheckerModel.FuncInfo targetInfo = core.findFuncInfoByMangledName(funcName);
         String structName = targetInfo != null ? targetInfo.returnType.baseType
-                : callOp.resolvedType.substring(callOp.resolvedType.lastIndexOf('_') + 1);
+                : callOp.chk.resolvedType.substring(callOp.chk.resolvedType.lastIndexOf('_') + 1);
         String tempName = "$new_ctor_tmp" + (++core.labelCounter);
         String structType = "mut_" + structName;
         String rawPtrType = "raw_indeterminate_" + structName;
@@ -396,10 +396,10 @@ public final class BytecodeEmitter {
         // first call), and the allocation check below would then have none -- an unchecked null: hold it back and restore it.
         final String newCatchLabel = core.pendingTryCatchLabel;
         core.pendingTryCatchLabel = null;
-        if (unwrapped.isStructRvoCall) {
+        if (unwrapped.chk.isStructRvoCall) {
             // A '@throws' constructor is itself the call the try/'?' guards: it must stage the catch label (an unstaged
             // throw would unwind past this function's own catch into the caller). The label is restored for the allocation check below.
-            TypeCheckerModel.FuncInfo ctorInfo = core.findFuncInfoByMangledName(operations.resolveCallTargetForEmission(unwrapped.resolvedCallTarget));
+            TypeCheckerModel.FuncInfo ctorInfo = core.findFuncInfoByMangledName(operations.resolveCallTargetForEmission(unwrapped.chk.resolvedCallTarget));
             if (ctorInfo != null && ctorInfo.isThrows) {
                 core.pendingTryCatchLabel = newCatchLabel;
             }
@@ -411,7 +411,7 @@ public final class BytecodeEmitter {
         core.deferredTempNames = savedTempNames;
         core.pendingTryCatchLabel = newCatchLabel;
         core.requireGhostTableFunctionPresent("gt_register", op);
-        String constructedType = op.resolvedType.substring("owns_".length());
+        String constructedType = op.chk.resolvedType.substring("owns_".length());
         if (constructedType.startsWith("some_")) {
             constructedType = constructedType.substring("some_".length());
         }
@@ -420,8 +420,8 @@ public final class BytecodeEmitter {
         // check below sees a failed registration exactly like a failed allocation (same catch, same freeing of moved sources).
         core.line("GT_REGISTER");
         core.line("DUP_TOP");
-        core.line("PUSH null " + op.resolvedType);
-        core.line("EQ " + op.resolvedType + " " + op.resolvedType + " imut_bool");
+        core.line("PUSH null " + op.chk.resolvedType);
+        core.line("EQ " + op.chk.resolvedType + " " + op.chk.resolvedType + " imut_bool");
         core.line("CMP");
         String okLabel = statements.newLabel("new_ok");
         core.line("JMP " + okLabel);
@@ -449,8 +449,8 @@ public final class BytecodeEmitter {
     /** `movedSources`: owns variables just moved into the allocation (e.g. the elements of `dyn([a, b])`); freed if it fails. */
     public void emitAllocFailureCheck(Token op, List<Token> movedSources, List<String> movedTemps) {
         core.line("DUP_TOP");
-        core.line("PUSH null " + op.resolvedType);
-        core.line("EQ " + op.resolvedType + " " + op.resolvedType + " imut_bool");
+        core.line("PUSH null " + op.chk.resolvedType);
+        core.line("EQ " + op.chk.resolvedType + " " + op.chk.resolvedType + " imut_bool");
         core.line("CMP");
         String okLabel = statements.newLabel("alloc_ok");
         core.line("JMP " + okLabel);
@@ -472,7 +472,7 @@ public final class BytecodeEmitter {
         if (op.text.equals("static")) {
             return;
         }
-        core.line("ADDR_OF " + op.text.toUpperCase() + " " + op.left.resolvedType + " " + op.resolvedType);
+        core.line("ADDR_OF " + op.text.toUpperCase() + " " + op.left.chk.resolvedType + " " + op.chk.resolvedType);
     }
 
     public String literalValueOf(Token node) {

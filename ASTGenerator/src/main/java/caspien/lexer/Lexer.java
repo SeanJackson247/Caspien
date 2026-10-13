@@ -2,7 +2,6 @@ package caspien.lexer;
 import caspien.CompilerException;
 import caspien.DocComments;
 import caspien.FsPolicy;
-import caspien.Token;
 import caspien.TokenType;
 
 import java.util.ArrayList;
@@ -177,7 +176,7 @@ public class Lexer {
      */
     private final java.util.Deque<Integer> templateExprBraceDepth = new java.util.ArrayDeque<>();
 
-    private final List<Token> tokens = new ArrayList<>();
+    private final List<Lexeme> tokens = new ArrayList<>();
     private final StringBuilder buffer = new StringBuilder();
     private int bufferStartLine = 1;
 
@@ -208,7 +207,7 @@ public class Lexer {
         this.displayFile = displayFile;
     }
 
-    public List<Token> tokenize() {
+    public List<Lexeme> tokenize() {
         while (pos < src.length()) {
             char c = src.charAt(pos);
             switch (mode) {
@@ -407,7 +406,7 @@ public class Lexer {
         if (i < 0) {
             return false;
         }
-        Token last = tokens.get(i);
+        Lexeme last = tokens.get(i);
         if (last.type == TokenType.KEYWORD && last.text.equals("ASM")) {
             return true; // unnamed: "ASM {"
         }
@@ -499,7 +498,7 @@ public class Lexer {
             raw.append(c);
             pos++;
         }
-        Token t = new Token(TokenType.ASM_BLOCK, raw.toString(), startLine, file);
+        Lexeme t = new Lexeme(TokenType.ASM_BLOCK, raw.toString(), startLine, file);
         t.literalValue = raw.toString();
         tokens.add(t);
     }
@@ -669,11 +668,11 @@ public class Lexer {
             // inside an ordinary function body), the same way C's own
             // __LINE__/__FILE__ macros are, being resolved before any
             // real compilation begins at all.
-            tokens.add(new Token(TokenType.INTEGER, Integer.toString(bufferStartLine), bufferStartLine, file));
+            tokens.add(new Lexeme(TokenType.INTEGER, Integer.toString(bufferStartLine), bufferStartLine, file));
         } else if (text.equals("__FS_ROOTS")) {
             // the run-time table of fs-roots (see FsPolicy.runtimeRootsText), an ordinary string literal
             String roots = FsPolicy.current.runtimeRootsText();
-            Token rootsTok = new Token(TokenType.STRING, roots, bufferStartLine, file);
+            Lexeme rootsTok = new Lexeme(TokenType.STRING, roots, bufferStartLine, file);
             rootsTok.literalValue = roots;
             rootsTok.quoteDelimiter = '"';
             tokens.add(rootsTok);
@@ -695,7 +694,7 @@ public class Lexer {
             // (needed for everything else -- reading, import cycle
             // detection, error-message file reporting), which is a
             // different thing entirely for an imported file.
-            Token strTok = new Token(TokenType.STRING, displayFile, bufferStartLine, file);
+            Lexeme strTok = new Lexeme(TokenType.STRING, displayFile, bufferStartLine, file);
             strTok.literalValue = displayFile;
             strTok.quoteDelimiter = '"';
             tokens.add(strTok);
@@ -707,7 +706,7 @@ public class Lexer {
             // dispatch" treatment __LINE/__FILENAME already get.
             String[] spec = NUMERIC_LIMIT_CONSTANTS.get(text);
             TokenType litType = spec[2].equals("FLOAT") ? TokenType.FLOAT : TokenType.INTEGER;
-            Token litTok = new Token(litType, spec[0], bufferStartLine, file);
+            Lexeme litTok = new Lexeme(litType, spec[0], bufferStartLine, file);
             litTok.forcedLiteralType = spec[1];
             tokens.add(litTok);
         } else if (text.equals("enum") && justSawDotOperator()) {
@@ -831,7 +830,7 @@ public class Lexer {
             throw err("lex", "unterminated quoted literal (newline before closing " + quoteDelimiter + ")");
         }
         if (c == quoteDelimiter) {
-            Token t = new Token(TokenType.QUOTED_LITERAL, buffer.toString(), bufferStartLine, file);
+            Lexeme t = new Lexeme(TokenType.QUOTED_LITERAL, buffer.toString(), bufferStartLine, file);
             t.literalValue = buffer.toString();
             t.quoteDelimiter = quoteDelimiter;
             tokens.add(t);
@@ -895,7 +894,7 @@ public class Lexer {
 
     /** Flushes whatever literal text has accumulated in `buffer` as a TEMPLATE_STRING_PART token -- called both between two "${...}" segments and right before the closing backtick, so an empty piece (two interpolations back to back, or an interpolation right at the very start/end) still produces a token, keeping every segment boundary explicit rather than needing special-casing later. */
     private void flushTemplateStringPart() {
-        Token t = new Token(TokenType.OPERATOR, "TEMPLATE_STRING_PART", bufferStartLine, file);
+        Lexeme t = new Lexeme(TokenType.OPERATOR, "TEMPLATE_STRING_PART", bufferStartLine, file);
         t.literalValue = buffer.toString();
         tokens.add(t);
         buffer.setLength(0);
@@ -954,7 +953,7 @@ public class Lexer {
 
     private void scanSlComment(char c) {
         if (c == '\n') {
-            Token t = new Token(TokenType.SL_COMMENT, buffer.toString(), bufferStartLine, file);
+            Lexeme t = new Lexeme(TokenType.SL_COMMENT, buffer.toString(), bufferStartLine, file);
             tokens.add(t);
             buffer.setLength(0);
             mode = Mode.CODE;
@@ -964,7 +963,7 @@ public class Lexer {
         buffer.append(c);
         pos++;
         if (pos >= src.length()) {
-            Token t = new Token(TokenType.SL_COMMENT, buffer.toString(), bufferStartLine, file);
+            Lexeme t = new Lexeme(TokenType.SL_COMMENT, buffer.toString(), bufferStartLine, file);
             tokens.add(t);
             buffer.setLength(0);
             mode = Mode.CODE;
@@ -973,7 +972,7 @@ public class Lexer {
 
     private void scanMlComment(char c) {
         if (c == '*' && peek(1) == '/') {
-            Token t = new Token(TokenType.ML_COMMENT, buffer.toString(), bufferStartLine, file);
+            Lexeme t = new Lexeme(TokenType.ML_COMMENT, buffer.toString(), bufferStartLine, file);
             tokens.add(t);
             buffer.setLength(0);
             pos += 2;
@@ -997,7 +996,7 @@ public class Lexer {
      * exactly one character), " and ` make a STRING (no length limit).
      */
     private void classifyQuotedLiterals() {
-        for (Token t : tokens) {
+        for (Lexeme t : tokens) {
             if (t.type != TokenType.QUOTED_LITERAL) {
                 continue;
             }
@@ -1016,8 +1015,8 @@ public class Lexer {
 
     private void mergeMultiCharOperators() {
         for (int i = 0; i < tokens.size() - 1; i++) {
-            Token a = tokens.get(i);
-            Token b = tokens.get(i + 1);
+            Lexeme a = tokens.get(i);
+            Lexeme b = tokens.get(i + 1);
             if (a.type == TokenType.OPERATOR && b.type == TokenType.OPERATOR
                     && a.line == b.line) {
                 String combo = a.text + b.text;
@@ -1032,9 +1031,9 @@ public class Lexer {
 
     private void mergeFloats() {
         for (int i = 0; i < tokens.size() - 2; i++) {
-            Token a = tokens.get(i);
-            Token dot = tokens.get(i + 1);
-            Token b = tokens.get(i + 2);
+            Lexeme a = tokens.get(i);
+            Lexeme dot = tokens.get(i + 1);
+            Lexeme b = tokens.get(i + 2);
             if (a.type == TokenType.INTEGER && !a.radixLiteral && dot.type == TokenType.OPERATOR && dot.text.equals(".")
                     && b.type == TokenType.INTEGER && a.line == dot.line && dot.line == b.line) {
                 a.type = TokenType.FLOAT;
@@ -1047,7 +1046,7 @@ public class Lexer {
 
     private void normalizeElseIf() {
         for (int i = 0; i < tokens.size(); i++) {
-            Token t = tokens.get(i);
+            Lexeme t = tokens.get(i);
             if (t.type == TokenType.KEYWORD && t.text.equals("elif")) {
                 t.text = "elseif";
                 continue;
@@ -1082,7 +1081,7 @@ public class Lexer {
     }
 
     /** Validates a doc comment (`/*! key: text *&#47;` or `//! key: text`) and registers it under the keyword it labels. See {@link DocComments}. */
-    private void registerDocComment(int idx, Token c) {
+    private void registerDocComment(int idx, Lexeme c) {
         int cl = c.line;
         String body = c.text.substring(1).trim().replaceAll("\\s+", " ");
         int colon = body.indexOf(':');
@@ -1103,9 +1102,9 @@ public class Lexer {
         }
         // the keyword it labels: the next real token, past any decorator lines (`@name ...` up to the end of its line)
         int j = idx + 1;
-        Token target = null;
+        Lexeme target = null;
         while (j < tokens.size()) {
-            Token x = tokens.get(j);
+            Lexeme x = tokens.get(j);
             if (isDiscardable(x)) {
                 j++;
                 continue;
@@ -1148,7 +1147,7 @@ public class Lexer {
 
     private void pinComments() {
         for (int i = 0; i < tokens.size(); i++) {
-            Token t = tokens.get(i);
+            Lexeme t = tokens.get(i);
             if (t.type != TokenType.SL_COMMENT && t.type != TokenType.ML_COMMENT) {
                 continue;
             }
@@ -1158,7 +1157,7 @@ public class Lexer {
                 i--;
                 continue;
             }
-            Token target = findNextRealToken(i);
+            Lexeme target = findNextRealToken(i);
             if (target == null) {
                 target = findPrevRealToken(i);
             }
@@ -1177,7 +1176,7 @@ public class Lexer {
      * one of these would silently lose the comment once that token is
      * discarded downstream.
      */
-    private static boolean isDiscardable(Token t) {
+    private static boolean isDiscardable(Lexeme t) {
         if (t.type == TokenType.WHITESPACE || t.type == TokenType.SL_COMMENT
                 || t.type == TokenType.ML_COMMENT || t.type == TokenType.TERMINATOR) {
             return true;
@@ -1189,9 +1188,9 @@ public class Lexer {
         return false;
     }
 
-    private Token findNextRealToken(int fromIndex) {
+    private Lexeme findNextRealToken(int fromIndex) {
         for (int j = fromIndex + 1; j < tokens.size(); j++) {
-            Token c = tokens.get(j);
+            Lexeme c = tokens.get(j);
             if (!isDiscardable(c)) {
                 return c;
             }
@@ -1199,9 +1198,9 @@ public class Lexer {
         return null;
     }
 
-    private Token findPrevRealToken(int fromIndex) {
+    private Lexeme findPrevRealToken(int fromIndex) {
         for (int j = fromIndex - 1; j >= 0; j--) {
-            Token c = tokens.get(j);
+            Lexeme c = tokens.get(j);
             if (!isDiscardable(c)) {
                 return c;
             }
@@ -1220,7 +1219,7 @@ public class Lexer {
     }
 
     private void emit(TokenType type, String text, int atLine) {
-        tokens.add(new Token(type, text, atLine, file));
+        tokens.add(new Lexeme(type, text, atLine, file));
     }
 
     private CompilerException err(String stage, String message) {

@@ -117,7 +117,7 @@ public final class TypeChecker {
         // the result is a fresh value: indeterminate mutability, needing mut/imut before a 'let' binds it
         TypeCheckerModel.TypeInfo prefixResult = operandType.withMutability("indeterminate").withStorage(storage);
         if (storage.equals("ref") && !prefixResult.isSome) {
-            op.refToId = true;   // `ref x` of a nullable owner is a nullable `ref`: an id, not the address
+            op.chk.refToId = true;   // `ref x` of a nullable owner is a nullable `ref`: an id, not the address
         }
         return prefixResult;
     }
@@ -254,7 +254,7 @@ public final class TypeChecker {
                         "'in' against a string requires a plain 'u64' on the left, got '"
                                 + leftType.canonical() + "'");
             }
-            op.isStringMembershipCheck = true;
+            op.chk.isStringMembershipCheck = true;
             return new TypeCheckerModel.TypeInfo(null, "indeterminate", "bool");
         }
         if (!isPlainU64(leftType) && !isRangeType(leftType)) {
@@ -292,8 +292,8 @@ public final class TypeChecker {
                             + "every one of its variants to carry an explicit discriminant value (e.g. '"
                             + enumInfo.variants.get(0) + ": 0'), not just some of them");
         }
-        op.right.resolvedType = enumName;
-        op.isGuaranteedEnumMembershipCheck = true;
+        op.right.chk.resolvedType = enumName;
+        op.chk.isGuaranteedEnumMembershipCheck = true;
         return new TypeCheckerModel.TypeInfo(null, "indeterminate", "bool");
     }
 
@@ -480,44 +480,44 @@ public final class TypeChecker {
      * was already the slot's type. A no-op unless `actualType.literalValue` was set.
      */
     public void adaptLiteral(Token expr, TypeCheckerModel.TypeInfo expected) {
-        if (expr == null || expr.resolvedType == null) {
+        if (expr == null || expr.chk.resolvedType == null) {
             return;
         }
-        String mutPrefix = expr.resolvedType.substring(0, expr.resolvedType.indexOf('_'));
+        String mutPrefix = expr.chk.resolvedType.substring(0, expr.chk.resolvedType.indexOf('_'));
         if (expr.type == TokenType.OPERATOR && (expr.text.equals("mut") || expr.text.equals("imut"))) {
             adaptLiteral(expr.left, expected);
-            expr.resolvedType = mutPrefix + "_" + expected.baseType;
+            expr.chk.resolvedType = mutPrefix + "_" + expected.baseType;
             return;
         }
         if (expr.type == TokenType.DELINEATOR && expr.text.equals("(") && expr.childs.size() == 1) {
             // grouping parentheses are transparent
             adaptLiteral(expr.childs.get(0), expected);
-            expr.resolvedType = mutPrefix + "_" + expected.baseType;
+            expr.chk.resolvedType = mutPrefix + "_" + expected.baseType;
             return;
         }
         if (expr.type == TokenType.OPERATOR && expr.text.equals("-") && expr.unary) {
-            expr.resolvedType = mutPrefix + "_" + expected.baseType;
+            expr.chk.resolvedType = mutPrefix + "_" + expected.baseType;
             // the operand of the NEG is the same-width UNSIGNED value (NEG's left/return types differ that way);
             // a float literal's operand is just the same float type.
-            if (expr.left != null && expr.left.resolvedType != null) {
-                String inner = expr.left.resolvedType.substring(0, expr.left.resolvedType.indexOf('_'));
+            if (expr.left != null && expr.left.chk.resolvedType != null) {
+                String inner = expr.left.chk.resolvedType.substring(0, expr.left.chk.resolvedType.indexOf('_'));
                 if (TypeCheckerModel.isFloatType(expected.baseType)) {
                     // retag the whole operand tree (`-(3.7 * 0.3)`, `-(0.5 + 0.25)`), not just its root
                     adaptLiteral(expr.left, expected);
-                    expr.left.resolvedType = inner + "_" + expected.baseType;
+                    expr.left.chk.resolvedType = inner + "_" + expected.baseType;
                 } else {
-                    expr.left.resolvedType = inner + "_" + TypeCheckerModel.unsignedCounterpart(expected.baseType);
+                    expr.left.chk.resolvedType = inner + "_" + TypeCheckerModel.unsignedCounterpart(expected.baseType);
                 }
             }
             return;
         }
         if (expr.type == TokenType.INTEGER || expr.type == TokenType.FLOAT) {
-            expr.resolvedType = mutPrefix + "_" + expected.baseType;
+            expr.chk.resolvedType = mutPrefix + "_" + expected.baseType;
         }
         if (TypeCheckerModel.isFloatType(expected.baseType) && expr.type == TokenType.OPERATOR && !expr.unary && expr.left != null && expr.right != null
                 && (expr.text.equals("+") || expr.text.equals("-") || expr.text.equals("*") || expr.text.equals("/"))) {
             // an all-literal float expression: retag the whole tree so every operation runs at the target width
-            expr.resolvedType = mutPrefix + "_" + expected.baseType;
+            expr.chk.resolvedType = mutPrefix + "_" + expected.baseType;
             adaptLiteral(expr.left, expected);
             adaptLiteral(expr.right, expected);
         }
@@ -529,7 +529,7 @@ public final class TypeChecker {
             for (Token e : elements) {
                 adaptLiteral(e, new TypeCheckerModel.TypeInfo(null, "indeterminate", elem));
             }
-            expr.resolvedType = mutPrefix + "_" + expected.baseType;
+            expr.chk.resolvedType = mutPrefix + "_" + expected.baseType;
         }
     }
 
@@ -546,10 +546,10 @@ public final class TypeChecker {
         boolean actualNullableRef = "ref".equals(actual.storage) && !actual.isSome;
         if ("ref".equals(expected.storage) && !expected.isSome) {
             if (!actualNullableRef && ("ref".equals(actual.storage) || "owns".equals(actual.storage))) {
-                expr.refToId = true;
+                expr.chk.refToId = true;
             }
         } else if ("raw".equals(expected.storage) && actualNullableRef) {
-            expr.refToRaw = true;
+            expr.chk.refToRaw = true;
         }
     }
 

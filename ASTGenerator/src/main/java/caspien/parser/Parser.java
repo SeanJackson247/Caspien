@@ -1,4 +1,5 @@
 package caspien.parser;
+import caspien.lexer.Lexeme;
 import caspien.CompilerException;
 import caspien.Token;
 import caspien.TokenType;
@@ -22,7 +23,7 @@ public final class Parser {
     /** The public entry points: the pipeline and the line gatherer live in ParserLines. */
     public static final String CONSTRUCTOR_NAME_PREFIX = ParserLines.CONSTRUCTOR_NAME_PREFIX;
 
-    public List<Token> parse(List<Token> lexerOutput) {
+    public List<Token> parse(List<Lexeme> lexerOutput) {
         return lines.parse(lexerOutput);
     }
 

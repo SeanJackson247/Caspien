@@ -34,7 +34,7 @@ public final class TypeCheckerControlFlow {
 
     /** "match e{ A:{..} B:{..} }" on an enum: records no proof; each case body is an ordinary child scope. See docs/TypeChecker.md, "Float and enum case matches". */
     public void checkCaseMatch(Token matchTok, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func, boolean insideLoop) {
-        Token conditionExpr = matchTok.sub.get(0);
+        Token conditionExpr = matchTok.condition();
         // "match x instanceof P.enum{..}" / "implements I.enum{..}" is detected structurally before resolveExprType rejects "P.enum".
         if (isEnumForMatchCondition(conditionExpr)) {
             checkEnumForMatch(matchTok, conditionExpr, scope, func, insideLoop);
@@ -99,7 +99,7 @@ public final class TypeCheckerControlFlow {
             }
             TypeCheckerModel.Scope branchScope = new TypeCheckerModel.Scope(scope, branchMoved, branchPatterns, false);
             hub.statements.checkLinesInScope(caseTok.childs, branchScope, func, insideLoop);
-            caseTok.destructOnExit = hub.statements.collectNaturalEndDestruct(caseTok.childs, branchScope, branchScope);
+            caseTok.chk.destructOnExit = hub.statements.collectNaturalEndDestruct(caseTok.childs, branchScope, branchScope);
             union.addAll(branchMoved);
             if (!hub.declarations.closedCaseTerminates(caseTok.childs)) { survivorMoves.add(branchMoved); }
         }
@@ -131,7 +131,7 @@ public final class TypeCheckerControlFlow {
             boolean isLast = i == cases.size() - 1;
             Token branch = new Token(TokenType.KEYWORD, isLast ? "else" : "if", caseTok.line, caseTok.file);
             branch.childs = caseTok.childs;
-            branch.destructOnExit = caseTok.destructOnExit;
+            branch.chk.destructOnExit = caseTok.chk.destructOnExit;
             if (isLast) {
                 branch.sub = new ArrayList<>();
             } else {
@@ -144,22 +144,22 @@ public final class TypeCheckerControlFlow {
                 Token checkOp = new Token(TokenType.OPERATOR, "FLOAT_CHECK", caseTok.line, caseTok.file);
                 checkOp.left = conditionExpr;
                 checkOp.right = chainTok;
-                checkOp.resolvedType = "indeterminate_bool";
+                checkOp.chk.resolvedType = "indeterminate_bool";
                 branch.sub = new ArrayList<>();
                 branch.sub.add(checkOp);
             }
             branches.add(branch);
         }
         for (int i = 0; i + 1 < branches.size(); i++) {
-            branches.get(i).right = branches.get(i + 1);
+            branches.get(i).next = branches.get(i + 1);
         }
         Token first = branches.get(0);
         matchTok.text = "if";
         matchTok.isCaseMatch = false;
         matchTok.sub = first.sub;
         matchTok.childs = first.childs;
-        matchTok.destructOnExit = first.destructOnExit;
-        matchTok.right = first.right;
+        matchTok.chk.destructOnExit = first.chk.destructOnExit;
+        matchTok.next = first.next;
     }
 
     public String labelsText(List<Token> labels) {
@@ -237,7 +237,7 @@ public final class TypeCheckerControlFlow {
             }
             TypeCheckerModel.Scope branchScope = new TypeCheckerModel.Scope(scope, branchMoved, branchPatterns, false);
             hub.statements.checkLinesInScope(caseTok.childs, branchScope, func, insideLoop);
-            caseTok.destructOnExit = hub.statements.collectNaturalEndDestruct(caseTok.childs, branchScope, branchScope);
+            caseTok.chk.destructOnExit = hub.statements.collectNaturalEndDestruct(caseTok.childs, branchScope, branchScope);
             union.addAll(branchMoved);
             if (!hub.declarations.closedCaseTerminates(caseTok.childs)) { survivorMoves.add(branchMoved); }
         }
@@ -279,7 +279,7 @@ public final class TypeCheckerControlFlow {
             boolean isLast = i == cases.size() - 1;
             Token branch = new Token(TokenType.KEYWORD, isLast ? "else" : "if", caseTok.line, caseTok.file);
             branch.childs = caseTok.childs;
-            branch.destructOnExit = caseTok.destructOnExit;
+            branch.chk.destructOnExit = caseTok.chk.destructOnExit;
             if (isLast) {
                 branch.sub = new ArrayList<>();
             } else {
@@ -312,15 +312,15 @@ public final class TypeCheckerControlFlow {
             branches.add(branch);
         }
         for (int i = 0; i + 1 < branches.size(); i++) {
-            branches.get(i).right = branches.get(i + 1);
+            branches.get(i).next = branches.get(i + 1);
         }
         Token first = branches.get(0);
         matchTok.text = "if";
         matchTok.isCaseMatch = false;
         matchTok.sub = first.sub;
         matchTok.childs = first.childs;
-        matchTok.destructOnExit = first.destructOnExit;
-        matchTok.right = first.right;
+        matchTok.chk.destructOnExit = first.chk.destructOnExit;
+        matchTok.next = first.next;
     }
 
     /** True for exactly "x instanceof Owner.enum" / "x implements Owner.enum" ("enum" lexes as a VARREF after "."; Lexer.justSawDotOperator). */
@@ -373,7 +373,7 @@ public final class TypeCheckerControlFlow {
         probe.left = xExpr;
         probe.right = new Token(TokenType.VARREF, memberNames.get(0), conditionExpr.line, conditionExpr.file);
         resolveExprType(probe, scope, func);
-        conditionExpr.resolvedType = "imut_bool";
+        conditionExpr.chk.resolvedType = "imut_bool";
         Set<String> required = new LinkedHashSet<>(memberNames);
         Set<String> covered = new HashSet<>();
         Set<String> preState = scope.movedSlots;
@@ -409,7 +409,7 @@ public final class TypeCheckerControlFlow {
             // Same instanceof shadowing as checkMatchChain (narrowInstanceofSlots), so "c.foo()" in an "A:" case resolves as A's method.
             hub.statements.narrowInstanceofSlots(branchPatterns, scope, branchScope);
             hub.statements.checkLinesInScope(caseTok.childs, branchScope, func, insideLoop);
-            caseTok.destructOnExit = hub.statements.collectNaturalEndDestruct(caseTok.childs, branchScope, branchScope);
+            caseTok.chk.destructOnExit = hub.statements.collectNaturalEndDestruct(caseTok.childs, branchScope, branchScope);
             union.addAll(branchMoved);
             if (!hub.declarations.closedCaseTerminates(caseTok.childs)) { survivorMoves.add(branchMoved); }
         }
@@ -438,7 +438,7 @@ public final class TypeCheckerControlFlow {
             boolean isLast = i == cases.size() - 1;
             Token branch = new Token(TokenType.KEYWORD, isLast ? "else" : "if", caseTok.line, caseTok.file);
             branch.childs = caseTok.childs;
-            branch.destructOnExit = caseTok.destructOnExit;
+            branch.chk.destructOnExit = caseTok.chk.destructOnExit;
             if (isLast) {
                 branch.sub = new ArrayList<>();
             } else {
@@ -465,15 +465,15 @@ public final class TypeCheckerControlFlow {
             branches.add(branch);
         }
         for (int i = 0; i + 1 < branches.size(); i++) {
-            branches.get(i).right = branches.get(i + 1);
+            branches.get(i).next = branches.get(i + 1);
         }
         Token first = branches.get(0);
         matchTok.text = "if";
         matchTok.isCaseMatch = false;
         matchTok.sub = first.sub;
         matchTok.childs = first.childs;
-        matchTok.destructOnExit = first.destructOnExit;
-        matchTok.right = first.right;
+        matchTok.chk.destructOnExit = first.chk.destructOnExit;
+        matchTok.next = first.next;
     }
 
     /**
@@ -485,7 +485,7 @@ public final class TypeCheckerControlFlow {
             checkMatchCondition(node.left, scope, func, out);
             checkMatchCondition(node.right, scope, func, out);
             // "and" has no resolveExprType case; its result type is set here (always bool).
-            node.resolvedType = "imut_bool";
+            node.chk.resolvedType = "imut_bool";
             return;
         }
         if (node.type == TokenType.OPERATOR && (node.text.equals("!=") || node.text.equals(">"))
@@ -504,8 +504,8 @@ public final class TypeCheckerControlFlow {
             }
             // A literal 0 fits every integer type, but resolveExprType types it u64 and checkComparison needs equal base types, so
             // the comparison's types are set by hand here (literal coerced to the left side's type).
-            node.right.resolvedType = leftType.canonical();
-            node.resolvedType = "imut_bool";
+            node.right.chk.resolvedType = leftType.canonical();
+            node.chk.resolvedType = "imut_bool";
             boolean isUnsigned = TypeCheckerModel.UNSIGNED_TO_SIGNED.containsKey(leftType.baseType);
             // "!= 0" suffices only for unsigned types (a signed divisor could still be -1: TYPE_MIN / -1 traps); "> 0" always suffices.
             boolean sufficientForDivision = node.text.equals(">") || (node.text.equals("!=") && isUnsigned);
@@ -516,12 +516,12 @@ public final class TypeCheckerControlFlow {
         }
         if (node.type == TokenType.OPERATOR && node.text.equals("instanceof")) {
             resolveExprType(node, scope, func);
-            out.add(new Token.MatchPattern(hub.expressions.slotKeyOf(node.left), "instanceof", node.right.resolvedType));
+            out.add(new Token.MatchPattern(hub.expressions.slotKeyOf(node.left), "instanceof", node.right.chk.resolvedType));
             return;
         }
         if (node.type == TokenType.OPERATOR && node.text.equals("implements")) {
             resolveExprType(node, scope, func);
-            out.add(new Token.MatchPattern(hub.expressions.slotKeyOf(node.left), "implements", node.right.resolvedType));
+            out.add(new Token.MatchPattern(hub.expressions.slotKeyOf(node.left), "implements", node.right.chk.resolvedType));
             return;
         }
         if (node.type == TokenType.OPERATOR && (node.text.equals("in") || node.text.equals("into"))
@@ -534,13 +534,13 @@ public final class TypeCheckerControlFlow {
         if (node.type == TokenType.OPERATOR && node.text.equals("in")) {
             resolveExprType(node, scope, func);
             // "u64 in GuaranteedEnum" is never a valid match condition: the right side is a type name, so no bounds proof can target it.
-            if (node.isGuaranteedEnumMembershipCheck) {
+            if (node.chk.isGuaranteedEnumMembershipCheck) {
                 throw new CompilerException("type", node.file, node.line,
-                        "'u64 in " + node.right.resolvedType + "' is not valid as a match condition -- "
+                        "'u64 in " + node.right.chk.resolvedType + "' is not valid as a match condition -- "
                                 + "it's only usable as an ordinary bool expression");
             }
             // "u64 in string" is a byte-membership scan, not a bounds check: likewise never a match condition.
-            if (node.isStringMembershipCheck) {
+            if (node.chk.isStringMembershipCheck) {
                 throw new CompilerException("type", node.file, node.line,
                         "'u64 in <string>' is not valid as a match condition -- "
                                 + "it's only usable as an ordinary bool expression");
@@ -552,13 +552,13 @@ public final class TypeCheckerControlFlow {
             // "match i into arr{..}": like "in" (checkIn, called by hand), but recorded as an "into" proof, which also
             // legalizes writes at that exact index (isProvenWritable). See docs/TypeChecker.md, "Match chains".
             TypeCheckerModel.TypeInfo intoCondType = hub.checkIn(node, scope, func);
-            node.resolvedType = intoCondType.canonical();
-            if (node.isGuaranteedEnumMembershipCheck) {
+            node.chk.resolvedType = intoCondType.canonical();
+            if (node.chk.isGuaranteedEnumMembershipCheck) {
                 throw new CompilerException("type", node.file, node.line,
-                        "'u64 into " + node.right.resolvedType + "' is not valid -- 'into' only makes "
+                        "'u64 into " + node.right.chk.resolvedType + "' is not valid -- 'into' only makes "
                                 + "sense against a range/dynarray target, never a guaranteed enum");
             }
-            if (node.isStringMembershipCheck) {
+            if (node.chk.isStringMembershipCheck) {
                 throw new CompilerException("type", node.file, node.line,
                         "'u64 into <string>' is not valid -- 'into' only makes sense against a "
                                 + "range/dynarray target, never a string");
@@ -588,9 +588,9 @@ public final class TypeCheckerControlFlow {
                 throw new CompilerException("type", node.left.file, node.left.line,
                         "'fits' needs a variable or a field on the left, so the proof has a slot to attach to");
             }
-            node.fitsSourceBase = fitsLeft.baseType;
-            node.fitsTargetBase = node.right.text;
-            node.resolvedType = "imut_bool";
+            node.chk.fitsSourceBase = fitsLeft.baseType;
+            node.chk.fitsTargetBase = node.right.text;
+            node.chk.resolvedType = "imut_bool";
             out.add(new Token.MatchPattern(fitsKey, "fits", node.right.text));
             return;
         }
@@ -606,7 +606,7 @@ public final class TypeCheckerControlFlow {
                 throw new CompilerException("type", node.right.file, node.right.line,
                         "'is' only supports 'base' on the right");
             }
-            node.resolvedType = "imut_bool";
+            node.chk.resolvedType = "imut_bool";
             out.add(new Token.MatchPattern(hub.expressions.slotKeyOf(node.left), "is_base", null));
             return;
         }
@@ -621,9 +621,9 @@ public final class TypeCheckerControlFlow {
                 ProofKills.suppressReads--;
             }
             Token argExpr = hub.calls.collectSingleBuiltinArg(node, "Some", scope, func).get(0);
-            node.someProofKey = hub.expressions.proofKeyOf(argExpr);
+            node.chk.someProofKey = hub.expressions.proofKeyOf(argExpr);
             Token.MatchPattern someProof = new Token.MatchPattern(hub.expressions.proofKeyOf(argExpr), "alive", null);
-            someProof.onId = node.someOnRef;
+            someProof.onId = node.chk.someOnRef;
             out.add(someProof);
             return;
         }
@@ -662,11 +662,11 @@ public final class TypeCheckerControlFlow {
         boundsOp.left = indexExpr;
         boundsOp.right = node.right;
         TypeCheckerModel.TypeInfo condType = hub.checkIn(boundsOp, scope, func);
-        node.resolvedType = condType.canonical();
-        someCall.resolvedType = "imut_bool";
-        if (boundsOp.isGuaranteedEnumMembershipCheck) {
+        node.chk.resolvedType = condType.canonical();
+        someCall.chk.resolvedType = "imut_bool";
+        if (boundsOp.chk.isGuaranteedEnumMembershipCheck) {
             throw new CompilerException("type", node.file, node.line,
-                    "'Some(...) " + kind + " " + boundsOp.right.resolvedType + "' is not valid -- "
+                    "'Some(...) " + kind + " " + boundsOp.right.chk.resolvedType + "' is not valid -- "
                             + "'Some(...) " + kind + "' only makes sense against a range/dynarray "
                             + "target, never a guaranteed enum");
         }
@@ -694,11 +694,11 @@ public final class TypeCheckerControlFlow {
         }
         Token.MatchPattern elemProof = new Token.MatchPattern(hub.expressions.slotKeyOf(lookupNode), "alive", null);
         out.add(elemProof);
-        lookupNode.someOnRef = "ref".equals(elemType.storage) && !elemType.isSome;
-        elemProof.onId = lookupNode.someOnRef;
-        lookupNode.someProofKey = hub.expressions.slotKeyOf(lookupNode);
+        lookupNode.chk.someOnRef = "ref".equals(elemType.storage) && !elemType.isSome;
+        elemProof.onId = lookupNode.chk.someOnRef;
+        lookupNode.chk.someProofKey = hub.expressions.slotKeyOf(lookupNode);
         // Lets BytecodeEmitter emit the GT_ALIVE_CHECK for this resolved lookup directly.
-        node.someIndexElementExpr = lookupNode;
+        node.chk.someIndexElementExpr = lookupNode;
     }
 
     /** Slot a bounds proof applies to: the range variable itself, or the origin argument of "range(origin)". Null if untrackable. */
@@ -795,9 +795,9 @@ public final class TypeCheckerControlFlow {
         Set<String> preState = scope.movedSlots;
         Set<String> union = new HashSet<>();
         List<Set<String>> survivorMoves = new ArrayList<>();
-        for (Token branch = ifTok; branch != null; branch = branch.right) {
+        for (Token branch = ifTok; branch != null; branch = branch.next) {
             if (!branch.sub.isEmpty()) {
-                Token condNode = branch.sub.get(0);
+                Token condNode = branch.condition();
                 // The one place insideShortCircuitEligiblePosition is seeded true: a branch condition is the top level where &&then / ||then is legal.
                 boolean previousEligible = hub.model.insideShortCircuitEligiblePosition;
                 hub.model.insideShortCircuitEligiblePosition = true;
@@ -814,7 +814,7 @@ public final class TypeCheckerControlFlow {
             // if / else do not change loop context.
             TypeCheckerModel.Scope branchBodyScope = hub.statements.checkLines(branch.childs, branchScope, func, insideLoop);
             // A branch's natural end is not a function/loop boundary: only its own locals are destructed.
-            branch.destructOnExit = hub.statements.collectNaturalEndDestruct(branch.childs, branchBodyScope, branchBodyScope);
+            branch.chk.destructOnExit = hub.statements.collectNaturalEndDestruct(branch.childs, branchBodyScope, branchBodyScope);
             union.addAll(branchMoved);
             if (!hub.declarations.closedCaseTerminates(branch.childs)) { survivorMoves.add(branchMoved); }
         }
@@ -926,7 +926,7 @@ public final class TypeCheckerControlFlow {
         rangeAssign.left = rangeLetTok;
         rangeAssign.right = rangeSourceExpr;
         TypeCheckerModel.TypeInfo rangeAssignType = hub.expressions.checkAssign(rangeAssign, forScope, func);
-        rangeAssign.resolvedType = rangeAssignType.canonical();
+        rangeAssign.chk.resolvedType = rangeAssignType.canonical();
 
         // let x = $range.start (a dynarray starts at literal 0).
         Token loopVarLetTok = new Token(TokenType.KEYWORD, "let", forTok.line, forTok.file);
@@ -950,7 +950,7 @@ public final class TypeCheckerControlFlow {
         mutStartDot.left = loopVarInitialValue;
         loopVarAssign.right = mutStartDot;
         TypeCheckerModel.TypeInfo loopVarAssignType = hub.expressions.checkAssign(loopVarAssign, forScope, func);
-        loopVarAssign.resolvedType = loopVarAssignType.canonical();
+        loopVarAssign.chk.resolvedType = loopVarAssignType.canonical();
 
         // per-iteration condition: x in $range (a real 'in' node)
         Token loopVarRefForCond = new Token(TokenType.VARREF, loopVarTok.text, forTok.line, forTok.file);
@@ -959,7 +959,7 @@ public final class TypeCheckerControlFlow {
         conditionIn.left = loopVarRefForCond;
         conditionIn.right = rangeRefForCond;
         TypeCheckerModel.TypeInfo condType = hub.checkIn(conditionIn, forScope, func);
-        conditionIn.resolvedType = condType.canonical();
+        conditionIn.chk.resolvedType = condType.canonical();
 
         // increment: x++ (a real postfix '++' node)
         Token loopVarRefForInc = new Token(TokenType.VARREF, loopVarTok.text, forTok.line, forTok.file);
@@ -967,7 +967,7 @@ public final class TypeCheckerControlFlow {
         increment.unary = true;
         increment.left = loopVarRefForInc;
         TypeCheckerModel.TypeInfo incType = hub.expressions.checkIncrement(increment, forScope, func);
-        increment.resolvedType = incType.canonical();
+        increment.chk.resolvedType = incType.canonical();
 
         // "for match i in x{..}": same bytecode, but the body scope also carries the "i in x" proof, built against the ORIGINAL
         // rangeExpr (not $range) so indexing in the body names the same slot; wrapped in a fresh Scope, forScope stays untouched.
@@ -1022,7 +1022,7 @@ public final class TypeCheckerControlFlow {
         hub.statements.collectLoopMoves(forTok.childs, forScope, forScope.movedSlots);
         TypeCheckerModel.Scope forBodyScope = hub.statements.checkLinesAsLoopBody(forTok.childs, forScopeForBody, func, isDynArraySource);
         // Per-iteration scope exit, as for "loop".
-        forTok.destructOnExit = hub.statements.collectNaturalEndDestruct(forTok.childs, forBodyScope, forBodyScope);
+        forTok.chk.destructOnExit = hub.statements.collectNaturalEndDestruct(forTok.childs, forBodyScope, forBodyScope);
         // Desugared pieces for BytecodeEmitter, stored in forTok.sub: [rangeAssign, loopVarAssign, conditionIn, increment].
         forTok.sub = new ArrayList<>();
         forTok.sub.add(rangeAssign);
@@ -1038,31 +1038,31 @@ public final class TypeCheckerControlFlow {
                         "empty 'return' in a function declared to return '"
                                 + func.returnType.canonical() + "'");
             }
-            returnTok.resolvedType = func.returnType.canonical();
-            returnTok.destructOnExit = hub.statements.collectOwnsToDestruct(scope, scope.functionRootScope, null);
-            returnTok.unlockOnExit = hub.statements.collectLockReleasesToBoundary(scope, scope.functionRootScope);
+            returnTok.chk.resolvedType = func.returnType.canonical();
+            returnTok.chk.destructOnExit = hub.statements.collectOwnsToDestruct(scope, scope.functionRootScope, null);
+            returnTok.chk.unlockOnExit = hub.statements.collectLockReleasesToBoundary(scope, scope.functionRootScope);
             return;
         }
         Token previousDirectReturnExprNode = hub.model.directReturnExprNode;
-        hub.model.directReturnExprNode = returnTok.sub.get(0);
+        hub.model.directReturnExprNode = returnTok.operand();
         // 'return foo()' forwards this function's $ret_dest into a struct-returning callee (third legal RVO position).
         // See docs/TypeChecker.md, "Struct return values (RVO)".
         boolean previousRvoEligible = hub.model.insideStructRvoDestinationPosition;
         hub.model.insideStructRvoDestinationPosition = hub.isStructByValueReturn(func.returnType);
         TypeCheckerModel.TypeInfo exprType;
         try {
-            exprType = resolveExprType(returnTok.sub.get(0), scope, func);
+            exprType = resolveExprType(returnTok.operand(), scope, func);
         } finally {
             hub.model.directReturnExprNode = previousDirectReturnExprNode;
             hub.model.insideStructRvoDestinationPosition = previousRvoEligible;
         }
-        if (func.returnType.isSome && !exprType.isSome && hub.locksAndProofs.isProvenAlive(returnTok.sub.get(0), scope)) {
+        if (func.returnType.isSome && !exprType.isSome && hub.locksAndProofs.isProvenAlive(returnTok.operand(), scope)) {
             // A return expression proven alive by an active `match Some` counts as 'some' for a 'some' return type.
             // A bare `new` never does (malloc can fail). See docs/TypeChecker.md, "Returning owns some".
             exprType = exprType.withSome(true);
-            returnTok.sub.get(0).resolvedType = exprType.canonical();
+            returnTok.operand().chk.resolvedType = exprType.canonical();
         }
-        if (!hub.acceptsAdaptingLiteral(func.returnType, exprType, returnTok.sub.get(0))) {
+        if (!hub.acceptsAdaptingLiteral(func.returnType, exprType, returnTok.operand())) {
             throw new CompilerException("type", returnTok.file, returnTok.line,
                     "return type mismatch: function returns '" + func.returnType.canonical()
                             + "' but this statement returns '" + exprType.canonical() + "'");
@@ -1076,7 +1076,7 @@ public final class TypeCheckerControlFlow {
         // Struct-by-value return: only a fresh struct literal, a readable value chain of the same struct, or a tail call.
         // See docs/TypeChecker.md, "Struct return values (RVO)".
         if (hub.isStructByValueReturn(func.returnType)) {
-            Token retExpr = returnTok.sub.get(0);
+            Token retExpr = returnTok.operand();
             boolean isFreshLiteral = retExpr.type == TokenType.OPERATOR && retExpr.text.equals("INSTANTIATE");
             boolean isReadableExpr = hub.isReadableValueChain(retExpr);
             // checkCall sets isStructRvoCall only for an eligible position, so testing the flag is enough.
@@ -1085,7 +1085,7 @@ public final class TypeCheckerControlFlow {
                     && (unwrapped.text.equals("mut") || unwrapped.text.equals("imut"))) {
                 unwrapped = unwrapped.left;
             }
-            boolean isTailForwardCall = unwrapped.isStructRvoCall;
+            boolean isTailForwardCall = unwrapped.chk.isStructRvoCall;
             if (!isFreshLiteral && !isReadableExpr && !isTailForwardCall) {
                 throw new CompilerException("type", returnTok.file, returnTok.line,
                         "a function returning '" + func.returnType.baseType + "' by value may only "
@@ -1100,14 +1100,14 @@ public final class TypeCheckerControlFlow {
             }
         }
         // Annotate with the declared return type (differs from the expression's when returning 'null' for a pointer type).
-        returnTok.resolvedType = func.returnType.canonical();
+        returnTok.chk.resolvedType = func.returnType.canonical();
         // The slot named directly in the return expression passes to the caller and is exempt from destruction.
-        String preservedSlotKey = hub.expressions.slotKeyOf(returnTok.sub.get(0));
+        String preservedSlotKey = hub.expressions.slotKeyOf(returnTok.operand());
         if (preservedSlotKey != null) {
             hub.model.fnEverMoved.add(preservedSlotKey);
         }
-        returnTok.destructOnExit = hub.statements.collectOwnsToDestruct(scope, scope.functionRootScope, preservedSlotKey);
-        returnTok.unlockOnExit = hub.statements.collectLockReleasesToBoundary(scope, scope.functionRootScope);
+        returnTok.chk.destructOnExit = hub.statements.collectOwnsToDestruct(scope, scope.functionRootScope, preservedSlotKey);
+        returnTok.chk.unlockOnExit = hub.statements.collectLockReleasesToBoundary(scope, scope.functionRootScope);
     }
 
     /**
@@ -1138,10 +1138,10 @@ public final class TypeCheckerControlFlow {
                     "'" + func.name + "' is '@pure' and cannot 'throw' -- an unconditional program "
                             + "termination can never be verified at compile time");
         }
-        hub.model.rethrowOperand = throwTok.sub.get(0);   // `throw e` of a catch parameter is the one bare use that stays legal
+        hub.model.rethrowOperand = throwTok.operand();   // `throw e` of a catch parameter is the one bare use that stays legal
         TypeCheckerModel.TypeInfo exprType;
         try {
-            exprType = resolveExprType(throwTok.sub.get(0), scope, func);
+            exprType = resolveExprType(throwTok.operand(), scope, func);
         } finally {
             hub.model.rethrowOperand = null;
         }
@@ -1155,16 +1155,16 @@ public final class TypeCheckerControlFlow {
         func.sawThrow = true;
         hub.model.throwSites.add(new TypeCheckerModel.ThrowSite(func, throwTok));
         // Per-throw-site destruct list and held-lock releases (a throw out of an OPEN case must not leave the lock held).
-        throwTok.destructOnExit = hub.statements.collectOwnsToDestruct(scope, scope.functionRootScope, null);
-        throwTok.unlockOnExit = hub.statements.collectLockReleasesToBoundary(scope, scope.functionRootScope);
+        throwTok.chk.destructOnExit = hub.statements.collectOwnsToDestruct(scope, scope.functionRootScope, null);
+        throwTok.chk.unlockOnExit = hub.statements.collectLockReleasesToBoundary(scope, scope.functionRootScope);
         // THROW takes one operand: a string literal (templates are already reduced) or a bare variable.
-        Token expr = throwTok.sub.get(0);
+        Token expr = throwTok.operand();
         if (expr.type != TokenType.STRING && expr.type != TokenType.VARREF) {
             throw new CompilerException("type", throwTok.file, throwTok.line,
                     "'throw' requires a string literal or a bare variable -- not a more complex "
                             + "expression");
         }
-        throwTok.resolvedType = exprType.canonical();
+        throwTok.chk.resolvedType = exprType.canonical();
     }
 
     /**
@@ -1176,7 +1176,7 @@ public final class TypeCheckerControlFlow {
             throw new CompilerException("type", tryTok.file, tryTok.line,
                     "'try' requires an expression (a call to a '@throws' function) before 'catch'");
         }
-        Token callNode = tryTok.sub.get(0);
+        Token callNode = tryTok.operand();
         // Shapes `try` may wrap: a CALL (including the dyn/resize/clone builtins), `new`, `par`/`await`.
         // `new` and the builtins enforce their own wrapping rule; a CALL is enforced by requireThrowsWrapping.
         boolean isAsyncNode = callNode.type == TokenType.OPERATOR
@@ -1191,7 +1191,7 @@ public final class TypeCheckerControlFlow {
                     "'try' can only wrap a direct call to a '@throws' function, a 'new' expression, a "
                             + "'par'/'await' call, or a 'dyn'/'resize'/'clone' builtin call, not a more general expression");
         }
-        callNode.insideTry = true;
+        callNode.chk.insideTry = true;
         // A nested allocation cannot get its own `try`, so coverage is tracked by the insideThrowingAllocContext flag
         // for the whole descent, not by the per-token insideTry.
         boolean previousInsideThrowingAllocContext = hub.model.insideThrowingAllocContext;
@@ -1227,7 +1227,7 @@ public final class TypeCheckerControlFlow {
             }
         }
         // No destructOnExit: a catch body never reaches its natural end (it must terminate, checked below).
-        tryTok.resolvedType = resultType.canonical();
+        tryTok.chk.resolvedType = resultType.canonical();
         // A catch body must end every path in return, throw or continue: a caught throw jumps straight into it,
         // never back through the call's return path. See docs/TypeChecker.md, "throw, try and catch".
         if (!hub.statements.definitelyReturns(tryTok.childs)) {
@@ -1245,12 +1245,12 @@ public final class TypeCheckerControlFlow {
 
     /** The two-way @throws contract, checked at each call-resolution site once the callee is known: an '@throws' callee must be in try/`?`, a non-throwing one must not be. */
     public void requireThrowsWrapping(TypeCheckerModel.FuncInfo candidate, Token op) {
-        if (candidate.isThrows && !op.insideTry && !op.coveredByThrowingNew) {
+        if (candidate.isThrows && !op.chk.insideTry && !op.chk.coveredByThrowingNew) {
             throw new CompilerException("type", op.file, op.line,
                     "call to '" + candidate.name + "', which is decorated '@throws', must be wrapped in "
                             + "'try ... catch { ... }'");
         }
-        if (!candidate.isThrows && op.insideTry) {
+        if (!candidate.isThrows && op.chk.insideTry) {
             throw new CompilerException("type", op.file, op.line,
                     "'try' wraps a call to '" + candidate.name + "', which is not decorated '@throws' -- "
                             + "'try'/'catch' is only needed (and only allowed) around a call to a "
@@ -1262,10 +1262,10 @@ public final class TypeCheckerControlFlow {
 
     public TypeCheckerModel.TypeInfo resolveExprType(Token node, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
         TypeCheckerModel.TypeInfo result = hub.expressions.resolveExprTypeInner(node, scope, func);
-        if (node.resolvedCallTarget != null && node.type == TokenType.OPERATOR && "CALL".equals(node.text)) {
-            ProofKills.call(scope.activeMatchPatterns, node, node.resolvedCallTarget);
+        if (node.chk.resolvedCallTarget != null && node.type == TokenType.OPERATOR && "CALL".equals(node.text)) {
+            ProofKills.call(scope.activeMatchPatterns, node, node.chk.resolvedCallTarget);
         }
-        node.resolvedType = result.canonical();
+        node.chk.resolvedType = result.canonical();
         if (func != null && hub.impls.isPureRtFunc(func)) {
             hub.impls.requirePureRtNoPointer(result, node, func, "in an expression");
         }

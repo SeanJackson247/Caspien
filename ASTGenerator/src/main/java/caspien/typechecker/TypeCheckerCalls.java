@@ -55,7 +55,7 @@ public final class TypeCheckerCalls {
                 wasEventLoopRedirect = true;
                 // The stdlib loop writes `? tick(state)`; the wrap is kept only if tick is '@throws', so the two-way rule still holds.
                 if (!tickFuncs.get(0).isThrows) {
-                    op.insideTry = false;
+                    op.chk.insideTry = false;
                 }
             }
         }
@@ -131,37 +131,37 @@ public final class TypeCheckerCalls {
                             "'" + funcName + "' is private -- not accessible outside the file it's "
                                     + "declared in");
                 }
-                if (candidate.isAsync && op.asyncCallKind == null && !op.isTrampolineOwnCall) {
+                if (candidate.isAsync && op.chk.asyncCallKind == null && !op.chk.isTrampolineOwnCall) {
                     throw new CompilerException("type", op.file, op.line,
                             "'" + funcName + "' is '@async' and can only be called through 'par' or "
                                     + "'await' -- never plainly");
                 }
-                if (!candidate.isAsync && op.asyncCallKind != null) {
+                if (!candidate.isAsync && op.chk.asyncCallKind != null) {
                     throw new CompilerException("type", op.file, op.line,
-                            "'" + op.asyncCallKind.toLowerCase() + "' can only be used on an '@async' "
+                            "'" + op.chk.asyncCallKind.toLowerCase() + "' can only be used on an '@async' "
                                     + "function -- '" + funcName + "' isn't one");
                 }
-                if (op.asyncCallKind != null) {
+                if (op.chk.asyncCallKind != null) {
                     // Pointers (even nested in structs) cannot cross par/await without 'unsafe async'.
                     for (int i = 0; i < argNodes.size(); i++) {
                         if (hub.locksAndProofs.containsPointerAnywhere(candidate.paramTypes.get(i)) && !hub.declarations.unsafeBypass(scope, "async")) {
                             throw new CompilerException("type", argNodes.get(i).file, argNodes.get(i).line,
                                     "passing '" + candidate.paramTypes.get(i).canonical() + "' (a pointer, "
                                             + "or a struct with one nested somewhere inside it) across "
-                                            + "'" + op.asyncCallKind.toLowerCase() + "' requires 'unsafe' "
+                                            + "'" + op.chk.asyncCallKind.toLowerCase() + "' requires 'unsafe' "
                                             + "code");
                         }
                     }
                 }
-                op.resolvedCallTarget = candidate.mangledName;
-                op.resolvedCallConvention = candidate.callConvention;
+                op.chk.resolvedCallTarget = candidate.mangledName;
+                op.chk.resolvedCallConvention = candidate.callConvention;
                 hub.controlFlow.requireThrowsWrapping(candidate, op);
                 for (int i = 0; i < argNodes.size(); i++) {
                     hub.expressions.markMovedIfOwned(candidate.paramTypes.get(i), argNodes.get(i), scope);
                 }
                 // Per-call-site destruct list, used if the callee throws and unwinds back here (emitted only when the program uses throw).
-                op.destructOnExit = hub.statements.collectOwnsToDestruct(scope, scope.functionRootScope, null);
-                op.unlockOnExit = hub.statements.collectLockReleasesToBoundary(scope, scope.functionRootScope);
+                op.chk.destructOnExit = hub.statements.collectOwnsToDestruct(scope, scope.functionRootScope, null);
+                op.chk.unlockOnExit = hub.statements.collectLockReleasesToBoundary(scope, scope.functionRootScope);
                 if (candidate == func && scope.suspendsSelfRecursion) {
                     throw new CompilerException("type", op.file, op.line,
                             "cannot call '" + func.name + "' from within its own base-case match "
@@ -186,7 +186,7 @@ public final class TypeCheckerCalls {
                                         + "expression, or anywhere else a value is otherwise expected; bind it "
                                         + "to a 'let' first");
                     }
-                    op.isStructRvoCall = true;
+                    op.chk.isStructRvoCall = true;
                 }
                 return candidate.returnType;
             }
@@ -235,8 +235,8 @@ public final class TypeCheckerCalls {
             // Varargs past the fixed parameters: C ignores mutability, so an
             // indeterminate-mutability value (literal, expression) is accepted as is.
         }
-        op.resolvedCallTarget = info.linkName; // the real linked symbol -- info.name unless "@link_name" overrides it (see ExternInfo.linkName's own doc comment)
-        op.resolvedCallConvention = info.callConvention;
+        op.chk.resolvedCallTarget = info.linkName; // the real linked symbol -- info.name unless "@link_name" overrides it (see ExternInfo.linkName's own doc comment)
+        op.chk.resolvedCallConvention = info.callConvention;
         return info.returnType;
     }
 
@@ -270,10 +270,10 @@ public final class TypeCheckerCalls {
             }
             hub.expressions.markMovedIfOwned(expected, argNode, scope);
         }
-        op.resolvedCallTarget = sleepFunc.mangledName;
-        op.resolvedCallConvention = sleepFunc.callConvention;
+        op.chk.resolvedCallTarget = sleepFunc.mangledName;
+        op.chk.resolvedCallConvention = sleepFunc.callConvention;
         // Emitted as SLEEP, not CALL; BytecodeEmitter.emitCallOrBuiltin reads the flag.
-        op.isSleepCall = true;
+        op.chk.isSleepCall = true;
         return sleepFunc.returnType;
     }
 
@@ -306,7 +306,7 @@ public final class TypeCheckerCalls {
             throw new CompilerException("type", argExpr.file, argExpr.line,
                     "'Some' requires a pointer, got '" + argType.canonical() + "'");
         }
-        op.someOnRef = "ref".equals(argType.storage) && !argType.isSome;
+        op.chk.someOnRef = "ref".equals(argType.storage) && !argType.isSome;
         return new TypeCheckerModel.TypeInfo(null, "indeterminate", "bool");
     }
 
@@ -332,7 +332,7 @@ public final class TypeCheckerCalls {
             if (floatArgType.floatLiteral) {
                 hub.adaptLiteral(floatArg, new TypeCheckerModel.TypeInfo(null, floatArgType.mutability, floatTarget));
             } else {
-                op.isFloatConvert = true;
+                op.chk.isFloatConvert = true;
             }
             return new TypeCheckerModel.TypeInfo(null, "indeterminate", floatTarget);
         }
@@ -407,8 +407,8 @@ public final class TypeCheckerCalls {
             argType = hub.controlFlow.resolveExprType(argExpr, scope, func);
         }
         long size = computeSizeOf(argType, op);
-        op.builtinConstantValue = size;
-        op.sizeofStruct = sizedStructName(argType);
+        op.chk.builtinConstantValue = size;
+        op.chk.sizeofStruct = sizedStructName(argType);
         return new TypeCheckerModel.TypeInfo(null, "indeterminate", "u64");
     }
 
@@ -547,7 +547,7 @@ public final class TypeCheckerCalls {
             throw new CompilerException("type", argExpr.file, argExpr.line,
                     "'len' requires a string, an array, or a dynarray, got '" + argType.canonical() + "'");
         }
-        op.builtinConstantValue = length;
+        op.chk.builtinConstantValue = length;
         return new TypeCheckerModel.TypeInfo(null, "indeterminate", "u64");
     }
 
@@ -578,7 +578,7 @@ public final class TypeCheckerCalls {
             throw new CompilerException("type", argExpr.file, argExpr.line,
                     "'range' requires a string, an array, or a dynarray, got '" + argType.canonical() + "'");
         }
-        op.builtinConstantValue = length;
+        op.chk.builtinConstantValue = length;
         return new TypeCheckerModel.TypeInfo(null, "imut", "range(0," + length + ")");
     }
 
@@ -616,7 +616,7 @@ public final class TypeCheckerCalls {
         // Allocates and registers like `new`: same try/catch discipline and same program-wide flags.
         hub.model.usesOwnsRefDynNew = true;
         hub.model.usesThrow = true;
-        if (!op.insideTry && !hub.model.insideThrowingAllocContext) {
+        if (!op.chk.insideTry && !hub.model.insideThrowingAllocContext) {
             throw new CompilerException("type", op.file, op.line,
                     "'clone' can fail (it throws when the underlying allocation fails) and must be "
                             + "wrapped in 'try ... catch { ... }'");
@@ -695,8 +695,8 @@ public final class TypeCheckerCalls {
             }
             hub.expressions.markMovedIfOwned(paramType, callArgs.get(i), scope);
         }
-        op.invokeArgCount = callArgs.size();
-        op.resolvedCallConvention = funcPtrType.funcPtrCallConvention;
+        op.chk.invokeArgCount = callArgs.size();
+        op.chk.resolvedCallConvention = funcPtrType.funcPtrCallConvention;
         return funcPtrType.funcPtrReturnType;
     }
 
@@ -822,7 +822,7 @@ public final class TypeCheckerCalls {
         hub.model.usesOwnsRefDynNew = true;
         if (!isUnsafe) {
             hub.model.usesThrow = true;
-            if (!op.insideTry && !hub.model.insideThrowingAllocContext) {
+            if (!op.chk.insideTry && !hub.model.insideThrowingAllocContext) {
                 throw new CompilerException("type", op.file, op.line,
                         "'dyn' can fail (it throws when the underlying allocation fails) and must be "
                                 + "wrapped in 'try ... catch { ... }'");
@@ -848,7 +848,7 @@ public final class TypeCheckerCalls {
                         "'dyn:<" + elemTok.text + ">': '" + elemTok.text + "' is not a known type");
             }
             TypeCheckerModel.TypeInfo emptyElementType = new TypeCheckerModel.TypeInfo(null, "mut", elemTok.text);
-            op.builtinConstantValue = 0L;
+            op.chk.builtinConstantValue = 0L;
             return isUnsafe ? TypeCheckerModel.TypeInfo.unsafeDynArray("indeterminate", emptyElementType)
                     : TypeCheckerModel.TypeInfo.dynArray("indeterminate", emptyElementType).withSome(true);
         }
@@ -861,7 +861,7 @@ public final class TypeCheckerCalls {
             // `dyn(text)`: a dynarray of chars; the element is `imut char`, like string indexing.
             TypeCheckerModel.TypeInfo argType = hub.controlFlow.resolveExprType(argExpr, scope, func);
             if (argType.baseType.equals("string")) {
-                op.dynFromStringSource = true;
+                op.chk.dynFromStringSource = true;
                 TypeCheckerModel.TypeInfo elementType = new TypeCheckerModel.TypeInfo(null, "imut", "char");
                 return isUnsafe ? TypeCheckerModel.TypeInfo.unsafeDynArray("indeterminate", elementType)
                         : TypeCheckerModel.TypeInfo.dynArray("indeterminate", elementType).withSome(true);
@@ -873,7 +873,7 @@ public final class TypeCheckerCalls {
         int count = hub.arrayLength(fixedArrayType.baseType);
         // Reuse the element type checkArrayLiteral already computed: resolving the elements again re-ran the move check and wrongly reported `dyn([a, b])`.
         TypeCheckerModel.TypeInfo elementType = fixedArrayType.arrayElementType;
-        op.builtinConstantValue = (long) count;
+        op.chk.builtinConstantValue = (long) count;
         return isUnsafe ? TypeCheckerModel.TypeInfo.unsafeDynArray("indeterminate", elementType)
                 : TypeCheckerModel.TypeInfo.dynArray("indeterminate", elementType).withSome(true);
     }
@@ -892,7 +892,7 @@ public final class TypeCheckerCalls {
         }
         TypeCheckerModel.TypeInfo result = checkDynBuiltinCore(op.left, scope, func, true);
         hub.declarations.unsafeBypass(scope, hub.declarations.udynTag(result));
-        op.left.resolvedType = result.canonical();
+        op.left.chk.resolvedType = result.canonical();
         return result;
     }
 
@@ -953,7 +953,7 @@ public final class TypeCheckerCalls {
                                 + "'unsafe', got " + args.size());
             }
             // An unsafe `resize` cannot throw, so `try` around it is rejected (same two-way contract as requireThrowsWrapping).
-            if (op.insideTry) {
+            if (op.chk.insideTry) {
                 throw new CompilerException("type", op.file, op.line,
                         "'try' wraps a call to 'resize' on an 'unsafe dynarray', which cannot throw -- "
                                 + "'try'/'catch' is only needed (and only allowed) around 'resize' on a "
@@ -967,7 +967,7 @@ public final class TypeCheckerCalls {
         // A safe `resize` can fail like `new`/`dyn`: it needs try/catch (op.insideTry or insideThrowingAllocContext) and sets usesThrow.
         if (!isUnsafeTarget) {
             hub.model.usesThrow = true;
-            if (!op.insideTry && !hub.model.insideThrowingAllocContext) {
+            if (!op.chk.insideTry && !hub.model.insideThrowingAllocContext) {
                 throw new CompilerException("type", op.file, op.line,
                         "'resize' can fail (it throws when the underlying reallocation fails) and must be "
                                 + "wrapped in 'try ... catch { ... }'");
@@ -1029,7 +1029,7 @@ public final class TypeCheckerCalls {
                             + "inside a larger expression, as a 'return' statement's own expression, or anywhere else a "
                             + "value is otherwise expected; bind it to a 'let' first");
         }
-        op.isStructRvoCall = true;
+        op.chk.isStructRvoCall = true;
     }
 
     /** `receiver.method(args)`: the receiver only selects the impls to search and is not injected as an argument; resolved at compile time, no run-time dispatch. See docs/TypeChecker.md, "Method calls". */
@@ -1106,15 +1106,15 @@ public final class TypeCheckerCalls {
             if (matches) {
                 hub.retagLiteralArgs(candidate.paramTypes, argTypes, argNodes);
                 checkImplMethodVisibility(candidate, impl, methodName, op, func);
-                op.resolvedCallTarget = candidate.mangledName;
-                op.resolvedCallConvention = candidate.callConvention;
+                op.chk.resolvedCallTarget = candidate.mangledName;
+                op.chk.resolvedCallConvention = candidate.callConvention;
                 hub.controlFlow.requireThrowsWrapping(candidate, op);
                 for (int i = 0; i < argNodes.size(); i++) {
                     hub.expressions.markMovedIfOwned(candidate.paramTypes.get(i), argNodes.get(i), scope);
                 }
                 // Per-call-site unwind lists; see docs/TypeChecker.md, "Method calls".
-                op.destructOnExit = hub.statements.collectOwnsToDestruct(scope, scope.functionRootScope, null);
-                op.unlockOnExit = hub.statements.collectLockReleasesToBoundary(scope, scope.functionRootScope);
+                op.chk.destructOnExit = hub.statements.collectOwnsToDestruct(scope, scope.functionRootScope, null);
+                op.chk.unlockOnExit = hub.statements.collectLockReleasesToBoundary(scope, scope.functionRootScope);
                 if (candidate == func && scope.suspendsSelfRecursion) {
                     throw new CompilerException("type", op.file, op.line,
                             "cannot call '" + func.name + "' from within its own base-case match "
@@ -1207,15 +1207,15 @@ public final class TypeCheckerCalls {
         hub.retagLiteralArgs(candidate.paramTypes, argTypes, argNodes);
 
         checkImplMethodVisibility(candidate, owningImpl, methodName, op, func);
-        op.resolvedCallTarget = candidate.mangledName;
-        op.resolvedCallConvention = candidate.callConvention;
+        op.chk.resolvedCallTarget = candidate.mangledName;
+        op.chk.resolvedCallConvention = candidate.callConvention;
         hub.controlFlow.requireThrowsWrapping(candidate, op);
         for (int i = 0; i < argNodes.size(); i++) {
             hub.expressions.markMovedIfOwned(candidate.paramTypes.get(i), argNodes.get(i), scope);
         }
         // Per-call-site unwind lists; see docs/TypeChecker.md, "Method calls".
-        op.destructOnExit = hub.statements.collectOwnsToDestruct(scope, scope.functionRootScope, null);
-        op.unlockOnExit = hub.statements.collectLockReleasesToBoundary(scope, scope.functionRootScope);
+        op.chk.destructOnExit = hub.statements.collectOwnsToDestruct(scope, scope.functionRootScope, null);
+        op.chk.unlockOnExit = hub.statements.collectLockReleasesToBoundary(scope, scope.functionRootScope);
         hub.locksAndProofs.requireMethodLockProofs(candidate, dotNode.left, argNodes, scope, op);
         hub.impls.requirePureCalleeIfPure(func, candidate, op);
         hub.model.callEdges.add(new TypeCheckerModel.CallEdge(func, candidate, scope.currentSafety, op, scope.insideDynArrayForLoopBody));
@@ -1225,7 +1225,7 @@ public final class TypeCheckerCalls {
 
     /** Materializes (memoized per type-argument list) a callable FuncInfo for a residual-generic method template; the template is already tree-built, so deepCloneCheckedTree is used. */
     public TypeCheckerModel.FuncInfo instantiateGenericMethod(TypeCheckerModel.ImplInfo impl, Token template, List<String> argNames, Token usageTok) {
-        String key = template.sub.get(0).text + "<" + String.join(",", argNames) + ">";
+        String key = template.declName().text + "<" + String.join(",", argNames) + ">";
         TypeCheckerModel.FuncInfo existing = impl.genericMethodInstances.get(key);
         if (existing != null) {
             return existing;
@@ -1250,8 +1250,8 @@ public final class TypeCheckerCalls {
 
         Token clone = hub.impls.deepCloneCheckedTree(template);
         // `self` is substituted here for residual-generic templates (collectImpl skips them).
-        hub.impls.substituteSelfInPlace(clone.sub.get(1).childs, impl.concreteName);
-        hub.impls.substituteSelfInPlace(clone.sub.subList(2, clone.sub.size()), impl.concreteName);
+        hub.impls.substituteSelfInPlace(clone.paramsTok().childs, impl.concreteName);
+        hub.impls.substituteSelfInPlace(clone.returnTypeTokens(), impl.concreteName);
         substituteGenericMethodParams(clone, subMap);
         clone.typeParams = null;
         clone.typeParamBounds = null;
@@ -1290,6 +1290,7 @@ public final class TypeCheckerCalls {
         }
         substituteGenericMethodParams(node.left, subMap);
         substituteGenericMethodParams(node.right, subMap);
+        substituteGenericMethodParams(node.next, subMap);
         if (node.childs != null) {
             for (Token c : node.childs) {
                 substituteGenericMethodParams(c, subMap);
@@ -1352,8 +1353,8 @@ public final class TypeCheckerCalls {
             }
         }
         hub.retagLiteralArgs(dispatcher.paramTypes, argTypes, argNodes);
-        op.resolvedCallTarget = dispatcher.mangledName;
-        op.resolvedCallConvention = dispatcher.callConvention;
+        op.chk.resolvedCallTarget = dispatcher.mangledName;
+        op.chk.resolvedCallConvention = dispatcher.callConvention;
         for (int i = 0; i < argNodes.size(); i++) {
             hub.expressions.markMovedIfOwned(dispatcher.paramTypes.get(i), argNodes.get(i), scope);
         }

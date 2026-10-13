@@ -1,12 +1,9 @@
 package caspien.typechecker;
+import caspien.SourceParser;
 import caspien.CompilerException;
 import caspien.Token;
 import caspien.TokenType;
 import caspien.TraceConfig;
-import caspien.lexer.Lexer;
-import caspien.parser.Parser;
-import caspien.rpnconverter.RpnConverter;
-import caspien.treebuilder.TreeBuilder;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -79,7 +76,7 @@ public final class TypeCheckerAccessAndAsync {
      * proof for this exact (index, target) ("arr[i+1] = .." does not qualify).
      */
     public void requireLookupWriteAuthorized(Token lookupOp, TypeCheckerModel.Scope scope) {
-        if (!lookupOp.isLookupProofReliant) {
+        if (!lookupOp.chk.isLookupProofReliant) {
             return;
         }
         Token indexExpr = lookupOp.right.childs.get(0);
@@ -139,7 +136,7 @@ public final class TypeCheckerAccessAndAsync {
         if (!memberName.equals(structInfo.swapFieldName)) {
             return;
         }
-        if (op.isCompilerSynthesizedSwapAccess || hub.declarations.unsafeBypass(scope, "atomic")) {
+        if (op.chk.isCompilerSynthesizedSwapAccess || hub.declarations.unsafeBypass(scope, "atomic")) {
             return;
         }
         throw new CompilerException("type", op.file, op.line,
@@ -161,12 +158,12 @@ public final class TypeCheckerAccessAndAsync {
                 && op.right.type == TokenType.VARREF
                 && (op.right.text.equals("msg") || op.right.text.equals("stack_trace"))) {
             Token tryTok = hub.model.activeCatchTries.get(op.left.text);
-            op.catchMember = op.right.text;
-            op.catchTry = tryTok;
+            op.chk.catchMember = op.right.text;
+            op.chk.catchTry = tryTok;
             if (op.right.text.equals("msg")) {
                 return new TypeCheckerModel.TypeInfo("static", "imut", "string");
             }
-            tryTok.catchUsesStackTrace = true;
+            tryTok.chk.catchUsesStackTrace = true;
             return new TypeCheckerModel.TypeInfo("auto", "imut", "u64[" + (TraceConfig.depth + 1) + "]");
         }
 
@@ -324,8 +321,8 @@ public final class TypeCheckerAccessAndAsync {
                         "member '" + memberName + "' expects type '" + declaredType.canonical()
                                 + "', got '" + valueType.canonical() + "'");
             }
-            assignNode.resolvedType = declaredType.canonical();
-            assignNode.left.resolvedType = declaredType.canonical();
+            assignNode.chk.resolvedType = declaredType.canonical();
+            assignNode.left.chk.resolvedType = declaredType.canonical();
             hub.expressions.markMovedIfOwned(declaredType, assignNode.right, scope);
             if (structInfo.swapFieldName != null && hub.model.typeOwnsMemory(declaredType, new HashSet<>())) {
                 hub.signatures.requireFreshIntoSwapLock(assignNode.right, "used to build", structName);
@@ -353,7 +350,7 @@ public final class TypeCheckerAccessAndAsync {
                 // Narrow OTC exception for lock-field structs: only the lock field given, as a provably
                 // non-satisfying literal (see checkOtcLockViolation).
                 checkOtcLockViolation(op, structInfo, structName, lockFieldValueNode);
-                op.isLockViolationConstruct = true;
+                op.chk.isLockViolationConstruct = true;
             } else {
                 throw new CompilerException("type", op.file, op.line,
                         "struct '" + structName + "' literal is missing member(s): "
@@ -501,7 +498,7 @@ public final class TypeCheckerAccessAndAsync {
         boolean previousRvoEligible = hub.model.insideStructRvoDestinationPosition;
         hub.model.insideStructRvoDestinationPosition = true;
         if (op.left.type == TokenType.OPERATOR && op.left.text.equals("CALL")) {
-            op.left.coveredByThrowingNew = true; // insideThrowingAllocContext was verified just above
+            op.left.chk.coveredByThrowingNew = true; // insideThrowingAllocContext was verified just above
         }
         TypeCheckerModel.TypeInfo operandType;
         try {
@@ -596,13 +593,13 @@ public final class TypeCheckerAccessAndAsync {
             throw new CompilerException("type", op.left.file, op.left.line,
                     "'await' must directly wrap a function call, e.g. 'await foo(...)'");
         }
-        if (!op.insideTry) {
+        if (!op.chk.insideTry) {
             throw new CompilerException("type", op.file, op.line,
                     "'await' can fail (out of memory for its handle, or the thread cannot be started), so it must be "
                             + "wrapped in 'try ... catch(e){ ... }' or written '?await ...'");
         }
         hub.model.usesThrow = true; // like 'new': the failure exits set gt_error_message
-        op.left.asyncCallKind = "AWAIT";
+        op.left.chk.asyncCallKind = "AWAIT";
         TypeCheckerModel.TypeInfo calleeReturnType = hub.controlFlow.resolveExprType(op.left, scope, func);
         prepareAsyncCallSite(op.left, calleeReturnType);
         return calleeReturnType;
@@ -621,16 +618,16 @@ public final class TypeCheckerAccessAndAsync {
         TypeCheckerModel.TypeInfo paramType = asyncFuncInfo.paramTypes.isEmpty() ? null : asyncFuncInfo.paramTypes.get(0);
         boolean isVoid = calleeReturnType.baseType.equals("void");
         TypeCheckerModel.TypeInfo handleType = getOrCreateAsyncHandleType(isVoid ? null : calleeReturnType, paramType, callTok,
-                "PAR".equals(callTok.asyncCallKind));
-        callTok.asyncHandleStructName = handleType.baseType;
-        callTok.asyncHandleCanonicalType = handleType.canonical();
+                "PAR".equals(callTok.chk.asyncCallKind));
+        callTok.chk.asyncHandleStructName = handleType.baseType;
+        callTok.chk.asyncHandleCanonicalType = handleType.canonical();
         // A hidden (void) handle reached via par is never visible to the caller and its thread may still read
         // it, so it needs a self-destructing trampoline; void via await shares the ordinary one (it joins first).
-        boolean selfDestructHidden = isVoid && "PAR".equals(callTok.asyncCallKind);
-        boolean lockedHandle = !isVoid && "PAR".equals(callTok.asyncCallKind);
+        boolean selfDestructHidden = isVoid && "PAR".equals(callTok.chk.asyncCallKind);
+        boolean lockedHandle = !isVoid && "PAR".equals(callTok.chk.asyncCallKind);
         String trampolineName = "__trampoline_" + asyncFuncInfo.mangledName
                 + (selfDestructHidden ? "__par_fire_and_forget" : lockedHandle ? "__par_locked" : "");
-        callTok.asyncTrampolineName = trampolineName;
+        callTok.chk.asyncTrampolineName = trampolineName;
         synthesizeAsyncTrampoline(asyncFuncInfo, handleType, paramType, isVoid ? null : calleeReturnType,
                 trampolineName, selfDestructHidden, lockedHandle);
         if (lockedHandle) {
@@ -646,7 +643,7 @@ public final class TypeCheckerAccessAndAsync {
     public TypeCheckerModel.FuncInfo findTopLevelAsyncFuncInfo(Token callTok) {
         for (List<TypeCheckerModel.FuncInfo> overloads : hub.model.functions.values()) {
             for (TypeCheckerModel.FuncInfo fi : overloads) {
-                if (fi.mangledName.equals(callTok.resolvedCallTarget)) {
+                if (fi.mangledName.equals(callTok.chk.resolvedCallTarget)) {
                     return fi;
                 }
             }
@@ -1133,17 +1130,17 @@ public final class TypeCheckerAccessAndAsync {
             throw new CompilerException("type", op.left.file, op.left.line,
                     "'par' must directly wrap a function call, e.g. 'par foo(...)'");
         }
-        if (!op.insideTry) {
+        if (!op.chk.insideTry) {
             throw new CompilerException("type", op.file, op.line,
                     "'par' can fail (out of memory for its handle, or the thread cannot be started), so it must be "
                             + "wrapped in 'try ... catch(e){ ... }' or written '?par ...'");
         }
         hub.model.usesThrow = true; // like 'new': the failure exits set gt_error_message
-        op.left.asyncCallKind = "PAR";
+        op.left.chk.asyncCallKind = "PAR";
         TypeCheckerModel.TypeInfo calleeReturnType = hub.controlFlow.resolveExprType(op.left, scope, func);
         TypeCheckerModel.TypeInfo handleType = prepareAsyncCallSite(op.left, calleeReturnType);
         TypeCheckerModel.TypeInfo result = calleeReturnType.baseType.equals("void") ? calleeReturnType : handleType;
-        op.left.resolvedType = result.canonical();
+        op.left.chk.resolvedType = result.canonical();
         return result;
     }
 
@@ -1208,12 +1205,7 @@ public final class TypeCheckerAccessAndAsync {
         src.append("}\n");
 
         String file = asyncFuncInfo.funcToken.file;
-        Lexer lexer = new Lexer(src.toString(), file, file);
-        List<Token> tokens = lexer.tokenize();
-        Parser parser = new Parser();
-        List<Token> parsed = parser.parse(tokens);
-        new RpnConverter().convertLines(parsed);
-        new TreeBuilder().buildLines(parsed);
+        List<Token> parsed = SourceParser.parse(src.toString(), file, file);
 
         Token funcTok = parsed.get(0).childs.get(0);
         markSynthesizedUnsafe(funcTok);
@@ -1222,7 +1214,7 @@ public final class TypeCheckerAccessAndAsync {
             throw new IllegalStateException(
                     "internal error: trampoline synthesis lost its own call to '" + asyncFuncInfo.name + "'");
         }
-        callNode.isTrampolineOwnCall = true;
+        callNode.chk.isTrampolineOwnCall = true;
 
         TypeCheckerModel.FuncInfo trampolineInfo = new TypeCheckerModel.FuncInfo();
         trampolineInfo.funcToken = funcTok;
@@ -1260,12 +1252,7 @@ public final class TypeCheckerAccessAndAsync {
         src.append("\t\t}\n");
         src.append("\t}\n");
         src.append("}\n");
-        Lexer lexer = new Lexer(src.toString(), file, file);
-        List<Token> tokens = lexer.tokenize();
-        Parser parser = new Parser();
-        List<Token> parsed = parser.parse(tokens);
-        new RpnConverter().convertLines(parsed);
-        new TreeBuilder().buildLines(parsed);
+        List<Token> parsed = SourceParser.parse(src.toString(), file, file);
         Token funcTok = parsed.get(0).childs.get(0);
         markSynthesizedUnsafe(funcTok);
         TypeCheckerModel.FuncInfo hookInfo = new TypeCheckerModel.FuncInfo();
@@ -1290,7 +1277,7 @@ public final class TypeCheckerAccessAndAsync {
             return;
         }
         if (node.type == TokenType.KEYWORD && node.text.equals("unsafe")) {
-            node.synthesizedUnsafe = true;
+            node.chk.synthesizedUnsafe = true;
         }
         if (node.childs != null) {
             for (Token c : node.childs) {
@@ -1313,6 +1300,10 @@ public final class TypeCheckerAccessAndAsync {
             return found;
         }
         found = findCallNodeByCalleeName(node.right, calleeName);
+        if (found != null) {
+            return found;
+        }
+        found = findCallNodeByCalleeName(node.next, calleeName);
         if (found != null) {
             return found;
         }

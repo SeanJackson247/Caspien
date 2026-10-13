@@ -556,7 +556,7 @@ final class ParserBlocks {
             branch.childs = branchBlockTok.childs;
             branch.pinnedComments = branchKw.pinnedComments;
 
-            chainTail.right = branch;
+            chainTail.next = branch;
             chainTail = branch;
             consumed++;
             j++;
@@ -623,7 +623,7 @@ final class ParserBlocks {
             branch.childs = branchBlockTok.childs;
             branch.pinnedComments = branchKw.pinnedComments;
 
-            chainTail.right = branch;
+            chainTail.next = branch;
             chainTail = branch;
             consumed++;
             j++;

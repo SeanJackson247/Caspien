@@ -249,9 +249,9 @@ final class BytecodeEmitterCore {
      * Optimizer's SizeofResolutionPass into that same PUSH).
      */
     public static String pointerScaleLine(Token op, String type) {
-        return op.pointerScaleStruct != null
-                ? "SIZEOF " + op.pointerScaleStruct + " " + type
-                : "PUSH " + op.pointerScale + " " + type;
+        return op.chk.pointerScaleStruct != null
+                ? "SIZEOF " + op.chk.pointerScaleStruct + " " + type
+                : "PUSH " + op.chk.pointerScale + " " + type;
     }
 
     /** Builtin calls: they bypass the overload table (no resolvedCallTarget), so they are dispatched here by reserved name before emitCall; see docs/BytecodeEmitter.md, "Builtin call emission". */
@@ -379,19 +379,19 @@ final class BytecodeEmitterCore {
             }
             if (t.type == TokenType.VARREF) {
                 // "asm_name;" at the root: already resolved and validated by TypeChecker.
-                emitAsm(t.resolvedAsmContent);
+                emitAsm(t.chk.resolvedAsmContent);
                 continue;
             }
             switch (t.text) {
                 case "struct":
-                    emitStruct(structs.get(t.sub.get(0).text));
+                    emitStruct(structs.get(t.declName().text));
                     break;
                 case "type":
                     break; // no bytecode: a type alias is erased, TypeChecker resolved every use
                 case "const":
                     break; // no bytecode: a const is erased, TypeChecker substituted every use
                 case "enum":
-                    emitEnum(enums.get(t.sub.get(0).text));
+                    emitEnum(enums.get(t.declName().text));
                     break;
                 case "func":
                     emitFunc(findFuncInfo(checker, t));
@@ -415,7 +415,7 @@ final class BytecodeEmitterCore {
                     }
                     break;
                 case "extern":
-                    emitExtern(checker.declarations.getExterns().get(t.sub.get(0).text));
+                    emitExtern(checker.declarations.getExterns().get(t.declName().text));
                     break;
                 case "export":
                     break; // folded into the target func's FUNC_START block as an EXPORT line (see emitFunc)
@@ -424,7 +424,7 @@ final class BytecodeEmitterCore {
                 case "ASM":
                     // Named: emitted at each "asm_name;" invocation (see the VARREF branch). Unnamed: emitted only here.
                     if (t.sub.isEmpty()) {
-                        emitAsm(t.resolvedAsmContent);
+                        emitAsm(t.chk.resolvedAsmContent);
                     }
                     break;
                 default:
@@ -572,8 +572,8 @@ final class BytecodeEmitterCore {
         if (node == null) {
             return;
         }
-        if (node.resolvedCallTarget != null) {
-            queue.add(node.resolvedCallTarget);
+        if (node.chk.resolvedCallTarget != null) {
+            queue.add(node.chk.resolvedCallTarget);
         }
         if (node.type == TokenType.OPERATOR && node.text.equals("CALL") && node.left != null
                 && node.left.type == TokenType.VARREF && node.left.text.equals("call")) {
@@ -584,6 +584,7 @@ final class BytecodeEmitterCore {
         }
         collectCallTargetsAndBanInvoke(node.left, queue);
         collectCallTargetsAndBanInvoke(node.right, queue);
+        collectCallTargetsAndBanInvoke(node.next, queue);
         if (node.childs != null) {
             for (Token c : node.childs) {
                 collectCallTargetsAndBanInvoke(c, queue);
@@ -630,11 +631,11 @@ final class BytecodeEmitterCore {
                 }
             }
         }
-        throw new IllegalStateException("no FuncInfo for impl method '" + methodTok.sub.get(0).text + "'");
+        throw new IllegalStateException("no FuncInfo for impl method '" + methodTok.declName().text + "'");
     }
 
     public TypeCheckerModel.FuncInfo findLibraryFuncInfo(TypeChecker checker, Token libraryTok, Token funcTok) {
-        String name = libraryTok.sub.get(0).text;
+        String name = libraryTok.declName().text;
         for (List<TypeCheckerModel.FuncInfo> overloads : checker.declarations.getLibraries().get(name).ownFunctions.values()) {
             for (TypeCheckerModel.FuncInfo info : overloads) {
                 if (info.funcToken == funcTok) {
@@ -642,11 +643,11 @@ final class BytecodeEmitterCore {
                 }
             }
         }
-        throw new IllegalStateException("no FuncInfo for library function '" + funcTok.sub.get(0).text + "'");
+        throw new IllegalStateException("no FuncInfo for library function '" + funcTok.declName().text + "'");
     }
 
     public TypeCheckerModel.FuncInfo findFuncInfo(TypeChecker checker, Token funcTok) {
-        String name = funcTok.sub.get(0).text;
+        String name = funcTok.declName().text;
         for (TypeCheckerModel.FuncInfo info : checker.declarations.getFunctions().get(name)) {
             if (info.funcToken == funcTok) {
                 return info;
@@ -870,7 +871,7 @@ final class BytecodeEmitterCore {
         line("ASSIGN " + argsType.canonical() + " " + argsType.canonical() + " " + argsType.canonical());
 
         Token argsTok = syntheticVarref("args", argsType.canonical());
-        argsTok.isOwnershipMoveSource = true;
+        argsTok.chk.isOwnershipMoveSource = true;
         boolean isVoid = userMain.returnType.canonical().equals("imut_void");
         // Empty destruct list: "args" is moved into this call.
         stageCallSiteForUnwindNames(Collections.emptyList(), Collections.emptyList(), userMain.funcToken);
@@ -892,7 +893,7 @@ final class BytecodeEmitterCore {
     /** A minimal VARREF token so synthesized names can go through the ordinary emitExpr / emitAssignTarget machinery; never type-checked. */
     public Token syntheticVarref(String name, String resolvedType) {
         Token t = new Token(TokenType.VARREF, name, 0, "<synthesized>");
-        t.resolvedType = resolvedType;
+        t.chk.resolvedType = resolvedType;
         return t;
     }
 
@@ -1031,8 +1032,8 @@ final class BytecodeEmitterCore {
      * See docs/BytecodeEmitter.md, "Call-site unwinding".
      */
     public void stageCallSiteForUnwind(Token op) {
-        List<String> destructNames = op.destructOnExit != null ? op.destructOnExit : Collections.emptyList();
-        List<Token> unlocks = op.unlockOnExit != null ? op.unlockOnExit : Collections.emptyList();
+        List<String> destructNames = op.chk.destructOnExit != null ? op.chk.destructOnExit : Collections.emptyList();
+        List<Token> unlocks = op.chk.unlockOnExit != null ? op.chk.unlockOnExit : Collections.emptyList();
         stageCallSiteForUnwindNames(destructNames, unlocks, op);
     }
 
@@ -1061,7 +1062,7 @@ final class BytecodeEmitterCore {
      */
     public void emitTryGuardedCall(Token tryTok) {
         pendingTryCatchLabel = tryCatchLabels.get(tryTok);
-        hub.statements.emitExpr(tryTok.sub.get(0));
+        hub.statements.emitExpr(tryTok.operand());
         pendingTryCatchLabel = null;
     }
 
@@ -1166,7 +1167,7 @@ final class BytecodeEmitterCore {
         hub.statements.emitHoistedCatchBlocks(info);
         // isEntryPointBody is true for the function emitted as "main" (the post-dundering name), i.e. also for an @event_loop function.
         emitBlock(info.funcToken.childs, emittedName.equals("main"));
-        emitDestructList(info.funcToken.destructOnExit, info.funcToken);
+        emitDestructList(info.funcToken.chk.destructOnExit, info.funcToken);
         // Every call site is known now: emit the landing pads after the natural-end destruct list, before FUNC_END.
         emitCallSiteUnwindLandingPads(info, emittedName, gtSuppressed);
         line("FUNC_END");
@@ -1301,7 +1302,7 @@ final class BytecodeEmitterCore {
             if (type != null && checker.declarations.isInlineOwningStruct(type)) {
                 // an inline owning struct: its members were dropped by the GT_DESTRUCT above; leave them null
                 Token local = new Token(TokenType.VARREF, name, 0, "");
-                local.resolvedType = type.canonical();
+                local.chk.resolvedType = type.canonical();
                 hub.statements.emitInlineOwnsNullOut(local, type.baseType);
             } else if (type != null) {
                 line("ADDR " + name + " " + type.canonical());

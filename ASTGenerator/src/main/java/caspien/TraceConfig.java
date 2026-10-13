@@ -86,6 +86,6 @@ public final class TraceConfig {
                 return true;
             }
         }
-        return walk(t.left, seen) || walk(t.right, seen);
+        return walk(t.left, seen) || walk(t.right, seen) || walk(t.next, seen);
     }
 }

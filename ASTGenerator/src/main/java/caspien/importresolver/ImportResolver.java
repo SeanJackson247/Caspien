@@ -1,13 +1,10 @@
 package caspien.importresolver;
+import caspien.SourceParser;
 import caspien.CompilerException;
 import caspien.DepsLog;
 import caspien.FsPolicy;
 import caspien.Token;
 import caspien.TokenType;
-import caspien.lexer.Lexer;
-import caspien.parser.Parser;
-import caspien.rpnconverter.RpnConverter;
-import caspien.treebuilder.TreeBuilder;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -149,12 +146,7 @@ public class ImportResolver {
                             + resolvedPathStr + "): " + e.getMessage());
         }
 
-        Lexer lexer = new Lexer(source, resolvedPathStr, importPath);
-        List<Token> importedTokens = lexer.tokenize();
-        Parser parser = new Parser();
-        List<Token> importedLines = parser.parse(importedTokens);
-        new RpnConverter().convertLines(importedLines);
-        new TreeBuilder().buildLines(importedLines);
+        List<Token> importedLines = SourceParser.parse(source, resolvedPathStr, importPath);
 
         return resolve(importedLines, resolvedPathStr);
     }

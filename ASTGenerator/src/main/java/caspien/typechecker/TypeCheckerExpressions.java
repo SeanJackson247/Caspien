@@ -137,7 +137,6 @@ public final class TypeCheckerExpressions {
                     node.type = literal.type;
                     node.text = literal.text;
                     node.literalValue = literal.literalValue;
-                    node.quoteDelimiter = literal.quoteDelimiter;
                     node.forcedLiteralType = literal.forcedLiteralType;
                     return resolveExprTypeInner(node, scope, func);
                 }
@@ -430,7 +429,7 @@ public final class TypeCheckerExpressions {
     /** Marks the source slot of a value bound to an `owns` type as moved (let, assignment, call argument, struct field). See docs/TypeChecker.md, "Ownership moves". */
     public void markMovedIfOwned(TypeCheckerModel.TypeInfo declaredType, Token valueExpr, TypeCheckerModel.Scope scope) {
         markMovedIfOwnedInner(declaredType, valueExpr, scope);
-        if (hub.model.newDynDepth > 0 && valueExpr.isOwnershipMoveSource) {
+        if (hub.model.newDynDepth > 0 && valueExpr.chk.isOwnershipMoveSource) {
             ProofKills.kill(scope.activeMatchPatterns, valueExpr, "moving an owner into 'new' or 'dyn' (it is freed if the allocation fails)");
         }
     }
@@ -469,8 +468,8 @@ public final class TypeCheckerExpressions {
             if (key != null) {
                 requireNotMovedAlready(key, valueExpr, scope);
                 scope.movedSlots.add(key);
-                valueExpr.isOwnershipMoveSource = true;
-                valueExpr.inlineOwnsStruct = declaredType.baseType;
+                valueExpr.chk.isOwnershipMoveSource = true;
+                valueExpr.chk.inlineOwnsStruct = declaredType.baseType;
             }
             return;
         }
@@ -492,7 +491,7 @@ public final class TypeCheckerExpressions {
                 requireNotMovedAlready(key, valueExpr, scope);
                 scope.movedSlots.add(key);
                 hub.model.fnEverMoved.add(key);
-                valueExpr.isOwnershipMoveSource = true;
+                valueExpr.chk.isOwnershipMoveSource = true;
             }
         }
     }
@@ -539,7 +538,7 @@ public final class TypeCheckerExpressions {
                 }
                 scope.movedSlots.remove(nameTok.text);
             hub.model.partlyMovedSlots.remove(nameTok.text);
-                op.left.resolvedType = rhsType.canonical();
+                op.left.chk.resolvedType = rhsType.canonical();
                 return rhsType;
             }
             // A plain 'let' RHS is always an eligible struct-RVO destination; checkCall decides whether it is such a call.
@@ -585,7 +584,7 @@ public final class TypeCheckerExpressions {
             // A fresh 'let' is a new binding: clear any stale moved-flag from an earlier use of the same name (e.g. a loop body redeclaring it).
             scope.movedSlots.remove(nameTok.text);
             hub.model.partlyMovedSlots.remove(nameTok.text);
-            op.left.resolvedType = rhsType.canonical();
+            op.left.chk.resolvedType = rhsType.canonical();
             hub.signatures.requireNoAutoContainer(rhsType, nameTok, "'" + nameTok.text + "'");
             markMovedIfOwned(rhsType, op.right, scope);
             return rhsType;
@@ -647,7 +646,7 @@ public final class TypeCheckerExpressions {
             ProofKills.kill(scope.activeMatchPatterns, op, "an assignment over a slot that owns memory (the old value is freed)", TypeCheckerModel.memberPathRoot(op.left), hub.declarations.destroyedTypes(leftType));
         }
         if (hub.declarations.isInlineOwningStruct(leftType)) {
-            op.left.inlineOwnsStruct = leftType.baseType;
+            op.left.chk.inlineOwnsStruct = leftType.baseType;
         }
         markMovedIfOwned(leftType, op.right, scope);
         if (hub.model.typeOwnsMemory(leftType, new HashSet<>()) && hub.signatures.assignsInsideSwapLockStruct(op.left, scope)) {
@@ -792,7 +791,6 @@ public final class TypeCheckerExpressions {
         node.type = TokenType.STRING;
         node.text = sb.toString();
         node.literalValue = sb.toString();
-        node.quoteDelimiter = '`';
         node.childs = new ArrayList<>();
         return new TypeCheckerModel.TypeInfo("static", "imut", "string").withSome(true);
     }
@@ -1053,8 +1051,8 @@ public final class TypeCheckerExpressions {
         if (pointerCompound) {
             hub.requireEightByteInteger(rightType, op);
             long scale = hub.pointeeSize(leftType, op);
-            op.pointerScale = scale > 1 ? scale : 0;
-            op.pointerScaleStruct = op.pointerScale > 0 ? hub.pointeeStructName(leftType) : null;
+            op.chk.pointerScale = scale > 1 ? scale : 0;
+            op.chk.pointerScaleStruct = op.chk.pointerScale > 0 ? hub.pointeeStructName(leftType) : null;
         } else {
             hub.requireNumeric(leftType, op);
             hub.requireNumeric(rightType, op);
@@ -1096,25 +1094,25 @@ public final class TypeCheckerExpressions {
                             "cannot subtract 'raw' pointers to different types ('" + leftType.canonical()
                                     + "' and '" + rightType.canonical() + "')");
                 }
-                op.pointerArithKind = 3;
-                op.pointerScale = hub.pointeeSize(leftType, op);
-                op.pointerScaleStruct = hub.pointeeStructName(leftType);
+                op.chk.pointerArithKind = 3;
+                op.chk.pointerScale = hub.pointeeSize(leftType, op);
+                op.chk.pointerScaleStruct = hub.pointeeStructName(leftType);
                 return new TypeCheckerModel.TypeInfo(null, "indeterminate", "s64");
             }
             if (leftPtr) {
                 hub.requireEightByteInteger(rightType, op);
-                op.pointerArithKind = 1;
-                op.pointerScale = hub.pointeeSize(leftType, op);
-                op.pointerScaleStruct = hub.pointeeStructName(leftType);
+                op.chk.pointerArithKind = 1;
+                op.chk.pointerScale = hub.pointeeSize(leftType, op);
+                op.chk.pointerScaleStruct = hub.pointeeStructName(leftType);
                 return hub.pointerResultType(leftType);
             }
             if (op.text.equals("-")) {
                 throw new CompilerException("type", op.file, op.line, "cannot subtract a 'raw' pointer from an integer");
             }
             hub.requireEightByteInteger(leftType, op);
-            op.pointerArithKind = 2;
-            op.pointerScale = hub.pointeeSize(rightType, op);
-            op.pointerScaleStruct = hub.pointeeStructName(rightType);
+            op.chk.pointerArithKind = 2;
+            op.chk.pointerScale = hub.pointeeSize(rightType, op);
+            op.chk.pointerScaleStruct = hub.pointeeStructName(rightType);
             return hub.pointerResultType(rightType);
         }
         hub.requireNumeric(leftType, op);
@@ -1203,8 +1201,8 @@ public final class TypeCheckerExpressions {
                 requireMutable(op.left, operand, scope, func, op);
                 requireNotLoopImmutable(op.left, scope, op);
                 invalidateMatchPatternsForWrite(op.left, scope);
-                op.pointerScale = scale;
-                op.pointerScaleStruct = hub.pointeeStructName(operand);
+                op.chk.pointerScale = scale;
+                op.chk.pointerScaleStruct = hub.pointeeStructName(operand);
                 return operand;
             }
         }
@@ -1312,9 +1310,9 @@ public final class TypeCheckerExpressions {
             return;
         }
         if ("raw".equals(addrType.storage)) {
-            idSide.refToRaw = true;
+            idSide.chk.refToRaw = true;
         } else {
-            addrSide.refToId = true;
+            addrSide.chk.refToId = true;
         }
     }
 }

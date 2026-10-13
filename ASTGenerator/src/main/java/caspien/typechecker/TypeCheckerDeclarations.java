@@ -589,11 +589,11 @@ public final class TypeCheckerDeclarations {
                     "declaring 'ASM' requires 'unsafe' code");
         }
         String rawText = hub.statements.resolveAsmRawText(t);
-        t.resolvedAsmContent = rawText; // read by BytecodeEmitter directly when unnamed (self-emits here); harmlessly unused otherwise
+        t.chk.resolvedAsmContent = rawText; // read by BytecodeEmitter directly when unnamed (self-emits here); harmlessly unused otherwise
         if (t.sub.isEmpty()) {
             return; // unnamed -- never registered under any name at all
         }
-        String name = t.sub.get(0).text;
+        String name = t.declName().text;
         if (hub.model.rootAsms.containsKey(name)) {
             throw new CompilerException("type", t.file, t.line,
                     "'ASM " + name + "' is already declared");
@@ -616,7 +616,7 @@ public final class TypeCheckerDeclarations {
             throw new CompilerException("type", t.file, t.line,
                     "'" + t.text + "' is not a declared 'ASM' name (or is used before its declaration)");
         }
-        t.resolvedAsmContent = info.rawText;
+        t.chk.resolvedAsmContent = info.rawText;
     }
 
     /** Returns the "=" assign node if `lineTok` is a root-level "let static NAME = ..." global, else null. */
@@ -666,7 +666,7 @@ public final class TypeCheckerDeclarations {
         if (rhsType.isAtomic && !hub.impls.isDirectAtomicDeclaration(assignNode.right)) {
             rhsType = rhsType.withAtomic(false);
         }
-        letTok.resolvedType = rhsType.canonical();
+        letTok.chk.resolvedType = rhsType.canonical();
 
         hub.model.globals.put(name, rhsType);
         hub.model.globalDeclOrder.put(name, declOrder);
@@ -731,7 +731,7 @@ public final class TypeCheckerDeclarations {
      * side.
      */
     public void registerAlias(Token t) {
-        String name = t.sub.get(0).text;
+        String name = t.declName().text;
         if (hub.model.aliasRawTargets.containsKey(name) || hub.model.structs.containsKey(name) || hub.model.enums.containsKey(name)
                 || hub.model.interfaces.containsKey(name) || hub.model.libraries.containsKey(name)) {
             throw new CompilerException("type", t.file, t.line, "'" + name + "' is already declared");
@@ -744,7 +744,7 @@ public final class TypeCheckerDeclarations {
      * see resolveConstValue). See docs/TypeChecker.md, "Top-level declaration collection".
      */
     public void registerConst(Token t) {
-        String name = t.sub.get(0).text;
+        String name = t.declName().text;
         if (hub.model.constExprs.containsKey(name) || hub.model.structs.containsKey(name) || hub.model.enums.containsKey(name)
                 || hub.model.interfaces.containsKey(name) || hub.model.aliasRawTargets.containsKey(name)
                 || hub.model.libraries.containsKey(name)) {
@@ -758,7 +758,7 @@ public final class TypeCheckerDeclarations {
      * later in collectLibrary.
      */
     public void registerLibraryName(Token t) {
-        String name = t.sub.get(0).text;
+        String name = t.declName().text;
         if (hub.model.structs.containsKey(name) || hub.model.enums.containsKey(name) || hub.model.interfaces.containsKey(name)
                 || hub.model.libraries.containsKey(name) || hub.model.aliasRawTargets.containsKey(name)
                 || hub.model.constExprs.containsKey(name)) {
@@ -774,7 +774,7 @@ public final class TypeCheckerDeclarations {
     }
 
     public void registerStructLike(Token t) {
-        String name = t.sub.get(0).text;
+        String name = t.declName().text;
         if (hub.model.structs.containsKey(name) || hub.model.enums.containsKey(name) || hub.model.interfaces.containsKey(name)
                 || hub.model.libraries.containsKey(name)) {
             throw new CompilerException("type", t.file, t.line, "'" + name + "' is already declared");
@@ -1003,7 +1003,7 @@ public final class TypeCheckerDeclarations {
     }
 
     public void collectEnum(Token t) {
-        String name = t.sub.get(0).text;
+        String name = t.declName().text;
         if (hub.model.structs.containsKey(name) || hub.model.enums.containsKey(name)) {
             throw new CompilerException("type", t.file, t.line, "'" + name + "' is already declared");
         }
@@ -1085,7 +1085,7 @@ public final class TypeCheckerDeclarations {
      * resolved per impl in collectImpl.
      */
     public void registerInterface(Token t) {
-        String name = t.sub.get(0).text;
+        String name = t.declName().text;
         if (hub.model.structs.containsKey(name) || hub.model.enums.containsKey(name) || hub.model.interfaces.containsKey(name)
                 || hub.model.libraries.containsKey(name)) {
             throw new CompilerException("type", t.file, t.line, "'" + name + "' is already declared");
@@ -1107,15 +1107,15 @@ public final class TypeCheckerDeclarations {
             } else if (isDefault) {
                 forbidSelfReference(methodTok, "a '@default' method");
             }
-            String methodName = methodTok.sub.get(0).text;
+            String methodName = methodTok.declName().text;
             if (info.ownMethods.containsKey(methodName)) {
                 throw new CompilerException("type", methodTok.file, methodTok.line,
                         "interface '" + name + "' already declares a method named '" + methodName + "'");
             }
             TypeCheckerModel.RawMethodSig sig = new TypeCheckerModel.RawMethodSig();
-            sig.nameTok = methodTok.sub.get(0);
-            sig.paramsTok = methodTok.sub.get(1);
-            sig.returnTypeTokens = methodTok.sub.subList(2, methodTok.sub.size());
+            sig.nameTok = methodTok.declName();
+            sig.paramsTok = methodTok.paramsTok();
+            sig.returnTypeTokens = methodTok.returnTypeTokens();
             sig.isDefault = isDefault;
             sig.decorators = methodTok.decorators;
             sig.isStatic = methodTok.isStaticMethod;
@@ -1185,6 +1185,7 @@ public final class TypeCheckerDeclarations {
         }
         forbidSelfReferenceIn(node.left, context);
         forbidSelfReferenceIn(node.right, context);
+        forbidSelfReferenceIn(node.next, context);
         if (node.childs != null) {
             for (Token c : node.childs) {
                 forbidSelfReferenceIn(c, context);
@@ -1272,7 +1273,7 @@ public final class TypeCheckerDeclarations {
      * docs/TypeChecker.md, "Impl collection".
      */
     public void collectDefaultLockMatchPolicy(Token t) {
-        String structName = t.sub.get(0).text;
+        String structName = t.declName().text;
         TypeCheckerModel.StructInfo structInfo = hub.model.structs.get(structName);
         if (structInfo == null) {
             throw new CompilerException("type", t.file, t.line,
@@ -1288,7 +1289,7 @@ public final class TypeCheckerDeclarations {
                     "'" + structName + "' already has a registered 'default match @lock' policy -- at most one "
                             + "is allowed per struct");
         }
-        Token paramsTok = t.sub.get(1);
+        Token paramsTok = t.paramsTok();
         List<TypeCheckerModel.NameType> params = hub.signatures.parseParamList(paramsTok.childs);
         if (params.isEmpty()) {
             throw new CompilerException("type", t.file, t.line,

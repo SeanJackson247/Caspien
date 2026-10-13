@@ -77,16 +77,16 @@ public final class TypeCheckerLocksAndProofs {
             if (matches) {
                 hub.retagLiteralArgs(candidate.paramTypes, argTypes, argNodes);
                 hub.calls.checkImplMethodVisibility(candidate, impl, methodName, op, func);
-                op.resolvedCallTarget = candidate.mangledName;
-                op.resolvedCallConvention = candidate.callConvention;
+                op.chk.resolvedCallTarget = candidate.mangledName;
+                op.chk.resolvedCallConvention = candidate.callConvention;
                 hub.controlFlow.requireThrowsWrapping(candidate, op);
                 hub.impls.checkFsPolicyAtCall(candidate, op, argNodes, scope);
                 for (int i = 0; i < argNodes.size(); i++) {
                     hub.expressions.markMovedIfOwned(candidate.paramTypes.get(i), argNodes.get(i), scope);
                 }
                 // Per-call-site unwind lists; see docs/TypeChecker.md, "Method calls".
-                op.destructOnExit = hub.statements.collectOwnsToDestruct(scope, scope.functionRootScope, null);
-                op.unlockOnExit = hub.statements.collectLockReleasesToBoundary(scope, scope.functionRootScope);
+                op.chk.destructOnExit = hub.statements.collectOwnsToDestruct(scope, scope.functionRootScope, null);
+                op.chk.unlockOnExit = hub.statements.collectLockReleasesToBoundary(scope, scope.functionRootScope);
                 if (candidate == func && scope.suspendsSelfRecursion) {
                     throw new CompilerException("type", op.file, op.line,
                             "cannot call '" + func.name + "' from within its own base-case match "
@@ -120,7 +120,7 @@ public final class TypeCheckerLocksAndProofs {
         Token dot = new Token(TokenType.OPERATOR, ".", at.line, at.file);
         dot.left = receiver;
         dot.right = new Token(TokenType.VARREF, fieldName, at.line, at.file);
-        dot.isCompilerSynthesizedSwapAccess = true;
+        dot.chk.isCompilerSynthesizedSwapAccess = true;
         return dot;
     }
 
@@ -138,7 +138,7 @@ public final class TypeCheckerLocksAndProofs {
      */
     public void checkLockMatchStatement(Token stmt, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func, boolean insideLoop) {
         hub.impls.requireNotPure(func, stmt, "'match @lock'", "acquiring the lock writes the mutex and blocks (a retry loop on shared state)");
-        Token receiver = stmt.sub.get(0);
+        Token receiver = stmt.condition();
         TypeCheckerModel.TypeInfo receiverType = hub.controlFlow.resolveExprType(receiver, scope, func);
         String matchedSlotKey = hub.expressions.slotKeyOf(receiver);
         if (matchedSlotKey != null) {
@@ -229,7 +229,7 @@ public final class TypeCheckerLocksAndProofs {
         } finally {
             hub.model.lockClosedLoopScope = savedLockClosedScope;
         }
-        openCase.destructOnExit = hub.statements.collectNaturalEndDestruct(openCase.childs, openBodyScope, openBodyScope);
+        openCase.chk.destructOnExit = hub.statements.collectNaturalEndDestruct(openCase.childs, openBodyScope, openBodyScope);
 
         // `CLOSED:default` / `CLOSED:default(args)`: detected on the tree-built CLOSED body and substituted before use; an ordinary body is untouched.
         TypeCheckerModel.Scope closedParentScope = loopBodyScope;
@@ -237,8 +237,8 @@ public final class TypeCheckerLocksAndProofs {
                 scope, loopBodyScope, func);
         if (substitution != null) {
             closedParentScope = substitution.preLoopScope;
-            stmt.preLoopInit = substitution.preLoopInit;
-            stmt.lockSpinBound = substitution.spinBound;
+            stmt.chk.preLoopInit = substitution.preLoopInit;
+            stmt.chk.lockSpinBound = substitution.spinBound;
         }
 
         Set<String> closedBranchMoved = new HashSet<>(preState);
@@ -251,7 +251,7 @@ public final class TypeCheckerLocksAndProofs {
             hub.model.lockClosedLoopScope = savedLockClosedScope;
         }
         if (substitution == null && hub.model.lockRetryContinuesSeen == retriesBefore) {
-            stmt.lockSpinBound = 1;         // a try-lock: no CLOSED path retries, so the loop body runs once
+            stmt.chk.lockSpinBound = 1;         // a try-lock: no CLOSED path retries, so the loop body runs once
         }
         if (substitution == null && hub.model.lockRetryContinuesSeen > retriesBefore && !isGhostTableFunction(func) && !hub.model.synthesizingGlueBody) {
             throw new CompilerException("type", closedCase.file, closedCase.line,
@@ -265,7 +265,7 @@ public final class TypeCheckerLocksAndProofs {
                             + "acquire), 'break' (give up without the lock), 'return' or 'throw' -- it "
                             + "cannot fall off its end");
         }
-        closedCase.destructOnExit = hub.statements.collectNaturalEndDestruct(closedCase.childs, closedBodyScope, closedBodyScope);
+        closedCase.chk.destructOnExit = hub.statements.collectNaturalEndDestruct(closedCase.childs, closedBodyScope, closedBodyScope);
 
         preState.clear();
         preState.addAll(openBranchMoved);
@@ -276,8 +276,8 @@ public final class TypeCheckerLocksAndProofs {
         // Only the owns locals declared INSIDE the OPEN body die at this exit (stop at the spin loop's own boundary scope, like a
         // user-written `break` does). Walking on to `scope` also destroyed the enclosing function's owns locals (e.g. the matched
         // handle itself) before the lock release below wrote through them.
-        breakTok.destructOnExit = hub.statements.collectOwnsToDestruct(openBodyScope, loopBodyScope, null);
-        breakTok.unlockOnExit = hub.statements.collectLockReleasesToBoundary(openBodyScope, scope);
+        breakTok.chk.destructOnExit = hub.statements.collectOwnsToDestruct(openBodyScope, loopBodyScope, null);
+        breakTok.chk.unlockOnExit = hub.statements.collectLockReleasesToBoundary(openBodyScope, scope);
         List<Token> openBranchChilds = new ArrayList<>(openCase.childs);
         openBranchChilds.add(hub.statements.wrapAsCheckedLine(breakTok));
 
@@ -285,22 +285,22 @@ public final class TypeCheckerLocksAndProofs {
         ifTok.sub = new ArrayList<>();
         ifTok.sub.add(condOp);
         ifTok.childs = openBranchChilds;
-        ifTok.destructOnExit = openCase.destructOnExit;
+        ifTok.chk.destructOnExit = openCase.chk.destructOnExit;
 
         Token elseTok = new Token(TokenType.KEYWORD, "else", stmt.line, stmt.file);
         elseTok.sub = new ArrayList<>();
         elseTok.childs = closedCase.childs;
-        elseTok.destructOnExit = closedCase.destructOnExit;
-        ifTok.right = elseTok;
+        elseTok.chk.destructOnExit = closedCase.chk.destructOnExit;
+        ifTok.next = elseTok;
 
         // Mutate `stmt` in place into a real `loop`; BytecodeEmitter's ordinary loop/if/break/=/swap emission does the rest.
         stmt.text = "loop";
-        stmt.isLockSpinLoop = true;
+        stmt.chk.isLockSpinLoop = true;
         stmt.isCaseMatch = false;
         stmt.sub = new ArrayList<>();
         stmt.childs = new ArrayList<>();
         stmt.childs.add(hub.statements.wrapAsCheckedLine(ifTok));
-        stmt.destructOnExit = new ArrayList<>();
+        stmt.chk.destructOnExit = new ArrayList<>();
     }
 
     /** Returns the lone expression of a `CLOSED:default` / `CLOSED:default(args)` body (bare VARREF `default` or a CALL on it), or null for an ordinary body. */
@@ -871,7 +871,7 @@ public final class TypeCheckerLocksAndProofs {
                     "'instanceof " + targetName + "' can never be true -- '" + targetName + "' does not implement '"
                             + leftType.baseType + "'");
         }
-        op.right.resolvedType = targetName;
+        op.right.chk.resolvedType = targetName;
         return new TypeCheckerModel.TypeInfo(null, "imut", "bool");
     }
 
@@ -921,7 +921,7 @@ public final class TypeCheckerLocksAndProofs {
                     "'implements " + targetName + "' can never be true -- '" + leftType.baseType + "' does not implement '"
                             + targetName + "'");
         }
-        op.right.resolvedType = targetName;
+        op.right.chk.resolvedType = targetName;
         return new TypeCheckerModel.TypeInfo(null, "imut", "bool");
     }
 
@@ -1028,7 +1028,7 @@ public final class TypeCheckerLocksAndProofs {
         // index restrictions (the match already emitted the runtime check).
         boolean provenInBounds = hub.accessAndAsync.isProvenInBounds(op.left, indexExpr, scope);
         // A literal index into a type-known length needs no proof (see Token.isLookupProofReliant).
-        op.isLookupProofReliant = !(indexExpr.type == TokenType.INTEGER && knownLength != null);
+        op.chk.isLookupProofReliant = !(indexExpr.type == TokenType.INTEGER && knownLength != null);
 
         // Resolve and reject a range-typed index (slicing was removed) BEFORE the knownLength bounds
         // error below, or dynarray operands would always hit that generic error first.
@@ -1189,10 +1189,10 @@ public final class TypeCheckerLocksAndProofs {
             if (leftType.floatLiteral) {
                 TypeCheckerModel.TypeInfo f64Slot = new TypeCheckerModel.TypeInfo(null, leftType.mutability, "f64");
                 hub.adaptLiteral(op.left, f64Slot);
-                op.isAliasCast = true;
+                op.chk.isAliasCast = true;
                 return new TypeCheckerModel.TypeInfo(null, leftType.mutability, "f64");
             }
-            op.isFloatConvert = true;
+            op.chk.isFloatConvert = true;
             return new TypeCheckerModel.TypeInfo(null, leftType.mutability, "f64");
         }
         requireProvenFloatState(op.left, leftType, scope, op);
@@ -1210,7 +1210,7 @@ public final class TypeCheckerLocksAndProofs {
                             "cannot cast '" + leftType.canonical() + "' as '" + targetBase + "' -- they "
                                     + "don't share the same underlying representation");
                 }
-                op.isAliasCast = true;
+                op.chk.isAliasCast = true;
                 return new TypeCheckerModel.TypeInfo(leftType.storage, leftType.mutability, resolvedTarget.baseType,
                         resolvedTarget.aliasName);
             }
@@ -1229,11 +1229,11 @@ public final class TypeCheckerLocksAndProofs {
                 int pw = TypeCheckerModel.INTEGER_WIDTH.get(leftType.baseType);
                 int tw = TypeCheckerModel.INTEGER_WIDTH.get(targetBase);
                 if (tw < pw) {
-                    op.isTruncCast = true;
+                    op.chk.isTruncCast = true;
                 } else if (tw == pw) {
-                    op.isAliasCast = true;
+                    op.chk.isAliasCast = true;
                 } else {
-                    op.isSignedWideningCast = (leftFamily == 's');
+                    op.chk.isSignedWideningCast = (leftFamily == 's');
                 }
                 return new TypeCheckerModel.TypeInfo(leftType.storage, leftType.mutability, targetBase);
             }
@@ -1253,7 +1253,7 @@ public final class TypeCheckerLocksAndProofs {
                                 + "{ ... }', or convert with 'wrap:<" + targetBase + ">(x)' / 'sat:<" + targetBase
                                 + ">(x)'");
             }
-            op.isSignedWideningCast = (leftFamily == 's');
+            op.chk.isSignedWideningCast = (leftFamily == 's');
             return new TypeCheckerModel.TypeInfo(leftType.storage, leftType.mutability, targetBase);
         }
 
@@ -1366,11 +1366,11 @@ public final class TypeCheckerLocksAndProofs {
         ProofKills.use(targetExpr, cands, key);
         for (Token.MatchPattern c : cands) {
             if (c.onId) {
-                targetExpr.refProofIsId = true;   // the proof is on a nullable `ref` (an id): the emitter reads the proof's address
+                targetExpr.chk.refProofIsId = true;   // the proof is on a nullable `ref` (an id): the emitter reads the proof's address
                 break;
             }
         }
-        targetExpr.refProofKey = key;   // a nullable `ref` subject is read from the proof's address slot (BytecodeEmitter)
+        targetExpr.chk.refProofKey = key;   // a nullable `ref` subject is read from the proof's address slot (BytecodeEmitter)
         return true;
     }
 

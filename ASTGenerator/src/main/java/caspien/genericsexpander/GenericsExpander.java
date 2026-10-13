@@ -1,4 +1,5 @@
 package caspien.genericsexpander;
+import caspien.TokenCloner;
 import caspien.CompilerException;
 import caspien.Token;
 import caspien.TokenType;
@@ -107,28 +108,28 @@ public class GenericsExpander {
             switch (entry.text) {
                 case "struct":
                     if (entry.typeParams != null) {
-                        registerTemplate(structTemplates, "struct", entry.sub.get(0).text, entry);
+                        registerTemplate(structTemplates, "struct", entry.declName().text, entry);
                     } else {
                         output.add(lineEntry);
                     }
                     break;
                 case "func":
                     if (entry.typeParams != null) {
-                        registerTemplate(funcTemplates, "func", entry.sub.get(0).text, entry);
+                        registerTemplate(funcTemplates, "func", entry.declName().text, entry);
                     } else {
                         output.add(lineEntry);
                     }
                     break;
                 case "interface":
                     if (entry.typeParams != null) {
-                        registerTemplate(interfaceTemplates, "interface", entry.sub.get(0).text, entry);
+                        registerTemplate(interfaceTemplates, "interface", entry.declName().text, entry);
                     } else {
                         output.add(lineEntry);
                     }
                     break;
                 case "library":
                     if (entry.typeParams != null) {
-                        registerTemplate(libraryTemplates, "library", entry.sub.get(0).text, entry);
+                        registerTemplate(libraryTemplates, "library", entry.declName().text, entry);
                     } else {
                         output.add(lineEntry);
                     }
@@ -300,9 +301,9 @@ public class GenericsExpander {
 
     private void scanFuncOrMethodSignature(Token funcOrMethod) {
         // sub = [nameTok, paramsTok, ...returnTypeTokens]
-        Token paramsTok = funcOrMethod.sub.get(1);
+        Token paramsTok = funcOrMethod.paramsTok();
         scanRawNameTypeGroups(paramsTok.childs);
-        List<Token> returnTypeTokens = funcOrMethod.sub.subList(2, funcOrMethod.sub.size());
+        List<Token> returnTypeTokens = funcOrMethod.returnTypeTokens();
         scanTypeTokenSpan(returnTypeTokens);
     }
 
@@ -502,6 +503,7 @@ public class GenericsExpander {
         } else {
             walkAndProcess(node.right);
         }
+        walkAndProcess(node.next);
         if (node.childs != null) {
             for (Token c : node.childs) {
                 walkAndProcess(c);
@@ -534,6 +536,7 @@ public class GenericsExpander {
         }
         walkAndProcess(node.left);
         walkAndProcess(node.right);
+        walkAndProcess(node.next);
         if (node.childs != null) {
             for (Token c : node.childs) {
                 walkAndProcess(c);
@@ -638,7 +641,7 @@ public class GenericsExpander {
         }
 
         Token clone = deepClone(template);
-        clone.sub.set(0, renamedCopy(clone.sub.get(0), mangled));
+        clone.sub.set(0, renamedCopy(clone.declName(), mangled));
         clone.pendingGenericBoundChecks = buildPendingBoundChecks(template, argNames);
         clone.typeParams = null;
         clone.typeParamBounds = null;
@@ -734,12 +737,12 @@ public class GenericsExpander {
         for (Token method : clone.childs) {
             method.fromGenericInstance = true;
             if (method.isConstructorDecl) {
-                method.sub.get(0).text = Parser.CONSTRUCTOR_NAME_PREFIX + mangledStructName;
+                method.declName().text = Parser.CONSTRUCTOR_NAME_PREFIX + mangledStructName;
                 method.constructorConcreteName = mangledStructName;
             }
         }
         if (clone.sub.size() == 2) {
-            Token cloneInterfaceTok = clone.sub.get(0);
+            Token cloneInterfaceTok = clone.declName();
             // interfaceNameTok may itself be a (now-substituted) generic
             // reference, e.g. "Container<T>" -> "Container<Point>" --
             // resolve/generate it the same uniform way.
@@ -844,7 +847,7 @@ public class GenericsExpander {
         if (node.type == TokenType.VARREF && node.text.equals(name)) {
             return true;
         }
-        if (referencesName(node.left, name) || referencesName(node.right, name)) {
+        if (referencesName(node.left, name) || referencesName(node.right, name) || referencesName(node.next, name)) {
             return true;
         }
         if (node.childs != null) {
@@ -917,6 +920,7 @@ public class GenericsExpander {
         }
         substituteParams(node.left, subMap, subFileMap);
         substituteParams(node.right, subMap, subFileMap);
+        substituteParams(node.next, subMap, subFileMap);
         if (node.childs != null) {
             for (Token c : node.childs) {
                 substituteParams(c, subMap, subFileMap);
@@ -944,164 +948,6 @@ public class GenericsExpander {
     // ---- deep clone -----------------------------------------------------
 
     private Token deepClone(Token src) {
-        Token copy = new Token(src.type, src.text, src.line, src.file);
-        copy.literalValue = src.literalValue;
-        copy.quoteDelimiter = src.quoteDelimiter;
-        copy.pinnedComments = src.pinnedComments; // comments carry no semantic meaning past this point
-        copy.unary = src.unary;
-        copy.typeParams = src.typeParams == null ? null : new ArrayList<>(src.typeParams);
-        copy.typeParamBounds = src.typeParamBounds == null ? null : new ArrayList<>(src.typeParamBounds);
-        // A real, pre-existing gap found and fixed while implementing
-        // @guard: decorators were never copied at all, so any decorator
-        // on a generic declaration (struct/func/interface) was silently
-        // lost the instant it was monomorphized -- never caught before,
-        // since nothing previously depended on a decorator surviving
-        // generic expansion (a plain generic struct with @unpadded, or
-        // a generic func with @recursive, would have silently lost the
-        // decorator too, not just @guard specifically).
-        copy.decorators = src.decorators;
-        copy.unsafeTags = src.unsafeTags;
-        // A third, separate instance of the exact same class of gap,
-        // found while building @pub{}: a struct member's own
-        // `isPubBlockMember` flag (set by Parser.stripDecoratorsDeep,
-        // read by TypeChecker.flattenStruct to populate a struct's own
-        // `publicMembers`) was never copied either, so any @pub{}-
-        // marked member of a *generic* struct silently reverted to
-        // private the instant it was monomorphized -- confirmed
-        // directly by testing DynamicArray<T>'s own "len" field, which
-        // compiles fine as plain source but failed the moment
-        // DynamicArray<u64> was actually instantiated.
-        copy.isPubBlockMember = src.isPubBlockMember;
-        // A second, separate instance of the exact same class of gap,
-        // found while building a generic hash function: a bound-type
-        // "let:<...>" declaration's own bound was never copied either,
-        // so it silently vanished the instant its enclosing function
-        // was monomorphized -- "let:<raw mut u8> b = null" would
-        // compile fine standalone, but inside *any* generic function
-        // body, its own bound was already gone by the time
-        // TypeChecker ever saw it, making a legitimate "null" RHS look
-        // unbound and indeterminate instead. Deep-cloned, *not*
-        // shallow-copied like typeParams just above -- typeParams is a
-        // list of plain strings (nothing can ever mutate one in place),
-        // but typeBound is a list of real Tokens, and substituteParams
-        // (below) mutates a VARREF's own `.text` in place -- sharing
-        // the same Token objects across two different instantiations of
-        // one template (e.g. "DynamicArray<u64>" and
-        // "DynamicArray<Point>") would let substituting the first
-        // corrupt the still-unprocessed template copy meant for the
-        // second.
-        if (src.typeBound == null) {
-            copy.typeBound = null;
-        } else {
-            copy.typeBound = new ArrayList<>();
-            for (Token t : src.typeBound) {
-                copy.typeBound.add(deepClone(t));
-            }
-        }
-        copy.left = src.left == null ? null : deepClone(src.left);
-        copy.right = src.right == null ? null : deepClone(src.right);
-        copy.childs = new ArrayList<>();
-        if (src.childs != null) {
-            for (Token c : src.childs) {
-                copy.childs.add(deepClone(c));
-            }
-        }
-        copy.sub = new ArrayList<>();
-        if (src.sub != null) {
-            for (Token s : src.sub) {
-                copy.sub.add(deepClone(s));
-            }
-        }
-        if (src.genericArgs != null) {
-            copy.genericArgs = new ArrayList<>();
-            for (List<Token> group : src.genericArgs) {
-                List<Token> copiedGroup = new ArrayList<>();
-                for (Token g : group) {
-                    copiedGroup.add(deepClone(g));
-                }
-                copy.genericArgs.add(copiedGroup);
-            }
-        }
-        // A third, separate instance of the exact same class of gap,
-        // found while adding static-method support: a "static func"
-        // declaration's own `isStaticMethod` flag was never copied
-        // either, so "static func fromValue(...)..." inside
-        // "impl<T> Holder<T>{...}" silently became an ordinary instance
-        // method the moment "Holder<T>" was monomorphized -- confirmed
-        // directly ("Holder:<u64>.fromValue(...)" failed as "'fromValue'
-        // is an instance method... not a static method"), not assumed.
-        copy.isStaticMethod = src.isStaticMethod;
-        // A fourth and fifth instance of the exact same class of gap
-        // (decorators, isPubBlockMember, typeBound, isStaticMethod, all
-        // found and fixed above in earlier rounds): "extends"/
-        // "implements" were never copied at all, so a generic
-        // interface/library with its own "extends"
-        // clause silently lost every one of its parents the instant it
-        // was monomorphized -- confirmed directly this needed fixing
-        // for real while adding generic library support, since a
-        // generic library extending another one is exactly the shape
-        // that first exercises this path. Plain lists of strings, like
-        // typeParams just above -- nothing ever mutates one of these in
-        // place, so a shallow copy of the list itself (not a deep clone
-        // of its elements) is sufficient.
-        copy.extendsNames = src.extendsNames == null ? null : new ArrayList<>(src.extendsNames);
-        copy.implementsNames = src.implementsNames == null ? null : new ArrayList<>(src.implementsNames);
-        // A sixth instance of the exact same class of gap (decorators,
-        // isPubBlockMember, typeBound, isStaticMethod, extends/implements,
-        // all found and fixed above): a "try ... catch(e){...}" node's own
-        // `catchParamName` (set once, by Parser.gatherTryCatchSpan, and
-        // otherwise never recomputed -- see its own doc comment) was never
-        // copied either, so a generic function/method with a "try...catch"
-        // in its own body silently lost its catch parameter's name the
-        // instant it was monomorphized: `TypeChecker.checkTry` still ran
-        // (nothing about it is generic-specific), but
-        // `catchBodyScope.vars.put(tryTok.catchParamName, ...)` bound a
-        // `null` key instead of "e", so `throw e` inside the very same
-        // catch body -- reading the value this catch just caught, straight
-        // back off its own bound parameter -- failed as "use of
-        // undeclared variable 'e'". Confirmed directly by reproducing:
-        // `Box:<T>.make(...)`'s own "let result = try new Box:<T>{...}
-        // catch(e){ throw e }" compiled fine as plain, non-generic source
-        // but failed exactly this way once `Box<T>` was actually
-        // instantiated with a concrete type argument.
-        copy.catchParamName = src.catchParamName;
-        // A seventh instance of the exact same class of gap (decorators,
-        // isPubBlockMember, typeBound, isStaticMethod, extends/implements,
-        // catchParamName, all found and fixed above): a constructor
-        // method's own `isConstructorDecl`/`constructorConcreteName`
-        // (set by Parser.gatherConstructorImpl for "impl constructor for
-        // X(...) self {...}") were never copied either, so
-        // "impl<T> constructor for X<T>(...) self {...}" would silently
-        // clone into an ordinary instance method named "__ctor__X" the
-        // instant "X<T>" was monomorphized -- TypeChecker.collectImpl's
-        // constructor-detection branch checks `methodTok.isConstructorDecl`
-        // on the *cloned* token, so losing this flag here would make the
-        // clone fall through to ordinary (non-overloading) method
-        // registration instead, and `constructorConcreteName` (a plain
-        // String field, not reachable by substituteParams's VARREF-based
-        // rewrite) would still name the original *generic* struct rather
-        // than the mangled concrete one.
-        copy.isConstructorDecl = src.isConstructorDecl;
-        copy.constructorConcreteName = src.constructorConcreteName;
-        // An eighth batch of the same class of gap, found 8 Oct 2026 while tracing why `unsafe assume{ assume match Some(node){ ... } }` made a generic
-        // hash-map method silently lose its whole body: every flag the Parser/Lexer sets on a token and that the clone did not carry. `hasBlock` is the
-        // one that bit (a block-form `assume` became the no-block form, so its statements were never emitted); `isTryBlock` (a plain `try { }` block
-        // became a try/catch shape), `isStatic`/`isConst` (`let static` / `let const` inside a generic body), the case/for match flags, explicit enum
-        // and range numbers, inline asm text and the literal radix/forced type were lost the same way.
-        copy.hasBlock = src.hasBlock;
-        copy.isTryBlock = src.isTryBlock;
-        copy.assumeFieldVariants = src.assumeFieldVariants == null ? null : new ArrayList<>(src.assumeFieldVariants);
-        copy.isCaseMatch = src.isCaseMatch;
-        copy.isForMatch = src.isForMatch;
-        copy.isStatic = src.isStatic;
-        copy.isConst = src.isConst;
-        copy.explicitEnumValue = src.explicitEnumValue;
-        copy.explicitRangeStart = src.explicitRangeStart;
-        copy.explicitRangeEnd = src.explicitRangeEnd;
-        copy.asmBlockText = src.asmBlockText;
-        copy.asmFilePath = src.asmFilePath;
-        copy.forcedLiteralType = src.forcedLiteralType;
-        copy.radixLiteral = src.radixLiteral;
-        return copy;
+        return TokenCloner.syntax(src);
     }
 }

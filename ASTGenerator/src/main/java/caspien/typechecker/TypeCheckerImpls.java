@@ -1,4 +1,5 @@
 package caspien.typechecker;
+import caspien.TokenCloner;
 import caspien.CompilerException;
 import caspien.FsPolicy;
 import caspien.Token;
@@ -82,7 +83,7 @@ public final class TypeCheckerImpls {
                 try {
                     hub.signatures.buildFuncInfo(methodTok, ctorInfo);
                 } catch (TypeCheckerModel.DeferredSignatureException e) {
-                    hub.declarations.recordUnavailable(methodTok.sub.get(0).text, "constructor", concreteName, true, e);
+                    hub.declarations.recordUnavailable(methodTok.declName().text, "constructor", concreteName, true, e);
                     genericTemplateTokensToRemove.add(methodTok);
                     droppedUnavailable = true;
                     continue;
@@ -121,7 +122,7 @@ public final class TypeCheckerImpls {
                             "a 'static' method cannot declare its own residual type parameter(s) yet -- "
                                     + "only an instance method's own residual generics are supported");
                 }
-                String genericMethodName = methodTok.sub.get(0).text;
+                String genericMethodName = methodTok.declName().text;
                 if (implInfo.genericMethodTemplates.containsKey(genericMethodName)) {
                     throw new CompilerException("type", methodTok.file, methodTok.line,
                             "'" + concreteName + "' already has a method named '"
@@ -142,8 +143,8 @@ public final class TypeCheckerImpls {
                 hub.declarations.forbidSelfReference(methodTok, "a static method");
             } else {
                 // 'self' is replaced by the concrete type name before buildFuncInfo.
-                substituteSelfInPlace(methodTok.sub.get(1).childs, concreteName);
-                substituteSelfInPlace(methodTok.sub.subList(2, methodTok.sub.size()), concreteName);
+                substituteSelfInPlace(methodTok.paramsTok().childs, concreteName);
+                substituteSelfInPlace(methodTok.returnTypeTokens(), concreteName);
             }
 
             if (interfaceInfo == null) {
@@ -164,7 +165,7 @@ public final class TypeCheckerImpls {
             try {
                 hub.signatures.buildFuncInfo(methodTok, info);
             } catch (TypeCheckerModel.DeferredSignatureException e) {
-                hub.declarations.recordUnavailable(concreteName + "." + methodTok.sub.get(0).text, methodTok.sub.get(0).text,
+                hub.declarations.recordUnavailable(concreteName + "." + methodTok.declName().text, methodTok.declName().text,
                         concreteName, false, e);
                 genericTemplateTokensToRemove.add(methodTok);
                 droppedUnavailable = true;
@@ -313,8 +314,8 @@ public final class TypeCheckerImpls {
         new RpnConverter().convertLines(wrapList);
         new TreeBuilder().buildLines(wrapList);
         if (!methodTok.isStaticMethod) {
-            substituteSelfInPlace(methodTok.sub.get(1).childs, concreteName);
-            substituteSelfInPlace(methodTok.sub.subList(2, methodTok.sub.size()), concreteName);
+            substituteSelfInPlace(methodTok.paramsTok().childs, concreteName);
+            substituteSelfInPlace(methodTok.returnTypeTokens(), concreteName);
         }
         TypeCheckerModel.FuncInfo info = new TypeCheckerModel.FuncInfo();
         info.funcToken = methodTok;
@@ -336,59 +337,10 @@ public final class TypeCheckerImpls {
     }
 
     /**
-     * Deep-clones a gathered, tree-built, not yet type-checked Token tree (a copy of GenericsExpander's private
-     * deepClone; Token.deepCloneRaw has a narrower field set).
+     * Deep-clones a gathered, tree-built, not yet type-checked Token tree (see TokenCloner.syntax; Token.deepCloneRaw has a narrower field set).
      */
     public Token deepCloneCheckedTree(Token src) {
-        Token copy = new Token(src.type, src.text, src.line, src.file);
-        copy.literalValue = src.literalValue;
-        copy.quoteDelimiter = src.quoteDelimiter;
-        copy.forcedLiteralType = src.forcedLiteralType;
-        copy.pinnedComments = src.pinnedComments;
-        copy.unary = src.unary;
-        copy.typeParams = src.typeParams == null ? null : new ArrayList<>(src.typeParams);
-        copy.typeParamBounds = src.typeParamBounds == null ? null : new ArrayList<>(src.typeParamBounds);
-        copy.decorators = src.decorators;
-        copy.unsafeTags = src.unsafeTags;
-        copy.isPubBlockMember = src.isPubBlockMember;
-        copy.isStatic = src.isStatic;
-        copy.isConst = src.isConst;
-        if (src.typeBound == null) {
-            copy.typeBound = null;
-        } else {
-            copy.typeBound = new ArrayList<>();
-            for (Token bt : src.typeBound) {
-                copy.typeBound.add(deepCloneCheckedTree(bt));
-            }
-        }
-        copy.left = src.left == null ? null : deepCloneCheckedTree(src.left);
-        copy.right = src.right == null ? null : deepCloneCheckedTree(src.right);
-        copy.childs = new ArrayList<>();
-        if (src.childs != null) {
-            for (Token c : src.childs) {
-                copy.childs.add(deepCloneCheckedTree(c));
-            }
-        }
-        copy.sub = new ArrayList<>();
-        if (src.sub != null) {
-            for (Token s : src.sub) {
-                copy.sub.add(deepCloneCheckedTree(s));
-            }
-        }
-        if (src.genericArgs != null) {
-            copy.genericArgs = new ArrayList<>();
-            for (List<Token> group : src.genericArgs) {
-                List<Token> copiedGroup = new ArrayList<>();
-                for (Token g : group) {
-                    copiedGroup.add(deepCloneCheckedTree(g));
-                }
-                copy.genericArgs.add(copiedGroup);
-            }
-        }
-        copy.isStaticMethod = src.isStaticMethod;
-        copy.extendsNames = src.extendsNames == null ? null : new ArrayList<>(src.extendsNames);
-        copy.implementsNames = src.implementsNames == null ? null : new ArrayList<>(src.implementsNames);
-        return copy;
+        return TokenCloner.syntax(src);
     }
 
     /**
@@ -396,7 +348,7 @@ public final class TypeCheckerImpls {
      * methods). See docs/TypeChecker.md, "Libraries".
      */
     public void collectLibrary(Token t, String safetyTag) {
-        String name = t.sub.get(0).text;
+        String name = t.declName().text;
         TypeCheckerModel.LibraryInfo info = hub.model.libraries.get(name);
         info.ownFunctions = new LinkedHashMap<>();
         for (Token funcTok : t.childs) {
@@ -607,16 +559,16 @@ public final class TypeCheckerImpls {
             if (matches) {
                 hub.retagLiteralArgs(candidate.paramTypes, argTypes, argNodes);
                 requireLibraryVisibility(candidate, funcName, op, func);
-                op.resolvedCallTarget = candidate.mangledName;
-                op.resolvedCallConvention = candidate.callConvention;
+                op.chk.resolvedCallTarget = candidate.mangledName;
+                op.chk.resolvedCallConvention = candidate.callConvention;
                 hub.controlFlow.requireThrowsWrapping(candidate, op);
                 for (int i = 0; i < argNodes.size(); i++) {
                     hub.expressions.markMovedIfOwned(candidate.paramTypes.get(i), argNodes.get(i), scope);
                 }
                 // Per-call-site destruct list, as in checkThrow (BytecodeEmitter uses it only when the program uses
                 // throw).
-                op.destructOnExit = hub.statements.collectOwnsToDestruct(scope, scope.functionRootScope, null);
-                op.unlockOnExit = hub.statements.collectLockReleasesToBoundary(scope, scope.functionRootScope);
+                op.chk.destructOnExit = hub.statements.collectOwnsToDestruct(scope, scope.functionRootScope, null);
+                op.chk.unlockOnExit = hub.statements.collectLockReleasesToBoundary(scope, scope.functionRootScope);
                 if (candidate == func && scope.suspendsSelfRecursion) {
                     throw new CompilerException("type", op.file, op.line,
                             "cannot call '" + func.name + "' from within its own base-case match "
@@ -1248,9 +1200,9 @@ public final class TypeCheckerImpls {
      */
     public void collectExtern(Token t) {
         validateDecorators(t.decorators, TypeCheckerModel.EXTERN_DECORATORS, "an extern");
-        Token nameTok = t.sub.get(0);
-        Token paramsTok = t.sub.get(1);
-        List<Token> returnTypeTokens = t.sub.subList(2, t.sub.size());
+        Token nameTok = t.declName();
+        Token paramsTok = t.paramsTok();
+        List<Token> returnTypeTokens = t.returnTypeTokens();
         String name = nameTok.text;
 
         if (TypeCheckerModel.BUILTIN_NAMES.contains(name)) {
@@ -1324,7 +1276,7 @@ public final class TypeCheckerImpls {
 
     /** "export foo": foo must be a declared, overload-free, non-generic top-level func. */
     public void collectExport(Token t) {
-        Token nameTok = t.sub.get(0);
+        Token nameTok = t.declName();
         String name = nameTok.text;
         List<TypeCheckerModel.FuncInfo> overloads = hub.model.functions.get(name);
         if (overloads == null || overloads.isEmpty()) {

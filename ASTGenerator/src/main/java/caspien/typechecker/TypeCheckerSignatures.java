@@ -34,9 +34,9 @@ public final class TypeCheckerSignatures {
 
     public void buildFuncInfo(Token t, TypeCheckerModel.FuncInfo info) {
         hub.impls.validateDecorators(t.decorators, TypeCheckerModel.FUNC_ALL_DECORATORS, "a function");
-        Token nameTok = t.sub.get(0);
-        Token paramsTok = t.sub.get(1);
-        List<Token> returnTypeTokens = t.sub.subList(2, t.sub.size());
+        Token nameTok = t.declName();
+        Token paramsTok = t.paramsTok();
+        List<Token> returnTypeTokens = t.returnTypeTokens();
 
         info.name = nameTok.text;
         info.mangledName = info.name; // overridden for impl methods, see collectImpl
@@ -319,7 +319,7 @@ public final class TypeCheckerSignatures {
     }
 
     public TypeCheckerModel.FuncInfo functionInfoFor(Token funcTok) {
-        String name = funcTok.sub.get(0).text;
+        String name = funcTok.declName().text;
         for (TypeCheckerModel.FuncInfo info : hub.model.functions.get(name)) {
             if (info.funcToken == funcTok) {
                 return info;
@@ -1136,7 +1136,7 @@ public final class TypeCheckerSignatures {
             } else if (v.type == TokenType.OPERATOR && v.unary && ("mut".equals(v.text) || "imut".equals(v.text)) && v.left != null) {
                 v = v.left;
             } else if (v.type == TokenType.KEYWORD && "try".equals(v.text) && !v.isTryBlock && v.sub != null && !v.sub.isEmpty()) {
-                v = v.sub.get(0);
+                v = v.operand();
             } else {
                 break;
             }
@@ -1157,10 +1157,10 @@ public final class TypeCheckerSignatures {
         if (t == null) {
             return false;
         }
-        if (t.isOwnershipMoveSource) {
+        if (t.chk.isOwnershipMoveSource) {
             return true;
         }
-        if (containsMoveSource(t.left) || containsMoveSource(t.right)) {
+        if (containsMoveSource(t.left) || containsMoveSource(t.right) || containsMoveSource(t.next)) {
             return true;
         }
         if (t.childs != null) {

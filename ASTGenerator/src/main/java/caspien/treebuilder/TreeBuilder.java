@@ -195,8 +195,8 @@ public class TreeBuilder {
                 throw new CompilerException("parse", t.file, t.line,
                         "internal error: unexpected gathered keyword '" + t.text + "'");
         }
-        if (t.right != null) {
-            processGathered(t.right);
+        if (t.next != null) {
+            processGathered(t.next);
         }
     }
 

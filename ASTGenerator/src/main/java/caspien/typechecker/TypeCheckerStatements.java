@@ -116,7 +116,7 @@ public final class TypeCheckerStatements {
                             + "' but not every path through its body ends in a 'return'");
         }
         // Falling off the end destructs everything live up to and including the root scope (owns parameters).
-        func.funcToken.destructOnExit = collectNaturalEndDestruct(func.funcToken.childs, bodyScope, scope);
+        func.funcToken.chk.destructOnExit = collectNaturalEndDestruct(func.funcToken.childs, bodyScope, scope);
         // Runs after every restriction above, on the original (un-lowered) shape; the lowering only changes bytecode shape.
         if (hub.impls.getDecorator(func.funcToken.decorators, "recursive") != null) {
             lowerRecursiveFunctionToLoop(func, scope);
@@ -160,7 +160,7 @@ public final class TypeCheckerStatements {
             case "match":
                 // if/match share the '.right'-linked chain: counts only if it ends in a plain else and every branch returns.
                 boolean sawElse = false;
-                for (Token branch = stmt; branch != null; branch = branch.right) {
+                for (Token branch = stmt; branch != null; branch = branch.next) {
                     if (!definitelyReturns(branch.childs)) {
                         return false;
                     }
@@ -208,14 +208,14 @@ public final class TypeCheckerStatements {
             case "loop":
                 return false; // a nested loop's own 'break' targets it, not the outer loop
             case "if":
-                for (Token branch = stmt; branch != null; branch = branch.right) {
+                for (Token branch = stmt; branch != null; branch = branch.next) {
                     if (containsBreak(branch.childs)) {
                         return true;
                     }
                 }
                 return false;
             case "match":
-                for (Token branch = stmt; branch != null; branch = branch.right) {
+                for (Token branch = stmt; branch != null; branch = branch.next) {
                     if (containsBreak(branch.childs)) {
                         return true;
                     }
@@ -273,7 +273,7 @@ public final class TypeCheckerStatements {
                 return !stmt.isTryBlock || containsRealTryCatch(stmt.childs);
             case "if":
             case "match":
-                for (Token branch = stmt; branch != null; branch = branch.right) {
+                for (Token branch = stmt; branch != null; branch = branch.next) {
                     if (containsRealTryCatch(branch.childs)) {
                         return true;
                     }
@@ -292,7 +292,7 @@ public final class TypeCheckerStatements {
                 if (stmt.sub == null || stmt.sub.size() != 1) {
                     return false;
                 }
-                Token rv = stmt.sub.get(0);
+                Token rv = stmt.operand();
                 while (rv.type == TokenType.OPERATOR && (rv.text.equals("mut") || rv.text.equals("imut")) && rv.left != null) {
                     rv = rv.left;
                 }
@@ -316,7 +316,7 @@ public final class TypeCheckerStatements {
         // TryBlockBoundaryMarker makes this scope the target a nested `continue` resolves via tryBlockBoundaryScope.
         TypeCheckerModel.Scope tryBlockScope = new TypeCheckerModel.Scope(scope, TypeCheckerModel.TryBlockBoundaryMarker.MARK);
         checkLinesInScope(stmt.childs, tryBlockScope, func, insideLoop);
-        stmt.destructOnExit = collectNaturalEndDestruct(stmt.childs, tryBlockScope, tryBlockScope);
+        stmt.chk.destructOnExit = collectNaturalEndDestruct(stmt.childs, tryBlockScope, tryBlockScope);
     }
 
     /** A `@recursive` function needs a final `imut range` parameter (any name) and a first statement (after `let static`s) of `match PARAM is base{...}`; structural checks only. See docs/TypeChecker.md, "@recursive functions". */
@@ -353,7 +353,7 @@ public final class TypeCheckerStatements {
         if (stmt == null || stmt.type != TokenType.KEYWORD || !stmt.text.equals("match") || stmt.sub.isEmpty()) {
             return false;
         }
-        Token condition = stmt.sub.get(0);
+        Token condition = stmt.condition();
         return condition.type == TokenType.OPERATOR && condition.text.equals("is")
                 && condition.left.type == TokenType.VARREF && condition.left.text.equals(rangeParamName)
                 && condition.right.type == TokenType.VARREF && condition.right.text.equals("base");
@@ -367,7 +367,7 @@ public final class TypeCheckerStatements {
                             + "a 'return' statement -- e.g. 'return " + func.name + "(...)' -- never bound "
                             + "to a variable first, and never nested inside a larger expression");
         }
-        op.isRecursiveTailCallSite = true;
+        op.chk.isRecursiveTailCallSite = true;
     }
 
     /** Every self-call must sit inside `match x within RANGEPARAM{}` with x an imut range; absolute rule, no unsafe bypass. See docs/TypeChecker.md, "@recursive functions". */
@@ -466,7 +466,7 @@ public final class TypeCheckerStatements {
         // re-checking it would reject the synthetic reassignment of imut parameters.
         hub.controlFlow.checkForLoop(forTok, wrapperScope, func);
         forTok.childs = restLines;
-        forTok.destructOnExit = new ArrayList<>();
+        forTok.chk.destructOnExit = new ArrayList<>();
         newChilds.add(wrapAsCheckedLine(forTok));
         newChilds.add(baseCaseAfterLoop);
 
@@ -482,7 +482,7 @@ public final class TypeCheckerStatements {
         assign.left = letTok;
         assign.right = valueExpr;
         TypeCheckerModel.TypeInfo t = hub.expressions.checkAssign(assign, scope, func);
-        assign.resolvedType = t.canonical();
+        assign.chk.resolvedType = t.canonical();
         return assign;
     }
 
@@ -505,7 +505,7 @@ public final class TypeCheckerStatements {
             }
             Token stmt = lineTok.childs.get(0);
             if (stmt.type == TokenType.KEYWORD && stmt.text.equals("return") && !stmt.sub.isEmpty()
-                    && stmt.sub.get(0).isRecursiveTailCallSite) {
+                    && stmt.operand().chk.isRecursiveTailCallSite) {
                 List<Token> replacement = buildTailCallReplacementLines(stmt, func);
                 lines.remove(i);
                 lines.addAll(i, replacement);
@@ -520,7 +520,7 @@ public final class TypeCheckerStatements {
                     replaceRecursiveReturnsInLines(caseTok.childs, func);
                 }
             } else if (stmt.text.equals("if") || stmt.text.equals("match")) {
-                for (Token branch = stmt; branch != null; branch = branch.right) {
+                for (Token branch = stmt; branch != null; branch = branch.next) {
                     replaceRecursiveReturnsInLines(branch.childs, func);
                 }
             } else if (stmt.text.equals("for") || stmt.text.equals("loop") || stmt.text.equals("unsafe")
@@ -538,7 +538,7 @@ public final class TypeCheckerStatements {
      * See docs/TypeChecker.md, "Recursive tail-call lowering".
      */
     public List<Token> buildTailCallReplacementLines(Token returnTok, TypeCheckerModel.FuncInfo func) {
-        Token callOp = returnTok.sub.get(0);
+        Token callOp = returnTok.operand();
         List<Token> argNodes = new ArrayList<>();
         if (!callOp.right.childs.isEmpty()) {
             hub.locksAndProofs.collectCommaArgs(callOp.right.childs.get(0), argNodes);
@@ -554,11 +554,11 @@ public final class TypeCheckerStatements {
             Token nameTok = new Token(TokenType.VARREF, tempName, line, file);
             Token letTok = new Token(TokenType.KEYWORD, "let", line, file);
             letTok.childs.add(nameTok);
-            letTok.resolvedType = argNode.resolvedType;
+            letTok.chk.resolvedType = argNode.chk.resolvedType;
             Token assign = new Token(TokenType.OPERATOR, "=", line, file);
             assign.left = letTok;
             assign.right = argNode;
-            assign.resolvedType = argNode.resolvedType;
+            assign.chk.resolvedType = argNode.chk.resolvedType;
             out.add(wrapAsCheckedLine(assign));
         }
         int n = func.paramNames.size();
@@ -566,13 +566,13 @@ public final class TypeCheckerStatements {
             String paramName = func.paramNames.get(i);
             String paramType = func.paramTypes.get(i).canonical();
             Token targetRef = new Token(TokenType.VARREF, paramName, line, file);
-            targetRef.resolvedType = paramType;
+            targetRef.chk.resolvedType = paramType;
             Token sourceRef = new Token(TokenType.VARREF, tempNames.get(i) != null ? tempNames.get(i) : argNodes.get(i).text, line, file);
-            sourceRef.resolvedType = paramType;
+            sourceRef.chk.resolvedType = paramType;
             Token assign = new Token(TokenType.OPERATOR, "=", line, file);
             assign.left = targetRef;
             assign.right = sourceRef;
-            assign.resolvedType = paramType;
+            assign.chk.resolvedType = paramType;
             out.add(wrapAsCheckedLine(assign));
         }
         return out;
@@ -643,8 +643,8 @@ public final class TypeCheckerStatements {
 
     public boolean chainHasElse(Token first) {
         Token last = first;
-        while (last.right != null) {
-            last = last.right;
+        while (last.next != null) {
+            last = last.next;
         }
         return last.sub.isEmpty();
     }
@@ -812,6 +812,7 @@ public final class TypeCheckerStatements {
         }
         collectMovesInNode(node.left, scope, out);
         collectMovesInNode(node.right, scope, out);
+        collectMovesInNode(node.next, scope, out);
         if (node.childs != null) {
             for (Token c : node.childs) {
                 collectMovesInNode(c, scope, out);
@@ -878,7 +879,7 @@ public final class TypeCheckerStatements {
                     collectLoopMoves(stmt.childs, scope, scope.movedSlots);
                     TypeCheckerModel.Scope loopBodyScope = checkLinesAsLoopBody(stmt.childs, scope, func);
                     // Every iteration is its own scope exit: owns locals are destructed at the natural bottom of the body.
-                    stmt.destructOnExit = collectNaturalEndDestruct(stmt.childs, loopBodyScope, loopBodyScope);
+                    stmt.chk.destructOnExit = collectNaturalEndDestruct(stmt.childs, loopBodyScope, loopBodyScope);
                     return;
                 case "for":
                     hub.impls.validateDecorators(stmt.decorators, TypeCheckerModel.LOOP_DECORATORS, "a 'for' statement");
@@ -912,7 +913,7 @@ public final class TypeCheckerStatements {
                     assumeExtended.addAll(assumePatterns);
                     TypeCheckerModel.Scope assumeBlockScope = new TypeCheckerModel.Scope(scope, assumeExtended, false);
                     checkLinesInScope(stmt.childs, assumeBlockScope, func, insideLoop);
-                    stmt.destructOnExit = collectNaturalEndDestruct(stmt.childs, assumeBlockScope, assumeBlockScope);
+                    stmt.chk.destructOnExit = collectNaturalEndDestruct(stmt.childs, assumeBlockScope, assumeBlockScope);
                     return;
                 case "unsafe":
                 case "safe":
@@ -924,7 +925,7 @@ public final class TypeCheckerStatements {
                     TypeCheckerModel.Scope safetyBlockScope = new TypeCheckerModel.Scope(scope, stmt.text);
                     safetyBlockScope.transparent = true;
                     if (stmt.text.equals("unsafe")) {
-                        if (!stmt.synthesizedUnsafe) {
+                        if (!stmt.chk.synthesizedUnsafe) {
                             hub.impls.requireNotPure(func, stmt, "an 'unsafe' block", "unsafe code can do anything the compiler cannot check, so purity could not be guaranteed");
                         }
                         safetyBlockScope.unsafeBlock = recordUnsafeBlock(stmt);
@@ -935,12 +936,12 @@ public final class TypeCheckerStatements {
                         // Uses inside the block are the programmer's responsibility.
                         boolean assumeOnly = stmt.unsafeTags != null && !stmt.unsafeTags.isEmpty()
                                 && TypeCheckerModel.NON_FREEING_UNSAFE_TAGS.containsAll(stmt.unsafeTags);
-                        if (!stmt.synthesizedUnsafe && !assumeOnly) {
+                        if (!stmt.chk.synthesizedUnsafe && !assumeOnly) {
                             ProofKills.kill(scope.activeMatchPatterns, stmt, "an 'unsafe' block");
                         }
                     }
                     // Natural end of a block is not a function/loop boundary.
-                    stmt.destructOnExit = collectNaturalEndDestruct(stmt.childs, safetyBlockScope, safetyBlockScope);
+                    stmt.chk.destructOnExit = collectNaturalEndDestruct(stmt.childs, safetyBlockScope, safetyBlockScope);
                     return;
                 case "return":
                     hub.controlFlow.checkReturn(stmt, scope, func);
@@ -962,30 +963,30 @@ public final class TypeCheckerStatements {
                         throw new CompilerException("type", stmt.file, stmt.line,
                                 "'break' used outside of a loop");
                     }
-                    stmt.destructOnExit = collectOwnsToDestruct(scope, scope.loopBoundaryScope, null);
-                    stmt.unlockOnExit = collectLockReleasesToBoundary(scope, scope.loopBoundaryScope);
+                    stmt.chk.destructOnExit = collectOwnsToDestruct(scope, scope.loopBoundaryScope, null);
+                    stmt.chk.unlockOnExit = collectLockReleasesToBoundary(scope, scope.loopBoundaryScope);
                     return;
                 case "continue":
                     // Same as "break", targeting an enclosing try block. Order: a user for/loop (next iteration), the CLOSED case of a
                     // match @lock (retry the acquire; no lock is held), then a catch body (needs an enclosing try block).
                     // See docs/TypeChecker.md, "Statement dispatch".
-                    stmt.isLoopContinue = false;
-                    stmt.isLockRetryContinue = false;
+                    stmt.chk.isLoopContinue = false;
+                    stmt.chk.isLockRetryContinue = false;
                     boolean continueBelongsToCatch = hub.model.insideCatchBody
                             && scope.loopBoundaryScope == hub.model.catchEnclosingLoopBoundary;
                     if (!continueBelongsToCatch && scope.loopBoundaryScope != null
                             && hub.model.userLoopScopes.contains(scope.loopBoundaryScope)) {
-                        stmt.isLoopContinue = true;
-                        stmt.destructOnExit = collectOwnsToDestruct(scope, scope.loopBoundaryScope, null);
-                        stmt.unlockOnExit = collectLockReleasesToBoundary(scope, scope.loopBoundaryScope);
+                        stmt.chk.isLoopContinue = true;
+                        stmt.chk.destructOnExit = collectOwnsToDestruct(scope, scope.loopBoundaryScope, null);
+                        stmt.chk.unlockOnExit = collectLockReleasesToBoundary(scope, scope.loopBoundaryScope);
                         return;
                     }
                     if (!hub.model.insideCatchBody && hub.model.lockClosedLoopScope != null
                             && scope.loopBoundaryScope == hub.model.lockClosedLoopScope) {
-                        stmt.isLockRetryContinue = true;
+                        stmt.chk.isLockRetryContinue = true;
                         hub.model.lockRetryContinuesSeen++;
-                        stmt.destructOnExit = collectOwnsToDestruct(scope, hub.model.lockClosedLoopScope, null);
-                        stmt.unlockOnExit = collectLockReleasesToBoundary(scope, hub.model.lockClosedLoopScope);
+                        stmt.chk.destructOnExit = collectOwnsToDestruct(scope, hub.model.lockClosedLoopScope, null);
+                        stmt.chk.unlockOnExit = collectLockReleasesToBoundary(scope, hub.model.lockClosedLoopScope);
                         return;
                     }
                     if (!hub.model.insideCatchBody) {
@@ -1000,8 +1001,8 @@ public final class TypeCheckerStatements {
                                         + "block -- there is nowhere well-defined for it to skip to "
                                         + "otherwise (the fallthrough it would produce is not allowed)");
                     }
-                    stmt.destructOnExit = collectOwnsToDestruct(scope, scope.tryBlockBoundaryScope, null);
-                    stmt.unlockOnExit = collectLockReleasesToBoundary(scope, scope.tryBlockBoundaryScope);
+                    stmt.chk.destructOnExit = collectOwnsToDestruct(scope, scope.tryBlockBoundaryScope, null);
+                    stmt.chk.unlockOnExit = collectLockReleasesToBoundary(scope, scope.tryBlockBoundaryScope);
                     return;
                 case "yield":
                     // Bare keyword, no restrictions (not even @async); emits YIELD.
@@ -1022,7 +1023,7 @@ public final class TypeCheckerStatements {
                     throw new CompilerException("type", stmt.file, stmt.line,
                             "invoking '" + stmt.text + "' requires 'unsafe' code");
                 }
-                stmt.resolvedAsmContent = info.rawText;
+                stmt.chk.resolvedAsmContent = info.rawText;
                 return;
             }
         }
@@ -1041,7 +1042,7 @@ public final class TypeCheckerStatements {
         }
         String rawText = resolveAsmRawText(stmt);
         if (stmt.sub.isEmpty()) {
-            stmt.resolvedAsmContent = rawText;
+            stmt.chk.resolvedAsmContent = rawText;
             return;
         }
         String name = stmt.sub.get(0).text;
@@ -1142,7 +1143,7 @@ public final class TypeCheckerStatements {
 
     /** Registers (or finds) the record of a statement-level `unsafe` block and validates its tag words. */
     public TypeCheckerModel.UnsafeBlockRecord recordUnsafeBlock(Token stmt) {
-        if (stmt.synthesizedUnsafe) {
+        if (stmt.chk.synthesizedUnsafe) {
             return null;
         }
         String key = stmt.file + ":" + stmt.line + ":" + (stmt.unsafeTags == null ? "" : String.join(",", stmt.unsafeTags));
@@ -1230,7 +1231,7 @@ public final class TypeCheckerStatements {
             boolean savedAssumeKeyMode = hub.model.assumeKeyMode;
             hub.model.assumeKeyMode = true;
             try {
-                hub.controlFlow.checkMatchCondition(stmt.sub.get(0), scope, func, patterns);
+                hub.controlFlow.checkMatchCondition(stmt.operand(), scope, func, patterns);
             } finally {
                 hub.model.assumeKeyMode = savedAssumeKeyMode;
             }
@@ -1240,11 +1241,11 @@ public final class TypeCheckerStatements {
 
     /** "assume match x.field : V1|V2" and the float-state form; `stmt.sub.get(0)` is the built x.field tree, assumeFieldVariants the parsed variant names. */
     public void checkAssumeFieldVariant(Token stmt, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func, List<Token.MatchPattern> out) {
-        Token fieldAccess = stmt.sub.get(0);
+        Token fieldAccess = stmt.operand();
         {
             // float-state form: records the same "float_state" proof as a real match case body, and never runs.
             if (fieldAccess.type == TokenType.OPERATOR && fieldAccess.text.equals(".")) {
-                fieldAccess.isCompilerSynthesizedSwapAccess = true;
+                fieldAccess.chk.isCompilerSynthesizedSwapAccess = true;
             }
             TypeCheckerModel.TypeInfo floatType = hub.controlFlow.resolveExprType(fieldAccess, scope, func);
             if (TypeCheckerModel.isFloatType(floatType.baseType)) {
@@ -1273,7 +1274,7 @@ public final class TypeCheckerStatements {
         }
         // 'assume match r.status : LIVE' only names the field for the checker; nothing is read or written at run time,
         // so it is not an access to a 'swap' field that would need the 'swap' tag.
-        fieldAccess.isCompilerSynthesizedSwapAccess = true;
+        fieldAccess.chk.isCompilerSynthesizedSwapAccess = true;
         TypeCheckerModel.TypeInfo fieldType = hub.controlFlow.resolveExprType(fieldAccess, scope, func);
         TypeCheckerModel.EnumInfo enumInfo = hub.model.enums.get(fieldType.baseType);
         if (enumInfo == null) {
@@ -1327,13 +1328,13 @@ public final class TypeCheckerStatements {
         Set<String> preState = scope.movedSlots;
         Set<String> union = new HashSet<>();
         List<Set<String>> survivorMoves = new ArrayList<>();
-        for (Token branch = matchTok; branch != null; branch = branch.right) {
+        for (Token branch = matchTok; branch != null; branch = branch.next) {
             List<Token.MatchPattern> patterns = new ArrayList<>();
             boolean isBaseCaseMatch = false;
             if (!branch.sub.isEmpty()) {
-                Token condition = branch.sub.get(0);
+                Token condition = branch.condition();
                 hub.controlFlow.checkMatchCondition(condition, scope, func, patterns);
-                branch.matchPatterns = patterns;
+                branch.chk.matchPatterns = patterns;
                 isBaseCaseMatch = patterns.size() == 1 && patterns.get(0).kind.equals("is_base");
                 requireNewTypeAssertion(patterns, scope, condition);
             }
@@ -1344,7 +1345,7 @@ public final class TypeCheckerStatements {
             narrowInstanceofSlots(patterns, scope, branchScope);
             checkLinesInScope(branch.childs, branchScope, func, insideLoop);
             // Natural end of a branch is not a function/loop boundary.
-            branch.destructOnExit = collectNaturalEndDestruct(branch.childs, branchScope, branchScope);
+            branch.chk.destructOnExit = collectNaturalEndDestruct(branch.childs, branchScope, branchScope);
             union.addAll(branchMoved);
             if (!hub.declarations.closedCaseTerminates(branch.childs)) { survivorMoves.add(branchMoved); }
         }

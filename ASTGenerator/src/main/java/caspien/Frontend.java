@@ -1,4 +1,5 @@
 package caspien;
+import caspien.lexer.Lexeme;
 import caspien.bytecode.BytecodeProgram;
 import caspien.bytecode.BytecodeSerializer;
 import caspien.bytecodeemitter.BytecodeEmitter;
@@ -7,12 +8,9 @@ import caspien.dupexpander.DupExpander;
 import caspien.genericsexpander.GenericsExpander;
 import caspien.importresolver.ImportResolver;
 import caspien.lexer.Lexer;
-import caspien.parser.Parser;
 import caspien.postpasses.AuditReport;
 import caspien.postpasses.FixTool;
 import caspien.postpasses.gasreport.GasReport;
-import caspien.rpnconverter.RpnConverter;
-import caspien.treebuilder.TreeBuilder;
 import caspien.typechecker.TypeChecker;
 import caspien.typechecker.TypeCheckerModel;
 
@@ -121,10 +119,8 @@ public final class Frontend {
 
         // __FILENAME of the top-level file is its base name, however the compiler was invoked.
         String displayFile = Paths.get(inputPath).getFileName().toString();
-        List<Token> tokens = new Lexer(source, inputPath, displayFile).tokenize();
-        List<Token> parsed = new Parser().parse(tokens);
-        new RpnConverter().convertLines(parsed);
-        new TreeBuilder().buildLines(parsed);
+        List<Lexeme> tokens = new Lexer(source, inputPath, displayFile).tokenize();
+        List<Token> parsed = SourceParser.parse(tokens);
         List<Token> resolved = new ImportResolver().resolve(parsed, inputPath);
         new DupExpander().expand(resolved);
         List<Token> expanded = new GenericsExpander().expand(resolved);
@@ -191,7 +187,7 @@ public final class Frontend {
         if (on(options, "debug")) {
             StringBuilder debug = new StringBuilder();
             debug.append("# Caspien lexer output for ").append(inputPath).append("\n\n");
-            for (Token t : tokens) {
+            for (Lexeme t : tokens) {
                 debug.append(t.toString()).append("\n");
             }
             debug.append("\n# Caspien fully type-checked tree (every resolvedType annotated)\n\n");
