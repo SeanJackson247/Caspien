@@ -14,6 +14,10 @@ The semantic checker: every type, ownership, proof, lock and purity rule of the 
 - The parts and their fields are public because other stages read the checker's results (`BytecodeEmitter`, `ProofKills`, `LockNestingCheck`, `Frontend`, `FixTool`): they write `checker.model.structs`, `checker.declarations.usesThrow()`, `TypeCheckerModel.WARNINGS`. `check(..)` is the entry point on `TypeChecker` itself.
 - The output (HOB, warnings and error messages) is byte-identical to the old chain (checked on every test, example and benchmark source in three configs).
 
+## No recursion: frames and the driver
+
+The checker's old mutual recursion (expression -> call -> function body -> statement -> expression ...) is an explicit stack. `CheckFrame` is one pending check (kind, phase, node, scope, function, a few slots); `CheckDriver.run(root)` pops/pushes frames and calls the kind's `step...` method, which does one phase and either finishes (`f.done(type)`) or asks for a nested check (`f.call(token)`, `f.callAll(tokens)`, `f.call(someFrame)`), resuming in the next phase with `f.got`/`f.gotFrame`. A result that is not a TypeInfo goes in `f.out`. Code that was `try/finally` around a nested check saves the state in the frame and restores it in the next phase (a thrown `CompilerException` is fatal, so nothing restores on error). The old `checkX(..)` methods remain as wrappers `hub.driver.run(xFrame(..))` for callers outside the checker; no `step...` method uses one. A static call-graph scan finds no cycle left in this package.
+
 ## Parts
 
 | File | Lines | Holds |

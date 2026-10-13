@@ -40,22 +40,44 @@ public final class TypeCheckerLocksAndProofs {
     /** `TypeName.method(..)`: static twin of checkMethodCall; the concrete name comes straight from the type name. */
     public TypeCheckerModel.TypeInfo checkStaticMethodCall(Token op, String concreteName, String methodName, TypeCheckerModel.Scope scope,
             TypeCheckerModel.FuncInfo func, boolean eligibleForRvoHere) {
+        return hub.driver.run(staticMethodCallFrame(op, concreteName, methodName, scope, func, eligibleForRvoHere));
+    }
+
+    public CheckFrame staticMethodCallFrame(Token op, String concreteName, String methodName, TypeCheckerModel.Scope scope,
+            TypeCheckerModel.FuncInfo func, boolean eligibleForRvoHere) {
+        CheckFrame f = new CheckFrame(CheckFrame.STATIC_METHOD_CALL, op, scope, func);
+        f.s1 = concreteName;
+        f.s2 = methodName;
+        f.p = eligibleForRvoHere;
+        return f;
+    }
+
+    public int stepStaticMethodCall(CheckFrame f) {
+        Token op = f.node;
+        String concreteName = f.s1;
+        String methodName = f.s2;
+        if (f.phase == 0) {
+            List<TypeCheckerModel.ImplInfo> impls = hub.model.implsByConcreteType.get(concreteName);
+            if (impls == null) {
+                throw new CompilerException("type", op.file, op.line,
+                        "'" + concreteName + "' has no static method named '" + methodName + "'");
+            }
+
+            List<Token> argNodes = new ArrayList<>();
+            Token argsDelineator = op.right;
+            if (!argsDelineator.childs.isEmpty()) {
+                collectCommaArgs(argsDelineator.childs.get(0), argNodes);
+            }
+            f.toks = argNodes;
+            f.phase = 1;
+            return f.callAll(argNodes);
+        }
+        return f.done(staticMethodCallType(op, concreteName, methodName, f.scope, f.func, f.p, f.toks, f.gotFrame.list));
+    }
+
+    private TypeCheckerModel.TypeInfo staticMethodCallType(Token op, String concreteName, String methodName, TypeCheckerModel.Scope scope,
+            TypeCheckerModel.FuncInfo func, boolean eligibleForRvoHere, List<Token> argNodes, List<TypeCheckerModel.TypeInfo> argTypes) {
         List<TypeCheckerModel.ImplInfo> impls = hub.model.implsByConcreteType.get(concreteName);
-        if (impls == null) {
-            throw new CompilerException("type", op.file, op.line,
-                    "'" + concreteName + "' has no static method named '" + methodName + "'");
-        }
-
-        List<Token> argNodes = new ArrayList<>();
-        Token argsDelineator = op.right;
-        if (!argsDelineator.childs.isEmpty()) {
-            collectCommaArgs(argsDelineator.childs.get(0), argNodes);
-        }
-        List<TypeCheckerModel.TypeInfo> argTypes = new ArrayList<>();
-        for (Token argNode : argNodes) {
-            argTypes.add(hub.controlFlow.resolveExprType(argNode, scope, func));
-        }
-
         boolean nameExistsAsInstance = false;
         for (TypeCheckerModel.ImplInfo impl : impls) {
             List<TypeCheckerModel.FuncInfo> overloadCandidates = impl.candidates(methodName, true);
@@ -115,7 +137,8 @@ public final class TypeCheckerLocksAndProofs {
                 "'" + concreteName + "' has no static method '" + methodName
                         + "' matching argument types (" + describeTypes(argTypes) + ")"
                         + hub.declarations.unavailableNote(concreteName + "." + methodName));
-    }
+        }
+
 
     /** Builds a raw `receiver.field` node for checkLockMatchStatement; marked compiler-synthesized so checkDot's swap-field restriction exempts it. */
     public Token buildFieldDot(Token receiver, String fieldName, Token at) {
@@ -138,124 +161,149 @@ public final class TypeCheckerLocksAndProofs {
      * `match @lock EXPR{ OPEN:{..} CLOSED:{..} }`: validates real Token trees (swap, ==, release assign) through the ordinary machinery, then rewrites
      * `stmt` in place into a `loop` (spin on ATOMIC_SWAP). See docs/TypeChecker.md, "match @lock lowering".
      */
-    public void checkLockMatchStatement(Token stmt, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func, boolean insideLoop) {
-        hub.impls.requireNotPure(func, stmt, "'match @lock'", "acquiring the lock writes the mutex and blocks (a retry loop on shared state)");
-        Token receiver = stmt.condition();
-        TypeCheckerModel.TypeInfo receiverType = hub.controlFlow.resolveExprType(receiver, scope, func);
-        String matchedSlotKey = hub.expressions.slotKeyOf(receiver);
-        if (matchedSlotKey != null) {
-            hub.model.fnLockMatched.add(matchedSlotKey);
+    public int stepLockMatch(CheckFrame f) {
+        Token stmt = f.node;
+        TypeCheckerModel.Scope scope = f.scope;
+        TypeCheckerModel.FuncInfo func = f.func;
+        LockState st;
+        if (f.phase == 0) {
+            hub.impls.requireNotPure(func, stmt, "'match @lock'", "acquiring the lock writes the mutex and blocks (a retry loop on shared state)");
+            st = new LockState();
+            f.data = st;
+            st.receiver = stmt.condition();
+            f.phase = 1;
+            return f.call(st.receiver);
         }
-        TypeCheckerModel.StructInfo structInfo = hub.model.structs.get(receiverType.baseType);
-        if (structInfo == null || structInfo.swapFieldName == null) {
-            throw new CompilerException("type", stmt.file, stmt.line,
-                    "'match @lock' requires a struct value with a 'swap'-tagged atomic mutex-state field, "
-                            + "found '" + receiverType.canonical() + "'");
-        }
-        String swapFieldName = structInfo.swapFieldName;
-        TypeCheckerModel.TypeInfo swapFieldType = structInfo.members.get(swapFieldName);
-        String stateEnumName = swapFieldType.baseType;
-
-        Token openCase = null;
-        Token closedCase = null;
-        for (Token caseTok : stmt.childs) {
-            List<Token> labels = caseTok.sub;
-            if (labels.size() != 1) {
-                throw new CompilerException("type", caseTok.file, caseTok.line,
-                        "'match @lock' case labels can't be '|'-chained -- 'OPEN' and 'CLOSED' each need "
-                                + "their own, separate case");
+        st = (LockState) f.data;
+        Token receiver = st.receiver;
+        if (f.phase == 1) {
+            TypeCheckerModel.TypeInfo receiverType = f.got;
+            String matchedSlotKey = hub.expressions.slotKeyOf(receiver);
+            if (matchedSlotKey != null) {
+                hub.model.fnLockMatched.add(matchedSlotKey);
             }
-            String label = labels.get(0).text;
-            if (label.equals("OPEN")) {
-                if (openCase != null) {
-                    throw new CompilerException("type", caseTok.file, caseTok.line,
-                            "'OPEN' is already covered by an earlier case");
-                }
-                openCase = caseTok;
-            } else if (label.equals("CLOSED")) {
-                if (closedCase != null) {
-                    throw new CompilerException("type", caseTok.file, caseTok.line,
-                            "'CLOSED' is already covered by an earlier case");
-                }
-                closedCase = caseTok;
-            } else {
-                throw new CompilerException("type", caseTok.file, caseTok.line,
-                        "'match @lock' case labels must be exactly 'OPEN' and 'CLOSED', found '" + label + "'");
+            st.structInfo = hub.model.structs.get(receiverType.baseType);
+            if (st.structInfo == null || st.structInfo.swapFieldName == null) {
+                throw new CompilerException("type", stmt.file, stmt.line,
+                        "'match @lock' requires a struct value with a 'swap'-tagged atomic mutex-state field, "
+                                + "found '" + receiverType.canonical() + "'");
             }
+            st.swapFieldName = st.structInfo.swapFieldName;
+            TypeCheckerModel.TypeInfo swapFieldType = st.structInfo.members.get(st.swapFieldName);
+            st.stateEnumName = swapFieldType.baseType;
+
+            for (Token caseTok : stmt.childs) {
+                List<Token> labels = caseTok.sub;
+                if (labels.size() != 1) {
+                    throw new CompilerException("type", caseTok.file, caseTok.line,
+                            "'match @lock' case labels can't be '|'-chained -- 'OPEN' and 'CLOSED' each need "
+                                    + "their own, separate case");
+                }
+                String label = labels.get(0).text;
+                if (label.equals("OPEN")) {
+                    if (st.openCase != null) {
+                        throw new CompilerException("type", caseTok.file, caseTok.line,
+                                "'OPEN' is already covered by an earlier case");
+                    }
+                    st.openCase = caseTok;
+                } else if (label.equals("CLOSED")) {
+                    if (st.closedCase != null) {
+                        throw new CompilerException("type", caseTok.file, caseTok.line,
+                                "'CLOSED' is already covered by an earlier case");
+                    }
+                    st.closedCase = caseTok;
+                } else {
+                    throw new CompilerException("type", caseTok.file, caseTok.line,
+                            "'match @lock' case labels must be exactly 'OPEN' and 'CLOSED', found '" + label + "'");
+                }
+            }
+            if (st.openCase == null || st.closedCase == null) {
+                throw new CompilerException("type", stmt.file, stmt.line,
+                        "'match @lock' must be exhaustive -- both 'OPEN' and 'CLOSED' cases are required");
+            }
+
+            // Acquire attempt: `recv.field swap Enum.CLOSED`.
+            st.swapOp = new Token(TokenType.OPERATOR, "swap", stmt.line, stmt.file);
+            st.swapOp.left = buildFieldDot(receiver, st.swapFieldName, stmt);
+            st.swapOp.right = buildEnumVariantRef(st.stateEnumName, "CLOSED", stmt);
+            f.phase = 2;
+            return f.call(st.swapOp);
         }
-        if (openCase == null || closedCase == null) {
-            throw new CompilerException("type", stmt.file, stmt.line,
-                    "'match @lock' must be exhaustive -- both 'OPEN' and 'CLOSED' cases are required");
+        if (f.phase == 2) {
+            // Was it OPEN: `== Enum.OPEN` on the swap result.
+            st.condOp = new Token(TokenType.OPERATOR, "==", stmt.line, stmt.file);
+            st.condOp.left = st.swapOp;
+            st.condOp.right = buildEnumVariantRef(st.stateEnumName, "OPEN", stmt);
+            f.phase = 3;
+            return f.call(st.condOp);
         }
-
-        // Acquire attempt: `recv.field swap Enum.CLOSED`.
-        Token swapOp = new Token(TokenType.OPERATOR, "swap", stmt.line, stmt.file);
-        swapOp.left = buildFieldDot(receiver, swapFieldName, stmt);
-        swapOp.right = buildEnumVariantRef(stateEnumName, "CLOSED", stmt);
-        hub.controlFlow.resolveExprType(swapOp, scope, func);
-
-        // Was it OPEN: `== Enum.OPEN` on the swap result.
-        Token condOp = new Token(TokenType.OPERATOR, "==", stmt.line, stmt.file);
-        condOp.left = swapOp;
-        condOp.right = buildEnumVariantRef(stateEnumName, "OPEN", stmt);
-        hub.controlFlow.resolveExprType(condOp, scope, func);
-
-        // Release: `recv.field = Enum.OPEN`, checked once and replayed at every OPEN-case exit. Not wrapped in `mut`: an enum-variant reference is always imut and checkAssign has the matching exception.
-        Token releaseValue = buildEnumVariantRef(stateEnumName, "OPEN", stmt);
-        Token releaseAssign = new Token(TokenType.OPERATOR, "=", stmt.line, stmt.file);
-        releaseAssign.left = buildFieldDot(receiver, swapFieldName, stmt);
-        releaseAssign.right = releaseValue;
-        hub.controlFlow.resolveExprType(releaseAssign, scope, func);
-
-        // The OPEN body owes `releaseAssign` on every exit (Scope.activeLockReleases). Both case bodies sit under one extra loop-boundary Scope so a user `break` targets this statement's own spin loop.
-        TypeCheckerModel.Scope loopBodyScope = new TypeCheckerModel.Scope(scope, true);
-
-        Set<String> preState = scope.movedSlots;
-        Set<String> openBranchMoved = new HashSet<>(preState);
-        // Inside the OPEN case this thread holds the lock, so the struct's
-        // own "@lock(match self.<swap field> : OPEN)" proof is satisfied
-        // for this receiver -- the same proof an ordinary
-        // "match recv.<field>{ OPEN:{...} }" plants (hasEnumFieldProof).
-        List<Token.MatchPattern> openProofPatterns = new ArrayList<>(loopBodyScope.activeMatchPatterns);
-        String openReceiverSlot = hub.expressions.slotKeyOf(receiver);
-        if (openReceiverSlot != null) {
-            openProofPatterns.add(new Token.MatchPattern(openReceiverSlot, "enum_field_variants", swapFieldName,
-                    new ArrayList<>(List.of("OPEN"))));
+        if (f.phase == 3) {
+            // Release: `recv.field = Enum.OPEN`, checked once and replayed at every OPEN-case exit. Not wrapped in `mut`: an enum-variant reference is always imut and checkAssign has the matching exception.
+            Token releaseValue = buildEnumVariantRef(st.stateEnumName, "OPEN", stmt);
+            st.releaseAssign = new Token(TokenType.OPERATOR, "=", stmt.line, stmt.file);
+            st.releaseAssign.left = buildFieldDot(receiver, st.swapFieldName, stmt);
+            st.releaseAssign.right = releaseValue;
+            f.phase = 4;
+            return f.call(st.releaseAssign);
         }
-        TypeCheckerModel.Scope openProofScope = new TypeCheckerModel.Scope(loopBodyScope, new HashSet<>(preState), openProofPatterns, false);
-        TypeCheckerModel.Scope openBodyScope = new TypeCheckerModel.Scope(openProofScope, openBranchMoved, releaseAssign);
-        TypeCheckerModel.Scope savedLockClosedScope = hub.model.lockClosedLoopScope;
-        hub.model.lockClosedLoopScope = null; // 'continue' (retry) is meaningless while holding the lock
-        try {
-            hub.statements.checkLinesInScope(openCase.childs, openBodyScope, func, true);
-        } finally {
-            hub.model.lockClosedLoopScope = savedLockClosedScope;
-        }
-        openCase.chk.destructOnExit = hub.statements.collectNaturalEndDestruct(openCase.childs, openBodyScope, openBodyScope);
+        if (f.phase == 4) {
+            // The OPEN body owes `releaseAssign` on every exit (Scope.activeLockReleases). Both case bodies sit under one extra loop-boundary Scope so a user `break` targets this statement's own spin loop.
+            st.loopBodyScope = new TypeCheckerModel.Scope(scope, true);
 
-        // `CLOSED:default` / `CLOSED:default(args)`: detected on the tree-built CLOSED body and substituted before use; an ordinary body is untouched.
-        TypeCheckerModel.Scope closedParentScope = loopBodyScope;
-        TypeCheckerModel.DefaultPolicySubstitution substitution = substituteDefaultLockMatchPolicyIfPresent(closedCase, structInfo,
-                scope, loopBodyScope, func);
-        if (substitution != null) {
-            closedParentScope = substitution.preLoopScope;
-            stmt.chk.preLoopInit = substitution.preLoopInit;
-            stmt.chk.lockSpinBound = substitution.spinBound;
+            st.preState = scope.movedSlots;
+            st.openBranchMoved = new HashSet<>(st.preState);
+            // Inside the OPEN case this thread holds the lock, so the struct's
+            // own "@lock(match self.<swap field> : OPEN)" proof is satisfied
+            // for this receiver -- the same proof an ordinary
+            // "match recv.<field>{ OPEN:{...} }" plants (hasEnumFieldProof).
+            List<Token.MatchPattern> openProofPatterns = new ArrayList<>(st.loopBodyScope.activeMatchPatterns);
+            String openReceiverSlot = hub.expressions.slotKeyOf(receiver);
+            if (openReceiverSlot != null) {
+                openProofPatterns.add(new Token.MatchPattern(openReceiverSlot, "enum_field_variants", st.swapFieldName,
+                        new ArrayList<>(List.of("OPEN"))));
+            }
+            TypeCheckerModel.Scope openProofScope = new TypeCheckerModel.Scope(st.loopBodyScope, new HashSet<>(st.preState), openProofPatterns, false);
+            st.openBodyScope = new TypeCheckerModel.Scope(openProofScope, st.openBranchMoved, st.releaseAssign);
+            st.savedLockClosedScope = hub.model.lockClosedLoopScope;
+            hub.model.lockClosedLoopScope = null; // 'continue' (retry) is meaningless while holding the lock
+            f.phase = 5;
+            return f.call(hub.statements.linesInScopeFrame(st.openCase.childs, st.openBodyScope, func, true));
         }
+        if (f.phase == 5) {
+            hub.model.lockClosedLoopScope = st.savedLockClosedScope;
+            st.openCase.chk.destructOnExit = hub.statements.collectNaturalEndDestruct(st.openCase.childs, st.openBodyScope, st.openBodyScope);
 
-        Set<String> closedBranchMoved = new HashSet<>(preState);
-        TypeCheckerModel.Scope closedBodyScope = new TypeCheckerModel.Scope(closedParentScope, closedBranchMoved, scope.activeMatchPatterns, false);
-        hub.model.lockClosedLoopScope = loopBodyScope;
-        int retriesBefore = hub.model.lockRetryContinuesSeen;
-        try {
-            hub.statements.checkLinesInScope(closedCase.childs, closedBodyScope, func, true);
-        } finally {
-            hub.model.lockClosedLoopScope = savedLockClosedScope;
+            // `CLOSED:default` / `CLOSED:default(args)`: detected on the tree-built CLOSED body and substituted before use; an ordinary body is untouched.
+            CheckFrame sub = new CheckFrame(CheckFrame.SUBST_POLICY, st.closedCase, scope, func);
+            sub.sc1 = st.loopBodyScope;
+            sub.data = st.structInfo;
+            f.phase = 6;
+            return f.call(sub);
         }
-        if (substitution == null && hub.model.lockRetryContinuesSeen == retriesBefore) {
+        if (f.phase == 6) {
+            TypeCheckerModel.DefaultPolicySubstitution substitution = (TypeCheckerModel.DefaultPolicySubstitution) f.gotFrame.out;
+            st.substitution = substitution;
+            TypeCheckerModel.Scope closedParentScope = st.loopBodyScope;
+            if (substitution != null) {
+                closedParentScope = substitution.preLoopScope;
+                stmt.chk.preLoopInit = substitution.preLoopInit;
+                stmt.chk.lockSpinBound = substitution.spinBound;
+            }
+            st.closedBranchMoved = new HashSet<>(st.preState);
+            st.closedBodyScope = new TypeCheckerModel.Scope(closedParentScope, st.closedBranchMoved, scope.activeMatchPatterns, false);
+            hub.model.lockClosedLoopScope = st.loopBodyScope;
+            st.retriesBefore = hub.model.lockRetryContinuesSeen;
+            f.phase = 7;
+            return f.call(hub.statements.linesInScopeFrame(st.closedCase.childs, st.closedBodyScope, func, true));
+        }
+        hub.model.lockClosedLoopScope = st.savedLockClosedScope;
+        Token closedCase = st.closedCase;
+        Token openCase = st.openCase;
+        TypeCheckerModel.DefaultPolicySubstitution substitution = st.substitution;
+        if (substitution == null && hub.model.lockRetryContinuesSeen == st.retriesBefore) {
             stmt.chk.lockSpinBound = 1;         // a try-lock: no CLOSED path retries, so the loop body runs once
         }
-        if (substitution == null && hub.model.lockRetryContinuesSeen > retriesBefore && !isGhostTableFunction(func) && !hub.model.synthesizingGlueBody) {
+        if (substitution == null && hub.model.lockRetryContinuesSeen > st.retriesBefore && !isGhostTableFunction(func) && !hub.model.synthesizingGlueBody) {
             throw new CompilerException("type", closedCase.file, closedCase.line,
                     "a 'match @lock' that retries must say how many times: a bare 'CLOSED:{ ... continue }' would spin without a limit, which safe code does not allow -- "
                             + "write 'CLOSED:default(n)' (retry up to n times, then give up with a 'break'), or give the type an 'impl default match @lock' policy, or give up at once "
@@ -267,25 +315,25 @@ public final class TypeCheckerLocksAndProofs {
                             + "acquire), 'break' (give up without the lock), 'return' or 'throw' -- it "
                             + "cannot fall off its end");
         }
-        closedCase.chk.destructOnExit = hub.statements.collectNaturalEndDestruct(closedCase.childs, closedBodyScope, closedBodyScope);
+        closedCase.chk.destructOnExit = hub.statements.collectNaturalEndDestruct(closedCase.childs, st.closedBodyScope, st.closedBodyScope);
 
-        preState.clear();
-        preState.addAll(openBranchMoved);
-        preState.addAll(closedBranchMoved);
+        st.preState.clear();
+        st.preState.addAll(st.openBranchMoved);
+        st.preState.addAll(st.closedBranchMoved);
 
         // Synthesized "got it, stop spinning" exit after the OPEN body (dead code if the body already ends in return/break); its unlockOnExit includes `releaseAssign`.
         Token breakTok = new Token(TokenType.KEYWORD, "break", stmt.line, stmt.file);
         // Only the owns locals declared INSIDE the OPEN body die at this exit (stop at the spin loop's own boundary scope, like a
         // user-written `break` does). Walking on to `scope` also destroyed the enclosing function's owns locals (e.g. the matched
         // handle itself) before the lock release below wrote through them.
-        breakTok.chk.destructOnExit = hub.statements.collectOwnsToDestruct(openBodyScope, loopBodyScope, null);
-        breakTok.chk.unlockOnExit = hub.statements.collectLockReleasesToBoundary(openBodyScope, scope);
+        breakTok.chk.destructOnExit = hub.statements.collectOwnsToDestruct(st.openBodyScope, st.loopBodyScope, null);
+        breakTok.chk.unlockOnExit = hub.statements.collectLockReleasesToBoundary(st.openBodyScope, scope);
         List<Token> openBranchChilds = new ArrayList<>(openCase.childs);
         openBranchChilds.add(hub.statements.wrapAsCheckedLine(breakTok));
 
         Token ifTok = new Token(TokenType.KEYWORD, "if", stmt.line, stmt.file);
         ifTok.sub = new ArrayList<>();
-        ifTok.sub.add(condOp);
+        ifTok.sub.add(st.condOp);
         ifTok.childs = openBranchChilds;
         ifTok.chk.destructOnExit = openCase.chk.destructOnExit;
 
@@ -303,7 +351,31 @@ public final class TypeCheckerLocksAndProofs {
         stmt.childs = new ArrayList<>();
         stmt.childs.add(hub.statements.wrapAsCheckedLine(ifTok));
         stmt.chk.destructOnExit = new ArrayList<>();
+        return f.done(null);
     }
+
+    /** Locals of one `match @lock` check, carried between phases. */
+    static final class LockState {
+        Token receiver;
+        TypeCheckerModel.StructInfo structInfo;
+        String swapFieldName;
+        String stateEnumName;
+        Token openCase;
+        Token closedCase;
+        Token swapOp;
+        Token condOp;
+        Token releaseAssign;
+        TypeCheckerModel.Scope loopBodyScope;
+        TypeCheckerModel.Scope openBodyScope;
+        TypeCheckerModel.Scope closedBodyScope;
+        TypeCheckerModel.Scope savedLockClosedScope;
+        Set<String> preState;
+        Set<String> openBranchMoved;
+        Set<String> closedBranchMoved;
+        TypeCheckerModel.DefaultPolicySubstitution substitution;
+        int retriesBefore;
+    }
+
 
     /** Returns the lone expression of a `CLOSED:default` / `CLOSED:default(args)` body (bare VARREF `default` or a CALL on it), or null for an ordinary body. */
     public Token detectDefaultPolicyRef(Token closedCase) {
@@ -330,12 +402,82 @@ public final class TypeCheckerLocksAndProofs {
      * attempt-limit form when none is registered); returns the pre-loop-init pieces, or null if the body is ordinary.
      * The new body is left unchecked: the caller's checkLinesInScope checks it. See docs/TypeChecker.md, "CLOSED:default substitution".
      */
-    public TypeCheckerModel.DefaultPolicySubstitution substituteDefaultLockMatchPolicyIfPresent(Token closedCase,
-            TypeCheckerModel.StructInfo structInfo, TypeCheckerModel.Scope scope, TypeCheckerModel.Scope loopBodyScope, TypeCheckerModel.FuncInfo func) {
+    public int stepSubstPolicy(CheckFrame f) {
+        Token closedCase = f.node;
+        TypeCheckerModel.Scope scope = f.scope;
+        TypeCheckerModel.FuncInfo func = f.func;
+        SubstState st;
+        if (f.phase == 0) {
+            return substHead(f, new SubstState());
+        }
+        st = (SubstState) f.data;
+        TypeCheckerModel.StructInfo structInfo = st.structInfo;
+        Token defaultRef = st.defaultRef;
+        if (f.phase == 1) {
+            TypeCheckerModel.TypeInfo limitType = f.got;
+            if (!hub.typesCompatible(new TypeCheckerModel.TypeInfo(null, "imut", "u64"), limitType)) {
+                throw new CompilerException("type", st.builtinArgs.get(0).file, st.builtinArgs.get(0).line,
+                        "the attempt limit of 'CLOSED:default(...)' must be a u64, got '" + limitType.canonical() + "'");
+            }
+            st.preLoopScope = new TypeCheckerModel.Scope(f.sc1);
+            st.preLoopInit = new ArrayList<>();
+            f.phase = 2;
+            return f.call(hub.statements.letAssignFrame("$lm_tries",
+                    wrapWithMutability(new Token(TokenType.INTEGER, "0", defaultRef.line, defaultRef.file), "mut"), st.preLoopScope, func));
+        }
+        if (f.phase == 2) {
+            st.preLoopInit.add((Token) f.gotFrame.out);
+            f.phase = 3;
+            return f.call(hub.statements.letAssignFrame("$lm_limit", wrapWithMutability(st.builtinArgs.get(0), "imut"), st.preLoopScope, func));
+        }
+        if (f.phase == 3) {
+            st.preLoopInit.add((Token) f.gotFrame.out);
+            List<Token> builtinBody = new ArrayList<>();
+            builtinBody.add(hub.statements.wrapAsCheckedLine(buildTriesIncrement(defaultRef)));
+            builtinBody.add(hub.statements.wrapAsCheckedLine(buildGiveUpCheck(defaultRef, new Token(TokenType.VARREF, "$lm_limit", defaultRef.line, defaultRef.file))));
+            builtinBody.add(hub.statements.wrapAsCheckedLine(new Token(TokenType.KEYWORD, "continue", defaultRef.line, defaultRef.file)));
+            closedCase.childs = builtinBody;
+            f.out = new TypeCheckerModel.DefaultPolicySubstitution(st.preLoopInit, st.preLoopScope).withBound(TypeCheckerModel.literalLimit(st.builtinArgs.get(0)));
+            return f.done(null);
+        }
+        TypeCheckerModel.DefaultLockMatchPolicy policy = structInfo.defaultLockMatchPolicy;
+        if (f.phase == 4) {
+            st.preLoopInit.add((Token) f.gotFrame.out);
+            f.i = 1;
+            return substArgLoop(f, st);
+        }
+        if (f.phase == 6) {
+            TypeCheckerModel.NameType param = st.policyParams.get(f.i);
+            Token argExpr = st.callArgNodes.get(f.i - 1);
+            TypeCheckerModel.TypeInfo argType = f.got;
+            if (!hub.typesCompatible(param.type, argType)) {
+                throw new CompilerException("type", argExpr.file, argExpr.line,
+                        "'CLOSED:default(...)' argument " + f.i + " for '" + policy.structName + "' must be '"
+                                + param.type.canonical() + "', got '" + argType.canonical() + "'");
+            }
+            // Bound once before the loop under its declared name; the cloned policy body refers to it by that name.
+            Token wrappedArg = wrapWithMutability(argExpr, param.type.mutability);
+            f.phase = 7;
+            return f.call(hub.statements.letAssignFrame(param.name, wrappedArg, st.preLoopScope, func));
+        }
+        // phase 7: a policy argument is bound
+        st.preLoopInit.add((Token) f.gotFrame.out);
+        f.i++;
+        return substArgLoop(f, st);
+    }
+
+    /** First step of SUBST_POLICY: detects the form and starts the first nested check. f.sc1 = the spin loop's body scope, f.data = the struct on entry. */
+    private int substHead(CheckFrame f, SubstState st) {
+        Token closedCase = f.node;
+        TypeCheckerModel.StructInfo structInfo = (TypeCheckerModel.StructInfo) f.data;
+        st.structInfo = structInfo;
+        f.data = st;
         Token defaultRef = detectDefaultPolicyRef(closedCase);
         if (defaultRef == null) {
-            return null;
+            f.out = null;
+            return f.done(null);
         }
+        st.defaultRef = defaultRef;
         TypeCheckerModel.DefaultLockMatchPolicy policy = structInfo.defaultLockMatchPolicy;
         if (policy == null) {
             // No policy registered: the built-in one. `CLOSED:default(n)` retries up to n times (attempt numbers 1..n), then gives up with a `break`.
@@ -344,72 +486,51 @@ public final class TypeCheckerLocksAndProofs {
                         "'" + structInfo.name + "' has no registered 'impl default match @lock' policy, so 'CLOSED:default' needs its attempt limit: "
                                 + "write 'CLOSED:default(n)' (retry up to n times, then give up)");
             }
-            List<Token> builtinArgs = new ArrayList<>();
+            st.builtinArgs = new ArrayList<>();
             Token builtinArgsDelineator = defaultRef.right;
             if (!builtinArgsDelineator.childs.isEmpty()) {
-                collectCommaArgs(builtinArgsDelineator.childs.get(0), builtinArgs);
+                collectCommaArgs(builtinArgsDelineator.childs.get(0), st.builtinArgs);
             }
-            if (builtinArgs.size() != 1) {
+            if (st.builtinArgs.size() != 1) {
                 throw new CompilerException("type", defaultRef.file, defaultRef.line,
-                        "'CLOSED:default(...)' with no registered 'impl default match @lock' policy takes exactly one argument, the attempt limit -- got " + builtinArgs.size());
+                        "'CLOSED:default(...)' with no registered 'impl default match @lock' policy takes exactly one argument, the attempt limit -- got " + st.builtinArgs.size());
             }
-            TypeCheckerModel.TypeInfo limitType = hub.controlFlow.resolveExprType(builtinArgs.get(0), scope, func);
-            if (!hub.typesCompatible(new TypeCheckerModel.TypeInfo(null, "imut", "u64"), limitType)) {
-                throw new CompilerException("type", builtinArgs.get(0).file, builtinArgs.get(0).line,
-                        "the attempt limit of 'CLOSED:default(...)' must be a u64, got '" + limitType.canonical() + "'");
-            }
-            TypeCheckerModel.Scope builtinScope = new TypeCheckerModel.Scope(loopBodyScope);
-            List<Token> builtinInit = new ArrayList<>();
-            builtinInit.add(hub.statements.buildCheckedLetAssign("$lm_tries",
-                    wrapWithMutability(new Token(TokenType.INTEGER, "0", defaultRef.line, defaultRef.file), "mut"), builtinScope, func));
-            builtinInit.add(hub.statements.buildCheckedLetAssign("$lm_limit", wrapWithMutability(builtinArgs.get(0), "imut"), builtinScope, func));
-            List<Token> builtinBody = new ArrayList<>();
-            builtinBody.add(hub.statements.wrapAsCheckedLine(buildTriesIncrement(defaultRef)));
-            builtinBody.add(hub.statements.wrapAsCheckedLine(buildGiveUpCheck(defaultRef, new Token(TokenType.VARREF, "$lm_limit", defaultRef.line, defaultRef.file))));
-            builtinBody.add(hub.statements.wrapAsCheckedLine(new Token(TokenType.KEYWORD, "continue", defaultRef.line, defaultRef.file)));
-            closedCase.childs = builtinBody;
-            return new TypeCheckerModel.DefaultPolicySubstitution(builtinInit, builtinScope).withBound(TypeCheckerModel.literalLimit(builtinArgs.get(0)));
+            f.phase = 1;
+            return f.call(st.builtinArgs.get(0));
         }
-        List<Token> callArgNodes = new ArrayList<>();
+        st.callArgNodes = new ArrayList<>();
         if (defaultRef.type == TokenType.OPERATOR && defaultRef.text.equals("CALL")) {
             Token argsDelineator = defaultRef.right;
             if (!argsDelineator.childs.isEmpty()) {
-                collectCommaArgs(argsDelineator.childs.get(0), callArgNodes);
+                collectCommaArgs(argsDelineator.childs.get(0), st.callArgNodes);
             }
         }
-        List<TypeCheckerModel.NameType> policyParams = hub.signatures.parseParamList(policy.rawParamsTok.childs);
-        int requiredArgCount = policyParams.size() - 1;
-        if (callArgNodes.size() != requiredArgCount) {
+        st.policyParams = hub.signatures.parseParamList(policy.rawParamsTok.childs);
+        int requiredArgCount = st.policyParams.size() - 1;
+        if (st.callArgNodes.size() != requiredArgCount) {
             throw new CompilerException("type", defaultRef.file, defaultRef.line,
                     "'CLOSED:default(...)' for '" + policy.structName + "' requires exactly " + requiredArgCount
-                            + " argument(s) -- its own first parameter ('" + policyParams.get(0).name
+                            + " argument(s) -- its own first parameter ('" + st.policyParams.get(0).name
                             + "') is always the automatic, per-iteration counter, never supplied here -- got "
-                            + callArgNodes.size());
+                            + st.callArgNodes.size());
         }
+        st.preLoopScope = new TypeCheckerModel.Scope(f.sc1);
+        st.preLoopInit = new ArrayList<>();
+        f.phase = 4;
+        return f.call(hub.statements.letAssignFrame("$lm_tries",
+                wrapWithMutability(new Token(TokenType.INTEGER, "0", defaultRef.line, defaultRef.file), "mut"), st.preLoopScope, f.func));
+    }
 
-        TypeCheckerModel.Scope preLoopScope = new TypeCheckerModel.Scope(loopBodyScope);
-        List<Token> preLoopInit = new ArrayList<>();
-        String triesLocalName = "$lm_tries";
-        Token triesInitAssign = hub.statements.buildCheckedLetAssign(triesLocalName,
-                wrapWithMutability(new Token(TokenType.INTEGER, "0", defaultRef.line, defaultRef.file), "mut"),
-                preLoopScope, func);
-        preLoopInit.add(triesInitAssign);
-
-        for (int p = 1; p < policyParams.size(); p++) {
-            TypeCheckerModel.NameType param = policyParams.get(p);
-            Token argExpr = callArgNodes.get(p - 1);
-            TypeCheckerModel.TypeInfo argType = hub.controlFlow.resolveExprType(argExpr, scope, func);
-            if (!hub.typesCompatible(param.type, argType)) {
-                throw new CompilerException("type", argExpr.file, argExpr.line,
-                        "'CLOSED:default(...)' argument " + p + " for '" + policy.structName + "' must be '"
-                                + param.type.canonical() + "', got '" + argType.canonical() + "'");
-            }
-            // Bound once before the loop under its declared name; the cloned policy body refers to it by that name.
-            Token wrappedArg = wrapWithMutability(argExpr, param.type.mutability);
-            Token configAssign = hub.statements.buildCheckedLetAssign(param.name, wrappedArg, preLoopScope, func);
-            preLoopInit.add(configAssign);
+    /** Next policy argument (f.i) or, when all are bound, the substituted CLOSED body. */
+    private int substArgLoop(CheckFrame f, SubstState st) {
+        Token closedCase = f.node;
+        Token defaultRef = st.defaultRef;
+        TypeCheckerModel.DefaultLockMatchPolicy policy = st.structInfo.defaultLockMatchPolicy;
+        List<TypeCheckerModel.NameType> policyParams = st.policyParams;
+        if (f.i < policyParams.size()) {
+            f.phase = 6;
+            return f.call(st.callArgNodes.get(f.i - 1));
         }
-
         List<Token> clonedBodyLines = new ArrayList<>();
         for (Token lineTok : policy.rawBodyLines) {
             clonedBodyLines.add(lineTok.deepCloneRaw());
@@ -418,6 +539,7 @@ public final class TypeCheckerLocksAndProofs {
         new RpnConverter().convertLines(clonedBodyLines);
         new TreeBuilder().buildLines(clonedBodyLines);
 
+        String triesLocalName = "$lm_tries";
         List<Token> substitutedChilds = new ArrayList<>();
         Token triesIncrement = new Token(TokenType.OPERATOR, "++", defaultRef.line, defaultRef.file);
         triesIncrement.unary = true;
@@ -453,10 +575,23 @@ public final class TypeCheckerLocksAndProofs {
 
         long bound = TypeCheckerModel.LOCK_SPIN_LIMIT;       // a policy without a u64 `limit` parameter is stopped at LOCK_SPIN_LIMIT
         if (policyParams.size() >= 2 && "u64".equals(policyParams.get(1).type.baseType)) {
-            bound = TypeCheckerModel.literalLimit(callArgNodes.get(0));
+            bound = TypeCheckerModel.literalLimit(st.callArgNodes.get(0));
         }
-        return new TypeCheckerModel.DefaultPolicySubstitution(preLoopInit, preLoopScope).withBound(bound);
+        f.out = new TypeCheckerModel.DefaultPolicySubstitution(st.preLoopInit, st.preLoopScope).withBound(bound);
+        return f.done(null);
     }
+
+    /** Locals of one CLOSED:default substitution, carried between phases. */
+    static final class SubstState {
+        TypeCheckerModel.StructInfo structInfo;
+        Token defaultRef;
+        List<Token> builtinArgs;
+        List<Token> callArgNodes;
+        List<TypeCheckerModel.NameType> policyParams;
+        TypeCheckerModel.Scope preLoopScope;
+        List<Token> preLoopInit;
+    }
+
 
     /** True for the `@gt_*` functions (the ghost table's own lock code), which keep an unbounded spin. */
     public boolean isGhostTableFunction(TypeCheckerModel.FuncInfo func) {
@@ -655,23 +790,36 @@ public final class TypeCheckerLocksAndProofs {
 
     /** `[a, b, ..]`: flattens the comma chain and requires one element base type; the type string embeds the length (`T[n]`). `dup` is already expanded by DupExpander. */
     public TypeCheckerModel.TypeInfo checkArrayLiteral(Token node, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
-        if (node.childs.isEmpty()) {
-            throw new CompilerException("type", node.file, node.line,
-                    "array literal must have at least one element");
-        }
-        List<Token> elements = new ArrayList<>();
-        collectCommaArgs(node.childs.get(0), elements);
-        if (elements.isEmpty()) {
-            throw new CompilerException("type", node.file, node.line,
-                    "array literal must have at least one element");
-        }
+        return hub.driver.run(new CheckFrame(CheckFrame.ARRAY_LITERAL, node, scope, func));
+    }
 
+    public int stepArrayLiteral(CheckFrame f) {
+        Token node = f.node;
+        if (f.phase == 0) {
+
+                if (node.childs.isEmpty()) {
+                throw new CompilerException("type", node.file, node.line,
+                        "array literal must have at least one element");
+            }
+            List<Token> elements = new ArrayList<>();
+            collectCommaArgs(node.childs.get(0), elements);
+            if (elements.isEmpty()) {
+                throw new CompilerException("type", node.file, node.line,
+                        "array literal must have at least one element");
+            }
+
+            f.toks = elements;
+            f.phase = 1;
+            return f.callAll(elements);
+        }
+        return f.done(arrayLiteralType(node, f.scope, f.func, f.toks, f.gotFrame.list));
+    }
+
+    private TypeCheckerModel.TypeInfo arrayLiteralType(Token node, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func,
+            List<Token> elements, List<TypeCheckerModel.TypeInfo> elementTypes) {
         // null alone gives `null[n]`; next to a non-null element the type comes from that element and null is accepted wherever a pointer is.
-        List<TypeCheckerModel.TypeInfo> elementTypes = new ArrayList<>();
         TypeCheckerModel.TypeInfo establishedType = null;
-        for (Token element : elements) {
-            TypeCheckerModel.TypeInfo t = hub.controlFlow.resolveExprType(element, scope, func);
-            elementTypes.add(t);
+        for (TypeCheckerModel.TypeInfo t : elementTypes) {
             if (establishedType == null && !t.baseType.equals("null")) {
                 establishedType = t;
             }
@@ -822,7 +970,8 @@ public final class TypeCheckerLocksAndProofs {
             arrayType.floatArrayLiteral = true;
         }
         return arrayType;
-    }
+        }
+
 
     /** True if `structName` is decorated `@untyped` (no hidden class id, so no runtime type information). */
     public boolean isUntyped(String structName) {
@@ -835,8 +984,18 @@ public final class TypeCheckerLocksAndProofs {
      * interface-typed, right side a struct name. See docs/TypeChecker.md, "instanceof and implements".
      */
     public TypeCheckerModel.TypeInfo checkInstanceof(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
-        TypeCheckerModel.TypeInfo leftType = hub.controlFlow.resolveExprType(op.left, scope, func);
-        // Interface-typed left side only: narrows to one of the interface's implementers. @untyped is
+        return hub.driver.run(new CheckFrame(CheckFrame.INSTANCEOF, op, scope, func));
+    }
+
+    public int stepInstanceof(CheckFrame f) {
+        if (f.phase == 0) {
+            f.phase = 1;
+            return f.call(f.node.left);
+        }
+        return f.done(instanceofType(f.node, f.scope, f.func, f.got));
+    }
+
+    private TypeCheckerModel.TypeInfo instanceofType(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func, TypeCheckerModel.TypeInfo leftType) {        // Interface-typed left side only: narrows to one of the interface's implementers. @untyped is
         // skipped safely (interfaces are absent from 'structs'); the alive-proof gate below treats
         // interface-typed values as pointer-like already.
         if (!hub.model.interfaces.containsKey(leftType.baseType)) {
@@ -882,13 +1041,24 @@ public final class TypeCheckerLocksAndProofs {
         return new TypeCheckerModel.TypeInfo(null, "imut", "bool");
     }
 
+
     /**
      * "structValue implements InterfaceName" -- the left side must be struct-typed,
      * the right side must name an interface (a statically decidable question).
      */
     public TypeCheckerModel.TypeInfo checkImplementsOperator(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
-        TypeCheckerModel.TypeInfo leftType = hub.controlFlow.resolveExprType(op.left, scope, func);
-        // Interface-typed left operands are legal too (mirror of checkInstanceof).
+        return hub.driver.run(new CheckFrame(CheckFrame.IMPLEMENTS, op, scope, func));
+    }
+
+    public int stepImplements(CheckFrame f) {
+        if (f.phase == 0) {
+            f.phase = 1;
+            return f.call(f.node.left);
+        }
+        return f.done(implementsType(f.node, f.scope, f.func, f.got));
+    }
+
+    private TypeCheckerModel.TypeInfo implementsType(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func, TypeCheckerModel.TypeInfo leftType) {        // Interface-typed left operands are legal too (mirror of checkInstanceof).
         if (!hub.model.structs.containsKey(leftType.baseType)) {
             throw new CompilerException("type", op.left.file, op.left.line,
                     "'implements' can only be used on a struct-typed value ('x implements SomeInterface'), got '"
@@ -931,6 +1101,7 @@ public final class TypeCheckerLocksAndProofs {
         op.right.chk.resolvedType = targetName;
         return new TypeCheckerModel.TypeInfo(null, "imut", "bool");
     }
+
 
     /** Whether `structName` has an `impl interfaceName for structName` block or declares `implements interfaceName`. */
     public boolean structImplements(String structName, String interfaceName) {
@@ -980,66 +1151,104 @@ public final class TypeCheckerLocksAndProofs {
      * or a live `match i in` proof. See docs/TypeChecker.md, "Lookup".
      */
     public TypeCheckerModel.TypeInfo checkLookup(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
-        TypeCheckerModel.TypeInfo targetType = hub.controlFlow.resolveExprType(op.left, scope, func);
-        if (hub.isUnsafeDynArrayType(targetType)) {
-            // Unsafe dynarray: needs 'unsafe', unchecked (no hidden length). Never sets
-            // `op.isLookupProofReliant`, so writes need no "into" proof. See docs/TypeChecker.md, "Lookup".
-            if (!hub.declarations.unsafeBypass(scope, hub.declarations.udynTag(targetType))) {
-                throw new CompilerException("type", op.file, op.line,
-                        "'[]' on an 'unsafe dynarray' can only be used from within 'unsafe' code -- it "
-                                + "has no bounds-proof mechanism at all, safe or otherwise");
+        return hub.driver.run(new CheckFrame(CheckFrame.LOOKUP, op, scope, func));
+    }
+
+    /** f.a = target type; f.p = the target is an unsafe dynarray; f.x = the index expression; f.q/f.data = provenInBounds / knownLength of the safe path. */
+    public int stepLookup(CheckFrame f) {
+        Token op = f.node;
+        TypeCheckerModel.Scope scope = f.scope;
+        TypeCheckerModel.FuncInfo func = f.func;
+        switch (f.phase) {
+            case 0:
+                f.phase = 1;
+                return f.call(op.left);
+            case 1: {
+                TypeCheckerModel.TypeInfo targetType = f.got;
+                f.a = targetType;
+                if (hub.isUnsafeDynArrayType(targetType)) {
+                    // Unsafe dynarray: needs 'unsafe', unchecked (no hidden length). Never sets
+                    // `op.isLookupProofReliant`, so writes need no "into" proof. See docs/TypeChecker.md, "Lookup".
+                    if (!hub.declarations.unsafeBypass(scope, hub.declarations.udynTag(targetType))) {
+                        throw new CompilerException("type", op.file, op.line,
+                                "'[]' on an 'unsafe dynarray' can only be used from within 'unsafe' code -- it "
+                                        + "has no bounds-proof mechanism at all, safe or otherwise");
+                    }
+                    Token indexDelineatorUnsafe = op.right;
+                    if (indexDelineatorUnsafe.childs.isEmpty()) {
+                        throw new CompilerException("type", op.file, op.line, "'[]' is missing an index expression");
+                    }
+                    Token indexExprUnsafe = indexDelineatorUnsafe.childs.get(0);
+                    f.x = indexExprUnsafe;
+                    f.p = true;
+                    f.phase = 2;
+                    return f.call(indexExprUnsafe);
+                }
+                boolean isArray = hub.isArrayType(targetType.baseType);
+                boolean isString = targetType.baseType.equals("string");
+                boolean isDynArray = hub.isDynArrayType(targetType);
+                if (!isString && !isArray && !isDynArray) {
+                    throw new CompilerException("type", op.file, op.line,
+                            "'[]' (LOOKUP) is only supported on strings, arrays, and dynarrays, got '"
+                                    + targetType.canonical() + "'");
+                }
+
+                Token indexDelineator = op.right;
+                if (indexDelineator.childs.isEmpty()) {
+                    throw new CompilerException("type", op.file, op.line, "'[]' is missing an index expression");
+                }
+                Token indexExpr = indexDelineator.childs.get(0);
+
+                // A dynarray length is never compile-time known: even a literal index needs a `match i in` proof.
+                Long knownLength = null;
+                if (isArray) {
+                    knownLength = (long) hub.arrayLength(targetType.baseType);
+                } else if (isString) {
+                    if (op.left.type == TokenType.STRING) {
+                        knownLength = (long) op.left.literalValue.length();
+                    }
+                }
+                // A live `match i in range(target)` proof for this exact target lifts the known-length/literal
+                // index restrictions (the match already emitted the runtime check).
+                boolean provenInBounds = hub.accessAndAsync.isProvenInBounds(op.left, indexExpr, scope);
+                // A literal index into a type-known length needs no proof (see Token.isLookupProofReliant).
+                op.chk.isLookupProofReliant = !(indexExpr.type == TokenType.INTEGER && knownLength != null);
+
+                // Resolve and reject a range-typed index (slicing was removed) BEFORE the knownLength bounds
+                // error below, or dynarray operands would always hit that generic error first.
+                f.x = indexExpr;
+                f.q = provenInBounds;
+                f.data = knownLength;
+                f.phase = 2;
+                return f.call(indexExpr);
             }
-            Token indexDelineatorUnsafe = op.right;
-            if (indexDelineatorUnsafe.childs.isEmpty()) {
-                throw new CompilerException("type", op.file, op.line, "'[]' is missing an index expression");
-            }
-            Token indexExprUnsafe = indexDelineatorUnsafe.childs.get(0);
-            TypeCheckerModel.TypeInfo indexTypeUnsafe = hub.controlFlow.resolveExprType(indexExprUnsafe, scope, func);
-            if (!TypeCheckerModel.INTEGER_TYPES.contains(indexTypeUnsafe.baseType)) {
-                throw new CompilerException("type", op.file, op.line,
-                        "'unsafe dynarray' index must be an integer type, got '"
-                                + indexTypeUnsafe.canonical() + "'");
-            }
-            // Keep element storage (owns/ref) as the safe cases below do.
-            TypeCheckerModel.TypeInfo unsafeElem = targetType.unsafeDynArrayElementType;
-            if (unsafeElem.storage != null) {
-                return unsafeElem.withMutability(targetType.mutability);
-            }
-            return new TypeCheckerModel.TypeInfo(null, targetType.mutability, unsafeElem.baseType);
+            default:
+                if (f.p) {
+                    return f.done(lookupUnsafeDynType(op, f.a, f.got));
+                }
+                return f.done(lookupType(op, scope, func, f.a, f.x, (Long) f.data, f.q, f.got));
         }
+    }
+
+    private TypeCheckerModel.TypeInfo lookupUnsafeDynType(Token op, TypeCheckerModel.TypeInfo targetType, TypeCheckerModel.TypeInfo indexTypeUnsafe) {
+        if (!TypeCheckerModel.INTEGER_TYPES.contains(indexTypeUnsafe.baseType)) {
+            throw new CompilerException("type", op.file, op.line,
+                    "'unsafe dynarray' index must be an integer type, got '"
+                            + indexTypeUnsafe.canonical() + "'");
+        }
+        // Keep element storage (owns/ref) as the safe cases below do.
+        TypeCheckerModel.TypeInfo unsafeElem = targetType.unsafeDynArrayElementType;
+        if (unsafeElem.storage != null) {
+            return unsafeElem.withMutability(targetType.mutability);
+        }
+        return new TypeCheckerModel.TypeInfo(null, targetType.mutability, unsafeElem.baseType);
+    }
+
+    private TypeCheckerModel.TypeInfo lookupType(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func,
+            TypeCheckerModel.TypeInfo targetType, Token indexExpr, Long knownLength, boolean provenInBounds, TypeCheckerModel.TypeInfo indexType) {
         boolean isArray = hub.isArrayType(targetType.baseType);
         boolean isString = targetType.baseType.equals("string");
         boolean isDynArray = hub.isDynArrayType(targetType);
-        if (!isString && !isArray && !isDynArray) {
-            throw new CompilerException("type", op.file, op.line,
-                    "'[]' (LOOKUP) is only supported on strings, arrays, and dynarrays, got '"
-                            + targetType.canonical() + "'");
-        }
-
-        Token indexDelineator = op.right;
-        if (indexDelineator.childs.isEmpty()) {
-            throw new CompilerException("type", op.file, op.line, "'[]' is missing an index expression");
-        }
-        Token indexExpr = indexDelineator.childs.get(0);
-
-        // A dynarray length is never compile-time known: even a literal index needs a `match i in` proof.
-        Long knownLength = null;
-        if (isArray) {
-            knownLength = (long) hub.arrayLength(targetType.baseType);
-        } else if (isString) {
-            if (op.left.type == TokenType.STRING) {
-                knownLength = (long) op.left.literalValue.length();
-            }
-        }
-        // A live `match i in range(target)` proof for this exact target lifts the known-length/literal
-        // index restrictions (the match already emitted the runtime check).
-        boolean provenInBounds = hub.accessAndAsync.isProvenInBounds(op.left, indexExpr, scope);
-        // A literal index into a type-known length needs no proof (see Token.isLookupProofReliant).
-        op.chk.isLookupProofReliant = !(indexExpr.type == TokenType.INTEGER && knownLength != null);
-
-        // Resolve and reject a range-typed index (slicing was removed) BEFORE the knownLength bounds
-        // error below, or dynarray operands would always hit that generic error first.
-        TypeCheckerModel.TypeInfo indexType = hub.controlFlow.resolveExprType(indexExpr, scope, func);
         if (hub.isRangeType(indexType)) {
             throw new CompilerException("type", indexExpr.file, indexExpr.line,
                     "slicing ('arr[range]') is no longer supported -- Caspien has removed the slice "
@@ -1108,6 +1317,7 @@ public final class TypeCheckerLocksAndProofs {
         }
         return new TypeCheckerModel.TypeInfo(null, targetType.mutability, elementBaseType);
     }
+
 
     /**
      * Reads literal bounds off a `range(a,b)` base-type string; null unless both are all digits
@@ -1188,8 +1398,18 @@ public final class TypeCheckerLocksAndProofs {
      * off its token, not typed as an expression. See docs/TypeChecker.md, "as casts".
      */
     public TypeCheckerModel.TypeInfo checkAs(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
-        TypeCheckerModel.TypeInfo leftType = hub.controlFlow.resolveExprType(op.left, scope, func);
-        // `x as f64` for an f32 x: always exact, never needs a float-state proof. A bare float literal
+        return hub.driver.run(new CheckFrame(CheckFrame.AS, op, scope, func));
+    }
+
+    public int stepAs(CheckFrame f) {
+        if (f.phase == 0) {
+            f.phase = 1;
+            return f.call(f.node.left);
+        }
+        return f.done(asType(f.node, f.scope, f.func, f.got));
+    }
+
+    private TypeCheckerModel.TypeInfo asType(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func, TypeCheckerModel.TypeInfo leftType) {        // `x as f64` for an f32 x: always exact, never needs a float-state proof. A bare float literal
         // simply adapts to f64 (keeping its full decimal text) instead of being widened from f32.
         if (op.right.type == TokenType.VARREF && op.right.text.equals("f64") && leftType.storage == null
                 && leftType.baseType.equals("f32") && !hub.model.aliasRawTargets.containsKey("f64")) {
@@ -1269,6 +1489,7 @@ public final class TypeCheckerLocksAndProofs {
                         + "-- mutability is never affected by 'as' (use the 'mut'/'imut' prefix "
                         + "operator instead)");
     }
+
 
     /**
      * The single gate for "needs a `match Some(x)` proof before '.field'": real storage, not `auto`
@@ -1394,4 +1615,12 @@ public final class TypeCheckerLocksAndProofs {
         }
         return false;
     }
+
+    public CheckFrame lockMatchFrame(Token t, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func, boolean insideLoop) {
+        CheckFrame f = new CheckFrame(CheckFrame.LOCK_MATCH, t, scope, func);
+        f.q = insideLoop;
+        return f;
+    }
+
+
 }

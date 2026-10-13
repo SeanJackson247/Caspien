@@ -543,27 +543,44 @@ public final class TypeCheckerImpls {
         }
     }
 
-    /**
-     * "Lib.f(args)": library counterpart of checkStaticMethodCall (overload search, call-edge bookkeeping); no
-     * guard-lock or method-lock machinery applies.
-     */
     public TypeCheckerModel.TypeInfo checkLibraryCall(Token op, String libName, String funcName, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
-        TypeCheckerModel.LibraryInfo lib = hub.model.libraries.get(libName);
-        List<TypeCheckerModel.FuncInfo> overloads = lib.functions.get(funcName);
-        if (overloads == null) {
-            throw new CompilerException("type", op.file, op.line,
-                    "'" + libName + "' has no function named '" + funcName + "'");
-        }
+        CheckFrame f = new CheckFrame(CheckFrame.LIBRARY_CALL, op, scope, func);
+        f.s1 = libName;
+        f.s2 = funcName;
+        return hub.driver.run(f);
+    }
 
-        List<Token> argNodes = new ArrayList<>();
-        Token argsDelineator = op.right;
-        if (!argsDelineator.childs.isEmpty()) {
-            hub.locksAndProofs.collectCommaArgs(argsDelineator.childs.get(0), argNodes);
+    public int stepLibraryCall(CheckFrame f) {
+        Token op = f.node;
+        TypeCheckerModel.Scope scope = f.scope;
+        TypeCheckerModel.FuncInfo func = f.func;
+        String libName = f.s1;
+        String funcName = f.s2;
+        if (f.phase == 0) {
+
+            TypeCheckerModel.LibraryInfo lib = hub.model.libraries.get(libName);
+            List<TypeCheckerModel.FuncInfo> overloads = lib.functions.get(funcName);
+            if (overloads == null) {
+                throw new CompilerException("type", op.file, op.line,
+                        "'" + libName + "' has no function named '" + funcName + "'");
+            }
+
+            f.data = overloads;
+            f.toks = new ArrayList<>();
+            Token argsDelineator = op.right;
+            if (!argsDelineator.childs.isEmpty()) {
+                hub.locksAndProofs.collectCommaArgs(argsDelineator.childs.get(0), f.toks);
+            }
+            f.phase = 1;
+            return f.callAll(f.toks);
         }
-        List<TypeCheckerModel.TypeInfo> argTypes = new ArrayList<>();
-        for (Token argNode : argNodes) {
-            argTypes.add(hub.controlFlow.resolveExprType(argNode, scope, func));
-        }
+        @SuppressWarnings("unchecked")
+        List<TypeCheckerModel.FuncInfo> overloads = (List<TypeCheckerModel.FuncInfo>) f.data;
+        return f.done(libraryCallTail(op, scope, func, libName, funcName, overloads, f.toks, f.gotFrame.list));
+    }
+
+    private TypeCheckerModel.TypeInfo libraryCallTail(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func, String libName, String funcName,
+            List<TypeCheckerModel.FuncInfo> overloads, List<Token> argNodes, List<TypeCheckerModel.TypeInfo> argTypes) {
 
         for (TypeCheckerModel.FuncInfo candidate : hub.orderByLiteralExactness(overloads, argTypes)) {
             if (candidate.paramTypes.size() != argTypes.size()) {
@@ -606,7 +623,8 @@ public final class TypeCheckerImpls {
         throw new CompilerException("type", op.file, op.line,
                 "'" + libName + "' has no function '" + funcName + "' matching argument types ("
                         + hub.locksAndProofs.describeTypes(argTypes) + ")");
-    }
+        }
+
 
     public String describeImplSource(TypeCheckerModel.ImplInfo info) {
         return info.interfaceName != null

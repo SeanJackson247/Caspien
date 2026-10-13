@@ -152,6 +152,22 @@ public final class TypeCheckerAccessAndAsync {
      * A declared local shadows an enum of the same name.
      */
     public TypeCheckerModel.TypeInfo checkDot(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+        return hub.driver.run(new CheckFrame(CheckFrame.DOT, op, scope, func));
+    }
+
+    public int stepDot(CheckFrame f) {
+        if (f.phase == 0) {
+            TypeCheckerModel.TypeInfo early = dotHead(f.node, f.scope, f.func);
+            if (early != null) {
+                return f.done(early);
+            }
+            f.phase = 1;
+            return f.call(f.node.left);
+        }
+        return f.done(dotTail(f.node, f.scope, f.func, f.got));
+    }
+
+    private TypeCheckerModel.TypeInfo dotHead(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
         boolean leftIsBareName = op.left.type == TokenType.VARREF;
         boolean leftIsDeclaredVar = leftIsBareName && scope.lookup(op.left.text) != null;
 
@@ -203,8 +219,10 @@ public final class TypeCheckerAccessAndAsync {
         }
 
         // instance.member
-        TypeCheckerModel.TypeInfo leftType = hub.controlFlow.resolveExprType(op.left, scope, func);
+        return null;
+    }
 
+    private TypeCheckerModel.TypeInfo dotTail(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func, TypeCheckerModel.TypeInfo leftType) {
         if (hub.isRangeType(leftType)) {
             // A plain `..` range has null storage; non-null storage only comes from an explicit annotation (e.g. "raw range(0,5)"), which still needs the alive proof.
             if (hub.locksAndProofs.requiresAliveProof(leftType, op.left, scope)) {
@@ -261,11 +279,34 @@ public final class TypeCheckerAccessAndAsync {
         return memberType;
     }
 
+
     /**
      * "StructName{ member= value, ... }" under the one-true-constructor policy: every member exactly
      * once, none unknown. Member names are read off the raw tokens. See docs/TypeChecker.md, "Struct literals".
      */
     public TypeCheckerModel.TypeInfo checkInstantiate(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+        return hub.driver.run(new CheckFrame(CheckFrame.INSTANTIATE, op, scope, func));
+    }
+
+    /** f.i = next member line; f.data = {provided, lockFieldValueNode, swapFieldValueNode}. */
+    public int stepInstantiate(CheckFrame f) {
+        Token op = f.node;
+        if (f.phase == 0) {
+            instantiateHead(op);
+            f.data = new Object[]{new HashSet<String>(), null, null};
+            f.phase = 1;
+        } else {
+            instantiateMemberDone(f, op.right.childs.get(f.i - 1).childs.get(0), f.got);
+        }
+        if (f.i < op.right.childs.size()) {
+            Token assignNode = op.right.childs.get(f.i++).childs.get(0);
+            instantiateMemberCheck(f, assignNode);
+            return f.call(assignNode.right);
+        }
+        return f.done(instantiateTail(f));
+    }
+
+    private void instantiateHead(Token op) {
         if (op.left.type != TokenType.VARREF) {
             throw new CompilerException("type", op.left.file, op.left.line,
                     "struct instantiation expects a struct name (e.g. 'Point{ x= 1, y= 2 }')");
@@ -291,51 +332,76 @@ public final class TypeCheckerAccessAndAsync {
                             + "(...)' instead");
         }
 
-        Set<String> provided = new HashSet<>();
-        Token lockFieldValueNode = null;
-        Token swapFieldValueNode = null;
-        for (Token lineTok : op.right.childs) {
-            Token assignNode = lineTok.childs.get(0);
-            if (assignNode.type != TokenType.OPERATOR
-                    || !(assignNode.text.equals("=") || assignNode.text.equals(":"))
-                    || assignNode.left.type != TokenType.VARREF) {
-                throw new CompilerException("type", assignNode.file, assignNode.line,
-                        "expected 'memberName = value' or 'memberName: value' in struct literal for '"
-                                + structName + "'");
-            }
-            String memberName = assignNode.left.text;
-            TypeCheckerModel.TypeInfo declaredType = structInfo.members.get(memberName);
-            if (declaredType == null) {
-                throw new CompilerException("type", assignNode.left.file, assignNode.left.line,
-                        "struct '" + structName + "' has no member named '" + memberName + "'");
-            }
-            checkStructMemberVisibility(structInfo, structName, memberName, assignNode.left, func);
-            if (!provided.add(memberName)) {
-                throw new CompilerException("type", assignNode.left.file, assignNode.left.line,
-                        "member '" + memberName + "' is specified more than once in this '"
-                                + structName + "' literal");
-            }
-            TypeCheckerModel.TypeInfo valueType = hub.controlFlow.resolveExprType(assignNode.right, scope, func);
-            boolean isSwapFieldBareVariantLiteral = memberName.equals(structInfo.swapFieldName)
-                    && isBareEnumVariantRefNode(assignNode.right, declaredType.baseType);
-            if (!isSwapFieldBareVariantLiteral && !hub.acceptsAdaptingLiteral(declaredType, valueType, assignNode.right)) {
-                throw new CompilerException("type", assignNode.right.file, assignNode.right.line,
-                        "member '" + memberName + "' expects type '" + declaredType.canonical()
-                                + "', got '" + valueType.canonical() + "'");
-            }
-            assignNode.chk.resolvedType = declaredType.canonical();
-            assignNode.left.chk.resolvedType = declaredType.canonical();
-            hub.expressions.markMovedIfOwned(declaredType, assignNode.right, scope);
-            if (structInfo.swapFieldName != null && hub.model.typeOwnsMemory(declaredType, new HashSet<>())) {
-                hub.signatures.requireFreshIntoSwapLock(assignNode.right, "used to build", structName);
-            }
-            if (memberName.equals(structInfo.lockFieldName)) {
-                lockFieldValueNode = assignNode.right;
-            }
-            if (memberName.equals(structInfo.swapFieldName)) {
-                swapFieldValueNode = assignNode.right;
-            }
+    }
+
+    /** Checks of one `member = value` line before its value is resolved. */
+    @SuppressWarnings("unchecked")
+    private void instantiateMemberCheck(CheckFrame f, Token assignNode) {
+        Token op = f.node;
+        TypeCheckerModel.FuncInfo func = f.func;
+        String structName = op.left.text;
+        TypeCheckerModel.StructInfo structInfo = hub.model.structs.get(structName);
+        Set<String> provided = (Set<String>) ((Object[]) f.data)[0];
+        if (assignNode.type != TokenType.OPERATOR
+                || !(assignNode.text.equals("=") || assignNode.text.equals(":"))
+                || assignNode.left.type != TokenType.VARREF) {
+            throw new CompilerException("type", assignNode.file, assignNode.line,
+                    "expected 'memberName = value' or 'memberName: value' in struct literal for '"
+                            + structName + "'");
         }
+        String memberName = assignNode.left.text;
+        TypeCheckerModel.TypeInfo declaredType = structInfo.members.get(memberName);
+        if (declaredType == null) {
+            throw new CompilerException("type", assignNode.left.file, assignNode.left.line,
+                    "struct '" + structName + "' has no member named '" + memberName + "'");
+        }
+        checkStructMemberVisibility(structInfo, structName, memberName, assignNode.left, func);
+        if (!provided.add(memberName)) {
+            throw new CompilerException("type", assignNode.left.file, assignNode.left.line,
+                    "member '" + memberName + "' is specified more than once in this '"
+                            + structName + "' literal");
+        }
+    }
+
+    /** What follows resolving one member's value. */
+    private void instantiateMemberDone(CheckFrame f, Token assignNode, TypeCheckerModel.TypeInfo valueType) {
+        Token op = f.node;
+        TypeCheckerModel.Scope scope = f.scope;
+        String structName = op.left.text;
+        TypeCheckerModel.StructInfo structInfo = hub.model.structs.get(structName);
+        Object[] st = (Object[]) f.data;
+        String memberName = assignNode.left.text;
+        TypeCheckerModel.TypeInfo declaredType = structInfo.members.get(memberName);
+        boolean isSwapFieldBareVariantLiteral = memberName.equals(structInfo.swapFieldName)
+                && isBareEnumVariantRefNode(assignNode.right, declaredType.baseType);
+        if (!isSwapFieldBareVariantLiteral && !hub.acceptsAdaptingLiteral(declaredType, valueType, assignNode.right)) {
+            throw new CompilerException("type", assignNode.right.file, assignNode.right.line,
+                    "member '" + memberName + "' expects type '" + declaredType.canonical()
+                            + "', got '" + valueType.canonical() + "'");
+        }
+        assignNode.chk.resolvedType = declaredType.canonical();
+        assignNode.left.chk.resolvedType = declaredType.canonical();
+        hub.expressions.markMovedIfOwned(declaredType, assignNode.right, scope);
+        if (structInfo.swapFieldName != null && hub.model.typeOwnsMemory(declaredType, new HashSet<>())) {
+            hub.signatures.requireFreshIntoSwapLock(assignNode.right, "used to build", structName);
+        }
+        if (memberName.equals(structInfo.lockFieldName)) {
+            st[1] = assignNode.right;
+        }
+        if (memberName.equals(structInfo.swapFieldName)) {
+            st[2] = assignNode.right;
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private TypeCheckerModel.TypeInfo instantiateTail(CheckFrame f) {
+        Token op = f.node;
+        String structName = op.left.text;
+        TypeCheckerModel.StructInfo structInfo = hub.model.structs.get(structName);
+        Object[] st = (Object[]) f.data;
+        Set<String> provided = (Set<String>) st[0];
+        Token lockFieldValueNode = (Token) st[1];
+        Token swapFieldValueNode = (Token) st[2];
         if (swapFieldValueNode != null) {
             checkSwapFieldNotConstructedClosed(structInfo, structName, swapFieldValueNode);
         }
@@ -363,6 +429,7 @@ public final class TypeCheckerAccessAndAsync {
         // A literal's top-level mutability is indeterminate until stated; member mutability comes from the definition.
         return new TypeCheckerModel.TypeInfo(null, "indeterminate", structName);
     }
+
 
     /**
      * Swap-flavoured construction rule: a literal 'EnumName.CLOSED' value is rejected (a fresh mutex is
@@ -470,17 +537,29 @@ public final class TypeCheckerAccessAndAsync {
      * See docs/TypeChecker.md, "Storage constructors and new".
      */
     public TypeCheckerModel.TypeInfo checkNew(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
-        TypeCheckerModel.TypeInfo result;
-        hub.model.newDynDepth++;
-        try {
-            result = checkNewInner(op, scope, func);
-        } finally {
-            hub.model.newDynDepth--;
-        }
-        return result;
+        return hub.driver.run(new CheckFrame(CheckFrame.NEW, op, scope, func));
     }
 
-    public TypeCheckerModel.TypeInfo checkNewInner(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+    public int stepNew(CheckFrame f) {
+        Token op = f.node;
+        if (f.phase == 0) {
+            hub.model.newDynDepth++;
+            newChecks(op, f.func);
+            f.q = hub.model.insideStructRvoDestinationPosition;
+            hub.model.insideStructRvoDestinationPosition = true;
+            if (op.left.type == TokenType.OPERATOR && op.left.text.equals("CALL")) {
+                op.left.chk.coveredByThrowingNew = true; // insideThrowingAllocContext was verified in newChecks
+            }
+            f.phase = 1;
+            return f.call(op.left);
+        }
+        hub.model.insideStructRvoDestinationPosition = f.q;
+        hub.model.newDynDepth--;
+        TypeCheckerModel.TypeInfo operandType = f.got;
+        return f.done(new TypeCheckerModel.TypeInfo("owns", operandType.mutability, operandType.baseType).withSome(true));
+    }
+
+    private void newChecks(Token op, TypeCheckerModel.FuncInfo func) {
         hub.impls.requireNotPureRt(func, op, "'new'", "allocation depends on heap state (it can fail), so the result is not a function of the arguments");
         hub.model.usesOwnsRefDynNew = true;
         hub.model.usesThrow = true;
@@ -497,27 +576,28 @@ public final class TypeCheckerAccessAndAsync {
         }
         // A struct-RVO call (constructor or struct-returning function) may be the operand: 'new' supplies a
         // stable destination (a hidden stack temp copied by the existing NEW/GT_REGISTER sequence).
-        boolean previousRvoEligible = hub.model.insideStructRvoDestinationPosition;
-        hub.model.insideStructRvoDestinationPosition = true;
-        if (op.left.type == TokenType.OPERATOR && op.left.text.equals("CALL")) {
-            op.left.chk.coveredByThrowingNew = true; // insideThrowingAllocContext was verified just above
-        }
-        TypeCheckerModel.TypeInfo operandType;
-        try {
-            operandType = hub.controlFlow.resolveExprType(op.left, scope, func);
-        } finally {
-            hub.model.insideStructRvoDestinationPosition = previousRvoEligible;
-        }
-        return new TypeCheckerModel.TypeInfo("owns", operandType.mutability, operandType.baseType).withSome(true);
     }
+
+
+
 
     /**
      * "atomic x": tags a plain scalar's type as atomic (TypeInfo.isAtomic). Mutability is preserved
      * (still needs an explicit mut/imut wrap to bind); only integer/bool/char, no storage.
      */
     public TypeCheckerModel.TypeInfo checkAtomicWrapper(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
-        TypeCheckerModel.TypeInfo operandType = hub.controlFlow.resolveExprType(op.left, scope, func);
-        if (operandType.storage != null) {
+        return hub.driver.run(new CheckFrame(CheckFrame.ATOMIC_WRAPPER, op, scope, func));
+    }
+
+    public int stepAtomicWrapper(CheckFrame f) {
+        if (f.phase == 0) {
+            f.phase = 1;
+            return f.call(f.node.left);
+        }
+        return f.done(atomicTail(f.node, f.scope, f.func, f.got));
+    }
+
+    private TypeCheckerModel.TypeInfo atomicTail(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func, TypeCheckerModel.TypeInfo operandType) {        if (operandType.storage != null) {
             throw new CompilerException("type", op.left.file, op.left.line,
                     "'atomic' can only wrap a plain (no-storage) scalar value, not a pointer");
         }
@@ -529,11 +609,34 @@ public final class TypeCheckerAccessAndAsync {
         return new TypeCheckerModel.TypeInfo(null, operandType.mutability, operandType.baseType).withAtomic(true);
     }
 
+
     /**
      * "a swap b": atomic read-modify-write, yields the previous value (dedicated ATOMIC_SWAP, it cannot
      * be decomposed into PUSH + ASSIGN atomically).
      */
     public TypeCheckerModel.TypeInfo checkSwapOperator(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+        return hub.driver.run(new CheckFrame(CheckFrame.SWAP, op, scope, func));
+    }
+
+    public int stepSwap(CheckFrame f) {
+        Token op = f.node;
+        TypeCheckerModel.Scope scope = f.scope;
+        switch (f.phase) {
+            case 0:
+                swapHead(op);
+                f.phase = 1;
+                return f.call(op.left);
+            case 1:
+                f.a = f.got;
+                f.p = swapMid(op, f.a);
+                f.phase = 2;
+                return f.call(op.right);
+            default:
+                return f.done(swapTail(op, scope, f.a, f.p, f.got));
+        }
+    }
+
+    private void swapHead(Token op) {
         hub.expressions.rejectDerefAsWriteTarget(op.left, "'swap'");
         // Left: a bare reference (atomic global/static) or a '.' chain (a 'swap'-tagged struct field, used
         // by checkLockMatchStatement's synthesized acquire).
@@ -544,8 +647,10 @@ public final class TypeCheckerAccessAndAsync {
                     "the left operand of 'swap' must be a bare reference to an atomic variable, or a "
                             + "'.'-member-access chain naming an atomic struct field");
         }
-        TypeCheckerModel.TypeInfo leftType = hub.controlFlow.resolveExprType(op.left, scope, func);
-        if (!leftType.isAtomic) {
+    }
+
+    /** Checks on the left operand's type; returns whether the right operand is a bare enum variant. */
+    private boolean swapMid(Token op, TypeCheckerModel.TypeInfo leftType) {        if (!leftType.isAtomic) {
             throw new CompilerException("type", op.left.file, op.left.line,
                     "the left operand of 'swap' must be an 'atomic'-typed value");
         }
@@ -567,8 +672,10 @@ public final class TypeCheckerAccessAndAsync {
                             + "computation's own non-atomicity visible, rather than letting it look bundled "
                             + "into one atomic step");
         }
-        TypeCheckerModel.TypeInfo rightType = hub.controlFlow.resolveExprType(op.right, scope, func);
-        if (!isBareEnumVariantRight && !hub.typesCompatible(leftType, rightType)) {
+        return isBareEnumVariantRight;
+    }
+
+    private TypeCheckerModel.TypeInfo swapTail(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.TypeInfo leftType, boolean isBareEnumVariantRight, TypeCheckerModel.TypeInfo rightType) {        if (!isBareEnumVariantRight && !hub.typesCompatible(leftType, rightType)) {
             throw new CompilerException("type", op.right.file, op.right.line,
                     "'swap' requires the right operand to be type-compatible with the atomic's own value "
                             + "type ('" + leftType.canonical() + "'), but found '" + rightType.canonical() + "'");
@@ -576,20 +683,38 @@ public final class TypeCheckerAccessAndAsync {
         hub.expressions.invalidateMatchPatternsForWrite(op.left, scope);
         // A plain (never atomic) snapshot of the old value, "indeterminate" like any computed result.
         return new TypeCheckerModel.TypeInfo(null, "indeterminate", leftType.baseType);
-    }
+        }
+
 
     /**
      * "await f(args)": blocks and yields the callee's own return type (no handle). The CALL is marked
      * `asyncCallKind = "AWAIT"` before dispatch so checkCall enforces the @async requirement in one place.
      */
     public TypeCheckerModel.TypeInfo checkAwait(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
-        TypeCheckerModel.TypeInfo result;
-        result = checkAwaitInner(op, scope, func);
-        ProofKills.kill(scope.activeMatchPatterns, op, "'await' (another thread runs)");
-        return result;
+        return hub.driver.run(new CheckFrame(CheckFrame.AWAIT, op, scope, func));
     }
 
-    public TypeCheckerModel.TypeInfo checkAwaitInner(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+    public int stepAwait(CheckFrame f) {
+        Token op = f.node;
+        if (f.phase == 0) {
+            awaitChecks(op, f.func);
+            f.phase = 1;
+            return f.call(op.left);
+        }
+        if (f.phase == 1) {
+            f.a = f.got;
+            f.data = new ArrayList<TypeCheckerModel.FuncInfo>();
+            prepareAsyncCallSite(op.left, f.a, glueOf(f));
+            f.phase = 2;
+        }
+        if (nextGlueBody(f)) {
+            return CheckFrame.CALL;
+        }
+        ProofKills.kill(f.scope.activeMatchPatterns, op, "'await' (another thread runs)");
+        return f.done(f.a);
+    }
+
+    private void awaitChecks(Token op, TypeCheckerModel.FuncInfo func) {
         hub.impls.requireNotPure(func, op, "'await'", "it waits on another thread");
         if (op.left.type != TokenType.OPERATOR || !op.left.text.equals("CALL")) {
             throw new CompilerException("type", op.left.file, op.left.line,
@@ -602,17 +727,42 @@ public final class TypeCheckerAccessAndAsync {
         }
         hub.model.usesThrow = true; // like 'new': the failure exits set gt_error_message
         op.left.chk.asyncCallKind = "AWAIT";
-        TypeCheckerModel.TypeInfo calleeReturnType = hub.controlFlow.resolveExprType(op.left, scope, func);
-        prepareAsyncCallSite(op.left, calleeReturnType);
-        return calleeReturnType;
     }
+
+
+
 
     /**
      * Shared by checkAwait/checkPar after the CALL is resolved: finds the top-level @async FuncInfo,
      * obtains the handle type (exposed for non-void, internal for void), records its names on the CALL
      * token for BytecodeEmitter.emitAsyncCall, and synthesizes the (memoized) trampoline.
      */
-    public TypeCheckerModel.TypeInfo prepareAsyncCallSite(Token callTok, TypeCheckerModel.TypeInfo calleeReturnType) {
+    @SuppressWarnings("unchecked")
+    private List<TypeCheckerModel.FuncInfo> glueOf(CheckFrame f) {
+        return (List<TypeCheckerModel.FuncInfo>) f.data;
+    }
+
+    /**
+     * Runs the synthesized glue functions (f.data) one after another as nested function-body frames (f.i = how many were started, f.p = the saved
+     * glue flag). True when a child was started; the caller returns CALL. Each finished body is added as a root token before the next starts.
+     */
+    private boolean nextGlueBody(CheckFrame f) {
+        List<TypeCheckerModel.FuncInfo> pend = glueOf(f);
+        if (f.i > 0) {
+            hub.model.synthesizingGlueBody = f.p;
+            appendSynthesizedRootToken(pend.get(f.i - 1).funcToken);
+        }
+        if (f.i < pend.size()) {
+            f.p = hub.model.synthesizingGlueBody;
+            hub.model.synthesizingGlueBody = true;
+            f.call(hub.statements.functionBodyFrame(pend.get(f.i)));
+            f.i++;
+            return true;
+        }
+        return false;
+    }
+
+    public TypeCheckerModel.TypeInfo prepareAsyncCallSite(Token callTok, TypeCheckerModel.TypeInfo calleeReturnType, List<TypeCheckerModel.FuncInfo> glue) {
         // par/await need the ghost table even if the program never writes owns/ref/new/dyn: without this
         // flag GT_INIT never runs and gt_register grows from capacity 0 forever (heap corruption).
         hub.model.usesOwnsRefDynNew = true;
@@ -631,9 +781,9 @@ public final class TypeCheckerAccessAndAsync {
                 + (selfDestructHidden ? "__par_fire_and_forget" : lockedHandle ? "__par_locked" : "");
         callTok.chk.asyncTrampolineName = trampolineName;
         synthesizeAsyncTrampoline(asyncFuncInfo, handleType, paramType, isVoid ? null : calleeReturnType,
-                trampolineName, selfDestructHidden, lockedHandle);
+                trampolineName, selfDestructHidden, lockedHandle, glue);
         if (lockedHandle) {
-            synthesizeAsyncDropHook(handleType.baseType, asyncFuncInfo.funcToken.file);
+            synthesizeAsyncDropHook(handleType.baseType, asyncFuncInfo.funcToken.file, glue);
         }
         return handleType;
     }
@@ -1120,13 +1270,34 @@ public final class TypeCheckerAccessAndAsync {
 
     /** Type of `par call(..)`: void for a void '@async' callee (bare statement), else an `owns some AsyncHandle_<T>`. See docs/TypeChecker.md, "par / await and trampolines". */
     public TypeCheckerModel.TypeInfo checkPar(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
-        TypeCheckerModel.TypeInfo result;
-        result = checkParInner(op, scope, func);
-        ProofKills.kill(scope.activeMatchPatterns, op, "'par' (another thread starts)");
-        return result;
+        return hub.driver.run(new CheckFrame(CheckFrame.PAR, op, scope, func));
     }
 
-    public TypeCheckerModel.TypeInfo checkParInner(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+    public int stepPar(CheckFrame f) {
+        Token op = f.node;
+        if (f.phase == 0) {
+            parChecks(op, f.func);
+            f.phase = 1;
+            return f.call(op.left);
+        }
+        if (f.phase == 1) {
+            f.a = f.got;
+            f.data = new ArrayList<TypeCheckerModel.FuncInfo>();
+            f.b = prepareAsyncCallSite(op.left, f.a, glueOf(f));
+            f.phase = 2;
+        }
+        if (nextGlueBody(f)) {
+            return CheckFrame.CALL;
+        }
+        TypeCheckerModel.TypeInfo calleeReturnType = f.a;
+        TypeCheckerModel.TypeInfo handleType = f.b;
+        TypeCheckerModel.TypeInfo result = calleeReturnType.baseType.equals("void") ? calleeReturnType : handleType;
+        op.left.chk.resolvedType = result.canonical();
+        ProofKills.kill(f.scope.activeMatchPatterns, op, "'par' (another thread starts)");
+        return f.done(result);
+    }
+
+    private void parChecks(Token op, TypeCheckerModel.FuncInfo func) {
         hub.impls.requireNotPure(func, op, "'par'", "it starts another thread");
         if (op.left.type != TokenType.OPERATOR || !op.left.text.equals("CALL")) {
             throw new CompilerException("type", op.left.file, op.left.line,
@@ -1139,19 +1310,18 @@ public final class TypeCheckerAccessAndAsync {
         }
         hub.model.usesThrow = true; // like 'new': the failure exits set gt_error_message
         op.left.chk.asyncCallKind = "PAR";
-        TypeCheckerModel.TypeInfo calleeReturnType = hub.controlFlow.resolveExprType(op.left, scope, func);
-        TypeCheckerModel.TypeInfo handleType = prepareAsyncCallSite(op.left, calleeReturnType);
-        TypeCheckerModel.TypeInfo result = calleeReturnType.baseType.equals("void") ? calleeReturnType : handleType;
-        op.left.chk.resolvedType = result.canonical();
-        return result;
     }
+
+
+
 
     /**
      * Synthesizes (once per function) the pthread-shaped trampoline `raw mut u8 __trampoline_<name>(raw mut u8)` as Caspien source text run through the front end,
      * and checks its body eagerly (check()'s sweep worklist is already fixed). See docs/TypeChecker.md, "par / await and trampolines".
      */
     public void synthesizeAsyncTrampoline(TypeCheckerModel.FuncInfo asyncFuncInfo, TypeCheckerModel.TypeInfo handleType, TypeCheckerModel.TypeInfo paramType,
-            TypeCheckerModel.TypeInfo resultTypeOrNull, String trampolineName, boolean selfDestructHidden, boolean lockedHandle) {
+            TypeCheckerModel.TypeInfo resultTypeOrNull, String trampolineName, boolean selfDestructHidden, boolean lockedHandle,
+            List<TypeCheckerModel.FuncInfo> glue) {
         if (!hub.model.asyncTrampolinesSynthesized.add(trampolineName)) {
             return; // already synthesized (either ordinarily, or for this exact self-destructing shape)
         }
@@ -1224,14 +1394,7 @@ public final class TypeCheckerAccessAndAsync {
         trampolineInfo.declOrder = Integer.MAX_VALUE;
         trampolineInfo.isPublic = false;
         hub.model.functions.computeIfAbsent(trampolineInfo.name, k -> new ArrayList<>()).add(trampolineInfo);
-        boolean savedGlue = hub.model.synthesizingGlueBody;
-        hub.model.synthesizingGlueBody = true;
-        try {
-            hub.statements.checkFunctionBody(trampolineInfo);
-        } finally {
-            hub.model.synthesizingGlueBody = savedGlue;
-        }
-        appendSynthesizedRootToken(funcTok);
+        glue.add(trampolineInfo);   // its body is checked (as glue) and its root token appended by the caller
     }
 
     /**
@@ -1239,7 +1402,7 @@ public final class TypeCheckerAccessAndAsync {
      * its thread by joining it, so the handle's memory never goes away under a running thread. `threadId` is 0 when no thread was started
      * (pthread_create failed), then there is nothing to join. Written as Caspien source like the trampoline; trusted glue code.
      */
-    public void synthesizeAsyncDropHook(String handleStructName, String file) {
+    public void synthesizeAsyncDropHook(String handleStructName, String file, List<TypeCheckerModel.FuncInfo> glue) {
         if (!hub.model.asyncDropHooksSynthesized.add(handleStructName)) {
             return;
         }
@@ -1263,14 +1426,7 @@ public final class TypeCheckerAccessAndAsync {
         hookInfo.declOrder = Integer.MAX_VALUE;
         hookInfo.isPublic = false;
         hub.model.functions.computeIfAbsent(hookInfo.name, k -> new ArrayList<>()).add(hookInfo);
-        boolean savedGlue = hub.model.synthesizingGlueBody;
-        hub.model.synthesizingGlueBody = true;
-        try {
-            hub.statements.checkFunctionBody(hookInfo);
-        } finally {
-            hub.model.synthesizingGlueBody = savedGlue;
-        }
-        appendSynthesizedRootToken(funcTok);
+        glue.add(hookInfo);   // its body is checked (as glue) and its root token appended by the caller
     }
 
     /** Marks every 'unsafe' block inside compiler-written code as exempt from the unsafe-tag rules. */

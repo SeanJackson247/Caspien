@@ -38,6 +38,7 @@ public final class TypeChecker {
     public final TypeCheckerCalls calls = new TypeCheckerCalls(this);
     public final TypeCheckerLocksAndProofs locksAndProofs = new TypeCheckerLocksAndProofs(this);
     public final TypeCheckerAccessAndAsync accessAndAsync = new TypeCheckerAccessAndAsync(this);
+    public final CheckDriver driver = new CheckDriver(this);
 
     /** The public entry point; the checker's state is public through the part fields (`model` holds most of it). */
     public void check(List<Token> rootLines) {
@@ -45,6 +46,22 @@ public final class TypeChecker {
     }
 
     public TypeCheckerModel.TypeInfo checkAddressOf(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+        return driver.run(new CheckFrame(CheckFrame.ADDRESS_OF, op, scope, func));
+    }
+
+    public int stepAddressOf(CheckFrame f) {
+        if (f.phase == 0) {
+            TypeCheckerModel.TypeInfo early = addressOfHead(f.node, f.scope, f.func);
+            if (early != null) {
+                return f.done(early);
+            }
+            f.phase = 1;
+            return f.call(f.node.left);
+        }
+        return f.done(addressOfTail(f.node, f.scope, f.func, f.got));
+    }
+
+    private TypeCheckerModel.TypeInfo addressOfHead(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
         String storage = op.text;
         if (storage.equals("raw") && !declarations.unsafeBypass(scope, "raw")) {
             throw new CompilerException("type", op.file, op.line,
@@ -108,8 +125,11 @@ public final class TypeChecker {
                                 + "would reach it without its lock. Take the value inside the lock instead");
             }
         }
-        TypeCheckerModel.TypeInfo operandType = controlFlow.resolveExprType(op.left, scope, func);
-        if (storage.equals("auto") && operandType.storage != null && !"static".equals(operandType.storage)) {
+        return null;
+    }
+
+    private TypeCheckerModel.TypeInfo addressOfTail(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func, TypeCheckerModel.TypeInfo operandType) {
+        String storage = op.text;        if (storage.equals("auto") && operandType.storage != null && !"static".equals(operandType.storage)) {
             // `auto c` of a variable that is itself a pointer (`owns`/`ref`/`raw`/`auto`) was typed as a pointer to the pointee but produced the
             // address of the VARIABLE, so writes through it landed in the neighbouring stack slots (9 Oct demo: `auto c.n += 1` left c.n at 41).
             throw new CompilerException("type", op.left.file, op.left.line,
@@ -123,6 +143,7 @@ public final class TypeChecker {
         }
         return prefixResult;
     }
+
 
     /** True for a VARREF, or a '.' chain of member accesses rooted in one -- the things 'auto' can validly point to. */
     public boolean isAddressableLvalue(Token node) {
@@ -160,21 +181,38 @@ public final class TypeChecker {
     }
 
     /** Prefix `mut`/`imut`: forces concrete mutability; only imut -> mut is rejected. See docs/TypeChecker.md, "Address-of operators". */
-    public TypeCheckerModel.TypeInfo checkMutabilityOf(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+    public int stepMutabilityOf(CheckFrame f) {
+        Token op = f.node;
+        if (f.phase == 0) {
+            f.phase = 1;
+            return f.call(op.left);
+        }
         String target = op.text;
-        TypeCheckerModel.TypeInfo operandType = controlFlow.resolveExprType(op.left, scope, func);
+        TypeCheckerModel.TypeInfo operandType = f.got;
         if ("imut".equals(operandType.mutability) && target.equals("mut")) {
             throw new CompilerException("type", op.file, op.line,
                     "cannot make an 'imut' value 'mut' -- only an indeterminate or already-'mut' "
                             + "value can become 'mut'");
         }
-        return operandType.withMutability(target);
+        return f.done(operandType.withMutability(target));
     }
 
     /** `a..b`: a range type whose base-type string embeds its bounds; both operands u64, each a bare literal or variable. See docs/TypeChecker.md, "Ranges and membership operators". */
-    public TypeCheckerModel.TypeInfo checkRange(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
-        TypeCheckerModel.TypeInfo leftType = controlFlow.resolveExprType(op.left, scope, func);
-        TypeCheckerModel.TypeInfo rightType = controlFlow.resolveExprType(op.right, scope, func);
+    public int stepRange(CheckFrame f) {
+        Token op = f.node;
+        switch (f.phase) {
+            case 0:
+                f.phase = 1;
+                return f.call(op.left);
+            case 1:
+                f.a = f.got;
+                f.phase = 2;
+                return f.call(op.right);
+            default:
+                break;
+        }
+        TypeCheckerModel.TypeInfo leftType = f.a;
+        TypeCheckerModel.TypeInfo rightType = f.got;
         if (!isPlainU64(leftType)) {
             throw new CompilerException("type", op.left.file, op.left.line,
                     "'..' operands must resolve to a plain 'u64', got '" + leftType.canonical() + "'");
@@ -186,7 +224,7 @@ public final class TypeChecker {
         String leftDesc = rangeBoundDescriptor(op.left, leftType);
         String rightDesc = rangeBoundDescriptor(op.right, rightType);
         String baseType = "range(" + leftDesc + "," + rightDesc + ")";
-        return new TypeCheckerModel.TypeInfo(null, "imut", baseType);
+        return f.done(new TypeCheckerModel.TypeInfo(null, "imut", baseType));
     }
 
     public boolean isPlainU64(TypeCheckerModel.TypeInfo t) {
@@ -238,17 +276,41 @@ public final class TypeChecker {
 
     /** `x in R`: u64 or range on the left; range, dynarray, fixed array, string or guaranteed enum on the right. See docs/TypeChecker.md, "Ranges and membership operators". */
     public TypeCheckerModel.TypeInfo checkIn(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
-        // a bare enum name on the right is a different shape: `u64 in Enum`
-        if (op.right.type == TokenType.VARREF && model.enums.containsKey(op.right.text)) {
-            return checkGuaranteedEnumMembership(op, scope, func);
+        return driver.run(new CheckFrame(CheckFrame.IN, op, scope, func));
+    }
+
+    /** Phases: 0 start, 1 left done, 2 right done, 3 right re-resolved after a fixed array was wrapped as a range. */
+    public int stepIn(CheckFrame f) {
+        Token op = f.node;
+        switch (f.phase) {
+            case 0:
+                // a bare enum name on the right is a different shape: `u64 in Enum`
+                if (op.right.type == TokenType.VARREF && model.enums.containsKey(op.right.text)) {
+                    f.phase = 4;
+                    return f.call(new CheckFrame(CheckFrame.GUARANTEED_ENUM, op, f.scope, f.func));
+                }
+                f.phase = 1;
+                return f.call(op.left);
+            case 1:
+                f.a = f.got;
+                f.phase = 2;
+                return f.call(op.right);
+            case 2:
+                if (isArrayType(f.got.baseType)) {
+                    // sugar for range(arr), using the array's compile-time length
+                    op.right = wrapFixedArrayAsRange(op.right);
+                    f.phase = 3;
+                    return f.call(op.right);
+                }
+                return f.done(inType(op, f.a, f.got));
+            case 3:
+                return f.done(inType(op, f.a, f.got));
+            default:
+                return f.done(f.got);
         }
-        TypeCheckerModel.TypeInfo leftType = controlFlow.resolveExprType(op.left, scope, func);
-        TypeCheckerModel.TypeInfo rightType = controlFlow.resolveExprType(op.right, scope, func);
-        if (isArrayType(rightType.baseType)) {
-            // sugar for range(arr), using the array's compile-time length
-            op.right = wrapFixedArrayAsRange(op.right);
-            rightType = controlFlow.resolveExprType(op.right, scope, func);
-        }
+    }
+
+    private TypeCheckerModel.TypeInfo inType(Token op, TypeCheckerModel.TypeInfo leftType, TypeCheckerModel.TypeInfo rightType) {
         // `u64 in string`: runtime byte scan up to the NUL (IN_SCAN)
         if (rightType.baseType.equals("string")) {
             if (!isPlainU64(leftType)) {
@@ -278,10 +340,21 @@ public final class TypeChecker {
         return new TypeCheckerModel.TypeInfo(null, "indeterminate", "bool");
     }
 
+
     /** `u64 in EnumName`: the enum must be "guaranteed" (every variant has an explicit discriminant). See docs/TypeChecker.md, "Ranges and membership operators". */
     public TypeCheckerModel.TypeInfo checkGuaranteedEnumMembership(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
-        TypeCheckerModel.TypeInfo leftType = controlFlow.resolveExprType(op.left, scope, func);
-        if (!isPlainU64(leftType)) {
+        return driver.run(new CheckFrame(CheckFrame.GUARANTEED_ENUM, op, scope, func));
+    }
+
+    public int stepGuaranteedEnumMembership(CheckFrame f) {
+        if (f.phase == 0) {
+            f.phase = 1;
+            return f.call(f.node.left);
+        }
+        return f.done(enumMembershipTail(f.node, f.scope, f.func, f.got));
+    }
+
+    private TypeCheckerModel.TypeInfo enumMembershipTail(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func, TypeCheckerModel.TypeInfo leftType) {        if (!isPlainU64(leftType)) {
             throw new CompilerException("type", op.left.file, op.left.line,
                     "'in' against a guaranteed enum requires a plain 'u64' on the left, got '"
                             + leftType.canonical() + "'");
@@ -299,10 +372,27 @@ public final class TypeChecker {
         return new TypeCheckerModel.TypeInfo(null, "indeterminate", "bool");
     }
 
+
     /** `within`: like `in` but range on both sides; strict proper subrange (IN-style typing, WITHIN opcode). See docs/TypeChecker.md, "Ranges and membership operators". */
     public TypeCheckerModel.TypeInfo checkWithin(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
-        TypeCheckerModel.TypeInfo leftType = controlFlow.resolveExprType(op.left, scope, func);
-        TypeCheckerModel.TypeInfo rightType = controlFlow.resolveExprType(op.right, scope, func);
+        return driver.run(new CheckFrame(CheckFrame.WITHIN, op, scope, func));
+    }
+
+    public int stepWithin(CheckFrame f) {
+        switch (f.phase) {
+            case 0:
+                f.phase = 1;
+                return f.call(f.node.left);
+            case 1:
+                f.a = f.got;
+                f.phase = 2;
+                return f.call(f.node.right);
+            default:
+                return f.done(withinType(f.node, f.a, f.got));
+        }
+    }
+
+    private TypeCheckerModel.TypeInfo withinType(Token op, TypeCheckerModel.TypeInfo leftType, TypeCheckerModel.TypeInfo rightType) {
         if (!isRangeType(leftType)) {
             throw new CompilerException("type", op.left.file, op.left.line,
                     "'within' requires a range on the left, got '"
@@ -315,6 +405,7 @@ public final class TypeChecker {
         }
         return new TypeCheckerModel.TypeInfo(null, "indeterminate", "bool");
     }
+
 
     /** Array base types are "elem[len]" (nestable); the length is part of the type. */
     public boolean isArrayType(String baseType) {

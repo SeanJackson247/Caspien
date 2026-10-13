@@ -35,6 +35,7 @@ public final class TypeCheckerExpressions {
     }
 
     public TypeCheckerModel.TypeInfo resolveExprTypeInner(Token node, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+        while (true) {
         switch (node.type) {
             case STRING:
                 // String literals are 'static imut string' and 'some' (always present); 'some' coerces one-way to plain.
@@ -140,7 +141,7 @@ public final class TypeCheckerExpressions {
                     node.text = literal.text;
                     node.literalValue = literal.literalValue;
                     node.forcedLiteralType = literal.forcedLiteralType;
-                    return resolveExprTypeInner(node, scope, func);
+                    continue;   // re-dispatch the substituted literal
                 }
                 // A bare function name used as a value is a function pointer with its own signature and decorators.
                 List<TypeCheckerModel.FuncInfo> asFunc = hub.model.functions.get(node.text);
@@ -174,102 +175,25 @@ public final class TypeCheckerExpressions {
                     throw new CompilerException("type", node.file, node.line,
                             "internal error: bare 'let' token in expression position");
                 }
-                if (node.text.equals("try")) {
-                    // Expression-position `try`; insideLoop is passed as false (see checkTry).
-                    return hub.controlFlow.checkTry(node, scope, func, false);
-                }
                 break;
             case DELINEATOR:
-                if (node.text.equals("(")) {
-                    if (node.childs.isEmpty()) {
-                        throw new CompilerException("type", node.file, node.line, "empty '()' expression");
-                    }
-                    return hub.controlFlow.resolveExprType(node.childs.get(0), scope, func);
-                }
-                if (node.text.equals("[")) {
-                    return hub.locksAndProofs.checkArrayLiteral(node, scope, func);
-                }
                 break;
-            case OPERATOR:
-                return resolveOperatorType(node, scope, func);
             default:
                 break;
         }
         throw new CompilerException("type", node.file, node.line,
                 "internal error: don't know how to type '" + node.type + "(" + node.text + ")'");
+        }
     }
 
-    public TypeCheckerModel.TypeInfo resolveOperatorType(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
-        // Captured once and reset before dispatch, so a stale 'true' from an enclosing context cannot reach other operators;
-        // only checkLogical sees it. See docs/TypeChecker.md, "Operator dispatch context flags".
-        boolean eligibleHere = hub.model.insideShortCircuitEligiblePosition;
-        hub.model.insideShortCircuitEligiblePosition = false;
-        // Same capture-and-reset for the struct-RVO destination flag; only checkCall consults it.
-        boolean eligibleForRvoHere = hub.model.insideStructRvoDestinationPosition;
-        hub.model.insideStructRvoDestinationPosition = false;
+    /** The operators that are never valid as ordinary expressions (everything else has its own frame kind, see stepExpr). */
+    public TypeCheckerModel.TypeInfo resolveOperatorType(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func,
+            boolean eligibleForRvoHere) {
         switch (op.text) {
-            case "=":
-                return checkAssign(op, scope, func);
-            case "+=": case "-=": case "*=": case "/=": case "%=":
-                return checkCompoundAssign(op, scope, func);
-            case "+": case "-": case "*": case "/": case "%":
-                if (op.unary) {
-                    return checkUnaryMinus(op, scope, func);
-                }
-                return checkArithmetic(op, scope, func);
-            case "!":
-                return checkLogicalNot(op, scope, func);
-            case "++": case "--":
-                return checkIncrement(op, scope, func);
-            case "&&": case "||": case "&&then": case "||then":
-                return checkLogical(op, scope, func, eligibleHere);
-            case "<": case ">": case "<=": case ">=": case "==": case "!=":
-                return checkComparison(op, scope, func);
-            case "CALL":
-                return hub.calls.checkCall(op, scope, func, eligibleForRvoHere);
-            case "LOOKUP":
-                return hub.locksAndProofs.checkLookup(op, scope, func);
-            case "as":
-                return hub.locksAndProofs.checkAs(op, scope, func);
-            case ".":
-                return hub.accessAndAsync.checkDot(op, scope, func);
-            case "INSTANTIATE":
-                return hub.accessAndAsync.checkInstantiate(op, scope, func);
-            case "owns": case "ref": case "auto": case "raw": case "static":
-                return hub.checkAddressOf(op, scope, func);
-            case "mut": case "imut":
-                // mut/imut are transparent for the RVO flag: re-armed one level down so the wrapped CALL still sees it.
-                hub.model.insideStructRvoDestinationPosition = eligibleForRvoHere;
-                return hub.checkMutabilityOf(op, scope, func);
-            case "new":
-                return hub.accessAndAsync.checkNew(op, scope, func);
-            case "await":
-                return hub.accessAndAsync.checkAwait(op, scope, func);
-            case "par":
-                return hub.accessAndAsync.checkPar(op, scope, func);
-            case "unsafe":
-                return hub.calls.checkUnsafeDynWrapper(op, scope, func);
-            case "atomic":
-                return hub.accessAndAsync.checkAtomicWrapper(op, scope, func);
-            case "swap":
-                return hub.accessAndAsync.checkSwapOperator(op, scope, func);
-            case "..":
-                return hub.checkRange(op, scope, func);
-            case "in":
-                return hub.checkIn(op, scope, func);
-            case "within":
-                return hub.checkWithin(op, scope, func);
-            case "instanceof":
-                return hub.locksAndProofs.checkInstanceof(op, scope, func);
-            case "implements":
-                return hub.locksAndProofs.checkImplementsOperator(op, scope, func);
             case "dup":
                 // 'dup' is expanded earlier (DupExpander); reaching here means it was used outside an array literal.
                 throw new CompilerException("type", op.file, op.line,
                         "'dup' can only be used as an element of an array literal");
-            case ",":
-                hub.controlFlow.resolveExprType(op.left, scope, func);
-                return hub.controlFlow.resolveExprType(op.right, scope, func);
             case "and":
                 // 'and' is only valid inside a match condition (checkMatchCondition walks the chain itself).
                 throw new CompilerException("type", op.file, op.line,
@@ -288,6 +212,298 @@ public final class TypeCheckerExpressions {
                 throw new CompilerException("type", op.file, op.line,
                         "internal error: unhandled operator '" + op.text + "' in type checker");
         }
+    }
+
+    /** resolveExprType as a frame: node-kind dispatch, converted operators run as their own frames, the rest through resolveOperatorType. */
+    public int stepExpr(CheckFrame f) {
+        Token node = f.node;
+        if (f.phase != 0) {
+            return finishExpr(f, f.got);
+        }
+        if (node.type == TokenType.DELINEATOR && node.text.equals("(")) {
+            if (node.childs.isEmpty()) {
+                throw new CompilerException("type", node.file, node.line, "empty '()' expression");
+            }
+            f.phase = 1;
+            return f.call(node.childs.get(0));
+        }
+        if (node.type == TokenType.KEYWORD && node.text.equals("try")) {
+            // Expression-position `try`; insideLoop is false (see checkTry).
+            f.phase = 2;
+            return f.call(hub.controlFlow.tryStmtFrame(node, f.scope, f.func, false));
+        }
+        if (node.type == TokenType.DELINEATOR && node.text.equals("[")) {
+            f.phase = 2;
+            return f.call(new CheckFrame(CheckFrame.ARRAY_LITERAL, node, f.scope, f.func));
+        }
+        if (node.type != TokenType.OPERATOR) {
+            return finishExpr(f, resolveExprTypeInner(node, f.scope, f.func));
+        }
+        // Captured once and reset before dispatch, so a stale 'true' from an enclosing context cannot reach other operators;
+        // only checkLogical sees it. See docs/TypeChecker.md, "Operator dispatch context flags".
+        boolean eligibleHere = hub.model.insideShortCircuitEligiblePosition;
+        hub.model.insideShortCircuitEligiblePosition = false;
+        // Same capture-and-reset for the struct-RVO destination flag; only checkCall consults it.
+        boolean eligibleForRvoHere = hub.model.insideStructRvoDestinationPosition;
+        hub.model.insideStructRvoDestinationPosition = false;
+        int kind = 0;
+        boolean pFlag = eligibleHere;
+        switch (node.text) {
+            case ",": kind = CheckFrame.COMMA; break;
+            case "+": case "-": case "*": case "/": case "%":
+                kind = node.unary ? CheckFrame.UNARY_MINUS : CheckFrame.ARITH;
+                break;
+            case "!": kind = CheckFrame.LOGICAL_NOT; break;
+            case "++": case "--": kind = CheckFrame.INCREMENT; break;
+            case "&&": case "||": case "&&then": case "||then": kind = CheckFrame.LOGICAL; break;
+            case "<": case ">": case "<=": case ">=": case "==": case "!=": kind = CheckFrame.COMPARISON; break;
+            case "mut": case "imut":
+                // mut/imut are transparent for the RVO flag: re-armed one level down so the wrapped CALL still sees it.
+                hub.model.insideStructRvoDestinationPosition = eligibleForRvoHere;
+                kind = CheckFrame.MUTABILITY_OF;
+                break;
+            case "..": kind = CheckFrame.RANGE; break;
+            case "=": kind = CheckFrame.ASSIGN; pFlag = false; break;
+            case "+=": case "-=": case "*=": case "/=": case "%=": kind = CheckFrame.COMPOUND_ASSIGN; pFlag = false; break;
+            case "CALL": kind = CheckFrame.CALL_EXPR; pFlag = eligibleForRvoHere; break;
+            case "LOOKUP": kind = CheckFrame.LOOKUP; pFlag = false; break;
+            case "as": kind = CheckFrame.AS; pFlag = false; break;
+            case ".": kind = CheckFrame.DOT; pFlag = false; break;
+            case "INSTANTIATE": kind = CheckFrame.INSTANTIATE; pFlag = false; break;
+            case "owns": case "ref": case "auto": case "raw": case "static": kind = CheckFrame.ADDRESS_OF; pFlag = false; break;
+            case "new": kind = CheckFrame.NEW; pFlag = false; break;
+            case "await": kind = CheckFrame.AWAIT; pFlag = false; break;
+            case "par": kind = CheckFrame.PAR; pFlag = false; break;
+            case "unsafe": kind = CheckFrame.UNSAFE_DYN_WRAPPER; pFlag = false; break;
+            case "atomic": kind = CheckFrame.ATOMIC_WRAPPER; pFlag = false; break;
+            case "swap": kind = CheckFrame.SWAP; pFlag = false; break;
+            case "in": kind = CheckFrame.IN; pFlag = false; break;
+            case "within": kind = CheckFrame.WITHIN; pFlag = false; break;
+            case "instanceof": kind = CheckFrame.INSTANCEOF; pFlag = false; break;
+            case "implements": kind = CheckFrame.IMPLEMENTS; pFlag = false; break;
+            default: break;
+        }
+        if (kind == 0) {
+            return finishExpr(f, resolveOperatorType(node, f.scope, f.func, eligibleForRvoHere));
+        }
+        CheckFrame handler = new CheckFrame(kind, node, f.scope, f.func);
+        handler.p = pFlag;
+        f.phase = 2;
+        return f.call(handler);
+    }
+
+    private int finishExpr(CheckFrame f, TypeCheckerModel.TypeInfo result) {
+        Token node = f.node;
+        if (node.chk.resolvedCallTarget != null && node.type == TokenType.OPERATOR && "CALL".equals(node.text)) {
+            ProofKills.call(f.scope.activeMatchPatterns, node, node.chk.resolvedCallTarget);
+        }
+        node.chk.resolvedType = result.canonical();
+        if (f.func != null && hub.impls.isPureRtFunc(f.func)) {
+            hub.impls.requirePureRtNoPointer(result, node, f.func, "in an expression");
+        }
+        return f.done(result);
+    }
+
+    /** `a, b`: both sides are resolved, the value is the right one. */
+    public int stepComma(CheckFrame f) {
+        switch (f.phase) {
+            case 0:
+                f.phase = 1;
+                return f.call(f.node.left);
+            case 1:
+                f.phase = 2;
+                return f.call(f.node.right);
+            default:
+                return f.done(f.got);
+        }
+    }
+
+    public int stepArithmetic(CheckFrame f) {
+        switch (f.phase) {
+            case 0:
+                f.phase = 1;
+                return f.call(f.node.left);
+            case 1:
+                f.a = f.got;
+                f.phase = 2;
+                return f.call(f.node.right);
+            default:
+                return f.done(arithmeticType(f.node, f.scope, f.a, f.got));
+        }
+    }
+
+    public int stepUnaryMinus(CheckFrame f) {
+        if (f.phase == 0) {
+            f.phase = 1;
+            return f.call(f.node.left);
+        }
+        return f.done(unaryMinusType(f.node, f.scope, f.got));
+    }
+
+    public int stepLogicalNot(CheckFrame f) {
+        if (f.phase == 0) {
+            f.phase = 1;
+            return f.call(f.node.left);
+        }
+        hub.requireBoolOrInteger(f.got, f.node);
+        return f.done(new TypeCheckerModel.TypeInfo(null, "indeterminate", "bool"));
+    }
+
+    public int stepComparison(CheckFrame f) {
+        switch (f.phase) {
+            case 0:
+                f.phase = 1;
+                return f.call(f.node.left);
+            case 1:
+                f.a = f.got;
+                f.phase = 2;
+                return f.call(f.node.right);
+            default:
+                return f.done(comparisonType(f.node, f.scope, f.a, f.got));
+        }
+    }
+
+    /**
+     * `&&`/`||` (eager) and `&&then`/`||then` (lazy) share this check; the then-variants are legal only at the top of an
+     * if/elseif condition (f.p = eligibleHere). See docs/TypeChecker.md, "Operator dispatch context flags".
+     */
+    public int stepLogical(CheckFrame f) {
+        Token op = f.node;
+        boolean isThenVariant = op.text.equals("&&then") || op.text.equals("||then");
+        switch (f.phase) {
+            case 0:
+                if (isThenVariant && !f.p) {
+                    throw new CompilerException("type", op.file, op.line,
+                            "'" + op.text + "' is only legal at the top level of an 'if'/'elseif' condition -- as "
+                                    + "that condition's own root operator, or nested only under further "
+                                    + "'&&then'/'||then' operators reached from it -- not used as a function argument, "
+                                    + "inside a '!' or comparison, as an operand of a plain '&&'/'||', inside a 'match', "
+                                    + "or anywhere else an ordinary expression is expected");
+                }
+                // Only a then-variant re-arms eligibility for its operands; a plain &&/|| leaves it consumed.
+                if (isThenVariant) {
+                    hub.model.insideShortCircuitEligiblePosition = true;
+                }
+                f.phase = 1;
+                return f.call(op.left);
+            case 1:
+                f.a = f.got;
+                hub.model.insideShortCircuitEligiblePosition = false;
+                if (isThenVariant) {
+                    hub.model.insideShortCircuitEligiblePosition = true;
+                }
+                f.phase = 2;
+                return f.call(op.right);
+            default:
+                hub.model.insideShortCircuitEligiblePosition = false;
+                hub.requireBoolOrInteger(f.a, op);
+                hub.requireBoolOrInteger(f.got, op);
+                return f.done(new TypeCheckerModel.TypeInfo(null, "indeterminate", "bool"));
+        }
+    }
+
+    /** Shared by both "++" and "--" -- identical rules either way (numeric, mutable, not the loop's own immutable slot); only the emitted mnemonic differs, decided later by BytecodeEmitter from op.text alone. */
+    public int stepIncrement(CheckFrame f) {
+        Token op = f.node;
+        switch (f.phase) {
+            case 0:
+                rejectDerefAsWriteTarget(op.left, "'++'/'--'");
+                f.phase = 1;
+                return f.call(op.left);
+            case 1: {
+                TypeCheckerModel.TypeInfo operand = f.got;
+                f.a = operand;
+                // C-style: "p++" on a raw pointer advances by the pointee size. A
+                // one-byte pointee keeps the ordinary path below, byte-identical to before.
+                if (TypeCheckerModel.isRawPointerType(operand)) {
+                    long scale = hub.pointeeSize(operand, op);
+                    if (scale > 1) {
+                        requireNotAtomicOrdinaryWriteTarget(operand, op, op.text);
+                        f.p = true;
+                        f.phase = 2;
+                        return f.call(requireMutableFrame(f, op.left, operand, op));
+                    }
+                }
+                requireNotAtomicOrdinaryWriteTarget(operand, op, op.text);
+                hub.requireNumeric(operand, op);
+                f.phase = 2;
+                return f.call(requireMutableFrame(f, op.left, operand, op));
+            }
+            default: {
+                TypeCheckerModel.TypeInfo operand = f.a;
+                requireNotLoopImmutable(op.left, f.scope, op);
+                invalidateMatchPatternsForWrite(op.left, f.scope);
+                if (f.p) {
+                    op.chk.pointerScale = hub.pointeeSize(operand, op);
+                    op.chk.pointerScaleStruct = hub.pointeeStructName(operand);
+                    return f.done(operand);
+                }
+                return f.done(new TypeCheckerModel.TypeInfo(null, "indeterminate", operand.baseType));
+            }
+        }
+    }
+
+    private CheckFrame requireMutableFrame(CheckFrame f, Token targetExpr, TypeCheckerModel.TypeInfo targetType, Token at) {
+        CheckFrame m = new CheckFrame(CheckFrame.REQUIRE_MUTABLE, targetExpr, f.scope, f.func);
+        m.a = targetType;
+        m.y = at;
+        return m;
+    }
+
+    /** Modifying a value needs 'mut' on the target and on every prefix of a dotted/indexed path (f.node = target, f.a = its type, f.y = error anchor). */
+    public int stepRequireMutable(CheckFrame f) {
+        if (f.phase == 1) {
+            f.node = f.node.left;     // the prefix: checked the same way, one level down
+            f.a = f.got;
+        }
+        Token targetExpr = f.node;
+        TypeCheckerModel.TypeInfo targetType = f.a;
+        Token at = f.y;
+        if (!"mut".equals(targetType.mutability)) {
+            throw new CompilerException("type", at.file, at.line,
+                    "cannot modify this value -- its mutability is '"
+                            + (targetType.mutability == null ? "indeterminate" : targetType.mutability)
+                            + "', not 'mut'");
+        }
+        // '@pure' functions may not mutate through any pointer anywhere in the chain; unsafe gives no exemption.
+        if (hub.impls.isPureFunc(f.func) && targetType.storage != null) {
+            throw new CompilerException("type", at.file, at.line,
+                    "'" + f.func.name + "' is '@pure' and cannot mutate through a pointer -- '"
+                            + targetType.canonical() + "' has 'raw'/'owns'/'ref'/'auto'/'static' storage");
+        }
+        if (targetExpr.type == TokenType.OPERATOR && (targetExpr.text.equals(".") || targetExpr.text.equals("LOOKUP"))) {
+            // "." and LOOKUP are walked (the '@pure' pointer check), so `p.arr[0]` reaches `p`.
+            f.phase = 1;
+            return f.call(targetExpr.left);
+        }
+        return f.done(null);
+    }
+
+    /** Resolves f.toks in order into f.list. */
+    public int stepExprList(CheckFrame f) {
+        if (f.phase == 0) {
+            f.list = new ArrayList<>();
+            f.phase = 1;
+        } else {
+            f.list.add(f.got);
+        }
+        if (f.i < f.toks.size()) {
+            return f.call(f.toks.get(f.i++));
+        }
+        return f.done(null);
+    }
+
+    /** checkIncrement for code that is not a frame itself. */
+    public TypeCheckerModel.TypeInfo checkIncrement(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
+        return hub.driver.run(new CheckFrame(CheckFrame.INCREMENT, op, scope, func));
+    }
+
+    /** requireMutable for code that is not a frame itself. */
+    public void requireMutable(Token targetExpr, TypeCheckerModel.TypeInfo targetType, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func, Token at) {
+        CheckFrame m = new CheckFrame(CheckFrame.REQUIRE_MUTABLE, targetExpr, scope, func);
+        m.a = targetType;
+        m.y = at;
+        hub.driver.run(m);
     }
 
     /** The tracked slot key of a bare name, an `a.b` member path or `x[i]` (parens transparent); null for untrackable shapes, which are never moved. */
@@ -565,152 +781,185 @@ public final class TypeCheckerExpressions {
     }
 
     public TypeCheckerModel.TypeInfo checkAssign(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
-        rejectDerefAsWriteTarget(op.left, "an assignment");
-        if (op.left.type == TokenType.KEYWORD && op.left.text.equals("let")) {
-            Token nameTok = op.left.childs.get(0);
-            if (op.left.isStatic) {
-                if (!op.left.staticApproved) {
-                    throw new CompilerException("type", op.left.file, op.left.line,
-                            "'let static' is only allowed at the top of a function body, before any "
-                                    + "other statement");
-                }
-                checkNoRuntimeConstructs(op.right);
-                // Compile-time constant: resolved in an empty Scope, so any variable reference fails as undeclared.
-                TypeCheckerModel.TypeInfo rhsType = hub.controlFlow.resolveExprType(op.right, new TypeCheckerModel.Scope(null), func);
-                TypeCheckerModel.TypeInfo bound = resolveAndValidateTypeBound(op.left, rhsType, op.right);
-                if (bound != null) {
-                    rhsType = bound;
-                } else {
-                    requireStaticMutable(rhsType, op.right);
-                }
-                // A direct atomic declaration is legal for 'let static'; an atomic merely read from elsewhere is stripped.
-                if (rhsType.isAtomic && !hub.impls.isDirectAtomicDeclaration(op.right)) {
-                    rhsType = rhsType.withAtomic(false);
-                }
-                scope.declare(nameTok.text, rhsType, nameTok);
-                scope.declScope().staticNames.add(nameTok.text);
-                if (op.left.isConst) {
-                    scope.declScope().constNames.add(nameTok.text);
-                }
-                scope.movedSlots.remove(nameTok.text);
-            hub.model.partlyMovedSlots.remove(nameTok.text);
-                op.left.chk.resolvedType = rhsType.canonical();
-                return rhsType;
-            }
-            // A plain 'let' RHS is always an eligible struct-RVO destination; checkCall decides whether it is such a call.
-            boolean previousRvoEligible = hub.model.insideStructRvoDestinationPosition;
-            hub.model.insideStructRvoDestinationPosition = true;
-            TypeCheckerModel.TypeInfo rhsType;
-            try {
-                rhsType = hub.controlFlow.resolveExprType(op.right, scope, func);
-            } finally {
-                hub.model.insideStructRvoDestinationPosition = previousRvoEligible;
-            }
-            TypeCheckerModel.TypeInfo bound = resolveAndValidateTypeBound(op.left, rhsType, op.right);
-            if (bound != null) {
-                rhsType = bound;
-            } else {
-                requireConcreteMutability(rhsType, op.right);
-            }
-            // A direct atomic declaration is legal only for a global or 'let static'; an expression that merely resolves to an
-            // atomic value is stripped to non-atomic. See docs/TypeChecker.md, "Atomic write rules".
-            if (rhsType.isAtomic) {
-                if (hub.impls.isDirectAtomicDeclaration(op.right)) {
-                    throw new CompilerException("type", op.left.file, op.left.line,
-                            "an 'atomic' value can only ever be the type of a global or 'let static' "
-                                    + "local, never a plain 'let'");
-                }
-                rhsType = rhsType.withAtomic(false);
-            }
-            scope.declare(nameTok.text, rhsType, nameTok);
-            if ("ref".equals(rhsType.storage) && rhsType.isSome) {
-                ProofKills.implicit(nameTok.text, hub.declarations.pointeeOf(rhsType));
-            }
-            if (op.left.isConst) {
-                scope.declScope().constNames.add(nameTok.text);
-            }
-            // Recorded in declaration order so this scope drops the owning local at every exit (natural end, return, break).
-            if ("owns".equals(rhsType.storage) || hub.declarations.isInlineOwningStruct(rhsType)) {
-                scope.declScope().ownsDeclaredHere.add(nameTok.text);
-                func.ownsLocalTypes.put(nameTok.text, rhsType);
-                if (hub.statements.isLockedAsyncHandle(rhsType) && !hub.model.synthesizingGlueBody) {
-                    hub.model.fnHandleDecls.putIfAbsent(nameTok.text, nameTok);
-                }
-            }
-            // A fresh 'let' is a new binding: clear any stale moved-flag from an earlier use of the same name (e.g. a loop body redeclaring it).
-            scope.movedSlots.remove(nameTok.text);
-            hub.model.partlyMovedSlots.remove(nameTok.text);
-            op.left.chk.resolvedType = rhsType.canonical();
-            hub.signatures.requireNoAutoContainer(rhsType, nameTok, "'" + nameTok.text + "'");
-            markMovedIfOwned(rhsType, op.right, scope);
-            return rhsType;
-        }
-        // A fresh assignment revives a moved slot; cleared before the left side is resolved so the move check does not reject it.
-        String leftSlotKeyForRevival = slotKeyOf(op.left);
-        if (leftSlotKeyForRevival != null) {
-            scope.movedSlots.remove(leftSlotKeyForRevival);
-            hub.model.partlyMovedSlots.remove(leftSlotKeyForRevival);
-        }
-        hub.model.assignTargetVar = op.left;
-        TypeCheckerModel.TypeInfo leftType;
-        try {
-            leftType = hub.controlFlow.resolveExprType(op.left, scope, func);
-        } finally {
-            hub.model.assignTargetVar = null;
-        }
-        // A bare EnumName.Variant is always 'imut' and would not coerce to a 'mut' target; allowed as in checkInstantiate and
-        // checkSwapOperator (needed by the synthesized lock-release write).
-        boolean isBareEnumVariantRight = hub.model.enums.containsKey(leftType.baseType)
-                && hub.accessAndAsync.isBareEnumVariantRefNode(op.right, leftType.baseType);
-        // '=' on an atomic target is allowed only for a bare variable, literal or enum variant (isSwapRhsAllowedShape); compound
-        // assignment and ++/-- are rejected outright. See docs/TypeChecker.md, "Atomic write rules".
-        if (leftType.isAtomic && !isBareEnumVariantRight && !hub.accessAndAsync.isSwapRhsAllowedShape(op.right)) {
-            throw new CompilerException("type", op.right.file, op.right.line,
-                    "an 'atomic' target can only be assigned a bare variable, a literal, or an "
-                            + "'EnumName.Variant' reference with '=' -- not a computed expression. Use "
-                            + "'swap' instead if the new value needs to be computed");
-        }
-        // A struct-RVO call is eligible here only when the assignment target is a bare variable.
-        boolean previousRvoEligible = hub.model.insideStructRvoDestinationPosition;
-        hub.model.insideStructRvoDestinationPosition = op.left.type == TokenType.VARREF;
-        TypeCheckerModel.TypeInfo rightType;
-        try {
-            rightType = hub.controlFlow.resolveExprType(op.right, scope, func);
-        } finally {
-            hub.model.insideStructRvoDestinationPosition = previousRvoEligible;
-        }
-        if (!isBareEnumVariantRight && !hub.acceptsAdaptingLiteral(leftType, rightType, op.right)) {
-            throw new CompilerException("type", op.file, op.line,
-                    "cannot assign '" + rightType.canonical() + "' to '" + leftType.canonical() + "'");
-        }
-        requireMutable(op.left, leftType, scope, func, op);
-        requireNotConst(op.left, leftType, scope, op);
-        requireNotLoopImmutable(op.left, scope, op);
-        if (op.left.type == TokenType.OPERATOR && op.left.text.equals("LOOKUP")) {
-            hub.accessAndAsync.requireLookupWriteAuthorized(op.left, scope);
-        }
-        // Revive the target again: `arr = resize(arr, ..)` moves the slot while the RHS is resolved, and this assignment supersedes that move.
-        if (leftSlotKeyForRevival != null) {
-            scope.movedSlots.remove(leftSlotKeyForRevival);
-            hub.model.partlyMovedSlots.remove(leftSlotKeyForRevival);
-        }
-        invalidateMatchPatternsForWrite(op.left, scope);
-        if ("ref".equals(leftType.storage) && leftType.isSome && op.left.type == TokenType.VARREF) {
-            ProofKills.implicit(op.left.text, hub.declarations.pointeeOf(leftType));
-        }
-        if (hub.model.typeOwnsMemory(leftType, new HashSet<>())) {
-            ProofKills.kill(scope.activeMatchPatterns, op, "an assignment over a slot that owns memory (the old value is freed)", TypeCheckerModel.memberPathRoot(op.left), hub.declarations.destroyedTypes(leftType));
-        }
-        if (hub.declarations.isInlineOwningStruct(leftType)) {
-            op.left.chk.inlineOwnsStruct = leftType.baseType;
-        }
-        markMovedIfOwned(leftType, op.right, scope);
-        if (hub.model.typeOwnsMemory(leftType, new HashSet<>()) && hub.signatures.assignsInsideSwapLockStruct(op.left, scope)) {
-            hub.signatures.requireFreshIntoSwapLock(op.right, "assigned into", String.valueOf(TypeCheckerModel.memberPathRoot(op.left)));
-        }
-        // Return the target's type (it differs from the value's when assigning 'null').
-        return leftType;
+        return hub.driver.run(new CheckFrame(CheckFrame.ASSIGN, op, scope, func));
     }
+
+    /**
+     * `=`: phases 0 start; 10 `let static` RHS done; 20 plain `let` RHS done; 30 assignment target done; 31 RHS done; 32 target mutability checked.
+     * f.q = saved RVO flag, f.s1 = revival slot key, f.a = target type, f.p = the RHS is a bare enum variant.
+     */
+    public int stepAssign(CheckFrame f) {
+        Token op = f.node;
+        TypeCheckerModel.Scope scope = f.scope;
+        TypeCheckerModel.FuncInfo func = f.func;
+        switch (f.phase) {
+            case 0:
+                rejectDerefAsWriteTarget(op.left, "an assignment");
+                if (op.left.type == TokenType.KEYWORD && op.left.text.equals("let")) {
+                    if (op.left.isStatic) {
+                        if (!op.left.staticApproved) {
+                            throw new CompilerException("type", op.left.file, op.left.line,
+                                    "'let static' is only allowed at the top of a function body, before any "
+                                            + "other statement");
+                        }
+                        checkNoRuntimeConstructs(op.right);
+                        // Compile-time constant: resolved in an empty Scope, so any variable reference fails as undeclared.
+                        f.phase = 10;
+                        return f.call(new CheckFrame(CheckFrame.EXPR, op.right, new TypeCheckerModel.Scope(null), func));
+                    }
+            // A plain 'let' RHS is always an eligible struct-RVO destination; checkCall decides whether it is such a call.
+            f.q = hub.model.insideStructRvoDestinationPosition;
+            hub.model.insideStructRvoDestinationPosition = true;
+                    f.phase = 20;
+                    return f.call(op.right);
+                }
+                // A fresh assignment revives a moved slot; cleared before the left side is resolved so the move check does not reject it.
+                f.s1 = slotKeyOf(op.left);
+                if (f.s1 != null) {
+                    scope.movedSlots.remove(f.s1);
+                    hub.model.partlyMovedSlots.remove(f.s1);
+                }
+                hub.model.assignTargetVar = op.left;
+                f.phase = 30;
+                return f.call(op.left);
+            case 10:
+                return f.done(assignStaticLet(op, scope, f.got));
+            case 20:
+                hub.model.insideStructRvoDestinationPosition = f.q;
+                return f.done(assignPlainLet(op, scope, func, f.got));
+            case 30: {
+                TypeCheckerModel.TypeInfo leftType = f.got;
+                hub.model.assignTargetVar = null;
+                f.a = leftType;
+                // A bare EnumName.Variant is always 'imut' and would not coerce to a 'mut' target; allowed as in checkInstantiate and
+                // checkSwapOperator (needed by the synthesized lock-release write).
+                boolean isBareEnumVariantRight = hub.model.enums.containsKey(leftType.baseType)
+                        && hub.accessAndAsync.isBareEnumVariantRefNode(op.right, leftType.baseType);
+                // '=' on an atomic target is allowed only for a bare variable, literal or enum variant (isSwapRhsAllowedShape); compound
+                // assignment and ++/-- are rejected outright. See docs/TypeChecker.md, "Atomic write rules".
+                if (leftType.isAtomic && !isBareEnumVariantRight && !hub.accessAndAsync.isSwapRhsAllowedShape(op.right)) {
+                    throw new CompilerException("type", op.right.file, op.right.line,
+                            "an 'atomic' target can only be assigned a bare variable, a literal, or an "
+                                    + "'EnumName.Variant' reference with '=' -- not a computed expression. Use "
+                                    + "'swap' instead if the new value needs to be computed");
+                }
+                f.p = isBareEnumVariantRight;
+                // A struct-RVO call is eligible here only when the assignment target is a bare variable.
+                f.q = hub.model.insideStructRvoDestinationPosition;
+                hub.model.insideStructRvoDestinationPosition = op.left.type == TokenType.VARREF;
+                f.phase = 31;
+                return f.call(op.right);
+            }
+            case 31: {
+                hub.model.insideStructRvoDestinationPosition = f.q;
+                TypeCheckerModel.TypeInfo leftType = f.a;
+                TypeCheckerModel.TypeInfo rightType = f.got;
+                boolean isBareEnumVariantRight = f.p;
+                if (!isBareEnumVariantRight && !hub.acceptsAdaptingLiteral(leftType, rightType, op.right)) {
+                    throw new CompilerException("type", op.file, op.line,
+                            "cannot assign '" + rightType.canonical() + "' to '" + leftType.canonical() + "'");
+                }
+                f.phase = 32;
+                return f.call(requireMutableFrame(f, op.left, leftType, op));
+            }
+            default: {
+                TypeCheckerModel.TypeInfo leftType = f.a;
+                String leftSlotKeyForRevival = f.s1;
+                requireNotConst(op.left, leftType, scope, op);
+                requireNotLoopImmutable(op.left, scope, op);
+                if (op.left.type == TokenType.OPERATOR && op.left.text.equals("LOOKUP")) {
+                    hub.accessAndAsync.requireLookupWriteAuthorized(op.left, scope);
+                }
+                // Revive the target again: `arr = resize(arr, ..)` moves the slot while the RHS is resolved, and this assignment supersedes that move.
+                if (leftSlotKeyForRevival != null) {
+                    scope.movedSlots.remove(leftSlotKeyForRevival);
+                    hub.model.partlyMovedSlots.remove(leftSlotKeyForRevival);
+                }
+                invalidateMatchPatternsForWrite(op.left, scope);
+                if ("ref".equals(leftType.storage) && leftType.isSome && op.left.type == TokenType.VARREF) {
+                    ProofKills.implicit(op.left.text, hub.declarations.pointeeOf(leftType));
+                }
+                if (hub.model.typeOwnsMemory(leftType, new HashSet<>())) {
+                    ProofKills.kill(scope.activeMatchPatterns, op, "an assignment over a slot that owns memory (the old value is freed)", TypeCheckerModel.memberPathRoot(op.left), hub.declarations.destroyedTypes(leftType));
+                }
+                if (hub.declarations.isInlineOwningStruct(leftType)) {
+                    op.left.chk.inlineOwnsStruct = leftType.baseType;
+                }
+                markMovedIfOwned(leftType, op.right, scope);
+                if (hub.model.typeOwnsMemory(leftType, new HashSet<>()) && hub.signatures.assignsInsideSwapLockStruct(op.left, scope)) {
+                    hub.signatures.requireFreshIntoSwapLock(op.right, "assigned into", String.valueOf(TypeCheckerModel.memberPathRoot(op.left)));
+                }
+                // Return the target's type (it differs from the value's when assigning 'null').
+                return f.done(leftType);
+            }
+        }
+    }
+
+    private TypeCheckerModel.TypeInfo assignStaticLet(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.TypeInfo rhsType) {
+        Token nameTok = op.left.childs.get(0);
+        TypeCheckerModel.TypeInfo bound = resolveAndValidateTypeBound(op.left, rhsType, op.right);
+        if (bound != null) {
+            rhsType = bound;
+        } else {
+            requireStaticMutable(rhsType, op.right);
+        }
+        // A direct atomic declaration is legal for 'let static'; an atomic merely read from elsewhere is stripped.
+        if (rhsType.isAtomic && !hub.impls.isDirectAtomicDeclaration(op.right)) {
+            rhsType = rhsType.withAtomic(false);
+        }
+        scope.declare(nameTok.text, rhsType, nameTok);
+        scope.declScope().staticNames.add(nameTok.text);
+        if (op.left.isConst) {
+            scope.declScope().constNames.add(nameTok.text);
+        }
+        scope.movedSlots.remove(nameTok.text);
+        hub.model.partlyMovedSlots.remove(nameTok.text);
+        op.left.chk.resolvedType = rhsType.canonical();
+        return rhsType;
+    }
+
+    private TypeCheckerModel.TypeInfo assignPlainLet(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func, TypeCheckerModel.TypeInfo rhsType) {
+        Token nameTok = op.left.childs.get(0);
+        TypeCheckerModel.TypeInfo bound = resolveAndValidateTypeBound(op.left, rhsType, op.right);
+        if (bound != null) {
+            rhsType = bound;
+        } else {
+            requireConcreteMutability(rhsType, op.right);
+        }
+        // A direct atomic declaration is legal only for a global or 'let static'; an expression that merely resolves to an
+        // atomic value is stripped to non-atomic. See docs/TypeChecker.md, "Atomic write rules".
+        if (rhsType.isAtomic) {
+            if (hub.impls.isDirectAtomicDeclaration(op.right)) {
+                throw new CompilerException("type", op.left.file, op.left.line,
+                        "an 'atomic' value can only ever be the type of a global or 'let static' "
+                                + "local, never a plain 'let'");
+            }
+            rhsType = rhsType.withAtomic(false);
+        }
+        scope.declare(nameTok.text, rhsType, nameTok);
+        if ("ref".equals(rhsType.storage) && rhsType.isSome) {
+            ProofKills.implicit(nameTok.text, hub.declarations.pointeeOf(rhsType));
+        }
+        if (op.left.isConst) {
+            scope.declScope().constNames.add(nameTok.text);
+        }
+        // Recorded in declaration order so this scope drops the owning local at every exit (natural end, return, break).
+        if ("owns".equals(rhsType.storage) || hub.declarations.isInlineOwningStruct(rhsType)) {
+            scope.declScope().ownsDeclaredHere.add(nameTok.text);
+            func.ownsLocalTypes.put(nameTok.text, rhsType);
+            if (hub.statements.isLockedAsyncHandle(rhsType) && !hub.model.synthesizingGlueBody) {
+                hub.model.fnHandleDecls.putIfAbsent(nameTok.text, nameTok);
+            }
+        }
+        // A fresh 'let' is a new binding: clear any stale moved-flag from an earlier use of the same name (e.g. a loop body redeclaring it).
+        scope.movedSlots.remove(nameTok.text);
+        hub.model.partlyMovedSlots.remove(nameTok.text);
+        op.left.chk.resolvedType = rhsType.canonical();
+        hub.signatures.requireNoAutoContainer(rhsType, nameTok, "'" + nameTok.text + "'");
+        markMovedIfOwned(rhsType, op.right, scope);
+        return rhsType;
+    }
+
 
     /** Rejects compound assignment and ++/-- on an atomic target outright (they are read-then-write; use `swap`). See docs/TypeChecker.md, "Atomic write rules". */
     public void requireNotAtomicOrdinaryWriteTarget(TypeCheckerModel.TypeInfo targetType, Token at, String opText) {
@@ -1154,43 +1403,65 @@ public final class TypeCheckerExpressions {
     }
 
     public TypeCheckerModel.TypeInfo checkCompoundAssign(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
-        rejectDerefAsWriteTarget(op.left, "a compound assignment");
-        TypeCheckerModel.TypeInfo leftType = hub.controlFlow.resolveExprType(op.left, scope, func);
-        requireNotAtomicOrdinaryWriteTarget(leftType, op, op.text);
-        TypeCheckerModel.TypeInfo rightType = hub.controlFlow.resolveExprType(op.right, scope, func);
-        // C-style: "p += n" / "p -= n" on a raw pointer moves by n elements (n * pointee size bytes).
-        boolean pointerCompound = TypeCheckerModel.isRawPointerType(leftType) && (op.text.equals("+=") || op.text.equals("-="))
-                && !(hub.pointeeSize(leftType, op) == 1 && leftType.sameBaseType(rightType));
-        if (pointerCompound) {
-            hub.requireEightByteInteger(rightType, op);
-            long scale = hub.pointeeSize(leftType, op);
-            op.chk.pointerScale = scale > 1 ? scale : 0;
-            op.chk.pointerScaleStruct = op.chk.pointerScale > 0 ? hub.pointeeStructName(leftType) : null;
-        } else {
-            hub.requireNumeric(leftType, op);
-            hub.requireNumeric(rightType, op);
-            rightType = hub.unifyLiteralOperands(op, leftType, rightType)[1];
-            if (!leftType.sameBaseType(rightType)) {
-                throw new CompilerException("type", op.file, op.line,
-                        "'" + op.text + "' requires both sides to be the same numeric type, got '"
-                                + leftType.canonical() + "' and '" + rightType.canonical() + "'");
-            }
-        }
-        if (op.text.equals("/=") || op.text.equals("%=")) {
-            requireProvenNonzeroDivisor(op.right, rightType, scope, op);
-        }
-        requireMutable(op.left, leftType, scope, func, op);
-        requireNotLoopImmutable(op.left, scope, op);
-        if (op.left.type == TokenType.OPERATOR && op.left.text.equals("LOOKUP")) {
-            hub.accessAndAsync.requireLookupWriteAuthorized(op.left, scope);
-        }
-        invalidateMatchPatternsForWrite(op.left, scope);
-        return leftType;
+        return hub.driver.run(new CheckFrame(CheckFrame.COMPOUND_ASSIGN, op, scope, func));
     }
 
-    public TypeCheckerModel.TypeInfo checkArithmetic(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
-        TypeCheckerModel.TypeInfo leftType = hub.controlFlow.resolveExprType(op.left, scope, func);
-        TypeCheckerModel.TypeInfo rightType = hub.controlFlow.resolveExprType(op.right, scope, func);
+    public int stepCompoundAssign(CheckFrame f) {
+        Token op = f.node;
+        TypeCheckerModel.Scope scope = f.scope;
+        TypeCheckerModel.FuncInfo func = f.func;
+        switch (f.phase) {
+            case 0:
+                rejectDerefAsWriteTarget(op.left, "a compound assignment");
+                f.phase = 1;
+                return f.call(op.left);
+            case 1:
+                f.a = f.got;
+                requireNotAtomicOrdinaryWriteTarget(f.a, op, op.text);
+                f.phase = 2;
+                return f.call(op.right);
+            case 2: {
+                TypeCheckerModel.TypeInfo leftType = f.a;
+                TypeCheckerModel.TypeInfo rightType = f.got;
+                // C-style: "p += n" / "p -= n" on a raw pointer moves by n elements (n * pointee size bytes).
+                boolean pointerCompound = TypeCheckerModel.isRawPointerType(leftType) && (op.text.equals("+=") || op.text.equals("-="))
+                        && !(hub.pointeeSize(leftType, op) == 1 && leftType.sameBaseType(rightType));
+                if (pointerCompound) {
+                    hub.requireEightByteInteger(rightType, op);
+                    long scale = hub.pointeeSize(leftType, op);
+                    op.chk.pointerScale = scale > 1 ? scale : 0;
+                    op.chk.pointerScaleStruct = op.chk.pointerScale > 0 ? hub.pointeeStructName(leftType) : null;
+                } else {
+                    hub.requireNumeric(leftType, op);
+                    hub.requireNumeric(rightType, op);
+                    rightType = hub.unifyLiteralOperands(op, leftType, rightType)[1];
+                    if (!leftType.sameBaseType(rightType)) {
+                        throw new CompilerException("type", op.file, op.line,
+                                "'" + op.text + "' requires both sides to be the same numeric type, got '"
+                                        + leftType.canonical() + "' and '" + rightType.canonical() + "'");
+                    }
+                }
+                if (op.text.equals("/=") || op.text.equals("%=")) {
+                    requireProvenNonzeroDivisor(op.right, rightType, scope, op);
+                }
+                f.phase = 3;
+                return f.call(requireMutableFrame(f, op.left, leftType, op));
+            }
+            default: {
+                TypeCheckerModel.TypeInfo leftType = f.a;
+                requireNotLoopImmutable(op.left, scope, op);
+                if (op.left.type == TokenType.OPERATOR && op.left.text.equals("LOOKUP")) {
+                    hub.accessAndAsync.requireLookupWriteAuthorized(op.left, scope);
+                }
+                invalidateMatchPatternsForWrite(op.left, scope);
+                return f.done(leftType);
+            }
+        }
+    }
+
+
+    /** The type of `l op r` once both operands are resolved. */
+    public TypeCheckerModel.TypeInfo arithmeticType(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.TypeInfo leftType, TypeCheckerModel.TypeInfo rightType) {
         // C-style pointer arithmetic on 'raw' pointers: pointer +/- integer and
         // integer + pointer give a pointer moved by n elements; pointer - pointer
         // gives the signed element count between them. Any other operator on a
@@ -1278,8 +1549,7 @@ public final class TypeCheckerExpressions {
         }
     }
 
-    public TypeCheckerModel.TypeInfo checkUnaryMinus(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
-        TypeCheckerModel.TypeInfo operand = hub.controlFlow.resolveExprType(op.left, scope, func);
+    public TypeCheckerModel.TypeInfo unaryMinusType(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.TypeInfo operand) {
         hub.requireNumeric(operand, op);
         hub.locksAndProofs.requireProvenFloatState(op.left, operand, scope, op);
         String resultBase = TypeCheckerModel.UNSIGNED_TO_SIGNED.getOrDefault(operand.baseType, operand.baseType);
@@ -1295,95 +1565,7 @@ public final class TypeCheckerExpressions {
         return negated;
     }
 
-    public TypeCheckerModel.TypeInfo checkLogicalNot(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
-        TypeCheckerModel.TypeInfo operand = hub.controlFlow.resolveExprType(op.left, scope, func);
-        hub.requireBoolOrInteger(operand, op);
-        return new TypeCheckerModel.TypeInfo(null, "indeterminate", "bool");
-    }
-
-    /** Shared by both "++" and "--" -- identical rules either way (numeric, mutable, not the loop's own immutable slot); only the emitted mnemonic differs, decided later by BytecodeEmitter from op.text alone. */
-    public TypeCheckerModel.TypeInfo checkIncrement(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
-        rejectDerefAsWriteTarget(op.left, "'++'/'--'");
-        TypeCheckerModel.TypeInfo operand = hub.controlFlow.resolveExprType(op.left, scope, func);
-        // C-style: "p++" on a raw pointer advances by the pointee size. A
-        // one-byte pointee keeps the ordinary path below, byte-identical to before.
-        if (TypeCheckerModel.isRawPointerType(operand)) {
-            long scale = hub.pointeeSize(operand, op);
-            if (scale > 1) {
-                requireNotAtomicOrdinaryWriteTarget(operand, op, op.text);
-                requireMutable(op.left, operand, scope, func, op);
-                requireNotLoopImmutable(op.left, scope, op);
-                invalidateMatchPatternsForWrite(op.left, scope);
-                op.chk.pointerScale = scale;
-                op.chk.pointerScaleStruct = hub.pointeeStructName(operand);
-                return operand;
-            }
-        }
-        requireNotAtomicOrdinaryWriteTarget(operand, op, op.text);
-        hub.requireNumeric(operand, op);
-        requireMutable(op.left, operand, scope, func, op);
-        requireNotLoopImmutable(op.left, scope, op);
-        invalidateMatchPatternsForWrite(op.left, scope);
-        return new TypeCheckerModel.TypeInfo(null, "indeterminate", operand.baseType);
-    }
-
-    /** Modifying a value needs 'mut' on the target and on every prefix of a dotted/indexed path. */
-    public void requireMutable(Token targetExpr, TypeCheckerModel.TypeInfo targetType, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func, Token at) {
-        if (!"mut".equals(targetType.mutability)) {
-            throw new CompilerException("type", at.file, at.line,
-                    "cannot modify this value -- its mutability is '"
-                            + (targetType.mutability == null ? "indeterminate" : targetType.mutability)
-                            + "', not 'mut'");
-        }
-        // '@pure' functions may not mutate through any pointer anywhere in the chain; unsafe gives no exemption.
-        if (hub.impls.isPureFunc(func) && targetType.storage != null) {
-            throw new CompilerException("type", at.file, at.line,
-                    "'" + func.name + "' is '@pure' and cannot mutate through a pointer -- '"
-                            + targetType.canonical() + "' has 'raw'/'owns'/'ref'/'auto'/'static' storage");
-        }
-        if (targetExpr.type == TokenType.OPERATOR && targetExpr.text.equals(".")) {
-            TypeCheckerModel.TypeInfo prefixType = hub.controlFlow.resolveExprType(targetExpr.left, scope, func);
-            requireMutable(targetExpr.left, prefixType, scope, func, at);
-        } else if (targetExpr.type == TokenType.OPERATOR && targetExpr.text.equals("LOOKUP")) {
-            // LOOKUP is walked for the '@pure' pointer check, recursing so `p.arr[0]` reaches `p`.
-            TypeCheckerModel.TypeInfo prefixType = hub.controlFlow.resolveExprType(targetExpr.left, scope, func);
-            requireMutable(targetExpr.left, prefixType, scope, func, at);
-        }
-    }
-
-    /**
-         * `&&`/`||` (eager) and `&&then`/`||then` (lazy) share this check; the then-variants are legal only at the top of an
-         * if/elseif condition (eligibleHere). See docs/TypeChecker.md, "Operator dispatch context flags".
-         */
-    public TypeCheckerModel.TypeInfo checkLogical(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func, boolean eligibleHere) {
-        boolean isThenVariant = op.text.equals("&&then") || op.text.equals("||then");
-        if (isThenVariant && !eligibleHere) {
-            throw new CompilerException("type", op.file, op.line,
-                    "'" + op.text + "' is only legal at the top level of an 'if'/'elseif' condition -- as "
-                            + "that condition's own root operator, or nested only under further "
-                            + "'&&then'/'||then' operators reached from it -- not used as a function argument, "
-                            + "inside a '!' or comparison, as an operand of a plain '&&'/'||', inside a 'match', "
-                            + "or anywhere else an ordinary expression is expected");
-        }
-        // Only a then-variant re-arms eligibility for its operands; a plain &&/|| leaves it consumed.
-        if (isThenVariant) {
-            hub.model.insideShortCircuitEligiblePosition = true;
-        }
-        TypeCheckerModel.TypeInfo leftType = hub.controlFlow.resolveExprType(op.left, scope, func);
-        hub.model.insideShortCircuitEligiblePosition = false;
-        if (isThenVariant) {
-            hub.model.insideShortCircuitEligiblePosition = true;
-        }
-        TypeCheckerModel.TypeInfo rightType = hub.controlFlow.resolveExprType(op.right, scope, func);
-        hub.model.insideShortCircuitEligiblePosition = false;
-        hub.requireBoolOrInteger(leftType, op);
-        hub.requireBoolOrInteger(rightType, op);
-        return new TypeCheckerModel.TypeInfo(null, "indeterminate", "bool");
-    }
-
-    public TypeCheckerModel.TypeInfo checkComparison(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
-        TypeCheckerModel.TypeInfo leftType = hub.controlFlow.resolveExprType(op.left, scope, func);
-        TypeCheckerModel.TypeInfo rightType = hub.controlFlow.resolveExprType(op.right, scope, func);
+    public TypeCheckerModel.TypeInfo comparisonType(Token op, TypeCheckerModel.Scope scope, TypeCheckerModel.TypeInfo leftType, TypeCheckerModel.TypeInfo rightType) {
         TypeCheckerModel.TypeInfo[] unified = hub.unifyLiteralOperands(op, leftType, rightType);
         leftType = unified[0];
         rightType = unified[1];
