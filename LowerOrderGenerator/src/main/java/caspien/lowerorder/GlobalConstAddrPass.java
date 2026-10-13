@@ -3,8 +3,6 @@ import caspien.bytecode.BytecodeProgram;
 import caspien.bytecode.BytecodeStatement;
 import caspien.bytecode.BytecodeToken;
 
-import java.util.ArrayList;
-import java.util.List;
 
 /**
  * A global array element at a constant index is one RIP-relative instruction. Runs after {@link IndexedAccessPass} (always on;

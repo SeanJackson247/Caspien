@@ -52,7 +52,7 @@ public class Main {
             throw new RuntimeException("required config file 'compiler.config' could not be read: " + e.getMessage(), e);
         }
 
-        LowerOrder.Result result = LowerOrder.generate(input, inputPath, config);
+        LowerOrderResult result = LowerOrder.generate(input, inputPath, config);
         for (String msg : result.messages) {
             System.err.println(msg);
         }

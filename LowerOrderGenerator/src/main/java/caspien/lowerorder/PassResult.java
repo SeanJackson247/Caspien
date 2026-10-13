@@ -1,7 +1,6 @@
 package caspien.lowerorder;
 import caspien.bytecode.BytecodeProgram;
 
-import java.util.List;
 
 /**
  * The result of running one OptimizationPass once: the (possibly

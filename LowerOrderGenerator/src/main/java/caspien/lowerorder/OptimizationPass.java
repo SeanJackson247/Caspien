@@ -1,7 +1,6 @@
 package caspien.lowerorder;
 import caspien.bytecode.BytecodeProgram;
 
-import java.util.List;
 
 /**
  * One optimization pass over the whole, already-emitted bytecode

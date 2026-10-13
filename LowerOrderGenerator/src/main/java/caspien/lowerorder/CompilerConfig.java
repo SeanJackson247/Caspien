@@ -55,21 +55,7 @@ import java.util.Map;
  */
 public class CompilerConfig {
 
-    /** One named entry under "CallingConventions:" -- every field mirrors the config file's own key names. `argumentRegisters.size()`/`argumentRegistersFloat.size()`, `shadowStack`, and `sharedArgumentPosition` are read by `AddressLoweringPass`'s own per-function parameter-word resolution; the rest are parsed and validated (so a malformed config still fails loudly) but not otherwise consumed here. */
-    public static class CallingConvention {
-        public String name;
-        public String cleanup;
-        public List<String> argumentRegisters = new ArrayList<>();
-        public List<String> argumentRegistersFloat = new ArrayList<>();
-        public String returnRegister;
-        public String returnRegisterFloat;
-        public int alignment;
-        public int shadowStack;
-        /** True only for a convention where an integer argument and a float argument advance one shared running position counter (win64's own documented behavior) rather than two independent per-bank counters (SysV, arm64's AAPCS64) -- see the compiler-side `CompilerConfig`'s own copy of this same field for the full reasoning (a real, fixed ABI fact, not derived from the two register lists' lengths). Defaults false when the config omits this key. */
-        public boolean sharedArgumentPosition;
-    }
-
-    public final Map<String, CallingConvention> callingConventions = new LinkedHashMap<>();
+    public final Map<String, CompilerConfigCallingConvention> callingConventions = new LinkedHashMap<>();
     public String defaultConvention;
     /** Optional top-level 'deferred-operands: on|off' (default off): enables the LowerOrderGenerator's RegisterFormPass. */
     public boolean deferredOperands = false;
@@ -94,7 +80,7 @@ public class CompilerConfig {
     /** Optional top-level 'loop-rotation: on|off' (default off): LoopRotationPass copies the exit test of a for/loop to the bottom of the loop (one conditional jump per iteration instead of a conditional plus an unconditional one). */
     public boolean loopRotation = false;
 
-    public CallingConvention getDefault() {
+    public CompilerConfigCallingConvention getDefault() {
         return callingConventions.get(defaultConvention);
     }
 
@@ -237,7 +223,7 @@ public class CompilerConfig {
 
         int conventionIndent = -1;
         int fieldIndent = -1;
-        CallingConvention current = null;
+        CompilerConfigCallingConvention current = null;
 
         while (i < lines.size()) {
             lineNo++;
@@ -274,7 +260,7 @@ public class CompilerConfig {
                 if (config.callingConventions.containsKey(name)) {
                     throw configErr(path, lineNo, "calling convention '" + name + "' is already declared");
                 }
-                current = new CallingConvention();
+                current = new CompilerConfigCallingConvention();
                 current.name = name;
                 config.callingConventions.put(name, current);
                 continue;
@@ -336,7 +322,7 @@ public class CompilerConfig {
             throw configErr(path, lineNo,
                     "'default: " + config.defaultConvention + "' does not name a declared calling convention");
         }
-        for (CallingConvention cc : config.callingConventions.values()) {
+        for (CompilerConfigCallingConvention cc : config.callingConventions.values()) {
             if (cc.argumentRegisters.isEmpty()) {
                 throw configErr(path, lineNo,
                         "calling convention '" + cc.name + "' has no 'argument-registers'");

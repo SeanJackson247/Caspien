@@ -102,12 +102,6 @@ public class StaticFloatCachePass {
         return out;
     }
 
-    private static final class Loop {
-        int h;
-        int b;
-        Set<String> used = new HashSet<>();
-    }
-
     private BytecodeProgram cacheFunction(BytecodeProgram fn, Set<String> escaped) {
         int n = fn.size();
         Map<String, Integer> labelDef = new HashMap<>();
@@ -133,7 +127,7 @@ public class StaticFloatCachePass {
             }
         }
         // back edges: a branch to a label defined earlier
-        Map<Integer, Loop> loops = new HashMap<>();
+        Map<Integer, StaticFloatCacheLoop> loops = new HashMap<>();
         for (int i = 0; i < n; i++) {
             BytecodeStatement l = fn.get(i);
             if (l.isEmpty() || isLabelDef(l)) {
@@ -144,8 +138,8 @@ public class StaticFloatCachePass {
                 if (s.startsWith("@")) {
                     Integer d = labelDef.get(s);
                     if (d != null && d < i) {
-                        Loop lp = loops.computeIfAbsent(d, h -> {
-                            Loop x = new Loop();
+                        StaticFloatCacheLoop lp = loops.computeIfAbsent(d, h -> {
+                            StaticFloatCacheLoop x = new StaticFloatCacheLoop();
                             x.h = h;
                             return x;
                         });
@@ -157,7 +151,7 @@ public class StaticFloatCachePass {
         if (loops.isEmpty()) {
             return fn;
         }
-        List<Loop> order = new ArrayList<>(loops.values());
+        List<StaticFloatCacheLoop> order = new ArrayList<>(loops.values());
         order.sort((a, b) -> a.h != b.h ? Integer.compare(a.h, b.h) : Integer.compare(b.b, a.b));
         List<String> pool = new ArrayList<>();
         for (int k = 0; k < Z_COUNT; k++) {
@@ -168,8 +162,8 @@ public class StaticFloatCachePass {
         }
         BytecodeProgram cur = new BytecodeProgram(fn);
         Map<Integer, BytecodeProgram> before = new HashMap<>();
-        List<Loop> done = new ArrayList<>();
-        for (Loop lp : order) {
+        List<StaticFloatCacheLoop> done = new ArrayList<>();
+        for (StaticFloatCacheLoop lp : order) {
             if (!loopOk(cur, lp, labelDef, n)) {
                 continue;
             }
@@ -201,7 +195,7 @@ public class StaticFloatCachePass {
                 }
             }
             Set<String> taken = new HashSet<>();
-            for (Loop d : done) {
+            for (StaticFloatCacheLoop d : done) {
                 if (d.h <= lp.h && d.b >= lp.b) {
                     taken.addAll(d.used);
                 }
@@ -267,7 +261,7 @@ public class StaticFloatCachePass {
     }
 
     /** whitelisted ops only, single entry: no jump to the header from outside, none to an inner label from outside */
-    private boolean loopOk(BytecodeProgram cur, Loop lp, Map<String, Integer> labelDef, int n) {
+    private boolean loopOk(BytecodeProgram cur, StaticFloatCacheLoop lp, Map<String, Integer> labelDef, int n) {
         for (int i = lp.h; i <= lp.b; i++) {
             BytecodeStatement l = cur.get(i);
             if (l.isEmpty()) {

@@ -540,7 +540,7 @@ the header branch's exit label (so a header with a second back edge is rotated a
 | `StructTable` | reads `STRUCT_*` blocks: `membersOf`, `layoutOf` (members plus padding entries), `isOwnsBearing`, `dropHookOf` (from `FUNC_DECORATE @drop`) |
 | `EnumTable` | reads `ENUM` lines: `variantValue(enum, variant)` (explicit value, or 0,1,2.. for a plain enum), `implementerClassIdsOf`, `valueVariantsOf` |
 | `CompilerConfig` | `compiler.config` parser (section 5), `getDefault()` calling convention |
-| `AddressLoweringPass.SizeCalculator` | sizes/alignments from canonical text plus `StructTable` (struct size = padded layout; alignment mirrors the compiler's `BytecodeEmitter`) |
+| `AddressLoweringSizeCalculator` | sizes/alignments from canonical text plus `StructTable` (struct size = padded layout; alignment mirrors the compiler's `BytecodeEmitter`) |
 
 **Adding a pass**
 1. Write `XPass` with `run(BytecodeProgram)`. Work per function (`FUNC_START`..`FUNC_END`), return the input list unchanged when nothing applies

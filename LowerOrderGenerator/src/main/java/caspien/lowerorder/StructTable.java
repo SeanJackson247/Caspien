@@ -7,7 +7,6 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 /**
  * Every struct's own member layout, read directly out of the program's
@@ -24,53 +23,9 @@ import java.util.Set;
  */
 public class StructTable {
 
-    public static class Member {
-        public final String name;
-        public final String canonicalType;
-
-        public Member(String name, String canonicalType) {
-            this.name = name;
-            this.canonicalType = canonicalType;
-        }
-    }
-
-    /**
-     * One entry of a struct's own real, physical layout, in declared
-     * order: either a real named member (`member` set, `paddingBytes`
-     * 0), or a pure alignment gap the compiler itself already baked in
-     * as a "STRUCT_PADDING n" line (`member` null, `paddingBytes` the
-     * gap's own byte count) -- see BytecodeEmitter.emitStruct
-     * (compiler project), which now computes and emits real natural-
-     * alignment padding directly into a struct's own STRUCT_START/
-     * STRUCT_MEMBER/STRUCT_END declaration, rather than leaving this
-     * pass to (wrongly) assume a flat, gap-free member sum the way
-     * `membersOf`'s own plain `Member` list always has. Never matched
-     * against a member name and never itself sized by `SizeCalculator`
-     * (its own byte count is already known outright) -- purely
-     * something for an offset/size walk to add to its running total and
-     * skip over.
-     */
-    public static final class LayoutEntry {
-        public final Member member;     // null for a pure padding gap
-        public final long paddingBytes; // 0 unless member == null
-
-        private LayoutEntry(Member member, long paddingBytes) {
-            this.member = member;
-            this.paddingBytes = paddingBytes;
-        }
-
-        static LayoutEntry ofMember(Member m) {
-            return new LayoutEntry(m, 0);
-        }
-
-        static LayoutEntry ofPadding(long bytes) {
-            return new LayoutEntry(null, bytes);
-        }
-    }
-
-    private final Map<String, List<Member>> structs = new LinkedHashMap<>();
+    private final Map<String, List<StructTableMember>> structs = new LinkedHashMap<>();
     /** Same structs, same declared order, but including every "STRUCT_PADDING n" gap alongside the real members -- what a real offset/size walk (AddressLoweringPass's memberLocOf/structSizeOf) needs; `structs`/`membersOf` above stays real-members-only for every existing caller that only ever wanted named fields (drop-glue generation, clone generation, dotted-name type resolution, ...), none of which need to see a nameless padding gap at all. */
-    private final Map<String, List<LayoutEntry>> layouts = new LinkedHashMap<>();
+    private final Map<String, List<StructTableLayoutEntry>> layouts = new LinkedHashMap<>();
     private final Map<String, Boolean> ownsBearingCache = new HashMap<>();
 
     public static StructTable read(BytecodeProgram lines) {
@@ -78,8 +33,8 @@ public class StructTable {
         String currentStruct = null;
         String currentFunc = null;
         boolean currentFuncIsDrop = false;
-        List<Member> currentMembers = null;
-        List<LayoutEntry> currentLayout = null;
+        List<StructTableMember> currentMembers = null;
+        List<StructTableLayoutEntry> currentLayout = null;
         for (BytecodeStatement line : lines) {
             if (line.isEmpty()) {
                 continue;
@@ -99,11 +54,11 @@ public class StructTable {
                 currentMembers = new ArrayList<>();
                 currentLayout = new ArrayList<>();
             } else if (head.equals("STRUCT_MEMBER") && currentMembers != null && line.size() >= 3) {
-                Member m = new Member(line.get(1).text, line.get(2).text);
+                StructTableMember m = new StructTableMember(line.get(1).text, line.get(2).text);
                 currentMembers.add(m);
-                currentLayout.add(LayoutEntry.ofMember(m));
+                currentLayout.add(StructTableLayoutEntry.ofMember(m));
             } else if (head.equals("STRUCT_PADDING") && currentLayout != null && line.size() >= 2) {
-                currentLayout.add(LayoutEntry.ofPadding(Long.parseLong(line.get(1).text)));
+                currentLayout.add(StructTableLayoutEntry.ofPadding(Long.parseLong(line.get(1).text)));
             } else if (head.equals("STRUCT_END") && currentStruct != null) {
                 table.structs.put(currentStruct, currentMembers);
                 table.layouts.put(currentStruct, currentLayout);
@@ -126,12 +81,12 @@ public class StructTable {
         return structs.containsKey(name);
     }
 
-    public List<Member> membersOf(String structName) {
+    public List<StructTableMember> membersOf(String structName) {
         return structs.get(structName);
     }
 
     /** `structName`'s own real physical layout, real members interspersed with any real "STRUCT_PADDING" gaps, in declared order -- see `LayoutEntry`'s own doc comment. Null for the same cases `membersOf` returns null for. */
-    public List<LayoutEntry> layoutOf(String structName) {
+    public List<StructTableLayoutEntry> layoutOf(String structName) {
         return layouts.get(structName);
     }
 
@@ -222,11 +177,11 @@ public class StructTable {
             plan.add(null); // a struct with a cleanup hook needs its drop routine even when it owns no memory itself
             return plan;
         }
-        List<Member> members = structs.get(baseType);
+        List<StructTableMember> members = structs.get(baseType);
         if (members == null) {
             return plan; // a primitive, or any other type this table has no members for
         }
-        for (Member m : members) {
+        for (StructTableMember m : members) {
             CanonicalType t = CanonicalType.parse(m.canonicalType);
             if (t.isOwnsStorage()) {
                 plan.add(null); // this member alone means the struct needs a routine, regardless of what it itself points to

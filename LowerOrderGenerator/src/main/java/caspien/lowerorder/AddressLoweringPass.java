@@ -3,7 +3,6 @@ import caspien.bytecode.BytecodeProgram;
 import caspien.bytecode.BytecodeStatement;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -20,7 +19,6 @@ import java.util.Set;
  */
 public class AddressLoweringPass implements OptimizationPass {
 
-
     @Override
     public String name() {
         return "address-lowering";
@@ -35,7 +33,7 @@ public class AddressLoweringPass implements OptimizationPass {
     @Override
     public PassResult run(BytecodeProgram lines) {
         StructTable structTable = StructTable.read(lines);
-        SizeCalculator sizes = new SizeCalculator(structTable);
+        AddressLoweringSizeCalculator sizes = new AddressLoweringSizeCalculator(structTable);
         EnumTable enumTable = EnumTable.read(lines);
         BytecodeProgram out = new BytecodeProgram();
         boolean changed = false;
@@ -119,10 +117,10 @@ public class AddressLoweringPass implements OptimizationPass {
                 totalAllocSize += 16 - allocRemainder;
             }
 
-            CompilerConfig.CallingConvention convention = resolveConvention(lines, start, end, config);
+            CompilerConfigCallingConvention convention = resolveConvention(lines, start, end, config);
 
             // Resolve all PUSH ARGn/FARGn words up front: int and float words can interleave (see resolveArgWordSlots).
-            Map<String, ArgWordSlot> argWordSlots = resolveArgWordSlots(lines, start, end, convention);
+            Map<String, AddressLoweringArgWordSlot> argWordSlots = resolveArgWordSlots(lines, start, end, convention);
 
             // The preceding line in ORIGINAL (pre-rewrite) form: PUSH_FIELDNAME needs the struct type that an already-lowered
             // predecessor no longer carries.
@@ -183,7 +181,7 @@ public class AddressLoweringPass implements OptimizationPass {
                     // A stack struct literal's own top-level store: append the struct's physical layout (see the "NEW" rewrite
                     // for the token format), so Codegen can repack the pushed field words when the field values are not all
                     // plain pushes (see X86Backend.emitAssignRepack). Codegen ignores it on its packed fast path.
-                    List<StructTable.LayoutEntry> lit = structTable.layoutOf(CanonicalType.parse(fl.get(1).text).baseType);
+                    List<StructTableLayoutEntry> lit = structTable.layoutOf(CanonicalType.parse(fl.get(1).text).baseType);
                     if (lit != null) {
                         StringBuilder sb = new StringBuilder(fl.get(0).text);
                         for (int q = 1; q < 4; q++) {
@@ -215,7 +213,7 @@ public class AddressLoweringPass implements OptimizationPass {
                 if (rewritten != null && fl.get(0).text.equals("NEW") && fl.size() == 2 && rewritten.size() > 2) {
                     // Heap struct literal: the same element-wise array handling as for a stack literal (see the ASSIGN case above).
                     int runStart = findNewRunStart(lines, start, k, structTable, enumTable);
-                    List<StructTable.LayoutEntry> nl = structTable.layoutOf(CanonicalType.parse(fl.get(1).text).baseType);
+                    List<StructTableLayoutEntry> nl = structTable.layoutOf(CanonicalType.parse(fl.get(1).text).baseType);
                     if (runStart >= 0 && nl != null) {
                         rewritten = BytecodeStatement.fromText("NEW " + rewritten.get(1).text
                                 + layoutTokens(nl, lines, runStart, k, sizes, structTable, enumTable), "<address-lowered>");
@@ -266,7 +264,7 @@ public class AddressLoweringPass implements OptimizationPass {
                     // Treat "ADDR v T" followed by anything but a single whole-value push of T as such a literal; the matching
                     // ASSIGN below confirms it (a whole-value copy is "ADDR v T / PUSH w T / ASSIGN T T T").
                     CanonicalType ct = CanonicalType.parse(l.get(2).text);
-                    List<StructTable.LayoutEntry> lay = ct.storage == null ? structTable.layoutOf(ct.baseType) : null;
+                    List<StructTableLayoutEntry> lay = ct.storage == null ? structTable.layoutOf(ct.baseType) : null;
                     if (lay != null && !lay.isEmpty() && lay.get(0).member != null && !lay.get(0).member.name.equals("___type")) {
                         untypedAddr.put(l.get(2).text, k);
                     }
@@ -315,7 +313,7 @@ public class AddressLoweringPass implements OptimizationPass {
      * literal's "ADDR v T" line. Each element is pushed as its own whole word; when one of them is computed Codegen cannot treat the run as a packed
      * image, so the ASSIGN gets an "a<elemBytes>x<n>" token (same repack as an array member of a struct literal).
      */
-    private static Map<Integer, Integer> findArrayLiteralAssigns(BytecodeProgram lines, int start, int end, SizeCalculator sizes,
+    private static Map<Integer, Integer> findArrayLiteralAssigns(BytecodeProgram lines, int start, int end, AddressLoweringSizeCalculator sizes,
             StructTable structTable) {
         Map<Integer, Integer> result = new HashMap<>();
         java.util.ArrayDeque<String> pending = new java.util.ArrayDeque<>();
@@ -454,8 +452,8 @@ public class AddressLoweringPass implements OptimizationPass {
      * the line that produced it has an array type, otherwise it is n element values. If the lines cannot be split, it falls back to counting
      * array-typed value lines; that is only decisive when no array type is shared by two members, otherwise the literal is rejected.
      */
-    private static String layoutTokens(List<StructTable.LayoutEntry> layout, BytecodeProgram lines, int from, int to,
-            SizeCalculator sizes, StructTable structTable, EnumTable enumTable) {
+    private static String layoutTokens(List<StructTableLayoutEntry> layout, BytecodeProgram lines, int from, int to,
+            AddressLoweringSizeCalculator sizes, StructTable structTable, EnumTable enumTable) {
         List<Integer> units = splitValueUnits(lines, from, to, enumTable);
         StringBuilder sb = new StringBuilder();
         if (units != null) {
@@ -469,7 +467,7 @@ public class AddressLoweringPass implements OptimizationPass {
             }
         }
         Map<String, Integer> arrayValueLines = countArrayValueLines(lines, from, to);
-        for (StructTable.LayoutEntry entry : layout) {
+        for (StructTableLayoutEntry entry : layout) {
             if (entry.member == null) {
                 sb.append(" p").append(entry.paddingBytes);
                 continue;
@@ -491,8 +489,8 @@ public class AddressLoweringPass implements OptimizationPass {
      * after another (a narrow scalar array is the single token "a<elemBytes>x<n>", n words) and a struct literal is its own layout (type id,
      * members, padding), nested to any depth. Worked with an explicit to-do stack, front of the work first, so no recursion.
      */
-    private static boolean layoutFromUnits(List<StructTable.LayoutEntry> layout, BytecodeProgram lines, List<Integer> units, int[] u,
-            List<String> tokens, SizeCalculator sizes, StructTable structTable) {
+    private static boolean layoutFromUnits(List<StructTableLayoutEntry> layout, BytecodeProgram lines, List<Integer> units, int[] u,
+            List<String> tokens, AddressLoweringSizeCalculator sizes, StructTable structTable) {
         final int LAYOUT = 0;  // {kind, layout, next entry index}
         final int VALUE = 1;   // {kind, base type}
         final int REPEAT = 2;  // {kind, element type, repetitions left}
@@ -503,10 +501,10 @@ public class AddressLoweringPass implements OptimizationPass {
             int kind = (Integer) task[0];
             if (kind == LAYOUT) {
                 @SuppressWarnings("unchecked")
-                List<StructTable.LayoutEntry> entries = (List<StructTable.LayoutEntry>) task[1];
+                List<StructTableLayoutEntry> entries = (List<StructTableLayoutEntry>) task[1];
                 int i = (Integer) task[2];
                 while (i < entries.size()) {
-                    StructTable.LayoutEntry entry = entries.get(i++);
+                    StructTableLayoutEntry entry = entries.get(i++);
                     if (entry.member == null) {
                         tokens.add("p" + entry.paddingBytes);
                         continue;
@@ -538,7 +536,7 @@ public class AddressLoweringPass implements OptimizationPass {
                 BytecodeStatement producer = lines.get(units.get(u[0]));
                 String last = producer.get(producer.size() - 1).text;
                 boolean isArray = ARRAY_TYPE.matcher(base).matches();
-                List<StructTable.LayoutEntry> structLayout = isArray ? null : structTable.layoutOf(base);
+                List<StructTableLayoutEntry> structLayout = isArray ? null : structTable.layoutOf(base);
                 if ((isArray || structLayout != null) && CanonicalType.parse(last).baseType.equals(base)) {
                     tokens.add("m" + sizes.sizeOf("mut_" + base));
                     u[0]++;
@@ -570,7 +568,7 @@ public class AddressLoweringPass implements OptimizationPass {
     }
 
     /** "a<elemBytes>x<n>" if `elem` is a plain scalar type narrower than 8 bytes, else null. */
-    private static String narrowElementToken(String elem, long n, SizeCalculator sizes, StructTable structTable) {
+    private static String narrowElementToken(String elem, long n, AddressLoweringSizeCalculator sizes, StructTable structTable) {
         if (!elem.matches("[A-Za-z0-9_]+") || structTable.layoutOf(elem) != null || n <= 0) {
             return null;
         }
@@ -643,8 +641,8 @@ public class AddressLoweringPass implements OptimizationPass {
      * Fallback when the literal's values cannot be split; mixed shapes among same-typed members are rejected.
      * See docs/AddressLoweringPass.md, "NEW layout descriptor".
      */
-    private static String elementwiseArrayToken(String memberType, List<StructTable.LayoutEntry> layout, Map<String, Integer> arrayValueLines,
-            SizeCalculator sizes, StructTable structTable) {
+    private static String elementwiseArrayToken(String memberType, List<StructTableLayoutEntry> layout, Map<String, Integer> arrayValueLines,
+            AddressLoweringSizeCalculator sizes, StructTable structTable) {
         CanonicalType ct = CanonicalType.parse(memberType);
         java.util.regex.Matcher mt = java.util.regex.Pattern.compile("^([A-Za-z0-9_]+)\\[([0-9]+)\\]$").matcher(ct.baseType);
         if (ct.storage != null || !mt.matches() || structTable.layoutOf(mt.group(1)) != null) {
@@ -657,7 +655,7 @@ public class AddressLoweringPass implements OptimizationPass {
         }
         int blockValues = arrayValueLines.getOrDefault(ct.baseType, 0);
         int sameType = 0;
-        for (StructTable.LayoutEntry e : layout) {
+        for (StructTableLayoutEntry e : layout) {
             if (e.member != null && CanonicalType.parse(e.member.canonicalType).baseType.equals(ct.baseType)) {
                 sameType++;
             }
@@ -673,7 +671,7 @@ public class AddressLoweringPass implements OptimizationPass {
      * This function's calling convention: its "FUNC_DECORATE @call_convention(name)" line, else the config default (same rule as
      * TypeChecker.resolveCallConvention). See docs/AddressLoweringPass.md, "Calling convention and parameter words".
      */
-    private CompilerConfig.CallingConvention resolveConvention(BytecodeProgram lines, int start, int end,
+    private CompilerConfigCallingConvention resolveConvention(BytecodeProgram lines, int start, int end,
             CompilerConfig config) {
         String name = null;
         for (int k = start; k <= end && name == null; k++) {
@@ -763,36 +761,14 @@ public class AddressLoweringPass implements OptimizationPass {
         }
     }
 
-    /** One resolved "PUSH ARGn"/"PUSH FARGn" parameter word's own real fate -- either a real register-table index (`isRegister` true, `registerIndex` valid, `stackOffset` unused) or a real, positive base-pointer-relative stack offset (`isRegister` false) -- decided once, for the whole function, by `resolveArgWordSlots`. */
-    /** Resolved fate of one "PUSH ARGn"/"PUSH FARGn" word: a register-table index or a positive stack offset (see resolveArgWordSlots). */
-    private static final class ArgWordSlot {
-        final boolean isRegister;
-        final int registerIndex;
-        final long stackOffset;
-
-        private ArgWordSlot(boolean isRegister, int registerIndex, long stackOffset) {
-            this.isRegister = isRegister;
-            this.registerIndex = registerIndex;
-            this.stackOffset = stackOffset;
-        }
-
-        static ArgWordSlot register(int index) {
-            return new ArgWordSlot(true, index, 0);
-        }
-
-        static ArgWordSlot stack(long offset) {
-            return new ArgWordSlot(false, -1, offset);
-        }
-    }
-
     /**
      * Resolves every parameter-loading ARGn/FARGn word of one function into a register index or stack offset, keyed by token text.
      * Needs the whole list because int and float words interleave and overflow words share one stack sequence.
      * See docs/AddressLoweringPass.md, "Calling convention and parameter words".
      */
-    private Map<String, ArgWordSlot> resolveArgWordSlots(BytecodeProgram lines, int start, int end,
-            CompilerConfig.CallingConvention convention) {
-        Map<String, ArgWordSlot> slots = new HashMap<>();
+    private Map<String, AddressLoweringArgWordSlot> resolveArgWordSlots(BytecodeProgram lines, int start, int end,
+            CompilerConfigCallingConvention convention) {
+        Map<String, AddressLoweringArgWordSlot> slots = new HashMap<>();
         int intCount = convention.argumentRegisters.size();
         int floatCount = convention.argumentRegistersFloat.size();
         boolean shared = convention.sharedArgumentPosition;
@@ -824,10 +800,10 @@ public class AddressLoweringPass implements OptimizationPass {
             }
             int cutoff = isFloatWord ? floatCount : intCount;
             if (idx < cutoff) {
-                slots.put(token, ArgWordSlot.register(idx));
+                slots.put(token, AddressLoweringArgWordSlot.register(idx));
             } else {
                 long offset = 16L + convention.shadowStack + (long) stackWordsSoFar * 8;
-                slots.put(token, ArgWordSlot.stack(offset));
+                slots.put(token, AddressLoweringArgWordSlot.stack(offset));
                 stackWordsSoFar++;
             }
         }
@@ -839,7 +815,7 @@ public class AddressLoweringPass implements OptimizationPass {
      * top-level GLOBAL sits outside every function and never reaches tryRewrite; the value goes through resolveLiteralOrEnumValue.
      * See docs/AddressLoweringPass.md, "Static and global declarations".
      */
-    private static BytecodeStatement rewriteStaticOrGlobalDecl(BytecodeStatement line, SizeCalculator sizes,
+    private static BytecodeStatement rewriteStaticOrGlobalDecl(BytecodeStatement line, AddressLoweringSizeCalculator sizes,
             EnumTable enumTable) {
         if (line.isEmpty()) {
             return null;
@@ -870,15 +846,14 @@ public class AddressLoweringPass implements OptimizationPass {
         return false;
     }
 
-
     /**
      * Rewrites one in-function line by erasing type operands to byte sizes (and splitting mnemonics where the runtime meaning differs);
      * null leaves the line alone. See docs/AddressLoweringPass.md, "Per-mnemonic rewrites".
      */
     private BytecodeStatement tryRewrite(BytecodeStatement line, Map<String, Long> offsets,
-            Map<String, String> localTypes, SizeCalculator sizes, StructTable structTable, EnumTable enumTable,
-            CompilerConfig.CallingConvention convention, BytecodeStatement previousLine,
-            Map<String, ArgWordSlot> argWordSlots) {
+            Map<String, String> localTypes, AddressLoweringSizeCalculator sizes, StructTable structTable, EnumTable enumTable,
+            CompilerConfigCallingConvention convention, BytecodeStatement previousLine,
+            Map<String, AddressLoweringArgWordSlot> argWordSlots) {
         if (line.isEmpty()) {
             return null;
         }
@@ -915,9 +890,9 @@ public class AddressLoweringPass implements OptimizationPass {
             // Layout descriptor: "m<bytes>" per member, "p<bytes>" per padding gap; used by codegen only when the field pushes are not one clean run.
             StringBuilder lowered = new StringBuilder("NEW ").append(size);
             CanonicalType newType = CanonicalType.parse(line.get(1).text);
-            List<StructTable.LayoutEntry> newLayout = newType.storage == null ? structTable.layoutOf(newType.baseType) : null;
+            List<StructTableLayoutEntry> newLayout = newType.storage == null ? structTable.layoutOf(newType.baseType) : null;
             if (newLayout != null) {
-                for (StructTable.LayoutEntry entry : newLayout) {
+                for (StructTableLayoutEntry entry : newLayout) {
                     lowered.append(' ').append(entry.member != null
                             ? "m" + sizes.sizeOf(entry.member.canonicalType)
                             : "p" + entry.paddingBytes);
@@ -976,7 +951,7 @@ public class AddressLoweringPass implements OptimizationPass {
             }
             String structName = operand;
             long size = sizes.sizeOf(structName);
-            List<StructTable.Member> members = structTable.membersOf(structName);
+            List<StructTableMember> members = structTable.membersOf(structName);
             // ___type, when present, is the FIRST member (index 0).
             boolean hasClassId = members != null && !members.isEmpty()
                     && members.get(0).name.equals("___type");
@@ -1163,7 +1138,7 @@ public class AddressLoweringPass implements OptimizationPass {
             String structBaseType = CanonicalType.parse(structType).baseType;
             String fieldName = line.get(1).text;
             String fieldType = line.get(2).text;
-            MemberLoc loc = memberLocOf(structBaseType, fieldName, sizes, structTable);
+            AddressLoweringMemberLoc loc = memberLocOf(structBaseType, fieldName, sizes, structTable);
             if (loc == null) {
                 return null;
             }
@@ -1241,7 +1216,7 @@ public class AddressLoweringPass implements OptimizationPass {
         long size = sizes.sizeOf(typeOperand);
 
         if (mnemonic.equals("PUSH") || mnemonic.equals("ATOMIC_PUSH")) {
-            ArgWordSlot slot = argWordSlots.get(firstOperand);
+            AddressLoweringArgWordSlot slot = argWordSlots.get(firstOperand);
             if (slot != null) {
                 if (!slot.isRegister) {
                     String rewritten = mnemonic + " " + size + " $" + slot.stackOffset;
@@ -1291,7 +1266,7 @@ public class AddressLoweringPass implements OptimizationPass {
 
     /** Resolves a name or dotted chain to a flat base-pointer offset; null if any segment cannot be resolved. See docs/AddressLoweringPass.md, "Address resolution". */
     private Long resolveAddress(String nameChain, Map<String, Long> offsets, Map<String, String> localTypes,
-            SizeCalculator sizes, StructTable structTable) {
+            AddressLoweringSizeCalculator sizes, StructTable structTable) {
         int dot = nameChain.indexOf('.');
         String root = (dot < 0) ? nameChain : nameChain.substring(0, dot);
         Long base = offsets.get(root);
@@ -1316,7 +1291,7 @@ public class AddressLoweringPass implements OptimizationPass {
                 remainder = (nextDot < 0) ? "" : remainder.substring(nextDot + 1);
                 continue;
             }
-            MemberLoc loc = memberLocOf(t.baseType, segment, sizes, structTable);
+            AddressLoweringMemberLoc loc = memberLocOf(t.baseType, segment, sizes, structTable);
             if (loc == null) {
                 return null;
             }
@@ -1327,43 +1302,33 @@ public class AddressLoweringPass implements OptimizationPass {
         return address;
     }
 
-    private static final class MemberLoc {
-        final long offset;
-        final String type;
-
-        MemberLoc(long offset, String type) {
-            this.offset = offset;
-            this.type = type;
-        }
-    }
-
     /** Member byte offset and declared type within baseType's padded layout (walks LayoutEntry so padding is counted); null if absent. See docs/AddressLoweringPass.md, "Address resolution". */
-    private MemberLoc memberLocOf(String baseType, String memberName, SizeCalculator sizes, StructTable structTable) {
+    private AddressLoweringMemberLoc memberLocOf(String baseType, String memberName, AddressLoweringSizeCalculator sizes, StructTable structTable) {
         if (memberName.equals("___type")) {
             // ___type is always the first member (offset 0, imut_u64), resolved structure-agnostically so it also works when baseType is an interface.
-            return new MemberLoc(0, "imut_u64");
+            return new AddressLoweringMemberLoc(0, "imut_u64");
         }
-        List<StructTable.LayoutEntry> layout = pseudoLayoutOf(baseType, structTable);
+        List<StructTableLayoutEntry> layout = pseudoLayoutOf(baseType, structTable);
         if (layout == null) {
             return null;
         }
-        MemberLoc direct = walkLayoutFor(layout, memberName, sizes);
+        AddressLoweringMemberLoc direct = walkLayoutFor(layout, memberName, sizes);
         if (direct != null) {
             return direct;
         }
         return null;
     }
 
-    private static MemberLoc walkLayoutFor(List<StructTable.LayoutEntry> layout, String memberName,
-            SizeCalculator sizes) {
+    private static AddressLoweringMemberLoc walkLayoutFor(List<StructTableLayoutEntry> layout, String memberName,
+            AddressLoweringSizeCalculator sizes) {
         long offset = 0;
-        for (StructTable.LayoutEntry entry : layout) {
+        for (StructTableLayoutEntry entry : layout) {
             if (entry.member == null) {
                 offset += entry.paddingBytes;
                 continue;
             }
             if (entry.member.name.equals(memberName)) {
-                return new MemberLoc(offset, entry.member.canonicalType);
+                return new AddressLoweringMemberLoc(offset, entry.member.canonicalType);
             }
             offset += sizes.sizeOf(entry.member.canonicalType);
         }
@@ -1371,239 +1336,14 @@ public class AddressLoweringPass implements OptimizationPass {
     }
 
     /** Fixed layout for a range (start, end: two u64) and otherwise the struct table's layout. */
-    private List<StructTable.LayoutEntry> pseudoLayoutOf(String baseType, StructTable structTable) {
+    private List<StructTableLayoutEntry> pseudoLayoutOf(String baseType, StructTable structTable) {
         if (baseType.equals("range") || baseType.startsWith("range(")) {
-            List<StructTable.LayoutEntry> m = new ArrayList<>();
-            m.add(StructTable.LayoutEntry.ofMember(new StructTable.Member("start", "indeterminate_u64")));
-            m.add(StructTable.LayoutEntry.ofMember(new StructTable.Member("end", "indeterminate_u64")));
+            List<StructTableLayoutEntry> m = new ArrayList<>();
+            m.add(StructTableLayoutEntry.ofMember(new StructTableMember("start", "indeterminate_u64")));
+            m.add(StructTableLayoutEntry.ofMember(new StructTableMember("end", "indeterminate_u64")));
             return m;
         }
         return structTable.layoutOf(baseType);
     }
 
-    /** Value sizes in bytes from canonical type text and the struct table; any pointer is 8 bytes. See docs/AddressLoweringPass.md, "SizeCalculator". */
-    static final class SizeCalculator {
-        private final StructTable structTable;
-        private final Map<String, Long> structSizeCache = new HashMap<>();
-        private final Map<String, Long> structAlignCache = new HashMap<>();
-
-        SizeCalculator(StructTable structTable) {
-            this.structTable = structTable;
-        }
-
-        /** Set by sizeNoRecurse/alignNoRecurse to the struct whose size/alignment is not cached yet (its value is then not final). */
-        private String missing;
-
-        long sizeOf(String canonical) {
-            missing = null;
-            long v = sizeNoRecurse(canonical);
-            if (missing == null) {
-                return v;
-            }
-            resolveStructSizes(missing);
-            missing = null;
-            return sizeNoRecurse(canonical);
-        }
-
-        /** Natural alignment; equals size for leaves, max member alignment for structs. Mirrors the compiler side's layoutSizeAndAlignOf. */
-        long alignOf(String canonical) {
-            missing = null;
-            long v = alignNoRecurse(canonical);
-            if (missing == null) {
-                return v;
-            }
-            resolveStructAligns(missing);
-            missing = null;
-            return alignNoRecurse(canonical);
-        }
-
-        /** Size of `canonical` given the cached struct sizes; the first struct size still missing is left in `missing`. */
-        private long sizeNoRecurse(String canonical) {
-            long mult = 1;
-            String cur = canonical;
-            while (true) {
-                String baseType;
-                // A bare struct name is used whole (a generic mangled name like HashMapEntry_u64 would be mis-parsed).
-                if (structTable.hasStruct(cur)) {
-                    baseType = cur;
-                } else {
-                    CanonicalType t = CanonicalType.parse(cur);
-                    if (t.storage != null) {
-                        return mult * 8;
-                    }
-                    baseType = t.baseType;
-                }
-                switch (baseType) {
-                    // bool is 1 byte (matches TypeChecker.PRIMITIVE_SIZE); may need revisiting if codegen needs a wider ABI size.
-                    case "u8": case "s8": case "bool": case "char":
-                        return mult;
-                    case "u16": case "s16":
-                        return mult * 2;
-                    case "u32": case "s32": case "f32":
-                        return mult * 4;
-                    case "u64": case "s64": case "f64": case "code_addr": case "string":
-                        return mult * 8;
-                    case "void":
-                        return 0;
-                    default:
-                        break;
-                }
-                if (CanonicalType.dynArrayElementTypeOf(baseType) != null) {
-                    return mult * 8; // a dynarray value is a single handle/pointer to its own heap buffer
-                }
-                String arrElem = CanonicalType.fixedArrayElementTypeOf(baseType);
-                if (arrElem != null) {
-                    int length = CanonicalType.fixedArrayLengthOf(baseType);
-                    if (length < 0) {
-                        return mult * 8;
-                    }
-                    mult *= length;
-                    cur = arrElem;
-                    continue;
-                }
-                if (baseType.equals("range") || baseType.startsWith("range(")) {
-                    return mult * 16; // two plain u64 bounds, always -- TypeChecker.checkRange
-                }
-                if (structTable.hasStruct(baseType)) {
-                    Long cached = structSizeCache.get(baseType);
-                    if (cached == null) {
-                        missing = baseType;
-                        return 0;
-                    }
-                    return mult * cached;
-                }
-                return mult * 8; // unknown type: conservative one-word fallback
-            }
-        }
-
-        /**
-         * Fills structSizeCache for `root` and every struct below it, depth first with an explicit stack. A struct is seeded 0 while
-         * it is on the stack (struct types form a DAG, never a cycle -- see StructTable.isOwnsBearing's identical guard); its size is
-         * summed over its padded layout (members plus STRUCT_PADDING gaps) once all member structs are cached.
-         */
-        private void resolveStructSizes(String root) {
-            List<String> stack = new ArrayList<>();
-            structSizeCache.put(root, 0L);
-            stack.add(root);
-            while (!stack.isEmpty()) {
-                String name = stack.get(stack.size() - 1);
-                List<String> memberTypes = new ArrayList<>();
-                List<Long> paddings = new ArrayList<>();
-                List<StructTable.LayoutEntry> layout = structTable.layoutOf(name);
-                if (layout != null) {
-                    for (StructTable.LayoutEntry entry : layout) {
-                        memberTypes.add(entry.member != null ? entry.member.canonicalType : null);
-                        paddings.add(entry.paddingBytes);
-                    }
-                } else {
-                    // Defensive fallback: plain member sum if no layout exists.
-                    for (StructTable.Member m : structTable.membersOf(name)) {
-                        memberTypes.add(m.canonicalType);
-                        paddings.add(0L);
-                    }
-                }
-                long total = 0;
-                boolean blocked = false;
-                for (int i = 0; i < memberTypes.size(); i++) {
-                    if (memberTypes.get(i) == null) {
-                        total += paddings.get(i);
-                        continue;
-                    }
-                    missing = null;
-                    long v = sizeNoRecurse(memberTypes.get(i));
-                    if (missing != null) {
-                        structSizeCache.put(missing, 0L);
-                        stack.add(missing);
-                        missing = null;
-                        blocked = true;
-                        break;
-                    }
-                    total += v;
-                }
-                if (!blocked) {
-                    structSizeCache.put(name, total);
-                    stack.remove(stack.size() - 1);
-                }
-            }
-        }
-
-        /** Alignment of `canonical` given the cached struct alignments; the first one still missing is left in `missing`. */
-        private long alignNoRecurse(String canonical) {
-            String cur = canonical;
-            while (true) {
-                CanonicalType t = CanonicalType.parse(cur);
-                if (t.storage != null) {
-                    return 8;
-                }
-                String baseType = t.baseType;
-                switch (baseType) {
-                    case "u8": case "s8": case "bool": case "char":
-                        return 1;
-                    case "u16": case "s16":
-                        return 2;
-                    case "u32": case "s32": case "f32":
-                        return 4;
-                    case "u64": case "s64": case "f64": case "code_addr": case "string":
-                        return 8;
-                    case "void":
-                        return 1;
-                    default:
-                        break;
-                }
-                if (CanonicalType.dynArrayElementTypeOf(baseType) != null) {
-                    return 8; // a dynarray value is a single handle/pointer -- same reasoning as sizeNoRecurse's own identical case
-                }
-                String arrElem = CanonicalType.fixedArrayElementTypeOf(baseType);
-                if (arrElem != null) {
-                    cur = arrElem; // an array's own alignment is its element's own -- never its own total size
-                    continue;
-                }
-                if (baseType.equals("range") || baseType.startsWith("range(")) {
-                    return 8; // two plain u64 bounds -- 8-aligned, same as either bound alone
-                }
-                if (structTable.hasStruct(baseType)) {
-                    Long cached = structAlignCache.get(baseType);
-                    if (cached == null) {
-                        missing = baseType;
-                        return 1;
-                    }
-                    return cached;
-                }
-                return 8; // unknown type: same one-word fallback
-            }
-        }
-
-        /** Fills structAlignCache for `root` and every struct below it: max of its members' alignments (hidden classId included), explicit stack, seeded 1 while on it. */
-        private void resolveStructAligns(String root) {
-            List<String> stack = new ArrayList<>();
-            structAlignCache.put(root, 1L);
-            stack.add(root);
-            while (!stack.isEmpty()) {
-                String name = stack.get(stack.size() - 1);
-                long maxAlign = 1;
-                boolean blocked = false;
-                List<StructTable.Member> members = structTable.membersOf(name);
-                if (members != null) {
-                    for (StructTable.Member m : members) {
-                        missing = null;
-                        long align = alignNoRecurse(m.canonicalType);
-                        if (missing != null) {
-                            structAlignCache.put(missing, 1L);
-                            stack.add(missing);
-                            missing = null;
-                            blocked = true;
-                            break;
-                        }
-                        if (align > maxAlign) {
-                            maxAlign = align;
-                        }
-                    }
-                }
-                if (!blocked) {
-                    structAlignCache.put(name, maxAlign);
-                    stack.remove(stack.size() - 1);
-                }
-            }
-        }
-    }
 }

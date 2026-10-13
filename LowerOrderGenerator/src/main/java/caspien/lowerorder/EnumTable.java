@@ -49,16 +49,7 @@ import java.util.Map;
  */
 public class EnumTable {
 
-    private static final class RangeInfo {
-        final long lo;
-        final long hi;
-        RangeInfo(long lo, long hi) {
-            this.lo = lo;
-            this.hi = hi;
-        }
-    }
-
-    private final Map<String, Map<String, RangeInfo>> rangeEnums = new LinkedHashMap<>();
+    private final Map<String, Map<String, EnumTableRangeInfo>> rangeEnums = new LinkedHashMap<>();
     private final Map<String, Map<String, Long>> valueEnums = new LinkedHashMap<>();
     private final Map<String, List<String>> valueVariantOrder = new LinkedHashMap<>();
     private final Map<String, List<String>> plainEnumVariantOrder = new LinkedHashMap<>();
@@ -88,11 +79,11 @@ public class EnumTable {
             boolean pairShaped = rest.size() >= 2 && rest.size() % 2 == 0
                     && (isRangeLiteral(rest.get(1)) || isPlainU64Literal(rest.get(1)));
             if (pairShaped && isRangeLiteral(rest.get(1))) {
-                Map<String, RangeInfo> variants = new LinkedHashMap<>();
+                Map<String, EnumTableRangeInfo> variants = new LinkedHashMap<>();
                 for (int i = 0; i + 1 < rest.size(); i += 2) {
                     long[] bounds = parseRangeLiteral(rest.get(i + 1));
                     if (bounds != null) {
-                        variants.put(rest.get(i), new RangeInfo(bounds[0], bounds[1]));
+                        variants.put(rest.get(i), new EnumTableRangeInfo(bounds[0], bounds[1]));
                     }
                 }
                 table.rangeEnums.put(enumName, variants);

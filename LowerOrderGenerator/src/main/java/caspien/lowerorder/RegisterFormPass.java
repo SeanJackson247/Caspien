@@ -83,37 +83,7 @@ public class RegisterFormPass implements OptimizationPass {
     /** How many temporaries exist; the backend maps %t0..%t{N-1} to registers. */
     public static final int TEMP_COUNT = 4;
 
-    enum Kind {
-        /** a constant (integer, or a float's bit pattern) */ K,
-        /** a value still sitting in a frame slot (size 1/2/4/8) */ M,
-        /** an address: of a frame slot ("$off") or of a global ("&sym") */ A,
-        /** a value held in a temp register, zero-extended to 64 bits */ T
-    }
-
-    static final class Entry {
-        Kind kind;
-        /** the original line (K, M, A) so a flush can re-emit it verbatim */
-        BytecodeStatement orig;
-        /** K: literal text; M: the "$off" text; A: "$off" or "&sym" */
-        String text;
-        /** M/A(frame): parsed frame offset */
-        long off;
-        /** T: which temp */
-        int temp = -1;
-        /** width in bytes of an M value or a loaded T (arithmetic results are 8) */
-        int size = 8;
-        /** A only: the address is a global symbol */
-        boolean global;
-        /** T only: the register holds the value ZERO-EXTENDED to 64 bits (a load of `size` bytes). Arithmetic results are not: a narrow ADD leaves carry bits above its width. */
-        boolean zx;
-    }
-
-    /** One fusable mnemonic. Returns how many input lines it consumed, or 0 to decline (caller flushes/rolls back and passes through). A handler must not emit anything before it returns 0. */
-    interface Handler {
-        int tryFuse(State st, BytecodeStatement line, BytecodeProgram all, int idx);
-    }
-
-    private final Map<String, Handler> handlers = new HashMap<>();
+    private final Map<String, RegisterFormHandler> handlers = new HashMap<>();
 
     /** Names declared by GLOBAL / ALLOC_STATIC lines of the program being processed (refilled by every run). */
     private final java.util.Set<String> globalNames = new java.util.HashSet<>();
@@ -214,7 +184,7 @@ public class RegisterFormPass implements OptimizationPass {
                 }
             }
         }
-        State st = new State();
+        RegisterFormState st = new RegisterFormState();
         boolean changed = false;
         int i = 0;
         while (i < lines.size()) {
@@ -224,7 +194,7 @@ public class RegisterFormPass implements OptimizationPass {
                 i++;
                 continue;
             }
-            Handler h = handlers.get(line.get(0).text);
+            RegisterFormHandler h = handlers.get(line.get(0).text);
             int consumed = h == null ? 0 : h.tryFuse(st, line, lines, i);
             if (consumed > 0) {
                 changed = true;
@@ -272,119 +242,11 @@ public class RegisterFormPass implements OptimizationPass {
     // State: the abstract operand stack, the temp pool, and the output.
     // ------------------------------------------------------------------
 
-    static final class State {
-        final BytecodeProgram out = new BytecodeProgram();
-        final List<Entry> stack = new ArrayList<>();
-        final boolean[] tempUsed = new boolean[TEMP_COUNT];
-        private BytecodeToken anchor; // any token, for file/line of synthesized lines
-        /** region start: the input line index and output size at the last empty-model point */
-        int cpIn = 0;
-        int cpOut = 0;
-        /** the current region uses something a plain stack flush could not reproduce faithfully */
-        boolean risky = false;
-
-        int freeTemps() {
-            int n = 0;
-            for (boolean u : tempUsed) {
-                if (!u) n++;
-            }
-            return n;
-        }
-
-        int allocTemp() {
-            for (int t = 0; t < TEMP_COUNT; t++) {
-                if (!tempUsed[t]) {
-                    tempUsed[t] = true;
-                    return t;
-                }
-            }
-            return -1;
-        }
-
-        void freeTemp(int t) {
-            tempUsed[t] = false;
-        }
-
-        void emit(String... texts) {
-            out.add(mk(texts));
-        }
-
-        BytecodeStatement mk(String... texts) {
-            BytecodeStatement l = new BytecodeStatement(texts.length);
-            BytecodeToken a = anchor;
-            for (String t : texts) {
-                l.add(new BytecodeToken(t, a == null ? "<register-form>" : a.file, a == null ? 0 : a.line, BytecodeToken.Kind.CODE));
-            }
-            return l;
-        }
-
-        /** every remembered entry is one plain 8-byte word (a constant, a frame value, an address, a full-width temp) */
-        boolean plainWords() {
-            for (Entry e : stack) {
-                if (e.size != 8) {
-                    return false;
-                }
-            }
-            return true;
-        }
-
-        /** Discards this region's output and emits its original input lines [cpIn, upTo) instead. */
-        void rollback(BytecodeProgram all, int upTo) {
-            out.removeRange(cpOut, out.size());
-            for (int k = cpIn; k < upTo; k++) {
-                out.add(all.get(k));
-            }
-            stack.clear();
-            Arrays.fill(tempUsed, false);
-        }
-
-        /** Writes every remembered entry back out, bottom to top, then empties the model. */
-        void flush() {
-            flush(false);
-        }
-
-        /**
-         * @param tempLiveAbove true when a temp that is NOT on the model (e.g. a branch condition being
-         *                      consumed) is still live in a register while this flush runs
-         *
-         * An entry's ORIGINAL line is re-emitted by the backend's ordinary PUSH/ADDR code, which uses rax/rbx
-         * as scratch -- so it must not run while any temp is still live. Whenever a temp sits above the
-         * entry (or is live off-model), the entry is written with a register-form push instead, which only
-         * ever uses the spare scratch register. When no temp is live above, the original line is kept, so the
-         * struct/array construction shapes the backend recognises reach it unchanged. (Only non-risky regions
-         * are ever flushed while entries remain; see the class comment.)
-         */
-        void flush(boolean tempLiveAbove) {
-            int lastT = -1;
-            for (int i = 0; i < stack.size(); i++) {
-                if (stack.get(i).kind == Kind.T) {
-                    lastT = i;
-                }
-            }
-            for (int i = 0; i < stack.size(); i++) {
-                Entry e = stack.get(i);
-                if (e.kind == Kind.T) {
-                    emit("R_PUSH", "8", "%t" + e.temp);
-                    freeTemp(e.temp);
-                } else if (tempLiveAbove || i < lastT) {
-                    if (e.kind == Kind.A) {
-                        emit("R_PUSHA", "8", e.text);
-                    } else {
-                        emit("R_PUSH", "8", operandOf(e));
-                    }
-                } else {
-                    out.add(e.orig);
-                }
-            }
-            stack.clear();
-        }
-    }
-
     // ------------------------------------------------------------------
     // Operand text -- the one place that knows how an entry is written.
     // ------------------------------------------------------------------
 
-    private static String operandOf(Entry e) {
+    static String operandOf(RegisterFormEntry e) {
         switch (e.kind) {
             case K:
                 return "#" + e.text;
@@ -403,13 +265,13 @@ public class RegisterFormPass implements OptimizationPass {
      * that sits below the last value of a run is narrower than the whole (a run's total is the ASSIGN width,
      * at most 8), so it can never be an 8-byte value -- only a genuine address is.
      */
-    private static boolean isAddress(Entry e) {
-        return e.kind == Kind.A || ((e.kind == Kind.T || e.kind == Kind.M) && e.size == 8);
+    private static boolean isAddress(RegisterFormEntry e) {
+        return e.kind == RegisterFormKind.A || ((e.kind == RegisterFormKind.T || e.kind == RegisterFormKind.M) && e.size == 8);
     }
 
     /** anything that is a value (not an address) */
-    private static boolean isValue(Entry e) {
-        return e.kind != Kind.A;
+    private static boolean isValue(RegisterFormEntry e) {
+        return e.kind != RegisterFormKind.A;
     }
 
     // ------------------------------------------------------------------
@@ -468,9 +330,9 @@ public class RegisterFormPass implements OptimizationPass {
     }
 
     /** Loads a memory-resident or constant entry into a fresh temp (the caller has checked a temp is free). */
-    private static void loadInto(State st, Entry e) {
+    private static void loadInto(RegisterFormState st, RegisterFormEntry e) {
         int t = st.allocTemp();
-        if (e.kind == Kind.M) {
+        if (e.kind == RegisterFormKind.M) {
             if (e.size == 8) {
                 st.emit("R_MOV", "8", "%t" + t, e.text);
             } else {
@@ -479,23 +341,23 @@ public class RegisterFormPass implements OptimizationPass {
         } else {
             st.emit("R_MOV", "8", "%t" + t, operandOf(e)); // a constant
         }
-        boolean wasMem = e.kind == Kind.M;
-        e.kind = Kind.T;
+        boolean wasMem = e.kind == RegisterFormKind.M;
+        e.kind = RegisterFormKind.T;
         e.temp = t;
         e.orig = null;
         e.zx = wasMem; // R_LD / an 8-byte move of a frame value: zero-extended; a constant is taken as written
     }
 
     /** a temp that an R_LD of `size` bytes just filled: zero-extended */
-    private static Entry loadedTemp(int t, int size) {
-        Entry r = newTemp(t, size);
+    private static RegisterFormEntry loadedTemp(int t, int size) {
+        RegisterFormEntry r = newTemp(t, size);
         r.zx = true;
         return r;
     }
 
-    private static Entry newTemp(int t, int size) {
-        Entry r = new Entry();
-        r.kind = Kind.T;
+    private static RegisterFormEntry newTemp(int t, int size) {
+        RegisterFormEntry r = new RegisterFormEntry();
+        r.kind = RegisterFormKind.T;
         r.temp = t;
         r.size = size;
         return r;
@@ -505,7 +367,7 @@ public class RegisterFormPass implements OptimizationPass {
     // Handlers
     // ------------------------------------------------------------------
 
-    private int fusePush(State st, BytecodeStatement line, BytecodeProgram all, int idx) {
+    private int fusePush(RegisterFormState st, BytecodeStatement line, BytecodeProgram all, int idx) {
         if (!is(line, 3)) {
             return 0;
         }
@@ -514,12 +376,12 @@ public class RegisterFormPass implements OptimizationPass {
             return 0;
         }
         String operand = line.get(2).text;
-        Entry e = new Entry();
+        RegisterFormEntry e = new RegisterFormEntry();
         e.orig = line;
         e.size = n;
         Long slot = parseSlot(operand);
         if (slot != null) {
-            e.kind = Kind.M;
+            e.kind = RegisterFormKind.M;
             e.text = operand;
             e.off = slot;
         } else if (isFloatLiteral(operand)) {
@@ -527,7 +389,7 @@ public class RegisterFormPass implements OptimizationPass {
             long bits = n <= 4
                     ? Integer.toUnsignedLong(Float.floatToRawIntBits(Float.parseFloat(operand)))
                     : Double.doubleToRawLongBits(Double.parseDouble(operand));
-            e.kind = Kind.K;
+            e.kind = RegisterFormKind.K;
             e.text = Long.toUnsignedString(bits);
             st.risky = true;
         } else {
@@ -538,7 +400,7 @@ public class RegisterFormPass implements OptimizationPass {
                 }
                 return 0;
             }
-            e.kind = Kind.K;
+            e.kind = RegisterFormKind.K;
             e.text = operand.equals("null") ? "0" : operand;
         }
         if (n < 8) {
@@ -555,7 +417,7 @@ public class RegisterFormPass implements OptimizationPass {
      * Declined (stack form) when an atomic swap follows two lines later (the backend reads that push as an address)
      * or no temp is free.
      */
-    private int fuseGlobalRead(State st, BytecodeStatement line, BytecodeProgram all, int idx, int n, String sym) {
+    private int fuseGlobalRead(RegisterFormState st, BytecodeStatement line, BytecodeProgram all, int idx, int n, String sym) {
         // The backend decides a global push by looking TWO lines ahead: "PUSH address / PUSH newValue / ATOMIC_SWAP" pushes
         // the global's ADDRESS, not its value (X86Backend lineAtOffsetIsAtomicSwap(2)).
         if (idx + 2 < all.size()) {
@@ -575,13 +437,13 @@ public class RegisterFormPass implements OptimizationPass {
         return 1;
     }
 
-    private int fuseAddr(State st, BytecodeStatement line, BytecodeProgram all, int idx) {
+    private int fuseAddr(RegisterFormState st, BytecodeStatement line, BytecodeProgram all, int idx) {
         if (!is(line, 3)) {
             return 0;
         }
         String operand = line.get(2).text;
-        Entry e = new Entry();
-        e.kind = Kind.A;
+        RegisterFormEntry e = new RegisterFormEntry();
+        e.kind = RegisterFormKind.A;
         e.orig = line;
         Long slot = parseSlot(operand);
         if (slot != null) {
@@ -601,11 +463,11 @@ public class RegisterFormPass implements OptimizationPass {
     }
 
     /** Must an M operand of an n-byte integer op be loaded into a register first? (a narrow value or a narrow op needs zero/sign extension in a register) */
-    private static boolean needsLoad(Entry e, int n) {
-        return e.kind == Kind.M && (e.size != 8 || n < 8);
+    private static boolean needsLoad(RegisterFormEntry e, int n) {
+        return e.kind == RegisterFormKind.M && (e.size != 8 || n < 8);
     }
 
-    private int fuseBinary(State st, BytecodeStatement line, BytecodeProgram all, int idx) {
+    private int fuseBinary(RegisterFormState st, BytecodeStatement line, BytecodeProgram all, int idx) {
         String mnemonic = line.get(0).text;
         boolean logical = mnemonic.equals("AND") || mnemonic.equals("OR");
         if (!is(line, 2)) {
@@ -619,21 +481,21 @@ public class RegisterFormPass implements OptimizationPass {
         if (sz < 2) {
             return 0;
         }
-        Entry b = st.stack.get(sz - 1);
-        Entry a = st.stack.get(sz - 2);
+        RegisterFormEntry b = st.stack.get(sz - 1);
+        RegisterFormEntry a = st.stack.get(sz - 2);
         if (!isValue(a) || !isValue(b)) {
             return 0;
         }
-        if ((mnemonic.equals("SHL") || mnemonic.equals("SHR") || mnemonic.equals("SAR") || mnemonic.equals("ROTL") || mnemonic.equals("ROTR")) && b.kind == Kind.K && parseIntLiteral(b.text) == null) {
+        if ((mnemonic.equals("SHL") || mnemonic.equals("SHR") || mnemonic.equals("SAR") || mnemonic.equals("ROTL") || mnemonic.equals("ROTR")) && b.kind == RegisterFormKind.K && parseIntLiteral(b.text) == null) {
             return 0; // a constant count the backend could not read as an immediate
         }
-        if (logical && (a.kind != Kind.T || b.kind != Kind.T)) {
+        if (logical && (a.kind != RegisterFormKind.T || b.kind != RegisterFormKind.T)) {
             return 0; // boolean ops only on register-held 0/1 results
         }
         boolean loadA = needsLoad(a, n);
         boolean loadB = needsLoad(b, n);
-        boolean aReg = a.kind == Kind.T || loadA;
-        boolean bReg = b.kind == Kind.T || loadB;
+        boolean aReg = a.kind == RegisterFormKind.T || loadA;
+        boolean bReg = b.kind == RegisterFormKind.T || loadB;
         int need = (loadA ? 1 : 0) + (loadB ? 1 : 0) + ((!aReg && !bReg) ? 1 : 0);
         if (need > st.freeTemps()) {
             return 0;
@@ -653,13 +515,13 @@ public class RegisterFormPass implements OptimizationPass {
         st.stack.remove(sz - 1);
         st.stack.remove(sz - 2);
         int dst;
-        if (a.kind == Kind.T) {
+        if (a.kind == RegisterFormKind.T) {
             dst = a.temp;
-            if (b.kind == Kind.T) {
+            if (b.kind == RegisterFormKind.T) {
                 st.freeTemp(b.temp);
             }
         } else {
-            if (b.kind == Kind.T) {
+            if (b.kind == RegisterFormKind.T) {
                 st.freeTemp(b.temp); // dst may equal b's temp; the backend handles that
             }
             dst = st.allocTemp();
@@ -668,7 +530,7 @@ public class RegisterFormPass implements OptimizationPass {
         boolean bits = bop.equals("SHL") || bop.equals("SHR") || bop.equals("SAR") || bop.equals("ROTL") || bop.equals("ROTR") || bop.equals("BAND") || bop.equals("BOR") || bop.equals("BXOR");
         boolean arith = bits || bop.equals("ADD") || bop.equals("SUB") || bop.equals("MUL");
         st.emit("R_BIN", bop, line.get(1).text, "%t" + dst, aOp, bOp);
-        Entry res = newTemp(dst, arith ? n : 1); // the width of the VALUE (a comparison or bool op yields one byte)
+        RegisterFormEntry res = newTemp(dst, arith ? n : 1); // the width of the VALUE (a comparison or bool op yields one byte)
         res.zx = bits; // the backend cuts a narrow bitwise/shift result back to its width: the temp holds the zero-extended value
         st.stack.add(res);
         return 1;
@@ -679,7 +541,7 @@ public class RegisterFormPass implements OptimizationPass {
      * which the backend turns into a multiplication by the reciprocal. Only the unsigned 8-byte forms and a literal divisor of
      * at least 3; any other division stays in the stack form.
      */
-    private int fuseDivConst(State st, BytecodeStatement line, BytecodeProgram all, int idx) {
+    private int fuseDivConst(RegisterFormState st, BytecodeStatement line, BytecodeProgram all, int idx) {
         if (!is(line, 2)) {
             return 0;
         }
@@ -691,9 +553,9 @@ public class RegisterFormPass implements OptimizationPass {
         if (sz < 2) {
             return 0;
         }
-        Entry b = st.stack.get(sz - 1);
-        Entry a = st.stack.get(sz - 2);
-        if (b.kind != Kind.K || !isValue(a)) {
+        RegisterFormEntry b = st.stack.get(sz - 1);
+        RegisterFormEntry a = st.stack.get(sz - 2);
+        if (b.kind != RegisterFormKind.K || !isValue(a)) {
             return 0;
         }
         Long k = parseIntLiteral(b.text);
@@ -701,7 +563,7 @@ public class RegisterFormPass implements OptimizationPass {
             return 0;
         }
         boolean loadA = needsLoad(a, n);
-        boolean aReg = a.kind == Kind.T || loadA;
+        boolean aReg = a.kind == RegisterFormKind.T || loadA;
         int need = (loadA ? 1 : 0) + (!aReg ? 1 : 0);
         if (need > st.freeTemps()) {
             return 0;
@@ -714,13 +576,13 @@ public class RegisterFormPass implements OptimizationPass {
         String aOp = operandOf(a);
         st.stack.remove(sz - 1);
         st.stack.remove(sz - 2);
-        int dst = a.kind == Kind.T ? a.temp : st.allocTemp();
+        int dst = a.kind == RegisterFormKind.T ? a.temp : st.allocTemp();
         st.emit("R_DIVC", line.get(0).text.equals("DIV_INT") ? "DIV" : "MOD", String.valueOf(n), "%t" + dst, aOp, "#" + k);
         st.stack.add(newTemp(dst, n));
         return 1;
     }
 
-    private int fuseUnary(State st, BytecodeStatement line, BytecodeProgram all, int idx) {
+    private int fuseUnary(RegisterFormState st, BytecodeStatement line, BytecodeProgram all, int idx) {
         String mnemonic = line.get(0).text;
         boolean isNot = mnemonic.equals("NOT");
         boolean isBitsNot = mnemonic.equals("BITS_NOT");
@@ -735,15 +597,15 @@ public class RegisterFormPass implements OptimizationPass {
         if (sz < 1) {
             return 0;
         }
-        Entry a = st.stack.get(sz - 1);
+        RegisterFormEntry a = st.stack.get(sz - 1);
         if (!isValue(a)) {
             return 0;
         }
-        if (isNot && a.kind != Kind.T) {
+        if (isNot && a.kind != RegisterFormKind.T) {
             return 0;
         }
-        boolean load = a.kind == Kind.M && a.size != 8;
-        int need = (load || a.kind != Kind.T) ? 1 : 0;
+        boolean load = a.kind == RegisterFormKind.M && a.size != 8;
+        int need = (load || a.kind != RegisterFormKind.T) ? 1 : 0;
         if (need > st.freeTemps()) {
             return 0;
         }
@@ -757,9 +619,9 @@ public class RegisterFormPass implements OptimizationPass {
         String op = mnemonic.equals("INC_INT") ? "INC" : mnemonic.equals("DEC_INT") ? "DEC" : isBitsNot ? "BNOT" : mnemonic;
         String aOp = operandOf(a);
         st.stack.remove(sz - 1);
-        int dst = a.kind == Kind.T ? a.temp : st.allocTemp();
+        int dst = a.kind == RegisterFormKind.T ? a.temp : st.allocTemp();
         st.emit("R_UN", op, line.get(1).text, "%t" + dst, aOp);
-        Entry res = newTemp(dst, isNot ? 1 : n);
+        RegisterFormEntry res = newTemp(dst, isNot ? 1 : n);
         res.zx = isBitsNot; // the backend cuts the complement back to the operand width
         st.stack.add(res);
         return 1;
@@ -768,19 +630,19 @@ public class RegisterFormPass implements OptimizationPass {
     // ---- floats -------------------------------------------------------
 
     /** A float operand: a T or K is used as is, an M of the op's own width is read straight from memory, any other M is loaded first. */
-    private static boolean floatNeedsLoad(Entry e, int n) {
-        return e.kind == Kind.M && e.size != n;
+    private static boolean floatNeedsLoad(RegisterFormEntry e, int n) {
+        return e.kind == RegisterFormKind.M && e.size != n;
     }
 
-    private int fuseFloatBin(State st, BytecodeStatement line, BytecodeProgram all, int idx) {
+    private int fuseFloatBin(RegisterFormState st, BytecodeStatement line, BytecodeProgram all, int idx) {
         return fuseFloatOp(st, line, "R_FBIN", FLOAT_BIN.get(line.get(0).text));
     }
 
-    private int fuseFloatCmp(State st, BytecodeStatement line, BytecodeProgram all, int idx) {
+    private int fuseFloatCmp(RegisterFormState st, BytecodeStatement line, BytecodeProgram all, int idx) {
         return fuseFloatOp(st, line, "R_FCMP", FLOAT_CMP.get(line.get(0).text));
     }
 
-    private int fuseFloatOp(State st, BytecodeStatement line, String rmn, String op) {
+    private int fuseFloatOp(RegisterFormState st, BytecodeStatement line, String rmn, String op) {
         if (!is(line, 2)) {
             return 0;
         }
@@ -792,15 +654,15 @@ public class RegisterFormPass implements OptimizationPass {
         if (sz < 2) {
             return 0;
         }
-        Entry b = st.stack.get(sz - 1);
-        Entry a = st.stack.get(sz - 2);
+        RegisterFormEntry b = st.stack.get(sz - 1);
+        RegisterFormEntry a = st.stack.get(sz - 2);
         if (!isValue(a) || !isValue(b)) {
             return 0;
         }
         boolean loadA = floatNeedsLoad(a, n);
         boolean loadB = floatNeedsLoad(b, n);
-        boolean aReg = a.kind == Kind.T || loadA;
-        boolean bReg = b.kind == Kind.T || loadB;
+        boolean aReg = a.kind == RegisterFormKind.T || loadA;
+        boolean bReg = b.kind == RegisterFormKind.T || loadB;
         int need = (loadA ? 1 : 0) + (loadB ? 1 : 0) + ((!aReg && !bReg) ? 1 : 0);
         if (need > st.freeTemps()) {
             return 0;
@@ -818,12 +680,12 @@ public class RegisterFormPass implements OptimizationPass {
         st.stack.remove(sz - 1);
         st.stack.remove(sz - 2);
         int dst;
-        if (a.kind == Kind.T) {
+        if (a.kind == RegisterFormKind.T) {
             dst = a.temp;
-            if (b.kind == Kind.T) {
+            if (b.kind == RegisterFormKind.T) {
                 st.freeTemp(b.temp);
             }
-        } else if (b.kind == Kind.T) {
+        } else if (b.kind == RegisterFormKind.T) {
             dst = b.temp;
         } else {
             dst = st.allocTemp();
@@ -835,7 +697,7 @@ public class RegisterFormPass implements OptimizationPass {
 
     // ---- pointers, loads, computed addresses ---------------------------
 
-    private int fuseDeref(State st, BytecodeStatement line, BytecodeProgram all, int idx) {
+    private int fuseDeref(RegisterFormState st, BytecodeStatement line, BytecodeProgram all, int idx) {
         if (!is(line, 2)) {
             return 0;
         }
@@ -844,14 +706,14 @@ public class RegisterFormPass implements OptimizationPass {
     }
 
     /** LEN -- the dynarray header's len field: an 8-byte load through the pointer on top of the stack. */
-    private int fuseLen(State st, BytecodeStatement line, BytecodeProgram all, int idx) {
+    private int fuseLen(RegisterFormState st, BytecodeStatement line, BytecodeProgram all, int idx) {
         if (!is(line, 1)) {
             return 0;
         }
         return derefN(st, line, 8);
     }
 
-    private int derefN(State st, BytecodeStatement line, int n) {
+    private int derefN(RegisterFormState st, BytecodeStatement line, int n) {
         if (!isWidth(n)) {
             return 0;
         }
@@ -859,21 +721,21 @@ public class RegisterFormPass implements OptimizationPass {
         if (sz < 1) {
             return 0;
         }
-        Entry p = st.stack.get(sz - 1);
+        RegisterFormEntry p = st.stack.get(sz - 1);
         if (!isAddress(p)) {
             return 0;
         }
-        if (p.kind != Kind.T && st.freeTemps() == 0) {
+        if (p.kind != RegisterFormKind.T && st.freeTemps() == 0) {
             return 0;
         }
         st.anchor = line.get(0);
         st.risky = true;
         st.stack.remove(sz - 1);
-        if (p.kind == Kind.A) {
+        if (p.kind == RegisterFormKind.A) {
             int t = st.allocTemp();
             st.emit("R_LD", String.valueOf(n), "%t" + t, p.text);
             st.stack.add(loadedTemp(t, n));
-        } else if (p.kind == Kind.M) {
+        } else if (p.kind == RegisterFormKind.M) {
             int t = st.allocTemp();
             st.emit("R_MOV", "8", "%t" + t, p.text);
             st.emit("R_LD", String.valueOf(n), "%t" + t, "%t" + t);
@@ -886,7 +748,7 @@ public class RegisterFormPass implements OptimizationPass {
     }
 
     /** base + idx*scale into one temp. base: A, T or an 8-byte M; idx: K, T or an M (loaded when narrow). */
-    private int fuseLookupArrayLhs(State st, BytecodeStatement line, BytecodeProgram all, int idx) {
+    private int fuseLookupArrayLhs(RegisterFormState st, BytecodeStatement line, BytecodeProgram all, int idx) {
         if (!is(line, 2)) {
             return 0;
         }
@@ -898,8 +760,8 @@ public class RegisterFormPass implements OptimizationPass {
         if (sz < 2) {
             return 0;
         }
-        Entry ix = st.stack.get(sz - 1);
-        Entry base = st.stack.get(sz - 2);
+        RegisterFormEntry ix = st.stack.get(sz - 1);
+        RegisterFormEntry base = st.stack.get(sz - 2);
         if (!isValue(ix)) {
             return 0;
         }
@@ -915,7 +777,7 @@ public class RegisterFormPass implements OptimizationPass {
      * value (a frame slot or a temp); a fixed array pushed by value is never one of these (bigger ones are pushed as blocks, an 8-byte one carries
      * the "t8" token, smaller ones are tagged), so only the plain two-token line is taken. Element types that are not 1/2/4/8 bytes stay stack form.
      */
-    private int fuseLookupPtrRead(State st, BytecodeStatement line, BytecodeProgram all, int idx) {
+    private int fuseLookupPtrRead(RegisterFormState st, BytecodeStatement line, BytecodeProgram all, int idx) {
         if (!is(line, 2)) {
             return 0;
         }
@@ -931,12 +793,12 @@ public class RegisterFormPass implements OptimizationPass {
                 int dw = parseSize(dl.get(1).text);
                 int sz2 = st.stack.size();
                 if (off != null && off >= 0 && fw == dw && isWidth(fw) && off + fw <= n && sz2 >= 2) {
-                    Entry ix2 = st.stack.get(sz2 - 1);
-                    Entry base2 = st.stack.get(sz2 - 2);
-                    if (isValue(ix2) && base2.kind != Kind.A && isAddress(base2)) {
+                    RegisterFormEntry ix2 = st.stack.get(sz2 - 1);
+                    RegisterFormEntry base2 = st.stack.get(sz2 - 2);
+                    if (isValue(ix2) && base2.kind != RegisterFormKind.A && isAddress(base2)) {
                         int r2 = emitLea(st, line, base2, ix2, n, sz2, off);
                         if (r2 != 0) {
-                            Entry top2 = st.stack.remove(st.stack.size() - 1);
+                            RegisterFormEntry top2 = st.stack.remove(st.stack.size() - 1);
                             st.emit("R_LD", String.valueOf(fw), "%t" + top2.temp, "%t" + top2.temp);
                             st.stack.add(loadedTemp(top2.temp, fw));
                             return 3;
@@ -962,31 +824,31 @@ public class RegisterFormPass implements OptimizationPass {
         if (sz < 2) {
             return 0;
         }
-        Entry ix = st.stack.get(sz - 1);
-        Entry base = st.stack.get(sz - 2);
-        if (!isValue(ix) || base.kind == Kind.A || !isAddress(base)) {
+        RegisterFormEntry ix = st.stack.get(sz - 1);
+        RegisterFormEntry base = st.stack.get(sz - 2);
+        if (!isValue(ix) || base.kind == RegisterFormKind.A || !isAddress(base)) {
             return 0;
         }
         int r = emitLea(st, line, base, ix, n, sz, 0);
         if (r == 0) {
             return 0;
         }
-        Entry top = st.stack.remove(st.stack.size() - 1);
+        RegisterFormEntry top = st.stack.remove(st.stack.size() - 1);
         st.emit("R_LD", String.valueOf(n), "%t" + top.temp, "%t" + top.temp);
         st.stack.add(loadedTemp(top.temp, n));
         return r;
     }
 
-    private int emitLea(State st, BytecodeStatement line, Entry base, Entry ix, int scale, int sz) {
+    private int emitLea(RegisterFormState st, BytecodeStatement line, RegisterFormEntry base, RegisterFormEntry ix, int scale, int sz) {
         return emitLea(st, line, base, ix, scale, sz, 0);
     }
 
     /** as above, plus a constant byte displacement (a sixth R_LEA operand, written only when non-zero). */
-    private int emitLea(State st, BytecodeStatement line, Entry base, Entry ix, int scale, int sz, long disp) {
-        boolean loadBase = base.kind == Kind.M;
-        boolean loadIx = ix.kind == Kind.M && ix.size != 8;
-        boolean baseReg = base.kind == Kind.T || loadBase;
-        boolean ixReg = ix.kind == Kind.T || loadIx;
+    private int emitLea(RegisterFormState st, BytecodeStatement line, RegisterFormEntry base, RegisterFormEntry ix, int scale, int sz, long disp) {
+        boolean loadBase = base.kind == RegisterFormKind.M;
+        boolean loadIx = ix.kind == RegisterFormKind.M && ix.size != 8;
+        boolean baseReg = base.kind == RegisterFormKind.T || loadBase;
+        boolean ixReg = ix.kind == RegisterFormKind.T || loadIx;
         int need = (loadBase ? 1 : 0) + (loadIx ? 1 : 0) + ((!baseReg && !ixReg) ? 1 : 0);
         if (need > st.freeTemps()) {
             return 0;
@@ -999,17 +861,17 @@ public class RegisterFormPass implements OptimizationPass {
         if (loadIx) {
             loadInto(st, ix);
         }
-        String bOp = base.kind == Kind.A ? base.text : operandOf(base);
+        String bOp = base.kind == RegisterFormKind.A ? base.text : operandOf(base);
         String iOp = operandOf(ix);
         st.stack.remove(sz - 1);
         st.stack.remove(sz - 2);
         int dst;
-        if (base.kind == Kind.T) {
+        if (base.kind == RegisterFormKind.T) {
             dst = base.temp;
-            if (ix.kind == Kind.T) {
+            if (ix.kind == RegisterFormKind.T) {
                 st.freeTemp(ix.temp);
             }
-        } else if (ix.kind == Kind.T) {
+        } else if (ix.kind == RegisterFormKind.T) {
             dst = ix.temp;
         } else {
             dst = st.allocTemp();
@@ -1027,7 +889,7 @@ public class RegisterFormPass implements OptimizationPass {
      * LOOKUP_DYN n / LOOKUP_DYN_LHS n -- element address = pointer + 16 + index*n (the dynarray header is len, cap). The LHS form
      * leaves that address; the value form also loads n bytes (n = 1, 2, 4, 8) straight away, zero-extended.
      */
-    private int fuseLookupDyn(State st, BytecodeStatement line, BytecodeProgram all, int idx) {
+    private int fuseLookupDyn(RegisterFormState st, BytecodeStatement line, BytecodeProgram all, int idx) {
         if (!is(line, 2)) {
             return 0;
         }
@@ -1047,12 +909,12 @@ public class RegisterFormPass implements OptimizationPass {
                 int dw = parseSize(dl.get(1).text);
                 int sz2 = st.stack.size();
                 if (off != null && off >= 0 && fw == dw && isWidth(fw) && off + fw <= n && sz2 >= 2) {
-                    Entry ix2 = st.stack.get(sz2 - 1);
-                    Entry base2 = st.stack.get(sz2 - 2);
+                    RegisterFormEntry ix2 = st.stack.get(sz2 - 1);
+                    RegisterFormEntry base2 = st.stack.get(sz2 - 2);
                     if (isValue(ix2) && isAddress(base2)) {
                         int r2 = emitLea(st, line, base2, ix2, n, sz2, 16 + off);
                         if (r2 != 0) {
-                            Entry top2 = st.stack.remove(st.stack.size() - 1);
+                            RegisterFormEntry top2 = st.stack.remove(st.stack.size() - 1);
                             st.emit("R_LD", String.valueOf(fw), "%t" + top2.temp, "%t" + top2.temp);
                             st.stack.add(loadedTemp(top2.temp, fw));
                             return 3;
@@ -1078,8 +940,8 @@ public class RegisterFormPass implements OptimizationPass {
         if (sz < 2) {
             return 0;
         }
-        Entry ix = st.stack.get(sz - 1);
-        Entry base = st.stack.get(sz - 2);
+        RegisterFormEntry ix = st.stack.get(sz - 1);
+        RegisterFormEntry base = st.stack.get(sz - 2);
         if (!isValue(ix) || !isAddress(base)) {
             return 0;
         }
@@ -1088,7 +950,7 @@ public class RegisterFormPass implements OptimizationPass {
         if (r == 0 || lhs) {
             return r;
         }
-        Entry top = st.stack.remove(st.stack.size() - 1);
+        RegisterFormEntry top = st.stack.remove(st.stack.size() - 1);
         st.emit("R_LD", String.valueOf(n), "%t" + top.temp, "%t" + top.temp);
         st.stack.add(loadedTemp(top.temp, n));
         return r;
@@ -1099,7 +961,7 @@ public class RegisterFormPass implements OptimizationPass {
      * src bytes is already zero-extended (R_LD does it), so only its recorded width changes; a computed temp (a narrow ADD keeps carry
      * bits above its width) is masked (src 1 or 2) or left to the stack form (src 4: the mask does not fit an immediate).
      */
-    private int fuseZext(State st, BytecodeStatement line, BytecodeProgram all, int idx) {
+    private int fuseZext(RegisterFormState st, BytecodeStatement line, BytecodeProgram all, int idx) {
         if (!is(line, 3)) {
             return 0;
         }
@@ -1113,8 +975,8 @@ public class RegisterFormPass implements OptimizationPass {
             st.anchor = line.get(0);
             return 1;
         }
-        Entry e = st.stack.get(sz - 1);
-        if (e.kind == Kind.M) {
+        RegisterFormEntry e = st.stack.get(sz - 1);
+        if (e.kind == RegisterFormKind.M) {
             // a frame value is zero-extended whenever it is read: keeping only its low `src` bytes is just reading fewer of them
             st.anchor = line.get(0);
             st.risky = true;
@@ -1124,7 +986,7 @@ public class RegisterFormPass implements OptimizationPass {
             }
             return 1;
         }
-        if (e.kind != Kind.T) {
+        if (e.kind != RegisterFormKind.T) {
             return 0;
         }
         if (e.zx && e.size <= src) {
@@ -1149,7 +1011,7 @@ public class RegisterFormPass implements OptimizationPass {
      * TRUNC src dst -- keep the low `dst` bytes, zero-filled (a wrap:<T> or a proven narrowing). A frame value of at least dst bytes
      * is just read narrower (little endian: same address); a temp is masked in place (dst 1 or 2: the mask is an immediate).
      */
-    private int fuseTrunc(State st, BytecodeStatement line, BytecodeProgram all, int idx) {
+    private int fuseTrunc(RegisterFormState st, BytecodeStatement line, BytecodeProgram all, int idx) {
         if (!is(line, 3)) {
             return 0;
         }
@@ -1159,15 +1021,15 @@ public class RegisterFormPass implements OptimizationPass {
         if (sz < 1 || src != 8 || (dst != 1 && dst != 2 && dst != 4)) {
             return 0;
         }
-        Entry e = st.stack.get(sz - 1);
-        if (e.kind == Kind.M && e.size >= dst) {
+        RegisterFormEntry e = st.stack.get(sz - 1);
+        if (e.kind == RegisterFormKind.M && e.size >= dst) {
             st.anchor = line.get(0);
             st.risky = true;
             e.size = dst;
             e.orig = st.mk("PUSH", String.valueOf(dst), e.text); // a flush re-emits exactly the narrowed push
             return 1;
         }
-        if (e.kind == Kind.T && dst != 4) {
+        if (e.kind == RegisterFormKind.T && dst != 4) {
             st.anchor = line.get(0);
             st.risky = true;
             st.emit("R_BIN", "BAND", "8", "%t" + e.temp, "%t" + e.temp, dst == 1 ? "#255" : "#65535");
@@ -1179,7 +1041,7 @@ public class RegisterFormPass implements OptimizationPass {
     }
 
     /** PUSH_FIELDNAME off size -- the field offset, an immediate that the DOT_LHS right after it adds to a base address. */
-    private int fuseFieldName(State st, BytecodeStatement line, BytecodeProgram all, int idx) {
+    private int fuseFieldName(RegisterFormState st, BytecodeStatement line, BytecodeProgram all, int idx) {
         if (!is(line, 3)) {
             return 0;
         }
@@ -1187,8 +1049,8 @@ public class RegisterFormPass implements OptimizationPass {
         if (off == null) {
             return 0;
         }
-        Entry e = new Entry();
-        e.kind = Kind.K;
+        RegisterFormEntry e = new RegisterFormEntry();
+        e.kind = RegisterFormKind.K;
         e.orig = line;
         e.text = line.get(1).text;
         st.anchor = line.get(0);
@@ -1197,7 +1059,7 @@ public class RegisterFormPass implements OptimizationPass {
         return 1;
     }
 
-    private int fuseDotLhs(State st, BytecodeStatement line, BytecodeProgram all, int idx) {
+    private int fuseDotLhs(RegisterFormState st, BytecodeStatement line, BytecodeProgram all, int idx) {
         if (!is(line, 2)) {
             return 0;
         }
@@ -1205,23 +1067,23 @@ public class RegisterFormPass implements OptimizationPass {
         if (sz < 2) {
             return 0;
         }
-        Entry off = st.stack.get(sz - 1);
-        Entry base = st.stack.get(sz - 2);
-        if (off.kind != Kind.K) {
+        RegisterFormEntry off = st.stack.get(sz - 1);
+        RegisterFormEntry base = st.stack.get(sz - 2);
+        if (off.kind != RegisterFormKind.K) {
             return 0;
         }
         Long k = parseIntLiteral(off.text);
         if (k == null || !isAddress(base)) {
             return 0;
         }
-        if (base.kind == Kind.A && !base.global) {
+        if (base.kind == RegisterFormKind.A && !base.global) {
             // A field of a frame slot is just another frame address: no code at all.
             st.anchor = line.get(0);
             st.risky = true;
             st.stack.remove(sz - 1);
             st.stack.remove(sz - 2);
-            Entry e = new Entry();
-            e.kind = Kind.A;
+            RegisterFormEntry e = new RegisterFormEntry();
+            e.kind = RegisterFormKind.A;
             e.off = base.off + k;
             e.text = "$" + e.off;
             e.orig = st.mk("ADDR", "8", e.text);
@@ -1233,7 +1095,7 @@ public class RegisterFormPass implements OptimizationPass {
 
     // ---- stores ---------------------------------------------------------
 
-    private int fuseAssign(State st, BytecodeStatement line, BytecodeProgram all, int idx) {
+    private int fuseAssign(RegisterFormState st, BytecodeStatement line, BytecodeProgram all, int idx) {
         if (!is(line, 4) || !line.get(0).text.equals("ASSIGN")) {
             return 0;
         }
@@ -1245,18 +1107,18 @@ public class RegisterFormPass implements OptimizationPass {
         if (sz < 2) {
             return 0;
         }
-        Entry val = st.stack.get(sz - 1);
-        Entry addr = st.stack.get(sz - 2);
+        RegisterFormEntry val = st.stack.get(sz - 1);
+        RegisterFormEntry addr = st.stack.get(sz - 2);
         if (!isAddress(addr) || !isValue(val)) {
             return 0; // not a plain scalar store -- includes every multi-entry construction run
         }
-        boolean frameDst = addr.kind == Kind.A && !addr.global;
-        boolean globalDst = addr.kind == Kind.A && addr.global;
+        boolean frameDst = addr.kind == RegisterFormKind.A && !addr.global;
+        boolean globalDst = addr.kind == RegisterFormKind.A && addr.global;
         // Store hazard: a still-deferred read of memory this store may overwrite must be loaded first.
-        List<Entry> hazards = new ArrayList<>();
+        List<RegisterFormEntry> hazards = new ArrayList<>();
         for (int k = 0; k < sz - 2; k++) {
-            Entry e = st.stack.get(k);
-            if (e.kind != Kind.M) {
+            RegisterFormEntry e = st.stack.get(k);
+            if (e.kind != RegisterFormKind.M) {
                 continue;
             }
             boolean overlaps;
@@ -1270,9 +1132,9 @@ public class RegisterFormPass implements OptimizationPass {
             }
         }
         boolean legacy = n == 8 && frameDst; // the phase-1 shape: R_MOV $slot src
-        boolean valLoad = val.kind == Kind.M
-                || (val.kind == Kind.K && !legacy && n == 8 && !fitsImm32(val.text));
-        boolean addrLoad = addr.kind == Kind.M;
+        boolean valLoad = val.kind == RegisterFormKind.M
+                || (val.kind == RegisterFormKind.K && !legacy && n == 8 && !fitsImm32(val.text));
+        boolean addrLoad = addr.kind == RegisterFormKind.M;
         int needed = hazards.size() + (valLoad ? 1 : 0) + (addrLoad ? 1 : 0);
         if (needed > st.freeTemps()) {
             return 0;
@@ -1281,18 +1143,18 @@ public class RegisterFormPass implements OptimizationPass {
         if (!legacy || n != 8) {
             st.risky = true;
         }
-        for (Entry h : hazards) {
+        for (RegisterFormEntry h : hazards) {
             loadInto(st, h);
         }
         // Peephole: "x = x + c" / "x = x - c" / "x++" / "x--" on an 8-byte slot -> one memory-operand instruction.
-        if (legacy && val.kind == Kind.T && tryRmw(st, addr, val, sz)) {
+        if (legacy && val.kind == RegisterFormKind.T && tryRmw(st, addr, val, sz)) {
             return 1;
         }
         String src;
         int scratch = -1;
         if (valLoad) {
             scratch = st.allocTemp();
-            if (val.kind == Kind.M) {
+            if (val.kind == RegisterFormKind.M) {
                 if (val.size == 8) {
                     st.emit("R_MOV", "8", "%t" + scratch, val.text);
                 } else {
@@ -1311,7 +1173,7 @@ public class RegisterFormPass implements OptimizationPass {
             addrScratch = st.allocTemp();
             st.emit("R_MOV", "8", "%t" + addrScratch, addr.text);
             dst = "%t" + addrScratch;
-        } else if (addr.kind == Kind.T) {
+        } else if (addr.kind == RegisterFormKind.T) {
             dst = "%t" + addr.temp;
         } else {
             dst = addr.text; // $off or &sym
@@ -1327,10 +1189,10 @@ public class RegisterFormPass implements OptimizationPass {
         if (addrScratch >= 0) {
             st.freeTemp(addrScratch);
         }
-        if (val.kind == Kind.T) {
+        if (val.kind == RegisterFormKind.T) {
             st.freeTemp(val.temp);
         }
-        if (addr.kind == Kind.T) {
+        if (addr.kind == RegisterFormKind.T) {
             st.freeTemp(addr.temp);
         }
         st.stack.remove(sz - 1);
@@ -1343,7 +1205,7 @@ public class RegisterFormPass implements OptimizationPass {
      * "R_UN INC|DEC 8 %tv $x"): replace that instruction and the store with one read-modify-write on the slot.
      * The temp is dead after the store, so nothing else reads it.
      */
-    private boolean tryRmw(State st, Entry addr, Entry val, int sz) {
+    private boolean tryRmw(RegisterFormState st, RegisterFormEntry addr, RegisterFormEntry val, int sz) {
         if (st.out.isEmpty() || st.out.size() <= st.cpOut) {
             return false;
         }
@@ -1385,7 +1247,7 @@ public class RegisterFormPass implements OptimizationPass {
     // ---- argument registers and returns ---------------------------------
 
     /** POP ARGn size / POP FARGn size -- straight into the argument register; anything else (POP $slot ...) is left alone. */
-    private int fusePop(State st, BytecodeStatement line, BytecodeProgram all, int idx) {
+    private int fusePop(RegisterFormState st, BytecodeStatement line, BytecodeProgram all, int idx) {
         if (!is(line, 3)) {
             return 0;
         }
@@ -1407,8 +1269,8 @@ public class RegisterFormPass implements OptimizationPass {
         if (sz < 1) {
             return 0;
         }
-        Entry v = st.stack.get(sz - 1);
-        if (v.kind == Kind.A) {
+        RegisterFormEntry v = st.stack.get(sz - 1);
+        if (v.kind == RegisterFormKind.A) {
             if (isF) {
                 return 0;
             }
@@ -1422,8 +1284,8 @@ public class RegisterFormPass implements OptimizationPass {
         st.anchor = line.get(0);
         st.risky = true;
         st.stack.remove(sz - 1);
-        st.emit(isF ? "R_FARG" : "R_ARG", String.valueOf(n), String.valueOf(v.kind == Kind.M ? v.size : 8), operandOf(v));
-        if (v.kind == Kind.T) {
+        st.emit(isF ? "R_FARG" : "R_ARG", String.valueOf(n), String.valueOf(v.kind == RegisterFormKind.M ? v.size : 8), operandOf(v));
+        if (v.kind == RegisterFormKind.T) {
             st.freeTemp(v.temp);
         }
         return 1;
@@ -1433,14 +1295,14 @@ public class RegisterFormPass implements OptimizationPass {
      * POP $slot n with a remembered value on top: the same store as "ADDR $slot; value; ASSIGN n n n", so it goes through
      * fuseAssign with a transient address entry placed under the value (removed again if fuseAssign declines).
      */
-    private int fusePopToSlot(State st, BytecodeStatement line, BytecodeProgram all, int idx, String dest, long slot) {
+    private int fusePopToSlot(RegisterFormState st, BytecodeStatement line, BytecodeProgram all, int idx, String dest, long slot) {
         int n = parseSize(line.get(2).text);
         int sz = st.stack.size();
         if (!isWidth(n) || sz < 1 || !isValue(st.stack.get(sz - 1))) {
             return 0;
         }
-        Entry a = new Entry();
-        a.kind = Kind.A;
+        RegisterFormEntry a = new RegisterFormEntry();
+        a.kind = RegisterFormKind.A;
         a.orig = line;
         a.text = dest;
         a.off = slot;
@@ -1460,7 +1322,7 @@ public class RegisterFormPass implements OptimizationPass {
     }
 
     /** RET size / RET_FLOAT size with exactly one remembered value: move it into rax / xmm0 and leave. */
-    private int fuseRet(State st, BytecodeStatement line, BytecodeProgram all, int idx) {
+    private int fuseRet(RegisterFormState st, BytecodeStatement line, BytecodeProgram all, int idx) {
         if (!is(line, 2)) {
             return 0;
         }
@@ -1474,20 +1336,20 @@ public class RegisterFormPass implements OptimizationPass {
         if (st.stack.size() != 1) {
             return 0;
         }
-        Entry v = st.stack.get(0);
+        RegisterFormEntry v = st.stack.get(0);
         if (!isValue(v)) {
             return 0;
         }
         st.anchor = line.get(0);
         st.risky = true;
         st.stack.remove(0);
-        if (v.kind == Kind.M && v.size != 8) {
+        if (v.kind == RegisterFormKind.M && v.size != 8) {
             st.emit("R_LD", String.valueOf(v.size), "%s", v.text);
             st.emit(isF ? "R_RETF" : "R_RET", "%s");
         } else {
             st.emit(isF ? "R_RETF" : "R_RET", operandOf(v));
         }
-        if (v.kind == Kind.T) {
+        if (v.kind == RegisterFormKind.T) {
             st.freeTemp(v.temp);
         }
         return 1;
@@ -1495,7 +1357,7 @@ public class RegisterFormPass implements OptimizationPass {
 
     // ---- conditional branches ---------------------------------------------
 
-    private int fuseCmpJmp(State st, BytecodeStatement line, BytecodeProgram all, int idx) {
+    private int fuseCmpJmp(RegisterFormState st, BytecodeStatement line, BytecodeProgram all, int idx) {
         if (!is(line, 1) || idx + 1 >= all.size()) {
             return 0;
         }
@@ -1507,8 +1369,8 @@ public class RegisterFormPass implements OptimizationPass {
         if (n < 1) {
             return 0;
         }
-        Entry c = st.stack.get(n - 1);
-        if (c.kind != Kind.T) {
+        RegisterFormEntry c = st.stack.get(n - 1);
+        if (c.kind != RegisterFormKind.T) {
             return 0; // conditions are register-held 0/1 results
         }
         if (st.risky && n > 1) {

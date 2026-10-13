@@ -66,19 +66,11 @@ public class RangeEndHintPass {
         return out;
     }
 
-    /** one candidate construction: the index of its ADDR line, the split point of its two expressions, the ASSIGN index */
-    private static final class Site {
-        int addr;
-        int split;   // first line of the second expression
-        int assign;
-        long off;
-    }
-
     private BytecodeProgram function(BytecodeProgram fn) {
         int n = fn.size();
-        List<Site> sites = new ArrayList<>();
+        List<RangeEndHintSite> sites = new ArrayList<>();
         for (int i = 0; i + 3 < n; i++) {
-            Site s = match(fn, i);
+            RangeEndHintSite s = match(fn, i);
             if (s != null) {
                 sites.add(s);
             }
@@ -108,14 +100,14 @@ public class RangeEndHintPass {
             }
         }
         // group the sites by slot; a slot is usable only if every mention outside its constructions is a plain 8-byte read
-        Map<Long, List<Site>> bySlot = new HashMap<>();
-        for (Site s : sites) {
+        Map<Long, List<RangeEndHintSite>> bySlot = new HashMap<>();
+        for (RangeEndHintSite s : sites) {
             bySlot.computeIfAbsent(s.off, k -> new ArrayList<>()).add(s);
         }
         Set<Integer> splitAddr = new HashSet<>();
         List<long[]> hints = new ArrayList<>(); // {offset of the end slot, weight}
-        List<Site> accepted = new ArrayList<>();
-        for (Map.Entry<Long, List<Site>> e : bySlot.entrySet()) {
+        List<RangeEndHintSite> accepted = new ArrayList<>();
+        for (Map.Entry<Long, List<RangeEndHintSite>> e : bySlot.entrySet()) {
             long ro = e.getKey();
             long weight = usable(fn, ro, e.getValue(), depth);
             if (weight < 0) {
@@ -129,15 +121,15 @@ public class RangeEndHintPass {
         if (accepted.isEmpty()) {
             return fn;
         }
-        Map<Integer, Site> byAddr = new HashMap<>();
-        for (Site s : accepted) {
+        Map<Integer, RangeEndHintSite> byAddr = new HashMap<>();
+        for (RangeEndHintSite s : accepted) {
             byAddr.put(s.addr, s);
         }
         BytecodeProgram res = new BytecodeProgram(n + 4 + hints.size());
         boolean hinted = false;
         for (int i = 0; i < n; i++) {
             BytecodeStatement l = fn.get(i);
-            Site s = byAddr.get(i);
+            RangeEndHintSite s = byAddr.get(i);
             if (s != null) {
                 // ADDR 8 $r ; <a> ; ASSIGN 8 8 8 ; ADDR 8 $r+8 ; <b> ; ASSIGN 8 8 8
                 res.add(mk(l.get(0), "ADDR", "8", "$" + s.off));
@@ -171,19 +163,19 @@ public class RangeEndHintPass {
      * -1 when the slot cannot be treated this way, else the weight of its end slot. Every other mention of $ro must be PUSH 8 $ro,
      * every mention of $ro+8 PUSH 8 $ro+8 (or the construction itself), and no token may name an offset strictly inside the 16 bytes.
      */
-    private static long usable(BytecodeProgram fn, long ro, List<Site> sites, int[] depth) {
+    private static long usable(BytecodeProgram fn, long ro, List<RangeEndHintSite> sites, int[] depth) {
         String rs = "$" + ro;
         String es = "$" + (ro + 8);
         Set<Integer> own = new HashSet<>();
         Set<Integer> addrLines = new HashSet<>();
-        for (Site s : sites) {
+        for (RangeEndHintSite s : sites) {
             addrLines.add(s.addr);
             for (int k = s.addr; k <= s.assign; k++) {
                 own.add(k);
             }
         }
         long weight = 0;
-        for (Site s : sites) {
+        for (RangeEndHintSite s : sites) {
             weight += w(depth[s.addr]); // the store of the end
         }
         for (int i = 0; i < fn.size(); i++) {
@@ -244,7 +236,7 @@ public class RangeEndHintPass {
     }
 
     /** ADDR 16 $r ; expression ; expression ; ASSIGN 16 16 16 starting at i, or null */
-    private static Site match(BytecodeProgram fn, int i) {
+    private static RangeEndHintSite match(BytecodeProgram fn, int i) {
         BytecodeStatement a = fn.get(i);
         if (!(a.size() == 3 && isMn(a, "ADDR") && t(a, 1).equals("16"))) {
             return null;
@@ -259,7 +251,7 @@ public class RangeEndHintPass {
             BytecodeStatement l = fn.get(j);
             if (isMn(l, "ASSIGN")) {
                 if (depth == 2 && split > 0 && l.size() == 4 && t(l, 1).equals("16") && t(l, 2).equals("16") && t(l, 3).equals("16")) {
-                    Site s = new Site();
+                    RangeEndHintSite s = new RangeEndHintSite();
                     s.addr = i;
                     s.split = split;
                     s.assign = j;

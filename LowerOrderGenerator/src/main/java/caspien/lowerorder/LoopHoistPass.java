@@ -4,7 +4,6 @@ import caspien.bytecode.BytecodeStatement;
 import caspien.bytecode.BytecodeToken;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -89,13 +88,6 @@ public class LoopHoistPass {
         return l.size() == 1 && t(l, 0).startsWith("@") && t(l, 0).endsWith(":");
     }
 
-    /** a loop: header label index h, last line b that jumps back to it */
-    private static final class Loop {
-        int h;
-        int b;
-        int depth;
-    }
-
     /** returns the new function text, or null when nothing was hoisted */
     private BytecodeProgram hoistFunction(BytecodeProgram fn) {
         int n = fn.size();
@@ -151,14 +143,14 @@ public class LoopHoistPass {
                 }
             }
         }
-        List<Loop> loops = new ArrayList<>();
+        List<LoopHoistLoop> loops = new ArrayList<>();
         for (Map.Entry<String, Integer> e : labelDef.entrySet()) {
             int h = e.getValue();
             Integer last = lastRef.get(e.getKey());
             if (last == null || last <= h || firstRef.get(e.getKey()) < h) {
                 continue; // not a back edge, or the header is also entered from above/outside
             }
-            Loop lp = new Loop();
+            LoopHoistLoop lp = new LoopHoistLoop();
             lp.h = h;
             lp.b = last;
             if (singleEntry(fn, lp, labelDef)) {
@@ -168,8 +160,8 @@ public class LoopHoistPass {
         if (loops.isEmpty()) {
             return null;
         }
-        for (Loop a : loops) {
-            for (Loop b : loops) {
+        for (LoopHoistLoop a : loops) {
+            for (LoopHoistLoop b : loops) {
                 if (a != b && b.h < a.h && a.b <= b.b) {
                     a.depth++;
                 }
@@ -183,7 +175,7 @@ public class LoopHoistPass {
         Map<Integer, BytecodeProgram> before = new HashMap<>();
         BytecodeProgram hints = new BytecodeProgram();
         int extra = 0;
-        for (Loop lp : loops) {
+        for (LoopHoistLoop lp : loops) {
             Map<String, Integer> starts = new HashMap<>();
             List<long[]> writes = new ArrayList<>(); // {offset, width}: bytes the loop may store to, [offset, offset+width)
             for (int i = lp.h; i <= lp.b; i++) {
@@ -253,7 +245,6 @@ public class LoopHoistPass {
         }
         return res;
     }
-
 
     /**
      * How many bytes the mention of slot operand k of this line may store to (0 = the line only reads it). Known shapes give
@@ -451,7 +442,7 @@ public class LoopHoistPass {
     }
 
     /** true when no jump from outside [h,b] lands on a label inside it (the header itself is checked by the caller) */
-    private static boolean singleEntry(BytecodeProgram fn, Loop lp, Map<String, Integer> labelDef) {
+    private static boolean singleEntry(BytecodeProgram fn, LoopHoistLoop lp, Map<String, Integer> labelDef) {
         Set<String> inside = new HashSet<>();
         for (int i = lp.h + 1; i <= lp.b; i++) {
             BytecodeStatement l = fn.get(i);

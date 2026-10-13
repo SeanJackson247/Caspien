@@ -194,17 +194,6 @@ public class FloatTempPass {
         }
     }
 
-    private static final class Chain {
-        int def;
-        int last = -1;
-        boolean ok = true;
-        String temp;
-        List<int[]> uses = new ArrayList<>(); // {line, operand index}
-        int y = -1;
-        String w = "4";
-        boolean floatUse = false;
-    }
-
     private static String m(List<String> l) {
         return l.isEmpty() ? "" : l.get(0);
     }
@@ -293,7 +282,7 @@ public class FloatTempPass {
         }
 
         // find chains
-        List<Chain> chains = new ArrayList<>();
+        List<FloatTempChain> chains = new ArrayList<>();
         for (int d = 0; d < n; d++) {
             List<String> l = t.get(d);
             String mm = m(l);
@@ -312,7 +301,7 @@ public class FloatTempPass {
             if (tmp == null || !tmp.startsWith("%t")) {
                 continue;
             }
-            Chain c = new Chain();
+            FloatTempChain c = new FloatTempChain();
             c.def = d;
             c.temp = tmp;
             c.w = w;
@@ -374,7 +363,7 @@ public class FloatTempPass {
         Arrays.fill(freeAt, true);
         int[] busyUntil = new int[Y_COUNT];
         Arrays.fill(busyUntil, -1);
-        for (Chain c : chains) {
+        for (FloatTempChain c : chains) {
             if (!c.ok) {
                 continue;
             }
@@ -394,7 +383,7 @@ public class FloatTempPass {
         }
 
         boolean changed = false;
-        for (Chain c : chains) {
+        for (FloatTempChain c : chains) {
             if (!c.ok) {
                 continue;
             }

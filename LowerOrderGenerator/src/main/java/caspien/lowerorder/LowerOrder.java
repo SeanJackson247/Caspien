@@ -16,31 +16,18 @@ public final class LowerOrder {
     private LowerOrder() {
     }
 
-    /** `lob` = the low-order program text; `messages` = "[info]"/"[note]"/"[warning]" lines, in order (none today). */
-    public static final class Result {
-        public final String lob;
-        public final List<String> messages;
-        /** A stage that cannot finish throws; the field exists so every stage's Result can be read the same way. */
-        public final boolean failed = false;
-
-        Result(String lob, List<String> messages) {
-            this.lob = lob;
-            this.messages = messages;
-        }
-    }
-
     /**
      * @param hobText    the Optimizer's output
      * @param origin     name shown in diagnostics for the input (a file name)
      * @param configText the contents of `compiler.config` (required: calling conventions and register switches)
      */
-    public static Result generate(String hobText, String origin, String configText) {
+    public static LowerOrderResult generate(String hobText, String origin, String configText) {
         if (configText == null) {
             throw new IllegalStateException("required config 'compiler.config' was not supplied");
         }
         BytecodeProgram program = new BytecodeParser().parse(hobText.lines().toList(), origin);
         CompilerConfig config = CompilerConfig.parse(configText, "compiler.config");
         BytecodeProgram lowered = new LowerOrderGenerator(config).generate(program);
-        return new Result(new BytecodeSerializer().serialize(lowered), List.of());
+        return new LowerOrderResult(new BytecodeSerializer().serialize(lowered), List.of());
     }
 }

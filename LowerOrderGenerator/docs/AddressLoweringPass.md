@@ -80,7 +80,7 @@ Covers: the drop rule in `run()`.
 Covers: top-level and in-function metadata lines.
 
 - `STRUCT_DECORATE`, and in functions `FUNC_DECORATE`/`LOOP_DECORATE`/`FOR_DECORATE`, are dropped: purely declarative, already consumed upstream (`resolveConvention` reads `@call_convention(...)` off `lines`, not `out`). A real consumer would read them from the AST/TypeChecker side. `previousLine` is left unchanged for these (never a value-producing instruction a later PUSH_FIELDNAME/ADDR_OF lookup should see).
-- `STRUCT_START/STRUCT_MEMBER/STRUCT_END` and `ENUM` (user-declared and synthesized, `Class`, `$enum_for_...`) are dropped: struct layouts were read once up front via `StructTable.read(lines)` and baked into the surviving instructions (sizes via `SizeCalculator.structSizeOf`, member offsets via PUSH_FIELDNAME/`memberLocOf`); enum variant values are resolved via `resolveLiteralOrEnumValue` from `EnumTable.read(lines)`; `Class` ids and `$enum_for_...` lists were consumed by the earlier `MembershipLoweringPass`; the hidden `___type` id is always a plain integer literal pushed by `BytecodeEmitter.emitStruct`. This is the last pass, so nothing later needs them.
+- `STRUCT_START/STRUCT_MEMBER/STRUCT_END` and `ENUM` (user-declared and synthesized, `Class`, `$enum_for_...`) are dropped: struct layouts were read once up front via `StructTable.read(lines)` and baked into the surviving instructions (sizes via `AddressLoweringSizeCalculator.structSizeOf`, member offsets via PUSH_FIELDNAME/`memberLocOf`); enum variant values are resolved via `resolveLiteralOrEnumValue` from `EnumTable.read(lines)`; `Class` ids and `$enum_for_...` lists were consumed by the earlier `MembershipLoweringPass`; the hidden `___type` id is always a plain integer literal pushed by `BytecodeEmitter.emitStruct`. This is the last pass, so nothing later needs them.
 - A top-level `GLOBAL` is rewritten by `rewriteStaticOrGlobalDecl`; `ALLOC_STATIC` is handled inside functions by `tryRewrite`.
 - `REGVAR name weight [f]` (from `RegVarHintPass`) becomes `REGHINT offset size weight [f]` using the same layout; `RegisterFormPass` consumes it, `LowerOrderGenerator` strips leftovers; an unknown name drops the hint.
 
@@ -103,7 +103,7 @@ Covers: `findStructLiteralAssigns`, `findArrayLiteralAssigns` (in `run()`'s call
 
 ## Per-mnemonic rewrites
 
-Covers: `tryRewrite` (in-function lines). Every rewrite erases type operands down to byte sizes via `SizeCalculator.sizeOf`; where two runtime meanings differ, the mnemonic is split instead. A line that matches no rule (or an `ADDR` whose name does not resolve) returns null and is left alone.
+Covers: `tryRewrite` (in-function lines). Every rewrite erases type operands down to byte sizes via `AddressLoweringSizeCalculator.sizeOf`; where two runtime meanings differ, the mnemonic is split instead. A line that matches no rule (or an `ADDR` whose name does not resolve) returns null and is left alone.
 
 - `ALLOC name type` -> `ALLOC size` (always; `run` already read every ALLOC to build `offsets`). `ADDR name type` -> `ADDR size $offset` when `name` resolves. `PUSH x type` -> `PUSH size $offset` when `x` is a stack name, else `PUSH size x` (literal, `null`, global label...). `ASSIGN t t t` -> `ASSIGN s s s`; `ATOMIC_ASSIGN` gets the same treatment and keeps its own mnemonic so codegen can tell it from an ordinary store.
 - `RET type` -> `RET size` or `RET_FLOAT size` (integer vs float return register; `isFloatBaseType` is true for f32/f64 and is used only for this and the float splits below).
@@ -176,7 +176,7 @@ Covers: `isAlreadyCorrectPointerRetag`.
 
 An `ADDR_OF` is dropped as a no-op retag in exactly two cases: `REF` whose preceding storage is `owns` (re-aliasing an existing owns value computes no address; the text is checked rather than assumed), and `RAW` whose preceding storage is exactly `static` (an already-hoisted string literal, `static_some_imut_string`; other `static` locals are not matched).
 
-Every rewrite below reads an HOB line (`mnemonic operands...`) and returns a replacement line in low-order form, or `null` to leave the line untouched ("flag the gap, don't guess"). Type operands are erased to byte sizes via `SizeCalculator`.
+Every rewrite below reads an HOB line (`mnemonic operands...`) and returns a replacement line in low-order form, or `null` to leave the line untouched ("flag the gap, don't guess"). Type operands are erased to byte sizes via `AddressLoweringSizeCalculator`.
 
 ## Size-erasing rewrites
 Covers: DEREF, NEG, SEXT/ZEXT/TRUNC/FCONV, ATOMIC_SWAP, ADD/SUB/MUL/DIV/MOD, INC/DEC.
@@ -236,7 +236,7 @@ Covers: `resolveAddress`, `memberLocOf`, `walkLayoutFor`, `pseudoLayoutOf`, `Mem
 - `memberLocOf(baseType, member)` returns the member's offset and declared type. It walks `StructTable.LayoutEntry` (not the plain `Member` list) because `BytecodeEmitter.emitStruct` bakes natural-alignment `STRUCT_PADDING n` entries into the declared order; a padding entry has no name and just adds its byte count. `___type` is special-cased to `(0, imut_u64)` (every non-`@untyped` struct's hidden class id is its first member), so `MembershipLoweringPass`'s `leftName.___type` (from `instanceof`/`implements`) also resolves when the static type is an interface, which has no STRUCT_START/STRUCT_MEMBER layout.
 - `pseudoLayoutOf`: `range` / `range(...)` has a synthetic layout of two `indeterminate_u64` members `start`, `end` with no gap (see `TypeChecker.checkRange`, the range-literal ASSIGN order in `BytecodeEmitter`); everything else uses `structTable.layoutOf`.
 
-## SizeCalculator
+## AddressLoweringSizeCalculator
 Covers: `sizeOf`, `sizeOfBaseType`, `structSizeOf`, `alignOf`, `alignOfBaseType`, `structAlignOf`.
 
 - Sizes come only from canonical type text and the `StructTable` (no dependency on the compiler project). Any storage-bearing type (any pointer) is 8 bytes. A bare struct name known to the table is used whole before parsing (a generic mangled name such as `HashMapEntry_u64` would otherwise parse as mutability `HashMapEntry` + base `u64` and silently size as 8).

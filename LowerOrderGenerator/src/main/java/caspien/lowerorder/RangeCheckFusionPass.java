@@ -3,8 +3,6 @@ import caspien.bytecode.BytecodeProgram;
 import caspien.bytecode.BytecodeStatement;
 import caspien.bytecode.BytecodeToken;
 
-import java.util.ArrayList;
-import java.util.List;
 
 /**
  * Constant-bounds `match i in arr` / `match i into arr` check (always on, runs on the STACK-form text right after

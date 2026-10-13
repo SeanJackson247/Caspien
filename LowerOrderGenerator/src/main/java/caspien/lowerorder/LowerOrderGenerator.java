@@ -1,7 +1,6 @@
 package caspien.lowerorder;
 import caspien.bytecode.BytecodeProgram;
 
-import java.util.List;
 
 /**
  * Top-level orchestrator for the real lowering work -- split out of the

@@ -3,8 +3,6 @@ import caspien.bytecode.BytecodeProgram;
 import caspien.bytecode.BytecodeStatement;
 import caspien.bytecode.BytecodeToken;
 
-import java.util.ArrayList;
-import java.util.List;
 
 /**
  * Field access through a pointer as one instruction (always on; runs last, after {@link LengthCompareFusionPass}, on the final register-form

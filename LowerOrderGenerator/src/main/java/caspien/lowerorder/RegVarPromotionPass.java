@@ -123,26 +123,6 @@ public class RegVarPromotionPass {
         this.argRegs = enabled && argRegs;
     }
 
-    static final class Hint {
-        long off;
-        int size;
-        long weight;
-        boolean banned;
-        int reg = -1;
-        /** the hint carried the float marker */
-        boolean isFloat;
-        /** promoted to an xmm register (float hint and the float switch is on) rather than r13/r14 */
-        boolean xmm;
-        /** may live in a caller-saved register (r8/r9/r10): never live across or at a line that could clobber them */
-        boolean volOk;
-        /** may live in rsi/rdi: volOk, and never mentioned inside a call's argument bracket (CC_START .. CC_END), where those registers are being filled */
-        boolean argSafe;
-        /** may live in rdx: never live at or across a constant divide (R_DIVC clobbers rdx) */
-        boolean rdxOk;
-        /** may live in rcx: never live at or across a variable-count shift (the shift saves and uses rcx as the count) */
-        boolean rcxOk;
-    }
-
     public BytecodeProgram run(BytecodeProgram lines) {
         BytecodeProgram out = new BytecodeProgram(lines.size());
         int i = 0;
@@ -189,7 +169,7 @@ public class RegVarPromotionPass {
     }
 
     private void processFunction(BytecodeProgram fn, BytecodeProgram out) {
-        Map<Long, Hint> hints = new HashMap<>();
+        Map<Long, RegVarPromotionHint> hints = new HashMap<>();
         boolean blocked = false;      // an instruction that uses r13/r14 as backend scratch: no integer variables here
         boolean hardBlocked = false;  // inline assembly: touch nothing
         for (BytecodeStatement l : fn) {
@@ -199,7 +179,7 @@ public class RegVarPromotionPass {
             String m = l.get(0).text;
             if (m.equals("REGHINT") && (l.size() == 4 || l.size() == 5)) {
                 try {
-                    Hint h = new Hint();
+                    RegVarPromotionHint h = new RegVarPromotionHint();
                     h.off = Long.parseLong(l.get(1).text);
                     h.size = Integer.parseInt(l.get(2).text);
                     h.weight = Long.parseLong(l.get(3).text);
@@ -242,7 +222,7 @@ public class RegVarPromotionPass {
             if (!(l.size() == 3 && l.get(0).text.equals("ADDR") && (l.get(1).text.equals("1") || l.get(1).text.equals("2") || l.get(1).text.equals("4") || l.get(1).text.equals("8")) && l.get(2).text.startsWith("$"))) {
                 continue;
             }
-            Hint h = slotHint(hints, l.get(2).text);
+            RegVarPromotionHint h = slotHint(hints, l.get(2).text);
             if (h == null || !l.get(1).text.equals(String.valueOf(h.size))) {
                 continue;
             }
@@ -320,7 +300,7 @@ public class RegVarPromotionPass {
             }
             String m = l.get(0).text;
             for (int k = 1; k < l.size(); k++) {
-                Hint h = slotHint(hints, l.get(k).text);
+                RegVarPromotionHint h = slotHint(hints, l.get(k).text);
                 if (h != null && !(h.xmm ? mentionOkX(m, l, k, h) : mentionOk(m, l, k, h))) {
                     h.banned = true;
                 }
@@ -328,16 +308,16 @@ public class RegVarPromotionPass {
         }
 
         // Choose per register file: highest weight first (lower offset breaks ties, for a stable result).
-        Map<Long, Hint> chosenInt = new HashMap<>();
-        Map<Long, Hint> chosenX = new HashMap<>();
-        List<Hint> intCands = new ArrayList<>();
-        List<Hint> xCands = new ArrayList<>();
-        for (Hint h : hints.values()) {
+        Map<Long, RegVarPromotionHint> chosenInt = new HashMap<>();
+        Map<Long, RegVarPromotionHint> chosenX = new HashMap<>();
+        List<RegVarPromotionHint> intCands = new ArrayList<>();
+        List<RegVarPromotionHint> xCands = new ArrayList<>();
+        for (RegVarPromotionHint h : hints.values()) {
             if (!h.banned) {
                 (h.xmm ? xCands : intCands).add(h);
             }
         }
-        java.util.Comparator<Hint> byWeight = (a, b) -> a.weight != b.weight ? Long.compare(b.weight, a.weight) : Long.compare(a.off, b.off);
+        java.util.Comparator<RegVarPromotionHint> byWeight = (a, b) -> a.weight != b.weight ? Long.compare(b.weight, a.weight) : Long.compare(a.off, b.off);
         intCands.sort(byWeight);
         xCands.sort(byWeight);
         boolean noCallee = blocked && !allocFunctions;
@@ -349,8 +329,8 @@ public class RegVarPromotionPass {
             // More candidates than registers (typical after inlining: dozens of hot variables from different inlined bodies in one
             // function). Variables whose live ranges never overlap can share a register, so colour by interference, heaviest first.
             shareRegisters(fn, hints, pairs, intCands, xCands, intLimit);
-            for (Hint h : intCands) if (h.reg >= 0) chosenInt.put(h.off, h);
-            for (Hint h : xCands) if (h.reg >= 0) chosenX.put(h.off, h);
+            for (RegVarPromotionHint h : intCands) if (h.reg >= 0) chosenInt.put(h.off, h);
+            for (RegVarPromotionHint h : xCands) if (h.reg >= 0) chosenX.put(h.off, h);
         } else {
             for (int k = 0; k < intCands.size() && k < intLimit; k++) {
                 intCands.get(k).reg = k;
@@ -372,10 +352,10 @@ public class RegVarPromotionPass {
 
         // Pass 2: rewrite.
         java.util.Set<Integer> dropped = new HashSet<>();
-        Map<Integer, Hint> retReplace = new HashMap<>();   // PUSH_RET_FLOAT line -> R_GETRETF
-        Map<Integer, Hint> assignReplace = new HashMap<>(); // ASSIGN line -> R_POPX
+        Map<Integer, RegVarPromotionHint> retReplace = new HashMap<>();   // PUSH_RET_FLOAT line -> R_GETRETF
+        Map<Integer, RegVarPromotionHint> assignReplace = new HashMap<>(); // ASSIGN line -> R_POPX
         for (int[] pr : pairs) {
-            Hint h = chosenX.get(pairSlot.get(pr[0]));
+            RegVarPromotionHint h = chosenX.get(pairSlot.get(pr[0]));
             if (h == null) {
                 h = chosenInt.get(pairSlot.get(pr[0]));
             }
@@ -398,12 +378,12 @@ public class RegVarPromotionPass {
             }
             BytecodeToken ref = l.isEmpty() ? null : l.get(0);
             if (retReplace.containsKey(idx)) {
-                Hint rh = retReplace.get(idx);
+                RegVarPromotionHint rh = retReplace.get(idx);
                 res.add(rh.xmm ? mk(ref, "R_GETRETF", String.valueOf(rh.size), "%x" + rh.reg) : mk(ref, "R_GETRET", String.valueOf(rh.size), "%v" + rh.reg));
                 continue;
             }
             if (assignReplace.containsKey(idx)) {
-                Hint ah = assignReplace.get(idx);
+                RegVarPromotionHint ah = assignReplace.get(idx);
                 res.add(ah.xmm ? mk(ref, "R_POPX", String.valueOf(ah.size), "%x" + ah.reg) : mk(ref, "R_POPV", String.valueOf(ah.size), "%v" + ah.reg));
                 continue;
             }
@@ -417,12 +397,12 @@ public class RegVarPromotionPass {
             if (idx == 0 && !chosenX.isEmpty()) {
                 // one declaration per register: its home slot (where the backend spills it around calls) is the slot of the heaviest
                 // variable that lives in it; the slot is free for that use because every mention of the variable was renamed
-                Map<Integer, Hint> homeOf = new java.util.TreeMap<>();
-                for (Hint h : chosenX.values()) {
-                    Hint cur = homeOf.get(h.reg);
+                Map<Integer, RegVarPromotionHint> homeOf = new java.util.TreeMap<>();
+                for (RegVarPromotionHint h : chosenX.values()) {
+                    RegVarPromotionHint cur = homeOf.get(h.reg);
                     if (cur == null || h.weight > cur.weight || (h.weight == cur.weight && h.off < cur.off)) homeOf.put(h.reg, h);
                 }
-                for (Hint h : homeOf.values()) {
+                for (RegVarPromotionHint h : homeOf.values()) {
                     res.add(mk(ref, "R_XVAR", "%x" + h.reg, "$" + h.off, String.valueOf(h.size)));
                 }
             }
@@ -466,9 +446,9 @@ public class RegVarPromotionPass {
      * register free of its neighbours stays in memory. Floats of different width never share a register (the backend spills a register
      * with one width). Sets {@code Hint.reg} (-1 = not promoted).
      */
-    private void shareRegisters(BytecodeProgram fn, Map<Long, Hint> hints, List<int[]> pairs,
-                                List<Hint> intCands, List<Hint> xCands, int intLimit) {
-        List<Hint> all = new ArrayList<>(intCands.size() + xCands.size());
+    private void shareRegisters(BytecodeProgram fn, Map<Long, RegVarPromotionHint> hints, List<int[]> pairs,
+                                List<RegVarPromotionHint> intCands, List<RegVarPromotionHint> xCands, int intLimit) {
+        List<RegVarPromotionHint> all = new ArrayList<>(intCands.size() + xCands.size());
         all.addAll(intCands);
         all.addAll(xCands);
         int nh = all.size();
@@ -536,7 +516,7 @@ public class RegVarPromotionPass {
             if (l.isEmpty() || isHint(l) || approved.contains(i)) continue;
             String m = l.get(0).text;
             for (int k = 1; k < l.size(); k++) {
-                Hint h = slotHint(hints, l.get(k).text);
+                RegVarPromotionHint h = slotHint(hints, l.get(k).text);
                 if (h == null) continue;
                 Integer id = idOf.get(h.off);
                 if (id == null) continue;
@@ -660,13 +640,13 @@ public class RegVarPromotionPass {
     }
 
     /** Integer colouring: callee-saved registers 0..intLimit-1, and for variables that may (volOk) also r8/r9/r10 as 3..5. */
-    private static void colourInt(List<Hint> all, List<Hint> cands, java.util.BitSet[] adj, Map<Long, Integer> idOf, int intLimit,
+    private static void colourInt(List<RegVarPromotionHint> all, List<RegVarPromotionHint> cands, java.util.BitSet[] adj, Map<Long, Integer> idOf, int intLimit,
                                   boolean[] volRegOk) {
-        for (Hint h : cands) {
+        for (RegVarPromotionHint h : cands) {
             int id = idOf.get(h.off);
             boolean[] taken = new boolean[VOL_FIRST + VOL_COUNT];
             for (int v = adj[id].nextSetBit(0); v >= 0; v = adj[id].nextSetBit(v + 1)) {
-                Hint o = all.get(v);
+                RegVarPromotionHint o = all.get(v);
                 if (o.reg >= 0 && o.reg < taken.length && !o.xmm) taken[o.reg] = true;
             }
             List<Integer> order = new ArrayList<>();
@@ -680,13 +660,13 @@ public class RegVarPromotionPass {
         }
     }
 
-    private static void colour(List<Hint> all, List<Hint> cands, java.util.BitSet[] adj, Map<Long, Integer> idOf, int regCount, boolean xmm) {
+    private static void colour(List<RegVarPromotionHint> all, List<RegVarPromotionHint> cands, java.util.BitSet[] adj, Map<Long, Integer> idOf, int regCount, boolean xmm) {
         int[] width = new int[regCount];
-        for (Hint h : cands) {
+        for (RegVarPromotionHint h : cands) {
             int id = idOf.get(h.off);
             boolean[] taken = new boolean[regCount];
             for (int v = adj[id].nextSetBit(0); v >= 0; v = adj[id].nextSetBit(v + 1)) {
-                Hint o = all.get(v);
+                RegVarPromotionHint o = all.get(v);
                 if (o.reg >= 0 && o.reg < regCount && o.xmm == xmm) taken[o.reg] = true;
             }
             for (int r = 0; r < regCount; r++) {
@@ -699,8 +679,8 @@ public class RegVarPromotionPass {
         }
     }
 
-    private static long pairSlotOf(BytecodeProgram fn, int addrIdx, Map<Long, Hint> hints) {
-        Hint h = slotHint(hints, fn.get(addrIdx).get(2).text);
+    private static long pairSlotOf(BytecodeProgram fn, int addrIdx, Map<Long, RegVarPromotionHint> hints) {
+        RegVarPromotionHint h = slotHint(hints, fn.get(addrIdx).get(2).text);
         return h == null ? Long.MIN_VALUE : h.off;
     }
 
@@ -824,7 +804,7 @@ public class RegVarPromotionPass {
         }
     }
 
-    private static Hint slotHint(Map<Long, Hint> hints, String tok) {
+    private static RegVarPromotionHint slotHint(Map<Long, RegVarPromotionHint> hints, String tok) {
         if (tok.length() < 2 || tok.charAt(0) != '$') {
             return null;
         }
@@ -844,7 +824,7 @@ public class RegVarPromotionPass {
     }
 
     /** May operand k of this line name the hinted slot h (and be renamed to its register)? */
-    private static boolean mentionOk(String m, BytecodeStatement l, int k, Hint h) {
+    private static boolean mentionOk(String m, BytecodeStatement l, int k, RegVarPromotionHint h) {
         switch (m) {
             case "R_MOV": // R_MOV 8 dst src
                 return h.size == 8 && l.size() == 4 && (k == 2 || k == 3);
@@ -879,7 +859,7 @@ public class RegVarPromotionPass {
     }
 
     /** May operand k of this line name the float-variable slot h (and be renamed to its xmm register)? */
-    private static boolean mentionOkX(String m, BytecodeStatement l, int k, Hint h) {
+    private static boolean mentionOkX(String m, BytecodeStatement l, int k, RegVarPromotionHint h) {
         switch (m) {
             case "R_LD": // R_LD n %tD $x
                 return l.size() == 4 && k == 3 && intOf(l.get(1).text) == h.size;
@@ -906,7 +886,7 @@ public class RegVarPromotionPass {
         }
     }
 
-    private static BytecodeStatement rewrite(BytecodeStatement l, Map<Long, Hint> chosenInt, Map<Long, Hint> chosenX) {
+    private static BytecodeStatement rewrite(BytecodeStatement l, Map<Long, RegVarPromotionHint> chosenInt, Map<Long, RegVarPromotionHint> chosenX) {
         if (l.isEmpty()) {
             return l;
         }
@@ -917,8 +897,8 @@ public class RegVarPromotionPass {
         for (int k = 0; k < l.size(); k++) {
             String s = l.get(k).text;
             if (k > 0) {
-                Hint hi = slotHint(chosenInt, s);
-                Hint hx = hi == null ? slotHint(chosenX, s) : null;
+                RegVarPromotionHint hi = slotHint(chosenInt, s);
+                RegVarPromotionHint hx = hi == null ? slotHint(chosenX, s) : null;
                 if (hi != null) {
                     s = "%v" + hi.reg;
                     touchesInt = true;
