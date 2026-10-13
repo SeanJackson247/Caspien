@@ -1,4 +1,4 @@
-package caspien;
+package caspien.frontend;
 
 import java.util.List;
 import java.util.Map;

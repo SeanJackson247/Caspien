@@ -1,4 +1,4 @@
-package caspien;
+package caspien.frontend;
 
 import caspien.config.CompilerConfig;
 import caspien.config.CompilerException;

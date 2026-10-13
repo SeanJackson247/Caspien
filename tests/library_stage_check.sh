@@ -14,7 +14,7 @@ ok(){ echo "PASS $*"; }
 
 # 1. the orchestrator launches no stage as a program
 if grep -q '\.Main"' Compiler.java; then fail "Compiler.java still names a stage Main class"; else ok "Compiler.java launches no stage Main"; fi
-grep -q 'runLibraryStage(cache, "s2"' Compiler.java && grep -q 'runLibraryStage(cache, "s3"' Compiler.java && grep -q 'runLibraryStage(cache, "s4"' Compiler.java && grep -q 'caspien.Frontend' Compiler.java && ok "all four stages go through library calls" || fail "a stage is not a library call"
+grep -q 'runLibraryStage(cache, "s2"' Compiler.java && grep -q 'runLibraryStage(cache, "s3"' Compiler.java && grep -q 'runLibraryStage(cache, "s4"' Compiler.java && grep -q 'caspien.frontend.Frontend' Compiler.java && ok "all four stages go through library calls" || fail "a stage is not a library call"
 grep -q 'optText, optOut.toString(), lobOut' Compiler.java && ok "the Optimizer's text is passed straight to the LowerOrderGenerator" || fail "stage 3 does not take the in-memory Optimizer text"
 
 # 2. a real build: no child JVM at all (the one `java` is the orchestrator itself)

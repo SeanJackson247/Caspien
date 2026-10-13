@@ -572,7 +572,7 @@ public class Compiler {
     /** One run of the front end (uncached): reports its messages through `diag`; `log` (nullable) collects its warnings and notes for the cache. */
     private static Out runFrontend(Path astGenDir, Path input, Map<String, String> configs, Map<String, String> options, Diagnostics diag,
                                    CompilerCache.StageLog log) throws IOException {
-        Out o = callLibrary(astGenDir, "caspien.Frontend", "compile", "hob", new Class<?>[]{String.class, Map.class, Map.class},
+        Out o = callLibrary(astGenDir, "caspien.frontend.Frontend", "compile", "hob", new Class<?>[]{String.class, Map.class, Map.class},
                 input.toString(), configs, options);
         reportStageOutput(o.messages, o.failed ? 1 : 0, diag, "ASTGenerator", log);
         return o;
