@@ -1,5 +1,7 @@
 package caspien.parser;
-import caspien.*;
+import caspien.CompilerException;
+import caspien.Token;
+import caspien.TokenType;
 
 import java.util.ArrayList;
 import java.util.Arrays;

@@ -1,12 +1,21 @@
 package caspien;
-
 import caspien.bytecode.BytecodeProgram;
 import caspien.bytecode.BytecodeSerializer;
 import caspien.bytecodeemitter.BytecodeEmitter;
-import caspien.gasreport.GasReport;
+import caspien.bytecodeemitter.BytecodeEmitter;
+import caspien.dupexpander.DupExpander;
+import caspien.genericsexpander.GenericsExpander;
+import caspien.importresolver.ImportResolver;
+import caspien.lexer.Lexer;
 import caspien.parser.Parser;
+import caspien.postpasses.AuditReport;
+import caspien.postpasses.FixTool;
+import caspien.postpasses.gasreport.GasReport;
+import caspien.rpnconverter.RpnConverter;
+import caspien.treebuilder.TreeBuilder;
 import caspien.typechecker.TypeChecker;
 import caspien.typechecker.TypeCheckerModel;
+
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;

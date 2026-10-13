@@ -1,6 +1,8 @@
 package caspien.typechecker;
-import caspien.bytecodeemitter.BytecodeEmitter;
-import caspien.*;
+import caspien.CompilerException;
+import caspien.DepsLog;
+import caspien.Token;
+import caspien.TokenType;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
