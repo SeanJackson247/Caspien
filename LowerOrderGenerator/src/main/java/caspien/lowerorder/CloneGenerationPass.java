@@ -747,17 +747,31 @@ public class CloneGenerationPass implements OptimizationPass {
             return out;
         }
 
-        /** Phase 1: for every ordinary member of `structName` (read off the local copy at `basePath`), clone each owns leaf into a temp. */
+        /**
+         * Phase 1: for every ordinary member of `structName` (read off the local copy at `basePath`), clone each owns leaf into a temp.
+         * Walks the members, nested structs and fixed-array elements depth first with an explicit to-do stack ({path, type}; the next
+         * item to emit is the last), so the emitted order is the same as a recursive walk.
+         */
         private void emitCloneLeavesOfStruct(BytecodeProgram out, CloneCtx ctx, String structName, String basePath) {
-            List<StructTable.Member> members = structTable.membersOf(structName);
-            boolean classIdBearing = !members.isEmpty() && members.get(0).name.equals("___type");
-            List<StructTable.Member> ordinary = classIdBearing ? members.subList(1, members.size()) : members;
-            for (StructTable.Member m : ordinary) {
-                emitCloneLeaves(out, ctx, basePath + "." + m.name, m.canonicalType);
+            List<String[]> todo = new ArrayList<>();
+            pushOrdinaryMembers(todo, structName, basePath);
+            while (!todo.isEmpty()) {
+                String[] item = todo.remove(todo.size() - 1);
+                emitCloneLeaf(out, ctx, item[0], item[1], todo);
             }
         }
 
-        private void emitCloneLeaves(BytecodeProgram out, CloneCtx ctx, String path, String canonicalType) {
+        /** Queues the ordinary members of `structName` (all but the hidden class id) so that the first one is emitted first. */
+        private void pushOrdinaryMembers(List<String[]> todo, String structName, String basePath) {
+            List<StructTable.Member> members = structTable.membersOf(structName);
+            boolean classIdBearing = !members.isEmpty() && members.get(0).name.equals("___type");
+            for (int i = members.size() - 1; i >= (classIdBearing ? 1 : 0); i--) {
+                todo.add(new String[] {basePath + "." + members.get(i).name, members.get(i).canonicalType});
+            }
+        }
+
+        /** Emits the clone code of one {path, type} item; a struct or fixed array only queues its parts on `todo`. */
+        private void emitCloneLeaf(BytecodeProgram out, CloneCtx ctx, String path, String canonicalType, List<String[]> todo) {
             CanonicalType t = CanonicalType.parse(canonicalType);
 
             if (t.isOwnsStorage()) {
@@ -798,7 +812,7 @@ public class CloneGenerationPass implements OptimizationPass {
 
             if (structTable.hasStruct(t.baseType)) {
                 if (structTable.isOwnsBearing(t.baseType)) {
-                    emitCloneLeavesOfStruct(out, ctx, t.baseType, path);
+                    pushOrdinaryMembers(todo, t.baseType, path);
                 }
                 return;
             }
@@ -806,8 +820,8 @@ public class CloneGenerationPass implements OptimizationPass {
             String fixedElem = t.fixedArrayElementType();
             if (fixedElem != null && elementNeedsWork(fixedElem)) {
                 int count = t.fixedArrayLength();
-                for (int i = 0; i < count; i++) {
-                    emitCloneLeaves(out, ctx, path + "." + i, fixedElem);
+                for (int i = count - 1; i >= 0; i--) {
+                    todo.add(new String[] {path + "." + i, fixedElem});
                 }
             }
         }
@@ -844,21 +858,33 @@ public class CloneGenerationPass implements OptimizationPass {
             }
         }
 
-        /** Phase 2: push the class id (if any) and every ordinary member in declared order, owns leaves taken from their temps. */
+        /**
+         * Phase 2: push the class id (if any) and every ordinary member in declared order, owns leaves taken from their temps. Nested
+         * structs and fixed-array elements are walked depth first with an explicit to-do stack ({kind, path, type}: "V" = a value,
+         * "S" = an owns-bearing struct whose class id and members are emitted when it is reached).
+         */
         private void emitMemberPushSequence(BytecodeProgram out, String structName, String basePath, CloneCtx ctx) {
-            List<StructTable.Member> members = structTable.membersOf(structName);
-            boolean classIdBearing = !members.isEmpty() && members.get(0).name.equals("___type");
-            List<StructTable.Member> ordinary = classIdBearing ? members.subList(1, members.size()) : members;
-
-            if (classIdBearing) {
-                emit(out, "PUSH " + basePath + ".___type imut_u64");
-            }
-            for (StructTable.Member m : ordinary) {
-                emitPushValue(out, basePath + "." + m.name, m.canonicalType, ctx);
+            List<String[]> todo = new ArrayList<>();
+            todo.add(new String[] {"S", basePath, structName});
+            while (!todo.isEmpty()) {
+                String[] item = todo.remove(todo.size() - 1);
+                if (item[0].equals("S")) {
+                    List<StructTable.Member> members = structTable.membersOf(item[2]);
+                    boolean classIdBearing = !members.isEmpty() && members.get(0).name.equals("___type");
+                    if (classIdBearing) {
+                        emit(out, "PUSH " + item[1] + ".___type imut_u64");
+                    }
+                    for (int i = members.size() - 1; i >= (classIdBearing ? 1 : 0); i--) {
+                        todo.add(new String[] {"V", item[1] + "." + members.get(i).name, members.get(i).canonicalType});
+                    }
+                } else {
+                    emitPushValue(out, item[1], item[2], ctx, todo);
+                }
             }
         }
 
-        private void emitPushValue(BytecodeProgram out, String path, String canonicalType, CloneCtx ctx) {
+        /** Emits the push of one value; an owns-bearing struct or a fixed array only queues its parts on `todo`. */
+        private void emitPushValue(BytecodeProgram out, String path, String canonicalType, CloneCtx ctx, List<String[]> todo) {
             CanonicalType t = CanonicalType.parse(canonicalType);
 
             if (t.isOwnsStorage()) {
@@ -868,7 +894,7 @@ public class CloneGenerationPass implements OptimizationPass {
 
             if (structTable.hasStruct(t.baseType)) {
                 if (structTable.isOwnsBearing(t.baseType)) {
-                    emitMemberPushSequence(out, t.baseType, path, ctx);
+                    todo.add(new String[] {"S", path, t.baseType});
                     return;
                 }
                 emit(out, "PUSH " + path + " " + canonicalType);
@@ -878,8 +904,8 @@ public class CloneGenerationPass implements OptimizationPass {
             String fixedElem = t.fixedArrayElementType();
             if (fixedElem != null && elementNeedsWork(fixedElem)) {
                 int count = t.fixedArrayLength();
-                for (int i = 0; i < count; i++) {
-                    emitPushValue(out, path + "." + i, fixedElem, ctx);
+                for (int i = count - 1; i >= 0; i--) {
+                    todo.add(new String[] {"V", path + "." + i, fixedElem});
                 }
                 return;
             }

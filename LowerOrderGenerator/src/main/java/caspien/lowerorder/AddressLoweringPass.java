@@ -485,81 +485,87 @@ public class AddressLoweringPass implements OptimizationPass {
     /**
      * Appends the descriptor tokens for one struct layout, consuming the literal's top-level value units (u[0] is the next unit). Returns false
      * if the units do not fit the layout (the caller then falls back to counting).
+     *
+     * A plain (no storage) member is one value of type `base` -- a scalar, a fixed array or an inline struct -- as it sits in the literal's units.
+     * A value whose producer already has exactly this type is one whole block (a variable): "m<size>". Otherwise an array is its elements one
+     * after another (a narrow scalar array is the single token "a<elemBytes>x<n>", n words) and a struct literal is its own layout (type id,
+     * members, padding), nested to any depth. Worked with an explicit to-do stack, front of the work first, so no recursion.
      */
     private static boolean layoutFromUnits(List<StructTable.LayoutEntry> layout, BytecodeProgram lines, List<Integer> units, int[] u,
             List<String> tokens, SizeCalculator sizes, StructTable structTable) {
-        for (StructTable.LayoutEntry entry : layout) {
-            if (entry.member == null) {
-                tokens.add("p" + entry.paddingBytes);
-                continue;
-            }
-            CanonicalType ct = CanonicalType.parse(entry.member.canonicalType);
-            if (ct.storage != null) {
+        final int LAYOUT = 0;  // {kind, layout, next entry index}
+        final int VALUE = 1;   // {kind, base type}
+        final int REPEAT = 2;  // {kind, element type, repetitions left}
+        List<Object[]> todo = new ArrayList<>();
+        todo.add(new Object[] {LAYOUT, layout, 0});
+        while (!todo.isEmpty()) {
+            Object[] task = todo.remove(todo.size() - 1);
+            int kind = (Integer) task[0];
+            if (kind == LAYOUT) {
+                @SuppressWarnings("unchecked")
+                List<StructTable.LayoutEntry> entries = (List<StructTable.LayoutEntry>) task[1];
+                int i = (Integer) task[2];
+                while (i < entries.size()) {
+                    StructTable.LayoutEntry entry = entries.get(i++);
+                    if (entry.member == null) {
+                        tokens.add("p" + entry.paddingBytes);
+                        continue;
+                    }
+                    CanonicalType ct = CanonicalType.parse(entry.member.canonicalType);
+                    if (ct.storage != null || (!ARRAY_TYPE.matcher(ct.baseType).matches() && structTable.layoutOf(ct.baseType) == null)) {
+                        if (u[0] >= units.size()) {
+                            return false;
+                        }
+                        tokens.add("m" + sizes.sizeOf(entry.member.canonicalType));
+                        u[0]++;
+                        continue;
+                    }
+                    todo.add(new Object[] {LAYOUT, entries, i}); // the rest of this layout, after the value below
+                    todo.add(new Object[] {VALUE, ct.baseType});
+                    break;
+                }
+            } else if (kind == REPEAT) {
+                long left = (Long) task[2];
+                if (left > 0) {
+                    todo.add(new Object[] {REPEAT, task[1], left - 1});
+                    todo.add(new Object[] {VALUE, task[1]});
+                }
+            } else {
+                String base = (String) task[1];
                 if (u[0] >= units.size()) {
                     return false;
                 }
-                tokens.add("m" + sizes.sizeOf(entry.member.canonicalType));
-                u[0]++;
-                continue;
-            }
-            if (!ARRAY_TYPE.matcher(ct.baseType).matches() && structTable.layoutOf(ct.baseType) == null) {
-                if (u[0] >= units.size()) {
-                    return false;
-                }
-                tokens.add("m" + sizes.sizeOf(entry.member.canonicalType));
-                u[0]++;
-                continue;
-            }
-            if (!valueFromUnits(ct.baseType, lines, units, u, tokens, sizes, structTable)) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    /**
-     * One plain (no storage) value of type `base` -- a scalar, a fixed array or an inline struct -- as it sits in the literal's units. A value whose producer
-     * already has exactly this type is one whole block (a variable): "m<size>". Otherwise an array is its elements one after another (a narrow scalar
-     * array is the single token "a<elemBytes>x<n>", n words) and a struct literal is its own layout (type id, members, padding), recursively.
-     */
-    private static boolean valueFromUnits(String base, BytecodeProgram lines, List<Integer> units, int[] u, List<String> tokens,
-            SizeCalculator sizes, StructTable structTable) {
-        if (u[0] >= units.size()) {
-            return false;
-        }
-        BytecodeStatement producer = lines.get(units.get(u[0]));
-        String last = producer.get(producer.size() - 1).text;
-        boolean isArray = ARRAY_TYPE.matcher(base).matches();
-        List<StructTable.LayoutEntry> structLayout = isArray ? null : structTable.layoutOf(base);
-        if ((isArray || structLayout != null) && CanonicalType.parse(last).baseType.equals(base)) {
-            tokens.add("m" + sizes.sizeOf("mut_" + base));
-            u[0]++;
-            return true;
-        }
-        if (structLayout != null) {
-            return layoutFromUnits(structLayout, lines, units, u, tokens, sizes, structTable);
-        }
-        if (isArray) {
-            java.util.regex.Matcher mt = ARRAY_TYPE.matcher(base);
-            mt.matches();
-            String elem = mt.group(1);
-            long n = Long.parseLong(mt.group(2));
-            boolean nested = ARRAY_TYPE.matcher(elem).matches() || structTable.layoutOf(elem) != null;
-            if (!nested) {
-                String narrow = narrowElementToken(elem, n, sizes, structTable);
-                tokens.add(narrow != null ? narrow : "m" + sizes.sizeOf("mut_" + base));
-                u[0] += (int) n;
-                return u[0] <= units.size();
-            }
-            for (long k = 0; k < n; k++) {
-                if (!valueFromUnits(elem, lines, units, u, tokens, sizes, structTable)) {
-                    return false;
+                BytecodeStatement producer = lines.get(units.get(u[0]));
+                String last = producer.get(producer.size() - 1).text;
+                boolean isArray = ARRAY_TYPE.matcher(base).matches();
+                List<StructTable.LayoutEntry> structLayout = isArray ? null : structTable.layoutOf(base);
+                if ((isArray || structLayout != null) && CanonicalType.parse(last).baseType.equals(base)) {
+                    tokens.add("m" + sizes.sizeOf("mut_" + base));
+                    u[0]++;
+                } else if (structLayout != null) {
+                    todo.add(new Object[] {LAYOUT, structLayout, 0});
+                } else if (isArray) {
+                    java.util.regex.Matcher mt = ARRAY_TYPE.matcher(base);
+                    mt.matches();
+                    String elem = mt.group(1);
+                    long n = Long.parseLong(mt.group(2));
+                    boolean nested = ARRAY_TYPE.matcher(elem).matches() || structTable.layoutOf(elem) != null;
+                    if (!nested) {
+                        String narrow = narrowElementToken(elem, n, sizes, structTable);
+                        tokens.add(narrow != null ? narrow : "m" + sizes.sizeOf("mut_" + base));
+                        u[0] += (int) n;
+                        if (u[0] > units.size()) {
+                            return false;
+                        }
+                    } else {
+                        todo.add(new Object[] {REPEAT, elem, n});
+                    }
+                } else {
+                    tokens.add("m" + sizes.sizeOf("mut_" + base));
+                    u[0]++;
                 }
             }
-            return true;
         }
-        tokens.add("m" + sizes.sizeOf("mut_" + base));
-        u[0]++;
         return true;
     }
 
@@ -1385,137 +1391,219 @@ public class AddressLoweringPass implements OptimizationPass {
             this.structTable = structTable;
         }
 
+        /** Set by sizeNoRecurse/alignNoRecurse to the struct whose size/alignment is not cached yet (its value is then not final). */
+        private String missing;
+
         long sizeOf(String canonical) {
-            // A bare struct name is used whole (a generic mangled name like HashMapEntry_u64 would be mis-parsed).
-            if (structTable.hasStruct(canonical)) {
-                return sizeOfBaseType(canonical);
+            missing = null;
+            long v = sizeNoRecurse(canonical);
+            if (missing == null) {
+                return v;
             }
-            CanonicalType t = CanonicalType.parse(canonical);
-            if (t.storage != null) {
-                return 8;
-            }
-            return sizeOfBaseType(t.baseType);
+            resolveStructSizes(missing);
+            missing = null;
+            return sizeNoRecurse(canonical);
         }
 
-        private long sizeOfBaseType(String baseType) {
-            switch (baseType) {
-                // bool is 1 byte (matches TypeChecker.PRIMITIVE_SIZE); may need revisiting if codegen needs a wider ABI size.
-                case "u8": case "s8": case "bool": case "char":
-                    return 1;
-                case "u16": case "s16":
-                    return 2;
-                case "u32": case "s32": case "f32":
-                    return 4;
-                case "u64": case "s64": case "f64": case "code_addr": case "string":
-                    return 8;
-                case "void":
-                    return 0;
-                default:
-                    break;
-            }
-            String dynElem = CanonicalType.dynArrayElementTypeOf(baseType);
-            if (dynElem != null) {
-                return 8; // a dynarray value is a single handle/pointer to its own heap buffer
-            }
-            String arrElem = CanonicalType.fixedArrayElementTypeOf(baseType);
-            if (arrElem != null) {
-                int length = CanonicalType.fixedArrayLengthOf(baseType);
-                return length < 0 ? 8 : (long) length * sizeOf(arrElem);
-            }
-            if (baseType.equals("range") || baseType.startsWith("range(")) {
-                return 16; // two plain u64 bounds, always -- TypeChecker.checkRange
-            }
-            if (structTable.hasStruct(baseType)) {
-                return structSizeOf(baseType);
-            }
-                // Unknown type: conservative one-word fallback.
-            return 8;
-        }
-
-            /** Struct size summed over its padded layout (members plus STRUCT_PADDING gaps). */
-        private long structSizeOf(String structName) {
-            Long cached = structSizeCache.get(structName);
-            if (cached != null) {
-                return cached;
-            }
-            structSizeCache.put(structName, 0L); // struct types form a DAG, never a cycle -- see StructTable.isOwnsBearing's own identical guard
-            long total = 0;
-            List<StructTable.LayoutEntry> layout = structTable.layoutOf(structName);
-            if (layout != null) {
-                for (StructTable.LayoutEntry entry : layout) {
-                    total += entry.member != null ? sizeOf(entry.member.canonicalType) : entry.paddingBytes;
-                }
-            } else {
-                        // Defensive fallback: plain member sum if no layout exists.
-                for (StructTable.Member m : structTable.membersOf(structName)) {
-                    total += sizeOf(m.canonicalType);
-                }
-            }
-            structSizeCache.put(structName, total);
-            return total;
-        }
-
-            /** Natural alignment; equals size for leaves, max member alignment for structs. Mirrors the compiler side's layoutSizeAndAlignOf. */
+        /** Natural alignment; equals size for leaves, max member alignment for structs. Mirrors the compiler side's layoutSizeAndAlignOf. */
         long alignOf(String canonical) {
-            CanonicalType t = CanonicalType.parse(canonical);
-            if (t.storage != null) {
-                return 8;
+            missing = null;
+            long v = alignNoRecurse(canonical);
+            if (missing == null) {
+                return v;
             }
-            return alignOfBaseType(t.baseType);
+            resolveStructAligns(missing);
+            missing = null;
+            return alignNoRecurse(canonical);
         }
 
-        private long alignOfBaseType(String baseType) {
-            switch (baseType) {
-                case "u8": case "s8": case "bool": case "char":
-                    return 1;
-                case "u16": case "s16":
-                    return 2;
-                case "u32": case "s32": case "f32":
-                    return 4;
-                case "u64": case "s64": case "f64": case "code_addr": case "string":
-                    return 8;
-                case "void":
-                    return 1;
-                default:
-                    break;
+        /** Size of `canonical` given the cached struct sizes; the first struct size still missing is left in `missing`. */
+        private long sizeNoRecurse(String canonical) {
+            long mult = 1;
+            String cur = canonical;
+            while (true) {
+                String baseType;
+                // A bare struct name is used whole (a generic mangled name like HashMapEntry_u64 would be mis-parsed).
+                if (structTable.hasStruct(cur)) {
+                    baseType = cur;
+                } else {
+                    CanonicalType t = CanonicalType.parse(cur);
+                    if (t.storage != null) {
+                        return mult * 8;
+                    }
+                    baseType = t.baseType;
+                }
+                switch (baseType) {
+                    // bool is 1 byte (matches TypeChecker.PRIMITIVE_SIZE); may need revisiting if codegen needs a wider ABI size.
+                    case "u8": case "s8": case "bool": case "char":
+                        return mult;
+                    case "u16": case "s16":
+                        return mult * 2;
+                    case "u32": case "s32": case "f32":
+                        return mult * 4;
+                    case "u64": case "s64": case "f64": case "code_addr": case "string":
+                        return mult * 8;
+                    case "void":
+                        return 0;
+                    default:
+                        break;
+                }
+                if (CanonicalType.dynArrayElementTypeOf(baseType) != null) {
+                    return mult * 8; // a dynarray value is a single handle/pointer to its own heap buffer
+                }
+                String arrElem = CanonicalType.fixedArrayElementTypeOf(baseType);
+                if (arrElem != null) {
+                    int length = CanonicalType.fixedArrayLengthOf(baseType);
+                    if (length < 0) {
+                        return mult * 8;
+                    }
+                    mult *= length;
+                    cur = arrElem;
+                    continue;
+                }
+                if (baseType.equals("range") || baseType.startsWith("range(")) {
+                    return mult * 16; // two plain u64 bounds, always -- TypeChecker.checkRange
+                }
+                if (structTable.hasStruct(baseType)) {
+                    Long cached = structSizeCache.get(baseType);
+                    if (cached == null) {
+                        missing = baseType;
+                        return 0;
+                    }
+                    return mult * cached;
+                }
+                return mult * 8; // unknown type: conservative one-word fallback
             }
-            String dynElem = CanonicalType.dynArrayElementTypeOf(baseType);
-            if (dynElem != null) {
-                return 8; // a dynarray value is a single handle/pointer -- same reasoning as sizeOfBaseType's own identical case
-            }
-            String arrElem = CanonicalType.fixedArrayElementTypeOf(baseType);
-            if (arrElem != null) {
-                return alignOf(arrElem); // an array's own alignment is its element's own -- never its own total size
-            }
-            if (baseType.equals("range") || baseType.startsWith("range(")) {
-                return 8; // two plain u64 bounds -- 8-aligned, same as either bound alone
-            }
-            if (structTable.hasStruct(baseType)) {
-                return structAlignOf(baseType);
-            }
-                    // Unknown type: same one-word fallback as sizeOfBaseType.
-            return 8;
         }
 
-            /** Struct alignment: max of its members' alignments (hidden classId included), memoized DAG-safe. */
-        private long structAlignOf(String structName) {
-            Long cached = structAlignCache.get(structName);
-            if (cached != null) {
-                return cached;
-            }
-            structAlignCache.put(structName, 1L); // struct types form a DAG, never a cycle -- same seed-before-descend guard structSizeOf/isOwnsBearing already use
-            long maxAlign = 1;
-            List<StructTable.Member> members = structTable.membersOf(structName);
-            if (members != null) {
-                for (StructTable.Member m : members) {
-                    long align = alignOf(m.canonicalType);
-                    if (align > maxAlign) {
-                        maxAlign = align;
+        /**
+         * Fills structSizeCache for `root` and every struct below it, depth first with an explicit stack. A struct is seeded 0 while
+         * it is on the stack (struct types form a DAG, never a cycle -- see StructTable.isOwnsBearing's identical guard); its size is
+         * summed over its padded layout (members plus STRUCT_PADDING gaps) once all member structs are cached.
+         */
+        private void resolveStructSizes(String root) {
+            List<String> stack = new ArrayList<>();
+            structSizeCache.put(root, 0L);
+            stack.add(root);
+            while (!stack.isEmpty()) {
+                String name = stack.get(stack.size() - 1);
+                List<String> memberTypes = new ArrayList<>();
+                List<Long> paddings = new ArrayList<>();
+                List<StructTable.LayoutEntry> layout = structTable.layoutOf(name);
+                if (layout != null) {
+                    for (StructTable.LayoutEntry entry : layout) {
+                        memberTypes.add(entry.member != null ? entry.member.canonicalType : null);
+                        paddings.add(entry.paddingBytes);
+                    }
+                } else {
+                    // Defensive fallback: plain member sum if no layout exists.
+                    for (StructTable.Member m : structTable.membersOf(name)) {
+                        memberTypes.add(m.canonicalType);
+                        paddings.add(0L);
                     }
                 }
+                long total = 0;
+                boolean blocked = false;
+                for (int i = 0; i < memberTypes.size(); i++) {
+                    if (memberTypes.get(i) == null) {
+                        total += paddings.get(i);
+                        continue;
+                    }
+                    missing = null;
+                    long v = sizeNoRecurse(memberTypes.get(i));
+                    if (missing != null) {
+                        structSizeCache.put(missing, 0L);
+                        stack.add(missing);
+                        missing = null;
+                        blocked = true;
+                        break;
+                    }
+                    total += v;
+                }
+                if (!blocked) {
+                    structSizeCache.put(name, total);
+                    stack.remove(stack.size() - 1);
+                }
             }
-            structAlignCache.put(structName, maxAlign);
-            return maxAlign;
+        }
+
+        /** Alignment of `canonical` given the cached struct alignments; the first one still missing is left in `missing`. */
+        private long alignNoRecurse(String canonical) {
+            String cur = canonical;
+            while (true) {
+                CanonicalType t = CanonicalType.parse(cur);
+                if (t.storage != null) {
+                    return 8;
+                }
+                String baseType = t.baseType;
+                switch (baseType) {
+                    case "u8": case "s8": case "bool": case "char":
+                        return 1;
+                    case "u16": case "s16":
+                        return 2;
+                    case "u32": case "s32": case "f32":
+                        return 4;
+                    case "u64": case "s64": case "f64": case "code_addr": case "string":
+                        return 8;
+                    case "void":
+                        return 1;
+                    default:
+                        break;
+                }
+                if (CanonicalType.dynArrayElementTypeOf(baseType) != null) {
+                    return 8; // a dynarray value is a single handle/pointer -- same reasoning as sizeNoRecurse's own identical case
+                }
+                String arrElem = CanonicalType.fixedArrayElementTypeOf(baseType);
+                if (arrElem != null) {
+                    cur = arrElem; // an array's own alignment is its element's own -- never its own total size
+                    continue;
+                }
+                if (baseType.equals("range") || baseType.startsWith("range(")) {
+                    return 8; // two plain u64 bounds -- 8-aligned, same as either bound alone
+                }
+                if (structTable.hasStruct(baseType)) {
+                    Long cached = structAlignCache.get(baseType);
+                    if (cached == null) {
+                        missing = baseType;
+                        return 1;
+                    }
+                    return cached;
+                }
+                return 8; // unknown type: same one-word fallback
+            }
+        }
+
+        /** Fills structAlignCache for `root` and every struct below it: max of its members' alignments (hidden classId included), explicit stack, seeded 1 while on it. */
+        private void resolveStructAligns(String root) {
+            List<String> stack = new ArrayList<>();
+            structAlignCache.put(root, 1L);
+            stack.add(root);
+            while (!stack.isEmpty()) {
+                String name = stack.get(stack.size() - 1);
+                long maxAlign = 1;
+                boolean blocked = false;
+                List<StructTable.Member> members = structTable.membersOf(name);
+                if (members != null) {
+                    for (StructTable.Member m : members) {
+                        missing = null;
+                        long align = alignNoRecurse(m.canonicalType);
+                        if (missing != null) {
+                            structAlignCache.put(missing, 1L);
+                            stack.add(missing);
+                            missing = null;
+                            blocked = true;
+                            break;
+                        }
+                        if (align > maxAlign) {
+                            maxAlign = align;
+                        }
+                    }
+                }
+                if (!blocked) {
+                    structAlignCache.put(name, maxAlign);
+                    stack.remove(stack.size() - 1);
+                }
+            }
         }
     }
 }

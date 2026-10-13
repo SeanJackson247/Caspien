@@ -144,51 +144,98 @@ public class StructTable {
      * as the bare, single GT_DESTRUCT the compiler already emits, with
      * nothing further to walk.
      *
-     * Memoized -- struct types form a DAG, never a cycle
-     * (self-referential/recursive struct shapes are illegal in this
-     * language), so plain recursion with a cache is safe and always
-     * terminates. The "seed false before descending" step below is a
-     * purely defensive belt-and-braces guard against that assumption
-     * ever being wrong; it should never actually be exercised.
+     * Memoized, walked with an explicit stack (no recursion). Struct types
+     * form a DAG, never a cycle (self-referential struct shapes are illegal
+     * in this language); the "seed false while on the stack" step is a
+     * purely defensive guard against that assumption ever being wrong.
      */
     public boolean isOwnsBearing(String baseType) {
         Boolean cached = ownsBearingCache.get(baseType);
         if (cached != null) {
             return cached;
         }
+        // Depth-first walk with an explicit stack (parallel lists: type, its plan, next step). A plan entry is a type to ask
+        // about, or null = "owns-bearing for sure". A type is seeded false while it is on the stack, as the recursive form did.
+        List<String> types = new ArrayList<>();
+        List<List<String>> plans = new ArrayList<>();
+        List<Integer> nextStep = new ArrayList<>();
         ownsBearingCache.put(baseType, false);
-        boolean result = computeOwnsBearing(baseType);
-        ownsBearingCache.put(baseType, result);
-        return result;
+        types.add(baseType);
+        plans.add(ownsPlan(baseType));
+        nextStep.add(0);
+        boolean childOwns = false;
+        while (!types.isEmpty()) {
+            int top = types.size() - 1;
+            List<String> plan = plans.get(top);
+            int pos = nextStep.get(top);
+            boolean done = childOwns;
+            boolean result = childOwns;
+            childOwns = false;
+            boolean descend = false;
+            while (!done && pos < plan.size()) {
+                String step = plan.get(pos++);
+                if (step == null) {
+                    done = true;
+                    result = true;
+                } else {
+                    Boolean known = ownsBearingCache.get(step);
+                    if (known == null) {
+                        nextStep.set(top, pos);
+                        ownsBearingCache.put(step, false);
+                        types.add(step);
+                        plans.add(ownsPlan(step));
+                        nextStep.add(0);
+                        descend = true;
+                        break;
+                    }
+                    if (known) {
+                        done = true;
+                        result = true;
+                    }
+                }
+            }
+            if (descend) {
+                continue;
+            }
+            ownsBearingCache.put(types.get(top), result);
+            types.remove(top);
+            plans.remove(top);
+            nextStep.remove(top);
+            childOwns = result;
+        }
+        return childOwns;
     }
 
-    private boolean computeOwnsBearing(String baseType) {
-        String dynElem = CanonicalType.dynArrayElementTypeOf(baseType);
-        if (dynElem != null) {
-            CanonicalType elemType = CanonicalType.parse(dynElem);
-            return elemType.isOwnsStorage() || isOwnsBearing(elemType.baseType);
+    /** What decides whether `baseType` is owns-bearing, in the order they are asked: types to query, or null for an immediate yes. */
+    private List<String> ownsPlan(String baseType) {
+        List<String> plan = new ArrayList<>();
+        String elem = CanonicalType.dynArrayElementTypeOf(baseType);
+        if (elem == null) {
+            elem = CanonicalType.fixedArrayElementTypeOf(baseType);
         }
-        String arrElem = CanonicalType.fixedArrayElementTypeOf(baseType);
-        if (arrElem != null) {
-            CanonicalType elemType = CanonicalType.parse(arrElem);
-            return elemType.isOwnsStorage() || isOwnsBearing(elemType.baseType);
+        if (elem != null) {
+            CanonicalType elemType = CanonicalType.parse(elem);
+            plan.add(elemType.isOwnsStorage() ? null : elemType.baseType);
+            return plan;
         }
         if (dropHooks.containsKey(baseType)) {
-            return true; // a struct with a cleanup hook needs its drop routine even when it owns no memory itself
+            plan.add(null); // a struct with a cleanup hook needs its drop routine even when it owns no memory itself
+            return plan;
         }
         List<Member> members = structs.get(baseType);
         if (members == null) {
-            return false; // a primitive, or any other type this table has no members for
+            return plan; // a primitive, or any other type this table has no members for
         }
         for (Member m : members) {
             CanonicalType t = CanonicalType.parse(m.canonicalType);
             if (t.isOwnsStorage()) {
-                return true; // this member alone means the struct needs a routine, regardless of what it itself points to
+                plan.add(null); // this member alone means the struct needs a routine, regardless of what it itself points to
+                return plan;
             }
-            if (t.storage == null && isOwnsBearing(t.baseType)) {
-                return true; // an inline member with owns descendants further down
+            if (t.storage == null) {
+                plan.add(t.baseType); // an inline member with owns descendants further down
             }
         }
-        return false;
+        return plan;
     }
 }

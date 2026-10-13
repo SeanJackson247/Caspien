@@ -521,6 +521,16 @@ public class DropGlueGenerationPass implements OptimizationPass {
          * unrolled fixed array.
          */
         private void emitValueDestruct(BytecodeProgram out, String path, String canonicalType) {
+            // Fixed-array elements are queued on an explicit to-do stack ({path, type}; the next one to emit is the last), not recursed into.
+            List<String[]> todo = new ArrayList<>();
+            todo.add(new String[] {path, canonicalType});
+            while (!todo.isEmpty()) {
+                String[] item = todo.remove(todo.size() - 1);
+                emitValueDestructStep(out, item[0], item[1], todo);
+            }
+        }
+
+        private void emitValueDestructStep(BytecodeProgram out, String path, String canonicalType, List<String[]> todo) {
             CanonicalType t = CanonicalType.parse(canonicalType);
 
             if (t.isOwnsStorage()) {
@@ -550,15 +560,13 @@ public class DropGlueGenerationPass implements OptimizationPass {
                 if (elemNeedsWork && !leafT.isOwnsStorage() && leafT.storage == null && structTable.hasStruct(leafT.baseType)
                         && structTable.isOwnsBearing(leafT.baseType)) {
                     // Elements are inline owning structs: address each one on the stack (LOOKUP_LHS chain) and call its drop routine.
-                    final String basePath = path;
-                    final String arrType = canonicalType;
-                    emitFixedArrayElementDrops(out, () -> emit(out, "ADDR " + basePath + " " + arrType), arrType, leafT.baseType);
+                    emitFixedArrayElementDrops(out, path, canonicalType, leafT.baseType);
                     return;
                 }
                 if (elemNeedsWork) {
                     int count = t.fixedArrayLength();
-                    for (int i = 0; i < count; i++) {
-                        emitValueDestruct(out, path + "." + i, fixedElem);
+                    for (int i = count - 1; i >= 0; i--) {
+                        todo.add(new String[] {path + "." + i, fixedElem});
                     }
                 }
                 return;
@@ -573,25 +581,46 @@ public class DropGlueGenerationPass implements OptimizationPass {
             // all -- falls through with no bytecode emitted.
         }
 
-        /** Calls the drop routine of `leafStruct` on every element of the fixed array whose address `emitBase` pushes (unrolled; nested dimensions recurse). */
-        private void emitFixedArrayElementDrops(BytecodeProgram out, Runnable emitBase, String arrCanonical, String leafStruct) {
-            CanonicalType at = CanonicalType.parse(arrCanonical);
-            String elemCanonical = at.fixedArrayElementType();
-            int count = at.fixedArrayLength();
-            boolean elemIsArray = CanonicalType.fixedArrayElementTypeOf(CanonicalType.parse(elemCanonical).baseType) != null;
-            for (int i = 0; i < count; i++) {
-                final int idx = i;
-                Runnable elemBase = () -> {
-                    emitBase.run();
-                    emit(out, "PUSH " + idx + " mut_u64");
-                    emit(out, "LOOKUP_LHS " + arrCanonical + " mut_u64 " + elemCanonical);
-                };
-                if (elemIsArray) {
-                    emitFixedArrayElementDrops(out, elemBase, elemCanonical, leafStruct);
-                } else {
-                    elemBase.run();
-                    emit(out, "CALL " + routineNameFor(leafStruct));
-                    enqueue(leafStruct);
+        /**
+         * Calls the drop routine of `leafStruct` on every element of the fixed array at `basePath` (unrolled; nested dimensions are
+         * stepped through like an odometer, last index fastest, which is the order nested loops would emit them).
+         */
+        private void emitFixedArrayElementDrops(BytecodeProgram out, String basePath, String arrCanonical, String leafStruct) {
+            List<String> levels = new ArrayList<>();   // levels.get(k) = the array type indexed at nesting depth k
+            String cur = arrCanonical;
+            while (true) {
+                levels.add(cur);
+                String elem = CanonicalType.parse(cur).fixedArrayElementType();
+                if (CanonicalType.fixedArrayElementTypeOf(CanonicalType.parse(elem).baseType) == null) {
+                    break;
+                }
+                cur = elem;
+            }
+            int depth = levels.size();
+            int[] count = new int[depth];
+            for (int k = 0; k < depth; k++) {
+                count[k] = CanonicalType.parse(levels.get(k)).fixedArrayLength();
+                if (count[k] <= 0) {
+                    return; // an empty dimension has no elements to drop
+                }
+            }
+            int[] idx = new int[depth];
+            while (true) {
+                emit(out, "ADDR " + basePath + " " + arrCanonical);
+                for (int k = 0; k < depth; k++) {
+                    String elemCanonical = k + 1 < depth ? levels.get(k + 1) : CanonicalType.parse(levels.get(k)).fixedArrayElementType();
+                    emit(out, "PUSH " + idx[k] + " mut_u64");
+                    emit(out, "LOOKUP_LHS " + levels.get(k) + " mut_u64 " + elemCanonical);
+                }
+                emit(out, "CALL " + routineNameFor(leafStruct));
+                enqueue(leafStruct);
+                int k = depth - 1;
+                while (k >= 0 && ++idx[k] == count[k]) {
+                    idx[k] = 0;
+                    k--;
+                }
+                if (k < 0) {
+                    return;
                 }
             }
         }
