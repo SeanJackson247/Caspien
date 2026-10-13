@@ -1,5 +1,5 @@
 package caspien.typechecker;
-import caspien.SourceParser;
+import caspien.parser.SourceParser;
 import caspien.CompilerException;
 import caspien.Token;
 import caspien.TokenType;

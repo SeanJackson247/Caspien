@@ -1,5 +1,5 @@
 package caspien.importresolver;
-import caspien.SourceParser;
+import caspien.parser.SourceParser;
 import caspien.CompilerException;
 import caspien.DepsLog;
 import caspien.FsPolicy;
