@@ -52,14 +52,14 @@ public class VariableShiftingPass implements OptimizationPass {
         Map<Integer, BytecodeProgram> insertAfter = new TreeMap<>(); // ALLOC line index -> new ALLOC lines
         for (int[] f : VarAnalysis.functions(lines)) {
             if (VarAnalysis.hasMnemonic(lines, f[0], f[1], "ASM_START") || hasCatchLabel(lines, f[0], f[1])) continue;
-            Map<String, VarAnalysis.Var> vars = VarAnalysis.scan(lines, f[0], f[1]);
+            Map<String, VarAnalysisVar> vars = VarAnalysis.scan(lines, f[0], f[1]);
             Map<String, Integer> labels = VarAnalysis.labels(lines, f[0], f[1]);
             List<int[]> jumps = VarAnalysis.jumps(lines, f[0], f[1], labels);
             Set<String> used = new HashSet<>();
             for (int i = f[0]; i <= f[1]; i++) {
                 for (BytecodeToken t : lines.get(i)) used.add(t.text);
             }
-            for (VarAnalysis.Var v : vars.values()) {
+            for (VarAnalysisVar v : vars.values()) {
                 if (v.bad || v.assigns.size() < 2) continue;
                 int first = v.assigns.get(0);
                 boolean declFirst = true;

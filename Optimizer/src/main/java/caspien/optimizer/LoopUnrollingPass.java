@@ -114,21 +114,6 @@ public class LoopUnrollingPass implements OptimizationPass {
 
     // ---- candidate loop ----------------------------------------------------------------------------------
 
-    private static final class Loop {
-        int start;            // index of "ADDR $for_range_N T"
-        int bodyStart;        // first body line
-        int incStart;         // first line of the 4-line increment (= body end, exclusive)
-        int jmpIdx;           // "JMP @for_A"
-        int endIdx;           // "@for_end_B:"
-        String rangeName, rangeType, var, varType, headLabel, endLabel;
-        long lo, hi;
-        int allocIdx = -1;    // "ALLOC $for_range_N T" near the top of the function
-        int headIdx;          // index of "@for_A:" (after any FOR_DECORATE lines)
-        boolean forced, dont; // @unroll / @dont(unroll) written on the loop
-        int factor;           // @unroll(N): N, or 0 for a plain @unroll (full)
-        String pos;           // "file:line" of the decorator, for messages
-    }
-
     /** The most lines one @unroll may add to a function (a safety net; the preset budgets do not apply to a forced unroll). */
     static final long HARD_CAP = 20000L;
 
@@ -140,7 +125,7 @@ public class LoopUnrollingPass implements OptimizationPass {
         return t.length() >= 2 && t.startsWith("\"") && t.endsWith("\"") ? t.substring(1, t.length() - 1) : t;
     }
 
-    private static Loop match(BytecodeProgram L, int s, int fnEnd) {
+    private static LoopUnrollingLoop match(BytecodeProgram L, int s, int fnEnd) {
         if (s + 13 >= fnEnd) return null;
         BytecodeStatement a = L.get(s);
         if (!is(a, 3, "ADDR") || !a.get(1).text.startsWith("$for_range_")) return null;
@@ -210,7 +195,7 @@ public class LoopUnrollingPass implements OptimizationPass {
         if (!is(i2, 3, "PUSH") || !i2.get(1).text.equals(var) || !i2.get(2).text.equals(vt)) return null;
         if (!is(i3, 3, "INC") || !i3.get(1).text.equals(vt)) return null;
         if (!is(i4, 4, "ASSIGN")) return null;
-        Loop lp = new Loop();
+        LoopUnrollingLoop lp = new LoopUnrollingLoop();
         lp.start = s;
         lp.bodyStart = h + 6;
         lp.headIdx = h;
@@ -233,7 +218,7 @@ public class LoopUnrollingPass implements OptimizationPass {
     }
 
     /** Is this candidate safe to copy? Also fills in allocIdx. */
-    private static boolean copyable(BytecodeProgram L, Loop lp, int fnStart, int fnEnd) {
+    private static boolean copyable(BytecodeProgram L, LoopUnrollingLoop lp, int fnStart, int fnEnd) {
         Set<String> defined = new HashSet<>();
         for (int k = lp.bodyStart; k < lp.incStart; k++) {
             BytecodeStatement l = L.get(k);
@@ -307,18 +292,18 @@ public class LoopUnrollingPass implements OptimizationPass {
                 fnEnd++;
             }
             String fname = l.get(1).text;
-            List<Loop> cands = new ArrayList<>();
+            List<LoopUnrollingLoop> cands = new ArrayList<>();
             for (int k = fnStart + 1; k < fnEnd; k++) {
-                Loop lp = match(work, k, fnEnd);
+                LoopUnrollingLoop lp = match(work, k, fnEnd);
                 if (lp != null && copyable(work, lp, fnStart, fnEnd)) {
                     cands.add(lp);
                 }
             }
             // innermost candidates only (no other candidate inside), applied from the back so earlier indices stay valid
-            List<Loop> inner = new ArrayList<>();
-            for (Loop a : cands) {
+            List<LoopUnrollingLoop> inner = new ArrayList<>();
+            for (LoopUnrollingLoop a : cands) {
                 boolean hasInner = false;
-                for (Loop b : cands) {
+                for (LoopUnrollingLoop b : cands) {
                     // an @unroll loop is not held back by an inner loop that will stay a loop
                     if (b != a && b.start > a.start && b.endIdx < a.endIdx && (!a.forced || plan(b, fname) != null)) {
                         hasInner = true;
@@ -329,7 +314,7 @@ public class LoopUnrollingPass implements OptimizationPass {
             }
             int delta = 0;
             for (int c = inner.size() - 1; c >= 0; c--) {
-                Loop lp = inner.get(c);
+                LoopUnrollingLoop lp = inner.get(c);
                 int added = apply(work, lp, fname);
                 if (added != Integer.MIN_VALUE) {
                     changed = true;
@@ -343,17 +328,6 @@ public class LoopUnrollingPass implements OptimizationPass {
         return changed ? new PassResult(work, true) : new PassResult(lines, false);
     }
 
-    private static final class Plan {
-        final boolean full;
-        final int u;
-        final long rem;
-        Plan(boolean full, int u, long rem) {
-            this.full = full;
-            this.u = u;
-            this.rem = rem;
-        }
-    }
-
     private static boolean anyUnrollDecorator(BytecodeProgram lines) {
         for (BytecodeStatement l : lines) {
             if (isForDeco(l) && l.get(1).text.startsWith("@unroll")) return true;
@@ -362,22 +336,22 @@ public class LoopUnrollingPass implements OptimizationPass {
     }
 
     /** What would be done to this loop (null = leave it). Pure: no messages. */
-    private Plan plan(Loop lp, String fname) {
+    private LoopUnrollingPlan plan(LoopUnrollingLoop lp, String fname) {
         if (lp.dont) return null;
         long n = lp.hi - lp.lo;
         if (lp.forced) {
             long unit = (lp.incStart - lp.bodyStart) + 4L;
             int f = lp.factor;
             if (f == 0 || n <= f) {
-                return (n - 1) * unit > HARD_CAP ? null : new Plan(true, 0, 0);
+                return (n - 1) * unit > HARD_CAP ? null : new LoopUnrollingPlan(true, 0, 0);
             }
             long rem = n % f;
-            return (f - 1 + rem) * unit + 3 > HARD_CAP ? null : new Plan(false, f, rem);
+            return (f - 1 + rem) * unit + 3 > HARD_CAP ? null : new LoopUnrollingPlan(false, f, rem);
         }
         return heuristicPlan(lp, fname);
     }
 
-    private Plan heuristicPlan(Loop lp, String fname) {
+    private LoopUnrollingPlan heuristicPlan(LoopUnrollingLoop lp, String fname) {
         if (!cfg.enabled) {
             return null;
         }
@@ -390,14 +364,14 @@ public class LoopUnrollingPass implements OptimizationPass {
         long budget = cfg.maxGrowth - grown.getOrDefault(fname, 0L);
         boolean full = cfg.fullMaxTrips > 0 && n <= cfg.fullMaxTrips && (n - 1) * unit <= budget;
         if (full) {
-            return new Plan(true, 0, 0);
+            return new LoopUnrollingPlan(true, 0, 0);
         }
         int u = cfg.factor;
         if (u >= 2 && n >= 2L * u) {
             long rem = n % u;
             long extra = (u - 1 + rem) * unit + 3;
             if (extra <= budget) {
-                return new Plan(false, u, rem);
+                return new LoopUnrollingPlan(false, u, rem);
             }
         }
         return null;
@@ -410,9 +384,9 @@ public class LoopUnrollingPass implements OptimizationPass {
     }
 
     /** Applies the chosen unroll to work in place; returns the change in line count, or MIN_VALUE if nothing was done. */
-    private int apply(BytecodeProgram work, Loop lp, String fname) {
+    private int apply(BytecodeProgram work, LoopUnrollingLoop lp, String fname) {
         long n = lp.hi - lp.lo;
-        Plan pl = plan(lp, fname);
+        LoopUnrollingPlan pl = plan(lp, fname);
         if (pl == null) {
             if (lp.dont && heuristicPlan(lp, fname) != null && noted.add("dont:" + lp.pos + ":" + lp.headLabel)) {
                 note(lp.pos, "@dont(unroll): this loop is kept as a loop (the heuristic would have unrolled it)");
@@ -519,7 +493,7 @@ public class LoopUnrollingPass implements OptimizationPass {
             while (fnEnd < L.size() && !(L.get(fnEnd).size() >= 1 && L.get(fnEnd).get(0).text.equals("FUNC_END"))) fnEnd++;
             int s = first - 7;
             String reason;
-            Loop lp = s >= fnStart ? match(L, s, fnEnd) : null;
+            LoopUnrollingLoop lp = s >= fnStart ? match(L, s, fnEnd) : null;
             String range = s >= fnStart && is(L.get(s), 3, "ADDR") && L.get(s).get(1).text.startsWith("$for_range_") ? L.get(s).get(2).text : null;
             if (range == null || range.indexOf("range(") < 0) {
                 reason = "this loop is not a counted `for` the unroller recognises";
@@ -547,7 +521,7 @@ public class LoopUnrollingPass implements OptimizationPass {
     }
 
     /** True when every mention of the loop variable in the body is a plain "PUSH var vt" that is not directly followed by ADDR_OF. */
-    private static boolean onlyReadsVar(BytecodeProgram body, Loop lp, boolean nestedOk) {
+    private static boolean onlyReadsVar(BytecodeProgram body, LoopUnrollingLoop lp, boolean nestedOk) {
         // Innermost loops only unless `nestedOk` (@unroll, or `loop-unroll-nested: on`): substituting a literal into a body that holds another loop
         // gives that loop literal bounds, and the nested full unrolling that follows multiplies the code (n-body: 2.5x the code). Range proofs on the literal are folded away by ConstantFoldingPass (`IN`).
         for (BytecodeStatement l : body) {
@@ -626,7 +600,7 @@ public class LoopUnrollingPass implements OptimizationPass {
     }
 
     /** Locals declared in the body: ALLOC'd in this function, mentioned only inside the body span, body holding an inner loop. */
-    private List<String> bodyLocals(BytecodeProgram work, Loop lp) {
+    private List<String> bodyLocals(BytecodeProgram work, LoopUnrollingLoop lp) {
         List<String> res = new ArrayList<>();
         boolean nested = false;
         for (int k = lp.bodyStart; k < lp.incStart && !nested; k++) {
@@ -660,7 +634,7 @@ public class LoopUnrollingPass implements OptimizationPass {
     }
 
     /** `copy` with the given locals renamed to fresh names; queues the matching ALLOC lines. */
-    private BytecodeProgram renameLocals(BytecodeProgram work, Loop lp, BytecodeProgram copy, List<String> locals) {
+    private BytecodeProgram renameLocals(BytecodeProgram work, LoopUnrollingLoop lp, BytecodeProgram copy, List<String> locals) {
         Map<String, String> map = new HashMap<>();
         int[] f = functionOf(work, lp.start);
         for (String nm : locals) {
@@ -715,7 +689,7 @@ public class LoopUnrollingPass implements OptimizationPass {
     }
 
     /** The body with every "PUSH var vt" turned into "PUSH value vt". */
-    private static BytecodeProgram substVar(BytecodeProgram body, Loop lp, long value) {
+    private static BytecodeProgram substVar(BytecodeProgram body, LoopUnrollingLoop lp, long value) {
         BytecodeProgram out = new BytecodeProgram(body.size());
         for (BytecodeStatement l : body) {
             if (is(l, 3, "PUSH") && l.get(1).text.equals(lp.var) && l.get(2).text.equals(lp.varType)) {

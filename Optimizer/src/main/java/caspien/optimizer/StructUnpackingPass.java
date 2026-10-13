@@ -126,7 +126,7 @@ public class StructUnpackingPass implements OptimizationPass {
                 String sname = T.startsWith("imut_") ? T.substring(5) : T.startsWith("mut_") ? T.substring(4) : null;
                 List<String[]> members = sname == null ? null : table.get(sname);
                 if (members == null) continue;
-                Plan plan = plan(lines, f[0], f[1], i, v, T, members, allNames);
+                StructUnpackingPlan plan = plan(lines, f[0], f[1], i, v, T, members, allNames);
                 if (plan == null) continue;
                 changed = true;
                 remove.addAll(plan.remove);
@@ -148,12 +148,6 @@ public class StructUnpackingPass implements OptimizationPass {
         return new PassResult(out, true);
     }
 
-    private static final class Plan {
-        final Set<Integer> remove = new HashSet<>();
-        final Map<Integer, BytecodeProgram> replace = new HashMap<>();
-        final Map<Integer, String> rename = new HashMap<>();
-    }
-
     private static BytecodeStatement mk(BytecodeToken like, String... toks) {
         BytecodeStatement r = new BytecodeStatement();
         for (String s : toks) r.add(new BytecodeToken(s, like.file, like.line, BytecodeToken.Kind.CODE));
@@ -161,7 +155,7 @@ public class StructUnpackingPass implements OptimizationPass {
     }
 
     /** Returns the rewrite for variable v, or null when some mention is not one of the understood shapes. */
-    private static Plan plan(BytecodeProgram L, int s, int e, int allocIdx, String v, String T,
+    private static StructUnpackingPlan plan(BytecodeProgram L, int s, int e, int allocIdx, String v, String T,
                              List<String[]> members, Set<String> allNames) {
         Map<String, String> newName = new LinkedHashMap<>();
         Map<String, String> memType = new HashMap<>();
@@ -171,7 +165,7 @@ public class StructUnpackingPass implements OptimizationPass {
             newName.put(m[0], nn);
             memType.put(m[0], m[1]);
         }
-        Plan pl = new Plan();
+        StructUnpackingPlan pl = new StructUnpackingPlan();
         Set<Integer> handled = new HashSet<>();
         handled.add(allocIdx);
         int n = members.size();

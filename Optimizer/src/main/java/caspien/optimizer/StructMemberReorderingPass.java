@@ -64,44 +64,6 @@ public class StructMemberReorderingPass implements OptimizationPass {
 
     // ---------------------------------------------------------------- model
 
-    private static final class Entry {
-        final boolean pad;
-        final long padBytes;
-        final String name;
-        final String type;
-        final BytecodeStatement line;   // the original declaration line
-
-        Entry(boolean pad, long padBytes, String name, String type, BytecodeStatement line) {
-            this.pad = pad;
-            this.padBytes = padBytes;
-            this.name = name;
-            this.type = type;
-            this.line = line;
-        }
-    }
-
-    private static final class Decl {
-        String name;
-        int start;                       // index of STRUCT_START
-        int end;                         // index of STRUCT_END
-        BytecodeProgram head = new BytecodeProgram();   // STRUCT_START, STRUCT_DECORATE..., the ___type member
-        List<Entry> entries = new ArrayList<>();              // everything after ___type, in order
-        boolean hasType;
-        boolean typeFirst;
-        boolean plain = true;            // scalar members only, no odd decorators
-        List<Entry> members = new ArrayList<>();
-        long classId = -1;
-        boolean blocked;
-        List<Entry> newEntries;          // the reordered layout (members and padding)
-    }
-
-    private static final class Site {
-        int start;
-        int end;                         // exclusive
-        Decl decl;
-        Map<String, BytecodeProgram> units = new HashMap<>();   // member name -> its lines
-    }
-
     // ------------------------------------------------------------- helpers
 
     private final Set<String> pinnedEver = new HashSet<>();
@@ -202,31 +164,31 @@ public class StructMemberReorderingPass implements OptimizationPass {
     }
 
     private PassResult reorder(BytecodeProgram L, Set<String> pinned) {
-        Map<String, Decl> decls = readDecls(L);
+        Map<String, StructMemberReorderingDecl> decls = readDecls(L);
         if (decls.isEmpty()) {
             return new PassResult(L, false);
         }
         readClassIds(L, decls);
         // structural eligibility
-        for (Decl d : decls.values()) {
+        for (StructMemberReorderingDecl d : decls.values()) {
             if (!d.plain || !d.hasType || !d.typeFirst || d.members.size() < 2 || d.classId < 0 || pinned.contains(d.name)) {
                 d.blocked = true;
             }
         }
         blockByUses(L, decls);
         // the new layout, and only when it is strictly smaller
-        for (Decl d : decls.values()) {
+        for (StructMemberReorderingDecl d : decls.values()) {
             if (d.blocked) {
                 continue;
             }
             long oldSize = 8;
-            for (Entry e : d.entries) {
+            for (StructMemberReorderingEntry e : d.entries) {
                 oldSize += e.pad ? e.padBytes : scalarSize(e.type);
             }
-            List<Entry> sorted = new ArrayList<>(d.members);
+            List<StructMemberReorderingEntry> sorted = new ArrayList<>(d.members);
             sorted.sort((a, b) -> Integer.compare(scalarSize(b.type), scalarSize(a.type)));   // stable
             long sum = 8;
-            for (Entry e : sorted) {
+            for (StructMemberReorderingEntry e : sorted) {
                 sum += scalarSize(e.type);
             }
             long total = (sum + 7) / 8 * 8;
@@ -234,26 +196,26 @@ public class StructMemberReorderingPass implements OptimizationPass {
                 d.blocked = true;
                 continue;
             }
-            List<Entry> ne = new ArrayList<>(sorted);
+            List<StructMemberReorderingEntry> ne = new ArrayList<>(sorted);
             if (total > sum) {
-                ne.add(new Entry(true, total - sum, null, null, null));
+                ne.add(new StructMemberReorderingEntry(true, total - sum, null, null, null));
             }
             d.newEntries = ne;
         }
-        Map<Long, Decl> byId = new HashMap<>();
-        for (Decl d : decls.values()) {
+        Map<Long, StructMemberReorderingDecl> byId = new HashMap<>();
+        for (StructMemberReorderingDecl d : decls.values()) {
             if (d.classId >= 0) {
                 byId.put(d.classId, d);
             }
         }
         // construction sites: every classId push of a still-eligible struct must parse
-        List<Site> sites = new ArrayList<>();
+        List<StructMemberReorderingSite> sites = new ArrayList<>();
         for (int i = 0; i < L.size(); i++) {
-            Decl d = classIdPush(L.get(i), byId);
+            StructMemberReorderingDecl d = classIdPush(L.get(i), byId);
             if (d == null || d.blocked) {
                 continue;
             }
-            Site s = parseSite(L, i, d, byId);
+            StructMemberReorderingSite s = parseSite(L, i, d, byId);
             if (s == null) {
                 d.blocked = true;
             } else {
@@ -261,7 +223,7 @@ public class StructMemberReorderingPass implements OptimizationPass {
             }
         }
         boolean any = false;
-        for (Decl d : decls.values()) {
+        for (StructMemberReorderingDecl d : decls.values()) {
             if (!d.blocked && d.newEntries != null) {
                 any = true;
             }
@@ -270,24 +232,24 @@ public class StructMemberReorderingPass implements OptimizationPass {
             return new PassResult(L, false);
         }
         // rewrite
-        Map<Integer, Site> siteAt = new HashMap<>();
-        for (Site s : sites) {
+        Map<Integer, StructMemberReorderingSite> siteAt = new HashMap<>();
+        for (StructMemberReorderingSite s : sites) {
             if (!s.decl.blocked) {
                 siteAt.put(s.start, s);
             }
         }
-        Map<Integer, Decl> declAt = new HashMap<>();
-        for (Decl d : decls.values()) {
+        Map<Integer, StructMemberReorderingDecl> declAt = new HashMap<>();
+        for (StructMemberReorderingDecl d : decls.values()) {
             if (!d.blocked && d.newEntries != null) {
                 declAt.put(d.start, d);
             }
         }
         BytecodeProgram out = new BytecodeProgram(L.size());
         for (int i = 0; i < L.size(); i++) {
-            Decl d = declAt.get(i);
+            StructMemberReorderingDecl d = declAt.get(i);
             if (d != null) {
                 out.addAll(d.head);
-                for (Entry e : d.newEntries) {
+                for (StructMemberReorderingEntry e : d.newEntries) {
                     if (e.pad) {
                         BytecodeToken near = d.head.get(0).get(0);
                         BytecodeStatement pl = new BytecodeStatement();
@@ -302,10 +264,10 @@ public class StructMemberReorderingPass implements OptimizationPass {
                 i = d.end;
                 continue;
             }
-            Site s = siteAt.get(i);
+            StructMemberReorderingSite s = siteAt.get(i);
             if (s != null) {
                 out.add(L.get(i));   // the class id push
-                for (Entry e : s.decl.newEntries) {
+                for (StructMemberReorderingEntry e : s.decl.newEntries) {
                     if (e.pad) {
                         BytecodeStatement pl = new BytecodeStatement();
                         pl.add(tok(L.get(i).get(0), "STACK_LOCK"));
@@ -325,13 +287,13 @@ public class StructMemberReorderingPass implements OptimizationPass {
 
     // ---------------------------------------------------------- declarations
 
-    private static Map<String, Decl> readDecls(BytecodeProgram L) {
-        Map<String, Decl> out = new LinkedHashMap<>();
-        Decl cur = null;
+    private static Map<String, StructMemberReorderingDecl> readDecls(BytecodeProgram L) {
+        Map<String, StructMemberReorderingDecl> out = new LinkedHashMap<>();
+        StructMemberReorderingDecl cur = null;
         for (int i = 0; i < L.size(); i++) {
             BytecodeStatement l = L.get(i);
             if (isMn(l, "STRUCT_START") && l.size() == 2) {
-                cur = new Decl();
+                cur = new StructMemberReorderingDecl();
                 cur.name = l.get(1).text;
                 cur.start = i;
                 cur.head.add(l);
@@ -350,7 +312,7 @@ public class StructMemberReorderingPass implements OptimizationPass {
                     cur.typeFirst = cur.entries.isEmpty();
                     cur.head.add(l);
                 } else {
-                    Entry e = new Entry(false, 0, nm, ty, l);
+                    StructMemberReorderingEntry e = new StructMemberReorderingEntry(false, 0, nm, ty, l);
                     if (scalarSize(ty) < 0) {
                         cur.plain = false;
                     }
@@ -365,7 +327,7 @@ public class StructMemberReorderingPass implements OptimizationPass {
                     cur.plain = false;
                     n = 0;
                 }
-                cur.entries.add(new Entry(true, n, null, null, l));
+                cur.entries.add(new StructMemberReorderingEntry(true, n, null, null, l));
             } else if (isMn(l, "STRUCT_END")) {
                 cur.end = i;
                 out.put(cur.name, cur);
@@ -378,11 +340,11 @@ public class StructMemberReorderingPass implements OptimizationPass {
     }
 
     /** Class id of each struct, from the flat "Class" enum. */
-    private static void readClassIds(BytecodeProgram L, Map<String, Decl> decls) {
+    private static void readClassIds(BytecodeProgram L, Map<String, StructMemberReorderingDecl> decls) {
         for (BytecodeStatement l : L) {
             if (isMn(l, "ENUM") && l.size() >= 3 && l.get(1).text.equals("Class")) {
                 for (int i = 2; i + 1 < l.size(); i += 2) {
-                    Decl d = decls.get(l.get(i).text);
+                    StructMemberReorderingDecl d = decls.get(l.get(i).text);
                     if (d != null) {
                         try {
                             d.classId = Long.parseLong(l.get(i + 1).text);
@@ -427,19 +389,19 @@ public class StructMemberReorderingPass implements OptimizationPass {
         return namesStruct(text, s);
     }
 
-    private static void blockByUses(BytecodeProgram L, Map<String, Decl> decls) {
+    private static void blockByUses(BytecodeProgram L, Map<String, StructMemberReorderingDecl> decls) {
         // struct used as a member of another struct (by value or array)
-        for (Decl d : decls.values()) {
-            for (Entry e : d.members) {
-                for (Decl o : decls.values()) {
+        for (StructMemberReorderingDecl d : decls.values()) {
+            for (StructMemberReorderingEntry e : d.members) {
+                for (StructMemberReorderingDecl o : decls.values()) {
                     if (namesStruct(e.type, o.name) && !e.type.startsWith("owns_") && !e.type.startsWith("ref_")
                             && !e.type.startsWith("auto_") && !e.type.startsWith("static_")) {
                         o.blocked = true;
                     }
                 }
             }
-            for (Entry e : d.members) {
-                for (Decl o : decls.values()) {
+            for (StructMemberReorderingEntry e : d.members) {
+                for (StructMemberReorderingDecl o : decls.values()) {
                     if (namesStruct(e.type, o.name)) {
                         o.blocked = true;   // any use as a member type, pointer or not (a raw one is also caught below)
                     }
@@ -466,7 +428,7 @@ public class StructMemberReorderingPass implements OptimizationPass {
             if (decl) {
                 continue;
             }
-            for (Decl d : decls.values()) {
+            for (StructMemberReorderingDecl d : decls.values()) {
                 if (d.blocked) {
                     continue;
                 }
@@ -533,7 +495,7 @@ public class StructMemberReorderingPass implements OptimizationPass {
 
     // ------------------------------------------------------ construction sites
 
-    private static Decl classIdPush(BytecodeStatement l, Map<Long, Decl> byId) {
+    private static StructMemberReorderingDecl classIdPush(BytecodeStatement l, Map<Long, StructMemberReorderingDecl> byId) {
         if (isMn(l, "PUSH") && l.size() == 3 && l.get(2).text.equals("imut_u64")) {
             try {
                 return byId.get(Long.parseLong(l.get(1).text));
@@ -546,69 +508,89 @@ public class StructMemberReorderingPass implements OptimizationPass {
 
     private static final int MAX_UNIT = 64;
 
-    private Site parseSite(BytecodeProgram L, int i, Decl d, Map<Long, Decl> byId) {
-        List<Entry> order = d.entries;
-        List<Site> found = new ArrayList<>();
-        walk(L, i + 1, order, 0, 0, new ArrayList<>(), d, byId, i, found);
+    private StructMemberReorderingSite parseSite(BytecodeProgram L, int i, StructMemberReorderingDecl d, Map<Long, StructMemberReorderingDecl> byId) {
+        List<StructMemberReorderingEntry> order = d.entries;
+        List<StructMemberReorderingSite> found = new ArrayList<>();
+        walk(L, i + 1, order, d, byId, i, found);
         return found.size() == 1 ? found.get(0) : null;
     }
 
-    private void walk(BytecodeProgram L, int j, List<Entry> order, int idx, int membersDone,
-            List<BytecodeProgram> acc, Decl d, Map<Long, Decl> byId, int start, List<Site> found) {
-        if (found.size() > 1) {
-            return;
-        }
-        if (idx == order.size()) {
-            if (j < L.size()) {
-                BytecodeStatement t = L.get(j);
-                if (isMn(t, "ASSIGN") || isMn(t, "NEW") || classIdPush(t, byId) != null) {
-                    Site s = new Site();
-                    s.start = start;
-                    s.end = j;
-                    s.decl = d;
-                    int k = 0;
-                    for (Entry e : order) {
-                        if (!e.pad) {
-                            s.units.put(e.name, acc.get(k++));
+    /**
+     * Backtracking search for the ways the literal's pushed values can be cut into the members of `order`, depth first, stopping
+     * as soon as a second way is found. The choice points (where each member's value ends) are frames on an explicit stack.
+     */
+    private void walk(BytecodeProgram L, int j0, List<StructMemberReorderingEntry> order, StructMemberReorderingDecl d, Map<Long, StructMemberReorderingDecl> byId, int start, List<StructMemberReorderingSite> found) {
+        List<StructMemberReorderingFrame> stack = new ArrayList<>();
+        stack.add(new StructMemberReorderingFrame(j0, 0, 0, new ArrayList<>()));
+        while (!stack.isEmpty()) {
+            if (found.size() > 1) {
+                return;
+            }
+            StructMemberReorderingFrame f = stack.get(stack.size() - 1);
+            if (!f.entered) {
+                f.entered = true;
+                if (f.idx == order.size()) {
+                    if (f.j < L.size()) {
+                        BytecodeStatement t = L.get(f.j);
+                        if (isMn(t, "ASSIGN") || isMn(t, "NEW") || classIdPush(t, byId) != null) {
+                            StructMemberReorderingSite s = new StructMemberReorderingSite();
+                            s.start = start;
+                            s.end = f.j;
+                            s.decl = d;
+                            int k = 0;
+                            for (StructMemberReorderingEntry e : order) {
+                                if (!e.pad) {
+                                    s.units.put(e.name, f.acc.get(k++));
+                                }
+                            }
+                            found.add(s);
                         }
                     }
-                    found.add(s);
+                    stack.remove(stack.size() - 1);
+                    continue;
+                }
+                StructMemberReorderingEntry e = order.get(f.idx);
+                if (e.pad) {
+                    stack.remove(stack.size() - 1);
+                    if (f.j < L.size() && isMn(L.get(f.j), "STACK_LOCK") && L.get(f.j).size() == 2
+                            && L.get(f.j).get(1).text.equals(Long.toString(e.padBytes))) {
+                        stack.add(new StructMemberReorderingFrame(f.j + 1, f.idx + 1, f.membersDone, f.acc));
+                    }
+                    continue;
+                }
+                f.depth = f.membersDone;
+                f.unit = new BytecodeProgram();
+                f.p = f.j;
+            }
+            StructMemberReorderingEntry e = order.get(f.idx);
+            boolean descended = false;
+            while (f.p < L.size() && f.unit.size() < MAX_UNIT) {
+                BytecodeStatement l = L.get(f.p);
+                int ef = effect(l);
+                if (ef == Integer.MIN_VALUE) {
+                    break;
+                }
+                if (ef < 0 && f.depth - f.membersDone < 2) {
+                    break;   // a binary operator would eat the previous member's value
+                }
+                f.depth += ef;
+                if (f.depth < f.membersDone + 1) {
+                    break;
+                }
+                f.unit.add(l);
+                f.p++;
+                if (f.depth == f.membersDone + 1 && typeMatches(resultType(l), e.type)) {
+                    List<BytecodeProgram> next = new ArrayList<>(f.acc);
+                    next.add(new BytecodeProgram(f.unit));
+                    stack.add(new StructMemberReorderingFrame(f.p, f.idx + 1, f.membersDone + 1, next));
+                    descended = true;
+                    break;
                 }
             }
-            return;
-        }
-        Entry e = order.get(idx);
-        if (e.pad) {
-            if (j < L.size() && isMn(L.get(j), "STACK_LOCK") && L.get(j).size() == 2
-                    && L.get(j).get(1).text.equals(Long.toString(e.padBytes))) {
-                walk(L, j + 1, order, idx + 1, membersDone, acc, d, byId, start, found);
+            if (descended) {
+                continue;
             }
-            return;
-        }
-        int depth = membersDone;
-        BytecodeProgram unit = new BytecodeProgram();
-        for (int p = j; p < L.size() && unit.size() < MAX_UNIT; p++) {
-            BytecodeStatement l = L.get(p);
-            int ef = effect(l);
-            if (ef == Integer.MIN_VALUE) {
-                return;
-            }
-            if (ef < 0 && depth - membersDone < 2) {
-                return;   // a binary operator would eat the previous member's value
-            }
-            depth += ef;
-            if (depth < membersDone + 1) {
-                return;
-            }
-            unit.add(l);
-            if (depth == membersDone + 1 && typeMatches(resultType(l), e.type)) {
-                List<BytecodeProgram> next = new ArrayList<>(acc);
-                next.add(new BytecodeProgram(unit));
-                walk(L, p + 1, order, idx + 1, membersDone + 1, next, d, byId, start, found);
-                if (found.size() > 1) {
-                    return;
-                }
-            }
+            stack.remove(stack.size() - 1);
         }
     }
 

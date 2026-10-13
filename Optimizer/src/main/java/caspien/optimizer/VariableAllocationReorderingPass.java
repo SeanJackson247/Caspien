@@ -57,7 +57,7 @@ public class VariableAllocationReorderingPass implements OptimizationPass {
         if (!enabled) {
             return new PassResult(lines, false);
         }
-        Align table = new Align(lines);
+        VariableAllocationReorderingAlign table = new VariableAllocationReorderingAlign(lines);
         BytecodeProgram out = new BytecodeProgram(lines.size());
         boolean changed = false;
         int i = 0;
@@ -86,7 +86,7 @@ public class VariableAllocationReorderingPass implements OptimizationPass {
         return new PassResult(changed ? out : lines, changed);
     }
 
-    private static boolean isMnemonic(BytecodeStatement line, String m) {
+    static boolean isMnemonic(BytecodeStatement line, String m) {
         return !line.isEmpty() && line.get(0).kind == BytecodeToken.Kind.CODE && line.get(0).text.equals(m);
     }
 
@@ -95,7 +95,7 @@ public class VariableAllocationReorderingPass implements OptimizationPass {
     }
 
     /** The function's lines with the leading ALLOC run reordered, or null when nothing changes. */
-    private BytecodeProgram reorderFunction(BytecodeProgram fn, Align table) {
+    private BytecodeProgram reorderFunction(BytecodeProgram fn, VariableAllocationReorderingAlign table) {
         int n = fn.size();
         for (BytecodeStatement l : fn) {
             if (isMnemonic(l, "ASM_START")) {
@@ -184,25 +184,13 @@ public class VariableAllocationReorderingPass implements OptimizationPass {
                 }
             }
         }
-        final class Slot {
-            final int idx;
-            final BytecodeStatement line;
-            final long align;
-            final long weight;
-
-            Slot(int idx, BytecodeStatement line) {
-                this.idx = idx;
-                this.line = line;
-                this.align = table.of(line.get(2).text);
-                this.weight = weights.getOrDefault(line.get(1).text, 0L);
-            }
-
-        }
-        List<Slot> slots = new ArrayList<>(count);
+        List<VariableAllocationReorderingSlot> slots = new ArrayList<>(count);
         for (int k = p; k <= last; k++) {
-            slots.add(new Slot(k - p, fn.get(k)));
+            BytecodeStatement decl = fn.get(k);
+            slots.add(new VariableAllocationReorderingSlot(k - p, decl, table.of(decl.get(2).text),
+                    weights.getOrDefault(decl.get(1).text, 0L)));
         }
-        List<Slot> sorted = new ArrayList<>(slots);
+        List<VariableAllocationReorderingSlot> sorted = new ArrayList<>(slots);
         sorted.sort((a, b) -> {
             if (a.align != b.align) {
                 return Long.compare(b.align, a.align);
@@ -224,93 +212,11 @@ public class VariableAllocationReorderingPass implements OptimizationPass {
         }
         BytecodeProgram result = new BytecodeProgram(n);
         result.addAll(fn.slice(0, p));
-        for (Slot s : sorted) {
+        for (VariableAllocationReorderingSlot s : sorted) {
             result.add(s.line);
         }
         result.addAll(fn.slice(last + 1, n));
         return result;
     }
 
-    /** Alignment of a canonical type text; mirrors the LowerOrderGenerator's own table (see the class comment). */
-    static final class Align {
-        private final Map<String, List<String>> structMembers = new HashMap<>();
-        private final Map<String, Long> structCache = new HashMap<>();
-
-        Align(BytecodeProgram lines) {
-            String cur = null;
-            for (BytecodeStatement l : lines) {
-                if (isMnemonic(l, "STRUCT_START") && l.size() >= 2) {
-                    cur = l.get(1).text;
-                    structMembers.put(cur, new ArrayList<>());
-                } else if (isMnemonic(l, "STRUCT_MEMBER") && l.size() >= 3 && cur != null) {
-                    structMembers.get(cur).add(l.get(2).text);
-                } else if (isMnemonic(l, "STRUCT_END")) {
-                    cur = null;
-                }
-            }
-        }
-
-        long of(String canonical) {
-            String rest = canonical;
-            int u = rest.indexOf('_');
-            if (u > 0) {
-                String c = rest.substring(0, u);
-                if (c.equals("owns") || c.equals("ref") || c.equals("raw") || c.equals("auto") || c.equals("static")) {
-                    return 8;
-                }
-            }
-            u = rest.indexOf('_');
-            if (u > 0 && rest.substring(0, u).equals("some")) {
-                rest = rest.substring(u + 1);
-            }
-            u = rest.indexOf('_');
-            String base = u > 0 ? rest.substring(u + 1) : rest;
-            if (base.startsWith("atomic_")) {
-                base = base.substring("atomic_".length());
-            }
-            return ofBase(base);
-        }
-
-        private long ofBase(String base) {
-            switch (base) {
-                case "u8": case "s8": case "bool": case "char": case "void":
-                    return 1;
-                case "u16": case "s16":
-                    return 2;
-                case "u32": case "s32": case "f32":
-                    return 4;
-                case "u64": case "s64": case "f64": case "code_addr": case "string":
-                    return 8;
-                default:
-                    break;
-            }
-            if (base.startsWith("dynarray(") && base.endsWith(")")) {
-                return 8;
-            }
-            if (base.endsWith("]")) {
-                int open = base.lastIndexOf('[');
-                if (open > 0) {
-                    return of(base.substring(0, open));
-                }
-            }
-            if (base.equals("range") || base.startsWith("range(")) {
-                return 8;
-            }
-            List<String> members = structMembers.get(base);
-            if (members != null) {
-                Long cached = structCache.get(base);
-                if (cached != null) {
-                    return cached;
-                }
-                structCache.put(base, 1L);
-                long max = 1;
-                for (String m : members) {
-                    max = Math.max(max, of(m));
-                }
-                structCache.put(base, max);
-                return max;
-            }
-            return 8;
-        }
-    }
 }

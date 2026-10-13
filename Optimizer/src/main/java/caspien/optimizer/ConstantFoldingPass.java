@@ -142,11 +142,11 @@ public class ConstantFoldingPass implements OptimizationPass {
     }
 
     /** A literal PUSH: "PUSH <literal> <type>" whose literal really is one of the type's kind; else null. */
-    static Lit lit(BytecodeStatement line) {
+    static ConstantFoldingLit lit(BytecodeStatement line) {
         if (line.size() != 3 || line.get(0).kind != BytecodeToken.Kind.CODE || !line.get(0).text.equals("PUSH")) return null;
         String text = line.get(1).text, type = line.get(2).text, b = base(type);
         if (b == null) return null;
-        Lit l = new Lit();
+        ConstantFoldingLit l = new ConstantFoldingLit();
         l.type = type;
         l.base = b;
         if (isInt(b)) {
@@ -168,13 +168,6 @@ public class ConstantFoldingPass implements OptimizationPass {
             else return null;
         }
         return l;
-    }
-
-    static final class Lit {
-        String type, base;
-        BigInteger i;
-        double d;      // an f32 is held exactly as a double
-        boolean b;
     }
 
     private static String floatText(double v, boolean single) {
@@ -208,7 +201,7 @@ public class ConstantFoldingPass implements OptimizationPass {
         switch (op) {
             case "NOT": case "NEG": case "TRUNC": case "SEXT": case "ZEXT": case "BITS_NOT": {
                 if (line.size() != 3 || n < 1) return null;
-                Lit a = lit(out.get(n - 1));
+                ConstantFoldingLit a = lit(out.get(n - 1));
                 if (a == null) return null;
                 BytecodeStatement r = unary(op, a, line);
                 if (r != null) out.remove(n - 1);
@@ -217,7 +210,7 @@ public class ConstantFoldingPass implements OptimizationPass {
             case "ADD": case "SUB": case "MUL": case "DIV": case "MOD": case "SHL": case "SHR": case "ROTL": case "ROTR": case "BITS_OR": case "BITS_AND": case "BITS_XOR":
             case "LT": case "LT_EQ": case "GT": case "GT_EQ": case "EQ": case "NEQ": case "AND": case "OR": {
                 if (line.size() != 4 || n < 2) return null;
-                Lit a = lit(out.get(n - 2)), b = lit(out.get(n - 1));
+                ConstantFoldingLit a = lit(out.get(n - 2)), b = lit(out.get(n - 1));
                 if (a == null || b == null) return null;
                 BytecodeStatement r = binary(op, a, b, line);
                 if (r != null) {
@@ -233,7 +226,7 @@ public class ConstantFoldingPass implements OptimizationPass {
                 if (line.size() != 4 || n < 3) return null;
                 String rangeType = line.get(2).text;
                 if (!rangeType.contains("range(") || !"bool".equals(base(line.get(3).text))) return null;
-                Lit x = lit(out.get(n - 3)), lo = lit(out.get(n - 2)), hi = lit(out.get(n - 1));
+                ConstantFoldingLit x = lit(out.get(n - 3)), lo = lit(out.get(n - 2)), hi = lit(out.get(n - 1));
                 if (x == null || lo == null || hi == null) return null;
                 if (!isInt(x.base) || !isInt(lo.base) || !isInt(hi.base) || !"u64".equals(base(line.get(1).text))) return null;
                 if (x.i.signum() < 0 || lo.i.signum() < 0 || hi.i.signum() < 0) return null;
@@ -248,7 +241,7 @@ public class ConstantFoldingPass implements OptimizationPass {
         }
     }
 
-    private static BytecodeStatement unary(String op, Lit a, BytecodeStatement line) {
+    private static BytecodeStatement unary(String op, ConstantFoldingLit a, BytecodeStatement line) {
         BytecodeToken at = line.get(0);
         String t1 = line.get(1).text, t2 = line.get(2).text;
         switch (op) {
@@ -329,7 +322,7 @@ public class ConstantFoldingPass implements OptimizationPass {
         return wrap(r, b);
     }
 
-    private static BytecodeStatement binary(String op, Lit a, Lit b, BytecodeStatement line) {
+    private static BytecodeStatement binary(String op, ConstantFoldingLit a, ConstantFoldingLit b, BytecodeStatement line) {
         BytecodeToken at = line.get(0);
         String lt = line.get(1).text, rt = line.get(2).text, res = line.get(3).text;
         String lb = base(lt), rb = base(rt), resB = base(res);

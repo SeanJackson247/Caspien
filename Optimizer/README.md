@@ -398,7 +398,7 @@ reorders the function's LEADING contiguous `ALLOC` run (an `ALLOC` that appears 
 
 Pinned at the front: `gt_routine_address` (rbp-8), then `gt_error_message` (rbp-16), then any `gt_trace_*` slots (rbp-24/-32): `GT_UNWIND`, its `MSG` copy and the trace walk address them by offset. A function whose run does not start with that pinned
 prefix, that has such a name anywhere else, or that has `ASM_START`, is left alone. Parameters are `ARG` lines at this point; the LowerOrderGenerator's `ArgToAllocLoweringPass` inserts their slots right behind the pinned ones, so they stay ahead of every reordered local. Correctness needs no analysis (locals are only mentioned by name, offsets are computed afterwards, the pass never adds, removes or renames a line); a wrong alignment estimate could only cost padding.
-The alignment table (`Align`) MIRRORS `AddressLoweringPass.Sizes.alignOf` and must be kept in step: storage pointers 8, u8/s8/bool/char 1, u16/s16 2, u32/s32/f32 4, u64/s64/f64/code_addr/string/range/dynarray 8, a fixed array its element's, a struct the max over its members, anything unknown 8.
+The alignment table (`VariableAllocationReorderingAlign`) MIRRORS `AddressLoweringPass.Sizes.alignOf` and must be kept in step: storage pointers 8, u8/s8/bool/char 1, u16/s16 2, u32/s32/f32 4, u64/s64/f64/code_addr/string/range/dynarray 8, a fixed array its element's, a struct the max over its members, anything unknown 8.
 Tests: `tests/allocreorder_test.caspien` (identical output with the switch off and on; the frame of `mixed` is smaller), `tests/allocreorder_hob_check.sh`.
 
 ### RegVarHintPass (always on, runs once, last)
@@ -486,7 +486,7 @@ Things that have bitten before:
 - Passes must be pure functions of the whole program; any state kept across rounds (counters, budgets) lives in the pass object and must make the loop terminate.
 - Reserved scaffolding slots: `gt_routine_address`, `gt_error_message` (rbp-8/-16) and, under stack traces, `gt_trace_id` / `gt_trace_ptr` / `gt_trace_buf` (rbp-24/-32/...; written and read only by the backend's `TRACE_CAPTURE` walk, so they look like unused locals). Guards today: `VariableElisionPass` (skips `gt_trace_*`), `VariableAllocationReorderingPass` (pins them),
   `LoopUnrollingPass` (never renames them as per-copy locals), `RegVarHintPass` (never hints them); the inliner never sees them because under `usesTrace` every function is `@dont(inline)`. A new pass that deletes unused locals or moves slots must leave them alone (elision once deleted them).
-- `AddressLoweringPass.Sizes.alignOf` (LowerOrderGenerator) is mirrored by `VariableAllocationReorderingPass.Align` and, for sizes, by `SizeofResolutionPass.Sizes`: keep all three in step.
+- `AddressLoweringPass.Sizes.alignOf` (LowerOrderGenerator) is mirrored by `VariableAllocationReorderingAlign` and, for sizes, by `SizeofResolutionSizes`: keep all three in step.
 - Never compile two programs at once in one compiler tree: the orchestrator's scratch files and the stage cache are shared.
 
 ## Tests

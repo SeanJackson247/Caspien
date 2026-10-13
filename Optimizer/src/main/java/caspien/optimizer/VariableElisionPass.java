@@ -58,12 +58,12 @@ public class VariableElisionPass implements OptimizationPass {
         TreeMap<Integer, Object[]> boundLits = new TreeMap<>();
         for (int[] f : VarAnalysis.functions(lines)) {
             if (VarAnalysis.hasMnemonic(lines, f[0], f[1], "ASM_START")) continue;
-            Map<String, VarAnalysis.Var> vars = VarAnalysis.scan(lines, f[0], f[1]);
+            Map<String, VarAnalysisVar> vars = VarAnalysis.scan(lines, f[0], f[1]);
             Map<String, Integer> labels = VarAnalysis.labels(lines, f[0], f[1]);
             List<int[]> jumps = VarAnalysis.jumps(lines, f[0], f[1], labels);
             Map<String, String> lits = new HashMap<>();
             boundLits.put(f[0], new Object[] {f[1], lits});
-            for (VarAnalysis.Var v : vars.values()) {
+            for (VarAnalysisVar v : vars.values()) {
                 if (v.bad || v.assigns.size() != 1 || v.name.startsWith("gt_trace_")) continue;   // read only by the backend's TRACE_CAPTURE walk
                 int a = v.assigns.get(0);
                 boolean ok = true;

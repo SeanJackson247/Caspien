@@ -9,7 +9,6 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -204,46 +203,6 @@ public class FunctionInliningPass implements OptimizationPass {
     // ------------------------------------------------------------------------------------------------------------------
     // callee analysis
 
-    private static final class Ret {
-        int idx;
-        boolean isVoid;
-        String type;
-        int vStart = -1, vTail = -1;
-        boolean pure;
-        boolean tail;
-    }
-
-    private static final class Callee {
-        String name;
-        List<String[]> params = new ArrayList<>();
-        List<String[]> allocs = new ArrayList<>();
-        BytecodeProgram code = new BytecodeProgram();
-        boolean eligible;
-        int scaffoldSlots;
-        /** the body contains THROW / GT_UNWIND: it can leave through the caller's call-site label. */
-        boolean unwinds;
-        boolean usesAddr, usesMsg;
-        /** the body defines a `@catch_N` label (a `?catch` / `try ... catch` of its own). */
-        boolean hasCatch;
-        /** every statement leaves the operand stack as it found it (no ignored call result, no unknown mnemonic): safe to run with operands of an enclosing expression beneath. */
-        boolean balanced;
-        boolean controlFlow;
-        boolean simple;
-        List<Ret> rets = new ArrayList<>();
-        Set<String> locals = new HashSet<>();
-        Set<String> globals = new HashSet<>();
-        Set<String> labels = new LinkedHashSet<>();
-        int lines;
-        /** number of `CALL name` lines in the program at the start of this round */
-        int calls;
-        String why = "";
-        /** @inline: inline every call site that is safe, whatever the preset's size and growth limits say. */
-        boolean forced;
-        /** @dont(inline): never. */
-        boolean dont;
-        String pos;
-    }
-
     private static final Set<String> NAME_POS = new HashSet<>(Arrays.asList("PUSH", "ADDR", "GT_DESTRUCT", "ATOMIC_PUSH"));
 
     /**
@@ -382,8 +341,8 @@ public class FunctionInliningPass implements OptimizationPass {
         return -1;
     }
 
-    private Callee analyse(BytecodeProgram L, int s, int e, Set<String> cyclic) {
-        Callee c = new Callee();
+    private FunctionInliningCallee analyse(BytecodeProgram L, int s, int e, Set<String> cyclic) {
+        FunctionInliningCallee c = new FunctionInliningCallee();
         c.name = L.get(s).get(1).text;
         String retType = null;
         boolean ok = true;
@@ -577,7 +536,7 @@ public class FunctionInliningPass implements OptimizationPass {
                 ok = false;
                 continue;
             }
-            Ret r = new Ret();
+            FunctionInliningRet r = new FunctionInliningRet();
             r.idx = i;
             r.type = l.get(1).text;
             r.isVoid = r.type.equals("imut_void");
@@ -676,15 +635,6 @@ public class FunctionInliningPass implements OptimizationPass {
         return false;
     }
 
-    private final class Ctx {
-        String caller;
-        Set<String> callerNames = new HashSet<>();
-        Map<String, Callee> callees;
-        BytecodeProgram newAllocs = new BytecodeProgram();
-        long added = 0;
-        boolean changed = false;
-    }
-
     /** One round: every call site whose callee (as it stands now) is eligible is inlined. Returns null if nothing changed. */
     private BytecodeProgram round(BytecodeProgram L) {
         int maxNum = 0;
@@ -732,23 +682,23 @@ public class FunctionInliningPass implements OptimizationPass {
                 if (nx != null) stack.addAll(nx);
             }
         }
-        Map<String, Callee> callees = new HashMap<>();
+        Map<String, FunctionInliningCallee> callees = new HashMap<>();
         for (int[] f : fns) {
-            Callee c = analyse(L, f[0], f[1], cyclic);
+            FunctionInliningCallee c = analyse(L, f[0], f[1], cyclic);
             callees.put(c.name, c);
         }
         Map<String, Integer> callCount = new HashMap<>();
         for (BytecodeStatement l : L) {
             if (is(l, 2, "CALL")) callCount.merge(l.get(1).text, 1, Integer::sum);
         }
-        for (Callee c : callees.values()) c.calls = callCount.getOrDefault(c.name, 0);
+        for (FunctionInliningCallee c : callees.values()) c.calls = callCount.getOrDefault(c.name, 0);
 
         BytecodeProgram out = new BytecodeProgram(L.size());
         boolean changed = false;
         int pos = 0;
         for (int[] f : fns) {
             while (pos < f[0]) out.add(L.get(pos++));
-            Ctx cx = new Ctx();
+            FunctionInliningCtx cx = new FunctionInliningCtx();
             cx.caller = L.get(f[0]).get(1).text;
             cx.callees = callees;
             for (int i = f[0] + 1; i < f[1]; i++) {
@@ -828,48 +778,73 @@ public class FunctionInliningPass implements OptimizationPass {
      * runs with no register protection (a real nested call saves and restores the loaded argument registers around itself; the backend's own
      * block copies, shifts and divides use rdi, rsi, rdx, rcx as scratch), so a call site in that position is never inlined.
      */
-    private BytecodeProgram expandRange(BytecodeProgram L, int from, int to, Ctx cx, boolean baseClean, boolean regsLoaded) {
-        BytecodeProgram out = new BytecodeProgram();
-        int k = from;
-        while (k < to) {
-            BytecodeStatement line = L.get(k);
-            if (!is(line, 2, "CC_START")) {
-                out.add(line);
-                k++;
-                continue;
-            }
-            int e = matchEnd(L, k, to);
-            if (e < 0) {
-                out.add(line);
-                k++;
-                continue;
-            }
-            BytecodeStatement callLine = L.get(e - 1);
-            boolean isCall = e - 1 > k && is(callLine, 2, "CALL");
-            int argsEnd = isCall ? e - 1 : e; // exclusive end of the argument region
-            int cut = stagedLabel(out) != null ? 3 : 0;
-            int cls = classify(out, cut, baseClean);
-            boolean loaded = regsLoaded || argRegisterLoaded(out);
-            BytecodeProgram args = expandRange(L, k + 1, argsEnd, cx, cls == 0, loaded);
-            boolean hasRet = e + 1 < to && is(L.get(e + 1), 2, "PUSH_RET");
-            boolean done = false;
-            if (isCall) {
-                Callee c = cx.callees.get(callLine.get(1).text);
-                if (c != null && c.eligible && !c.name.equals(cx.caller) && !loaded) {
-                    done = tryInline(c, line, args, hasRet ? L.get(e + 1) : null, out, cut, cls, cx);
+    private BytecodeProgram expandRange(BytecodeProgram L, int from, int to, FunctionInliningCtx cx, boolean baseClean, boolean regsLoaded) {
+        // A call's argument region is expanded first, as a frame of its own on this stack; the call itself is handled when that
+        // frame is done (the parent frame keeps the call's pending state).
+        List<FunctionInliningFrame> stack = new ArrayList<>();
+        stack.add(new FunctionInliningFrame(from, to, baseClean, regsLoaded));
+        BytecodeProgram finishedArgs = null;
+        BytecodeProgram result = null;
+        while (!stack.isEmpty()) {
+            FunctionInliningFrame f = stack.get(stack.size() - 1);
+            if (finishedArgs != null) {
+                BytecodeProgram args = finishedArgs;
+                finishedArgs = null;
+                BytecodeStatement line = L.get(f.k);
+                boolean hasRet = f.e + 1 < f.to && is(L.get(f.e + 1), 2, "PUSH_RET");
+                boolean done = false;
+                if (f.isCall) {
+                    FunctionInliningCallee c = cx.callees.get(f.callLine.get(1).text);
+                    if (c != null && c.eligible && !c.name.equals(cx.caller) && !f.loaded) {
+                        done = tryInline(c, line, args, hasRet ? L.get(f.e + 1) : null, f.out, f.cut, f.cls, cx);
+                    }
+                }
+                if (done) {
+                    f.k = f.e + 1 + (hasRet ? 1 : 0);
+                } else {
+                    f.out.add(line);
+                    f.out.addAll(args);
+                    if (f.isCall) f.out.add(f.callLine);
+                    f.out.add(L.get(f.e));
+                    f.k = f.e + 1;
                 }
             }
-            if (done) {
-                k = e + 1 + (hasRet ? 1 : 0);
+            boolean descended = false;
+            while (f.k < f.to) {
+                BytecodeStatement line = L.get(f.k);
+                if (!is(line, 2, "CC_START")) {
+                    f.out.add(line);
+                    f.k++;
+                    continue;
+                }
+                int e = matchEnd(L, f.k, f.to);
+                if (e < 0) {
+                    f.out.add(line);
+                    f.k++;
+                    continue;
+                }
+                f.e = e;
+                f.callLine = L.get(e - 1);
+                f.isCall = e - 1 > f.k && is(f.callLine, 2, "CALL");
+                int argsEnd = f.isCall ? e - 1 : e; // exclusive end of the argument region
+                f.cut = stagedLabel(f.out) != null ? 3 : 0;
+                f.cls = classify(f.out, f.cut, f.baseClean);
+                f.loaded = f.regsLoaded || argRegisterLoaded(f.out);
+                stack.add(new FunctionInliningFrame(f.k + 1, argsEnd, f.cls == 0, f.loaded));
+                descended = true;
+                break;
+            }
+            if (descended) {
+                continue;
+            }
+            stack.remove(stack.size() - 1);
+            if (stack.isEmpty()) {
+                result = f.out;
             } else {
-                out.add(line);
-                out.addAll(args);
-                if (isCall) out.add(callLine);
-                out.add(L.get(e));
-                k = e + 1;
+                finishedArgs = f.out;
             }
         }
-        return out;
+        return result;
     }
 
     /** True if `l` is empty or made only of null-out triples "ADDR name T / PUSH null T / ASSIGN T T T" (a moved owns variable being cleared). */
@@ -898,8 +873,8 @@ public class FunctionInliningPass implements OptimizationPass {
         return BOUNDARY.contains(mn(l));
     }
 
-    private boolean tryInline(Callee c, BytecodeStatement ccStart, BytecodeProgram args, BytecodeStatement pushRet,
-            BytecodeProgram out, int cut, int cls, Ctx cx) {
+    private boolean tryInline(FunctionInliningCallee c, BytecodeStatement ccStart, BytecodeProgram args, BytecodeStatement pushRet,
+            BytecodeProgram out, int cut, int cls, FunctionInliningCtx cx) {
         // ---- split the argument region into per-parameter segments
         List<BytecodeProgram> segs = new ArrayList<>();
         BytecodeProgram pops = new BytecodeProgram();
@@ -940,7 +915,7 @@ public class FunctionInliningPass implements OptimizationPass {
         if (addr1 && !valueMode) return false;
         // ---- callee shape vs. site
         boolean voidCallee = c.rets.isEmpty() || c.rets.get(0).isVoid;
-        for (Ret r : c.rets) {
+        for (FunctionInliningRet r : c.rets) {
             if (r.isVoid != voidCallee) return false;
         }
         if (valueMode && voidCallee && !c.rets.isEmpty()) return false;
@@ -949,7 +924,7 @@ public class FunctionInliningPass implements OptimizationPass {
         if (!valueMode) {
             mode = "DISCARD";
             if (!voidCallee) {
-                for (Ret r : c.rets) {
+                for (FunctionInliningRet r : c.rets) {
                     if (r.vStart < 0 || !r.pure) return false;
                 }
             }
@@ -960,7 +935,7 @@ public class FunctionInliningPass implements OptimizationPass {
                 mode = "STACK";
             } else {
                 mode = "TEMP";
-                for (Ret r : c.rets) {
+                for (FunctionInliningRet r : c.rets) {
                     if (r.vStart < 0) return false;
                 }
             }
@@ -1033,14 +1008,14 @@ public class FunctionInliningPass implements OptimizationPass {
         }
         blk.addAll(post);
         String retT = null;
-        for (Ret r : c.rets) {
+        for (FunctionInliningRet r : c.rets) {
             if (!r.isVoid) retT = r.type;
         }
         Set<Integer> skip = new HashSet<>();
         Map<Integer, BytecodeProgram> before = new HashMap<>();
         Map<Integer, BytecodeProgram> after = new HashMap<>();
         boolean usesEnd = false;
-        for (Ret r : c.rets) {
+        for (FunctionInliningRet r : c.rets) {
             if (!r.isVoid && mode.equals("DISCARD")) {
                 for (int q = r.vStart; q <= r.vTail; q++) skip.add(q);
             }
@@ -1061,8 +1036,8 @@ public class FunctionInliningPass implements OptimizationPass {
             if (b != null) blk.addAll(b);
             if (!skip.contains(i)) {
                 BytecodeStatement l = c.code.get(i);
-                Ret rr = null;
-                for (Ret r : c.rets) {
+                FunctionInliningRet rr = null;
+                for (FunctionInliningRet r : c.rets) {
                     if (r.idx == i) rr = r;
                 }
                 if (rr != null) {

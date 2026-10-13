@@ -17,25 +17,12 @@ public final class Optimizer {
     private Optimizer() {
     }
 
-    /** `hob` = the optimised program text; `messages` = "[info]"/"[note]"/"[warning]" lines, in order. */
-    public static final class Result {
-        public final String hob;
-        public final List<String> messages;
-        /** A stage that cannot finish throws; the field exists so every stage's Result can be read the same way. */
-        public final boolean failed = false;
-
-        Result(String hob, List<String> messages) {
-            this.hob = hob;
-            this.messages = messages;
-        }
-    }
-
     /**
      * @param hobText    the front end's output
      * @param origin     name shown in diagnostics for the input (a file name)
      * @param configText the contents of `compiler.config`, or null for "every switch off"
      */
-    public static Result optimize(String hobText, String origin, String configText) {
+    public static OptimizerResult optimize(String hobText, String origin, String configText) {
         BytecodeProgram program = new BytecodeParser().parse(hobText.lines().toList(), origin);
 
         List<String> cfg = configText == null ? new ArrayList<>() : configText.lines().toList();
@@ -49,6 +36,6 @@ public final class Optimizer {
         messages.add("[info] optimizer: " + unrollConfig + "; " + foldConfig + "; " + variableConfig + "; " + inlineConfig);
         BytecodeProgram optimized = new BytecodeOptimizer(unrollConfig, foldConfig, variableConfig, inlineConfig, messages).optimize(program);
 
-        return new Result(new BytecodeSerializer().serialize(optimized), messages.lines());
+        return new OptimizerResult(new BytecodeSerializer().serialize(optimized), messages.lines());
     }
 }

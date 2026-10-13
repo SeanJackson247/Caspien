@@ -26,14 +26,6 @@ final class VarAnalysis {
     private VarAnalysis() {
     }
 
-    static final class Var {
-        String name, type;
-        int allocs, allocIdx = -1;
-        boolean bad;
-        final List<Integer> reads = new ArrayList<>();
-        final List<Integer> assigns = new ArrayList<>();   // index of the "ADDR name T" line; the literal PUSH is at +1
-    }
-
     /** [start, end] line indices (FUNC_START .. FUNC_END inclusive) of every function. */
     static List<int[]> functions(BytecodeProgram L) {
         List<int[]> out = new ArrayList<>();
@@ -103,19 +95,19 @@ final class VarAnalysis {
     }
 
     /** The scan described in the class comment, for the function spanning lines s..e. */
-    static Map<String, Var> scan(BytecodeProgram L, int s, int e) {
-        Map<String, Var> vars = new LinkedHashMap<>();
+    static Map<String, VarAnalysisVar> scan(BytecodeProgram L, int s, int e) {
+        Map<String, VarAnalysisVar> vars = new LinkedHashMap<>();
         for (int i = s; i <= e; i++) {
             BytecodeStatement l = L.get(i);
             if (l.size() == 3 && "ALLOC".equals(mnemonic(l)) && !l.get(1).text.startsWith("$") && ConstantFoldingPass.base(l.get(2).text) != null) {
-                Var v = vars.computeIfAbsent(l.get(1).text, k -> new Var());
+                VarAnalysisVar v = vars.computeIfAbsent(l.get(1).text, k -> new VarAnalysisVar());
                 v.name = l.get(1).text;
                 v.type = l.get(2).text;
                 v.allocs++;
                 v.allocIdx = i;
             }
         }
-        for (Var v : vars.values()) {
+        for (VarAnalysisVar v : vars.values()) {
             if (v.allocs != 1) v.bad = true;
         }
         for (int i = s; i <= e; i++) {
@@ -124,7 +116,7 @@ final class VarAnalysis {
                 BytecodeToken tok = l.get(t);
                 if (tok.kind != BytecodeToken.Kind.CODE) continue;
                 String txt = tok.text;
-                Var v = vars.get(txt);
+                VarAnalysisVar v = vars.get(txt);
                 if (v == null) {
                     int dot = txt.indexOf('.');
                     if (dot > 0) v = vars.get(txt.substring(0, dot));
@@ -145,8 +137,8 @@ final class VarAnalysis {
     }
 
     /** "ADDR x T" at i, "PUSH literal T2" at i+1 (same base type as x), "ASSIGN ..." at i+2. */
-    private static boolean isConstAssign(BytecodeProgram L, int i, Var v) {
-        ConstantFoldingPass.Lit lit = ConstantFoldingPass.lit(L.get(i + 1));
+    private static boolean isConstAssign(BytecodeProgram L, int i, VarAnalysisVar v) {
+        ConstantFoldingLit lit = ConstantFoldingPass.lit(L.get(i + 1));
         if (lit == null) return false;
         String vb = ConstantFoldingPass.base(v.type);
         if (vb == null || !vb.equals(lit.base) || !vb.equals(ConstantFoldingPass.base(L.get(i).get(2).text))) return false;

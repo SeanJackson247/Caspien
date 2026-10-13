@@ -37,7 +37,7 @@ public class Main {
         Path configPath = Paths.get("compiler.config");
         String config = Files.exists(configPath) ? Files.readString(configPath, StandardCharsets.UTF_8) : null;
 
-        Optimizer.Result result = Optimizer.optimize(input, inputPath, config);
+        OptimizerResult result = Optimizer.optimize(input, inputPath, config);
         for (String m : result.messages) {
             System.err.println(m);
         }
