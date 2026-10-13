@@ -91,7 +91,7 @@ public class Main {
             options.put("fix-verify", Files.readString(Paths.get(verifyFile), StandardCharsets.UTF_8));
         }
 
-        Frontend.Result result = Frontend.compile(Paths.get(inputPath).toAbsolutePath().normalize().toString(), configs, options);
+        FrontendResult result = Frontend.compile(Paths.get(inputPath).toAbsolutePath().normalize().toString(), configs, options);
         for (String line : result.messages) {
             System.err.println(line);
         }

@@ -37,7 +37,7 @@ import java.util.Map;
 
 /**
  * The front end as a library: a .caspien file in, higher-order bytecode (HOB) text out. Config comes in as text, results come
- * back in a {@link Result}; nothing is read from the working directory or the environment and nothing is printed.
+ * back in a {@link FrontendResult}; nothing is read from the working directory or the environment and nothing is printed.
  * The only files read are the program's own sources (the input, its imports, `ASM "file"`), because imports are resolved from disk.
  * The front end keeps static state (lexer/doc-comment registries, FsPolicy, TraceConfig, DepsLog, ...): use one class loader per
  * compile, as the orchestrator does. `Main` is the same thing as a stand-alone program.
@@ -48,33 +48,6 @@ public final class Frontend {
     private Frontend() {
     }
 
-    /** A failure whose message is printed exactly as given. */
-    private static final class Failure extends RuntimeException {
-        Failure(String message) {
-            super(message);
-        }
-    }
-
-    /**
-     * `hob` = the program (null when `failed`); `messages` = the lines a stand-alone run prints to stderr, in order;
-     * `deps` = every source file read; `reports` = optional texts by key: "audit", "fix", "fixHash", "fixBlocks", "viz", "debug".
-     */
-    public static final class Result {
-        public final String hob;
-        public final List<String> messages;
-        public final boolean failed;
-        public final List<String> deps;
-        public final Map<String, String> reports;
-
-        Result(String hob, List<String> messages, boolean failed, List<String> deps, Map<String, String> reports) {
-            this.hob = hob;
-            this.messages = messages;
-            this.failed = failed;
-            this.deps = deps;
-            this.reports = reports;
-        }
-    }
-
     /**
      * @param inputPath absolute path of the main .caspien file
      * @param configs   texts by file name: "compiler.config" (required), "fs.config", "platform.config", "trace.config" (optional)
@@ -82,7 +55,7 @@ public final class Frontend {
      *                  "fix-mode" (comma list; with "fix-write", "fix-stdlib" = "1", "fix-backup" = backup folder, "fix-only" = "file:line");
      *                  "fix-verify" = the expected hash of the HOB (fail when the HOB differs)
      */
-    public static Result compile(String inputPath, Map<String, String> configs, Map<String, String> options) {
+    public static FrontendResult compile(String inputPath, Map<String, String> configs, Map<String, String> options) {
         List<String> messages = new ArrayList<>();
         Map<String, String> reports = new LinkedHashMap<>();
         String hobText = null;
@@ -95,7 +68,7 @@ public final class Frontend {
             TypeCheckerModel.WARNINGS.clear();
             messages.add(ce.getMessage());
             failed = true;
-        } catch (Failure f) {
+        } catch (FrontendFailure f) {
             messages.addAll(TypeCheckerModel.WARNINGS);
             TypeCheckerModel.WARNINGS.clear();
             messages.add(f.getMessage());
@@ -106,7 +79,7 @@ public final class Frontend {
             messages.add("[io error] " + ioe.getMessage());
             failed = true;
         }
-        return new Result(failed ? null : hobText, messages, failed, DepsLog.files(), reports);
+        return new FrontendResult(failed ? null : hobText, messages, failed, DepsLog.files(), reports);
     }
 
     private static boolean on(Map<String, String> options, String key) {
@@ -167,7 +140,7 @@ public final class Frontend {
 
         String verify = options.get("fix-verify");
         if (verify != null && !verify.isEmpty() && !verify.trim().equals(FixTool.sha(bytecode))) {
-            throw new Failure("[error] --fix verification: the higher-order bytecode differs after the edit");
+            throw new FrontendFailure("[error] --fix verification: the higher-order bytecode differs after the edit");
         }
         if (fixModes != null && !fixModes.isEmpty()) {
             reports.put("fixHash", FixTool.sha(bytecode));
@@ -180,7 +153,7 @@ public final class Frontend {
         if (viz) {
             String page = GasReport.viz(bytecode, displayFile);
             if (page == null) {
-                throw new Failure("[error] --viz: the program has no main function to draw");
+                throw new FrontendFailure("[error] --viz: the program has no main function to draw");
             }
             reports.put("viz", page);
         }
