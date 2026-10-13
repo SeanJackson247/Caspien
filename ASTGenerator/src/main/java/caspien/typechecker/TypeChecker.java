@@ -9,7 +9,9 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
@@ -124,17 +126,18 @@ public final class TypeChecker {
 
     /** True for a VARREF, or a '.' chain of member accesses rooted in one -- the things 'auto' can validly point to. */
     public boolean isAddressableLvalue(Token node) {
-        if (node.type == TokenType.VARREF) {
-            return true;
+        while (true) {
+            if (node.type == TokenType.VARREF) {
+                return true;
+            }
+            if (node.type == TokenType.OPERATOR && node.text.equals(".")) {
+                node = node.left;
+            } else if (node.type == TokenType.DELINEATOR && node.text.equals("(") && !node.childs.isEmpty()) {
+                node = node.childs.get(0);   // transparent grouping parens
+            } else {
+                return false;
+            }
         }
-        if (node.type == TokenType.OPERATOR && node.text.equals(".")) {
-            return isAddressableLvalue(node.left);
-        }
-        if (node.type == TokenType.DELINEATOR && node.text.equals("(") && !node.childs.isEmpty()) {
-            // transparent grouping parens
-            return isAddressableLvalue(node.childs.get(0));
-        }
-        return false;
     }
 
     /**
@@ -142,19 +145,18 @@ public final class TypeChecker {
      * See docs/TypeChecker.md, "Address-of operators".
      */
     public boolean isReadableValueChain(Token node) {
-        if (node.type == TokenType.VARREF) {
-            return true;
+        while (true) {
+            if (node.type == TokenType.VARREF) {
+                return true;
+            }
+            if (node.type == TokenType.OPERATOR && (node.text.equals(".") || node.text.equals("LOOKUP"))) {
+                node = node.left;
+            } else if (node.type == TokenType.DELINEATOR && node.text.equals("(") && !node.childs.isEmpty()) {
+                node = node.childs.get(0);
+            } else {
+                return false;
+            }
         }
-        if (node.type == TokenType.OPERATOR && node.text.equals(".")) {
-            return isReadableValueChain(node.left);
-        }
-        if (node.type == TokenType.OPERATOR && node.text.equals("LOOKUP")) {
-            return isReadableValueChain(node.left);
-        }
-        if (node.type == TokenType.DELINEATOR && node.text.equals("(") && !node.childs.isEmpty()) {
-            return isReadableValueChain(node.childs.get(0));
-        }
-        return false;
     }
 
     /** Prefix `mut`/`imut`: forces concrete mutability; only imut -> mut is rejected. See docs/TypeChecker.md, "Address-of operators". */
@@ -479,57 +481,69 @@ public final class TypeChecker {
      * signedness instead of the literal's `u64`/`s64` default. Safe to call on an expression whose type
      * was already the slot's type. A no-op unless `actualType.literalValue` was set.
      */
-    public void adaptLiteral(Token expr, TypeCheckerModel.TypeInfo expected) {
-        if (expr == null || expr.chk.resolvedType == null) {
-            return;
-        }
-        String mutPrefix = expr.chk.resolvedType.substring(0, expr.chk.resolvedType.indexOf('_'));
-        if (expr.type == TokenType.OPERATOR && (expr.text.equals("mut") || expr.text.equals("imut"))) {
-            adaptLiteral(expr.left, expected);
-            expr.chk.resolvedType = mutPrefix + "_" + expected.baseType;
-            return;
-        }
-        if (expr.type == TokenType.DELINEATOR && expr.text.equals("(") && expr.childs.size() == 1) {
-            // grouping parentheses are transparent
-            adaptLiteral(expr.childs.get(0), expected);
-            expr.chk.resolvedType = mutPrefix + "_" + expected.baseType;
-            return;
-        }
-        if (expr.type == TokenType.OPERATOR && expr.text.equals("-") && expr.unary) {
-            expr.chk.resolvedType = mutPrefix + "_" + expected.baseType;
-            // the operand of the NEG is the same-width UNSIGNED value (NEG's left/return types differ that way);
-            // a float literal's operand is just the same float type.
-            if (expr.left != null && expr.left.chk.resolvedType != null) {
-                String inner = expr.left.chk.resolvedType.substring(0, expr.left.chk.resolvedType.indexOf('_'));
-                if (TypeCheckerModel.isFloatType(expected.baseType)) {
-                    // retag the whole operand tree (`-(3.7 * 0.3)`, `-(0.5 + 0.25)`), not just its root
-                    adaptLiteral(expr.left, expected);
-                    expr.left.chk.resolvedType = inner + "_" + expected.baseType;
-                } else {
-                    expr.left.chk.resolvedType = inner + "_" + TypeCheckerModel.unsignedCounterpart(expected.baseType);
+    public void adaptLiteral(Token root, TypeCheckerModel.TypeInfo rootExpected) {
+        // work items: {token, expected, null} = retag it; {token, null, type} = set its type once its subtree is done
+        Deque<Object[]> work = new ArrayDeque<>();
+        work.push(new Object[]{root, rootExpected, null});
+        while (!work.isEmpty()) {
+            Object[] w = work.pop();
+            Token expr = (Token) w[0];
+            if (w[2] != null) {
+                expr.chk.resolvedType = (String) w[2];
+                continue;
+            }
+            TypeCheckerModel.TypeInfo expected = (TypeCheckerModel.TypeInfo) w[1];
+            if (expr == null || expr.chk.resolvedType == null) {
+                continue;
+            }
+            String mutPrefix = expr.chk.resolvedType.substring(0, expr.chk.resolvedType.indexOf('_'));
+            if (expr.type == TokenType.OPERATOR && (expr.text.equals("mut") || expr.text.equals("imut"))) {
+                work.push(new Object[]{expr.left, expected, null});
+                expr.chk.resolvedType = mutPrefix + "_" + expected.baseType;
+                continue;
+            }
+            if (expr.type == TokenType.DELINEATOR && expr.text.equals("(") && expr.childs.size() == 1) {
+                // grouping parentheses are transparent
+                work.push(new Object[]{expr.childs.get(0), expected, null});
+                expr.chk.resolvedType = mutPrefix + "_" + expected.baseType;
+                continue;
+            }
+            if (expr.type == TokenType.OPERATOR && expr.text.equals("-") && expr.unary) {
+                expr.chk.resolvedType = mutPrefix + "_" + expected.baseType;
+                // the operand of the NEG is the same-width UNSIGNED value (NEG's left/return types differ that way);
+                // a float literal's operand is just the same float type.
+                if (expr.left != null && expr.left.chk.resolvedType != null) {
+                    String inner = expr.left.chk.resolvedType.substring(0, expr.left.chk.resolvedType.indexOf('_'));
+                    if (TypeCheckerModel.isFloatType(expected.baseType)) {
+                        // retag the whole operand tree (`-(3.7 * 0.3)`, `-(0.5 + 0.25)`), not just its root, then fix its own type
+                        work.push(new Object[]{expr.left, null, inner + "_" + expected.baseType});
+                        work.push(new Object[]{expr.left, expected, null});
+                    } else {
+                        expr.left.chk.resolvedType = inner + "_" + TypeCheckerModel.unsignedCounterpart(expected.baseType);
+                    }
                 }
+                continue;
             }
-            return;
-        }
-        if (expr.type == TokenType.INTEGER || expr.type == TokenType.FLOAT) {
-            expr.chk.resolvedType = mutPrefix + "_" + expected.baseType;
-        }
-        if (TypeCheckerModel.isFloatType(expected.baseType) && expr.type == TokenType.OPERATOR && !expr.unary && expr.left != null && expr.right != null
-                && (expr.text.equals("+") || expr.text.equals("-") || expr.text.equals("*") || expr.text.equals("/"))) {
-            // an all-literal float expression: retag the whole tree so every operation runs at the target width
-            expr.chk.resolvedType = mutPrefix + "_" + expected.baseType;
-            adaptLiteral(expr.left, expected);
-            adaptLiteral(expr.right, expected);
-        }
-        if (expr.type == TokenType.DELINEATOR && expr.text.equals("[") && expected.baseType.indexOf('[') > 0
-                && !expr.childs.isEmpty()) {
-            String elem = expected.baseType.substring(0, expected.baseType.lastIndexOf('['));   // one dimension fewer ("u32[3][2]" -> "u32[3]")
-            List<Token> elements = new ArrayList<>();
-            locksAndProofs.collectCommaArgs(expr.childs.get(0), elements);
-            for (Token e : elements) {
-                adaptLiteral(e, new TypeCheckerModel.TypeInfo(null, "indeterminate", elem));
+            if (expr.type == TokenType.INTEGER || expr.type == TokenType.FLOAT) {
+                expr.chk.resolvedType = mutPrefix + "_" + expected.baseType;
             }
-            expr.chk.resolvedType = mutPrefix + "_" + expected.baseType;
+            if (TypeCheckerModel.isFloatType(expected.baseType) && expr.type == TokenType.OPERATOR && !expr.unary && expr.left != null && expr.right != null
+                    && (expr.text.equals("+") || expr.text.equals("-") || expr.text.equals("*") || expr.text.equals("/"))) {
+                // an all-literal float expression: retag the whole tree so every operation runs at the target width
+                expr.chk.resolvedType = mutPrefix + "_" + expected.baseType;
+                work.push(new Object[]{expr.right, expected, null});
+                work.push(new Object[]{expr.left, expected, null});
+            }
+            if (expr.type == TokenType.DELINEATOR && expr.text.equals("[") && expected.baseType.indexOf('[') > 0
+                    && !expr.childs.isEmpty()) {
+                String elem = expected.baseType.substring(0, expected.baseType.lastIndexOf('['));   // one dimension fewer ("u32[3][2]" -> "u32[3]")
+                List<Token> elements = new ArrayList<>();
+                locksAndProofs.collectCommaArgs(expr.childs.get(0), elements);
+                for (int i = elements.size() - 1; i >= 0; i--) {
+                    work.push(new Object[]{elements.get(i), new TypeCheckerModel.TypeInfo(null, "indeterminate", elem), null});
+                }
+                expr.chk.resolvedType = mutPrefix + "_" + expected.baseType;
+            }
         }
     }
 

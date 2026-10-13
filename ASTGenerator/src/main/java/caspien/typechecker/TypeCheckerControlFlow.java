@@ -8,10 +8,12 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.Deque;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -775,16 +777,17 @@ public final class TypeCheckerControlFlow {
     }
 
     public boolean interfaceExtendsOrIs(String actualInterfaceName, String targetInterfaceName) {
-        if (actualInterfaceName.equals(targetInterfaceName)) {
-            return true;
-        }
-        TypeCheckerModel.InterfaceInfo info = hub.model.interfaces.get(actualInterfaceName);
-        if (info == null) {
-            return false;
-        }
-        for (String parent : info.extendsNames) {
-            if (interfaceExtendsOrIs(parent, targetInterfaceName)) {
+        Deque<String> work = new ArrayDeque<>();
+        Set<String> seen = new HashSet<>();
+        work.push(actualInterfaceName);
+        while (!work.isEmpty()) {
+            String name = work.pop();
+            if (name.equals(targetInterfaceName)) {
                 return true;
+            }
+            TypeCheckerModel.InterfaceInfo info = hub.model.interfaces.get(name);
+            if (info != null && seen.add(name)) {
+                info.extendsNames.forEach(work::push);
             }
         }
         return false;

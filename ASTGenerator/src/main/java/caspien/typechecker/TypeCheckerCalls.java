@@ -9,9 +9,11 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -357,19 +359,21 @@ public final class TypeCheckerCalls {
     }
 
     public boolean isPureSimpleOperand(Token t) {
-        if (t.type == TokenType.VARREF || t.type == TokenType.INTEGER) {
-            return true;
+        while (true) {
+            if (t.type == TokenType.VARREF || t.type == TokenType.INTEGER) {
+                return true;
+            }
+            if (t.type == TokenType.OPERATOR && t.text.equals(".") && t.left != null && t.right != null) {
+                if (t.right.type != TokenType.VARREF) {
+                    return false;
+                }
+                t = t.left;
+            } else if (t.type == TokenType.OPERATOR && (t.text.equals("mut") || t.text.equals("imut") || (t.text.equals("-") && t.unary)) && t.left != null) {
+                t = t.left;
+            } else {
+                return false;
+            }
         }
-        if (t.type == TokenType.OPERATOR && t.text.equals(".") && t.left != null && t.right != null) {
-            return isPureSimpleOperand(t.left) && t.right.type == TokenType.VARREF;
-        }
-        if (t.type == TokenType.OPERATOR && t.text.equals("-") && t.unary && t.left != null) {
-            return isPureSimpleOperand(t.left);
-        }
-        if (t.type == TokenType.OPERATOR && (t.text.equals("mut") || t.text.equals("imut")) && t.left != null) {
-            return isPureSimpleOperand(t.left);
-        }
-        return false;
     }
 
     public List<Token> collectSingleBuiltinArg(Token op, String name, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func) {
@@ -451,37 +455,49 @@ public final class TypeCheckerCalls {
     }
 
     /** Size of a type: any pointer = POINTER_SIZE, range = 16, array = its base element. See docs/TypeChecker.md, "Builtin calls". */
-    public long computeSizeOf(TypeCheckerModel.TypeInfo t, Token at) {
-        if (t.storage != null) {
-            return TypeCheckerModel.POINTER_SIZE;
-        }
-        if (hub.isRangeType(t)) {
-            return 16;
-        }
-        if (hub.isArrayType(t.baseType)) {
-            String elem = t.baseType;
-            while (hub.isArrayType(elem)) {
-                elem = hub.arrayElementType(elem);
+    public long computeSizeOf(TypeCheckerModel.TypeInfo root, Token at) {
+        long total = 0;
+        Deque<TypeCheckerModel.TypeInfo> work = new java.util.LinkedList<>();
+        work.push(root);
+        while (!work.isEmpty()) {
+            TypeCheckerModel.TypeInfo t = work.pop();
+            if (t.storage != null) {
+                total += TypeCheckerModel.POINTER_SIZE;
+                continue;
             }
-            return computeSizeOf(new TypeCheckerModel.TypeInfo(null, "imut", elem), at);
-        }
-        TypeCheckerModel.StructInfo si = hub.model.structs.get(t.baseType);
-        if (si != null) {
-            // A rough estimate only (the real size, with padding and the layout the Optimizer finally
-            // settles on, is resolved by SizeofResolutionPass from the symbolic SIZEOF): the hidden
-            // ___type word plus the members, so it is never below 8 and never claims a one-byte stride.
-            long sum = 8;
-            for (TypeCheckerModel.TypeInfo memberType : si.members.values()) {
-                sum += computeSizeOf(memberType, at);
+            if (hub.isRangeType(t)) {
+                total += 16;
+                continue;
             }
-            return sum;
+            if (hub.isArrayType(t.baseType)) {
+                String elem = t.baseType;
+                while (hub.isArrayType(elem)) {
+                    elem = hub.arrayElementType(elem);
+                }
+                work.push(new TypeCheckerModel.TypeInfo(null, "imut", elem));
+                continue;
+            }
+            TypeCheckerModel.StructInfo si = hub.model.structs.get(t.baseType);
+            if (si != null) {
+                // A rough estimate only (the real size, with padding and the layout the Optimizer finally
+                // settles on, is resolved by SizeofResolutionPass from the symbolic SIZEOF): the hidden
+                // ___type word plus the members, so it is never below 8 and never claims a one-byte stride.
+                total += 8;
+                List<TypeCheckerModel.TypeInfo> members = new ArrayList<>(si.members.values());
+                for (int i = members.size() - 1; i >= 0; i--) {
+                    work.push(members.get(i));
+                }
+                continue;
+            }
+            Long primitiveSize = TypeCheckerModel.PRIMITIVE_SIZE.get(t.baseType);
+            if (primitiveSize != null) {
+                total += primitiveSize;
+                continue;
+            }
+            throw new CompilerException("type", at.file, at.line,
+                    "'sizeof' doesn't know the size of '" + t.canonical() + "'");
         }
-        Long primitiveSize = TypeCheckerModel.PRIMITIVE_SIZE.get(t.baseType);
-        if (primitiveSize != null) {
-            return primitiveSize;
-        }
-        throw new CompilerException("type", at.file, at.line,
-                "'sizeof' doesn't know the size of '" + t.canonical() + "'");
+        return total;
     }
 
     /** `len(x)`: constant for arrays and direct string literals, run-time for dynarrays; the 2-arg form scans an unsafe dynarray. See docs/TypeChecker.md, "len and range". */
@@ -1281,36 +1297,33 @@ public final class TypeCheckerCalls {
     }
 
     /** Blanket VARREF-text substitution of a residual-generic method's type parameters (post-GenericsExpander counterpart of its substituteParams). */
-    public void substituteGenericMethodParams(Token node, Map<String, String> subMap) {
-        if (node == null) {
-            return;
-        }
-        if (node.type == TokenType.VARREF && subMap.containsKey(node.text)) {
-            node.text = subMap.get(node.text);
-        }
-        substituteGenericMethodParams(node.left, subMap);
-        substituteGenericMethodParams(node.right, subMap);
-        substituteGenericMethodParams(node.next, subMap);
-        if (node.childs != null) {
-            for (Token c : node.childs) {
-                substituteGenericMethodParams(c, subMap);
+    public void substituteGenericMethodParams(Token root, Map<String, String> subMap) {
+        Deque<Token> work = new java.util.LinkedList<>();   // may hold null children
+        work.push(root);
+        while (!work.isEmpty()) {
+            Token node = work.pop();
+            if (node == null) {
+                continue;
             }
-        }
-        if (node.sub != null) {
-            for (Token s : node.sub) {
-                substituteGenericMethodParams(s, subMap);
+            if (node.type == TokenType.VARREF && subMap.containsKey(node.text)) {
+                node.text = subMap.get(node.text);
             }
-        }
-        if (node.genericArgs != null) {
-            for (List<Token> group : node.genericArgs) {
-                for (Token g : group) {
-                    substituteGenericMethodParams(g, subMap);
+            work.push(node.left);
+            work.push(node.right);
+            work.push(node.next);
+            if (node.childs != null) {
+                node.childs.forEach(work::push);
+            }
+            if (node.sub != null) {
+                node.sub.forEach(work::push);
+            }
+            if (node.genericArgs != null) {
+                for (List<Token> group : node.genericArgs) {
+                    group.forEach(work::push);
                 }
             }
-        }
-        if (node.typeBound != null) {
-            for (Token t : node.typeBound) {
-                substituteGenericMethodParams(t, subMap);
+            if (node.typeBound != null) {
+                node.typeBound.forEach(work::push);
             }
         }
     }

@@ -11,9 +11,11 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -637,12 +639,17 @@ public final class TypeCheckerLocksAndProofs {
         }
     }
 
-    public void collectCommaArgs(Token node, List<Token> out) {
-        if (node.type == TokenType.OPERATOR && node.text.equals(",")) {
-            collectCommaArgs(node.left, out);
-            collectCommaArgs(node.right, out);
-        } else {
-            out.add(node);
+    public void collectCommaArgs(Token root, List<Token> out) {
+        Deque<Token> work = new ArrayDeque<>();
+        work.push(root);
+        while (!work.isEmpty()) {
+            Token node = work.pop();
+            if (node.type == TokenType.OPERATOR && node.text.equals(",")) {
+                work.push(node.right);
+                work.push(node.left);
+            } else {
+                out.add(node);
+            }
         }
     }
 
@@ -1329,17 +1336,17 @@ public final class TypeCheckerLocksAndProofs {
      * True for a type with real storage, or a struct with such a member (recursively; struct cycles are
      * already a hard error, so this terminates). Used to ban passing/returning pointers to async.
      */
-    public boolean containsPointerAnywhere(TypeCheckerModel.TypeInfo type) {
-        if (type.storage != null) {
-            return true;
-        }
-        TypeCheckerModel.StructInfo si = hub.model.structs.get(type.baseType);
-        if (si == null) {
-            return false;
-        }
-        for (TypeCheckerModel.TypeInfo memberType : si.members.values()) {
-            if (containsPointerAnywhere(memberType)) {
+    public boolean containsPointerAnywhere(TypeCheckerModel.TypeInfo root) {
+        Deque<TypeCheckerModel.TypeInfo> work = new ArrayDeque<>();
+        work.push(root);
+        while (!work.isEmpty()) {
+            TypeCheckerModel.TypeInfo type = work.pop();
+            if (type.storage != null) {
                 return true;
+            }
+            TypeCheckerModel.StructInfo si = hub.model.structs.get(type.baseType);
+            if (si != null) {
+                si.members.values().forEach(work::push);
             }
         }
         return false;

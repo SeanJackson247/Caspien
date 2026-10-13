@@ -8,9 +8,11 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -289,29 +291,44 @@ public final class TypeCheckerExpressions {
     }
 
     /** The tracked slot key of a bare name, an `a.b` member path or `x[i]` (parens transparent); null for untrackable shapes, which are never moved. */
-    public String slotKeyOf(Token node) {
-        if (node.type == TokenType.DELINEATOR && node.text.equals("(") && !node.childs.isEmpty()) {
-            return slotKeyOf(node.childs.get(0));
-        }
-        if (node.type == TokenType.VARREF) {
-            return node.text;
-        }
-        if (node.type == TokenType.OPERATOR && node.text.equals(".") && node.right.type == TokenType.VARREF) {
-            String leftKey = slotKeyOf(node.left);
-            return leftKey == null ? null : leftKey + "." + node.right.text;
-        }
-        if (node.type == TokenType.OPERATOR && node.text.equals("LOOKUP") && node.right != null
-                && !node.right.childs.isEmpty()) {
-            // `x[i]` as a slot, so a proof granted for a specific element can be matched by a later access.
-            // Both target and index must themselves be slots.
-            String leftKey = slotKeyOf(node.left);
-            String idxKey = slotKeyOf(node.right.childs.get(0));
-            if (leftKey == null || idxKey == null) {
-                return null;
+    public String slotKeyOf(Token root) {
+        // work items: {Token} = evaluate it; {Integer op, String text} = combine the results below with it
+        Deque<Object[]> work = new ArrayDeque<>();
+        List<String> results = new ArrayList<>();   // value stack (null = untrackable)
+        work.push(new Object[]{root, null});
+        while (!work.isEmpty()) {
+            Object[] item = work.pop();
+            if (!(item[0] instanceof Token)) {
+                if ((Integer) item[0] == 0) {   // `.member`
+                    String left = results.remove(results.size() - 1);
+                    results.add(left == null ? null : left + "." + item[1]);
+                } else {                          // `[index]`
+                    String idx = results.remove(results.size() - 1);
+                    String left = results.remove(results.size() - 1);
+                    results.add(left == null || idx == null ? null : left + "[" + idx + "]");
+                }
+                continue;
             }
-            return leftKey + "[" + idxKey + "]";
+            Token node = (Token) item[0];
+            if (node.type == TokenType.DELINEATOR && node.text.equals("(") && !node.childs.isEmpty()) {
+                work.push(new Object[]{node.childs.get(0), null});
+            } else if (node.type == TokenType.VARREF) {
+                results.add(node.text);
+            } else if (node.type == TokenType.OPERATOR && node.text.equals(".") && node.right.type == TokenType.VARREF) {
+                work.push(new Object[]{0, node.right.text});
+                work.push(new Object[]{node.left, null});
+            } else if (node.type == TokenType.OPERATOR && node.text.equals("LOOKUP") && node.right != null
+                    && !node.right.childs.isEmpty()) {
+                // `x[i]` as a slot, so a proof granted for a specific element can be matched by a later access.
+                // Both target and index must themselves be slots.
+                work.push(new Object[]{1, null});
+                work.push(new Object[]{node.right.childs.get(0), null});
+                work.push(new Object[]{node.left, null});
+            } else {
+                results.add(null);
+            }
         }
-        return null;
+        return results.get(0);
     }
 
     /**
@@ -338,59 +355,98 @@ public final class TypeCheckerExpressions {
      * and look up facts vouched for with 'assume match'; null when the expression has any other shape. Always starts with
      * "(" so it can never collide with a variable/field slot key.
      */
-    public String exprKeyOf(Token node) {
-        if (node == null) {
-            return null;
-        }
-        if (node.type == TokenType.DELINEATOR && node.text.equals("(") && node.childs != null && node.childs.size() == 1) {
-            return exprKeyOf(node.childs.get(0));
-        }
-        if (node.type == TokenType.INTEGER || node.type == TokenType.FLOAT) {
-            return node.text;
-        }
-        String slot = slotKeyOf(node);
-        if (slot != null) {
-            return slot;
-        }
-        if (node.type == TokenType.OPERATOR && node.text.equals("-") && node.right == null && node.left != null) {
-            String uk = exprKeyOf(node.left);
-            return uk == null ? null : "(-" + uk + ")";
-        }
-        if (node.type == TokenType.OPERATOR && node.text.equals(".") && node.left != null && node.right != null
-                && node.right.type == TokenType.VARREF) {
-            String dk = exprKeyOf(node.left);
-            return dk == null ? null : dk + "." + node.right.text;
-        }
-        if (node.type == TokenType.OPERATOR && node.text.equals("LOOKUP") && node.left != null && node.right != null
-                && !node.right.childs.isEmpty()) {
-            String lk = exprKeyOf(node.left);
-            String ik = exprKeyOf(node.right.childs.get(0));
-            return lk == null || ik == null ? null : lk + "[" + ik + "]";
-        }
-        if (node.type == TokenType.OPERATOR && node.text.equals("CALL") && node.left != null
-                && node.left.type == TokenType.VARREF && node.right != null) {
-            // a plain call `f(a, b)` keyed by name and argument keys (for 'assume match f(x) : finite')
-            List<Token> callArgs = new ArrayList<>();
-            if (!node.right.childs.isEmpty()) {
-                hub.locksAndProofs.collectCommaArgs(node.right.childs.get(0), callArgs);
-            }
-            StringBuilder sb = new StringBuilder(node.left.text).append("(");
-            for (int ai = 0; ai < callArgs.size(); ai++) {
-                String ak = exprKeyOf(callArgs.get(ai));
-                if (ak == null) {
-                    return null;
+    public String exprKeyOf(Token root) {
+        // work items: {Token} = evaluate it; {Integer op, Object extra} = combine the results below with it
+        Deque<Object[]> work = new ArrayDeque<>();
+        List<String> results = new ArrayList<>();   // value stack (null = no key)
+        work.push(new Object[]{root, null});
+        while (!work.isEmpty()) {
+            Object[] item = work.pop();
+            if (!(item[0] instanceof Token) && item[0] != null) {
+                int op = (Integer) item[0];
+                if (op == 0) {            // unary minus
+                    String uk = results.remove(results.size() - 1);
+                    results.add(uk == null ? null : "(-" + uk + ")");
+                } else if (op == 1) {     // member
+                    String dk = results.remove(results.size() - 1);
+                    results.add(dk == null ? null : dk + "." + item[1]);
+                } else if (op == 2) {     // index
+                    String ik = results.remove(results.size() - 1);
+                    String lk = results.remove(results.size() - 1);
+                    results.add(lk == null || ik == null ? null : lk + "[" + ik + "]");
+                } else if (op == 3) {     // call: {name, argument count}
+                    Object[] info = (Object[]) item[1];
+                    int n = (Integer) info[1];
+                    List<String> keys = new ArrayList<>(results.subList(results.size() - n, results.size()));
+                    results.subList(results.size() - n, results.size()).clear();
+                    StringBuilder sb = new StringBuilder((String) info[0]).append("(");
+                    boolean ok = true;
+                    for (int ai = 0; ai < n; ai++) {
+                        if (keys.get(ai) == null) {
+                            ok = false;
+                            break;
+                        }
+                        sb.append(ai > 0 ? "," : "").append(keys.get(ai));
+                    }
+                    results.add(ok ? sb.append(")").toString() : null);
+                } else {                  // binary arithmetic
+                    String r = results.remove(results.size() - 1);
+                    String l = results.remove(results.size() - 1);
+                    results.add(l == null || r == null ? null : "(" + l + item[1] + r + ")");
                 }
-                sb.append(ai > 0 ? "," : "").append(ak);
+                continue;
             }
-            return sb.append(")").toString();
+            Token node = (Token) item[0];
+            if (node == null) {
+                results.add(null);
+                continue;
+            }
+            if (node.type == TokenType.DELINEATOR && node.text.equals("(") && node.childs != null && node.childs.size() == 1) {
+                work.push(new Object[]{node.childs.get(0), null});
+                continue;
+            }
+            if (node.type == TokenType.INTEGER || node.type == TokenType.FLOAT) {
+                results.add(node.text);
+                continue;
+            }
+            String slot = slotKeyOf(node);
+            if (slot != null) {
+                results.add(slot);
+                continue;
+            }
+            if (node.type == TokenType.OPERATOR && node.text.equals("-") && node.right == null && node.left != null) {
+                work.push(new Object[]{0, null});
+                work.push(new Object[]{node.left, null});
+            } else if (node.type == TokenType.OPERATOR && node.text.equals(".") && node.left != null && node.right != null
+                    && node.right.type == TokenType.VARREF) {
+                work.push(new Object[]{1, node.right.text});
+                work.push(new Object[]{node.left, null});
+            } else if (node.type == TokenType.OPERATOR && node.text.equals("LOOKUP") && node.left != null && node.right != null
+                    && !node.right.childs.isEmpty()) {
+                work.push(new Object[]{2, null});
+                work.push(new Object[]{node.right.childs.get(0), null});
+                work.push(new Object[]{node.left, null});
+            } else if (node.type == TokenType.OPERATOR && node.text.equals("CALL") && node.left != null
+                    && node.left.type == TokenType.VARREF && node.right != null) {
+                // a plain call `f(a, b)` keyed by name and argument keys (for 'assume match f(x) : finite')
+                List<Token> callArgs = new ArrayList<>();
+                if (!node.right.childs.isEmpty()) {
+                    hub.locksAndProofs.collectCommaArgs(node.right.childs.get(0), callArgs);
+                }
+                work.push(new Object[]{3, new Object[]{node.left.text, callArgs.size()}});
+                for (int ai = callArgs.size() - 1; ai >= 0; ai--) {
+                    work.push(new Object[]{callArgs.get(ai), null});
+                }
+            } else if (node.type == TokenType.OPERATOR && node.left != null && node.right != null
+                    && java.util.Arrays.asList("+", "-", "*", "/", "%").contains(node.text)) {
+                work.push(new Object[]{4, node.text});
+                work.push(new Object[]{node.right, null});
+                work.push(new Object[]{node.left, null});
+            } else {
+                results.add(null);
+            }
         }
-        if (node.type == TokenType.OPERATOR && node.left != null && node.right != null
-                && java.util.Arrays.asList("+", "-", "*", "/", "%").contains(node.text)) {
-            String l = exprKeyOf(node.left);
-            String r = exprKeyOf(node.right);
-            return l == null || r == null ? null : "(" + l + node.text + r + ")";
-        }
-        return null;
+        return results.get(0);
     }
 
     /** The key a proof is recorded under: the slot key, or (in an 'assume match' condition only) the expression key. */
@@ -693,32 +749,37 @@ public final class TypeCheckerExpressions {
     }
 
     /** A 'static' initializer may contain no CALL (except sizeof) and no `new`; variable references fail by resolving in an empty Scope. */
-    public void checkNoRuntimeConstructs(Token node) {
-        if (node == null) {
-            return;
-        }
-        if (node.type == TokenType.OPERATOR && node.text.equals("CALL")) {
-            if (node.left != null && node.left.type == TokenType.VARREF && node.left.text.equals("sizeof")) {
-                // sizeof(T) is a compile-time constant (a struct's size is folded by the emitter from
-                // its real layout); its argument is a type, so there is nothing further to check.
-                return;
+    public void checkNoRuntimeConstructs(Token root) {
+        Deque<Token> work = new java.util.LinkedList<>();   // may hold null children
+        work.push(root);
+        while (!work.isEmpty()) {
+            Token node = work.pop();
+            if (node == null) {
+                continue;
             }
-            throw new CompilerException("type", node.file, node.line,
-                    "a 'static' initializer must be a compile-time constant -- function calls are not "
-                            + "allowed");
-        }
-        if (node.type == TokenType.OPERATOR && node.unary && node.text.equals("new")) {
-            // `new` is a runtime allocation and can never be folded to a constant.
-            throw new CompilerException("type", node.file, node.line,
-                    "a 'static' initializer must be a compile-time constant -- 'new' (a runtime heap "
-                            + "allocation) is not allowed");
-        }
-        checkNoRuntimeConstructs(node.left);
-        checkNoRuntimeConstructs(node.right);
-        if (node.childs != null) {
-            for (Token c : node.childs) {
-                checkNoRuntimeConstructs(c);
+            if (node.type == TokenType.OPERATOR && node.text.equals("CALL")) {
+                if (node.left != null && node.left.type == TokenType.VARREF && node.left.text.equals("sizeof")) {
+                    // sizeof(T) is a compile-time constant (a struct's size is folded by the emitter from
+                    // its real layout); its argument is a type, so there is nothing further to check.
+                    continue;
+                }
+                throw new CompilerException("type", node.file, node.line,
+                        "a 'static' initializer must be a compile-time constant -- function calls are not "
+                                + "allowed");
             }
+            if (node.type == TokenType.OPERATOR && node.unary && node.text.equals("new")) {
+                // `new` is a runtime allocation and can never be folded to a constant.
+                throw new CompilerException("type", node.file, node.line,
+                        "a 'static' initializer must be a compile-time constant -- 'new' (a runtime heap "
+                                + "allocation) is not allowed");
+            }
+            if (node.childs != null) {
+                for (int i = node.childs.size() - 1; i >= 0; i--) {
+                    work.push(node.childs.get(i));
+                }
+            }
+            work.push(node.right);
+            work.push(node.left);
         }
     }
 
@@ -727,50 +788,148 @@ public final class TypeCheckerExpressions {
          * the VARREF case substitutes in place. See docs/TypeChecker.md, "Compile-time constants".
          */
     public Token resolveConstValue(String name, Token referencingNode) {
-        Token cached = hub.model.constResolvedValues.get(name);
-        if (cached != null) {
-            return cached;
-        }
-        if (hub.model.constsBeingEvaluated.contains(name)) {
-            throw new CompilerException("type", referencingNode.file, referencingNode.line,
-                    "'const " + name + "' is circularly defined (directly or indirectly references "
-                            + "its own value)");
-        }
-        hub.model.constsBeingEvaluated.add(name);
-        Token result;
-        try {
-            result = evaluateConstant(hub.model.constExprs.get(name));
-        } finally {
-            hub.model.constsBeingEvaluated.remove(name);
-        }
-        hub.model.constResolvedValues.put(name, result);
-        return result;
+        return runConstantEvaluation(new Object[]{9, new Object[]{name, referencingNode}});
     }
 
     /** Evaluates a const expression (literals, other consts, operators) to a literal Token, mirroring resolveOperatorType's dispatch; anything else throws. */
     public Token evaluateConstant(Token node) {
-        switch (node.type) {
-            case INTEGER:
-            case FLOAT:
-            case BOOL:
-            case CHAR:
-            case STRING:
-            case NULL:
-                return node;
-            case VARREF:
-                if (!hub.model.constExprs.containsKey(node.text)) {
-                    throw new CompilerException("type", node.file, node.line,
-                            "'" + node.text + "' is not a known const -- a compile-time constant "
-                                    + "expression can only reference literals and other consts, never a "
-                                    + "variable");
+        return runConstantEvaluation(new Object[]{node, null});
+    }
+
+    /**
+     * The constant folder as one loop. Work items: {Token, null} = evaluate it; {Integer op, payload} = combine the values below.
+     * Ops: 0 const finished {name}, 2 unary minus {op}, 3 arithmetic {op}, 4 `!` {op}, 5 `&&`/`||` {op}, 6 comparison {op}, 9 const reference {name, referencing node}.
+     */
+    public Token runConstantEvaluation(Object[] first) {
+        Deque<Object[]> work = new ArrayDeque<>();
+        List<Token> values = new ArrayList<>();
+        List<String> pending = new ArrayList<>();   // consts this call has started and not finished (so a throw leaves none marked)
+        work.push(first);
+        try {
+            while (!work.isEmpty()) {
+                Object[] item = work.pop();
+                if (item[0] instanceof Token || item[0] == null) {
+                    Token node = (Token) item[0];
+                    switch (node.type) {
+                        case INTEGER:
+                        case FLOAT:
+                        case BOOL:
+                        case CHAR:
+                        case STRING:
+                        case NULL:
+                            values.add(node);
+                            break;
+                        case VARREF:
+                            if (!hub.model.constExprs.containsKey(node.text)) {
+                                throw new CompilerException("type", node.file, node.line,
+                                        "'" + node.text + "' is not a known const -- a compile-time constant "
+                                                + "expression can only reference literals and other consts, never a "
+                                                + "variable");
+                            }
+                            work.push(new Object[]{9, new Object[]{node.text, node}});
+                            break;
+                        case OPERATOR:
+                            scheduleConstantOperator(node, work);
+                            break;
+                        default:
+                            throw new CompilerException("type", node.file, node.line,
+                                    "'" + node.text + "' cannot appear in a compile-time constant expression");
+                    }
+                    continue;
                 }
-                return resolveConstValue(node.text, node);
-            case OPERATOR:
-                return evaluateConstantOperator(node);
-            default:
-                throw new CompilerException("type", node.file, node.line,
-                        "'" + node.text + "' cannot appear in a compile-time constant expression");
+                int op = (Integer) item[0];
+                if (op == 9) {
+                    Object[] ref = (Object[]) item[1];
+                    String name = (String) ref[0];
+                    Token referencingNode = (Token) ref[1];
+                    Token cached = hub.model.constResolvedValues.get(name);
+                    if (cached != null) {
+                        values.add(cached);
+                        continue;
+                    }
+                    if (hub.model.constsBeingEvaluated.contains(name)) {
+                        throw new CompilerException("type", referencingNode.file, referencingNode.line,
+                                "'const " + name + "' is circularly defined (directly or indirectly references "
+                                        + "its own value)");
+                    }
+                    hub.model.constsBeingEvaluated.add(name);
+                    pending.add(name);
+                    work.push(new Object[]{0, name});
+                    work.push(new Object[]{hub.model.constExprs.get(name), null});
+                } else if (op == 0) {
+                    String name = (String) item[1];
+                    hub.model.constsBeingEvaluated.remove(name);
+                    pending.remove(name);
+                    hub.model.constResolvedValues.put(name, values.get(values.size() - 1));
+                } else if (op == 2) {
+                    Token operand = values.remove(values.size() - 1);
+                    values.add(evaluateConstantUnaryMinus((Token) item[1], operand));
+                } else if (op == 4) {
+                    Token opTok = (Token) item[1];
+                    Token operand = values.remove(values.size() - 1);
+                    requireConstBool(operand, opTok);
+                    values.add(new Token(TokenType.BOOL, String.valueOf(!Boolean.parseBoolean(operand.text)), opTok.line, opTok.file));
+                } else {
+                    Token opTok = (Token) item[1];
+                    Token right = values.remove(values.size() - 1);
+                    Token left = values.remove(values.size() - 1);
+                    if (op == 3) {
+                        values.add(evaluateConstantArithmetic(opTok, left, right));
+                    } else if (op == 5) {
+                        requireConstBool(left, opTok);
+                        requireConstBool(right, opTok);
+                        boolean l = Boolean.parseBoolean(left.text);
+                        boolean r = Boolean.parseBoolean(right.text);
+                        boolean result = opTok.text.equals("&&") ? (l && r) : (l || r);
+                        values.add(new Token(TokenType.BOOL, String.valueOf(result), opTok.line, opTok.file));
+                    } else {
+                        values.add(evaluateConstantComparison(opTok, left, right));
+                    }
+                }
+            }
+        } finally {
+            for (String name : pending) {
+                hub.model.constsBeingEvaluated.remove(name);
+            }
         }
+        return values.get(0);
+    }
+
+    /** Pushes the work for one operator node of a constant expression (operands first, then the combining item). */
+    public void scheduleConstantOperator(Token op, Deque<Object[]> work) {
+        if (op.text.equals("CALL")) {
+            throw new CompilerException("type", op.file, op.line,
+                    "a compile-time constant expression cannot call a function");
+        }
+        if (op.text.equals("mut") || op.text.equals("imut")) {
+            // Mutability never affects a literal's own value -- pass
+            // straight through to whatever's wrapped.
+            work.push(new Object[]{op.left, null});
+            return;
+        }
+        if (op.text.equals("+") || op.text.equals("-") || op.text.equals("*") || op.text.equals("/")
+                || op.text.equals("%")) {
+            if (op.unary) {
+                work.push(new Object[]{2, op});
+                work.push(new Object[]{op.left, null});
+                return;
+            }
+            work.push(new Object[]{3, op});
+        } else if (op.text.equals("!")) {
+            work.push(new Object[]{4, op});
+            work.push(new Object[]{op.left, null});
+            return;
+        } else if (op.text.equals("&&") || op.text.equals("||")) {
+            work.push(new Object[]{5, op});
+        } else if (op.text.equals("<") || op.text.equals(">") || op.text.equals("<=") || op.text.equals(">=")
+                || op.text.equals("==") || op.text.equals("!=")) {
+            work.push(new Object[]{6, op});
+        } else {
+            throw new CompilerException("type", op.file, op.line,
+                    "'" + op.text + "' cannot appear in a compile-time constant expression");
+        }
+        work.push(new Object[]{op.right, null});
+        work.push(new Object[]{op.left, null});
     }
 
     /** Folds a template literal into a plain STRING token in place; each `${..}` is evaluated by evaluateConstant. See docs/TypeChecker.md, "Compile-time constants". */
@@ -817,47 +976,6 @@ public final class TypeCheckerExpressions {
         }
     }
 
-    public Token evaluateConstantOperator(Token op) {
-        if (op.text.equals("CALL")) {
-            throw new CompilerException("type", op.file, op.line,
-                    "a compile-time constant expression cannot call a function");
-        }
-        if (op.text.equals("mut") || op.text.equals("imut")) {
-            // Mutability never affects a literal's own value -- pass
-            // straight through to whatever's wrapped.
-            return evaluateConstant(op.left);
-        }
-        if (op.text.equals("+") || op.text.equals("-") || op.text.equals("*") || op.text.equals("/")
-                || op.text.equals("%")) {
-            if (op.unary) {
-                return evaluateConstantUnaryMinus(op);
-            }
-            return evaluateConstantArithmetic(op);
-        }
-        if (op.text.equals("!")) {
-            Token operand = evaluateConstant(op.left);
-            requireConstBool(operand, op);
-            return new Token(TokenType.BOOL, String.valueOf(!Boolean.parseBoolean(operand.text)),
-                    op.line, op.file);
-        }
-        if (op.text.equals("&&") || op.text.equals("||")) {
-            Token left = evaluateConstant(op.left);
-            Token right = evaluateConstant(op.right);
-            requireConstBool(left, op);
-            requireConstBool(right, op);
-            boolean l = Boolean.parseBoolean(left.text);
-            boolean r = Boolean.parseBoolean(right.text);
-            boolean result = op.text.equals("&&") ? (l && r) : (l || r);
-            return new Token(TokenType.BOOL, String.valueOf(result), op.line, op.file);
-        }
-        if (op.text.equals("<") || op.text.equals(">") || op.text.equals("<=") || op.text.equals(">=")
-                || op.text.equals("==") || op.text.equals("!=")) {
-            return evaluateConstantComparison(op);
-        }
-        throw new CompilerException("type", op.file, op.line,
-                "'" + op.text + "' cannot appear in a compile-time constant expression");
-    }
-
     public void requireConstBool(Token t, Token op) {
         if (t.type != TokenType.BOOL) {
             throw new CompilerException("type", op.file, op.line,
@@ -870,8 +988,7 @@ public final class TypeCheckerExpressions {
         return t.type == TokenType.INTEGER || t.type == TokenType.FLOAT;
     }
 
-    public Token evaluateConstantUnaryMinus(Token op) {
-        Token operand = evaluateConstant(op.left);
+    public Token evaluateConstantUnaryMinus(Token op, Token operand) {
         if (!isConstNumeric(operand)) {
             throw new CompilerException("type", op.file, op.line,
                     "unary '-' requires a numeric operand in a compile-time constant expression, got '"
@@ -884,9 +1001,7 @@ public final class TypeCheckerExpressions {
         return new Token(TokenType.INTEGER, Long.toString(-Long.parseLong(operand.text)), op.line, op.file);
     }
 
-    public Token evaluateConstantArithmetic(Token op) {
-        Token leftTok = evaluateConstant(op.left);
-        Token rightTok = evaluateConstant(op.right);
+    public Token evaluateConstantArithmetic(Token op, Token leftTok, Token rightTok) {
         if (!isConstNumeric(leftTok) || !isConstNumeric(rightTok)) {
             throw new CompilerException("type", op.file, op.line,
                     "'" + op.text + "' requires numeric operands in a compile-time constant expression, "
@@ -928,9 +1043,7 @@ public final class TypeCheckerExpressions {
         return new Token(TokenType.INTEGER, Long.toString(result), op.line, op.file);
     }
 
-    public Token evaluateConstantComparison(Token op) {
-        Token leftTok = evaluateConstant(op.left);
-        Token rightTok = evaluateConstant(op.right);
+    public Token evaluateConstantComparison(Token op, Token leftTok, Token rightTok) {
         boolean result;
         if (isConstNumeric(leftTok) && isConstNumeric(rightTok)) {
             double l = Double.parseDouble(leftTok.text);

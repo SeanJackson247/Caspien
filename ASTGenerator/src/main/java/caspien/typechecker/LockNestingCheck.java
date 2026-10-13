@@ -71,46 +71,71 @@ public final class LockNestingCheck {
         }
     }
 
-    public void walk(Token t, boolean held, Info in) {
-        if (t == null) {
-            return;
-        }
-        if (t.chk.isLockSpinLoop) {
-            acquire(t, held, in);
-            Token ifTok = t.childs != null && !t.childs.isEmpty() && !t.childs.get(0).childs.isEmpty() ? t.childs.get(0).childs.get(0) : null;
-            if (ifTok == null) {
-                walkChildren(t, held, in);
-                return;
+    /** Pre-order walk with an explicit stack ({token, held}); children are pushed in reverse so the visiting order is the recursive one. */
+    public void walk(Token start, boolean startHeld, Info in) {
+        Deque<Object[]> work = new ArrayDeque<>();
+        work.push(new Object[]{start, startHeld});
+        while (!work.isEmpty()) {
+            Object[] item = work.pop();
+            Token t = (Token) item[0];
+            boolean held = (Boolean) item[1];
+            if (t == null) {
+                continue;
             }
-            walk(ifTok.sub == null || ifTok.sub.isEmpty() ? null : ifTok.sub.get(0), held, in);   // the acquire attempt
-            for (Token c : ifTok.childs) {
-                walk(c, true, in);                                                                // OPEN case: the lock is held
+            if (t.chk.isLockSpinLoop) {
+                acquire(t, held, in);
+                Token ifTok = t.childs != null && !t.childs.isEmpty() && !t.childs.get(0).childs.isEmpty() ? t.childs.get(0).childs.get(0) : null;
+                if (ifTok == null) {
+                    pushChildren(work, t, held);
+                    continue;
+                }
+                if (t.chk.preLoopInit != null) {
+                    for (int i = t.chk.preLoopInit.size() - 1; i >= 0; i--) {
+                        work.push(new Object[]{t.chk.preLoopInit.get(i), held});
+                    }
+                }
+                work.push(new Object[]{ifTok.next, held});                                           // CLOSED case: not held
+                for (int i = ifTok.childs.size() - 1; i >= 0; i--) {
+                    work.push(new Object[]{ifTok.childs.get(i), true});                              // OPEN case: the lock is held
+                }
+                work.push(new Object[]{ifTok.sub == null || ifTok.sub.isEmpty() ? null : ifTok.sub.get(0), held});   // the acquire attempt
+                continue;
             }
-            walk(ifTok.next, held, in);                                                          // CLOSED case: not held
-            if (t.chk.preLoopInit != null) {
-                for (Token c : t.chk.preLoopInit) {
-                    walk(c, held, in);
+            String waitKind = waitKindOf(t);
+            if (waitKind != null) {
+                if (held) {
+                    throw new CompilerException("type", t.file, t.line, "'" + waitKind + "' while a lock is held -- nothing may wait inside a critical section (the thread waited for "
+                            + "may need this very lock, and a lock holder must always let go); release the lock first");
+                }
+                if (in.waitKind == null) {
+                    in.waitKind = waitKind;
                 }
             }
-            return;
-        }
-        String waitKind = waitKindOf(t);
-        if (waitKind != null) {
-            if (held) {
-                throw new CompilerException("type", t.file, t.line, "'" + waitKind + "' while a lock is held -- nothing may wait inside a critical section (the thread waited for "
-                        + "may need this very lock, and a lock holder must always let go); release the lock first");
+            if (t.chk.resolvedCallTarget != null) {
+                in.callees.add(t.chk.resolvedCallTarget);
+                if (held) {
+                    in.heldCalls.add(t);
+                }
             }
-            if (in.waitKind == null) {
-                in.waitKind = waitKind;
+            pushChildren(work, t, held);
+        }
+    }
+
+    /** Pushes left, right, next, childs, sub so that they pop in that order. */
+    private static void pushChildren(Deque<Object[]> work, Token t, boolean held) {
+        if (t.sub != null) {
+            for (int i = t.sub.size() - 1; i >= 0; i--) {
+                work.push(new Object[]{t.sub.get(i), held});
             }
         }
-        if (t.chk.resolvedCallTarget != null) {
-            in.callees.add(t.chk.resolvedCallTarget);
-            if (held) {
-                in.heldCalls.add(t);
+        if (t.childs != null) {
+            for (int i = t.childs.size() - 1; i >= 0; i--) {
+                work.push(new Object[]{t.childs.get(i), held});
             }
         }
-        walkChildren(t, held, in);
+        work.push(new Object[]{t.next, held});
+        work.push(new Object[]{t.right, held});
+        work.push(new Object[]{t.left, held});
     }
 
     /** "yield", "sleep", "par" or "await" when `t` is that operation, else null. */
@@ -127,22 +152,6 @@ public final class LockNestingCheck {
         return null;
     }
 
-    public void walkChildren(Token t, boolean held, Info in) {
-        walk(t.left, held, in);
-        walk(t.right, held, in);
-        walk(t.next, held, in);
-        if (t.childs != null) {
-            for (Token c : t.childs) {
-                walk(c, held, in);
-            }
-        }
-        if (t.sub != null) {
-            for (Token c : t.sub) {
-                walk(c, held, in);
-            }
-        }
-    }
-
     public void acquire(Token t, boolean held, Info in) {
         in.acquires = true;
         if (held) {
@@ -153,40 +162,44 @@ public final class LockNestingCheck {
 
     /** The calls a function makes, then (shortest first) the chain down to a function that takes a lock; null when none does. */
     public List<String> pathToLock(String from, Set<String> seen) {
-        Info in = byName.get(from);
-        if (in == null || !seen.add(from)) {
-            return null;
-        }
-        if (in.acquires) {
-            return new ArrayList<>(List.of(from));
-        }
-        for (String c : in.callees) {
-            List<String> p = pathToLock(c, seen);
-            if (p != null) {
-                p.add(0, from);
-                return p;
-            }
-        }
-        return null;
+        return pathTo(from, seen, in -> in.acquires);
     }
 
     /** The calls a function makes down to a function that waits, shortest first; null when none does. */
     public List<String> pathToWait(String from, Set<String> seen) {
-        Info in = byName.get(from);
-        if (in == null || !seen.add(from)) {
-            return null;
-        }
-        if (in.waitKind != null) {
-            return new ArrayList<>(List.of(from));
-        }
-        for (String c : in.callees) {
-            List<String> p = pathToWait(c, seen);
-            if (p != null) {
-                p.add(0, from);
-                return p;
+        return pathTo(from, seen, in -> in.waitKind != null);
+    }
+
+    /** Depth-first search over callees; the open frames are the path. */
+    private List<String> pathTo(String from, Set<String> seen, java.util.function.Predicate<Info> hit) {
+        List<String> names = new ArrayList<>();
+        Deque<Iterator<String>> iters = new ArrayDeque<>();
+        String enter = from;
+        while (true) {
+            if (enter != null) {
+                Info in = byName.get(enter);
+                if (in == null || !seen.add(enter)) {
+                    enter = null;
+                } else if (hit.test(in)) {
+                    names.add(enter);
+                    return names;
+                } else {
+                    names.add(enter);
+                    iters.push(in.callees.iterator());
+                    enter = null;
+                }
+            }
+            if (iters.isEmpty()) {
+                return null;
+            }
+            Iterator<String> it = iters.peek();
+            if (it.hasNext()) {
+                enter = it.next();
+            } else {
+                iters.pop();
+                names.remove(names.size() - 1);
             }
         }
-        return null;
     }
 
     public void check() {

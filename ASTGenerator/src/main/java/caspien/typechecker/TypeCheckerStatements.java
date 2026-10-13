@@ -9,11 +9,14 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -129,110 +132,148 @@ public final class TypeCheckerStatements {
 
     /** Conservative: does some statement of `lines` definitely end in a return (or throw)? See docs/TypeChecker.md, "Control-flow termination checks". */
     public boolean definitelyReturns(List<Token> lines) {
-        for (Token lineTok : lines) {
-            // Skip blank lines (a lowered match case body can contain one).
-            if (lineTok.childs.isEmpty()) {
-                continue;
-            }
-            Token stmt = lineTok.childs.get(0);
-            if (statementDefinitelyReturns(stmt)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    public boolean statementDefinitelyReturns(Token stmt) {
-        if (stmt.type != TokenType.KEYWORD) {
-            return false;
-        }
-        switch (stmt.text) {
-            case "return":
-            case "throw":
-                return true;
-            case "break":
-                // Counts only while checking a `match @lock` CLOSED case (closedCaseTerminates): break = give up without the lock.
-                return hub.model.breakCountsAsTerminator;
-            case "continue":
-                // Legal only in a catch body (checkStatement rejects other uses); jumps past the enclosing try-block, so it terminates like return/throw.
-                return true;
-            case "if":
-            case "match":
-                // if/match share the '.right'-linked chain: counts only if it ends in a plain else and every branch returns.
-                boolean sawElse = false;
-                for (Token branch = stmt; branch != null; branch = branch.next) {
-                    if (!definitelyReturns(branch.childs)) {
-                        return false;
+        // frames: {kind 0 = any line of a list, list iterator, -} or {kind 1 = every branch of an if/match chain, next branch, {sawElse, current branch}}
+        Deque<Object[]> frames = new ArrayDeque<>();
+        frames.push(new Object[]{0, lines.iterator(), null});
+        Boolean ret = null;
+        while (!frames.isEmpty()) {
+            Object[] fr = frames.peek();
+            boolean any = (Integer) fr[0] == 0;
+            if (ret != null) {
+                boolean r = ret;
+                ret = null;
+                if (any) {
+                    if (r) {
+                        frames.pop();
+                        ret = true;
+                        continue;
                     }
-                    if (branch.sub.isEmpty()) {
-                        sawElse = true;
+                } else {
+                    Object[] st = (Object[]) fr[2];
+                    if (!r) {
+                        frames.pop();
+                        ret = false;
+                        continue;
+                    }
+                    if (((Token) st[1]).sub.isEmpty()) {
+                        st[0] = true;
                     }
                 }
-                return sawElse;
-            case "loop":
-                // With no 'break' a loop can only end by returning (or never).
-                return !containsBreak(stmt.childs);
-            case "unsafe":
-            case "safe":
-                // Unconditional: propagates from the body.
-                return definitelyReturns(stmt.childs);
-            case "lock":
-                // Same as unsafe/safe.
-                return definitelyReturns(stmt.childs);
-            case "try":
-                // Only the plain "try { }" block is unconditional; a throwing "try EXPR catch" falls through to false.
-                return stmt.isTryBlock && definitelyReturns(stmt.childs);
-            default:
-                // Anything else never proves a return.
-                return false;
+            }
+            if (any) {
+                @SuppressWarnings("unchecked")
+                Iterator<Token> it = (Iterator<Token>) fr[1];
+                if (!it.hasNext()) {
+                    frames.pop();
+                    ret = false;
+                    continue;
+                }
+                Token lineTok = it.next();
+                // Skip blank lines (a lowered match case body can contain one).
+                if (lineTok.childs.isEmpty()) {
+                    continue;
+                }
+                Token stmt = lineTok.childs.get(0);
+                if (stmt.type != TokenType.KEYWORD) {
+                    continue;
+                }
+                switch (stmt.text) {
+                    case "return":
+                    case "throw":
+                    case "continue":   // legal only in a catch body; jumps past the enclosing try-block, so it terminates like return/throw
+                        ret = true;
+                        break;
+                    case "break":
+                        // Counts only while checking a `match @lock` CLOSED case (closedCaseTerminates): break = give up without the lock.
+                        ret = hub.model.breakCountsAsTerminator;
+                        break;
+                    case "if":
+                    case "match":
+                        // if/match share the chain linked through `next`: counts only if it ends in a plain else and every branch returns.
+                        frames.push(new Object[]{1, stmt, new Object[]{false, null}});
+                        break;
+                    case "loop":
+                        // With no 'break' a loop can only end by returning (or never).
+                        ret = !containsBreak(stmt.childs);
+                        break;
+                    case "unsafe":
+                    case "safe":
+                    case "lock":
+                        frames.push(new Object[]{0, stmt.childs.iterator(), null});   // unconditional: propagates from the body
+                        break;
+                    case "try":
+                        // Only the plain "try { }" block is unconditional; a throwing "try EXPR catch" falls through to false.
+                        if (stmt.isTryBlock) {
+                            frames.push(new Object[]{0, stmt.childs.iterator(), null});
+                        }
+                        break;
+                    default:
+                        break;   // anything else never proves a return
+                }
+            } else {
+                Token branch = (Token) fr[1];
+                Object[] st = (Object[]) fr[2];
+                if (branch == null) {
+                    frames.pop();
+                    ret = (Boolean) st[0];
+                    continue;
+                }
+                fr[1] = branch.next;
+                st[1] = branch;
+                frames.push(new Object[]{0, branch.childs.iterator(), null});
+            }
         }
+        return ret != null && ret;
+    }
+
+    /** Whether this single statement definitely ends in a return (or throw): `definitelyReturns` over a one-line list. */
+    public boolean statementDefinitelyReturns(Token stmt) {
+        return definitelyReturns(List.of(wrapAsCheckedLine(stmt)));
     }
 
     /** True if a 'break' appears in `lines` at any depth, except inside a nested 'loop' (whose break is its own). */
     public boolean containsBreak(List<Token> lines) {
-        for (Token lineTok : lines) {
-            if (statementContainsBreak(lineTok.childs.get(0))) {
-                return true;
+        Deque<Iterator<Token>> its = new ArrayDeque<>();
+        its.push(lines.iterator());
+        while (!its.isEmpty()) {
+            Iterator<Token> it = its.peek();
+            if (!it.hasNext()) {
+                its.pop();
+                continue;
+            }
+            Token stmt = it.next().childs.get(0);
+            if (stmt.type != TokenType.KEYWORD) {
+                continue;
+            }
+            switch (stmt.text) {
+                case "break":
+                    return true;
+                case "if":
+                case "match": {
+                    List<Token> branches = new ArrayList<>();
+                    for (Token branch = stmt; branch != null; branch = branch.next) {
+                        branches.add(branch);
+                    }
+                    for (int i = branches.size() - 1; i >= 0; i--) {
+                        its.push(branches.get(i).childs.iterator());
+                    }
+                    break;
+                }
+                case "unsafe":
+                case "safe":
+                case "lock":   // not conditional: a break in its body belongs to the enclosing loop
+                    its.push(stmt.childs.iterator());
+                    break;
+                case "try":    // only the plain try-block form is unconditional
+                    if (stmt.isTryBlock) {
+                        its.push(stmt.childs.iterator());
+                    }
+                    break;
+                default:       // includes "loop": a nested loop's own 'break' targets it, not the outer loop
+                    break;
             }
         }
         return false;
-    }
-
-    public boolean statementContainsBreak(Token stmt) {
-        if (stmt.type != TokenType.KEYWORD) {
-            return false;
-        }
-        switch (stmt.text) {
-            case "break":
-                return true;
-            case "loop":
-                return false; // a nested loop's own 'break' targets it, not the outer loop
-            case "if":
-                for (Token branch = stmt; branch != null; branch = branch.next) {
-                    if (containsBreak(branch.childs)) {
-                        return true;
-                    }
-                }
-                return false;
-            case "match":
-                for (Token branch = stmt; branch != null; branch = branch.next) {
-                    if (containsBreak(branch.childs)) {
-                        return true;
-                    }
-                }
-                return false;
-            case "unsafe":
-            case "safe":
-                return containsBreak(stmt.childs);
-            case "lock":
-                // Not conditional: a break in its body belongs to the enclosing loop.
-                return containsBreak(stmt.childs);
-            case "try":
-                // Only the plain try-block form is unconditional (as in statementDefinitelyReturns).
-                return stmt.isTryBlock && containsBreak(stmt.childs);
-            default:
-                return false;
-        }
     }
 
     /**
@@ -240,67 +281,87 @@ public final class TypeCheckerStatements {
      * try-blocks); used by checkTryBlock. Broader than definitelyReturns/containsBreak, which only walk the relevant constructs.
      */
     public boolean containsRealTryCatch(List<Token> lines) {
-        for (Token lineTok : lines) {
+        Deque<Iterator<Token>> its = new ArrayDeque<>();
+        its.push(lines.iterator());
+        while (!its.isEmpty()) {
+            Iterator<Token> it = its.peek();
+            if (!it.hasNext()) {
+                its.pop();
+                continue;
+            }
+            Token lineTok = it.next();
             if (lineTok.childs.isEmpty()) {
                 continue;
             }
-            if (statementContainsRealTryCatch(lineTok.childs.get(0))) {
-                return true;
+            Token stmt = lineTok.childs.get(0);
+            // A try used as a let/assignment RHS hangs off the "=" operator (through mut/imut), as in BytecodeEmitter.tryNodeOf.
+            if (stmt.type == TokenType.OPERATOR && stmt.text.equals("=") && stmt.right != null) {
+                Token rhs = stmt.right;
+                while (rhs.type == TokenType.OPERATOR && (rhs.text.equals("mut") || rhs.text.equals("imut"))
+                        && rhs.left != null) {
+                    rhs = rhs.left;
+                }
+                if (rhs.type == TokenType.KEYWORD && rhs.text.equals("try")) {
+                    if (!rhs.isTryBlock) {
+                        return true;
+                    }
+                    its.push(rhs.childs.iterator());
+                }
+                continue;
+            }
+            if (stmt.type != TokenType.KEYWORD) {
+                continue;
+            }
+            switch (stmt.text) {
+                case "try":
+                    // A real try/catch qualifies; a nested "try { }" block does not itself, but is searched.
+                    if (!stmt.isTryBlock) {
+                        return true;
+                    }
+                    its.push(stmt.childs.iterator());
+                    break;
+                case "if":
+                case "match": {
+                    List<Token> branches = new ArrayList<>();
+                    for (Token branch = stmt; branch != null; branch = branch.next) {
+                        branches.add(branch);
+                    }
+                    for (int i = branches.size() - 1; i >= 0; i--) {
+                        its.push(branches.get(i).childs.iterator());
+                    }
+                    break;
+                }
+                case "loop":
+                case "for":
+                case "unsafe":
+                case "safe":
+                case "lock":
+                    its.push(stmt.childs.iterator());
+                    break;
+                case "assume":
+                    if (stmt.hasBlock) {
+                        its.push(stmt.childs.iterator());
+                    }
+                    break;
+                case "return": {
+                    // "return ?f(x)" / "return try f(x) catch(e){...}": the returned expression is the try (through any mut/imut wrapper)
+                    if (stmt.sub == null || stmt.sub.size() != 1) {
+                        break;
+                    }
+                    Token rv = stmt.operand();
+                    while (rv.type == TokenType.OPERATOR && (rv.text.equals("mut") || rv.text.equals("imut")) && rv.left != null) {
+                        rv = rv.left;
+                    }
+                    if (rv.type == TokenType.KEYWORD && rv.text.equals("try") && !rv.isTryBlock) {
+                        return true;
+                    }
+                    break;
+                }
+                default:
+                    break;
             }
         }
         return false;
-    }
-
-    public boolean statementContainsRealTryCatch(Token stmt) {
-        // A try used as a let/assignment RHS hangs off the "=" operator (through mut/imut), as in BytecodeEmitter.tryNodeOf.
-        if (stmt.type == TokenType.OPERATOR && stmt.text.equals("=") && stmt.right != null) {
-            Token rhs = stmt.right;
-            while (rhs.type == TokenType.OPERATOR && (rhs.text.equals("mut") || rhs.text.equals("imut"))
-                    && rhs.left != null) {
-                rhs = rhs.left;
-            }
-            if (rhs.type == TokenType.KEYWORD && rhs.text.equals("try")) {
-                return !rhs.isTryBlock || containsRealTryCatch(rhs.childs);
-            }
-            return false;
-        }
-        if (stmt.type != TokenType.KEYWORD) {
-            return false;
-        }
-        switch (stmt.text) {
-            case "try":
-                // A real try/catch qualifies; a nested "try { }" block does not itself, but is searched.
-                return !stmt.isTryBlock || containsRealTryCatch(stmt.childs);
-            case "if":
-            case "match":
-                for (Token branch = stmt; branch != null; branch = branch.next) {
-                    if (containsRealTryCatch(branch.childs)) {
-                        return true;
-                    }
-                }
-                return false;
-            case "loop":
-            case "for":
-            case "unsafe":
-            case "safe":
-            case "lock":
-                return containsRealTryCatch(stmt.childs);
-            case "assume":
-                return stmt.hasBlock && containsRealTryCatch(stmt.childs);
-            case "return": {
-                // "return ?f(x)" / "return try f(x) catch(e){...}": the returned expression is the try (through any mut/imut wrapper)
-                if (stmt.sub == null || stmt.sub.size() != 1) {
-                    return false;
-                }
-                Token rv = stmt.operand();
-                while (rv.type == TokenType.OPERATOR && (rv.text.equals("mut") || rv.text.equals("imut")) && rv.left != null) {
-                    rv = rv.left;
-                }
-                return rv.type == TokenType.KEYWORD && rv.text.equals("try") && !rv.isTryBlock;
-            }
-            default:
-                return false;
-        }
     }
 
     /**
@@ -497,8 +558,20 @@ public final class TypeCheckerStatements {
      * Replaces every "return SELFCALL(..)" marked isRecursiveTailCallSite, wherever it nests, with the reassignment
      * lines; any number of call sites. See docs/TypeChecker.md, "Recursive tail-call lowering".
      */
-    public void replaceRecursiveReturnsInLines(List<Token> lines, TypeCheckerModel.FuncInfo func) {
-        for (int i = 0; i < lines.size(); i++) {
+    public void replaceRecursiveReturnsInLines(List<Token> rootLines, TypeCheckerModel.FuncInfo func) {
+        // frames: {line list, int[]{next index}}; nested lists are visited in document order (the replacement lines are numbered as they are built)
+        Deque<Object[]> frames = new ArrayDeque<>();
+        frames.push(new Object[]{rootLines, new int[]{0}});
+        while (!frames.isEmpty()) {
+            Object[] fr = frames.peek();
+            @SuppressWarnings("unchecked")
+            List<Token> lines = (List<Token>) fr[0];
+            int[] next = (int[]) fr[1];
+            if (next[0] >= lines.size()) {
+                frames.pop();
+                continue;
+            }
+            int i = next[0]++;
             Token lineTok = lines.get(i);
             if (lineTok.childs.isEmpty()) {
                 continue;
@@ -509,25 +582,29 @@ public final class TypeCheckerStatements {
                 List<Token> replacement = buildTailCallReplacementLines(stmt, func);
                 lines.remove(i);
                 lines.addAll(i, replacement);
-                i += replacement.size() - 1;
+                next[0] = i + replacement.size();
                 continue;
             }
             if (stmt.type != TokenType.KEYWORD) {
                 continue;
             }
+            List<List<Token>> nested = new ArrayList<>();
             if (stmt.text.equals("match") && stmt.isCaseMatch) {
                 for (Token caseTok : stmt.childs) {
-                    replaceRecursiveReturnsInLines(caseTok.childs, func);
+                    nested.add(caseTok.childs);
                 }
             } else if (stmt.text.equals("if") || stmt.text.equals("match")) {
                 for (Token branch = stmt; branch != null; branch = branch.next) {
-                    replaceRecursiveReturnsInLines(branch.childs, func);
+                    nested.add(branch.childs);
                 }
             } else if (stmt.text.equals("for") || stmt.text.equals("loop") || stmt.text.equals("unsafe")
                     || stmt.text.equals("safe")) {
-                replaceRecursiveReturnsInLines(stmt.childs, func);
+                nested.add(stmt.childs);
             } else if (stmt.text.equals("assume") && stmt.hasBlock) {
-                replaceRecursiveReturnsInLines(stmt.childs, func);
+                nested.add(stmt.childs);
+            }
+            for (int k = nested.size() - 1; k >= 0; k--) {
+                frames.push(new Object[]{nested.get(k), new int[]{0}});
             }
         }
     }
@@ -771,88 +848,97 @@ public final class TypeCheckerStatements {
         }
     }
 
-    public void collectMovesInNode(Token node, TypeCheckerModel.Scope scope, Set<String> out) {
-        if (node == null) {
-            return;
-        }
-        if (node.type == TokenType.OPERATOR && node.text.equals("=")) {
-            Token destTok = node.left;
-            if (destTok.type == TokenType.KEYWORD && destTok.text.equals("let")) {
-                TypeCheckerModel.TypeInfo rhsDeclared = lookupDeclaredTypeStructurally(node.right, scope);
-                if (rhsDeclared != null && "owns".equals(rhsDeclared.storage)) {
-                    String key = hub.expressions.slotKeyOf(node.right);
-                    if (key != null) {
-                        out.add(key);
-                    }
-                }
-            } else {
-                TypeCheckerModel.TypeInfo declared = lookupDeclaredTypeStructurally(destTok, scope);
-                if (declared != null && "owns".equals(declared.storage)) {
-                    String key = hub.expressions.slotKeyOf(node.right);
-                    if (key != null) {
-                        out.add(key);
-                    }
-                }
+    public void collectMovesInNode(Token root, TypeCheckerModel.Scope scope, Set<String> out) {
+        Deque<Token> work = new java.util.LinkedList<>();   // may hold null children
+        work.push(root);
+        while (!work.isEmpty()) {
+            Token node = work.pop();
+            if (node == null) {
+                continue;
             }
-        } else if (node.type == TokenType.OPERATOR && node.text.equals("CALL") && node.left.type == TokenType.VARREF) {
-            List<TypeCheckerModel.FuncInfo> overloads = hub.model.functions.get(node.left.text);
-            if (overloads != null && overloads.size() == 1 && !node.right.childs.isEmpty()) {
-                List<Token> argNodes = new ArrayList<>();
-                hub.locksAndProofs.collectCommaArgs(node.right.childs.get(0), argNodes);
-                TypeCheckerModel.FuncInfo only = overloads.get(0);
-                for (int i = 0; i < argNodes.size() && i < only.paramTypes.size(); i++) {
-                    if ("owns".equals(only.paramTypes.get(i).storage)) {
-                        String key = hub.expressions.slotKeyOf(argNodes.get(i));
+            if (node.type == TokenType.OPERATOR && node.text.equals("=")) {
+                Token destTok = node.left;
+                if (destTok.type == TokenType.KEYWORD && destTok.text.equals("let")) {
+                    TypeCheckerModel.TypeInfo rhsDeclared = lookupDeclaredTypeStructurally(node.right, scope);
+                    if (rhsDeclared != null && "owns".equals(rhsDeclared.storage)) {
+                        String key = hub.expressions.slotKeyOf(node.right);
+                        if (key != null) {
+                            out.add(key);
+                        }
+                    }
+                } else {
+                    TypeCheckerModel.TypeInfo declared = lookupDeclaredTypeStructurally(destTok, scope);
+                    if (declared != null && "owns".equals(declared.storage)) {
+                        String key = hub.expressions.slotKeyOf(node.right);
                         if (key != null) {
                             out.add(key);
                         }
                     }
                 }
+            } else if (node.type == TokenType.OPERATOR && node.text.equals("CALL") && node.left.type == TokenType.VARREF) {
+                List<TypeCheckerModel.FuncInfo> overloads = hub.model.functions.get(node.left.text);
+                if (overloads != null && overloads.size() == 1 && !node.right.childs.isEmpty()) {
+                    List<Token> argNodes = new ArrayList<>();
+                    hub.locksAndProofs.collectCommaArgs(node.right.childs.get(0), argNodes);
+                    TypeCheckerModel.FuncInfo only = overloads.get(0);
+                    for (int i = 0; i < argNodes.size() && i < only.paramTypes.size(); i++) {
+                        if ("owns".equals(only.paramTypes.get(i).storage)) {
+                            String key = hub.expressions.slotKeyOf(argNodes.get(i));
+                            if (key != null) {
+                                out.add(key);
+                            }
+                        }
+                    }
+                }
             }
-        }
-        collectMovesInNode(node.left, scope, out);
-        collectMovesInNode(node.right, scope, out);
-        collectMovesInNode(node.next, scope, out);
-        if (node.childs != null) {
-            for (Token c : node.childs) {
-                collectMovesInNode(c, scope, out);
+            // pushed in reverse so the pop order is left, right, next, childs, sub
+            if (node.sub != null) {
+                for (int i = node.sub.size() - 1; i >= 0; i--) {
+                    work.push(node.sub.get(i));
+                }
             }
-        }
-        if (node.sub != null) {
-            for (Token s : node.sub) {
-                collectMovesInNode(s, scope, out);
+            if (node.childs != null) {
+                for (int i = node.childs.size() - 1; i >= 0; i--) {
+                    work.push(node.childs.get(i));
+                }
             }
+            work.push(node.next);
+            work.push(node.right);
+            work.push(node.left);
         }
     }
 
     /** Structural-only type lookup (Scope/StructInfo, no expression resolution) -- used solely by collectLoopMoves's cheap pre-scan and checkAddressOf's 'ref' validation. */
     public TypeCheckerModel.TypeInfo lookupDeclaredTypeStructurally(Token node, TypeCheckerModel.Scope scope) {
-        if (node.type == TokenType.DELINEATOR && node.text.equals("(") && !node.childs.isEmpty()) {
-            return lookupDeclaredTypeStructurally(node.childs.get(0), scope);
-        }
-        if (node.type == TokenType.VARREF) {
-            return scope.lookup(node.text);
-        }
-        if (node.type == TokenType.OPERATOR && node.text.equals(".") && node.right.type == TokenType.VARREF) {
-            TypeCheckerModel.TypeInfo leftType = lookupDeclaredTypeStructurally(node.left, scope);
-            if (leftType == null) {
+        // walk down the `.member` / `[index]` spine to its root, then apply the steps back up
+        Deque<Token> steps = new ArrayDeque<>();
+        TypeCheckerModel.TypeInfo cur;
+        while (true) {
+            if (node.type == TokenType.DELINEATOR && node.text.equals("(") && !node.childs.isEmpty()) {
+                node = node.childs.get(0);
+            } else if (node.type == TokenType.VARREF) {
+                cur = scope.lookup(node.text);
+                break;
+            } else if (node.type == TokenType.OPERATOR && node.text.equals(".") && node.right.type == TokenType.VARREF) {
+                steps.push(node);
+                node = node.left;
+            } else if (node.type == TokenType.OPERATOR && node.text.equals("LOOKUP") && node.left != null) {
+                steps.push(node);   // "x[i]": the element type of a safe dynarray or fixed array, so `ref x[i].member` can see an `owns` member of an element
+                node = node.left;
+            } else {
                 return null;
             }
-            TypeCheckerModel.StructInfo si = hub.model.structs.get(leftType.baseType);
-            return si == null ? null : si.members.get(node.right.text);
         }
-        if (node.type == TokenType.OPERATOR && node.text.equals("LOOKUP") && node.left != null) {
-            // "x[i]": the element type of a safe dynarray or fixed array, so `ref x[i].member` can see an `owns` member of an element
-            TypeCheckerModel.TypeInfo arrType = lookupDeclaredTypeStructurally(node.left, scope);
-            if (arrType == null) {
-                return null;
+        while (!steps.isEmpty() && cur != null) {
+            Token step = steps.pop();
+            if (step.text.equals(".")) {
+                TypeCheckerModel.StructInfo si = hub.model.structs.get(cur.baseType);
+                cur = si == null ? null : si.members.get(step.right.text);
+            } else {
+                cur = cur.dynArrayElementType != null ? cur.dynArrayElementType : cur.arrayElementType;
             }
-            if (arrType.dynArrayElementType != null) {
-                return arrType.dynArrayElementType;
-            }
-            return arrType.arrayElementType;
         }
-        return null;
+        return cur;
     }
 
     public void checkStatement(Token stmt, TypeCheckerModel.Scope scope, TypeCheckerModel.FuncInfo func, boolean insideLoop) {

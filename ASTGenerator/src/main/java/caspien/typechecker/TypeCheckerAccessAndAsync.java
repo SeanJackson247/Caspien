@@ -10,9 +10,11 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -1272,63 +1274,59 @@ public final class TypeCheckerAccessAndAsync {
     }
 
     /** Marks every 'unsafe' block inside compiler-written code as exempt from the unsafe-tag rules. */
-    public void markSynthesizedUnsafe(Token node) {
-        if (node == null) {
-            return;
-        }
-        if (node.type == TokenType.KEYWORD && node.text.equals("unsafe")) {
-            node.chk.synthesizedUnsafe = true;
-        }
-        if (node.childs != null) {
-            for (Token c : node.childs) {
-                markSynthesizedUnsafe(c);
+    public void markSynthesizedUnsafe(Token root) {
+        Deque<Token> work = new java.util.LinkedList<>();   // may hold null children
+        work.push(root);
+        while (!work.isEmpty()) {
+            Token node = work.pop();
+            if (node == null) {
+                continue;
+            }
+            if (node.type == TokenType.KEYWORD && node.text.equals("unsafe")) {
+                node.chk.synthesizedUnsafe = true;
+            }
+            if (node.childs != null) {
+                for (Token c : node.childs) {
+                    work.push(c);
+                }
             }
         }
     }
 
-    /** Recursive left/right/childs/sub walk (the same generic Token-tree traversal shape `collectCallTargetsAndBanInvoke` in BytecodeEmitter already uses for an unrelated purpose) for the first "CALL" node whose own callee is a bare VARREF named `calleeName` -- used only to find synthesizeAsyncTrampoline's own single, known-unique call into the real "@async" function it wraps. */
-    public Token findCallNodeByCalleeName(Token node, String calleeName) {
-        if (node == null) {
-            return null;
-        }
-        if (node.type == TokenType.OPERATOR && node.text.equals("CALL") && node.left != null
-                && node.left.type == TokenType.VARREF && node.left.text.equals(calleeName)) {
-            return node;
-        }
-        Token found = findCallNodeByCalleeName(node.left, calleeName);
-        if (found != null) {
-            return found;
-        }
-        found = findCallNodeByCalleeName(node.right, calleeName);
-        if (found != null) {
-            return found;
-        }
-        found = findCallNodeByCalleeName(node.next, calleeName);
-        if (found != null) {
-            return found;
-        }
-        if (node.childs != null) {
-            for (Token c : node.childs) {
-                found = findCallNodeByCalleeName(c, calleeName);
-                if (found != null) {
-                    return found;
+    /** Left/right/next/childs/sub walk, first match in that pre-order (the same generic Token-tree traversal shape `collectCallTargetsAndBanInvoke` in BytecodeEmitter already uses for an unrelated purpose) for the first "CALL" node whose own callee is a bare VARREF named `calleeName` -- used only to find synthesizeAsyncTrampoline's own single, known-unique call into the real "@async" function it wraps. */
+    public Token findCallNodeByCalleeName(Token root, String calleeName) {
+        Deque<Token> work = new java.util.LinkedList<>();   // may hold null children
+        work.push(root);
+        while (!work.isEmpty()) {
+            Token node = work.pop();
+            if (node == null) {
+                continue;
+            }
+            if (node.type == TokenType.OPERATOR && node.text.equals("CALL") && node.left != null
+                    && node.left.type == TokenType.VARREF && node.left.text.equals(calleeName)) {
+                return node;
+            }
+            // pushed in reverse so the pop order is left, right, next, childs, sub
+            if (node.sub != null) {
+                for (int i = node.sub.size() - 1; i >= 0; i--) {
+                    work.push(node.sub.get(i));
                 }
             }
-        }
-        if (node.sub != null) {
-            for (Token c : node.sub) {
-                found = findCallNodeByCalleeName(c, calleeName);
-                if (found != null) {
-                    return found;
+            if (node.childs != null) {
+                for (int i = node.childs.size() - 1; i >= 0; i--) {
+                    work.push(node.childs.get(i));
                 }
             }
+            work.push(node.next);
+            work.push(node.right);
+            work.push(node.left);
         }
         return null;
     }
 
     public boolean isValueConstructingExpr(Token node) {
-        if (node.type == TokenType.DELINEATOR && node.text.equals("(") && !node.childs.isEmpty()) {
-            return isValueConstructingExpr(node.childs.get(0)); // transparent grouping
+        while (node.type == TokenType.DELINEATOR && node.text.equals("(") && !node.childs.isEmpty()) {
+            node = node.childs.get(0); // transparent grouping
         }
         if (node.type == TokenType.VARREF) {
             return false; // a bare reference to an existing variable

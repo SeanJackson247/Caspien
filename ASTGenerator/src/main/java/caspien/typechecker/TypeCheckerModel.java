@@ -866,15 +866,12 @@ public final class TypeCheckerModel {
         }
 
         public void declare(String name, TypeInfo type, Token at) {
-            if (transparent && parent != null) {
-                parent.declare(name, type, at);
-                return;
-            }
-            if (vars.containsKey(name)) {
+            Scope target = declScope();
+            if (target.vars.containsKey(name)) {
                 throw new CompilerException("type", at.file, at.line,
                         "variable '" + name + "' is already declared in this scope");
             }
-            vars.put(name, type);
+            target.vars.put(name, type);
         }
     }
 
@@ -1282,21 +1279,25 @@ public final class TypeCheckerModel {
     }
 
     /** True when a value of type `t` holds memory it must free: an `owns` pointer, a dynarray, or an inline struct with such a member. */
-    public boolean typeOwnsMemory(TypeInfo t, Set<String> visiting) {
-        if (t == null) {
-            return false;
-        }
-        if ("owns".equals(t.storage)) {
-            return true;
-        }
-        String elemBase = t.storage == null ? hub.declarations.stripArrayDims(t.baseType) : t.baseType;
-        StructInfo si = structs.get(elemBase);
-        if (si == null || !visiting.add(elemBase)) {
-            return false;
-        }
-        for (TypeInfo m : si.members.values()) {
-            if (typeOwnsMemory(m, visiting)) {
+    public boolean typeOwnsMemory(TypeInfo root, Set<String> visiting) {
+        java.util.Deque<TypeInfo> work = new java.util.LinkedList<>();
+        work.push(root);
+        while (!work.isEmpty()) {
+            TypeInfo t = work.pop();
+            if (t == null) {
+                continue;
+            }
+            if ("owns".equals(t.storage)) {
                 return true;
+            }
+            String elemBase = t.storage == null ? hub.declarations.stripArrayDims(t.baseType) : t.baseType;
+            StructInfo si = structs.get(elemBase);
+            if (si == null || !visiting.add(elemBase)) {
+                continue;
+            }
+            List<TypeInfo> members = new ArrayList<>(si.members.values());
+            for (int i = members.size() - 1; i >= 0; i--) {
+                work.push(members.get(i));
             }
         }
         return false;

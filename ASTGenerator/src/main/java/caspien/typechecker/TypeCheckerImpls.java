@@ -12,11 +12,14 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -450,35 +453,52 @@ public final class TypeCheckerImpls {
      * Flattens a library's function set: multiple extends, only a full-signature collision is an error, functions
      * inherited by reference. See docs/TypeChecker.md, "Libraries".
      */
-    public void flattenLibrary(String name, Set<String> visiting) {
-        TypeCheckerModel.LibraryInfo info = hub.model.libraries.get(name);
-        if (info == null || info.flattened) {
-            return;
-        }
-        if (visiting.contains(name)) {
-            throw new CompilerException("type", info.declTok.file, info.declTok.line,
-                    "circular inheritance involving library '" + name + "'");
-        }
-        visiting.add(name);
-
-        for (String parentName : info.extendsNames) {
-            TypeCheckerModel.LibraryInfo parentInfo = hub.model.libraries.get(parentName);
-            if (parentInfo == null) {
-                throw new CompilerException("type", info.declTok.file, info.declTok.line,
-                        "'" + parentName + "' is not a known library");
+    public void flattenLibrary(String rootName, Set<String> visiting) {
+        // frames: {library name, iterator over its extended libraries (null before first entry), parent just flattened and not yet merged}
+        Deque<Object[]> stack = new ArrayDeque<>();
+        stack.push(new Object[]{rootName, null, null});
+        while (!stack.isEmpty()) {
+            Object[] f = stack.peek();
+            String name = (String) f[0];
+            TypeCheckerModel.LibraryInfo info = hub.model.libraries.get(name);
+            if (f[1] == null) {
+                if (info == null || info.flattened) {
+                    stack.pop();
+                    continue;
+                }
+                if (visiting.contains(name)) {
+                    throw new CompilerException("type", info.declTok.file, info.declTok.line,
+                            "circular inheritance involving library '" + name + "'");
+                }
+                visiting.add(name);
+                f[1] = info.extendsNames.iterator();
             }
-            flattenLibrary(parentName, visiting);
-            for (Map.Entry<String, List<TypeCheckerModel.FuncInfo>> e : parentInfo.functions.entrySet()) {
+            if (f[2] != null) {
+                TypeCheckerModel.LibraryInfo parentInfo = hub.model.libraries.get((String) f[2]);
+                f[2] = null;
+                for (Map.Entry<String, List<TypeCheckerModel.FuncInfo>> e : parentInfo.functions.entrySet()) {
+                    mergeLibraryOverloads(info, name, e.getKey(), e.getValue());
+                }
+            }
+            @SuppressWarnings("unchecked")
+            Iterator<String> parents = (Iterator<String>) f[1];
+            if (parents.hasNext()) {
+                String parentName = parents.next();
+                if (hub.model.libraries.get(parentName) == null) {
+                    throw new CompilerException("type", info.declTok.file, info.declTok.line,
+                            "'" + parentName + "' is not a known library");
+                }
+                f[2] = parentName;
+                stack.push(new Object[]{parentName, null, null});
+                continue;
+            }
+            for (Map.Entry<String, List<TypeCheckerModel.FuncInfo>> e : info.ownFunctions.entrySet()) {
                 mergeLibraryOverloads(info, name, e.getKey(), e.getValue());
             }
+            info.flattened = true;
+            visiting.remove(name);
+            stack.pop();
         }
-
-        for (Map.Entry<String, List<TypeCheckerModel.FuncInfo>> e : info.ownFunctions.entrySet()) {
-            mergeLibraryOverloads(info, name, e.getKey(), e.getValue());
-        }
-
-        info.flattened = true;
-        visiting.remove(name);
     }
 
     /**
@@ -908,7 +928,15 @@ public final class TypeCheckerImpls {
         if (baseType == null) {
             return false;
         }
-        for (String id : baseType.split("[^A-Za-z0-9_]+")) {
+        Deque<Iterator<String>> its = new ArrayDeque<>();
+        its.push(Arrays.asList(baseType.split("[^A-Za-z0-9_]+")).iterator());
+        while (!its.isEmpty()) {
+            Iterator<String> it = its.peek();
+            if (!it.hasNext()) {
+                its.pop();
+                continue;
+            }
+            String id = it.next();
             if (id.isEmpty() || !seen.add(id)) {
                 continue;
             }
@@ -917,11 +945,13 @@ public final class TypeCheckerImpls {
             }
             TypeCheckerModel.StructInfo si = hub.model.structs.get(id);
             if (si != null) {
+                List<String> memberIds = new ArrayList<>();
                 for (TypeCheckerModel.TypeInfo m : si.members.values()) {
-                    if (typeReachesDropHook(m.baseType, seen)) {
-                        return true;
+                    if (m.baseType != null) {
+                        memberIds.addAll(Arrays.asList(m.baseType.split("[^A-Za-z0-9_]+")));
                     }
                 }
+                its.push(memberIds.iterator());
             }
         }
         return false;

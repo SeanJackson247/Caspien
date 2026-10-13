@@ -283,53 +283,81 @@ public final class ProofKills {
     }
 
     /** null when the callee cannot destroy. */
-    public static Summ summarize(String callee, Graph g, Set<String> path) {
-        if (g.externs.contains(callee)) {
-            return null;                                          // an extern call needs `unsafe` at the call site (already a kill there), or is declared safe
-        }
-        TypeCheckerModel.FuncInfo fi = g.known.get(callee);
-        Summ s = new Summ();
-        if (fi == null) {
-            s.reason = callee + " (target not known)";
-            s.all = true;
-            return s;
-        }
-        if (!path.add(callee)) {
-            return null;
-        }
-        Facts fa = facts.get(callee);
-        if (fa != null && fa.directKill != null) {
-            s.reason = callee + ": " + fa.directKill;
-            s.all |= fa.directAll;
-            s.types.addAll(fa.directTypes);
-        }
-        for (TypeCheckerModel.TypeInfo pt : fi.paramTypes) {
-            if (pt != null && "owns".equals(pt.storage)) {
-                if (s.reason == null) {
-                    s.reason = callee + ": it takes an owning parameter, which it may drop";
-                }
-                Set<String> c = g.closure.apply(pt);
-                if (c == null) {
-                    s.all = true;
+    public static Summ summarize(String root, Graph g, Set<String> path) {
+        // frames: {callee, its Summ, iterator over the callees it still has to visit}
+        java.util.Deque<Object[]> frames = new java.util.ArrayDeque<>();
+        String enter = root;
+        Summ ret = null;
+        boolean haveRet = false;
+        while (true) {
+            if (enter != null) {
+                String callee = enter;
+                enter = null;
+                TypeCheckerModel.FuncInfo fi = g.known.get(callee);
+                if (g.externs.contains(callee)) {
+                    haveRet = true;                               // an extern call needs `unsafe` at the call site (already a kill there), or is declared safe
+                } else if (fi == null) {
+                    Summ unknown = new Summ();
+                    unknown.reason = callee + " (target not known)";
+                    unknown.all = true;
+                    ret = unknown;
+                    haveRet = true;
+                } else if (!path.add(callee)) {
+                    haveRet = true;
                 } else {
-                    s.types.addAll(c);
-                }
-            }
-        }
-        if (fa != null) {
-            for (String c : fa.callees) {
-                Summ r = summarize(c, g, path);
-                if (r != null) {
-                    if (s.reason == null) {
-                        s.reason = callee + " > " + r.reason;
+                    Summ s = new Summ();
+                    Facts fa = facts.get(callee);
+                    if (fa != null && fa.directKill != null) {
+                        s.reason = callee + ": " + fa.directKill;
+                        s.all |= fa.directAll;
+                        s.types.addAll(fa.directTypes);
                     }
-                    s.all |= r.all;
-                    s.types.addAll(r.types);
+                    for (TypeCheckerModel.TypeInfo pt : fi.paramTypes) {
+                        if (pt != null && "owns".equals(pt.storage)) {
+                            if (s.reason == null) {
+                                s.reason = callee + ": it takes an owning parameter, which it may drop";
+                            }
+                            Set<String> c = g.closure.apply(pt);
+                            if (c == null) {
+                                s.all = true;
+                            } else {
+                                s.types.addAll(c);
+                            }
+                        }
+                    }
+                    java.util.Iterator<String> callees = fa != null ? fa.callees.iterator() : java.util.Collections.<String>emptyIterator();
+                    frames.push(new Object[]{callee, s, callees});
                 }
             }
+            if (haveRet) {
+                haveRet = false;
+                if (frames.isEmpty()) {
+                    return ret;
+                }
+                Object[] parent = frames.peek();
+                if (ret != null) {
+                    Summ s = (Summ) parent[1];
+                    if (s.reason == null) {
+                        s.reason = parent[0] + " > " + ret.reason;
+                    }
+                    s.all |= ret.all;
+                    s.types.addAll(ret.types);
+                }
+                ret = null;
+            }
+            Object[] fr = frames.peek();
+            @SuppressWarnings("unchecked")
+            java.util.Iterator<String> callees = (java.util.Iterator<String>) fr[2];
+            if (callees.hasNext()) {
+                enter = callees.next();
+                continue;
+            }
+            frames.pop();
+            path.remove((String) fr[0]);
+            Summ s = (Summ) fr[1];
+            ret = s.reason == null ? null : s;
+            haveRet = true;
         }
-        path.remove(callee);
-        return s.reason == null ? null : s;
     }
 
     public static boolean kills(Token.MatchPattern p, boolean all, Set<String> types) {

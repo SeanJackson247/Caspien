@@ -10,11 +10,14 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -53,18 +56,21 @@ public final class TypeCheckerDeclarations {
         return out;
     }
 
-    public void collectDestroyed(TypeCheckerModel.TypeInfo t, Set<String> out) {
-        if (t == null || t.baseType == null || (t.storage != null && !"owns".equals(t.storage))) {
-            return;
-        }
-        String b = stripArrayDims(t.baseType);
-        if (!out.add(b)) {
-            return;
-        }
-        TypeCheckerModel.StructInfo si = hub.model.structs.get(b);
-        if (si != null) {
-            for (TypeCheckerModel.TypeInfo m : si.members.values()) {
-                collectDestroyed(m, out);
+    public void collectDestroyed(TypeCheckerModel.TypeInfo root, Set<String> out) {
+        Deque<TypeCheckerModel.TypeInfo> work = new java.util.LinkedList<>();
+        work.push(root);
+        while (!work.isEmpty()) {
+            TypeCheckerModel.TypeInfo t = work.pop();
+            if (t == null || t.baseType == null || (t.storage != null && !"owns".equals(t.storage))) {
+                continue;
+            }
+            String b = stripArrayDims(t.baseType);
+            if (!out.add(b)) {
+                continue;
+            }
+            TypeCheckerModel.StructInfo si = hub.model.structs.get(b);
+            if (si != null) {
+                si.members.values().forEach(work::push);
             }
         }
     }
@@ -197,16 +203,28 @@ public final class TypeCheckerDeclarations {
      */
     public List<TypeCheckerModel.FlatDecl> flattenRootLines(List<Token> lines, String currentSafety) {
         List<TypeCheckerModel.FlatDecl> out = new ArrayList<>();
-        for (Token lineTok : lines) {
+        Deque<Iterator<Token>> iterators = new ArrayDeque<>();
+        Deque<String> safeties = new ArrayDeque<>();
+        iterators.push(lines.iterator());
+        safeties.push(currentSafety);
+        while (!iterators.isEmpty()) {
+            if (!iterators.peek().hasNext()) {
+                iterators.pop();
+                safeties.pop();
+                continue;
+            }
+            Token lineTok = iterators.peek().next();
+            String safety = safeties.peek();
             Token t = lineTok.childs.get(0);
             if (t.type == TokenType.KEYWORD && (t.text.equals("unsafe") || t.text.equals("safe"))) {
-                if (t.text.equals("unsafe") && currentSafety.equals("safe")) {
+                if (t.text.equals("unsafe") && safety.equals("safe")) {
                     throw new CompilerException("type", t.file, t.line,
                             "'unsafe' cannot be nested inside 'safe'");
                 }
-                out.addAll(flattenRootLines(t.childs, t.text));
+                iterators.push(t.childs.iterator());
+                safeties.push(t.text);
             } else {
-                out.add(new TypeCheckerModel.FlatDecl(lineTok, currentSafety));
+                out.add(new TypeCheckerModel.FlatDecl(lineTok, safety));
             }
         }
         return out;
@@ -1175,69 +1193,92 @@ public final class TypeCheckerDeclarations {
         }
     }
 
-    public void forbidSelfReferenceIn(Token node, String context) {
-        if (node == null) {
-            return;
-        }
-        if (node.type == TokenType.VARREF && node.text.equals("self")) {
-            throw new CompilerException("type", node.file, node.line,
-                    context + " cannot reference 'self' anywhere in its signature or body");
-        }
-        forbidSelfReferenceIn(node.left, context);
-        forbidSelfReferenceIn(node.right, context);
-        forbidSelfReferenceIn(node.next, context);
-        if (node.childs != null) {
-            for (Token c : node.childs) {
-                forbidSelfReferenceIn(c, context);
+    public void forbidSelfReferenceIn(Token root, String context) {
+        Deque<Token> work = new java.util.LinkedList<>();   // may hold null children
+        work.push(root);
+        while (!work.isEmpty()) {
+            Token node = work.pop();
+            if (node == null) {
+                continue;
             }
-        }
-        if (node.sub != null) {
-            for (Token s : node.sub) {
-                forbidSelfReferenceIn(s, context);
+            if (node.type == TokenType.VARREF && node.text.equals("self")) {
+                throw new CompilerException("type", node.file, node.line,
+                        context + " cannot reference 'self' anywhere in its signature or body");
             }
+            // pushed in reverse so the pop order is left, right, next, childs, sub
+            if (node.sub != null) {
+                for (int i = node.sub.size() - 1; i >= 0; i--) {
+                    work.push(node.sub.get(i));
+                }
+            }
+            if (node.childs != null) {
+                for (int i = node.childs.size() - 1; i >= 0; i--) {
+                    work.push(node.childs.get(i));
+                }
+            }
+            work.push(node.next);
+            work.push(node.right);
+            work.push(node.left);
         }
     }
 
     /** Resolves an interface's flattened method set (any number of extends; name collisions are errors). */
-    public void flattenInterface(String name, Set<String> visiting) {
-        TypeCheckerModel.InterfaceInfo info = hub.model.interfaces.get(name);
-        if (info == null || info.flattened) {
-            return;
-        }
-        if (visiting.contains(name)) {
-            throw new CompilerException("type", info.declTok.file, info.declTok.line,
-                    "circular inheritance involving interface '" + name + "'");
-        }
-        visiting.add(name);
-
-        for (String parentName : info.extendsNames) {
-            TypeCheckerModel.InterfaceInfo parentInfo = hub.model.interfaces.get(parentName);
-            if (parentInfo == null) {
-                throw new CompilerException("type", info.declTok.file, info.declTok.line,
-                        "'" + parentName + "' is not a known interface");
+    public void flattenInterface(String rootName, Set<String> visiting) {
+        // frames: {interface name, iterator over its extended interfaces (null before first entry), parent just flattened and not yet merged}
+        Deque<Object[]> stack = new ArrayDeque<>();
+        stack.push(new Object[]{rootName, null, null});
+        while (!stack.isEmpty()) {
+            Object[] f = stack.peek();
+            String name = (String) f[0];
+            TypeCheckerModel.InterfaceInfo info = hub.model.interfaces.get(name);
+            if (f[1] == null) {
+                if (info == null || info.flattened) {
+                    stack.pop();
+                    continue;
+                }
+                if (visiting.contains(name)) {
+                    throw new CompilerException("type", info.declTok.file, info.declTok.line,
+                            "circular inheritance involving interface '" + name + "'");
+                }
+                visiting.add(name);
+                f[1] = info.extendsNames.iterator();
             }
-            flattenInterface(parentName, visiting);
-            for (Map.Entry<String, TypeCheckerModel.RawMethodSig> e : parentInfo.methods.entrySet()) {
+            if (f[2] != null) {
+                TypeCheckerModel.InterfaceInfo parentInfo = hub.model.interfaces.get((String) f[2]);
+                f[2] = null;
+                for (Map.Entry<String, TypeCheckerModel.RawMethodSig> e : parentInfo.methods.entrySet()) {
+                    if (info.methods.containsKey(e.getKey())) {
+                        throw new CompilerException("type", info.declTok.file, info.declTok.line,
+                                "interface '" + name + "' inherits a method named '" + e.getKey()
+                                        + "' from more than one extended interface");
+                    }
+                    info.methods.put(e.getKey(), e.getValue());
+                }
+            }
+            @SuppressWarnings("unchecked")
+            Iterator<String> parents = (Iterator<String>) f[1];
+            if (parents.hasNext()) {
+                String parentName = parents.next();
+                if (hub.model.interfaces.get(parentName) == null) {
+                    throw new CompilerException("type", info.declTok.file, info.declTok.line,
+                            "'" + parentName + "' is not a known interface");
+                }
+                f[2] = parentName;
+                stack.push(new Object[]{parentName, null, null});
+                continue;
+            }
+            for (Map.Entry<String, TypeCheckerModel.RawMethodSig> e : info.ownMethods.entrySet()) {
                 if (info.methods.containsKey(e.getKey())) {
                     throw new CompilerException("type", info.declTok.file, info.declTok.line,
-                            "interface '" + name + "' inherits a method named '" + e.getKey()
-                                    + "' from more than one extended interface");
+                            "interface '" + name + "' already has a method named '" + e.getKey()
+                                    + "' via an extended interface");
                 }
                 info.methods.put(e.getKey(), e.getValue());
             }
+            info.flattened = true;
+            visiting.remove(name);
+            stack.pop();
         }
-
-        for (Map.Entry<String, TypeCheckerModel.RawMethodSig> e : info.ownMethods.entrySet()) {
-            if (info.methods.containsKey(e.getKey())) {
-                throw new CompilerException("type", info.declTok.file, info.declTok.line,
-                        "interface '" + name + "' already has a method named '" + e.getKey()
-                                + "' via an extended interface");
-            }
-            info.methods.put(e.getKey(), e.getValue());
-        }
-
-        info.flattened = true;
-        visiting.remove(name);
     }
 
     public void validateSelfIsPointer(TypeCheckerModel.RawMethodSig sig, String interfaceName) {
