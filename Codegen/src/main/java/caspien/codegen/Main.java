@@ -53,7 +53,7 @@ public class Main {
         }
         String input = Files.readString(Paths.get(inputPath), StandardCharsets.UTF_8);
 
-        Codegen.Result result = Codegen.generate(input, inputPath, config);
+        CodegenResult result = Codegen.generate(input, inputPath, config);
         for (String msg : result.messages) {
             System.err.println(msg);
         }

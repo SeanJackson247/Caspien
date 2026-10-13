@@ -1,8 +1,8 @@
 package caspien.codegen.x86backend;
 
+import caspien.codegen.CodegenTarget;
 import caspien.bytecode.BytecodeStatement;
 import caspien.bytecode.BytecodeToken;
-import caspien.codegen.CodegenConfig;
 import caspien.codegen.CodegenException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -56,7 +56,7 @@ import java.util.Set;
  *   exactly the given size, no header at all.
  *
  * Two concrete targets share this one class, distinguished by
- * `CodegenConfig.Target` (set from `codegen.config`); both emit GNU
+ * `CodegenTarget` (set from `codegen.config`); both emit GNU
  * assembler (GAS) AT&T syntax:
  * - LINUX_X64: SysV calling convention (rdi/rsi/rdx/rcx/r8/r9).
  * - WINDOWS_GNU_X64: win64 calling convention (rcx/rdx/r8/r9 + 32-byte
@@ -887,7 +887,7 @@ final class X86Generator {
         if (core.floatPool.isEmpty()) {
             return;
         }
-        hub.emit.raw(core.target == CodegenConfig.Target.WINDOWS_GNU_X64 ? ".section .rdata,\"dr\"" : ".section .rodata");
+        hub.emit.raw(core.target == CodegenTarget.WINDOWS_GNU_X64 ? ".section .rdata,\"dr\"" : ".section .rodata");
         for (Map.Entry<String, String> e : core.floatPool.entrySet()) {
             int colon = e.getKey().indexOf(':');
             int n = Integer.parseInt(e.getKey().substring(0, colon));

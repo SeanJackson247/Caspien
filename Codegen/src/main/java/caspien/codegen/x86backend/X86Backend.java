@@ -1,7 +1,7 @@
 package caspien.codegen.x86backend;
 
+import caspien.codegen.CodegenTarget;
 import caspien.bytecode.BytecodeStatement;
-import caspien.codegen.CodegenConfig;
 import java.util.List;
 
 /**
@@ -20,11 +20,11 @@ public final class X86Backend {
     /** AVX three-operand float forms (set before {@link #generate}). */
     public boolean avx;
 
-    public X86Backend(CodegenConfig.Target target) {
+    public X86Backend(CodegenTarget target) {
         this(target, false);
     }
 
-    public X86Backend(CodegenConfig.Target target, boolean bmi2) {
+    public X86Backend(CodegenTarget target, boolean bmi2) {
         core = new X86Core(target, bmi2);
         emit = new X86Emit(this);
         calls = new X86Calls(this);

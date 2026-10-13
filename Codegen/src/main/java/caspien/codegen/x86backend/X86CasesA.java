@@ -2,7 +2,6 @@ package caspien.codegen.x86backend;
 
 import caspien.bytecode.BytecodeStatement;
 import caspien.bytecode.BytecodeToken;
-import caspien.codegen.CodegenConfig;
 import caspien.codegen.CodegenException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;

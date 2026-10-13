@@ -1,8 +1,8 @@
 package caspien.codegen.x86backend;
 
+import caspien.codegen.CodegenTarget;
 import caspien.bytecode.BytecodeStatement;
 import caspien.bytecode.BytecodeToken;
-import caspien.codegen.CodegenConfig;
 import caspien.codegen.CodegenException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -17,12 +17,12 @@ import java.util.Set;
  */
 final class X86Core {
 
-    X86Core(CodegenConfig.Target target, boolean bmi2) {
+    X86Core(CodegenTarget target, boolean bmi2) {
         this.target = target;
         this.bmi2 = bmi2;
     }
 
-    final CodegenConfig.Target target;
+    final CodegenTarget target;
 
     final StringBuilder out = new StringBuilder();
 
@@ -419,12 +419,6 @@ final class X86Core {
      * the "NEW" line.
      */
     final Set<Integer> packedNewLines = new java.util.HashSet<>();
-
-    /** Plain data holder for {@link #collectRunEntries}: parallel lists of each direct entry's own size and its store-instruction line index (-1 when it has none of its own -- a `STACK_LOCK` padding gap, or a nested `NEW`'s own opaque pointer). */
-    static final class RunEntries {
-        final List<Long> sizes = new ArrayList<>();
-        final List<Integer> storeLines = new ArrayList<>();
-    }
 
     final boolean bmi2;
 
