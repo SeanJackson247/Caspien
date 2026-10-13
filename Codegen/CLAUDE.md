@@ -41,7 +41,7 @@ Callee-saved: `finishCalleeSaved` at `FUNC_END` scans the function text for rbx,
 - windows_gnu runs under Wine (3 Oct); keep it that way (`tests/wine_check.sh`).
 - Struct-by-value parameters (above). `PUSH n ARGk` reads the whole register at entry; `argReg(idx)` falls back to `rax` out of range.
 - Original `PUSH` lines use rax/rbx as scratch, so a flush under a live temp must use `R_PUSH/R_PUSHA`. Inside a construction run, fields are stored below the current rsp: never `push`, `rep movsb` (rdi/rsi/rcx) or call helpers that touch the stack there (`pushBlockFromFrameConstructionAware` copies via rax).
-- `findRunStart` only knows PUSH/ATOMIC_PUSH/STACK_LOCK/nested NEW as construction-run members.
+- `findRunStart` only knows PUSH/ATOMIC_PUSH/STACK_LOCK/nested NEW as construction-run members. It is a loop with an explicit stack of saved (total, target) pairs, so Codegen has no recursion (12 Oct; fuzzed against the old recursive version, asm identical).
 - `rcx` may hold an already-loaded 4th argument (SysV): any code using `%cl` must save/restore it. `%xmm0` is both float arg0 and the float return register.
 - Every catch landing (label containing `catch_`) is followed by `RSP_MARK`, which `finishCalleeSaved` turns into `leaq -frame(%rbp), %rsp` (frame = sum of ALLOCs + callee-saved area): an unwind skips the call site's own rsp restore, which used to leak 16-24 bytes per caught throw (`tests/catch_continue_stack_test`).
 - `LOOKUP_ARRAY` of a fixed array of exactly 8 bytes carries a `t8` token (arrays under 8 bytes are tagged `ra`); `u32[2]`/`u8[8]` indexing re-checked on 3 Oct, works.

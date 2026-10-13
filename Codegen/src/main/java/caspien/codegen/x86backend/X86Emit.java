@@ -56,7 +56,7 @@ final class X86Emit {
      * ordinary "PUSH"/"ATOMIC_PUSH"/"STACK_LOCK" line (contributing its
      * own declared size/gap) or a complete nested "NEW <size>"
      * (contributing exactly 8 bytes -- the pointer it leaves behind --
-     * once its *own* run is confirmed, recursively, to sum to that same
+     * once its *own* run is confirmed, with an explicit stack, to sum to that same
      * declared size).
      *
      * `targetSize` is load-bearing, not a mere sanity check: a nested
@@ -75,33 +75,46 @@ final class X86Emit {
      * "as much as looks valid."
      */
     int findRunStart(int endExclusive, long targetSize) {
+        // A nested NEW opens a run of its own; the enclosing (total, target) wait on this stack.
+        long[] saved = new long[16];
+        int depth = 0;
         long total = 0;
+        long target = targetSize;
         int idx = endExclusive;
-        while (total < targetSize && idx > 0) {
-            BytecodeStatement prev = core.allLines.get(idx - 1);
-            if (prev.isEmpty()) {
-                return -1;
-            }
-            String m = prev.get(0).text;
-            if ((m.equals("PUSH") || m.equals("ATOMIC_PUSH")) && prev.size() >= 2) {
-                total += Long.parseLong(prev.get(1).text);
-                idx--;
-            } else if (m.equals("STACK_LOCK") && prev.size() >= 2) {
-                total += Long.parseLong(prev.get(1).text);
-                idx--;
-            } else if (m.equals("NEW") && prev.size() >= 2) {
-                long declaredNestedSize = Long.parseLong(prev.get(1).text);
-                int nestedStart = findRunStart(idx - 1, declaredNestedSize);
-                if (nestedStart < 0) {
+        while (true) {
+            if (total < target && idx > 0) {
+                BytecodeStatement prev = core.allLines.get(idx - 1);
+                if (prev.isEmpty()) {
                     return -1;
                 }
-                idx = nestedStart;
-                total += 8; // the nested NEW's own resulting pointer -- one ordinary 8-byte word to this (outer) run
-            } else {
+                String m = prev.get(0).text;
+                if ((m.equals("PUSH") || m.equals("ATOMIC_PUSH") || m.equals("STACK_LOCK")) && prev.size() >= 2) {
+                    total += Long.parseLong(prev.get(1).text);
+                    idx--;
+                } else if (m.equals("NEW") && prev.size() >= 2) {
+                    if (depth + 2 > saved.length) {
+                        saved = java.util.Arrays.copyOf(saved, saved.length * 2);
+                    }
+                    saved[depth++] = total;
+                    saved[depth++] = target;
+                    target = Long.parseLong(prev.get(1).text);
+                    total = 0;
+                    idx--;
+                } else {
+                    return -1;
+                }
+                continue;
+            }
+            if (total != target) {
                 return -1;
             }
+            if (depth == 0) {
+                return idx;
+            }
+            // nested run confirmed: the enclosing run resumes before it; the nested NEW's pointer is one 8-byte word
+            target = saved[--depth];
+            total = saved[--depth] + 8;
         }
-        return total == targetSize ? idx : -1;
     }
 
     /**
