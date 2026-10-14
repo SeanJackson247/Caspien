@@ -12,6 +12,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import caspien.config.DocComment;
 
 /**
  * Stage 1: turns the raw source of a single file into a flat list of
@@ -147,13 +148,13 @@ public class Lexer {
         NUMERIC_LIMIT_CONSTANTS.put("f64Min", new String[]{"-1.7976931348623157e308", "f64", "FLOAT"});
     }
 
-    private enum Mode { CODE, QUOTED_LITERAL, SL_COMMENT, ML_COMMENT, TEMPLATE_LITERAL }
+
 
     private final String src;
     private final String file;
     private int pos = 0;
     private int line = 1;
-    private Mode mode = Mode.CODE;
+    private LexerMode mode = LexerMode.CODE;
 
     /** Which quote character opened the literal currently being scanned. */
     private char quoteDelimiter;
@@ -229,13 +230,13 @@ public class Lexer {
                     break;
             }
         }
-        if (mode == Mode.QUOTED_LITERAL) {
+        if (mode == LexerMode.QUOTED_LITERAL) {
             throw err("lex", "unterminated quoted literal");
         }
-        if (mode == Mode.TEMPLATE_LITERAL || !templateExprBraceDepth.isEmpty()) {
+        if (mode == LexerMode.TEMPLATE_LITERAL || !templateExprBraceDepth.isEmpty()) {
             throw err("lex", "unterminated template literal (missing closing '`')");
         }
-        if (mode == Mode.ML_COMMENT) {
+        if (mode == LexerMode.ML_COMMENT) {
             throw err("lex", "unterminated multi-line comment");
         }
         flushBuffer();
@@ -311,7 +312,7 @@ public class Lexer {
                 if (depth == 0) {
                     emit(TokenType.DELINEATOR, ")", line);
                     pos++;
-                    mode = Mode.TEMPLATE_LITERAL;
+                    mode = LexerMode.TEMPLATE_LITERAL;
                     return;
                 }
                 templateExprBraceDepth.push(depth);
@@ -325,7 +326,7 @@ public class Lexer {
             bufferStartLine = line;
             quoteDelimiter = c;
             pos++;
-            mode = Mode.QUOTED_LITERAL;
+            mode = LexerMode.QUOTED_LITERAL;
             return;
         }
         if (c == '`') {
@@ -339,21 +340,21 @@ public class Lexer {
             emit(TokenType.OPERATOR, "TEMPLATE_STRING_START", line);
             bufferStartLine = line;
             pos++;
-            mode = Mode.TEMPLATE_LITERAL;
+            mode = LexerMode.TEMPLATE_LITERAL;
             return;
         }
         if (c == '/' && peek(1) == '/') {
             flushBuffer();
             bufferStartLine = line;
             pos += 2;
-            mode = Mode.SL_COMMENT;
+            mode = LexerMode.SL_COMMENT;
             return;
         }
         if (c == '/' && peek(1) == '*') {
             flushBuffer();
             bufferStartLine = line;
             pos += 2;
-            mode = Mode.ML_COMMENT;
+            mode = LexerMode.ML_COMMENT;
             return;
         }
         if (SINGLE_CHAR_OPERATORS.contains(c)) {
@@ -837,7 +838,7 @@ public class Lexer {
             tokens.add(t);
             buffer.setLength(0);
             pos++;
-            mode = Mode.CODE;
+            mode = LexerMode.CODE;
             return;
         }
         if (c == '\\') {
@@ -859,7 +860,7 @@ public class Lexer {
             flushTemplateStringPart();
             emit(TokenType.OPERATOR, "TEMPLATE_STRING_END", line);
             pos++;
-            mode = Mode.CODE;
+            mode = LexerMode.CODE;
             return;
         }
         if (c == '$' && peek(1) == '{') {
@@ -879,7 +880,7 @@ public class Lexer {
             // might separately contain.
             emit(TokenType.DELINEATOR, "(", line);
             templateExprBraceDepth.push(1);
-            mode = Mode.CODE;
+            mode = LexerMode.CODE;
             return;
         }
         if (c == '\n') {
@@ -957,7 +958,7 @@ public class Lexer {
             Lexeme t = new Lexeme(TokenType.SL_COMMENT, buffer.toString(), bufferStartLine, file);
             tokens.add(t);
             buffer.setLength(0);
-            mode = Mode.CODE;
+            mode = LexerMode.CODE;
             // do not consume the newline here; let CODE mode emit its TERMINATOR
             return;
         }
@@ -967,7 +968,7 @@ public class Lexer {
             Lexeme t = new Lexeme(TokenType.SL_COMMENT, buffer.toString(), bufferStartLine, file);
             tokens.add(t);
             buffer.setLength(0);
-            mode = Mode.CODE;
+            mode = LexerMode.CODE;
         }
     }
 
@@ -977,7 +978,7 @@ public class Lexer {
             tokens.add(t);
             buffer.setLength(0);
             pos += 2;
-            mode = Mode.CODE;
+            mode = LexerMode.CODE;
             return;
         }
         if (c == '\n') {
@@ -1141,7 +1142,7 @@ public class Lexer {
                     + (key.equals("justify") ? "an `unsafe` block" : "a `loop`, `for`, `func` or `match @lock`")
                     + (target == null ? " (nothing follows it)" : " (found `" + kind + "` on line " + target.line + ")"));
         }
-        if (!DocComments.register(new DocComments.Doc(key, value, file, kind, cl, target.line))) {
+        if (!DocComments.register(new DocComment(key, value, file, kind, cl, target.line))) {
             throw new CompilerException("lex", file, cl, "'" + key + ":' appears twice before the same `" + kind + "`");
         }
     }

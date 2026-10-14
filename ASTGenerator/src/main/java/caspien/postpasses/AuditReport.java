@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
+import caspien.config.DocComment;
 
 /**
  * `--audit`: every use of `unsafe` in the source being compiled (the input and every file it imports), with file, line, the tags written
@@ -20,17 +21,7 @@ import java.util.TreeMap;
  * useful figure for `unsafe unaudited{`.
  */
 public final class AuditReport {
-    private static final class Use {
-        final String file;
-        final int line;
-        final boolean block;
-        final String tags;
-        final String text;     // the braces' content for a block, otherwise the source line
-        final int firstLine;   // line number of the first content line
-        Use(String file, int line, boolean block, String tags, String text, int firstLine) {
-            this.file = file; this.line = line; this.block = block; this.tags = tags; this.text = text; this.firstLine = firstLine;
-        }
-    }
+
 
     private AuditReport() {
     }
@@ -38,7 +29,7 @@ public final class AuditReport {
     /** Line numbers of every `unsafe` statement block in a source text (what `--fix justify` labels). */
     static List<Integer> blockLines(String src) {
         List<Integer> out = new ArrayList<>();
-        for (Use u : scan("", src)) {
+        for (AuditUse u : scan("", src)) {
             if (u.block) {
                 out.add(u.line);
             }
@@ -51,12 +42,12 @@ public final class AuditReport {
     }
 
     public static String build(List<String> files, Path base, Map<String, Set<String>> needed, boolean hideStdlib) throws IOException {
-        List<Use> mine = new ArrayList<>(), lib = new ArrayList<>();
+        List<AuditUse> mine = new ArrayList<>(), lib = new ArrayList<>();
         int fileCount = 0;
         for (String f : files) {
             Path p = Paths.get(f);
             String src = new String(Files.readAllBytes(p), StandardCharsets.UTF_8);
-            List<Use> uses = scan(show(p, base), src);
+            List<AuditUse> uses = scan(show(p, base), src);
             if (!uses.isEmpty()) {
                 fileCount++;
             }
@@ -68,7 +59,7 @@ public final class AuditReport {
         section(sb, "standard library", lib, needed, base, hideStdlib);
         TreeMap<String, Integer> byTag = new TreeMap<>();
         int unaudited = 0, blocks = 0, exprs = 0, justified = 0, unjustifiedNone = 0, unjustifiedTodo = 0;
-        for (Use u : concat(mine, lib)) {
+        for (AuditUse u : concat(mine, lib)) {
             if (!u.block) { exprs++; continue; }
             blocks++;
             if (u.tags.isEmpty()) {
@@ -82,7 +73,7 @@ public final class AuditReport {
             if (u.tags.equals("unaudited")) {
                 unaudited++;
             }
-            DocComments.Doc jd = justOf(u, base);
+            DocComment jd = justOf(u, base);
             if (jd == null) {
                 unjustifiedNone++;
             } else if (DocComments.isTodo(jd.text)) {
@@ -106,18 +97,18 @@ public final class AuditReport {
     }
 
     /** The `justify:` doc comment standing before this block, or null. */
-    private static DocComments.Doc justOf(Use u, Path base) {
-        DocComments.Doc d = DocComments.find(base.resolve(u.file).toString(), u.line, "justify", "unsafe");
+    private static DocComment justOf(AuditUse u, Path base) {
+        DocComment d = DocComments.find(base.resolve(u.file).toString(), u.line, "justify", "unsafe");
         return d != null ? d : DocComments.find(Paths.get(u.file).toAbsolutePath().normalize().toString(), u.line, "justify", "unsafe");
     }
 
-    private static List<Use> concat(List<Use> a, List<Use> b) {
-        List<Use> all = new ArrayList<>(a);
+    private static List<AuditUse> concat(List<AuditUse> a, List<AuditUse> b) {
+        List<AuditUse> all = new ArrayList<>(a);
         all.addAll(b);
         return all;
     }
 
-    private static void section(StringBuilder sb, String title, List<Use> uses, Map<String, Set<String>> needed, Path base, boolean hide) {
+    private static void section(StringBuilder sb, String title, List<AuditUse> uses, Map<String, Set<String>> needed, Path base, boolean hide) {
         long blocks = uses.stream().filter(u -> u.block).count();
         sb.append("\n## ").append(title).append(": ").append(blocks).append(" blocks, ").append(uses.size() - blocks).append(" other uses");
         if (hide) {
@@ -125,7 +116,7 @@ public final class AuditReport {
             return;
         }
         sb.append('\n');
-        for (Use u : uses) {
+        for (AuditUse u : uses) {
             sb.append('\n').append(u.file).append(':').append(u.line).append("  ");
             if (!u.block) {
                 sb.append("unsafe (not a block): ").append(u.text.trim()).append('\n');
@@ -140,7 +131,7 @@ public final class AuditReport {
                 sb.append("   UNAUDITED").append(n == null ? "" : "; it actually needs: " + (n.isEmpty() ? "nothing" : String.join(" ", n)));
             }
             sb.append('\n');
-            DocComments.Doc jd = justOf(u, base);
+            DocComment jd = justOf(u, base);
             sb.append("       justify: ").append(jd == null ? "(none)" : DocComments.isTodo(jd.text) ? "TODO  <- not justified yet" : jd.text).append('\n');
             String[] lines = u.text.split("\n", -1);
             for (int i = 0; i < lines.length; i++) {
@@ -163,8 +154,8 @@ public final class AuditReport {
 
     // ---- scanner ------------------------------------------------------------------------------------------------------------------------------
 
-    static List<Use> scan(String file, String s) {
-        List<Use> out = new ArrayList<>();
+    static List<AuditUse> scan(String file, String s) {
+        List<AuditUse> out = new ArrayList<>();
         int n = s.length(), line = 1, i = 0;
         while (i < n) {
             char c = s.charAt(i);
@@ -198,7 +189,7 @@ public final class AuditReport {
                 }
                 if (!block) {
                     int ls = s.lastIndexOf('\n', st) + 1, le = s.indexOf('\n', st);
-                    out.add(new Use(file, useLine, false, "", s.substring(ls, le < 0 ? n : le), useLine));
+                    out.add(new AuditUse(file, useLine, false, "", s.substring(ls, le < 0 ? n : le), useLine));
                     continue;
                 }
                 int open = j, depth = 0, k = open;
@@ -219,7 +210,7 @@ public final class AuditReport {
                 String body = s.substring(open + 1, Math.min(k, n));
                 int bodyLine = line + (int) s.substring(i, open + 1).chars().filter(x -> x == '\n').count();
                 if (body.startsWith("\n")) { body = body.substring(1); bodyLine++; }
-                out.add(new Use(file, useLine, true, String.join(" ", tags), body, bodyLine));
+                out.add(new AuditUse(file, useLine, true, String.join(" ", tags), body, bodyLine));
                 // carry on scanning inside the block too: nested `unsafe` is its own instance
                 continue;
             }

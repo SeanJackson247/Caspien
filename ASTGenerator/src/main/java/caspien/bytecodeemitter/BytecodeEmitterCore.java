@@ -31,6 +31,8 @@ import caspien.typechecker.LibraryInfo;
 import caspien.typechecker.StructInfo;
 import caspien.typechecker.TypeInfo;
 import caspien.token.Decorator;
+import caspien.config.CallingConvention;
+import caspien.config.DocComment;
 
 /**
  * Final front-end stage: walks the type-checked tree and builds the stack-based higher-order bytecode (HOB) as a BytecodeProgram (text only when the caller serializes it).
@@ -62,20 +64,7 @@ final class BytecodeEmitterCore {
     /** One-shot: a "try" points the next call-site staging write at its catch label instead of a fresh landing pad. See docs/BytecodeEmitter.md, "Call-site unwinding". */
     public String pendingTryCatchLabel;
 
-    /** One buffered call-site unwind landing pad -- see `pendingCallSiteUnwindLandingPads`'s own doc comment. */
-    public static final class PendingUnwindLandingPad {
-        public final String label;
-        public final List<String> destructNames;
-        public final List<Token> unlockCalls;
-        public final Token at;
 
-        public PendingUnwindLandingPad(String label, List<String> destructNames, List<Token> unlockCalls, Token at) {
-            this.label = label;
-            this.destructNames = destructNames;
-            this.unlockCalls = unlockCalls;
-            this.at = at;
-        }
-    }
 
     /** Names of the gt-decorated functions, and of everything they transitively call (each of those is emitted twice, the second as a "__" duplicate). See docs/BytecodeEmitter.md, "Ghost-table suppression". */
     public Set<String> gtDecoratedFuncMangledNames = new HashSet<>();
@@ -162,38 +151,9 @@ final class BytecodeEmitterCore {
     public static final Set<String> LAYOUT_STORAGE_KEYWORDS =
             new HashSet<>(Arrays.asList("owns", "ref", "raw", "auto", "static"));
 
-    /** One real STRUCT_MEMBER line (memberName/canonicalType set, paddingBytes 0) or one pure STRUCT_PADDING gap (memberName/canonicalType null, paddingBytes > 0) -- computeStructLayout's own output, in final declared-plus-padding order. */
-    public static final class StructLayoutEntry {
-        public final String memberName;
-        public final String canonicalType;
-        public final long paddingBytes;
 
-        public StructLayoutEntry(String memberName, String canonicalType, long paddingBytes) {
-            this.memberName = memberName;
-            this.canonicalType = canonicalType;
-            this.paddingBytes = paddingBytes;
-        }
 
-        public static StructLayoutEntry member(String name, String canonicalType) {
-            return new StructLayoutEntry(name, canonicalType, 0);
-        }
 
-        public static StructLayoutEntry padding(long bytes) {
-            return new StructLayoutEntry(null, null, bytes);
-        }
-    }
-
-    public static final class StructLayout {
-        public final List<StructLayoutEntry> entries;
-        public final long size;
-        public final long align;
-
-        public StructLayout(List<StructLayoutEntry> entries, long size, long align) {
-            this.entries = entries;
-            this.size = size;
-            this.align = align;
-        }
-    }
 
     public final Map<String, StructLayout> structLayoutCache = new HashMap<>();
 
@@ -216,8 +176,8 @@ final class BytecodeEmitterCore {
     public final List<String> traceFuncNames = new ArrayList<>();
 
     /** `/*! termination: .. *&#47;` labels found on emitted functions (HOB function name) and loops (HOB function name + "|" + loop label); checked by GasReport.checkLabels. */
-    public final Map<String, DocComments.Doc> funcTermLabels = new java.util.LinkedHashMap<>();
-    public final Map<String, DocComments.Doc> loopTermLabels = new java.util.LinkedHashMap<>();
+    public final Map<String, DocComment> funcTermLabels = new java.util.LinkedHashMap<>();
+    public final Map<String, DocComment> loopTermLabels = new java.util.LinkedHashMap<>();
     public String curHobFn;
     /** "function|loop label" -> most retries of a `match @lock` spin (> 0 literal, -1 run-time value); GasReport uses it as the loop's bound. */
     public final Map<String, Long> spinBounds = new java.util.LinkedHashMap<>();
@@ -281,48 +241,7 @@ final class BytecodeEmitterCore {
         return canonical != null && (canonical.equals("f32") || canonical.endsWith("_f32"));
     }
 
-    /** Per-call-site counters choosing the register and bank (int/float) of each argument word: SysV counts the banks independently, win64 shares one position counter. A stack-passed word still advances its counter. see docs/BytecodeEmitter.md, "Call sequence". */
-    public static final class ArgCounters {
-        public final boolean shared;
-        public final int intCount;
-        public final int floatCount;
-        public int sharedIdx;
-        public int intIdx;
-        public int floatIdx;
 
-        public ArgCounters(CompilerConfig.CallingConvention convention) {
-            this.shared = convention.sharedArgumentPosition;
-            this.intCount = convention.argumentRegisters.size();
-            this.floatCount = convention.argumentRegistersFloat.size();
-        }
-
-        /** Advances this bank's own counter (or the shared one) and returns the real register-table index for the next word of the given type, or -1 if that bank's registers are already exhausted (stack-passed instead). */
-        public int next(boolean isFloat) {
-            int idx;
-            if (shared) {
-                idx = sharedIdx;
-                sharedIdx++;
-            } else if (isFloat) {
-                idx = floatIdx;
-                floatIdx++;
-            } else {
-                idx = intIdx;
-                intIdx++;
-            }
-            int cutoff = isFloat ? floatCount : intCount;
-            return idx < cutoff ? idx : -1;
-        }
-
-        /** Float-bank registers really used (clamped to floatCount) for the SysV %al rule; not the raw floatIdx, which keeps counting stack-passed floats. */
-        public int floatRegistersUsed() {
-            return Math.min(floatIdx, floatCount);
-        }
-
-        /** True for win64's shared position counter. */
-        public boolean isShared() {
-            return shared;
-        }
-    }
 
     public static String baseOfCanonical(String canonical) {
         return canonical.substring(canonical.lastIndexOf('_') + 1);
@@ -347,16 +266,28 @@ final class BytecodeEmitterCore {
 
     /** Identical string literals anywhere in the program share one id. */
     public String hoistedStringId(String rawValue) {
-        return hoistedStrings.computeIfAbsent(rawValue, v -> "string_id" + (hoistedStrings.size() + 1));
+        String id = hoistedStrings.get(rawValue);
+        if (id == null) {
+            id = "string_id" + (hoistedStrings.size() + 1);
+            hoistedStrings.put(rawValue, id);
+        }
+        return id;
     }
 
     /** Expands root-level unsafe/safe wrappers into their contents (they leave no bytecode); mirrors TypeChecker's flattenRootLines without the validation. */
     public List<Token> flattenRootLinesForEmit(List<Token> lines) {
         List<Token> out = new ArrayList<>();
-        for (Token lineTok : lines) {
+        Deque<Token> work = new ArrayDeque<>();
+        for (int i = lines.size() - 1; i >= 0; i--) {
+            work.push(lines.get(i));
+        }
+        while (!work.isEmpty()) {
+            Token lineTok = work.pop();
             Token t = lineTok.childs.get(0);
             if (t.type == TokenType.KEYWORD && (t.text.equals("unsafe") || t.text.equals("safe"))) {
-                out.addAll(flattenRootLinesForEmit(t.childs));
+                for (int i = t.childs.size() - 1; i >= 0; i--) {
+                    work.push(t.childs.get(i));
+                }
             } else {
                 out.add(lineTok);
             }
@@ -465,11 +396,11 @@ final class BytecodeEmitterCore {
                 String label = "@funcname_next_" + (i + 1);
                 chain.append("PUSH id imut_u64\nPUSH ").append(i + 1).append(" indeterminate_u64\n")
                         .append("EQ imut_u64 indeterminate_u64 indeterminate_bool\nCMP\nJMP ").append(label).append('\n')
-                        .append("PUSH ").append(hoistedStrings.computeIfAbsent(traceFuncNames.get(i), v -> "string_id" + (hoistedStrings.size() + 1)))
+                        .append("PUSH ").append(hoistedStringId(traceFuncNames.get(i)))
                         .append(" static_some_imut_string\nRET static_imut_string\n").append(label).append(":\n");
             }
         }
-        String unknownId = hoistedStrings.computeIfAbsent("?", v -> "string_id" + (hoistedStrings.size() + 1));
+        String unknownId = hoistedStringId("?");
         chain.append("PUSH ").append(unknownId).append(" static_some_imut_string\n");
         out.remove(at);
         out.addAll(at, statementsOf(chain.toString()));
@@ -575,33 +506,44 @@ final class BytecodeEmitterCore {
         return null;
     }
 
-    /** Generic recursive walk (left/right/childs/sub -- every field a Token tree can branch through) over one function body, collecting every Token.resolvedCallTarget it finds (a CALL/RECURSIVE_CALL/method-call/extern-call target -- resolvedCallTarget is never set on anything else) into `queue`, and throwing immediately on any "call()" (INVOKE) use found anywhere within it. */
-    public void collectCallTargetsAndBanInvoke(Token node, Deque<String> queue) {
-        if (node == null) {
-            return;
+    /** Generic walk (left/right/childs/sub -- every field a Token tree can branch through) over one function body, collecting every Token.resolvedCallTarget it finds (a CALL/RECURSIVE_CALL/method-call/extern-call target -- resolvedCallTarget is never set on anything else) into `queue`, and throwing immediately on any "call()" (INVOKE) use found anywhere within it. */
+    public void collectCallTargetsAndBanInvoke(Token root, Deque<String> queue) {
+        // Pre-order on an explicit stack: left, right, next, childs, sub (children pushed in reverse).
+        Deque<Token> work = new ArrayDeque<>();
+        if (root != null) {
+            work.push(root);
         }
-        if (node.chk.resolvedCallTarget != null) {
-            queue.add(node.chk.resolvedCallTarget);
-        }
-        if (node.type == TokenType.OPERATOR && node.text.equals("CALL") && node.left != null
-                && node.left.type == TokenType.VARREF && node.left.text.equals("call")) {
-            throw new CompilerException("type", node.file, node.line,
-                    "'call' (a function-pointer invocation) cannot be used anywhere reachable from a "
-                            + "ghost-table-decorated function -- the target isn't known at compile time, so "
-                            + "there's no way to guarantee it only reaches dundered duplicates too");
-        }
-        collectCallTargetsAndBanInvoke(node.left, queue);
-        collectCallTargetsAndBanInvoke(node.right, queue);
-        collectCallTargetsAndBanInvoke(node.next, queue);
-        if (node.childs != null) {
-            for (Token c : node.childs) {
-                collectCallTargetsAndBanInvoke(c, queue);
+        while (!work.isEmpty()) {
+            Token node = work.pop();
+            if (node.chk.resolvedCallTarget != null) {
+                queue.add(node.chk.resolvedCallTarget);
             }
-        }
-        if (node.sub != null) {
-            for (Token c : node.sub) {
-                collectCallTargetsAndBanInvoke(c, queue);
+            if (node.type == TokenType.OPERATOR && node.text.equals("CALL") && node.left != null
+                    && node.left.type == TokenType.VARREF && node.left.text.equals("call")) {
+                throw new CompilerException("type", node.file, node.line,
+                        "'call' (a function-pointer invocation) cannot be used anywhere reachable from a "
+                                + "ghost-table-decorated function -- the target isn't known at compile time, so "
+                                + "there's no way to guarantee it only reaches dundered duplicates too");
             }
+            if (node.sub != null) {
+                for (int i = node.sub.size() - 1; i >= 0; i--) {
+                    pushIfNotNull(work, node.sub.get(i));
+                }
+            }
+            if (node.childs != null) {
+                for (int i = node.childs.size() - 1; i >= 0; i--) {
+                    pushIfNotNull(work, node.childs.get(i));
+                }
+            }
+            pushIfNotNull(work, node.next);
+            pushIfNotNull(work, node.right);
+            pushIfNotNull(work, node.left);
+        }
+    }
+
+    private static void pushIfNotNull(Deque<Token> work, Token t) {
+        if (t != null) {
+            work.push(t);
         }
     }
 
@@ -727,12 +669,35 @@ final class BytecodeEmitterCore {
         line("STRUCT_END");
     }
 
-    /** `info`'s own real STRUCT_MEMBER/STRUCT_PADDING sequence plus its own total (size, alignment) in bytes -- memoized per struct name; struct types form a DAG (self-referential struct shapes are illegal), so plain recursion is safe and always terminates. */
+    /** `info`'s own real STRUCT_MEMBER/STRUCT_PADDING sequence plus its own total (size, alignment) in bytes -- memoized per struct name. Nested structs are laid out first on an explicit stack (struct types form a DAG). */
     public StructLayout computeStructLayout(StructInfo info) {
         StructLayout cached = structLayoutCache.get(info.name);
         if (cached != null) {
             return cached;
         }
+        Deque<StructInfo> pendingStructs = new ArrayDeque<>();
+        pendingStructs.push(info);
+        while (!pendingStructs.isEmpty()) {
+            StructInfo cur = pendingStructs.peek();
+            if (structLayoutCache.containsKey(cur.name)) {
+                pendingStructs.pop();
+                continue;
+            }
+            StructInfo missing = layoutStructOrMissing(cur);
+            if (missing == null) {
+                pendingStructs.pop();
+                continue;
+            }
+            if (pendingStructs.contains(missing)) {
+                throw new IllegalStateException("struct '" + missing.name + "' contains itself");
+            }
+            pendingStructs.push(missing);
+        }
+        return structLayoutCache.get(info.name);
+    }
+
+    /** Lays `info` out and caches it, or returns the first nested struct whose layout is not cached yet (nothing is cached then). */
+    private StructInfo layoutStructOrMissing(StructInfo info) {
         List<StructLayoutEntry> entries = new ArrayList<>();
         long offset = 0;
         long maxAlign = 1;
@@ -743,7 +708,10 @@ final class BytecodeEmitterCore {
         }
         for (Map.Entry<String, TypeInfo> e : info.members.entrySet()) {
             String canonical = e.getValue().canonical();
-            long[] sizeAlign = layoutSizeAndAlignOf(canonical);
+            long[] sizeAlign = layoutSizeAndAlignOrMissing(canonical);
+            if (sizeAlign == null) {
+                return layoutMissingStruct;
+            }
             long align = sizeAlign[1] <= 0 ? 1 : sizeAlign[1];
             long misalign = offset % align;
             if (misalign != 0) {
@@ -763,13 +731,26 @@ final class BytecodeEmitterCore {
             entries.add(StructLayoutEntry.padding(pad));
             offset += pad;
         }
-        StructLayout layout = new StructLayout(entries, offset, maxAlign);
-        structLayoutCache.put(info.name, layout);
-        return layout;
+        structLayoutCache.put(info.name, new StructLayout(entries, offset, maxAlign));
+        return null;
     }
+
+    /** The nested struct layoutSizeAndAlignOrMissing could not size because its layout is not cached. */
+    private StructInfo layoutMissingStruct;
 
     /** [size, align] in bytes for a member's canonical type text: any storage-bearing type is one 8-byte pointer word, otherwise strips to the base type (layoutSizeAndAlignOfBaseType). */
     public long[] layoutSizeAndAlignOf(String canonical) {
+        while (true) {
+            long[] r = layoutSizeAndAlignOrMissing(canonical);
+            if (r != null) {
+                return r;
+            }
+            computeStructLayout(layoutMissingStruct);
+        }
+    }
+
+    /** layoutSizeAndAlignOf without computing nested layouts: null (and layoutMissingStruct set) when a nested struct is not cached yet. */
+    private long[] layoutSizeAndAlignOrMissing(String canonical) {
         String rest = canonical;
         int firstUnderscore = rest.indexOf('_');
         if (firstUnderscore > 0 && LAYOUT_STORAGE_KEYWORDS.contains(rest.substring(0, firstUnderscore))) {
@@ -786,39 +767,53 @@ final class BytecodeEmitterCore {
         return layoutSizeAndAlignOfBaseType(baseType);
     }
 
-    /** [size, align] for a bare base type: range 16/8; fixed array = element align, count * element size; dynarray = one 8-byte handle; nested struct recurses; enum or unknown = one 8-byte word. */
-    public long[] layoutSizeAndAlignOfBaseType(String baseType) {
-        if (baseType.equals("range") || baseType.startsWith("range(")) {
-            return new long[]{16, 8};
-        }
-        if (!baseType.isEmpty() && baseType.charAt(baseType.length() - 1) == ']') {
-            int open = baseType.lastIndexOf('[');
-            if (open >= 0) {
-                String digits = baseType.substring(open + 1, baseType.length() - 1);
-                boolean allDigits = !digits.isEmpty();
-                for (int i = 0; allDigits && i < digits.length(); i++) {
-                    allDigits = Character.isDigit(digits.charAt(i));
-                }
-                String elem = baseType.substring(0, open);
-                long[] elemSizeAlign = layoutSizeAndAlignOfBaseType(elem);
-                long length = allDigits ? Long.parseLong(digits) : -1;
-                long size = length < 0 ? LAYOUT_POINTER_SIZE : length * elemSizeAlign[0];
-                return new long[]{size, elemSizeAlign[1]};
+    /** [size, align] for a bare base type: range 16/8; fixed array = element align, count * element size (dimensions peeled outermost first, applied innermost first); dynarray = one 8-byte handle; nested struct = its cached layout; enum or unknown = one 8-byte word. Null when a nested struct is not cached. */
+    private long[] layoutSizeAndAlignOfBaseType(String baseType) {
+        List<Long> lengths = new ArrayList<>();
+        String t = baseType;
+        long[] base;
+        while (true) {
+            if (t.equals("range") || t.startsWith("range(")) {
+                base = new long[]{16, 8};
+                break;
             }
+            if (!t.isEmpty() && t.charAt(t.length() - 1) == ']') {
+                int open = t.lastIndexOf('[');
+                if (open >= 0) {
+                    String digits = t.substring(open + 1, t.length() - 1);
+                    boolean allDigits = !digits.isEmpty();
+                    for (int i = 0; allDigits && i < digits.length(); i++) {
+                        allDigits = Character.isDigit(digits.charAt(i));
+                    }
+                    lengths.add(allDigits ? Long.parseLong(digits) : -1L);
+                    t = t.substring(0, open);
+                    continue;
+                }
+            }
+            if (t.startsWith("dynarray(") || t.startsWith("unsafe_dynarray(")) {
+                base = new long[]{LAYOUT_POINTER_SIZE, LAYOUT_POINTER_SIZE};
+                break;
+            }
+            StructInfo nested = checker.declarations.getStructs().get(t);
+            if (nested != null) {
+                StructLayout nestedLayout = structLayoutCache.get(nested.name);
+                if (nestedLayout == null) {
+                    layoutMissingStruct = nested;
+                    return null;
+                }
+                base = new long[]{nestedLayout.size, nestedLayout.align};
+                break;
+            }
+            Long prim = LAYOUT_PRIMITIVE_SIZE.get(t);
+            base = prim != null ? new long[]{prim, prim} : new long[]{LAYOUT_POINTER_SIZE, LAYOUT_POINTER_SIZE};
+            break;
         }
-        if (baseType.startsWith("dynarray(") || baseType.startsWith("unsafe_dynarray(")) {
-            return new long[]{LAYOUT_POINTER_SIZE, LAYOUT_POINTER_SIZE};
+        long size = base[0];
+        for (int k = lengths.size() - 1; k >= 0; k--) {
+            long length = lengths.get(k);
+            size = length < 0 ? LAYOUT_POINTER_SIZE : length * size;
         }
-        StructInfo nested = checker.declarations.getStructs().get(baseType);
-        if (nested != null) {
-            StructLayout nestedLayout = computeStructLayout(nested);
-            return new long[]{nestedLayout.size, nestedLayout.align};
-        }
-        Long prim = LAYOUT_PRIMITIVE_SIZE.get(baseType);
-        if (prim != null) {
-            return new long[]{prim, prim};
-        }
-        return new long[]{LAYOUT_POINTER_SIZE, LAYOUT_POINTER_SIZE};
+        return new long[]{size, base[1]};
     }
 
     public void emitEnum(EnumInfo info) {
@@ -874,7 +869,7 @@ final class BytecodeEmitterCore {
         Token argvTok = syntheticVarref("argv", argvType.canonical());
         // Empty destruct list: "args" does not exist yet.
         stageCallSiteForUnwindNames(Collections.emptyList(), Collections.emptyList(), userMain.funcToken);
-        hub.operations.emitCallSequence(null, Arrays.asList(argcTok, argvTok), () -> line("CALL make_safe_args"),
+        hub.operations.emitCallSequenceTop(userMain.funcToken, Arrays.asList(argcTok, argvTok), "CALL make_safe_args",
                 argsType.canonical(), makeSafeArgs.callConvention);
         line("ASSIGN " + argsType.canonical() + " " + argsType.canonical() + " " + argsType.canonical());
 
@@ -883,7 +878,7 @@ final class BytecodeEmitterCore {
         boolean isVoid = userMain.returnType.canonical().equals("imut_void");
         // Empty destruct list: "args" is moved into this call.
         stageCallSiteForUnwindNames(Collections.emptyList(), Collections.emptyList(), userMain.funcToken);
-        hub.operations.emitCallSequence(null, Arrays.asList(argsTok), () -> line("CALL __caspien_main"),
+        hub.operations.emitCallSequenceTop(userMain.funcToken, Arrays.asList(argsTok), "CALL __caspien_main",
                 isVoid ? null : userMain.returnType.canonical(), userMain.callConvention);
         if (isVoid) {
             line("RET imut_void");
@@ -1068,10 +1063,18 @@ final class BytecodeEmitterCore {
      * Emits the call node a "try" directly wraps with the one-shot `pendingTryCatchLabel` set, so its staging write lands in the catch block. The
      * clear afterwards is only a safety net. No resume label is needed: checkTry requires every catch body to terminate. See docs/BytecodeEmitter.md, "Call-site unwinding".
      */
-    public void emitTryGuardedCall(Token tryTok) {
-        pendingTryCatchLabel = tryCatchLabels.get(tryTok);
-        hub.statements.emitExpr(tryTok.operand());
+    public EmitFrame tryGuardedCallFrame(Token tryTok) {
+        return new EmitFrame(EmitFrame.TRY_GUARDED, tryTok);
+    }
+
+    public int stepTryGuardedCall(EmitFrame f) {
+        if (f.phase == 0) {
+            pendingTryCatchLabel = tryCatchLabels.get(f.node);
+            f.phase = 1;
+            return f.callExpr(f.node.operand());
+        }
         pendingTryCatchLabel = null;
+        return EmitFrame.DONE;
     }
 
     /**
@@ -1092,7 +1095,7 @@ final class BytecodeEmitterCore {
             for (String name : pad.destructNames) {
                 line("GT_DESTRUCT " + name);
             }
-            emitUnlockList(pad.unlockCalls, pad.at);
+            runUnlockList(pad.unlockCalls, pad.at);
             if (emittedName.equals("main")) {
                 line("EXIT");
             } else if (info.isAsync) {
@@ -1128,7 +1131,7 @@ final class BytecodeEmitterCore {
             termSites.add(new String[]{emittedName, null, info.funcToken.file, String.valueOf(info.funcToken.line), "func"});
         }
         {
-            DocComments.Doc td = DocComments.find(info.funcToken.file, info.funcToken.line, "termination", "func");
+            DocComment td = DocComments.find(info.funcToken.file, info.funcToken.line, "termination", "func");
             if (td != null) {
                 funcTermLabels.put(emittedName, td);
             }
@@ -1151,16 +1154,16 @@ final class BytecodeEmitterCore {
         emitParamDecls(info.paramNames, canonicalParamTypes(info));
         // Every ALLOC/ALLOC_STATIC of the whole function (any nesting depth) is hoisted here: statics, then gt_routine_address, then ordinary locals.
         // emitBlock and friends emit only the initializing ASSIGNs. Parameters stay ARG lines. See docs/BytecodeEmitter.md, "ALLOC hoisting".
-        List<Runnable> staticAllocs = new ArrayList<>();
-        List<Runnable> ordinaryAllocs = new ArrayList<>();
+        List<HoistedAlloc> staticAllocs = new ArrayList<>();
+        List<HoistedAlloc> ordinaryAllocs = new ArrayList<>();
         hub.statements.collectHoistedAllocs(info.funcToken.childs, staticAllocs, ordinaryAllocs);
-        for (Runnable r : staticAllocs) {
-            r.run();
+        for (HoistedAlloc alloc : staticAllocs) {
+            hub.statements.emitHoistedAlloc(alloc);
         }
         emitGtRoutineAlloc(info, emittedName, gtSuppressed);
         final int allocScanStart = out.size();
-        for (Runnable r : ordinaryAllocs) {
-            r.run();
+        for (HoistedAlloc alloc : ordinaryAllocs) {
+            hub.statements.emitHoistedAlloc(alloc);
         }
         requireOneOwnsTypePerSlotName(info, out.slice(allocScanStart, out.size()));
         // Locals discovered while emitting the body (see `declareHiddenLocal`) get their ALLOC lines spliced in right here once the
@@ -1174,8 +1177,8 @@ final class BytecodeEmitterCore {
         emitGtRoutineBody(info, emittedName, gtSuppressed);
         hub.statements.emitHoistedCatchBlocks(info);
         // isEntryPointBody is true for the function emitted as "main" (the post-dundering name), i.e. also for an @event_loop function.
-        emitBlock(info.funcToken.childs, emittedName.equals("main"));
-        emitDestructList(info.funcToken.chk.destructOnExit, info.funcToken);
+        runBlock(info.funcToken.childs, emittedName.equals("main"));
+        runDestructList(info.funcToken.chk.destructOnExit, info.funcToken);
         // Every call site is known now: emit the landing pads after the natural-end destruct list, before FUNC_END.
         emitCallSiteUnwindLandingPads(info, emittedName, gtSuppressed);
         line("FUNC_END");
@@ -1263,46 +1266,78 @@ final class BytecodeEmitterCore {
 
     // ---- blocks: hoisted ALLOCs, then each statement in order -------------
 
-    public void emitBlock(List<Token> lines) {
-        emitBlock(lines, false);
+    public EmitFrame blockFrame(List<Token> lines, boolean isEntryPointBody) {
+        EmitFrame f = new EmitFrame(EmitFrame.BLOCK, null);
+        f.toks = lines;
+        f.b1 = isEntryPointBody;
+        return f;
+    }
+
+    /** Runs a block outside the emitter machine (function bodies, hoisted catch bodies). */
+    public void runBlock(List<Token> lines, boolean isEntryPointBody) {
+        hub.driver.run(blockFrame(lines, isEntryPointBody));
     }
 
     /**
-     * isEntryPointBody is true for the single block of the function emitted as "main": it gets GT_INIT (when owns/ref/dyn/new is used anywhere),
-     * after the hoisted ALLOCs and before any expression. A `let` emits only its ASSIGN here; the ALLOC was hoisted.
+     * isEntryPointBody (b1) is true for the single block of the function emitted as "main": it gets GT_INIT (when owns/ref/dyn/new is used anywhere),
+     * after the hoisted ALLOCs and before any expression. A `let` emits only its ASSIGN here; the ALLOC was hoisted. Frame: toks = the lines, i = next one.
      */
-    public void emitBlock(List<Token> lines, boolean isEntryPointBody) {
-        if (isEntryPointBody && checker.declarations.usesOwnsRefDynNew()) {
-            Token at = currentFuncInfo != null && currentFuncInfo.funcToken != null ? currentFuncInfo.funcToken
-                    : (lines.isEmpty() ? null : lines.get(0));
-            requireGhostTableFunctionPresent("gt_init", at);
-            requireGhostTableFunctionPresent("gt_moved", at);
-            line("GT_INIT");
+    public int stepBlock(EmitFrame f) {
+        List<Token> lines = f.toks;
+        if (f.phase == 0) {
+            if (f.b1 && checker.declarations.usesOwnsRefDynNew()) {
+                Token at = currentFuncInfo != null && currentFuncInfo.funcToken != null ? currentFuncInfo.funcToken
+                        : (lines.isEmpty() ? null : lines.get(0));
+                requireGhostTableFunctionPresent("gt_init", at);
+                requireGhostTableFunctionPresent("gt_moved", at);
+                line("GT_INIT");
+            }
+            f.i = 0;
+            f.phase = 1;
         }
-        for (Token lineTok : lines) {
-            Token stmt = lineTok.childs.get(0);
+        while (f.i < lines.size()) {
+            Token stmt = lines.get(f.i++).childs.get(0);
             Token letTok = hub.statements.letDeclarationOf(stmt);
             if (letTok != null && letTok.isStatic) {
                 continue; // no runtime init to emit -- the value is already baked into ALLOC_STATIC, hoisted to the top of the function
             }
-            hub.statements.emitStatement(stmt);
+            EmitFrame statement = hub.statements.statementFrame(stmt);
+            if (statement != null) {
+                return f.call(statement);
+            }
         }
+        return EmitFrame.DONE;
     }
 
     /**
      * One GT_DESTRUCT per name of TypeChecker's precomputed list (reverse declaration order, moved and return-preserved names already excluded).
-     * Requires a function decorated @gt_destruct only when something is actually emitted.
+     * Requires a function decorated @gt_destruct only when something is actually emitted. Null when there is nothing to emit.
      */
-    public void emitDestructList(List<String> names, Token at) {
+    public EmitFrame destructListFrame(List<String> names, Token at) {
         if (names == null || names.isEmpty()) {
-            return;
+            return null;
         }
         if (inGtSuppressedContext) {
             // Silent skip: implicit compiler-inserted behavior (unlike a bare 'match' condition the programmer wrote, which errors).
-            return;
+            return null;
         }
         requireGhostTableFunctionPresent("gt_destruct", at);
-        for (String name : names) {
+        EmitFrame f = new EmitFrame(EmitFrame.DESTRUCT_LIST, at);
+        f.strs = names;
+        return f;
+    }
+
+    public void runDestructList(List<String> names, Token at) {
+        EmitFrame f = destructListFrame(names, at);
+        if (f != null) {
+            hub.driver.run(f);
+        }
+    }
+
+    /** Frame: strs = the names, i = next name. */
+    public int stepDestructList(EmitFrame f) {
+        while (f.i < f.strs.size()) {
+            String name = f.strs.get(f.i++);
             line("GT_DESTRUCT " + name);
             // Null the slot after its destruct: a loop-body owns local shares one hoisted slot across iterations, and a stale freed pointer could be
             // destructed again after the allocator reused the address.
@@ -1311,26 +1346,42 @@ final class BytecodeEmitterCore {
                 // an inline owning struct: its members were dropped by the GT_DESTRUCT above; leave them null
                 Token local = new Token(TokenType.VARREF, name, 0, "");
                 local.chk.resolvedType = type.canonical();
-                hub.statements.emitInlineOwnsNullOut(local, type.baseType);
+                return f.call(hub.statements.inlineNullOutFrame(local, type.baseType));
             } else if (type != null) {
                 line("ADDR " + name + " " + type.canonical());
                 line("PUSH null " + type.canonical());
                 line("ASSIGN " + type.canonical() + " " + type.canonical() + " " + type.canonical());
             }
         }
+        return EmitFrame.DONE;
     }
 
-    /** Lock-release counterpart of emitDestructList: emits TypeChecker's synthesized unlock() calls (reverse acquisition order) as ordinary expressions. */
-    public void emitUnlockList(List<Token> unlockCalls, Token at) {
+    /** Lock-release counterpart of the destruct list: TypeChecker's synthesized unlock() calls (reverse acquisition order) as ordinary expressions. Null when there are none. */
+    public EmitFrame unlockListFrame(List<Token> unlockCalls, Token at) {
         if (unlockCalls == null || unlockCalls.isEmpty()) {
-            return;
+            return null;
         }
-        for (Token unlockCall : unlockCalls) {
-            hub.statements.emitExpr(unlockCall);
+        EmitFrame f = new EmitFrame(EmitFrame.UNLOCK_LIST, at);
+        f.toks = unlockCalls;
+        return f;
+    }
+
+    public void runUnlockList(List<Token> unlockCalls, Token at) {
+        EmitFrame f = unlockListFrame(unlockCalls, at);
+        if (f != null) {
+            hub.driver.run(f);
         }
     }
 
-    /** Shared by emitDestructList/emitMatchCondition -- see emitDestructList's own doc comment for the rule this enforces. */
+    /** Frame: toks = the calls, i = next call. */
+    public int stepUnlockList(EmitFrame f) {
+        if (f.i < f.toks.size()) {
+            return f.callExpr(f.toks.get(f.i++));
+        }
+        return EmitFrame.DONE;
+    }
+
+    /** Shared by the destruct list and the match conditions -- see destructListFrame's doc comment for the rule this enforces. */
     public void requireGhostTableFunctionPresent(String decoratorName, Token at) {
         if (checker.declarations.getGhostTableFunction(decoratorName) == null) {
             throw new CompilerException("bytecode", at.file, at.line,

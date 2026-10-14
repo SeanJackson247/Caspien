@@ -11,7 +11,9 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -52,37 +54,66 @@ public class ImportResolver {
     private final Set<String> resolvedFiles = new LinkedHashSet<>();
     private final List<String> resolutionStack = new ArrayList<>();
 
-    /** Resolves imports in an already-compiled (through tree-building) file's top-level statements, in place. */
+    /**
+     * Resolves imports in an already-compiled (through tree-building) file's top-level statements, in place.
+     * An explicit stack of files being resolved (no recursion): an import line starts a frame for the imported
+     * file, and when that frame is done its lines are spliced into its parent's result at the import's place.
+     */
     public List<Token> resolve(List<Token> lines, String currentFilePath) {
+        Deque<ImportFrame> stack = new ArrayDeque<>();
+        stack.push(enter(lines, currentFilePath));
+        while (true) {
+            ImportFrame f = stack.peek();
+            if (f.jobs != null && f.jobIdx < f.jobs.size()) {
+                ImportJob job = f.jobs.get(f.jobIdx++);
+                ImportFrame child = startFile(job);
+                if (child != null) {
+                    stack.push(child);
+                }
+                continue;
+            }
+            f.jobs = null;
+            if (f.idx < f.lines.size()) {
+                Token lineTok = f.lines.get(f.idx++);
+                List<Token> tokens = lineTok.childs;
+                if (tokens.size() == 1 && tokens.get(0).type == TokenType.KEYWORD
+                        && tokens.get(0).text.equals("import")) {
+                    f.jobs = importJobs(tokens.get(0), f.currentFilePath);
+                    f.jobIdx = 0;
+                } else {
+                    f.result.add(lineTok);
+                }
+                continue;
+            }
+            resolutionStack.remove(resolutionStack.size() - 1);
+            stack.pop();
+            if (stack.isEmpty()) {
+                return f.result;
+            }
+            stack.peek().result.addAll(f.result);
+        }
+    }
+
+    private ImportFrame enter(List<Token> lines, String currentFilePath) {
         String canonical = canonicalize(currentFilePath);
         resolutionStack.add(canonical);
         resolvedFiles.add(canonical);
-
-        List<Token> result = new ArrayList<>();
-        for (Token lineTok : lines) {
-            List<Token> tokens = lineTok.childs;
-            if (tokens.size() == 1 && tokens.get(0).type == TokenType.KEYWORD
-                    && tokens.get(0).text.equals("import")) {
-                result.addAll(resolveImport(tokens.get(0), currentFilePath));
-            } else {
-                result.add(lineTok);
-            }
-        }
-
-        resolutionStack.remove(resolutionStack.size() - 1);
-        return result;
+        return new ImportFrame(lines, currentFilePath);
     }
 
-    private List<Token> resolveImport(Token importTok, String currentFilePath) {
+    /** The files one import line brings in, in order: one for a plain import, one per .caspien file for a wildcard. */
+    private List<ImportJob> importJobs(Token importTok, String currentFilePath) {
         Token pathTok = importTok.childs.get(0);
         String importPath = pathTok.literalValue != null ? pathTok.literalValue : pathTok.text;
         importPath = importPath.replace("{target}", FsPolicy.platform); // platform-specific stdlib file, e.g. fs_{target}.caspien
 
         Path importerDir = Paths.get(currentFilePath).toAbsolutePath().getParent();
         if (importPath.equals("*") || importPath.endsWith("/*")) {
-            return resolveWildcard(importTok, currentFilePath, importerDir, importPath);
+            return wildcardJobs(importTok, currentFilePath, importerDir, importPath);
         }
-        return resolveFile(importTok, currentFilePath, importerDir, importPath);
+        List<ImportJob> one = new ArrayList<>();
+        one.add(new ImportJob(importTok, currentFilePath, importerDir, importPath));
+        return one;
     }
 
     /**
@@ -90,7 +121,7 @@ public class ImportResolver {
      * had its own import line. The folder must exist and hold at least one .caspien file (a typo must not import nothing).
      * The folder itself is recorded as a dependency so that adding or removing a file invalidates the build cache.
      */
-    private List<Token> resolveWildcard(Token importTok, String currentFilePath, Path importerDir, String importPath) {
+    private List<ImportJob> wildcardJobs(Token importTok, String currentFilePath, Path importerDir, String importPath) {
         String dirPart = importPath.equals("*") ? "." : importPath.substring(0, importPath.length() - 2);
         if (dirPart.isEmpty()) {
             dirPart = "/";
@@ -114,15 +145,20 @@ public class ImportResolver {
         }
         java.util.Collections.sort(names);
         DepsLog.record(dir);
-        List<Token> result = new ArrayList<>();
+        List<ImportJob> jobs = new ArrayList<>();
         for (String n : names) {
             String one = (dirPart.equals("/") ? "/" : dirPart + "/") + n;
-            result.addAll(resolveFile(importTok, currentFilePath, importerDir, one));
+            jobs.add(new ImportJob(importTok, currentFilePath, importerDir, one));
         }
-        return result;
+        return jobs;
     }
 
-    private List<Token> resolveFile(Token importTok, String currentFilePath, Path importerDir, String importPath) {
+    /** One file import: null when the file is already resolved elsewhere (dropped), else a new frame for its lines. */
+    private ImportFrame startFile(ImportJob job) {
+        Token importTok = job.importTok;
+        String currentFilePath = job.currentFilePath;
+        String importPath = job.importPath;
+        Path importerDir = job.importerDir;
         Path resolvedPath = (importerDir != null ? importerDir : Paths.get("."))
                 .resolve(importPath).normalize();
         String resolvedPathStr = resolvedPath.toString();
@@ -133,7 +169,7 @@ public class ImportResolver {
                     "circular import: " + cycleDescription(canonical));
         }
         if (resolvedFiles.contains(canonical)) {
-            return new ArrayList<>(); // already resolved and spliced in elsewhere -- drop this import
+            return null; // already resolved and spliced in elsewhere -- drop this import
         }
 
         String source;
@@ -148,7 +184,7 @@ public class ImportResolver {
 
         List<Token> importedLines = SourceParser.parse(source, resolvedPathStr, importPath);
 
-        return resolve(importedLines, resolvedPathStr);
+        return enter(importedLines, resolvedPathStr);
     }
 
     private String canonicalize(String path) {

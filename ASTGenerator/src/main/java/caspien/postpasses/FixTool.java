@@ -22,6 +22,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 import caspien.typechecker.SplitInfo;
+import caspien.config.DocComment;
 
 /**
  * `--fix MODE[,MODE] [--write] [--fix-stdlib]`: the compiler as a tool that edits source, text only (it inserts whole comment lines and changes
@@ -93,19 +94,10 @@ public final class FixTool {
         return abs.startsWith(base) ? base.relativize(abs).toString() : abs.toString();
     }
 
-    /** What a run found: the text report, and the unsafe blocks that would change ("file\tline" per line, for the per-block fallback). */
-    public static final class Run {
-        public final String report;
-        public final String blocks;
 
-        Run(String report, String blocks) {
-            this.report = report;
-            this.blocks = blocks;
-        }
-    }
 
     /** `only` (nullable) limits unsafe-split to one block, "file:line". */
-    public static Run run(String modes, boolean write, boolean includeStdlib, BytecodeEmitter em, String hob, String backupDir,
+    public static FixRun run(String modes, boolean write, boolean includeStdlib, BytecodeEmitter em, String hob, String backupDir,
                    List<SplitInfo> splitInfo, String only) throws IOException {
         FixTool t = new FixTool();
         Set<String> want = new LinkedHashSet<>(java.util.Arrays.asList(modes.split(",")));
@@ -147,7 +139,7 @@ public final class FixTool {
         if (write && (t.count > 0 || t.splits > 0)) {
             t.apply(backupDir);
         }
-        return new Run(sb.toString(), blocks);
+        return new FixRun(sb.toString(), blocks);
     }
 
     private void planTermination(BytecodeEmitter em, String hob, List<String> files) throws IOException {
@@ -176,7 +168,7 @@ public final class FixTool {
             String file = DocComments.norm(s[2]);
             int line = Integer.parseInt(s[3]);
             String kind = s[4];
-            DocComments.Doc d = DocComments.find(s[2], line, "termination", kind);
+            DocComment d = DocComments.find(s[2], line, "termination", kind);
             if (d != null) {
                 if (e.getValue().size() == 1 && !e.getValue().contains(d.text)) {
                     notes.add(show(file) + ":" + line + " the `" + kind + "` is labelled `" + d.text + "` but its class is `" + e.getValue().iterator().next() + "` (labels are never changed by --fix)");
@@ -233,11 +225,7 @@ public final class FixTool {
         return t.startsWith("//") || t.startsWith("/*") || t.startsWith("*") || t.startsWith("@");     // a decorator line belongs to the statement below it
     }
 
-    /** One run of direct children that end up in the same block (or, with no tags, outside every block). */
-    private static final class Unit {
-        int from, to;
-        Set<String> tags;
-    }
+
 
     /**
      * `unsafe-split`: rewrite every written `unsafe` block (the type checker told us which tags each direct child statement of it needed) into
@@ -353,10 +341,10 @@ public final class FixTool {
             }
             start[n] = close;
             // units: tags per child, a bare `assume match` binds everything after it
-            List<Unit> units = new ArrayList<>();
+            List<FixUnit> units = new ArrayList<>();
             boolean bound = false;
             for (int i = 0; i < n; i++) {
-                Unit u = null;
+                FixUnit u = null;
                 if (bound && !units.isEmpty()) {
                     u = units.get(units.size() - 1);
                     u.to = i;
@@ -364,7 +352,7 @@ public final class FixTool {
                     u.tags.addAll(si.childTags.get(i));
                     continue;
                 }
-                u = new Unit();
+                u = new FixUnit();
                 u.from = i;
                 u.to = i;
                 u.tags = new java.util.TreeSet<>(si.childTags.get(i));
@@ -373,9 +361,9 @@ public final class FixTool {
                     bound = true;
                 }
             }
-            List<Unit> groups = new ArrayList<>();
-            for (Unit u : units) {
-                Unit last = groups.isEmpty() ? null : groups.get(groups.size() - 1);
+            List<FixUnit> groups = new ArrayList<>();
+            for (FixUnit u : units) {
+                FixUnit last = groups.isEmpty() ? null : groups.get(groups.size() - 1);
                 if (last != null && last.tags.equals(u.tags)) {
                     last.to = u.to;
                 } else {
@@ -388,7 +376,7 @@ public final class FixTool {
             // justification written above the block stays with the first new block
             int regionStart = L;
             List<String> justify = null;
-            DocComments.Doc jd = DocComments.find(si.file, L, "justify", "unsafe");
+            DocComment jd = DocComments.find(si.file, L, "justify", "unsafe");
             if (jd != null && jd.commentLine >= 1 && jd.commentLine < L) {
                 regionStart = jd.commentLine;
                 justify = new ArrayList<>(lines.subList(jd.commentLine - 1, L - 1));
@@ -398,7 +386,7 @@ public final class FixTool {
             String unit = childIndent.substring(blockIndent.length());
             StringBuilder desc = new StringBuilder();
             int plain = 0;
-            for (Unit g : groups) {
+            for (FixUnit g : groups) {
                 int from = start[g.from], to = start[g.to + 1] - 1;
                 List<String> body = new ArrayList<>(lines.subList(from - 1, to));
                 List<String> trailing = new ArrayList<>();

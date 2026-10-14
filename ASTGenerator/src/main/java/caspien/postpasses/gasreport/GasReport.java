@@ -15,6 +15,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import caspien.config.DocComment;
 
 /**
  * `--audit`, worst-case execution cost in ABSTRACT GAS. Works on the emitted high-order bytecode (before any optimiser pass), so the figure
@@ -40,7 +41,7 @@ public final class GasReport {
     public static final Map<String, String> POS = GasReportCore.POS;
     public static final Map<String, Long> SPIN = GasReportCore.SPIN;
 
-    public static GasReportCore.Result build(String hob) {
+    public static Result build(String hob) {
         return GasReportCore.build(hob);
     }
 
@@ -52,23 +53,78 @@ public final class GasReport {
         return GasReportCore.classify(hob, sites);
     }
 
-    public static void checkLabels(String hob, Map<String, DocComments.Doc> funcs, Map<String, DocComments.Doc> loops) {
+    public static void checkLabels(String hob, Map<String, DocComment> funcs, Map<String, DocComment> loops) {
         GasReportCore.checkLabels(hob, funcs, loops);
     }
 
-    /** Evaluates the reverse-Polish lines from..to-1 (PUSH of a literal / variable / range field, ADD SUB MUL INC DEC) as seen at line `at`; null when anything else shows up. */
-    public List<GasReportCore.V> evalSeg(GasReportCore.Fn f, int from, int to, int at, int depth) {
-        List<GasReportCore.V> st = new ArrayList<>();
-        for (int i = from; i < to; i++) {
-            String[] p = core.ln[i].split(" ");
+    public List<V> evalSeg(Fn f, int from, int to, int at, int depth) {
+        return (List<V>) evalRun(segFrame(f, from, to, at, depth));
+    }
+
+    private GasEvalFrame segFrame(Fn f, int from, int to, int at, int depth) {
+        GasEvalFrame fr = new GasEvalFrame(GasEvalFrame.EVAL_SEG, f);
+        fr.from = from;
+        fr.to = to;
+        fr.at = at;
+        fr.depth = depth;
+        fr.i = from;
+        fr.st = new ArrayList<>();
+        return fr;
+    }
+
+    /** Runs the evaluator frames (evalSeg, valueAt, stableValue call each other) on an explicit stack; each step may ask for a child frame. */
+    private Object evalRun(GasEvalFrame root) {
+        Deque<GasEvalFrame> stack = new ArrayDeque<>();
+        stack.push(root);
+        while (true) {
+            GasEvalFrame fr = stack.peek();
+            GasEvalFrame child;
+            switch (fr.kind) {
+                case GasEvalFrame.EVAL_SEG: child = stepEvalSeg(fr); break;
+                case GasEvalFrame.VALUE_AT: child = stepValueAt(fr); break;
+                default: child = stepStable(fr); break;
+            }
+            if (child != null) {
+                stack.push(child);
+                continue;
+            }
+            stack.pop();
+            if (stack.isEmpty()) {
+                return fr.result;
+            }
+            stack.peek().got = fr.result;
+        }
+    }
+
+    private GasEvalFrame stepEvalSeg(GasEvalFrame fr) {
+        Fn f = fr.f;
+        List<V> st = fr.st;
+        if (fr.phase == 1) {
+            // the value of a variable asked for below is in `got`
+            fr.phase = 0;
+            V v = (V) fr.got;
+            if (v == null) {
+                return fr.finish(null);
+            }
+            if (fr.field == null) {
+                st.add(v);
+            } else if (v.range) {
+                st.add(V.sc(fr.field.equals("start") ? v.a : v.b));
+            } else {
+                return fr.finish(null);
+            }
+            fr.i++;
+        }
+        for (; fr.i < fr.to; fr.i++) {
+            String[] p = core.ln[fr.i].split(" ");
             switch (p[0]) {
                 case "PUSH": {
                     if (p.length < 2) {
-                        return null;
+                        return fr.finish(null);
                     }
                     String t = p[1];
                     if (t.matches("\\d+")) {
-                        st.add(GasReportCore.V.sc(new BigInteger(t)));
+                        st.add(V.sc(new BigInteger(t)));
                         break;
                     }
                     String base = t, field = null;
@@ -77,53 +133,66 @@ public final class GasReport {
                         base = t.substring(0, d);
                         field = t.substring(d + 1);
                     }
-                    GasReportCore.V v = valueAt(f, base, at, depth + 1);
-                    if (v == null) {
-                        return null;
-                    }
-                    if (field == null) {
-                        st.add(v);
-                    } else if (v.range) {
-                        st.add(GasReportCore.V.sc(field.equals("start") ? v.a : v.b));
-                    } else {
-                        return null;
-                    }
-                    break;
+                    fr.field = field;
+                    fr.phase = 1;
+                    return valueFrame(f, base, fr.at, fr.depth + 1);
                 }
                 case "ADD": case "SUB": case "MUL": {
                     if (st.size() < 2 || GasReportCore.narrowType(p)) {
-                        return null;
+                        return fr.finish(null);
                     }
-                    GasReportCore.V y = st.remove(st.size() - 1), x = st.remove(st.size() - 1);
+                    V y = st.remove(st.size() - 1), x = st.remove(st.size() - 1);
                     if (x.range || y.range) {
-                        return null;
+                        return fr.finish(null);
                     }
                     BigInteger r = p[0].equals("ADD") ? x.a.add(y.a) : p[0].equals("SUB") ? x.a.subtract(y.a) : x.a.multiply(y.a);
                     if (!GasReportCore.small(r)) {
-                        return null;
+                        return fr.finish(null);
                     }
-                    st.add(GasReportCore.V.sc(r));
+                    st.add(V.sc(r));
                     break;
                 }
                 case "INC": case "DEC": {
                     if (st.isEmpty() || GasReportCore.narrowType(p) || st.get(st.size() - 1).range) {
-                        return null;
+                        return fr.finish(null);
                     }
                     BigInteger r = st.remove(st.size() - 1).a.add(BigInteger.valueOf(p[0].equals("INC") ? 1 : -1));
                     if (!GasReportCore.small(r)) {
-                        return null;
+                        return fr.finish(null);
                     }
-                    st.add(GasReportCore.V.sc(r));
+                    st.add(V.sc(r));
                     break;
                 }
                 default:
-                    return null;
+                    return fr.finish(null);
             }
         }
-        return st;
+        return fr.finish(st);
     }
 
-    public boolean addressTaken(GasReportCore.Fn f, String var) {
+    private GasEvalFrame valueFrame(Fn f, String var, int at, int depth) {
+        GasEvalFrame fr = new GasEvalFrame(GasEvalFrame.VALUE_AT, f);
+        fr.var = var;
+        fr.at = at;
+        fr.depth = depth;
+        return fr;
+    }
+
+    /** The value of the (from, to) segment read as one variable assignment (scalar or range), or null. */
+    private V assignedValue(String[] p, List<V> st) {
+        if (st == null) {
+            return null;
+        }
+        if (p.length >= 3 && p[2].contains("range")) {
+            if (st.size() == 2 && !st.get(0).range && !st.get(1).range) {
+                return new V(st.get(0).a, st.get(1).a, true);
+            }
+            return st.size() == 1 && st.get(0).range ? st.get(0) : null;
+        }
+        return st.size() == 1 && !st.get(0).range ? st.get(0) : null;
+    }
+
+    public boolean addressTaken(Fn f, String var) {
         for (int i = f.start; i < f.end; i++) {
             if (core.ln[i].startsWith("ADDR_OF ")) {
                 for (String t : core.ln[i].split(" ")) {
@@ -136,68 +205,87 @@ public final class GasReport {
         return false;
     }
 
-    /**
-     * The value variable `var` certainly has when control reaches line `at`: found by walking back through straight-line code (no label in between,
-     * so every path to `at` runs through what is read) to its last write, or to the parameter declaration (then the value the caller passes).
-     * null = not known. A variable whose address is taken anywhere is never known.
-     */
-    public GasReportCore.V valueAt(GasReportCore.Fn f, String var, int at, int depth) {
-        if (depth > 60 || addressTaken(f, var)) {
-            return null;
+    public V valueAt(Fn f, String var, int at, int depth) {
+        return (V) evalRun(valueFrame(f, var, at, depth));
+    }
+
+    private GasEvalFrame stepValueAt(GasEvalFrame fr) {
+        Fn f = fr.f;
+        String var = fr.var;
+        int at = fr.at;
+        if (fr.phase == 0) {
+            if (fr.depth > 60 || addressTaken(f, var)) {
+                return fr.finish(null);
+            }
+            fr.phase = 1;
+            GasEvalFrame c = new GasEvalFrame(GasEvalFrame.STABLE, f);
+            c.var = var;
+            c.at = at;
+            c.depth = fr.depth;
+            return c;
         }
-        GasReportCore.V stable = stableValue(f, var, at, depth);
+        if (fr.phase == 2) {
+            // the segment of the last write to `var` has been evaluated
+            return fr.finish(assignedValue(fr.p, castSeg(fr.got)));
+        }
+        V stable = (V) fr.got;
         if (stable != null) {
-            return stable;
+            return fr.finish(stable);
         }
         for (int i = at - 1; i > f.start; i--) {
             String line = core.ln[i];
             if (GasReportCore.isLabel(line)) {
-                return null;
+                return fr.finish(null);
             }
             String[] p = line.split(" ");
             if (p[0].equals("ADDR") && p.length >= 2 && p[1].equals(var)) {
                 int j = i + 1;
                 while (j < f.end && !core.ln[j].startsWith("ASSIGN ")) {
                     if (GasReportCore.isLabel(core.ln[j])) {
-                        return null;
+                        return fr.finish(null);
                     }
                     j++;
                 }
                 if (j >= f.end) {
-                    return null;
+                    return fr.finish(null);
                 }
-                List<GasReportCore.V> st = evalSeg(f, i + 1, j, i, depth);
-                if (st == null) {
-                    return null;
-                }
-                if (p.length >= 3 && p[2].contains("range")) {
-                    if (st.size() == 2 && !st.get(0).range && !st.get(1).range) {
-                        return new GasReportCore.V(st.get(0).a, st.get(1).a, true);
-                    }
-                    return st.size() == 1 && st.get(0).range ? st.get(0) : null;
-                }
-                return st.size() == 1 && !st.get(0).range ? st.get(0) : null;
+                fr.p = p;
+                fr.phase = 2;
+                return segFrame(f, i + 1, j, i, fr.depth);
             }
             if (p[0].equals("ARG") && p.length >= 2 && p[1].equals(var)) {
-                return f.args.get(var);
+                return fr.finish(f.args.get(var));
             }
             if (!p[0].equals("PUSH") && !p[0].equals("ADDR") && !p[0].equals("ASSIGN") && !p[0].equals("ALLOC")) {
                 for (int k = 1; k < p.length; k++) {
                     if (p[k].equals(var)) {
-                        return null;
+                        return fr.finish(null);
                     }
                 }
             }
         }
-        return null;
+        return fr.finish(null);
     }
 
-    /**
-     * A variable that is written once only (or a parameter that is never written but copied into its own slot at the top) has that one value for the
-     * rest of the function, labels or not: a parameter's value, or the value of its single write when that write is straight-line code from the start
-     * of the function (no label before it, so it runs exactly once, before everything that follows).
-     */
-    public GasReportCore.V stableValue(GasReportCore.Fn f, String var, int at, int depth) {
+    @SuppressWarnings("unchecked")
+    private static List<V> castSeg(Object o) {
+        return (List<V>) o;
+    }
+
+    public V stableValue(Fn f, String var, int at, int depth) {
+        GasEvalFrame fr = new GasEvalFrame(GasEvalFrame.STABLE, f);
+        fr.var = var;
+        fr.at = at;
+        fr.depth = depth;
+        return (V) evalRun(fr);
+    }
+
+    private GasEvalFrame stepStable(GasEvalFrame fr) {
+        Fn f = fr.f;
+        String var = fr.var;
+        if (fr.phase == 1) {
+            return fr.finish(assignedValue(core.ln[fr.write].split(" "), castSeg(fr.got)));
+        }
         int write = -1, writes = 0;
         boolean param = false;
         for (int i = f.start + 1; i < f.end; i++) {
@@ -214,31 +302,22 @@ public final class GasReport {
             }
         }
         if (param && writes == 0) {
-            return f.args.get(var);
+            return fr.finish(f.args.get(var));
         }
-        if (!param && writes == 1 && write < at && runsFirst(f, write)) {
+        if (!param && writes == 1 && write < fr.at && runsFirst(f, write)) {
             int j = write + 1;
             while (j < f.end && !core.ln[j].startsWith("ASSIGN ")) {
                 j++;
             }
-            List<GasReportCore.V> st = evalSeg(f, write + 1, j, write, depth);
-            if (st == null) {
-                return null;
-            }
-            String[] p = core.ln[write].split(" ");
-            if (p.length >= 3 && p[2].contains("range")) {
-                if (st.size() == 2 && !st.get(0).range && !st.get(1).range) {
-                    return new GasReportCore.V(st.get(0).a, st.get(1).a, true);
-                }
-                return st.size() == 1 && st.get(0).range ? st.get(0) : null;
-            }
-            return st.size() == 1 && !st.get(0).range ? st.get(0) : null;
+            fr.write = write;
+            fr.phase = 1;
+            return segFrame(f, write + 1, j, write, fr.depth);
         }
-        return null;
+        return fr.finish(null);
     }
 
     /** True when line `w` is reached on every path from the function start and only once: nothing before it jumps (but the old landing-pad skip) or is a label (but the landing pads). */
-    public boolean runsFirst(GasReportCore.Fn f, int w) {
+    public boolean runsFirst(Fn f, int w) {
         for (int i = f.start + 1; i < w; i++) {
             String line = core.ln[i];
             if (GasReportCore.isLabel(line)) {
@@ -252,13 +331,13 @@ public final class GasReport {
         return true;
     }
 
-    public BigInteger scalarAt(GasReportCore.Fn f, int idx) {
-        List<GasReportCore.V> st = evalSeg(f, idx, idx + 1, idx, 0);
+    public BigInteger scalarAt(Fn f, int idx) {
+        List<V> st = evalSeg(f, idx, idx + 1, idx, 0);
         return st != null && st.size() == 1 && !st.get(0).range ? st.get(0).a : null;
     }
 
     /** Iteration count of a `for` whose range is not literal in its type: the range the hidden `$for_range_N` variable was built from, when known here. */
-    public BigInteger rangeCount(GasReportCore.Fn f, GasReportCore.Loop lp, String type) {
+    public BigInteger rangeCount(Fn f, Loop lp, String type) {
         String name = null;
         for (int i = lp.head + 1; i < lp.back && i < lp.head + 6; i++) {
             if (core.ln[i].startsWith("PUSH $for_range_")) {
@@ -269,13 +348,13 @@ public final class GasReport {
         if (name == null) {
             return null;
         }
-        GasReportCore.V v = valueAt(f, name, lp.head, 0);
+        V v = valueAt(f, name, lp.head, 0);
         return v != null && v.range ? v.b.subtract(v.a).max(BigInteger.ZERO) : null;
     }
 
     /** The parameter values call line `callLine` of `caller` passes to `callee` (only those known), or empty. */
-    public Map<String, GasReportCore.V> callArgs(GasReportCore.Fn caller, int callLine, Map<String, GasReportCore.V> callerArgs, GasReportCore.Fn callee) {
-        Map<String, GasReportCore.V> out = new HashMap<>();
+    public Map<String, V> callArgs(Fn caller, int callLine, Map<String, V> callerArgs, Fn callee) {
+        Map<String, V> out = new HashMap<>();
         int cs = callLine - 1, depth = 0;
         while (cs >= caller.start) {
             String o = GasReportCore.op(core.ln[cs]);
@@ -292,7 +371,7 @@ public final class GasReport {
         if (cs < caller.start) {
             return out;
         }
-        List<GasReportCore.V> slots = new ArrayList<>();
+        List<V> slots = new ArrayList<>();
         int segStart = cs + 1, d = 0;
         for (int i = cs + 1; i < callLine; i++) {
             String o = GasReportCore.op(core.ln[i]);
@@ -301,7 +380,7 @@ public final class GasReport {
             } else if (o.equals("CC_END")) {
                 d--;
             } else if (d == 0 && core.ln[i].startsWith("POP ARG")) {
-                List<GasReportCore.V> st = evalSeg(caller, segStart, i, i, 0);
+                List<V> st = evalSeg(caller, segStart, i, i, 0);
                 slots.add(st != null && st.size() == 1 && !st.get(0).range ? st.get(0) : null);
                 segStart = i + 1;
             }
@@ -324,11 +403,11 @@ public final class GasReport {
         int k = 0;
         for (String[] pr : params) {
             boolean rng = pr.length >= 3 && pr[2].matches("(imut_|mut_)?range");
-            GasReportCore.V x = slots.get(k++);
+            V x = slots.get(k++);
             if (rng) {
-                GasReportCore.V y = slots.get(k++);
+                V y = slots.get(k++);
                 if (x != null && y != null) {
-                    out.put(pr[1], new GasReportCore.V(x.a, y.a, true));
+                    out.put(pr[1], new V(x.a, y.a, true));
                 }
             } else if (x != null) {
                 out.put(pr[1], x);
@@ -338,7 +417,7 @@ public final class GasReport {
     }
 
     /** Pairs each allocation with the label its null check jumps to on success (everything between is the whitelisted check and the failure branch). */
-    public void mapOkLabels(GasReportCore.Fn f) {
+    public void mapOkLabels(Fn f) {
         f.okLabelAlloc.clear();
         for (int i = f.start + 1; i < f.end; i++) {
             if (!GasReportCore.isAlloc(GasReportCore.op(core.ln[i]))) {
@@ -365,7 +444,7 @@ public final class GasReport {
      * the live-heap figure stays an upper bound: blocks that cross into a struct member, an unknown callee or a path-dependent slot are never credited.
      * Also fills Fn.paramFreed (owned parameters destructed on every exit) and Fn.retLo (bytes of the owned block returned).
      */
-    public void analyzeCredits(GasReportCore.Fn f) {
+    public void analyzeCredits(Fn f) {
         f.credit.clear();
         f.edgeCredit.clear();
         f.edgeCall.clear();
@@ -418,7 +497,7 @@ public final class GasReport {
                 lhs.put(i, stk.pop());
             }
         }
-        GasReportCore.St[] in = flow(f, f.start + 1, new GasReportCore.St(), slotType, lhs);
+        St[] in = flow(f, f.start + 1, new St(), slotType, lhs);
         f.credit.putAll(creditsFrom(f, in, slotType));
         // parameter frees and the returned block, from the settled in-states
         boolean[] freed = new boolean[params.size()];
@@ -426,7 +505,7 @@ public final class GasReport {
         boolean anyExit = false;
         long retMin = Long.MAX_VALUE, retDeepMin = Long.MAX_VALUE;
         for (int i = f.start + 1; i < f.end; i++) {
-            GasReportCore.St s = in[i];
+            St s = in[i];
             if (s == null) {
                 continue;
             }
@@ -458,7 +537,7 @@ public final class GasReport {
             }
             String o = GasReportCore.op(core.ln[i]);
             Integer t = null;
-            GasReportCore.St entry = null;
+            St entry = null;
             if (o.equals("PUSH_LABEL") && !GasReportCore.arg(core.ln[i]).startsWith("@for") && !GasReportCore.arg(core.ln[i]).startsWith("@loop")) {
                 t = f.labels.get(GasReportCore.arg(core.ln[i]));
                 for (int k = i + 1; k < f.end && k < i + 200; k++) {
@@ -486,8 +565,8 @@ public final class GasReport {
     }
 
     /** Fixpoint of the credit state over the lines reachable from `start` with the state `init` there. */
-    public GasReportCore.St[] flow(GasReportCore.Fn f, int start, GasReportCore.St init, Map<String, String> slotType, Map<Integer, Integer> lhs) {
-        GasReportCore.St[] in = new GasReportCore.St[f.end + 1];
+    public St[] flow(Fn f, int start, St init, Map<String, String> slotType, Map<Integer, Integer> lhs) {
+        St[] in = new St[f.end + 1];
         java.util.ArrayDeque<Integer> work = new java.util.ArrayDeque<>();
         in[start] = init.copy();
         work.add(start);
@@ -496,7 +575,7 @@ public final class GasReport {
             if (i >= f.end) {
                 continue;
             }
-            GasReportCore.St out = transferCredit(f, i, in[i], slotType, lhs, in);
+            St out = transferCredit(f, i, in[i], slotType, lhs, in);
             for (int t : successors(f, i)) {
                 if (t >= f.end || t < 0) {
                     continue;
@@ -505,7 +584,7 @@ public final class GasReport {
                     in[t] = out.copy();
                     work.add(t);
                 } else {
-                    GasReportCore.St j = GasReportCore.St.join(in[t], out);
+                    St j = St.join(in[t], out);
                     if (!j.same(in[t])) {
                         in[t] = j;
                         work.add(t);
@@ -517,10 +596,10 @@ public final class GasReport {
     }
 
     /** Bytes certainly released at each free line, from the settled in-states of a flow. */
-    public Map<Integer, Long> creditsFrom(GasReportCore.Fn f, GasReportCore.St[] in, Map<String, String> slotType) {
+    public Map<Integer, Long> creditsFrom(Fn f, St[] in, Map<String, String> slotType) {
         Map<Integer, Long> out = new java.util.TreeMap<>();
         for (int i = f.start + 1; i < f.end; i++) {
-            GasReportCore.St s = in[i];
+            St s = in[i];
             if (s == null) {
                 continue;
             }
@@ -536,7 +615,7 @@ public final class GasReport {
                     cr = s.lo.getOrDefault(y, 0L);
                 }
             } else if (o.equals("CALL")) {
-                GasReportCore.Fn cf = core.fns.get(GasReportCore.arg(core.ln[i]));
+                Fn cf = core.fns.get(GasReportCore.arg(core.ln[i]));
                 if (cf != null && cf.paramFreed.length > 0) {
                     int depth = 0;
                     for (int k = i - 1; k > f.start; k--) {
@@ -571,7 +650,7 @@ public final class GasReport {
     }
 
     /** Whether some path from the function's entry reaches a normal `RET` (false = every path ends in a throw / unwind, or never ends). */
-    public boolean canReturn(GasReportCore.Fn f) {
+    public boolean canReturn(Fn f) {
         Set<Integer> seen = new HashSet<>();
         Deque<Integer> work = new ArrayDeque<>();
         work.add(f.start + 1);
@@ -588,7 +667,7 @@ public final class GasReport {
         return false;
     }
 
-    public List<Integer> successors(GasReportCore.Fn f, int i) {
+    public List<Integer> successors(Fn f, int i) {
         List<Integer> r = new ArrayList<>(2);
         String line = core.ln[i], o = GasReportCore.op(line);
         if (o.equals("RET") || o.equals("EXIT") || o.equals("EXIT_THREAD") || o.equals("GT_UNWIND")) {
@@ -619,10 +698,10 @@ public final class GasReport {
         return r;
     }
 
-    public GasReportCore.St transferCredit(GasReportCore.Fn f, int i, GasReportCore.St s, Map<String, String> slotType, Map<Integer, Integer> lhs, GasReportCore.St[] in) {
+    public St transferCredit(Fn f, int i, St s, Map<String, String> slotType, Map<Integer, Integer> lhs, St[] in) {
         String line = core.ln[i], o = GasReportCore.op(line);
         if (o.equals("GT_DESTRUCT") && line.split(" ").length == 2 && slotType.containsKey(GasReportCore.arg(line))) {
-            GasReportCore.St r = s.copy();
+            St r = s.copy();
             r.lo.remove(GasReportCore.arg(line));
             r.deep.remove(GasReportCore.arg(line));
             r.dead.add(GasReportCore.arg(line));
@@ -640,7 +719,7 @@ public final class GasReport {
         if (!inline && !GasReportCore.firstType(line).startsWith("owns_")) {
             return s;
         }
-        GasReportCore.St r = s.copy();
+        St r = s.copy();
         long def = 0, deep = 0;
         int w = i - a - 1;
         if (in[a] != null) {
@@ -663,7 +742,7 @@ public final class GasReport {
             r.lo.remove(y);                      // a move: the source no longer holds the block
             r.deep.remove(y);
         } else if (i - 3 > a && GasReportCore.op(core.ln[i - 1]).equals("PUSH_RET") && GasReportCore.op(core.ln[i - 2]).equals("CC_END") && GasReportCore.op(core.ln[i - 3]).equals("CALL")) {
-            GasReportCore.Fn cf = core.fns.get(GasReportCore.arg(core.ln[i - 3]));
+            Fn cf = core.fns.get(GasReportCore.arg(core.ln[i - 3]));
             def = cf == null ? 0 : cf.retLo;
             deep = cf == null || !cf.deepOk ? 0 : cf.retDeep;
         } else {
@@ -706,7 +785,7 @@ public final class GasReport {
      * (a move), written (a replacement) or reached through a reference passed to another function, and no tracked slot has its address taken. The
      * `name.member = null` statements right after a `GT_DESTRUCT name` are the drop glue clearing what was just freed and do not count.
      */
-    public boolean deepOk(GasReportCore.Fn f, Map<String, String> slotType) {
+    public boolean deepOk(Fn f, Map<String, String> slotType) {
         Set<Integer> idiom = new HashSet<>();
         for (int i = f.start + 1; i < f.end; i++) {
             if (GasReportCore.op(core.ln[i]).equals("GT_DESTRUCT") && core.ln[i].split(" ").length == 2) {
@@ -778,7 +857,7 @@ public final class GasReport {
                     core.ownsMemberNames.add(p[1]);
                     core.ownsStructs.add(cur);
                 }
-                total += (sizeOf(p[p.length - 1]) + 7) / 8 * 8;
+                total += (sizeOfKnown(p[p.length - 1]) + 7) / 8 * 8;
             } else if (cur != null && l.startsWith("STRUCT_PADDING ")) {
                 total += Long.parseLong(l.substring(15).trim());
             } else if (l.equals("STRUCT_END") && cur != null) {
@@ -788,36 +867,58 @@ public final class GasReport {
         }
     }
 
-    /** Size in bytes of a value of HOB type `t` (an estimate for anything not obviously sized: 8). */
     public long sizeOf(String t) {
         if (core.structSize == null) {
             parseStructs();
         }
+        return sizeOfKnown(t);
+    }
+
+    /** sizeOf once the struct table exists; array dimensions are folded in a loop (innermost first). */
+    private long sizeOfKnown(String t) {
+        Deque<Long> dims = new ArrayDeque<>();
         String x = t;
+        long size;
         while (true) {
-            if (x.startsWith("mut_")) {
-                x = x.substring(4);
-            } else if (x.startsWith("imut_")) {
-                x = x.substring(5);
-            } else if (x.startsWith("indeterminate_")) {
-                x = x.substring(14);
-            } else {
+            while (true) {
+                if (x.startsWith("mut_")) {
+                    x = x.substring(4);
+                } else if (x.startsWith("imut_")) {
+                    x = x.substring(5);
+                } else if (x.startsWith("indeterminate_")) {
+                    x = x.substring(14);
+                } else {
+                    break;
+                }
+            }
+            if (x.startsWith("owns_") || x.startsWith("ref_") || x.startsWith("raw_") || x.startsWith("auto_") || x.startsWith("static_") || x.equals("code_addr")) {
+                size = 8;
                 break;
             }
+            if (x.startsWith("range")) {
+                size = 16;
+                break;
+            }
+            if (x.startsWith("dynarray(") || x.startsWith("owns_dynarray")) {
+                size = 8;
+                break;
+            }
+            java.util.regex.Matcher arr = java.util.regex.Pattern.compile("(.*)\\[(\\d+)\\]$").matcher(x);
+            if (arr.matches()) {
+                dims.push(Long.parseLong(arr.group(2)));
+                x = arr.group(1);
+                continue;
+            }
+            size = leafSize(x);
+            break;
         }
-        if (x.startsWith("owns_") || x.startsWith("ref_") || x.startsWith("raw_") || x.startsWith("auto_") || x.startsWith("static_") || x.equals("code_addr")) {
-            return 8;
+        while (!dims.isEmpty()) {
+            size = dims.pop() * ((size + 7) / 8 * 8);
         }
-        if (x.startsWith("range")) {
-            return 16;
-        }
-        if (x.startsWith("dynarray(") || x.startsWith("owns_dynarray")) {
-            return 8;
-        }
-        java.util.regex.Matcher arr = java.util.regex.Pattern.compile("(.*)\\[(\\d+)\\]$").matcher(x);
-        if (arr.matches()) {
-            return Long.parseLong(arr.group(2)) * ((sizeOf(arr.group(1)) + 7) / 8 * 8);
-        }
+        return size;
+    }
+
+    private long leafSize(String x) {
         java.util.regex.Matcher prim = java.util.regex.Pattern.compile("[us](\\d+)").matcher(x);
         if (prim.matches()) {
             return Math.max(1, Integer.parseInt(prim.group(1)) / 8);
@@ -850,52 +951,54 @@ public final class GasReport {
         return p.length >= 2 && p[1].matches("\\d+") ? new BigInteger(p[1]) : null;
     }
 
-    /** Bytes of a deep clone of a block of type `t` (a struct: its own size plus every owned member's block; a dynarray: runtime size, null). */
-    public BigInteger deepBytes(String t, int depth) {
-        if (depth > 8) {
-            return null;
-        }
-        String e = GasReportCore.dynElem(t);
-        if (e != null) {
-            return null;
-        }
-        BigInteger total = BigInteger.valueOf((sizeOf(t) + 7) / 8 * 8);
-        List<String> ms = core.structMembers.get(t);
-        if (ms != null) {
-            for (String m : ms) {
-                if (m.contains("owns_")) {
-                    String pt = GasReportCore.pointee(m);
-                    if (pt == null) {
-                        continue;
+    public BigInteger deepBytes(String t0, int depth0) {
+        Deque<Object[]> work = new ArrayDeque<>();   // {type, depth}
+        work.push(new Object[]{t0, depth0});
+        BigInteger total = BigInteger.ZERO;
+        while (!work.isEmpty()) {
+            Object[] w = work.pop();
+            String t = (String) w[0];
+            int depth = (Integer) w[1];
+            if (depth > 8 || GasReportCore.dynElem(t) != null) {
+                return null;
+            }
+            total = total.add(BigInteger.valueOf((sizeOf(t) + 7) / 8 * 8));
+            List<String> ms = core.structMembers.get(t);
+            if (ms != null) {
+                for (String m : ms) {
+                    if (m.contains("owns_")) {
+                        String pt = GasReportCore.pointee(m);
+                        if (pt == null) {
+                            continue;
+                        }
+                        if (m.contains("dynarray")) {
+                            return null;
+                        }
+                        work.push(new Object[]{pt, depth + 1});
                     }
-                    BigInteger d = m.contains("dynarray") ? null : deepBytes(pt, depth + 1);
-                    if (d == null) {
-                        return null;
-                    }
-                    total = total.add(d);
                 }
             }
         }
         return total;
     }
 
-    public void verifyLabels(Map<String, DocComments.Doc> funcs, Map<String, DocComments.Doc> loops) {
-        for (GasReportCore.Fn f : core.fns.values()) {
+    public void verifyLabels(Map<String, DocComment> funcs, Map<String, DocComment> loops) {
+        for (Fn f : core.fns.values()) {
             core.solve(f, new ArrayList<>());
         }
-        for (Map.Entry<String, DocComments.Doc> e : funcs.entrySet()) {
+        for (Map.Entry<String, DocComment> e : funcs.entrySet()) {
             String word = funcWord(e.getKey());
-            DocComments.Doc d = e.getValue();
+            DocComment d = e.getValue();
             if (word != null && !word.equals(d.text)) {
-                GasReportCore.Fn f = core.fns.get(e.getKey());
+                Fn f = core.fns.get(e.getKey());
                 throw new CompilerException("termination", d.file, d.targetLine, "function `" + GasReportCore.shown(f.name) + "` is labelled `" + d.text
                         + "` but its termination class is `" + word + "`" + (GasReportCore.worstOf(f.ub[GasReportCore.GAS]) == 0 ? "" : " (" + GasReportCore.tag(f.ub[GasReportCore.GAS]) + ")"));
             }
         }
-        for (Map.Entry<String, DocComments.Doc> e : loops.entrySet()) {
+        for (Map.Entry<String, DocComment> e : loops.entrySet()) {
             int bar = e.getKey().indexOf('|');
             String word = loopWord(e.getKey().substring(0, bar), e.getKey().substring(bar + 1));
-            DocComments.Doc d = e.getValue();
+            DocComment d = e.getValue();
             if (word != null && !word.equals(d.text)) {
                 throw new CompilerException("termination", d.file, d.targetLine, "`" + d.kind + "` in `" + GasReportCore.shown(e.getKey().substring(0, bar)) + "` is labelled `" + d.text
                         + "` but its termination class is `" + word + "`");
@@ -905,19 +1008,19 @@ public final class GasReport {
 
     /** The class word of a function (solved already), or null when it is not in the program. */
     public String funcWord(String name) {
-        GasReportCore.Fn f = core.fns.get(name);
+        Fn f = core.fns.get(name);
         return f == null ? null : GasReportCore.wordOf(GasReportCore.worstOf(f.ub[GasReportCore.GAS]));
     }
 
     /** The class word of one loop (see loopClass), or null when the loop is not found. */
     public String loopWord(String fnName, String label) {
-        GasReportCore.Fn f = core.fns.get(fnName);
+        Fn f = core.fns.get(fnName);
         if (f == null || !f.labels.containsKey(label)) {
             return null;     // optimised away before the report could see it, or not emitted
         }
         Set<String> savedUb = new LinkedHashSet<>(f.ub[GasReportCore.GAS]);
-        GasReportCore.Eval ev = core.new Eval(f, GasReportCore.GAS);
-        GasReportCore.Loop lp = ev.loops.get(f.labels.get(label));
+        Eval ev = new Eval(core, f, GasReportCore.GAS);
+        Loop lp = ev.loops.get(f.labels.get(label));
         if (lp == null) {
             return null;
         }
@@ -928,10 +1031,10 @@ public final class GasReport {
     }
 
     /** The class of one loop alone: its own bound/exit, every call and indirect call inside it, and the loops nested in it. */
-    public int loopClass(GasReportCore.Eval ev, GasReportCore.Fn f, GasReportCore.Loop lp) {
+    public int loopClass(Eval ev, Fn f, Loop lp) {
         ev.solveLoop(lp);
         int cls = lp.ownClass;
-        for (GasReportCore.Loop in : ev.loops.values()) {
+        for (Loop in : ev.loops.values()) {
             if (in != lp && in.head > lp.head && in.end < lp.end) {
                 ev.solveLoop(in);
                 cls = Math.max(cls, in.ownClass);
@@ -942,7 +1045,7 @@ public final class GasReport {
             if (o.equals("INVOKE")) {
                 cls = Math.max(cls, GasReportCore.UNK);
             } else if (o.equals("CALL")) {
-                GasReportCore.Fn cf = f.calleeAt.get(i);
+                Fn cf = f.calleeAt.get(i);
                 if (cf == null) {
                     cf = core.fns.get(GasReportCore.arg(core.ln[i]));
                 }
@@ -956,7 +1059,7 @@ public final class GasReport {
         return cls;
     }
 
-    public BigInteger allocBytes(int idx, GasReportCore.Fn f) {
+    public BigInteger allocBytes(int idx, Fn f) {
         String line = core.ln[idx];
         String[] p = line.split(" ");
         String o = p[0];
@@ -1064,7 +1167,7 @@ public final class GasReport {
      * later stages add (callee-saved register saves, temporaries, hidden slots): 64 + 8 bytes per 24 lines of the function body. The allowance
      * was calibrated so the estimate is never below the real frame of the compiled function (tests/stack_check.sh).
      */
-    public long frameBytes(GasReportCore.Fn f) {
+    public long frameBytes(Fn f) {
         long total = 16;
         for (int i = f.start; i < f.end; i++) {
             String l = core.ln[i];
@@ -1081,45 +1184,72 @@ public final class GasReport {
         if (depth.containsKey(n)) {
             return depth.get(n);
         }
-        GasReportCore.Fn f = core.fns.get(n);
-        Set<String> w = new LinkedHashSet<>();
         if (path.contains(n)) {
             return 0;
         }
+        Deque<GasStackWalk> stack = new ArrayDeque<>();
         path.add(n);
-        long best = 0;
-        String bestVia = null;
-        for (String c : f.calls) {
-            GasReportCore.Fn cf = core.fns.get(c);
-            if (cf == null) {
+        stack.push(new GasStackWalk(n, core.fns.get(n)));
+        long ret = 0;
+        while (!stack.isEmpty()) {
+            GasStackWalk w = stack.peek();
+            if (w.pending != null) {
+                String c = w.pending;
+                w.pending = null;
+                absorbCallee(w, c, ret, why);
+            }
+            boolean descended = false;
+            while (w.next < w.calls.size()) {
+                String c = w.calls.get(w.next++);
+                Fn cf = core.fns.get(c);
+                if (cf == null) {
+                    continue;
+                }
+                if (path.contains(c)) {
+                    throw new IllegalStateException("audit: call cycle through " + c + " in a program that type-checked (compiler bug)");
+                }
+                frame.putIfAbsent(c, frameBytes(cf));
+                if (depth.containsKey(c)) {
+                    absorbCallee(w, c, depth.get(c), why);
+                    continue;
+                }
+                w.pending = c;
+                path.add(c);
+                stack.push(new GasStackWalk(c, cf));
+                descended = true;
+                break;
+            }
+            if (descended) {
                 continue;
             }
-            if (path.contains(c)) {
-                throw new IllegalStateException("audit: call cycle through " + c + " in a program that type-checked (compiler bug)");
+            // all callees done: close this function
+            Fn f = core.fns.get(w.name);
+            for (int i = f.start; i < f.end; i++) {
+                if (GasReportCore.op(core.ln[i]).equals("INVOKE")) {
+                    w.why.add(GasReportCore.R(GasReportCore.UNK, "indirect call (INVOKE), the callee is not known"));
+                }
             }
-            frame.putIfAbsent(c, frameBytes(cf));
-            long d = stackDepth(c, frame, depth, via, why, path);
-            if (!why.get(c).isEmpty()) {
-                w.add(GasReportCore.callReason(c, why.get(c), false));
+            path.remove(path.size() - 1);
+            long d = frame.get(w.name) + w.best;
+            depth.put(w.name, d);
+            if (w.bestVia != null) {
+                via.put(w.name, w.bestVia);
             }
-            if (d > best || bestVia == null) {
-                best = d;
-                bestVia = c;
-            }
+            why.put(w.name, w.why);
+            ret = d;
+            stack.pop();
         }
-        for (int i = f.start; i < f.end; i++) {
-            if (GasReportCore.op(core.ln[i]).equals("INVOKE")) {
-                w.add(GasReportCore.R(GasReportCore.UNK, "indirect call (INVOKE), the callee is not known"));
-            }
+        return ret;
+    }
+
+    private void absorbCallee(GasStackWalk w, String c, long d, Map<String, Set<String>> why) {
+        if (!why.get(c).isEmpty()) {
+            w.why.add(GasReportCore.callReason(c, why.get(c), false));
         }
-        path.remove(path.size() - 1);
-        long d = frame.get(n) + best;
-        depth.put(n, d);
-        if (bestVia != null) {
-            via.put(n, bestVia);
+        if (d > w.best || w.bestVia == null) {
+            w.best = d;
+            w.bestVia = c;
         }
-        why.put(n, w);
-        return d;
     }
 
     /** The termination class word of a function for the page (the word the audit prints after its gas figure). */
@@ -1129,11 +1259,11 @@ public final class GasReport {
     }
 
     public String vizPage(String title) {
-        GasReportCore.Fn entry = core.entryFn();
+        Fn entry = core.entryFn();
         if (entry == null) {
             return null;
         }
-        for (GasReportCore.Fn f : core.fns.values()) {
+        for (Fn f : core.fns.values()) {
             core.solve(f, new ArrayList<>());
         }
         parseStructs();
@@ -1147,7 +1277,7 @@ public final class GasReport {
                 .append(GasReportCore.jsonStr(termWord(entry.name))).append("}");
         StringBuilder callees = new StringBuilder();
         for (String c : entry.calls) {
-            GasReportCore.Fn cf = core.fns.get(c);
+            Fn cf = core.fns.get(c);
             if (cf == null || c.equals(entry.name)) {
                 continue;
             }
@@ -1169,10 +1299,10 @@ public final class GasReport {
             }
         }
         core.ln = l.toArray(new String[0]);
-        GasReportCore.Fn cur = null;
+        Fn cur = null;
         for (int i = 0; i < core.ln.length; i++) {
             if (core.ln[i].startsWith("FUNC_START ")) {
-                cur = new GasReportCore.Fn();
+                cur = new Fn();
                 cur.name = core.ln[i].substring(11).trim();
                 cur.start = i;
                 core.fns.put(cur.name, cur);

@@ -3,7 +3,9 @@ import caspien.config.CompilerException;
 import caspien.token.Token;
 import caspien.token.TokenType;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.List;
 
 /**
@@ -37,83 +39,133 @@ public class DupExpander {
     }
 
     /**
-     * Generic recursive walk over every Token field that can hold a nested
-     * subtree (left/right/childs/sub), regardless of what kind of node it
-     * is -- struct/func/interface/impl declarations, statements, and
-     * expressions all get visited uniformly. Whenever a '[' delineator
-     * (array literal) is found, its single resolved comma-chain child is
-     * expanded in place before recursing further (so a dup'd element that
-     * is itself an array literal gets its own nested dups expanded too, via
-     * the ordinary recursion below).
+     * Walk over every Token field that can hold a nested subtree (left/right/childs/sub), regardless of what kind of
+     * node it is -- struct/func/interface/impl declarations, statements, and expressions all get visited uniformly.
+     * Whenever a '[' delineator (array literal) is found, its single resolved comma-chain child is expanded in place
+     * before the walk goes on (so a dup'd element that is itself an array literal gets its own nested dups expanded
+     * too). An explicit task stack, in the order the old recursive walk visited things.
      */
-    private void walk(Token node) {
-        if (node == null) {
-            return;
-        }
-        if (node.type == TokenType.DELINEATOR && "[".equals(node.text) && node.childs != null
-                && !node.childs.isEmpty()) {
-            expandArrayLiteral(node);
-        }
-        walk(node.left);
-        walk(node.right);
-        walk(node.next);
-        if (node.childs != null) {
-            for (Token c : node.childs) {
-                walk(c);
-            }
-        }
-        if (node.sub != null) {
-            for (Token s : node.sub) {
-                walk(s);
+    private void walk(Token start) {
+        Deque<DupTask> stack = new ArrayDeque<>();
+        stack.push(new DupTask(DupTask.WALK, start));
+        List<DupTask> out = new ArrayList<>();
+        while (!stack.isEmpty()) {
+            DupTask t = stack.pop();
+            out.clear();
+            step(t, out);
+            for (int i = out.size() - 1; i >= 0; i--) {
+                stack.push(out.get(i));
             }
         }
     }
 
-    private void expandArrayLiteral(Token arrayNode) {
-        List<Token> rawElements = new ArrayList<>();
-        collectCommaArgs(arrayNode.childs.get(0), rawElements);
-
-        List<Token> elements = new ArrayList<>();
-        boolean sawDup = false;
-        for (Token rawElement : rawElements) {
-            if (rawElement.type == TokenType.OPERATOR && rawElement.text.equals("dup") && !rawElement.unary) {
-                sawDup = true;
+    private void step(DupTask t, List<DupTask> out) {
+        switch (t.kind) {
+            case DupTask.WALK: {
+                Token node = t.node;
+                if (node == null) {
+                    return;
+                }
+                if (node.type == TokenType.DELINEATOR && "[".equals(node.text) && node.childs != null
+                        && !node.childs.isEmpty()) {
+                    beginArrayLiteral(node, out);
+                }
+                out.add(new DupTask(DupTask.CHILDREN, node));
+                return;
+            }
+            case DupTask.CHILDREN: {
+                // read after the array literal (if any) has been rewritten
+                Token node = t.node;
+                out.add(new DupTask(DupTask.WALK, node.left));
+                out.add(new DupTask(DupTask.WALK, node.right));
+                out.add(new DupTask(DupTask.WALK, node.next));
+                if (node.childs != null) {
+                    for (Token c : node.childs) {
+                        out.add(new DupTask(DupTask.WALK, c));
+                    }
+                }
+                if (node.sub != null) {
+                    for (Token s : node.sub) {
+                        out.add(new DupTask(DupTask.WALK, s));
+                    }
+                }
+                return;
+            }
+            case DupTask.ELEMENT: {
+                // the walk of a dup element's lhs is done: now count it and add the copies
+                Token rawElement = t.node;
                 Token lhs = rawElement.left;
-                // the lhs itself may contain nested array literals / dups;
-                // expand those first so 'lhs' is fully clean before we copy
-                // it N times.
-                walk(lhs);
-                Token countExpr = rawElement.right;
-                long count = evalConstantDupCount(countExpr);
+                long count = evalConstantDupCount(rawElement.right);
                 if (count < 0) {
                     throw new CompilerException("type", rawElement.file, rawElement.line,
                             "'dup' count must be non-negative, got " + count);
                 }
                 for (long i = 0; i < count; i++) {
-                    elements.add(lhs);
+                    t.elements.add(lhs);
                 }
-            } else {
-                elements.add(rawElement);
+                return;
             }
+            case DupTask.PLAIN_ELEMENT:
+                t.elements.add(t.node);
+                return;
+            case DupTask.FINISH: {
+                Token arrayNode = t.node;
+                if (!t.sawDup) {
+                    return; // nothing to do; leave the chain exactly as-is
+                }
+                if (t.elements.isEmpty()) {
+                    throw new CompilerException("type", arrayNode.file, arrayNode.line,
+                            "array literal must have at least one element");
+                }
+                arrayNode.childs = new ArrayList<>();
+                arrayNode.childs.add(rebuildCommaChain(t.elements));
+                return;
+            }
+            default:
+                throw new IllegalStateException("unknown dup task " + t.kind);
         }
-        if (!sawDup) {
-            return; // nothing to do; leave the chain exactly as-is
-        }
-        if (elements.isEmpty()) {
-            throw new CompilerException("type", arrayNode.file, arrayNode.line,
-                    "array literal must have at least one element");
-        }
-        arrayNode.childs = new ArrayList<>();
-        arrayNode.childs.add(rebuildCommaChain(elements));
     }
 
-    private void collectCommaArgs(Token node, List<Token> out) {
-        if (node.type == TokenType.OPERATOR && node.text.equals(",")) {
-            collectCommaArgs(node.left, out);
-            collectCommaArgs(node.right, out);
-        } else {
-            out.add(node);
+    /** Queues the elements of an array literal in order; each dup element's lhs is walked before its count is read. */
+    private void beginArrayLiteral(Token arrayNode, List<DupTask> out) {
+        List<Token> rawElements = collectCommaArgs(arrayNode.childs.get(0));
+        List<Token> elements = new ArrayList<>();
+        boolean sawDup = false;
+        for (Token rawElement : rawElements) {
+            if (rawElement.type == TokenType.OPERATOR && rawElement.text.equals("dup") && !rawElement.unary) {
+                sawDup = true;
+                // the lhs itself may contain nested array literals / dups; expand those first so 'lhs' is fully clean before we copy it N times.
+                out.add(new DupTask(DupTask.WALK, rawElement.left));
+                DupTask el = new DupTask(DupTask.ELEMENT, rawElement);
+                el.elements = elements;
+                out.add(el);
+            } else {
+                DupTask el = new DupTask(DupTask.PLAIN_ELEMENT, rawElement);
+                el.elements = elements;
+                out.add(el);
+            }
         }
+        DupTask fin = new DupTask(DupTask.FINISH, arrayNode);
+        fin.elements = elements;
+        fin.sawDup = sawDup;
+        out.add(fin);
+    }
+
+    /** The operands of a ',' chain, left to right. */
+    private List<Token> collectCommaArgs(Token root) {
+        List<Token> out = new ArrayList<>();
+        Deque<Token> work = new ArrayDeque<>();
+        work.push(root);
+        while (!work.isEmpty()) {
+            Token node = work.pop();
+            if (node.type == TokenType.OPERATOR && node.text.equals(",")) {
+                work.push(node.right);
+                work.push(node.left);
+            } else {
+                out.add(node);
+            }
+        }
+        return out;
     }
 
     private Token rebuildCommaChain(List<Token> elements) {
@@ -127,46 +179,72 @@ public class DupExpander {
         return acc;
     }
 
-    /** Unchanged from the old TypeChecker.evalConstantDupCount. */
-    private long evalConstantDupCount(Token node) {
-        if (node.type == TokenType.INTEGER) {
-            return Long.parseLong(node.text);
-        }
-        if (node.type == TokenType.DELINEATOR && node.text.equals("(") && !node.childs.isEmpty()) {
-            return evalConstantDupCount(node.childs.get(0));
-        }
-        if (node.type == TokenType.OPERATOR) {
-            if (node.unary && node.text.equals("-")) {
-                return -evalConstantDupCount(node.left);
-            }
-            if (!node.unary) {
-                switch (node.text) {
-                    case "+": return evalConstantDupCount(node.left) + evalConstantDupCount(node.right);
-                    case "-": return evalConstantDupCount(node.left) - evalConstantDupCount(node.right);
-                    case "*": return evalConstantDupCount(node.left) * evalConstantDupCount(node.right);
-                    case "/": {
-                        long divisor = evalConstantDupCount(node.right);
-                        if (divisor == 0) {
-                            throw new CompilerException("type", node.file, node.line,
-                                    "division by zero in 'dup' count");
+    /**
+     * Unchanged meaning from the old TypeChecker.evalConstantDupCount, with an explicit stack: operands are evaluated
+     * in the same order as before (a '/' or '%' reads its right operand and checks for zero before its left).
+     */
+    private long evalConstantDupCount(Token root) {
+        Deque<Object[]> tasks = new ArrayDeque<>();   // {Boolean evalNotCombine, Token node, String op}
+        Deque<Long> values = new ArrayDeque<>();
+        tasks.push(new Object[]{Boolean.TRUE, root, null});
+        while (!tasks.isEmpty()) {
+            Object[] task = tasks.pop();
+            Token node = (Token) task[1];
+            if (!(Boolean) task[0]) {
+                String op = (String) task[2];
+                switch (op) {
+                    case "neg": values.push(-values.pop()); break;
+                    case "+": { long r = values.pop(); long l = values.pop(); values.push(l + r); break; }
+                    case "-": { long r = values.pop(); long l = values.pop(); values.push(l - r); break; }
+                    case "*": { long r = values.pop(); long l = values.pop(); values.push(l * r); break; }
+                    case "/": { long l = values.pop(); long r = values.pop(); values.push(l / r); break; }
+                    case "%": { long l = values.pop(); long r = values.pop(); values.push(l % r); break; }
+                    case "zero?":
+                        if (values.peek() == 0) {
+                            throw new CompilerException("type", node.file, node.line, "division by zero in 'dup' count");
                         }
-                        return evalConstantDupCount(node.left) / divisor;
-                    }
-                    case "%": {
-                        long divisor = evalConstantDupCount(node.right);
-                        if (divisor == 0) {
-                            throw new CompilerException("type", node.file, node.line,
-                                    "division by zero in 'dup' count");
-                        }
-                        return evalConstantDupCount(node.left) % divisor;
-                    }
-                    default:
                         break;
+                    default: throw new IllegalStateException(op);
+                }
+                continue;
+            }
+            if (node.type == TokenType.INTEGER) {
+                values.push(Long.parseLong(node.text));
+                continue;
+            }
+            if (node.type == TokenType.DELINEATOR && node.text.equals("(") && !node.childs.isEmpty()) {
+                tasks.push(new Object[]{Boolean.TRUE, node.childs.get(0), null});
+                continue;
+            }
+            if (node.type == TokenType.OPERATOR) {
+                if (node.unary && node.text.equals("-")) {
+                    tasks.push(new Object[]{Boolean.FALSE, node, "neg"});
+                    tasks.push(new Object[]{Boolean.TRUE, node.left, null});
+                    continue;
+                }
+                if (!node.unary) {
+                    switch (node.text) {
+                        case "+": case "-": case "*":
+                            tasks.push(new Object[]{Boolean.FALSE, node, node.text});
+                            tasks.push(new Object[]{Boolean.TRUE, node.right, null});
+                            tasks.push(new Object[]{Boolean.TRUE, node.left, null});
+                            continue;
+                        case "/": case "%":
+                            // right first (and its zero check), then the left
+                            tasks.push(new Object[]{Boolean.FALSE, node, node.text});
+                            tasks.push(new Object[]{Boolean.TRUE, node.left, null});
+                            tasks.push(new Object[]{Boolean.FALSE, node, "zero?"});
+                            tasks.push(new Object[]{Boolean.TRUE, node.right, null});
+                            continue;
+                        default:
+                            break;
+                    }
                 }
             }
+            throw new CompilerException("type", node.file, node.line,
+                    "'dup' count must be a compile-time constant expression (integer literals and "
+                            + "+,-,*,/,% only) -- functions, variables, and anything else are not allowed");
         }
-        throw new CompilerException("type", node.file, node.line,
-                "'dup' count must be a compile-time constant expression (integer literals and "
-                        + "+,-,*,/,% only) -- functions, variables, and anything else are not allowed");
+        return values.pop();
     }
 }

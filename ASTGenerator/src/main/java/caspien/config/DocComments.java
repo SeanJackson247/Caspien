@@ -6,7 +6,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Doc comments: `/*! key: text *&#47;` and `//! key: text`. Commentary like any other comment (the compiler never treats the text as code), but
+ * DocComment comments: `/*! key: text *&#47;` and `//! key: text`. Commentary like any other comment (the compiler never treats the text as code), but
  * elevated: the `!` right after the opening marks it, the key says what it is, and where it may stand is checked.
  * <ul>
  * <li>`justify: ANY TEXT` goes directly before an `unsafe` block; free text, not checked, saying why the programmer had to use unsafe. The
@@ -18,16 +18,10 @@ import java.util.Map;
  * registers each comment under the file and line of the keyword it labels, so later stages look it up there (no token plumbing to lose it).
  */
 public final class DocComments {
-    public static final class Doc {
-        public final String key, text, file, kind;     // kind: the keyword it labels (unsafe / loop / for / func)
-        public final int commentLine, targetLine;
-        public Doc(String key, String text, String file, String kind, int commentLine, int targetLine) {
-            this.key = key; this.text = text; this.file = file; this.kind = kind; this.commentLine = commentLine; this.targetLine = targetLine;
-        }
-    }
+
 
     public static final List<String> CLASSES = java.util.Arrays.asList("bound", "finite", "unbound", "none", "conditional", "indirect");
-    public static final Map<String, Doc> BY_TARGET = new HashMap<>();
+    public static final Map<String, DocComment> BY_TARGET = new HashMap<>();
 
     public DocComments() {
     }
@@ -45,16 +39,16 @@ public final class DocComments {
     }
 
     /** Registers a validated doc comment; false when the target already has one with this key. */
-    public static boolean register(Doc d) {
+    public static boolean register(DocComment d) {
         return BY_TARGET.putIfAbsent(key(d.file, d.targetLine, d.key), d) == null;
     }
 
     /** The doc comment with this key on the keyword `kind` at file:line, or null. */
-    public static Doc find(String file, int line, String docKey, String kind) {
+    public static DocComment find(String file, int line, String docKey, String kind) {
         if (file == null) {
             return null;
         }
-        Doc d = BY_TARGET.get(key(file, line, docKey));
+        DocComment d = BY_TARGET.get(key(file, line, docKey));
         return d != null && d.kind.equals(kind) ? d : null;
     }
 

@@ -3,7 +3,9 @@ import caspien.config.CompilerException;
 import caspien.token.Token;
 import caspien.token.TokenType;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
@@ -76,14 +78,7 @@ public class RpnConverter {
             "=", "+=", "-=", "/=", "%=", "*=", ":"
     ));
 
-    private static class OpEntry {
-        final Token token;
-        final boolean unary;
-        OpEntry(Token token, boolean unary) {
-            this.token = token;
-            this.unary = unary;
-        }
-    }
+
 
     private static int precedence(String op, boolean unary) {
         if (op.equals("CALL") || op.equals("LOOKUP") || op.equals(".") || op.equals("INSTANTIATE")) {
@@ -142,12 +137,73 @@ public class RpnConverter {
 
     /** Entry point: walks a list of LINE tokens (a whole file, or any block's body) and RPN-converts every expression found within it, recursively. */
     public void convertLines(List<Token> lines) {
-        for (Token lineTok : lines) {
-            processStatement(lineTok);
+        run(new RpnTask(RpnTask.LINES, null, lines));
+    }
+
+    /** Explicit task stack (no recursion): the tasks a step returns run next, in order, before anything pushed earlier. */
+    private void run(RpnTask root) {
+        Deque<RpnTask> stack = new ArrayDeque<>();
+        stack.push(root);
+        List<RpnTask> out = new ArrayList<>();
+        while (!stack.isEmpty()) {
+            RpnTask t = stack.pop();
+            out.clear();
+            step(t, out);
+            for (int i = out.size() - 1; i >= 0; i--) {
+                stack.push(out.get(i));
+            }
         }
     }
 
-    private void processStatement(Token lineTok) {
+    private void step(RpnTask t, List<RpnTask> out) {
+        switch (t.kind) {
+            case RpnTask.LINES:
+                for (Token lineTok : t.list) {
+                    out.add(new RpnTask(RpnTask.STMT, lineTok, null));
+                }
+                return;
+            case RpnTask.STMT:
+                processStatement(t.tok, out);
+                return;
+            case RpnTask.FINISH_STMT: {
+                List<Token> rpn = toRpn(t.list, t.tok.file, t.tok.line);
+                List<Token> finalTokens = new ArrayList<>(t.list2);
+                finalTokens.addAll(rpn);
+                t.tok.childs = finalTokens;
+                return;
+            }
+            case RpnTask.GATHERED:
+                processGathered(t.tok, out);
+                return;
+            case RpnTask.NEXT:
+                if (t.tok.next != null) {
+                    out.add(new RpnTask(RpnTask.GATHERED, t.tok.next, null));
+                }
+                return;
+            case RpnTask.NESTED:
+                resolveNestedGroups(t.list, out);
+                return;
+            case RpnTask.RPN_CHILDS:
+                t.tok.childs = toRpn(t.tok.childs, t.tok.file, t.tok.line);
+                return;
+            case RpnTask.RPN_SUB:
+                t.tok.sub = toRpn(t.tok.sub, t.tok.file, t.tok.line);
+                return;
+            case RpnTask.STRUCT_BEGIN:
+                beginStructLiteral(t.tok, out);
+                return;
+            case RpnTask.STRUCT_MEMBER:
+                finishStructMember(t, out);
+                return;
+            case RpnTask.STRUCT_END:
+                t.tok.childs = t.list;
+                return;
+            default:
+                throw new IllegalStateException("unknown rpn task " + t.kind);
+        }
+    }
+
+    private void processStatement(Token lineTok, List<RpnTask> out) {
         List<Token> tokens = lineTok.childs;
         if (tokens.isEmpty()) {
             return;
@@ -177,7 +233,7 @@ public class RpnConverter {
                 case "assume":
                 case "lock":
                 case "try":
-                    processGathered(first);
+                    out.add(new RpnTask(RpnTask.GATHERED, first, null));
                     return;
                 case "import":
                     return; // already fully resolved, nothing to convert
@@ -222,16 +278,14 @@ public class RpnConverter {
         if (exprTokens.isEmpty()) {
             return; // bare 'return' with no expression (void return)
         }
-        resolveNestedGroups(exprTokens);
-        List<Token> rpn = toRpn(exprTokens, lineTok.file, lineTok.line);
-
-        List<Token> finalTokens = new ArrayList<>(prefix);
-        finalTokens.addAll(rpn);
-        lineTok.childs = finalTokens;
+        out.add(new RpnTask(RpnTask.NESTED, null, exprTokens));
+        RpnTask finish = new RpnTask(RpnTask.FINISH_STMT, lineTok, exprTokens);
+        finish.list2 = prefix;
+        out.add(finish);
     }
 
     /** Handles an already-gathered if/elseif/else/loop/func/struct/enum/for token. */
-    private void processGathered(Token t) {
+    private void processGathered(Token t, List<RpnTask> out) {
         switch (t.text) {
             case "if":
             case "elseif":
@@ -246,8 +300,8 @@ public class RpnConverter {
                 // in .childs, with .isCaseMatch distinguishing which of
                 // the two shapes it actually is (set by the parser the
                 // same way "match"'s own case-match form already is).
-                resolveNestedGroups(t.sub);
-                t.sub = toRpn(t.sub, t.file, t.line);
+                out.add(new RpnTask(RpnTask.NESTED, null, t.sub));
+                out.add(new RpnTask(RpnTask.RPN_SUB, t, null));
                 if (t.isCaseMatch) {
                     // "match b{ TRUE:{...} FALSE:{...} }" -- t.childs
                     // here holds one Token per *case*, not ordinary
@@ -265,14 +319,14 @@ public class RpnConverter {
                     // never reaching the RPN pass that turns raw tokens
                     // into a real expression tree at all).
                     for (Token caseTok : t.childs) {
-                        convertLines(caseTok.childs);
+                        out.add(new RpnTask(RpnTask.LINES, null, caseTok.childs));
                     }
                 } else {
-                    convertLines(t.childs);
+                    out.add(new RpnTask(RpnTask.LINES, null, t.childs));
                 }
                 break;
             case "else":
-                convertLines(t.childs);
+                out.add(new RpnTask(RpnTask.LINES, null, t.childs));
                 break;
             case "assume":
                 // "assume match expression;" or "assume match
@@ -282,17 +336,17 @@ public class RpnConverter {
                 // exists (and only needs walking) for the block form --
                 // the no-block form's own t.childs is deliberately left
                 // empty by the parser (see Token.hasBlock's own doc).
-                resolveNestedGroups(t.sub);
-                t.sub = toRpn(t.sub, t.file, t.line);
+                out.add(new RpnTask(RpnTask.NESTED, null, t.sub));
+                out.add(new RpnTask(RpnTask.RPN_SUB, t, null));
                 if (t.hasBlock) {
-                    convertLines(t.childs);
+                    out.add(new RpnTask(RpnTask.LINES, null, t.childs));
                 }
                 break;
             case "loop":
             case "func":
             case "unsafe":
             case "safe":
-                convertLines(t.childs);
+                out.add(new RpnTask(RpnTask.LINES, null, t.childs));
                 break;
             case "try":
                 // Two, unrelated shapes share this one KEYWORD text
@@ -311,10 +365,10 @@ public class RpnConverter {
                 // mandatory, Parser.gatherTryCatchSpan never leaves
                 // this empty).
                 if (!t.isTryBlock) {
-                    resolveNestedGroups(t.sub);
-                    t.sub = toRpn(t.sub, t.file, t.line);
+                    out.add(new RpnTask(RpnTask.NESTED, null, t.sub));
+                    out.add(new RpnTask(RpnTask.RPN_SUB, t, null));
                 }
-                convertLines(t.childs);
+                out.add(new RpnTask(RpnTask.LINES, null, t.childs));
                 break;
             case "struct":
             case "enum":
@@ -338,8 +392,8 @@ public class RpnConverter {
                 // expression) name; the expression itself is parked in
                 // t.childs (since t.sub is taken), converted the exact
                 // same way an 'if''s own condition already is.
-                resolveNestedGroups(t.childs);
-                t.childs = toRpn(t.childs, t.file, t.line);
+                out.add(new RpnTask(RpnTask.NESTED, null, t.childs));
+                out.add(new RpnTask(RpnTask.RPN_CHILDS, t, null));
                 return;
             case "interface":
                 return; // pure declarations (method signatures, no bodies) -- nothing to convert
@@ -348,7 +402,7 @@ public class RpnConverter {
                 // Parser.gatherImpl) -- each needs the exact same
                 // processing a top-level func gets.
                 for (Token method : t.childs) {
-                    processGathered(method);
+                    out.add(new RpnTask(RpnTask.GATHERED, method, null));
                 }
                 return;
             case "library":
@@ -358,16 +412,14 @@ public class RpnConverter {
                 // pulled out into t.extendsNames by the parser, so
                 // t.childs holds nothing but real function declarations).
                 for (Token func : t.childs) {
-                    processGathered(func);
+                    out.add(new RpnTask(RpnTask.GATHERED, func, null));
                 }
                 return;
             default:
                 throw new CompilerException("parse", t.file, t.line,
                         "internal error: unexpected gathered keyword '" + t.text + "'");
         }
-        if (t.next != null) {
-            processGathered(t.next);
-        }
+        out.add(new RpnTask(RpnTask.NEXT, t, null));
     }
 
     /**
@@ -401,15 +453,15 @@ public class RpnConverter {
      * guard, which exists specifically because that insertion runs too
      * early to avoid this same collision).
      */
-    private void resolveNestedGroups(List<Token> tokens) {
+    private void resolveNestedGroups(List<Token> tokens, List<RpnTask> out) {
         desugarSelfBolting(tokens);
         insertStructInstantiate(tokens);
         for (Token t : tokens) {
             if (t.type == TokenType.DELINEATOR && (t.text.equals("(") || t.text.equals("["))) {
-                resolveNestedGroups(t.childs);
-                t.childs = toRpn(t.childs, t.file, t.line);
+                out.add(new RpnTask(RpnTask.NESTED, null, t.childs));
+                out.add(new RpnTask(RpnTask.RPN_CHILDS, t, null));
             } else if (t.type == TokenType.DELINEATOR && t.text.equals("{")) {
-                resolveStructLiteralMembers(t);
+                out.add(new RpnTask(RpnTask.STRUCT_BEGIN, t, null));
             } else if (t.type == TokenType.TEMPLATE_STRING) {
                 // "let my_error_string = `...${CONFIG_FILE}...`,"
                 // confirmed directly -- each "${...}" segment is a
@@ -422,8 +474,8 @@ public class RpnConverter {
                 // nothing to RPN-convert in a bare piece of text.
                 for (Token seg : t.childs) {
                     if (seg.type == TokenType.DELINEATOR && seg.text.equals("(")) {
-                        resolveNestedGroups(seg.childs);
-                        seg.childs = toRpn(seg.childs, seg.file, seg.line);
+                        out.add(new RpnTask(RpnTask.NESTED, null, seg.childs));
+                        out.add(new RpnTask(RpnTask.RPN_CHILDS, seg, null));
                     }
                 }
             } else if (t.type == TokenType.KEYWORD && t.text.equals("try")) {
@@ -446,9 +498,9 @@ public class RpnConverter {
                 // KEYWORD as an ordinary atomic operand, so nothing
                 // further is needed to make it participate correctly in
                 // this expression's own shunting-yard.
-                resolveNestedGroups(t.sub);
-                t.sub = toRpn(t.sub, t.file, t.line);
-                convertLines(t.childs);
+                out.add(new RpnTask(RpnTask.NESTED, null, t.sub));
+                out.add(new RpnTask(RpnTask.RPN_SUB, t, null));
+                out.add(new RpnTask(RpnTask.LINES, null, t.childs));
             }
         }
     }
@@ -655,7 +707,7 @@ public class RpnConverter {
      * value itself needs (or is even meaningful to) resolve/RPN at all
      * -- the name is a bare marker, structurally never an operand.
      */
-    private void resolveStructLiteralMembers(Token braceTok) {
+    private void beginStructLiteral(Token braceTok, List<RpnTask> out) {
         List<List<Token>> groups = new ArrayList<>();
         for (Token lineTok : braceTok.childs) {
             splitByComma(lineTok.childs, groups);
@@ -671,42 +723,53 @@ public class RpnConverter {
                 nameAndSep.add(group.get(1));
                 valueTokens = new ArrayList<>(group.subList(2, group.size()));
             }
-            resolveNestedGroups(valueTokens);
-            // True RPN order for a binary operator: left operand, then
-            // right operand (or, if the right is itself a sub-
-            // expression, that sub-expression's own already-reduced
-            // RPN), then the operator last -- "name" is ':'/'='s own
-            // left operand, so it comes *first* here, with the value's
-            // own RPN in the middle and the separator itself last.
-            // Confirmed directly this is what the original, unsplit
-            // "toRpn(group, ...)" call already produced for this exact
-            // shape (its own shunting-yard treats ':'/'=' as an
-            // ordinary left-associative binary operator). Two earlier,
-            // wrong orderings were tried and rejected in turn while
-            // fixing this, not assumed correct on the first attempt:
-            // "[name, sep] + rpn(value)" (operator immediately after a
-            // single operand, with nothing yet on the stack to be its
-            // second one -- TreeBuilder itself failed, "':' is missing
-            // an operand") and "rpn(value) + [name, sep]" (valid RPN
-            // shape-wise, but silently swaps which operand ends up on
-            // which side of ':', since in RPN whichever operand is
-            // pushed *second* becomes the right one once the operator
-            // is reached). Caught by reasoning through the shunting-
-            // yard's own stack semantics directly rather than trusting
-            // either attempt because it merely stopped erroring.
-            List<Token> rpn = new ArrayList<>();
-            if (!nameAndSep.isEmpty()) {
-                rpn.add(nameAndSep.get(0));
-            }
-            rpn.addAll(toRpn(valueTokens, braceTok.file, braceTok.line));
-            if (!nameAndSep.isEmpty()) {
-                rpn.add(nameAndSep.get(1));
-            }
-            Token newLine = new Token(TokenType.LINE, "line", braceTok.line, braceTok.file);
-            newLine.childs = rpn;
-            newLines.add(newLine);
+            out.add(new RpnTask(RpnTask.NESTED, null, valueTokens));
+            RpnTask member = new RpnTask(RpnTask.STRUCT_MEMBER, braceTok, valueTokens);
+            member.list2 = nameAndSep;
+            member.lines = newLines;
+            out.add(member);
         }
-        braceTok.childs = newLines;
+        out.add(new RpnTask(RpnTask.STRUCT_END, braceTok, newLines));
+    }
+
+    /** One struct-literal member whose value is resolved: assembles its RPN line. The ordering comments are kept from the old single method. */
+    private void finishStructMember(RpnTask t, List<RpnTask> out) {
+        Token braceTok = t.tok;
+        List<Token> valueTokens = t.list;
+        List<Token> nameAndSep = t.list2;
+        // True RPN order for a binary operator: left operand, then
+        // right operand (or, if the right is itself a sub-
+        // expression, that sub-expression's own already-reduced
+        // RPN), then the operator last -- "name" is ':'/'='s own
+        // left operand, so it comes *first* here, with the value's
+        // own RPN in the middle and the separator itself last.
+        // Confirmed directly this is what the original, unsplit
+        // "toRpn(group, ...)" call already produced for this exact
+        // shape (its own shunting-yard treats ':'/'=' as an
+        // ordinary left-associative binary operator). Two earlier,
+        // wrong orderings were tried and rejected in turn while
+        // fixing this, not assumed correct on the first attempt:
+        // "[name, sep] + rpn(value)" (operator immediately after a
+        // single operand, with nothing yet on the stack to be its
+        // second one -- TreeBuilder itself failed, "':' is missing
+        // an operand") and "rpn(value) + [name, sep]" (valid RPN
+        // shape-wise, but silently swaps which operand ends up on
+        // which side of ':', since in RPN whichever operand is
+        // pushed *second* becomes the right one once the operator
+        // is reached). Caught by reasoning through the shunting-
+        // yard's own stack semantics directly rather than trusting
+        // either attempt because it merely stopped erroring.
+        List<Token> rpn = new ArrayList<>();
+        if (!nameAndSep.isEmpty()) {
+            rpn.add(nameAndSep.get(0));
+        }
+        rpn.addAll(toRpn(valueTokens, braceTok.file, braceTok.line));
+        if (!nameAndSep.isEmpty()) {
+            rpn.add(nameAndSep.get(1));
+        }
+        Token newLine = new Token(TokenType.LINE, "line", braceTok.line, braceTok.file);
+        newLine.childs = rpn;
+        t.lines.add(newLine);
     }
 
     private void splitByComma(List<Token> flat, List<List<Token>> out) {

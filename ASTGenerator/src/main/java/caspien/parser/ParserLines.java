@@ -4,8 +4,10 @@ import caspien.config.CompilerException;
 import caspien.token.Token;
 import caspien.token.TokenType;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Deque;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
@@ -48,49 +50,15 @@ final class ParserLines {
 
     // ---- generic "visit every line, anywhere in the tree" walker -----
 
-    public interface LineVisitor {
-        void visit(Token lineToken);
-    }
 
-    public static final class TypeParamParseResult {
-        public final List<String> names; // null if there was no '<' at all
-        public final List<String> bounds; // parallel to names; null entries mean "no bound"; whole list null if no bound anywhere
-        public final int nextIndex;
-        public TypeParamParseResult(List<String> names, List<String> bounds, int nextIndex) {
-            this.names = names;
-            this.bounds = bounds;
-            this.nextIndex = nextIndex;
-        }
-    }
 
-    public static final class TypeArgParseResult {
-        public final List<List<Token>> groups; // null if there was no '<' at all
-        public final int nextIndex;
-        public TypeArgParseResult(List<List<Token>> groups, int nextIndex) {
-            this.groups = groups;
-            this.nextIndex = nextIndex;
-        }
-    }
 
-    /** The result of parsing one "catch(e) { ... }" clause -- shared by a real "try EXPR catch(e){...}" (`gatherTryCatchSpan`) and a standalone "?catch(e){...}" declaration (see `gatherKeywordBlocks`'s own "?" handling). */
-    public static final class CatchClauseResult {
-        public final String paramName;
-        public final List<Token> body;
 
-        public CatchClauseResult(String paramName, List<Token> body) {
-            this.paramName = paramName;
-            this.body = body;
-        }
-    }
 
-    public static final class ImplementsParseResult {
-        public final List<String> names; // null if there was no 'implements' clause at all
-        public final int nextIndex;
-        public ImplementsParseResult(List<String> names, int nextIndex) {
-            this.names = names;
-            this.nextIndex = nextIndex;
-        }
-    }
+
+
+
+
 
     /** An enum variant's integer value (decimal text; hexadecimal/binary literals arrive already normalised to decimal): enum values are 63-bit. */
     public static long enumLiteralValue(Token t) {
@@ -125,7 +93,6 @@ final class ParserLines {
 
     // ---- 1. nesting -------------------------------------------------
 
-    /** Each Lexeme becomes the Token that will carry it through the tree stages (pinned comments keep their identity). */
     public List<Token> toTokens(List<Lexeme> lexemes) {
         IdentityHashMap<Lexeme, Token> made = new IdentityHashMap<>();
         List<Token> out = new ArrayList<>(lexemes.size());
@@ -136,17 +103,34 @@ final class ParserLines {
     }
 
     private Token tokenOf(Lexeme l, IdentityHashMap<Lexeme, Token> made) {
-        Token t = made.get(l);
-        if (t != null) {
-            return t;
+        Token root = made.get(l);
+        if (root != null) {
+            return root;
         }
-        t = new Token(l.type, l.text, l.line, l.file);
+        root = newToken(l, made);
+        // pinned comments may themselves carry pinned comments: fill them from a work list
+        Deque<Lexeme> work = new ArrayDeque<>();
+        work.push(l);
+        while (!work.isEmpty()) {
+            Lexeme cur = work.pop();
+            Token t = made.get(cur);
+            for (Lexeme c : cur.pinnedComments) {
+                Token tc = made.get(c);
+                if (tc == null) {
+                    tc = newToken(c, made);
+                    work.push(c);
+                }
+                t.pinnedComments.add(tc);
+            }
+        }
+        return root;
+    }
+
+    private Token newToken(Lexeme l, IdentityHashMap<Lexeme, Token> made) {
+        Token t = new Token(l.type, l.text, l.line, l.file);
         made.put(l, t);
         t.literalValue = l.literalValue;
         t.forcedLiteralType = l.forcedLiteralType;
-        for (Lexeme c : l.pinnedComments) {
-            t.pinnedComments.add(tokenOf(c, made));
-        }
         return t;
     }
 
@@ -188,69 +172,96 @@ final class ParserLines {
         return root;
     }
 
-    /** Collapses the lexer's template-string marker sequence into one TEMPLATE_STRING token (recursive).
-     *  See docs/Parser.md, "Template strings". */
     public void gatherTemplateStringsDeep(List<Token> flat) {
-        List<Token> result = new ArrayList<>();
-        int i = 0;
-        while (i < flat.size()) {
-            Token t = flat.get(i);
-            if (t.type == TokenType.OPERATOR && t.text.equals("TEMPLATE_STRING_START")) {
-                List<Token> segments = new ArrayList<>();
-                int j = i + 1;
-                while (j < flat.size()
-                        && !(flat.get(j).type == TokenType.OPERATOR
-                                && flat.get(j).text.equals("TEMPLATE_STRING_END"))) {
-                    Token seg = flat.get(j);
-                    if (seg.type == TokenType.OPERATOR && seg.text.equals("TEMPLATE_STRING_PART")) {
-                        segments.add(seg);
-                        j++;
-                    } else if (seg.type == TokenType.OPERATOR && seg.text.equals("TEMPLATE_EXPR_START")) {
-                        j++; // consume the marker itself
-                        Token braceGroup = flat.get(j); // the already-nested "{...}" token
-                        gatherTemplateStringsDeep(braceGroup.childs); // a template string can nest inside one
-                        // whitespace must go here: later passes never recurse into TEMPLATE_STRING segments
-                        // (see docs/Parser.md, "Template strings")
-                        removeWhitespaceFromExprGroup(braceGroup.childs);
-                        segments.add(braceGroup);
-                        j++;
-                    } else {
-                        throw new CompilerException("parse", seg.file, seg.line,
-                                "internal error: unexpected token '" + seg.text
-                                        + "' inside a template literal");
-                    }
-                }
-                if (j >= flat.size()) {
-                    throw new CompilerException("parse", t.file, t.line,
-                            "internal error: unterminated template literal reached end of input");
-                }
-                Token templateTok = new Token(TokenType.TEMPLATE_STRING, "`...`", t.line, t.file);
-                templateTok.childs = segments;
-                result.add(templateTok);
-                i = j + 1; // skip past TEMPLATE_STRING_END
-                continue;
-            }
-            if (t.childs != null) {
-                gatherTemplateStringsDeep(t.childs);
-            }
-            result.add(t);
-            i++;
-        }
-        flat.clear();
-        flat.addAll(result);
+        runTasks(new ParserTask(ParserTask.TPL, flat));
     }
 
-    /** Strips WHITESPACE/TERMINATOR from a "${...}" segment, recursing into '(' and '[' only. */
-    public void removeWhitespaceFromExprGroup(List<Token> flat) {
-        for (int i = flat.size() - 1; i >= 0; i--) {
-            TokenType t = flat.get(i).type;
-            if (t == TokenType.WHITESPACE || t == TokenType.TERMINATOR) {
-                flat.remove(i);
-            }
+    private void stepTemplate(ParserTask t, List<ParserTask> out) {
+        List<Token> flat = t.list;
+        if (t.result == null) {
+            t.result = new ArrayList<>();
+            t.i = 0;
         }
-        for (Token t : flat) {
-            if (t.type == TokenType.DELINEATOR && (t.text.equals("(") || t.text.equals("["))) {
-                removeWhitespaceFromExprGroup(t.childs);
+        boolean inTemplate = t.phase == 2;
+        if (t.phase == 3) {
+            // the embedded expression has been processed: whitespace goes here (later passes never recurse into TEMPLATE_STRING segments)
+            removeWhitespaceFromExprGroup(t.brace.childs);
+            t.segments.add(t.brace);
+            t.j++;
+            inTemplate = true;
+        }
+        t.phase = 0;
+        while (true) {
+            if (!inTemplate) {
+                if (t.i >= flat.size()) {
+                    break;
+                }
+                Token tok = flat.get(t.i);
+                if (tok.type == TokenType.OPERATOR && tok.text.equals("TEMPLATE_STRING_START")) {
+                    t.segments = new ArrayList<>();
+                    t.j = t.i + 1;
+                    t.tok = tok;
+                    inTemplate = true;
+                    continue;
+                }
+                t.result.add(tok);
+                t.i++;
+                if (tok.childs != null) {
+                    out.add(new ParserTask(ParserTask.TPL, tok.childs));   // a template string can nest inside one
+                    out.add(t);
+                    return;
+                }
+                continue;
+            }
+            while (t.j < flat.size()
+                    && !(flat.get(t.j).type == TokenType.OPERATOR
+                            && flat.get(t.j).text.equals("TEMPLATE_STRING_END"))) {
+                Token seg = flat.get(t.j);
+                if (seg.type == TokenType.OPERATOR && seg.text.equals("TEMPLATE_STRING_PART")) {
+                    t.segments.add(seg);
+                    t.j++;
+                } else if (seg.type == TokenType.OPERATOR && seg.text.equals("TEMPLATE_EXPR_START")) {
+                    t.j++; // consume the marker itself
+                    t.brace = flat.get(t.j); // the already-nested "{...}" token
+                    t.phase = 3;
+                    out.add(new ParserTask(ParserTask.TPL, t.brace.childs));
+                    out.add(t);
+                    return;
+                } else {
+                    throw new CompilerException("parse", seg.file, seg.line,
+                            "internal error: unexpected token '" + seg.text
+                                    + "' inside a template literal");
+                }
+            }
+            if (t.j >= flat.size()) {
+                throw new CompilerException("parse", t.tok.file, t.tok.line,
+                        "internal error: unterminated template literal reached end of input");
+            }
+            Token templateTok = new Token(TokenType.TEMPLATE_STRING, "`...`", t.tok.line, t.tok.file);
+            templateTok.childs = t.segments;
+            t.result.add(templateTok);
+            t.i = t.j + 1; // skip past TEMPLATE_STRING_END
+            inTemplate = false;
+        }
+        flat.clear();
+        flat.addAll(t.result);
+    }
+
+    public void removeWhitespaceFromExprGroup(List<Token> start) {
+        Deque<List<Token>> work = new ArrayDeque<>();
+        work.push(start);
+        while (!work.isEmpty()) {
+            List<Token> flat = work.pop();
+            for (int i = flat.size() - 1; i >= 0; i--) {
+                TokenType t = flat.get(i).type;
+                if (t == TokenType.WHITESPACE || t == TokenType.TERMINATOR) {
+                    flat.remove(i);
+                }
+            }
+            for (Token t : flat) {
+                if (t.type == TokenType.DELINEATOR && (t.text.equals("(") || t.text.equals("["))) {
+                    work.push(t.childs);
+                }
             }
         }
     }
@@ -265,8 +276,15 @@ final class ParserLines {
         return false;
     }
 
-    /** Groups a statement-sequence token list into LINE tokens (split on TERMINATOR and after a header-keyword '{'). */
     public List<Token> splitIntoLines(List<Token> flat) {
+        List<Token> lines = buildLines(flat);
+        for (Token lineTok : lines) {
+            runTasks(new ParserTask(ParserTask.SPLIT_FLAT, lineTok.childs));
+        }
+        return lines;
+    }
+
+    private List<Token> buildLines(List<Token> flat) {
         List<Token> lines = new ArrayList<>();
         List<Token> current = new ArrayList<>();
         int currentLine = 1;
@@ -296,28 +314,10 @@ final class ParserLines {
         if (hasNonWhitespace(current)) {
             lines.add(makeLine(current, currentLine));
         }
-
-        // Recurse into every '{' block found in each line, splitting its
-        // childs into lines too. '(' and '[' childs stay flat but are
-        // still walked, in case a '{' somehow appears nested inside one.
-        for (Token lineTok : lines) {
-            splitNestedBlocks(lineTok.childs);
-        }
         return lines;
     }
 
-    public void splitNestedBlocks(List<Token> flat) {
-        for (Token t : flat) {
-            if (t.type != TokenType.DELINEATOR) {
-                continue;
-            }
-            if (t.text.equals("{")) {
-                t.childs = splitIntoLines(t.childs);
-            } else {
-                splitNestedBlocks(t.childs);
-            }
-        }
-    }
+
 
     public boolean hasNonWhitespace(List<Token> toks) {
         for (Token t : toks) {
@@ -335,41 +335,50 @@ final class ParserLines {
     }
 
     public void forEachLineDeep(List<Token> lines, LineVisitor visitor) {
-        for (Token lineTok : lines) {
-            visitor.visit(lineTok);
-            scanForBlockLines(lineTok.childs, visitor);
-        }
+        ParserTask first = new ParserTask(ParserTask.VISIT_LINES, lines);
+        first.visitor = visitor;
+        runTasks(first);
     }
 
-    public void scanForBlockLines(List<Token> flat, LineVisitor visitor) {
-        for (Token t : flat) {
-            if (t.type != TokenType.DELINEATOR) {
-                continue;
-            }
-            if (t.text.equals("{")) {
-                forEachLineDeep(t.childs, visitor);
-            } else {
-                scanForBlockLines(t.childs, visitor);
-            }
-        }
-    }
+
 
     // ---- decorator lines ("@name" / "@name(args)") ---------------------
 
-    /**
-     * Removes "@name" / "@name(args)" lines and attaches them as Decorator objects to the next line's
-     * first token. Validity per construct is the TypeChecker's job. See docs/Parser.md, "Decorator lines".
-     */
     public void stripDecoratorsDeep(List<Token> lines) {
-        List<Decorator> pending = new ArrayList<>();
-        List<Token> result = new ArrayList<>();
-        for (Token lineTok : lines) {
+        runTasks(new ParserTask(ParserTask.DEC, lines));
+    }
+
+    /** One decorator-stripping pass over a statement list; resumable around the two nested walks (an "@pub{}" block, the '{' bodies of a kept line). */
+    private void stepDecorators(ParserTask d, List<ParserTask> out) {
+        List<Token> lines = d.list;
+        if (d.result == null) {
+            d.result = new ArrayList<>();
+            d.pending = new ArrayList<>();
+            d.i = 0;
+        }
+        List<Token> result = d.result;
+        if (d.inner != null) {
+            // the "@pub{...}" block's lines have been processed: unwrap them, marking each member
+            for (Token innerLine : d.inner) {
+                int innerIdx = firstNonWhitespaceIndex(innerLine.childs);
+                if (innerIdx >= 0) {
+                    innerLine.childs.get(innerIdx).isPubBlockMember = true;
+                    if (!d.pending.isEmpty()) {
+                        innerLine.childs.get(innerIdx).decorators = d.pending;
+                        d.pending = new ArrayList<>();
+                    }
+                }
+                result.add(innerLine);
+            }
+            d.inner = null;
+        }
+        while (d.i < lines.size()) {
+            Token lineTok = lines.get(d.i++);
             List<Token> tokens = lineTok.childs;
             int idx = firstNonWhitespaceIndex(tokens);
             if (idx >= 0 && tokens.get(idx).type == TokenType.OPERATOR && tokens.get(idx).text.equals("@")) {
                 if (isPubBlockShape(tokens, idx)) {
-                    // "@pub{...}" group: unwrap the block, mark each member isPubBlockMember
-                    // (see docs/Parser.md, "Decorator lines")
+                    // "@pub{...}" group: unwrap the block (see docs/Parser.md, "Decorator lines")
                     int nameIdx = idx + 1;
                     while (nameIdx < tokens.size() && tokens.get(nameIdx).type == TokenType.WHITESPACE) {
                         nameIdx++;
@@ -379,33 +388,25 @@ final class ParserLines {
                         braceIdx++;
                     }
                     Token braceTok = tokens.get(braceIdx);
-                    List<Token> innerLines = new ArrayList<>(braceTok.childs);
-                    stripDecoratorsDeep(innerLines);
-                    for (Token innerLine : innerLines) {
-                        int innerIdx = firstNonWhitespaceIndex(innerLine.childs);
-                        if (innerIdx >= 0) {
-                            innerLine.childs.get(innerIdx).isPubBlockMember = true;
-                            if (!pending.isEmpty()) {
-                                innerLine.childs.get(innerIdx).decorators = pending;
-                                pending = new ArrayList<>();
-                            }
-                        }
-                        result.add(innerLine);
-                    }
-                    continue;
+                    d.inner = new ArrayList<>(braceTok.childs);
+                    out.add(new ParserTask(ParserTask.DEC, d.inner));
+                    out.add(d);
+                    return;
                 }
-                pending.add(parseDecoratorLine(tokens, idx, lineTok));
+                d.pending.add(parseDecoratorLine(tokens, idx, lineTok));
                 continue; // the whole decorator line is dropped, not kept in `result`
             }
-            if (idx >= 0 && !pending.isEmpty()) {
-                tokens.get(idx).decorators = pending;
-                pending = new ArrayList<>();
+            if (idx >= 0 && !d.pending.isEmpty()) {
+                tokens.get(idx).decorators = d.pending;
+                d.pending = new ArrayList<>();
             }
             result.add(lineTok);
-            scanForBlockLinesDecorators(tokens);
+            out.add(new ParserTask(ParserTask.DEC_SCAN, tokens));
+            out.add(d);
+            return;
         }
-        if (!pending.isEmpty()) {
-            Decorator last = pending.get(pending.size() - 1);
+        if (!d.pending.isEmpty()) {
+            Decorator last = d.pending.get(d.pending.size() - 1);
             throw new CompilerException("parse", last.file, last.line,
                     "'@" + last.name + "' decorates nothing -- no statement follows it in this block");
         }
@@ -430,18 +431,7 @@ final class ParserLines {
                 && tokens.get(braceIdx).text.equals("{") && braceIdx == tokens.size() - 1;
     }
 
-    public void scanForBlockLinesDecorators(List<Token> flat) {
-        for (Token t : flat) {
-            if (t.type != TokenType.DELINEATOR) {
-                continue;
-            }
-            if (t.text.equals("{")) {
-                stripDecoratorsDeep(t.childs);
-            } else {
-                scanForBlockLinesDecorators(t.childs);
-            }
-        }
-    }
+
 
     /** tokens.get(idx) is the '@' token; parses "name" or "name(arg,arg,...)" starting right after it. */
     public Decorator parseDecoratorLine(List<Token> tokens, int idx, Token lineTok) {
@@ -796,30 +786,10 @@ final class ParserLines {
     // ---- 5. whitespace removal -----------------------------------------
 
     public void removeWhitespaceInLines(List<Token> lines) {
-        for (Token lineTok : lines) {
-            removeWhitespaceInFlat(lineTok.childs);
-        }
+        runTasks(new ParserTask(ParserTask.RW_LINES, lines));
     }
 
-    public void removeWhitespaceInFlat(List<Token> flat) {
-        for (int i = flat.size() - 1; i >= 0; i--) {
-            if (flat.get(i).type == TokenType.WHITESPACE) {
-                flat.remove(i);
-            }
-        }
-        for (Token t : flat) {
-            if (t.type != TokenType.DELINEATOR) {
-                continue;
-            }
-            if (t.text.equals("{")) {
-                removeWhitespaceInLines(t.childs);
-            } else {
-                // '(' and '[' bodies are one expression: leftover TERMINATORs are noise
-                removeTerminatorsInFlat(t.childs);
-                removeWhitespaceInFlat(t.childs);
-            }
-        }
-    }
+
 
     public void removeTerminatorsInFlat(List<Token> flat) {
         for (int i = flat.size() - 1; i >= 0; i--) {
@@ -831,128 +801,21 @@ final class ParserLines {
 
     // ---- 5.1 "then" pseudo-operator merging ("&&then"/"||then") -----------
 
-    /**
-     * Merges OPERATOR "&&"/"||" followed by VARREF "then" into one "&&then"/"||then" operator token.
-     * Must run before insertCallLookupInLines ("&&then(x)" would read as a call to "then").
-     * See docs/Parser.md, "&&then / ||then".
-     */
     public void mergeThenOperators(List<Token> lines) {
-        for (Token lineTok : lines) {
-            mergeThenInFlat(lineTok.childs);
-        }
+        runTasks(new ParserTask(ParserTask.MT_LINES, lines));
     }
 
-    public void mergeThenInFlat(List<Token> flat) {
-        for (int i = 0; i < flat.size() - 1; i++) {
-            Token t = flat.get(i);
-            Token next = flat.get(i + 1);
-            if (t.type == TokenType.OPERATOR && (t.text.equals("&&") || t.text.equals("||"))
-                    && next.type == TokenType.VARREF && next.text.equals("then")) {
-                t.text = t.text + "then";
-                flat.remove(i + 1);
-            }
-        }
-        for (Token t : flat) {
-            if (t.type != TokenType.DELINEATOR) {
-                continue;
-            }
-            if (t.text.equals("{")) {
-                mergeThenOperators(t.childs);
-            } else {
-                mergeThenInFlat(t.childs);
-            }
-        }
-    }
+
 
     // ---- 5.5 generic-instantiation collapsing (":<...>") ------------------
 
     public void collapseGenericInstantiationsInLines(List<Token> lines) {
-        for (Token lineTok : lines) {
-            collapseGenericInstantiationsInFlat(lineTok.childs);
-        }
+        runTasks(new ParserTask(ParserTask.CG_LINES, lines));
     }
 
-    /**
-     * Collapses "VARREF ':<' ... '>'" spans into one VARREF token carrying `.genericArgs`.
-     * Skips struct/enum/interface/type/extern/export/ASM lines and func/impl/library headers
-     * (declared-type contexts, never expressions). See docs/Parser.md, "Generic instantiation (':<...>')".
-     */
-    public void collapseGenericInstantiationsInFlat(List<Token> flat) {
-        if (flat.isEmpty()) {
-            return;
-        }
-        Token first = flat.get(0);
-        if (first.type == TokenType.KEYWORD
-                && (first.text.equals("struct") || first.text.equals("enum") || first.text.equals("interface") || first.text.equals("type") || first.text.equals("extern") || first.text.equals("export") || first.text.equals("ASM"))) {
-            return;
-        }
-        if (first.type == TokenType.KEYWORD
-                && (first.text.equals("func") || first.text.equals("impl") || first.text.equals("library"))) {
-            Token last = flat.get(flat.size() - 1);
-            if (last.type == TokenType.DELINEATOR && last.text.equals("{")) {
-                collapseGenericInstantiationsInLines(last.childs);
-            }
-            return;
-        }
 
-        for (int i = 0; i < flat.size(); i++) {
-            Token t = flat.get(i);
-            if (t.type == TokenType.VARREF && i + 1 < flat.size()) {
-                Token next = flat.get(i + 1);
-                if (next.type == TokenType.OPERATOR && next.text.equals(":<")) {
-                    collapseOneGenericSpan(flat, i);
-                }
-            }
-        }
-        for (Token t : flat) {
-            if (t.type != TokenType.DELINEATOR) {
-                continue;
-            }
-            if (t.text.equals("{")) {
-                collapseGenericInstantiationsInLines(t.childs);
-            } else {
-                collapseGenericInstantiationsInFlat(t.childs);
-            }
-        }
-    }
 
-    /** flat[i] is the base VARREF, flat[i+1] the ":<" token: collapses the whole span (nested spans recursively) into one token in place. */
-    public void collapseOneGenericSpan(List<Token> flat, int i) {
-        Token baseTok = flat.get(i);
-        int depth = 1;
-        int j = i + 2; // first token after ':<'
-        int closeIdx = -1;
-        for (; j < flat.size(); j++) {
-            Token t = flat.get(j);
-            if (t.type == TokenType.OPERATOR && t.text.equals(":<")) {
-                depth++;
-            } else if (t.type == TokenType.OPERATOR && t.text.equals(">")) {
-                depth--;
-                if (depth == 0) {
-                    closeIdx = j;
-                    break;
-                }
-            }
-        }
-        if (closeIdx < 0) {
-            throw new CompilerException("parse", baseTok.file, baseTok.line,
-                    "unterminated generic instantiation, expected a matching '>' for '"
-                            + baseTok.text + ":<'");
-        }
-        List<Token> argTokens = new ArrayList<>(flat.subList(i + 2, closeIdx));
-        List<List<Token>> argGroups = splitTopLevelCommaGroups(argTokens);
-        for (List<Token> group : argGroups) {
-            collapseGenericInstantiationsInFlat(group);
-        }
 
-        Token collapsed = new Token(TokenType.VARREF, baseTok.text, baseTok.line, baseTok.file);
-        collapsed.genericArgs = argGroups;
-
-        for (int k = closeIdx; k >= i; k--) {
-            flat.remove(k);
-        }
-        flat.add(i, collapsed);
-    }
 
     /** Splits on top-level ',' only (tracks ':<'/'>' depth so a nested generic's commas are not separators). */
     public List<List<Token>> splitTopLevelCommaGroups(List<Token> tokens) {
@@ -1097,9 +960,255 @@ final class ParserLines {
     // ---- 6. CALL / LOOKUP insertion -------------------------------------
 
     public void insertCallLookupInLines(List<Token> lines) {
-        for (Token lineTok : lines) {
-            insertCallLookupInFlat(lineTok.childs);
+        runTasks(new ParserTask(ParserTask.IC_LINES, lines));
+    }
+
+
+
+    // ---- the tree walkers' task stack ------------------------------------
+
+    /** Runs tasks depth-first; a step lists its follow-up tasks in run order. */
+    private void runTasks(ParserTask first) {
+        Deque<ParserTask> stack = new ArrayDeque<>();
+        stack.push(first);
+        List<ParserTask> out = new ArrayList<>();
+        while (!stack.isEmpty()) {
+            ParserTask t = stack.pop();
+            out.clear();
+            stepTask(t, out);
+            for (int i = out.size() - 1; i >= 0; i--) {
+                stack.push(out.get(i));
+            }
         }
+    }
+
+    private void stepTask(ParserTask t, List<ParserTask> out) {
+        switch (t.kind) {
+            case ParserTask.RW_LINES:
+                for (Token lineTok : t.list) {
+                    out.add(new ParserTask(ParserTask.RW_FLAT, lineTok.childs));
+                }
+                return;
+            case ParserTask.RW_PAREN:
+                removeTerminatorsInFlat(t.list);   // '(' and '[' bodies are one expression: leftover TERMINATORs are noise
+                stepRemoveWhitespace(t.list, out);
+                return;
+            case ParserTask.RW_FLAT:
+                stepRemoveWhitespace(t.list, out);
+                return;
+            case ParserTask.MT_LINES:
+                for (Token lineTok : t.list) {
+                    out.add(new ParserTask(ParserTask.MT_FLAT, lineTok.childs));
+                }
+                return;
+            case ParserTask.MT_FLAT:
+                stepMergeThen(t.list, out);
+                return;
+            case ParserTask.CG_LINES:
+                for (Token lineTok : t.list) {
+                    out.add(new ParserTask(ParserTask.CG_FLAT, lineTok.childs));
+                }
+                return;
+            case ParserTask.CG_FLAT:
+                stepCollapseGeneric(t, out);
+                return;
+            case ParserTask.CG_FINISH:
+                finishGenericSpan(t);
+                return;
+            case ParserTask.IC_LINES:
+                for (Token lineTok : t.list) {
+                    out.add(new ParserTask(ParserTask.IC_FLAT, lineTok.childs));
+                }
+                return;
+            case ParserTask.IC_FLAT:
+                stepInsertCallLookup(t.list, out);
+                return;
+            case ParserTask.TPL:
+                stepTemplate(t, out);
+                return;
+            case ParserTask.SPLIT_FLAT:
+                // every '{' body becomes lines too; '(' and '[' bodies stay flat but are still walked
+                for (Token tok : t.list) {
+                    if (tok.type != TokenType.DELINEATOR) {
+                        continue;
+                    }
+                    if (tok.text.equals("{")) {
+                        tok.childs = buildLines(tok.childs);
+                        for (Token lineTok : tok.childs) {
+                            out.add(new ParserTask(ParserTask.SPLIT_FLAT, lineTok.childs));
+                        }
+                    } else {
+                        out.add(new ParserTask(ParserTask.SPLIT_FLAT, tok.childs));
+                    }
+                }
+                return;
+            case ParserTask.VISIT_LINES:
+                for (Token lineTok : t.list) {
+                    ParserTask one = new ParserTask(ParserTask.VISIT_ONE, null);
+                    one.tok = lineTok;
+                    one.visitor = t.visitor;
+                    out.add(one);
+                }
+                return;
+            case ParserTask.VISIT_ONE: {
+                t.visitor.visit(t.tok);
+                ParserTask scan = new ParserTask(ParserTask.SCAN_BLOCKS, t.tok.childs);
+                scan.visitor = t.visitor;
+                out.add(scan);
+                return;
+            }
+            case ParserTask.SCAN_BLOCKS:
+                for (Token tok : t.list) {
+                    if (tok.type != TokenType.DELINEATOR) {
+                        continue;
+                    }
+                    ParserTask next = new ParserTask(tok.text.equals("{") ? ParserTask.VISIT_LINES : ParserTask.SCAN_BLOCKS, tok.childs);
+                    next.visitor = t.visitor;
+                    out.add(next);
+                }
+                return;
+            case ParserTask.DEC:
+                stepDecorators(t, out);
+                return;
+            case ParserTask.DEC_SCAN:
+                for (Token tok : t.list) {
+                    if (tok.type != TokenType.DELINEATOR) {
+                        continue;
+                    }
+                    out.add(new ParserTask(tok.text.equals("{") ? ParserTask.DEC : ParserTask.DEC_SCAN, tok.childs));
+                }
+                return;
+            default:
+                throw new IllegalStateException("unknown parser task " + t.kind);
+        }
+    }
+
+    private void stepRemoveWhitespace(List<Token> flat, List<ParserTask> out) {
+        for (int i = flat.size() - 1; i >= 0; i--) {
+            if (flat.get(i).type == TokenType.WHITESPACE) {
+                flat.remove(i);
+            }
+        }
+        for (Token t : flat) {
+            if (t.type != TokenType.DELINEATOR) {
+                continue;
+            }
+            out.add(new ParserTask(t.text.equals("{") ? ParserTask.RW_LINES : ParserTask.RW_PAREN, t.childs));
+        }
+    }
+
+    private void stepMergeThen(List<Token> flat, List<ParserTask> out) {
+        for (int i = 0; i < flat.size() - 1; i++) {
+            Token t = flat.get(i);
+            Token next = flat.get(i + 1);
+            if (t.type == TokenType.OPERATOR && (t.text.equals("&&") || t.text.equals("||"))
+                    && next.type == TokenType.VARREF && next.text.equals("then")) {
+                t.text = t.text + "then";
+                flat.remove(i + 1);
+            }
+        }
+        for (Token t : flat) {
+            if (t.type != TokenType.DELINEATOR) {
+                continue;
+            }
+            out.add(new ParserTask(t.text.equals("{") ? ParserTask.MT_LINES : ParserTask.MT_FLAT, t.childs));
+        }
+    }
+
+    /**
+     * Collapses "VARREF ':<' ... '>'" spans into one VARREF token carrying `.genericArgs`.
+     * Skips struct/enum/interface/type/extern/export/ASM lines and func/impl/library headers
+     * (declared-type contexts, never expressions). See docs/Parser.md, "Generic instantiation (':<...>')".
+     * Resumable: a span's argument groups are collapsed by child tasks before the span itself is replaced.
+     */
+    private void stepCollapseGeneric(ParserTask task, List<ParserTask> out) {
+        List<Token> flat = task.list;
+        if (task.phase == 0) {
+            if (flat.isEmpty()) {
+                return;
+            }
+            Token first = flat.get(0);
+            if (first.type == TokenType.KEYWORD
+                    && (first.text.equals("struct") || first.text.equals("enum") || first.text.equals("interface") || first.text.equals("type") || first.text.equals("extern") || first.text.equals("export") || first.text.equals("ASM"))) {
+                return;
+            }
+            if (first.type == TokenType.KEYWORD
+                    && (first.text.equals("func") || first.text.equals("impl") || first.text.equals("library"))) {
+                Token last = flat.get(flat.size() - 1);
+                if (last.type == TokenType.DELINEATOR && last.text.equals("{")) {
+                    out.add(new ParserTask(ParserTask.CG_LINES, last.childs));
+                }
+                return;
+            }
+            task.phase = 1;
+        }
+        for (; task.i < flat.size(); task.i++) {
+            int i = task.i;
+            Token t = flat.get(i);
+            if (t.type == TokenType.VARREF && i + 1 < flat.size()) {
+                Token next = flat.get(i + 1);
+                if (next.type == TokenType.OPERATOR && next.text.equals(":<")) {
+                    beginGenericSpan(task, i, out);
+                    task.i = i + 1;
+                    out.add(task);
+                    return;
+                }
+            }
+        }
+        for (Token t : flat) {
+            if (t.type != TokenType.DELINEATOR) {
+                continue;
+            }
+            out.add(new ParserTask(t.text.equals("{") ? ParserTask.CG_LINES : ParserTask.CG_FLAT, t.childs));
+        }
+    }
+
+    /** flat[i] is the base VARREF, flat[i+1] the ":<" token: queues the collapse of the argument groups, then the replacement of the whole span by one token. */
+    private void beginGenericSpan(ParserTask task, int i, List<ParserTask> out) {
+        List<Token> flat = task.list;
+        Token baseTok = flat.get(i);
+        int depth = 1;
+        int j = i + 2; // first token after ':<'
+        int closeIdx = -1;
+        for (; j < flat.size(); j++) {
+            Token t = flat.get(j);
+            if (t.type == TokenType.OPERATOR && t.text.equals(":<")) {
+                depth++;
+            } else if (t.type == TokenType.OPERATOR && t.text.equals(">")) {
+                depth--;
+                if (depth == 0) {
+                    closeIdx = j;
+                    break;
+                }
+            }
+        }
+        if (closeIdx < 0) {
+            throw new CompilerException("parse", baseTok.file, baseTok.line,
+                    "unterminated generic instantiation, expected a matching '>' for '"
+                            + baseTok.text + ":<'");
+        }
+        List<Token> argTokens = new ArrayList<>(flat.subList(i + 2, closeIdx));
+        List<List<Token>> argGroups = splitTopLevelCommaGroups(argTokens);
+        for (List<Token> group : argGroups) {
+            out.add(new ParserTask(ParserTask.CG_FLAT, group));
+        }
+        ParserTask fin = new ParserTask(ParserTask.CG_FINISH, flat);
+        fin.i = i;
+        fin.closeIdx = closeIdx;
+        fin.groups = argGroups;
+        fin.tok = baseTok;
+        out.add(fin);
+    }
+
+    private void finishGenericSpan(ParserTask fin) {
+        List<Token> flat = fin.list;
+        Token baseTok = fin.tok;
+        Token collapsed = new Token(TokenType.VARREF, baseTok.text, baseTok.line, baseTok.file);
+        collapsed.genericArgs = fin.groups;
+        for (int k = fin.closeIdx; k >= fin.i; k--) {
+            flat.remove(k);
+        }
+        flat.add(fin.i, collapsed);
     }
 
     /**
@@ -1107,7 +1216,7 @@ final class ParserLines {
      * type/extern/export/ASM lines, func headers): "u64[50]" there is a type, not a subscript.
      * See docs/Parser.md, "CALL / LOOKUP insertion".
      */
-    public void insertCallLookupInFlat(List<Token> flat) {
+    private void stepInsertCallLookup(List<Token> flat, List<ParserTask> out) {
         if (flat.isEmpty()) {
             return;
         }
@@ -1120,7 +1229,7 @@ final class ParserLines {
                 && (first.text.equals("func") || first.text.equals("impl") || first.text.equals("library"))) {
             Token last = flat.get(flat.size() - 1);
             if (last.type == TokenType.DELINEATOR && last.text.equals("{")) {
-                insertCallLookupInLines(last.childs);
+                out.add(new ParserTask(ParserTask.IC_LINES, last.childs));
             }
             return;
         }
@@ -1129,7 +1238,7 @@ final class ParserLines {
                 && flat.get(1).type == TokenType.KEYWORD && flat.get(1).text.equals("func")) {
             Token last = flat.get(flat.size() - 1);
             if (last.type == TokenType.DELINEATOR && last.text.equals("{")) {
-                insertCallLookupInLines(last.childs);
+                out.add(new ParserTask(ParserTask.IC_LINES, last.childs));
             }
             return;
         }
@@ -1169,7 +1278,7 @@ final class ParserLines {
                 // recurse into "${...}" groups too, so "${f()}" gets a CALL marker and a clear constant-expression error
                 for (Token seg : t.childs) {
                     if (seg.type == TokenType.DELINEATOR && seg.text.equals("(")) {
-                        insertCallLookupInFlat(seg.childs);
+                        out.add(new ParserTask(ParserTask.IC_FLAT, seg.childs));
                     }
                 }
                 continue;
@@ -1177,11 +1286,7 @@ final class ParserLines {
             if (t.type != TokenType.DELINEATOR) {
                 continue;
             }
-            if (t.text.equals("{")) {
-                insertCallLookupInLines(t.childs);
-            } else {
-                insertCallLookupInFlat(t.childs);
-            }
+            out.add(new ParserTask(t.text.equals("{") ? ParserTask.IC_LINES : ParserTask.IC_FLAT, t.childs));
         }
     }
 

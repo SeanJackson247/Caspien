@@ -19,11 +19,7 @@ import java.util.Set;
  * a program through the identifier __FS_ROOTS is "path?rw|path?r"; "?" and "|" cannot appear in a root.
  */
 public final class FsPolicy {
-    public static final class Root {
-        public final String path;
-        public final boolean rw;
-        Root(String path, boolean rw) { this.path = path; this.rw = rw; }
-    }
+
 
     /** The policy of this compiler run (set by Main before lexing). */
     public static FsPolicy current = new FsPolicy();
@@ -44,7 +40,7 @@ public final class FsPolicy {
         }
     }
 
-    public final List<Root> roots = new ArrayList<>();
+    public final List<FsRoot> roots = new ArrayList<>();
     public final Set<String> denyExterns = new LinkedHashSet<>();
     /** True when fs-roots is present: then literal roots are checked and the run-time table is the list above. */
     public boolean rootsEnforced;
@@ -87,7 +83,7 @@ public final class FsPolicy {
                     if (dir.isEmpty() || dir.indexOf('?') >= 0 || dir.indexOf('|') >= 0 || dir.contains("/..") || dir.indexOf('\\') >= 0) {
                         throw new CompilerException("config", file, lineNo, "fs-roots path '" + dir + "' is not allowed (use '/' separators, no '?', '|' or '..')");
                     }
-                    p.roots.add(new Root(dir, mode.equals("rw")));
+                    p.roots.add(new FsRoot(dir, mode.equals("rw")));
                 }
             } else if (key.equals("fs-deny-externs")) {
                 for (String item : value.split(",")) {
@@ -107,7 +103,7 @@ public final class FsPolicy {
             return "*"; // no fs-roots key: every path is accepted
         }
         StringBuilder sb = new StringBuilder();
-        for (Root r : roots) {
+        for (FsRoot r : roots) {
             if (sb.length() > 0) sb.append('|');
             sb.append(r.path).append('?').append(r.rw ? "rw" : "r");
         }
@@ -124,7 +120,7 @@ public final class FsPolicy {
         }
         String p = path;
         while (p.length() > 1 && p.endsWith("/")) p = p.substring(0, p.length() - 1);
-        for (Root r : roots) {
+        for (FsRoot r : roots) {
             boolean inside = p.equals(r.path) || p.startsWith(r.path.equals("/") ? "/" : r.path + "/");
             if (inside) {
                 if (wantRw && !r.rw) {

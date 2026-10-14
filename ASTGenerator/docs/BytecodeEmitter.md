@@ -2,6 +2,8 @@
 
 Reference notes for `BytecodeEmitter.java` (design, formats and rules). Design history is in [history.md](history.md).
 
+Note: there is no recursion in the package. Names like `emitExpr`/`emitBlock`/`emitStatement` below are frames (`...Frame` factory plus `step...` method) run by `EmitDriver`; see the package README.
+
 ## Instruction shapes
 Covers: class `BytecodeEmitter` header, `emitExpr`/`emitStatement` conventions, if/elseif chains, `++` and compound assignment.
 
@@ -93,7 +95,7 @@ Covers: `emitStruct`, `computeStructLayout`, `layoutSizeAndAlignOf`, `layoutSize
 Structs are padded C-like in the HOB itself (`STRUCT_START` / `STRUCT_MEMBER` / `STRUCT_PADDING n` / `STRUCT_END`), not recomputed from an unpadded member sum by a later stage.
 - Each field is aligned to its natural alignment (equal to its size for every leaf shape). A struct's alignment is the max of its members' (recursively: all-`u8` is 1-aligned, any `u64` makes it 8-aligned). Padding is inserted immediately before a field whose running offset is not a multiple of its alignment, and the total size is rounded up to the struct's alignment (so arrays of the struct stay aligned).
 - Walk order: the hidden `___type` field (`imut_u64`, offset 0, 8 bytes, absent for `@untyped` structs where `classId == null`) is laid out FIRST, then `info.members` in declaration order. `___type` is never in `info.members`, so it is exempt from struct-literal exhaustiveness and ordinary `.` access; its value is populated at every construction site (`emitInstantiate`, `emitStaticAlloc`). Putting it last would move it away from offset 0, so the ordering is load-bearing. There is no inheritance, so no parent part.
-- `[size, align]` of a member from its canonical text (`storage?_some?_mutability_atomic?_baseType`): any storage-bearing type (`owns`, `ref`, `raw`, `auto`, `static`) is one 8-byte, 8-aligned pointer word; then the base type: `range` / `range(..)` 16/8 (two u64 bounds); fixed array = element alignment, element size times length (a non-numeric length counts as one pointer word); dynarray / unsafe_dynarray one 8-byte handle; a nested struct recurses into its (memoized, DAG-only) layout; primitives per `LAYOUT_PRIMITIVE_SIZE` (u8/s8/bool/char 1, u16/s16 2, u32/s32/f32 4, u64/s64/f64/code_addr/string 8, void 0); anything else (an enum name, since every enum fits in one u64 word, matching `SizeCalculator`) falls back to 8/8.
+- `[size, align]` of a member from its canonical text (`storage?_some?_mutability_atomic?_baseType`): any storage-bearing type (`owns`, `ref`, `raw`, `auto`, `static`) is one 8-byte, 8-aligned pointer word; then the base type: `range` / `range(..)` 16/8 (two u64 bounds); fixed array = element alignment, element size times length (a non-numeric length counts as one pointer word); dynarray / unsafe_dynarray one 8-byte handle; a nested struct is laid out first through a pending-struct stack (memoized, DAG-only; a cycle throws); primitives per `LAYOUT_PRIMITIVE_SIZE` (u8/s8/bool/char 1, u16/s16 2, u32/s32/f32 4, u64/s64/f64/code_addr/string 8, void 0); anything else (an enum name, since every enum fits in one u64 word, matching `SizeCalculator`) falls back to 8/8.
 - The table is deliberately duplicated from `TypeChecker.PRIMITIVE_SIZE`, which serves the unrelated `sizeof` builtin under different rules (e.g. `sizeof` of an array type returns the element size and ignores alignment). The optimizer's `SizeCalculator` likewise keeps its own copy.
 - `@unpadded` is rejected up front by `registerStructLike`, so every struct reaching this code is padded.
 
@@ -137,7 +139,7 @@ Covers: `emitStaticAlloc`, `foldStaticConstant`, `unwrapStaticExpr`, `staticArra
 ## ALLOC hoisting
 Covers: `collectHoistedAllocs`, `collectHoistedAllocsFromStatement`, `collectTryHoistedAllocs`, `letDeclarationOf`.
 
-Every `ALLOC` / `ALLOC_STATIC` of a function, from any nesting depth (`if`/`match`/`loop`/`for`/`lock`/`unsafe`/`safe`/`assume`/`try` bodies), is collected up front into two lists of Runnables in program order, without emitting anything, then written contiguously: all static allocs, the reserved `gt_routine_address` family, all ordinary allocs. `emitBlock`, `emitPreLoopInit` and `emitForLoop` then emit only the runtime initialization (the ASSIGN) at the original position. Parameters are not part of the hoist; they are `ARG` lines. The bytecode text is thus itself the source of truth for "every local's slot exists before any other functionality runs".
+Every `ALLOC` / `ALLOC_STATIC` of a function, from any nesting depth (`if`/`match`/`loop`/`for`/`lock`/`unsafe`/`safe`/`assume`/`try` bodies), is collected up front into two lists of `HoistedAlloc` descriptors in program order, without emitting anything, then written contiguously: all static allocs, the reserved `gt_routine_address` family, all ordinary allocs. `emitBlock`, `emitPreLoopInit` and `emitForLoop` then emit only the runtime initialization (the ASSIGN) at the original position. Parameters are not part of the hoist; they are `ARG` lines. The bytecode text is thus itself the source of truth for "every local's slot exists before any other functionality runs".
 - The collection pre-pass must mirror what the main emit walk declares, including: a `loop`'s `preLoopInit` lets; a `for`'s hidden range variable (`rangeVarNameOf`) and loop variable; catch parameters (`ALLOC <param> static_imut_string`, plus `<param>$trace mut_u64[DEPTH+1]` when `catchUsesStackTrace`) and everything declared in a catch body (`collectTryHoistedAllocs`, which also records the name in `functionCatchParams`); a plain `try { }` block declares nothing of its own beyond its body; `assume` only when `hasBlock`.
 - A try-catch can appear as `let x = try ... catch(e){}`, as `x = try ... catch(e){}` (OPERATOR `=`), or as a bare statement; `tryNodeOf` recognises all three. Checking it for a `let` as well as ahead of the keyword switch is what hoists the catch parameter in every shape.
 
@@ -160,7 +162,7 @@ Covers: `emitHoistedCatchBlocks`, `collectTryCatchNodes`, `collectTryBlockLabels
   `throw` (same all-paths-return analysis as the function-body check), and both already emit their own destruct list and a
   terminating instruction (`RET`/`EXIT`/`GT_UNWIND`). Consequence: code after a `try`/`catch` statement is reached only when
   the call returned normally, so `let x = try foo() catch{..}` always has the real return value in `x`.
-- `collectTryCatchNodes` recurses into `if`/`match` chains (via `right` links), `loop`/`for`/`unsafe`/`safe`/`lock`,
+- `collectTryCatchNodes` walks (work stack) into `if`/`match` chains (via `right` links), `loop`/`for`/`unsafe`/`safe`/`lock`,
   plain `try { }` blocks, `assume` with a block, and into a found try's own catch body.
 - `tryNodeOf(stmt)` returns the throwing `try` token of a statement. Shapes: the bare statement `try f() catch{..}`; the
   assignment `=` whose right side is a try, seen through any `mut`/`imut` wrappers (`let p = mut try new Point{..} catch(e){..}`:
@@ -170,7 +172,7 @@ Covers: `emitHoistedCatchBlocks`, `collectTryCatchNodes`, `collectTryBlockLabels
 - Plain `try { }` blocks (only legal host of a catch-body `continue`): `collectTryBlockLabels` walks the function once, before
   anything is emitted, assigns each a label `after_try_block` in `tryBlockLabels` and records, for every `continue`, the label of
   its nearest lexically enclosing try block in `continueTargetLabels`. A live push/pop stack cannot work because a catch body is
-  emitted (hoisted) before its try block's lexical position is walked. The walk also recurses into real try/catch catch bodies.
+  emitted (hoisted) before its try block's lexical position is walked. The walk also enters real try/catch catch bodies.
   `emitStatement` emits a plain try block as its statements + destruct list + that label, nothing else.
 - `emitContinue` has three forms (checked in this order): `isLoopContinue` (user `for`/`loop`: destruct + unlock lists, then jump
   to the loop's continue target, `@for_cont_N` created on first use for `for`, the start label for `loop`),
@@ -470,7 +472,7 @@ Covers: `emitConvert`, `baseOfCanonical`.
 Covers: `emitDot`, `isQualifiedNameableDot`, `qualifiedDotName`.
 
 - Catch parameter members: `e.msg` -> `PUSH <param> static_imut_string`; `e.stack_trace` -> `PUSH <param>$trace mut_u64[DEPTH+1]` then `ADDR_OF AUTO <arr> auto_indeterminate_u64[DEPTH+1]`.
-- `EnumName.Variant` and `instance.member` chains (any depth, e.g. `line.start.x`) are one `PUSH <dot-joined name> <type>` (no DOT instruction, no run-time work; neither side is emitted through emitExpr). `qualifiedDotName` builds the name recursively (`op.left` of a chain is another `.` node, so `op.left.text` alone would give only the innermost segment).
+- `EnumName.Variant` and `instance.member` chains (any depth, e.g. `line.start.x`) are one `PUSH <dot-joined name> <type>` (no DOT instruction, no run-time work; neither side is emitted through emitExpr). `qualifiedDotName` builds the name by walking the chain down (`op.left` of a chain is another `.` node, so `op.left.text` alone would give only the innermost segment).
 - `isQualifiedNameableDot`: true only when the chain bottoms out at a VARREF and EVERY intermediate segment is storage-free (a pointer segment needs a real dereference that a flat compile-time name cannot express). This is the same "bail on any storage-bearing segment before the last" rule `AddressLoweringPass.resolveAddress` applies; a LOOKUP/CALL token's `.text` is an internal marker, and used as a name it once produced a malformed `PUSH LOOKUP.x`.
 - Otherwise: `emitExpr(op.left)`, `PUSH_FIELDNAME <member> <type>`, then if the base has storage (is a pointer) `DOT_LHS baseT T T; DEREF T` (field address, then load exactly this field's width), else `DOT baseT T T` (offset into the inline value on the stack). Decided per level of the chain, never as one whole-chain check, so each hop reads only its own field.
 

@@ -3,26 +3,53 @@ package caspien.postpasses;
 import caspien.token.Token;
 import caspien.token.TokenType;
 
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Deque;
 import java.util.List;
 
-/** Debug-only recursive dump of the parser's token tree structure. */
+/** Debug-only dump of the parser's token tree structure (an explicit work stack, no recursion). */
 public class TreeDump {
 
+
+
     public static void dumpLines(StringBuilder out, List<Token> lines, int indent) {
-        for (Token lineTok : lines) {
-            pad(out, indent);
-            out.append("LINE:\n");
-            dumpFlat(out, lineTok.childs, indent + 1);
+        run(out, new TreeDumpItem(1, null, lines, null, indent));
+    }
+
+    private static void run(StringBuilder out, TreeDumpItem first) {
+        Deque<TreeDumpItem> stack = new ArrayDeque<>();
+        stack.push(first);
+        List<TreeDumpItem> next = new ArrayList<>();
+        while (!stack.isEmpty()) {
+            TreeDumpItem it = stack.pop();
+            next.clear();
+            switch (it.kind) {
+                case 1:
+                    for (Token lineTok : it.list) {
+                        next.add(new TreeDumpItem(3, null, null, "LINE:\n", it.indent));
+                        next.add(new TreeDumpItem(2, null, lineTok.childs, null, it.indent + 1));
+                    }
+                    break;
+                case 2:
+                    for (Token t : it.list) {
+                        next.add(new TreeDumpItem(0, t, null, null, it.indent));
+                    }
+                    break;
+                case 3:
+                    pad(out, it.indent);
+                    out.append(it.label);
+                    break;
+                default:
+                    stepToken(out, it.tok, it.indent, next);
+            }
+            for (int i = next.size() - 1; i >= 0; i--) {
+                stack.push(next.get(i));
+            }
         }
     }
 
-    private static void dumpFlat(StringBuilder out, List<Token> flat, int indent) {
-        for (Token t : flat) {
-            dumpToken(out, t, indent);
-        }
-    }
-
-    private static void dumpToken(StringBuilder out, Token t, int indent) {
+    private static void stepToken(StringBuilder out, Token t, int indent, List<TreeDumpItem> next) {
         pad(out, indent);
         out.append(t.type).append("(").append(t.text).append(")");
         if (t.unary) {
@@ -38,41 +65,32 @@ public class TreeDump {
         out.append("\n");
 
         if (!t.sub.isEmpty()) {
-            pad(out, indent + 1);
-            out.append("sub:\n");
-            dumpFlat(out, t.sub, indent + 2);
+            next.add(new TreeDumpItem(3, null, null, "sub:\n", indent + 1));
+            next.add(new TreeDumpItem(2, null, t.sub, null, indent + 2));
         }
 
         if (!t.childs.isEmpty()) {
-            // A childs list is either a list of LINE tokens (a statement
-            // sequence -- a '{' block, or a gathered if/loop/func/struct
-            // body) or a flat expression/param/member token list. Detect
-            // which by looking at the first element.
+            // A childs list is either LINE tokens (a statement sequence) or a flat expression/param/member list.
             if (t.childs.get(0).type == TokenType.LINE) {
-                dumpLines(out, t.childs, indent + 1);
+                next.add(new TreeDumpItem(1, null, t.childs, null, indent + 1));
             } else {
-                dumpFlat(out, t.childs, indent + 1);
+                next.add(new TreeDumpItem(2, null, t.childs, null, indent + 1));
             }
         }
 
         if (t.type == TokenType.OPERATOR) {
-            // left/right are this operator's tree operands.
             if (t.left != null) {
-                pad(out, indent + 1);
-                out.append("left:\n");
-                dumpToken(out, t.left, indent + 2);
+                next.add(new TreeDumpItem(3, null, null, "left:\n", indent + 1));
+                next.add(new TreeDumpItem(0, t.left, null, null, indent + 2));
             }
             if (t.right != null) {
-                pad(out, indent + 1);
-                out.append("right:\n");
-                dumpToken(out, t.right, indent + 2);
+                next.add(new TreeDumpItem(3, null, null, "right:\n", indent + 1));
+                next.add(new TreeDumpItem(0, t.right, null, null, indent + 2));
             }
         }
         if (t.next != null) {
-            // The following branch of an if/elseif/else or match/elsematch chain.
-            pad(out, indent);
-            out.append("-- chained branch --\n");
-            dumpToken(out, t.next, indent);
+            next.add(new TreeDumpItem(3, null, null, "-- chained branch --\n", indent));
+            next.add(new TreeDumpItem(0, t.next, null, null, indent));
         }
     }
 

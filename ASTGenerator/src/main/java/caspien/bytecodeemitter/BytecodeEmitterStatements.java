@@ -20,6 +20,7 @@ import java.util.Set;
 import caspien.typechecker.FuncInfo;
 import caspien.typechecker.StructInfo;
 import caspien.typechecker.TypeInfo;
+import caspien.config.DocComment;
 
 /**
  * Final front-end stage: walks the type-checked tree and emits the stack-based higher-order bytecode (HOB) as text.
@@ -40,6 +41,25 @@ final class BytecodeEmitterStatements {
      * container then "name.0", "name.1"... Range: container, "name.start", "name.end". MNEMONIC is ALLOC_STATIC (local) or GLOBAL.
      */
     public void emitStaticAlloc(String mnemonic, String name, String resolvedType, Token rhs) {
+        // Explicit stack of pending pieces (a nested member/element is a piece of its own, a data line is a ready line), in output order.
+        Deque<StaticAllocPiece> work = new ArrayDeque<>();
+        work.push(new StaticAllocPiece(null, name, resolvedType, rhs));
+        while (!work.isEmpty()) {
+            StaticAllocPiece piece = work.pop();
+            if (piece.line != null) {
+                hub.core.line(piece.line);
+            } else {
+                expandStaticAlloc(mnemonic, piece, work);
+            }
+        }
+    }
+
+
+
+    private void expandStaticAlloc(String mnemonic, StaticAllocPiece piece, Deque<StaticAllocPiece> work) {
+        String name = piece.name;
+        String resolvedType = piece.type;
+        Token rhs = piece.rhs;
         Token unwrapped = unwrapStaticExpr(rhs);
         String structName = staticStructNameOf(unwrapped);
         if (structName != null) {
@@ -53,15 +73,19 @@ final class BytecodeEmitterStatements {
             }
             // Walk the real layout (___type, members, padding): the backend places each "name.member" line at the running sum of the sizes before it,
             // so padding gaps must be lines too ("name.$padN").
+            List<StaticAllocPiece> pieces = new ArrayList<>();
             int padCount = 0;
-            for (BytecodeEmitterCore.StructLayoutEntry entry : hub.core.computeStructLayout(structInfo).entries) {
+            for (StructLayoutEntry entry : hub.core.computeStructLayout(structInfo).entries) {
                 if (entry.paddingBytes > 0) {
-                    hub.core.line(mnemonic + " " + name + ".$pad" + (padCount++) + " imut_u8[" + entry.paddingBytes + "]");
+                    pieces.add(new StaticAllocPiece(mnemonic + " " + name + ".$pad" + (padCount++) + " imut_u8[" + entry.paddingBytes + "]", null, null, null));
                 } else if (entry.memberName.equals("___type")) {
-                    hub.core.line(mnemonic + " " + name + ".___type imut_u64 " + structInfo.classId);
+                    pieces.add(new StaticAllocPiece(mnemonic + " " + name + ".___type imut_u64 " + structInfo.classId, null, null, null));
                 } else {
-                    emitStaticAlloc(mnemonic, name + "." + entry.memberName, entry.canonicalType, valueByMember.get(entry.memberName));
+                    pieces.add(new StaticAllocPiece(null, name + "." + entry.memberName, entry.canonicalType, valueByMember.get(entry.memberName)));
                 }
+            }
+            for (int i = pieces.size() - 1; i >= 0; i--) {
+                work.push(pieces.get(i));
             }
             return;
         }
@@ -70,8 +94,8 @@ final class BytecodeEmitterStatements {
             // Fixed-array literal: a no-value container line, then "name.0", "name.1", ... per element.
             hub.core.line(mnemonic + " " + name + " " + resolvedType);
             String elemType = staticArrayElementType(resolvedType, unwrapped);
-            for (int i = 0; i < arrayElements.size(); i++) {
-                emitStaticAlloc(mnemonic, name + "." + i, elemType, arrayElements.get(i));
+            for (int i = arrayElements.size() - 1; i >= 0; i--) {
+                work.push(new StaticAllocPiece(null, name + "." + i, elemType, arrayElements.get(i)));
             }
             return;
         }
@@ -190,69 +214,113 @@ final class BytecodeEmitterStatements {
      * wrappers are transparent, integer + - * / % and unary - are evaluated (the restricted shape 'dup' counts use, see DupExpander), a plain enum
      * variant folds to its dotted name, a global may reference an earlier global. Enum-variant defaults beyond that are not handled.
      */
-    public String foldStaticConstant(Token node) {
-        if (node.chk.sizeofStruct != null && node.left != null && node.left.type == TokenType.VARREF
-                && node.left.text.equals("sizeof")) {
-            // "let static n = sizeof(Struct)": the initializer is a data line, so the Optimizer never resolves it; fold the laid-out size here and emit
-            // STRUCT_PIN so StructMemberReorderingPass cannot change that size (the pass always strips the line).
-            hub.core.line("STRUCT_PIN " + node.chk.sizeofStruct);
-            return Long.toString(hub.core.computeStructLayout(hub.core.checker.declarations.getStructs().get(node.chk.sizeofStruct)).size);
-        }
-        if (node.type == TokenType.OPERATOR && node.text.equals("CALL") && node.left != null
-                && node.left.type == TokenType.VARREF && node.left.text.equals("sizeof")) {
-            return Long.toString(node.chk.builtinConstantValue);
-        }
-        if (node.type == TokenType.DELINEATOR && node.text.equals("(") && !node.childs.isEmpty()) {
-            return foldStaticConstant(node.childs.get(0));
-        }
-        if (node.type == TokenType.OPERATOR && node.text.equals("as")) {
-            return foldStaticConstant(node.left);
-        }
-        if (node.type == TokenType.OPERATOR && node.unary
-                && (node.text.equals("mut") || node.text.equals("imut"))) {
-            // The RHS is virtually always wrapped in mut/imut (a bare literal is indeterminate); the wrapper has no runtime representation.
-            return foldStaticConstant(node.left);
-        }
-        if (node.type == TokenType.OPERATOR && node.unary && node.text.equals("static")) {
-            // 'static' on a string/char literal has no runtime representation either (emitAddressOf emits just the operand).
-            return foldStaticConstant(node.left);
-        }
-        if (node.type == TokenType.OPERATOR && node.unary && node.text.equals("atomic")) {
-            // 'atomic' is a pure type modifier; without this case the operator text "atomic" itself became the folded initial value of every atomic static/global.
-            return foldStaticConstant(node.left);
-        }
-        if (node.type == TokenType.OPERATOR && node.text.equals(".") && hub.isQualifiedNameableDot(node)) {
-            // Plain enum-variant reference ("let static c = Color.GREEN"; range-valued ones are routed by emitStaticAlloc's isRangeType check): folds to the
-            // same dotted name an ordinary PUSH uses (qualifiedDotName).
-            return hub.qualifiedDotName(node);
-        }
-        if (node.type == TokenType.OPERATOR && !node.unary) {
-            long left = Long.parseLong(foldStaticConstant(node.left));
-            long right = Long.parseLong(foldStaticConstant(node.right));
-            switch (node.text) {
-                case "+": return Long.toString(left + right);
-                case "-": return Long.toString(left - right);
-                case "*": return Long.toString(left * right);
-                case "/": return Long.toString(left / right);
-                case "%": return Long.toString(left % right);
-                default:
-                    break;
+    public String foldStaticConstant(Token start) {
+        // Explicit stack: a wrapper replaces its node in place (tail), a binary / unary-minus node waits for its operand results.
+        Deque<FoldStep> stack = new ArrayDeque<>();
+        stack.push(new FoldStep(start));
+        String ret = null;
+        while (!stack.isEmpty()) {
+            FoldStep f = stack.peek();
+            Token node = f.node;
+            if (f.state == 1) {
+                f.left = Long.parseLong(ret);
+                f.state = 2;
+                stack.push(new FoldStep(node.right));
+                continue;
             }
-        }
-        if (node.type == TokenType.OPERATOR && node.unary && node.text.equals("-")) {
-            String folded = foldStaticConstant(node.left);
-            if (folded.contains(".") || folded.contains("e") || folded.contains("E")) {
-                // Float constant (negative literal or array element): negate the text; parseLong would throw.
-                return folded.startsWith("-") ? folded.substring(1) : "-" + folded;
+            if (f.state == 2) {
+                long left = f.left;
+                long right = Long.parseLong(ret);
+                stack.pop();
+                switch (node.text) {
+                    case "+": ret = Long.toString(left + right); break;
+                    case "-": ret = Long.toString(left - right); break;
+                    case "*": ret = Long.toString(left * right); break;
+                    case "/": ret = Long.toString(left / right); break;
+                    case "%": ret = Long.toString(left % right); break;
+                    default: ret = hub.literalValueOf(node); break;
+                }
+                continue;
             }
-            return Long.toString(-Long.parseLong(folded));
+            if (f.state == 3) {
+                stack.pop();
+                String folded = ret;
+                if (folded.contains(".") || folded.contains("e") || folded.contains("E")) {
+                    // Float constant (negative literal or array element): negate the text; parseLong would throw.
+                    ret = folded.startsWith("-") ? folded.substring(1) : "-" + folded;
+                } else {
+                    ret = Long.toString(-Long.parseLong(folded));
+                }
+                continue;
+            }
+            if (node.chk.sizeofStruct != null && node.left != null && node.left.type == TokenType.VARREF
+                    && node.left.text.equals("sizeof")) {
+                // "let static n = sizeof(Struct)": the initializer is a data line, so the Optimizer never resolves it; fold the laid-out size here and emit
+                // STRUCT_PIN so StructMemberReorderingPass cannot change that size (the pass always strips the line).
+                hub.core.line("STRUCT_PIN " + node.chk.sizeofStruct);
+                ret = Long.toString(hub.core.computeStructLayout(hub.core.checker.declarations.getStructs().get(node.chk.sizeofStruct)).size);
+                stack.pop();
+                continue;
+            }
+            if (node.type == TokenType.OPERATOR && node.text.equals("CALL") && node.left != null
+                    && node.left.type == TokenType.VARREF && node.left.text.equals("sizeof")) {
+                ret = Long.toString(node.chk.builtinConstantValue);
+                stack.pop();
+                continue;
+            }
+            if (node.type == TokenType.DELINEATOR && node.text.equals("(") && !node.childs.isEmpty()) {
+                f.node = node.childs.get(0);
+                continue;
+            }
+            if (node.type == TokenType.OPERATOR && node.text.equals("as")) {
+                f.node = node.left;
+                continue;
+            }
+            if (node.type == TokenType.OPERATOR && node.unary
+                    && (node.text.equals("mut") || node.text.equals("imut"))) {
+                // The RHS is virtually always wrapped in mut/imut (a bare literal is indeterminate); the wrapper has no runtime representation.
+                f.node = node.left;
+                continue;
+            }
+            if (node.type == TokenType.OPERATOR && node.unary && node.text.equals("static")) {
+                // 'static' on a string/char literal has no runtime representation either (emitAddressOf emits just the operand).
+                f.node = node.left;
+                continue;
+            }
+            if (node.type == TokenType.OPERATOR && node.unary && node.text.equals("atomic")) {
+                // 'atomic' is a pure type modifier; without this case the operator text "atomic" itself became the folded initial value of every atomic static/global.
+                f.node = node.left;
+                continue;
+            }
+            if (node.type == TokenType.OPERATOR && node.text.equals(".") && hub.isQualifiedNameableDot(node)) {
+                // Plain enum-variant reference ("let static c = Color.GREEN"; range-valued ones are routed by emitStaticAlloc's isRangeType check): folds to the
+                // same dotted name an ordinary PUSH uses (qualifiedDotName).
+                ret = hub.qualifiedDotName(node);
+                stack.pop();
+                continue;
+            }
+            if (node.type == TokenType.OPERATOR && !node.unary) {
+                f.state = 1;
+                stack.push(new FoldStep(node.left));
+                continue;
+            }
+            if (node.type == TokenType.OPERATOR && node.unary && node.text.equals("-")) {
+                f.state = 3;
+                stack.push(new FoldStep(node.left));
+                continue;
+            }
+            if (node.type == TokenType.VARREF && hub.core.checker.declarations.getGlobals().containsKey(node.text)) {
+                // A global may reference an earlier global: fold through to its value.
+                f.node = hub.core.checker.declarations.getGlobalRhs().get(node.text);
+                continue;
+            }
+            ret = hub.literalValueOf(node);
+            stack.pop();
         }
-        if (node.type == TokenType.VARREF && hub.core.checker.declarations.getGlobals().containsKey(node.text)) {
-            // A global may reference an earlier global: fold through to its value.
-            return foldStaticConstant(hub.core.checker.declarations.getGlobalRhs().get(node.text));
-        }
-        return hub.literalValueOf(node);
+        return ret;
     }
+
+
 
     /** Returns the merged 'let' token if this statement is a `let` declaration, else null. */
     public Token letDeclarationOf(Token stmt) {
@@ -265,28 +333,47 @@ final class BytecodeEmitterStatements {
 
     // ---- whole-function ALLOC hoisting -----------------------------------
 
+
+
+    /** Pushes the statement lists of an `if`/`match` chain so the first branch is walked first. */
+    private static void pushBranchBodies(Deque<LineCursor> work, Token chainHead) {
+        List<Token> branches = new ArrayList<>();
+        for (Token b = chainHead; b != null; b = b.next) {
+            branches.add(b);
+        }
+        for (int i = branches.size() - 1; i >= 0; i--) {
+            work.push(new LineCursor(branches.get(i).childs, false));
+        }
+    }
+
     /**
-     * Walks the whole function body (every nested block, any depth) collecting one Runnable per ALLOC/ALLOC_STATIC, in program order, without
-     * emitting. emitFuncUnderName runs the static ones, then the gt_routine_address slot, then the ordinary ones; the initializing ASSIGN stays at
+     * Walks the whole function body (every nested block, any depth) collecting one HoistedAlloc per ALLOC/ALLOC_STATIC, in program order, without
+     * emitting. emitFuncUnderName emits the static ones, then the gt_routine_address slot, then the ordinary ones; the initializing ASSIGN stays at
      * the declaration's position. See docs/BytecodeEmitter.md, "ALLOC hoisting".
      */
-    public void collectHoistedAllocs(List<Token> lines, List<Runnable> staticAllocs, List<Runnable> ordinaryAllocs) {
-        for (Token lineTok : lines) {
+    public void collectHoistedAllocs(List<Token> lines, List<HoistedAlloc> staticAllocs, List<HoistedAlloc> ordinaryAllocs) {
+        Deque<LineCursor> work = new ArrayDeque<>();
+        work.push(new LineCursor(lines, false));
+        while (!work.isEmpty()) {
+            LineCursor cursor = work.peek();
+            if (cursor.index >= cursor.lines.size()) {
+                work.pop();
+                continue;
+            }
+            Token lineTok = cursor.lines.get(cursor.index++);
             Token stmt = lineTok.childs.get(0);
             Token letTok = letDeclarationOf(stmt);
             if (letTok != null) {
                 Token nameTok = letTok.childs.get(0);
                 if (letTok.isStatic) {
-                    Token assignNode = stmt;
-                    staticAllocs.add(() -> emitStaticAlloc("ALLOC_STATIC", nameTok.text, letTok.chk.resolvedType,
-                            assignNode.right));
+                    staticAllocs.add(new HoistedAlloc(nameTok.text, letTok.chk.resolvedType, stmt.right));
                 } else {
-                    ordinaryAllocs.add(() -> hub.core.line("ALLOC " + nameTok.text + " " + letTok.chk.resolvedType));
+                    ordinaryAllocs.add(new HoistedAlloc(nameTok.text, letTok.chk.resolvedType, null));
                 }
                 // A 'let' right-hand side can itself be a "try...catch(e){...}": hoist its catch parameter and body locals as well.
                 Token tryNodeUnderLet = tryNodeOf(stmt);
                 if (tryNodeUnderLet != null) {
-                    collectTryHoistedAllocs(tryNodeUnderLet, staticAllocs, ordinaryAllocs);
+                    hoistTryCatchParam(tryNodeUnderLet, ordinaryAllocs, work);
                 }
                 continue;
             }
@@ -294,72 +381,76 @@ final class BytecodeEmitterStatements {
             // statements); tryNodeOf recognises all three shapes, so checking it here closes the gap.
             Token tryNode = tryNodeOf(stmt);
             if (tryNode != null) {
-                collectTryHoistedAllocs(tryNode, staticAllocs, ordinaryAllocs);
+                hoistTryCatchParam(tryNode, ordinaryAllocs, work);
                 continue;
             }
-            collectHoistedAllocsFromStatement(stmt, staticAllocs, ordinaryAllocs);
+            hoistFromStatement(stmt, ordinaryAllocs, work);
         }
     }
 
-    /** Shared by both `collectHoistedAllocs` call sites that find a "try" node (under a 'let', or standalone): hoists the catch's own bound parameter (`ALLOC <catchParamName> static_imut_string`, initialized later by `emitHoistedCatchBlocks`'s own one-time snapshot write) plus, recursively, anything the catch body itself declares. */
-    public void collectTryHoistedAllocs(Token tryNode, List<Runnable> staticAllocs, List<Runnable> ordinaryAllocs) {
+    /** Hoists the catch's own bound parameter (`ALLOC <catchParamName> static_imut_string`, initialized later by `emitHoistedCatchBlocks`'s own one-time snapshot write), then queues the catch body for the walk. */
+    private void hoistTryCatchParam(Token tryNode, List<HoistedAlloc> ordinaryAllocs, Deque<LineCursor> work) {
         hub.core.functionCatchParams.add(tryNode.catchParamName);
-        ordinaryAllocs.add(() -> hub.core.line("ALLOC " + tryNode.catchParamName + " static_imut_string"));
+        ordinaryAllocs.add(new HoistedAlloc(tryNode.catchParamName, "static_imut_string", null));
         if (tryNode.chk.catchUsesStackTrace) {
-            ordinaryAllocs.add(() -> hub.core.line("ALLOC " + tryNode.catchParamName + "$trace mut_u64[" + (TraceConfig.depth + 1) + "]"));
+            ordinaryAllocs.add(new HoistedAlloc(tryNode.catchParamName + "$trace", "mut_u64[" + (TraceConfig.depth + 1) + "]", null));
         }
-        collectHoistedAllocs(tryNode.childs, staticAllocs, ordinaryAllocs);
+        work.push(new LineCursor(tryNode.childs, false));
     }
 
-    /** The non-'let' half of `collectHoistedAllocs` -- recurses into whichever nested block(s), if any, this statement carries, plus the two implicit shapes ('for's hidden range/loop variables, a 'loop's own preLoopInit) that declare a local without going through an ordinary 'let' line at all. */
-    public void collectHoistedAllocsFromStatement(Token stmt, List<Runnable> staticAllocs,
-            List<Runnable> ordinaryAllocs) {
+    /** The non-'let' half of `collectHoistedAllocs` -- queues whichever nested block(s), if any, this statement carries, plus the two implicit shapes ('for's hidden range/loop variables, a 'loop's own preLoopInit) that declare a local without going through an ordinary 'let' line at all. */
+    private void hoistFromStatement(Token stmt, List<HoistedAlloc> ordinaryAllocs, Deque<LineCursor> work) {
         if (stmt.type != TokenType.KEYWORD) {
             return;
         }
         switch (stmt.text) {
             case "if":
             case "match":
-                for (Token b = stmt; b != null; b = b.next) {
-                    collectHoistedAllocs(b.childs, staticAllocs, ordinaryAllocs);
-                }
+                pushBranchBodies(work, stmt);
                 return;
             case "loop":
                 if (stmt.chk.preLoopInit != null) {
                     for (Token assign : stmt.chk.preLoopInit) {
                         Token letTok = assign.left;
                         Token nameTok = letTok.childs.get(0);
-                        ordinaryAllocs.add(() -> hub.core.line("ALLOC " + nameTok.text + " " + letTok.chk.resolvedType));
+                        ordinaryAllocs.add(new HoistedAlloc(nameTok.text, letTok.chk.resolvedType, null));
                     }
                 }
-                collectHoistedAllocs(stmt.childs, staticAllocs, ordinaryAllocs);
+                work.push(new LineCursor(stmt.childs, false));
                 return;
             case "for": {
                 Token rangeAssign = stmt.sub.get(0);
                 Token loopVarAssign = stmt.sub.get(1);
-                ordinaryAllocs.add(() -> hub.core.line(
-                        "ALLOC " + rangeVarNameOf(rangeAssign) + " " + rangeAssign.left.chk.resolvedType));
-                ordinaryAllocs.add(() -> hub.core.line("ALLOC " + loopVarAssign.left.childs.get(0).text + " "
-                        + loopVarAssign.left.chk.resolvedType));
-                collectHoistedAllocs(stmt.childs, staticAllocs, ordinaryAllocs);
+                ordinaryAllocs.add(new HoistedAlloc(rangeVarNameOf(rangeAssign), rangeAssign.left.chk.resolvedType, null));
+                ordinaryAllocs.add(new HoistedAlloc(loopVarAssign.left.childs.get(0).text, loopVarAssign.left.chk.resolvedType, null));
+                work.push(new LineCursor(stmt.childs, false));
                 return;
             }
             case "unsafe":
             case "safe":
             case "lock":
-                collectHoistedAllocs(stmt.childs, staticAllocs, ordinaryAllocs);
+                work.push(new LineCursor(stmt.childs, false));
                 return;
             case "assume":
                 if (stmt.hasBlock) {
-                    collectHoistedAllocs(stmt.childs, staticAllocs, ordinaryAllocs);
+                    work.push(new LineCursor(stmt.childs, false));
                 }
                 return;
             case "try":
                 // Only the plain "try { ... }" block form arrives here (a throwing try...catch is intercepted by tryNodeOf); it emits nothing of its own.
-                collectHoistedAllocs(stmt.childs, staticAllocs, ordinaryAllocs);
+                work.push(new LineCursor(stmt.childs, false));
                 return;
             default:
                 return;
+        }
+    }
+
+    /** Emits one collected allocation: `ALLOC name type`, or the folded ALLOC_STATIC lines of a constant `let static`. */
+    public void emitHoistedAlloc(HoistedAlloc alloc) {
+        if (alloc.staticValue != null) {
+            emitStaticAlloc("ALLOC_STATIC", alloc.name, alloc.type, alloc.staticValue);
+        } else {
+            hub.core.line("ALLOC " + alloc.name + " " + alloc.type);
         }
     }
 
@@ -395,21 +486,28 @@ final class BytecodeEmitterStatements {
                 hub.core.line("DEREF " + arr);
                 hub.core.line("ASSIGN " + arr + " " + arr + " " + arr);
             }
-            hub.core.emitBlock(tryNode.childs);
+            hub.core.runBlock(tryNode.childs, false);
             // no trailing JMP/destruct list: the body ends in return/throw, which emit their own
         }
         hub.core.line(skipLabel + ":");
     }
 
-    /** Recurses into whichever nested block(s), if any, each statement in `lines` carries -- the identical traversal shape `collectHoistedAllocsFromStatement` already uses -- collecting every "try" token found, in program order. */
+    /** Visits whichever nested block(s), if any, each statement in `lines` carries -- the identical traversal shape `collectHoistedAllocs` uses -- collecting every "try" token found, in program order. */
     public void collectTryCatchNodes(List<Token> lines, List<Token> collected) {
-        for (Token lineTok : lines) {
-            Token stmt = lineTok.childs.get(0);
+        Deque<LineCursor> work = new ArrayDeque<>();
+        work.push(new LineCursor(lines, false));
+        while (!work.isEmpty()) {
+            LineCursor cursor = work.peek();
+            if (cursor.index >= cursor.lines.size()) {
+                work.pop();
+                continue;
+            }
+            Token stmt = cursor.lines.get(cursor.index++).childs.get(0);
             Token tryNode = tryNodeOf(stmt);
             if (tryNode != null) {
                 collected.add(tryNode);
                 // a catch body can itself contain a nested try
-                collectTryCatchNodes(tryNode.childs, collected);
+                work.push(new LineCursor(tryNode.childs, false));
                 continue;
             }
             if (stmt.type != TokenType.KEYWORD) {
@@ -418,24 +516,22 @@ final class BytecodeEmitterStatements {
             switch (stmt.text) {
                 case "if":
                 case "match":
-                    for (Token b = stmt; b != null; b = b.next) {
-                        collectTryCatchNodes(b.childs, collected);
-                    }
+                    pushBranchBodies(work, stmt);
                     break;
                 case "loop":
                 case "for":
                 case "unsafe":
                 case "safe":
                 case "lock":
-                    collectTryCatchNodes(stmt.childs, collected);
+                    work.push(new LineCursor(stmt.childs, false));
                     break;
                 case "try":
-                    // plain "try { }" block form only (the throwing form was taken by tryNodeOf); recurse so nested try/catch is found
-                    collectTryCatchNodes(stmt.childs, collected);
+                    // plain "try { }" block form only (the throwing form was taken by tryNodeOf); walk it so a nested try/catch is found
+                    work.push(new LineCursor(stmt.childs, false));
                     break;
                 case "assume":
                     if (stmt.hasBlock) {
-                        collectTryCatchNodes(stmt.childs, collected);
+                        work.push(new LineCursor(stmt.childs, false));
                     }
                     break;
                 default:
@@ -450,11 +546,21 @@ final class BytecodeEmitterStatements {
      * catch body is emitted before its try block is reached. See docs/BytecodeEmitter.md, "Hoisted catch blocks".
      */
     public void collectTryBlockLabels(List<Token> lines, Deque<Token> enclosingTryBlocks) {
-        for (Token lineTok : lines) {
-            Token stmt = lineTok.childs.get(0);
+        Deque<LineCursor> work = new ArrayDeque<>();
+        work.push(new LineCursor(lines, false));
+        while (!work.isEmpty()) {
+            LineCursor cursor = work.peek();
+            if (cursor.index >= cursor.lines.size()) {
+                work.pop();
+                if (cursor.popsTryBlock) {
+                    enclosingTryBlocks.pop();
+                }
+                continue;
+            }
+            Token stmt = cursor.lines.get(cursor.index++).childs.get(0);
             Token tryNode = tryNodeOf(stmt);
             if (tryNode != null) {
-                collectTryBlockLabels(tryNode.childs, enclosingTryBlocks);
+                work.push(new LineCursor(tryNode.childs, false));
                 continue;
             }
             if (stmt.type != TokenType.KEYWORD) {
@@ -463,27 +569,24 @@ final class BytecodeEmitterStatements {
             switch (stmt.text) {
                 case "if":
                 case "match":
-                    for (Token b = stmt; b != null; b = b.next) {
-                        collectTryBlockLabels(b.childs, enclosingTryBlocks);
-                    }
+                    pushBranchBodies(work, stmt);
                     break;
                 case "loop":
                 case "for":
                 case "unsafe":
                 case "safe":
                 case "lock":
-                    collectTryBlockLabels(stmt.childs, enclosingTryBlocks);
+                    work.push(new LineCursor(stmt.childs, false));
                     break;
                 case "try":
-                    // plain "try { }" only; label assigned before recursing so a nested catch's 'continue' can resolve it
+                    // plain "try { }" only; label assigned before walking the body so a nested catch's 'continue' can resolve it
                     hub.core.tryBlockLabels.put(stmt, newLabel("after_try_block"));
                     enclosingTryBlocks.push(stmt);
-                    collectTryBlockLabels(stmt.childs, enclosingTryBlocks);
-                    enclosingTryBlocks.pop();
+                    work.push(new LineCursor(stmt.childs, true));
                     break;
                 case "assume":
                     if (stmt.hasBlock) {
-                        collectTryBlockLabels(stmt.childs, enclosingTryBlocks);
+                        work.push(new LineCursor(stmt.childs, false));
                     }
                     break;
                 case "continue":
@@ -534,70 +637,57 @@ final class BytecodeEmitterStatements {
 
     // ---- statements -----------------------------------------------------
 
-    public void emitStatement(Token stmt) {
+    /** The emission of one statement: lines that need nothing nested are written now and null is returned, otherwise the frame that does the rest. */
+    public EmitFrame statementFrame(Token stmt) {
         if (stmt.type == TokenType.KEYWORD) {
             switch (stmt.text) {
                 case "if":
-                    emitIfChain(stmt);
-                    return;
+                    return new EmitFrame(EmitFrame.IF_CHAIN, stmt);
                 case "loop":
-                    emitLoop(stmt);
-                    return;
+                    return new EmitFrame(EmitFrame.LOOP, stmt);
                 case "for":
-                    emitForLoop(stmt);
-                    return;
+                    return new EmitFrame(EmitFrame.FOR_LOOP, stmt);
                 case "match":
-                    emitMatchChain(stmt);
-                    return;
+                    return new EmitFrame(EmitFrame.MATCH_CHAIN, stmt);
                 case "unsafe":
                 case "safe":
                     // compile-time safety markers only; emit the statements, no wrapper
-                    hub.core.emitBlock(stmt.childs);
-                    hub.core.emitDestructList(stmt.chk.destructOnExit, stmt);
-                    return;
+                    return EmitFrame.script(stmt).block(stmt.childs, false).destruct(stmt.chk.destructOnExit, stmt);
                 case "assume":
                     // no runtime presence: the block form emits its statements; the no-block form has no children (later siblings belong to the enclosing block)
                     if (stmt.hasBlock) {
-                        hub.core.emitBlock(stmt.childs);
-                        hub.core.emitDestructList(stmt.chk.destructOnExit, stmt);
+                        return EmitFrame.script(stmt).block(stmt.childs, false).destruct(stmt.chk.destructOnExit, stmt);
                     } else if (stmt.assumeFieldVariants == null && stmt.sub != null && !stmt.sub.isEmpty()) {
-                        emitAssumeResolves(stmt.operand());   // a nullable ref proven by `assume match Some(..)`: resolve it once
+                        return assumeResolvesFrame(stmt.operand());   // a nullable ref proven by `assume match Some(..)`: resolve it once
                     }
-                    return;
+                    return null;
                 case "return":
-                    emitReturn(stmt);
-                    return;
+                    return returnFrame(stmt);
                 case "throw":
-                    emitThrow(stmt);
-                    return;
+                    return throwFrame(stmt);
                 case "try":
                     // Two constructs share this KEYWORD (Token.isTryBlock). A plain "try { }" block emits its statements plus a label
                     // precomputed by collectTryBlockLabels (a hoisted catch's 'continue' jumps to it). Otherwise it is the bare
                     // "try call() catch(e){..}" statement; the call's result, if any, stays on the stack.
                     if (stmt.isTryBlock) {
-                        hub.core.emitBlock(stmt.childs);
-                        hub.core.emitDestructList(stmt.chk.destructOnExit, stmt);
-                        hub.core.line(hub.core.tryBlockLabels.get(stmt) + ":");
-                        return;
+                        return EmitFrame.script(stmt).block(stmt.childs, false).destruct(stmt.chk.destructOnExit, stmt)
+                                .line(hub.core.tryBlockLabels.get(stmt) + ":");
                     }
-                    hub.core.emitTryGuardedCall(stmt);
-                    return;
+                    return hub.core.tryGuardedCallFrame(stmt);
                 case "break":
-                    emitBreak(stmt);
-                    return;
+                    return breakFrame(stmt);
                 case "continue":
-                    emitContinue(stmt);
-                    return;
+                    return continueFrame(stmt);
                 case "yield":
                     // bare mnemonic, no operands
                     hub.core.line("YIELD");
-                    return;
+                    return null;
                 case "ASM":
                     // named: emitted at each invocation site (see the "ASM" case in emit()); unnamed: only here
                     if (stmt.sub.isEmpty()) {
                         hub.core.emitAsm(stmt.chk.resolvedAsmContent);
                     }
-                    return;
+                    return null;
                 default:
                     throw new IllegalStateException("unexpected statement keyword: " + stmt.text);
             }
@@ -605,143 +695,218 @@ final class BytecodeEmitterStatements {
         if (stmt.type == TokenType.VARREF && stmt.chk.resolvedAsmContent != null) {
             // "asm_name;" invocation (resolvedAsmContent is set only by TypeChecker, only for genuine ones)
             hub.core.emitAsm(stmt.chk.resolvedAsmContent);
-            return;
+            return null;
         }
         // plain expression statement: the result, if any, is left on the stack (no POP)
-        emitExpr(stmt);
+        return new EmitFrame(EmitFrame.EXPR, stmt);
     }
 
-    public void emitIfChain(Token ifTok) {
-        String endLabel = newLabel("end_of_if");
-        List<Token> branches = new ArrayList<>();
-        for (Token b = ifTok; b != null; b = b.next) {
-            branches.add(b);
-        }
-
-        for (int i = 0; i < branches.size(); i++) {
-            Token branch = branches.get(i);
-            boolean isLast = (i == branches.size() - 1);
-            String nextLabel = isLast ? endLabel : newLabel("if_branch");
-            boolean hasCondition = !branch.sub.isEmpty();
-
-            if (hasCondition) {
-                Token cond = branch.condition();
-                if (hub.operations.isThenVariant(cond)) {
-                    // "&&then"/"||then" root: cascading jumps (see emitShortCircuit)
-                    hub.operations.emitShortCircuit(cond, nextLabel, null);
-                } else {
-                    emitExpr(cond);
+    /** if / elseif / else chain. Frame: s1 = end label, s2 = the current branch's next label, toks = the branches, i = current branch. */
+    public int stepIfChain(EmitFrame f) {
+        while (true) {
+            switch (f.phase) {
+                case 0:
+                    f.s1 = newLabel("end_of_if");
+                    f.toks = new ArrayList<>();
+                    for (Token b = f.node; b != null; b = b.next) {
+                        f.toks.add(b);
+                    }
+                    f.i = 0;
+                    f.phase = 1;
+                    continue;
+                case 1: {
+                    if (f.i >= f.toks.size()) {
+                        hub.core.line(f.s1 + ":");
+                        return EmitFrame.DONE;
+                    }
+                    Token branch = f.toks.get(f.i);
+                    boolean isLast = (f.i == f.toks.size() - 1);
+                    f.s2 = isLast ? f.s1 : newLabel("if_branch");
+                    f.phase = 3;
+                    if (!branch.sub.isEmpty()) {
+                        Token cond = branch.condition();
+                        if (hub.operations.isThenVariant(cond)) {
+                            // "&&then"/"||then" root: cascading jumps (see stepShortCircuit)
+                            return f.call(hub.operations.shortCircuitFrame(cond, f.s2, null));
+                        }
+                        f.phase = 2;
+                        return f.callExpr(cond);
+                    }
+                    continue;
+                }
+                case 2:
                     hub.core.line("CMP");
-                    hub.core.line("JMP " + nextLabel);
+                    hub.core.line("JMP " + f.s2);
+                    f.phase = 3;
+                    continue;
+                case 3:
+                    f.phase = 4;
+                    return f.call(hub.core.blockFrame(f.toks.get(f.i).childs, false));
+                case 4: {
+                    Token branch = f.toks.get(f.i);
+                    f.phase = 5;
+                    EmitFrame destructs = hub.core.destructListFrame(branch.chk.destructOnExit, branch);
+                    if (destructs != null) {
+                        return f.call(destructs);
+                    }
+                    continue;
+                }
+                default: {
+                    boolean isLast = (f.i == f.toks.size() - 1);
+                    hub.core.line("JMP " + f.s1);
+                    if (!isLast) {
+                        hub.core.line(f.s2 + ":");
+                    }
+                    f.i++;
+                    f.phase = 1;
+                    continue;
                 }
             }
-            hub.core.emitBlock(branch.childs);
-            hub.core.emitDestructList(branch.chk.destructOnExit, branch);
-            hub.core.line("JMP " + endLabel);
-            if (!isLast) {
-                hub.core.line(nextLabel + ":");
-            }
         }
-        hub.core.line(endLabel + ":");
     }
 
-    /** A match is an if-chain: one CMP/JMP per branch (conditions via emitMatchCondition), shared end label; a bare 'else' branch falls into its block. */
-    public void emitMatchChain(Token matchTok) {
-        String endLabel = newLabel("end_of_match");
-        List<Token> branches = new ArrayList<>();
-        for (Token b = matchTok; b != null; b = b.next) {
-            branches.add(b);
-        }
-
-        for (int i = 0; i < branches.size(); i++) {
-            Token branch = branches.get(i);
-            boolean isLast = (i == branches.size() - 1);
-            String nextLabel = isLast ? endLabel : newLabel("match_branch");
-            boolean hasCondition = !branch.sub.isEmpty();
-
-            if (hasCondition) {
-                emitMatchCondition(branch.condition());
-                hub.core.line("CMP");
-                hub.core.line("JMP " + nextLabel);
+    /** A match is an if-chain: one CMP/JMP per branch (conditions via the MATCH_COND frame), shared end label; a bare 'else' branch falls into its block. Frame slots as stepIfChain. */
+    public int stepMatchChain(EmitFrame f) {
+        while (true) {
+            switch (f.phase) {
+                case 0:
+                    f.s1 = newLabel("end_of_match");
+                    f.toks = new ArrayList<>();
+                    for (Token b = f.node; b != null; b = b.next) {
+                        f.toks.add(b);
+                    }
+                    f.i = 0;
+                    f.phase = 1;
+                    continue;
+                case 1: {
+                    if (f.i >= f.toks.size()) {
+                        hub.core.line(f.s1 + ":");
+                        return EmitFrame.DONE;
+                    }
+                    Token branch = f.toks.get(f.i);
+                    boolean isLast = (f.i == f.toks.size() - 1);
+                    f.s2 = isLast ? f.s1 : newLabel("match_branch");
+                    f.phase = 3;
+                    if (!branch.sub.isEmpty()) {
+                        f.phase = 2;
+                        return f.call(new EmitFrame(EmitFrame.MATCH_COND, branch.condition()));
+                    }
+                    continue;
+                }
+                case 2:
+                    hub.core.line("CMP");
+                    hub.core.line("JMP " + f.s2);
+                    f.phase = 3;
+                    continue;
+                case 3:
+                    f.phase = 4;
+                    return f.call(hub.core.blockFrame(f.toks.get(f.i).childs, false));
+                case 4: {
+                    Token branch = f.toks.get(f.i);
+                    f.phase = 5;
+                    EmitFrame destructs = hub.core.destructListFrame(branch.chk.destructOnExit, branch);
+                    if (destructs != null) {
+                        return f.call(destructs);
+                    }
+                    continue;
+                }
+                default: {
+                    boolean isLast = (f.i == f.toks.size() - 1);
+                    hub.core.line("JMP " + f.s1);
+                    if (!isLast) {
+                        hub.core.line(f.s2 + ":");
+                    }
+                    f.i++;
+                    f.phase = 1;
+                    continue;
+                }
             }
-            hub.core.emitBlock(branch.childs);
-            hub.core.emitDestructList(branch.chk.destructOnExit, branch);
-            hub.core.line("JMP " + endLabel);
-            if (!isLast) {
-                hub.core.line(nextLabel + ":");
-            }
         }
-        hub.core.line(endLabel + ":");
     }
 
-    /** Emits a match condition's bool result onto the stack -- ordinary operator emission for instanceof/implements/in, plus GT_ALIVE_CHECK for the bare form, recursing through "and" so every leaf (whichever kind) gets the right treatment before being combined. */
-    public void emitMatchCondition(Token node) {
-        if (node.type == TokenType.OPERATOR && node.text.equals("and")) {
-            emitMatchCondition(node.left);
-            emitMatchCondition(node.right);
-            hub.core.line("AND " + node.left.chk.resolvedType + " " + node.right.chk.resolvedType + " " + node.chk.resolvedType);
-            return;
-        }
-        if (node.chk.someIndexElementExpr != null) {
-            // "match Some(i) in/into x": one combined bool (bounds IN, then element alive) gating the single block.
-            // node.left is the Some(..) call; only its index argument is pushed for the IN.
-            Token indexExpr = hub.operations.singleBuiltinArg(node.left);
-            emitExpr(indexExpr);
-            emitExpr(node.right);
-            hub.core.line("IN " + indexExpr.chk.resolvedType + " " + node.right.chk.resolvedType + " " + node.chk.resolvedType);
-            if (hub.core.inGtSuppressedContext) {
-                throw new CompilerException("type", node.file, node.line,
-                        "'Some(...)' (which needs '@gt_alive_check') can't be used here -- this "
-                                + "function is a ghost-table-decorated function, or is reachable "
-                                + "from one, and ghost-table instructions can never be generated "
-                                + "in that whole reachable set");
+    /** Emits a match condition's bool result onto the stack -- ordinary operator emission for instanceof/implements/in, plus GT_ALIVE_CHECK for the bare form, going through "and" so every leaf (whichever kind) gets the right treatment before being combined. Frame: t1 = the index expression of a `Some(i) in x`. */
+    public int stepMatchCondition(EmitFrame f) {
+        Token node = f.node;
+        while (true) {
+            switch (f.phase) {
+                case 0:
+                    if (node.type == TokenType.OPERATOR && node.text.equals("and")) {
+                        f.phase = 1;
+                        return f.call(new EmitFrame(EmitFrame.MATCH_COND, node.left));
+                    }
+                    if (node.chk.someIndexElementExpr != null) {
+                        // "match Some(i) in/into x": one combined bool (bounds IN, then element alive) gating the single block.
+                        // node.left is the Some(..) call; only its index argument is pushed for the IN.
+                        f.t1 = hub.operations.singleBuiltinArg(node.left);
+                        f.phase = 3;
+                        return f.callExpr(f.t1);
+                    }
+                    if (node.type == TokenType.OPERATOR
+                            && (node.text.equals("instanceof") || node.text.equals("implements") || node.text.equals("in")
+                                    || node.text.equals("within") || node.text.equals("into"))) {
+                        // "within" as a match condition emits exactly like "within"
+                        // within/into emit exactly like in as expressions; the proof is recorded separately by the type checker
+                        return f.tail(new EmitFrame(EmitFrame.EXPR, node));
+                    }
+                    if (node.type == TokenType.OPERATOR && node.text.equals("CALL") && node.left.type == TokenType.VARREF
+                            && node.left.text.equals("Some")) {
+                        // the expression emitter already emits GT_ALIVE_CHECK for Some(..); the generic fallback below would duplicate it
+                        return f.tail(new EmitFrame(EmitFrame.EXPR, node));
+                    }
+                    if (node.type == TokenType.OPERATOR && node.text.equals("fits")) {
+                        return f.tail(hub.fitsFrame(node));
+                    }
+                    if (node.type == TokenType.OPERATOR && node.text.equals("is")) {
+                        // "PUSH x / IS_BASE <leftType>": only the left side is pushed. The type is written out because for a composite
+                        // left operand (e.g. a range literal = two scalar pushes) the preceding line does not carry it.
+                        // See docs/BytecodeEmitter.md, "Operator emission".
+                        return f.tail(EmitFrame.script(node).expr(node.left).line("IS_BASE " + node.left.chk.resolvedType));
+                    }
+                    if (node.type == TokenType.OPERATOR && (node.text.equals("!=") || node.text.equals(">"))
+                            && node.left.type == TokenType.VARREF && node.right.type == TokenType.INTEGER
+                            && node.right.text.equals("0")) {
+                        // division-safety proof shape: an ordinary comparison, never a GT_ALIVE_CHECK
+                        return f.tail(new EmitFrame(EmitFrame.EXPR, node));
+                    }
+                    // unreachable: checkMatchCondition rejects every other shape
+                    throw new IllegalStateException(
+                            "internal error: unrecognized match condition shape reached bytecode emission: " + node.text);
+                case 1:
+                    f.phase = 2;
+                    return f.call(new EmitFrame(EmitFrame.MATCH_COND, node.right));
+                case 2:
+                    hub.core.line("AND " + node.left.chk.resolvedType + " " + node.right.chk.resolvedType + " " + node.chk.resolvedType);
+                    return EmitFrame.DONE;
+                case 3:
+                    f.phase = 4;
+                    return f.callExpr(node.right);
+                case 4: {
+                    hub.core.line("IN " + f.t1.chk.resolvedType + " " + node.right.chk.resolvedType + " " + node.chk.resolvedType);
+                    if (hub.core.inGtSuppressedContext) {
+                        throw new CompilerException("type", node.file, node.line,
+                                "'Some(...)' (which needs '@gt_alive_check') can't be used here -- this "
+                                        + "function is a ghost-table-decorated function, or is reachable "
+                                        + "from one, and ghost-table instructions can never be generated "
+                                        + "in that whole reachable set");
+                    }
+                    Token element = node.chk.someIndexElementExpr;
+                    f.phase = 6;
+                    if (element.chk.someOnRef) {
+                        return f.call(someOnRefFrame(element, element, element.chk.someProofKey, true));
+                    }
+                    hub.core.requireGhostTableFunctionPresent("gt_alive_check", node);
+                    f.phase = 5;
+                    return f.callExpr(element);
+                }
+                case 5:
+                    hub.core.line("GT_ALIVE_CHECK");
+                    f.phase = 6;
+                    continue;
+                default:
+                    hub.core.line("AND " + node.chk.resolvedType + " indeterminate_bool " + node.chk.resolvedType);
+                    return EmitFrame.DONE;
             }
-            if (node.chk.someIndexElementExpr.chk.someOnRef) {
-                emitSomeOnRef(node.chk.someIndexElementExpr, node.chk.someIndexElementExpr, node.chk.someIndexElementExpr.chk.someProofKey);
-            } else {
-                hub.core.requireGhostTableFunctionPresent("gt_alive_check", node);
-                emitExpr(node.chk.someIndexElementExpr);
-                hub.core.line("GT_ALIVE_CHECK");
-            }
-            hub.core.line("AND " + node.chk.resolvedType + " indeterminate_bool " + node.chk.resolvedType);
-            return;
         }
-        if (node.type == TokenType.OPERATOR
-                && (node.text.equals("instanceof") || node.text.equals("implements") || node.text.equals("in")
-                        || node.text.equals("within") || node.text.equals("into"))) {
-            // "within" as a match condition emits exactly like "within"
-            // within/into emit exactly like in as expressions; the proof is recorded separately by the type checker
-            emitExpr(node);
-            return;
-        }
-        if (node.type == TokenType.OPERATOR && node.text.equals("CALL") && node.left.type == TokenType.VARREF
-                && node.left.text.equals("Some")) {
-            // emitExpr already emits GT_ALIVE_CHECK for Some(..); the generic fallback below would duplicate it
-            emitExpr(node);
-            return;
-        }
-        if (node.type == TokenType.OPERATOR && node.text.equals("fits")) {
-            hub.emitFits(node);
-            return;
-        }
-        if (node.type == TokenType.OPERATOR && node.text.equals("is")) {
-            // "PUSH x / IS_BASE <leftType>": only the left side is pushed. The type is written out because for a composite
-            // left operand (e.g. a range literal = two scalar pushes) the preceding line does not carry it.
-            // See docs/BytecodeEmitter.md, "Operator emission".
-            emitExpr(node.left);
-            hub.core.line("IS_BASE " + node.left.chk.resolvedType);
-            return;
-        }
-        if (node.type == TokenType.OPERATOR && (node.text.equals("!=") || node.text.equals(">"))
-                && node.left.type == TokenType.VARREF && node.right.type == TokenType.INTEGER
-                && node.right.text.equals("0")) {
-            // division-safety proof shape: an ordinary comparison, never a GT_ALIVE_CHECK
-            emitExpr(node);
-            return;
-        }
-        // unreachable: checkMatchCondition rejects every other shape
-        throw new IllegalStateException(
-                "internal error: unrecognized match condition shape reached bytecode emission: " + node.text);
     }
 
     public void noteLoopLabel(Token loopTok, String kind, String startLabel) {
@@ -749,86 +914,122 @@ final class BytecodeEmitterStatements {
             hub.core.sourcePos.put(hub.core.curHobFn + "|" + startLabel, BytecodeEmitterCore.shownPos(loopTok));
             hub.core.termSites.add(new String[]{hub.core.curHobFn, startLabel, loopTok.file, String.valueOf(loopTok.line), kind});
         }
-        DocComments.Doc td = DocComments.find(loopTok.file, loopTok.line, "termination", kind);
+        DocComment td = DocComments.find(loopTok.file, loopTok.line, "termination", kind);
         if (td != null && hub.core.curHobFn != null) {
             hub.core.loopTermLabels.put(hub.core.curHobFn + "|" + startLabel, td);
         }
     }
 
-    public void emitLoop(Token loopTok) {
-        String startLabel = newLabel("loop");
-        noteLoopLabel(loopTok, "loop", startLabel);
-        if (loopTok.chk.lockSpinBound != 0 && hub.core.curHobFn != null) {
-            hub.core.spinBounds.put(hub.core.curHobFn + "|" + startLabel, loopTok.chk.lockSpinBound);
-        }
-        String endLabel = newLabel("loop_end");
-        hub.core.loopEndLabels.add(endLabel);
-        hub.core.loopContinueTargets.add(new String[] { startLabel });
-        hub.core.emitDecorators("LOOP_DECORATE", loopTok.decorators);
-        emitPreLoopInit(loopTok.chk.preLoopInit);
-        hub.core.line(startLabel + ":");
-        if (loopTok.chk.isLockSpinLoop) {
-            hub.core.lockRetryLabels.add(startLabel);
-        }
-        hub.core.emitBlock(loopTok.childs);
-        if (loopTok.chk.isLockSpinLoop) {
-            hub.core.lockRetryLabels.remove(hub.core.lockRetryLabels.size() - 1);
-        }
-        hub.core.emitDestructList(loopTok.chk.destructOnExit, loopTok);
-        hub.core.line("JMP " + startLabel);
-        hub.core.line(endLabel + ":");
-        hub.core.loopEndLabels.remove(hub.core.loopEndLabels.size() - 1);
-        hub.core.loopContinueTargets.remove(hub.core.loopContinueTargets.size() - 1);
-    }
-
-    /**
-     * Pre-loop assigns of a lowered "match @lock" loop that uses a "CLOSED:default" policy ($lm_tries = 0 and the policy's
-     * parameters), run once before the start label and not through emitBlock. Their ALLOCs are hoisted by collectHoistedAllocs.
-     */
-    public void emitPreLoopInit(List<Token> preLoopInit) {
-        if (preLoopInit == null) {
-            return;
-        }
-        for (Token assign : preLoopInit) {
-            hub.operations.emitAssign(assign);
+    /** `loop`. Frame: s1 = start label, s2 = end label, toks = pre-loop assigns, i = next pre-loop assign. */
+    public int stepLoop(EmitFrame f) {
+        Token loopTok = f.node;
+        while (true) {
+            switch (f.phase) {
+                case 0:
+                    f.s1 = newLabel("loop");
+                    noteLoopLabel(loopTok, "loop", f.s1);
+                    if (loopTok.chk.lockSpinBound != 0 && hub.core.curHobFn != null) {
+                        hub.core.spinBounds.put(hub.core.curHobFn + "|" + f.s1, loopTok.chk.lockSpinBound);
+                    }
+                    f.s2 = newLabel("loop_end");
+                    hub.core.loopEndLabels.add(f.s2);
+                    hub.core.loopContinueTargets.add(new String[] { f.s1 });
+                    hub.core.emitDecorators("LOOP_DECORATE", loopTok.decorators);
+                    // Pre-loop assigns of a lowered "match @lock" loop that uses a "CLOSED:default" policy ($lm_tries = 0 and the policy's
+                    // parameters), run once before the start label and not through a block. Their ALLOCs are hoisted by collectHoistedAllocs.
+                    f.toks = loopTok.chk.preLoopInit;
+                    f.i = 0;
+                    f.phase = 1;
+                    continue;
+                case 1:
+                    if (f.toks != null && f.i < f.toks.size()) {
+                        return f.call(new EmitFrame(EmitFrame.ASSIGN, f.toks.get(f.i++)));
+                    }
+                    hub.core.line(f.s1 + ":");
+                    if (loopTok.chk.isLockSpinLoop) {
+                        hub.core.lockRetryLabels.add(f.s1);
+                    }
+                    f.phase = 2;
+                    return f.call(hub.core.blockFrame(loopTok.childs, false));
+                case 2: {
+                    if (loopTok.chk.isLockSpinLoop) {
+                        hub.core.lockRetryLabels.remove(hub.core.lockRetryLabels.size() - 1);
+                    }
+                    f.phase = 3;
+                    EmitFrame destructs = hub.core.destructListFrame(loopTok.chk.destructOnExit, loopTok);
+                    if (destructs != null) {
+                        return f.call(destructs);
+                    }
+                    continue;
+                }
+                default:
+                    hub.core.line("JMP " + f.s1);
+                    hub.core.line(f.s2 + ":");
+                    hub.core.loopEndLabels.remove(hub.core.loopEndLabels.size() - 1);
+                    hub.core.loopContinueTargets.remove(hub.core.loopContinueTargets.size() - 1);
+                    return EmitFrame.DONE;
+            }
         }
     }
 
     /**
      * Emits a 'for' that TypeChecker.checkForLoop desugared into four nodes (range let, loop-variable let, 'in' condition, '++')
      * through the ordinary emission paths, plus the loop control flow (check at top, continue label before the step, jump back).
-     * The hidden variables' ALLOCs are hoisted by collectHoistedAllocs.
+     * The hidden variables' ALLOCs are hoisted by collectHoistedAllocs. Frame: s1 = start label, s2 = end label.
      */
-    public void emitForLoop(Token forTok) {
+    public int stepForLoop(EmitFrame f) {
+        Token forTok = f.node;
         Token rangeAssign = forTok.sub.get(0);
         Token loopVarAssign = forTok.sub.get(1);
         Token conditionIn = forTok.sub.get(2);
         Token increment = forTok.sub.get(3);
-
-        hub.operations.emitAssign(rangeAssign);
-        hub.operations.emitAssign(loopVarAssign);
-
-        String startLabel = newLabel("for");
-        noteLoopLabel(forTok, "for", startLabel);
-        String endLabel = newLabel("for_end");
-        hub.core.loopEndLabels.add(endLabel);
-        String[] continueTarget = new String[] { null };
-        hub.core.loopContinueTargets.add(continueTarget);
-        hub.core.emitDecorators("FOR_DECORATE", forTok.decorators, true);
-        hub.core.line(startLabel + ":");
-        emitExpr(conditionIn);
-        hub.core.line("CMP");
-        hub.core.line("JMP " + endLabel);
-        hub.core.emitBlock(forTok.childs);
-        hub.core.emitDestructList(forTok.chk.destructOnExit, forTok);
-        if (continueTarget[0] != null) {
-            hub.core.line(continueTarget[0] + ":");
+        while (true) {
+            switch (f.phase) {
+                case 0:
+                    f.phase = 1;
+                    return f.call(new EmitFrame(EmitFrame.ASSIGN, rangeAssign));
+                case 1:
+                    f.phase = 2;
+                    return f.call(new EmitFrame(EmitFrame.ASSIGN, loopVarAssign));
+                case 2:
+                    f.s1 = newLabel("for");
+                    noteLoopLabel(forTok, "for", f.s1);
+                    f.s2 = newLabel("for_end");
+                    hub.core.loopEndLabels.add(f.s2);
+                    hub.core.loopContinueTargets.add(new String[] { null });
+                    hub.core.emitDecorators("FOR_DECORATE", forTok.decorators, true);
+                    hub.core.line(f.s1 + ":");
+                    f.phase = 3;
+                    return f.callExpr(conditionIn);
+                case 3:
+                    hub.core.line("CMP");
+                    hub.core.line("JMP " + f.s2);
+                    f.phase = 4;
+                    return f.call(hub.core.blockFrame(forTok.childs, false));
+                case 4: {
+                    f.phase = 5;
+                    EmitFrame destructs = hub.core.destructListFrame(forTok.chk.destructOnExit, forTok);
+                    if (destructs != null) {
+                        return f.call(destructs);
+                    }
+                    continue;
+                }
+                case 5: {
+                    String[] continueTarget = hub.core.loopContinueTargets.get(hub.core.loopContinueTargets.size() - 1);
+                    if (continueTarget[0] != null) {
+                        hub.core.line(continueTarget[0] + ":");
+                    }
+                    f.phase = 6;
+                    return f.callExpr(increment);
+                }
+                default:
+                    hub.core.line("JMP " + f.s1);
+                    hub.core.line(f.s2 + ":");
+                    hub.core.loopEndLabels.remove(hub.core.loopEndLabels.size() - 1);
+                    hub.core.loopContinueTargets.remove(hub.core.loopContinueTargets.size() - 1);
+                    return EmitFrame.DONE;
+            }
         }
-        emitExpr(increment);
-        hub.core.line("JMP " + startLabel);
-        hub.core.line(endLabel + ":");
-        hub.core.loopEndLabels.remove(hub.core.loopEndLabels.size() - 1);
-        hub.core.loopContinueTargets.remove(hub.core.loopContinueTargets.size() - 1);
     }
 
     public String rangeVarNameOf(Token rangeAssign) {
@@ -836,15 +1037,14 @@ final class BytecodeEmitterStatements {
     }
 
     /** 'break': destruct/unlock lists, then a jump to the enclosing loop's end label. An empty stack means TypeChecker failed. */
-    public void emitBreak(Token breakTok) {
+    public EmitFrame breakFrame(Token breakTok) {
         if (hub.core.loopEndLabels.isEmpty()) {
             throw new IllegalStateException(
                     "internal error: 'break' reached bytecode gen outside any loop "
                             + "(should have been caught by TypeChecker)");
         }
-        hub.core.emitDestructList(breakTok.chk.destructOnExit, breakTok);
-        hub.core.emitUnlockList(breakTok.chk.unlockOnExit, breakTok);
-        hub.core.line("JMP " + hub.core.loopEndLabels.get(hub.core.loopEndLabels.size() - 1));
+        return EmitFrame.script(breakTok).destruct(breakTok.chk.destructOnExit, breakTok).unlock(breakTok.chk.unlockOnExit, breakTok)
+                .line("JMP " + hub.core.loopEndLabels.get(hub.core.loopEndLabels.size() - 1));
     }
 
     /**
@@ -852,7 +1052,8 @@ final class BytecodeEmitterStatements {
      * catch-body continue (jump to the label from continueTargetLabels, precomputed because the catch body is hoisted).
      * See docs/BytecodeEmitter.md, "Hoisted catch blocks".
      */
-    public void emitContinue(Token continueTok) {
+    public EmitFrame continueFrame(Token continueTok) {
+        EmitFrame f = EmitFrame.script(continueTok);
         if (continueTok.chk.isLoopContinue) {
             // 'continue' in a user 'for'/'loop': unwind like 'break', then jump to the loop's step / start.
             if (hub.core.loopContinueTargets.isEmpty()) {
@@ -863,10 +1064,8 @@ final class BytecodeEmitterStatements {
             if (target[0] == null) {
                 target[0] = newLabel("for_cont");
             }
-            hub.core.emitDestructList(continueTok.chk.destructOnExit, continueTok);
-            hub.core.emitUnlockList(continueTok.chk.unlockOnExit, continueTok);
-            hub.core.line("JMP " + target[0]);
-            return;
+            return f.destruct(continueTok.chk.destructOnExit, continueTok).unlock(continueTok.chk.unlockOnExit, continueTok)
+                    .line("JMP " + target[0]);
         }
         if (continueTok.chk.isLockRetryContinue) {
             // CLOSED case of a 'match @lock': retry at the spin loop's start (after the pre-loop init, so counters are kept); no lock is held
@@ -874,10 +1073,8 @@ final class BytecodeEmitterStatements {
                 throw new IllegalStateException(
                         "internal error: lock-retry 'continue' reached bytecode gen outside a 'match @lock' loop");
             }
-            hub.core.emitDestructList(continueTok.chk.destructOnExit, continueTok);
-            hub.core.emitUnlockList(continueTok.chk.unlockOnExit, continueTok);
-            hub.core.line("JMP " + hub.core.lockRetryLabels.get(hub.core.lockRetryLabels.size() - 1));
-            return;
+            return f.destruct(continueTok.chk.destructOnExit, continueTok).unlock(continueTok.chk.unlockOnExit, continueTok)
+                    .line("JMP " + hub.core.lockRetryLabels.get(hub.core.lockRetryLabels.size() - 1));
         }
         String targetLabel = hub.core.continueTargetLabels.get(continueTok);
         if (targetLabel == null) {
@@ -885,61 +1082,51 @@ final class BytecodeEmitterStatements {
                     "internal error: 'continue' reached bytecode gen with no enclosing 'try { ... }' "
                             + "block (should have been caught by TypeChecker)");
         }
-        hub.core.emitDestructList(continueTok.chk.destructOnExit, continueTok);
-        hub.core.emitUnlockList(continueTok.chk.unlockOnExit, continueTok);
-        hub.core.line("JMP " + targetLabel);
+        return f.destruct(continueTok.chk.destructOnExit, continueTok).unlock(continueTok.chk.unlockOnExit, continueTok)
+                .line("JMP " + targetLabel);
     }
 
-    public void emitReturn(Token returnTok) {
+    public EmitFrame returnFrame(Token returnTok) {
+        EmitFrame f = EmitFrame.script(returnTok);
         if (returnTok.sub.isEmpty()) {
-            hub.core.emitDestructList(returnTok.chk.destructOnExit, returnTok);
-            hub.core.emitUnlockList(returnTok.chk.unlockOnExit, returnTok);
-            hub.core.line("RET " + returnTok.chk.resolvedType);
-            return;
+            return f.destruct(returnTok.chk.destructOnExit, returnTok).unlock(returnTok.chk.unlockOnExit, returnTok)
+                    .line("RET " + returnTok.chk.resolvedType);
         }
         Token expr = returnTok.operand();
         if (hub.core.currentFuncInfo != null && hub.core.isStructByValueReturn(hub.core.currentFuncInfo.returnType)) {
-            emitStructRvoReturn(expr, returnTok);
-            return;
+            // Callee half of struct RVO: writes the returned struct through "$ret_dest" and returns that pointer. See docs/BytecodeEmitter.md, "Return and struct return (RVO)".
+            String structName = hub.core.currentFuncInfo.returnType.baseType;
+            String ptrType = "raw_mut_" + structName;
+            String structType = "mut_" + structName;
+            Token unwrapped = hub.operations.unwrapMutWrappers(expr);
+            if (unwrapped.chk.isStructRvoCall) {
+                // "return foo()": forward $ret_dest
+                f.rvoForward(unwrapped, ptrType);
+            } else {
+                f.line("PUSH $ret_dest " + ptrType);
+                f.expr(expr);
+                f.line("ASSIGN " + structType + " " + expr.chk.resolvedType + " " + structType);
+            }
+            return f.destruct(returnTok.chk.destructOnExit, returnTok).unlock(returnTok.chk.unlockOnExit, returnTok)
+                    .line("PUSH $ret_dest " + ptrType).line("RET " + ptrType);
         }
-        emitExpr(expr);
+        f.expr(expr);
         // the value is evaluated before destructing; the returned value is never in the destruct list
-        hub.core.emitDestructList(returnTok.chk.destructOnExit, returnTok);
-        hub.core.emitUnlockList(returnTok.chk.unlockOnExit, returnTok);
-        hub.core.line("RET " + returnTok.chk.resolvedType);
-    }
-
-    /** Callee half of struct RVO: writes the returned struct through "$ret_dest" and returns that pointer. See docs/BytecodeEmitter.md, "Return and struct return (RVO)". */
-    public void emitStructRvoReturn(Token expr, Token returnTok) {
-        String structName = hub.core.currentFuncInfo.returnType.baseType;
-        String ptrType = "raw_mut_" + structName;
-        String structType = "mut_" + structName;
-        Token unwrapped = hub.operations.unwrapMutWrappers(expr);
-        if (unwrapped.chk.isStructRvoCall) {
-            // "return foo()": forward $ret_dest (emitStructRvoForwardCall)
-            hub.operations.emitStructRvoForwardCall(unwrapped, ptrType);
-        } else {
-            hub.core.line("PUSH $ret_dest " + ptrType);
-            emitExpr(expr);
-            hub.core.line("ASSIGN " + structType + " " + expr.chk.resolvedType + " " + structType);
-        }
-        hub.core.emitDestructList(returnTok.chk.destructOnExit, returnTok);
-        hub.core.emitUnlockList(returnTok.chk.unlockOnExit, returnTok);
-        hub.core.line("PUSH $ret_dest " + ptrType);
-        hub.core.line("RET " + ptrType);
+        return f.destruct(returnTok.chk.destructOnExit, returnTok).unlock(returnTok.chk.unlockOnExit, returnTok)
+                .line("RET " + returnTok.chk.resolvedType);
     }
 
     /**
      * THROW marker line, then the write of the operand into this frame's gt_error_message slot, the per-throw-site destruct list
-     * and the unwind/exit. See docs/BytecodeEmitter.md, "Throw".
+     * and the unwind/exit. See docs/BytecodeEmitter.md, "Throw". The lines before the unlock calls are written now; null when nothing follows them.
      */
-    public void emitThrow(Token throwTok) {
+    public EmitFrame throwFrame(Token throwTok) {
         Token expr = throwTok.operand();
         String operand = expr.type == TokenType.VARREF ? expr.text : hub.literalValueOf(expr);
         hub.core.line("THROW " + operand);
         if (hub.core.inGtSuppressedContext) {
             // gt-suppressed function: no ghost-table instructions and no gt_routine slot exist here (checkThrow bans throw in the ghost-table functions)
-            return;
+            return null;
         }
         // operand is a string literal id or a variable name (a catch parameter is re-propagated unchanged)
         if (!(expr.type == TokenType.VARREF && hub.core.functionCatchParams.contains(expr.text))) {
@@ -957,14 +1144,15 @@ final class BytecodeEmitterStatements {
         for (String name : destructNames) {
             hub.core.line("GT_DESTRUCT " + name);
         }
-        hub.core.emitUnlockList(throwTok.chk.unlockOnExit, throwTok);
+        String finalLine;
         if (hub.core.currentFuncMangledName.equals("main")) {
-            hub.core.line("EXIT");
+            finalLine = "EXIT";
         } else if (hub.core.currentFuncInfo != null && hub.core.currentFuncInfo.isAsync) {
-            hub.core.line("EXIT_THREAD");
+            finalLine = "EXIT_THREAD";
         } else {
-            hub.core.line(hub.core.gtUnwindLine());
+            finalLine = hub.core.gtUnwindLine();
         }
+        return EmitFrame.script(throwTok).unlock(throwTok.chk.unlockOnExit, throwTok).line(finalLine);
     }
 
     public String newLabel(String prefix) {
@@ -972,28 +1160,35 @@ final class BytecodeEmitterStatements {
         return "@" + prefix + "_" + hub.core.labelCounter;
     }
 
-    // ---- expressions ------------------------------------------------------
-
     /**
      * Nullable `ref` values are 64-bit ids, `ref some` values and proven bindings are addresses (see Token.refToId). This wrapper
      * applies the three marks the TypeChecker left on an expression: a nullable `ref` that is the subject of an alive proof is read from
      * the proof's hidden address slot; an address stored where a nullable `ref` is expected becomes an id (GT_REF_ID); a nullable `ref`
      * handed to a `raw` slot is resolved to its current address (GT_REF_RESOLVE, null when dead).
      */
-    public void emitExpr(Token node) {
-        if (node.chk.refProofIsId && node.chk.refProofKey != null) {
-            String slot = hub.core.refAddrSlots.get(node.chk.refProofKey);
-            if (slot != null) {
-                hub.core.line("PUSH " + slot + " " + node.chk.resolvedType);
-                return;
+    public int stepExpr(EmitFrame f) {
+        Token node = f.node;
+        if (f.phase == 0) {
+            f.b1 = false;
+            if (node.chk.refProofIsId && node.chk.refProofKey != null) {
+                String slot = hub.core.refAddrSlots.get(node.chk.refProofKey);
+                if (slot != null) {
+                    hub.core.line("PUSH " + slot + " " + node.chk.resolvedType);
+                    return EmitFrame.DONE;
+                }
+                f.b1 = true;   // proven by `assume match` (nothing ran, no address slot): resolve the id here
             }
-            // proven by `assume match` (nothing ran, no address slot): resolve the id here
-            emitExprCore(node);
+            f.phase = 1;
+            EmitFrame core = coreFrame(node);
+            if (core != null) {
+                return f.call(core);
+            }
+        }
+        if (f.b1) {
             requireRefHook("gt_ref_resolve", node);
             hub.core.line("GT_REF_RESOLVE " + node.chk.resolvedType);   // like every instruction, it names the type it leaves (a following PUSH_FIELDNAME reads the struct from it)
-            return;
+            return EmitFrame.DONE;
         }
-        emitExprCore(node);
         if (node.chk.refToId) {
             requireRefHook("gt_ref_id", node);
             hub.core.line("GT_REF_ID");
@@ -1001,6 +1196,7 @@ final class BytecodeEmitterStatements {
             requireRefHook("gt_ref_resolve", node);
             hub.core.line("GT_REF_RESOLVE " + node.chk.resolvedType);
         }
+        return EmitFrame.DONE;
     }
 
     public void requireRefHook(String decorator, Token at) {
@@ -1014,36 +1210,10 @@ final class BytecodeEmitterStatements {
 
     /**
      * `Some(x)` on a nullable `ref` (an id): resolve it into the proof's hidden address slot (one slot per proof key and function), then
-     * test that address against null. The match body reads the slot instead of the id (emitExpr, Token.refProofKey).
+     * test that address against null. The match body reads the slot instead of the id (stepExpr, Token.refProofKey).
+     * `assume match Some(r)` (test false) does the same one-time resolve but no null test and no branch (the programmer vouches).
      */
-    public void emitSomeOnRef(Token someCall, Token subject, String proofKey) {
-        emitSomeOnRef(someCall, subject, proofKey, true);
-    }
-
-    /**
-     * `assume match Some(r)` / `assume match <index> in v and Some(v[i].r)` on a nullable `ref`: the same one-time resolve into the proof's
-     * address slot as a real `match Some`, but no null test and no branch (the programmer vouches), so the uses after it read the slot
-     * instead of resolving the id again at every use.
-     */
-    public void emitAssumeResolves(Token c) {
-        if (c == null) {
-            return;
-        }
-        if (c.chk.someOnRef && c.chk.someProofKey != null) {
-            emitSomeOnRef(c, hub.operations.singleBuiltinArg(c), c.chk.someProofKey, false);
-        } else if (c.chk.someIndexElementExpr != null && c.chk.someIndexElementExpr.chk.someOnRef) {
-            emitSomeOnRef(c.chk.someIndexElementExpr, c.chk.someIndexElementExpr, c.chk.someIndexElementExpr.chk.someProofKey, false);
-        }
-        emitAssumeResolves(c.left);
-        emitAssumeResolves(c.right);
-        if (c.sub != null) {
-            for (Token t : c.sub) {
-                emitAssumeResolves(t);
-            }
-        }
-    }
-
-    public void emitSomeOnRef(Token someCall, Token subject, String proofKey, boolean test) {
+    public EmitFrame someOnRefFrame(Token someCall, Token subject, String proofKey, boolean test) {
         requireRefHook("gt_ref_resolve", someCall);
         String type = subject.chk.resolvedType;
         String slot = proofKey == null ? null : hub.core.refAddrSlots.get(proofKey);
@@ -1053,18 +1223,66 @@ final class BytecodeEmitterStatements {
                 hub.core.refAddrSlots.put(proofKey, slot);
             }
         }
-        hub.core.line("ADDR " + slot + " " + type);
-        emitExpr(subject);
-        hub.core.line("GT_REF_RESOLVE " + type);
-        hub.core.line("ASSIGN " + type + " " + type + " " + type);
+        EmitFrame f = EmitFrame.script(someCall);
+        f.line("ADDR " + slot + " " + type);
+        f.expr(subject);
+        f.line("GT_REF_RESOLVE " + type);
+        f.line("ASSIGN " + type + " " + type + " " + type);
         if (test) {
-            hub.core.line("PUSH " + slot + " " + type);
-            hub.core.line("PUSH null null");
-            hub.core.line("NEQ " + type + " null indeterminate_bool");
+            f.line("PUSH " + slot + " " + type);
+            f.line("PUSH null null");
+            f.line("NEQ " + type + " null indeterminate_bool");
         }
+        return f;
     }
 
-    public void emitExprCore(Token node) {
+    /**
+     * `assume match Some(r)` / `assume match <index> in v and Some(v[i].r)` on a nullable `ref`: the same one-time resolve into the proof's
+     * address slot as a real `match Some`, but no null test and no branch, so the uses after it read the slot instead of resolving the id again at every use.
+     * Walks the condition tree in pre-order. Frame: work = the nodes still to visit.
+     */
+    public EmitFrame assumeResolvesFrame(Token condition) {
+        return new EmitFrame(EmitFrame.ASSUME_RESOLVES, condition);
+    }
+
+    public int stepAssumeResolves(EmitFrame f) {
+        if (f.phase == 0) {
+            f.work = new ArrayDeque<>();
+            if (f.node != null) {
+                f.work.push(f.node);
+            }
+            f.phase = 1;
+        }
+        while (!f.work.isEmpty()) {
+            Token c = f.work.pop();
+            if (c.sub != null) {
+                for (int k = c.sub.size() - 1; k >= 0; k--) {
+                    if (c.sub.get(k) != null) {
+                        f.work.push(c.sub.get(k));
+                    }
+                }
+            }
+            if (c.right != null) {
+                f.work.push(c.right);
+            }
+            if (c.left != null) {
+                f.work.push(c.left);
+            }
+            EmitFrame resolve = null;
+            if (c.chk.someOnRef && c.chk.someProofKey != null) {
+                resolve = someOnRefFrame(c, hub.operations.singleBuiltinArg(c), c.chk.someProofKey, false);
+            } else if (c.chk.someIndexElementExpr != null && c.chk.someIndexElementExpr.chk.someOnRef) {
+                resolve = someOnRefFrame(c.chk.someIndexElementExpr, c.chk.someIndexElementExpr, c.chk.someIndexElementExpr.chk.someProofKey, false);
+            }
+            if (resolve != null) {
+                return f.call(resolve);
+            }
+        }
+        return EmitFrame.DONE;
+    }
+
+    /** The emission of an expression node, or null when its lines were all written here: literals, the operator dispatch and the transparent wrappers. */
+    public EmitFrame coreFrame(Token node) {
         switch (node.type) {
             case STRING:
             case CHAR:
@@ -1073,230 +1291,213 @@ final class BytecodeEmitterStatements {
             case BOOL:
             case NULL:
                 hub.core.line("PUSH " + hub.literalValueOf(node) + " " + node.chk.resolvedType);
-                return;
+                return null;
             case VARREF:
                 hub.core.line((BytecodeEmitterCore.isAtomicCanonical(node.chk.resolvedType) ? "ATOMIC_PUSH " : "PUSH ") + node.text + " "
                         + node.chk.resolvedType);
-                return;
+                return null;
             case KEYWORD:
                 if (node.text.equals("let")) {
                     Token nameTok = node.childs.get(0);
                     hub.core.line("PUSH " + nameTok.text + " " + node.chk.resolvedType);
-                    return;
+                    return null;
                 }
                 if (node.text.equals("try")) {
-                    // expression-position "let x = try .. catch .."; emitAssign already emitted ADDR x
-                    hub.core.emitTryGuardedCall(node);
-                    return;
+                    // expression-position "let x = try .. catch .."; the assignment already emitted ADDR x
+                    return hub.core.tryGuardedCallFrame(node);
                 }
                 break;
             case DELINEATOR:
                 if (node.text.equals("(")) {
                     // transparent grouping parens
                     if (!node.childs.isEmpty()) {
-                        emitExpr(node.childs.get(0));
+                        return new EmitFrame(EmitFrame.EXPR, node.childs.get(0));
                     }
-                    return;
+                    return null;
                 }
                 if (node.text.equals("[")) {
                     // array literal: each element pushed in written order
-                    List<Token> elements = new ArrayList<>();
-                    hub.operations.collectCommaArgs(node.childs.get(0), elements);
-                    for (Token element : elements) {
-                        if (hub.core.dynLiteralTempNames != null && hub.isOwnsTemporary(element)) {
-                            hub.emitOwnsTemporaryViaLocal(element, hub.core.dynLiteralTempNames);
-                        } else {
-                            emitExpr(element);
-                        }
-                    }
-                    return;
+                    return new EmitFrame(EmitFrame.ARRAY_LITERAL, node);
                 }
                 break;
             case OPERATOR:
-                emitOperator(node);
-                return;
+                return operatorFrame(node);
             default:
                 break;
         }
         throw new IllegalStateException("don't know how to emit " + node.type + "(" + node.text + ")");
     }
 
-    public void emitOperator(Token op) {
+    /** Array literal. Frame: toks = the elements, i = next element. */
+    public int stepArrayLiteral(EmitFrame f) {
+        if (f.phase == 0) {
+            f.toks = new ArrayList<>();
+            hub.operations.collectCommaArgs(f.node.childs.get(0), f.toks);
+            f.i = 0;
+            f.phase = 1;
+        }
+        if (f.i < f.toks.size()) {
+            Token element = f.toks.get(f.i++);
+            if (hub.core.dynLiteralTempNames != null && hub.isOwnsTemporary(element)) {
+                return f.call(hub.ownsTemporaryFrame(element, hub.core.dynLiteralTempNames));
+            }
+            return f.callExpr(element);
+        }
+        return EmitFrame.DONE;
+    }
+
+    public EmitFrame operatorFrame(Token op) {
         switch (op.text) {
             case "=":
-                hub.operations.emitAssign(op);
-                return;
+                return new EmitFrame(EmitFrame.ASSIGN, op);
             case "+=": case "-=": case "*=": case "/=": case "%=":
-                hub.operations.emitCompoundAssign(op);
-                return;
+                return hub.operations.compoundAssignFrame(op);
             case "+": case "-": case "*": case "/": case "%":
                 if (op.unary) {
-                    hub.operations.emitUnaryMinus(op);
-                } else {
-                    hub.operations.emitBinaryArith(op);
+                    return hub.operations.unaryMinusFrame(op);
                 }
-                return;
+                return hub.operations.binaryArithFrame(op);
             case "!":
-                hub.operations.emitLogicalNot(op);
-                return;
+                return hub.operations.logicalNotFrame(op);
             case "++":
-                hub.operations.emitIncrement(op);
-                return;
+                return hub.operations.incDecFrame(op, true);
             case "--":
-                hub.operations.emitDecrement(op);
-                return;
+                return hub.operations.incDecFrame(op, false);
             case "&&":
-                hub.operations.emitLogical(op, "AND");
-                return;
+                return hub.operations.logicalFrame(op, "AND");
             case "||":
-                hub.operations.emitLogical(op, "OR");
-                return;
+                return hub.operations.logicalFrame(op, "OR");
             case "<": case ">": case "<=": case ">=": case "==": case "!=":
-                hub.operations.emitComparison(op);
-                return;
-            case "in": case "into":
+                return hub.operations.comparisonFrame(op);
+            case "in": case "into": {
                 // dedicated IN opcode; "into" emits identically (the difference is only a type-checker proof kind)
+                EmitFrame f = EmitFrame.script(op);
                 if (op.chk.isGuaranteedEnumMembershipCheck) {
                     // right side is a bare enum type name, pushed by name; the backend derives the check from the ENUM line
-                    emitExpr(op.left);
-                    hub.core.line("PUSH " + op.right.chk.resolvedType);
-                    hub.core.line("IN " + op.left.chk.resolvedType + " " + op.right.chk.resolvedType + " " + op.chk.resolvedType);
-                    return;
+                    return f.expr(op.left).line("PUSH " + op.right.chk.resolvedType)
+                            .line("IN " + op.left.chk.resolvedType + " " + op.right.chk.resolvedType + " " + op.chk.resolvedType);
                 }
                 if (op.chk.isStringMembershipCheck) {
                     // a string has no stored length: runtime byte scan under its own mnemonic IN_SCAN
-                    emitExpr(op.left);
-                    emitExpr(op.right);
-                    hub.core.line("IN_SCAN " + op.left.chk.resolvedType + " " + op.right.chk.resolvedType + " " + op.chk.resolvedType);
-                    return;
+                    return f.expr(op.left).expr(op.right)
+                            .line("IN_SCAN " + op.left.chk.resolvedType + " " + op.right.chk.resolvedType + " " + op.chk.resolvedType);
                 }
-                emitExpr(op.left);
-                emitExpr(op.right);
-                hub.core.line("IN " + op.left.chk.resolvedType + " " + op.right.chk.resolvedType + " " + op.chk.resolvedType);
-                return;
+                return f.expr(op.left).expr(op.right)
+                        .line("IN " + op.left.chk.resolvedType + " " + op.right.chk.resolvedType + " " + op.chk.resolvedType);
+            }
             case "within":
                 // same shape as "in"; always WITHIN (pointerness is handled by MembershipLoweringPass from the operand types)
-                emitExpr(op.left);
-                emitExpr(op.right);
-                hub.core.line("WITHIN " + op.left.chk.resolvedType + " " + op.right.chk.resolvedType + " " + op.chk.resolvedType);
-                return;
+                return EmitFrame.script(op).expr(op.left).expr(op.right)
+                        .line("WITHIN " + op.left.chk.resolvedType + " " + op.right.chk.resolvedType + " " + op.chk.resolvedType);
             case "CALL":
-                hub.operations.emitCallOrBuiltin(op);
-                return;
+                return hub.operations.callOrBuiltinFrame(op);
             case "LOOKUP":
-                hub.emitLookup(op);
-                return;
+                return hub.lookupFrame(op);
             case "as":
-                hub.emitAs(op);
-                return;
+                return hub.asFrame(op);
             case ".":
-                hub.emitDot(op);
-                return;
+                return hub.dotFrame(op);
             case "INSTANTIATE":
-                hub.emitInstantiate(op);
-                return;
+                return new EmitFrame(EmitFrame.INSTANTIATE, op);
             case "owns": case "ref": case "auto": case "raw": case "static":
-                hub.emitAddressOf(op);
-                return;
+                return hub.addressOfFrame(op);
             case "mut": case "imut":
                 // compile-time mutability retag: nothing to emit
-                emitExpr(op.left);
-                return;
+                return new EmitFrame(EmitFrame.EXPR, op.left);
             case "new":
-                hub.emitNew(op);
-                return;
+                return new EmitFrame(EmitFrame.NEW, op);
             case "await":
                 // no bytecode of its own; the wrapped CALL emits AWAIT_CALL
-                emitExpr(op.left);
-                return;
+                return new EmitFrame(EmitFrame.EXPR, op.left);
             case "par":
                 // no bytecode of its own; the wrapped CALL emits PAR_CALL (its resolvedType was overwritten by checkPar)
-                emitExpr(op.left);
-                return;
+                return new EmitFrame(EmitFrame.EXPR, op.left);
             case "unsafe":
                 // no bytecode of its own ("unsafe dyn(..)"); the wrapped call carries the corrected resolvedType
-                emitExpr(op.left);
-                return;
+                return new EmitFrame(EmitFrame.EXPR, op.left);
             case "atomic":
                 // no bytecode of its own; the wrapped expression's resolvedType carries "atomic"
-                emitExpr(op.left);
-                return;
+                return new EmitFrame(EmitFrame.EXPR, op.left);
             case "swap":
-                hub.operations.emitSwap(op);
-                return;
+                return hub.operations.swapFrame(op);
             case "..":
                 // a range is its two u64 bounds pushed back to back
-                emitExpr(op.left);
-                emitExpr(op.right);
-                return;
+                return EmitFrame.script(op).expr(op.left).expr(op.right);
             case ",":
                 // no COMMA instruction, per spec -- just compile both sides
-                emitExpr(op.left);
-                emitExpr(op.right);
-                return;
+                return EmitFrame.script(op).expr(op.left).expr(op.right);
             case "instanceof": case "implements":
                 // right operand is a bare type/interface name pushed by name. The left operand's type is a trailing operand
                 // because a bare struct literal on the left leaves only its last member's push before this line.
-                emitExpr(op.left);
-                hub.core.line("PUSH " + op.right.chk.resolvedType);
-                hub.core.line(op.text.toUpperCase() + " " + op.left.chk.resolvedType);
-                return;
+                return EmitFrame.script(op).expr(op.left).line("PUSH " + op.right.chk.resolvedType)
+                        .line(op.text.toUpperCase() + " " + op.left.chk.resolvedType);
             case "and":
                 // same bytecode as "&&"; the extra meaning is type-checker only
-                hub.operations.emitLogical(op, "AND");
-                return;
+                return hub.operations.logicalFrame(op, "AND");
             case "FLOAT_CHECK":
                 // compiler-internal operator (TypeChecker.lowerFloatMatchToIfChain); op.right.text holds the "finite|nan" chain string
-                emitExpr(op.left);
                 // an f64 operand carries its width (the f32 form is unchanged: "FLOAT_CHECK cats")
-                hub.core.line("FLOAT_CHECK " + op.right.text + (op.left.chk.resolvedType != null && (op.left.chk.resolvedType.equals("f64") || op.left.chk.resolvedType.endsWith("_f64")) ? " 8" : ""));
-                return;
+                return EmitFrame.script(op).expr(op.left).line("FLOAT_CHECK " + op.right.text
+                        + (op.left.chk.resolvedType != null && (op.left.chk.resolvedType.equals("f64") || op.left.chk.resolvedType.endsWith("_f64")) ? " 8" : ""));
             default:
                 throw new IllegalStateException("unhandled operator in bytecode gen: '" + op.text + "'");
         }
     }
 
     /**
-    /**
      * Pushes the base of an assignment target's '.'/LOOKUP chain: a no-storage bare variable gets ADDR instead of PUSH, a
-     * no-storage '.'/LOOKUP root recurses into emitAssignTarget (so "grid[1][1] = x" computes nested addresses), and a
-     * pointer-typed root or anything else goes through emitExpr. See docs/BytecodeEmitter.md, "Assignment targets".
+     * no-storage '.'/LOOKUP root is itself an assignment target (so "grid[1][1] = x" computes nested addresses), and a
+     * pointer-typed root or anything else is an ordinary expression. See docs/BytecodeEmitter.md, "Assignment targets". Null when the ADDR line was written here.
      */
-    public void emitDotLhsRoot(Token root) {
+    public EmitFrame dotLhsRootFrame(Token root) {
         if (root.type == TokenType.VARREF && !BytecodeEmitterCore.hasStorage(root.chk.resolvedType)) {
             hub.core.line("ADDR " + root.text + " " + root.chk.resolvedType);
-            return;
+            return null;
         }
         if (root.type == TokenType.OPERATOR && (root.text.equals(".") || root.text.equals("LOOKUP"))
                 && !BytecodeEmitterCore.hasStorage(root.chk.resolvedType)) {
-            emitAssignTarget(root);
-            return;
+            return new EmitFrame(EmitFrame.ASSIGN_TARGET, root);
         }
-        emitExpr(root);
+        return new EmitFrame(EmitFrame.EXPR, root);
     }
 
-    public void emitAssignTarget(Token target) {
-        if (target.type == TokenType.OPERATOR && target.text.equals(".")) {
-            emitDotLhsRoot(target.left);
-            hub.core.line("PUSH_FIELDNAME " + target.right.text + " " + target.chk.resolvedType);
-            hub.core.line("DOT_LHS " + target.left.chk.resolvedType + " " + target.chk.resolvedType + " " + target.chk.resolvedType);
-            return;
+    public int stepAssignTarget(EmitFrame f) {
+        Token target = f.node;
+        while (true) {
+            switch (f.phase) {
+                case 0: {
+                    if (target.type == TokenType.OPERATOR && (target.text.equals(".") || target.text.equals("LOOKUP"))) {
+                        f.phase = target.text.equals(".") ? 1 : 2;
+                        EmitFrame root = dotLhsRootFrame(target.left);
+                        if (root != null) {
+                            return f.call(root);
+                        }
+                        continue;
+                    }
+                    if (target.type == TokenType.KEYWORD && target.text.equals("let")) {
+                        // fresh 'let': the name is the wrapper's first child
+                        Token nameTok = target.childs.get(0);
+                        hub.core.line("ADDR " + nameTok.text + " " + target.chk.resolvedType);
+                        return EmitFrame.DONE;
+                    }
+                    hub.core.line("ADDR " + target.text + " " + target.chk.resolvedType);
+                    return EmitFrame.DONE;
+                }
+                case 1:
+                    hub.core.line("PUSH_FIELDNAME " + target.right.text + " " + target.chk.resolvedType);
+                    hub.core.line("DOT_LHS " + target.left.chk.resolvedType + " " + target.chk.resolvedType + " " + target.chk.resolvedType);
+                    return EmitFrame.DONE;
+                case 2:
+                    f.phase = 3;
+                    return f.callExpr(target.right.childs.get(0));
+                default: {
+                    Token indexExpr = target.right.childs.get(0);
+                    hub.core.line("LOOKUP_LHS " + target.left.chk.resolvedType + " " + indexExpr.chk.resolvedType + " "
+                            + target.chk.resolvedType);
+                    return EmitFrame.DONE;
+                }
+            }
         }
-        if (target.type == TokenType.OPERATOR && target.text.equals("LOOKUP")) {
-            emitDotLhsRoot(target.left);
-            Token indexExpr = target.right.childs.get(0);
-            emitExpr(indexExpr);
-            hub.core.line("LOOKUP_LHS " + target.left.chk.resolvedType + " " + indexExpr.chk.resolvedType + " "
-                    + target.chk.resolvedType);
-            return;
-        }
-        if (target.type == TokenType.KEYWORD && target.text.equals("let")) {
-            // fresh 'let': the name is the wrapper's first child
-            Token nameTok = target.childs.get(0);
-            hub.core.line("ADDR " + nameTok.text + " " + target.chk.resolvedType);
-            return;
-        }
-        hub.core.line("ADDR " + target.text + " " + target.chk.resolvedType);
     }
 
     /** A synthesized `base.member` access, enough for `emitAssignTarget`/`DOT_LHS`. */
@@ -1324,30 +1525,59 @@ final class BytecodeEmitterStatements {
     }
 
     /** Nulls every owned member of the inline struct at `base` (recursing into inline owning members): what a move out of it, or its own drop, leaves behind. */
-    public void emitInlineOwnsNullOut(Token base, String structName) {
-        if (hub.core.checker.declarations.isFixedArrayTypeText(structName)) {
-            // A fixed array of inline owning structs: null every element's owned leaves (unrolled, the length is fixed).
-            String elemName = structName.substring(0, structName.lastIndexOf('['));
-            int count = Integer.parseInt(structName.substring(structName.lastIndexOf('[') + 1, structName.length() - 1));
-            String elemCanon = base.chk.resolvedType.substring(0, base.chk.resolvedType.lastIndexOf(structName)) + elemName;
-            for (int i = 0; i < count; i++) {
-                emitInlineOwnsNullOut(syntheticElement(base, i, elemCanon), elemName);
-            }
-            return;
-        }
-        StructInfo si = hub.core.checker.declarations.getStructs().get(structName);
-        for (Map.Entry<String, TypeInfo> m : si.members.entrySet()) {
-            if (m.getKey().equals("___type")) {
-                continue;
-            }
-            TypeInfo mt = m.getValue();
-            if ("owns".equals(mt.storage)) {
-                Token target = syntheticMember(base, m.getKey(), mt);
-                emitAssignTarget(target);
-                hub.core.line("PUSH null " + mt.canonical());
-                hub.core.line("ASSIGN " + mt.canonical() + " " + mt.canonical() + " " + mt.canonical());
-            } else if (hub.core.checker.declarations.isInlineOwningStruct(mt)) {
-                emitInlineOwnsNullOut(syntheticMember(base, m.getKey(), mt), mt.baseType);
+    public EmitFrame inlineNullOutFrame(Token base, String structName) {
+        EmitFrame f = new EmitFrame(EmitFrame.INLINE_NULLOUT, base);
+        f.s1 = structName;
+        return f;
+    }
+
+    /** Frame: s1 = the struct (or fixed array) type name, b1 = fixed array, s2 = element name, s3 = element canonical type, n = element count, members/i = the walk, t2 = the member being nulled. */
+    public int stepInlineNullOut(EmitFrame f) {
+        Token base = f.node;
+        while (true) {
+            switch (f.phase) {
+                case 0:
+                    if (hub.core.checker.declarations.isFixedArrayTypeText(f.s1)) {
+                        // A fixed array of inline owning structs: null every element's owned leaves (unrolled, the length is fixed).
+                        f.b1 = true;
+                        f.s2 = f.s1.substring(0, f.s1.lastIndexOf('['));
+                        f.n = Integer.parseInt(f.s1.substring(f.s1.lastIndexOf('[') + 1, f.s1.length() - 1));
+                        f.s3 = base.chk.resolvedType.substring(0, base.chk.resolvedType.lastIndexOf(f.s1)) + f.s2;
+                    } else {
+                        StructInfo si = hub.core.checker.declarations.getStructs().get(f.s1);
+                        f.members = new ArrayList<>(si.members.entrySet());
+                    }
+                    f.i = 0;
+                    f.phase = 1;
+                    continue;
+                case 1:
+                    if (f.b1) {
+                        if (f.i < f.n) {
+                            return f.call(inlineNullOutFrame(syntheticElement(base, f.i++, f.s3), f.s2));
+                        }
+                        return EmitFrame.DONE;
+                    }
+                    while (f.i < f.members.size()) {
+                        Map.Entry<String, TypeInfo> m = f.members.get(f.i++);
+                        if (m.getKey().equals("___type")) {
+                            continue;
+                        }
+                        TypeInfo mt = m.getValue();
+                        if ("owns".equals(mt.storage)) {
+                            f.t2 = syntheticMember(base, m.getKey(), mt);
+                            f.s3 = mt.canonical();
+                            f.phase = 2;
+                            return f.callTarget(f.t2);
+                        } else if (hub.core.checker.declarations.isInlineOwningStruct(mt)) {
+                            return f.call(inlineNullOutFrame(syntheticMember(base, m.getKey(), mt), mt.baseType));
+                        }
+                    }
+                    return EmitFrame.DONE;
+                default:
+                    hub.core.line("PUSH null " + f.s3);
+                    hub.core.line("ASSIGN " + f.s3 + " " + f.s3 + " " + f.s3);
+                    f.phase = 1;
+                    continue;
             }
         }
     }
@@ -1357,15 +1587,13 @@ final class BytecodeEmitterStatements {
      * argument it sits between "POP ARGn" and the CALL, so a backend must keep its scratch registers off pending ARG registers.
      * See docs/BytecodeEmitter.md, "Moves and owning assignment".
      */
-    public void emitOwnershipMoveNullOut(Token valueExpr) {
+    public EmitFrame nullOutFrame(Token valueExpr) {
         if (valueExpr.chk.inlineOwnsStruct != null) {
-            emitInlineOwnsNullOut(hub.operations.unwrapMutWrappers(valueExpr), valueExpr.chk.inlineOwnsStruct);
-            return;
+            return inlineNullOutFrame(hub.operations.unwrapMutWrappers(valueExpr), valueExpr.chk.inlineOwnsStruct);
         }
         Token source = hub.operations.unwrapMutWrappers(valueExpr); // `a = mut b`: the variable underneath the wrapper is what gets nulled
-        emitAssignTarget(source);
-        hub.core.line("PUSH null " + source.chk.resolvedType);
-        hub.core.line("ASSIGN " + source.chk.resolvedType + " " + source.chk.resolvedType + " " + source.chk.resolvedType);
+        return EmitFrame.script(valueExpr).target(source).line("PUSH null " + source.chk.resolvedType)
+                .line("ASSIGN " + source.chk.resolvedType + " " + source.chk.resolvedType + " " + source.chk.resolvedType);
     }
 
     public boolean isFlatOwnsDestructTarget(Token target) {

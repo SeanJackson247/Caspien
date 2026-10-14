@@ -34,6 +34,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import caspien.postpasses.FixRun;
 
 /**
  * The front end as a library: a .caspien file in, higher-order bytecode (HOB) text out. Config comes in as text, results come
@@ -144,7 +145,7 @@ public final class Frontend {
         }
         if (fixModes != null && !fixModes.isEmpty()) {
             reports.put("fixHash", FixTool.sha(bytecode));
-            FixTool.Run fix = FixTool.run(fixModes, on(options, "fix-write"), on(options, "fix-stdlib"), bytecodeEmitter, bytecode,
+            FixRun fix = FixTool.run(fixModes, on(options, "fix-write"), on(options, "fix-stdlib"), bytecodeEmitter, bytecode,
                     options.get("fix-backup"), typeChecker.model.unsafeSplitInfo(), options.get("fix-only"));
             reports.put("fix", fix.report);
             reports.put("fixBlocks", fix.blocks);

@@ -21,6 +21,7 @@ import java.util.Map;
 import java.util.Set;
 import caspien.typechecker.FuncInfo;
 import caspien.typechecker.StructInfo;
+import caspien.config.DocComment;
 
 /**
  * Final front-end stage: walks the type-checked tree and emits the stack-based higher-order bytecode (HOB) as text.
@@ -31,10 +32,11 @@ public final class BytecodeEmitter {
     final BytecodeEmitterCore core = new BytecodeEmitterCore(this);
     final BytecodeEmitterStatements statements = new BytecodeEmitterStatements(this);
     final BytecodeEmitterOperations operations = new BytecodeEmitterOperations(this);
+    final EmitDriver driver = new EmitDriver(this);
 
     // Public surface used by Frontend and FixTool; everything else stays inside the package.
-    public final Map<String, DocComments.Doc> funcTermLabels = core.funcTermLabels;
-    public final Map<String, DocComments.Doc> loopTermLabels = core.loopTermLabels;
+    public final Map<String, DocComment> funcTermLabels = core.funcTermLabels;
+    public final Map<String, DocComment> loopTermLabels = core.loopTermLabels;
     public final Map<String, Long> spinBounds = core.spinBounds;
     public final List<String[]> termSites = core.termSites;
     public final Map<String, String> sourcePos = core.sourcePos;
@@ -43,27 +45,30 @@ public final class BytecodeEmitter {
         return core.emit(rootLines, checker);
     }
 
-    public void emitLookup(Token op) {
+    public EmitFrame lookupFrame(Token op) {
+        EmitFrame f = EmitFrame.script(op);
         String leftType = op.left.chk.resolvedType;
         if (op.left.type == TokenType.VARREF && leftType != null && !BytecodeEmitterCore.hasStorage(leftType)
                 && leftType.endsWith("]") && !leftType.contains("dynarray")
                 && op.chk.resolvedType != null && op.chk.resolvedType.matches("(mut|imut|indeterminate)_(u8|u16|u32|u64|s8|s16|s32|s64|f32|f64|bool|char)")) {
             // Scalar element of a fixed array variable: take the element address (ADDR + LOOKUP_LHS) and load only it, instead of pushing the whole array. Aggregate elements keep the old path (DEREF carries no size).
-            core.line("ADDR " + op.left.text + " " + leftType);
+            f.line("ADDR " + op.left.text + " " + leftType);
             Token idx = op.right.childs.get(0);
-            statements.emitExpr(idx);
-            core.line("LOOKUP_LHS " + leftType + " " + idx.chk.resolvedType + " " + op.chk.resolvedType);
-            core.line("DEREF " + op.chk.resolvedType);
-            return;
+            f.expr(idx);
+            f.line("LOOKUP_LHS " + leftType + " " + idx.chk.resolvedType + " " + op.chk.resolvedType);
+            f.line("DEREF " + op.chk.resolvedType);
+            return f;
         }
-        statements.emitExpr(op.left);
+        f.expr(op.left);
         Token indexExpr = op.right.childs.get(0);
-        statements.emitExpr(indexExpr);
-        core.line("LOOKUP " + op.left.chk.resolvedType + " " + indexExpr.chk.resolvedType + " " + op.chk.resolvedType);
+        f.expr(indexExpr);
+        f.line("LOOKUP " + op.left.chk.resolvedType + " " + indexExpr.chk.resolvedType + " " + op.chk.resolvedType);
+        return f;
     }
 
     /** 'x fits T' as unsigned 64-bit compares only; see docs/BytecodeEmitter.md, "fits". */
-    public void emitFits(Token node) {
+    public EmitFrame fitsFrame(Token node) {
+        EmitFrame f = EmitFrame.script(node);
         String xb = node.chk.fitsSourceBase;
         String tb = node.chk.fitsTargetBase;
         boolean xSigned = xb.charAt(0) == 's';
@@ -71,9 +76,9 @@ public final class BytecodeEmitter {
         int xw = Integer.parseInt(xb.substring(1));
         int tw = Integer.parseInt(tb.substring(1));
         String u64 = "indeterminate_u64";
-        statements.emitExpr(node.left);
+        f.expr(node.left);
         if (xw < 64) {
-            core.line((xSigned ? "SEXT " : "ZEXT ") + node.left.chk.resolvedType + " " + u64);
+            f.line((xSigned ? "SEXT " : "ZEXT ") + node.left.chk.resolvedType + " " + u64);
         }
         java.math.BigInteger one = java.math.BigInteger.ONE;
         java.math.BigInteger tmax = tSigned ? one.shiftLeft(tw - 1).subtract(one) : one.shiftLeft(tw).subtract(one);
@@ -88,36 +93,38 @@ public final class BytecodeEmitter {
                 alwaysTrue = false;
             }
             if (alwaysTrue) {
-                core.line("PUSH 0 " + u64);
-                core.line("GT_EQ " + u64 + " " + u64 + " imut_bool");
+                f.line("PUSH 0 " + u64);
+                f.line("GT_EQ " + u64 + " " + u64 + " imut_bool");
             } else {
-                core.line("PUSH " + tmax + " " + u64);
-                core.line("LT_EQ " + u64 + " " + u64 + " imut_bool");
+                f.line("PUSH " + tmax + " " + u64);
+                f.line("LT_EQ " + u64 + " " + u64 + " imut_bool");
             }
-            return;
+            return f;
         }
         // both signed
         if (tw == 64 || (xw <= tw)) {
-            core.line("PUSH 0 " + u64);
-            core.line("GT_EQ " + u64 + " " + u64 + " imut_bool");
-            return;
+            f.line("PUSH 0 " + u64);
+            f.line("GT_EQ " + u64 + " " + u64 + " imut_bool");
+            return f;
         }
-        core.line("PUSH " + tmin.negate() + " " + u64);
-        core.line("ADD " + u64 + " " + u64 + " " + u64);
-        core.line("PUSH " + tmax.subtract(tmin) + " " + u64);
-        core.line("LT_EQ " + u64 + " " + u64 + " imut_bool");
+        f.line("PUSH " + tmin.negate() + " " + u64);
+        f.line("ADD " + u64 + " " + u64 + " " + u64);
+        f.line("PUSH " + tmax.subtract(tmin) + " " + u64);
+        f.line("LT_EQ " + u64 + " " + u64 + " imut_bool");
+        return f;
     }
 
-    /** wrap:<T>(x) / sat:<T>(x), total integer conversions; see docs/BytecodeEmitter.md, "wrap and sat". */
-    public void emitConvert(Token op) {
+    /** wrap:<T>(x) / sat:<T>(x), total integer conversions; see docs/BytecodeEmitter.md, "wrap and sat". The operand is emitted again for every use in the formula. */
+    public EmitFrame convertFrame(Token op) {
         final Token arg = operations.singleBuiltinArg(op);
+        EmitFrame f = EmitFrame.script(op);
         if (op.chk.isFloatConvert || (op.chk.resolvedType != null && BytecodeEmitterCore.isFloatCanonical(op.chk.resolvedType))) {
             // wrap:<f32>(x) / wrap:<f64>(x): a float conversion (a literal argument was already retagged in place).
-            statements.emitExpr(arg);
+            f.expr(arg);
             if (op.chk.isFloatConvert) {
-                core.line("FCONV " + arg.chk.resolvedType + " " + op.chk.resolvedType);
+                f.line("FCONV " + arg.chk.resolvedType + " " + op.chk.resolvedType);
             }
-            return;
+            return f;
         }
         final boolean isSat = op.left.text.equals("sat");
         final String xb = BytecodeEmitterCore.baseOfCanonical(arg.chk.resolvedType);
@@ -131,100 +138,110 @@ public final class BytecodeEmitter {
         final java.math.BigInteger one = java.math.BigInteger.ONE;
         boolean alwaysFits = tw >= xw && (xs ? ts : (!ts || tw > xw));
         if (!isSat || alwaysFits) {
-            statements.emitExpr(arg);
+            f.expr(arg);
             if (tw > xw) {
-                core.line((xs ? "SEXT " : "ZEXT ") + arg.chk.resolvedType + " " + op.chk.resolvedType);
+                f.line((xs ? "SEXT " : "ZEXT ") + arg.chk.resolvedType + " " + op.chk.resolvedType);
             } else if (tw < xw) {
-                core.line("TRUNC " + arg.chk.resolvedType + " " + op.chk.resolvedType);
+                f.line("TRUNC " + arg.chk.resolvedType + " " + op.chk.resolvedType);
             }
-            return;
+            return f;
         }
         final java.math.BigInteger tmax = ts ? one.shiftLeft(tw - 1).subtract(one) : one.shiftLeft(tw).subtract(one);
         final String i63 = one.shiftLeft(63).subtract(one).toString();
-        final java.util.function.Consumer<String> bin = mn -> core.line(mn + " " + u64 + " " + u64 + " " + u64);
-        final Runnable pushX = () -> {
-            statements.emitExpr(arg);
-            if (xw < 64) {
-                core.line(ext);
-            }
-        };
         // Xc: X for unsigned x; max(X,0) for signed x targeting an unsigned T
-        final Runnable pushV;
+        final boolean hasPushV;
         boolean needClampAbove;
         if (!xs) {
-            pushV = pushX;
+            hasPushV = true;
             needClampAbove = true;
         } else if (!ts) {
-            pushV = () -> {                       // X * (X <=u 2^63-1)
-                pushX.run();
-                pushX.run();
-                core.line("PUSH " + i63 + " " + u64);
-                bin.accept("LT_EQ");
-                bin.accept("MUL");
-            };
+            hasPushV = true;                      // X * (X <=u 2^63-1)
             needClampAbove = tw < 64 && one.shiftLeft(xw - 1).subtract(one).compareTo(tmax) > 0;
         } else {
-            pushV = null;                         // signed -> narrower signed: handled below
+            hasPushV = false;                     // signed -> narrower signed: handled below
             needClampAbove = false;
         }
-        if (pushV != null) {
-            pushV.run();
+        if (hasPushV) {
+            pushConvertV(f, arg, xs, xw, ext, u64, i63);
             if (needClampAbove) {
-                pushV.run();
-                core.line("PUSH " + tmax + " " + u64);
-                bin.accept("GT");
-                core.line("PUSH " + tmax + " " + u64);
-                pushV.run();
-                bin.accept("SUB");
-                bin.accept("MUL");
-                bin.accept("ADD");
+                pushConvertV(f, arg, xs, xw, ext, u64, i63);
+                f.line("PUSH " + tmax + " " + u64);
+                f.line("GT " + u64 + " " + u64 + " " + u64);
+                f.line("PUSH " + tmax + " " + u64);
+                pushConvertV(f, arg, xs, xw, ext, u64, i63);
+                f.line("SUB " + u64 + " " + u64 + " " + u64);
+                f.line("MUL " + u64 + " " + u64 + " " + u64);
+                f.line("ADD " + u64 + " " + u64 + " " + u64);
             }
         } else {
             java.math.BigInteger absMin = one.shiftLeft(tw - 1);
             java.math.BigInteger range = one.shiftLeft(tw).subtract(one);
-            pushX.run();                                       // X
-            pushX.run();
-            core.line("PUSH " + absMin + " " + u64);
-            bin.accept("ADD");
-            core.line("PUSH " + range + " " + u64);
-            bin.accept("GT");                                  // notInside
-            core.line("PUSH 0 " + u64);
-            core.line("PUSH " + absMin + " " + u64);
-            bin.accept("SUB");                                 // Tmin (wrapped)
-            pushX.run();
-            core.line("PUSH " + i63 + " " + u64);
-            bin.accept("LT_EQ");                               // X >= 0
-            core.line("PUSH " + range + " " + u64);
-            bin.accept("MUL");
-            bin.accept("ADD");                                 // fallback
-            pushX.run();
-            bin.accept("SUB");                                 // fallback - X
-            bin.accept("MUL");
-            bin.accept("ADD");                                 // X + notInside*(fallback-X)
+            pushConvertX(f, arg, xw, ext);                                  // X
+            pushConvertX(f, arg, xw, ext);
+            f.line("PUSH " + absMin + " " + u64);
+            f.line("ADD " + u64 + " " + u64 + " " + u64);
+            f.line("PUSH " + range + " " + u64);
+            f.line("GT " + u64 + " " + u64 + " " + u64);                    // notInside
+            f.line("PUSH 0 " + u64);
+            f.line("PUSH " + absMin + " " + u64);
+            f.line("SUB " + u64 + " " + u64 + " " + u64);                   // Tmin (wrapped)
+            pushConvertX(f, arg, xw, ext);
+            f.line("PUSH " + i63 + " " + u64);
+            f.line("LT_EQ " + u64 + " " + u64 + " " + u64);                 // X >= 0
+            f.line("PUSH " + range + " " + u64);
+            f.line("MUL " + u64 + " " + u64 + " " + u64);
+            f.line("ADD " + u64 + " " + u64 + " " + u64);                   // fallback
+            pushConvertX(f, arg, xw, ext);
+            f.line("SUB " + u64 + " " + u64 + " " + u64);                   // fallback - X
+            f.line("MUL " + u64 + " " + u64 + " " + u64);
+            f.line("ADD " + u64 + " " + u64 + " " + u64);                   // X + notInside*(fallback-X)
         }
         if (tw < 64) {
-            core.line("TRUNC " + u64 + " " + op.chk.resolvedType);
+            f.line("TRUNC " + u64 + " " + op.chk.resolvedType);
         }
-    }
-    /** "as": no instruction for an alias cast, FCONV / TRUNC / SEXT / ZEXT otherwise. see docs/BytecodeEmitter.md, "as casts". */
-    public void emitAs(Token op) {
-        statements.emitExpr(op.left);
-        if (op.chk.isFloatConvert) {
-            core.line("FCONV " + op.left.chk.resolvedType + " " + op.chk.resolvedType);
-            return;
-        }
-        if (op.chk.isTruncCast) {
-            core.line("TRUNC " + op.left.chk.resolvedType + " " + op.chk.resolvedType);
-            return;
-        }
-        if (op.chk.isAliasCast) {
-            return;
-        }
-        core.line((op.chk.isSignedWideningCast ? "SEXT " : "ZEXT ") + op.left.chk.resolvedType + " " + op.chk.resolvedType);
+        return f;
     }
 
-    /** Both EnumName.Variant and instance.member chains: one PUSH of the dot-joined name when the chain is nameable, else base + DOT / DOT_LHS+DEREF. see docs/BytecodeEmitter.md, "Dot access". */
-    public void emitDot(Token op) {
+    /** The operand widened to u64 (convertFrame's pushX). */
+    private static void pushConvertX(EmitFrame f, Token arg, int xw, String ext) {
+        f.expr(arg);
+        if (xw < 64) {
+            f.line(ext);
+        }
+    }
+
+    /** convertFrame's pushV: X for an unsigned operand, X * (X <=u 2^63-1) for a signed one targeting an unsigned type. */
+    private static void pushConvertV(EmitFrame f, Token arg, boolean xs, int xw, String ext, String u64, String i63) {
+        pushConvertX(f, arg, xw, ext);
+        if (xs) {
+            pushConvertX(f, arg, xw, ext);
+            f.line("PUSH " + i63 + " " + u64);
+            f.line("LT_EQ " + u64 + " " + u64 + " " + u64);
+            f.line("MUL " + u64 + " " + u64 + " " + u64);
+        }
+    }
+
+    /** "as": no instruction for an alias cast, FCONV / TRUNC / SEXT / ZEXT otherwise. see docs/BytecodeEmitter.md, "as casts". */
+    public EmitFrame asFrame(Token op) {
+        EmitFrame f = EmitFrame.script(op);
+        f.expr(op.left);
+        if (op.chk.isFloatConvert) {
+            f.line("FCONV " + op.left.chk.resolvedType + " " + op.chk.resolvedType);
+            return f;
+        }
+        if (op.chk.isTruncCast) {
+            f.line("TRUNC " + op.left.chk.resolvedType + " " + op.chk.resolvedType);
+            return f;
+        }
+        if (op.chk.isAliasCast) {
+            return f;
+        }
+        f.line((op.chk.isSignedWideningCast ? "SEXT " : "ZEXT ") + op.left.chk.resolvedType + " " + op.chk.resolvedType);
+        return f;
+    }
+
+    /** Both EnumName.Variant and instance.member chains: one PUSH of the dot-joined name when the chain is nameable, else base + DOT / DOT_LHS+DEREF. see docs/BytecodeEmitter.md, "Dot access". Null when the lines were all written here. */
+    public EmitFrame dotFrame(Token op) {
         if (op.chk.catchMember != null) {
             String param = op.chk.catchTry.catchParamName;
             if (op.chk.catchMember.equals("msg")) {
@@ -234,89 +251,130 @@ public final class BytecodeEmitter {
                 core.line("PUSH " + param + "$trace " + arr);
                 core.line("ADDR_OF AUTO " + arr + " auto_indeterminate_u64[" + (TraceConfig.depth + 1) + "]");
             }
-            return;
+            return null;
         }
         if (isQualifiedNameableDot(op)) {
             core.line("PUSH " + qualifiedDotName(op) + " " + op.chk.resolvedType);
-            return;
+            return null;
         }
         // Not nameable (base is a LOOKUP/call, or a segment is a pointer): emit the base, then DOT (inline base) or DOT_LHS+DEREF (pointer base), decided per level.
-        statements.emitExpr(op.left);
-        core.line("PUSH_FIELDNAME " + op.right.text + " " + op.chk.resolvedType);
+        EmitFrame f = EmitFrame.script(op);
+        f.expr(op.left);
+        f.line("PUSH_FIELDNAME " + op.right.text + " " + op.chk.resolvedType);
         if (BytecodeEmitterCore.hasStorage(op.left.chk.resolvedType)) {
-            core.line("DOT_LHS " + op.left.chk.resolvedType + " " + op.chk.resolvedType + " " + op.chk.resolvedType);
-            core.line("DEREF " + op.chk.resolvedType);
+            f.line("DOT_LHS " + op.left.chk.resolvedType + " " + op.chk.resolvedType + " " + op.chk.resolvedType);
+            f.line("DEREF " + op.chk.resolvedType);
         } else {
-            core.line("DOT " + op.left.chk.resolvedType + " " + op.chk.resolvedType + " " + op.chk.resolvedType);
+            f.line("DOT " + op.left.chk.resolvedType + " " + op.chk.resolvedType + " " + op.chk.resolvedType);
         }
+        return f;
     }
 
     /** True when the whole chain is storage-free and rooted at a VARREF (a LOOKUP/CALL .text is a marker, not a name). */
     public boolean isQualifiedNameableDot(Token node) {
-        if (node.chk.catchMember != null) {
-            return false;
+        Token n = node;
+        while (true) {
+            if (n.chk.catchMember != null) {
+                return false;
+            }
+            if (n.type == TokenType.OPERATOR && n.text.equals(".")) {
+                // Per level: the segment dotted into must be storage-free too, the same bail-out AddressLoweringPass.resolveAddress applies.
+                if (BytecodeEmitterCore.hasStorage(n.left.chk.resolvedType)) {
+                    return false;
+                }
+                n = n.left;
+                continue;
+            }
+            return n.type == TokenType.VARREF && !BytecodeEmitterCore.hasStorage(n.chk.resolvedType);
         }
-        if (node.type == TokenType.OPERATOR && node.text.equals(".")) {
-            // Per level: the segment dotted into must be storage-free too, the same bail-out AddressLoweringPass.resolveAddress applies.
-            return isQualifiedNameableDot(node.left) && !BytecodeEmitterCore.hasStorage(node.left.chk.resolvedType);
-        }
-        return node.type == TokenType.VARREF && !BytecodeEmitterCore.hasStorage(node.chk.resolvedType);
     }
 
     public String qualifiedDotName(Token node) {
-        if (node.type == TokenType.OPERATOR && node.text.equals(".")) {
-            return qualifiedDotName(node.left) + "." + node.right.text;
+        Deque<String> segments = new ArrayDeque<>();
+        Token n = node;
+        while (n.type == TokenType.OPERATOR && n.text.equals(".")) {
+            segments.push(n.right.text);
+            n = n.left;
         }
-        return node.text;
+        StringBuilder sb = new StringBuilder(n.text);
+        for (String segment : segments) {
+            sb.append('.').append(segment);
+        }
+        return sb.toString();
     }
 
-    /** Struct literal: optional hidden ___type push, then members in padded layout order (declaration order, not literal order). Single choke point for `new X{..}` and bare `X{..}`. see docs/BytecodeEmitter.md, "Struct literals". */
-    public void emitInstantiate(Token op) {
-        String structName = op.left.text;
-        StructInfo structInfo = core.checker.declarations.getStructs().get(structName);
-        if (structInfo.classId != null) {
-            core.line("PUSH " + structInfo.classId + " imut_u64");
-        }
-
-        if (op.chk.isLockViolationConstruct) {
-            // OTC lock violation: only the lock/discriminant value is pushed, then STACK_LOCK <structName>.
-            Token lockAssignNode = op.right.childs.get(0).childs.get(0);
-            Token lockValue = lockAssignNode.right;
-            statements.emitExpr(lockValue);
-            if (lockValue.chk.isOwnershipMoveSource) {
-                statements.emitOwnershipMoveNullOut(lockValue);
-            }
-            core.line("STACK_LOCK " + structName);
-            return;
-        }
-
-        Map<String, Token> valueByMember = new HashMap<>();
-        for (Token lineTok : op.right.childs) {
-            Token assignNode = lineTok.childs.get(0);
-            valueByMember.put(assignNode.left.text, assignNode.right);
-        }
-        // Walk the padded layout: ___type already pushed, each padding gap is a STACK_LOCK.
-        for (BytecodeEmitterCore.StructLayoutEntry entry : core.computeStructLayout(structInfo).entries) {
-            if (entry.memberName == null) {
-                core.line("STACK_LOCK " + entry.paddingBytes);
-                continue;
-            }
-            if (entry.memberName.equals("___type")) {
-                continue;
-            }
-            Token value = valueByMember.get(entry.memberName);
-            if (core.deferredTempNames != null && isOwnsTemporary(value)) {
-                emitOwnsTemporaryViaLocal(value, core.deferredTempNames);
-                continue;
-            }
-            statements.emitExpr(value);
-            if (value.chk.isOwnershipMoveSource) {
-                // Null the move source right away: a later field value may contain a throwing call.
-                if (core.deferredMoveNullOuts != null) {
-                    core.deferredMoveNullOuts.add(value); // inside `new`: nulled only once the allocation has succeeded
-                } else {
-                    statements.emitOwnershipMoveNullOut(value);
+    /**
+     * Struct literal: optional hidden ___type push, then members in padded layout order (declaration order, not literal order). Single choke point for `new X{..}` and bare `X{..}`. see docs/BytecodeEmitter.md, "Struct literals".
+     * Frame: t1 = value being emitted, s1 = struct name (lock violation), entries/i = the layout walk, valueByMember.
+     */
+    public int stepInstantiate(EmitFrame f) {
+        Token op = f.node;
+        while (true) {
+            switch (f.phase) {
+                case 0: {
+                    String structName = op.left.text;
+                    f.structInfo = core.checker.declarations.getStructs().get(structName);
+                    if (f.structInfo.classId != null) {
+                        core.line("PUSH " + f.structInfo.classId + " imut_u64");
+                    }
+                    if (op.chk.isLockViolationConstruct) {
+                        // OTC lock violation: only the lock/discriminant value is pushed, then STACK_LOCK <structName>.
+                        Token lockAssignNode = op.right.childs.get(0).childs.get(0);
+                        f.t1 = lockAssignNode.right;
+                        f.s1 = structName;
+                        f.phase = 1;
+                        return f.callExpr(f.t1);
+                    }
+                    f.valueByMember = new HashMap<>();
+                    for (Token lineTok : op.right.childs) {
+                        Token assignNode = lineTok.childs.get(0);
+                        f.valueByMember.put(assignNode.left.text, assignNode.right);
+                    }
+                    // Walk the padded layout: ___type already pushed, each padding gap is a STACK_LOCK.
+                    f.entries = core.computeStructLayout(f.structInfo).entries;
+                    f.i = 0;
+                    f.phase = 3;
+                    continue;
                 }
+                case 1:
+                    f.phase = 2;
+                    if (f.t1.chk.isOwnershipMoveSource) {
+                        return f.call(statements.nullOutFrame(f.t1));
+                    }
+                    continue;
+                case 2:
+                    core.line("STACK_LOCK " + f.s1);
+                    return EmitFrame.DONE;
+                case 3:
+                    while (f.i < f.entries.size()) {
+                        StructLayoutEntry entry = f.entries.get(f.i++);
+                        if (entry.memberName == null) {
+                            core.line("STACK_LOCK " + entry.paddingBytes);
+                            continue;
+                        }
+                        if (entry.memberName.equals("___type")) {
+                            continue;
+                        }
+                        Token value = f.valueByMember.get(entry.memberName);
+                        f.t1 = value;
+                        if (core.deferredTempNames != null && isOwnsTemporary(value)) {
+                            return f.call(ownsTemporaryFrame(value, core.deferredTempNames));
+                        }
+                        f.phase = 4;
+                        return f.callExpr(value);
+                    }
+                    return EmitFrame.DONE;
+                default:
+                    f.phase = 3;
+                    if (f.t1.chk.isOwnershipMoveSource) {
+                        // Null the move source right away: a later field value may contain a throwing call.
+                        if (core.deferredMoveNullOuts != null) {
+                            core.deferredMoveNullOuts.add(f.t1); // inside `new`: nulled only once the allocation has succeeded
+                        } else {
+                            return f.call(statements.nullOutFrame(f.t1));
+                        }
+                    }
+                    continue;
             }
         }
     }
@@ -334,15 +392,27 @@ public final class BytecodeEmitter {
                 && value.type == TokenType.OPERATOR && !value.text.equals(".") && core.lateAllocs != null;
     }
 
-    /** Evaluates the temporary into a hidden local and pushes it from there, so a failing allocation can still free it. */
-    public void emitOwnsTemporaryViaLocal(Token value, List<String> tempNames) {
+    /** Evaluates the temporary into a hidden local and pushes it from there, so a failing allocation can still free it. The local is added to `tempNames`. */
+    public EmitFrame ownsTemporaryFrame(Token value, List<String> tempNames) {
+        EmitFrame f = new EmitFrame(EmitFrame.OWNS_TEMP, value);
+        f.strs = tempNames;
+        return f;
+    }
+
+    /** Frame: s1 = the hidden local. */
+    public int stepOwnsTemporary(EmitFrame f) {
+        Token value = f.node;
         String type = value.chk.resolvedType;
-        String tmp = declareHiddenLocal(type);
-        core.line("ADDR " + tmp + " " + type);
-        statements.emitExpr(value);
+        if (f.phase == 0) {
+            f.s1 = declareHiddenLocal(type);
+            core.line("ADDR " + f.s1 + " " + type);
+            f.phase = 1;
+            return f.callExpr(value);
+        }
         core.line("ASSIGN " + type + " " + type + " " + type);
-        core.line("PUSH " + tmp + " " + type);
-        tempNames.add(tmp);
+        core.line("PUSH " + f.s1 + " " + type);
+        f.strs.add(f.s1);
+        return EmitFrame.DONE;
     }
 
     public void emitDestructTempNames(List<String> names, Token at) {
@@ -368,78 +438,104 @@ public final class BytecodeEmitter {
         }
     }
 
-    /** `new ctor(..)`: construct into a hidden inline local through emitStructRvoCallSequence, then push it whole. see docs/BytecodeEmitter.md, "new". */
-    public void emitNewFromStructRvoCall(Token callOp) {
-        // Struct name from the callee return type, else from the call node's resolvedType.
-        String funcName = operations.resolveCallTargetForEmission(callOp.chk.resolvedCallTarget);
-        FuncInfo targetInfo = core.findFuncInfoByMangledName(funcName);
-        String structName = targetInfo != null ? targetInfo.returnType.baseType
-                : callOp.chk.resolvedType.substring(callOp.chk.resolvedType.lastIndexOf('_') + 1);
-        String tempName = "$new_ctor_tmp" + (++core.labelCounter);
-        String structType = "mut_" + structName;
-        String rawPtrType = "raw_indeterminate_" + structName;
-        core.line("ALLOC " + tempName + " " + structType);
-        operations.emitStructRvoCallSequence(callOp, rawPtrType, () -> {
-            core.line("PUSH " + tempName + " " + structType);
-            core.line("ADDR_OF RAW " + structType + " " + rawPtrType);
-        });
-        core.line("PUSH " + tempName + " " + structType);
+    public EmitFrame newFromStructRvoCallFrame(Token callOp) {
+        return new EmitFrame(EmitFrame.NEW_FROM_RVO, callOp);
     }
-    /** new: operand, NEW type, GT_REGISTER, null check jumping to the local catch; moved-in sources are nulled only after success. see docs/BytecodeEmitter.md, "new". */
-    public void emitNew(Token op) {
-        Token unwrapped = operations.unwrapMutWrappers(op.left);
-        List<Token> savedDeferral = core.deferredMoveNullOuts;
-        List<Token> movedSources = new ArrayList<>();
-        core.deferredMoveNullOuts = movedSources;
-        final List<String> savedTempNames = core.deferredTempNames;
-        final List<String> movedTemps = new ArrayList<>();
-        core.deferredTempNames = movedTemps;
-        // A call nested in the field values would consume the pending catch label (meant for the call-site staging of the
-        // first call), and the allocation check below would then have none -- an unchecked null: hold it back and restore it.
-        final String newCatchLabel = core.pendingTryCatchLabel;
-        core.pendingTryCatchLabel = null;
-        if (unwrapped.chk.isStructRvoCall) {
-            // A '@throws' constructor is itself the call the try/'?' guards: it must stage the catch label (an unstaged
-            // throw would unwind past this function's own catch into the caller). The label is restored for the allocation check below.
-            FuncInfo ctorInfo = core.findFuncInfoByMangledName(operations.resolveCallTargetForEmission(unwrapped.chk.resolvedCallTarget));
-            if (ctorInfo != null && ctorInfo.isThrows) {
-                core.pendingTryCatchLabel = newCatchLabel;
+
+    /** `new ctor(..)`: construct into a hidden inline local through the struct-RVO call sequence, then push it whole. see docs/BytecodeEmitter.md, "new". Frame: s1 = the local, s2 = its struct type. */
+    public int stepNewFromStructRvoCall(EmitFrame f) {
+        Token callOp = f.node;
+        if (f.phase == 0) {
+            // Struct name from the callee return type, else from the call node's resolvedType.
+            String funcName = operations.resolveCallTargetForEmission(callOp.chk.resolvedCallTarget);
+            FuncInfo targetInfo = core.findFuncInfoByMangledName(funcName);
+            String structName = targetInfo != null ? targetInfo.returnType.baseType
+                    : callOp.chk.resolvedType.substring(callOp.chk.resolvedType.lastIndexOf('_') + 1);
+            f.s1 = "$new_ctor_tmp" + (++core.labelCounter);
+            f.s2 = "mut_" + structName;
+            String rawPtrType = "raw_indeterminate_" + structName;
+            core.line("ALLOC " + f.s1 + " " + f.s2);
+            f.phase = 1;
+            return f.call(operations.rvoCallFrame(callOp, rawPtrType, Arrays.asList(
+                    "PUSH " + f.s1 + " " + f.s2, "ADDR_OF RAW " + f.s2 + " " + rawPtrType)));
+        }
+        core.line("PUSH " + f.s1 + " " + f.s2);
+        return EmitFrame.DONE;
+    }
+
+    /**
+     * new: operand, NEW type, GT_REGISTER, null check jumping to the local catch; moved-in sources are nulled only after success. see docs/BytecodeEmitter.md, "new".
+     * Frame: toks = moved-in sources, strs = moved-in temporaries, toks2/strs2 = the deferral lists to restore, s1 = held catch label, n = null-out index.
+     */
+    public int stepNew(EmitFrame f) {
+        Token op = f.node;
+        while (true) {
+            switch (f.phase) {
+                case 0: {
+                    Token unwrapped = operations.unwrapMutWrappers(op.left);
+                    f.toks2 = core.deferredMoveNullOuts;
+                    f.toks = new ArrayList<>();
+                    core.deferredMoveNullOuts = f.toks;
+                    f.strs2 = core.deferredTempNames;
+                    f.strs = new ArrayList<>();
+                    core.deferredTempNames = f.strs;
+                    // A call nested in the field values would consume the pending catch label (meant for the call-site staging of the
+                    // first call), and the allocation check below would then have none -- an unchecked null: hold it back and restore it.
+                    f.s1 = core.pendingTryCatchLabel;
+                    core.pendingTryCatchLabel = null;
+                    f.phase = 1;
+                    if (unwrapped.chk.isStructRvoCall) {
+                        // A '@throws' constructor is itself the call the try/'?' guards: it must stage the catch label (an unstaged
+                        // throw would unwind past this function's own catch into the caller). The label is restored for the allocation check below.
+                        FuncInfo ctorInfo = core.findFuncInfoByMangledName(operations.resolveCallTargetForEmission(unwrapped.chk.resolvedCallTarget));
+                        if (ctorInfo != null && ctorInfo.isThrows) {
+                            core.pendingTryCatchLabel = f.s1;
+                        }
+                        return f.call(newFromStructRvoCallFrame(unwrapped));
+                    }
+                    return f.callExpr(op.left);
+                }
+                case 1: {
+                    core.deferredMoveNullOuts = f.toks2;
+                    core.deferredTempNames = f.strs2;
+                    core.pendingTryCatchLabel = f.s1;
+                    core.requireGhostTableFunctionPresent("gt_register", op);
+                    String constructedType = op.chk.resolvedType.substring("owns_".length());
+                    if (constructedType.startsWith("some_")) {
+                        constructedType = constructedType.substring("some_".length());
+                    }
+                    core.line("NEW " + constructedType);
+                    // Registered right away: when the ghost table can not grow, GT_REGISTER frees the block and leaves null, so the
+                    // check below sees a failed registration exactly like a failed allocation (same catch, same freeing of moved sources).
+                    core.line("GT_REGISTER");
+                    core.line("DUP_TOP");
+                    core.line("PUSH null " + op.chk.resolvedType);
+                    core.line("EQ " + op.chk.resolvedType + " " + op.chk.resolvedType + " imut_bool");
+                    core.line("CMP");
+                    String okLabel = statements.newLabel("new_ok");
+                    core.line("JMP " + okLabel);
+                    if (!core.inGtSuppressedContext && core.pendingTryCatchLabel != null) {
+                        emitDestructMovedSources(f.toks); // the moved-in values are lost with the failed allocation: free them
+                        emitDestructTempNames(f.strs, op);
+                        String oomStringId = core.hoistedStringId("out of memory");
+                        core.emitTraceCapture();
+                        core.line("ADDR gt_error_message static_imut_string");
+                        core.line("PUSH " + oomStringId + " static_imut_string");
+                        core.line("ASSIGN static_imut_string static_imut_string static_imut_string");
+                        core.line("JMP " + core.pendingTryCatchLabel);
+                    }
+                    core.line(okLabel + ":");
+                    f.n = 0;
+                    f.phase = 2;
+                    continue;
+                }
+                default:
+                    if (f.n < f.toks.size()) {
+                        // the allocation took ownership: now the sources let go
+                        return f.call(statements.nullOutFrame(f.toks.get(f.n++)));
+                    }
+                    return EmitFrame.DONE;
             }
-            emitNewFromStructRvoCall(unwrapped);
-        } else {
-            statements.emitExpr(op.left);
-        }
-        core.deferredMoveNullOuts = savedDeferral;
-        core.deferredTempNames = savedTempNames;
-        core.pendingTryCatchLabel = newCatchLabel;
-        core.requireGhostTableFunctionPresent("gt_register", op);
-        String constructedType = op.chk.resolvedType.substring("owns_".length());
-        if (constructedType.startsWith("some_")) {
-            constructedType = constructedType.substring("some_".length());
-        }
-        core.line("NEW " + constructedType);
-        // Registered right away: when the ghost table can not grow, GT_REGISTER frees the block and leaves null, so the
-        // check below sees a failed registration exactly like a failed allocation (same catch, same freeing of moved sources).
-        core.line("GT_REGISTER");
-        core.line("DUP_TOP");
-        core.line("PUSH null " + op.chk.resolvedType);
-        core.line("EQ " + op.chk.resolvedType + " " + op.chk.resolvedType + " imut_bool");
-        core.line("CMP");
-        String okLabel = statements.newLabel("new_ok");
-        core.line("JMP " + okLabel);
-        if (!core.inGtSuppressedContext && core.pendingTryCatchLabel != null) {
-            emitDestructMovedSources(movedSources); // the moved-in values are lost with the failed allocation: free them
-            emitDestructTempNames(movedTemps, op);
-            String oomStringId = core.hoistedStringId("out of memory");
-            core.emitTraceCapture();
-            core.line("ADDR gt_error_message static_imut_string");
-            core.line("PUSH " + oomStringId + " static_imut_string");
-            core.line("ASSIGN static_imut_string static_imut_string static_imut_string");
-            core.line("JMP " + core.pendingTryCatchLabel);
-        }
-        core.line(okLabel + ":");
-        for (Token moved : movedSources) {
-            statements.emitOwnershipMoveNullOut(moved); // the allocation took ownership: now the sources let go
         }
     }
 
@@ -469,12 +565,13 @@ public final class BytecodeEmitter {
         core.line(okLabel + ":");
     }
     /** ADDR_OF auto/raw/ref (nothing for `static`); see docs/BytecodeEmitter.md, "Address-of". */
-    public void emitAddressOf(Token op) {
-        statements.emitExpr(op.left);
-        if (op.text.equals("static")) {
-            return;
+    public EmitFrame addressOfFrame(Token op) {
+        EmitFrame f = EmitFrame.script(op);
+        f.expr(op.left);
+        if (!op.text.equals("static")) {
+            f.line("ADDR_OF " + op.text.toUpperCase() + " " + op.left.chk.resolvedType + " " + op.chk.resolvedType);
         }
-        core.line("ADDR_OF " + op.text.toUpperCase() + " " + op.left.chk.resolvedType + " " + op.chk.resolvedType);
+        return f;
     }
 
     public String literalValueOf(Token node) {

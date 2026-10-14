@@ -5,8 +5,10 @@ import caspien.token.Token;
 import caspien.token.TokenType;
 import caspien.parser.Parser;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -246,57 +248,42 @@ public class GenericsExpander {
 
     // ---- Step A: annotation-context scanning --------------------------
 
-    private void scanAnnotationContexts(Token entry) {
-        if (entry.type != TokenType.KEYWORD) {
-            return;
-        }
-        switch (entry.text) {
-            case "struct":
-                for (Token memberLine : entry.childs) {
-                    scanRawNameTypeGroups(memberLine.childs);
-                }
-                break;
-            case "interface":
-                for (Token method : entry.childs) {
-                    scanFuncOrMethodSignature(method);
-                }
-                break;
-            case "library":
-                for (Token func : entry.childs) {
-                    scanFuncOrMethodSignature(func);
-                }
-                break;
-            case "type":
-                // "type NAME <target type tokens>" -- entry.sub = [nameTok,
-                // ...targetTokens], never passed through
-                // resolveNestedGroups/toRpn at all (the same "declaration
-                // annotation, not expression" treatment a struct member's or
-                // func param's own type gets -- see gatherType's own doc
-                // comment), so a bare "List<u64>" target needs this same
-                // scan to ever become a .genericArgs-bearing token at all.
-                scanTypeTokenSpan(entry.sub.subList(1, entry.sub.size()));
-                break;
-            case "func":
-                scanFuncOrMethodSignature(entry);
-                for (Token line : entry.childs) {
-                    // bodies are expression-context; nothing to scan here --
-                    // generic usages there were already collapsed by Parser.
-                }
-                if (entry.childs != null) {
-                    // still need to recurse into nested blocks in case a
-                    // func body contains a nested struct-literal type
-                    // annotation-shaped construct -- none exist in this
-                    // language (no local type decls), so nothing further
-                    // to do here.
-                }
-                break;
-            case "impl":
-                for (Token method : entry.childs) {
-                    scanAnnotationContexts(method); // each is a "func" entry
-                }
-                break;
-            default:
-                break;
+    private void scanAnnotationContexts(Token start) {
+        java.util.Deque<Token> work = new ArrayDeque<>();
+        work.push(start);
+        while (!work.isEmpty()) {
+            Token entry = work.pop();
+            if (entry.type != TokenType.KEYWORD) {
+                continue;
+            }
+            switch (entry.text) {
+                case "struct":
+                    for (Token memberLine : entry.childs) {
+                        scanRawNameTypeGroups(memberLine.childs);
+                    }
+                    break;
+                case "interface":
+                case "library":
+                    for (Token method : entry.childs) {
+                        scanFuncOrMethodSignature(method);
+                    }
+                    break;
+                case "type":
+                    // "type NAME <target tokens>": a declaration annotation, never passed through toRpn, so a bare
+                    // "List<u64>" target needs this scan to become a .genericArgs-bearing token.
+                    scanTypeTokenSpan(entry.sub.subList(1, entry.sub.size()));
+                    break;
+                case "func":
+                    scanFuncOrMethodSignature(entry); // bodies are expression context: nothing to scan
+                    break;
+                case "impl":
+                    for (int i = entry.childs.size() - 1; i >= 0; i--) {
+                        work.push(entry.childs.get(i)); // each is a "func" entry
+                    }
+                    break;
+                default:
+                    break;
+            }
         }
     }
 
@@ -367,93 +354,73 @@ public class GenericsExpander {
      * needs zero changes).
      */
     private void scanTypeTokenSpan(List<Token> span) {
+        GenericsTask first = new GenericsTask(GenericsTask.SPAN, null);
+        first.span = span;
+        run(first);
+    }
+
+    /** One span: only the first base-type VARREF counts; nested argument groups are queued, then the post step. */
+    private void stepSpan(GenericsTask task, List<GenericsTask> out) {
+        List<Token> span = task.span;
         for (int i = 0; i < span.size(); i++) {
             Token t = span.get(i);
-            if (t.type == TokenType.VARREF) {
-                if (i + 1 < span.size() && span.get(i + 1).type == TokenType.OPERATOR && span.get(i + 1).text.equals("<")) {
-                    int depth = 1;
-                    int j = i + 2;
-                    int closeIdx = -1;
-                    for (; j < span.size(); j++) {
-                        Token u = span.get(j);
-                        if (u.type == TokenType.OPERATOR && u.text.equals("<")) {
-                            depth++;
-                        } else if (u.type == TokenType.OPERATOR && u.text.equals(">")) {
-                            depth--;
-                            if (depth == 0) {
-                                closeIdx = j;
-                                break;
-                            }
+            if (t.type != TokenType.VARREF) {
+                continue;
+            }
+            if (i + 1 < span.size() && span.get(i + 1).type == TokenType.OPERATOR && span.get(i + 1).text.equals("<")) {
+                int depth = 1;
+                int j = i + 2;
+                int closeIdx = -1;
+                for (; j < span.size(); j++) {
+                    Token u = span.get(j);
+                    if (u.type == TokenType.OPERATOR && u.text.equals("<")) {
+                        depth++;
+                    } else if (u.type == TokenType.OPERATOR && u.text.equals(">")) {
+                        depth--;
+                        if (depth == 0) {
+                            closeIdx = j;
+                            break;
                         }
-                    }
-                    if (closeIdx < 0) {
-                        throw new CompilerException("type", t.file, t.line,
-                                "unterminated type-argument list for '" + t.text + "'");
-                    }
-                    List<Token> raw = new ArrayList<>(span.subList(i + 2, closeIdx));
-                    List<List<Token>> groups = splitTopLevelCommaGroupsBare(raw);
-                    for (List<Token> group : groups) {
-                        scanTypeTokenSpan(group); // nested generics inside the arg list
-                    }
-                    t.genericArgs = groups;
-                    for (int k = closeIdx; k >= i + 1; k--) {
-                        span.remove(k);
-                    }
-                } else if (i + 1 < span.size() && span.get(i + 1).type == TokenType.DELINEATOR
-                        && span.get(i + 1).text.equals("(")) {
-                    // "dynarray(...)"/"range(...)" -- a
-                    // composite-type-constructor shape, confirmed by
-                    // example to need exactly this recursion: a real,
-                    // separate gap found while building a generic
-                    // HashMap -- this whole method was written before
-                    // "dynarray" existed, and only ever looked for a
-                    // bare "Name<Args>" pattern directly in the flat
-                    // span; a nested generic reference living *inside*
-                    // one of these parenthesized argument positions
-                    // (e.g. "dynarray(imut HashMapEntry<T>)") was never
-                    // discovered/rewritten at all, so it reached
-                    // TypeChecker's own annotation parser as raw,
-                    // unprocessed tokens it has no way to interpret as
-                    // a generic reference (that's this pass's job, not
-                    // TypeChecker's). The "(" token's own `.childs` is
-                    // a *flat* token list (comma operators included,
-                    // same shape splitTopLevelCommaGroupsBare's own
-                    // callers already expect just above) -- not
-                    // pre-split groups -- so it needs the exact same
-                    // splitting before each resulting group can be
-                    // scanned.
-                    Token parenTok = span.get(i + 1);
-                    if (!parenTok.childs.isEmpty()) {
-                        List<List<Token>> groups = splitTopLevelCommaGroupsBare(parenTok.childs);
-                        for (List<Token> group : groups) {
-                            scanTypeTokenSpan(group); // may remove tokens from `group` itself
-                        }
-                        // splitTopLevelCommaGroupsBare returns brand-new
-                        // List objects -- removing a group's own now-
-                        // consumed "<...>" tokens above never touched
-                        // parenTok.childs itself at all (a different
-                        // List instance holding the same Token objects
-                        // by reference). Write the (now generic-args-
-                        // stripped) groups back into it, re-joined with
-                        // fresh comma tokens wherever groups were
-                        // originally separated, so a later multi-
-                        // argument case (e.g. "range(a,b)")
-                        // stays correct too, not just this one-argument
-                        // "dynarray(...)" case.
-                        List<Token> rebuilt = new ArrayList<>();
-                        for (int g = 0; g < groups.size(); g++) {
-                            if (g > 0) {
-                                rebuilt.add(new Token(TokenType.OPERATOR, ",", parenTok.line, parenTok.file));
-                            }
-                            rebuilt.addAll(groups.get(g));
-                        }
-                        parenTok.childs.clear();
-                        parenTok.childs.addAll(rebuilt);
                     }
                 }
-                break; // exactly one base-type VARREF per span; nothing more to scan
+                if (closeIdx < 0) {
+                    throw new CompilerException("type", t.file, t.line,
+                            "unterminated type-argument list for '" + t.text + "'");
+                }
+                List<Token> raw = new ArrayList<>(span.subList(i + 2, closeIdx));
+                List<List<Token>> groups = splitTopLevelCommaGroupsBare(raw);
+                for (List<Token> group : groups) {
+                    out.add(spanTask(group)); // nested generics inside the arg list
+                }
+                GenericsTask post = new GenericsTask(GenericsTask.SPAN_ANGLE_POST, t);
+                post.span = span;
+                post.groups = groups;
+                post.index = i;
+                post.closeIdx = closeIdx;
+                out.add(post);
+            } else if (i + 1 < span.size() && span.get(i + 1).type == TokenType.DELINEATOR
+                    && span.get(i + 1).text.equals("(")) {
+                // "dynarray(...)"/"range(...)": a generic reference inside the parentheses; the "(" token's childs are a
+                // flat token list (commas included), so they are split into groups, scanned, and written back.
+                Token parenTok = span.get(i + 1);
+                if (!parenTok.childs.isEmpty()) {
+                    List<List<Token>> groups = splitTopLevelCommaGroupsBare(parenTok.childs);
+                    for (List<Token> group : groups) {
+                        out.add(spanTask(group)); // may remove tokens from `group` itself
+                    }
+                    GenericsTask post = new GenericsTask(GenericsTask.SPAN_PAREN_POST, parenTok);
+                    post.groups = groups;
+                    out.add(post);
+                }
             }
+            return; // exactly one base-type VARREF per span; nothing more to scan
         }
+    }
+
+    private GenericsTask spanTask(List<Token> span) {
+        GenericsTask t = new GenericsTask(GenericsTask.SPAN, null);
+        t.span = span;
+        return t;
     }
 
     private List<List<Token>> splitTopLevelCommaGroupsBare(List<Token> tokens) {
@@ -479,128 +446,174 @@ public class GenericsExpander {
 
     // ---- generic walk + per-token processing ---------------------------
 
+    /** Runs the walk over `node` (every nested generic usage is resolved and instantiated). */
     private void walkAndProcess(Token node) {
-        if (node == null) {
-            return;
-        }
-        processGenericToken(node);
-        walkAndProcess(node.left);
-        // A '.' operator's own right side is always a bare member/method
-        // NAME, never a type-instantiation target -- so if it carries
-        // genericArgs at all, that's an explicit generic-method-call type
-        // argument ("receiver.method:<U>(...)", the impl-own-type-param
-        // feature's own call-site syntax), not a struct/func/interface/
-        // library reference. processGenericToken has no way to resolve
-        // that (it has no idea what concrete struct the receiver even is
-        // -- this whole pass is purely syntactic, with no symbol table),
-        // so it's deliberately left completely untouched here, genericArgs
-        // and all, for TypeChecker.checkMethodCall to resolve once the
-        // receiver's own concrete type is actually known (post-generics-
-        // expansion). This is the one deliberate exception to "TypeChecker
-        // never sees a non-null genericArgs" -- see Token.genericArgs' own
-        // doc comment.
-        if (node.type == TokenType.OPERATOR && node.text.equals(".")) {
-            walkAndProcessWithoutTopLevelGenericResolution(node.right);
-        } else {
-            walkAndProcess(node.right);
-        }
-        walkAndProcess(node.next);
-        if (node.childs != null) {
-            for (Token c : node.childs) {
-                walkAndProcess(c);
-            }
-        }
-        if (node.sub != null) {
-            for (Token s : node.sub) {
-                walkAndProcess(s);
-            }
-        }
-        // Note: node.genericArgs is intentionally not walked here -- by the
-        // time processGenericToken returns, it has already fully resolved
-        // and cleared node.genericArgs (recursing into each argument group
-        // itself as part of that resolution), so there is nothing left in
-        // it to visit afterward.
+        run(new GenericsTask(GenericsTask.WALK, node));
     }
 
-    /**
-     * Same recursive walk as walkAndProcess, except it never calls
-     * processGenericToken on `node` itself -- used only for a '.'
-     * operator's own right-hand side (see walkAndProcess' own doc
-     * comment). A method/member name is always a bare VARREF with no
-     * left/right/childs/sub of its own, so this recursion is a no-op in
-     * practice; kept general (rather than just returning immediately)
-     * purely for structural symmetry, in case that ever changes.
-     */
-    private void walkAndProcessWithoutTopLevelGenericResolution(Token node) {
-        if (node == null) {
-            return;
-        }
-        walkAndProcess(node.left);
-        walkAndProcess(node.right);
-        walkAndProcess(node.next);
-        if (node.childs != null) {
-            for (Token c : node.childs) {
-                walkAndProcess(c);
-            }
-        }
-        if (node.sub != null) {
-            for (Token s : node.sub) {
-                walkAndProcess(s);
+    /** Drives the task stack until it is empty; tasks queue their follow-ups in run order. */
+    private void run(GenericsTask first) {
+        Deque<GenericsTask> stack = new ArrayDeque<>();
+        stack.push(first);
+        List<GenericsTask> out = new ArrayList<>();
+        while (!stack.isEmpty()) {
+            GenericsTask t = stack.pop();
+            out.clear();
+            step(t, out);
+            for (int i = out.size() - 1; i >= 0; i--) {
+                stack.push(out.get(i));
             }
         }
     }
 
-    /**
-     * If `t` carries generic arguments, resolves them (recursively
-     * generating whatever nested instantiations they themselves require),
-     * generates the concrete monomorphized declaration for `t` itself if
-     * it doesn't already exist, and rewrites `t` in place into a plain,
-     * non-generic reference to the mangled name. A no-op for any token
-     * with no generic arguments.
-     */
-    private void processGenericToken(Token t) {
-        if (t.genericArgs == null) {
-            return;
-        }
-        // `dyn:<T>([])` -- the typed empty-dynarray form. `dyn` is a builtin,
-        // not a generic template, so there is nothing to monomorphize: its
-        // type argument is just resolved (in case it is itself a generic
-        // instantiation) and the genericArgs are deliberately LEFT on the
-        // `dyn` VARREF for TypeChecker.checkDynBuiltinCore to read -- the
-        // second exception, after `receiver.method:<U>(...)`, to "TypeChecker
-        // never sees a non-null genericArgs".
-        if (t.type == TokenType.VARREF && (t.text.equals("dyn") || t.text.equals("wrap") || t.text.equals("sat"))) {
-            for (List<Token> group : t.genericArgs) {
+    private void step(GenericsTask task, List<GenericsTask> out) {
+        switch (task.kind) {
+            case GenericsTask.WALK:
+            case GenericsTask.WALK_NO_TOP: {
+                Token node = task.tok;
+                if (node == null) {
+                    return;
+                }
+                boolean top = task.kind == GenericsTask.WALK;
+                if (top) {
+                    out.add(new GenericsTask(GenericsTask.PROCESS, node));
+                }
+                out.add(new GenericsTask(GenericsTask.WALK, node.left));
+                // A '.' operator's right side is a bare member/method NAME: any genericArgs on it are an explicit
+                // method type argument ("recv.m:<U>(..)"), left for TypeChecker.checkMethodCall.
+                boolean dot = top && node.type == TokenType.OPERATOR && node.text.equals(".");
+                out.add(new GenericsTask(dot ? GenericsTask.WALK_NO_TOP : GenericsTask.WALK, node.right));
+                out.add(new GenericsTask(GenericsTask.WALK, node.next));
+                if (node.childs != null) {
+                    for (Token c : node.childs) {
+                        out.add(new GenericsTask(GenericsTask.WALK, c));
+                    }
+                }
+                if (node.sub != null) {
+                    for (Token s : node.sub) {
+                        out.add(new GenericsTask(GenericsTask.WALK, s));
+                    }
+                }
+                return;
+            }
+            case GenericsTask.PROCESS: {
+                // Resolves t's generic arguments (nested instantiations first), generates its own instantiation if new,
+                // and rewrites t into a plain reference to the mangled name. No-op without genericArgs.
+                Token t = task.tok;
+                if (t.genericArgs == null) {
+                    return;
+                }
+                if (t.type == TokenType.VARREF && (t.text.equals("dyn") || t.text.equals("wrap") || t.text.equals("sat"))) {
+                    // `dyn:<T>([])`: not a template; only the argument is resolved and genericArgs stay for TypeChecker.
+                    out.add(new GenericsTask(GenericsTask.PROC_DYN, t));
+                    return;
+                }
+                GenericsTask arg = new GenericsTask(GenericsTask.PROC_ARG, t);
+                arg.argNames = new ArrayList<>();
+                arg.argTokens = new ArrayList<>();
+                out.add(arg);
+                return;
+            }
+            case GenericsTask.PROC_DYN: {
+                Token t = task.tok;
+                if (task.index >= t.genericArgs.size()) {
+                    return;
+                }
+                List<Token> group = t.genericArgs.get(task.index++);
                 if (group.size() != 1) {
                     throw new CompilerException("type", t.file, t.line,
                             "generic type argument must be a single type name, found a compound expression");
                 }
-                processGenericToken(group.get(0));
+                out.add(new GenericsTask(GenericsTask.PROCESS, group.get(0)));
+                out.add(task);
+                return;
             }
-            return;
-        }
-        String templateName = t.text;
-        List<String> argNames = new ArrayList<>();
-        List<Token> argTokens = new ArrayList<>();
-        for (List<Token> group : t.genericArgs) {
-            if (group.size() != 1) {
-                throw new CompilerException("type", t.file, t.line,
-                        "generic type argument must be a single type name, found a compound expression");
+            case GenericsTask.PROC_ARG: {
+                Token t = task.tok;
+                if (task.phase == 1) {
+                    // the argument has been resolved: its text is now final
+                    Token argTok = t.genericArgs.get(task.index).get(0);
+                    task.argNames.add(argTok.text);
+                    task.argTokens.add(argTok);
+                    task.index++;
+                    task.phase = 0;
+                }
+                if (task.index < t.genericArgs.size()) {
+                    List<Token> group = t.genericArgs.get(task.index);
+                    if (group.size() != 1) {
+                        throw new CompilerException("type", t.file, t.line,
+                                "generic type argument must be a single type name, found a compound expression");
+                    }
+                    task.phase = 1;
+                    out.add(new GenericsTask(GenericsTask.PROCESS, group.get(0)));
+                    out.add(task);
+                    return;
+                }
+                String templateName = t.text;
+                String key = templateName + "<" + String.join(",", task.argNames) + ">";
+                String mangled = memo.get(key);
+                if (mangled == null) {
+                    mangled = mangleName(templateName, task.argNames);
+                    memo.put(key, mangled); // reserve first: breaks self-referential instantiation
+                    beginInstantiation(templateName, task.argNames, task.argTokens, mangled, t, out);
+                }
+                GenericsTask set = new GenericsTask(GenericsTask.SET_MANGLED, t);
+                set.mangled = mangled;
+                out.add(set);
+                return;
             }
-            Token argTok = group.get(0);
-            processGenericToken(argTok); // resolves it first if it's itself generic
-            argNames.add(argTok.text);
-            argTokens.add(argTok);
+            case GenericsTask.SET_MANGLED:
+                task.tok.text = task.mangled;
+                task.tok.genericArgs = null;
+                return;
+            case GenericsTask.INST_IMPLS: {
+                List<Token> implTpls = implTemplatesByTarget.get(task.name);
+                if (implTpls != null) {
+                    for (Token implTpl : implTpls) {
+                        GenericsTask it = new GenericsTask(GenericsTask.IMPL_INST, implTpl);
+                        it.argNames = task.argNames;
+                        it.argTokens = task.argTokens;
+                        it.mangled = task.mangled;
+                        out.add(it);
+                    }
+                }
+                return;
+            }
+            case GenericsTask.IMPL_INST:
+                beginImplInstantiation(task.tok, task.argNames, task.argTokens, task.mangled, out);
+                return;
+            case GenericsTask.IMPL_ADD:
+                output.add(wrapAsLine(task.tok));
+                out.add(new GenericsTask(GenericsTask.WALK, task.tok));
+                return;
+            case GenericsTask.SPAN:
+                stepSpan(task, out);
+                return;
+            case GenericsTask.SPAN_ANGLE_POST: {
+                // nested groups are scanned: attach them and consume "<...>" out of the span
+                task.tok.genericArgs = task.groups;
+                for (int k = task.closeIdx; k >= task.index + 1; k--) {
+                    task.span.remove(k);
+                }
+                return;
+            }
+            case GenericsTask.SPAN_PAREN_POST: {
+                // write the (now generic-args-stripped) groups back into the parenthesis, re-joined with fresh commas
+                Token parenTok = task.tok;
+                List<Token> rebuilt = new ArrayList<>();
+                for (int g = 0; g < task.groups.size(); g++) {
+                    if (g > 0) {
+                        rebuilt.add(new Token(TokenType.OPERATOR, ",", parenTok.line, parenTok.file));
+                    }
+                    rebuilt.addAll(task.groups.get(g));
+                }
+                parenTok.childs.clear();
+                parenTok.childs.addAll(rebuilt);
+                return;
+            }
+            default:
+                throw new IllegalStateException("unknown generics task " + task.kind);
         }
-        String key = templateName + "<" + String.join(",", argNames) + ">";
-        String mangled = memo.get(key);
-        if (mangled == null) {
-            mangled = mangleName(templateName, argNames);
-            memo.put(key, mangled); // reserve first: breaks self-referential recursion
-            generateInstantiation(templateName, argNames, argTokens, mangled, t);
-        }
-        t.text = mangled;
-        t.genericArgs = null;
     }
 
     private String mangleName(String templateName, List<String> argNames) {
@@ -611,8 +624,9 @@ public class GenericsExpander {
         return sb.toString();
     }
 
-    private void generateInstantiation(String templateName, List<String> argNames, List<Token> argTokens,
-            String mangled, Token usageTok) {
+    /** The synchronous part of one instantiation (lookups, clone, substitution, output); queues the follow-up walks. */
+    private void beginInstantiation(String templateName, List<String> argNames, List<Token> argTokens,
+            String mangled, Token usageTok, List<GenericsTask> out) {
         Token structTpl = structTemplates.get(templateName);
         Token funcTpl = funcTemplates.get(templateName);
         Token ifaceTpl = interfaceTemplates.get(templateName);
@@ -628,13 +642,7 @@ public class GenericsExpander {
                             + " type argument(s), got " + argNames.size());
         }
         Map<String, String> subMap = new HashMap<>();
-        // Threads the real, real call site's own file through the
-        // substitution -- see substituteParams' own doc comment for why
-        // this exists at all: without it, every reference to a substituted
-        // type parameter inside the template's own body keeps the
-        // *template's* declaring file (from deepClone below), so a private
-        // struct passed in as a type argument from a different file was
-        // incorrectly reported as inaccessible from its own template's file.
+        // The call site's file is threaded through so a private type passed as an argument stays accessible (see substituteParams).
         Map<String, String> subFileMap = new HashMap<>();
         for (int i = 0; i < template.typeParams.size(); i++) {
             subMap.put(template.typeParams.get(i), argNames.get(i));
@@ -648,15 +656,14 @@ public class GenericsExpander {
         clone.typeParamBounds = null;
         substituteParams(clone, subMap, subFileMap);
         output.add(wrapAsLine(clone));
-        walkAndProcess(clone); // discover/generate anything the substitution exposed
-
+        out.add(new GenericsTask(GenericsTask.WALK, clone)); // discover/generate anything the substitution exposed
         if (structTpl != null) {
-            List<Token> implTpls = implTemplatesByTarget.get(templateName);
-            if (implTpls != null) {
-                for (Token implTpl : implTpls) {
-                    generateImplInstantiation(implTpl, argNames, argTokens, mangled);
-                }
-            }
+            GenericsTask impls = new GenericsTask(GenericsTask.INST_IMPLS, null);
+            impls.name = templateName;
+            impls.argNames = argNames;
+            impls.argTokens = argTokens;
+            impls.mangled = mangled;
+            out.add(impls);
         }
     }
 
@@ -685,8 +692,9 @@ public class GenericsExpander {
         return checks.isEmpty() ? null : checks;
     }
 
-    private void generateImplInstantiation(Token implTpl, List<String> structArgNames, List<Token> structArgTokens,
-            String mangledStructName) {
+    /** The synchronous part of one impl instantiation; queues the walks (interface name, then the impl itself). */
+    private void beginImplInstantiation(Token implTpl, List<String> structArgNames, List<Token> structArgTokens,
+            String mangledStructName, List<GenericsTask> out) {
         Token concreteNameTok = implTpl.sub.get(implTpl.sub.size() - 1);
         Map<String, String> subMap = new HashMap<>();
         Map<String, String> subFileMap = new HashMap<>();
@@ -704,37 +712,13 @@ public class GenericsExpander {
         }
 
         Token clone = deepClone(implTpl);
-        // Any of implTpl's own declared type params NOT consumed matching
-        // the target struct's own generic arguments (subMap's own keys) is
-        // "residual" -- exists purely for this impl's own methods (the
-        // "impl with independent type params" feature) -- tagged onto
-        // whichever individual method tokens actually reference it, rather
-        // than surviving on the impl declaration itself (which always ends
-        // up with typeParams cleared to null here, same as before).
+        // Residual type params (not consumed by the target's arguments) are tagged onto the methods that use them.
         tagResidualGenericMethods(implTpl, clone, subMap.keySet());
         Token cloneConcreteTok = clone.sub.get(clone.sub.size() - 1);
-        substituteParams(clone, subMap, subFileMap); // substitutes inside method bodies/signatures AND the header tokens below
+        substituteParams(clone, subMap, subFileMap); // method bodies/signatures AND the header tokens
         cloneConcreteTok.text = mangledStructName;
         cloneConcreteTok.genericArgs = null;
-        // A constructor method (Parser.gatherConstructorImpl's
-        // "impl<T> constructor for X<T>(...) self {...}" shape) is a
-        // plain "func" token tagged with `isConstructorDecl`/
-        // `constructorConcreteName` -- neither is reachable by
-        // `substituteParams`'s VARREF-text-matching walk (the method's
-        // own name text, "__ctor__X", never matches a type-param name in
-        // `subMap`, and `constructorConcreteName` is a plain String
-        // field, not a Token tree node at all), so both are rewritten
-        // here explicitly: the method's callable name must become
-        // "__ctor__<mangledStructName>" (matching the exact
-        // "CONSTRUCTOR_NAME_PREFIX + concreteName" key
-        // TypeChecker.collectFunc/checkCall register/look candidates up
-        // under for the now-concrete, monomorphized struct), and
-        // `constructorConcreteName` itself must name the mangled struct,
-        // not the original generic template name -- otherwise
-        // TypeChecker's own RVO/struct-exists checks for this
-        // constructor would look up a struct that was never actually
-        // declared (the generic template name is never a real,
-        // instantiable struct on its own).
+        // A constructor method has its name and constructorConcreteName rewritten here: substituteParams cannot reach them.
         for (Token method : clone.childs) {
             method.fromGenericInstance = true;
             if (method.isConstructorDecl) {
@@ -742,15 +726,15 @@ public class GenericsExpander {
                 method.constructorConcreteName = mangledStructName;
             }
         }
+        GenericsTask add = new GenericsTask(GenericsTask.IMPL_ADD, clone);
         if (clone.sub.size() == 2) {
-            Token cloneInterfaceTok = clone.declName();
-            // interfaceNameTok may itself be a (now-substituted) generic
-            // reference, e.g. "Container<T>" -> "Container<Point>" --
-            // resolve/generate it the same uniform way.
-            walkAndProcess(cloneInterfaceTok);
+            // the interface name may itself be a (now-substituted) generic reference: resolve it first
+            out.add(new GenericsTask(GenericsTask.WALK, clone.declName()));
+            out.add(add);
+        } else {
+            output.add(wrapAsLine(clone));
+            out.add(new GenericsTask(GenericsTask.WALK, clone));
         }
-        output.add(wrapAsLine(clone));
-        walkAndProcess(clone);
     }
 
     /**
@@ -841,45 +825,18 @@ public class GenericsExpander {
      * own impl's residual type parameters at all, so a plain, non-generic
      * sibling method on the same impl is left completely untouched.
      */
-    private boolean referencesName(Token node, String name) {
-        if (node == null) {
-            return false;
-        }
-        if (node.type == TokenType.VARREF && node.text.equals(name)) {
-            return true;
-        }
-        if (referencesName(node.left, name) || referencesName(node.right, name) || referencesName(node.next, name)) {
-            return true;
-        }
-        if (node.childs != null) {
-            for (Token c : node.childs) {
-                if (referencesName(c, name)) {
-                    return true;
-                }
+    private boolean referencesName(Token root, String name) {
+        Deque<Token> stack = new ArrayDeque<>();
+        pushNonNull(stack, root);
+        while (!stack.isEmpty()) {
+            Token node = stack.pop();
+            if (node == null) {
+                continue;
             }
-        }
-        if (node.sub != null) {
-            for (Token s : node.sub) {
-                if (referencesName(s, name)) {
-                    return true;
-                }
+            if (node.type == TokenType.VARREF && node.text.equals(name)) {
+                return true;
             }
-        }
-        if (node.genericArgs != null) {
-            for (List<Token> group : node.genericArgs) {
-                for (Token g : group) {
-                    if (referencesName(g, name)) {
-                        return true;
-                    }
-                }
-            }
-        }
-        if (node.typeBound != null) {
-            for (Token tb : node.typeBound) {
-                if (referencesName(tb, name)) {
-                    return true;
-                }
-            }
+            pushChildrenReversed(node, stack, true);
         }
         return false;
     }
@@ -908,41 +865,60 @@ public class GenericsExpander {
      * real per-argument file to thread through -- have none to give), in
      * which case only `.text` is substituted, exactly as before this fix.
      */
-    private void substituteParams(Token node, Map<String, String> subMap, Map<String, String> subFileMap) {
-        if (node == null) {
-            return;
-        }
-        if (node.type == TokenType.VARREF && subMap.containsKey(node.text)) {
-            String origName = node.text;
-            node.text = subMap.get(origName);
-            if (subFileMap != null && subFileMap.containsKey(origName)) {
-                node.file = subFileMap.get(origName);
+    private void substituteParams(Token root, Map<String, String> subMap, Map<String, String> subFileMap) {
+        Deque<Token> stack = new ArrayDeque<>();
+        pushNonNull(stack, root);
+        while (!stack.isEmpty()) {
+            Token node = stack.pop();
+            if (node == null) {
+                continue;
             }
-        }
-        substituteParams(node.left, subMap, subFileMap);
-        substituteParams(node.right, subMap, subFileMap);
-        substituteParams(node.next, subMap, subFileMap);
-        if (node.childs != null) {
-            for (Token c : node.childs) {
-                substituteParams(c, subMap, subFileMap);
+            if (node.type == TokenType.VARREF && subMap.containsKey(node.text)) {
+                String origName = node.text;
+                node.text = subMap.get(origName);
+                if (subFileMap != null && subFileMap.containsKey(origName)) {
+                    node.file = subFileMap.get(origName);
+                }
             }
+            pushChildrenReversed(node, stack, true);
         }
-        if (node.sub != null) {
-            for (Token s : node.sub) {
-                substituteParams(s, subMap, subFileMap);
+    }
+
+    /** Pushes left, right, next, childs, sub (and genericArgs, typeBound when asked) so that they pop in that order. */
+    private void pushChildrenReversed(Token node, Deque<Token> stack, boolean withTypeParts) {
+        if (withTypeParts) {
+            if (node.typeBound != null) {
+                for (int i = node.typeBound.size() - 1; i >= 0; i--) {
+                    pushNonNull(stack, node.typeBound.get(i));
+                }
             }
-        }
-        if (node.genericArgs != null) {
-            for (List<Token> group : node.genericArgs) {
-                for (Token g : group) {
-                    substituteParams(g, subMap, subFileMap);
+            if (node.genericArgs != null) {
+                for (int gi = node.genericArgs.size() - 1; gi >= 0; gi--) {
+                    List<Token> group = node.genericArgs.get(gi);
+                    for (int i = group.size() - 1; i >= 0; i--) {
+                        pushNonNull(stack, group.get(i));
+                    }
                 }
             }
         }
-        if (node.typeBound != null) {
-            for (Token t : node.typeBound) {
-                substituteParams(t, subMap, subFileMap);
+        if (node.sub != null) {
+            for (int i = node.sub.size() - 1; i >= 0; i--) {
+                pushNonNull(stack, node.sub.get(i));
             }
+        }
+        if (node.childs != null) {
+            for (int i = node.childs.size() - 1; i >= 0; i--) {
+                pushNonNull(stack, node.childs.get(i));
+            }
+        }
+        pushNonNull(stack, node.next);
+        pushNonNull(stack, node.right);
+        pushNonNull(stack, node.left);
+    }
+
+    private static void pushNonNull(Deque<Token> stack, Token t) {
+        if (t != null) {
+            stack.push(t);
         }
     }
 

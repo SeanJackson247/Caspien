@@ -72,23 +72,41 @@ public final class TraceConfig {
         }
     }
 
-    private static boolean walk(Token t, Map<Token, Boolean> seen) {
-        if (t == null || seen.put(t, Boolean.TRUE) != null) {
+    /** True when a trace name occurs in the tree under t; an explicit stack (order does not matter for a yes/no answer). */
+    private static boolean walk(Token start, Map<Token, Boolean> seen) {
+        java.util.ArrayDeque<Token> work = new java.util.ArrayDeque<>();
+        if (start == null) {
             return false;
         }
-        if (t.type != TokenType.STRING && t.type != TokenType.CHAR && isTraceName(t.text)) {
-            return true;
-        }
-        for (Token c : t.childs) {
-            if (walk(c, seen)) {
+        work.push(start);
+        while (!work.isEmpty()) {
+            Token t = work.pop();
+            if (seen.put(t, Boolean.TRUE) != null) {
+                continue;
+            }
+            if (t.type != TokenType.STRING && t.type != TokenType.CHAR && isTraceName(t.text)) {
                 return true;
             }
-        }
-        for (Token c : t.sub) {
-            if (walk(c, seen)) {
-                return true;
+            for (Token c : t.childs) {
+                if (c != null) {
+                    work.push(c);
+                }
+            }
+            for (Token c : t.sub) {
+                if (c != null) {
+                    work.push(c);
+                }
+            }
+            if (t.left != null) {
+                work.push(t.left);
+            }
+            if (t.right != null) {
+                work.push(t.right);
+            }
+            if (t.next != null) {
+                work.push(t.next);
             }
         }
-        return walk(t.left, seen) || walk(t.right, seen) || walk(t.next, seen);
+        return false;
     }
 }

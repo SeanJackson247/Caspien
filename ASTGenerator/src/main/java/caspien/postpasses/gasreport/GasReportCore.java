@@ -13,6 +13,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import caspien.config.DocComment;
 
 /**
  * `--audit`, worst-case execution cost in ABSTRACT GAS. Works on the emitted high-order bytecode (before any optimiser pass), so the figure
@@ -33,7 +34,7 @@ import java.util.Set;
 
 /** GasReportCore: fields, nested types and static helpers of GasReport (part 1 of 2; see README.md in this folder). */
 final class GasReportCore {
-    private final GasReport hub;
+    final GasReport hub;
 
     GasReportCore(GasReport hub) {
         this.hub = hub;
@@ -44,74 +45,9 @@ final class GasReportCore {
     public static final int CAP = "1".equals(System.getenv("CASPIEN_AUDIT_ALL")) ? Integer.MAX_VALUE - 2 : 40;
     public static final int GAS = 0, HEAP = 1, COUNT = 2, LIVE = 3, NMET = 4;     // the path metrics: gas, heap bytes requested, number of allocation operations
 
-    public static final class Fn {
-        public String name;
-        public int start, end;                       // line indexes: FUNC_START line .. FUNC_END line
-        public Map<String, Integer> labels = new HashMap<>();
-        public final BigInteger[] val = new BigInteger[NMET];                                // per metric: GAS, HEAP (bytes), COUNT, LIVE (net live bytes)
-        public BigInteger livePeak = BigInteger.ZERO;                                        // LIVE: the peak of live heap bytes during a run, relative to entry
-        public final Map<Integer, Long> credit = new HashMap<>();                            // line -> bytes a free at that line (GT_DESTRUCT, a resize's old block, a call's moved-in arguments) certainly releases
-        public final Map<Integer, Integer> okLabelAlloc = new HashMap<>();                   // LIVE: success label (`@new_ok_N`, `@alloc_ok_N`) line -> the allocation line it confirms (a failed allocation holds no block)
-        public final Map<Integer, Map<Integer, Long>> edgeCredit = new HashMap<>();          // LIVE: line of an edge into a catch block / landing pad -> the credits of that pad analysed from that edge's state
-        public final Map<Integer, Integer> edgeCall = new HashMap<>();                       // LIVE: PUSH_LABEL line -> the call that may unwind through it (its moved-in arguments are freed on that path too)
-        public final Map<String, Object> padEvals = new HashMap<>();                         // credit-map signature -> Eval (kept untyped here: Eval is an inner class)
-        public long retLo;                                                                   // bytes of the owned block it returns (certain lower bound)
-        public long retDeep;                                                                 // bytes of the blocks owned through members of the block it returns (certain lower bound)
-        public boolean deepOk;                                                               // members that own memory are never moved out, replaced or shared by reference here: a destruct frees the whole tree it was built with
-        public boolean[] paramFreed = new boolean[0];                                        // per ARG: every exit path destructs that owned parameter
-        @SuppressWarnings("unchecked")
-        final Set<String>[] ub = new Set[]{new LinkedHashSet<String>(), new LinkedHashSet<String>(), new LinkedHashSet<String>(), new LinkedHashSet<String>()};   // unbounded reasons per metric
-        public int sites;                            // allocation operations written in the body
-        public Set<String> notModelled = new LinkedHashSet<>();
-        public Set<String> calls = new LinkedHashSet<>();
-        public boolean busy;
-        public boolean done;
-        public boolean throwsDecorated;
-        public final Set<String> deco = new HashSet<>();   // FUNC_DECORATE names (@event_loop, @with_tick, @tick, ...)
-        public Map<String, V> args = new HashMap<>();                                        // parameter values this solve assumes (empty = none known): a specialisation per call context
-        public final Map<Integer, Fn> calleeAt = new HashMap<>();                            // CALL line -> the (possibly specialised) callee whose figures that call uses
 
-        /** A copy that shares the analysis results independent of argument values (credits, labels) and gets its own figures. */
-        public Fn specialised() {
-            Fn c = new Fn();
-            c.name = name;
-            c.start = start;
-            c.end = end;
-            c.labels = labels;
-            c.credit.putAll(credit);
-            c.okLabelAlloc.putAll(okLabelAlloc);
-            c.edgeCredit.putAll(edgeCredit);
-            c.edgeCall.putAll(edgeCall);
-            c.retLo = retLo;
-            c.retDeep = retDeep;
-            c.deepOk = deepOk;
-            c.paramFreed = paramFreed;
-            c.sites = sites;
-            c.notModelled = notModelled;
-            c.calls = calls;
-            c.throwsDecorated = throwsDecorated;
-            c.deco.addAll(deco);
-            return c;
-        }
-    }
 
-    /** A value known at analysis time: a scalar, or the range a..b. */
-    public static final class V {
-        public final BigInteger a, b;
-        public final boolean range;
-        public V(BigInteger a, BigInteger b, boolean range) {
-            this.a = a;
-            this.b = b;
-            this.range = range;
-        }
-        public static V sc(BigInteger x) {
-            return new V(x, null, false);
-        }
-        @Override
-        public String toString() {
-            return range ? a + ".." + b : a.toString();
-        }
-    }
+
 
     /** Source positions told by the front end for `--audit` causes: "function" and "function|loop label" -> "file:line". Empty = not known. */
     public static final Map<String, String> POS = new HashMap<>();
@@ -121,17 +57,7 @@ final class GasReportCore {
     public String[] ln;                // trimmed non-empty lines
     public final Map<String, Fn> fns = new LinkedHashMap<>();
 
-    public static final class Result {
-        public String text;
-        public final Map<String, String> gasByFunction = new LinkedHashMap<>();   // for tests: name -> "123" or ">=123"
-        public final Map<String, String> stackByFunction = new LinkedHashMap<>();
-        public final Map<String, String> heapByFunction = new LinkedHashMap<>();
-        public final Map<String, String> countByFunction = new LinkedHashMap<>();
-        public final Map<String, String> liveByFunction = new LinkedHashMap<>();    // name -> "peak/leaves" (peak prefixed ">=" when unbounded)
-        public Result(String text) {
-            this.text = text;
-        }
-    }
+
 
     /** Builds the report section for the program whose HOB is given; `entry` functions are `main` and `__caspien_main`. */
     public static Result build(String hob) {
@@ -201,449 +127,33 @@ final class GasReportCore {
 
     public static final int CONT = 0, BRK = 1, RET = 2, ALL = 3;                     // which kind of path a walk looks for
 
-    /**
-     * A path value: `n` = net effect of a path (gas, bytes, a count; for LIVE the net change of live heap bytes), `p` = the peak of the running
-     * total along the path (never below 0, the empty prefix). Plain metrics only ever read `n` (their p equals n). `neg` = "no such path".
-     */
-    public static final class Val {
-        public final BigInteger n, p;
-        public final boolean neg;
-        public Val(BigInteger n, BigInteger p, boolean neg) {
-            this.n = n;
-            this.p = p;
-            this.neg = neg;
-        }
-        public static final Val NEG = new Val(BigInteger.ZERO, BigInteger.ZERO, true);
-        public static final Val ZERO = new Val(BigInteger.ZERO, BigInteger.ZERO, false);
-        /** A path that ends in a throw or a process exit: its peak counts, it leaves nothing for the caller (its net is -infinity, so any returning path wins the net). */
-        public static final Val NONET = new Val(BigInteger.TEN.pow(30).negate(), BigInteger.ZERO, false);
-        public static Val of(BigInteger c) {
-            return new Val(c, c.max(BigInteger.ZERO), false);
-        }
-        public static Val of(long c) {
-            return of(BigInteger.valueOf(c));
-        }
-        /** a, then b. */
-        public static Val seq(Val a, Val b) {
-            if (a.neg || b.neg) {
-                return NEG;
+
+
+
+
+    /** Runs walk frames (which may belong to different Evals) on an explicit stack; a step returns a child frame to run first, or null when it has finished. */
+    static Val runWalk(GasWalkFrame root) {
+        java.util.Deque<GasWalkFrame> stack = new java.util.ArrayDeque<>();
+        stack.push(root);
+        while (true) {
+            GasWalkFrame fr = stack.peek();
+            GasWalkFrame child = fr.ev.step(fr);
+            if (child != null) {
+                if (fr.replaced) {
+                    stack.pop();
+                }
+                stack.push(child);
+                continue;
             }
-            return new Val(a.n.add(b.n), a.p.max(a.n.add(b.p)), false);
-        }
-        /** the dearer of two alternative paths (componentwise: an upper bound for both the net and the peak). */
-        public static Val alt(Val a, Val b) {
-            if (a.neg) {
-                return b;
+            stack.pop();
+            if (stack.isEmpty()) {
+                return fr.result;
             }
-            if (b.neg) {
-                return a;
-            }
-            return new Val(a.n.max(b.n), a.p.max(b.p), false);
-        }
-        /** c repeated k times, back to back. */
-        public static Val rep(BigInteger k, Val c) {
-            if (c.neg || k.signum() == 0) {
-                return ZERO;
-            }
-            BigInteger peak = c.n.signum() > 0 ? k.subtract(BigInteger.ONE).multiply(c.n).add(c.p) : c.p;
-            return new Val(k.multiply(c.n), peak, false);
+            stack.peek().got = fr.result;
         }
     }
 
-    public static final class Loop {
-        public int head, end, back;        // label line, exit label line, the unconditional JMP back to the head
-        public BigInteger count;           // null = not a literal bound
-        public String why;
-        public boolean isFor;
-        public Val exitCost;               // cost of the paths that leave the loop and continue after it (add the tail); NEG impossible
-        public Val retCost = Val.NEG;      // cost of the paths that return/throw/exit from inside the loop (no tail)
-        public boolean done, computing;
-        public int ownClass;               // the loop's own termination class (not its callees'): 0 bound, FIN run-time `for`, UNB `loop` with an exit, NONT `loop` with none
-    }
 
-    /** Per-function analysis state. */
-    public final class Eval {
-        public final Fn f;
-        public final int mt;                                          // GAS, HEAP, COUNT or LIVE
-        public final Map<Integer, Loop> loops = new HashMap<>();      // head line -> loop
-        public final Map<Long, Val[]> memo = new HashMap<>();         // (context, mode) -> per-line memo
-
-        public final Map<Integer, Long> cred;                         // LIVE: the credits this walk uses (the function's own, or those of a pad analysed from one entry edge)
-
-        public Eval(Fn f, int mt) {
-            this(f, mt, f.credit);
-        }
-
-        public Eval(Fn f, int mt, Map<Integer, Long> cred) {
-            this.f = f;
-            this.mt = mt;
-            this.cred = cred;
-            for (Map.Entry<String, Integer> e : f.labels.entrySet()) {
-                String lab = e.getKey();
-                String kind = lab.startsWith("@for_") && !lab.startsWith("@for_end_") && !lab.startsWith("@for_cont_") ? "for"
-                        : lab.startsWith("@loop_") && !lab.startsWith("@loop_end_") ? "loop" : null;
-                if (kind == null) {
-                    continue;
-                }
-                int n;
-                try {
-                    n = Integer.parseInt(lab.substring(kind.length() + 2));
-                } catch (NumberFormatException ex) {
-                    continue;
-                }
-                Integer endLine = f.labels.get("@" + kind + "_end_" + (n + 1));
-                if (endLine == null) {
-                    continue;
-                }
-                Loop lp = new Loop();
-                lp.head = e.getValue();
-                lp.end = endLine;
-                lp.back = -1;
-                lp.isFor = kind.equals("for");
-                for (int i = endLine - 1; i > lp.head; i--) {
-                    if (ln[i].equals("JMP " + lab)) {
-                        lp.back = i;
-                        break;
-                    }
-                }
-                if (lp.back < 0) {
-                    continue;
-                }
-                Long spin = lp.isFor ? null : SPIN.get(f.name + "|" + lab);
-                if (!lp.isFor) {
-                    lp.why = null;      // classified in solveLoop (needs to know whether the body can leave the loop)
-                    if (spin != null && spin > 0) {
-                        lp.count = BigInteger.valueOf(spin).add(BigInteger.ONE);     // retries 1..limit, then the give-up test breaks on the next pass
-                    } else if (spin != null) {
-                        String at = POS.get(f.name + "|" + lab);
-                        lp.why = R(FIN, "`match @lock` retries a number of times only known at run time (`default(n)` with a run-time n)" + (at != null ? " (" + at + ")" : ""));
-                    }
-                } else {
-                    String type = null;
-                    for (int i = lp.head + 1; i < lp.back && i < lp.head + 6; i++) {
-                        if (ln[i].startsWith("PUSH $for_range_")) {
-                            String[] p = ln[i].split(" ");
-                            type = p[p.length - 1];
-                            break;
-                        }
-                    }
-                    BigInteger c = null;
-                    if (type != null) {
-                        int a = type.indexOf("range(");
-                        int comma = type.lastIndexOf(',');
-                        if (a >= 0 && comma > a && type.endsWith(")")) {
-                            String lo = type.substring(a + 6, comma), hi = type.substring(comma + 1, type.length() - 1);
-                            if (lo.matches("-?\\d+") && hi.matches("-?\\d+")) {
-                                c = new BigInteger(hi).subtract(new BigInteger(lo)).max(BigInteger.ZERO);
-                            }
-                        }
-                    }
-                    if (c == null && type != null && f.args != null) {
-                        c = hub.rangeCount(f, lp, type);
-                    }
-                    lp.count = c;
-                    if (c == null) {
-                        String dep = null;
-                        if (type != null && type.indexOf(',') > 0 && type.endsWith(")")) {
-                            String hi = type.substring(type.lastIndexOf(',') + 1, type.length() - 1).replaceFirst("^(imut_|mut_)", "");
-                            if (hi.matches("[A-Za-z_][A-Za-z_0-9.]*")) {
-                                dep = hi;
-                            }
-                        }
-                        String at = POS.get(f.name + "|" + lab);
-                        lp.why = R(FIN, "`for` runs a number of times only known at run time" + (dep != null ? ": depends on `" + dep + "`" : " (" + (type == null ? lab : type) + ")") + (at != null ? " (" + at + ")" : ""));
-                    }
-                }
-                loops.put(lp.head, lp);
-            }
-        }
-
-        /** Costs of a whole loop statement: exitCost (normal exit or `break`; the code after the loop is added by the caller) and retCost (a `return` inside). */
-        public void solveLoop(Loop lp) {
-            if (lp.done || lp.computing) {
-                return;
-            }
-            lp.computing = true;
-            Val cont = walk(lp.head + 1, lp.head, CONT);   // header + body up to the back edge
-            Val brk = walk(lp.head + 1, lp.head, BRK);     // ... up to a `break` / the final header test
-            Val ret = walk(lp.head + 1, lp.head, RET);     // ... up to a return/throw/exit
-            Val hdr = lp.isFor ? headerCost(lp) : Val.ZERO;
-            BigInteger n;
-            if (lp.count != null) {
-                n = lp.count;
-                lp.ownClass = 0;
-            } else {
-                // a count or a live-heap figure does not depend on the bound of a loop that does not grow it
-                String why = lp.why;
-                if (!lp.isFor && why == null) {
-                    boolean exit = !brk.neg || !ret.neg;     // a reachable `break`, `return` or `throw` (also from a call that can throw) inside the body
-                    why = exit ? R(UNB, "`loop` with no static bound, it can leave through `break`/`return`/`throw` (" + labelOf(lp) + ")")
-                            : R(hub.runsFirst(f, lp.head) ? NONT : DIV, "`loop` with no `break`, `return` or `throw` that leaves it (" + labelOf(lp) + ")");
-                }
-                lp.ownClass = why.charAt(0) - '0';
-                if (!lp.isFor && lp.why == null) {
-                    lp.ownClass = (!brk.neg || !ret.neg) ? UNB : NONT;
-                }
-                if (mt == GAS || (!cont.neg && cont.n.signum() > 0)) {
-                    f.ub[mt].add(why);
-                }
-                n = BigInteger.ONE;        // lower bound: one iteration
-            }
-            if (n.signum() == 0) {
-                lp.exitCost = hdr;
-            } else {
-                BigInteger nm1 = n.subtract(BigInteger.ONE);
-                Val c0 = cont.neg ? Val.ZERO : cont;
-                Val full = lp.isFor || !cont.neg ? Val.seq(Val.rep(n, c0), hdr) : Val.NEG;
-                if (!lp.isFor) {
-                    full = brk.neg ? cont : Val.NEG;   // a `loop` only ends through `break`
-                }
-                lp.exitCost = Val.alt(full, brk.neg ? Val.NEG : Val.seq(Val.rep(nm1, c0), brk));
-                if (lp.exitCost.neg) {
-                    lp.exitCost = c0;
-                }
-                lp.retCost = ret.neg ? Val.NEG : Val.seq(Val.rep(nm1, c0), ret);
-            }
-            lp.done = true;
-            lp.computing = false;
-        }
-
-        public String labelOf(Loop lp) {
-            String label = ln[lp.head].substring(0, ln[lp.head].length() - 1);
-            String pos = POS.get(f.name + "|" + label);
-            return pos != null ? pos : label;      // source file:line when the front end told us, else the HOB label
-        }
-
-        public Val headerCost(Loop lp) {
-            Val c = Val.ZERO;
-            for (int i = lp.head + 1; i < lp.back; i++) {
-                String o = op(ln[i]);
-                c = Val.seq(c, lineCost(i));
-                if (o.equals("JMP") && ln[i - 1].equals("CMP")) {
-                    break;
-                }
-            }
-            return c;
-        }
-
-        public Val walk(int i, int ctx, int mode) {
-            Val[] m = memo.computeIfAbsent(((long) ctx << 3) | mode, k -> new Val[ln.length + 1]);
-            return walkMemo(i, ctx, mode, m);
-        }
-
-        /** Terminal value of reaching line i in a loop context, or null when i is an ordinary line. */
-        public Val terminal(int i, int ctx, int mode) {
-            if (ctx < 0) {
-                return null;
-            }
-            Loop cl = loops.get(ctx);
-            if (i == cl.back) {
-                return mode == CONT ? lineCost(i) : Val.NEG;
-            }
-            if (i == cl.end) {
-                return mode == BRK ? Val.ZERO : Val.NEG;
-            }
-            return null;
-        }
-
-        public Val walkMemo(int start, int ctx, int mode, Val[] m) {
-            List<Integer> run = new ArrayList<>();
-            int i = start;
-            Val tail;
-            boolean asm = false;
-            while (true) {
-                if (i >= f.end) {
-                    tail = ctx < 0 ? Val.ZERO : Val.NEG;
-                    break;
-                }
-                if (m[i] != null) {
-                    tail = m[i];
-                    break;
-                }
-                Val term = terminal(i, ctx, mode);
-                if (term != null) {
-                    tail = term;
-                    break;
-                }
-                String line = ln[i];
-                String o = op(line);
-                if (asm) {
-                    if (o.equals("ASM_END")) {
-                        asm = false;
-                    } else {
-                        run.add(i);
-                        i++;
-                        continue;
-                    }
-                }
-                if (isLabel(line)) {
-                    Loop lp = loops.get(i);
-                    if (lp != null && i != ctx) {
-                        tail = block(lp, ctx, mode);
-                        break;
-                    }
-                    run.add(i);
-                    i++;
-                    continue;
-                }
-                if (o.equals("ASM_START")) {
-                    asm = true;
-                    f.notModelled.add("inline assembly");
-                    run.add(i);
-                    i++;
-                    continue;
-                }
-                if (o.equals("JMP")) {
-                    Integer t = f.labels.get(arg(line));
-                    boolean cond = i > 0 && ln[i - 1].equals("CMP");
-                    if (t == null) {
-                        run.add(i);
-                        i++;
-                        continue;
-                    }
-                    Val a = !cond && arg(line).startsWith("@catch_") ? padTarget(i, t, ctx, mode) : walkTarget(t, ctx, mode);
-                    Val b = cond ? walk(i + 1, ctx, mode) : Val.NEG;
-                    run.add(i);
-                    tail = Val.alt(a, b);
-                    break;
-                }
-                if (o.equals("RET") || o.equals("THROW") || o.equals("EXIT") || o.equals("EXIT_THREAD")) {
-                    run.add(i);
-                    tail = ctx < 0 || mode == RET ? (mt == LIVE && !o.equals("RET") ? Val.NONET : Val.ZERO) : Val.NEG;
-                    break;
-                }
-                if (o.equals("PUSH_LABEL")) {
-                    Integer t = f.labels.get(arg(line));
-                    if (t != null && !arg(line).startsWith("@for") && !arg(line).startsWith("@loop")) {
-                        // a call after this point may unwind to that catch block / landing pad: its cost is an alternative continuation
-                        Val alt = padTarget(i, t, ctx, mode);
-                        Val nxt = walk(i + 1, ctx, mode);
-                        run.add(i);
-                        tail = Val.alt(alt, nxt);
-                        break;
-                    }
-                }
-                run.add(i);
-                i++;
-            }
-            Val acc = tail;
-            for (int k = run.size() - 1; k >= 0; k--) {
-                int idx = run.get(k);
-                acc = Val.seq(lineCost(idx), acc);
-                m[idx] = acc;
-            }
-            return run.isEmpty() ? tail : m[run.get(0)];
-        }
-
-        /** A whole inner loop met while walking: its exit continues after the loop; a return inside it is a terminal path. */
-        public Val block(Loop lp, int ctx, int mode) {
-            solveLoop(lp);
-            Val r = Val.seq(lp.exitCost, walk(lp.end, ctx, mode));
-            if (!lp.retCost.neg && (ctx < 0 || mode == RET)) {
-                r = Val.alt(r, lp.retCost);
-            }
-            return r;
-        }
-
-        /** The way into a catch block / landing pad from the edge at line `edge`: with the credits of that pad analysed from the state at that edge. */
-        public Val padTarget(int edge, int target, int ctx, int mode) {
-            Map<Integer, Long> cm = mt == LIVE ? f.edgeCredit.get(edge) : null;
-            Val v;
-            if (cm == null || cm == cred) {
-                v = walkTarget(target, ctx, mode);
-            } else {
-                Eval e = (Eval) f.padEvals.computeIfAbsent(cm.toString(), k -> new Eval(f, mt, cm));
-                v = e.walkTarget(target, ctx, mode);
-            }
-            Integer call = mt == LIVE ? f.edgeCall.get(edge) : null;
-            if (call != null && !v.neg) {
-                // the callee that unwinds also frees the owned arguments moved into it
-                v = Val.seq(new Val(BigInteger.valueOf(-cred.getOrDefault(call, 0L)), BigInteger.ZERO, false), v);
-            }
-            return v;
-        }
-
-        public Val walkTarget(int target, int ctx, int mode) {
-            Val term = terminal(target, ctx, mode);
-            if (term != null) {
-                return term;
-            }
-            if (ctx >= 0 && target == loops.get(ctx).head) {
-                return mode == CONT ? Val.ZERO : Val.NEG;     // `continue`: the iteration is over
-            }
-            Loop lp = loops.get(target);
-            if (lp != null && target != ctx) {
-                return block(lp, ctx, mode);
-            }
-            return walk(target, ctx, mode);
-        }
-
-        public Val lineCost(int idx) {
-            String line = ln[idx];
-            String o = op(line);
-            if (isLabel(line) && !(mt == LIVE && f.okLabelAlloc.containsKey(idx))) {
-                return Val.ZERO;
-            }
-            Val c;
-            if (mt == LIVE) {
-                Integer allocAt = f.okLabelAlloc.get(idx);
-                if (isLabel(line) && allocAt == null) {
-                    return Val.ZERO;
-                }
-                int ai = allocAt != null ? allocAt : idx;
-                String ao = op(ln[ai]);
-                if (isAlloc(ao) && (allocAt != null || !f.okLabelAlloc.containsValue(ai))) {
-                    // charged on the success edge (the label after the null check) when there is one: a failed allocation holds no block
-                    long cr = cred.getOrDefault(ai, 0L);
-                    BigInteger b = hub.allocBytes(ai, f);
-                    // the new block exists before the old one of a `resize` is released: the peak sees both (every resize may move), the net only the difference
-                    c = new Val(b.subtract(BigInteger.valueOf(cr)), b, false);
-                } else if (o.equals("GT_DESTRUCT")) {
-                    c = new Val(BigInteger.valueOf(-cred.getOrDefault(idx, 0L)), BigInteger.ZERO, false);
-                } else {
-                    c = Val.ZERO;
-                }
-            } else {
-                c = Val.of(mt == GAS ? BigInteger.valueOf(cost(o)) : !isAlloc(o) ? BigInteger.ZERO : mt == COUNT ? BigInteger.ONE : hub.allocBytes(idx, f));
-            }
-            switch (o) {
-                case "CALL": {
-                    f.calls.add(arg(line));
-                    Fn cf = f.calleeAt.get(idx);
-                    if (cf == null) {
-                        cf = fns.get(arg(line));
-                    }
-                    if (cf != null && cf.val[mt] != null) {
-                        if (mt == LIVE) {
-                            // the callee's net is what it leaves live; the arguments it frees (known by the caller) are credited here
-                            BigInteger cr = BigInteger.valueOf(cred.getOrDefault(idx, 0L));
-                            return new Val(cf.val[mt].subtract(cr), cf.livePeak.max(cf.val[mt].subtract(cr)), false);
-                        }
-                        return Val.seq(c, Val.of(cf.val[mt]));
-                    }
-                    break;
-                }
-                case "EXTERN_CALL":
-                    f.notModelled.add("external call " + arg(line));
-                    break;
-                case "MEMCOPY":
-                    f.notModelled.add("`memcopy` (size not counted)");
-                    break;
-                case "SLEEP": case "YIELD": case "STACK_LOCK":
-                    f.notModelled.add(o.toLowerCase() + " (waits)");
-                    break;
-                case "ATOMIC_PUSH":
-                    f.notModelled.add("thread operation");
-                    break;
-                case "INVOKE":
-                    f.ub[mt].add(R(UNK, "indirect call (INVOKE), the callee is not known"));
-                    break;
-                default:
-                    break;
-            }
-            return c;
-        }
-    }
 
     /** Operations that ask the allocator for memory (a `resize` counts as one: it may grow in place or move). */
     /** A label line: `@name:` (structured control flow) or `name:` (the old landing-pad shape, `gt_routine__f:` / `end_of_gt_routine__f:`). */
@@ -690,41 +200,7 @@ final class GasReportCore {
 
     // ---- freed bytes (the credits of the live-heap figure) ------------------------------------------------------------------------------
 
-    /** Forward state of the credit analysis: per owned slot the bytes of the block it certainly holds (absent = unknown / null / moved), and the owned parameters certainly destructed. */
-    public static final class St {
-        public final Map<String, Long> lo = new HashMap<>();
-        public final Map<String, Long> deep = new HashMap<>();      // per slot: bytes of the blocks moved into the members of what it holds (certain; counted only when the function is deepOk)
-        public final Set<String> dead = new HashSet<>();
-        public St copy() {
-            St c = new St();
-            c.lo.putAll(lo);
-            c.deep.putAll(deep);
-            c.dead.addAll(dead);
-            return c;
-        }
-        public boolean same(St o) {
-            return lo.equals(o.lo) && deep.equals(o.deep) && dead.equals(o.dead);
-        }
-        /** Must-join: a slot keeps its bytes only when every path agrees on at least them (the minimum). */
-        public static St join(St a, St b) {
-            St r = new St();
-            for (Map.Entry<String, Long> e : a.lo.entrySet()) {
-                Long o = b.lo.get(e.getKey());
-                if (o != null) {
-                    r.lo.put(e.getKey(), Math.min(o, e.getValue()));
-                }
-            }
-            for (Map.Entry<String, Long> e : a.deep.entrySet()) {
-                Long o = b.deep.get(e.getKey());
-                if (o != null) {
-                    r.deep.put(e.getKey(), Math.min(o, e.getValue()));
-                }
-            }
-            r.dead.addAll(a.dead);
-            r.dead.retainAll(b.dead);
-            return r;
-        }
-    }
+
 
     public static String addrType(String l) {
         String[] p = l.split(" ");
@@ -798,7 +274,7 @@ final class GasReportCore {
      * its calls, the loops inside it); a `loop {}` that nothing can leave is `none` whether or not a path reaches it. Any difference, in
      * either direction, is a compile error. `funcs` is keyed by HOB function name, `loops` by function name + "|" + loop label.
      */
-    public static void checkLabels(String hob, Map<String, DocComments.Doc> funcs, Map<String, DocComments.Doc> loops) {
+    public static void checkLabels(String hob, Map<String, DocComment> funcs, Map<String, DocComment> loops) {
         GasReport g = new GasReport(hob);
         final RuntimeException[] err = new RuntimeException[1];
         Thread t = new Thread(null, () -> {
@@ -1248,63 +724,121 @@ final class GasReportCore {
         }
     }
 
-    public void collect(Fn f, Set<String> out) {
-        if (!out.add(f.name)) {
-            return;
-        }
-        for (String c : f.calls) {
-            Fn cf = fns.get(c);
-            if (cf != null) {
-                collect(cf, out);
+    public void collect(Fn start, Set<String> out) {
+        java.util.Deque<Fn> work = new java.util.ArrayDeque<>();
+        work.push(start);
+        while (!work.isEmpty()) {
+            Fn f = work.pop();
+            if (!out.add(f.name)) {
+                continue;
+            }
+            List<Fn> callees = new ArrayList<>();
+            for (String c : f.calls) {
+                Fn cf = fns.get(c);
+                if (cf != null) {
+                    callees.add(cf);
+                }
+            }
+            for (int i = callees.size() - 1; i >= 0; i--) {
+                work.push(callees.get(i));
             }
         }
     }
 
-    /** Worst-case gas and heap count of f including callees (callees are solved first and their figures spliced into the CALL lines). */
     public void solve(Fn f, List<String> stack) {
-        if (f.done) {
-            return;
-        }
-        if (stack.contains(f.name)) {
-            return;
-        }
-        stack.add(f.name);
-        for (int i = f.start; i < f.end; i++) {
-            String o = op(ln[i]);
-            if (isAlloc(o)) {
-                f.sites++;
-            }
-            if (!o.equals("CALL")) {
-                continue;
-            }
-            String c = arg(ln[i]);
-            f.calls.add(c);
-            Fn cf = fns.get(c);
-            if (cf == null) {
-                f.notModelled.add("call to " + c + " (no body)");
-                continue;
-            }
-            if (!stack.contains(c)) {
-                solve(cf, stack);
+        java.util.Deque<GasSolveFrame> frames = new java.util.ArrayDeque<>();
+        frames.push(new GasSolveFrame(GasSolveFrame.SOLVE, f));
+        while (!frames.isEmpty()) {
+            GasSolveFrame fr = frames.peek();
+            GasSolveFrame child = fr.kind == GasSolveFrame.SOLVE ? stepSolve(fr, stack) : stepRunEvals(fr, stack);
+            if (child != null) {
+                frames.push(child);
+            } else {
+                frames.pop();
             }
         }
-        hub.mapOkLabels(f);
-        hub.analyzeCredits(f);
-        runEvals(f, new HashMap<>(), stack);
+    }
+
+    /** Solves the callees first (each in its own frame), then the function itself. Returns a child frame or null when done. */
+    private GasSolveFrame stepSolve(GasSolveFrame fr, List<String> stack) {
+        Fn f = fr.f;
+        if (!fr.entered) {
+            if (f.done || stack.contains(f.name)) {
+                return null;
+            }
+            stack.add(f.name);
+            fr.entered = true;
+            fr.i = f.start;
+        }
+        if (fr.phase == 0) {
+            while (fr.i < f.end) {
+                int i = fr.i++;
+                String o = op(ln[i]);
+                if (isAlloc(o)) {
+                    f.sites++;
+                }
+                if (!o.equals("CALL")) {
+                    continue;
+                }
+                String c = arg(ln[i]);
+                f.calls.add(c);
+                Fn cf = fns.get(c);
+                if (cf == null) {
+                    f.notModelled.add("call to " + c + " (no body)");
+                    continue;
+                }
+                if (!stack.contains(c)) {
+                    return new GasSolveFrame(GasSolveFrame.SOLVE, cf);
+                }
+            }
+            hub.mapOkLabels(f);
+            hub.analyzeCredits(f);
+            fr.phase = 1;
+            GasSolveFrame run = new GasSolveFrame(GasSolveFrame.RUN_EVALS, f);
+            run.args = new HashMap<>();
+            return run;
+        }
         f.done = true;
         stack.remove(stack.size() - 1);
+        return null;
     }
 
-    /**
-     * The figures of f under the parameter values `args` (empty = nothing known): picks for every call the callee to use (a callee that is
-     * unbounded without argument values is solved again with the values this call passes, when they are known), then walks the paths.
-     */
     public void runEvals(Fn f, Map<String, V> args, List<String> stack) {
-        f.args = args;
-        f.calleeAt.clear();
-        @SuppressWarnings("unchecked")
-        Set<String>[] callUb = new Set[]{new LinkedHashSet<String>(), new LinkedHashSet<String>(), new LinkedHashSet<String>(), new LinkedHashSet<String>()};
-        for (int i = f.start; i < f.end; i++) {
+        java.util.Deque<GasSolveFrame> frames = new java.util.ArrayDeque<>();
+        GasSolveFrame first = new GasSolveFrame(GasSolveFrame.RUN_EVALS, f);
+        first.args = args;
+        frames.push(first);
+        while (!frames.isEmpty()) {
+            GasSolveFrame child = stepRunEvals(frames.peek(), stack);
+            if (child != null) {
+                frames.push(child);
+            } else {
+                frames.pop();
+            }
+        }
+    }
+
+    /** One function's figures under `args`; a callee that has to be specialised is run in a child frame first. */
+    @SuppressWarnings("unchecked")
+    private GasSolveFrame stepRunEvals(GasSolveFrame fr, List<String> stack) {
+        Fn f = fr.f;
+        Map<String, V> args = fr.args;
+        if (fr.callUb == null) {
+            f.args = args;
+            f.calleeAt.clear();
+            fr.callUb = new Set[]{new LinkedHashSet<String>(), new LinkedHashSet<String>(), new LinkedHashSet<String>(), new LinkedHashSet<String>()};
+            fr.i = f.start;
+        }
+        Set<String>[] callUb = fr.callUb;
+        if (fr.pendingCallee != null) {
+            // the specialised callee has been run
+            stack.remove(stack.size() - 1);
+            fr.i = finishCall(fr, fr.i - 1, fr.pendingCallee, fr.pendingUse);
+            fr.pendingCallee = null;
+            fr.pendingUse = null;
+        }
+        while (fr.i < f.end) {
+            int i = fr.i++;
             if (!op(ln[i]).equals("CALL")) {
                 continue;
             }
@@ -1327,28 +861,39 @@ final class GasReportCore {
                         use = cf.specialised();
                         specs.put(key, use);
                         stack.add(c);
-                        runEvals(use, cc, stack);
-                        stack.remove(stack.size() - 1);
+                        fr.pendingCallee = c;
+                        fr.pendingUse = use;
+                        GasSolveFrame child = new GasSolveFrame(GasSolveFrame.RUN_EVALS, use);
+                        child.args = cc;
+                        return child;
                     }
                 }
             }
-            f.calleeAt.put(i, use);
-            for (int m = 0; m < NMET; m++) {
-                if (!use.ub[m].isEmpty()) {
-                    callUb[m].add(callReason(c, use.ub[m], hub.runsFirst(f, i)));
-                }
-            }
+            finishCall(fr, i, c, use);
         }
         for (int m = 0; m < NMET; m++) {
             f.ub[m].clear();
         }
         for (int m = 0; m < NMET; m++) {
-            Val v = new Eval(f, m).walk(f.start + 1, -1, ALL);
+            Val v = new Eval(this, f, m).walk(f.start + 1, -1, ALL);
             f.val[m] = v.neg || v.n.compareTo(BigInteger.TEN.pow(20).negate()) < 0 ? BigInteger.ZERO : v.n;
             if (m == LIVE) {
                 f.livePeak = v.neg ? BigInteger.ZERO : v.p;
             }
             f.ub[m].addAll(callUb[m]);
         }
+        return null;
+    }
+
+    /** Records the callee chosen for the CALL at line i and its unbounded reasons; returns the next line to look at. */
+    private int finishCall(GasSolveFrame fr, int i, String c, Fn use) {
+        Fn f = fr.f;
+        f.calleeAt.put(i, use);
+        for (int m = 0; m < NMET; m++) {
+            if (!use.ub[m].isEmpty()) {
+                fr.callUb[m].add(callReason(c, use.ub[m], hub.runsFirst(f, i)));
+            }
+        }
+        return i + 1;
     }
 }
