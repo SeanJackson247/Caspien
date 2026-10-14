@@ -732,19 +732,33 @@ public class Token {
      * never carry one yet.
      */
     public Token deepCloneRaw() {
-        Token clone = new Token(this.type, this.text, this.line, this.file);
-        clone.literalValue = this.literalValue;
-        clone.forcedLiteralType = this.forcedLiteralType;
-        clone.pinnedComments = this.pinnedComments;
-        clone.decorators = this.decorators;
-        clone.unsafeTags = this.unsafeTags;
-        clone.isStatic = this.isStatic;
-        clone.isConst = this.isConst;
-        clone.typeBound = this.typeBound;
-        clone.childs = new ArrayList<>();
-        for (Token child : this.childs) {
-            clone.childs.add(child.deepCloneRaw());
+        // explicit stack of (source, copy) pairs: children are copied in order, no recursion
+        Token rootClone = rawShell(this);
+        java.util.ArrayDeque<Token[]> work = new java.util.ArrayDeque<>();
+        work.push(new Token[]{this, rootClone});
+        while (!work.isEmpty()) {
+            Token[] pair = work.pop();
+            for (Token child : pair[0].childs) {
+                Token copy = rawShell(child);
+                pair[1].childs.add(copy);
+                work.push(new Token[]{child, copy});
+            }
         }
+        return rootClone;
+    }
+
+    /** The raw-clone copy of one token's own fields, with an empty childs list. */
+    private static Token rawShell(Token src) {
+        Token clone = new Token(src.type, src.text, src.line, src.file);
+        clone.literalValue = src.literalValue;
+        clone.forcedLiteralType = src.forcedLiteralType;
+        clone.pinnedComments = src.pinnedComments;
+        clone.decorators = src.decorators;
+        clone.unsafeTags = src.unsafeTags;
+        clone.isStatic = src.isStatic;
+        clone.isConst = src.isConst;
+        clone.typeBound = src.typeBound;
+        clone.childs = new ArrayList<>();
         return clone;
     }
 
