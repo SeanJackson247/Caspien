@@ -69,17 +69,15 @@ public class Main {
         boolean audit = false;
         boolean viz = false;
         for (int i = 3; i < args.length; i++) {
-            switch (args[i]) {
-                case "--fs-report" -> options.put("fs-report", "1");
-                case "--audit" -> {
-                    audit = true;
-                    options.put("audit", "1");
-                }
-                case "--viz" -> {
-                    viz = true;
-                    options.put("viz", "1");
-                }
-                default -> { }
+            String arg = args[i];
+            if (arg.equals("--fs-report")) {
+                options.put("fs-report", "1");
+            } else if (arg.equals("--audit")) {
+                audit = true;
+                options.put("audit", "1");
+            } else if (arg.equals("--viz")) {
+                viz = true;
+                options.put("viz", "1");
             }
         }
         put(options, "audit-no-stdlib", "1".equals(System.getenv("CASPIEN_AUDIT_NOSTDLIB")) ? "1" : null);
