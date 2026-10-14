@@ -23,6 +23,8 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import caspien.token.Decorator;
+import caspien.token.MatchPattern;
 
 /**
  * Stage 6: type and logic checking over the import-resolved, tree-built program.
@@ -256,10 +258,10 @@ public final class TypeCheckerLocksAndProofs {
             // own "@lock(match self.<swap field> : OPEN)" proof is satisfied
             // for this receiver -- the same proof an ordinary
             // "match recv.<field>{ OPEN:{...} }" plants (hasEnumFieldProof).
-            List<Token.MatchPattern> openProofPatterns = new ArrayList<>(st.loopBodyScope.activeMatchPatterns);
+            List<MatchPattern> openProofPatterns = new ArrayList<>(st.loopBodyScope.activeMatchPatterns);
             String openReceiverSlot = hub.expressions.slotKeyOf(receiver);
             if (openReceiverSlot != null) {
-                openProofPatterns.add(new Token.MatchPattern(openReceiverSlot, "enum_field_variants", st.swapFieldName,
+                openProofPatterns.add(new MatchPattern(openReceiverSlot, "enum_field_variants", st.swapFieldName,
                         new ArrayList<>(List.of("OPEN"))));
             }
             Scope openProofScope = new Scope(st.loopBodyScope, new HashSet<>(st.preState), openProofPatterns, false);
@@ -609,19 +611,19 @@ public final class TypeCheckerLocksAndProofs {
      * The proofs a `@lock(..)` method may assume inside its own body (so it needs no `match` of its own). Only for non-static impl methods: the first
      * parameter is the receiver, whatever it is called. See docs/TypeChecker.md, "Method lock proofs".
      */
-    public List<Token.MatchPattern> assumedLockPatterns(FuncInfo func) {
-        List<Token.MatchPattern> result = new ArrayList<>();
+    public List<MatchPattern> assumedLockPatterns(FuncInfo func) {
+        List<MatchPattern> result = new ArrayList<>();
         if (func.funcToken.decorators == null || func.enclosingImpl == null || func.funcToken.isStaticMethod
                 || func.paramNames.isEmpty()) {
             return result;
         }
         String selfParamName = func.paramNames.get(0);
-        for (Token.Decorator d : func.funcToken.decorators) {
+        for (Decorator d : func.funcToken.decorators) {
             if (!d.name.equals("lock")) {
                 continue;
             }
             if (d.lockFieldName != null) {
-                result.add(new Token.MatchPattern(selfParamName, "enum_field_variants", d.lockFieldName,
+                result.add(new MatchPattern(selfParamName, "enum_field_variants", d.lockFieldName,
                         d.lockVariants));
             } else if (d.lockInParams != null) {
                 for (int j = 0; j < d.lockInParams.size(); j++) {
@@ -630,10 +632,10 @@ public final class TypeCheckerLocksAndProofs {
                     String paramName = d.lockInParams.get(j);
                     String fieldName = d.lockInFields.get(j);
                     String targetSlot = selfParamName + "." + fieldName;
-                    result.add(new Token.MatchPattern(paramName, kind, null, targetSlot));
+                    result.add(new MatchPattern(paramName, kind, null, targetSlot));
                     // `Some(..)`-wrapped: also grant the element-alive proof for `self.field[param]` (as checkSomeIndexBoundsCondition does).
                     if (d.lockInSomeWrapped != null && Boolean.TRUE.equals(d.lockInSomeWrapped.get(j))) {
-                        result.add(new Token.MatchPattern(targetSlot + "[" + paramName + "]", "alive", null));
+                        result.add(new MatchPattern(targetSlot + "[" + paramName + "]", "alive", null));
                     }
                 }
             }
@@ -660,7 +662,7 @@ public final class TypeCheckerLocksAndProofs {
             return;
         }
         String receiverSlot = hub.expressions.slotKeyOf(receiverNode);
-        for (Token.Decorator d : candidate.funcToken.decorators) {
+        for (Decorator d : candidate.funcToken.decorators) {
             if (!d.name.equals("lock")) {
                 continue;
             }
@@ -1355,7 +1357,7 @@ public final class TypeCheckerLocksAndProofs {
         if (key == null) {
             return false;
         }
-        for (Token.MatchPattern p : scope.activeMatchPatterns) {
+        for (MatchPattern p : scope.activeMatchPatterns) {
             if (p.kind.equals("fits") && !p.invalidated && key.equals(p.slotKey) && targetBase.equals(p.targetName)) {
                 return true;
             }
@@ -1479,7 +1481,7 @@ public final class TypeCheckerLocksAndProofs {
         if (key == null) {
             return false;
         }
-        for (Token.MatchPattern p : scope.activeMatchPatterns) {
+        for (MatchPattern p : scope.activeMatchPatterns) {
             if (!p.invalidated && p.kind.equals("float_state") && key.equals(p.slotKey)) {
                 return true;
             }
@@ -1550,8 +1552,8 @@ public final class TypeCheckerLocksAndProofs {
         if (key == null) {
             return false;
         }
-        List<Token.MatchPattern> cands = null;
-        for (Token.MatchPattern p : scope.activeMatchPatterns) {
+        List<MatchPattern> cands = null;
+        for (MatchPattern p : scope.activeMatchPatterns) {
             if (!p.invalidated && p.kind.equals("alive") && key.equals(p.slotKey)) {
                 if (cands == null) {
                     cands = new ArrayList<>();
@@ -1563,7 +1565,7 @@ public final class TypeCheckerLocksAndProofs {
             return false;
         }
         ProofKills.use(targetExpr, cands, key);
-        for (Token.MatchPattern c : cands) {
+        for (MatchPattern c : cands) {
             if (c.onId) {
                 targetExpr.chk.refProofIsId = true;   // the proof is on a nullable `ref` (an id): the emitter reads the proof's address
                 break;
@@ -1579,7 +1581,7 @@ public final class TypeCheckerLocksAndProofs {
         if (key == null) {
             return false;
         }
-        for (Token.MatchPattern p : scope.activeMatchPatterns) {
+        for (MatchPattern p : scope.activeMatchPatterns) {
             if (!p.invalidated && p.kind.equals("nonzero") && key.equals(p.slotKey)) {
                 return true;
             }

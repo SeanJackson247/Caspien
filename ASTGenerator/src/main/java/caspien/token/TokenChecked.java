@@ -366,7 +366,7 @@ public final class TokenChecked {
     public String someProofKey;
 
     /** Null unless this is a "match" KEYWORD token that's already been type-checked. */
-    public List<Token.MatchPattern> matchPatterns;
+    public List<MatchPattern> matchPatterns;
 
     /**
      * Set by TypeChecker on a "CALL" node for the "sizeof"/"len"

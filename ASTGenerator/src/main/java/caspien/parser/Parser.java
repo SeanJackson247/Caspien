@@ -9,6 +9,7 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import caspien.token.Decorator;
 
 /**
  * Stage 2 of the front end (public hub; the work is in ParserLines and ParserBlocks, see README.md): nests the Lexer's flat tokens, splits them into LINE tokens,
@@ -124,8 +125,8 @@ public final class Parser {
         // function-level ones such as @throws belong on the constructor
         // function itself, which keeps the full list (funcKw above).
         if (implTok.decorators != null) {
-            List<Token.Decorator> implLevel = new ArrayList<>();
-            for (Token.Decorator d : implTok.decorators) {
+            List<Decorator> implLevel = new ArrayList<>();
+            for (Decorator d : implTok.decorators) {
                 if (d.name.equals("pub")) {
                     implLevel.add(d);
                 }

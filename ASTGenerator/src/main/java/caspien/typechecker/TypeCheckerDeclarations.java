@@ -23,6 +23,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import caspien.token.Decorator;
 
 /**
  * Stage 6: type and logic checking over the import-resolved, tree-built program.
@@ -855,8 +856,8 @@ public final class TypeCheckerDeclarations {
             info.swapFieldName = swapFieldName;
         }
 
-        Token.Decorator lockDecorator = null;
-        for (Token.Decorator d : (info.declTok.decorators == null ? List.<Token.Decorator>of() : info.declTok.decorators)) {
+        Decorator lockDecorator = null;
+        for (Decorator d : (info.declTok.decorators == null ? List.<Decorator>of() : info.declTok.decorators)) {
             if (d.name.equals("lock") && d.lockFieldName != null) {
                 lockDecorator = d;
                 break;
@@ -915,7 +916,7 @@ public final class TypeCheckerDeclarations {
      * Validates "@lock(match self.x : X)": the field exists, is enum-typed, and every variant belongs to that
      * enum. Shared by struct-level and method-level use.
      */
-    public void validateLockEnumClause(Token.Decorator d, StructInfo structInfo, String structName) {
+    public void validateLockEnumClause(Decorator d, StructInfo structInfo, String structName) {
         String fieldName = d.lockFieldName;
         TypeInfo fieldType = structInfo.members.get(fieldName);
         if (fieldType == null) {
@@ -941,14 +942,14 @@ public final class TypeCheckerDeclarations {
      * Validates every "@lock(match ...)" decorator on one method (impl method or interface signature); struct
      * receivers only. See docs/TypeChecker.md, "Method-level @lock".
      */
-    public void validateMethodLocks(List<Token.Decorator> decorators, List<String> paramNames,
+    public void validateMethodLocks(List<Decorator> decorators, List<String> paramNames,
             List<TypeInfo> paramTypes, String concreteName) {
         if (decorators == null || !hub.model.structs.containsKey(concreteName)) {
             return;
         }
         flattenStruct(concreteName, new HashSet<>());
         StructInfo si = hub.model.structs.get(concreteName);
-        for (Token.Decorator d : decorators) {
+        for (Decorator d : decorators) {
             if (!d.name.equals("lock")) {
                 continue;
             }
@@ -965,7 +966,7 @@ public final class TypeCheckerDeclarations {
      * Validates "@lock(match x in|within self.f)" against the typing rules of checkIn / checkWithin (chosen per
      * clause by d.lockInOperators).
      */
-    public void validateLockInClause(Token.Decorator d, StructInfo si, String concreteName,
+    public void validateLockInClause(Decorator d, StructInfo si, String concreteName,
             List<String> paramNames, List<TypeInfo> paramTypes) {
         for (int i = 0; i < d.lockInParams.size(); i++) {
             String paramName = d.lockInParams.get(i);
@@ -1164,7 +1165,7 @@ public final class TypeCheckerDeclarations {
                             + "signature only");
         }
         for (String forbidden : new String[]{"overrides", "realizes"}) {
-            Token.Decorator bad = hub.impls.getDecorator(methodTok.decorators, forbidden);
+            Decorator bad = hub.impls.getDecorator(methodTok.decorators, forbidden);
             if (bad != null) {
                 throw new CompilerException("type", bad.file, bad.line,
                         "'@" + forbidden + "' decorates an impl's method, not an interface's own "

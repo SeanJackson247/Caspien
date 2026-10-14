@@ -25,6 +25,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import caspien.token.Decorator;
 
 /**
  * Stage 6: type and logic checking over the import-resolved, tree-built program.
@@ -153,7 +154,7 @@ public final class TypeCheckerImpls {
             if (interfaceInfo == null) {
                 // A bare impl has no interface: @default/@overrides/@realizes do not apply.
                 for (String forbidden : new String[]{"default", "overrides", "realizes"}) {
-                    Token.Decorator bad = getDecorator(methodTok.decorators, forbidden);
+                    Decorator bad = getDecorator(methodTok.decorators, forbidden);
                     if (bad != null) {
                         throw new CompilerException("type", bad.file, bad.line,
                                 "'@" + forbidden + "' only applies to a method implementing an "
@@ -357,7 +358,7 @@ public final class TypeCheckerImpls {
         for (Token funcTok : t.childs) {
             hub.declarations.forbidSelfReference(funcTok, "a library function");
             for (String forbidden : new String[]{"default", "overrides", "realizes"}) {
-                Token.Decorator bad = getDecorator(funcTok.decorators, forbidden);
+                Decorator bad = getDecorator(funcTok.decorators, forbidden);
                 if (bad != null) {
                     throw new CompilerException("type", bad.file, bad.line,
                             "'@" + forbidden + "' is only valid on an interface method or an impl method, "
@@ -669,7 +670,7 @@ public final class TypeCheckerImpls {
      */
     public void validateOverridesRealizes(FuncInfo implMethod, RawMethodSig interfaceMethod,
             String concreteName, String interfaceName) {
-        List<Token.Decorator> decorators = implMethod.funcToken.decorators;
+        List<Decorator> decorators = implMethod.funcToken.decorators;
         boolean hasOverrides = hasDecorator(decorators, "overrides");
         boolean hasRealizes = hasDecorator(decorators, "realizes");
         Token at = implMethod.funcToken;
@@ -709,8 +710,8 @@ public final class TypeCheckerImpls {
      */
     public void requireIdenticalLocks(FuncInfo actual, RawMethodSig ifaceSig, String concreteName,
             String interfaceName) {
-        List<Token.Decorator> ifaceLocks = filterQualifiedLockDecorators(ifaceSig.decorators);
-        List<Token.Decorator> implLocks = filterQualifiedLockDecorators(actual.funcToken.decorators);
+        List<Decorator> ifaceLocks = filterQualifiedLockDecorators(ifaceSig.decorators);
+        List<Decorator> implLocks = filterQualifiedLockDecorators(actual.funcToken.decorators);
         Token at = actual.funcToken;
         if (ifaceLocks.size() != implLocks.size()) {
             throw new CompilerException("type", at.file, at.line,
@@ -723,8 +724,8 @@ public final class TypeCheckerImpls {
             ifaceParamNames.add(group.get(0).text);
         }
         for (int idx = 0; idx < ifaceLocks.size(); idx++) {
-            Token.Decorator ifaceLock = ifaceLocks.get(idx);
-            Token.Decorator implLock = implLocks.get(idx);
+            Decorator ifaceLock = ifaceLocks.get(idx);
+            Decorator implLock = implLocks.get(idx);
             String mismatch = describeLockMismatch(ifaceLock, implLock, ifaceParamNames, actual.paramNames);
             if (mismatch != null) {
                 throw new CompilerException("type", at.file, at.line,
@@ -735,12 +736,12 @@ public final class TypeCheckerImpls {
     }
 
     /** Every "@lock(match ...)" decorator (either qualified shape) on `decorators`, in source order -- excludes the plain, argument-less "@lock" (the @guard method decorator), which `requireIdenticalLocks` has nothing to say about. */
-    public List<Token.Decorator> filterQualifiedLockDecorators(List<Token.Decorator> decorators) {
-        List<Token.Decorator> result = new ArrayList<>();
+    public List<Decorator> filterQualifiedLockDecorators(List<Decorator> decorators) {
+        List<Decorator> result = new ArrayList<>();
         if (decorators == null) {
             return result;
         }
-        for (Token.Decorator d : decorators) {
+        for (Decorator d : decorators) {
             if (d.name.equals("lock") && (d.lockFieldName != null || d.lockInParams != null)) {
                 result.add(d);
             }
@@ -749,7 +750,7 @@ public final class TypeCheckerImpls {
     }
 
     /** Null if `ifaceLock` and `implLock` describe the identical requirement; otherwise a short, human-readable reason they don't. */
-    public String describeLockMismatch(Token.Decorator ifaceLock, Token.Decorator implLock,
+    public String describeLockMismatch(Decorator ifaceLock, Decorator implLock,
             List<String> ifaceParamNames, List<String> implParamNames) {
         if (ifaceLock.lockFieldName != null) {
             if (implLock.lockFieldName == null) {
@@ -916,7 +917,7 @@ public final class TypeCheckerImpls {
 
     /** Checks the file-system rules of a call to a static method carrying '@fs_root' (literal path, checked against fs-roots) or '@fs_unsafe' (needs 'unsafe file'). */
     public void checkFsPolicyAtCall(FuncInfo callee, Token op, List<Token> argNodes, Scope scope) {
-        Token.Decorator root = getDecorator(callee.funcToken.decorators, "fs_root");
+        Decorator root = getDecorator(callee.funcToken.decorators, "fs_root");
         if (root != null) {
             boolean rw = !root.args.isEmpty() && root.args.get(0).equals("rw");
             Token a0 = argNodes.isEmpty() ? null : argNodes.get(0);
@@ -975,15 +976,15 @@ public final class TypeCheckerImpls {
         return false;
     }
 
-    public boolean hasDecorator(List<Token.Decorator> decorators, String name) {
+    public boolean hasDecorator(List<Decorator> decorators, String name) {
         return getDecorator(decorators, name) != null;
     }
 
-    public Token.Decorator getDecorator(List<Token.Decorator> decorators, String name) {
+    public Decorator getDecorator(List<Decorator> decorators, String name) {
         if (decorators == null) {
             return null;
         }
-        for (Token.Decorator d : decorators) {
+        for (Decorator d : decorators) {
             if (d.name.equals(name)) {
                 return d;
             }
@@ -995,8 +996,8 @@ public final class TypeCheckerImpls {
      * The "@call_convention(name)" argument if present (already validated), else compiler.config's default. Shared
      * by func and extern collection.
      */
-    public String resolveCallConvention(List<Token.Decorator> decorators) {
-        Token.Decorator d = getDecorator(decorators, "call_convention");
+    public String resolveCallConvention(List<Decorator> decorators) {
+        Decorator d = getDecorator(decorators, "call_convention");
         return d != null ? d.args.get(0) : hub.model.config.defaultConvention;
     }
 
@@ -1009,7 +1010,7 @@ public final class TypeCheckerImpls {
         if (f == null || f.funcToken == null) {
             return false;
         }
-        Token.Decorator d = getDecorator(f.funcToken.decorators, "pure");
+        Decorator d = getDecorator(f.funcToken.decorators, "pure");
         return d != null && !d.args.isEmpty();
     }
 
@@ -1059,11 +1060,11 @@ public final class TypeCheckerImpls {
      * Checks each decorator is a real one, allowed in this context, with the right argument shape. "@dont(X)" is
      * valid exactly where X is.
      */
-    public void validateDecorators(List<Token.Decorator> decorators, Set<String> allowedNames, String contextDesc) {
+    public void validateDecorators(List<Decorator> decorators, Set<String> allowedNames, String contextDesc) {
         if (decorators == null) {
             return;
         }
-        for (Token.Decorator d : decorators) {
+        for (Decorator d : decorators) {
             if (d.name.equals("dont")) {
                 if (d.args.size() != 1) {
                     throw new CompilerException("type", d.file, d.line,
@@ -1087,15 +1088,15 @@ public final class TypeCheckerImpls {
             }
             validateDecoratorArgShape(d);
         }
-        Token.Decorator pureDec = getDecorator(decorators, "pure");
-        Token.Decorator nonDec = getDecorator(decorators, "non");
+        Decorator pureDec = getDecorator(decorators, "pure");
+        Decorator nonDec = getDecorator(decorators, "non");
         if (pureDec != null && !pureDec.args.isEmpty() && nonDec != null) {
             throw new CompilerException("type", nonDec.file, nonDec.line,
                     "'@pure(rt)' (referentially transparent) cannot also be '@non(deterministic)'");
         }
     }
 
-    public void validateDecoratorArgShape(Token.Decorator d) {
+    public void validateDecoratorArgShape(Decorator d) {
         switch (d.name) {
             case "call_convention":
                 if (d.args.size() != 1) {
@@ -1200,7 +1201,7 @@ public final class TypeCheckerImpls {
 
     public void collectFunc(Token t, String safetyTag) {
         for (String contextOnly : new String[]{"default", "overrides", "realizes"}) {
-            Token.Decorator bad = getDecorator(t.decorators, contextOnly);
+            Decorator bad = getDecorator(t.decorators, contextOnly);
             if (bad != null) {
                 throw new CompilerException("type", bad.file, bad.line,
                         "'@" + contextOnly + "' is only valid on an interface method or an impl method, "
@@ -1270,7 +1271,7 @@ public final class TypeCheckerImpls {
 
         ExternInfo info = new ExternInfo();
         info.name = name;
-        Token.Decorator linkNameDecorator = getDecorator(t.decorators, "link_name");
+        Decorator linkNameDecorator = getDecorator(t.decorators, "link_name");
         info.linkName = linkNameDecorator != null ? linkNameDecorator.args.get(0) : name;
         info.declTok = t;
         info.callConvention = resolveCallConvention(t.decorators);

@@ -20,6 +20,8 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import caspien.token.GenericBoundCheck;
+import caspien.token.MatchPattern;
 
 /**
  * Stage 6: type and logic checking over the import-resolved, tree-built program.
@@ -163,9 +165,9 @@ public final class TypeCheckerControlFlow {
                 }
             }
             m.branchMoved = new HashSet<>(m.preState);
-            List<Token.MatchPattern> branchPatterns = new ArrayList<>(scope.activeMatchPatterns);
+            List<MatchPattern> branchPatterns = new ArrayList<>(scope.activeMatchPatterns);
             if (conditionSlotKey != null) {
-                branchPatterns.add(new Token.MatchPattern(conditionSlotKey, "float_state", null));
+                branchPatterns.add(new MatchPattern(conditionSlotKey, "float_state", null));
             }
             m.branchScope = new Scope(scope, m.branchMoved, branchPatterns, false);
             f.phase = 1;
@@ -326,7 +328,7 @@ public final class TypeCheckerControlFlow {
                 }
             }
             m.branchMoved = new HashSet<>(m.preState);
-            List<Token.MatchPattern> branchPatterns = scope.activeMatchPatterns;
+            List<MatchPattern> branchPatterns = scope.activeMatchPatterns;
             List<String> caseVariants = isDefault
                     ? enumInfo.variants.stream().filter(v -> !covered.contains(v))
                             .collect(java.util.stream.Collectors.toList())
@@ -336,7 +338,7 @@ public final class TypeCheckerControlFlow {
                 String fieldSlot = hub.expressions.slotKeyOf(conditionExpr.left);
                 if (fieldSlot != null) {
                     branchPatterns = new ArrayList<>(branchPatterns);
-                    branchPatterns.add(new Token.MatchPattern(fieldSlot, "enum_field_variants",
+                    branchPatterns.add(new MatchPattern(fieldSlot, "enum_field_variants",
                             conditionExpr.right.text, caseVariants));
                 }
             }
@@ -566,11 +568,11 @@ public final class TypeCheckerControlFlow {
                 }
             }
             m.branchMoved = new HashSet<>(m.preState);
-            List<Token.MatchPattern> branchPatterns = scope.activeMatchPatterns;
+            List<MatchPattern> branchPatterns = scope.activeMatchPatterns;
             if (xSlotKey != null && labels.size() == 1) {
                 // Always an "instanceof" proof, even for the "implements" form: a label names a concrete implementer.
                 branchPatterns = new ArrayList<>(branchPatterns);
-                branchPatterns.add(new Token.MatchPattern(xSlotKey, "instanceof", labels.get(0).text));
+                branchPatterns.add(new MatchPattern(xSlotKey, "instanceof", labels.get(0).text));
             }
             m.branchScope = new Scope(scope, m.branchMoved, branchPatterns, false);
             // Same instanceof shadowing as checkMatchChain (narrowInstanceofSlots), so "c.foo()" in an "A:" case resolves as A's method.
@@ -667,11 +669,11 @@ public final class TypeCheckerControlFlow {
      * Match condition grammar: left instanceof right, left implements right, left in right, a bare expression, chained with
      * "and". Each leaf is checked through resolveExprType and records one MatchPattern. See docs/TypeChecker.md, "Match chains".
      */
-    public void checkMatchCondition(Token node, Scope scope, FuncInfo func, List<Token.MatchPattern> out) {
+    public void checkMatchCondition(Token node, Scope scope, FuncInfo func, List<MatchPattern> out) {
         hub.driver.run(matchConditionFrame(node, scope, func, out));
     }
 
-    public CheckFrame matchConditionFrame(Token node, Scope scope, FuncInfo func, List<Token.MatchPattern> out) {
+    public CheckFrame matchConditionFrame(Token node, Scope scope, FuncInfo func, List<MatchPattern> out) {
         CheckFrame f = new CheckFrame(CheckFrame.MATCH_CONDITION, node, scope, func);
         f.data = out;
         return f;
@@ -686,7 +688,7 @@ public final class TypeCheckerControlFlow {
         Scope scope = f.scope;
         FuncInfo func = f.func;
         @SuppressWarnings("unchecked")
-        List<Token.MatchPattern> out = (List<Token.MatchPattern>) f.data;
+        List<MatchPattern> out = (List<MatchPattern>) f.data;
         if (f.phase != 0) {
             return matchConditionResume(f, out);
         }
@@ -775,7 +777,7 @@ public final class TypeCheckerControlFlow {
                         + "meant to prove it isn't null");
     }
 
-    private int matchConditionResume(CheckFrame f, List<Token.MatchPattern> out) {
+    private int matchConditionResume(CheckFrame f, List<MatchPattern> out) {
         Token node = f.node;
         Scope scope = f.scope;
         FuncInfo func = f.func;
@@ -803,18 +805,18 @@ public final class TypeCheckerControlFlow {
                 // "!= 0" suffices only for unsigned types (a signed divisor could still be -1: TYPE_MIN / -1 traps); "> 0" always suffices.
                 boolean sufficientForDivision = node.text.equals(">") || (node.text.equals("!=") && isUnsigned);
                 if (sufficientForDivision) {
-                    out.add(new Token.MatchPattern(hub.expressions.proofKeyOf(node.left), "nonzero", null));
+                    out.add(new MatchPattern(hub.expressions.proofKeyOf(node.left), "nonzero", null));
                 }
                 return f.done(null);
             }
             case "zero2":
-                out.add(new Token.MatchPattern(hub.expressions.slotKeyOf(node), "alive", null));
+                out.add(new MatchPattern(hub.expressions.slotKeyOf(node), "alive", null));
                 return f.done(null);
             case "instanceof":
-                out.add(new Token.MatchPattern(hub.expressions.slotKeyOf(node.left), "instanceof", node.right.chk.resolvedType));
+                out.add(new MatchPattern(hub.expressions.slotKeyOf(node.left), "instanceof", node.right.chk.resolvedType));
                 return f.done(null);
             case "implements":
-                out.add(new Token.MatchPattern(hub.expressions.slotKeyOf(node.left), "implements", node.right.chk.resolvedType));
+                out.add(new MatchPattern(hub.expressions.slotKeyOf(node.left), "implements", node.right.chk.resolvedType));
                 return f.done(null);
             case "someindex":
                 return f.done(null);
@@ -831,7 +833,7 @@ public final class TypeCheckerControlFlow {
                             "'u64 in <string>' is not valid as a match condition -- "
                                     + "it's only usable as an ordinary bool expression");
                 }
-                out.add(new Token.MatchPattern(hub.accessAndAsync.boundsSlotKeyOf(node.left), "in", null, boundsTargetSlotOf(node.right)));
+                out.add(new MatchPattern(hub.accessAndAsync.boundsSlotKeyOf(node.left), "in", null, boundsTargetSlotOf(node.right)));
                 return f.done(null);
             case "into": {
                 TypeInfo intoCondType = f.got;
@@ -846,11 +848,11 @@ public final class TypeCheckerControlFlow {
                             "'u64 into <string>' is not valid -- 'into' only makes sense against a "
                                     + "range/dynarray target, never a string");
                 }
-                out.add(new Token.MatchPattern(hub.accessAndAsync.boundsSlotKeyOf(node.left), "into", null, boundsTargetSlotOf(node.right)));
+                out.add(new MatchPattern(hub.accessAndAsync.boundsSlotKeyOf(node.left), "into", null, boundsTargetSlotOf(node.right)));
                 return f.done(null);
             }
             case "within":
-                out.add(new Token.MatchPattern(hub.accessAndAsync.boundsSlotKeyOf(node.left), "in", null, boundsTargetSlotOf(node.right)));
+                out.add(new MatchPattern(hub.accessAndAsync.boundsSlotKeyOf(node.left), "in", null, boundsTargetSlotOf(node.right)));
                 return f.done(null);
             case "fits": {
                 TypeInfo fitsLeft = f.got;
@@ -870,7 +872,7 @@ public final class TypeCheckerControlFlow {
                 node.chk.fitsSourceBase = fitsLeft.baseType;
                 node.chk.fitsTargetBase = node.right.text;
                 node.chk.resolvedType = "imut_bool";
-                out.add(new Token.MatchPattern(fitsKey, "fits", node.right.text));
+                out.add(new MatchPattern(fitsKey, "fits", node.right.text));
                 return f.done(null);
             }
             case "is": {
@@ -884,14 +886,14 @@ public final class TypeCheckerControlFlow {
                             "'is' only supports 'base' on the right");
                 }
                 node.chk.resolvedType = "imut_bool";
-                out.add(new Token.MatchPattern(hub.expressions.slotKeyOf(node.left), "is_base", null));
+                out.add(new MatchPattern(hub.expressions.slotKeyOf(node.left), "is_base", null));
                 return f.done(null);
             }
             default: {   // "some"
                 ProofKills.suppressReads--;
                 Token argExpr = hub.calls.collectSingleBuiltinArg(node, "Some", scope, func).get(0);
                 node.chk.someProofKey = hub.expressions.proofKeyOf(argExpr);
-                Token.MatchPattern someProof = new Token.MatchPattern(hub.expressions.proofKeyOf(argExpr), "alive", null);
+                MatchPattern someProof = new MatchPattern(hub.expressions.proofKeyOf(argExpr), "alive", null);
                 someProof.onId = node.chk.someOnRef;
                 out.add(someProof);
                 return f.done(null);
@@ -911,11 +913,11 @@ public final class TypeCheckerControlFlow {
      * (checkForLoop) and the @lock(match Some(i) in self.field) qualifier. See docs/TypeChecker.md, "Match chains".
      */
     public void checkSomeIndexBoundsCondition(Token node, String kind, Scope scope, FuncInfo func,
-            List<Token.MatchPattern> out) {
+            List<MatchPattern> out) {
         hub.driver.run(someIndexBoundsFrame(node, kind, scope, func, out));
     }
 
-    public CheckFrame someIndexBoundsFrame(Token node, String kind, Scope scope, FuncInfo func, List<Token.MatchPattern> out) {
+    public CheckFrame someIndexBoundsFrame(Token node, String kind, Scope scope, FuncInfo func, List<MatchPattern> out) {
         CheckFrame f = new CheckFrame(CheckFrame.SOME_INDEX_BOUNDS, node, scope, func);
         f.s1 = kind;
         f.data = out;
@@ -930,7 +932,7 @@ public final class TypeCheckerControlFlow {
         FuncInfo func = f.func;
         if (f.phase == 0) {
             @SuppressWarnings("unchecked")
-            List<Token.MatchPattern> out = (List<Token.MatchPattern>) f.data;
+            List<MatchPattern> out = (List<MatchPattern>) f.data;
 
             Token someCall = node.left;
             Token indexExpr = hub.calls.collectSingleBuiltinArg(someCall, "Some", scope, func).get(0);
@@ -953,7 +955,7 @@ public final class TypeCheckerControlFlow {
         }
         Object[] st = (Object[]) f.data;
         @SuppressWarnings("unchecked")
-        List<Token.MatchPattern> out = (List<Token.MatchPattern>) st[0];
+        List<MatchPattern> out = (List<MatchPattern>) st[0];
         Token someCall = f.y;
         Token indexExpr = f.x;
         if (f.phase == 1) {
@@ -969,7 +971,7 @@ public final class TypeCheckerControlFlow {
             }
             String indexSlot = hub.expressions.slotKeyOf(indexExpr);
             String targetSlot = boundsTargetSlotOf(node.right);
-            Token.MatchPattern boundsPattern = new Token.MatchPattern(indexSlot, kind, null, targetSlot);
+            MatchPattern boundsPattern = new MatchPattern(indexSlot, kind, null, targetSlot);
             out.add(boundsPattern);
 
             // Element-alive proof for x[i]: a throwaway LOOKUP on the "range(origin)"-unwrapped target (boundsTargetExprOf), checked
@@ -980,7 +982,7 @@ public final class TypeCheckerControlFlow {
             Token lookupNode = new Token(TokenType.OPERATOR, "LOOKUP", node.line, node.file);
             lookupNode.left = originExpr;
             lookupNode.right = bracket;
-            List<Token.MatchPattern> withBounds = new ArrayList<>(scope.activeMatchPatterns);
+            List<MatchPattern> withBounds = new ArrayList<>(scope.activeMatchPatterns);
             withBounds.add(boundsPattern);
             Scope probeScope = new Scope(scope, withBounds, false);
             f.sc1 = probeScope;
@@ -996,7 +998,7 @@ public final class TypeCheckerControlFlow {
                     "'Some(...)' requires the element type to be a pointer, got '" + elemType.canonical()
                             + "'");
         }
-        Token.MatchPattern elemProof = new Token.MatchPattern(hub.expressions.slotKeyOf(lookupNode), "alive", null);
+        MatchPattern elemProof = new MatchPattern(hub.expressions.slotKeyOf(lookupNode), "alive", null);
         out.add(elemProof);
         lookupNode.chk.someOnRef = "ref".equals(elemType.storage) && !elemType.isSome;
         elemProof.onId = lookupNode.chk.someOnRef;
@@ -1043,11 +1045,11 @@ public final class TypeCheckerControlFlow {
     public void validateGenericBounds(List<Token> rootLines) {
         for (Token lineTok : rootLines) {
             Token entry = lineTok.childs.get(0);
-            List<Token.GenericBoundCheck> checks = entry.pendingGenericBoundChecks;
+            List<GenericBoundCheck> checks = entry.pendingGenericBoundChecks;
             if (checks == null) {
                 continue;
             }
-            for (Token.GenericBoundCheck check : checks) {
+            for (GenericBoundCheck check : checks) {
                 if (!structImplementsInterface(check.concreteTypeName, check.interfaceName)) {
                     throw new CompilerException("type", entry.file, entry.line,
                             "'" + check.concreteTypeName + "' does not implement '" + check.interfaceName
@@ -1360,10 +1362,10 @@ public final class TypeCheckerControlFlow {
                 if (forTok.isForMatch) {
                     String iSlotKey = hub.expressions.slotKeyOf(loopVarTok);
                     if (iSlotKey != null) {
-                        List<Token.MatchPattern> extended = new ArrayList<>(forScope.activeMatchPatterns);
+                        List<MatchPattern> extended = new ArrayList<>(forScope.activeMatchPatterns);
                         // "into" also grants everything "in" does; only the recorded kind differs.
                         String kind = rootIsInto ? "into" : "in";
-                        extended.add(new Token.MatchPattern(iSlotKey, kind, null, boundsTargetSlotOf(rangeExpr)));
+                        extended.add(new MatchPattern(iSlotKey, kind, null, boundsTargetSlotOf(rangeExpr)));
                         forScopeForBody = new Scope(forScope, forScope.movedSlots, extended, false);
                     }
                 }

@@ -30,6 +30,7 @@ import caspien.typechecker.ImplInfo;
 import caspien.typechecker.LibraryInfo;
 import caspien.typechecker.StructInfo;
 import caspien.typechecker.TypeInfo;
+import caspien.token.Decorator;
 
 /**
  * Final front-end stage: walks the type-checked tree and builds the stack-based higher-order bytecode (HOB) as a BytecodeProgram (text only when the caller serializes it).
@@ -1229,16 +1230,16 @@ final class BytecodeEmitterCore {
     }
 
     /** One line per decorator, in declaration order: mnemonic + "@name(args)"; string arguments keep their quotes. */
-    public void emitDecorators(String mnemonic, List<Token.Decorator> decorators) {
+    public void emitDecorators(String mnemonic, List<Decorator> decorators) {
         emitDecorators(mnemonic, decorators, false);
     }
 
     /** withPos: append the decorator's source position as a quoted "file:line" operand (the optimizer reports on it). */
-    public void emitDecorators(String mnemonic, List<Token.Decorator> decorators, boolean withPos) {
+    public void emitDecorators(String mnemonic, List<Decorator> decorators, boolean withPos) {
         if (decorators == null) {
             return;
         }
-        for (Token.Decorator d : decorators) {
+        for (Decorator d : decorators) {
             StringBuilder sb = new StringBuilder("@").append(d.name);
             if (!d.args.isEmpty()) {
                 sb.append('(');

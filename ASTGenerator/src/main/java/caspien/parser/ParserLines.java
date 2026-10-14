@@ -10,6 +10,7 @@ import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Set;
+import caspien.token.Decorator;
 
 /**
  * Stage 2 of the front end: nests the Lexer's flat tokens, splits them into LINE tokens,
@@ -360,7 +361,7 @@ final class ParserLines {
      * first token. Validity per construct is the TypeChecker's job. See docs/Parser.md, "Decorator lines".
      */
     public void stripDecoratorsDeep(List<Token> lines) {
-        List<Token.Decorator> pending = new ArrayList<>();
+        List<Decorator> pending = new ArrayList<>();
         List<Token> result = new ArrayList<>();
         for (Token lineTok : lines) {
             List<Token> tokens = lineTok.childs;
@@ -404,7 +405,7 @@ final class ParserLines {
             scanForBlockLinesDecorators(tokens);
         }
         if (!pending.isEmpty()) {
-            Token.Decorator last = pending.get(pending.size() - 1);
+            Decorator last = pending.get(pending.size() - 1);
             throw new CompilerException("parse", last.file, last.line,
                     "'@" + last.name + "' decorates nothing -- no statement follows it in this block");
         }
@@ -443,7 +444,7 @@ final class ParserLines {
     }
 
     /** tokens.get(idx) is the '@' token; parses "name" or "name(arg,arg,...)" starting right after it. */
-    public Token.Decorator parseDecoratorLine(List<Token> tokens, int idx, Token lineTok) {
+    public Decorator parseDecoratorLine(List<Token> tokens, int idx, Token lineTok) {
         int nameIdx = idx + 1;
         while (nameIdx < tokens.size() && tokens.get(nameIdx).type == TokenType.WHITESPACE) {
             nameIdx++;
@@ -467,7 +468,7 @@ final class ParserLines {
             if (nameTok.text.equals("lock") && firstReal < parenChilds.size()
                     && parenChilds.get(firstReal).type == TokenType.KEYWORD
                     && parenChilds.get(firstReal).text.equals("match")) {
-                Token.Decorator d = parseLockMatchQualifier(parenChilds, firstReal, nameTok, lineTok);
+                Decorator d = parseLockMatchQualifier(parenChilds, firstReal, nameTok, lineTok);
                 next++;
                 while (next < tokens.size() && tokens.get(next).type == TokenType.WHITESPACE) {
                     next++;
@@ -504,14 +505,14 @@ final class ParserLines {
             throw new CompilerException("parse", tokens.get(next).file, tokens.get(next).line,
                     "unexpected token '" + tokens.get(next).text + "' after '@" + nameTok.text + "'");
         }
-        return new Token.Decorator(nameTok.text, args, argIsString, lineTok.line, lineTok.file);
+        return new Decorator(nameTok.text, args, argIsString, lineTok.line, lineTok.file);
     }
 
     /**
      * Parses "@lock(match ...)": enum style ("match self.f : A|B") or "in" style ("match i in self.f [and ...]").
      * See docs/Parser.md, "@lock(match) qualifiers".
      */
-    public Token.Decorator parseLockMatchQualifier(List<Token> t, int i, Token nameTok, Token lineTok) {
+    public Decorator parseLockMatchQualifier(List<Token> t, int i, Token nameTok, Token lineTok) {
         i = skipWs(t, i + 1); // past "match"
         if (i >= t.size() || t.get(i).type != TokenType.VARREF && t.get(i).type != TokenType.KEYWORD) {
             throw new CompilerException("parse", lineTok.file, lineTok.line,
@@ -523,7 +524,7 @@ final class ParserLines {
         return parseLockInQualifier(t, i, lineTok);
     }
 
-    public Token.Decorator parseLockEnumQualifier(List<Token> t, int i, Token lineTok) {
+    public Decorator parseLockEnumQualifier(List<Token> t, int i, Token lineTok) {
         i = skipWs(t, i + 1); // past "self"
         if (i >= t.size() || t.get(i).type != TokenType.OPERATOR || !t.get(i).text.equals(".")) {
             throw new CompilerException("parse", lineTok.file, lineTok.line,
@@ -559,7 +560,7 @@ final class ParserLines {
             throw new CompilerException("parse", t.get(i).file, t.get(i).line,
                     "unexpected token '" + t.get(i).text + "' in '@lock(match ...)'");
         }
-        Token.Decorator d = new Token.Decorator("lock", new ArrayList<>(), new ArrayList<>(), lineTok.line,
+        Decorator d = new Decorator("lock", new ArrayList<>(), new ArrayList<>(), lineTok.line,
                 lineTok.file);
         d.lockFieldName = fieldName;
         d.lockVariants = variants;
@@ -567,7 +568,7 @@ final class ParserLines {
     }
 
     /** "in"-style clauses: PARAM (in|within|into) self.FIELD, chained with 'and'; operators kept per clause. */
-    public Token.Decorator parseLockInQualifier(List<Token> t, int i, Token lineTok) {
+    public Decorator parseLockInQualifier(List<Token> t, int i, Token lineTok) {
         List<String> params = new ArrayList<>();
         List<String> fields = new ArrayList<>();
         List<String> operators = new ArrayList<>();
@@ -649,7 +650,7 @@ final class ParserLines {
             throw new CompilerException("parse", t.get(i).file, t.get(i).line,
                     "unexpected token '" + t.get(i).text + "' in '@lock(match ...)'");
         }
-        Token.Decorator d = new Token.Decorator("lock", new ArrayList<>(), new ArrayList<>(), lineTok.line,
+        Decorator d = new Decorator("lock", new ArrayList<>(), new ArrayList<>(), lineTok.line,
                 lineTok.file);
         d.lockInParams = params;
         d.lockInFields = fields;

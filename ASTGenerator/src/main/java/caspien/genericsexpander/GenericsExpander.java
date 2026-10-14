@@ -13,6 +13,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import caspien.token.GenericBoundCheck;
 
 /**
  * New pipeline stage, runs on the fully import-resolved, dup-expanded root
@@ -670,15 +671,15 @@ public class GenericsExpander {
      * information (which concrete type was substituted for which bound
      * parameter) in hand at the same time.
      */
-    private List<Token.GenericBoundCheck> buildPendingBoundChecks(Token template, List<String> argNames) {
+    private List<GenericBoundCheck> buildPendingBoundChecks(Token template, List<String> argNames) {
         if (template.typeParamBounds == null) {
             return null;
         }
-        List<Token.GenericBoundCheck> checks = new ArrayList<>();
+        List<GenericBoundCheck> checks = new ArrayList<>();
         for (int i = 0; i < template.typeParamBounds.size(); i++) {
             String bound = template.typeParamBounds.get(i);
             if (bound != null) {
-                checks.add(new Token.GenericBoundCheck(template.typeParams.get(i), argNames.get(i), bound));
+                checks.add(new GenericBoundCheck(template.typeParams.get(i), argNames.get(i), bound));
             }
         }
         return checks.isEmpty() ? null : checks;

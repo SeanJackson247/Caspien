@@ -9,6 +9,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import caspien.token.MatchPattern;
 
 public class Scope {
     public final Scope parent;
@@ -40,7 +41,7 @@ public class Scope {
     /** The tagged 'unsafe' block this scope sits in (set on the scope that block opens, found via parents); null outside any statement-level unsafe block. */
     public UnsafeBlockRecord unsafeBlock;
     /** Proven MatchPatterns, inherited and extended by entering a match block; never mutated. */
-    public final List<Token.MatchPattern> activeMatchPatterns;
+    public final List<MatchPattern> activeMatchPatterns;
     /** True inside the base-case match of a @recursive function; checkCall/checkMethodCall reject self-calls there. */
     public final boolean suspendsSelfRecursion;
     /** Owns slots declared directly in this scope, in order (per block, not inherited); dropped at scope end. Filled by checkAssign (lets) and checkFunctionBody (params, in the root scope). */
@@ -94,7 +95,7 @@ public class Scope {
         this.activeLockReleases = (parent != null) ? parent.activeLockReleases : Collections.emptyList();
     }
     /** Entering a match block: extends the proven patterns; suspends self-recursion for the required "RANGE_PARAM is base" match. */
-    public Scope(Scope parent, List<Token.MatchPattern> extendedMatchPatterns, boolean suspendsSelfRecursionOverride) {
+    public Scope(Scope parent, List<MatchPattern> extendedMatchPatterns, boolean suspendsSelfRecursionOverride) {
         this.parent = parent;
         this.movedSlots = (parent != null) ? parent.movedSlots : new HashSet<>();
         this.currentSafety = (parent != null) ? parent.currentSafety : "indeterminate";
@@ -108,7 +109,7 @@ public class Scope {
         this.activeLockReleases = (parent != null) ? parent.activeLockReleases : Collections.emptyList();
     }
     /** One branch of a match/elsematch/else chain: isolated movedSlots copy plus this branch's patterns (a plain else adds none and never suspends recursion). */
-    public Scope(Scope parent, Set<String> movedSlotsOverride, List<Token.MatchPattern> extendedMatchPatterns,
+    public Scope(Scope parent, Set<String> movedSlotsOverride, List<MatchPattern> extendedMatchPatterns,
             boolean suspendsSelfRecursionOverride) {
         this.parent = parent;
         this.movedSlots = movedSlotsOverride;

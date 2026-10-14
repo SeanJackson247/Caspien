@@ -20,6 +20,8 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import caspien.token.Decorator;
+import caspien.token.MatchPattern;
 
 /**
  * Stage 6: type and logic checking over the import-resolved, tree-built program.
@@ -160,7 +162,7 @@ public final class TypeCheckerExpressions {
                     }
                     Set<String> decorators = new HashSet<>();
                     if (target.funcToken.decorators != null) {
-                        for (Token.Decorator d : target.funcToken.decorators) {
+                        for (Decorator d : target.funcToken.decorators) {
                             decorators.add(d.name);
                         }
                     }
@@ -557,7 +559,7 @@ public final class TypeCheckerExpressions {
             return;
         }
         java.util.regex.Pattern word = java.util.regex.Pattern.compile("(?<![A-Za-z0-9_.])" + java.util.regex.Pattern.quote(key) + "(?![A-Za-z0-9_])");
-        for (Token.MatchPattern p : scope.activeMatchPatterns) {
+        for (MatchPattern p : scope.activeMatchPatterns) {
             if (key.equals(p.slotKey) || key.equals(p.rightSlotKey)) {
                 p.invalidated = true;
             } else if (p.slotKey != null && p.slotKey.startsWith("(") && word.matcher(p.slotKey).find()) {

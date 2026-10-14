@@ -22,6 +22,8 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import caspien.token.Decorator;
+import caspien.token.MatchPattern;
 
 /**
  * Stage 6: type and logic checking over the import-resolved, tree-built program.
@@ -46,7 +48,7 @@ public final class TypeCheckerAccessAndAsync {
         if (indexKey == null || targetKey == null) {
             return false;
         }
-        for (Token.MatchPattern p : scope.activeMatchPatterns) {
+        for (MatchPattern p : scope.activeMatchPatterns) {
             // "into" is a superset of "in" (adds write access).
             if (!p.invalidated && (p.kind.equals("in") || p.kind.equals("into")) && indexKey.equals(p.slotKey)
                     && targetKey.equals(p.rightSlotKey)) {
@@ -63,7 +65,7 @@ public final class TypeCheckerAccessAndAsync {
         if (indexKey == null || targetKey == null) {
             return false;
         }
-        for (Token.MatchPattern p : scope.activeMatchPatterns) {
+        for (MatchPattern p : scope.activeMatchPatterns) {
             if (!p.invalidated && p.kind.equals("into") && indexKey.equals(p.slotKey)
                     && targetKey.equals(p.rightSlotKey)) {
                 return true;
@@ -1227,7 +1229,7 @@ public final class TypeCheckerAccessAndAsync {
             Token methodTok = new Token(TokenType.KEYWORD, "func", at.line, at.file);
             methodTok.decorators = new ArrayList<>();
             if (locked) {
-                Token.Decorator lockDec = new Token.Decorator("lock", new ArrayList<>(), new ArrayList<>(), at.line, at.file);
+                Decorator lockDec = new Decorator("lock", new ArrayList<>(), new ArrayList<>(), at.line, at.file);
                 lockDec.lockFieldName = "gate";
                 lockDec.lockVariants = new ArrayList<>(List.of("OPEN"));
                 methodTok.decorators.add(lockDec);

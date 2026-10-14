@@ -3,6 +3,7 @@ import caspien.config.CompilerException;
 import caspien.token.Token;
 
 import java.util.*;
+import caspien.token.MatchPattern;
 
 /**
  * A `match Some(x){...}` proof says "the object x refers to is alive HERE". It is checked once, at the top of the body, so anything that can destroy an
@@ -33,13 +34,13 @@ public final class ProofKills {
     public static int seq = 0;
     public static int loopSerial = 0;
     public static final ArrayList<Integer> loopIds = new ArrayList<>();
-    public static final IdentityHashMap<Token.MatchPattern, List<ProofKillsEv>> events = new IdentityHashMap<>();
+    public static final IdentityHashMap<MatchPattern, List<ProofKillsEv>> events = new IdentityHashMap<>();
     public static final List<ProofKillsUse> uses = new ArrayList<>();
     public static final Map<String, ProofKillsFacts> facts = new HashMap<>();
     public static final ArrayDeque<FuncInfo> funcStack = new ArrayDeque<>();
     /** Implicit proofs of `ref some` locals: a `ref some` is alive when it is made, exactly like a fresh `match Some`. Keyed "function|slot" and "function". */
-    public static final Map<String, List<Token.MatchPattern>> implicitBySlot = new HashMap<>();
-    public static final Map<String, List<Token.MatchPattern>> implicitByFunc = new HashMap<>();
+    public static final Map<String, List<MatchPattern>> implicitBySlot = new HashMap<>();
+    public static final Map<String, List<MatchPattern>> implicitByFunc = new HashMap<>();
 
     public ProofKills() {
     }
@@ -114,8 +115,8 @@ public final class ProofKills {
     }
 
     /** Remember how deep in loops the proofs were made, so only loops inside a proof's body count as "shared" later. */
-    public static void stamp(List<Token.MatchPattern> patterns) {
-        for (Token.MatchPattern p : patterns) {
+    public static void stamp(List<MatchPattern> patterns) {
+        for (MatchPattern p : patterns) {
             if (p.loopDepth < 0) {
                 p.loopDepth = loopIds.size();
             }
@@ -130,13 +131,13 @@ public final class ProofKills {
     /** A `ref some` local was just assigned: from here until it is assigned again it is "proven alive" by its own creation. */
     public static void implicit(String slot, String pointee) {
         String fk = funcKey();
-        List<Token.MatchPattern> old = implicitBySlot.get(fk + "|" + slot);
+        List<MatchPattern> old = implicitBySlot.get(fk + "|" + slot);
         if (old != null) {
-            for (Token.MatchPattern o : old) {
+            for (MatchPattern o : old) {
                 o.invalidated = true;
             }
         }
-        Token.MatchPattern p = new Token.MatchPattern(slot, "alive", null);
+        MatchPattern p = new MatchPattern(slot, "alive", null);
         p.loopDepth = loopIds.size();
         p.pointee = pointee;
         implicitBySlot.computeIfAbsent(fk + "|" + slot, k -> new ArrayList<>()).add(p);
@@ -144,21 +145,21 @@ public final class ProofKills {
     }
 
     /** A read of a `ref some` local: it must still be covered by its creation proof. */
-    public static void refSomeRead(Token at, List<Token.MatchPattern> active) {
+    public static void refSomeRead(Token at, List<MatchPattern> active) {
         if (suppressReads > 0) {
             return;
         }
-        List<Token.MatchPattern> all = implicitBySlot.get(funcKey() + "|" + at.text);
+        List<MatchPattern> all = implicitBySlot.get(funcKey() + "|" + at.text);
         if (all == null) {
             return;
         }
-        List<Token.MatchPattern> cands = new ArrayList<>();
-        for (Token.MatchPattern p : all) {
+        List<MatchPattern> cands = new ArrayList<>();
+        for (MatchPattern p : all) {
             if (!p.invalidated) {
                 cands.add(p);
             }
         }
-        for (Token.MatchPattern p : active) {       // a `match Some(r)` or `assume match Some(r)` made after the free proves it again
+        for (MatchPattern p : active) {       // a `match Some(r)` or `assume match Some(r)` made after the free proves it again
             if (!p.invalidated && p.kind.equals("alive") && at.text.equals(p.slotKey)) {
                 cands.add(p);
             }
@@ -169,26 +170,26 @@ public final class ProofKills {
     }
 
     /** True when something that may destroy was recorded after this alive proof was made (only the post-check pass knows whether it really can). */
-    public static boolean hasEvents(Token.MatchPattern p) {
+    public static boolean hasEvents(MatchPattern p) {
         List<ProofKillsEv> l = events.get(p);
         return l != null && !l.isEmpty();
     }
 
-    public static void use(Token at, List<Token.MatchPattern> cands) {
+    public static void use(Token at, List<MatchPattern> cands) {
         use(at, cands, null);
     }
 
-    public static void use(Token at, List<Token.MatchPattern> cands, String name) {
+    public static void use(Token at, List<MatchPattern> cands, String name) {
         uses.add(new ProofKillsUse(++seq, snapshot(), at, cands, name));
     }
 
     /** A direct destroying event in the function being checked. */
-    public static void kill(List<Token.MatchPattern> active, Token at, String what) {
+    public static void kill(List<MatchPattern> active, Token at, String what) {
         kill(active, at, what, null, null);
     }
 
     /** `memberRoot`: when the freed object is a member reached through variable v (`v.backing`, `v.n[i]`), v's own target is not what is freed. */
-    public static void kill(List<Token.MatchPattern> active, Token at, String what, String memberRoot, Set<String> types) {
+    public static void kill(List<MatchPattern> active, Token at, String what, String memberRoot, Set<String> types) {
         FuncInfo f = funcStack.peek();
         if (f != null && f.mangledName != null) {
             ProofKillsFacts fa = facts.computeIfAbsent(f.mangledName, k -> new ProofKillsFacts());
@@ -204,7 +205,7 @@ public final class ProofKills {
         record(active, new ProofKillsEv(++seq, snapshot(), at, what, null, memberRoot, types));
     }
 
-    public static void call(List<Token.MatchPattern> active, Token at, String callee) {
+    public static void call(List<MatchPattern> active, Token at, String callee) {
         FuncInfo f = funcStack.peek();
         if (f != null && f.mangledName != null) {
             facts.computeIfAbsent(f.mangledName, k -> new ProofKillsFacts()).callees.add(callee);
@@ -212,15 +213,15 @@ public final class ProofKills {
         record(active, new ProofKillsEv(++seq, snapshot(), at, null, callee, null, null));
     }
 
-    public static void record(List<Token.MatchPattern> active, ProofKillsEv e) {
-        for (Token.MatchPattern p : active) {
+    public static void record(List<MatchPattern> active, ProofKillsEv e) {
+        for (MatchPattern p : active) {
             if (p.kind.equals("alive") && !p.invalidated && !(e.skipSlot != null && e.skipSlot.equals(p.slotKey))) {
                 events.computeIfAbsent(p, k -> new ArrayList<>()).add(e);
             }
         }
-        List<Token.MatchPattern> imp = implicitByFunc.get(funcKey());
+        List<MatchPattern> imp = implicitByFunc.get(funcKey());
         if (imp != null) {
-            for (Token.MatchPattern p : imp) {
+            for (MatchPattern p : imp) {
                 if (!p.invalidated && !(e.skipSlot != null && e.skipSlot.equals(p.slotKey))) {
                     events.computeIfAbsent(p, k -> new ArrayList<>()).add(e);
                 }
@@ -312,7 +313,7 @@ public final class ProofKills {
         }
     }
 
-    public static boolean kills(Token.MatchPattern p, boolean all, Set<String> types) {
+    public static boolean kills(MatchPattern p, boolean all, Set<String> types) {
         return all || types == null || p.pointee == null || types.contains(p.pointee);
     }
 
@@ -336,7 +337,7 @@ public final class ProofKills {
             boolean ok = false;
             String reason = null;
             ProofKillsEv last = null;
-            for (Token.MatchPattern p : u.cands) {
+            for (MatchPattern p : u.cands) {
                 boolean killed = false;
                 for (ProofKillsEv e : events.getOrDefault(p, Collections.emptyList())) {
                     boolean before = e.seq < u.seq;

@@ -110,17 +110,7 @@ public class Token {
      */
     public List<GenericBoundCheck> pendingGenericBoundChecks;
 
-    /** One entry of `pendingGenericBoundChecks` -- see its own doc comment. */
-    public static final class GenericBoundCheck {
-        public final String typeParamName;
-        public final String concreteTypeName;
-        public final String interfaceName;
-        public GenericBoundCheck(String typeParamName, String concreteTypeName, String interfaceName) {
-            this.typeParamName = typeParamName;
-            this.concreteTypeName = concreteTypeName;
-            this.interfaceName = interfaceName;
-        }
-    }
+
 
     /**
      * Usage-site generic type arguments, e.g. the raw token groups for
@@ -152,93 +142,7 @@ public class Token {
      */
     public List<String> implementsNames;
 
-    /**
-     * A parsed "@name(args)" or bare "@name" line -- confirmed directly,
-     * parsing is deliberately simple: if a line starts with '@' it's a
-     * decorator, and it's a decorator to the end of that line. Attached
-     * by Parser's stripDecoratorsDeep to the raw first token of whatever
-     * line follows a run of decorator lines, then copied onto the final
-     * "gathered" token by whichever gather* method builds it (so it
-     * survives being wrapped into a new Token instance, e.g.
-     * gatherFunc's own KEYWORD("func") node).
-     */
-    public static final class Decorator {
-        public final String name;
-        public final List<String> args; // raw text -- a STRING literal's own text (quotes stripped) or a bare identifier's text
-        public final List<Boolean> argIsString; // parallel to `args`: true if that argument was written as a quoted string, false if a bare identifier -- needed to re-emit it correctly (can't be guessed back from the text alone, e.g. an identifier argument could itself look like "C")
-        public final int line;
-        public final String file;
-        /**
-         * "@lock(match self.x : X)... on a struct rather than a
-         * method," confirmed directly -- this shape is a genuinely
-         * different grammar from every other decorator argument (a
-         * bare identifier or string), so it's never folded into
-         * `args`/`argIsString` above at all; both fields here stay null
-         * for every decorator except this one. `lockFieldName` is "x"
-         * (the discriminant field); `lockVariants` is "X" as written,
-         * one entry per '|'-chained variant (e.g. ["TRUE","FALSE"] for
-         * "TRUE|FALSE").
-         */
-        public String lockFieldName;
-        public List<String> lockVariants;
-        /**
-         * "@lock(match x in self.x2)... support the and operator,
-         * allowing... match i in self.backing and i2 in self.backing,"
-         * confirmed directly -- a second, genuinely different '@lock'
-         * qualifier shape, method-only (never on a struct), and never
-         * mixed with the enum-style fields just above within one
-         * decorator ("it doesnt mix and match with the enum style,"
-         * confirmed directly). `lockInParams`/`lockInFields` are
-         * parallel lists, one entry per 'and'-chained clause -- the
-         * i-th param goes with the i-th field ("i in self.backing" is
-         * `lockInParams[0]="i"`, `lockInFields[0]="backing"`).
-         */
-        public List<String> lockInParams;
-        public List<String> lockInFields;
-        /**
-         * Parallel to `lockInParams`/`lockInFields`, one entry per
-         * 'and'-chained clause -- the literal operator text written at
-         * that clause ("in" or "within"). "I want the within operator
-         * to be able to be used... in a @lock(match) decorator,"
-         * confirmed directly: `within` is accepted at exactly the same
-         * grammar position `in` is (Parser.parseLockInQualifier), but
-         * which one was written still matters for validation
-         * (TypeChecker.validateLockInClause checks the clause against
-         * `checkIn`'s or `checkWithin`'s own type rules, whichever was
-         * actually written) and for interface conformance
-         * (`describeLockMismatch` requires the same operator at the
-         * same position, not just the same param/field). The proof it
-         * grants once satisfied is identical either way -- "the same
-         * type assurance to the type system," confirmed directly --
-         * `assumedLockPatterns`/`requireMethodLockProofs` both still key
-         * off the single, shared "in" `MatchPattern` kind regardless of
-         * which operator this list says was actually written.
-         */
-        public List<String> lockInOperators;
-        /**
-         * Parallel to `lockInParams`/`lockInFields`/`lockInOperators`,
-         * one entry per 'and'-chained clause -- true when that clause's
-         * own parameter was written wrapped in "Some(...)"
-         * ("@lock(match Some(i) in self.x)"), the same index-bounds-plus
-         * -element-alive sugar the bare-match/for-match forms support,
-         * extended here to the method-lock qualifier. Interface
-         * conformance requires an exact match on this flag at each
-         * clause position, the same "exact-match discipline every other
-         * part of a lock clause already gets" precedent the operator
-         * itself (`lockInOperators`) already established -- a plain
-         * `in`-style implementation can never satisfy a `Some(...)`-
-         * wrapped interface clause, or vice versa, even though both
-         * grant a superset/subset-related proof.
-         */
-        public List<Boolean> lockInSomeWrapped;
-        public Decorator(String name, List<String> args, List<Boolean> argIsString, int line, String file) {
-            this.name = name;
-            this.args = args;
-            this.argIsString = argIsString;
-            this.line = line;
-            this.file = file;
-        }
-    }
+
 
     /** Null/empty if this token has no decorators. See the Decorator class doc for how these get here. */
     public List<Decorator> decorators;
@@ -525,90 +429,7 @@ public class Token {
 
 
 
-    /**
-     * "The compiler just needs to store these assertions about its type
-     * system" -- confirmed directly. One entry per leaf condition in a
-     * "match" statement's (possibly "and"-chained) condition, set by
-     * TypeChecker.checkMatch on the "match" KEYWORD token itself. Not
-     * yet consumed anywhere (no narrowing happens inside the match block
-     * this round, confirmed directly: "later we will address how these
-     * change the type checking within the match block itself") -- purely
-     * recorded for a future pass to read.
-     */
-    public static final class MatchPattern {
-        /** The left operand's slot (a bare variable name or simple "a.b" path) -- null if the operand isn't a trackable slot at all (e.g. a call result). */
-        public final String slotKey;
-        /** "instanceof", "implements", "in", or "alive" (the bare-expression form). */
-        public final String kind;
-        /** The right-hand type/interface name for "instanceof"/"implements" -- null for "in"/"alive". */
-        public final String targetName;
-        /** For "in" only: the right operand's own slot (a bare variable name or simple "a.b" path) -- null if untrackable, or for any other kind. Lets a later bounds-check confirm a proof is being reused against the exact same target it was proven against, not a different one that merely has the same index variable. */
-        public final String rightSlotKey;
-        /**
-         * Set once a real write anywhere within this proof's own
-         * guarded region reassigns the exact slot(s) this proof
-         * depends on (`slotKey` or `rightSlotKey`) -- see
-         * `TypeChecker.invalidateMatchPatternsForWrite`. Deliberately
-         * mutable, unlike every other field here: a `MatchPattern`
-         * instance is created exactly once, when its own `match`/`for`/
-         * `lock` condition is checked, and from then on the *same
-         * object* (never a copy) is shared by reference down through
-         * every nested scope's own copy-and-extend `activeMatchPatterns`
-         * list for as long as that proof's own guarded region lexically
-         * continues -- so flipping this one field here is visible to
-         * every later proof-check anywhere in that same region, however
-         * deeply nested through an 'if'/loop/nested 'match', while a
-         * completely different, later `match` on the same variable
-         * builds its own fresh `MatchPattern` object (starting
-         * `invalidated = false` again) that this can never affect.
-         * Found and fixed directly: "match b != 0{ b = mut 0; a / b }"
-         * and "match i into arr{ arr = resize(arr, 1, 0); arr[i] = ...
-         * }" both used to compile and then crash/corrupt memory at
-         * runtime -- the proof was checked once, against the slot's
-         * value *at the moment the match condition ran*, and never
-         * invalidated by a *later* write to that same slot within its
-         * own guarded body.
-         */
-        public boolean invalidated = false;
-        /** Loop nesting depth at which this proof was made (set by ProofKills.stamp); -1 until stamped. */
-        public int loopDepth = -1;
-        /** Struct type name of the object a `ref some` proof points at (null = unknown: any destroying event ends it). */
-        public String pointee = null;
-        /**
-         * For "enum_field_variants" only (a real "match receiver.field
-         * {...}" case block's own proof, `targetName` holding "field")
-         * -- the exact set of variants this specific case's own body is
-         * proven to cover (a case's own "|"-chain, or, for a `default`
-         * case, whatever no earlier case already claimed). Both
-         * `TypeChecker.requireStructLockProof` (the original, struct-
-         * level "@lock(match self.x : X)" feature) and the newer,
-         * method-level enum-style "@lock(...)" both read this same
-         * proof, checking their own required set is a superset of it --
-         * a genuinely general mechanism, granted for *any* "." match
-         * condition, not only one a struct happens to have its own
-         * lock qualifier for.
-         */
-        public final List<String> provenVariants;
-        /** "alive" only: the proof is on a nullable `ref` slot (an id), so a use of the subject reads the proof's address slot / resolves the id. */
-        public boolean onId;
-        public MatchPattern(String slotKey, String kind, String targetName) {
-            this(slotKey, kind, targetName, (String) null);
-        }
-        public MatchPattern(String slotKey, String kind, String targetName, String rightSlotKey) {
-            this.slotKey = slotKey;
-            this.kind = kind;
-            this.targetName = targetName;
-            this.rightSlotKey = rightSlotKey;
-            this.provenVariants = null;
-        }
-        public MatchPattern(String slotKey, String kind, String targetName, List<String> provenVariants) {
-            this.slotKey = slotKey;
-            this.kind = kind;
-            this.targetName = targetName;
-            this.rightSlotKey = null;
-            this.provenVariants = provenVariants;
-        }
-    }
+
 
 
 

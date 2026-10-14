@@ -2,6 +2,7 @@ package caspien.typechecker;
 
 import caspien.token.Token;
 import java.util.List;
+import caspien.token.Decorator;
 
 public class RawMethodSig {
     public Token nameTok;
@@ -12,7 +13,7 @@ public class RawMethodSig {
     /** Only for isDefault: the interface's gathered "func" token, deep-cloned for each impl that omits the method (see materializeDefaultMethod). */
     public Token defaultBodyTok;
     /** Decorators of the interface method declaration (e.g. @lock/@unlock on @guard interfaces), checked against the implementing method. */
-    public List<Token.Decorator> decorators;
+    public List<Decorator> decorators;
     /** "static" signature; kept in the same maps as instance signatures (a name clash is still an error), this flag keeps the two kinds apart. */
     public boolean isStatic;
 }

@@ -22,6 +22,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import caspien.token.MatchPattern;
 
 /**
  * Stage 6: type and logic checking over the import-resolved, tree-built program.
@@ -87,7 +88,7 @@ public final class TypeCheckerStatements {
             }
             validateStaticLetPlacement(func.funcToken.childs);
             validateRecursiveFuncRequirements(func);
-            List<Token.MatchPattern> assumedLocks = hub.locksAndProofs.assumedLockPatterns(func);
+            List<MatchPattern> assumedLocks = hub.locksAndProofs.assumedLockPatterns(func);
             Scope bodyCheckScope = assumedLocks.isEmpty() ? scope : new Scope(scope, assumedLocks, false);
             hub.model.insideConstructorBodyForStruct = func.isConstructor ? func.constructorConcreteName : null;
             f.sc1 = scope;
@@ -485,7 +486,7 @@ public final class TypeCheckerStatements {
         String argSlotKey = hub.expressions.slotKeyOf(finalArg);
         boolean proven = false;
         if (argSlotKey != null) {
-            for (Token.MatchPattern p : scope.activeMatchPatterns) {
+            for (MatchPattern p : scope.activeMatchPatterns) {
                 if (!p.invalidated && p.kind.equals("in") && argSlotKey.equals(p.slotKey)
                         && rangeParamName.equals(p.rightSlotKey)) {
                     proven = true;
@@ -937,8 +938,8 @@ public final class TypeCheckerStatements {
             f.data = f.scope.unsafeBlock;      // set only for the scope of a written `unsafe` block: its direct children are attributed one by one
         } else if (f.phase == 2) {
             @SuppressWarnings("unchecked")
-            List<Token.MatchPattern> assumePatterns = (List<Token.MatchPattern>) f.gotFrame.out;
-            List<Token.MatchPattern> assumeExtended = new ArrayList<>(f.scope.activeMatchPatterns);
+            List<MatchPattern> assumePatterns = (List<MatchPattern>) f.gotFrame.out;
+            List<MatchPattern> assumeExtended = new ArrayList<>(f.scope.activeMatchPatterns);
             assumeExtended.addAll(assumePatterns);
             f.scope = new Scope(f.scope, assumeExtended, false);
         }
@@ -1296,8 +1297,8 @@ public final class TypeCheckerStatements {
             case "assume": {
                 if (f.phase == 1) {
                     @SuppressWarnings("unchecked")
-                    List<Token.MatchPattern> assumePatterns = (List<Token.MatchPattern>) f.gotFrame.out;
-                    List<Token.MatchPattern> assumeExtended = new ArrayList<>(scope.activeMatchPatterns);
+                    List<MatchPattern> assumePatterns = (List<MatchPattern>) f.gotFrame.out;
+                    List<MatchPattern> assumeExtended = new ArrayList<>(scope.activeMatchPatterns);
                     assumeExtended.addAll(assumePatterns);
                     Scope assumeBlockScope = new Scope(scope, assumeExtended, false);
                     f.sc1 = assumeBlockScope;
@@ -1512,11 +1513,11 @@ public final class TypeCheckerStatements {
         }
     }
 
-    public List<Token.MatchPattern> checkAssumeMatchCondition(Token stmt, Scope scope, FuncInfo func) {
+    public List<MatchPattern> checkAssumeMatchCondition(Token stmt, Scope scope, FuncInfo func) {
         CheckFrame f = assumeCondFrame(stmt, scope, func);
         hub.driver.run(f);
         @SuppressWarnings("unchecked")
-        List<Token.MatchPattern> patterns = (List<Token.MatchPattern>) f.out;
+        List<MatchPattern> patterns = (List<MatchPattern>) f.out;
         return patterns;
     }
 
@@ -1533,7 +1534,7 @@ public final class TypeCheckerStatements {
                 throw new CompilerException("type", stmt.file, stmt.line,
                         "'assume match' is only allowed inside 'unsafe' code");
             }
-            List<Token.MatchPattern> patterns = new ArrayList<>();
+            List<MatchPattern> patterns = new ArrayList<>();
             f.out = patterns;
             if (stmt.assumeFieldVariants != null) {
                 CheckFrame c = new CheckFrame(CheckFrame.ASSUME_FIELD, stmt, f.scope, f.func);
@@ -1553,7 +1554,7 @@ public final class TypeCheckerStatements {
     }
 
 
-    public void checkAssumeFieldVariant(Token stmt, Scope scope, FuncInfo func, List<Token.MatchPattern> out) {
+    public void checkAssumeFieldVariant(Token stmt, Scope scope, FuncInfo func, List<MatchPattern> out) {
         CheckFrame f = new CheckFrame(CheckFrame.ASSUME_FIELD, stmt, scope, func);
         f.data = out;
         hub.driver.run(f);
@@ -1564,7 +1565,7 @@ public final class TypeCheckerStatements {
         Token stmt = f.node;
         Scope scope = f.scope;
         @SuppressWarnings("unchecked")
-        List<Token.MatchPattern> out = (List<Token.MatchPattern>) f.data;
+        List<MatchPattern> out = (List<MatchPattern>) f.data;
         Token fieldAccess = stmt.operand();
         if (f.phase == 0) {
             // float-state form: records the same "float_state" proof as a real match case body, and never runs.
@@ -1591,7 +1592,7 @@ public final class TypeCheckerStatements {
                 }
                 String floatSlot = hub.expressions.exprKeyOf(fieldAccess);
                 if (floatSlot != null) {
-                    out.add(new Token.MatchPattern(floatSlot, "float_state", null));
+                    out.add(new MatchPattern(floatSlot, "float_state", null));
                 }
                 return f.done(null);
             }
@@ -1620,7 +1621,7 @@ public final class TypeCheckerStatements {
         }
         String fieldSlot = hub.expressions.slotKeyOf(fieldAccess.left);
         if (fieldSlot != null) {
-            out.add(new Token.MatchPattern(fieldSlot, "enum_field_variants", fieldAccess.right.text,
+            out.add(new MatchPattern(fieldSlot, "enum_field_variants", fieldAccess.right.text,
                     stmt.assumeFieldVariants));
         }
         return f.done(null);
@@ -1631,11 +1632,11 @@ public final class TypeCheckerStatements {
      * Safe code: a match/elsematch branch must add at least one proof not already active (an alive proof with kill events
      * since it was made counts as stale). Never called for a bare else or for case matches. See docs/TypeChecker.md, "Match chains".
      */
-    public void requireNewTypeAssertion(List<Token.MatchPattern> newPatterns, Scope scope, Token at) {
+    public void requireNewTypeAssertion(List<MatchPattern> newPatterns, Scope scope, Token at) {
         if (scope.currentSafety.equals("unsafe") || newPatterns.isEmpty()) {
             return;
         }
-        for (Token.MatchPattern p : newPatterns) {
+        for (MatchPattern p : newPatterns) {
             // an alive proof that has seen a possibly destroying event since it was made may be stale: matching again is how it is renewed
             boolean alreadyActive = scope.activeMatchPatterns.stream().anyMatch(existing -> matchPatternsEqual(p, existing) && !ProofKills.hasEvents(existing));
             if (!alreadyActive) {
@@ -1648,7 +1649,7 @@ public final class TypeCheckerStatements {
     }
 
     /** Field-by-field equality; MatchPattern has no equals(). */
-    public boolean matchPatternsEqual(Token.MatchPattern a, Token.MatchPattern b) {
+    public boolean matchPatternsEqual(MatchPattern a, MatchPattern b) {
         return java.util.Objects.equals(a.slotKey, b.slotKey) && java.util.Objects.equals(a.kind, b.kind)
                 && java.util.Objects.equals(a.targetName, b.targetName)
                 && java.util.Objects.equals(a.rightSlotKey, b.rightSlotKey)
@@ -1698,7 +1699,7 @@ public final class TypeCheckerStatements {
             @SuppressWarnings("unchecked")
             Set<String> preState = (Set<String>) st[0];
             @SuppressWarnings("unchecked")
-            List<Token.MatchPattern> patterns = (List<Token.MatchPattern>) st[5];
+            List<MatchPattern> patterns = (List<MatchPattern>) st[5];
             boolean isBaseCaseMatch = false;
             if (f.phase != 2) {
                 patterns = new ArrayList<>();
@@ -1713,7 +1714,7 @@ public final class TypeCheckerStatements {
                 isBaseCaseMatch = patterns.size() == 1 && patterns.get(0).kind.equals("is_base");
                 requireNewTypeAssertion(patterns, scope, condition);
             }
-            List<Token.MatchPattern> extended = new ArrayList<>(scope.activeMatchPatterns);
+            List<MatchPattern> extended = new ArrayList<>(scope.activeMatchPatterns);
             extended.addAll(patterns);
             Set<String> branchMoved = new HashSet<>(preState);
             Scope branchScope = new Scope(scope, branchMoved, extended, isBaseCaseMatch);
@@ -1735,8 +1736,8 @@ public final class TypeCheckerStatements {
 
 
     /** Shadows a plain local variable with the concrete type proven by an "instanceof" proof for the branch (not for dotted/indexed slots). See docs/TypeChecker.md, "Match chains". */
-    public void narrowInstanceofSlots(List<Token.MatchPattern> patterns, Scope outerScope, Scope branchScope) {
-        for (Token.MatchPattern p : patterns) {
+    public void narrowInstanceofSlots(List<MatchPattern> patterns, Scope outerScope, Scope branchScope) {
+        for (MatchPattern p : patterns) {
             if (!"instanceof".equals(p.kind) || p.slotKey == null || p.slotKey.contains(".") || p.slotKey.contains("[")) {
                 continue;
             }
