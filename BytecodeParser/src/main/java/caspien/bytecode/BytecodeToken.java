@@ -6,21 +6,12 @@ package caspien.bytecode;
  */
 public final class BytecodeToken {
 
-    public enum Kind {
-        /** A mnemonic or operand: "PUSH", "12", "imut_u64", a label, a char literal. */
-        CODE,
-        /** A quoted string literal, quotes included (a STRING line's text). */
-        STRING,
-        /** Reserved; HOB has no comment syntax. */
-        COMMENT
-    }
-
     public final String text;
     public final String file;
     public final int line;
-    public final Kind kind;
+    public final BytecodeTokenKind kind;
 
-    public BytecodeToken(String text, String file, int line, Kind kind) {
+    public BytecodeToken(String text, String file, int line, BytecodeTokenKind kind) {
         this.text = text;
         this.file = file;
         this.line = line;

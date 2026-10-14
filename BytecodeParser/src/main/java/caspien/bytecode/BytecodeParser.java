@@ -41,7 +41,7 @@ public final class BytecodeParser {
                     i++; // consume closing quote
                 }
                 String text = rawLine.substring(start, Math.min(i, len));
-                tokens.add(new BytecodeToken(text, originFile, lineNumber, BytecodeToken.Kind.STRING));
+                tokens.add(new BytecodeToken(text, originFile, lineNumber, BytecodeTokenKind.STRING));
                 continue;
             }
             if (c == '\'') {
@@ -58,7 +58,7 @@ public final class BytecodeParser {
                     end = i + 3;
                 }
                 if (end != -1 && (end == len || Character.isWhitespace(rawLine.charAt(end)))) {
-                    tokens.add(new BytecodeToken(rawLine.substring(i, end), originFile, lineNumber, BytecodeToken.Kind.CODE));
+                    tokens.add(new BytecodeToken(rawLine.substring(i, end), originFile, lineNumber, BytecodeTokenKind.CODE));
                     i = end;
                     continue;
                 }
@@ -67,7 +67,7 @@ public final class BytecodeParser {
             while (i < len && !Character.isWhitespace(rawLine.charAt(i))) {
                 i++;
             }
-            tokens.add(new BytecodeToken(rawLine.substring(start, i), originFile, lineNumber, BytecodeToken.Kind.CODE));
+            tokens.add(new BytecodeToken(rawLine.substring(start, i), originFile, lineNumber, BytecodeTokenKind.CODE));
         }
         return tokens;
     }

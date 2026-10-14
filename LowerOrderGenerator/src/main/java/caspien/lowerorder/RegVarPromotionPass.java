@@ -2,6 +2,7 @@ package caspien.lowerorder;
 import caspien.bytecode.BytecodeProgram;
 import caspien.bytecode.BytecodeStatement;
 import caspien.bytecode.BytecodeToken;
+import caspien.bytecode.BytecodeTokenKind;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -687,7 +688,7 @@ public class RegVarPromotionPass {
     private static BytecodeStatement mk(BytecodeToken ref, String... texts) {
         BytecodeStatement r = new BytecodeStatement(texts.length);
         for (String t : texts) {
-            r.add(new BytecodeToken(t, ref.file, ref.line, BytecodeToken.Kind.CODE));
+            r.add(new BytecodeToken(t, ref.file, ref.line, BytecodeTokenKind.CODE));
         }
         return r;
     }
@@ -937,7 +938,7 @@ public class RegVarPromotionPass {
         BytecodeToken a = l.get(0);
         BytecodeStatement r = new BytecodeStatement(t.size());
         for (String s : t) {
-            r.add(new BytecodeToken(s, a.file, a.line, BytecodeToken.Kind.CODE));
+            r.add(new BytecodeToken(s, a.file, a.line, BytecodeTokenKind.CODE));
         }
         return r;
     }

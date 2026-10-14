@@ -83,7 +83,7 @@ public class Compiler {
         int code;
         try {
             code = run(args);
-        } catch (UsageError ue) {
+        } catch (CompilerUsageError ue) {
             System.err.println(ue.getMessage());
             System.err.println();
             System.err.println(USAGE);
@@ -102,11 +102,7 @@ public class Compiler {
     private static final String USAGE =
             "Usage: java Compiler -i <input.caspien> <output> [--no-warnings] [--fs-report] [--asm | --lob | --hob] [--trace-depth N] [--no-cache] [--cache-report] [--clear-cache]\n       java Compiler -i <input.caspien> --audit [--audit-no-stdlib]\n       java Compiler -i <input.caspien> --viz [out.html]\n       java Compiler -i <input.caspien> --fix termination|justify|unsafe-split [--write] [--fix-stdlib]";
 
-    private static class UsageError extends RuntimeException {
-        UsageError(String message) {
-            super(message);
-        }
-    }
+
 
     // ---- CLI ----------------------------------------------------------
 
@@ -127,7 +123,7 @@ public class Compiler {
             switch (a) {
                 case "-i":
                     if (i + 1 >= args.length) {
-                        throw new UsageError("-i requires a path");
+                        throw new CompilerUsageError("-i requires a path");
                     }
                     inputArg = args[++i];
                     break;
@@ -154,7 +150,7 @@ public class Compiler {
                     break;
                 case "--fix":
                     if (i + 1 >= args.length) {
-                        throw new UsageError("--fix requires a mode: termination, justify, unsafe-split (comma separated)");
+                        throw new CompilerUsageError("--fix requires a mode: termination, justify, unsafe-split (comma separated)");
                     }
                     fixModes = args[++i];
                     break;
@@ -170,15 +166,15 @@ public class Compiler {
                     break;
                 case "--trace-depth":
                     if (i + 1 >= args.length) {
-                        throw new UsageError("--trace-depth requires a number");
+                        throw new CompilerUsageError("--trace-depth requires a number");
                     }
                     try {
                         traceDepth = Integer.parseInt(args[++i]);
                     } catch (NumberFormatException e) {
-                        throw new UsageError("--trace-depth requires a whole number, got: " + args[i]);
+                        throw new CompilerUsageError("--trace-depth requires a whole number, got: " + args[i]);
                     }
                     if (traceDepth < 1 || traceDepth > 1024) {
-                        throw new UsageError("--trace-depth must be from 1 to 1024, got: " + traceDepth);
+                        throw new CompilerUsageError("--trace-depth must be from 1 to 1024, got: " + traceDepth);
                     }
                     break;
                 case "--no-cache":
@@ -192,11 +188,11 @@ public class Compiler {
                     break;
                 default:
                     if (a.startsWith("-")) {
-                        throw new UsageError("unknown flag: " + a);
+                        throw new CompilerUsageError("unknown flag: " + a);
                     } else if (outputArg == null) {
                         outputArg = a;
                     } else {
-                        throw new UsageError("unexpected extra argument: " + a);
+                        throw new CompilerUsageError("unexpected extra argument: " + a);
                     }
             }
         }
@@ -211,7 +207,7 @@ public class Compiler {
             }
         }
         if (inputArg == null) {
-            throw new UsageError("missing required -i <input.caspien>");
+            throw new CompilerUsageError("missing required -i <input.caspien>");
         }
         Path vizHtml = null;
         if (viz) {
@@ -227,17 +223,17 @@ public class Compiler {
             outputArg = "output/audit";   // an audit builds nothing; the front end's intermediate file goes here
         }
         if (outputArg == null) {
-            throw new UsageError("missing required <output> path");
+            throw new CompilerUsageError("missing required <output> path");
         }
         int stopCount = (stopAsm ? 1 : 0) + (stopLob ? 1 : 0) + (stopHob ? 1 : 0);
         if (stopCount > 1) {
-            throw new UsageError("only one of --asm, --lob, --hob may be given");
+            throw new CompilerUsageError("only one of --asm, --lob, --hob may be given");
         }
 
         Path input = Paths.get(inputArg).toAbsolutePath().normalize();
         Path output = Paths.get(outputArg).toAbsolutePath().normalize();
         if (!Files.exists(input)) {
-            throw new UsageError("input file does not exist: " + input);
+            throw new CompilerUsageError("input file does not exist: " + input);
         }
 
         Path root = Paths.get("").toAbsolutePath(); // this orchestrator's own directory -- everything below is relative to it
@@ -263,7 +259,7 @@ public class Compiler {
 
         Path buildDir = null; // created lazily, only if an intermediate file is actually needed
 
-        Diagnostics diag = new Diagnostics(noWarnings);
+        CompilerDiagnostics diag = new CompilerDiagnostics(noWarnings);
         CompilerCache cache = new CompilerCache(cacheRoot, !noCache, cacheReport);
 
         // Each stage's cache key is the hash of everything its output depends on (see CompilerCache); an unchanged stage is not run again.
@@ -292,7 +288,7 @@ public class Compiler {
         if (viz) {
             // --viz builds nothing, like --audit: the page goes to vizHtml
             feOptions.put("viz", "1");
-            Out o = runFrontend(astGenDir, input, feConfigs, feOptions, diag, null);
+            CompilerOut o = runFrontend(astGenDir, input, feConfigs, feOptions, diag, null);
             if (!diag.hasFatalError()) {
                 if (vizHtml.getParent() != null) {
                     Files.createDirectories(vizHtml.getParent());
@@ -317,7 +313,7 @@ public class Compiler {
             if (fixStdlib) {
                 fixOptions.put("fix-stdlib", "1");
             }
-            Out fix = runFrontend(astGenDir, input, feConfigs, fixOptions, diag, null);
+            CompilerOut fix = runFrontend(astGenDir, input, feConfigs, fixOptions, diag, null);
             if (diag.hasFatalError()) {
                 return diag.exitCode();
             }
@@ -328,7 +324,7 @@ public class Compiler {
             if (fixWrite && Files.isRegularFile(manifest)) {
                 Map<String, String> verifyOptions = new java.util.HashMap<>(feOptions);
                 verifyOptions.put("fix-verify", hash);
-                Diagnostics verify = new Diagnostics(noWarnings);
+                CompilerDiagnostics verify = new CompilerDiagnostics(noWarnings);
                 runFrontend(astGenDir, input, feConfigs, verifyOptions, verify, null);
                 if (verify.hasFatalError()) {
                     for (String l : Files.readAllLines(manifest, StandardCharsets.UTF_8)) {
@@ -361,8 +357,8 @@ public class Compiler {
                             if (fixStdlib) {
                                 oneOptions.put("fix-stdlib", "1");
                             }
-                            Diagnostics d3 = new Diagnostics(noWarnings);
-                            Out one = runFrontend(astGenDir, input, feConfigs, oneOptions, d3, null);
+                            CompilerDiagnostics d3 = new CompilerDiagnostics(noWarnings);
+                            CompilerOut one = runFrontend(astGenDir, input, feConfigs, oneOptions, d3, null);
                             Path man2 = bak2.resolve("manifest.txt");
                             if (d3.hasFatalError() || !Files.isRegularFile(man2)) {
                                 left++;
@@ -370,7 +366,7 @@ public class Compiler {
                             }
                             Map<String, String> check = new java.util.HashMap<>(feOptions);
                             check.put("fix-verify", one.reports.get("fixHash"));
-                            Diagnostics v4 = new Diagnostics(noWarnings);
+                            CompilerDiagnostics v4 = new CompilerDiagnostics(noWarnings);
                             runFrontend(astGenDir, input, feConfigs, check, v4, null);
                             if (v4.hasFatalError()) {
                                 for (String l : Files.readAllLines(man2, StandardCharsets.UTF_8)) {
@@ -402,7 +398,7 @@ public class Compiler {
             if (auditNoStdlib) {
                 feOptions.put("audit-no-stdlib", "1");
             }
-            Out o = runFrontend(astGenDir, input, feConfigs, feOptions, diag, null);
+            CompilerOut o = runFrontend(astGenDir, input, feConfigs, feOptions, diag, null);
             if (!diag.hasFatalError()) {
                 System.out.print(o.reports.get("audit"));
             }
@@ -456,7 +452,7 @@ public class Compiler {
         // ---- Stage 5: assemble + link (real toolchain, chosen by codegen.config's own target) ----
         String tools = toolIdentity(target);
         String key5 = tools == null ? null : CompilerCache.sha("S5\n" + target + (jccPadding ? "\njcc" : "") + "\n" + tools + "\n--in--\n" + CompilerCache.fileHash(asmOut));
-        CompilerCache.StageLog log5 = new CompilerCache.StageLog();
+        CompilerStageLog log5 = new CompilerStageLog();
         if (cache.restore("s5", key5, output, false, log5)) {
             cache.note("s5", true);
         } else {
@@ -505,14 +501,7 @@ public class Compiler {
         return sb.toString();
     }
 
-    /** What a library stage returned, read from its Result object: the output text, the stderr-style messages, whether it failed, and (front end) extras. */
-    private static final class Out {
-        String text;
-        List<String> messages = new ArrayList<>();
-        boolean failed;
-        List<String> deps;
-        Map<String, String> reports = new java.util.HashMap<>();
-    }
+
 
     /**
      * Calls `className.method(paramTypes...)` of a stage's library entry class in this JVM. The stage's classes are loaded from its own
@@ -520,9 +509,9 @@ public class Compiler {
      * state of the stage dies with the call). `resultField` names the public String field of the Result holding the output text.
      * A stage that throws is reported like a stand-alone stage that crashed (stack trace as the error text, failed).
      */
-    private static Out callLibrary(Path componentDir, String className, String method, String resultField, Class<?>[] paramTypes, Object... args)
+    private static CompilerOut callLibrary(Path componentDir, String className, String method, String resultField, Class<?>[] paramTypes, Object... args)
             throws IOException {
-        Out out = new Out();
+        CompilerOut out = new CompilerOut();
         URL classes = componentDir.resolve("out").toUri().toURL();
         try (URLClassLoader loader = new URLClassLoader(new URL[]{classes}, ClassLoader.getPlatformClassLoader())) {
             Object result = Class.forName(className, true, loader).getMethod(method, paramTypes).invoke(null, args);
@@ -556,7 +545,7 @@ public class Compiler {
     }
 
     /** Replays a cache hit's notes and warnings, as if the stage had just run. */
-    private static void replayCached(CompilerCache cache, String stage, CompilerCache.StageLog log, Diagnostics diag) {
+    private static void replayCached(CompilerCache cache, String stage, CompilerStageLog log, CompilerDiagnostics diag) {
         for (String n : log.notes) {
             System.err.println(n);
         }
@@ -570,9 +559,9 @@ public class Compiler {
     }
 
     /** One run of the front end (uncached): reports its messages through `diag`; `log` (nullable) collects its warnings and notes for the cache. */
-    private static Out runFrontend(Path astGenDir, Path input, Map<String, String> configs, Map<String, String> options, Diagnostics diag,
-                                   CompilerCache.StageLog log) throws IOException {
-        Out o = callLibrary(astGenDir, "caspien.frontend.Frontend", "compile", "hob", new Class<?>[]{String.class, Map.class, Map.class},
+    private static CompilerOut runFrontend(Path astGenDir, Path input, Map<String, String> configs, Map<String, String> options, CompilerDiagnostics diag,
+                                   CompilerStageLog log) throws IOException {
+        CompilerOut o = callLibrary(astGenDir, "caspien.frontend.Frontend", "compile", "hob", new Class<?>[]{String.class, Map.class, Map.class},
                 input.toString(), configs, options);
         reportStageOutput(o.messages, o.failed ? 1 : 0, diag, "ASTGenerator", log);
         return o;
@@ -580,13 +569,13 @@ public class Compiler {
 
     /** Stage 1 through the cache: a hit restores the HOB (if no source file changed) and replays its warnings; a miss runs the front end. */
     private static void runFrontendStage(CompilerCache cache, String key, Path astGenDir, Path input, Map<String, String> configs,
-                                         Map<String, String> options, Path outputFile, Diagnostics diag) throws IOException {
-        CompilerCache.StageLog log = new CompilerCache.StageLog();
+                                         Map<String, String> options, Path outputFile, CompilerDiagnostics diag) throws IOException {
+        CompilerStageLog log = new CompilerStageLog();
         if (cache.restore("s1", key, outputFile, true, log)) {
             replayCached(cache, "s1", log, diag);
             return;
         }
-        Out o = runFrontend(astGenDir, input, configs, options, diag, log);
+        CompilerOut o = runFrontend(astGenDir, input, configs, options, diag, log);
         cache.note("s1", false);
         if (!diag.hasFatalError()) {
             Files.writeString(outputFile, o.text, StandardCharsets.UTF_8);
@@ -604,14 +593,14 @@ public class Compiler {
      */
     private static String runLibraryStage(CompilerCache cache, String stage, String key, Path componentDir, String className, String method,
                                           String resultField, String configName, String inputText, String origin, Path outputFile,
-                                          Diagnostics diag, String stageName) throws IOException {
-        CompilerCache.StageLog log = new CompilerCache.StageLog();
+                                          CompilerDiagnostics diag, String stageName) throws IOException {
+        CompilerStageLog log = new CompilerStageLog();
         if (cache.restore(stage, key, outputFile, false, log)) {
             replayCached(cache, stage, log, diag);
             return Files.readString(outputFile, StandardCharsets.UTF_8);
         }
         String config = Files.readString(componentDir.resolve(configName), StandardCharsets.UTF_8);
-        Out o = callLibrary(componentDir, className, method, resultField, new Class<?>[]{String.class, String.class, String.class},
+        CompilerOut o = callLibrary(componentDir, className, method, resultField, new Class<?>[]{String.class, String.class, String.class},
                 inputText, origin, config);
         reportStageOutput(o.messages, o.failed ? 1 : 0, diag, stageName, log);
         cache.note(stage, false);
@@ -633,7 +622,7 @@ public class Compiler {
         return buildDir;
     }
 
-    private static void printSummary(Path output, String kind, Diagnostics diag) {
+    private static void printSummary(Path output, String kind, CompilerDiagnostics diag) {
         System.err.println("\n[info] done -- wrote " + kind + " to " + output
                 + (diag.warningCount() > 0 && !diag.suppressWarnings()
                     ? " (" + diag.warningCount() + " warning" + (diag.warningCount() == 1 ? "" : "s") + ")"
@@ -756,7 +745,7 @@ public class Compiler {
      */
     private static void validateAbiConsistency(String compilerCfgText, String codegenCfgText) throws IOException {
         String target = parseCodegenTargetFromText(codegenCfgText);
-        AbiShape required = requiredAbiShapeFor(target);
+        CompilerAbiShape required = requiredAbiShapeFor(target);
         if (required == null) {
             // An unrecognized target is reported later, at the point
             // this orchestrator actually tries to assemble/link with it
@@ -765,12 +754,12 @@ public class Compiler {
             return;
         }
 
-        Map<String, AbiShape> conventions = new LinkedHashMap<>();
+        Map<String, CompilerAbiShape> conventions = new LinkedHashMap<>();
         String defaultName = parseCallingConventions(compilerCfgText, conventions);
         if (defaultName == null) {
             throw new IOException("toolchain.config's '===compiler.config===' section is missing 'default: <conventionName>'");
         }
-        AbiShape actual = conventions.get(defaultName);
+        CompilerAbiShape actual = conventions.get(defaultName);
         if (actual == null) {
             throw new IOException("toolchain.config's '===compiler.config===' section has 'default: " + defaultName
                     + "' but declares no calling convention by that name");
@@ -790,44 +779,18 @@ public class Compiler {
     }
 
     /** The real, fixed ABI shape a codegen target's own emitted assembly actually implements (see X86Backend's own isWinAbi()/argReg tables) -- null for a target this orchestrator doesn't recognize at all (reported separately, later). */
-    private static AbiShape requiredAbiShapeFor(String target) {
+    private static CompilerAbiShape requiredAbiShapeFor(String target) {
         switch (target) {
             case "windows_gnu":
-                return new AbiShape(4, 4, 32, true, "win64");
+                return new CompilerAbiShape(4, 4, 32, true, "win64");
             case "linux":
-                return new AbiShape(6, 8, 0, false, "SysV");
+                return new CompilerAbiShape(6, 8, 0, false, "SysV");
             default:
                 return null;
         }
     }
 
-    /** One calling convention's ABI shape -- the four facts that actually matter to real, physical argument marshalling (see validateAbiConsistency's own doc comment for why exactly these four and no others). */
-    private static final class AbiShape {
-        final int intRegs;
-        final int floatRegs;
-        final int shadowStack;
-        final boolean sharedPosition;
-        final String abiName; // only set on a requiredAbiShapeFor() result, for the error message; null for one parsed off a named convention
 
-        AbiShape(int intRegs, int floatRegs, int shadowStack, boolean sharedPosition, String abiName) {
-            this.intRegs = intRegs;
-            this.floatRegs = floatRegs;
-            this.shadowStack = shadowStack;
-            this.sharedPosition = sharedPosition;
-            this.abiName = abiName;
-        }
-
-        boolean matches(AbiShape other) {
-            return intRegs == other.intRegs && floatRegs == other.floatRegs
-                    && shadowStack == other.shadowStack && sharedPosition == other.sharedPosition;
-        }
-
-        String describe() {
-            return intRegs + " int / " + floatRegs + " float argument register" + (intRegs == 1 && floatRegs == 1 ? "" : "s")
-                    + ", " + shadowStack + "-byte shadow space, "
-                    + (sharedPosition ? "shared" : "independent") + " argument-position counting";
-        }
-    }
 
     /**
      * A narrow, hand-written parser for just enough of `compiler.config`'s
@@ -842,7 +805,7 @@ public class Compiler {
      * already does that full validation itself, once it's written out and
      * that component's subprocess actually runs.
      */
-    private static String parseCallingConventions(String text, Map<String, AbiShape> outShapes) {
+    private static String parseCallingConventions(String text, Map<String, CompilerAbiShape> outShapes) {
         String[] lines = text.split("\n", -1);
         String defaultName = null;
 
@@ -873,7 +836,7 @@ public class Compiler {
                 }
                 if (indent == conventionIndent) {
                     if (currentName != null) {
-                        outShapes.put(currentName, new AbiShape(currentIntRegs, currentFloatRegs, currentShadow, currentShared, null));
+                        outShapes.put(currentName, new CompilerAbiShape(currentIntRegs, currentFloatRegs, currentShadow, currentShared, null));
                     }
                     currentName = trimmed.substring(0, trimmed.length() - 1).trim();
                     currentIntRegs = 0;
@@ -911,7 +874,7 @@ public class Compiler {
             }
         }
         if (currentName != null) {
-            outShapes.put(currentName, new AbiShape(currentIntRegs, currentFloatRegs, currentShadow, currentShared, null));
+            outShapes.put(currentName, new CompilerAbiShape(currentIntRegs, currentFloatRegs, currentShadow, currentShared, null));
         }
         return defaultName;
     }
@@ -1052,7 +1015,7 @@ public class Compiler {
      * Classifies a stage's diagnostic lines ("[warning]", "[info]", "[note]", anything else) and prints them (the lines a stand-alone
      * run of the stage would print to stderr); a nonzero `exit` makes the stage fail.
      */
-    private static void reportStageOutput(List<String> allLines, int exit, Diagnostics diag, String stageName, CompilerCache.StageLog log) {
+    private static void reportStageOutput(List<String> allLines, int exit, CompilerDiagnostics diag, String stageName, CompilerStageLog log) {
         List<String> warnings = new ArrayList<>();
         List<String> infos = new ArrayList<>();
         List<String> notes = new ArrayList<>();
@@ -1124,7 +1087,7 @@ public class Compiler {
      * orchestrator surfaces each one as a proper warning instead of
      * leaving them only discoverable by reading the .s file by hand.
      */
-    private static void scanCodegenTodos(Path asmFile, Diagnostics diag) throws IOException {
+    private static void scanCodegenTodos(Path asmFile, CompilerDiagnostics diag) throws IOException {
         List<String> lines = Files.readAllLines(asmFile, StandardCharsets.UTF_8);
         int count = 0;
         for (String line : lines) {
@@ -1150,7 +1113,7 @@ public class Compiler {
      * toolchain proper, since none of the four pipeline projects do
      * their own assembling.
      */
-    private static void assembleAndLink(String target, Path asmFile, Path output, Path buildDir, Diagnostics diag, boolean jccPadding)
+    private static void assembleAndLink(String target, Path asmFile, Path output, Path buildDir, CompilerDiagnostics diag, boolean jccPadding)
             throws IOException, InterruptedException {
         boolean hostIsWindows = System.getProperty("os.name", "").toLowerCase().contains("win");
         switch (target) {
@@ -1221,7 +1184,7 @@ public class Compiler {
         }
     }
 
-    private static void runToolProcess(List<String> command, Diagnostics diag, String toolName)
+    private static void runToolProcess(List<String> command, CompilerDiagnostics diag, String toolName)
             throws IOException, InterruptedException {
         ProcessBuilder pb = new ProcessBuilder(command);
         Process proc = pb.start();
@@ -1257,39 +1220,5 @@ public class Compiler {
 
     // ---- diagnostics bookkeeping -----------------------------------------
 
-    private static final class Diagnostics {
-        private final boolean suppressWarnings;
-        private int warningCount = 0;
-        private int failCode = 0;
 
-        Diagnostics(boolean suppressWarnings) {
-            this.suppressWarnings = suppressWarnings;
-        }
-
-        boolean suppressWarnings() {
-            return suppressWarnings;
-        }
-
-        void addWarnings(int n) {
-            warningCount += n;
-        }
-
-        int warningCount() {
-            return warningCount;
-        }
-
-        void fail(int code) {
-            if (failCode == 0) {
-                failCode = code;
-            }
-        }
-
-        boolean hasFatalError() {
-            return failCode != 0;
-        }
-
-        int exitCode() {
-            return failCode;
-        }
-    }
 }

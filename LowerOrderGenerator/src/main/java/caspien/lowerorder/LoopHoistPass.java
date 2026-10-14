@@ -2,6 +2,7 @@ package caspien.lowerorder;
 import caspien.bytecode.BytecodeProgram;
 import caspien.bytecode.BytecodeStatement;
 import caspien.bytecode.BytecodeToken;
+import caspien.bytecode.BytecodeTokenKind;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -382,7 +383,7 @@ public class LoopHoistPass {
                 BytecodeStatement n = new BytecodeStatement(l);
                 for (int k = 1; k < n.size(); k++) {
                     if (alive.contains(t(l, k))) {
-                        n.set(k, new BytecodeToken(copyOf.get(t(l, k)), l.get(k).file, l.get(k).line, BytecodeToken.Kind.CODE));
+                        n.set(k, new BytecodeToken(copyOf.get(t(l, k)), l.get(k).file, l.get(k).line, BytecodeTokenKind.CODE));
                     }
                 }
                 undone.add(n);
@@ -407,7 +408,7 @@ public class LoopHoistPass {
                 if ((b.size() == 5 || b.size() == 6) && t(b, 0).equals("R_LEA") && t(b, 1).equals(tA) && t(b, 2).equals(tA)
                         && !t(b, 3).equals(tA)) {
                     BytecodeStatement n = new BytecodeStatement(b);
-                    n.set(2, new BytecodeToken(vK, b.get(2).file, b.get(2).line, BytecodeToken.Kind.CODE));
+                    n.set(2, new BytecodeToken(vK, b.get(2).file, b.get(2).line, BytecodeTokenKind.CODE));
                     out.add(n);
                     i++;
                     continue;
@@ -473,7 +474,7 @@ public class LoopHoistPass {
     private static BytecodeStatement mk(BytecodeToken ref, String... texts) {
         BytecodeStatement l = new BytecodeStatement(texts.length);
         for (String s : texts) {
-            l.add(new BytecodeToken(s, ref.file, ref.line, BytecodeToken.Kind.CODE));
+            l.add(new BytecodeToken(s, ref.file, ref.line, BytecodeTokenKind.CODE));
         }
         return l;
     }

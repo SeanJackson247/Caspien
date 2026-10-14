@@ -3,6 +3,7 @@ package caspien.optimizer;
 import caspien.bytecode.BytecodeProgram;
 import caspien.bytecode.BytecodeStatement;
 import caspien.bytecode.BytecodeToken;
+import caspien.bytecode.BytecodeTokenKind;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -43,7 +44,7 @@ final class VarAnalysis {
     }
 
     static String mnemonic(BytecodeStatement line) {
-        if (line.isEmpty() || line.get(0).kind != BytecodeToken.Kind.CODE) return null;
+        if (line.isEmpty() || line.get(0).kind != BytecodeTokenKind.CODE) return null;
         return line.get(0).text;
     }
 
@@ -59,7 +60,7 @@ final class VarAnalysis {
         Map<String, Integer> m = new HashMap<>();
         for (int i = s; i <= e; i++) {
             BytecodeStatement l = L.get(i);
-            if (l.size() == 1 && l.get(0).kind == BytecodeToken.Kind.CODE && l.get(0).text.startsWith("@") && l.get(0).text.endsWith(":")) {
+            if (l.size() == 1 && l.get(0).kind == BytecodeTokenKind.CODE && l.get(0).text.startsWith("@") && l.get(0).text.endsWith(":")) {
                 String t = l.get(0).text;
                 m.put(t.substring(0, t.length() - 1), i);
             }
@@ -114,7 +115,7 @@ final class VarAnalysis {
             BytecodeStatement l = L.get(i);
             for (int t = 1; t < l.size(); t++) {
                 BytecodeToken tok = l.get(t);
-                if (tok.kind != BytecodeToken.Kind.CODE) continue;
+                if (tok.kind != BytecodeTokenKind.CODE) continue;
                 String txt = tok.text;
                 VarAnalysisVar v = vars.get(txt);
                 if (v == null) {

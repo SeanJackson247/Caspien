@@ -3,6 +3,7 @@ package caspien.lowerorder;
 import caspien.bytecode.BytecodeProgram;
 import caspien.bytecode.BytecodeStatement;
 import caspien.bytecode.BytecodeToken;
+import caspien.bytecode.BytecodeTokenKind;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -48,7 +49,7 @@ final class RegisterFormState {
         BytecodeStatement l = new BytecodeStatement(texts.length);
         BytecodeToken a = anchor;
         for (String t : texts) {
-            l.add(new BytecodeToken(t, a == null ? "<register-form>" : a.file, a == null ? 0 : a.line, BytecodeToken.Kind.CODE));
+            l.add(new BytecodeToken(t, a == null ? "<register-form>" : a.file, a == null ? 0 : a.line, BytecodeTokenKind.CODE));
         }
         return l;
     }

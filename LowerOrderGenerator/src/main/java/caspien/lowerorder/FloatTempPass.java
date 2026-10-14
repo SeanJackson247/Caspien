@@ -2,6 +2,7 @@ package caspien.lowerorder;
 import caspien.bytecode.BytecodeProgram;
 import caspien.bytecode.BytecodeStatement;
 import caspien.bytecode.BytecodeToken;
+import caspien.bytecode.BytecodeTokenKind;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -172,7 +173,7 @@ public class FloatTempPass {
                     } else if (tx.equals(y)) {
                         tx = xd;
                     }
-                    r.add(tx.equals(b.text) ? b : new BytecodeToken(tx, b.file, b.line, BytecodeToken.Kind.CODE));
+                    r.add(tx.equals(b.text) ? b : new BytecodeToken(tx, b.file, b.line, BytecodeTokenKind.CODE));
                 }
                 res.set(q, r);
             }
@@ -449,7 +450,7 @@ public class FloatTempPass {
             BytecodeToken ref = orig.isEmpty() ? null : orig.get(0);
             BytecodeStatement r = new BytecodeStatement(l.size());
             for (String s : l) {
-                r.add(new BytecodeToken(s, ref == null ? null : ref.file, ref == null ? 0 : ref.line, BytecodeToken.Kind.CODE));
+                r.add(new BytecodeToken(s, ref == null ? null : ref.file, ref == null ? 0 : ref.line, BytecodeTokenKind.CODE));
             }
             out.add(r);
         }

@@ -3,6 +3,7 @@ package caspien.optimizer;
 import caspien.bytecode.BytecodeProgram;
 import caspien.bytecode.BytecodeStatement;
 import caspien.bytecode.BytecodeToken;
+import caspien.bytecode.BytecodeTokenKind;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -72,11 +73,11 @@ public class LoopUnrollingPass {
     }
 
     private static boolean is(BytecodeStatement line, int size, String first) {
-        return line.size() == size && line.get(0).kind == BytecodeToken.Kind.CODE && line.get(0).text.equals(first);
+        return line.size() == size && line.get(0).kind == BytecodeTokenKind.CODE && line.get(0).text.equals(first);
     }
 
     private static boolean isLabelDef(BytecodeStatement line) {
-        return line.size() == 1 && line.get(0).kind == BytecodeToken.Kind.CODE
+        return line.size() == 1 && line.get(0).kind == BytecodeTokenKind.CODE
                 && line.get(0).text.startsWith("@") && line.get(0).text.endsWith(":");
     }
 
@@ -113,7 +114,7 @@ public class LoopUnrollingPass {
     static final long HARD_CAP = 20000L;
 
     private static boolean isForDeco(BytecodeStatement l) {
-        return (l.size() == 2 || l.size() == 3) && l.get(0).kind == BytecodeToken.Kind.CODE && l.get(0).text.equals("FOR_DECORATE");
+        return (l.size() == 2 || l.size() == 3) && l.get(0).kind == BytecodeTokenKind.CODE && l.get(0).text.equals("FOR_DECORATE");
     }
 
     private static String stripQuotes(String t) {
@@ -219,12 +220,12 @@ public class LoopUnrollingPass {
             BytecodeStatement l = L.get(k);
             if (l.isEmpty()) continue;
             String f = l.get(0).text;
-            if (l.get(0).kind == BytecodeToken.Kind.CODE && (f.equals("ALLOC") || f.equals("ALLOC_STATIC") || f.equals("FUNC_START")
+            if (l.get(0).kind == BytecodeTokenKind.CODE && (f.equals("ALLOC") || f.equals("ALLOC_STATIC") || f.equals("FUNC_START")
                     || f.equals("FUNC_END") || f.equals("STRUCT_START") || f.equals("GLOBAL") || f.equals("REGVAR"))) {
                 return false;
             }
             for (BytecodeToken t : l) {
-                if (t.kind != BytecodeToken.Kind.CODE) continue;
+                if (t.kind != BytecodeTokenKind.CODE) continue;
                 if (t.text.equals(lp.headLabel) || t.text.equals(lp.headLabel + ":") || t.text.equals(lp.rangeName) || t.text.startsWith(lp.rangeName + ".")) return false;
             }
             if (isLabelDef(l)) {
@@ -235,7 +236,7 @@ public class LoopUnrollingPass {
             for (int k = fnStart; k < fnEnd; k++) {
                 if (k >= lp.bodyStart && k < lp.incStart) continue;
                 for (BytecodeToken t : L.get(k)) {
-                    if (t.kind == BytecodeToken.Kind.CODE && t.text.startsWith("@") && defined.contains(labelName(t.text))) {
+                    if (t.kind == BytecodeTokenKind.CODE && t.text.startsWith("@") && defined.contains(labelName(t.text))) {
                         return false; // a label of the body is used from outside it (try block, etc.)
                     }
                 }
@@ -260,7 +261,7 @@ public class LoopUnrollingPass {
         int maxNum = 0;
         for (BytecodeStatement l : lines) {
             for (BytecodeToken t : l) {
-                if (t.kind == BytecodeToken.Kind.CODE && t.text.startsWith("@")) {
+                if (t.kind == BytecodeTokenKind.CODE && t.text.startsWith("@")) {
                     String n = labelName(t.text);
                     int us = n.lastIndexOf('_');
                     if (us >= 0 && allDigits(n.substring(us + 1))) {
@@ -525,7 +526,7 @@ public class LoopUnrollingPass {
             BytecodeStatement l = body.get(k);
             boolean mentions = false;
             for (int t = 1; t < l.size(); t++) {
-                if (l.get(t).kind == BytecodeToken.Kind.CODE && l.get(t).text.equals(lp.var)) {
+                if (l.get(t).kind == BytecodeTokenKind.CODE && l.get(t).text.equals(lp.var)) {
                     mentions = true;
                     if (t != 1) return false;
                 }
@@ -618,7 +619,7 @@ public class LoopUnrollingPass {
                 boolean in = k >= lp.bodyStart && k < lp.incStart;
                 BytecodeStatement row = work.get(k);
                 for (int t = 1; t < row.size(); t++) {
-                    if (row.get(t).kind != BytecodeToken.Kind.CODE || !namesVar(row.get(t).text, name)) continue;
+                    if (row.get(t).kind != BytecodeTokenKind.CODE || !namesVar(row.get(t).text, name)) continue;
                     if (in) inside = true; else { outside = true; break; }
                 }
             }
@@ -648,7 +649,7 @@ public class LoopUnrollingPass {
             BytecodeStatement row = null;
             for (int t = 1; t < l.size(); t++) {
                 BytecodeToken tok = l.get(t);
-                if (tok.kind != BytecodeToken.Kind.CODE) continue;
+                if (tok.kind != BytecodeTokenKind.CODE) continue;
                 String r = renameTok(tok.text, map);
                 if (!r.equals(tok.text)) {
                     if (row == null) row = new BytecodeStatement(l);
@@ -724,7 +725,7 @@ public class LoopUnrollingPass {
             }
             BytecodeStatement row = new BytecodeStatement(l.size());
             for (BytecodeToken t : l) {
-                if (t.kind == BytecodeToken.Kind.CODE && t.text.startsWith("@")) {
+                if (t.kind == BytecodeTokenKind.CODE && t.text.startsWith("@")) {
                     boolean colon = t.text.endsWith(":");
                     String repl = map.get(labelName(t.text));
                     row.add(repl == null ? t : retext(t, "@" + repl + (colon ? ":" : "")));

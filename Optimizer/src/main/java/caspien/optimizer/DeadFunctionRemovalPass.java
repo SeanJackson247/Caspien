@@ -3,6 +3,7 @@ package caspien.optimizer;
 import caspien.bytecode.BytecodeProgram;
 import caspien.bytecode.BytecodeStatement;
 import caspien.bytecode.BytecodeToken;
+import caspien.bytecode.BytecodeTokenKind;
 
 import java.util.ArrayDeque;
 import java.util.HashMap;
@@ -78,7 +79,7 @@ public class DeadFunctionRemovalPass {
             boolean inside = fi < funcs.size() && funcs.get(fi)[0] <= i && i <= funcs.get(fi)[1];
             if (inside) continue;
             for (BytecodeToken t : lines.get(i)) {
-                if (t.kind != BytecodeToken.Kind.CODE) continue;
+                if (t.kind != BytecodeTokenKind.CODE) continue;
                 Integer k = byName.get(t.text);
                 if (k != null) markLive(live, work, k);
             }
@@ -88,7 +89,7 @@ public class DeadFunctionRemovalPass {
             int[] f = funcs.get(k);
             for (int i = f[0] + 1; i < f[1]; i++) {
                 for (BytecodeToken t : lines.get(i)) {
-                    if (t.kind != BytecodeToken.Kind.CODE) continue;
+                    if (t.kind != BytecodeTokenKind.CODE) continue;
                     Integer c = byName.get(t.text);
                     if (c != null) markLive(live, work, c);
                 }

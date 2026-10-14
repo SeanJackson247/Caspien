@@ -2,6 +2,7 @@ package caspien.lowerorder;
 import caspien.bytecode.BytecodeProgram;
 import caspien.bytecode.BytecodeStatement;
 import caspien.bytecode.BytecodeToken;
+import caspien.bytecode.BytecodeTokenKind;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -227,19 +228,19 @@ public class StaticFloatCachePass {
                     break;
                 }
                 BytecodeToken ref = cur.get(lp.h).get(0);
-                pre.add(new BytecodeStatement(Arrays.asList(new BytecodeToken("R_LDX", ref.file, ref.line, BytecodeToken.Kind.CODE),
-                        new BytecodeToken(width.get(g), ref.file, ref.line, BytecodeToken.Kind.CODE),
-                        new BytecodeToken(reg, ref.file, ref.line, BytecodeToken.Kind.CODE),
-                        new BytecodeToken(g, ref.file, ref.line, BytecodeToken.Kind.CODE))));
+                pre.add(new BytecodeStatement(Arrays.asList(new BytecodeToken("R_LDX", ref.file, ref.line, BytecodeTokenKind.CODE),
+                        new BytecodeToken(width.get(g), ref.file, ref.line, BytecodeTokenKind.CODE),
+                        new BytecodeToken(reg, ref.file, ref.line, BytecodeTokenKind.CODE),
+                        new BytecodeToken(g, ref.file, ref.line, BytecodeTokenKind.CODE))));
                 lp.used.add(reg);
             }
             for (int i = lp.h; i <= lp.b; i++) {
                 BytecodeStatement l = cur.get(i);
                 if (l.size() == 4 && t(l, 0).equals("R_LDX") && t(l, 3).startsWith("&") && assigned.containsKey(t(l, 3))) {
                     BytecodeStatement r = new BytecodeStatement();
-                    r.add(new BytecodeToken("R_XMOV", l.get(0).file, l.get(0).line, BytecodeToken.Kind.CODE));
+                    r.add(new BytecodeToken("R_XMOV", l.get(0).file, l.get(0).line, BytecodeTokenKind.CODE));
                     r.add(l.get(2));
-                    r.add(new BytecodeToken(assigned.get(t(l, 3)), l.get(0).file, l.get(0).line, BytecodeToken.Kind.CODE));
+                    r.add(new BytecodeToken(assigned.get(t(l, 3)), l.get(0).file, l.get(0).line, BytecodeTokenKind.CODE));
                     cur.set(i, r);
                 }
             }

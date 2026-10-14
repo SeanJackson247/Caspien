@@ -15,7 +15,7 @@ public class Drv9 {
         BytecodeProgram r = new BytecodeProgram();
         for (String ln : s.split(" ; ")) {
             BytecodeStatement l = new BytecodeStatement();
-            for (String t : ln.trim().split(" ")) l.add(new BytecodeToken(t, "x", 0, BytecodeToken.Kind.CODE));
+            for (String t : ln.trim().split(" ")) l.add(new BytecodeToken(t, "x", 0, BytecodeTokenKind.CODE));
             r.add(l);
         }
         return r;

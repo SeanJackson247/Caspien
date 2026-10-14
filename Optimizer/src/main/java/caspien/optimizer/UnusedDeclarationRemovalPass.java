@@ -3,6 +3,7 @@ package caspien.optimizer;
 import caspien.bytecode.BytecodeProgram;
 import caspien.bytecode.BytecodeStatement;
 import caspien.bytecode.BytecodeToken;
+import caspien.bytecode.BytecodeTokenKind;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -96,7 +97,7 @@ public class UnusedDeclarationRemovalPass {
             else if (m != null && l.size() >= 2 && (m.equals("GLOBAL") || m.equals("ALLOC_STATIC"))) own = m + ":" + base(l.get(1).text);
             for (int k = 0; k < l.size(); k++) {
                 BytecodeToken t = l.get(k);
-                if (t.kind != BytecodeToken.Kind.CODE) continue;
+                if (t.kind != BytecodeTokenKind.CODE) continue;
                 if (k == 0 && own != null) continue;   // the mnemonic itself
                 String b = base(t.text);
                 for (String key : new String[] {"EXTERN:" + t.text, "STRING:" + t.text, "GLOBAL:" + b, "ALLOC_STATIC:" + b}) {

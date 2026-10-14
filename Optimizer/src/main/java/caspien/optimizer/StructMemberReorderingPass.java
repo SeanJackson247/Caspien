@@ -3,6 +3,7 @@ package caspien.optimizer;
 import caspien.bytecode.BytecodeProgram;
 import caspien.bytecode.BytecodeStatement;
 import caspien.bytecode.BytecodeToken;
+import caspien.bytecode.BytecodeTokenKind;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -64,11 +65,11 @@ public class StructMemberReorderingPass {
     private final Set<String> pinnedEver = new HashSet<>();
 
     private static boolean isMn(BytecodeStatement l, String m) {
-        return !l.isEmpty() && l.get(0).kind == BytecodeToken.Kind.CODE && l.get(0).text.equals(m);
+        return !l.isEmpty() && l.get(0).kind == BytecodeTokenKind.CODE && l.get(0).text.equals(m);
     }
 
     private static BytecodeToken tok(BytecodeToken near, String text) {
-        return new BytecodeToken(text, near.file, near.line, BytecodeToken.Kind.CODE);
+        return new BytecodeToken(text, near.file, near.line, BytecodeTokenKind.CODE);
     }
 
     private static String stripMut(String t) {
@@ -105,7 +106,7 @@ public class StructMemberReorderingPass {
 
     /** Stack effect of one member-expression line, or Integer.MIN_VALUE when the line is not allowed in one. */
     private static int effect(BytecodeStatement l) {
-        if (l.isEmpty() || l.get(0).kind != BytecodeToken.Kind.CODE) {
+        if (l.isEmpty() || l.get(0).kind != BytecodeTokenKind.CODE) {
             return Integer.MIN_VALUE;
         }
         String m = l.get(0).text;
@@ -414,7 +415,7 @@ public class StructMemberReorderingPass {
         }
         for (int i = 0; i < L.size(); i++) {
             BytecodeStatement l = L.get(i);
-            if (l.isEmpty() || l.get(0).kind != BytecodeToken.Kind.CODE) {
+            if (l.isEmpty() || l.get(0).kind != BytecodeTokenKind.CODE) {
                 continue;
             }
             String m = l.get(0).text;

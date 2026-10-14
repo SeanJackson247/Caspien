@@ -3,6 +3,7 @@ package caspien.optimizer;
 import caspien.bytecode.BytecodeProgram;
 import caspien.bytecode.BytecodeStatement;
 import caspien.bytecode.BytecodeToken;
+import caspien.bytecode.BytecodeTokenKind;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -48,7 +49,7 @@ public class DeadControlFlowRemovalPass {
     }
 
     private static boolean isLabelDef(BytecodeStatement l) {
-        return l.size() == 1 && l.get(0).kind == BytecodeToken.Kind.CODE && l.get(0).text.startsWith("@") && l.get(0).text.endsWith(":");
+        return l.size() == 1 && l.get(0).kind == BytecodeTokenKind.CODE && l.get(0).text.startsWith("@") && l.get(0).text.endsWith(":");
     }
 
     private static String labelName(BytecodeStatement l) {

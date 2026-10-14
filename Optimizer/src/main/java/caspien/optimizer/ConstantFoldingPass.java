@@ -3,6 +3,7 @@ package caspien.optimizer;
 import caspien.bytecode.BytecodeProgram;
 import caspien.bytecode.BytecodeStatement;
 import caspien.bytecode.BytecodeToken;
+import caspien.bytecode.BytecodeTokenKind;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
@@ -137,7 +138,7 @@ public class ConstantFoldingPass {
 
     /** A literal PUSH: "PUSH <literal> <type>" whose literal really is one of the type's kind; else null. */
     static ConstantFoldingLit lit(BytecodeStatement line) {
-        if (line.size() != 3 || line.get(0).kind != BytecodeToken.Kind.CODE || !line.get(0).text.equals("PUSH")) return null;
+        if (line.size() != 3 || line.get(0).kind != BytecodeTokenKind.CODE || !line.get(0).text.equals("PUSH")) return null;
         String text = line.get(1).text, type = line.get(2).text, b = base(type);
         if (b == null) return null;
         ConstantFoldingLit l = new ConstantFoldingLit();
@@ -176,9 +177,9 @@ public class ConstantFoldingPass {
 
     private static BytecodeStatement push(BytecodeToken at, String value, String type) {
         BytecodeStatement l = new BytecodeStatement(3);
-        l.add(new BytecodeToken("PUSH", at.file, at.line, BytecodeToken.Kind.CODE));
-        l.add(new BytecodeToken(value, at.file, at.line, BytecodeToken.Kind.CODE));
-        l.add(new BytecodeToken(type, at.file, at.line, BytecodeToken.Kind.CODE));
+        l.add(new BytecodeToken("PUSH", at.file, at.line, BytecodeTokenKind.CODE));
+        l.add(new BytecodeToken(value, at.file, at.line, BytecodeTokenKind.CODE));
+        l.add(new BytecodeToken(type, at.file, at.line, BytecodeTokenKind.CODE));
         return l;
     }
 
@@ -186,9 +187,9 @@ public class ConstantFoldingPass {
 
     /** If `line` is an operator whose operand PUSH lines are the last ones in `out`, removes them and returns the result PUSH. */
     private static BytecodeStatement tryFold(BytecodeProgram out, BytecodeStatement line) {
-        if (line.isEmpty() || line.get(0).kind != BytecodeToken.Kind.CODE) return null;
+        if (line.isEmpty() || line.get(0).kind != BytecodeTokenKind.CODE) return null;
         for (BytecodeToken t : line) {
-            if (t.kind != BytecodeToken.Kind.CODE) return null;
+            if (t.kind != BytecodeTokenKind.CODE) return null;
         }
         String op = line.get(0).text;
         int n = out.size();

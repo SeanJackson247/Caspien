@@ -3,6 +3,7 @@ package caspien.optimizer;
 import caspien.bytecode.BytecodeProgram;
 import caspien.bytecode.BytecodeStatement;
 import caspien.bytecode.BytecodeToken;
+import caspien.bytecode.BytecodeTokenKind;
 
 
 /**
@@ -53,8 +54,8 @@ public class SizeofResolutionPass {
                 }
                 BytecodeStatement r = new BytecodeStatement(l.size());
                 BytecodeToken m = l.get(0);
-                r.add(new BytecodeToken("PUSH", m.file, m.line, BytecodeToken.Kind.CODE));
-                r.add(new BytecodeToken(Long.toString(n), m.file, m.line, BytecodeToken.Kind.CODE));
+                r.add(new BytecodeToken("PUSH", m.file, m.line, BytecodeTokenKind.CODE));
+                r.add(new BytecodeToken(Long.toString(n), m.file, m.line, BytecodeTokenKind.CODE));
                 for (int i = 2; i < l.size(); i++) {
                     r.add(l.get(i));
                 }
@@ -67,7 +68,7 @@ public class SizeofResolutionPass {
     }
 
     static boolean isMnemonic(BytecodeStatement line, String m) {
-        return !line.isEmpty() && line.get(0).kind == BytecodeToken.Kind.CODE && line.get(0).text.equals(m);
+        return !line.isEmpty() && line.get(0).kind == BytecodeTokenKind.CODE && line.get(0).text.equals(m);
     }
 
 }

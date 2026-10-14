@@ -3,6 +3,7 @@ package caspien.optimizer;
 import caspien.bytecode.BytecodeProgram;
 import caspien.bytecode.BytecodeStatement;
 import caspien.bytecode.BytecodeToken;
+import caspien.bytecode.BytecodeTokenKind;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -81,7 +82,7 @@ public class VariableAllocationReorderingPass {
     }
 
     static boolean isMnemonic(BytecodeStatement line, String m) {
-        return !line.isEmpty() && line.get(0).kind == BytecodeToken.Kind.CODE && line.get(0).text.equals(m);
+        return !line.isEmpty() && line.get(0).kind == BytecodeTokenKind.CODE && line.get(0).text.equals(m);
     }
 
     private static boolean isAlloc(BytecodeStatement l) {
@@ -173,7 +174,7 @@ public class VariableAllocationReorderingPass {
             }
             long w = 1L << (3 * Math.min(run, 4));
             for (int t = 1; t < l.size(); t++) {
-                if (l.get(t).kind == BytecodeToken.Kind.CODE) {
+                if (l.get(t).kind == BytecodeTokenKind.CODE) {
                     weights.merge(l.get(t).text, w, Long::sum);
                 }
             }

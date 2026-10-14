@@ -2,6 +2,7 @@ package caspien.lowerorder;
 import caspien.bytecode.BytecodeProgram;
 import caspien.bytecode.BytecodeStatement;
 import caspien.bytecode.BytecodeToken;
+import caspien.bytecode.BytecodeTokenKind;
 
 import java.util.HashSet;
 import java.util.Set;
@@ -62,7 +63,7 @@ public class FloatIntrinsicPass {
                 if (plain && k >= 0 && out.get(k).size() == 2 && out.get(k).get(1).text.equals(lines.get(i + 2).get(1).text)) {
                     BytecodeStatement r = new BytecodeStatement();
                     BytecodeToken ref = get.get(0);
-                    r.add(new BytecodeToken("R_FSQRT", ref.file, ref.line, BytecodeToken.Kind.CODE));
+                    r.add(new BytecodeToken("R_FSQRT", ref.file, ref.line, BytecodeTokenKind.CODE));
                     r.add(get.get(1));
                     r.add(get.get(2));
                     r.add(farg.get(3));

@@ -3,6 +3,7 @@ package caspien.optimizer;
 import caspien.bytecode.BytecodeProgram;
 import caspien.bytecode.BytecodeStatement;
 import caspien.bytecode.BytecodeToken;
+import caspien.bytecode.BytecodeTokenKind;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -78,7 +79,7 @@ public class FunctionInliningPass {
     // small helpers
 
     private static String mn(BytecodeStatement l) {
-        return l.isEmpty() || l.get(0).kind != BytecodeToken.Kind.CODE ? null : l.get(0).text;
+        return l.isEmpty() || l.get(0).kind != BytecodeTokenKind.CODE ? null : l.get(0).text;
     }
 
     private static String tok(BytecodeStatement l, int i) {
@@ -90,7 +91,7 @@ public class FunctionInliningPass {
     }
 
     private static boolean isLabelDef(BytecodeStatement l) {
-        return l.size() == 1 && l.get(0).kind == BytecodeToken.Kind.CODE && l.get(0).text.startsWith("@") && l.get(0).text.endsWith(":");
+        return l.size() == 1 && l.get(0).kind == BytecodeTokenKind.CODE && l.get(0).text.startsWith("@") && l.get(0).text.endsWith(":");
     }
 
     private static BytecodeToken retext(BytecodeToken t, String text) {
@@ -99,7 +100,7 @@ public class FunctionInliningPass {
 
     private static BytecodeStatement mk(BytecodeToken ref, String... parts) {
         BytecodeStatement l = new BytecodeStatement(parts.length);
-        for (String p : parts) l.add(new BytecodeToken(p, ref.file, ref.line, BytecodeToken.Kind.CODE));
+        for (String p : parts) l.add(new BytecodeToken(p, ref.file, ref.line, BytecodeTokenKind.CODE));
         return l;
     }
 
@@ -351,7 +352,7 @@ public class FunctionInliningPass {
             }
             if (m.equals("FUNC_DECORATE")) {
                 String dt = tok(l, 1);
-                boolean posOk = l.size() == 3 && l.get(2).kind == BytecodeToken.Kind.STRING;   // an optional "file:line" operand
+                boolean posOk = l.size() == 3 && l.get(2).kind == BytecodeTokenKind.STRING;   // an optional "file:line" operand
                 if (!(l.size() == 2 || posOk) || !(OK_DECORATORS.contains(dt) || "@dont(inline)".equals(dt))) {
                     c.why = "decorator " + dt;
                     ok = false;
@@ -430,8 +431,8 @@ public class FunctionInliningPass {
         for (BytecodeStatement l : c.code) {
             for (int t = 1; t < l.size(); t++) {
                 BytecodeToken tk = l.get(t);
-                if (tk.kind == BytecodeToken.Kind.CODE && tk.text.equals("gt_routine_address")) c.usesAddr = true;
-                if (tk.kind == BytecodeToken.Kind.CODE && tk.text.equals("gt_error_message")) c.usesMsg = true;
+                if (tk.kind == BytecodeTokenKind.CODE && tk.text.equals("gt_routine_address")) c.usesAddr = true;
+                if (tk.kind == BytecodeTokenKind.CODE && tk.text.equals("gt_error_message")) c.usesMsg = true;
             }
         }
         c.lines = e - s - 1;
@@ -490,7 +491,7 @@ public class FunctionInliningPass {
             if ("PUSH".equals(m) && l.size() == 3 && !scalarType(l.get(2).text)) simple = false;
             for (int t = 1; t < l.size(); t++) {
                 BytecodeToken tk = l.get(t);
-                if (tk.kind != BytecodeToken.Kind.CODE) {
+                if (tk.kind != BytecodeTokenKind.CODE) {
                     continue;
                 }
                 String x = tk.text;
@@ -634,7 +635,7 @@ public class FunctionInliningPass {
         int maxNum = 0;
         for (BytecodeStatement l : L) {
             for (BytecodeToken t : l) {
-                if (t.kind != BytecodeToken.Kind.CODE) continue;
+                if (t.kind != BytecodeTokenKind.CODE) continue;
                 String x = t.text;
                 if (!(x.startsWith("@") || x.startsWith("$for_range_"))) continue;
                 if (x.endsWith(":")) x = x.substring(0, x.length() - 1);
@@ -1093,7 +1094,7 @@ public class FunctionInliningPass {
         String m = mn(l);
         for (int t = 0; t < l.size(); t++) {
             BytecodeToken tk = l.get(t);
-            if (tk.kind != BytecodeToken.Kind.CODE || t == 0 && !isLabelDef(l)) {
+            if (tk.kind != BytecodeTokenKind.CODE || t == 0 && !isLabelDef(l)) {
                 out.add(tk);
                 continue;
             }

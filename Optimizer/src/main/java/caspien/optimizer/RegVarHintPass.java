@@ -3,6 +3,7 @@ package caspien.optimizer;
 import caspien.bytecode.BytecodeProgram;
 import caspien.bytecode.BytecodeStatement;
 import caspien.bytecode.BytecodeToken;
+import caspien.bytecode.BytecodeTokenKind;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -71,7 +72,7 @@ public class RegVarHintPass {
     }
 
     private static boolean isMnemonic(BytecodeStatement line, String m) {
-        return !line.isEmpty() && line.get(0).kind == BytecodeToken.Kind.CODE && line.get(0).text.equals(m);
+        return !line.isEmpty() && line.get(0).kind == BytecodeTokenKind.CODE && line.get(0).text.equals(m);
     }
 
     private static String mnemonic(BytecodeStatement line) {
@@ -149,7 +150,7 @@ public class RegVarHintPass {
             String m = mnemonic(l);
             for (int t = 1; t < l.size(); t++) {
                 String tok = l.get(t).text;
-                if (!candidates.contains(tok) || l.get(t).kind != BytecodeToken.Kind.CODE) {
+                if (!candidates.contains(tok) || l.get(t).kind != BytecodeTokenKind.CODE) {
                     continue;
                 }
                 boolean simple = (m.equals("PUSH") || m.equals("ADDR")) && t == 1;
@@ -182,12 +183,12 @@ public class RegVarHintPass {
         BytecodeProgram result = new BytecodeProgram(fn.slice(0, lastLeadingAlloc + 1));
         for (String c : chosen) {
             BytecodeStatement h = new BytecodeStatement();
-            h.add(new BytecodeToken("REGVAR", ref.file, ref.line, BytecodeToken.Kind.CODE));
-            h.add(new BytecodeToken(c, ref.file, ref.line, BytecodeToken.Kind.CODE));
-            h.add(new BytecodeToken(Long.toString(Math.min(weight.get(c), 1_000_000_000L)), ref.file, ref.line, BytecodeToken.Kind.CODE));
+            h.add(new BytecodeToken("REGVAR", ref.file, ref.line, BytecodeTokenKind.CODE));
+            h.add(new BytecodeToken(c, ref.file, ref.line, BytecodeTokenKind.CODE));
+            h.add(new BytecodeToken(Long.toString(Math.min(weight.get(c), 1_000_000_000L)), ref.file, ref.line, BytecodeTokenKind.CODE));
             if ((allocType.get(c).endsWith("_f32") || allocType.get(c).endsWith("_f64"))) {
                 // a class marker only: "this one is a float". Which register file (if any) holds it is the lowering's business.
-                h.add(new BytecodeToken("f", ref.file, ref.line, BytecodeToken.Kind.CODE));
+                h.add(new BytecodeToken("f", ref.file, ref.line, BytecodeTokenKind.CODE));
             }
             result.add(h);
         }

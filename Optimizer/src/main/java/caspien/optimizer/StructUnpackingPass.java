@@ -3,6 +3,7 @@ package caspien.optimizer;
 import caspien.bytecode.BytecodeProgram;
 import caspien.bytecode.BytecodeStatement;
 import caspien.bytecode.BytecodeToken;
+import caspien.bytecode.BytecodeTokenKind;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -144,7 +145,7 @@ public class StructUnpackingPass {
 
     private static BytecodeStatement mk(BytecodeToken like, String... toks) {
         BytecodeStatement r = new BytecodeStatement();
-        for (String s : toks) r.add(new BytecodeToken(s, like.file, like.line, BytecodeToken.Kind.CODE));
+        for (String s : toks) r.add(new BytecodeToken(s, like.file, like.line, BytecodeTokenKind.CODE));
         return r;
     }
 

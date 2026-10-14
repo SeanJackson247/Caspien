@@ -2,6 +2,7 @@ package caspien.lowerorder;
 import caspien.bytecode.BytecodeProgram;
 import caspien.bytecode.BytecodeStatement;
 import caspien.bytecode.BytecodeToken;
+import caspien.bytecode.BytecodeTokenKind;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -267,7 +268,7 @@ public class RangeWordSplitPass {
     private static BytecodeStatement mk(BytecodeToken ref, String... texts) {
         BytecodeStatement r = new BytecodeStatement(texts.length);
         for (String x : texts) {
-            r.add(new BytecodeToken(x, ref.file, ref.line, BytecodeToken.Kind.CODE));
+            r.add(new BytecodeToken(x, ref.file, ref.line, BytecodeTokenKind.CODE));
         }
         return r;
     }

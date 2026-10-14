@@ -37,12 +37,7 @@ final class CompilerCache {
     /** compiler.config keys read only by the LowerOrderGenerator (the front end parses them but never uses them; the Optimizer does not read them). */
     static final String[] REG_KEYS = {"deferred-operands:", "variables-in-registers:", "float-variables-in-registers:", "float-temporaries-in-registers:", "hoist-array-bases:", "variables-in-alloc-functions:", "fuse-length-compare:", "variables-in-arg-registers:", "loop-rotation:", "copy-forward:", "conditional-move:"};
 
-    /** What a stage printed that a cache hit has to reproduce. */
-    static final class StageLog {
-        final List<String> warnings = new ArrayList<>();
-        /** "[note]" lines (what the optimizer did because the source asked for it); replayed on a hit like warnings. */
-        final List<String> notes = new ArrayList<>();
-    }
+
 
     private final Path root;
     private final boolean enabled;
@@ -174,7 +169,7 @@ final class CompilerCache {
      * Copies the cached output of (stage, key) to outFile and fills log; false = miss. With checkDeps the recorded source-file hashes must all
      * still match (stage 1).
      */
-    boolean restore(String stage, String key, Path outFile, boolean checkDeps, StageLog log) {
+    boolean restore(String stage, String key, Path outFile, boolean checkDeps, CompilerStageLog log) {
         if (!enabled || key == null) {
             return false;
         }
@@ -215,7 +210,7 @@ final class CompilerCache {
     }
 
     /** Stores a successful stage's output; `deps` (stage 1) is the list of source files the front end read, or null. Failures are ignored. */
-    void store(String stage, String key, Path outFile, StageLog log, List<String> deps) {
+    void store(String stage, String key, Path outFile, CompilerStageLog log, List<String> deps) {
         if (!enabled || key == null) {
             return;
         }
