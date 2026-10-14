@@ -175,7 +175,7 @@ public class VariableAllocationReorderingPass {
             long w = 1L << (3 * Math.min(run, 4));
             for (int t = 1; t < l.size(); t++) {
                 if (l.get(t).kind == BytecodeTokenKind.CODE) {
-                    weights.merge(l.get(t).text, w, Long::sum);
+                    { String mk = l.get(t).text; Long mo = weights.get(mk); weights.put(mk, mo == null ? w : mo + w); }
                 }
             }
         }
@@ -186,15 +186,7 @@ public class VariableAllocationReorderingPass {
                     weights.getOrDefault(decl.get(1).text, 0L)));
         }
         List<VariableAllocationReorderingSlot> sorted = new ArrayList<>(slots);
-        sorted.sort((a, b) -> {
-            if (a.align != b.align) {
-                return Long.compare(b.align, a.align);
-            }
-            if (a.weight != b.weight) {
-                return Long.compare(b.weight, a.weight);
-            }
-            return Integer.compare(a.idx, b.idx);
-        });
+        sortSlots(sorted);
         boolean same = true;
         for (int k = 0; k < count; k++) {
             if (sorted.get(k) != slots.get(k)) {
@@ -214,4 +206,26 @@ public class VariableAllocationReorderingPass {
         return result;
     }
 
+    private static int compareSlots(VariableAllocationReorderingSlot a, VariableAllocationReorderingSlot b) {
+        if (a.align != b.align) {
+            return Long.compare(b.align, a.align);
+        }
+        if (a.weight != b.weight) {
+            return Long.compare(b.weight, a.weight);
+        }
+        return Integer.compare(a.idx, b.idx);
+    }
+
+    /** Stable insertion sort of the list by compareSlots. */
+    private static void sortSlots(List<VariableAllocationReorderingSlot> list) {
+        for (int i = 1; i < list.size(); i++) {
+            VariableAllocationReorderingSlot x = list.get(i);
+            int j = i - 1;
+            while (j >= 0 && compareSlots(list.get(j), x) > 0) {
+                list.set(j + 1, list.get(j));
+                j--;
+            }
+            list.set(j + 1, x);
+        }
+    }
 }

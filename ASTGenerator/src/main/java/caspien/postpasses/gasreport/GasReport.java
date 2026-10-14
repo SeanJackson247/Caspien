@@ -560,7 +560,12 @@ public final class GasReport {
             }
             Map<Integer, Long> cm = creditsFrom(f, flow(f, t, entry, slotType, lhs), slotType);
             String sig = cm.toString();
-            f.edgeCredit.put(i, bySig.computeIfAbsent(sig, k -> cm));
+            Map<Integer, Long> shared = bySig.get(sig);
+            if (shared == null) {
+                shared = cm;
+                bySig.put(sig, shared);
+            }
+            f.edgeCredit.put(i, shared);
         }
     }
 

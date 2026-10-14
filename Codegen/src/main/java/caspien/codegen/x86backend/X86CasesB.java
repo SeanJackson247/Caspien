@@ -523,7 +523,7 @@ case "CLONE_DYN": {
                 hub.emit.raw("    addq $16, %r15");
                 hub.emit.raw("    movq %r15, %" + hub.calls.argReg(0));
                 
-                hub.calls.emitAlignedCall(() -> hub.calls.emitCallByName("malloc"));
+                hub.calls.emitAlignedCallByName("malloc");
                 hub.emit.raw("    movq %rax, %r14");
                 String cloneDynDone = hub.regForm.newInternalLabel("clone_dyn_done");
                 hub.emit.raw("    testq %r14, %r14");
@@ -797,14 +797,14 @@ case "NEW_FROM_USTRING":
                 // `windows_gnu` (AT&T syntax, win64 ABI).
                 hub.emit.raw("    movq %r12, %" + hub.calls.argReg(0));
                 
-                hub.calls.emitAlignedCall(() -> hub.calls.emitCallByName("strlen"));
+                hub.calls.emitAlignedCallByName("strlen");
                 // rax now holds the string length.
                 hub.emit.raw("    movq %rax, %r13"); // r13: length, callee-saved
                 hub.emit.raw("    addq $" + (ustr ? 1 : 16) + ", %rax");
                 
                 hub.emit.raw("    movq %rax, %" + hub.calls.argReg(0));
                 
-                hub.calls.emitAlignedCall(() -> hub.calls.emitCallByName("malloc"));
+                hub.calls.emitAlignedCallByName("malloc");
                 hub.emit.raw("    movq %rax, %r14"); // r14: new block
                 if (ustr) {
                     String ustrDone = hub.regForm.newInternalLabel("newustr_done");
@@ -937,7 +937,7 @@ case "RESIZE":
                 // realloc(oldBlockPtr, newTotalBytes) -- args already
                 // staged into the ABI's own first two argument registers
                 // just above (rdi/rsi for SysV, rcx/rdx for win64).
-                hub.calls.emitAlignedCall(() -> hub.calls.emitCallByName("realloc"));
+                hub.calls.emitAlignedCallByName("realloc");
                 if (hasFill) {
                     hub.emit.raw("    movq %r15, %rcx"); // rcx = the new capacity (saved in r15 across the call)
                 }

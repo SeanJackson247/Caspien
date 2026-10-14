@@ -998,7 +998,12 @@ public final class TypeCheckerSignatures {
     public void checkSafetyCallGraph() {
         Map<FuncInfo, List<FuncInfo>> callees = new HashMap<>();
         for (CallEdge e : hub.model.callEdges) {
-            callees.computeIfAbsent(e.caller, k -> new ArrayList<>()).add(e.callee);
+            List<FuncInfo> calleeList = callees.get(e.caller);
+            if (calleeList == null) {
+                calleeList = new ArrayList<>();
+                callees.put(e.caller, calleeList);
+            }
+            calleeList.add(e.callee);
         }
         Map<FuncInfo, Boolean> reachesUnsafeCache = new HashMap<>();
         for (CallEdge e : hub.model.callEdges) {
@@ -1086,7 +1091,12 @@ public final class TypeCheckerSignatures {
         }
         Map<FuncInfo, List<FuncInfo>> callees = new HashMap<>();
         for (CallEdge e : hub.model.callEdges) {
-            callees.computeIfAbsent(e.caller, k -> new ArrayList<>()).add(e.callee);
+            List<FuncInfo> calleeList = callees.get(e.caller);
+            if (calleeList == null) {
+                calleeList = new ArrayList<>();
+                callees.put(e.caller, calleeList);
+            }
+            calleeList.add(e.callee);
         }
         Set<FuncInfo> gtFuncSet = new HashSet<>(gtFuncs);
         Set<FuncInfo> reachable = new HashSet<>();
@@ -1283,10 +1293,14 @@ public final class TypeCheckerSignatures {
             work.push(t.right);
             work.push(t.next);
             if (t.childs != null) {
-                t.childs.forEach(work::push);
+                for (Token child : t.childs) {
+                    work.push(child);
+                }
             }
             if (t.sub != null) {
-                t.sub.forEach(work::push);
+                for (Token child : t.sub) {
+                    work.push(child);
+                }
             }
         }
         return false;
@@ -1457,15 +1471,19 @@ public final class TypeCheckerSignatures {
     }
 
     public boolean reachesUnsafe(FuncInfo f, Map<FuncInfo, List<FuncInfo>> callees, Map<FuncInfo, Boolean> cache) {
-        return reachesWhere(f, callees, cache, fn -> fn.safetyTag.equals("unsafe"));
+        return reachesWhere(f, callees, cache, true);
+    }
+
+    private boolean isReachBase(FuncInfo fn, boolean unsafeBase) {
+        return unsafeBase ? fn.safetyTag.equals("unsafe") : hub.model.funcsCallingResizeDirectly.contains(fn);
     }
 
     /**
-     * Memoised "can f reach a function satisfying `base`": a function still being explored counts as false (a cycle with no such function in it
+     * Memoised "can f reach a function satisfying the base test (`unsafeBase`: safety tag unsafe, else calls resize directly)": a function still being explored counts as false (a cycle with no such function in it
      * never reaches one), exactly as the recursive form did, so results do not depend on anything but the visiting order.
      */
     public boolean reachesWhere(FuncInfo f, Map<FuncInfo, List<FuncInfo>> callees, Map<FuncInfo, Boolean> cache,
-            java.util.function.Predicate<FuncInfo> base) {
+            boolean unsafeBase) {
         Boolean cachedRoot = cache.get(f);
         if (cachedRoot != null) {
             return cachedRoot;
@@ -1473,7 +1491,7 @@ public final class TypeCheckerSignatures {
         // frames: {function, callee iterator, result so far (Boolean[1])}
         Deque<Object[]> frames = new ArrayDeque<>();
         cache.put(f, false);
-        boolean rootResult = base.test(f);
+        boolean rootResult = isReachBase(f, unsafeBase);
         frames.push(new Object[]{f, callees.getOrDefault(f, Collections.emptyList()).iterator(), new boolean[]{rootResult}});
         Boolean childResult = null;
         boolean last = false;
@@ -1496,7 +1514,7 @@ public final class TypeCheckerSignatures {
                     childResult = cached;
                 } else {
                     cache.put(callee, false);
-                    frames.push(new Object[]{callee, callees.getOrDefault(callee, Collections.emptyList()).iterator(), new boolean[]{base.test(callee)}});
+                    frames.push(new Object[]{callee, callees.getOrDefault(callee, Collections.emptyList()).iterator(), new boolean[]{isReachBase(callee, unsafeBase)}});
                 }
                 continue;
             }
@@ -1512,7 +1530,12 @@ public final class TypeCheckerSignatures {
     public void checkDynArrayForLoopResizeSafety() {
         Map<FuncInfo, List<FuncInfo>> callees = new HashMap<>();
         for (CallEdge e : hub.model.callEdges) {
-            callees.computeIfAbsent(e.caller, k -> new ArrayList<>()).add(e.callee);
+            List<FuncInfo> calleeList = callees.get(e.caller);
+            if (calleeList == null) {
+                calleeList = new ArrayList<>();
+                callees.put(e.caller, calleeList);
+            }
+            calleeList.add(e.callee);
         }
         Map<FuncInfo, Boolean> reachesResizeCache = new HashMap<>();
         for (CallEdge e : hub.model.callEdges) {
@@ -1531,6 +1554,6 @@ public final class TypeCheckerSignatures {
     }
 
     public boolean reachesResize(FuncInfo f, Map<FuncInfo, List<FuncInfo>> callees, Map<FuncInfo, Boolean> cache) {
-        return reachesWhere(f, callees, cache, hub.model.funcsCallingResizeDirectly::contains);
+        return reachesWhere(f, callees, cache, false);
     }
 }

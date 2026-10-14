@@ -596,8 +596,12 @@ final class X86Emit {
                         // -- kept so the parent's storage can be emitted with
                         // them; before, they were dropped and every static
                         // array started zeroed.
-                        core.aliasInits.computeIfAbsent(parent, k -> new ArrayList<>())
-                                .add(new long[]{offset, size, initBits(line.get(3).text, size)});
+                        List<long[]> inits = core.aliasInits.get(parent);
+                        if (inits == null) {
+                            inits = new ArrayList<>();
+                            core.aliasInits.put(parent, inits);
+                        }
+                        inits.add(new long[]{offset, size, initBits(line.get(3).text, size)});
                     }
                     continue;
                 }

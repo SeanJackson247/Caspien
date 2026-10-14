@@ -102,13 +102,25 @@ public class RangeEndHintPass {
         }
         // group the sites by slot; a slot is usable only if every mention outside its constructions is a plain 8-byte read
         Map<Long, List<RangeEndHintSite>> bySlot = new HashMap<>();
+        List<Long> slotOrder = new ArrayList<>();   // keys in first-seen order
         for (RangeEndHintSite s : sites) {
-            bySlot.computeIfAbsent(s.off, k -> new ArrayList<>()).add(s);
+            List<RangeEndHintSite> bs = bySlot.get(s.off);
+            if (bs == null) {
+                bs = new ArrayList<>();
+                bySlot.put(s.off, bs);
+                slotOrder.add(s.off);
+            }
+            bs.add(s);
         }
         Set<Integer> splitAddr = new HashSet<>();
         List<long[]> hints = new ArrayList<>(); // {offset of the end slot, weight}
         List<RangeEndHintSite> accepted = new ArrayList<>();
-        for (Map.Entry<Long, List<RangeEndHintSite>> e : bySlot.entrySet()) {
+        // computeIfAbsent linked a new key at the head of its bucket; filling in reverse keeps that iteration order
+        Map<Long, List<RangeEndHintSite>> bySlotOrdered = new HashMap<>();
+        for (int q = slotOrder.size() - 1; q >= 0; q--) {
+            bySlotOrdered.put(slotOrder.get(q), bySlot.get(slotOrder.get(q)));
+        }
+        for (Map.Entry<Long, List<RangeEndHintSite>> e : bySlotOrdered.entrySet()) {
             long ro = e.getKey();
             long weight = usable(fn, ro, e.getValue(), depth);
             if (weight < 0) {

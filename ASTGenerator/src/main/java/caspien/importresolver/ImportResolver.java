@@ -132,9 +132,13 @@ public class ImportResolver {
                     "wildcard import '" + importPath + "': '" + dir + "' is not a folder");
         }
         List<String> names = new ArrayList<>();
-        try (java.util.stream.Stream<Path> l = Files.list(dir)) {
-            l.filter(Files::isRegularFile).map(x -> x.getFileName().toString())
-                    .filter(n -> n.endsWith(".caspien")).forEach(names::add);
+        try (java.nio.file.DirectoryStream<Path> l = Files.newDirectoryStream(dir)) {
+            for (Path x : l) {
+                String fileName = x.getFileName().toString();
+                if (Files.isRegularFile(x) && fileName.endsWith(".caspien")) {
+                    names.add(fileName);
+                }
+            }
         } catch (IOException e) {
             throw new CompilerException("import", currentFilePath, importTok.line,
                     "wildcard import '" + importPath + "': cannot list '" + dir + "': " + e.getMessage());

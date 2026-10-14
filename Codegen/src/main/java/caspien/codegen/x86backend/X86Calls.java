@@ -369,13 +369,13 @@ final class X86Calls {
      * `argTrackDeltaStack`'s own doc comment for the full design this
      * implements.
      */
-    void resolveStackArgBytesAndCall(Runnable callBody) {
+    void resolveStackArgBytesAndCall(boolean indirect, String target) {
         if (core.argTrackDeltaStack.isEmpty() || core.callBufferStack.isEmpty()) {
             // No open "CC_START" bracket at all -- shouldn't happen for a
             // real bytecode-level "CALL"/"INVOKE" (every one is always
             // wrapped in its own "CC_START"/"CC_END"), but falls back to
             // the always-safe, zero-stack-arg path rather than guessing.
-            emitAlignedCall(callBody);
+            emitAlignedCall(indirect, target);
             return;
         }
         long stackArgBytes = core.argTrackDeltaStack.peek();
@@ -419,7 +419,7 @@ final class X86Calls {
                     // `else`).
                     hub.emit.raw("    movl $" + hub.emit.consumeVarargsXmmCount() + ", %eax");
                 }
-                callBody.run();
+                emitCallTarget(indirect, target);
                 if (winAbi) {
                     hub.emit.raw("    addq $32, %rsp");
                 }
@@ -428,11 +428,24 @@ final class X86Calls {
             }
             emitStackArgRestore(stackArgBytes);
         } else {
-            emitAlignedCall(callBody);
+            emitAlignedCall(indirect, target);
         }
     }
 
-    void emitAlignedCall(Runnable body) {
+    /** Direct call by name, or indirect through register `target`. */
+    private void emitCallTarget(boolean indirect, String target) {
+        if (indirect) {
+            emitCallIndirect(target);
+        } else {
+            emitCallByName(target);
+        }
+    }
+
+    void emitAlignedCallByName(String name) {
+        emitAlignedCall(false, name);
+    }
+
+    void emitAlignedCall(boolean indirect, String target) {
         // Suspended for this whole call (preamble, body, postamble alike)
         // -- see `argTrackSuspendDepth`'s own doc comment. Every
         // instruction below nets to exactly zero real stack effect by the
@@ -474,7 +487,7 @@ final class X86Calls {
                 // so this whole branch stays SysV-only.
                 hub.emit.raw("    movl $" + hub.emit.consumeVarargsXmmCount() + ", %eax");
             }
-            body.run();
+            emitCallTarget(indirect, target);
             if (winAbi) {
                 hub.emit.raw("    addq $32, %rsp"); // undo shadow space -- rsp is back at the reserved slot
             }

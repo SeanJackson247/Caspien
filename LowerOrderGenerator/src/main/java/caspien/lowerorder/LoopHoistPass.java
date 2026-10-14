@@ -169,7 +169,7 @@ public class LoopHoistPass {
             }
         }
         // outermost (longest) first; ties broken by position for a stable result
-        loops.sort((x, y) -> (y.b - y.h) != (x.b - x.h) ? Integer.compare(y.b - y.h, x.b - x.h) : Integer.compare(x.h, y.h));
+        sortLoops(loops);
 
         BytecodeProgram cur = new BytecodeProgram(fn);
         Map<String, String> copyOf = new HashMap<>();
@@ -178,6 +178,7 @@ public class LoopHoistPass {
         int extra = 0;
         for (LoopHoistLoop lp : loops) {
             Map<String, Integer> starts = new HashMap<>();
+            List<String> startOrder = new ArrayList<>();   // keys in first-seen order
             List<long[]> writes = new ArrayList<>(); // {offset, width}: bytes the loop may store to, [offset, offset+width)
             for (int i = lp.h; i <= lp.b; i++) {
                 BytecodeStatement l = cur.get(i);
@@ -197,11 +198,20 @@ public class LoopHoistPass {
                     }
                     if (m.equals("R_MOV") && l.size() == 4 && t(l, 1).equals("8") && t(l, 2).startsWith("%t") && k == 3
                             && startsAccess(cur, i, lp.b)) {
-                        starts.merge(s, 1, Integer::sum);
+                        Integer mo = starts.get(s);
+                        if (mo == null) {
+                            startOrder.add(s);
+                        }
+                        starts.put(s, mo == null ? 1 : mo + 1);
                     }
                 }
             }
-            for (Map.Entry<String, Integer> e : starts.entrySet()) {
+            // merge() linked a new key at the head of its bucket; filling in reverse keeps that iteration order
+            Map<String, Integer> startsOrdered = new HashMap<>();
+            for (int q = startOrder.size() - 1; q >= 0; q--) {
+                startsOrdered.put(startOrder.get(q), starts.get(startOrder.get(q)));
+            }
+            for (Map.Entry<String, Integer> e : startsOrdered.entrySet()) {
                 String s = e.getKey();
                 long so = Long.parseLong(s.substring(1));
                 if (so < -allocSize || e.getValue() < MIN_READS || overlaps(writes, so) || isExposed(exposedOffsets, so)) {
@@ -216,7 +226,12 @@ public class LoopHoistPass {
                     }
                 }
                 copyOf.put(x, s);
-                before.computeIfAbsent(lp.h, q -> new BytecodeProgram()).add(mk(cur.get(lp.h).get(0), "R_MOV", "8", x, s));
+                BytecodeProgram bq = before.get(lp.h);
+                if (bq == null) {
+                    bq = new BytecodeProgram();
+                    before.put(lp.h, bq);
+                }
+                bq.add(mk(cur.get(lp.h).get(0), "R_MOV", "8", x, s));
                 long w = 1L;
                 for (int d = 0; d <= Math.min(lp.depth, 3); d++) {
                     w *= 8;
@@ -477,5 +492,22 @@ public class LoopHoistPass {
             l.add(new BytecodeToken(s, ref.file, ref.line, BytecodeTokenKind.CODE));
         }
         return l;
+    }
+
+    private static int compareLoops(LoopHoistLoop x, LoopHoistLoop y) {
+        return (y.b - y.h) != (x.b - x.h) ? Integer.compare(y.b - y.h, x.b - x.h) : Integer.compare(x.h, y.h);
+    }
+
+    /** Stable insertion sort of the list by compareLoops. */
+    private static void sortLoops(List<LoopHoistLoop> list) {
+        for (int i = 1; i < list.size(); i++) {
+            LoopHoistLoop x = list.get(i);
+            int j = i - 1;
+            while (j >= 0 && compareLoops(list.get(j), x) > 0) {
+                list.set(j + 1, list.get(j));
+                j--;
+            }
+            list.set(j + 1, x);
+        }
     }
 }

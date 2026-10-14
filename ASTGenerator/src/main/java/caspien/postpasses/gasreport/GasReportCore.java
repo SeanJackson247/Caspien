@@ -62,15 +62,15 @@ final class GasReportCore {
     /** Builds the report section for the program whose HOB is given; `entry` functions are `main` and `__caspien_main`. */
     public static Result build(String hob) {
         GasReport g = new GasReport(hob);
-        final Result[] out = new Result[1];
-        Thread t = new Thread(null, () -> out[0] = g.core.report(), "gas", 1L << 29);   // deep recursion over long functions
+        GasReportThread job = new GasReportThread(g);
+        Thread t = new Thread(null, job, "gas", 1L << 29);   // deep recursion over long functions
         t.start();
         try {
             t.join();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
-        return out[0];
+        return job.result;
     }
 
     // ---- the cost table ----------------------------------------------------------------------------------------------------------------
@@ -276,47 +276,31 @@ final class GasReportCore {
      */
     public static void checkLabels(String hob, Map<String, DocComment> funcs, Map<String, DocComment> loops) {
         GasReport g = new GasReport(hob);
-        final RuntimeException[] err = new RuntimeException[1];
-        Thread t = new Thread(null, () -> {
-            try {
-                g.verifyLabels(funcs, loops);
-            } catch (RuntimeException e) {
-                err[0] = e;
-            }
-        }, "gas-labels", 1L << 29);
+        GasLabelsThread job = new GasLabelsThread(g, funcs, loops);
+        Thread t = new Thread(null, job, "gas-labels", 1L << 29);
         t.start();
         try {
             t.join();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
-        if (err[0] != null) {
-            throw err[0];
+        if (job.error != null) {
+            throw job.error;
         }
     }
 
     /** Class words for every site ({hobFunction, loopLabel or null, ...}): key = function + "|" + (label or ""). Used by `--fix termination`. */
     public static Map<String, String> classify(String hob, List<String[]> sites) {
         GasReport g = new GasReport(hob);
-        final Map<String, String> out = new LinkedHashMap<>();
-        Thread t = new Thread(null, () -> {
-            for (Fn f : g.core.fns.values()) {
-                g.core.solve(f, new ArrayList<>());
-            }
-            for (String[] s : sites) {
-                String w = s[1] == null ? g.funcWord(s[0]) : g.loopWord(s[0], s[1]);
-                if (w != null) {
-                    out.put(s[0] + "|" + (s[1] == null ? "" : s[1]), w);
-                }
-            }
-        }, "gas-classify", 1L << 29);
+        GasClassifyThread job = new GasClassifyThread(g, sites);
+        Thread t = new Thread(null, job, "gas-classify", 1L << 29);
         t.start();
         try {
             t.join();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
-        return out;
+        return job.out;
     }
 
     public static String shown(String hobName) {
@@ -365,7 +349,7 @@ final class GasReportCore {
         StringBuilder sb = new StringBuilder(wordOf(w)).append(": ");
         boolean first = true;
         List<String> sorted = new ArrayList<>(reasons);
-        sorted.sort((a, b) -> Integer.compare(b.charAt(0), a.charAt(0)));      // worst class first (stable)
+        new GasSort().sort(sorted, GasSort.CLASS_DESC);      // worst class first (stable)
         for (String r : sorted) {
             if (!first) {
                 sb.append("; ");
@@ -388,15 +372,15 @@ final class GasReportCore {
      *  worst-case stack depth (the same figure as the stack section: frame + deepest callee) of its function. */
     public static String viz(String hob, String title) {
         GasReport g = new GasReport(hob);
-        final String[] out = new String[1];
-        Thread t = new Thread(null, () -> out[0] = g.vizPage(title), "viz", 1L << 29);
+        GasVizThread job = new GasVizThread(g, title);
+        Thread t = new Thread(null, job, "viz", 1L << 29);
         t.start();
         try {
             t.join();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
-        return out[0];
+        return job.page;
     }
 
     public static String jsonStr(String s) {
@@ -517,18 +501,8 @@ final class GasReportCore {
                 pinned.add(r.name);
             }
         }
-        final java.util.function.Function<String, String> rootLabel = n -> {
-            Fn f = fns.get(n);
-            if (eventMode && f != null && f.deco.contains("@with_tick")) {
-                return n + " (slice: @with_tick)";
-            }
-            if (eventMode && f != null && f.deco.contains("@tick")) {
-                return n + " (slice: @tick)";
-            }
-            return n + (n.equals(entry.name) ? " (entry)" : n.startsWith("__trampoline_") ? " (thread entry)" : "");
-        };
         List<String> order = new ArrayList<>(reach);
-        sortedSection(sb, res, order, pinned, rootLabel, GAS, "\n# worst-case execution cost (abstract gas; HOB operations before optimisation, table in docs/COMPILER_REFERENCE.md)\n", "gas");
+        sortedSection(sb, res, order, pinned, eventMode, entry, GAS, "\n# worst-case execution cost (abstract gas; HOB operations before optimisation, table in docs/COMPILER_REFERENCE.md)\n", "gas");
         for (Fn r : (eventMode ? slices : List.of(entry))) {
             Set<String> eub = r.ub[GAS];
             sb.append("# summary: ").append(r.name).append(" costs ").append(eub.isEmpty() ? "" : "at least ").append(r.val[GAS]).append(" gas")
@@ -560,15 +534,17 @@ final class GasReportCore {
             sb.append("#   a slice's figure includes the ").append(loopFrame).append(" bytes of the event loop's own frame, which it runs below\n");
         }
         List<String> so = new ArrayList<>(reach);
-        so.sort((a, b) -> depth.get(b).compareTo(depth.get(a)));
+        GasSort sorter = new GasSort();
+        sorter.depth = depth;
+        sorter.sort(so, GasSort.STACK_DESC);
         int shown = 0;
         for (String n : so) {
-            boolean isRoot = roots.stream().anyMatch(r -> r.name.equals(n));
+            boolean isRoot = isRootName(roots, n);
             if (shown++ >= CAP && !isRoot) {
                 continue;
             }
             Set<String> why = sub.get(n);
-            String label = rootLabel.apply(n);
+            String label = rootLabel(n, eventMode, entry);
             String val = (why.isEmpty() ? "" : ">= ") + depth.get(n) + " bytes";
             res.stackByFunction.put(n, (why.isEmpty() ? "" : ">=") + depth.get(n));
             sb.append(String.format("  %-34s %s  %s%n", label, val, tag(why)));
@@ -598,7 +574,12 @@ final class GasReportCore {
                 sb.append("      not counted: stack used by external calls (").append(String.join(", ", ext)).append(")\n");
             }
         }
-        long threadRoots = roots.stream().filter(r -> r.name.startsWith("__trampoline_")).count();
+        long threadRoots = 0;
+        for (Fn r : roots) {
+            if (r.name.startsWith("__trampoline_")) {
+                threadRoots++;
+            }
+        }
         for (Fn r : (eventMode ? slices : List.of(entry))) {
             sb.append("# summary: ").append(r.name).append(" needs ").append(sub.get(r.name).isEmpty() ? "" : "at least ").append(depth.get(r.name))
                     .append(" bytes of stack").append(sub.get(r.name).isEmpty() ? " (bound)" : " (" + wordOf(worstOf(sub.get(r.name))) + ")").append(" for safe code, ")
@@ -609,7 +590,8 @@ final class GasReportCore {
         sb.append("\n# heap memory (the most bytes one run can request from the allocator: new, dyn, resize and clone, at their full size, headers included, frees not credited,\n")
                 .append("#   so it also bounds the peak live heap; ghost-table growth and the allocator's own overhead are not counted; the number of allocation operations is in brackets)\n");
         List<String> ho = new ArrayList<>(reach);
-        ho.sort((a, b) -> fns.get(b).val[HEAP].compareTo(fns.get(a).val[HEAP]));
+        sorter.fns = fns;
+        sorter.sort(ho, GasSort.HEAP_DESC);
         shown = 0;
         for (String n : ho) {
             Fn f = fns.get(n);
@@ -622,7 +604,7 @@ final class GasReportCore {
             String val = (f.ub[HEAP].isEmpty() ? "" : ">= ") + f.val[HEAP] + " bytes";
             res.heapByFunction.put(n, (f.ub[HEAP].isEmpty() ? "" : ">=") + f.val[HEAP]);
             res.countByFunction.put(n, (f.ub[COUNT].isEmpty() ? "" : ">=") + f.val[COUNT]);
-            sb.append(String.format("  %-34s %s  (%s%d allocation operation%s)%s%n", rootLabel.apply(n).replace(" (thread entry)", ""), val,
+            sb.append(String.format("  %-34s %s  (%s%d allocation operation%s)%s%n", rootLabel(n, eventMode, entry).replace(" (thread entry)", ""), val,
                     f.ub[COUNT].isEmpty() ? "" : ">= ", f.val[COUNT], f.val[COUNT].equals(BigInteger.ONE) ? "" : "s",
                     "  " + tag(f.ub[HEAP])));
         }
@@ -635,7 +617,7 @@ final class GasReportCore {
                 .append("#   made, and every `resize` counts as a moving realloc, the old and the new block live together; a block moved into a struct member, a path-dependent slot or code the\n")
                 .append("#   analysis cannot follow is never credited, so the figure stays an upper bound; `leaves` = bytes still live when the function returns, e.g. a block it hands back)\n");
         List<String> lo = new ArrayList<>(reach);
-        lo.sort((a, b) -> fns.get(b).livePeak.compareTo(fns.get(a).livePeak));
+        sorter.sort(lo, GasSort.LIVE_DESC);
         shown = 0;
         for (String n : lo) {
             Fn f = fns.get(n);
@@ -646,7 +628,7 @@ final class GasReportCore {
             if (shown++ >= CAP && !pinned.contains(n)) {
                 continue;
             }
-            sb.append(String.format("  %-34s peak %s%s bytes  (leaves %s%s)%s%n", rootLabel.apply(n).replace(" (thread entry)", ""), f.ub[LIVE].isEmpty() ? "" : ">= ", f.livePeak,
+            sb.append(String.format("  %-34s peak %s%s bytes  (leaves %s%s)%s%n", rootLabel(n, eventMode, entry).replace(" (thread entry)", ""), f.ub[LIVE].isEmpty() ? "" : ">= ", f.livePeak,
                     f.ub[LIVE].isEmpty() ? "" : ">= ", f.val[LIVE].max(BigInteger.ZERO), "  " + tag(f.ub[LIVE])));
         }
         for (Fn r : (eventMode ? slices : List.of(entry))) {
@@ -659,7 +641,7 @@ final class GasReportCore {
                     .append("#   Worst case of one run of each slice, to completion (stack includes the event loop's own ").append(loopFrame).append("-byte frame; a tick's heap figure is per call):\n");
             for (Fn sl : slices) {
                 boolean g = sl.ub[GAS].isEmpty(), h = sl.ub[HEAP].isEmpty(), st = sub.get(sl.name).isEmpty();
-                top.append(String.format("  %-34s gas %s%s   stack %s%d bytes   heap %s%s bytes (%s%s allocation operation%s), peak live %s%s bytes%n", rootLabel.apply(sl.name),
+                top.append(String.format("  %-34s gas %s%s   stack %s%d bytes   heap %s%s bytes (%s%s allocation operation%s), peak live %s%s bytes%n", rootLabel(sl.name, eventMode, entry),
                         g ? "" : ">= ", sl.val[GAS], st ? "" : ">= ", depth.get(sl.name), h ? "" : ">= ", sl.val[HEAP],
                         sl.ub[COUNT].isEmpty() ? "" : ">= ", sl.val[COUNT], sl.val[COUNT].equals(BigInteger.ONE) ? "" : "s", sl.ub[LIVE].isEmpty() ? "" : ">= ", sl.livePeak));
             }
@@ -692,19 +674,34 @@ final class GasReportCore {
         return res;
     }
 
+    private String rootLabel(String n, boolean eventMode, Fn entry) {
+        Fn f = fns.get(n);
+        if (eventMode && f != null && f.deco.contains("@with_tick")) {
+            return n + " (slice: @with_tick)";
+        }
+        if (eventMode && f != null && f.deco.contains("@tick")) {
+            return n + " (slice: @tick)";
+        }
+        return n + (n.equals(entry.name) ? " (entry)" : n.startsWith("__trampoline_") ? " (thread entry)" : "");
+    }
+
+    private static boolean isRootName(List<Fn> roots, String n) {
+        for (Fn r : roots) {
+            if (r.name.equals(n)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public void sortedSection(StringBuilder sb, Result res, List<String> order, Set<String> pinned,
-            java.util.function.Function<String, String> label, int mt, String title, String key) {
+            boolean eventMode, Fn entry, int mt, String title, String key) {
         sb.append(title);
-        order.sort((a, b) -> {
-            boolean pa = pinned.contains(a), pb = pinned.contains(b);
-            if (pa != pb) {
-                return pa ? -1 : 1;
-            }
-            if (pa) {
-                return 0;   // pinned roots keep the order they were given in (stable sort)
-            }
-            return fns.get(b).val[mt].compareTo(fns.get(a).val[mt]);
-        });
+        GasSort sorter = new GasSort();
+        sorter.fns = fns;
+        sorter.pinned = pinned;
+        sorter.mt = mt;
+        sorter.sort(order, GasSort.PINNED_THEN_METRIC);
         int shown = 0;
         for (String n : order) {
             Fn f = fns.get(n);
@@ -714,7 +711,7 @@ final class GasReportCore {
             if (shown++ >= CAP && !pinned.contains(n)) {
                 continue;
             }
-            sb.append(String.format("  %-34s %s  %s%n", label.apply(n).replace(" (thread entry)", n.startsWith("__trampoline_") ? " (thread entry)" : ""), val, tag(ub)));
+            sb.append(String.format("  %-34s %s  %s%n", rootLabel(n, eventMode, entry).replace(" (thread entry)", n.startsWith("__trampoline_") ? " (thread entry)" : ""), val, tag(ub)));
             if (!f.notModelled.isEmpty()) {
                 sb.append("      not modelled: ").append(String.join("; ", f.notModelled)).append("\n");
             }

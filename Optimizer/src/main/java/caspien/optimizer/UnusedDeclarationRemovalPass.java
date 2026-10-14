@@ -70,14 +70,14 @@ public class UnusedDeclarationRemovalPass {
             switch (m) {
                 case "EXTERN":
                 case "STRING":
-                    decls.computeIfAbsent(m + ":" + n, k -> new ArrayList<>()).add(i);
+                    addDecl(decls, m + ":" + n, i);
                     break;
                 case "GLOBAL":
-                    decls.computeIfAbsent("GLOBAL:" + base(n), k -> new ArrayList<>()).add(i);
+                    addDecl(decls, "GLOBAL:" + base(n), i);
                     break;
                 case "ALLOC_STATIC":
-                    decls.computeIfAbsent("ALLOC_STATIC:" + base(n), k -> new ArrayList<>()).add(i);
-                    if (n.indexOf('.') < 0) staticBaseCount.merge(n, 1, Integer::sum);
+                    addDecl(decls, "ALLOC_STATIC:" + base(n), i);
+                    if (n.indexOf('.') < 0) { String mk = n; Integer mo = staticBaseCount.get(mk); staticBaseCount.put(mk, mo == null ? 1 : mo + 1); }
                     staticNames.add(base(n));
                     break;
                 default:
@@ -124,5 +124,14 @@ public class UnusedDeclarationRemovalPass {
             if (!remove.contains(i)) out.add(lines.get(i));
         }
         return new PassResult(out, true);
+    }
+
+    private static void addDecl(Map<String, List<Integer>> decls, String key, int i) {
+        List<Integer> v = decls.get(key);
+        if (v == null) {
+            v = new ArrayList<>();
+            decls.put(key, v);
+        }
+        v.add(i);
     }
 }

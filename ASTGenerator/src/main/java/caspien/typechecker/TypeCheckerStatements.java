@@ -1638,7 +1638,13 @@ public final class TypeCheckerStatements {
         }
         for (MatchPattern p : newPatterns) {
             // an alive proof that has seen a possibly destroying event since it was made may be stale: matching again is how it is renewed
-            boolean alreadyActive = scope.activeMatchPatterns.stream().anyMatch(existing -> matchPatternsEqual(p, existing) && !ProofKills.hasEvents(existing));
+            boolean alreadyActive = false;
+            for (MatchPattern existing : scope.activeMatchPatterns) {
+                if (matchPatternsEqual(p, existing) && !ProofKills.hasEvents(existing)) {
+                    alreadyActive = true;
+                    break;
+                }
+            }
             if (!alreadyActive) {
                 return; // at least one genuinely new assertion -- not redundant
             }

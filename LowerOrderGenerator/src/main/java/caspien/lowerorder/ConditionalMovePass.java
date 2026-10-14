@@ -33,13 +33,13 @@ public class ConditionalMovePass {
         Map<String, Integer> refs = new HashMap<>();
         for (BytecodeStatement l : lines) {
             if (l.size() == 6 && (t(l, 0).equals("R_BRC") || t(l, 0).equals("R_BRCM"))) {
-                refs.merge(t(l, 5), 1, Integer::sum);
+                { String mk = t(l, 5); Integer mo = refs.get(mk); refs.put(mk, mo == null ? 1 : mo + 1); }
             } else if (l.size() == 2 && t(l, 0).equals("JMP")) {
-                refs.merge(t(l, 1), 1, Integer::sum);
+                { String mk = t(l, 1); Integer mo = refs.get(mk); refs.put(mk, mo == null ? 1 : mo + 1); }
             } else {
                 for (int k = 1; k < l.size(); k++) {
                     if (t(l, k).startsWith("@") && !t(l, k).endsWith(":")) {
-                        refs.merge(t(l, k), 100, Integer::sum);     // any other mention (switch tables, address-of): never touch
+                        { String mk = t(l, k); Integer mo = refs.get(mk); refs.put(mk, mo == null ? 100 : mo + 100); }     // any other mention (switch tables, address-of): never touch
                     }
                 }
             }

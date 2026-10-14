@@ -40,6 +40,15 @@ public final class TypeCheckerImpls {
         this.hub = hub;
     }
 
+    private static boolean allDigits(String text) {
+        for (int i = 0; i < text.length(); i++) {
+            if (!Character.isDigit(text.charAt(i))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     /** Registers "impl [I for] C{...}". See docs/TypeChecker.md, "Impl collection" for the rules. */
     public void collectImpl(Token t, String safetyTag) {
         String interfaceName = t.sub.size() == 2 ? t.sub.get(0).text : null;
@@ -373,7 +382,11 @@ public final class TypeCheckerImpls {
             fi.safetyTag = safetyTag;
             fi.mangledName = name + "_" + fi.name + "__sig_" + signatureSuffix(fi.paramTypes);
 
-            List<FuncInfo> overloads = info.ownFunctions.computeIfAbsent(fi.name, k -> new ArrayList<>());
+            List<FuncInfo> overloads = info.ownFunctions.get(fi.name);
+            if (overloads == null) {
+                overloads = new ArrayList<>();
+                info.ownFunctions.put(fi.name, overloads);
+            }
             for (FuncInfo existing : overloads) {
                 if (hub.signatures.sameSignature(existing, fi)) {
                     throw new CompilerException("type", funcTok.file, funcTok.line,
@@ -507,7 +520,11 @@ public final class TypeCheckerImpls {
      * flattenLibrary).
      */
     public void mergeLibraryOverloads(LibraryInfo info, String name, String funcName, List<FuncInfo> incoming) {
-        List<FuncInfo> existing = info.functions.computeIfAbsent(funcName, k -> new ArrayList<>());
+        List<FuncInfo> existing = info.functions.get(funcName);
+        if (existing == null) {
+            existing = new ArrayList<>();
+            info.functions.put(funcName, existing);
+        }
         for (FuncInfo candidate : incoming) {
             for (FuncInfo already : existing) {
                 if (hub.signatures.sameSignature(already, candidate)) {
@@ -1151,7 +1168,7 @@ public final class TypeCheckerImpls {
                 }
                 if (d.args.size() == 1) {
                     String a = d.args.get(0);
-                    boolean digits = !d.argIsString.get(0) && !a.isEmpty() && a.length() <= 3 && a.chars().allMatch(Character::isDigit);
+                    boolean digits = !d.argIsString.get(0) && !a.isEmpty() && a.length() <= 3 && allDigits(a);
                     if (!digits || Integer.parseInt(a) < 2 || Integer.parseInt(a) > 64) {
                         throw new CompilerException("type", d.file, d.line,
                                 "'@unroll(N)' needs a whole-number factor from 2 to 64, found '" + a + "'");

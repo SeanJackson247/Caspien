@@ -160,7 +160,12 @@ public final class FixTool {
                 continue;
             }
             String key = DocComments.norm(s[2]) + "|" + s[3] + "|" + s[4];
-            byConstruct.computeIfAbsent(key, k -> new LinkedHashSet<>()).add(w);
+            Set<String> classSet = byConstruct.get(key);
+            if (classSet == null) {
+                classSet = new LinkedHashSet<>();
+                byConstruct.put(key, classSet);
+            }
+            classSet.add(w);
             first.putIfAbsent(key, s);
         }
         for (Map.Entry<String, Set<String>> e : byConstruct.entrySet()) {
@@ -281,8 +286,8 @@ public final class FixTool {
                         repl.add(indentOf(one) + "/*! justify: TODO */");
                     }
                     repl.add(nl);
-                    replacements.computeIfAbsent(file, k -> new ArrayList<>()).add(new Object[]{L, L, repl});
-                    splitBlockLines.computeIfAbsent(file, k -> new LinkedHashSet<>()).add(L);
+                    replacementsFor(file).add(new Object[]{L, L, repl});
+                    splitLinesFor(file).add(L);
                     splitBlocks.add(file + "\t" + L);
                     splits++;
                     plan.add(where + "  unsafe unaudited{ -> unsafe " + String.join(" ", need) + "{ (one line, retagged)");
@@ -416,8 +421,8 @@ public final class FixTool {
             if (out.equals(oldRegion)) {
                 continue;
             }
-            replacements.computeIfAbsent(file, k -> new ArrayList<>()).add(new Object[]{regionStart, close, out});
-            splitBlockLines.computeIfAbsent(file, k -> new LinkedHashSet<>()).add(L);
+            replacementsFor(file).add(new Object[]{regionStart, close, out});
+            splitLinesFor(file).add(L);
             splitBlocks.add(file + "\t" + L);
             splits++;
             plan.add(where + "  unsafe " + String.join(" ", si.declared) + "{ (" + n + " statement" + (n == 1 ? "" : "s") + ") -> "
@@ -425,8 +430,36 @@ public final class FixTool {
         }
     }
 
+    private List<Object[]> replacementsFor(String file) {
+        List<Object[]> r = replacements.get(file);
+        if (r == null) {
+            r = new ArrayList<>();
+            replacements.put(file, r);
+        }
+        return r;
+    }
+
+    private Set<Integer> splitLinesFor(String file) {
+        Set<Integer> r = splitBlockLines.get(file);
+        if (r == null) {
+            r = new LinkedHashSet<>();
+            splitBlockLines.put(file, r);
+        }
+        return r;
+    }
+
     private void add(String file, int before, String text, String what) {
-        inserts.computeIfAbsent(file, k -> new TreeMap<>()).computeIfAbsent(before, k -> new ArrayList<>()).add(text);
+        TreeMap<Integer, List<String>> perFile = inserts.get(file);
+        if (perFile == null) {
+            perFile = new TreeMap<>();
+            inserts.put(file, perFile);
+        }
+        List<String> atLine = perFile.get(before);
+        if (atLine == null) {
+            atLine = new ArrayList<>();
+            perFile.put(before, atLine);
+        }
+        atLine.add(text);
         plan.add(show(file) + ":" + before + "  + " + text.trim() + "    (" + what + ")");
         count++;
     }

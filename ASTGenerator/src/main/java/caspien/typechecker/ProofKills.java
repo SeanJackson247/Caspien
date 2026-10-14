@@ -63,7 +63,7 @@ public final class ProofKills {
     public static void enterFunction(FuncInfo f) {
         funcStack.push(f);
         if (f.mangledName != null) {
-            ProofKillsFacts fa = facts.computeIfAbsent(f.mangledName, k -> new ProofKillsFacts());
+            ProofKillsFacts fa = factsFor(f.mangledName);
             if ("unsafe".equals(f.safetyTag) && fa.directKill == null) {
                 fa.directKill = "it is declared inside unsafe{}";
                 fa.directAll = true;
@@ -140,8 +140,19 @@ public final class ProofKills {
         MatchPattern p = new MatchPattern(slot, "alive", null);
         p.loopDepth = loopIds.size();
         p.pointee = pointee;
-        implicitBySlot.computeIfAbsent(fk + "|" + slot, k -> new ArrayList<>()).add(p);
-        implicitByFunc.computeIfAbsent(fk, k -> new ArrayList<>()).add(p);
+        String slotKey = fk + "|" + slot;
+        List<MatchPattern> bySlot = implicitBySlot.get(slotKey);
+        if (bySlot == null) {
+            bySlot = new ArrayList<>();
+            implicitBySlot.put(slotKey, bySlot);
+        }
+        bySlot.add(p);
+        List<MatchPattern> byFunc = implicitByFunc.get(fk);
+        if (byFunc == null) {
+            byFunc = new ArrayList<>();
+            implicitByFunc.put(fk, byFunc);
+        }
+        byFunc.add(p);
     }
 
     /** A read of a `ref some` local: it must still be covered by its creation proof. */
@@ -192,7 +203,7 @@ public final class ProofKills {
     public static void kill(List<MatchPattern> active, Token at, String what, String memberRoot, Set<String> types) {
         FuncInfo f = funcStack.peek();
         if (f != null && f.mangledName != null) {
-            ProofKillsFacts fa = facts.computeIfAbsent(f.mangledName, k -> new ProofKillsFacts());
+            ProofKillsFacts fa = factsFor(f.mangledName);
             if (fa.directKill == null) {
                 fa.directKill = what + " at " + at.file + ":" + at.line;
             }
@@ -208,22 +219,40 @@ public final class ProofKills {
     public static void call(List<MatchPattern> active, Token at, String callee) {
         FuncInfo f = funcStack.peek();
         if (f != null && f.mangledName != null) {
-            facts.computeIfAbsent(f.mangledName, k -> new ProofKillsFacts()).callees.add(callee);
+            factsFor(f.mangledName).callees.add(callee);
         }
         record(active, new ProofKillsEv(++seq, snapshot(), at, null, callee, null, null));
+    }
+
+    private static ProofKillsFacts factsFor(String name) {
+        ProofKillsFacts fa = facts.get(name);
+        if (fa == null) {
+            fa = new ProofKillsFacts();
+            facts.put(name, fa);
+        }
+        return fa;
+    }
+
+    private static List<ProofKillsEv> eventsFor(MatchPattern p) {
+        List<ProofKillsEv> list = events.get(p);
+        if (list == null) {
+            list = new ArrayList<>();
+            events.put(p, list);
+        }
+        return list;
     }
 
     public static void record(List<MatchPattern> active, ProofKillsEv e) {
         for (MatchPattern p : active) {
             if (p.kind.equals("alive") && !p.invalidated && !(e.skipSlot != null && e.skipSlot.equals(p.slotKey))) {
-                events.computeIfAbsent(p, k -> new ArrayList<>()).add(e);
+                eventsFor(p).add(e);
             }
         }
         List<MatchPattern> imp = implicitByFunc.get(funcKey());
         if (imp != null) {
             for (MatchPattern p : imp) {
                 if (!p.invalidated && !(e.skipSlot != null && e.skipSlot.equals(p.slotKey))) {
-                    events.computeIfAbsent(p, k -> new ArrayList<>()).add(e);
+                    eventsFor(p).add(e);
                 }
             }
         }
@@ -270,7 +299,7 @@ public final class ProofKills {
                             if (s.reason == null) {
                                 s.reason = callee + ": it takes an owning parameter, which it may drop";
                             }
-                            Set<String> c = g.closure.apply(pt);
+                            Set<String> c = g.closure.destroyedTypes(pt);
                             if (c == null) {
                                 s.all = true;
                             } else {
@@ -327,7 +356,7 @@ public final class ProofKills {
     }
 
     public static void check(TypeChecker checker, Collection<FuncInfo> allFuncs, Set<String> externNames) {
-        ProofKillsGraph g = new ProofKillsGraph(externNames, checker.declarations::destroyedTypes);
+        ProofKillsGraph g = new ProofKillsGraph(externNames, checker.declarations);
         for (FuncInfo f : allFuncs) {
             if (f != null && f.mangledName != null) {
                 g.known.put(f.mangledName, f);

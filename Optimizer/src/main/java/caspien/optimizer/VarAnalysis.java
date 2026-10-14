@@ -101,7 +101,11 @@ final class VarAnalysis {
         for (int i = s; i <= e; i++) {
             BytecodeStatement l = L.get(i);
             if (l.size() == 3 && "ALLOC".equals(mnemonic(l)) && !l.get(1).text.startsWith("$") && ConstantFoldingPass.base(l.get(2).text) != null) {
-                VarAnalysisVar v = vars.computeIfAbsent(l.get(1).text, k -> new VarAnalysisVar());
+                VarAnalysisVar v = vars.get(l.get(1).text);
+                if (v == null) {
+                    v = new VarAnalysisVar();
+                    vars.put(l.get(1).text, v);
+                }
                 v.name = l.get(1).text;
                 v.type = l.get(2).text;
                 v.allocs++;

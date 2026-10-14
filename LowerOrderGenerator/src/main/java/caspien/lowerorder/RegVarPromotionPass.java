@@ -318,9 +318,8 @@ public class RegVarPromotionPass {
                 (h.xmm ? xCands : intCands).add(h);
             }
         }
-        java.util.Comparator<RegVarPromotionHint> byWeight = (a, b) -> a.weight != b.weight ? Long.compare(b.weight, a.weight) : Long.compare(a.off, b.off);
-        intCands.sort(byWeight);
-        xCands.sort(byWeight);
+        sortByWeight(intCands);
+        sortByWeight(xCands);
         boolean noCallee = blocked && !allocFunctions;
         int intLimit = noCallee ? 0 : VAR_COUNT;
         if (!noCallee && !usesTemp3(fn)) {
@@ -496,7 +495,9 @@ public class RegVarPromotionPass {
             }
             if (fall && i + 1 < n) sc.add(i + 1);
             if (MAY_UNWIND.contains(m)) sc.addAll(padTargets);
-            succ[i] = sc.stream().mapToInt(Integer::intValue).toArray();
+            int[] scArr = new int[sc.size()];
+            for (int q = 0; q < scArr.length; q++) scArr[q] = sc.get(q);
+            succ[i] = scArr;
         }
         // reads and writes per line
         java.util.BitSet[] use = new java.util.BitSet[n];
@@ -941,5 +942,22 @@ public class RegVarPromotionPass {
             r.add(new BytecodeToken(s, a.file, a.line, BytecodeTokenKind.CODE));
         }
         return r;
+    }
+
+    private static int compareByWeight(RegVarPromotionHint a, RegVarPromotionHint b) {
+        return a.weight != b.weight ? Long.compare(b.weight, a.weight) : Long.compare(a.off, b.off);
+    }
+
+    /** Stable insertion sort of the list by compareByWeight. */
+    private static void sortByWeight(List<RegVarPromotionHint> list) {
+        for (int i = 1; i < list.size(); i++) {
+            RegVarPromotionHint x = list.get(i);
+            int j = i - 1;
+            while (j >= 0 && compareByWeight(list.get(j), x) > 0) {
+                list.set(j + 1, list.get(j));
+                j--;
+            }
+            list.set(j + 1, x);
+        }
     }
 }

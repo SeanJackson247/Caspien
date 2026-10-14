@@ -598,7 +598,7 @@ public class FunctionInliningPass {
         Map<String, String> pos = new LinkedHashMap<>(forcedPos);
         for (int i = 0; i < L.size(); i++) {
             BytecodeStatement l = L.get(i);
-            if (is(l, 2, "CALL")) remaining.merge(l.get(1).text, 1, Integer::sum);
+            if (is(l, 2, "CALL")) { String mk = l.get(1).text; Integer mo = remaining.get(mk); remaining.put(mk, mo == null ? 1 : mo + 1); }
             if ("FUNC_DECORATE".equals(mn(l)) && l.size() == 3 && "@inline".equals(l.get(1).text)) {
                 // the nearest FUNC_START above names the function
                 int j = i;
@@ -684,7 +684,7 @@ public class FunctionInliningPass {
         }
         Map<String, Integer> callCount = new HashMap<>();
         for (BytecodeStatement l : L) {
-            if (is(l, 2, "CALL")) callCount.merge(l.get(1).text, 1, Integer::sum);
+            if (is(l, 2, "CALL")) { String mk = l.get(1).text; Integer mo = callCount.get(mk); callCount.put(mk, mo == null ? 1 : mo + 1); }
         }
         for (FunctionInliningCallee c : callees.values()) c.calls = callCount.getOrDefault(c.name, 0);
 
@@ -722,7 +722,7 @@ public class FunctionInliningPass {
                 while (p < body.size()) fn.add(body.get(p++));
                 fn.add(L.get(f[1]));
                 out.addAll(fn);
-                grown.merge(cx.caller, cx.added, Long::sum);
+                { String mk = cx.caller; Long mo = grown.get(mk); grown.put(mk, mo == null ? cx.added : mo + cx.added); }
             } else {
                 for (int i = f[0]; i <= f[1]; i++) out.add(L.get(i));
             }
@@ -1015,8 +1015,18 @@ public class FunctionInliningPass {
                 for (int q = r.vStart; q <= r.vTail; q++) skip.add(q);
             }
             if (!r.isVoid && mode.equals("TEMP")) {
-                before.computeIfAbsent(r.vStart, z -> new BytecodeProgram()).add(mk(ref, "ADDR", retVar, retT));
-                after.computeIfAbsent(r.vTail, z -> new BytecodeProgram()).add(mk(ref, "ASSIGN", retT, retT, retT));
+                BytecodeProgram bf = before.get(r.vStart);
+                if (bf == null) {
+                    bf = new BytecodeProgram();
+                    before.put(r.vStart, bf);
+                }
+                bf.add(mk(ref, "ADDR", retVar, retT));
+                BytecodeProgram af = after.get(r.vTail);
+                if (af == null) {
+                    af = new BytecodeProgram();
+                    after.put(r.vTail, af);
+                }
+                af.add(mk(ref, "ASSIGN", retT, retT, retT));
             }
             if (mode.equals("STACK")) {
                 skip.add(r.idx);
@@ -1066,7 +1076,7 @@ public class FunctionInliningPass {
         cx.changed = true;
         inlinedSites++;
         if (c.forced) {
-            forcedSites.merge(c.name, 1, Integer::sum);
+            { String mk = c.name; Integer mo = forcedSites.get(mk); forcedSites.put(mk, mo == null ? 1 : mo + 1); }
             forcedPos.putIfAbsent(c.name, c.pos);
         }
         return true;

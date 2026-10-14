@@ -464,7 +464,7 @@ public class LoopUnrollingPass {
         for (int k = lp.endIdx; k >= lp.start; k--) work.remove(k);
         work.addAll(lp.start, out);
         int added = out.size() - oldSize;
-        grown.merge(fname, (long) Math.max(added, 0), Long::sum);
+        { long ga = Math.max(added, 0); Long mo = grown.get(fname); grown.put(fname, mo == null ? ga : mo + ga); }
         if (lp.forced) {
             note(lp.pos, "@unroll: " + (full ? "unrolled fully" : "unrolled by " + u) + " (" + n + " iterations, " + (added >= 0 ? "+" : "") + added + " lines)");
         }

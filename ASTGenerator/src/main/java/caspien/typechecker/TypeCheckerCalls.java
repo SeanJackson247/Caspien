@@ -1757,18 +1757,26 @@ public final class TypeCheckerCalls {
             work.push(node.right);
             work.push(node.next);
             if (node.childs != null) {
-                node.childs.forEach(work::push);
+                for (Token child : node.childs) {
+                    work.push(child);
+                }
             }
             if (node.sub != null) {
-                node.sub.forEach(work::push);
+                for (Token child : node.sub) {
+                    work.push(child);
+                }
             }
             if (node.genericArgs != null) {
                 for (List<Token> group : node.genericArgs) {
-                    group.forEach(work::push);
+                    for (Token child : group) {
+                        work.push(child);
+                    }
                 }
             }
             if (node.typeBound != null) {
-                node.typeBound.forEach(work::push);
+                for (Token child : node.typeBound) {
+                    work.push(child);
+                }
             }
         }
     }

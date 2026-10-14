@@ -71,7 +71,9 @@ public final class TypeCheckerDeclarations {
             }
             StructInfo si = hub.model.structs.get(b);
             if (si != null) {
-                si.members.values().forEach(work::push);
+                for (TypeInfo member : si.members.values()) {
+                    work.push(member);
+                }
             }
         }
     }
@@ -152,7 +154,12 @@ public final class TypeCheckerDeclarations {
         String msg = (ctor ? "constructor of '" : "method '" + shownName + "' of '") + concreteName
                 + "' is unavailable for this type argument: "
                 + e.raw;
-        hub.model.unavailableGenericMethods.computeIfAbsent(key, k -> new ArrayList<>()).add(msg);
+        List<String> msgs = hub.model.unavailableGenericMethods.get(key);
+        if (msgs == null) {
+            msgs = new ArrayList<>();
+            hub.model.unavailableGenericMethods.put(key, msgs);
+        }
+        msgs.add(msg);
     }
 
     public String unavailableNote(String key) {

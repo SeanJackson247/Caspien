@@ -329,10 +329,18 @@ public final class TypeCheckerControlFlow {
             }
             m.branchMoved = new HashSet<>(m.preState);
             List<MatchPattern> branchPatterns = scope.activeMatchPatterns;
-            List<String> caseVariants = isDefault
-                    ? enumInfo.variants.stream().filter(v -> !covered.contains(v))
-                            .collect(java.util.stream.Collectors.toList())
-                    : labels.stream().map(l -> l.text).collect(java.util.stream.Collectors.toList());
+            List<String> caseVariants = new ArrayList<>();
+            if (isDefault) {
+                for (String v : enumInfo.variants) {
+                    if (!covered.contains(v)) {
+                        caseVariants.add(v);
+                    }
+                }
+            } else {
+                for (Token l : labels) {
+                    caseVariants.add(l.text);
+                }
+            }
             // Every "receiver.field" condition records the enum_field_variants proof that @lock(match self.x : X) qualifiers read.
             if (conditionExpr.type == TokenType.OPERATOR && conditionExpr.text.equals(".")) {
                 String fieldSlot = hub.expressions.slotKeyOf(conditionExpr.left);
@@ -1093,7 +1101,9 @@ public final class TypeCheckerControlFlow {
             }
             InterfaceInfo info = hub.model.interfaces.get(name);
             if (info != null && seen.add(name)) {
-                info.extendsNames.forEach(work::push);
+                for (String name2 : info.extendsNames) {
+                    work.push(name2);
+                }
             }
         }
         return false;

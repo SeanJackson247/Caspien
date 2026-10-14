@@ -63,11 +63,11 @@ public final class AuditReport {
             if (!u.block) { exprs++; continue; }
             blocks++;
             if (u.tags.isEmpty()) {
-                byTag.merge("(none: declaration block)", 1, Integer::sum);
+                addTag(byTag, "(none: declaration block)");
             }
             for (String t : u.tags.split(" ")) {
                 if (!t.isEmpty()) {
-                    byTag.merge(t, 1, Integer::sum);
+                    addTag(byTag, t);
                 }
             }
             if (u.tags.equals("unaudited")) {
@@ -82,8 +82,8 @@ public final class AuditReport {
                 justified++;
             }
         }
-        sb.append("\n# summary: ").append(blocks).append(" unsafe blocks (").append(mine.stream().filter(u -> u.block).count()).append(" in your code, ")
-          .append(lib.stream().filter(u -> u.block).count()).append(" in the standard library) and ").append(exprs).append(" other uses of the keyword, in ")
+        sb.append("\n# summary: ").append(blocks).append(" unsafe blocks (").append(countBlocks(mine)).append(" in your code, ")
+          .append(countBlocks(lib)).append(" in the standard library) and ").append(exprs).append(" other uses of the keyword, in ")
           .append(fileCount).append(" files\n");
         sb.append("# unaudited blocks: ").append(unaudited).append(unaudited > 0 ? "  <- nobody has said why these are unsafe\n" : "\n");
         sb.append("# justified blocks: ").append(justified).append(" of ").append(blocks).append(" (").append(unjustifiedNone).append(" without a justify comment, ")
@@ -102,6 +102,31 @@ public final class AuditReport {
         return d != null ? d : DocComments.find(Paths.get(u.file).toAbsolutePath().normalize().toString(), u.line, "justify", "unsafe");
     }
 
+    private static void addTag(TreeMap<String, Integer> byTag, String tag) {
+        Integer old = byTag.get(tag);
+        byTag.put(tag, old == null ? 1 : old + 1);
+    }
+
+    private static long countBlocks(List<AuditUse> uses) {
+        long n = 0;
+        for (AuditUse u : uses) {
+            if (u.block) {
+                n++;
+            }
+        }
+        return n;
+    }
+
+    private static int countNewlines(String s) {
+        int n = 0;
+        for (int i = 0; i < s.length(); i++) {
+            if (s.charAt(i) == '\n') {
+                n++;
+            }
+        }
+        return n;
+    }
+
     private static List<AuditUse> concat(List<AuditUse> a, List<AuditUse> b) {
         List<AuditUse> all = new ArrayList<>(a);
         all.addAll(b);
@@ -109,7 +134,7 @@ public final class AuditReport {
     }
 
     private static void section(StringBuilder sb, String title, List<AuditUse> uses, Map<String, Set<String>> needed, Path base, boolean hide) {
-        long blocks = uses.stream().filter(u -> u.block).count();
+        long blocks = countBlocks(uses);
         sb.append("\n## ").append(title).append(": ").append(blocks).append(" blocks, ").append(uses.size() - blocks).append(" other uses");
         if (hide) {
             sb.append(" (not listed: --audit-no-stdlib)\n");
@@ -208,7 +233,7 @@ public final class AuditReport {
                     k++;
                 }
                 String body = s.substring(open + 1, Math.min(k, n));
-                int bodyLine = line + (int) s.substring(i, open + 1).chars().filter(x -> x == '\n').count();
+                int bodyLine = line + countNewlines(s.substring(i, open + 1));
                 if (body.startsWith("\n")) { body = body.substring(1); bodyLine++; }
                 out.add(new AuditUse(file, useLine, true, String.join(" ", tags), body, bodyLine));
                 // carry on scanning inside the block too: nested `unsafe` is its own instance

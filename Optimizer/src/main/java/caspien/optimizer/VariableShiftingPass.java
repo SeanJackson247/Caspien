@@ -87,7 +87,12 @@ public class VariableShiftingPass {
                     }
                 }
                 if (!newAllocs.isEmpty()) {
-                    insertAfter.computeIfAbsent(v.allocIdx, k -> new BytecodeProgram()).addAll(newAllocs);
+                    BytecodeProgram ia = insertAfter.get(v.allocIdx);
+                    if (ia == null) {
+                        ia = new BytecodeProgram();
+                        insertAfter.put(v.allocIdx, ia);
+                    }
+                    ia.addAll(newAllocs);
                 }
             }
         }

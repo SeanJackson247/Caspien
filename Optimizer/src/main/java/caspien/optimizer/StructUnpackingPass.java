@@ -111,7 +111,7 @@ public class StructUnpackingPass {
             for (int i = f[0]; i <= f[1]; i++) {
                 BytecodeStatement l = lines.get(i);
                 for (BytecodeToken t : l) allNames.add(t.text);
-                if ("ALLOC".equals(VarAnalysis.mnemonic(l)) && l.size() == 3) allocCount.merge(l.get(1).text, 1, Integer::sum);
+                if ("ALLOC".equals(VarAnalysis.mnemonic(l)) && l.size() == 3) { String mk = l.get(1).text; Integer mo = allocCount.get(mk); allocCount.put(mk, mo == null ? 1 : mo + 1); }
             }
             for (int i = f[0]; i <= f[1]; i++) {
                 BytecodeStatement l = lines.get(i);

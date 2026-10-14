@@ -93,7 +93,7 @@ public class RegVarHintPass {
                 return null; // already hinted
             }
             if (m.equals("ALLOC") && l.size() == 3) {
-                allocCount.merge(l.get(1).text, 1, Integer::sum);
+                { String mk = l.get(1).text; Integer mo = allocCount.get(mk); allocCount.put(mk, mo == null ? 1 : mo + 1); }
                 String prevType = allocType.put(l.get(1).text, l.get(2).text);
                 if (prevType != null && !prevType.equals(l.get(2).text)) {
                     mixedType.add(l.get(1).text);
@@ -164,7 +164,7 @@ public class RegVarHintPass {
                     weight.remove(tok);
                 } else {
                     long w = 1L << (3 * Math.min(depth[k], 4));
-                    weight.merge(tok, w, Long::sum);
+                    { String mk = tok; Long mo = weight.get(mk); weight.put(mk, mo == null ? w : mo + w); }
                 }
             }
         }

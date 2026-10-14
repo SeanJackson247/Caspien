@@ -181,7 +181,7 @@ public class StructMemberReorderingPass {
                 oldSize += e.pad ? e.padBytes : scalarSize(e.type);
             }
             List<StructMemberReorderingEntry> sorted = new ArrayList<>(d.members);
-            sorted.sort((a, b) -> Integer.compare(scalarSize(b.type), scalarSize(a.type)));   // stable
+            sortBySizeDesc(sorted);
             long sum = 8;
             for (StructMemberReorderingEntry e : sorted) {
                 sum += scalarSize(e.type);
@@ -591,5 +591,22 @@ public class StructMemberReorderingPass {
 
     private static boolean typeMatches(String pushed, String member) {
         return stripMut(pushed).equals(stripMut(member));
+    }
+
+    private static int compareBySizeDesc(StructMemberReorderingEntry a, StructMemberReorderingEntry b) {
+        return Integer.compare(scalarSize(b.type), scalarSize(a.type));
+    }
+
+    /** Stable insertion sort of the list by compareBySizeDesc. */
+    private static void sortBySizeDesc(List<StructMemberReorderingEntry> list) {
+        for (int i = 1; i < list.size(); i++) {
+            StructMemberReorderingEntry x = list.get(i);
+            int j = i - 1;
+            while (j >= 0 && compareBySizeDesc(list.get(j), x) > 0) {
+                list.set(j + 1, list.get(j));
+                j--;
+            }
+            list.set(j + 1, x);
+        }
     }
 }

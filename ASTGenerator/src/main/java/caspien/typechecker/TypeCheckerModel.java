@@ -464,7 +464,12 @@ public final class TypeCheckerModel {
         Map<String, java.util.Set<String>> out = new java.util.HashMap<>();
         for (UnsafeBlockRecord rec : unsafeBlockRecords.values()) {
             String k = java.nio.file.Paths.get(rec.tok.file).toAbsolutePath().normalize() + ":" + rec.tok.line;
-            out.computeIfAbsent(k, x -> new java.util.TreeSet<>()).addAll(rec.used);
+            java.util.Set<String> tags = out.get(k);
+            if (tags == null) {
+                tags = new java.util.TreeSet<>();
+                out.put(k, tags);
+            }
+            tags.addAll(rec.used);
         }
         return out;
     }

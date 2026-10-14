@@ -624,7 +624,7 @@ public class AddressLoweringPass {
             }
             String last = l.get(l.size() - 1).text;
             if (last.endsWith("]")) {
-                counts.merge(CanonicalType.parse(last).baseType, 1, Integer::sum);
+                { String mk = CanonicalType.parse(last).baseType; Integer mo = counts.get(mk); counts.put(mk, mo == null ? 1 : mo + 1); }
             }
         }
         return counts;
@@ -940,7 +940,7 @@ public class AddressLoweringPass {
         if (mnemonic.equals("STACK_LOCK") && line.size() == 2) {
             String operand = line.get(1).text;
             // An operand that is already digits is a padding gap size from emitInstantiate: already lowered.
-            if (operand.chars().allMatch(Character::isDigit)) {
+            if (allDigits(operand)) {
                 return line;
             }
             String structName = operand;
@@ -1340,4 +1340,11 @@ public class AddressLoweringPass {
         return structTable.layoutOf(baseType);
     }
 
+    /** True when every char is a digit (also for the empty string, like allMatch). */
+    private static boolean allDigits(String s) {
+        for (int i = 0; i < s.length(); i++) {
+            if (!Character.isDigit(s.charAt(i))) return false;
+        }
+        return true;
+    }
 }

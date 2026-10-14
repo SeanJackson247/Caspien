@@ -340,11 +340,7 @@ public class Compiler {
                                 blocks.add(l);
                             }
                         }
-                        blocks.sort((x, y) -> {
-                            String[] a1 = x.split("\t"), b1 = y.split("\t");
-                            int c = a1[0].compareTo(b1[0]);
-                            return c != 0 ? c : Integer.compare(Integer.parseInt(b1[1]), Integer.parseInt(a1[1]));
-                        });
+                        sortBlocks(blocks);
                         int kept = 0, left = 0;
                         for (String blk : blocks) {
                             String[] bp = blk.split("\t");
@@ -1065,7 +1061,26 @@ public class Compiler {
         }
     }
 
-    private static void drain(InputStream in) {
+    /** Stable insertion sort: file name ascending, then line number descending (same order as the old List.sort). */
+    private static void sortBlocks(List<String> blocks) {
+        for (int i = 1; i < blocks.size(); i++) {
+            String cur = blocks.get(i);
+            int j = i - 1;
+            while (j >= 0 && compareBlocks(blocks.get(j), cur) > 0) {
+                blocks.set(j + 1, blocks.get(j));
+                j--;
+            }
+            blocks.set(j + 1, cur);
+        }
+    }
+
+    private static int compareBlocks(String x, String y) {
+        String[] a1 = x.split("\t"), b1 = y.split("\t");
+        int c = a1[0].compareTo(b1[0]);
+        return c != 0 ? c : Integer.compare(Integer.parseInt(b1[1]), Integer.parseInt(a1[1]));
+    }
+
+    static void drain(InputStream in) {
         try {
             byte[] buf = new byte[8192];
             while (in.read(buf) >= 0) {
@@ -1188,7 +1203,7 @@ public class Compiler {
             throws IOException, InterruptedException {
         ProcessBuilder pb = new ProcessBuilder(command);
         Process proc = pb.start();
-        Thread stdoutDrain = new Thread(() -> drain(proc.getInputStream()));
+        Thread stdoutDrain = new Thread(new CompilerDrain(proc.getInputStream()));
         stdoutDrain.setDaemon(true);
         stdoutDrain.start();
 

@@ -31,7 +31,7 @@ case "GT_INIT": {
                 // directly by the exact, unmistakable name match (and
                 // the identical pattern for GT_ALIVE_CHECK/GT_DESTRUCT
                 // below).
-                hub.calls.emitAlignedCall(() -> hub.calls.emitCallByName("gt_init"));
+                hub.calls.emitAlignedCallByName("gt_init");
                 return true;
             }
             
@@ -78,7 +78,7 @@ case "GT_REGISTER": {
                 hub.emit.pushReg("rax"); // the throwaway copy -- this one becomes the argument
                 hub.emit.popReg("rax");
                 hub.emit.raw(("    movq %rax, %" + hub.calls.argReg(0)));
-                hub.calls.emitAlignedCall(() -> hub.calls.emitCallByName("gt_register"));
+                hub.calls.emitAlignedCallByName("gt_register");
                 // gt_register returns false when the table could not grow (the pointer is then NOT registered): free the
                 // block and leave null in its place, exactly what a failed allocation leaves, so the allocation site's own
                 // null check takes the out-of-memory path. A null pointer registers as success (and stays null).
@@ -87,7 +87,7 @@ case "GT_REGISTER": {
                 hub.emit.raw("    jnz " + regOk);
                 hub.emit.popReg("rax"); // the surviving copy
                 hub.emit.raw(("    movq %rax, %" + hub.calls.argReg(0)));
-                hub.calls.emitAlignedCall(() -> hub.calls.emitCallByName("free"));
+                hub.calls.emitAlignedCallByName("free");
                 hub.emit.raw("    xorq %rax, %rax");
                 hub.emit.pushReg("rax");
                 hub.emit.raw(regOk + ":");
@@ -97,7 +97,7 @@ case "GT_REGISTER": {
 case "GT_ALIVE_CHECK": {
                 hub.emit.popReg("rax"); // the pointer being checked
                 hub.emit.raw(("    movq %rax, %" + hub.calls.argReg(0)));
-                hub.calls.emitAlignedCall(() -> hub.calls.emitCallByName("gt_alive_check"));
+                hub.calls.emitAlignedCallByName("gt_alive_check");
                 hub.emit.pushReg("rax"); // its bool result
                 return true;
             }
@@ -105,7 +105,7 @@ case "GT_ALIVE_CHECK": {
 case "GT_REF_ID": {
                 hub.emit.popReg("rax"); // an address (ref some / owns) being stored into a nullable ref
                 hub.emit.raw(("    movq %rax, %" + hub.calls.argReg(0)));
-                hub.calls.emitAlignedCall(() -> hub.calls.emitCallByName("gt_ref_id"));
+                hub.calls.emitAlignedCallByName("gt_ref_id");
                 hub.emit.pushReg("rax"); // its 64-bit id (0 for null / dead)
                 return true;
             }
@@ -113,7 +113,7 @@ case "GT_REF_ID": {
 case "GT_REF_RESOLVE": {
                 hub.emit.popReg("rax"); // an id
                 hub.emit.raw(("    movq %rax, %" + hub.calls.argReg(0)));
-                hub.calls.emitAlignedCall(() -> hub.calls.emitCallByName("gt_ref_resolve"));
+                hub.calls.emitAlignedCallByName("gt_ref_resolve");
                 hub.emit.pushReg("rax"); // the object's address, null when it is no longer registered
                 return true;
             }
@@ -129,7 +129,7 @@ case "GT_DESTRUCT": {
                 if (operand.startsWith("$")) {
                     hub.emit.loadSizedFromFrame("rax", Long.parseLong(operand.substring(1)), 8);
                     hub.emit.raw(("    movq %rax, %" + hub.calls.argReg(0)));
-                    hub.calls.emitAlignedCall(() -> hub.calls.emitCallByName("gt_destruct"));
+                    hub.calls.emitAlignedCallByName("gt_destruct");
                 } else {
                     hub.emit.comment("TODO(codegen): 'GT_DESTRUCT " + operand + "' (non-stack-offset operand) not yet implemented");
                 }
@@ -165,7 +165,7 @@ case "GT_DESTRUCT_ADDR": {
                 hub.emit.popReg("rax"); // the computed address itself
                 hub.emit.loadSizedFromAddr("rax", "rax", 8); // dereference: the owns pointer's own value
                 hub.emit.raw(("    movq %rax, %" + hub.calls.argReg(0)));
-                hub.calls.emitAlignedCall(() -> hub.calls.emitCallByName("gt_destruct"));
+                hub.calls.emitAlignedCallByName("gt_destruct");
                 return true;
             }
             
@@ -203,7 +203,7 @@ case "YIELD": {
                 // no return value read by anything -- "sched_yield"
                 // itself returns an int (0 on success) that nothing
                 // downstream of "yield" ever consumes.
-                hub.calls.emitAlignedCall(() -> hub.calls.emitCallByName("sched_yield"));
+                hub.calls.emitAlignedCallByName("sched_yield");
                 return true;
             }
             
@@ -237,7 +237,7 @@ case "SLEEP": {
                 String realFuncName = line.get(1).text;
                 hub.emit.popReg("rax"); // the pushed duration argument
                 hub.emit.raw(("    movq %rax, %" + hub.calls.argReg(0)));
-                hub.calls.emitAlignedCall(() -> hub.calls.emitCallByName(realFuncName));
+                hub.calls.emitAlignedCallByName(realFuncName);
                 hub.emit.pushReg("rax"); // the real C "sleep"'s own u64 result (remaining, unslept seconds)
                 return true;
             }
@@ -271,7 +271,7 @@ case "EXIT": {
                 // straightforward way to actually end the process here,
                 // with that exact distinct status.
                 hub.emit.raw(("    movq $1, %" + hub.calls.argReg(0)));
-                hub.calls.emitAlignedCall(() -> hub.calls.emitCallByName("exit"));
+                hub.calls.emitAlignedCallByName("exit");
                 return true;
             }
             
@@ -309,7 +309,7 @@ case "EXIT_THREAD": {
                 // "stdlib/await_call.caspien"'s own "pthread_join(tid,
                 // null)") ever consumes it.
                 hub.emit.raw(("    movq $0, %" + hub.calls.argReg(0)));
-                hub.calls.emitAlignedCall(() -> hub.calls.emitCallByName("pthread_exit"));
+                hub.calls.emitAlignedCallByName("pthread_exit");
                 return true;
             }
             
@@ -568,7 +568,7 @@ case "CALL": {
                     emitDropGlueCall(name);
                     return true;
                 }
-                hub.calls.resolveStackArgBytesAndCall(() -> hub.calls.emitCallByName(name));
+                hub.calls.resolveStackArgBytesAndCall(false, name);
                 return true;
             }
             
@@ -580,7 +580,7 @@ case "INVOKE": {
                 // through it. The numeric operand (arg count) is purely
                 // informational here.
                 hub.emit.popReg("r10");
-                hub.calls.resolveStackArgBytesAndCall(() -> hub.calls.emitCallIndirect("r10"));
+                hub.calls.resolveStackArgBytesAndCall(true, "r10");
                 return true;
             }
             
@@ -890,7 +890,7 @@ case "GLOBAL":
     void emitGtCall(String fn, String reg) {
         hub.emit.pushReg(reg);
         hub.emit.raw(("    movq %" + reg + ", %" + hub.calls.argReg(0)));
-        hub.calls.emitAlignedCall(() -> hub.calls.emitCallByName(fn));
+        hub.calls.emitAlignedCallByName(fn);
         hub.emit.popReg(reg);
     }
 
@@ -953,7 +953,7 @@ case "GLOBAL":
         // visibly).
         hub.emit.raw("    movq $" + size + ", %" + hub.calls.argReg(0));
         
-        hub.calls.emitAlignedCall(() -> hub.calls.emitCallByName("malloc"));
+        hub.calls.emitAlignedCallByName("malloc");
     }
 
     String newInternalLabel(String prefix) {

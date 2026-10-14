@@ -686,10 +686,17 @@ public final class TypeCheckerLocksAndProofs {
                     // boundsSlotKeyOf, not slotKeyOf: a literal index ("match 0 into thr.backing{ thr.set(thr, 0, v) }") is provable too
                     String argSlot = argExpr != null ? hub.accessAndAsync.boundsSlotKeyOf(argExpr) : null;
                     String targetSlot = receiverSlot != null ? receiverSlot + "." + fieldName : null;
-                    boolean proven = argSlot != null && targetSlot != null && scope.activeMatchPatterns.stream()
-                            .anyMatch(p -> !p.invalidated && (p.kind.equals(requiredKind)
+                    boolean proven = false;
+                    if (argSlot != null && targetSlot != null) {
+                        for (MatchPattern p : scope.activeMatchPatterns) {
+                            if (!p.invalidated && (p.kind.equals(requiredKind)
                                     || (requiredKind.equals("in") && p.kind.equals("into")))
-                                    && argSlot.equals(p.slotKey) && targetSlot.equals(p.rightSlotKey));
+                                    && argSlot.equals(p.slotKey) && targetSlot.equals(p.rightSlotKey)) {
+                                proven = true;
+                                break;
+                            }
+                        }
+                    }
                     if (!proven) {
                         throw new CompilerException("type", at.file, at.line,
                                 "calling '" + candidate.name + "' requires a 'match "
@@ -702,8 +709,15 @@ public final class TypeCheckerLocksAndProofs {
                     if (d.lockInSomeWrapped != null && Boolean.TRUE.equals(d.lockInSomeWrapped.get(j))) {
                         String elemSlot = targetSlot != null && argSlot != null
                                 ? targetSlot + "[" + argSlot + "]" : null;
-                        boolean elemProven = elemSlot != null && scope.activeMatchPatterns.stream()
-                                .anyMatch(p -> !p.invalidated && p.kind.equals("alive") && elemSlot.equals(p.slotKey));
+                        boolean elemProven = false;
+                        if (elemSlot != null) {
+                            for (MatchPattern p : scope.activeMatchPatterns) {
+                                if (!p.invalidated && p.kind.equals("alive") && elemSlot.equals(p.slotKey)) {
+                                    elemProven = true;
+                                    break;
+                                }
+                            }
+                        }
                         if (!elemProven) {
                             throw new CompilerException("type", at.file, at.line,
                                     "calling '" + candidate.name + "' requires a 'match Some("
@@ -723,9 +737,13 @@ public final class TypeCheckerLocksAndProofs {
         if (slotKey == null) {
             return false;
         }
-        return scope.activeMatchPatterns.stream()
-                .anyMatch(p -> !p.invalidated && p.kind.equals("enum_field_variants") && p.slotKey.equals(slotKey)
-                        && p.targetName.equals(fieldName) && requiredVariants.containsAll(p.provenVariants));
+        for (MatchPattern p : scope.activeMatchPatterns) {
+            if (!p.invalidated && p.kind.equals("enum_field_variants") && p.slotKey.equals(slotKey)
+                    && p.targetName.equals(fieldName) && requiredVariants.containsAll(p.provenVariants)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** A member other than the lock discriminant field needs an active enum-field proof for this receiver (planted by checkEnumMatch); the discriminant is freely readable; unsafe bypasses. */
@@ -1337,8 +1355,13 @@ public final class TypeCheckerLocksAndProofs {
             List<Token> expanded = hub.signatures.expandAliases(synthetic, new HashSet<>(), aliasNameHolder, at);
             // resolveTypeAnnotationRaw needs exactly one mutability modifier; the synthetic 'imut' is
             // never read by checkAs (mutability is untouched by a cast).
-            boolean alreadyHasMutability = expanded.stream().anyMatch(t ->
-                    t.type == TokenType.MODIFIER && (t.text.equals("mut") || t.text.equals("imut")));
+            boolean alreadyHasMutability = false;
+            for (Token t : expanded) {
+                if (t.type == TokenType.MODIFIER && (t.text.equals("mut") || t.text.equals("imut"))) {
+                    alreadyHasMutability = true;
+                    break;
+                }
+            }
             if (!alreadyHasMutability) {
                 expanded.add(0, new Token(TokenType.MODIFIER, "imut", at.line, at.file));
             }
@@ -1540,7 +1563,9 @@ public final class TypeCheckerLocksAndProofs {
             }
             StructInfo si = hub.model.structs.get(type.baseType);
             if (si != null) {
-                si.members.values().forEach(work::push);
+                for (TypeInfo member : si.members.values()) {
+                    work.push(member);
+                }
             }
         }
         return false;

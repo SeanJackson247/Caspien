@@ -46,18 +46,28 @@ public final class LockNestingCheck {
 
     public void collect(TypeChecker checker) {
         for (List<FuncInfo> l : checker.declarations.getFunctions().values()) {
-            l.forEach(this::add);
+            for (FuncInfo f : l) {
+                add(f);
+            }
         }
         for (List<ImplInfo> l : checker.declarations.getImpls().values()) {
             for (ImplInfo impl : l) {
-                impl.methods.values().forEach(this::add);
-                impl.staticMethods.values().forEach(this::add);
-                impl.genericMethodInstances.values().forEach(this::add);
+                for (FuncInfo f : impl.methods.values()) {
+                    add(f);
+                }
+                for (FuncInfo f : impl.staticMethods.values()) {
+                    add(f);
+                }
+                for (FuncInfo f : impl.genericMethodInstances.values()) {
+                    add(f);
+                }
             }
         }
         for (LibraryInfo lib : checker.declarations.getLibraries().values()) {
             for (List<FuncInfo> l : lib.ownFunctions.values()) {
-                l.forEach(this::add);
+                for (FuncInfo f : l) {
+                    add(f);
+                }
             }
         }
     }
@@ -153,16 +163,16 @@ public final class LockNestingCheck {
 
     /** The calls a function makes, then (shortest first) the chain down to a function that takes a lock; null when none does. */
     public List<String> pathToLock(String from, Set<String> seen) {
-        return pathTo(from, seen, in -> in.acquires);
+        return pathTo(from, seen, false);
     }
 
     /** The calls a function makes down to a function that waits, shortest first; null when none does. */
     public List<String> pathToWait(String from, Set<String> seen) {
-        return pathTo(from, seen, in -> in.waitKind != null);
+        return pathTo(from, seen, true);
     }
 
-    /** Depth-first search over callees; the open frames are the path. */
-    private List<String> pathTo(String from, Set<String> seen, java.util.function.Predicate<LockNestingInfo> hit) {
+    /** Depth-first search over callees; the open frames are the path. forWait: stop at a waiting function, else at one that takes a lock. */
+    private List<String> pathTo(String from, Set<String> seen, boolean forWait) {
         List<String> names = new ArrayList<>();
         Deque<Iterator<String>> iters = new ArrayDeque<>();
         String enter = from;
@@ -171,7 +181,7 @@ public final class LockNestingCheck {
                 LockNestingInfo in = byName.get(enter);
                 if (in == null || !seen.add(enter)) {
                     enter = null;
-                } else if (hit.test(in)) {
+                } else if (forWait ? in.waitKind != null : in.acquires) {
                     names.add(enter);
                     return names;
                 } else {

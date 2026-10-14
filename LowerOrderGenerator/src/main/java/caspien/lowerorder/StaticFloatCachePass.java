@@ -139,11 +139,12 @@ public class StaticFloatCachePass {
                 if (s.startsWith("@")) {
                     Integer d = labelDef.get(s);
                     if (d != null && d < i) {
-                        StaticFloatCacheLoop lp = loops.computeIfAbsent(d, h -> {
-                            StaticFloatCacheLoop x = new StaticFloatCacheLoop();
-                            x.h = h;
-                            return x;
-                        });
+                        StaticFloatCacheLoop lp = loops.get(d);
+                        if (lp == null) {
+                            lp = new StaticFloatCacheLoop();
+                            lp.h = d;
+                            loops.put(d, lp);
+                        }
                         lp.b = Math.max(lp.b, i);
                     }
                 }
@@ -153,7 +154,7 @@ public class StaticFloatCachePass {
             return fn;
         }
         List<StaticFloatCacheLoop> order = new ArrayList<>(loops.values());
-        order.sort((a, b) -> a.h != b.h ? Integer.compare(a.h, b.h) : Integer.compare(b.b, a.b));
+        sortLoops(order);
         List<String> pool = new ArrayList<>();
         for (int k = 0; k < Z_COUNT; k++) {
             pool.add("%z" + k);
@@ -185,7 +186,7 @@ public class StaticFloatCachePass {
                     boolean plainRead = op.equals("R_LDX") && l.size() == 4 && k == 3 && (t(l, 1).equals("4") || t(l, 1).equals("8"))
                             && (t(l, 2).startsWith("%y") || t(l, 2).startsWith("%x"));
                     if (plainRead && !escaped.contains(s)) {
-                        reads.merge(s, 1, Integer::sum);
+                        { String mk = s; Integer mo = reads.get(mk); reads.put(mk, mo == null ? 1 : mo + 1); }
                         String w = width.putIfAbsent(s, t(l, 1));
                         if (w != null && !w.equals(t(l, 1))) {
                             bad.add(s);
@@ -216,7 +217,7 @@ public class StaticFloatCachePass {
             if (cands.isEmpty() || free.isEmpty()) {
                 continue;
             }
-            cands.sort((a, b) -> reads.get(a).equals(reads.get(b)) ? a.compareTo(b) : Integer.compare(reads.get(b), reads.get(a)));
+            sortByReads(cands, reads);
             Map<String, String> assigned = new HashMap<>();
             for (int k = 0; k < cands.size() && k < free.size(); k++) {
                 assigned.put(cands.get(k), free.get(k));
@@ -244,7 +245,12 @@ public class StaticFloatCachePass {
                     cur.set(i, r);
                 }
             }
-            before.computeIfAbsent(lp.h, k -> new BytecodeProgram()).addAll(pre);
+            BytecodeProgram bk = before.get(lp.h);
+            if (bk == null) {
+                bk = new BytecodeProgram();
+                before.put(lp.h, bk);
+            }
+            bk.addAll(pre);
             done.add(lp);
         }
         if (done.isEmpty()) {
@@ -294,5 +300,39 @@ public class StaticFloatCachePass {
             }
         }
         return true;
+    }
+
+    private static int compareLoops(StaticFloatCacheLoop a, StaticFloatCacheLoop b) {
+        return a.h != b.h ? Integer.compare(a.h, b.h) : Integer.compare(b.b, a.b);
+    }
+
+    /** Stable insertion sort of the list by compareLoops. */
+    private static void sortLoops(List<StaticFloatCacheLoop> list) {
+        for (int i = 1; i < list.size(); i++) {
+            StaticFloatCacheLoop x = list.get(i);
+            int j = i - 1;
+            while (j >= 0 && compareLoops(list.get(j), x) > 0) {
+                list.set(j + 1, list.get(j));
+                j--;
+            }
+            list.set(j + 1, x);
+        }
+    }
+
+    private static int compareByReads(String a, String b, Map<String, Integer> reads) {
+        return reads.get(a).equals(reads.get(b)) ? a.compareTo(b) : Integer.compare(reads.get(b), reads.get(a));
+    }
+
+    /** Stable insertion sort of the list by compareByReads. */
+    private static void sortByReads(List<String> list, Map<String, Integer> reads) {
+        for (int i = 1; i < list.size(); i++) {
+            String x = list.get(i);
+            int j = i - 1;
+            while (j >= 0 && compareByReads(list.get(j), x, reads) > 0) {
+                list.set(j + 1, list.get(j));
+                j--;
+            }
+            list.set(j + 1, x);
+        }
     }
 }

@@ -232,7 +232,12 @@ public class GenericsExpander {
         }
         validateImplTargetPattern(implEntry, concreteNameTok);
         String targetName = concreteNameTok.text;
-        implTemplatesByTarget.computeIfAbsent(targetName, k -> new ArrayList<>()).add(implEntry);
+        List<Token> templates = implTemplatesByTarget.get(targetName);
+        if (templates == null) {
+            templates = new ArrayList<>();
+            implTemplatesByTarget.put(targetName, templates);
+        }
+        templates.add(implEntry);
     }
 
     private void validateImplTargetPattern(Token implEntry, Token targetTok) {

@@ -5,11 +5,9 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Stream;
 
 /**
  * Content-addressed build cache for the Compiler orchestrator: every stage's result is stored under a key that is the SHA-256 of
@@ -64,11 +62,30 @@ final class CompilerCache {
         if (!Files.exists(root)) {
             return;
         }
-        try (Stream<Path> w = Files.walk(root)) {
-            for (Path p : (Iterable<Path>) w.sorted(Comparator.reverseOrder())::iterator) {
-                Files.delete(p);
+        List<Path> all = walkAll(root);
+        java.util.Collections.sort(all);
+        for (int i = all.size() - 1; i >= 0; i--) {
+            Files.delete(all.get(i));
+        }
+    }
+
+    /** Every path under root, root included, without following symlinks (unordered; callers sort). Iterative. */
+    static List<Path> walkAll(Path root) throws IOException {
+        List<Path> all = new ArrayList<>();
+        java.util.ArrayDeque<Path> todo = new java.util.ArrayDeque<>();
+        todo.push(root);
+        while (!todo.isEmpty()) {
+            Path cur = todo.pop();
+            all.add(cur);
+            if (Files.isDirectory(cur, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+                try (java.nio.file.DirectoryStream<Path> ds = Files.newDirectoryStream(cur)) {
+                    for (Path child : ds) {
+                        todo.push(child);
+                    }
+                }
             }
         }
+        return all;
     }
 
     // ---- hashing ----------------------------------------------------------
@@ -98,8 +115,13 @@ final class CompilerCache {
     static String depHash(Path p) throws IOException {
         if (Files.isDirectory(p)) {
             List<String> names = new ArrayList<>();
-            try (Stream<Path> l = Files.list(p)) {
-                l.filter(Files::isRegularFile).map(x -> x.getFileName().toString()).filter(n -> n.endsWith(".caspien")).forEach(names::add);
+            try (java.nio.file.DirectoryStream<Path> ds = Files.newDirectoryStream(p)) {
+                for (Path x : ds) {
+                    String n = x.getFileName().toString();
+                    if (Files.isRegularFile(x) && n.endsWith(".caspien")) {
+                        names.add(n);
+                    }
+                }
             }
             java.util.Collections.sort(names);
             return sha("DIR\n" + String.join("\n", names));
@@ -122,9 +144,12 @@ final class CompilerCache {
         List<Path> files = new ArrayList<>();
         Path out = componentDir.resolve("out");
         if (Files.isDirectory(out)) {
-            try (Stream<Path> w = Files.walk(out)) {
-                w.filter(p -> p.toString().endsWith(".class")).sorted().forEach(files::add);
+            for (Path p : walkAll(out)) {
+                if (p.toString().endsWith(".class")) {
+                    files.add(p);
+                }
             }
+            java.util.Collections.sort(files);
         }
         StringBuilder sb = new StringBuilder(System.getProperty("java.version")).append('|').append(System.getProperty("java.vendor")).append('\n');
         for (Path f : files) {

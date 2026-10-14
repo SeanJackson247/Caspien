@@ -206,7 +206,13 @@ public final class Eval {
 
     private GasWalkFrame walkFrame(int start, int ctx, int mode) {
         GasWalkFrame fr = new GasWalkFrame(GasWalkFrame.WALK_MEMO, this);
-        fr.m = memo.computeIfAbsent(((long) ctx << 3) | mode, k -> new Val[core.ln.length + 1]);
+        long memoKey = ((long) ctx << 3) | mode;
+        Val[] memoRow = memo.get(memoKey);
+        if (memoRow == null) {
+            memoRow = new Val[core.ln.length + 1];
+            memo.put(memoKey, memoRow);
+        }
+        fr.m = memoRow;
         fr.i = start;
         fr.ctx = ctx;
         fr.mode = mode;
@@ -278,7 +284,12 @@ public final class Eval {
             if (cm == null || cm == cred) {
                 return targetFrame(fr.target, fr.ctx, fr.mode);
             }
-            Eval e = f.padEvals.computeIfAbsent(cm.toString(), k -> new Eval(core, f, mt, cm));
+            String padSig = cm.toString();
+            Eval e = f.padEvals.get(padSig);
+            if (e == null) {
+                e = new Eval(core, f, mt, cm);
+                f.padEvals.put(padSig, e);
+            }
             return e.targetFrame(fr.target, fr.ctx, fr.mode);
         }
         Val v = fr.got;
