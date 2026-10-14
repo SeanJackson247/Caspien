@@ -98,18 +98,12 @@ import java.util.regex.Pattern;
  * slice type has been removed from the language entirely, so that case
  * is gone along with it.)
  */
-public class ArgToAllocLoweringPass implements OptimizationPass {
+public class ArgToAllocLoweringPass {
 
 
     private static final Pattern BY_VALUE_RANGE_ARG =
             Pattern.compile("^(?:imut|mut|indeterminate)_range(?:\\(.*\\))?$");
 
-    @Override
-    public String name() {
-        return "arg-to-alloc-lowering";
-    }
-
-    @Override
     public PassResult run(BytecodeProgram lines) {
         BytecodeProgram out = new BytecodeProgram();
         boolean changed = false;

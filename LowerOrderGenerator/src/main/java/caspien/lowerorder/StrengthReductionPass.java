@@ -18,14 +18,8 @@ import caspien.bytecode.BytecodeToken;
  * BITS_AND is a new stack-form mnemonic (pop two, and, push); the register-form pass turns both results into
  * R_BIN SHR / R_BIN BAND with an immediate.
  */
-public class StrengthReductionPass implements OptimizationPass {
+public class StrengthReductionPass {
 
-    @Override
-    public String name() {
-        return "strength-reduction";
-    }
-
-    @Override
     public PassResult run(BytecodeProgram lines) {
         BytecodeProgram out = new BytecodeProgram(lines.size());
         boolean changed = false;

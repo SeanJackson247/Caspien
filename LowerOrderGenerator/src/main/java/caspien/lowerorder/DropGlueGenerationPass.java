@@ -128,7 +128,7 @@ import caspien.bytecode.BytecodeProgram;
  * match the real emitter exactly (TypeChecker's own comparison-result
  * TypeInfo is literally `new TypeInfo(null, "imut", "bool")`).
  */
-public class DropGlueGenerationPass implements OptimizationPass {
+public class DropGlueGenerationPass {
 
     private final CompilerConfig config;
 
@@ -136,12 +136,6 @@ public class DropGlueGenerationPass implements OptimizationPass {
         this.config = config;
     }
 
-    @Override
-    public String name() {
-        return "drop-glue-generation";
-    }
-
-    @Override
     public PassResult run(BytecodeProgram lines) {
         return new DropGlueGenerationWorker(StructTable.read(lines), config).process(lines);
     }

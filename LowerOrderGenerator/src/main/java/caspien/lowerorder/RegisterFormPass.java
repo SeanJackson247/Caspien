@@ -74,16 +74,14 @@ import java.util.Map;
  * through a computed pointer).
  *
  * <p><b>Extension points.</b> Entries carry a size, operand text is produced in one place ({@link #operandOf}), and
- * fusable mnemonics live in the {@link #handlers} table. Promoted-variable registers turned out not to need any change
+ * fusable mnemonics live in the {@link #tryFuse} switch. Promoted-variable registers turned out not to need any change
  * here: every operand this pass emits for a frame slot is already a plain "$off" text, so {@link RegVarPromotionPass}
  * can rename them afterwards, on the final text, where a slot with any mention it cannot rewrite is simply left alone.
  */
-public class RegisterFormPass implements OptimizationPass {
+public class RegisterFormPass {
 
     /** How many temporaries exist; the backend maps %t0..%t{N-1} to registers. */
     public static final int TEMP_COUNT = 4;
-
-    private final Map<String, RegisterFormHandler> handlers = new HashMap<>();
 
     /** Names declared by GLOBAL / ALLOC_STATIC lines of the program being processed (refilled by every run). */
     private final java.util.Set<String> globalNames = new java.util.HashSet<>();
@@ -132,48 +130,65 @@ public class RegisterFormPass implements OptimizationPass {
         FLOAT_CMP.put("GT_FLOAT", "GT");
     }
 
-    public RegisterFormPass() {
-        handlers.put("PUSH", this::fusePush);
-        handlers.put("ADDR", this::fuseAddr);
-        for (String m : BIN_OPS.keySet()) {
-            handlers.put(m, this::fuseBinary);
+    /** The fuse handler for a mnemonic: how many input lines it consumed, or 0 to decline (also for a mnemonic with no handler). */
+    private int tryFuse(String mnemonic, RegisterFormState st, BytecodeStatement line, BytecodeProgram all, int idx) {
+        switch (mnemonic) {
+            case "PUSH":
+                return fusePush(st, line, all, idx);
+            case "ADDR":
+                return fuseAddr(st, line, all, idx);
+            case "DIV_INT":
+            case "MOD_INT":
+                return fuseDivConst(st, line, all, idx);
+            case "INC_INT":
+            case "DEC_INT":
+            case "NEG":
+            case "NOT":
+            case "BITS_NOT":
+                return fuseUnary(st, line, all, idx);
+            case "ASSIGN":
+                return fuseAssign(st, line, all, idx);
+            case "CMP":
+                return fuseCmpJmp(st, line, all, idx);
+            case "DEREF":
+                return fuseDeref(st, line, all, idx);
+            case "LEN":
+                return fuseLen(st, line, all, idx);
+            case "LOOKUP_DYN":
+            case "LOOKUP_DYN_LHS":
+                return fuseLookupDyn(st, line, all, idx);
+            case "ZEXT":
+                return fuseZext(st, line, all, idx);
+            case "TRUNC":
+                return fuseTrunc(st, line, all, idx);
+            case "LOOKUP_ARRAY_LHS":
+                return fuseLookupArrayLhs(st, line, all, idx);
+            case "LOOKUP_ARRAY":
+                return fuseLookupPtrRead(st, line, all, idx);
+            case "PUSH_FIELDNAME":
+                return fuseFieldName(st, line, all, idx);
+            case "DOT_LHS":
+                return fuseDotLhs(st, line, all, idx);
+            case "POP":
+                return fusePop(st, line, all, idx);
+            case "RET":
+            case "RET_FLOAT":
+                return fuseRet(st, line, all, idx);
+            default:
+                if (BIN_OPS.containsKey(mnemonic)) {
+                    return fuseBinary(st, line, all, idx);
+                }
+                if (FLOAT_BIN.containsKey(mnemonic)) {
+                    return fuseFloatBin(st, line, all, idx);
+                }
+                if (FLOAT_CMP.containsKey(mnemonic)) {
+                    return fuseFloatCmp(st, line, all, idx);
+                }
+                return 0;
         }
-        handlers.put("DIV_INT", this::fuseDivConst);
-        handlers.put("MOD_INT", this::fuseDivConst);
-        handlers.put("INC_INT", this::fuseUnary);
-        handlers.put("DEC_INT", this::fuseUnary);
-        handlers.put("NEG", this::fuseUnary);
-        handlers.put("NOT", this::fuseUnary);
-        handlers.put("BITS_NOT", this::fuseUnary);
-        handlers.put("ASSIGN", this::fuseAssign);
-        handlers.put("CMP", this::fuseCmpJmp);
-        for (String m : FLOAT_BIN.keySet()) {
-            handlers.put(m, this::fuseFloatBin);
-        }
-        for (String m : FLOAT_CMP.keySet()) {
-            handlers.put(m, this::fuseFloatCmp);
-        }
-        handlers.put("DEREF", this::fuseDeref);
-        handlers.put("LEN", this::fuseLen);
-        handlers.put("LOOKUP_DYN", this::fuseLookupDyn);
-        handlers.put("LOOKUP_DYN_LHS", this::fuseLookupDyn);
-        handlers.put("ZEXT", this::fuseZext);
-        handlers.put("TRUNC", this::fuseTrunc);
-        handlers.put("LOOKUP_ARRAY_LHS", this::fuseLookupArrayLhs);
-        handlers.put("LOOKUP_ARRAY", this::fuseLookupPtrRead);
-        handlers.put("PUSH_FIELDNAME", this::fuseFieldName);
-        handlers.put("DOT_LHS", this::fuseDotLhs);
-        handlers.put("POP", this::fusePop);
-        handlers.put("RET", this::fuseRet);
-        handlers.put("RET_FLOAT", this::fuseRet);
     }
 
-    @Override
-    public String name() {
-        return "register-form";
-    }
 
-    @Override
     public PassResult run(BytecodeProgram lines) {
         globalNames.clear();
         for (BytecodeStatement l : lines) {
@@ -194,8 +209,7 @@ public class RegisterFormPass implements OptimizationPass {
                 i++;
                 continue;
             }
-            RegisterFormHandler h = handlers.get(line.get(0).text);
-            int consumed = h == null ? 0 : h.tryFuse(st, line, lines, i);
+            int consumed = tryFuse(line.get(0).text, st, line, lines, i);
             if (consumed > 0) {
                 changed = true;
                 i += consumed;

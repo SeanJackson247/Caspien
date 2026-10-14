@@ -9,14 +9,8 @@ import caspien.bytecode.BytecodeProgram;
  * left as the original bytecode.
  * See docs/MembershipLoweringPass.md.
  */
-public class MembershipLoweringPass implements OptimizationPass {
+public class MembershipLoweringPass {
 
-    @Override
-    public String name() {
-        return "membership-lowering";
-    }
-
-    @Override
     public PassResult run(BytecodeProgram lines) {
         return new MembershipLoweringWorker(StructTable.read(lines), EnumTable.read(lines)).process(lines);
     }

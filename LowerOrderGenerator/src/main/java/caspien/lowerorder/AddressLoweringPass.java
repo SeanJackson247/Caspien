@@ -17,12 +17,7 @@ import java.util.Set;
  * Per-mnemonic rewrite table, name resolution and the finished/untouched mnemonic lists:
  * see docs/AddressLoweringPass.md, "Mnemonic rewrites" and "Name resolution".
  */
-public class AddressLoweringPass implements OptimizationPass {
-
-    @Override
-    public String name() {
-        return "address-lowering";
-    }
+public class AddressLoweringPass {
 
     private final CompilerConfig config;
 
@@ -30,7 +25,6 @@ public class AddressLoweringPass implements OptimizationPass {
         this.config = config;
     }
 
-    @Override
     public PassResult run(BytecodeProgram lines) {
         StructTable structTable = StructTable.read(lines);
         AddressLoweringSizeCalculator sizes = new AddressLoweringSizeCalculator(structTable);

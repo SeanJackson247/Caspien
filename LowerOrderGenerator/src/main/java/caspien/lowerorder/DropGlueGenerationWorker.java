@@ -13,7 +13,7 @@ import java.util.Set;
 /**
  * Holds this one run's own mutable state (the routine worklist, the
  * label counter) so the outer pass class itself stays a stateless,
- * reentrant OptimizationPass -- a fresh Worker per run() call, never
+ * reentrant pass -- a fresh Worker per run() call, never
  * shared across calls.
  */
 final class DropGlueGenerationWorker {

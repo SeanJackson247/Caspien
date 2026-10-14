@@ -156,14 +156,8 @@ import caspien.bytecode.BytecodeProgram;
  * all way DropGlueGenerationPass's own routines already are, with no
  * open question remaining.
  */
-public class CloneGenerationPass implements OptimizationPass {
+public class CloneGenerationPass {
 
-    @Override
-    public String name() {
-        return "clone-generation";
-    }
-
-    @Override
     public PassResult run(BytecodeProgram lines) {
         return new CloneGenerationWorker(StructTable.read(lines)).process(lines);
     }
