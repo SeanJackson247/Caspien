@@ -35,7 +35,7 @@ import java.util.Map;
  * string/range/dynarray 8, a fixed array its element's, a struct the max over its members, anything unknown 8); a wrong estimate could only
  * cost some padding, never correctness.
  */
-public class VariableAllocationReorderingPass implements OptimizationPass {
+public class VariableAllocationReorderingPass {
 
     private final boolean enabled;
 
@@ -47,12 +47,6 @@ public class VariableAllocationReorderingPass implements OptimizationPass {
         this.enabled = enabled;
     }
 
-    @Override
-    public String name() {
-        return "variable-allocation-reordering";
-    }
-
-    @Override
     public PassResult run(BytecodeProgram lines) {
         if (!enabled) {
             return new PassResult(lines, false);

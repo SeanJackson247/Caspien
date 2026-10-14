@@ -32,7 +32,7 @@ import java.util.Set;
  * are dropped (a program that reads ___type is not touched). The new variables are ordinary scalars, so elision, shifting and the register
  * hints see them.
  */
-public class StructUnpackingPass implements OptimizationPass {
+public class StructUnpackingPass {
 
     private final boolean enabled;
 
@@ -42,11 +42,6 @@ public class StructUnpackingPass implements OptimizationPass {
 
     public StructUnpackingPass(boolean enabled) {
         this.enabled = enabled;
-    }
-
-    @Override
-    public String name() {
-        return "struct-unpacking";
     }
 
     private static final Set<String> BINARY = new HashSet<>(List.of(
@@ -96,7 +91,6 @@ public class StructUnpackingPass implements OptimizationPass {
         return Integer.MIN_VALUE;
     }
 
-    @Override
     public PassResult run(BytecodeProgram lines) {
         if (!enabled) {
             return new PassResult(lines, false);

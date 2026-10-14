@@ -34,18 +34,12 @@ import java.util.regex.Pattern;
  * hinted. A function that already carries REGVAR lines is left alone, so the pass is idempotent inside the fixed-point loop.
  * This pass proves nothing about the lowered code; the LowerOrderGenerator re-checks every mention before it promotes anything.
  */
-public class RegVarHintPass implements OptimizationPass {
+public class RegVarHintPass {
 
     private static final Pattern PLAIN_SCALAR =
             Pattern.compile("^(mut|imut)_(u8|u16|u32|u64|s8|s16|s32|s64|f32|f64|bool|char)$");
     private static final long MIN_WEIGHT = 8;
 
-    @Override
-    public String name() {
-        return "regvar-hint";
-    }
-
-    @Override
     public PassResult run(BytecodeProgram lines) {
         BytecodeProgram out = new BytecodeProgram();
         boolean changed = false;

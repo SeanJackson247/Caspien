@@ -32,7 +32,7 @@ import java.math.BigInteger;
  *              bytecode has no literal for it); the operator is left for the runtime.
  * Left alone: division or modulo by zero (the language already rejects a literal zero divisor), signed MIN / -1, integer NEG (the emitter already folds a negated literal), anything with a non-literal operand.
  */
-public class ConstantFoldingPass implements OptimizationPass {
+public class ConstantFoldingPass {
 
     private final boolean enabled;
 
@@ -44,12 +44,6 @@ public class ConstantFoldingPass implements OptimizationPass {
         this.enabled = enabled;
     }
 
-    @Override
-    public String name() {
-        return "constant-folding";
-    }
-
-    @Override
     public PassResult run(BytecodeProgram lines) {
         if (!enabled) {
             return new PassResult(lines, false);

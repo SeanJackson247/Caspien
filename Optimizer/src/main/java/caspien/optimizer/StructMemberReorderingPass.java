@@ -45,7 +45,7 @@ import java.util.Set;
  *
  * Always, even with the switch off, the pass strips every {@code STRUCT_PIN} line (it must never reach the Lower Order Generator).
  */
-public class StructMemberReorderingPass implements OptimizationPass {
+public class StructMemberReorderingPass {
 
     private final boolean enabled;
 
@@ -55,11 +55,6 @@ public class StructMemberReorderingPass implements OptimizationPass {
 
     public StructMemberReorderingPass(boolean enabled) {
         this.enabled = enabled;
-    }
-
-    @Override
-    public String name() {
-        return "struct-member-reordering";
     }
 
     // ---------------------------------------------------------------- model
@@ -132,7 +127,6 @@ public class StructMemberReorderingPass implements OptimizationPass {
 
     // ------------------------------------------------------------------ run
 
-    @Override
     public PassResult run(BytecodeProgram lines) {
         // STRUCT_PIN lines: read, then always removed.
         Set<String> pinned = pinnedEver; // the pass instance lives across outer-loop rounds; the lines are stripped in round one, the pins must outlive them

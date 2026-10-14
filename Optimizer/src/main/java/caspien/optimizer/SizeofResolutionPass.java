@@ -27,14 +27,8 @@ import caspien.bytecode.BytecodeToken;
  * Always on: the SIZEOF mnemonic must never reach the Lower Order Generator. A SIZEOF naming a
  * struct with no declaration is an internal error.
  */
-public class SizeofResolutionPass implements OptimizationPass {
+public class SizeofResolutionPass {
 
-    @Override
-    public String name() {
-        return "sizeof-resolution";
-    }
-
-    @Override
     public PassResult run(BytecodeProgram lines) {
         boolean any = false;
         for (BytecodeStatement l : lines) {

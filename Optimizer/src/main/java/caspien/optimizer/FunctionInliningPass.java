@@ -50,7 +50,7 @@ import java.util.Set;
  *
  * Configuration: see InlineConfig (presets off|conservative|balanced|aggressive with size / depth / growth limits).
  */
-public class FunctionInliningPass implements OptimizationPass {
+public class FunctionInliningPass {
 
     private final InlineConfig cfg;
     private int roundsDone = 0;
@@ -72,11 +72,6 @@ public class FunctionInliningPass implements OptimizationPass {
     public FunctionInliningPass(InlineConfig cfg, Messages messages) {
         this.cfg = cfg;
         this.messages = messages;
-    }
-
-    @Override
-    public String name() {
-        return "function-inlining";
     }
 
     // ------------------------------------------------------------------------------------------------------------------
@@ -568,7 +563,6 @@ public class FunctionInliningPass implements OptimizationPass {
     // ------------------------------------------------------------------------------------------------------------------
     // the pass
 
-    @Override
     public PassResult run(BytecodeProgram lines) {
         int maxRounds = cfg.enabled ? Math.max(cfg.maxDepth, anyInlineDecorator(lines) ? FORCED_ROUNDS : 0) : (anyInlineDecorator(lines) ? FORCED_ROUNDS : 0);
         if (roundsDone >= maxRounds) {

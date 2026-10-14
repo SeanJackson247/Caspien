@@ -30,7 +30,7 @@ import java.util.TreeMap;
  *
  * Off unless "variable-elision: on" is set in compiler.config (see VariableConfig).
  */
-public class VariableElisionPass implements OptimizationPass {
+public class VariableElisionPass {
 
     private final boolean enabled;
 
@@ -42,12 +42,6 @@ public class VariableElisionPass implements OptimizationPass {
         this.enabled = enabled;
     }
 
-    @Override
-    public String name() {
-        return "variable-elision";
-    }
-
-    @Override
     public PassResult run(BytecodeProgram lines) {
         if (!enabled) {
             return new PassResult(lines, false);

@@ -48,7 +48,7 @@ import java.util.Set;
  * is referenced from outside the body (a try block, for instance). Innermost candidates go first; an outer loop
  * is considered on a later round with its now larger body.
  */
-public class LoopUnrollingPass implements OptimizationPass {
+public class LoopUnrollingPass {
 
     private final UnrollConfig cfg;
     private final Map<String, Long> grown = new HashMap<>();
@@ -63,11 +63,6 @@ public class LoopUnrollingPass implements OptimizationPass {
     public LoopUnrollingPass(UnrollConfig cfg, Messages messages) {
         this.cfg = cfg;
         this.messages = messages;
-    }
-
-    @Override
-    public String name() {
-        return "loop-unrolling";
     }
 
     // ---- small helpers over the token lines --------------------------------------------------------------
@@ -258,7 +253,6 @@ public class LoopUnrollingPass implements OptimizationPass {
 
     // ---- the pass ----------------------------------------------------------------------------------------
 
-    @Override
     public PassResult run(BytecodeProgram lines) {
         if (!cfg.enabled && !anyUnrollDecorator(lines)) {
             return new PassResult(lines, false);

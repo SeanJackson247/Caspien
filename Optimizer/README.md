@@ -6,7 +6,7 @@ loop unrolling, function inlining, the two layout reorderings, `sizeof` resoluti
 lowering, register form, register variables, fusion passes) lives in the next stage, `LowerOrderGenerator/`. The two stages share only the HOB
 parser/classes in `BytecodeParser/`; the text bytecode is the only interchange format.
 
-The stage is a library, `Optimizer.optimize(hobText, origin, compilerConfigText)` -> `Result{hob, messages}` (text in, text out; no files, no stdout); the orchestrator calls it in its own JVM and `Main` is the same call wrapped as a program (`-i in out`, reads `./compiler.config` if present, prints the messages). Every pass is a pure function `BytecodeProgram -> PassResult` (`OptimizationPass`). Passes know nothing about each other;
+The stage is a library, `Optimizer.optimize(hobText, origin, compilerConfigText)` -> `Result{hob, messages}` (text in, text out; no files, no stdout); the orchestrator calls it in its own JVM and `Main` is the same call wrapped as a program (`-i in out`, reads `./compiler.config` if present, prints the messages). Every pass is a pure function `BytecodeProgram -> PassResult` (each pass class has `PassResult run(BytecodeProgram)`). Passes know nothing about each other;
 ordering and fixed-point looping live only in `BytecodeOptimizer`. No pass is a no-op stub any more.
 
 Contents: [Usage](#usage) | [Input and output format](#input-and-output-format) | [Pipeline](#the-pipeline) | [Pass summary](#pass-summary) |
@@ -468,7 +468,7 @@ stderr lines the orchestrator collects (`Compiler.runProcess` keeps `[note]` and
 
 - `BytecodeOptimizer`: the pipeline (above) and the constructor chain `BytecodeOptimizer(UnrollConfig, FoldConfig, VariableConfig, InlineConfig)`; the no-argument and partial constructors build an all-off optimizer (used by tests that call it directly).
 - `Main`: CLI (`-i input output`), reads the four configs from `compiler.config`, parse -> optimize -> serialize.
-- `OptimizationPass` (`name()`, `PassResult run(BytecodeProgram)`), `PassResult` (`lines`, `changed`; `changed` drives every fixed-point loop and must be false when nothing was done).
+- `PassResult` (`lines`, `changed`; `changed` drives every fixed-point loop and must be false when nothing was done).
 - `BytecodeParser/` (shared with the LowerOrderGenerator, compiled into this stage's `out/`): `BytecodeToken` (`text`, `file`, `line`, `kind` = CODE/STRING/COMMENT), `BytecodeStatement` (one line; `opcode()`, `text(i)`), `BytecodeProgram`, `BytecodeParser` (hand-written scanner: quoted strings and char literals stay one token), `BytecodeSerializer` (single-space join). It imports no stage.
 - `VarAnalysis` (package-private; shared by elision, shifting and several others): `functions()` (FUNC_START..FUNC_END index pairs), `mnemonic()`, `hasMnemonic()`, `labels()` (label definition line = one token `@name:`),
   `jumps()` (`JMP @label` as {line, target}; targets outside the function ignored), `dominated(a, m, jumps)` (false when a forward jump before line a lands after a and at or before m), `inLoop(a, jumps)` (true when a backward jump after a lands before it),
@@ -477,7 +477,7 @@ stderr lines the orchestrator collects (`Compiler.runProcess` keeps `[note]` and
 
 ## Adding a pass and gotchas
 
-Add `FooPass implements OptimizationPass`, a switch in the matching `*Config` class (or a new one, parsed the same way: top-level keys only, `#` comments, strict values), construct it in the `BytecodeOptimizer` constructor and call it at the right place in `optimize`.
+Add `FooPass` (a class with `PassResult run(BytecodeProgram)`), a switch in the matching `*Config` class (or a new one, parsed the same way: top-level keys only, `#` comments, strict values), construct it in the `BytecodeOptimizer` constructor and call it at the right place in `optimize`.
 Also: add the key to `CompilerCache.OPT_KEYS` (so the stage-2 cache view includes it), to `toolchain.config` (documented, shipped off) and `docs/COMPILER_REFERENCE.md`; add a `tests/*.caspien` runtime test (print PASS/FAIL lines) plus a `*_hob_check.sh` if the language cannot express the shapes, and sweep all tests under several configs.
 
 Things that have bitten before:

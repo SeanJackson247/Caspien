@@ -26,7 +26,7 @@ import java.util.Set;
  * FUNC_START..FUNC_END blocks are deleted. Most effective right after DeadControlFlowRemovalPass, which is what turns "called from a removed
  * branch" into "never called".
  */
-public class DeadFunctionRemovalPass implements OptimizationPass {
+public class DeadFunctionRemovalPass {
 
     private final boolean enabled;
 
@@ -38,15 +38,9 @@ public class DeadFunctionRemovalPass implements OptimizationPass {
         this.enabled = enabled;
     }
 
-    @Override
-    public String name() {
-        return "dead-function-removal";
-    }
-
     private static final Set<String> HOOKS = new HashSet<>(List.of("gt_init", "gt_register", "gt_alive_check", "gt_destruct", "gt_moved"));
     private static final Set<String> INERT_DECORATORS = new HashSet<>(List.of("@pub", "@throws", "@recursive", "@pure", "@pure(rt)", "@non(deterministic)", "@inline", "@dont(inline)"));
 
-    @Override
     public PassResult run(BytecodeProgram lines) {
         if (!enabled) {
             return new PassResult(lines, false);

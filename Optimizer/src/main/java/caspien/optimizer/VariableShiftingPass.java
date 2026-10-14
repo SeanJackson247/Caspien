@@ -26,7 +26,7 @@ import java.util.TreeMap;
  *
  * Off unless "variable-shifting: on" is set in compiler.config (see VariableConfig).
  */
-public class VariableShiftingPass implements OptimizationPass {
+public class VariableShiftingPass {
 
     private final boolean enabled;
 
@@ -38,12 +38,6 @@ public class VariableShiftingPass implements OptimizationPass {
         this.enabled = enabled;
     }
 
-    @Override
-    public String name() {
-        return "variable-shifting";
-    }
-
-    @Override
     public PassResult run(BytecodeProgram lines) {
         if (!enabled) {
             return new PassResult(lines, false);

@@ -23,7 +23,7 @@ import java.util.Set;
  * functions) is left alone. The whole pass does nothing when the program has no {@code main} (a library exports its declarations) or contains
  * inline assembly ({@code ASM_START}, whose text may name symbols).
  */
-public class UnusedDeclarationRemovalPass implements OptimizationPass {
+public class UnusedDeclarationRemovalPass {
 
     private final boolean enabled;
 
@@ -35,11 +35,6 @@ public class UnusedDeclarationRemovalPass implements OptimizationPass {
         this.enabled = enabled;
     }
 
-    @Override
-    public String name() {
-        return "unused-declaration-removal";
-    }
-
     private static final Set<String> IMPLICIT_EXTERNS = new HashSet<>(List.of(
             "malloc", "realloc", "free", "strlen", "exit", "pthread_exit", "sched_yield"));
     private static final Set<String> IMPLICIT_GLOBALS = new HashSet<>(List.of("ghost_table"));
@@ -49,7 +44,6 @@ public class UnusedDeclarationRemovalPass implements OptimizationPass {
         return d < 0 ? name : name.substring(0, d);
     }
 
-    @Override
     public PassResult run(BytecodeProgram lines) {
         if (!enabled) {
             return new PassResult(lines, false);

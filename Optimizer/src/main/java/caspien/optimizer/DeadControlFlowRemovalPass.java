@@ -25,7 +25,7 @@ import java.util.Set;
  * deleted; code that was already unreachable before it is left alone. Declarations (ALLOC, ARG, REGVAR, ...) are never deleted. Afterwards a {@code JMP L} directly followed by the definition of L is dropped.
  * Only functions without ASM_START are touched. No other unreachable-code analysis is done.
  */
-public class DeadControlFlowRemovalPass implements OptimizationPass {
+public class DeadControlFlowRemovalPass {
 
     private final boolean enabled;
 
@@ -35,11 +35,6 @@ public class DeadControlFlowRemovalPass implements OptimizationPass {
 
     public DeadControlFlowRemovalPass(boolean enabled) {
         this.enabled = enabled;
-    }
-
-    @Override
-    public String name() {
-        return "dead-control-flow-removal";
     }
 
     private static final String[] STRUCTURAL = {"@if_branch_", "@end_of_if_", "@loop_", "@loop_end_", "@for_", "@for_end_", "@match_branch_", "@end_of_match_"};
@@ -65,7 +60,6 @@ public class DeadControlFlowRemovalPass implements OptimizationPass {
         return "PUSH".equals(VarAnalysis.mnemonic(l)) && l.size() == 3 && l.get(1).text.equals(lit);
     }
 
-    @Override
     public PassResult run(BytecodeProgram input) {
         if (!enabled) {
             return new PassResult(input, false);
