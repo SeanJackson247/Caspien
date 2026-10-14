@@ -79,8 +79,8 @@ final class ParserLines {
         gatherTemplateStringsDeep(nested);
         List<Token> lines = splitIntoLines(nested);
 
-        forEachLineDeep(lines, this::mergeLetInLine);
-        forEachLineDeep(lines, this::collapseImportInLine);
+        forEachLineDeep(lines, ParserTask.PASS_MERGE_LET);
+        forEachLineDeep(lines, ParserTask.PASS_COLLAPSE_IMPORT);
         stripDecoratorsDeep(lines);
 
         removeWhitespaceInLines(lines);
@@ -334,9 +334,9 @@ final class ParserLines {
         return lineTok;
     }
 
-    public void forEachLineDeep(List<Token> lines, LineVisitor visitor) {
+    public void forEachLineDeep(List<Token> lines, int pass) {
         ParserTask first = new ParserTask(ParserTask.VISIT_LINES, lines);
-        first.visitor = visitor;
+        first.pass = pass;
         runTasks(first);
     }
 
@@ -1046,14 +1046,18 @@ final class ParserLines {
                 for (Token lineTok : t.list) {
                     ParserTask one = new ParserTask(ParserTask.VISIT_ONE, null);
                     one.tok = lineTok;
-                    one.visitor = t.visitor;
+                    one.pass = t.pass;
                     out.add(one);
                 }
                 return;
             case ParserTask.VISIT_ONE: {
-                t.visitor.visit(t.tok);
+                if (t.pass == ParserTask.PASS_MERGE_LET) {
+                    mergeLetInLine(t.tok);
+                } else {
+                    collapseImportInLine(t.tok);
+                }
                 ParserTask scan = new ParserTask(ParserTask.SCAN_BLOCKS, t.tok.childs);
-                scan.visitor = t.visitor;
+                scan.pass = t.pass;
                 out.add(scan);
                 return;
             }
@@ -1063,7 +1067,7 @@ final class ParserLines {
                         continue;
                     }
                     ParserTask next = new ParserTask(tok.text.equals("{") ? ParserTask.VISIT_LINES : ParserTask.SCAN_BLOCKS, tok.childs);
-                    next.visitor = t.visitor;
+                    next.pass = t.pass;
                     out.add(next);
                 }
                 return;

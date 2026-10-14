@@ -22,6 +22,8 @@ final class ParserTask {
     static final int VISIT_LINES = 12;
     static final int VISIT_ONE = 13;
     static final int SCAN_BLOCKS = 14;
+    static final int PASS_MERGE_LET = 0;
+    static final int PASS_COLLAPSE_IMPORT = 1;
     static final int DEC = 15;
     static final int DEC_SCAN = 16;
 
@@ -38,7 +40,8 @@ final class ParserTask {
     Token brace;
     List<Decorator> pending;
     List<List<Token>> groups;
-    LineVisitor visitor;
+    /** Which per-line pass VISIT_* tasks run: PASS_MERGE_LET or PASS_COLLAPSE_IMPORT. */
+    int pass;
 
     ParserTask(int kind, List<Token> list) {
         this.kind = kind;
