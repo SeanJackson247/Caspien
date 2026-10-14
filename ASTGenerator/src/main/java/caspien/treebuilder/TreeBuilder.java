@@ -37,29 +37,16 @@ public class TreeBuilder {
     private static final int BUILD_SUB = 8;      // tok: its .sub becomes one tree
     private static final int BUILD_CHILDS = 9;   // tok: its .childs become one tree (const)
 
-    private static final class Task {
-        final int kind;
-        final Token tok;
-        final Token tok2;
-        final List<Token> list;
-        Task(int kind, Token tok, Token tok2, List<Token> list) {
-            this.kind = kind;
-            this.tok = tok;
-            this.tok2 = tok2;
-            this.list = list;
-        }
-    }
-
     public void buildLines(List<Token> lines) {
-        run(new Task(LINES, null, null, lines));
+        run(new TreeTask(LINES, null, null, lines));
     }
 
-    private void run(Task root) {
-        Deque<Task> stack = new ArrayDeque<>();
+    private void run(TreeTask root) {
+        Deque<TreeTask> stack = new ArrayDeque<>();
         stack.push(root);
-        List<Task> out = new ArrayList<>();
+        List<TreeTask> out = new ArrayList<>();
         while (!stack.isEmpty()) {
-            Task t = stack.pop();
+            TreeTask t = stack.pop();
             out.clear();
             step(t, out);
             for (int i = out.size() - 1; i >= 0; i--) {
@@ -69,11 +56,11 @@ public class TreeBuilder {
     }
 
     /** Runs one task; the tasks it needs next are appended to `out` in the order they must run. */
-    private void step(Task t, List<Task> out) {
+    private void step(TreeTask t, List<TreeTask> out) {
         switch (t.kind) {
             case LINES:
                 for (Token lineTok : t.list) {
-                    out.add(new Task(STMT, lineTok, null, null));
+                    out.add(new TreeTask(STMT, lineTok, null, null));
                 }
                 return;
             case STMT:
@@ -95,7 +82,7 @@ public class TreeBuilder {
                 return;
             case NEXT:
                 if (t.tok.next != null) {
-                    out.add(new Task(GATHERED, t.tok.next, null, null));
+                    out.add(new TreeTask(GATHERED, t.tok.next, null, null));
                 }
                 return;
             case NESTED:
@@ -119,7 +106,7 @@ public class TreeBuilder {
         }
     }
 
-    private void processStatement(Token lineTok, List<Task> out) {
+    private void processStatement(Token lineTok, List<TreeTask> out) {
         List<Token> tokens = lineTok.childs;
         if (tokens.isEmpty()) {
             return;
@@ -149,7 +136,7 @@ public class TreeBuilder {
                 case "assume":
                 case "lock":
                 case "try":
-                    out.add(new Task(GATHERED, first, null, null));
+                    out.add(new TreeTask(GATHERED, first, null, null));
                     return;
                 case "import":
                     return; // nothing to build
@@ -176,12 +163,12 @@ public class TreeBuilder {
         if (exprTokens.isEmpty()) {
             return;
         }
-        out.add(new Task(NESTED, null, null, exprTokens));
-        out.add(new Task(FINISH_STMT, lineTok, returnTok, exprTokens));
+        out.add(new TreeTask(NESTED, null, null, exprTokens));
+        out.add(new TreeTask(FINISH_STMT, lineTok, returnTok, exprTokens));
     }
 
     /** Handles an already-gathered if/elseif/else/loop/func/struct/enum/for token. */
-    private void processGathered(Token t, List<Task> out) {
+    private void processGathered(Token t, List<TreeTask> out) {
         switch (t.text) {
             case "if":
             case "elseif":
@@ -189,47 +176,47 @@ public class TreeBuilder {
             case "match":
             case "elsematch":
             case "lock":
-                out.add(new Task(NESTED, null, null, t.sub));
-                out.add(new Task(BUILD_SUB, t, null, null));
+                out.add(new TreeTask(NESTED, null, null, t.sub));
+                out.add(new TreeTask(BUILD_SUB, t, null, null));
                 if (t.isCaseMatch) {
                     // Same reasoning as RpnConverter's own identical fix
                     // -- t.childs here holds one Token per case, not
                     // ordinary "line" tokens; each case's own real body
                     // is one level deeper, in that case's own .childs.
                     for (Token caseTok : t.childs) {
-                        out.add(new Task(LINES, null, null, caseTok.childs));
+                        out.add(new TreeTask(LINES, null, null, caseTok.childs));
                     }
                 } else {
-                    out.add(new Task(LINES, null, null, t.childs));
+                    out.add(new TreeTask(LINES, null, null, t.childs));
                 }
                 break;
             case "else":
-                out.add(new Task(LINES, null, null, t.childs));
+                out.add(new TreeTask(LINES, null, null, t.childs));
                 break;
             case "assume":
                 // t.sub always holds the condition (built into a real
                 // tree the same way an "if"'s own is); t.childs only
                 // exists (and only needs walking) for the block form.
-                out.add(new Task(NESTED, null, null, t.sub));
-                out.add(new Task(BUILD_SUB, t, null, null));
+                out.add(new TreeTask(NESTED, null, null, t.sub));
+                out.add(new TreeTask(BUILD_SUB, t, null, null));
                 if (t.hasBlock) {
-                    out.add(new Task(LINES, null, null, t.childs));
+                    out.add(new TreeTask(LINES, null, null, t.childs));
                 }
                 break;
             case "loop":
             case "func":
             case "unsafe":
             case "safe":
-                out.add(new Task(LINES, null, null, t.childs));
+                out.add(new TreeTask(LINES, null, null, t.childs));
                 break;
             case "try":
                 // t.sub holds the wrapped call's already-RPN'd tokens,
                 // reduced to a single tree root -- TypeChecker.checkTry
                 // requires that root be a real call. t.childs (the catch
                 // block, always present) gets the ordinary walk.
-                out.add(new Task(NESTED, null, null, t.sub));
-                out.add(new Task(BUILD_SUB, t, null, null));
-                out.add(new Task(LINES, null, null, t.childs));
+                out.add(new TreeTask(NESTED, null, null, t.sub));
+                out.add(new TreeTask(BUILD_SUB, t, null, null));
+                out.add(new TreeTask(LINES, null, null, t.childs));
                 break;
             case "struct":
             case "enum":
@@ -243,26 +230,26 @@ public class TreeBuilder {
             case "const":
                 // resolve, build a real tree, then replace the flat list with a
                 // single-element one holding just the root.
-                out.add(new Task(NESTED, null, null, t.childs));
-                out.add(new Task(BUILD_CHILDS, t, null, null));
+                out.add(new TreeTask(NESTED, null, null, t.childs));
+                out.add(new TreeTask(BUILD_CHILDS, t, null, null));
                 return;
             case "interface":
                 return; // pure declarations, nothing to build
             case "impl":
                 for (Token method : t.childs) {
-                    out.add(new Task(GATHERED, method, null, null));
+                    out.add(new TreeTask(GATHERED, method, null, null));
                 }
                 return;
             case "library":
                 for (Token func : t.childs) {
-                    out.add(new Task(GATHERED, func, null, null));
+                    out.add(new TreeTask(GATHERED, func, null, null));
                 }
                 return;
             default:
                 throw new CompilerException("parse", t.file, t.line,
                         "internal error: unexpected gathered keyword '" + t.text + "'");
         }
-        out.add(new Task(NEXT, t, null, null));
+        out.add(new TreeTask(NEXT, t, null, null));
     }
 
     /**
@@ -271,26 +258,26 @@ public class TreeBuilder {
      * one per member assignment: running them through buildLines works unchanged, since a bare "name = value" flat
      * sequence is exactly the shape the ordinary expression-statement path already builds.
      */
-    private void resolveNestedGroups(List<Token> tokens, List<Task> out) {
+    private void resolveNestedGroups(List<Token> tokens, List<TreeTask> out) {
         for (Token t : tokens) {
             if (t.type == TokenType.DELINEATOR && (t.text.equals("(") || t.text.equals("["))) {
-                out.add(new Task(NESTED, null, null, t.childs));
-                out.add(new Task(BUILD_GROUP, t, null, null));
+                out.add(new TreeTask(NESTED, null, null, t.childs));
+                out.add(new TreeTask(BUILD_GROUP, t, null, null));
             } else if (t.type == TokenType.DELINEATOR && t.text.equals("{")) {
-                out.add(new Task(LINES, null, null, t.childs));
+                out.add(new TreeTask(LINES, null, null, t.childs));
             } else if (t.type == TokenType.TEMPLATE_STRING) {
                 // each "${...}" segment is a synthesized '(' group one level deeper
                 for (Token seg : t.childs) {
                     if (seg.type == TokenType.DELINEATOR && seg.text.equals("(")) {
-                        out.add(new Task(NESTED, null, null, seg.childs));
-                        out.add(new Task(BUILD_GROUP, seg, null, null));
+                        out.add(new TreeTask(NESTED, null, null, seg.childs));
+                        out.add(new TreeTask(BUILD_GROUP, seg, null, null));
                     }
                 }
             } else if (t.type == TokenType.KEYWORD && t.text.equals("try")) {
                 // a 'try' embedded in a larger expression still needs its own .sub/.childs built
-                out.add(new Task(NESTED, null, null, t.sub));
-                out.add(new Task(BUILD_SUB, t, null, null));
-                out.add(new Task(LINES, null, null, t.childs));
+                out.add(new TreeTask(NESTED, null, null, t.sub));
+                out.add(new TreeTask(BUILD_SUB, t, null, null));
+                out.add(new TreeTask(LINES, null, null, t.childs));
             }
         }
     }
