@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import caspien.bytecode.Text;
 
 /**
  * File-system policy chosen by whoever compiles, read from the optional fs.config (written by the Compiler from toolchain.config's
@@ -67,7 +68,7 @@ public final class FsPolicy {
             String value = line.substring(colon + 1).trim();
             if (key.equals("fs-roots")) {
                 p.rootsEnforced = true;
-                for (String item : value.split(",")) {
+                for (String item : Text.split(value, ',', 0)) {
                     String it = item.trim();
                     if (it.isEmpty()) continue;
                     int c = it.lastIndexOf(':');
@@ -86,7 +87,7 @@ public final class FsPolicy {
                     p.roots.add(new FsRoot(dir, mode.equals("rw")));
                 }
             } else if (key.equals("fs-deny-externs")) {
-                for (String item : value.split(",")) {
+                for (String item : Text.split(value, ',', 0)) {
                     String it = item.trim();
                     if (!it.isEmpty()) p.denyExterns.add(it);
                 }

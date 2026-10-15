@@ -164,7 +164,7 @@ final class CompilerCache {
     static String configView(String text, String[]... dropPrefixes) {
         StringBuilder sb = new StringBuilder();
         outer:
-        for (String raw : text.split("\n", -1)) {
+        for (String raw : CompilerText.split(text, '\n', -1)) {
             String line = raw.endsWith("\r") ? raw.substring(0, raw.length() - 1) : raw;
             String t = line.trim();
             if (t.isEmpty() || t.startsWith("#")) {

@@ -7,6 +7,7 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import caspien.bytecode.Text;
 
 /** Emission helpers: output buffering, stack tracking, construction runs, sized loads/stores, block copies, shifts (see X86Generator for how the parts fit together). */
 final class X86Emit {
@@ -739,7 +740,7 @@ final class X86Emit {
         } else if (reg64.equals("rdi")) {
             return pickBySize(size, "dil", "di", "edi", "rdi");
         } else {
-            if (reg64.matches("r(8|9|1[0-5])") && size < 8) {
+            if (Text.isHighGpr(reg64) && size < 8) {
                 return reg64 + pickBySize(size, "b", "w", "d", "d");
             }
             return reg64;

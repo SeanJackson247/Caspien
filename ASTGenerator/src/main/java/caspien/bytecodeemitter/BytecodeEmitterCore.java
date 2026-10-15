@@ -33,6 +33,7 @@ import caspien.typechecker.TypeInfo;
 import caspien.token.Decorator;
 import caspien.config.CallingConvention;
 import caspien.config.DocComment;
+import caspien.bytecode.Text;
 
 /**
  * Final front-end stage: walks the type-checked tree and builds the stack-based higher-order bytecode (HOB) as a BytecodeProgram (text only when the caller serializes it).
@@ -225,10 +226,6 @@ final class BytecodeEmitterCore {
     /** Builtin calls: they bypass the overload table (no resolvedCallTarget), so they are dispatched here by reserved name before emitCall; see docs/BytecodeEmitter.md, "Builtin call emission". */
     /** Whole-program counter naming the hidden async-handle local of each par/await site. */
     public int asyncHandleTempCounter;
-
-    /** A genuine by-value range type (no storage prefix). */
-    public static final java.util.regex.Pattern BY_VALUE_RANGE_ARG =
-            java.util.regex.Pattern.compile("^(?:imut|mut|indeterminate)_range(?:\\(.*\\))?$");
 
     /** True for an f32/f64 canonical type (the base type is the last segment). */
     public static boolean isFloatCanonical(String canonical) {
@@ -427,7 +424,7 @@ final class BytecodeEmitterCore {
     /** Text with one instruction per line -> statements. */
     static List<BytecodeStatement> statementsOf(String lines) {
         List<BytecodeStatement> result = new ArrayList<>();
-        for (String l : lines.split("\n", -1)) {
+        for (String l : Text.split(lines, '\n', -1)) {
             result.add(BytecodeStatement.fromText(l, ORIGIN));
         }
         result.remove(result.size() - 1); // text ends with '\n': the last piece is empty
@@ -551,7 +548,7 @@ final class BytecodeEmitterCore {
     public void emitAsm(String rawContent) {
         line("ASM_START");
         if (!rawContent.isEmpty()) {
-            for (String l : (rawContent.endsWith("\n") ? rawContent : rawContent + "\n").split("\n", -1)) {
+            for (String l : Text.split((rawContent.endsWith("\n") ? rawContent : rawContent + "\n"), '\n', -1)) {
                 out.add(BytecodeStatement.fromText(l, ORIGIN));
             }
             out.remove(out.size() - 1); // the piece after the final '\n'

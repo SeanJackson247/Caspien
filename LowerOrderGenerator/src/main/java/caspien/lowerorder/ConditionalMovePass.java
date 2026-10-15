@@ -5,6 +5,7 @@ import caspien.bytecode.BytecodeToken;
 
 import java.util.HashMap;
 import java.util.Map;
+import caspien.bytecode.Text;
 
 /**
  * Conditional moves (`conditional-move: on`). A select between two register-or-constant values of a promoted variable is a compare and a branch
@@ -49,7 +50,7 @@ public class ConditionalMovePass {
         int i = 0;
         while (i < n) {
             BytecodeStatement br = lines.get(i);
-            if (br.size() == 6 && t(br, 0).equals("R_BRC") && t(br, 2).matches("[1248]") && i + 2 < n) {
+            if (br.size() == 6 && t(br, 0).equals("R_BRC") && Text.isPrefixedChar(t(br, 2), "", "1248") && i + 2 < n) {
                 String lbl = t(br, 5);
                 // one arm
                 String[] x = source(lines.get(i + 1));
@@ -81,14 +82,14 @@ public class ConditionalMovePass {
 
     /** {variable, source} of `R_MOV 8 %vK src` (register or immediate) or `R_SETV m %vK #c` (the constant cut to m bytes, zero-extended), else null */
     private static String[] source(BytecodeStatement l) {
-        if (l.size() != 4 || !t(l, 2).matches("%v[0-9]")) {
+        if (l.size() != 4 || !Text.isPrefixedChar(t(l, 2), "%v", "0123456789")) {
             return null;
         }
         String src = t(l, 3);
         if (t(l, 0).equals("R_MOV") && t(l, 1).equals("8") && (src.startsWith("%t") || src.startsWith("%v") || isNumImm(src))) {
             return new String[] {t(l, 2), src};
         }
-        if (t(l, 0).equals("R_SETV") && isNumImm(src) && t(l, 1).matches("[1248]")) {
+        if (t(l, 0).equals("R_SETV") && isNumImm(src) && Text.isPrefixedChar(t(l, 1), "", "1248")) {
             int m = Integer.parseInt(t(l, 1));
             long v = Long.decode(src.substring(1));
             if (m < 8) {

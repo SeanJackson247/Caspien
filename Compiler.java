@@ -212,7 +212,7 @@ public class Compiler {
         Path vizHtml = null;
         if (viz) {
             // --viz builds nothing, like --audit: the optional output path is the HTML page (default output/<input name>.html)
-            String base = Path.of(inputArg).getFileName().toString().replaceFirst("\\.caspien$", "");
+            String base = CompilerText.stripSuffixAtEnd(Path.of(inputArg).getFileName().toString(), ".caspien");
             vizHtml = Path.of(outputArg != null ? outputArg : "output/" + base + ".html");
             outputArg = "output/viz";   // the front end's intermediate file
         }
@@ -328,14 +328,14 @@ public class Compiler {
                 runFrontend(astGenDir, input, feConfigs, verifyOptions, verify, null);
                 if (verify.hasFatalError()) {
                     for (String l : Files.readAllLines(manifest, StandardCharsets.UTF_8)) {
-                        String[] p = l.split("\t");
+                        String[] p = CompilerText.split(l, '\t', 0);
                         Files.copy(Path.of(p[1]), Path.of(p[0]), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
                     }
                     if (fixModes.contains("unsafe-split") && blocksText != null) {
                         // The all-at-once rewrite did not verify. Try the blocks one at a time, last one in each file first (an edit never moves
                         // the lines above it), keeping every rewrite that compiles to identical bytecode and leaving the others as written.
                         List<String> blocks = new ArrayList<>();
-                        for (String l : blocksText.split("\n")) {
+                        for (String l : CompilerText.split(blocksText, '\n', 0)) {
                             if (!l.isBlank()) {
                                 blocks.add(l);
                             }
@@ -343,7 +343,7 @@ public class Compiler {
                         sortBlocks(blocks);
                         int kept = 0, left = 0;
                         for (String blk : blocks) {
-                            String[] bp = blk.split("\t");
+                            String[] bp = CompilerText.split(blk, '\t', 0);
                             Path bak2 = Files.createTempDirectory(tmp, "one");
                             Map<String, String> oneOptions = new java.util.HashMap<>(feOptions);
                             oneOptions.put("fix-mode", "unsafe-split");
@@ -366,7 +366,7 @@ public class Compiler {
                             runFrontend(astGenDir, input, feConfigs, check, v4, null);
                             if (v4.hasFatalError()) {
                                 for (String l : Files.readAllLines(man2, StandardCharsets.UTF_8)) {
-                                    String[] p = l.split("\t");
+                                    String[] p = CompilerText.split(l, '\t', 0);
                                     Files.copy(Path.of(p[1]), Path.of(p[0]), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
                                 }
                                 System.out.println("# kept as written (the rewrite changes the bytecode or does not compile): " + bp[0] + ":" + bp[1]);
@@ -531,7 +531,7 @@ public class Compiler {
             StringWriter trace = new StringWriter();
             e.getCause().printStackTrace(new PrintWriter(trace));
             // the text a crashed stand-alone stage prints, so a crash is reported the same either way
-            out.messages = new ArrayList<>(List.of(("Exception in thread \"main\" " + trace).split("\\R")));
+            out.messages = new ArrayList<>(List.of(CompilerText.splitLineBreaks("Exception in thread \"main\" " + trace)));
             out.failed = true;
             out.text = null;
         } catch (ReflectiveOperationException e) {
@@ -802,7 +802,7 @@ public class Compiler {
      * that component's subprocess actually runs.
      */
     private static String parseCallingConventions(String text, Map<String, CompilerAbiShape> outShapes) {
-        String[] lines = text.split("\n", -1);
+        String[] lines = CompilerText.split(text, '\n', -1);
         String defaultName = null;
 
         String currentName = null;
@@ -908,12 +908,12 @@ public class Compiler {
     }
 
     private static String parseCodegenTargetFromText(String codegenCfgText) {
-        for (String line : codegenCfgText.split("\n", -1)) {
+        for (String line : CompilerText.split(codegenCfgText, '\n', -1)) {
             String t = stripCrAndComment(line).trim();
             if (t.isEmpty()) {
                 continue;
             }
-            String[] parts = t.split("\\s+", 2);
+            String[] parts = CompilerText.splitSpace(t, 2);
             if (parts.length == 2 && parts[0].equals("target")) {
                 return parts[1].trim().toLowerCase();
             }
@@ -961,7 +961,7 @@ public class Compiler {
         for (String line : Files.readAllLines(codegenDir.resolve("codegen.config"), StandardCharsets.UTF_8)) {
             String t = line.trim();
             if (t.isEmpty() || t.startsWith("#")) continue;
-            String[] parts = t.split("\\s+", 2);
+            String[] parts = CompilerText.splitSpace(t, 2);
             if (parts.length == 2 && parts[0].equals(key)) {
                 return parts[1].trim().equalsIgnoreCase("on");
             }
@@ -997,7 +997,7 @@ public class Compiler {
         for (String line : Files.readAllLines(codegenDir.resolve("codegen.config"), StandardCharsets.UTF_8)) {
             String t = line.trim();
             if (t.isEmpty() || t.startsWith("#")) continue;
-            String[] parts = t.split("\\s+", 2);
+            String[] parts = CompilerText.splitSpace(t, 2);
             if (parts.length == 2 && parts[0].equals("target")) {
                 return parts[1].trim().toLowerCase();
             }
@@ -1075,7 +1075,7 @@ public class Compiler {
     }
 
     private static int compareBlocks(String x, String y) {
-        String[] a1 = x.split("\t"), b1 = y.split("\t");
+        String[] a1 = CompilerText.split(x, '\t', 0), b1 = CompilerText.split(y, '\t', 0);
         int c = a1[0].compareTo(b1[0]);
         return c != 0 ? c : Integer.compare(Integer.parseInt(b1[1]), Integer.parseInt(a1[1]));
     }
@@ -1110,7 +1110,7 @@ public class Compiler {
             if (t.contains("TODO(codegen)")) {
                 count++;
                 if (!diag.suppressWarnings()) {
-                    System.err.println("[warning] codegen: " + t.replaceFirst("^[#;]\\s*", ""));
+                    System.err.println("[warning] codegen: " + CompilerText.stripCommentLead(t));
                 }
             }
         }

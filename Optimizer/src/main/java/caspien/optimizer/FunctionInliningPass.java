@@ -13,6 +13,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import caspien.bytecode.Text;
 
 /**
  * Function inlining: a direct call "CC_START / args / CALL f / CC_END [PUSH_RET T]" is replaced by the body of f.
@@ -173,7 +174,7 @@ public class FunctionInliningPass {
                 break;
             }
             sb.append(x, i, q + 6);
-            String[] parts = x.substring(q + 6, close).split(",", -1);
+            String[] parts = Text.split(x.substring(q + 6, close), ',', -1);
             for (int k = 0; k < parts.length; k++) {
                 if (k > 0) sb.append(',');
                 String part = parts[k];

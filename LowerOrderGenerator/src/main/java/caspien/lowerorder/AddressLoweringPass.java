@@ -9,6 +9,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import caspien.bytecode.Text;
 
 /**
  * Last lowering stage: erases each named stack slot to its frame-relative offset and size ("PUSH imut_u64 x.y" ->
@@ -247,7 +248,7 @@ public class AddressLoweringPass {
             if (m.equals("ADDR") && l.size() == 3 && k + 1 <= end) {
                 BytecodeStatement nx = lines.get(k + 1);
                 if (nx.size() == 3 && nx.get(0).text.equals("PUSH") && nx.get(2).text.equals("imut_u64")
-                        && nx.get(1).text.matches("[0-9]+")) {
+                        && Text.isDigits(nx.get(1).text)) {
                     CanonicalType ct = CanonicalType.parse(l.get(2).text);
                     if (ct.storage == null && structTable.layoutOf(ct.baseType) != null) {
                         pending.push(l.get(2).text);
@@ -270,7 +271,7 @@ public class AddressLoweringPass {
                 BytecodeStatement nx = lines.get(k + 1);
                 // (the type id is a literal, or -- in a generated clone routine -- read off the source copy's own `.___type`)
                 if (nx.size() == 3 && nx.get(0).text.equals("PUSH") && nx.get(2).text.equals("imut_u64")
-                        && (nx.get(1).text.matches("[0-9]+") || nx.get(1).text.endsWith(".___type"))) {
+                        && (Text.isDigits(nx.get(1).text) || nx.get(1).text.endsWith(".___type"))) {
                     CanonicalType ct = CanonicalType.parse(l.get(2).text.substring(4));
                     if (ct.storage == null && structTable.layoutOf(ct.baseType) != null) {
                         pending.push("RVO:" + l.get(2).text.substring(4));
@@ -358,7 +359,7 @@ public class AddressLoweringPass {
             }
             switch (m) {
                 case "PUSH":
-                    stack.add(new int[] {j, (l.size() == 3 && l.get(2).text.equals("imut_u64") && l.get(1).text.matches("[0-9]+")) ? 1 : 0});
+                    stack.add(new int[] {j, (l.size() == 3 && l.get(2).text.equals("imut_u64") && Text.isDigits(l.get(1).text)) ? 1 : 0});
                     break;
                 case "PUSH_LABEL":
                 case "ADDR":
@@ -472,7 +473,6 @@ public class AddressLoweringPass {
         return sb.toString();
     }
 
-    private static final java.util.regex.Pattern ARRAY_TYPE = java.util.regex.Pattern.compile("^(.+)\\[([0-9]+)\\]$");
 
     /**
      * Appends the descriptor tokens for one struct layout, consuming the literal's top-level value units (u[0] is the next unit). Returns false
@@ -504,7 +504,7 @@ public class AddressLoweringPass {
                         continue;
                     }
                     CanonicalType ct = CanonicalType.parse(entry.member.canonicalType);
-                    if (ct.storage != null || (!ARRAY_TYPE.matcher(ct.baseType).matches() && structTable.layoutOf(ct.baseType) == null)) {
+                    if (ct.storage != null || (Text.splitArrayType(ct.baseType, 0) == null && structTable.layoutOf(ct.baseType) == null)) {
                         if (u[0] >= units.size()) {
                             return false;
                         }
@@ -529,7 +529,8 @@ public class AddressLoweringPass {
                 }
                 BytecodeStatement producer = lines.get(units.get(u[0]));
                 String last = producer.get(producer.size() - 1).text;
-                boolean isArray = ARRAY_TYPE.matcher(base).matches();
+                String[] arrayParts = Text.splitArrayType(base, 0);
+                boolean isArray = arrayParts != null;
                 List<StructTableLayoutEntry> structLayout = isArray ? null : structTable.layoutOf(base);
                 if ((isArray || structLayout != null) && CanonicalType.parse(last).baseType.equals(base)) {
                     tokens.add("m" + sizes.sizeOf("mut_" + base));
@@ -537,11 +538,9 @@ public class AddressLoweringPass {
                 } else if (structLayout != null) {
                     todo.add(new Object[] {LAYOUT, structLayout, 0});
                 } else if (isArray) {
-                    java.util.regex.Matcher mt = ARRAY_TYPE.matcher(base);
-                    mt.matches();
-                    String elem = mt.group(1);
-                    long n = Long.parseLong(mt.group(2));
-                    boolean nested = ARRAY_TYPE.matcher(elem).matches() || structTable.layoutOf(elem) != null;
+                    String elem = arrayParts[0];
+                    long n = Long.parseLong(arrayParts[1]);
+                    boolean nested = Text.splitArrayType(elem, 0) != null || structTable.layoutOf(elem) != null;
                     if (!nested) {
                         String narrow = narrowElementToken(elem, n, sizes, structTable);
                         tokens.add(narrow != null ? narrow : "m" + sizes.sizeOf("mut_" + base));
@@ -563,7 +562,7 @@ public class AddressLoweringPass {
 
     /** "a<elemBytes>x<n>" if `elem` is a plain scalar type narrower than 8 bytes, else null. */
     private static String narrowElementToken(String elem, long n, AddressLoweringSizeCalculator sizes, StructTable structTable) {
-        if (!elem.matches("[A-Za-z0-9_]+") || structTable.layoutOf(elem) != null || n <= 0) {
+        if (!Text.isWord(elem) || structTable.layoutOf(elem) != null || n <= 0) {
             return null;
         }
         long e = sizes.sizeOf("mut_" + elem);
@@ -588,7 +587,7 @@ public class AddressLoweringPass {
                 if (wanted == null || (l.size() >= 2 && self.equals(CanonicalType.parse(l.get(1).text).baseType))) {
                     depth++;
                 }
-            } else if (l.size() == 3 && l.get(0).text.equals("PUSH") && l.get(2).text.equals("imut_u64") && l.get(1).text.matches("[0-9]+")) {
+            } else if (l.size() == 3 && l.get(0).text.equals("PUSH") && l.get(2).text.equals("imut_u64") && Text.isDigits(l.get(1).text)) {
                 if (wanted != null && !typeIdValue(l).equals(wanted)) {
                     continue;   // the type-id push of an inline struct literal (an array element, an inline member), not this literal's own
                 }
@@ -638,12 +637,12 @@ public class AddressLoweringPass {
     private static String elementwiseArrayToken(String memberType, List<StructTableLayoutEntry> layout, Map<String, Integer> arrayValueLines,
             AddressLoweringSizeCalculator sizes, StructTable structTable) {
         CanonicalType ct = CanonicalType.parse(memberType);
-        java.util.regex.Matcher mt = java.util.regex.Pattern.compile("^([A-Za-z0-9_]+)\\[([0-9]+)\\]$").matcher(ct.baseType);
-        if (ct.storage != null || !mt.matches() || structTable.layoutOf(mt.group(1)) != null) {
+        String[] mt = Text.splitArrayType(ct.baseType, 1);
+        if (ct.storage != null || mt == null || structTable.layoutOf(mt[0]) != null) {
             return null;
         }
-        long elem = sizes.sizeOf("mut_" + mt.group(1));
-        long n = Long.parseLong(mt.group(2));
+        long elem = sizes.sizeOf("mut_" + mt[0]);
+        long n = Long.parseLong(mt[1]);
         if (elem >= 8 || elem <= 0 || n <= 0) {
             return null;
         }
@@ -1278,7 +1277,7 @@ public class AddressLoweringPass {
             int nextDot = remainder.indexOf('.');
             String segment = (nextDot < 0) ? remainder : remainder.substring(0, nextDot);
             String arrayElem = t.fixedArrayElementType();
-            if (arrayElem != null && segment.matches("[0-9]+")) {
+            if (arrayElem != null && Text.isDigits(segment)) {
                 // A numeric segment into a fixed array ("name.hs.1.w", as the drop/clone glue passes write them): element stride * index.
                 address += Long.parseLong(segment) * sizes.sizeOf(arrayElem);
                 currentType = arrayElem;

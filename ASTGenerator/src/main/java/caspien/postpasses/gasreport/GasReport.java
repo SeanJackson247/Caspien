@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import caspien.config.DocComment;
+import caspien.bytecode.Text;
 
 /**
  * `--audit`, worst-case execution cost in ABSTRACT GAS. Works on the emitted high-order bytecode (before any optimiser pass), so the figure
@@ -116,14 +117,14 @@ public final class GasReport {
             fr.i++;
         }
         for (; fr.i < fr.to; fr.i++) {
-            String[] p = core.ln[fr.i].split(" ");
+            String[] p = Text.split(core.ln[fr.i], ' ', 0);
             switch (p[0]) {
                 case "PUSH": {
                     if (p.length < 2) {
                         return fr.finish(null);
                     }
                     String t = p[1];
-                    if (t.matches("\\d+")) {
+                    if (Text.isDigits(t)) {
                         st.add(V.sc(new BigInteger(t)));
                         break;
                     }
@@ -195,7 +196,7 @@ public final class GasReport {
     public boolean addressTaken(Fn f, String var) {
         for (int i = f.start; i < f.end; i++) {
             if (core.ln[i].startsWith("ADDR_OF ")) {
-                for (String t : core.ln[i].split(" ")) {
+                for (String t : Text.split(core.ln[i], ' ', 0)) {
                     if (t.equals(var)) {
                         return true;
                     }
@@ -237,7 +238,7 @@ public final class GasReport {
             if (GasReportCore.isLabel(line)) {
                 return fr.finish(null);
             }
-            String[] p = line.split(" ");
+            String[] p = Text.split(line, ' ', 0);
             if (p[0].equals("ADDR") && p.length >= 2 && p[1].equals(var)) {
                 int j = i + 1;
                 while (j < f.end && !core.ln[j].startsWith("ASSIGN ")) {
@@ -284,16 +285,16 @@ public final class GasReport {
         Fn f = fr.f;
         String var = fr.var;
         if (fr.phase == 1) {
-            return fr.finish(assignedValue(core.ln[fr.write].split(" "), castSeg(fr.got)));
+            return fr.finish(assignedValue(Text.split(core.ln[fr.write], ' ', 0), castSeg(fr.got)));
         }
         int write = -1, writes = 0;
         boolean param = false;
         for (int i = f.start + 1; i < f.end; i++) {
             String line = core.ln[i];
-            if (line.startsWith("ARG ") && line.split(" ")[1].equals(var)) {
+            if (line.startsWith("ARG ") && Text.split(line, ' ', 0)[1].equals(var)) {
                 param = true;
             }
-            if (line.startsWith("ADDR ") && line.split(" ")[1].equals(var)) {
+            if (line.startsWith("ADDR ") && Text.split(line, ' ', 0)[1].equals(var)) {
                 boolean selfCopy = param && i + 2 < f.end && core.ln[i + 1].startsWith("PUSH " + var + " ") && core.ln[i + 2].startsWith("ASSIGN ");
                 if (!selfCopy) {
                     writes++;
@@ -341,7 +342,7 @@ public final class GasReport {
         String name = null;
         for (int i = lp.head + 1; i < lp.back && i < lp.head + 6; i++) {
             if (core.ln[i].startsWith("PUSH $for_range_")) {
-                name = core.ln[i].split(" ")[1];
+                name = Text.split(core.ln[i], ' ', 0)[1];
                 break;
             }
         }
@@ -388,21 +389,21 @@ public final class GasReport {
         List<String[]> params = new ArrayList<>();
         for (int i = callee.start; i < callee.end; i++) {
             if (core.ln[i].startsWith("ARG ")) {
-                params.add(core.ln[i].split(" "));
+                params.add(Text.split(core.ln[i], ' ', 0));
             } else if (core.ln[i].startsWith("ALLOC ")) {
                 break;
             }
         }
         int need = 0;
         for (String[] pr : params) {
-            need += pr.length >= 3 && pr[2].matches("(imut_|mut_)?range") ? 2 : 1;
+            need += pr.length >= 3 && Text.isRangeType(pr[2]) ? 2 : 1;
         }
         if (need != slots.size()) {
             return out;
         }
         int k = 0;
         for (String[] pr : params) {
-            boolean rng = pr.length >= 3 && pr[2].matches("(imut_|mut_)?range");
+            boolean rng = pr.length >= 3 && Text.isRangeType(pr[2]);
             V x = slots.get(k++);
             if (rng) {
                 V y = slots.get(k++);
@@ -458,7 +459,7 @@ public final class GasReport {
                 retType = GasReportCore.firstType(l);
             }
             if (l.startsWith("ALLOC ") || l.startsWith("ARG ")) {
-                String[] p = l.split(" ");
+                String[] p = Text.split(l, ' ', 0);
                 if (p.length >= 3 && p[2].startsWith("owns_")) {
                     slotType.put(p[1], p[2]);
                 }
@@ -475,8 +476,8 @@ public final class GasReport {
         }
         for (int i = f.start; i < f.end; i++) {
             if (core.ln[i].startsWith("ALLOC ")) {
-                String[] p = core.ln[i].split(" ");
-                String st = p.length >= 3 ? p[2].replaceFirst("^((mut|imut|indeterminate)_)+", "") : "";
+                String[] p = Text.split(core.ln[i], ' ', 0);
+                String st = p.length >= 3 ? Text.stripQualifierPrefixes(p[2]) : "";
                 if (p.length >= 3 && !p[2].startsWith("owns_") && core.ownsStructs.contains(st)) {
                     slotType.put(p[1], "inline_" + st);     // a struct held directly that owns memory: dropped like an owner at scope end
                 }
@@ -610,7 +611,7 @@ public final class GasReport {
             }
             String o = GasReportCore.op(core.ln[i]);
             long cr = 0;
-            if (o.equals("GT_DESTRUCT") && core.ln[i].split(" ").length == 2) {
+            if (o.equals("GT_DESTRUCT") && Text.split(core.ln[i], ' ', 0).length == 2) {
                 cr = s.lo.getOrDefault(GasReportCore.arg(core.ln[i]), 0L) + (f.deepOk ? s.deep.getOrDefault(GasReportCore.arg(core.ln[i]), 0L) : 0L);
             } else if ((o.equals("RESIZE") || o.equals("URESIZE")) && i >= 3) {
                 int srcAt = o.equals("RESIZE") ? i - 3 : i - 2;
@@ -705,7 +706,7 @@ public final class GasReport {
 
     public St transferCredit(Fn f, int i, St s, Map<String, String> slotType, Map<Integer, Integer> lhs, St[] in) {
         String line = core.ln[i], o = GasReportCore.op(line);
-        if (o.equals("GT_DESTRUCT") && line.split(" ").length == 2 && slotType.containsKey(GasReportCore.arg(line))) {
+        if (o.equals("GT_DESTRUCT") && Text.split(line, ' ', 0).length == 2 && slotType.containsKey(GasReportCore.arg(line))) {
             St r = s.copy();
             r.lo.remove(GasReportCore.arg(line));
             r.deep.remove(GasReportCore.arg(line));
@@ -793,7 +794,7 @@ public final class GasReport {
     public boolean deepOk(Fn f, Map<String, String> slotType) {
         Set<Integer> idiom = new HashSet<>();
         for (int i = f.start + 1; i < f.end; i++) {
-            if (GasReportCore.op(core.ln[i]).equals("GT_DESTRUCT") && core.ln[i].split(" ").length == 2) {
+            if (GasReportCore.op(core.ln[i]).equals("GT_DESTRUCT") && Text.split(core.ln[i], ' ', 0).length == 2) {
                 String name = GasReportCore.arg(core.ln[i]);
                 int k = i + 1;
                 while (k < f.end && core.ln[k].startsWith("ADDR " + name + " ")) {
@@ -812,7 +813,7 @@ public final class GasReport {
             if (idiom.contains(i)) {
                 continue;
             }
-            String[] p = core.ln[i].split(" ");
+            String[] p = Text.split(core.ln[i], ' ', 0);
             if (p.length < 2) {
                 continue;
             }
@@ -856,7 +857,7 @@ public final class GasReport {
                 total = 0;
                 core.structMembers.put(cur, new ArrayList<>());
             } else if (cur != null && l.startsWith("STRUCT_MEMBER ")) {
-                String[] p = l.split(" ");
+                String[] p = Text.split(l, ' ', 0);
                 core.structMembers.get(cur).add(p[p.length - 1]);
                 if (p[p.length - 1].contains("owns_")) {
                     core.ownsMemberNames.add(p[1]);
@@ -908,10 +909,10 @@ public final class GasReport {
                 size = 8;
                 break;
             }
-            java.util.regex.Matcher arr = java.util.regex.Pattern.compile("(.*)\\[(\\d+)\\]$").matcher(x);
-            if (arr.matches()) {
-                dims.push(Long.parseLong(arr.group(2)));
-                x = arr.group(1);
+            String[] arr = Text.splitArrayType(x, 2);
+            if (arr != null) {
+                dims.push(Long.parseLong(arr[1]));
+                x = arr[0];
                 continue;
             }
             size = leafSize(x);
@@ -924,9 +925,8 @@ public final class GasReport {
     }
 
     private long leafSize(String x) {
-        java.util.regex.Matcher prim = java.util.regex.Pattern.compile("[us](\\d+)").matcher(x);
-        if (prim.matches()) {
-            return Math.max(1, Integer.parseInt(prim.group(1)) / 8);
+        if (Text.isSizedIntName(x)) {
+            return Math.max(1, Integer.parseInt(x.substring(1)) / 8);
         }
         switch (x) {
             case "bool": case "char":
@@ -952,8 +952,8 @@ public final class GasReport {
         if (idx < 0 || !core.ln[idx].startsWith("PUSH ")) {
             return null;
         }
-        String[] p = core.ln[idx].split(" ");
-        return p.length >= 2 && p[1].matches("\\d+") ? new BigInteger(p[1]) : null;
+        String[] p = Text.split(core.ln[idx], ' ', 0);
+        return p.length >= 2 && Text.isDigits(p[1]) ? new BigInteger(p[1]) : null;
     }
 
     public BigInteger deepBytes(String t0, int depth0) {
@@ -1066,7 +1066,7 @@ public final class GasReport {
 
     public BigInteger allocBytes(int idx, Fn f) {
         String line = core.ln[idx];
-        String[] p = line.split(" ");
+        String[] p = Text.split(line, ' ', 0);
         String o = p[0];
         if (core.structSize == null) {
             parseStructs();
@@ -1087,7 +1087,7 @@ public final class GasReport {
             }
             case "NEW_FROM_STRING": case "NEW_FROM_USTRING": {
                 // the text literal pushed just before: STRING <id> "text"
-                String id = idx > 0 && core.ln[idx - 1].startsWith("PUSH string_id") ? core.ln[idx - 1].split(" ")[1] : null;
+                String id = idx > 0 && core.ln[idx - 1].startsWith("PUSH string_id") ? Text.split(core.ln[idx - 1], ' ', 0)[1] : null;
                 Integer len = id == null ? null : stringLength(id);
                 if (len == null) {
                     GasReportCore.unb(f, GasReportCore.R(GasReportCore.FIN, "text length of a `dyn(...)` is not a literal"));
@@ -1177,7 +1177,7 @@ public final class GasReport {
         for (int i = f.start; i < f.end; i++) {
             String l = core.ln[i];
             if (l.startsWith("ALLOC ") || l.startsWith("ARG ") || l.startsWith("ALLOC_STATIC ")) {
-                String[] p = l.split(" ");
+                String[] p = Text.split(l, ' ', 0);
                 total += (sizeOf(p[p.length - 1]) + 7) / 8 * 8;
             }
         }
@@ -1297,7 +1297,7 @@ public final class GasReport {
 
     public GasReport(String hob) {
         List<String> l = new ArrayList<>();
-        for (String s : hob.split("\n")) {
+        for (String s : Text.split(hob, '\n', 0)) {
             s = s.trim();
             if (!s.isEmpty()) {
                 l.add(s);

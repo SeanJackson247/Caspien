@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import caspien.token.Decorator;
+import caspien.bytecode.Text;
 
 /**
  * Stage 6: type and logic checking over the import-resolved, tree-built program.
@@ -460,7 +461,7 @@ public final class TypeCheckerImpls {
         // The suffix ends up in an assembly label; a parameter type such
         // as owns_mut_dynarray(u64) contains characters no assembler
         // accepts in a symbol, so anything outside [A-Za-z0-9_] becomes '_'.
-        return sb.toString().replaceAll("[^A-Za-z0-9_]", "_");
+        return Text.replaceNonWordChars(sb.toString(), "_");
     }
 
     /**
@@ -965,7 +966,7 @@ public final class TypeCheckerImpls {
             return false;
         }
         Deque<Iterator<String>> its = new ArrayDeque<>();
-        its.push(Arrays.asList(baseType.split("[^A-Za-z0-9_]+")).iterator());
+        its.push(Arrays.asList(Text.splitNonWord(baseType)).iterator());
         while (!its.isEmpty()) {
             Iterator<String> it = its.peek();
             if (!it.hasNext()) {
@@ -984,7 +985,7 @@ public final class TypeCheckerImpls {
                 List<String> memberIds = new ArrayList<>();
                 for (TypeInfo m : si.members.values()) {
                     if (m.baseType != null) {
-                        memberIds.addAll(Arrays.asList(m.baseType.split("[^A-Za-z0-9_]+")));
+                        memberIds.addAll(Arrays.asList(Text.splitNonWord(m.baseType)));
                     }
                 }
                 its.push(memberIds.iterator());

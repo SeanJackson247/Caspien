@@ -10,6 +10,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import caspien.bytecode.Text;
 
 /**
  * 16-byte range values built or copied word by word instead of through the stack (runs on the STACK-form text, after
@@ -236,7 +237,7 @@ public class RangeWordSplitPass {
         if (num(o) != null) {
             return true;
         }
-        if (o.matches("ARG[0-9]+")) {
+        if (Text.isPrefixedDigits(o, "ARG")) {
             return true;
         }
         Long s = slotOff(o);

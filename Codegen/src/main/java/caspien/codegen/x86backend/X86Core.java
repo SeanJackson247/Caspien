@@ -14,6 +14,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.TreeMap;
+import caspien.bytecode.Text;
 
 /** Shared state of the x86-64 backend; see README.md, "X86Core.java". */
 final class X86Core {
@@ -117,7 +118,7 @@ final class X86Core {
         if (r.equals(full)) {
             return true;
         }
-        if (full.matches("r\\d+")) {
+        if (Text.isPrefixedDigits(full, "r")) {
             return r.equals(full + "d") || r.equals(full + "w") || r.equals(full + "b");
         }
         String base = full.substring(1);     // rax -> ax, rsi -> si
@@ -144,7 +145,7 @@ final class X86Core {
     }
 
     static boolean isFloatLiteral(String s) {
-        return s.matches("-?\\d+\\.\\d+([eE][+-]?\\d+)?");
+        return Text.isDecimalNumber(s);
     }
 
     /** "'a'", "'\n'", "'\0'", ... -- a char-literal PUSH operand, exactly as `BytecodeEmitter.escapeForBytecode` serializes one: an opening single quote, one real character's worth of content, a closing single quote. Deliberately checked structurally (quote ... quote) rather than by first ruling out every other operand shape, since a bare identifier can never itself start *and* end with `'`. */

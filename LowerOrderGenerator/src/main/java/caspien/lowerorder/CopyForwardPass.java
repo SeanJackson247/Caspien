@@ -5,6 +5,7 @@ import caspien.bytecode.BytecodeToken;
 
 import java.util.Map;
 import java.util.Set;
+import caspien.bytecode.Text;
 
 /**
  * Copy forwarding (`copy-forward: on`). A temporary that only holds a copy of a promoted variable,
@@ -57,7 +58,7 @@ public class CopyForwardPass {
                 changed = true;
                 continue;
             }
-            if (!t(m, 2).matches("%t[0-3]") || !t(m, 3).matches("%v[0-5]")) {
+            if (!Text.isPrefixedChar(t(m, 2), "%t", "0123") || !Text.isPrefixedChar(t(m, 3), "%v", "012345")) {
                 continue;
             }
             BytecodeProgram edits = plan(cur, gone, i, t(m, 2), m.get(3));

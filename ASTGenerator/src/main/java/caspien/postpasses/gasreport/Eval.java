@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import caspien.bytecode.Text;
 
 /** Per-function analysis state. */
 public final class Eval {
@@ -71,7 +72,7 @@ public final class Eval {
                 String type = null;
                 for (int i = lp.head + 1; i < lp.back && i < lp.head + 6; i++) {
                     if (core.ln[i].startsWith("PUSH $for_range_")) {
-                        String[] p = core.ln[i].split(" ");
+                        String[] p = Text.split(core.ln[i], ' ', 0);
                         type = p[p.length - 1];
                         break;
                     }
@@ -82,7 +83,7 @@ public final class Eval {
                     int comma = type.lastIndexOf(',');
                     if (a >= 0 && comma > a && type.endsWith(")")) {
                         String lo = type.substring(a + 6, comma), hi = type.substring(comma + 1, type.length() - 1);
-                        if (lo.matches("-?\\d+") && hi.matches("-?\\d+")) {
+                        if (Text.isSignedDigits(lo) && Text.isSignedDigits(hi)) {
                             c = new BigInteger(hi).subtract(new BigInteger(lo)).max(BigInteger.ZERO);
                         }
                     }
@@ -94,8 +95,8 @@ public final class Eval {
                 if (c == null) {
                     String dep = null;
                     if (type != null && type.indexOf(',') > 0 && type.endsWith(")")) {
-                        String hi = type.substring(type.lastIndexOf(',') + 1, type.length() - 1).replaceFirst("^(imut_|mut_)", "");
-                        if (hi.matches("[A-Za-z_][A-Za-z_0-9.]*")) {
+                        String hi = Text.stripMutPrefix(type.substring(type.lastIndexOf(',') + 1, type.length() - 1));
+                        if (Text.isDottedName(hi)) {
                             dep = hi;
                         }
                     }

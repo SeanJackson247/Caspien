@@ -6,7 +6,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
-import java.util.regex.Pattern;
+import caspien.bytecode.Text;
 
 /**
  * "ARG-to-ALLOC lowering" -- the transformation that erases the
@@ -100,9 +100,6 @@ import java.util.regex.Pattern;
  */
 public class ArgToAllocLoweringPass {
 
-
-    private static final Pattern BY_VALUE_RANGE_ARG =
-            Pattern.compile("^(?:imut|mut|indeterminate)_range(?:\\(.*\\))?$");
 
     public PassResult run(BytecodeProgram lines) {
         BytecodeProgram out = new BytecodeProgram();
@@ -282,7 +279,7 @@ public class ArgToAllocLoweringPass {
     }
 
     private List<String> argWordTypesOf(String canonical) {
-        if (BY_VALUE_RANGE_ARG.matcher(canonical).matches()) {
+        if (Text.isByValueRangeType(canonical)) {
             return Arrays.asList("indeterminate_u64", "indeterminate_u64");
         }
         return Collections.singletonList(canonical);

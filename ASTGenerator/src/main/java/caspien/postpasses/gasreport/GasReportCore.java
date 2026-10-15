@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import caspien.config.DocComment;
+import caspien.bytecode.Text;
 
 /**
  * `--audit`, worst-case execution cost in ABSTRACT GAS. Works on the emitted high-order bytecode (before any optimiser pass), so the figure
@@ -191,7 +192,7 @@ final class GasReportCore {
 
     public static boolean narrowType(String[] p) {
         for (int k = 1; k < p.length; k++) {
-            if (p[k].matches(".*[us](8|16|32)")) {
+            if (Text.endsWithSmallIntType(p[k])) {
                 return true;
             }
         }
@@ -203,12 +204,12 @@ final class GasReportCore {
 
 
     public static String addrType(String l) {
-        String[] p = l.split(" ");
+        String[] p = Text.split(l, ' ', 0);
         return p.length > 2 ? p[2] : "";
     }
 
     public static String firstType(String l) {
-        String[] p = l.split(" ");
+        String[] p = Text.split(l, ' ', 0);
         return p.length > 1 ? p[1] : "";
     }
 

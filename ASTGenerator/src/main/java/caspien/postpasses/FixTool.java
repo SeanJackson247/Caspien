@@ -23,6 +23,7 @@ import java.util.Set;
 import java.util.TreeMap;
 import caspien.typechecker.SplitInfo;
 import caspien.config.DocComment;
+import caspien.bytecode.Text;
 
 /**
  * `--fix MODE[,MODE] [--write] [--fix-stdlib]`: the compiler as a tool that edits source, text only (it inserts whole comment lines and changes
@@ -56,7 +57,7 @@ public final class FixTool {
     static String normalize(String hob) {
         StringBuilder sb = new StringBuilder(hob.length());
         boolean dead = false;
-        for (String ln : hob.split("\n", -1)) {
+        for (String ln : Text.split(hob, '\n', -1)) {
             if (dead) {
                 if (ln.startsWith("@") && ln.endsWith(":") || ln.startsWith("FUNC_END")) {
                     dead = false;
@@ -65,7 +66,7 @@ public final class FixTool {
                 }
             }
             if (ln.contains("_DECORATE ") && ln.endsWith("\"")) {
-                ln = ln.replaceFirst(":\\d+\"$", "\"");
+                ln = Text.stripLineNumberBeforeQuote(ln);
             }
             sb.append(ln).append('\n');
             if (ln.equals("RET") || ln.startsWith("RET ")) {
@@ -100,7 +101,7 @@ public final class FixTool {
     public static FixRun run(String modes, boolean write, boolean includeStdlib, BytecodeEmitter em, String hob, String backupDir,
                    List<SplitInfo> splitInfo, String only) throws IOException {
         FixTool t = new FixTool();
-        Set<String> want = new LinkedHashSet<>(java.util.Arrays.asList(modes.split(",")));
+        Set<String> want = new LinkedHashSet<>(java.util.Arrays.asList(Text.split(modes, ',', 0)));
         for (String m : want) {
             if (!m.equals("termination") && !m.equals("justify") && !m.equals("unsafe-split")) {
                 throw new CompilerException("fix", "", 0, "unknown --fix mode '" + m + "' (modes: termination, justify, unsafe-split)");
@@ -222,8 +223,6 @@ public final class FixTool {
         }
     }
 
-    private static final java.util.regex.Pattern OPEN_LINE = java.util.regex.Pattern.compile("^(\\s*)unsafe\\b[^{]*\\{\\s*(//.*)?$");
-    private static final java.util.regex.Pattern CLOSE_LINE = java.util.regex.Pattern.compile("^\\s*\\}\\s*(//.*)?$");
 
     private static boolean isCommentLine(String l) {
         String t = l.trim();
@@ -266,8 +265,8 @@ public final class FixTool {
             if (L < 1 || L > lines.size()) {
                 continue;
             }
-            java.util.regex.Matcher om = OPEN_LINE.matcher(lines.get(L - 1));
-            if (!om.matches()) {
+            String[] om = Text.unsafeOpenParts(lines.get(L - 1));
+            if (om == null) {
                 String one = lines.get(L - 1);
                 if (!one.contains("}")) {
                     notes.add(where + " the `unsafe` block does not open on a line of its own: not split");
@@ -278,9 +277,9 @@ public final class FixTool {
                 for (Set<String> t : si.childTags) {
                     need.addAll(t);
                 }
-                java.util.regex.Matcher um = java.util.regex.Pattern.compile("\\bunsafe\\s+unaudited\\s*\\{").matcher(one);
-                if (si.declared.contains("unaudited") && um.find() && !need.isEmpty()) {
-                    String nl = one.substring(0, um.start()) + "unsafe " + String.join(" ", need) + "{" + one.substring(um.end());
+                int[] um = Text.findUnsafeUnaudited(one);
+                if (si.declared.contains("unaudited") && um != null && !need.isEmpty()) {
+                    String nl = one.substring(0, um[0]) + "unsafe " + String.join(" ", need) + "{" + one.substring(um[1]);
                     List<String> repl = new ArrayList<>();
                     if (DocComments.find(si.file, L, "justify", "unsafe") == null) {
                         repl.add(indentOf(one) + "/*! justify: TODO */");
@@ -294,8 +293,8 @@ public final class FixTool {
                 }
                 continue;
             }
-            String blockIndent = om.group(1);
-            String openComment = om.group(2);
+            String blockIndent = om[0];
+            String openComment = om[1];
             int lastChild = si.childLine.get(n - 1);
             boolean ok = true;
             for (int i = 0; i < n; i++) {
@@ -311,7 +310,7 @@ public final class FixTool {
                     if (ln.trim().isEmpty()) {
                         continue;
                     }
-                    if (indentOf(ln).equals(blockIndent) && CLOSE_LINE.matcher(ln).matches()) {
+                    if (indentOf(ln).equals(blockIndent) && Text.isCloseLine(ln)) {
                         close = i;
                         break;
                     }
@@ -482,7 +481,7 @@ public final class FixTool {
 
     private static List<String> readLines(String file) throws IOException {
         String content = new String(Files.readAllBytes(Paths.get(file)), StandardCharsets.UTF_8);
-        List<String> l = new ArrayList<>(java.util.Arrays.asList(content.split("\r?\n", -1)));
+        List<String> l = new ArrayList<>(java.util.Arrays.asList(Text.splitNewlines(content, -1)));
         return l;
     }
 
@@ -497,7 +496,7 @@ public final class FixTool {
             Path p = Paths.get(e.getKey());
             String content = new String(Files.readAllBytes(p), StandardCharsets.UTF_8);
             String eol = content.contains("\r\n") ? "\r\n" : "\n";
-            List<String> lines = new ArrayList<>(java.util.Arrays.asList(content.split("\r?\n", -1)));
+            List<String> lines = new ArrayList<>(java.util.Arrays.asList(Text.splitNewlines(content, -1)));
             // every edit as (position, lines removed, lines added), applied from the bottom up so earlier line numbers stay valid
             TreeMap<Integer, Object[]> edits = new TreeMap<>(java.util.Collections.reverseOrder());
             for (Map.Entry<Integer, List<String>> ins : e.getValue().entrySet()) {

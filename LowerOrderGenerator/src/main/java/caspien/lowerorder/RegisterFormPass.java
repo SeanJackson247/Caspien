@@ -8,6 +8,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import caspien.bytecode.Text;
 
 /**
  * Register-form pass ("deferred operands") -- runs LAST, on the final
@@ -335,7 +336,7 @@ public class RegisterFormPass {
     }
 
     private static boolean isFloatLiteral(String s) {
-        return s.matches("-?\\d+\\.\\d+([eE][+-]?\\d+)?");
+        return Text.isDecimalNumber(s);
     }
 
     private static boolean fitsImm32(String text) {

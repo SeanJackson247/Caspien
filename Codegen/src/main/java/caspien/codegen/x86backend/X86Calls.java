@@ -1,6 +1,7 @@
 package caspien.codegen.x86backend;
 
 import caspien.bytecode.BytecodeStatement;
+import caspien.bytecode.Text;
 
 /** Argument registers, aligned calls with stack-passed arguments, and the mnemonic dispatcher (emitLine, first mnemonic group) (see X86Generator for how the parts fit together). */
 final class X86Calls {
@@ -33,7 +34,7 @@ final class X86Calls {
                 return -1;
             }
             String operand = l.get(2).text;
-            if (operand.matches("\\d+") && l.get(1).text.equals("8")) {
+            if (Text.isDigits(operand) && l.get(1).text.equals("8")) {
                 if (values != 1) {
                     return -1;
                 }
@@ -260,7 +261,7 @@ final class X86Calls {
 
         long pendingBlockSize = core.lastValueBlockSize;
         core.lastValueBlockSize = 0;
-        if (first.equals("PUSH") && line.size() > 1 && line.get(1).text.matches("\\d+")) {
+        if (first.equals("PUSH") && line.size() > 1 && Text.isDigits(line.get(1).text)) {
             if (pendingBlockSize != 0 && core.pushedWordWithTag) {
                 pendingBlockSize = 0;
             }
@@ -409,7 +410,7 @@ final class X86Calls {
                     bits = Double.doubleToRawLongBits(Double.parseDouble(operand));
                 }
                 hub.emit.movImmToReg("rax", bits);
-            } else if (operand.matches("\\d+\\.(start|end)")) {
+            } else if (Text.isDigitsDotStartOrEnd(operand)) {
                 hub.emit.comment("TODO(codegen): PUSH of incomplete-range pseudo-member '" + operand + "' not yet implemented -- pushing 0 as a placeholder");
                 hub.emit.movImmToReg("rax", 0);
             } else if (operand.startsWith("ARG")) {

@@ -22,6 +22,7 @@ import java.util.Set;
 import caspien.typechecker.FuncInfo;
 import caspien.typechecker.StructInfo;
 import caspien.config.DocComment;
+import caspien.bytecode.Text;
 
 /**
  * Final front-end stage: walks the type-checked tree and emits the stack-based higher-order bytecode (HOB) as text.
@@ -50,7 +51,7 @@ public final class BytecodeEmitter {
         String leftType = op.left.chk.resolvedType;
         if (op.left.type == TokenType.VARREF && leftType != null && !BytecodeEmitterCore.hasStorage(leftType)
                 && leftType.endsWith("]") && !leftType.contains("dynarray")
-                && op.chk.resolvedType != null && op.chk.resolvedType.matches("(mut|imut|indeterminate)_(u8|u16|u32|u64|s8|s16|s32|s64|f32|f64|bool|char)")) {
+                && op.chk.resolvedType != null && Text.isQualifiedScalar(op.chk.resolvedType, true)) {
             // Scalar element of a fixed array variable: take the element address (ADDR + LOOKUP_LHS) and load only it, instead of pushing the whole array. Aggregate elements keep the old path (DEREF carries no size).
             f.line("ADDR " + op.left.text + " " + leftType);
             Token idx = op.right.childs.get(0);

@@ -4,6 +4,7 @@ import caspien.bytecode.BytecodeStatement;
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.List;
+import caspien.bytecode.Text;
 
 /** Last stack-form mnemonic groups, allocation/resize helpers, and the first register-form (R_*) helpers (see X86Generator for how the parts fit together). */
 final class X86RegForm {
@@ -262,7 +263,7 @@ final class X86RegForm {
             // ASM_START skipped it first) -- nothing to emit either way.
             return true;
         } else if (mnemonic.equals("FLOAT_CHECK")) {
-            String[] categories = line.get(1).text.split("\\|");
+            String[] categories = Text.split(line.get(1).text, '|', 0);
             boolean f64Check = line.size() > 2 && line.get(2).text.equals("8");
             hub.emit.popReg("rax");
             if (f64Check) {

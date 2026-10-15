@@ -13,6 +13,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 import caspien.config.DocComment;
+import caspien.bytecode.Text;
 
 /**
  * `--audit`: every use of `unsafe` in the source being compiled (the input and every file it imports), with file, line, the tags written
@@ -65,7 +66,7 @@ public final class AuditReport {
             if (u.tags.isEmpty()) {
                 addTag(byTag, "(none: declaration block)");
             }
-            for (String t : u.tags.split(" ")) {
+            for (String t : Text.split(u.tags, ' ', 0)) {
                 if (!t.isEmpty()) {
                     addTag(byTag, t);
                 }
@@ -158,12 +159,12 @@ public final class AuditReport {
             sb.append('\n');
             DocComment jd = justOf(u, base);
             sb.append("       justify: ").append(jd == null ? "(none)" : DocComments.isTodo(jd.text) ? "TODO  <- not justified yet" : jd.text).append('\n');
-            String[] lines = u.text.split("\n", -1);
+            String[] lines = Text.split(u.text, '\n', -1);
             for (int i = 0; i < lines.length; i++) {
                 if (i == lines.length - 1 && lines[i].trim().isEmpty()) {
                     break;
                 }
-                sb.append(String.format("%6d | %s%n", u.firstLine + i, lines[i].replaceAll("\\s+$", "")));
+                sb.append(String.format("%6d | %s%n", u.firstLine + i, Text.stripTrailingSpace(lines[i])));
             }
             sb.append("       }\n");
         }

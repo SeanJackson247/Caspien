@@ -11,7 +11,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.regex.Pattern;
+import caspien.bytecode.Text;
 
 /**
  * Marks local variables that are worth keeping in a register, as a HINT for the lower stages:
@@ -37,8 +37,6 @@ import java.util.regex.Pattern;
  */
 public class RegVarHintPass {
 
-    private static final Pattern PLAIN_SCALAR =
-            Pattern.compile("^(mut|imut)_(u8|u16|u32|u64|s8|s16|s32|s64|f32|f64|bool|char)$");
     private static final long MIN_WEIGHT = 8;
 
     public PassResult run(BytecodeProgram lines) {
@@ -114,7 +112,7 @@ public class RegVarHintPass {
             // A name declared several times with ONE type (the counter `i` of several `for` loops of a function) is one slot
             // for the lower stages (they resolve a name to a single frame offset), so it is one candidate.
             if (!mixedType.contains(n) && !n.startsWith("$") && !n.equals("gt_routine_address") && !n.equals("gt_error_message") && !n.startsWith("gt_trace_")
-                    && PLAIN_SCALAR.matcher(allocType.get(n)).matches()) {
+                    && Text.isQualifiedScalar(allocType.get(n), false)) {
                 candidates.add(n);
             }
         }

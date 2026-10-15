@@ -1,6 +1,7 @@
 package caspien.codegen;
 
 import java.util.List;
+import caspien.bytecode.Text;
 
 /**
  * Loads `codegen.config` (fixed path, resolved relative to the current
@@ -47,7 +48,7 @@ public class CodegenConfig {
             if (raw.isEmpty() || raw.startsWith("#")) {
                 continue;
             }
-            String[] parts = raw.split("\\s+", 2);
+            String[] parts = Text.splitSpace(raw, 2);
             if (parts.length != 2) {
                 throw new CodegenException("config", path, i + 1, "expected 'key value', got: " + raw);
             }

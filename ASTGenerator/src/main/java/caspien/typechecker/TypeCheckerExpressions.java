@@ -22,6 +22,7 @@ import java.util.Map;
 import java.util.Set;
 import caspien.token.Decorator;
 import caspien.token.MatchPattern;
+import caspien.bytecode.Text;
 
 /**
  * Stage 6: type and logic checking over the import-resolved, tree-built program.
@@ -558,11 +559,10 @@ public final class TypeCheckerExpressions {
         if (key == null) {
             return;
         }
-        java.util.regex.Pattern word = java.util.regex.Pattern.compile("(?<![A-Za-z0-9_.])" + java.util.regex.Pattern.quote(key) + "(?![A-Za-z0-9_])");
         for (MatchPattern p : scope.activeMatchPatterns) {
             if (key.equals(p.slotKey) || key.equals(p.rightSlotKey)) {
                 p.invalidated = true;
-            } else if (p.slotKey != null && p.slotKey.startsWith("(") && word.matcher(p.slotKey).find()) {
+            } else if (p.slotKey != null && p.slotKey.startsWith("(") && Text.containsWord(p.slotKey, key, "", true)) {
                 p.invalidated = true; // an assumed fact about an expression ("p+i") dies when any variable in it is written
             }
         }

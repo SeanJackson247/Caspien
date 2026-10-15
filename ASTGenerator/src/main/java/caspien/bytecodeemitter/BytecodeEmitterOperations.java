@@ -19,6 +19,7 @@ import caspien.typechecker.ExternInfo;
 import caspien.typechecker.FuncInfo;
 import caspien.typechecker.StructInfo;
 import caspien.typechecker.TypeInfo;
+import caspien.bytecode.Text;
 
 /**
  * Final front-end stage: walks the type-checked tree and emits the stack-based higher-order bytecode (HOB) as text.
@@ -321,8 +322,8 @@ final class BytecodeEmitterOperations {
         EmitFrame f = EmitFrame.script(op);
         // A negated integer literal is one constant: a single `PUSH -N` (so it also stays a plain PUSH inside a
         // packed array / struct construction run, which any other instruction between pushes would break).
-        if (op.left.type == TokenType.INTEGER && op.left.forcedLiteralType == null && op.left.text.matches("[0-9]+")) {
-            String digits = op.left.text.replaceFirst("^0+(?=.)", "");
+        if (op.left.type == TokenType.INTEGER && op.left.forcedLiteralType == null && Text.isDigits(op.left.text)) {
+            String digits = Text.stripLeadingZeros(op.left.text);
             f.line("PUSH " + (digits.equals("0") ? "0" : "-" + digits) + " " + op.chk.resolvedType);
             return f;
         }
@@ -930,7 +931,7 @@ final class BytecodeEmitterOperations {
         switch (f.phase) {
             case 0: {
                 Token unwrapped = unwrapParens(arg);
-                if (BytecodeEmitterCore.BY_VALUE_RANGE_ARG.matcher(arg.chk.resolvedType).matches()) {
+                if (Text.isByValueRangeType(arg.chk.resolvedType)) {
                     // A range's words are u64 bounds, never float.
                     if (unwrapped.type == TokenType.OPERATOR && unwrapped.text.equals("..")) {
                         f.t1 = unwrapped;

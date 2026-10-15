@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import caspien.config.DocComment;
+import caspien.bytecode.Text;
 
 /**
  * Stage 1: turns the raw source of a single file into a flat list of
@@ -1085,7 +1086,7 @@ public class Lexer {
     /** Validates a doc comment (`/*! key: text *&#47;` or `//! key: text`) and registers it under the keyword it labels. See {@link DocComments}. */
     private void registerDocComment(int idx, Lexeme c) {
         int cl = c.line;
-        String body = c.text.substring(1).trim().replaceAll("\\s+", " ");
+        String body = Text.collapseSpace(c.text.substring(1).trim());
         int colon = body.indexOf(':');
         if (colon <= 0) {
             throw new CompilerException("lex", file, cl, "doc comment must read '" + (c.type == TokenType.ML_COMMENT ? "/*! " : "//! ")

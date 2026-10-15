@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
+import caspien.bytecode.Text;
 
 /**
  * Variable elision (constant propagation for a variable that is assigned exactly once): finds
@@ -73,7 +74,7 @@ public class VariableElisionPass {
                 remove.add(a + 1);
                 remove.add(a + 2);
                 remove.add(v.allocIdx);
-                if (lit.matches("[0-9]+")) lits.put(v.name, lit);
+                if (Text.isDigits(lit)) lits.put(v.name, lit);
                 for (int r : v.reads) {
                     replaceRead.put(r, lit);
                 }

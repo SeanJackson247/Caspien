@@ -2,11 +2,11 @@ package caspien.codegen.x86backend;
 
 import caspien.codegen.CodegenTarget;
 import caspien.bytecode.BytecodeStatement;
+import caspien.bytecode.Text;
 import caspien.codegen.CodegenException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.regex.Pattern;
 
 /** The x86-64 backend's code generator (register form, callee-saved handling, `generate`); overview in README.md. */
 final class X86Generator {
@@ -1280,7 +1280,7 @@ final class X86Generator {
             }
             String seg = core.out.substring(segStart, j);
             for (int vi = 0; vi < 3; vi++) {
-                if (Pattern.compile("(?<![A-Za-z0-9_])" + regs[vi] + "[dwb]?(?![A-Za-z0-9_])").matcher(seg).find()) {
+                if (Text.containsWord(seg, regs[vi], "dwb", false)) {
                     mask |= 1 << vi;
                 }
             }
@@ -1305,7 +1305,7 @@ final class X86Generator {
             StringBuilder sv = new StringBuilder();
             StringBuilder rs = new StringBuilder();
             for (int vi = 0; vi < 3; vi++) {
-                if (core.vSlots[vi] != null && Pattern.compile("(?<![A-Za-z0-9_])" + regs[vi] + "[dwb]?(?![A-Za-z0-9_])").matcher(seg).find()) {
+                if (core.vSlots[vi] != null && Text.containsWord(seg, regs[vi], "dwb", false)) {
                     sv.append("    movq %").append(regs[vi]).append(", ").append(core.vSlots[vi]).append("\n");
                     rs.append("    movq ").append(core.vSlots[vi]).append(", %").append(regs[vi]).append("\n");
                 }
@@ -1323,18 +1323,17 @@ final class X86Generator {
         long frameBytes = core.csrAllocSum;
         String body = core.out.substring(core.csrFuncStart);
         List<String[]> regs = new ArrayList<>(); // {name, kind gpr|xmm}
-        Pattern nb = Pattern.compile("(?<![A-Za-z0-9_])(?:rbx|ebx|bx|bl|bh)(?![A-Za-z0-9_])");
-        if (nb.matcher(body).find()) regs.add(new String[] {"rbx", "gpr"});
+        if (Text.containsAnyWord(body, new String[] {"rbx", "ebx", "bx", "bl", "bh"}, "")) regs.add(new String[] {"rbx", "gpr"});
         for (int r = 12; r <= 15; r++) {
-            if (Pattern.compile("(?<![A-Za-z0-9_])r" + r + "[dwb]?(?![A-Za-z0-9_])").matcher(body).find()) {
+            if (Text.containsWord(body, "r" + r, "dwb", false)) {
                 regs.add(new String[] {"r" + r, "gpr"});
             }
         }
         if (hub.emit.isWinAbi()) {
-            if (Pattern.compile("(?<![A-Za-z0-9_])(?:rdi|edi|di|dil)(?![A-Za-z0-9_])").matcher(body).find()) regs.add(new String[] {"rdi", "gpr"});
-            if (Pattern.compile("(?<![A-Za-z0-9_])(?:rsi|esi|si|sil)(?![A-Za-z0-9_])").matcher(body).find()) regs.add(new String[] {"rsi", "gpr"});
+            if (Text.containsAnyWord(body, new String[] {"rdi", "edi", "di", "dil"}, "")) regs.add(new String[] {"rdi", "gpr"});
+            if (Text.containsAnyWord(body, new String[] {"rsi", "esi", "si", "sil"}, "")) regs.add(new String[] {"rsi", "gpr"});
             for (int x = 6; x <= 15; x++) {
-                if (Pattern.compile("(?<![A-Za-z0-9_])xmm" + x + "(?![0-9A-Za-z_])").matcher(body).find()) {
+                if (Text.containsWord(body, "xmm" + x, "", false)) {
                     regs.add(new String[] {"xmm" + x, "xmm"});
                 }
             }
@@ -1350,20 +1349,20 @@ final class X86Generator {
             }
             String beforeAlloc = core.out.substring(core.csrFuncStart, core.csrAllocPos);
             for (String[] r : regs) {
-                String regPattern;
+                String early = beforeAlloc.replace(X86Core.CSR_MARK, "");
+                boolean usedEarly;
                 if (r[1].equals("xmm")) {
-                    regPattern = r[0];
+                    usedEarly = Text.containsWord(early, r[0], "", false);
                 } else if (r[0].equals("rbx")) {
-                    regPattern = "(?:rbx|ebx|bx|bl|bh)";
+                    usedEarly = Text.containsAnyWord(early, new String[] {"rbx", "ebx", "bx", "bl", "bh"}, "");
                 } else if (r[0].equals("rdi")) {
-                    regPattern = "(?:rdi|edi|di|dil)";
+                    usedEarly = Text.containsAnyWord(early, new String[] {"rdi", "edi", "di", "dil"}, "");
                 } else if (r[0].equals("rsi")) {
-                    regPattern = "(?:rsi|esi|si|sil)";
+                    usedEarly = Text.containsAnyWord(early, new String[] {"rsi", "esi", "si", "sil"}, "");
                 } else {
-                    regPattern = r[0] + "[dwb]?";
+                    usedEarly = Text.containsWord(early, r[0], "dwb", false);
                 }
-                Pattern any = Pattern.compile("(?<![A-Za-z0-9_])" + regPattern + "(?![0-9A-Za-z_])");
-                if (any.matcher(beforeAlloc.replace(X86Core.CSR_MARK, "")).find()) {
+                if (usedEarly) {
                     throw new RuntimeException("codegen internal error: function '" + core.currentFuncName + "' uses " + r[0] + " before its frame is allocated");
                 }
             }

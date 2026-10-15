@@ -12,6 +12,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import caspien.bytecode.Text;
 
 /**
  * Rewrites a struct instance living in a local variable to act as independent variables, one per member, instead of one opaque
@@ -204,7 +205,7 @@ public class StructUnpackingPass {
             int p = i + 1;
             if (p > e) return null;
             BytecodeStatement ty = L.get(p);
-            if (!"PUSH".equals(VarAnalysis.mnemonic(ty)) || ty.size() != 3 || !ty.get(2).text.equals("imut_u64") || !ty.get(1).text.matches("[0-9]+")) return null;
+            if (!"PUSH".equals(VarAnalysis.mnemonic(ty)) || ty.size() != 3 || !ty.get(2).text.equals("imut_u64") || !Text.isDigits(ty.get(1).text)) return null;
             p++;
             // The member expressions are postfix; simulate a stack of "start line" markers to find where each one begins.
             List<Integer> starts = new ArrayList<>();
