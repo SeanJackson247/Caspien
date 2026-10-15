@@ -4,10 +4,7 @@ import caspien.bytecode.BytecodeStatement;
 import caspien.bytecode.BytecodeToken;
 import caspien.codegen.CodegenException;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
 
 /** Last stack-form mnemonic groups, allocation/resize helpers, and the first register-form (R_*) helpers (see X86Generator for how the parts fit together). */
 final class X86RegForm {

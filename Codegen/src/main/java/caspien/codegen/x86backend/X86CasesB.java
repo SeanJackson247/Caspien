@@ -3,11 +3,6 @@ package caspien.codegen.x86backend;
 import caspien.bytecode.BytecodeStatement;
 import caspien.bytecode.BytecodeToken;
 import caspien.codegen.CodegenException;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
 
 /** Mnemonic groups 4 and 5 of the stack-form instruction set (see X86Generator for how the parts fit together). */
 final class X86CasesB {

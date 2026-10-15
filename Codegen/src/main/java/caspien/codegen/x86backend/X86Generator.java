@@ -5,10 +5,7 @@ import caspien.bytecode.BytecodeStatement;
 import caspien.bytecode.BytecodeToken;
 import caspien.codegen.CodegenException;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
 
 /** The x86-64 backend's code generator (register form, callee-saved handling, `generate`); overview in README.md. */
 final class X86Generator {
@@ -858,9 +855,10 @@ final class X86Generator {
         if (hub.emit.isWinAbi() || core.xvHome.isEmpty()) {
             return;
         }
-        for (java.util.Map.Entry<Integer, Long> e : core.xvHome.entrySet()) {
-            String wsfx = widthSfx(core.xvWidth.getOrDefault(e.getKey(), 4));
-            hub.emit.raw("    mov" + wsfx + " %" + xvPhys(e.getKey()) + ", " + e.getValue() + "(%rbp)");
+        for (Integer key : core.xvHome.keySet()) {
+            Long value = core.xvHome.get(key);
+            String wsfx = widthSfx(core.xvWidth.getOrDefault(key, 4));
+            hub.emit.raw("    mov" + wsfx + " %" + xvPhys(key) + ", " + value + "(%rbp)");
         }
     }
 
@@ -868,9 +866,10 @@ final class X86Generator {
         if (hub.emit.isWinAbi() || core.xvHome.isEmpty()) {
             return;
         }
-        for (java.util.Map.Entry<Integer, Long> e : core.xvHome.entrySet()) {
-            String wsfx = widthSfx(core.xvWidth.getOrDefault(e.getKey(), 4));
-            hub.emit.raw("    mov" + wsfx + " " + e.getValue() + "(%rbp), %" + xvPhys(e.getKey()));
+        for (Integer key : core.xvHome.keySet()) {
+            Long value = core.xvHome.get(key);
+            String wsfx = widthSfx(core.xvWidth.getOrDefault(key, 4));
+            hub.emit.raw("    mov" + wsfx + " " + value + "(%rbp), %" + xvPhys(key));
         }
     }
 
@@ -901,16 +900,17 @@ final class X86Generator {
         } else {
             hub.emit.raw(".section .rodata");
         }
-        for (Map.Entry<String, String> e : core.floatPool.entrySet()) {
-            int colon = e.getKey().indexOf(':');
-            int n = Integer.parseInt(e.getKey().substring(0, colon));
-            long bits = Long.parseLong(e.getKey().substring(colon + 1));
+        for (String key : core.floatPool.keySet()) {
+            String value = core.floatPool.get(key);
+            int colon = key.indexOf(':');
+            int n = Integer.parseInt(key.substring(0, colon));
+            long bits = Long.parseLong(key.substring(colon + 1));
             if (n == 4) {
                 hub.emit.raw("    .p2align 2");
             } else {
                 hub.emit.raw("    .p2align 3");
             }
-            hub.emit.raw(e.getValue() + ":");
+            hub.emit.raw(value + ":");
             if (n == 4) {
                 hub.emit.raw("    .long " + bits);
             } else {

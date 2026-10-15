@@ -5,10 +5,12 @@ import caspien.bytecode.BytecodeStatement;
 import caspien.bytecode.BytecodeToken;
 import caspien.codegen.CodegenException;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.TreeMap;
 
 /** Shared state of the x86-64 backend; see README.md, "X86Core.java". */
 final class X86Core {
@@ -39,25 +41,25 @@ final class X86Core {
     /** A catch landing is reached by an unwind that skipped the call's own rsp restore (and any operand words pushed): the mark becomes `rsp = rbp - frame` once the frame size is final. */
     static final String RSP_MARK = "@@RSP@@";
 
-    final Map<String, long[]> globalsSizeInit = new LinkedHashMap<>();
+    final LinkedHashMap<String, long[]> globalsSizeInit = new LinkedHashMap<>();
 
  // name -> [size, init] (init may be absent -> bss)
-    final Map<String, Boolean> globalsHasInit = new LinkedHashMap<>();
+    final LinkedHashMap<String, Boolean> globalsHasInit = new LinkedHashMap<>();
 
-    final Map<String, String> stringLiterals = new LinkedHashMap<>();
+    final LinkedHashMap<String, String> stringLiterals = new LinkedHashMap<>();
 
  // id -> text
-    final Map<String, String> floatPool = new LinkedHashMap<>();
+    final LinkedHashMap<String, String> floatPool = new LinkedHashMap<>();
 
-    final java.util.Set<String> declaredFunctionNames = new java.util.HashSet<>();
+    final HashSet<String> declaredFunctionNames = new HashSet<>();
 
-    final Map<String, Long> globalAliasOffset = new LinkedHashMap<>();
+    final LinkedHashMap<String, Long> globalAliasOffset = new LinkedHashMap<>();
 
  // dotted name -> byte offset into its parent
-    final Map<String, List<long[]>> aliasInits = new LinkedHashMap<>();
+    final LinkedHashMap<String, List<long[]>> aliasInits = new LinkedHashMap<>();
 
  // parent -> [offset, size, bits] of each initialised element
-    final Map<String, String> globalAliasParent = new LinkedHashMap<>();
+    final LinkedHashMap<String, String> globalAliasParent = new LinkedHashMap<>();
 
  // dotted name -> parent global name
     List<BytecodeStatement> allLines;
@@ -67,7 +69,7 @@ final class X86Core {
     int asmSkipUntilIndex = -1;
 
     // See README.md, "Construction-scoped push detection".
-    final Map<Integer, Long> pushStoreOffsetByLine = new java.util.HashMap<>();
+    final HashMap<Integer, Long> pushStoreOffsetByLine = new HashMap<>();
 
     // See README.md, "Call-argument stack tracking and CC_START buffering".
     final java.util.Deque<Long> argTrackDeltaStack = new java.util.ArrayDeque<>();
@@ -84,9 +86,9 @@ final class X86Core {
 
     int pendingVarargsXmmCount = -1;
 
-    final Set<Integer> constructionScopedAssign = new java.util.HashSet<>();
+    final HashSet<Integer> constructionScopedAssign = new HashSet<>();
 
-    final Set<Integer> packedNewLines = new java.util.HashSet<>();
+    final HashSet<Integer> packedNewLines = new HashSet<>();
 
     final boolean bmi2;
 
@@ -101,7 +103,7 @@ final class X86Core {
 
     long strideKeyScale = 0;
 
-    static final java.util.Set<String> STRIDE_KEEP_OPS = new java.util.HashSet<>(java.util.Arrays.asList(
+    static final HashSet<String> STRIDE_KEEP_OPS = new HashSet<>(Arrays.asList(
             "movq", "movl", "movw", "movb", "movzbq", "movzwq", "movzbl", "movzwl", "movslq", "movsbq", "movswq", "movsbl", "movswl",
             "movsd", "movss", "movd", "movaps", "movapd", "addsd", "addss", "subsd", "subss", "mulsd", "mulss", "divsd", "divss",
             "addq", "subq", "addl", "subl", "leaq", "andq", "orq", "xorq", "shlq", "shrq", "sarq", "incq", "decq", "negq", "notq",
@@ -236,7 +238,7 @@ final class X86Core {
     /** set when this function has an instruction whose code uses r13/r14 internally (see RegVarPromotionPass.R13_R14_USERS) */
     boolean rfClobberSeen = false;
 
-    static final java.util.Set<String> RF_R13_R14_USERS = new java.util.HashSet<>(java.util.Arrays.asList(
+    static final HashSet<String> RF_R13_R14_USERS = new HashSet<>(Arrays.asList(
             "NEW", "NEW_DYN", "NEW_UDYN", "NEW_FROM_STRING", "NEW_FROM_USTRING", "CLONE", "CLONE_DYN", "RESIZE", "URESIZE", "DOT", "LOOKUP_ARRAY", "ASM_START"));
 
     /** a register operand: a temp, the scratch register or a promoted variable */
@@ -433,9 +435,9 @@ final class X86Core {
 
     static final int XV_COUNT = 6;
 
-    final java.util.Map<Integer, Long> xvHome = new java.util.TreeMap<>();
+    final TreeMap<Integer, Long> xvHome = new TreeMap<>();
 
-    final java.util.Map<Integer, Integer> xvWidth = new java.util.TreeMap<>();
+    final TreeMap<Integer, Integer> xvWidth = new TreeMap<>();
 
     static boolean rfIsXvar(String tok) {
         return tok.startsWith("%x") || tok.startsWith("%y") || tok.startsWith("%z");

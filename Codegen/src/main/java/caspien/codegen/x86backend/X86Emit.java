@@ -5,10 +5,9 @@ import caspien.bytecode.BytecodeStatement;
 import caspien.bytecode.BytecodeToken;
 import caspien.codegen.CodegenException;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
 
 /** Emission helpers: output buffering, stack tracking, construction runs, sized loads/stores, block copies, shifts (see X86Generator for how the parts fit together). */
 final class X86Emit {
@@ -391,7 +390,7 @@ final class X86Emit {
     // ---- Pass 1: declarations -------------------------------------------------
 
     void collectDeclarations(List<BytecodeStatement> lines) {
-        java.util.Set<String> plainGlobalNames = new java.util.HashSet<>();
+        HashSet<String> plainGlobalNames = new HashSet<>();
         for (BytecodeStatement line : lines) {
             if (line.isEmpty()) {
                 continue;
@@ -409,7 +408,7 @@ final class X86Emit {
         }
         // Pass 2: real declarations, aliasing dotted fields of a known
         // parent block instead of giving them their own storage.
-        Map<String, Long> parentRunningOffset = new LinkedHashMap<>();
+        LinkedHashMap<String, Long> parentRunningOffset = new LinkedHashMap<>();
         for (BytecodeStatement line : lines) {
             if (line.isEmpty()) {
                 continue;
@@ -495,14 +494,15 @@ final class X86Emit {
     void emitDataSections() {
         if (!core.globalsSizeInit.isEmpty()) {
             raw(".data");
-            for (Map.Entry<String, long[]> e : core.globalsSizeInit.entrySet()) {
-                String label = mangleGlobalName(e.getKey());
-                long size = e.getValue()[0];
-                long init = e.getValue()[1];
-                boolean hasInit = core.globalsHasInit.getOrDefault(e.getKey(), false);
+            for (String key : core.globalsSizeInit.keySet()) {
+                long[] value = core.globalsSizeInit.get(key);
+                String label = mangleGlobalName(key);
+                long size = value[0];
+                long init = value[1];
+                boolean hasInit = core.globalsHasInit.getOrDefault(key, false);
                 raw((".globl " + label));
                 raw(label + ":");
-                List<long[]> parts = core.aliasInits.get(e.getKey());
+                List<long[]> parts = core.aliasInits.get(key);
                 if (parts != null) {
                     // A whole-block global whose elements carry initial
                     // values: lay the bytes out little-endian.
@@ -533,9 +533,10 @@ final class X86Emit {
         }
         if (!core.stringLiterals.isEmpty()) {
             raw(".section .rodata");
-            for (Map.Entry<String, String> e : core.stringLiterals.entrySet()) {
-                raw(e.getKey() + ":");
-                raw(("    .asciz \"" + e.getValue() + "\""));
+            for (String key : core.stringLiterals.keySet()) {
+                String value = core.stringLiterals.get(key);
+                raw(key + ":");
+                raw(("    .asciz \"" + value + "\""));
             }
         }
     }
