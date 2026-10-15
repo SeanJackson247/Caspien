@@ -1003,8 +1003,15 @@ public final class TypeCheckerStatements {
      * See docs/TypeChecker.md, "Loop move pre-scan".
      */
     public void collectLoopMoves(List<Token> lines, Scope scope, Set<String> out) {
+        Set<String> already = new HashSet<>(out);
         for (Token lineTok : lines) {
             collectMovesInNode(lineTok.childs.get(0), scope, out);
+        }
+        // Seeded slots are only "maybe moved by an earlier iteration": a throw/return before the move still owns them, so exits keep destructing them (a real move nulls the slot).
+        for (String key : out) {
+            if (!already.contains(key)) {
+                hub.model.partlyMovedSlots.add(key);
+            }
         }
     }
 

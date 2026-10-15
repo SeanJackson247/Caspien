@@ -264,7 +264,7 @@ public class AddressLoweringPass {
                         untypedAddr.put(l.get(2).text, k);
                     }
                 }
-            } else if (m.equals("PUSH") && l.size() == 3 && l.get(1).text.equals("$ret_dest") && l.get(2).text.startsWith("raw_") && k + 1 <= end) {
+            } else if (m.equals("PUSH") && l.size() == 3 && (l.get(1).text.equals("$ret_dest") || l.get(1).text.startsWith("$ret_dest__i")) && l.get(2).text.startsWith("raw_") && k + 1 <= end) {
                 // Return value optimisation: the literal is stored through the hidden destination pointer
                 // ("PUSH $ret_dest raw_mut_S / classId / members / ASSIGN mut_S indeterminate_S mut_S"). The pointer value sits where an
                 // "ADDR v" would, so the store is the same repack.
