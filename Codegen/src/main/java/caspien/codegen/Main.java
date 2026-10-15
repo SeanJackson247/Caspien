@@ -6,23 +6,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 
-/**
- * CLI entry point for the (new, just-starting) caspien-codegen stage --
- * "begin building the fourth program... this will generate assembly
- * instructions from the lower order bytecode. The code generator will
- * use a config file as necessary. Current target is x86 windows, but
- * whether windows or linux is the target is down to the config,"
- * confirmed directly.
- *
- * Usage: codegen -i input.txt output.s
- *
- * `input.txt` is expected to be the sibling caspien-lowerordergenerator
- * project's own plain-text output. `codegen.config` (fixed path,
- * resolved relative to the current working directory) selects the
- * target -- see `CodegenConfig`'s own doc comment.
- */
 public class Main {
-
     public static void main(String[] args) {
         try {
             run(args);

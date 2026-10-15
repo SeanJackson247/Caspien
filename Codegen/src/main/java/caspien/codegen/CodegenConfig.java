@@ -3,32 +3,11 @@ package caspien.codegen;
 import java.util.List;
 import caspien.bytecode.Text;
 
-/**
- * Loads `codegen.config` (fixed path, resolved relative to the current
- * working directory, the same convention `compiler.config` already
- * uses on the compiler/lowerordergenerator side) -- required, missing
- * entirely is a fatal error, same as that file.
- *
- * Format is deliberately minimal: one "key value" pair per
- * non-comment, non-blank line ('#' starts a comment). The only key read
- * is "target", one of "windows_gnu" (gcc/mingw-w64, GNU `as`, win64 ABI)
- * or "linux" (SysV ABI). Both emit GAS AT&T syntax. (An Intel/MASM
- * "windows" target existed once; it was removed on purpose -- Windows
- * builds go through gcc/mingw-w64.)
- * Everything this stage needs to know about a target -- assembly
- * syntax, calling-convention register names, whether a call needs 32
- * bytes of shadow space reserved ahead of it -- is decided by which
- * `CodegenTarget` this resolves to (see that enum), not read as further
- * key/value pairs here; more configurable knobs can be added the same
- * way `compiler.config` grew its own calling-convention table, once
- * this backend actually needs them.
- */
 public class CodegenConfig {
-
     public final CodegenTarget target;
-    /** `bmi2 on`: variable shifts use shlx/shrx (needs a BMI2 CPU: Intel Haswell 2013+, AMD Excavator/Zen+). Off by default. */
+
     public final boolean bmi2;
-    /** `avx on`: scalar float arithmetic on register variables uses the 3-operand VEX forms (vaddsd ...), which need no copy of the first operand (Sandy Bridge 2011+, AMD Bulldozer+). Off by default. */
+
     public final boolean avx;
 
     private CodegenConfig(CodegenTarget target, boolean bmi2, boolean avx) {
@@ -37,7 +16,6 @@ public class CodegenConfig {
         this.avx = avx;
     }
 
-    /** Parses the text of `codegen.config`; `path` names it in error messages. Reads no file. */
     public static CodegenConfig parse(String text, String path) {
         List<String> lines = text.lines().toList();
         CodegenTarget target = null;
@@ -80,7 +58,6 @@ public class CodegenConfig {
                 }
                 avx = value.equalsIgnoreCase("on");
             } else if (key.equals("jcc-padding")) {
-                // read by the Compiler (it adds an option to the assembler call); Codegen only validates it
                 if (!value.equalsIgnoreCase("on") && !value.equalsIgnoreCase("off")) {
                     throw new CodegenException("config", path, i + 1, "jcc-padding must be 'on' or 'off', got '" + value + "'");
                 }
