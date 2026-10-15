@@ -1,0 +1,222 @@
+import "../../../../../../../../stdlib/string.caspien"
+import "../collections.caspien"
+import "../bytecode/BytecodeStatement.caspien"
+import "../bytecode/BytecodeToken.caspien"
+import "X86Core.caspien"
+import "X86Structs.caspien"
+import "X86RunEntries.caspien"
+
+@pub
+impl constructor for X86Emit(hub: ref some mut X86Backend) self{
+	return X86Emit{hub= hub, core= ref hub.core}
+}
+
+@pub
+impl X86Emit{
+	@pub
+	func lineAtOffsetIsAtomicSwap(_self: ref some mut self, offset: mut s32) mut bool{ return false }
+
+	@pub
+	func noteArgRegLoaded(_self: ref some mut self, tag: ref imut String) void{
+	}
+
+	@pub
+	func currentSink(_self: ref some mut self) ref mut String{ return null }
+
+	@pub
+	func consumeVarargsXmmCount(_self: ref some mut self) mut s32{ return 0 }
+
+	@pub
+	func findRunStart(_self: ref some mut self, endExclusive: mut s32, targetSize: mut s64) mut s32{ return 0 }
+
+	@pub
+	func populateDirectMembers(_self: ref some mut self, start: mut s32, endExclusive: mut s32, runTotal: mut s64) void{
+	}
+
+	@pub
+	func storeConstructionOrPlainPush(_self: ref some mut self, regName: ref imut String, size: mut s32) void{
+	}
+
+	@pub
+	func collectRunEntries(_self: ref some mut self, start: mut s32, endExclusive: mut s32) owns mut X86RunEntries{ return null }
+
+	@pub
+	func emitNewRepack(_self: ref some mut self, size: mut s64, line: ref imut BytecodeStatement) void{
+	}
+
+	@pub
+	func emitAssignRepack(_self: ref some mut self, size: mut s64, line: ref imut BytecodeStatement) void{
+	}
+
+	@pub
+	func copyBytes(_self: ref some mut self, srcReg: ref imut String, srcOff: mut s64, dstReg: ref imut String, dstOff: mut s64, n: mut s64) void{
+	}
+
+	@pub
+	func copyBytesR12ToR14(_self: ref some mut self, srcOff: mut s64, dstOff: mut s64, n: mut s64) void{
+	}
+
+	@pub
+	func precomputeConstructionOffsets(_self: ref some mut self) void{
+	}
+
+	@pub
+	func isWinAbi(_self: ref some mut self) mut bool{ return false }
+
+	@pub
+	func collectDeclarations(_self: ref some mut self, lines: ref imut ObjectList<BytecodeStatement>) void{
+	}
+
+	@pub
+	func initBits(_self: ref some mut self, text: ref imut String, size: mut s64) mut s64{ return 0 }
+
+	@pub
+	func parseInitValue(_self: ref some mut self, text: ref imut String) mut s64{ return 0 }
+
+	@pub
+	func emitDataSections(_self: ref some mut self) void{
+	}
+
+	@pub
+	func emitStorageDirective(_self: ref some mut self, size: mut s64, init: mut s64) void{
+	}
+
+	@pub
+	func mangleGlobalName(_self: ref some mut self, name: ref imut String) owns mut String{ return null }
+
+	@pub
+	func emitHeader(_self: ref some mut self) void{
+	}
+
+	@pub
+	func emitFooter(_self: ref some mut self) void{
+	}
+
+	@pub
+	func comment(_self: ref some mut self, text: ref imut String) void{
+	}
+
+	@pub
+	func raw_(_self: ref some mut self, text: ref imut String) void{
+	}
+
+	@pub
+	func strideKeyAfter(_self: ref some mut self, text: ref imut String) void{
+	}
+
+	@pub
+	func trackStackDelta(_self: ref some mut self, rawText: ref imut String) void{
+	}
+
+	@pub
+	func parseRspDelta(_self: ref some mut self, t: ref imut String, prefix: ref imut String, suffix: ref imut String) mut s64{ return 0 }
+
+	@pub
+	func pushReg(_self: ref some mut self, reg: ref imut String) void{
+	}
+
+	@pub
+	func popReg(_self: ref some mut self, reg: ref imut String) void{
+	}
+
+	@pub
+	func movMemToReg(_self: ref some mut self, reg: ref imut String, offset: mut s64) void{
+	}
+
+	@pub
+	func movRegToMem(_self: ref some mut self, reg: ref imut String, offset: mut s64) void{
+	}
+
+	@pub
+	func leaMemToReg(_self: ref some mut self, reg: ref imut String, offset: mut s64) void{
+	}
+
+	@pub
+	func leaGlobalToReg(_self: ref some mut self, reg: ref imut String, globalName: ref imut String) void{
+	}
+
+	@pub
+	func globalRipOperand(_self: ref some mut self, globalName: ref imut String) owns mut String{ return null }
+
+	@pub
+	func movImmToReg(_self: ref some mut self, reg: ref imut String, imm: mut s64) void{
+	}
+
+	@pub
+	func sizedReg(_self: ref some mut self, reg64: ref imut String, size: mut s32) owns mut String{ return null }
+
+	@pub
+	func signExtendReg(_self: ref some mut self, reg: ref imut String, size: mut s32) void{
+	}
+
+	@pub
+	func emitShiftCore(_self: ref some mut self, op: ref imut String, size: mut s32, v: ref imut String) void{
+	}
+
+	@pub
+	func emitShiftBmi2(_self: ref some mut self, op: ref imut String, size: mut s32, v: ref imut String, cnt: ref imut String) void{
+	}
+
+	@pub
+	func zeroExtendReg(_self: ref some mut self, reg: ref imut String, size: mut s32) void{
+	}
+
+	static func plusOffset(off: mut s64) owns mut String{ return null }
+
+	static func offsetText(off: mut s64) owns mut String{ return null }
+
+	static func widthFor(left: mut s64) mut s32{ return 0 }
+
+	static func pickBySize(size: mut s32, s1: ref imut String, s2: ref imut String, s4: ref imut String, other: ref imut String) owns mut String{ return null }
+
+	@pub
+	func movSuffix(_self: ref some mut self, size: mut s32) owns mut String{ return null }
+
+	@pub
+	func loadSizedFromFrame(_self: ref some mut self, reg64: ref imut String, offset: mut s64, size: mut s32) void{
+	}
+
+	@pub
+	func storeSizedToFrame(_self: ref some mut self, reg64: ref imut String, offset: mut s64, size: mut s32) void{
+	}
+
+	@pub
+	func loadSizedFromAddr(_self: ref some mut self, destReg64: ref imut String, addrReg64: ref imut String, size: mut s32) void{
+	}
+
+	@pub
+	func extractWordsFromReversedBlock(_self: ref some mut self, totalWords: mut s64, size: mut s32) void{
+	}
+
+	@pub
+	func storeOddSize(_self: ref some mut self, srcReg64: ref imut String, baseReg64: ref imut String, off: mut s64, size: mut s32) void{
+	}
+
+	@pub
+	func storePiece(_self: ref some mut self, srcReg64: ref imut String, baseReg64: ref imut String, off: mut s64, width: mut s32) void{
+	}
+
+	@pub
+	func rotReg(_self: ref some mut self, reg64: ref imut String, right: mut bool, bits: mut s32) void{
+	}
+
+	@pub
+	func storeSizedToAddr(_self: ref some mut self, srcReg64: ref imut String, addrReg64: ref imut String, size: mut s32) void{
+	}
+
+	@pub
+	func pushBlockFromFrame(_self: ref some mut self, baseOffset: mut s64, size: mut s64) void{
+	}
+
+	@pub
+	func pushBlockFromFrameConstructionAware(_self: ref some mut self, baseOffset: mut s64, size: mut s64) void{
+	}
+
+	@pub
+	func assignBlock(_self: ref some mut self, size: mut s64) void{
+	}
+
+	@pub
+	func assignConstructionBlock(_self: ref some mut self, size: mut s64) void{
+	}
+}

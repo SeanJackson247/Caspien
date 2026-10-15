@@ -1,0 +1,86 @@
+import "../../../../../../../../stdlib/string.caspien"
+import "../collections.caspien"
+import "../bytecode/BytecodeStatement.caspien"
+import "../bytecode/BytecodeToken.caspien"
+import "X86Core.caspien"
+import "X86Structs.caspien"
+
+@pub
+impl constructor for X86Calls(hub: ref some mut X86Backend) self{
+	return X86Calls{hub= hub, core= ref hub.core}
+}
+
+@pub
+impl X86Calls{
+	@pub
+	func memcopyConstantSize(_self: ref some mut self) mut s64{ return 0 }
+
+	@pub
+	func movRegToXmm(_self: ref some mut self, gpr64: ref imut String, xmmReg: ref imut String) void{
+	}
+
+	@pub
+	func movXmmToReg(_self: ref some mut self, xmmReg: ref imut String, gpr64: ref imut String) void{
+	}
+
+	@pub
+	func sseSuffix(_self: ref some mut self, size: mut s32) owns mut String{ return null }
+
+	@pub
+	func pushSizedOrBlockFromAddr(_self: ref some mut self, addrReg64: ref imut String, size: mut s32) void{
+	}
+
+	@pub
+	func argReg(_self: ref some mut self, index: mut s32) owns mut String{ return null }
+
+	@pub
+	func argFloatReg(_self: ref some mut self, index: mut s32) owns mut String{ return null }
+
+	@pub
+	func alignPadFor(_self: ref some mut self, stackArgBytes: mut s64) mut s32{ return 0 }
+
+	@pub
+	func emitStackArgRestore(_self: ref some mut self, stackArgBytes: mut s64) void{
+	}
+
+	@pub
+	func buildStackArgReservation(_self: ref some mut self, stackArgBytes: mut s64) owns mut String{ return null }
+
+	@pub
+	func reverseStackArgWords(_self: ref some mut self, stackArgBytes: mut s64) void{
+	}
+
+	@pub
+	func resolveStackArgBytesAndCall(_self: ref some mut self, indirect: mut bool, target: ref imut String) void{
+	}
+
+	func emitCallTarget(_self: ref some mut self, indirect: mut bool, target: ref imut String) void{
+	}
+
+	@pub
+	func emitAlignedCallByName(_self: ref some mut self, name: ref imut String) void{
+	}
+
+	@pub
+	func emitAlignedCall(_self: ref some mut self, indirect: mut bool, target: ref imut String) void{
+	}
+
+	@pub
+	func emitCallByName(_self: ref some mut self, name: ref imut String) void{
+	}
+
+	@pub
+	func emitCallIndirect(_self: ref some mut self, reg64: ref imut String) void{
+	}
+
+	@pub
+	func emitLine(_self: ref some mut self, line: ref imut BytecodeStatement) void{
+	}
+
+	@pub
+	func emitLineInner(_self: ref some mut self, line: ref imut BytecodeStatement) void{
+	}
+
+	@pub
+	func emitCases1(_self: ref some mut self, mnemonic: ref imut String, line: ref imut BytecodeStatement, first: ref imut String, wasCmp: mut bool, pendingBlockSize: mut s64) mut bool{ return false }
+}

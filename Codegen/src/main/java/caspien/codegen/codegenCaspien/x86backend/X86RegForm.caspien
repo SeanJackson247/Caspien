@@ -1,0 +1,87 @@
+import "../../../../../../../../stdlib/string.caspien"
+import "../collections.caspien"
+import "../bytecode/BytecodeStatement.caspien"
+import "../bytecode/BytecodeToken.caspien"
+import "X86Core.caspien"
+import "X86Structs.caspien"
+
+@pub
+impl constructor for X86RegForm(hub: ref some mut X86Backend) self{
+	return X86RegForm{hub= hub, core= ref hub.core}
+}
+
+@pub
+impl X86RegForm{
+	@pub
+	func emitCases6(_self: ref some mut self, mnemonic: ref imut String, line: ref imut BytecodeStatement, first: ref imut String, wasCmp: mut bool, pendingBlockSize: mut s64) mut bool{ return false }
+
+	@pub
+	func emitCases7(_self: ref some mut self, mnemonic: ref imut String, line: ref imut BytecodeStatement, first: ref imut String, wasCmp: mut bool, pendingBlockSize: mut s64) mut bool{ return false }
+
+	@pub
+	func storeSizedToAddr_withOffsetImm(_self: ref some mut self, baseReg64: ref imut String, offset: mut s64, value: mut s64, size: mut s32) void{
+	}
+
+	@pub
+	func storeSizedToAddr_reg(_self: ref some mut self, baseReg64: ref imut String, offset: mut s64, srcReg64: ref imut String, size: mut s32) void{
+	}
+
+	@pub
+	func emitDropGlueCall(_self: ref some mut self, name: ref imut String) void{
+	}
+
+	@pub
+	func emitGtCall(_self: ref some mut self, fn: ref imut String, reg: ref imut String) void{
+	}
+
+	@pub
+	func emitResizeGtUpdate(_self: ref some mut self) void{
+	}
+
+	@pub
+	func emitResizeWideFillCopy(_self: ref some mut self, elemSize: mut s32, words: mut s32) void{
+	}
+
+	@pub
+	func emitMallocCall(_self: ref some mut self, size: mut s64) void{
+	}
+
+	@pub
+	func newInternalLabel(_self: ref some mut self, prefix: ref imut String) owns mut String{ return null }
+
+	@pub
+	func rfReg(_self: ref some mut self, tok: ref imut String) owns mut String{ return null }
+
+	@pub
+	func rfRegText(_self: ref some mut self, reg: ref imut String) owns mut String{ return null }
+
+	@pub
+	func rfMemText(_self: ref some mut self, off: mut s64) owns mut String{ return null }
+
+	@pub
+	func rfSrc(_self: ref some mut self, tok: ref imut String) owns mut String{ return null }
+
+	@pub
+	func rfOp2(_self: ref some mut self, op: ref imut String, dstText: ref imut String, srcText: ref imut String) void{
+	}
+
+	@pub
+	func rfRegToReg(_self: ref some mut self, dst: ref imut String, src: ref imut String) void{
+	}
+
+	@pub
+	func rfMov(_self: ref some mut self, dst: ref imut String, src: ref imut String) void{
+	}
+
+	@pub
+	func rfRotate(_self: ref some mut self, op: ref imut String, size: mut s32, dstTok: ref imut String, aTok: ref imut String, bTok: ref imut String) void{
+	}
+
+	@pub
+	func rfShift(_self: ref some mut self, op: ref imut String, size: mut s32, dstTok: ref imut String, aTok: ref imut String, bTok: ref imut String) void{
+	}
+
+	@pub
+	func rfDivConst(_self: ref some mut self, mod: mut bool, size: mut s32, dstTok: ref imut String, aTok: ref imut String, k: mut s64) void{
+	}
+}

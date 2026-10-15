@@ -1,0 +1,15 @@
+import "../collections.caspien"
+import "BytecodeToken.caspien"
+
+@pub
+struct BytecodeStatement{@pub{
+	items: owns some mut ObjectList<BytecodeToken>
+}}
+
+@pub
+@throws
+impl constructor for BytecodeStatement() self{
+	?catch(e){ throw e }
+	let items = mut ? new ObjectList:<BytecodeToken>()
+	return BytecodeStatement{items= items}
+}

@@ -1,0 +1,18 @@
+import "../../../../../../../stdlib/string.caspien"
+import "CodegenResult.caspien"
+import "CodegenConfig.caspien"
+import "x86backend/X86Backend.caspien"
+
+@pub
+struct Codegen{@pub{
+}}
+
+impl constructor for Codegen() self{
+	return Codegen{}
+}
+
+@pub
+impl Codegen{
+	@pub
+	static func generate(lobText: ref imut String, origin: ref imut String, configText: ref imut String) owns mut CodegenResult{ return null }
+}

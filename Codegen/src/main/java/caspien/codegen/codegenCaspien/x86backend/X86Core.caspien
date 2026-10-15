@@ -1,0 +1,222 @@
+import "../../../../../../../../stdlib/libc.caspien"
+import "../../../../../../../../stdlib/string.caspien"
+import "../../../../../../../../stdlib/dynamic_array.caspien"
+import "../../../../../../../../stdlib/hash_map.caspien"
+import "../../../../../../../../stdlib/hash_set.caspien"
+import "../../../../../../../../stdlib/tree_map.caspien"
+import "../collections.caspien"
+import "../CodegenTarget.caspien"
+import "../bytecode/BytecodeStatement.caspien"
+import "../bytecode/BytecodeToken.caspien"
+
+@pub
+let static X86Core_CSR_MARK = imut "@@CSR@@"
+
+@pub
+let static X86Core_RSP_MARK = imut "@@RSP@@"
+
+@pub
+let static X86Core_V1314_SAVE = imut "@@V1314S@@"
+
+@pub
+let static X86Core_V1314_REST = imut "@@V1314R@@"
+
+@pub
+let static X86Core_RF_SCRATCH = imut "r15"
+
+@pub
+let static:<imut s32> X86Core_XV_COUNT = imut 6
+
+@pub
+let static:<imut s32> X86Core_YT_COUNT = imut 4
+
+@pub
+let static X86Core_LINUX_ARG_REGS = imut ["rdi", "rsi", "rdx", "rcx", "r8", "r9"]
+
+@pub
+let static X86Core_WIN_ARG_REGS = imut ["rcx", "rdx", "r8", "r9"]
+
+@pub
+let static X86Core_LINUX_ARG_REGS_FLOAT = imut ["xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7"]
+
+@pub
+let static X86Core_WIN_ARG_REGS_FLOAT = imut ["xmm0", "xmm1", "xmm2", "xmm3"]
+
+@pub
+let static X86Core_RF_TEMP_REGS = imut ["rax", "rbx", "r11", "r12"]
+
+@pub
+let static X86Core_RF_VAR_REGS = imut ["r13", "r14", "r12", "r8", "r9", "r10", "rsi", "rdi", "rdx", "rcx"]
+
+@pub
+let static X86Core_STRIDE_KEEP_OPS = imut [
+		"movq", "movl", "movw", "movb", "movzbq", "movzwq", "movzbl", "movzwl", "movslq", "movsbq", "movswq", "movsbl",
+		"movswl", "movsd", "movss", "movd", "movaps", "movapd", "addsd", "addss", "subsd", "subss", "mulsd", "mulss",
+		"divsd", "divss", "addq", "subq", "addl", "subl", "leaq", "andq", "orq", "xorq", "shlq", "shrq", "sarq",
+		"incq", "decq", "negq", "notq", "sqrtsd", "sqrtss", "ucomisd", "ucomiss", "comisd", "comiss", "cvtss2sd",
+		"cvtsd2ss", "xorps", "xorpd", "andps", "andpd"]
+
+@pub
+let static X86Core_RF_R13_R14_USERS = imut [
+		"NEW", "NEW_DYN", "NEW_UDYN", "NEW_FROM_STRING", "NEW_FROM_USTRING", "CLONE", "CLONE_DYN", "RESIZE", "URESIZE",
+		"DOT", "LOOKUP_ARRAY", "ASM_START"]
+
+@pub
+struct X86Core{@pub{
+	target: imut CodegenTarget
+	out: owns some mut String
+	csrFuncStart: mut s32
+	csrAllocPos: mut s32
+	csrAllocBytes: mut s64
+	csrAllocLine: owns mut String
+	csrAllocSum: mut s64
+	globalsSizeInit: owns some mut StringMap<DynamicArray<s64>>
+	globalsHasInit: owns some mut StringScalarMap<bool>
+	stringLiterals: owns some mut StringMap<String>
+	floatPool: owns some mut StringMap<String>
+	declaredFunctionNames: owns some mut StringSet
+	globalAliasOffset: owns some mut StringScalarMap<s64>
+	aliasInits: owns some mut StringMap<ObjectList<DynamicArray<s64>>>
+	globalAliasParent: owns some mut StringMap<String>
+	allLines: ref mut ObjectList<BytecodeStatement>
+	currentLineIndex: mut s32
+	asmSkipUntilIndex: mut s32
+	pushStoreOffsetByLine: owns some mut HashMap<s32, s64>
+	argTrackDeltaStack: owns some mut DynamicArray<s64>
+	argTrackSuspendDepth: mut s32
+	callBufferStack: owns some mut ObjectList<String>
+	loadedArgRegsStack: owns some mut ObjectList<ObjectList<String>>
+	savedOuterArgRegsStack: owns some mut ObjectList<ObjectList<String>>
+	floatResultInR10: mut bool
+	pendingVarargsXmmCount: mut s32
+	constructionScopedAssign: owns some mut HashSet<s32>
+	packedNewLines: owns some mut HashSet<s32>
+	bmi2: imut bool
+	avx: mut bool
+	strideCseHits: mut s32
+	strideKeySink: ref mut String
+	strideKeyIdx: owns mut String
+	strideKeyScale: mut s64
+	resizeExtraStack: mut s32
+	lastWasCmp: mut bool
+	lastValueBlockSize: mut s64
+	pushedWordWithTag: mut bool
+	currentFuncName: owns mut String
+	internalLabelCounter: mut s32
+	rfVarUsed: mut bool
+	rfVarMask: mut s32
+	rfClobberSeen: mut bool
+	rfIdxReg: owns mut String
+	rfIdxScale: mut s64
+	rfIdxDisp: mut s64
+	rfMemOverride: owns mut String
+	xvHome: owns some mut TreeMap<s32, s64>
+	xvWidth: owns some mut TreeMap<s32, s32>
+	vSlots: owns some mut ObjectList<String>
+}}
+
+@pub
+@throws
+impl constructor for X86Core(target: imut CodegenTarget, bmi2: imut bool) self{
+	?catch(e){ throw e }
+	let out = mut ? new String()
+	let globalsSizeInit = mut ? new StringMap:<DynamicArray:<s64>>()
+	let globalsHasInit = mut ? new StringScalarMap:<bool>()
+	let stringLiterals = mut ? new StringMap:<String>()
+	let floatPool = mut ? new StringMap:<String>()
+	let declaredFunctionNames = mut ? new StringSet()
+	let globalAliasOffset = mut ? new StringScalarMap:<s64>()
+	let aliasInits = mut ? new StringMap:<ObjectList:<DynamicArray:<s64>>>()
+	let globalAliasParent = mut ? new StringMap:<String>()
+	let pushStoreOffsetByLine = mut ? new HashMap:<s32, s64>(mut 0, mut 0, mut 16)
+	let argTrackDeltaStack = mut ? new DynamicArray:<s64>()
+	let callBufferStack = mut ? new ObjectList:<String>()
+	let loadedArgRegsStack = mut ? new ObjectList:<ObjectList:<String>>()
+	let savedOuterArgRegsStack = mut ? new ObjectList:<ObjectList:<String>>()
+	let constructionScopedAssign = mut ? new HashSet:<s32>(mut 0, mut 16)
+	let packedNewLines = mut ? new HashSet:<s32>(mut 0, mut 16)
+	let xvHome = mut ? new TreeMap:<s32, s64>()
+	let xvWidth = mut ? new TreeMap:<s32, s32>()
+	let vSlots = mut ? new ObjectList:<String>()
+	let blank = mut ? String()
+	vSlots.items = ? resize(vSlots.items, 3, blank)
+	return X86Core{target= target, out= out, csrFuncStart= mut -1, csrAllocPos= mut -1, csrAllocBytes= mut 0, csrAllocLine= null, csrAllocSum= mut 0, globalsSizeInit= globalsSizeInit, globalsHasInit= globalsHasInit, stringLiterals= stringLiterals, floatPool= floatPool, declaredFunctionNames= declaredFunctionNames, globalAliasOffset= globalAliasOffset, aliasInits= aliasInits, globalAliasParent= globalAliasParent, allLines= null, currentLineIndex= mut 0, asmSkipUntilIndex= mut -1, pushStoreOffsetByLine= pushStoreOffsetByLine, argTrackDeltaStack= argTrackDeltaStack, argTrackSuspendDepth= mut 0, callBufferStack= callBufferStack, loadedArgRegsStack= loadedArgRegsStack, savedOuterArgRegsStack= savedOuterArgRegsStack, floatResultInR10= false, pendingVarargsXmmCount= mut -1, constructionScopedAssign= constructionScopedAssign, packedNewLines= packedNewLines, bmi2= bmi2, avx= false, strideCseHits= mut 0, strideKeySink= null, strideKeyIdx= null, strideKeyScale= mut 0, resizeExtraStack= mut 0, lastWasCmp= false, lastValueBlockSize= mut 0, pushedWordWithTag= false, currentFuncName= null, internalLabelCounter= mut 0, rfVarUsed= false, rfVarMask= mut 0, rfClobberSeen= false, rfIdxReg= null, rfIdxScale= mut 1, rfIdxDisp= mut 0, rfMemOverride= null, xvHome= xvHome, xvWidth= xvWidth, vSlots= vSlots}
+}
+
+@pub
+impl X86Core{
+	@pub
+	static func regAliasOf(r: ref imut String, full: ref imut String) mut bool{ return false }
+
+	@pub
+	static func roundUpToLoadableWidth(size: mut s32) mut s32{ return 0 }
+
+	@pub
+	static func isOddSize(size: mut s32) mut bool{ return false }
+
+	@pub
+	static func isFloatLiteral(s: ref imut String) mut bool{ return false }
+
+	@pub
+	static func isCharLiteral(s: ref imut String) mut bool{ return false }
+
+	@pub
+	static func decodeCharLiteral(operandTok: ref imut BytecodeToken) mut s64{ return 0 }
+
+	@pub
+	static func rfIsTemp(tok: ref imut String) mut bool{ return false }
+
+	@pub
+	static func rfIsVar(tok: ref imut String) mut bool{ return false }
+
+	@pub
+	static func rfIsImm(tok: ref imut String) mut bool{ return false }
+
+	@pub
+	static func rfIsSlot(tok: ref imut String) mut bool{ return false }
+
+	@pub
+	static func rfImm(tok: ref imut String) mut s64{ return 0 }
+
+	@pub
+	static func rfSlot(tok: ref imut String) mut s64{ return 0 }
+
+	@pub
+	static func rfFitsImm32(v: mut s64) mut bool{ return false }
+
+	@pub
+	static func divMagicSimple(k: mut s64) owns mut DynamicArray<s64>{ return null }
+
+	@pub
+	static func mulByConstShape(k: mut s64) mut bool{ return false }
+
+	@pub
+	static func rfFalseJump(op: ref imut String) owns mut String{ return null }
+
+	@pub
+	static func rfMirrorJump(cc: ref imut String) owns mut String{ return null }
+
+	@pub
+	static func rfTrueSuffix(falseJump: ref imut String) owns mut String{ return null }
+
+	@pub
+	static func rfExtImm(v: mut s64, size: mut s32, signed: mut bool) mut s64{ return 0 }
+
+	@pub
+	static func rfIsGlobal(tok: ref imut String) mut bool{ return false }
+
+	@pub
+	static func rfTrunc(v: mut s64, n: mut s32) mut s64{ return 0 }
+
+	@pub
+	static func rfHwScale(s: mut s64) mut bool{ return false }
+
+	@pub
+	static func rfIsXvar(tok: ref imut String) mut bool{ return false }
+
+	@pub
+	static func isInteger(s: ref imut String) mut bool{ return false }
+
+	@pub
+	static func textsOf(line: ref imut BytecodeStatement) owns mut ObjectList<String>{ return null }
+}

@@ -1,0 +1,24 @@
+import "../../../../../../../../stdlib/string.caspien"
+import "../collections.caspien"
+import "../bytecode/BytecodeStatement.caspien"
+import "../bytecode/BytecodeToken.caspien"
+import "X86Core.caspien"
+import "X86Structs.caspien"
+
+@pub
+impl constructor for X86CasesA(hub: ref some mut X86Backend) self{
+	return X86CasesA{hub= hub, core= ref hub.core}
+}
+
+@pub
+impl X86CasesA{
+	@pub
+	func emitCases2(_self: ref some mut self, mnemonic: ref imut String, line: ref imut BytecodeStatement, first: ref imut String, wasCmp: mut bool, pendingBlockSize: mut s64) mut bool{ return false }
+
+	@pub
+	func emitCases3(_self: ref some mut self, mnemonic: ref imut String, line: ref imut BytecodeStatement, first: ref imut String, wasCmp: mut bool, pendingBlockSize: mut s64) mut bool{ return false }
+
+	static func optLong(line: ref imut BytecodeStatement, idx: mut s32) mut s64{ return 0 }
+
+	static func optSize(line: ref imut BytecodeStatement, idx: mut s32, dflt: mut s32) mut s32{ return 0 }
+}

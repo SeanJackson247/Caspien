@@ -1,3 +1,35 @@
+# codegenCaspien: the Caspien port (skeleton)
+
+Every Java file of `../` has a `.caspien` twin here (the Java copies were removed). Method bodies are empty stubs and constructors are real, so `Main.caspien` compiles and does nothing. Compile it with a Linux-configured scratch tree, as for any program: `java Compiler -i .../codegenCaspien/Main.caspien out`. The text below the line is the Java documentation, still describing the behaviour to port.
+
+## Type mapping
+| Java | Caspien |
+|---|---|
+| `int`, `long`, `boolean`, `char` | `s32`, `s64`, `bool`, `char` |
+| `final` field / non-final field | `imut` / `mut` member (a pointer member's `mut` is its target's) |
+| `String` | stdlib `String`: `ref imut String` parameter, `owns mut String` return or nullable field |
+| `StringBuilder` | `String` (`owns some mut` field, `ref mut` parameter or return) |
+| `long[]` | `DynamicArray<s64>` |
+| `Integer`/`Long` sets, maps, deques | stdlib `HashSet<s32>`, `HashMap<s32, s64>`, `TreeMap`, `DynamicArray<s64>` |
+| lists/deques of Strings or objects, `String[]` field | `ObjectList<T>` (`collections.caspien`) |
+| `HashSet<String>` | `StringSet` (`collections.caspien`) |
+| `LinkedHashMap<String, V>` | `StringMap<V>` (object values) or `StringScalarMap<V>` (bool, s64) |
+| `static final` constants | root-level `let static X86Core_NAME`; the two `HashSet<String>` constants are string arrays |
+| `private` | no `@pub` (but see the private fields below) |
+
+`collections.caspien` types and `bytecode/` (`BytecodeToken`, `BytecodeStatement`, `BytecodeTokenKind`: data members only, no methods) are stand-ins: the stdlib has no String-keyed map or set, and `DynamicArray` cannot hold an element that owns memory.
+
+## Where the port differs from the Java
+- Imports cannot be circular, so the structs of `X86Backend` and its six parts live together in `x86backend/X86Structs.caspien`; each part file holds its constructor and methods.
+- A constructor cannot pass `this`: `new X86Backend(..)` leaves the parts null and `backend.wire()` creates them. The `(target)` constructor repeats the body instead of delegating.
+- The parts' `private final hub/core` fields are public (a struct with a private member cannot be built by a constructor).
+- `X86Core.vSlots` (`new String[3]` of nulls) holds three empty Strings.
+- `raw()` of `X86Emit` is `raw_` (`raw` is a keyword).
+- `Main.run/writeFile` lose `throws IOException` (`@throws` needs a real `throw`); `main` takes the safe-args form. `Text` and the other unused Java imports are not imported.
+- Javadoc comments of the Java files are not copied; they stay in the Java originals and the README below.
+
+---
+
 # `caspien.codegen` (stage 4 entry package)
 
 The library and stand-alone entry points of the code generator. The x86-64 backend itself is in `x86backend/` (see `Codegen/CLAUDE.md`). The source files here carry no comments; what they used to say is below.

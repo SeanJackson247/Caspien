@@ -1,0 +1,19 @@
+import "../../../../../../../stdlib/string.caspien"
+import "CodegenTarget.caspien"
+
+@pub
+struct CodegenConfig{@pub{
+	target: imut CodegenTarget
+	bmi2: imut bool
+	avx: imut bool
+}}
+
+impl constructor for CodegenConfig(target: imut CodegenTarget, bmi2: imut bool, avx: imut bool) self{
+	return CodegenConfig{target= target, bmi2= bmi2, avx= avx}
+}
+
+@pub
+impl CodegenConfig{
+	@pub
+	static func parse(text: ref imut String, path: ref imut String) owns mut CodegenConfig{ return null }
+}

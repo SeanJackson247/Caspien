@@ -1,0 +1,49 @@
+import "X86Core.caspien"
+
+@pub
+struct X86Backend{@pub{
+	core: owns some mut X86Core
+	emit: owns mut X86Emit
+	calls: owns mut X86Calls
+	casesA: owns mut X86CasesA
+	casesB: owns mut X86CasesB
+	regForm: owns mut X86RegForm
+	gen: owns mut X86Generator
+	avx: mut bool
+}}
+
+@pub
+struct X86Emit{@pub{
+	hub: ref mut X86Backend
+	core: ref mut X86Core
+}}
+
+@pub
+struct X86Calls{@pub{
+	hub: ref mut X86Backend
+	core: ref mut X86Core
+}}
+
+@pub
+struct X86CasesA{@pub{
+	hub: ref mut X86Backend
+	core: ref mut X86Core
+}}
+
+@pub
+struct X86CasesB{@pub{
+	hub: ref mut X86Backend
+	core: ref mut X86Core
+}}
+
+@pub
+struct X86RegForm{@pub{
+	hub: ref mut X86Backend
+	core: ref mut X86Core
+}}
+
+@pub
+struct X86Generator{@pub{
+	hub: ref mut X86Backend
+	core: ref mut X86Core
+}}

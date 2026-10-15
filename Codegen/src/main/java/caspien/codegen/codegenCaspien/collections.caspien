@@ -1,0 +1,59 @@
+import "../../../../../../../stdlib/libc.caspien"
+import "../../../../../../../stdlib/string.caspien"
+
+// Stand-ins for the java.util classes the codegen files use on Strings and objects (see README.md, "Caspien port").
+@pub
+struct ObjectList<T>{@pub{
+	items: owns some mut dynarray(mut T)
+}}
+
+@pub
+@throws
+impl<T> constructor for ObjectList<T>() self{
+	?catch(e){ throw e }
+	let items = mut ? dyn:<T>([])
+	return ObjectList:<T>{items= items}
+}
+
+@pub
+struct StringSet{@pub{
+	items: owns some mut dynarray(mut String)
+}}
+
+@pub
+@throws
+impl constructor for StringSet() self{
+	?catch(e){ throw e }
+	let items = mut ? dyn:<String>([])
+	return StringSet{items= items}
+}
+
+@pub
+struct StringMap<V>{@pub{
+	keys: owns some mut dynarray(mut String)
+	values: owns some mut dynarray(mut V)
+}}
+
+@pub
+@throws
+impl<V> constructor for StringMap<V>() self{
+	?catch(e){ throw e }
+	let keys = mut ? dyn:<String>([])
+	let values = mut ? dyn:<V>([])
+	return StringMap:<V>{keys= keys, values= values}
+}
+
+@pub
+struct StringScalarMap<V>{@pub{
+	keys: owns some mut dynarray(mut String)
+	values: owns some mut dynarray(mut V)
+}}
+
+@pub
+@throws
+impl<V> constructor for StringScalarMap<V>() self{
+	?catch(e){ throw e }
+	let keys = mut ? dyn:<String>([])
+	let values = mut ? dyn:<V>([])
+	return StringScalarMap:<V>{keys= keys, values= values}
+}

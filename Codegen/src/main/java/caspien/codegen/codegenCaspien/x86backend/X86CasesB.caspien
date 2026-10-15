@@ -1,0 +1,20 @@
+import "../../../../../../../../stdlib/string.caspien"
+import "../collections.caspien"
+import "../bytecode/BytecodeStatement.caspien"
+import "../bytecode/BytecodeToken.caspien"
+import "X86Core.caspien"
+import "X86Structs.caspien"
+
+@pub
+impl constructor for X86CasesB(hub: ref some mut X86Backend) self{
+	return X86CasesB{hub= hub, core= ref hub.core}
+}
+
+@pub
+impl X86CasesB{
+	@pub
+	func emitCases4(_self: ref some mut self, mnemonic: ref imut String, line: ref imut BytecodeStatement, first: ref imut String, wasCmp: mut bool, pendingBlockSize: mut s64) mut bool{ return false }
+
+	@pub
+	func emitCases5(_self: ref some mut self, mnemonic: ref imut String, line: ref imut BytecodeStatement, first: ref imut String, wasCmp: mut bool, pendingBlockSize: mut s64) mut bool{ return false }
+}

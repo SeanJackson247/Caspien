@@ -1,0 +1,15 @@
+import "../../../../../../../../stdlib/string.caspien"
+import "BytecodeTokenKind.caspien"
+
+@pub
+struct BytecodeToken{@pub{
+	text: owns some mut String
+	file: owns some mut String
+	line: imut s32
+	kind: imut BytecodeTokenKind
+}}
+
+@pub
+impl constructor for BytecodeToken(text: owns some mut String, file: owns some mut String, line: imut s32, kind: imut BytecodeTokenKind) self{
+	return BytecodeToken{text= text, file= file, line= line, kind= kind}
+}

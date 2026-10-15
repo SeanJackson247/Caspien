@@ -1,0 +1,239 @@
+import "../../../../../../../../stdlib/string.caspien"
+import "../collections.caspien"
+import "../bytecode/BytecodeStatement.caspien"
+import "../bytecode/BytecodeToken.caspien"
+import "X86Core.caspien"
+import "X86Structs.caspien"
+
+@pub
+impl constructor for X86Generator(hub: ref some mut X86Backend) self{
+	return X86Generator{hub= hub, core= ref hub.core}
+}
+
+@pub
+impl X86Generator{
+	@pub
+	func generate(_self: ref some mut self, lines: ref imut ObjectList<BytecodeStatement>) owns mut String{ return null }
+
+	@pub
+	func rfBin(_self: ref some mut self, op: ref imut String, size: mut s32, dstTok: ref imut String, aTok: ref imut String, bTok: ref imut String) void{
+	}
+
+	@pub
+	func rfMulByBigConst(_self: ref some mut self, d: ref imut String, aTok: ref imut String, k: mut s64) mut bool{ return false }
+
+	@pub
+	func rfMulByConst(_self: ref some mut self, d: ref imut String, k: mut s64) mut bool{ return false }
+
+	@pub
+	func rfBrcMem(_self: ref some mut self, op: ref imut String, aTok: ref imut String, baseTok: ref imut String, label: ref imut String) void{
+	}
+
+	@pub
+	func rfBrcNarrow(_self: ref some mut self, op: ref imut String, size: mut s32, aTok: ref imut String, bTok: ref imut String, label: ref imut String) owns mut String{ return null }
+
+	@pub
+	func rfBrc(_self: ref some mut self, op: ref imut String, aTok: ref imut String, bTok: ref imut String, label: ref imut String) owns mut String{ return null }
+
+	@pub
+	func rfMovImmKeepFlags(_self: ref some mut self, reg: ref imut String, v: mut s64) void{
+	}
+
+	@pub
+	func rfCmov(_self: ref some mut self, line: ref imut BytecodeStatement) void{
+	}
+
+	@pub
+	func rfExtend(_self: ref some mut self, reg: ref imut String, size: mut s32, signed: mut bool) void{
+	}
+
+	@pub
+	func rfUn(_self: ref some mut self, op: ref imut String, size: mut s32, dstTok: ref imut String, aTok: ref imut String) void{
+	}
+
+	@pub
+	func rfAddrToReg(_self: ref some mut self, reg: ref imut String, tok: ref imut String) void{
+	}
+
+	@pub
+	func rfArgReg(_self: ref some mut self, idx: mut s32) owns mut String{ return null }
+
+	@pub
+	func rfLoad(_self: ref some mut self, n: mut s32, dstTok: ref imut String, srcTok: ref imut String) void{
+	}
+
+	@pub
+	func rfDispMem(_self: ref some mut self, baseTok: ref imut String, disp: mut s64) owns mut String{ return null }
+
+	@pub
+	func rfLoadDisp(_self: ref some mut self, n: mut s32, dstTok: ref imut String, baseTok: ref imut String, disp: mut s64) void{
+	}
+
+	@pub
+	func rfStoreDisp(_self: ref some mut self, n: mut s32, baseTok: ref imut String, disp: mut s64, srcTok: ref imut String) void{
+	}
+
+	@pub
+	func rfLoadXDisp(_self: ref some mut self, xmm: ref imut String, baseTok: ref imut String, disp: mut s64, n: mut s32) void{
+	}
+
+	@pub
+	func rfStoreXDisp(_self: ref some mut self, baseTok: ref imut String, disp: mut s64, xmm: ref imut String, n: mut s32) void{
+	}
+
+	@pub
+	func rfStore(_self: ref some mut self, n: mut s32, addrTok: ref imut String, srcTok: ref imut String) void{
+	}
+
+	@pub
+	func rfMemOperand(_self: ref some mut self, baseReg: ref imut String) owns mut String{ return null }
+
+	@pub
+	func rfIndexedBase(_self: ref some mut self, baseTok: ref imut String, scratch: ref imut String) owns mut String{ return null }
+
+	@pub
+	func rfSetIndex(_self: ref some mut self, baseTok: ref imut String, idxTok: ref imut String, scale: mut s64) void{
+	}
+
+	@pub
+	func rfLoadIndexed(_self: ref some mut self, n: mut s32, dstTok: ref imut String, baseTok: ref imut String, idxTok: ref imut String, scale: mut s64, disp: mut s64) void{
+	}
+
+	@pub
+	func rfStoreIndexed(_self: ref some mut self, n: mut s32, baseTok: ref imut String, idxTok: ref imut String, scale: mut s64, srcTok: ref imut String, disp: mut s64) void{
+	}
+
+	@pub
+	func rfLoadXIndexed(_self: ref some mut self, n: mut s32, xTok: ref imut String, baseTok: ref imut String, idxTok: ref imut String, scale: mut s64, disp: mut s64) void{
+	}
+
+	@pub
+	func rfStoreXIndexed(_self: ref some mut self, n: mut s32, baseTok: ref imut String, idxTok: ref imut String, scale: mut s64, xTok: ref imut String, disp: mut s64) void{
+	}
+
+	@pub
+	func rfAddImm(_self: ref some mut self, reg: ref imut String, v: mut s64) void{
+	}
+
+	@pub
+	func rfLea(_self: ref some mut self, dstTok: ref imut String, baseTok: ref imut String, idxTok: ref imut String, scale: mut s64, extra: mut s64) void{
+	}
+
+	@pub
+	func rfXmmA(_self: ref some mut self) owns mut String{ return null }
+
+	@pub
+	func rfXmmB(_self: ref some mut self) owns mut String{ return null }
+
+	@pub
+	func rfGprToXmm(_self: ref some mut self, xmm: ref imut String, gpr64: ref imut String, n: mut s32) void{
+	}
+
+	@pub
+	func rfXmmToGpr(_self: ref some mut self, xmm: ref imut String, gpr64: ref imut String, n: mut s32) void{
+	}
+
+	@pub
+	func rfLoadXmm(_self: ref some mut self, tok: ref imut String, xmm: ref imut String, n: mut s32) void{
+	}
+
+	@pub
+	func yPhys(_self: ref some mut self, k: mut s32) owns mut String{ return null }
+
+	@pub
+	func xvPhys(_self: ref some mut self, k: mut s32) owns mut String{ return null }
+
+	@pub
+	func xvReg(_self: ref some mut self, tok: ref imut String) owns mut String{ return null }
+
+	@pub
+	func xvSpillAll(_self: ref some mut self) void{
+	}
+
+	@pub
+	func xvReloadAll(_self: ref some mut self) void{
+	}
+
+	@pub
+	func floatPoolLabel(_self: ref some mut self, bits: mut s64, n: mut s32) owns mut String{ return null }
+
+	@pub
+	func floatPoolMem(_self: ref some mut self, bits: mut s64, n: mut s32) owns mut String{ return null }
+
+	@pub
+	func emitFloatPool(_self: ref some mut self) void{
+	}
+
+	@pub
+	func xText(_self: ref some mut self, xmm: ref imut String) owns mut String{ return null }
+
+	@pub
+	func rfMovaps(_self: ref some mut self, dst: ref imut String, src: ref imut String) void{
+	}
+
+	@pub
+	func rfFloatMem(_self: ref some mut self, addrTok: ref imut String, n: mut s32) owns mut String{ return null }
+
+	@pub
+	func rfLoadX(_self: ref some mut self, xmm: ref imut String, addrTok: ref imut String, n: mut s32) void{
+	}
+
+	@pub
+	func rfStoreX(_self: ref some mut self, addrTok: ref imut String, xmm: ref imut String, n: mut s32) void{
+	}
+
+	@pub
+	func rfTimesTwoOperand(_self: ref some mut self, n: mut s32, aTok: ref imut String, bTok: ref imut String) owns mut String{ return null }
+
+	@pub
+	func rfFloatX(_self: ref some mut self, op: ref imut String, n: mut s32, dstTok: ref imut String, aTok: ref imut String, bTok: ref imut String) void{
+	}
+
+	@pub
+	func rfFloat(_self: ref some mut self, compare: mut bool, op: ref imut String, n: mut s32, dstTok: ref imut String, aTok: ref imut String, bTok: ref imut String) void{
+	}
+
+	@pub
+	func rfFloat(_self: ref some mut self, compare: mut bool, op: ref imut String, n: mut s32, dstTok: ref imut String, aTok: ref imut String, bTok: ref imut String, branchLabel: ref imut String) void{
+	}
+
+	@pub
+	func rfSetcc(_self: ref some mut self, setcc: ref imut String, d: ref imut String) void{
+	}
+
+	@pub
+	func rfRmw(_self: ref some mut self, op: ref imut String, slotTok: ref imut String, srcTok: ref imut String) void{
+	}
+
+	static func fsfx(n: mut s32) owns mut String{ return null }
+
+	static func widthSfx(w: mut s32) owns mut String{ return null }
+
+	static func fmov(n: mut s32) owns mut String{ return null }
+
+	static func maskIf4(v: mut s64, n: mut s32) mut s64{ return 0 }
+
+	static func maskUnless8(v: mut s64, n: mut s32) mut s64{ return 0 }
+
+	@pub
+	func mangleLabel(_self: ref some mut self, text: ref imut String) owns mut String{ return null }
+
+	@pub
+	func movRegToRegRbpFromRsp(_self: ref some mut self) void{
+	}
+
+	@pub
+	func varMarksNeeded(_self: ref some mut self, start: mut s32) mut s32{ return 0 }
+
+	@pub
+	func expandVarMarks(_self: ref some mut self, start: mut s32) void{
+	}
+
+	@pub
+	func finishCalleeSaved(_self: ref some mut self) void{
+	}
+
+	@pub
+	func emitFunctionEpilogue(_self: ref some mut self) void{
+	}
+}
