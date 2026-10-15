@@ -242,4 +242,62 @@ impl<K, V> HashMap<K, V>{
 		}
 		return mut false
 	}
+
+	/** Removes `key` if present and returns whether it was. Backward-shift deletion (no tombstones): each following entry of the probe run whose home slot lies at or before the hole moves back into it, so a lookup still stops at the first empty slot. A map of capacity 0 removes nothing. */
+	@pub
+	func remove(_self: ref some mut self, key: mut K) mut bool{
+		let cap = mut _self.capacity
+		match cap != 0{
+			let mask = mut (cap - 1)
+			let startIdx = mut bits_and(hashKey:<K>(imut key), mask)
+			let hole = mut 0
+			let found = mut false
+			for steps in 0..cap{
+				let idx = mut bits_and(startIdx + steps, mask)
+				match idx in _self.ctrl{
+					if _self.ctrl[idx] == 0{
+						break
+					}
+					match idx in _self.slots{
+						if _self.slots[idx].key == key{
+							hole = idx
+							found = true
+							break
+						}
+					}
+				}
+			}
+			if found{
+				let i = mut hole
+				for step in 1..cap{
+					let j = mut bits_and(hole + step, mask)
+					match j in _self.ctrl{
+						if _self.ctrl[j] == 0{
+							break
+						}
+						match j in _self.slots{
+							let jk = mut _self.slots[j].key
+							let jv = mut _self.slots[j].value
+							let home = mut bits_and(hashKey:<K>(imut jk), mask)
+							let dj = mut bits_and(j + cap - i, mask)
+							let dh = mut bits_and(j + cap - home, mask)
+							if dh >= dj{
+								match i into _self.slots{
+									_self.slots[i].key = jk
+									_self.slots[i].value = jv
+								}
+								i = j
+							}
+						}
+					}
+				}
+				match i into _self.ctrl{
+					_self.ctrl[i] = 0
+				}
+				_self.count = mut (_self.count - 1)
+				return mut true
+			}
+		}
+		return mut false
+	}
 }

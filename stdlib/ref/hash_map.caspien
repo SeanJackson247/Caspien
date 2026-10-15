@@ -1,4 +1,4 @@
-// REF variant of stdlib/hash_map.caspien: the same HashMap<K, V> API (`new HashMap:<K, V>(defaultKey, defaultValue, capacity)`, `set`, `get`, `contains`,
+// REF variant of stdlib/hash_map.caspien: the same HashMap<K, V> API (`new HashMap:<K, V>(defaultKey, defaultValue, capacity)`, `set`, `get`, `contains`, `remove`,
 // the `count` and `capacity` fields, a capacity rounded up to a power of two, 0 = a map that ignores every `set`, growth at 70% load, as the original) but
 // built the way a C programmer would: SEPARATE CHAINING. Every entry is its own heap node `HashMapNode{key, value, next}` whose `next` is a plain
 // `ref` to another node of the same struct (a self-referential struct, which the language allows for `ref` only), the bucket array holds `ref` heads,
@@ -16,6 +16,7 @@ struct HashMapNode<K, V>{@pub{
 	key: mut K
 	value: mut V
 	next: ref mut HashMapNode<K, V>
+	slot: mut u64
 }}
 
 @pub
@@ -155,7 +156,7 @@ impl<K, V> HashMap<K, V>{
 					match h in _self.heads{
 						hd = _self.heads[h].n
 					}
-					let nn = mut ? new HashMapNode:<K, V>{key= key, value= value, next= hd}
+					let nn = mut ? new HashMapNode:<K, V>{key= key, value= value, next= hd, slot= idx}
 					match idx into _self.owners{
 						_self.owners[idx].n = nn
 					}
@@ -229,6 +230,79 @@ impl<K, V> HashMap<K, V>{
 					}
 				}
 			}
+		}
+		return mut false
+	}
+
+	/** Removes `key` if present and returns whether it was: unlinks the node from its bucket chain, frees it, and moves the last owner slot into the freed one so the owners stay dense (the moved node's `slot` is updated; refs to it stay valid). A map of capacity 0 removes nothing. */
+	@pub
+	func remove(_self: ref some mut self, key: mut K) mut bool{
+		let cap = mut _self.capacity
+		let idx = mut 0
+		let found = mut false
+		match cap != 0{
+			let mask = mut (cap - 1)
+			let h = mut bits_and(hashKey:<K>(imut key), mask)
+			match Some(_self){      // hashKey's `unsafe` ended the entry proof: match again
+				let nilHead = mut HashMapHead:<K, V>{n= null}
+				let cur = mut nilHead.n
+				let prev = mut nilHead.n
+				let limit = mut _self.count
+				match h in _self.heads{
+					cur = _self.heads[h].n
+				}
+				for steps in 0..limit{
+					match Some(cur){
+						let ck = mut cur.key
+						let nx = mut cur.next
+						if ck == key{
+							idx = cur.slot
+							found = true
+							match Some(prev){
+								prev.next = nx
+							}
+							else{
+								match h into _self.heads{
+									_self.heads[h].n = nx
+								}
+							}
+							break
+						}
+						prev = cur
+						cur = nx
+					}
+					else{
+						break
+					}
+				}
+			}
+		}
+		if found{
+			match Some(_self){
+				let last = mut (_self.count - 1)
+				let nilHead = mut HashMapHead:<K, V>{n= null}
+				let moved = mut nilHead.n
+				if idx == last{
+					match idx into _self.owners{
+						_self.owners[idx].n = null
+					}
+				}
+				else{
+					match idx into _self.owners{
+						match last into _self.owners{
+							_self.owners[idx].n = _self.owners[last].n
+						}
+					}
+					match idx in _self.owners{
+						moved = ref _self.owners[idx].n
+					}
+					match Some(moved){
+						moved.slot = idx
+					}
+				}
+				_self.count = mut last
+			}
+			return mut true
 		}
 		return mut false
 	}
