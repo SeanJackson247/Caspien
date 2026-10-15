@@ -137,7 +137,7 @@ public final class TypeCheckerModel {
     public final Map<String, EnumInfo> enums = new HashMap<>();
     /** The list `check(...)` was given, shared with BytecodeEmitter, so root tokens appended later (par's AsyncHandle_T, see getOrCreateAsyncHandleType) reach emission. */
     public List<Token> rootLinesRef;
-    public final Map<String, List<FuncInfo>> functions = new HashMap<>();
+    public final Map<String, List<FuncInfo>> functions = new LinkedHashMap<>();
     public final Map<String, InterfaceInfo> interfaces = new HashMap<>();
     /** extern name -> signature; collectFunc/collectExtern cross-check so an extern and a function never share a name. */
     public final Map<String, ExternInfo> externs = new HashMap<>();
@@ -146,7 +146,7 @@ public final class TypeCheckerModel {
     /** Named root-level ASM declarations, in their own namespace. Visible from any function body; a root-level "asm_name;" invocation is processed in file order. See collectAsmDeclarationsAndInvocations. */
     public final Map<String, AsmInfo> rootAsms = new HashMap<>();
     /** Concrete type name -> every impl block declared for it (at most one bare impl, plus at most one per interface -- enforced at collection time). */
-    public final Map<String, List<ImplInfo>> implsByConcreteType = new HashMap<>();
+    public final Map<String, List<ImplInfo>> implsByConcreteType = new LinkedHashMap<>();
     /** Every generic constructor's FuncInfo, registered by collectImpl into `functions` (so check()'s two body loops miss it); check() runs a third loop over this list. See docs/TypeChecker.md, "Generic constructors". */
     public final List<FuncInfo> genericConstructorFuncInfos = new ArrayList<>();
 
@@ -497,5 +497,25 @@ public final class TypeCheckerModel {
             }
         }
         return false;
+    }
+
+    /** The overload list for a function name, created (in insertion order) on first use. */
+    public List<FuncInfo> functionList(String name) {
+        List<FuncInfo> list = functions.get(name);
+        if (list == null) {
+            list = new ArrayList<>();
+            functions.put(name, list);
+        }
+        return list;
+    }
+
+    /** The impl list for a concrete type name, created (in insertion order) on first use. */
+    public List<ImplInfo> implList(String typeName) {
+        List<ImplInfo> list = implsByConcreteType.get(typeName);
+        if (list == null) {
+            list = new ArrayList<>();
+            implsByConcreteType.put(typeName, list);
+        }
+        return list;
     }
 }

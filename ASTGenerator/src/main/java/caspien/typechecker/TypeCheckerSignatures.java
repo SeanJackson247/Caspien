@@ -1021,9 +1021,14 @@ public final class TypeCheckerSignatures {
 
     /** Direct recursion needs @recursive; any indirect cycle is an error. `call()` targets are not CallEdges, so they are never seen. See docs/TypeChecker.md, "Whole-program call-graph checks". */
     public void checkNoRecursion() {
-        Map<FuncInfo, List<CallEdge>> outEdges = new HashMap<>();
+        Map<FuncInfo, List<CallEdge>> outEdges = new LinkedHashMap<>();
         for (CallEdge e : hub.model.callEdges) {
-            outEdges.computeIfAbsent(e.caller, k -> new ArrayList<>()).add(e);
+            List<CallEdge> edgeList = outEdges.get(e.caller);
+            if (edgeList == null) {
+                edgeList = new ArrayList<>();
+                outEdges.put(e.caller, edgeList);
+            }
+            edgeList.add(e);
         }
         for (CallEdge e : hub.model.callEdges) {
             if (e.caller == e.callee && hub.impls.getDecorator(e.caller.funcToken.decorators, "recursive") == null) {

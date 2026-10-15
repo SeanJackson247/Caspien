@@ -114,7 +114,7 @@ public final class TypeCheckerImpls {
                             "'" + ctorInfo.name + "' collides with an already-declared 'const "
                                     + ctorInfo.name + "'");
                 }
-                List<FuncInfo> ctorOverloads = hub.model.functions.computeIfAbsent(ctorInfo.name, k -> new ArrayList<>());
+                List<FuncInfo> ctorOverloads = hub.model.functionList(ctorInfo.name);
                 for (FuncInfo existing : ctorOverloads) {
                     if (hub.signatures.sameSignature(existing, ctorInfo)) {
                         throw new CompilerException("type", methodTok.file, methodTok.line,
@@ -270,7 +270,7 @@ public final class TypeCheckerImpls {
         if (constructorsOnlyImpl) {
             return;
         }
-        List<ImplInfo> existingImpls = hub.model.implsByConcreteType.computeIfAbsent(concreteName, k -> new ArrayList<>());
+        List<ImplInfo> existingImpls = hub.model.implList(concreteName);
         for (ImplInfo existing : existingImpls) {
             if (interfaceName == null && existing.interfaceName == null) {
                 throw new CompilerException("type", t.file, t.line,
@@ -1250,7 +1250,7 @@ public final class TypeCheckerImpls {
                     "'" + info.name + "' collides with an already-declared 'const " + info.name
                             + "' -- a const and a function can't share a name");
         }
-        List<FuncInfo> overloads = hub.model.functions.computeIfAbsent(info.name, k -> new ArrayList<>());
+        List<FuncInfo> overloads = hub.model.functionList(info.name);
         for (FuncInfo existing : overloads) {
             if (hub.signatures.sameSignature(existing, info)) {
                 throw new CompilerException("type", t.file, t.line,

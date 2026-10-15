@@ -1121,7 +1121,7 @@ public final class TypeCheckerAccessAndAsync {
         info.callConvention = hub.model.config.defaultConvention;
         info.isPublic = true;
         info.funcToken = funcTok;
-        hub.model.functions.computeIfAbsent(dispatcherName, k -> new ArrayList<>()).add(info);
+        hub.model.functionList(dispatcherName).add(info);
         appendSynthesizedRootToken(funcTok);
     }
 
@@ -1256,7 +1256,7 @@ public final class TypeCheckerAccessAndAsync {
             if (locked) {
                 resolveFunc.enclosingImpl = implInfo; // lets the method's own `@lock(match self.gate : OPEN)` grant its body the proof
             }
-            hub.model.implsByConcreteType.computeIfAbsent(structName, k -> new ArrayList<>()).add(implInfo);
+            hub.model.implList(structName).add(implInfo);
 
             Token implTok = new Token(TokenType.KEYWORD, "impl", at.line, at.file);
             implTok.sub = new ArrayList<>();
@@ -1395,7 +1395,7 @@ public final class TypeCheckerAccessAndAsync {
         hub.signatures.buildFuncInfo(funcTok, trampolineInfo);
         trampolineInfo.declOrder = Integer.MAX_VALUE;
         trampolineInfo.isPublic = false;
-        hub.model.functions.computeIfAbsent(trampolineInfo.name, k -> new ArrayList<>()).add(trampolineInfo);
+        hub.model.functionList(trampolineInfo.name).add(trampolineInfo);
         glue.add(trampolineInfo);   // its body is checked (as glue) and its root token appended by the caller
     }
 
@@ -1427,7 +1427,7 @@ public final class TypeCheckerAccessAndAsync {
         hub.signatures.buildFuncInfo(funcTok, hookInfo);
         hookInfo.declOrder = Integer.MAX_VALUE;
         hookInfo.isPublic = false;
-        hub.model.functions.computeIfAbsent(hookInfo.name, k -> new ArrayList<>()).add(hookInfo);
+        hub.model.functionList(hookInfo.name).add(hookInfo);
         glue.add(hookInfo);   // its body is checked (as glue) and its root token appended by the caller
     }
 
