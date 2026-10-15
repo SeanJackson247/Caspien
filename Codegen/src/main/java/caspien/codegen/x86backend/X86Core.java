@@ -4,8 +4,11 @@ import caspien.codegen.CodegenTarget;
 import caspien.bytecode.BytecodeStatement;
 import caspien.bytecode.BytecodeToken;
 import caspien.codegen.CodegenException;
+import java.math.BigInteger;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -72,15 +75,15 @@ final class X86Core {
     final HashMap<Integer, Long> pushStoreOffsetByLine = new HashMap<>();
 
     // See README.md, "Call-argument stack tracking and CC_START buffering".
-    final java.util.Deque<Long> argTrackDeltaStack = new java.util.ArrayDeque<>();
+    final Deque<Long> argTrackDeltaStack = new ArrayDeque<>();
 
     int argTrackSuspendDepth = 0;
 
-    final java.util.Deque<StringBuilder> callBufferStack = new java.util.ArrayDeque<>();
+    final Deque<StringBuilder> callBufferStack = new ArrayDeque<>();
 
-    final java.util.Deque<java.util.List<String>> loadedArgRegsStack = new java.util.ArrayDeque<>();
+    final Deque<List<String>> loadedArgRegsStack = new ArrayDeque<>();
 
-    final java.util.Deque<java.util.List<String>> savedOuterArgRegsStack = new java.util.ArrayDeque<>();
+    final Deque<List<String>> savedOuterArgRegsStack = new ArrayDeque<>();
 
     boolean floatResultInR10 = false;
 
@@ -276,7 +279,7 @@ final class X86Core {
     }
 
     static long[] divMagicSimple(long k) {
-        java.math.BigInteger bk0 = new java.math.BigInteger(Long.toUnsignedString(k));
+        BigInteger bk0 = new BigInteger(Long.toUnsignedString(k));
         int tz = Long.numberOfTrailingZeros(k);
         int[] pres;
         if (tz > 0) {
@@ -284,21 +287,21 @@ final class X86Core {
         } else {
             pres = new int[] {0};
         }
-        java.math.BigInteger limit = java.math.BigInteger.ONE.shiftLeft(64);
+        BigInteger limit = BigInteger.ONE.shiftLeft(64);
         for (int pre : pres) {
-            java.math.BigInteger kk = bk0.shiftRight(pre);
-            if (kk.compareTo(java.math.BigInteger.ONE) <= 0) {
+            BigInteger kk = bk0.shiftRight(pre);
+            if (kk.compareTo(BigInteger.ONE) <= 0) {
                 continue;
             }
             int n = 64 - pre;
             for (int l = pre; l <= 64; l++) {
-                java.math.BigInteger p = java.math.BigInteger.ONE.shiftLeft(n + l);
-                java.math.BigInteger m = p.add(kk).subtract(java.math.BigInteger.ONE).divide(kk);
+                BigInteger p = BigInteger.ONE.shiftLeft(n + l);
+                BigInteger m = p.add(kk).subtract(BigInteger.ONE).divide(kk);
                 if (m.compareTo(limit) >= 0) {
                     break;
                 }
-                java.math.BigInteger e = m.multiply(kk).subtract(p);
-                if (e.compareTo(java.math.BigInteger.ONE.shiftLeft(l)) <= 0) {
+                BigInteger e = m.multiply(kk).subtract(p);
+                if (e.compareTo(BigInteger.ONE.shiftLeft(l)) <= 0) {
                     return new long[] {pre, m.longValue(), l - pre};
                 }
             }

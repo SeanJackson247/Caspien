@@ -1,8 +1,7 @@
 package caspien.codegen.x86backend;
 
 import caspien.bytecode.BytecodeStatement;
-import caspien.bytecode.BytecodeToken;
-import caspien.codegen.CodegenException;
+import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -303,7 +302,7 @@ final class X86RegForm {
             return true;
         } else if (mnemonic.equals("CC_START")) {
             // See README.md, "Calls, arguments, and call brackets".
-            java.util.List<String> saved = new java.util.ArrayList<>();
+            List<String> saved = new ArrayList<>();
             if (!core.loadedArgRegsStack.isEmpty()) {
                 saved.addAll(core.loadedArgRegsStack.peek());
             }
@@ -316,7 +315,7 @@ final class X86RegForm {
                 }
             }
             core.savedOuterArgRegsStack.push(saved);
-            core.loadedArgRegsStack.push(new java.util.ArrayList<>());
+            core.loadedArgRegsStack.push(new ArrayList<>());
             core.callBufferStack.push(new StringBuilder());
             core.argTrackDeltaStack.push(0L);
             return true;
@@ -326,7 +325,7 @@ final class X86RegForm {
             core.loadedArgRegsStack.pop();
             hub.emit.currentSink().append(finished);
             core.strideKeySink = null;
-            java.util.List<String> saved = core.savedOuterArgRegsStack.pop();
+            List<String> saved = core.savedOuterArgRegsStack.pop();
             if (saved.contains("f0")) {
                 hub.calls.movXmmToReg("xmm0", "r10");
                 core.floatResultInR10 = true;
@@ -715,9 +714,9 @@ final class X86RegForm {
             return;
         }
         int l = 64 - Long.numberOfLeadingZeros(k - 1);
-        java.math.BigInteger two64 = java.math.BigInteger.ONE.shiftLeft(64);
-        java.math.BigInteger bk = new java.math.BigInteger(Long.toUnsignedString(k));
-        java.math.BigInteger m = java.math.BigInteger.ONE.shiftLeft(l).subtract(bk).shiftLeft(64).divide(bk).add(java.math.BigInteger.ONE);
+        BigInteger two64 = BigInteger.ONE.shiftLeft(64);
+        BigInteger bk = new BigInteger(Long.toUnsignedString(k));
+        BigInteger m = BigInteger.ONE.shiftLeft(l).subtract(bk).shiftLeft(64).divide(bk).add(BigInteger.ONE);
         long magic = m.mod(two64).longValue();
         if (!inRax) {
             hub.emit.raw("    xchgq %rax, %" + d);

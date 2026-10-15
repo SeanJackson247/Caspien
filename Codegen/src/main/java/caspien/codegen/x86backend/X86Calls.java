@@ -1,8 +1,6 @@
 package caspien.codegen.x86backend;
 
 import caspien.bytecode.BytecodeStatement;
-import caspien.bytecode.BytecodeToken;
-import caspien.codegen.CodegenException;
 
 /** Argument registers, aligned calls with stack-passed arguments, and the mnemonic dispatcher (emitLine, first mnemonic group) (see X86Generator for how the parts fit together). */
 final class X86Calls {

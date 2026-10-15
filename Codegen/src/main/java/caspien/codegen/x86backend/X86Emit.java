@@ -2,9 +2,8 @@ package caspien.codegen.x86backend;
 
 import caspien.codegen.CodegenTarget;
 import caspien.bytecode.BytecodeStatement;
-import caspien.bytecode.BytecodeToken;
-import caspien.codegen.CodegenException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -74,7 +73,7 @@ final class X86Emit {
                     idx--;
                 } else if (m.equals("NEW") && prev.size() >= 2) {
                     if (depth + 2 > saved.length) {
-                        saved = java.util.Arrays.copyOf(saved, saved.length * 2);
+                        saved = Arrays.copyOf(saved, saved.length * 2);
                     }
                     saved[depth++] = total;
                     saved[depth++] = target;

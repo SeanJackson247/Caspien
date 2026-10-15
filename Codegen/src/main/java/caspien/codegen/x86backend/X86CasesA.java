@@ -1,8 +1,6 @@
 package caspien.codegen.x86backend;
 
 import caspien.bytecode.BytecodeStatement;
-import caspien.bytecode.BytecodeToken;
-import caspien.codegen.CodegenException;
 
 /** Mnemonic groups 2 and 3 of the stack-form instruction set (one switch per group, false = not mine) (see X86Generator for how the parts fit together). */
 final class X86CasesA {

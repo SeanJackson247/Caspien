@@ -2,10 +2,11 @@ package caspien.codegen.x86backend;
 
 import caspien.codegen.CodegenTarget;
 import caspien.bytecode.BytecodeStatement;
-import caspien.bytecode.BytecodeToken;
 import caspien.codegen.CodegenException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.regex.Pattern;
 
 /** The x86-64 backend's code generator (register form, callee-saved handling, `generate`); overview in README.md. */
 final class X86Generator {
@@ -1279,7 +1280,7 @@ final class X86Generator {
             }
             String seg = core.out.substring(segStart, j);
             for (int vi = 0; vi < 3; vi++) {
-                if (java.util.regex.Pattern.compile("(?<![A-Za-z0-9_])" + regs[vi] + "[dwb]?(?![A-Za-z0-9_])").matcher(seg).find()) {
+                if (Pattern.compile("(?<![A-Za-z0-9_])" + regs[vi] + "[dwb]?(?![A-Za-z0-9_])").matcher(seg).find()) {
                     mask |= 1 << vi;
                 }
             }
@@ -1304,7 +1305,7 @@ final class X86Generator {
             StringBuilder sv = new StringBuilder();
             StringBuilder rs = new StringBuilder();
             for (int vi = 0; vi < 3; vi++) {
-                if (core.vSlots[vi] != null && java.util.regex.Pattern.compile("(?<![A-Za-z0-9_])" + regs[vi] + "[dwb]?(?![A-Za-z0-9_])").matcher(seg).find()) {
+                if (core.vSlots[vi] != null && Pattern.compile("(?<![A-Za-z0-9_])" + regs[vi] + "[dwb]?(?![A-Za-z0-9_])").matcher(seg).find()) {
                     sv.append("    movq %").append(regs[vi]).append(", ").append(core.vSlots[vi]).append("\n");
                     rs.append("    movq ").append(core.vSlots[vi]).append(", %").append(regs[vi]).append("\n");
                 }
@@ -1321,25 +1322,25 @@ final class X86Generator {
         }
         long frameBytes = core.csrAllocSum;
         String body = core.out.substring(core.csrFuncStart);
-        java.util.List<String[]> regs = new java.util.ArrayList<>(); // {name, kind gpr|xmm}
-        java.util.regex.Pattern nb = java.util.regex.Pattern.compile("(?<![A-Za-z0-9_])(?:rbx|ebx|bx|bl|bh)(?![A-Za-z0-9_])");
+        List<String[]> regs = new ArrayList<>(); // {name, kind gpr|xmm}
+        Pattern nb = Pattern.compile("(?<![A-Za-z0-9_])(?:rbx|ebx|bx|bl|bh)(?![A-Za-z0-9_])");
         if (nb.matcher(body).find()) regs.add(new String[] {"rbx", "gpr"});
         for (int r = 12; r <= 15; r++) {
-            if (java.util.regex.Pattern.compile("(?<![A-Za-z0-9_])r" + r + "[dwb]?(?![A-Za-z0-9_])").matcher(body).find()) {
+            if (Pattern.compile("(?<![A-Za-z0-9_])r" + r + "[dwb]?(?![A-Za-z0-9_])").matcher(body).find()) {
                 regs.add(new String[] {"r" + r, "gpr"});
             }
         }
         if (hub.emit.isWinAbi()) {
-            if (java.util.regex.Pattern.compile("(?<![A-Za-z0-9_])(?:rdi|edi|di|dil)(?![A-Za-z0-9_])").matcher(body).find()) regs.add(new String[] {"rdi", "gpr"});
-            if (java.util.regex.Pattern.compile("(?<![A-Za-z0-9_])(?:rsi|esi|si|sil)(?![A-Za-z0-9_])").matcher(body).find()) regs.add(new String[] {"rsi", "gpr"});
+            if (Pattern.compile("(?<![A-Za-z0-9_])(?:rdi|edi|di|dil)(?![A-Za-z0-9_])").matcher(body).find()) regs.add(new String[] {"rdi", "gpr"});
+            if (Pattern.compile("(?<![A-Za-z0-9_])(?:rsi|esi|si|sil)(?![A-Za-z0-9_])").matcher(body).find()) regs.add(new String[] {"rsi", "gpr"});
             for (int x = 6; x <= 15; x++) {
-                if (java.util.regex.Pattern.compile("(?<![A-Za-z0-9_])xmm" + x + "(?![0-9A-Za-z_])").matcher(body).find()) {
+                if (Pattern.compile("(?<![A-Za-z0-9_])xmm" + x + "(?![0-9A-Za-z_])").matcher(body).find()) {
                     regs.add(new String[] {"xmm" + x, "xmm"});
                 }
             }
         }
         String restoreText = "";
-        java.util.Arrays.fill(core.vSlots, null);
+        Arrays.fill(core.vSlots, null);
         if (!regs.isEmpty()) {
             if (core.csrAllocPos < 0) {
                 // no locals at all (no ALLOC line): make the frame ourselves, right after the prologue
@@ -1361,7 +1362,7 @@ final class X86Generator {
                 } else {
                     regPattern = r[0] + "[dwb]?";
                 }
-                java.util.regex.Pattern any = java.util.regex.Pattern.compile("(?<![A-Za-z0-9_])" + regPattern + "(?![0-9A-Za-z_])");
+                Pattern any = Pattern.compile("(?<![A-Za-z0-9_])" + regPattern + "(?![0-9A-Za-z_])");
                 if (any.matcher(beforeAlloc.replace(X86Core.CSR_MARK, "")).find()) {
                     throw new RuntimeException("codegen internal error: function '" + core.currentFuncName + "' uses " + r[0] + " before its frame is allocated");
                 }
@@ -1388,7 +1389,7 @@ final class X86Generator {
                 restores.append(ld).append('\n');
             }
             // r13/r14/r12 variables are saved to frame slots around the scratch users (see V1314_SAVE)
-            java.util.Arrays.fill(core.vSlots, null);
+            Arrays.fill(core.vSlots, null);
             int needMask = varMarksNeeded(core.csrFuncStart);
             for (int vi = 0; vi < 3; vi++) {
                 if ((core.rfVarMask & needMask & (1 << vi)) != 0) {
