@@ -3,7 +3,6 @@ package caspien.codegen.codegenCaspien.x86backend;
 import caspien.codegen.codegenCaspien.CodegenTarget;
 import caspien.bytecode.BytecodeStatement;
 import caspien.bytecode.Text;
-import caspien.codegen.codegenCaspien.CodegenException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
