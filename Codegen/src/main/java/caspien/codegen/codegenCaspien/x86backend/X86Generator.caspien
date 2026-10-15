@@ -211,9 +211,19 @@ impl X86Generator{
 
 	static func fmov(n: mut s32) owns mut String{ return null }
 
-	static func maskIf4(v: mut s64, n: mut s32) mut s64{ return 0 }
+	static func maskIf4(v: mut s64, n: mut s32) mut s64{
+		if n == 4{
+			return bits_and(v, 0xFFFFFFFF)
+		}
+		return v
+	}
 
-	static func maskUnless8(v: mut s64, n: mut s32) mut s64{ return 0 }
+	static func maskUnless8(v: mut s64, n: mut s32) mut s64{
+		if n == 8{
+			return v
+		}
+		return bits_and(v, 0xFFFFFFFF)
+	}
 
 	@pub
 	func mangleLabel(_self: ref some mut self, text: ref imut String) owns mut String{ return null }

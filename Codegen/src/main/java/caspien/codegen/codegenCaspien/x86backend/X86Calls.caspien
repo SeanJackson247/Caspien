@@ -37,7 +37,12 @@ impl X86Calls{
 	func argFloatReg(_self: ref some mut self, index: mut s32) owns mut String{ return null }
 
 	@pub
-	func alignPadFor(_self: ref some mut self, stackArgBytes: mut s64) mut s32{ return 0 }
+	func alignPadFor(_self: ref some mut self, stackArgBytes: mut s64) mut s32{
+		if stackArgBytes % 16 == 0{
+			return 16
+		}
+		return 8
+	}
 
 	@pub
 	func emitStackArgRestore(_self: ref some mut self, stackArgBytes: mut s64) void{

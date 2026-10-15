@@ -392,7 +392,7 @@ final class DropGlueGenerationWorker {
         }
 
         if (structTable.hasStruct(t.baseType)) {
-            if (structTable.isOwnsBearing(t.baseType)) {
+            if (t.storage == null && structTable.isOwnsBearing(t.baseType)) {
                 emit(out, "ADDR " + path + " " + canonicalType);
                 emit(out, "CALL " + routineNameFor(t.baseType));
                 enqueue(t.baseType);

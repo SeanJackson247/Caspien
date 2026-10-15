@@ -8,6 +8,8 @@ import "../collections.caspien"
 import "../CodegenTarget.caspien"
 import "../bytecode/BytecodeStatement.caspien"
 import "../bytecode/BytecodeToken.caspien"
+import "../../../../../../../../stdlib/jdk_long.caspien"
+import "../../../../../../../../stdlib/bigint.caspien"
 
 @pub
 let static X86Core_CSR_MARK = imut "@@CSR@@"
@@ -149,10 +151,20 @@ impl X86Core{
 	static func regAliasOf(r: ref imut String, full: ref imut String) mut bool{ return false }
 
 	@pub
-	static func roundUpToLoadableWidth(size: mut s32) mut s32{ return 0 }
+	static func roundUpToLoadableWidth(size: mut s32) mut s32{
+		if size <= 2{
+			return size
+		} elseif size <= 4{
+			return 4
+		} else{
+			return 8
+		}
+	}
 
 	@pub
-	static func isOddSize(size: mut s32) mut bool{ return false }
+	static func isOddSize(size: mut s32) mut bool{
+		return size == 3 || (size >= 5 && size <= 7)
+	}
 
 	@pub
 	static func isFloatLiteral(s: ref imut String) mut bool{ return false }
@@ -182,13 +194,67 @@ impl X86Core{
 	static func rfSlot(tok: ref imut String) mut s64{ return 0 }
 
 	@pub
-	static func rfFitsImm32(v: mut s64) mut bool{ return false }
+	static func rfFitsImm32(v: mut s64) mut bool{
+		return v >= -2147483648 && v <= 2147483647
+	}
 
 	@pub
-	static func divMagicSimple(k: mut s64) owns mut DynamicArray<s64>{ return null }
+	@throws
+	static func divMagicSimple(k: mut s64) owns mut DynamicArray<s64>{
+		?catch(e){ throw e }
+		let bk0 = mut ? BigInt.fromU64(wrap:<u64>(k))
+		let tz = mut Long.numberOfTrailingZeros(k)
+		let one = mut ? BigInt.valueOf(1)
+		let limit = mut ? one.shiftLeft(one, 64)
+		let count = mut 1
+		if tz > 0{
+			count = 2
+		}
+		for pi in 0..count{
+			let pre = mut 0
+			if tz > 0{
+				if pi == 0{
+					pre = wrap:<u64>(tz)
+				}
+			}
+			let kk = mut ? bk0.shiftRight(bk0, pre)
+			if kk.compareTo(kk, one) <= 0{
+				continue
+			}
+			let n = mut (64 - pre)
+			let steps = mut (65 - pre)
+			for j in 0..steps{
+				let l = mut (pre + j)
+				let p = mut ? one.shiftLeft(one, n + l)
+				let pk = mut ? p.add(p, kk)
+				let pk1 = mut ? pk.subtract(pk, one)
+				let m = mut ? pk1.divide(pk1, kk)
+				if m.compareTo(m, limit) >= 0{
+					break
+				}
+				let mk = mut ? m.multiply(m, kk)
+				let err = mut ? mk.subtract(mk, p)
+				let cap = mut ? one.shiftLeft(one, l)
+				if err.compareTo(err, cap) <= 0{
+					let preWide = mut wrap:<s64>(pre)
+					let mWide = mut m.toS64(m)
+					let restWide = mut wrap:<s64>(j)
+					let arr = mut ? dyn([preWide, mWide, restWide])
+					let result = mut ? new DynamicArray:<s64>(arr)
+					return result
+				}
+			}
+		}
+		return null
+	}
 
 	@pub
-	static func mulByConstShape(k: mut s64) mut bool{ return false }
+	static func mulByConstShape(k: mut s64) mut bool{
+		if k < 2 || k > 2147483648{
+			return false
+		}
+		return Long.bitCount(k) == 1 || k == 3 || k == 5 || k == 9 || Long.bitCount(k - 1) == 1 || Long.bitCount(k + 1) == 1
+	}
 
 	@pub
 	static func rfFalseJump(op: ref imut String) owns mut String{ return null }
@@ -206,10 +272,19 @@ impl X86Core{
 	static func rfIsGlobal(tok: ref imut String) mut bool{ return false }
 
 	@pub
-	static func rfTrunc(v: mut s64, n: mut s32) mut s64{ return 0 }
+	static func rfTrunc(v: mut s64, n: mut s32) mut s64{
+		if n >= 8{
+			return v
+		}
+		let sh = mut bits_and(64 - 8 * n, 63)
+		let count = mut sh as s64
+		return bits_right(bits_left(v, count), count)
+	}
 
 	@pub
-	static func rfHwScale(s: mut s64) mut bool{ return false }
+	static func rfHwScale(s: mut s64) mut bool{
+		return s == 1 || s == 2 || s == 4 || s == 8
+	}
 
 	@pub
 	static func rfIsXvar(tok: ref imut String) mut bool{ return false }

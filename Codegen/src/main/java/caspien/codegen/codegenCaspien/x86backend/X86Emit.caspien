@@ -5,6 +5,7 @@ import "../bytecode/BytecodeToken.caspien"
 import "X86Core.caspien"
 import "X86Structs.caspien"
 import "X86RunEntries.caspien"
+import "../CodegenTarget.caspien"
 
 @pub
 impl constructor for X86Emit(hub: ref some mut X86Backend) self{
@@ -24,7 +25,18 @@ impl X86Emit{
 	func currentSink(_self: ref some mut self) ref mut String{ return null }
 
 	@pub
-	func consumeVarargsXmmCount(_self: ref some mut self) mut s32{ return 0 }
+	func consumeVarargsXmmCount(_self: ref some mut self) mut s32{
+		let:<mut s32> count = mut 0
+		match Some(_self.core){
+			if _self.core.pendingVarargsXmmCount < 0{
+				count = 0
+			} else{
+				count = _self.core.pendingVarargsXmmCount
+			}
+			_self.core.pendingVarargsXmmCount = -1
+		}
+		return count
+	}
 
 	@pub
 	func findRunStart(_self: ref some mut self, endExclusive: mut s32, targetSize: mut s64) mut s32{ return 0 }
@@ -61,7 +73,13 @@ impl X86Emit{
 	}
 
 	@pub
-	func isWinAbi(_self: ref some mut self) mut bool{ return false }
+	func isWinAbi(_self: ref some mut self) mut bool{
+		let result = mut false
+		match Some(_self.core){
+			result = _self.core.target == CodegenTarget.WINDOWS_GNU_X64
+		}
+		return result
+	}
 
 	@pub
 	func collectDeclarations(_self: ref some mut self, lines: ref imut ObjectList<BytecodeStatement>) void{
@@ -165,7 +183,16 @@ impl X86Emit{
 
 	static func offsetText(off: mut s64) owns mut String{ return null }
 
-	static func widthFor(left: mut s64) mut s32{ return 0 }
+	static func widthFor(left: mut s64) mut s32{
+		if left >= 8{
+			return 8
+		} elseif left >= 4{
+			return 4
+		} elseif left >= 2{
+			return 2
+		}
+		return 1
+	}
 
 	static func pickBySize(size: mut s32, s1: ref imut String, s2: ref imut String, s4: ref imut String, other: ref imut String) owns mut String{ return null }
 
