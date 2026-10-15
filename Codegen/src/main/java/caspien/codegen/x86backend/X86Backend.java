@@ -4,10 +4,6 @@ import caspien.codegen.CodegenTarget;
 import caspien.bytecode.BytecodeStatement;
 import java.util.List;
 
-/**
- * The x86-64 backend's public face and wiring: it owns the shared state ({@link X86Core}) and the six parts that
- * use it, each a separate class holding a reference back here. Overview and layout: see {@link X86Generator}.
- */
 public final class X86Backend {
     final X86Core core;
     final X86Emit emit;

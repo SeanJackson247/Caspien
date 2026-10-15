@@ -10,68 +10,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/**
- * The one and only backend so far: x86-64, either target. This is a
- * *substantial* second pass, not a finished code generator -- "begin
- * building the fourth program... this will generate assembly
- * instructions from the lower order bytecode," confirmed directly, plus
- * a later, explicit "fix that [PUSH] bug and then work thru the
- * remaining 70+ [mnemonics]," confirmed directly. It now correctly
- * translates the great majority of the real low-order instruction set
- * (see the mnemonic list in `emitLine`'s own switch); anything still
- * genuinely unresolved is emitted as a visible `; TODO(codegen): <line>
- * not yet implemented` comment rather than silently dropped or guessed
- * at -- see this project's own CLAUDE.md, "Known gaps," for the
- * current, honest list of what's still missing and *why* (a few of
- * these turned out to need either a real runtime-protocol decision that
- * doesn't exist anywhere yet, such as GT_UNWIND/async, or a fix one
- * layer up in caspien-lowerordergenerator itself, such as WITHIN's
- * incomplete-range case and INSTANCEOF's class tag -- both still carry
- * unresolved symbolic operands even at "low order," not something
- * codegen alone can safely translate).
- *
- * Translation strategy: this bytecode is a stack machine (PUSH/POP/
- * ADDR all push or consume one 8-byte cell), and the host machine has
- * a real stack of its own -- so, for this first version, every
- * bytecode-level push/pop is translated 1:1 to a real `push`/`pop` of
- * the target's own hardware stack. This is deliberately not an
- * optimizing translation (a real backend would keep short-lived values
- * in registers instead) -- it is a straightforward, easy-to-verify
- * mapping, chosen so this first version can be checked for
- * correctness by actually assembling and running its output, not just
- * read for plausibility.
- *
- * Memory layout decisions this pass had to make on its own (nothing
- * else in the pipeline reads a dynarray's or a ghost-registered heap
- * pointer's actual bytes except the mnemonics this backend itself
- * implements, confirmed by grepping every sibling project's own source
- * for any DOT/PUSH_FIELDNAME-style structural access to one -- there is
- * none, so this backend is free to choose its own internal
- * representation as long as it is self-consistent):
- * - A dynarray value is a pointer to a malloc'd block laid out as
- *   [8-byte len][8-byte capacity][elements...]. `len`/`capacity` are
- *   always kept equal (no growth slack) for this first version's own
- *   simplicity -- see LEN/RESIZE/URESIZE/LOOKUP_DYN(_LHS).
- * - Every other heap value (NEW/CLONE) is a bare malloc'd block of
- *   exactly the given size, no header at all.
- *
- * Two concrete targets share this one class, distinguished by
- * `CodegenTarget` (set from `codegen.config`); both emit GNU
- * assembler (GAS) AT&T syntax:
- * - LINUX_X64: SysV calling convention (rdi/rsi/rdx/rcx/r8/r9).
- * - WINDOWS_GNU_X64: win64 calling convention (rcx/rdx/r8/r9 + 32-byte
- *   shadow space), assembled and linked with mingw-w64 gcc.
- * Both are run in this project's test sandbox (Windows under Wine). There
- * is no MASM/Intel-syntax target: it was removed on purpose.
- *
- * Source layout (composition, not inheritance; Java has no partial classes and one file would be 7000+ lines):
- * X86Backend is the public hub that builds the shared state X86Core (fields, constants, static helpers) and the
- * parts: X86Emit (emission helpers, construction runs, sized moves, block copies), X86Calls (argument registers,
- * aligned calls, `emitLine`/`emitLineInner`, the first mnemonic group), X86CasesA and X86CasesB (more mnemonic groups,
- * `emitCasesN`, each a `switch` that returns false for a mnemonic it does not own), X86RegForm (register-form `R_*`
- * helpers) and X86Generator (the rest of the register form, callee-saved handling, `generate`). A part reaches the
- * state as `core.x` and another part as `hub.<part>.x`. No file is over 1500 lines.
- */
+/** The x86-64 backend's code generator (register form, callee-saved handling, `generate`); overview in README.md. */
 final class X86Generator {
     private final X86Backend hub;
     private final X86Core core;
@@ -286,11 +225,6 @@ final class X86Generator {
         
     }
 
-    /**
-     * `d = a * k` for k = 2^n + 1 or 2^n - 1 above 2^31 (too big for an imm32 imul: it would take a 10-byte `movabs` plus a 3-cycle `imul`), as
-     * `mov a, d; shl n, d; add|sub a, d` (a is read again, so a == d goes through the scratch register). The low 64 bits equal the imul's.
-     * Returns false (nothing emitted) for any other k.
-     */
     boolean rfMulByBigConst(String d, String aTok, long k) {
         if (k <= (1L << 31)) {
             return false;
@@ -325,11 +259,6 @@ final class X86Generator {
         return true;
     }
 
-    /**
-     * `d *= k` for a constant k as shifts and adds instead of an `imul` (3 cycles of latency; the shifts are 1 + 1): a power of two is one
-     * `shl`, 3, 5 and 9 are one `lea`, 2^n + 1 and 2^n - 1 are `mov scratch; shl; add|sub scratch` (so `x * 31` is `(x << 5) - x`). The low 64 bits
-     * are the same as the imul's, which is all a register holds (narrow products are never masked there anyway). Returns false for any other k.
-     */
     boolean rfMulByConst(String d, long k) {
         if (k < 2 || k > (1L << 31)) {
             return false;
@@ -363,10 +292,6 @@ final class X86Generator {
         return true;
     }
 
-    /**
-     * R_BRCM: jump to `label` when NOT (a op [base]), where [base] is the 8-byte word at the address held in the register `base`
-     * (the safe dynarray length word: `cmpq (%base), %a`). `a` is a %t/%v register or a frame slot.
-     */
     void rfBrcMem(String op, String aTok, String baseTok, String label) {
         String cc = X86Core.rfFalseJump(op);
         String aText;
@@ -381,12 +306,6 @@ final class X86Generator {
         hub.emit.raw("    " + cc + " " + label);
     }
 
-    /**
-     * R_BRC of a 1, 2 or 4 byte compare: one sized cmp (cmpb/cmpw/cmpl) of the low bytes of two registers or a register and an immediate,
-     * then the jump taken when the comparison is false. Unsigned operators use the unsigned conditions and S* the signed ones, which on a
-     * sized cmp look at exactly the low `size` bytes (what the unfused R_BIN did by extending both operands first). Frame-slot operands are
-     * never fused (BranchFusionPass).
-     */
     String rfBrcNarrow(String op, int size, String aTok, String bTok, String label) {
         String cc = X86Core.rfFalseJump(op);
         if (X86Core.rfIsImm(aTok)) {
@@ -458,10 +377,6 @@ final class X86Generator {
         }
     }
 
-    /**
-     * "R_CMOV OP n a b %vK X [Y]" -- the select made by the LowerOrderGenerator's ConditionalMovePass: %vK = (a OP b) ? X : Y (Y absent = %vK keeps its
-     * value). X and Y are a register or an immediate (already cut to the variable's width). One compare, then `mov Y` (flags untouched) and `cmovCC X`.
-     */
     void rfCmov(BytecodeStatement line) {
         String op = line.get(1).text;
         int size = (int) Long.parseLong(line.get(2).text);
@@ -647,10 +562,6 @@ final class X86Generator {
         return idxDispText + "(%" + baseReg + ",%" + core.rfIdxReg + "," + core.rfIdxScale + ")";
     }
 
-    /**
-     * Base of an indexed access (R_LDI/R_STI/R_LDXI/R_STXI): a global is loaded into `scratch`, a frame slot is addressed
-     * off rbp with a displacement, a temp or variable register is used as it is. Sets rfIdxDisp; the caller resets it.
-     */
     String rfIndexedBase(String baseTok, String scratch) {
         core.rfIdxDisp = 0;
         if (X86Core.rfIsGlobal(baseTok)) {
@@ -667,11 +578,6 @@ final class X86Generator {
         throw new IllegalStateException("malformed indexed base " + baseTok);
     }
 
-    /**
-     * Index register + scale of an indexed access. A hardware scale (1/2/4/8) is used as it is; any other stride (a struct element: 24, 56 ...)
-     * is multiplied into the scratch register first (`imulq $scale, %idx, %r15`, the variable is not touched) and the operand becomes
-     * `disp(%base,%r15,1)`. The base of such an access must not be a global (a global base address already needs the scratch register).
-     */
     void rfSetIndex(String baseTok, String idxTok, long scale) {
         if (X86Core.rfHwScale(scale)) {
             core.rfIdxReg = hub.regForm.rfReg(idxTok);
@@ -1358,10 +1264,6 @@ final class X86Generator {
         
     }
 
-    /**
-     * Expands every V1314 mark pair: a variable register is saved and restored around an instruction only when the instruction's own code
-     * mentions that register (most scratch users touch none of them); pairs that need nothing disappear.
-     */
     int varMarksNeeded(int start) {
         String[] regs = {"r13", "r14", "r12"};
         String sm = X86Core.V1314_SAVE + "\n";

@@ -115,9 +115,6 @@ final class X86CasesA {
             hub.gen.rfFloat(mnemonic.equals("R_FCMP"), line.get(1).text, (int) Long.parseLong(line.get(2).text), line.get(3).text, line.get(4).text, line.get(5).text);
             return true;
         } else if (mnemonic.equals("R_XVAR")) {
-            // "R_XVAR %xK $off [n]" -- declaration only (no code): float variable K lives in an xmm register; $off is its
-            // home frame slot, used to spill/reload around calls where the ABI does not preserve xmm registers; n is the
-            // variable's width (4 = f32, the default; 8 = f64).
             int xk = Integer.parseInt(line.get(1).text.substring(2));
             core.xvHome.put(xk, X86Core.rfSlot(line.get(2).text));
             int xw;
@@ -362,16 +359,7 @@ final class X86CasesA {
             hub.emit.pushReg("rax");
             return true;
         } else if (mnemonic.equals("DIV_INT") || mnemonic.equals("MOD_INT")) {
-            // Unsigned division -- this bytecode carries only a byte
-            // size per operator, never a signedness flag, and this
-            // language's own numeric literals default to unsigned
-            // ("indeterminate_u64") throughout -- so, like LT_INT/
-            // LT_EQ_INT/GT_EQ_INT below, this pass treats every
-            // int comparison/division as unsigned. A real signed
-            // s8/s16/s32/s64 division would need idiv/cqto instead;
-            // documented as a known gap rather than silently wrong
-            // for the (much more common, in this language) unsigned
-            // case.
+            // Unsigned only (known gap); see README.md, "Integer division and comparisons".
             int dsize = optSize(line, 1, 8);
             hub.emit.popReg("rbx");
             hub.emit.popReg("rax");
@@ -396,12 +384,6 @@ final class X86CasesA {
             hub.emit.pushReg(divResult);
             return true;
         } else if (mnemonic.equals("SHL") || mnemonic.equals("SHR") || mnemonic.equals("SAR")) {
-            // Shifts have ONE well-defined meaning at every width, on both targets and in both forms (the register-form
-            // twin is rfShift): the count is read as an UNSIGNED number of the operand's own width (a negative signed
-            // count is therefore huge); a count >= the operand width gives 0 for SHL and SHR and the sign fill (0 or
-            // -1) for SAR -- not x86's "count modulo 64". SAR = arithmetic shift right for signed operands (the value is
-            // sign-extended from its width first); SHR zero-extends first. A narrow result is re-truncated, so the stack
-            // word keeps holding the zero-extended value.
             int ssize = optSize(line, 1, 8);
             hub.emit.popReg("rbx"); // shift count
             hub.emit.popReg("rax"); // value
@@ -420,9 +402,6 @@ final class X86CasesA {
             hub.emit.pushReg("rax");
             return true;
         } else if (mnemonic.equals("ROTL") || mnemonic.equals("ROTR")) {
-            // bits_rotl / bits_rotr: rotate the low `size` bytes, count modulo the width (what rol/ror do: the hardware masks the count to 5 or 6
-            // bits, and a 1/2-byte rotate by (count mod 32) is the same as by (count mod width)). The value is zero-extended first so the
-            // untouched upper bits of a 1/2-byte sub-register stay zero.
             int rsize = optSize(line, 1, 8);
             hub.emit.popReg("rbx"); // count
             hub.emit.popReg("rax"); // value
@@ -472,18 +451,6 @@ final class X86CasesA {
 
     boolean emitCases3(String mnemonic, BytecodeStatement line, String first, boolean wasCmp, long pendingBlockSize) {
         if (mnemonic.equals("EQ_INT") || mnemonic.equals("NEQ_INT") || mnemonic.equals("LT_INT") || mnemonic.equals("LT_EQ_INT") || mnemonic.equals("GT_EQ_INT") || mnemonic.equals("GT_INT")) {
-            // "GT_INT" found genuinely missing here while building
-            // float support -- the sibling `caspien-lowerordergenerator`
-            // project's own AddressLoweringPass rewrites all six
-            // comparison operators (GT/LT/GT_EQ/LT_EQ/EQ/NEQ) through
-            // one identical rule (see its own doc comment on that
-            // rewrite), so every one of them was always just as
-            // reachable as GT_EQ_INT, right below it, which *was*
-            // handled -- this one case was simply never added.
-            // Unrelated to anything float-specific; fixed alongside it
-            // rather than left now that it's been noticed, same
-            // unsigned-only scope as its five siblings (see DIV_INT's
-            // own note).
             int csize = optSize(line, 1, 8);
             hub.emit.popReg("rbx");
             hub.emit.popReg("rax");
@@ -526,27 +493,11 @@ final class X86CasesA {
             } else {
                 op = "div";
             }
-            // AT&T "op src, dest" computes dest = dest OP src; xmm0
-            // holds the left operand (pushed first, popped last,
-            // exactly the ADD_INT/SUB_INT/MUL_INT convention just
-            // above), xmm1 the right, so "opss %xmm1, %xmm0" gives
-            // left-OP-right, in the correct order for the
-            // non-commutative SUB_FLOAT/DIV_FLOAT cases.
             hub.emit.raw(("    " + op + sfx + " %" + hub.gen.rfXmmB() + ", %" + hub.gen.rfXmmA()));
             hub.calls.movXmmToReg(hub.gen.rfXmmA(), "rax");
             hub.emit.pushReg("rax");
             return true;
         } else if (mnemonic.equals("EQ_FLOAT") || mnemonic.equals("NEQ_FLOAT") || mnemonic.equals("LT_FLOAT") || mnemonic.equals("LT_EQ_FLOAT") || mnemonic.equals("GT_EQ_FLOAT") || mnemonic.equals("GT_FLOAT")) {
-            // Same unordered-compare caveat DIV_INT/MOD_INT's own note
-            // flags for unsigned-only integer division: `ucomiss` sets
-            // CF=ZF=PF=1 whenever either operand is NaN ("unordered"),
-            // so a NaN compared with anything reads as both "less than"
-            // and "equal to" it here, rather than IEEE-754's own rule
-            // that every ordered comparison against NaN is false. This
-            // mirrors the file's existing precedent for a scoped,
-            // documented gap rather than a silent one: correct for
-            // every ordinary (non-NaN) float comparison, not yet
-            // NaN-aware.
             int size = (int) Long.parseLong(line.get(1).text);
             String cmp;
             if (size <= 4) {
@@ -625,12 +576,6 @@ final class X86CasesA {
             hub.emit.pushReg("rax");
             return true;
         } else if (mnemonic.equals("INC_FLOAT") || mnemonic.equals("DEC_FLOAT")) {
-            // No SSE "increment by one" instruction exists (unlike
-            // `inc`/`dec` on a GPR) -- 1.0's own IEEE-754 bit pattern
-            // is loaded as a plain integer immediate (exactly how a
-            // float literal already reaches a register in PUSH's own
-            // isFloatLiteral branch above) and added/subtracted as a
-            // real SSE operand instead.
             int size = (int) Long.parseLong(line.get(1).text);
             long oneBits;
             if (size <= 4) {
@@ -654,14 +599,6 @@ final class X86CasesA {
             hub.emit.pushReg("rax");
             return true;
         } else if (mnemonic.equals("CMP")) {
-            // Pops the boolean condition and sets the real flags
-            // from it -- "if true, fall through; if false, jump
-            // away" (emitForLoop's own doc comment, confirmed
-            // directly), and CMP is always immediately followed by
-            // exactly one JMP (verified against every real low-order
-            // output this pass was checked against) -- so the
-            // *next* JMP becomes a conditional "jump if false"
-            // rather than an unconditional jump; see the JMP case.
             hub.emit.popReg("rax");
             hub.emit.raw("    testq %rax, %rax");
             core.lastWasCmp = true;
@@ -696,9 +633,6 @@ final class X86CasesA {
             hub.emit.pushReg("rax");
             return true;
         } else if (mnemonic.equals("TRUNC")) {
-            // "TRUNC srcSize destSize" -- integer narrowing (only ever emitted where a
-            // `match x fits T` proof shows the value is representable in T). Keeps the low
-            // destSize bytes and zero-fills the rest of the stack word.
             int dstSize = (int) Long.parseLong(line.get(2).text);
             hub.emit.popReg("rax");
             if (dstSize < 8) {
@@ -721,21 +655,6 @@ final class X86CasesA {
             hub.emit.pushReg("rax");
             return true;
         } else if (mnemonic.equals("DUP_TOP")) {
-            // Duplicates the top 8-byte stack word in place (pop,
-            // then push it back twice) -- used only by the front
-            // end's own win64-varargs-float-duplication rule (see
-            // `BytecodeEmitter.emitArgTransferTail`'s own doc
-            // comment): "for variadic functions, floating-point
-            // arguments must be passed in both the XMM register and
-            // the corresponding general-purpose register" is a
-            // win64-only ABI requirement with no SysV equivalent --
-            // the one already-promoted 8-byte double bit pattern
-            // needs to reach both a "POP FARGn" and a "POP ARGn"
-            // line, and this is what makes a second, independent
-            // copy of it available to consume. A generic "duplicate
-            // the top of stack" primitive, not itself float-specific
-            // -- nothing about this mnemonic cares what the 8 bytes
-            // mean.
             hub.emit.popReg("rax");
             hub.emit.pushReg("rax");
             hub.emit.pushReg("rax");
@@ -765,74 +684,7 @@ final class X86CasesA {
             hub.emit.pushReg("rax");
             return true;
         } else if (mnemonic.equals("PROMOTE_F32_TO_F64")) {
-            // C's own "default argument promotion" rule: a `float`
-            // (this language's `f32`) argument reaching the `...`
-            // portion of a variadic call (printf's own "%f" and
-            // friends) is promoted to `double` *before* the call,
-            // unconditionally -- never left as a raw 4-byte value,
-            // regardless of what the callee's own varargs-reading
-            // code assumes. This is a real, separate ABI step from
-            // ordinary argument marshalling: the fixed, non-varargs
-            // prefix of a variadic function's own declared
-            // parameters (e.g. printf's own format-string argument)
-            // is NOT promoted -- only the true varargs are -- so this
-            // mnemonic is only ever emitted by the front end
-            // (`emitArgWord`'s own promote flag) for an argument
-            // index at or past the extern's own declared fixed
-            // parameter count, on a genuinely `f32`-typed argument.
-            // No `f64`/`double` type exists anywhere in this
-            // language (confirmed directly, see `FLOAT_CHECK`'s own
-            // doc comment above) -- this mnemonic's whole job is
-            // purely a *value*-level ABI conversion, in place, on
-            // the stack; it introduces no new type anywhere in the
-            // rest of this bytecode format.
-            //
-            // Every value on this backend's own stack already
-            // travels as an opaque 8-byte word (see the "Float
-            // (SSE) helpers" doc comment above) -- a pushed `f32`
-            // sits in the low 4 bytes of that word, upper 4 bytes
-            // zero (confirmed directly against real generated
-            // assembly: `movq %xmm0, %rax` zero-extends because the
-            // source xmm register's own upper 32 bits are zero for
-            // a real `f32` value). So: pop that word, reinterpret
-            // its low 32 bits as a real `float` in a scratch xmm
-            // register (`movq`, the same opaque-bit-move
-            // `movRegToXmm` already uses elsewhere -- exact here
-            // since the upper garbage bits are already known zero),
-            // widen with a genuine `cvtss2sd` (the one real
-            // floating-point conversion this mnemonic exists for),
-            // move the resulting 8-byte `double` bit pattern back to
-            // a GPR, and push it -- now a full, ABI-correct 8-byte
-            // double occupying the same one stack word a raw `f32`
-            // word already occupied, so nothing downstream
-            // (register-vs-stack argument counting, `POP FARGn`, an
-            // overflowing stack-passed word) needs to change at
-            // all: this still consumes exactly one float-bank
-            // argument slot, exactly as an unpromoted `f32` word
-            // already did.
-            //
-            // **Deliberately uses `xmm8`, never `xmm0`, as scratch --
-            // a real, confirmed register-clobber bug otherwise, the
-            // identical class of hazard already documented for
-            // `LOOKUP_ARRAY`'s own scratch-register choice** (this
-            // project's own CLAUDE.md, "a second, real bug found
-            // ... this time a register-clobber"): a multi-float
-            // variadic call (e.g. `printf("%f %f", a, b)`) already
-            // has `a`'s own promoted value sitting live in `xmm0`
-            // (its real "POP FARG0" destination) by the time `b`'s
-            // own "PUSH b / PROMOTE_F32_TO_F64 / POP FARG1" sequence
-            // runs -- using `xmm0` as this mnemonic's own scratch
-            // register for `b` would silently overwrite `a`'s
-            // already-transferred value before the call ever runs
-            // (confirmed directly: printed both floats as `b`'s own
-            // value before this fix). `xmm8` is never a real SysV or
-            // win64 argument register in either convention (both cap
-            // out at `xmm7`/`xmm3` respectively), so it can never
-            // collide with a live, not-yet-consumed `FARGn`
-            // transfer, no matter how many float arguments a call
-            // has or how many of them have already landed in their
-            // own real argument register by the time this mnemonic
-            // runs for a later one.
+            // See README.md, "Float (SSE) cases" (scratch is xmm8, never xmm0).
             hub.emit.popReg("rax");
             hub.calls.movRegToXmm("rax", hub.gen.rfXmmA());
             hub.emit.raw(("    cvtss2sd %" + hub.gen.rfXmmA() + ", %" + hub.gen.rfXmmA()));
@@ -840,18 +692,9 @@ final class X86CasesA {
             hub.emit.pushReg("rax");
             return true;
         } else if (mnemonic.equals("PUSH_FIELDNAME")) {
-            // Already address-lowered to "PUSH_FIELDNAME offset
-            // size" -- pushes the (compile-time-constant) field
-            // offset as an immediate, for the DOT/DOT_LHS that
-            // always immediately follows to add to the base address
-            // already on the stack.
             long offset = Long.parseLong(line.get(1).text);
             hub.emit.movImmToReg("rax", offset);
             hub.emit.pushReg("rax");
-            // Preserve a pending value-block across this (see PUSH's
-            // own note above) -- e.g. a DOT chained right after a
-            // LOOKUP_ARRAY read needs to know the element value
-            // LOOKUP_ARRAY just left on the stack is still there.
             core.lastValueBlockSize = pendingBlockSize;
             return true;
         } else if (mnemonic.equals("DOT_LHS")) {
