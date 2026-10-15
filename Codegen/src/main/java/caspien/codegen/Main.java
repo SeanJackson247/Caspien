@@ -1,8 +1,6 @@
 package caspien.codegen;
 
 import java.io.IOException;
-import java.io.PrintWriter;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 
@@ -30,12 +28,12 @@ public class Main {
 
         String config;
         try {
-            config = Files.readString(Paths.get("codegen.config"), StandardCharsets.UTF_8);
+            config = Files.readString(Paths.get("codegen.config"));
         } catch (IOException e) {
             throw new CodegenException("config", "codegen.config", 0,
                     "required config file 'codegen.config' could not be read: " + e.getMessage());
         }
-        String input = Files.readString(Paths.get(inputPath), StandardCharsets.UTF_8);
+        String input = Files.readString(Paths.get(inputPath));
 
         CodegenResult result = Codegen.generate(input, inputPath, config);
         for (String msg : result.messages) {
@@ -53,8 +51,6 @@ public class Main {
     }
 
     private static void writeFile(String path, String content) throws IOException {
-        try (PrintWriter pw = new PrintWriter(Files.newBufferedWriter(Paths.get(path), StandardCharsets.UTF_8))) {
-            pw.print(content);
-        }
+        Files.writeString(Paths.get(path), content);
     }
 }
