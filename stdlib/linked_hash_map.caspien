@@ -1,0 +1,169 @@
+// LinkedHashMap<K, V>: a map that iterates in insertion order. A `HashMap<K, u64>` maps each key to its position in `slots`, a dynarray of
+// (key, value, live) entries in insertion order. `remove` marks the entry dead (a tombstone) and, when more than half of `slots` is dead,
+// compacts it in place (the order of the live entries is kept). Setting an existing key keeps its position. Iterate with
+// `for match i in m.slots{ if m.isLive(m, i){ ... m.keyAt(m, i) ... } }`; `size()` counts live entries only.
+// K is a non-struct type of at most 8 bytes (the HashMap key). Built with `new LinkedHashMap:<u64, u64>(defaultKey, capacity)`.
+import "hash_map.caspien"
+
+@pub
+struct LinkedHashMapEntry<K, V>{@pub{
+	key: mut K
+	value: mut V
+	live: mut bool
+}}
+
+@pub
+struct LinkedHashMap<K, V>{@pub{
+	index: owns some mut HashMap<K, u64>
+	slots: owns some mut dynarray(mut LinkedHashMapEntry<K, V>)
+	count: mut u64
+}}
+
+/** `new LinkedHashMap:<K, V>(defaultKey, capacity)` -- an empty map; `capacity` is only the starting size of the index (it grows). `@throws`: the allocations can fail. */
+@pub
+@throws
+impl<K, V> constructor for LinkedHashMap<K, V>(defaultKey: mut K, capacity: mut u64) self{
+	?catch(e){ throw e }
+	let index = mut ? new HashMap:<K, u64>(defaultKey, mut 0, capacity)
+	let slots = mut ? dyn:<LinkedHashMapEntry:<K, V>>([])
+	return LinkedHashMap:<K, V>{index= index, slots= slots, count= mut 0}
+}
+
+@pub
+impl<K, V> LinkedHashMap<K, V>{
+	@pub
+	func size(_self: ref some imut self) mut u64{
+		return _self.count
+	}
+
+	/** Number of positions in `slots`, live or dead (the bound of an iteration loop; use `isLive`). */
+	@pub
+	func slotCount(_self: ref some imut self) mut u64{
+		return len(_self.slots)
+	}
+
+	/** The three accessors need a `match i in self.slots` proof, e.g. `for match i in m.slots{...}`. */
+	@pub
+	@lock(match i in self.slots)
+	@inline
+	func isLive(_self: ref some imut self, i: imut u64) mut bool{
+		return _self.slots[i].live
+	}
+
+	@pub
+	@lock(match i in self.slots)
+	@inline
+	func keyAt(_self: ref some imut self, i: imut u64) mut K{
+		return _self.slots[i].key
+	}
+
+	@pub
+	@lock(match i in self.slots)
+	@inline
+	func valueAt(_self: ref some imut self, i: imut u64) mut V{
+		return _self.slots[i].value
+	}
+
+	/** Inserts `key` at the end, or replaces the value of an existing key (its position stays). `@throws`: out of memory; the map is then unchanged. */
+	@pub
+	@throws
+	func set(_self: ref some mut self, key: mut K, value: mut V) void{
+		?catch(e){ throw e }
+		if _self.index.contains(_self.index, key){
+			let pos = mut _self.index.get(_self.index, key, mut 0)
+			match pos into _self.slots{
+				_self.slots[pos].value = value
+			}
+			return
+		}
+		let n = mut len(_self.slots)
+		let entry = mut LinkedHashMapEntry:<K, V>{key= key, value= value, live= true}
+		let grown = mut ? resize(_self.slots, mut (n + 1), entry)
+		_self.slots = grown
+		_self.index.set(_self.index, key, n)
+		if !_self.index.contains(_self.index, key){
+			match n into _self.slots{
+				_self.slots[n].live = false
+			}
+			throw "out of memory"
+		}
+		_self.count = mut (_self.count + 1)
+	}
+
+	/** `defaultValue` when `key` is absent. */
+	@pub
+	func get(_self: ref some imut self, key: mut K, defaultValue: mut V) mut V{
+		if _self.index.contains(_self.index, key){
+			let pos = mut _self.index.get(_self.index, key, mut 0)
+			match pos in _self.slots{
+				return _self.slots[pos].value
+			}
+		}
+		return defaultValue
+	}
+
+	@pub
+	func contains(_self: ref some imut self, key: mut K) mut bool{
+		return _self.index.contains(_self.index, key)
+	}
+
+	/** Removes `key` and returns whether it was there. */
+	@pub
+	func remove(_self: ref some mut self, key: mut K) mut bool{
+		if !_self.index.contains(_self.index, key){
+			return mut false
+		}
+		let pos = mut _self.index.get(_self.index, key, mut 0)
+		match pos into _self.slots{
+			_self.slots[pos].live = false
+		}
+		_self.index.remove(_self.index, key)
+		_self.count = mut (_self.count - 1)
+		let total = mut len(_self.slots)
+		let dead = mut (total - _self.count)
+		if dead > 8{
+			if dead * 2 > total{
+				try _self.compact(_self) catch(e){
+					return mut true
+				}
+			}
+		}
+		return mut true
+	}
+
+	/** Moves the live entries to the front in order and cuts the dead tail off. If the final shrink runs out of memory the dead tail stays (all marked dead), so the map is still consistent. */
+	@throws
+	func compact(_self: ref some mut self) void{
+		?catch(e){ throw e }
+		let n = mut len(_self.slots)
+		let zero = mut 0
+		match zero in _self.slots{
+			let seedK = mut _self.slots[zero].key
+			let seedV = mut _self.slots[zero].value
+			let w = mut 0
+			for r in 0..n{
+				match r in _self.slots{
+					if _self.slots[r].live{
+						let k = mut _self.slots[r].key
+						let v = mut _self.slots[r].value
+						match w into _self.slots{
+							_self.slots[w].key = k
+							_self.slots[w].value = v
+							_self.slots[w].live = true
+						}
+						_self.index.set(_self.index, k, w)
+						w = w + 1
+					}
+				}
+			}
+			for t in w..n{
+				match t into _self.slots{
+					_self.slots[t].live = false
+				}
+			}
+			let seed = mut LinkedHashMapEntry:<K, V>{key= seedK, value= seedV, live= false}
+			let shrunk = mut ? resize(_self.slots, w, seed)
+			_self.slots = shrunk
+		}
+	}
+}

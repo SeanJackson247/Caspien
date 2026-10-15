@@ -1,0 +1,157 @@
+// TreeMap<K, V>: a sorted map. One dynarray of (key, value) entries kept in ascending key order; lookup is a binary search, insert and remove
+// shift the entries after the position, so they are O(n) (lookup O(log n)). Iterate in sorted order with `size()`, `keyAt(i)`, `valueAt(i)`
+// under a `for match i in t.slots` proof. K must be ordered with `<` and `==` (a non-struct type of at most 8 bytes, like the HashMap key).
+// Built with `new TreeMap:<u64, u64>()`.
+
+@pub
+struct TreeMapEntry<K, V>{@pub{
+	key: mut K
+	value: mut V
+}}
+
+@pub
+struct TreeMap<K, V>{@pub{
+	slots: owns some mut dynarray(mut TreeMapEntry<K, V>)
+}}
+
+/** `new TreeMap:<K, V>()` -- an empty map. `@throws`: the allocation can fail. */
+@pub
+@throws
+impl<K, V> constructor for TreeMap<K, V>() self{
+	?catch(e){ throw e }
+	let slots = mut ? dyn:<TreeMapEntry:<K, V>>([])
+	return TreeMap:<K, V>{slots= slots}
+}
+
+@pub
+impl<K, V> TreeMap<K, V>{
+	/** Index of the first entry whose key is not less than `key` (`size()` when every key is smaller). Binary search over at most 64 halvings. */
+	@pub
+	func lowerBound(_self: ref some imut self, key: mut K) mut u64{
+		let lo = mut 0
+		let hi = mut len(_self.slots)
+		for step in 0..64{
+			if lo < hi{
+				let mid = mut (lo + bits_right(hi - lo, 1))
+				match mid in _self.slots{
+					if _self.slots[mid].key < key{
+						lo = mid + 1
+					}
+					else{
+						hi = mid
+					}
+				}
+			}
+		}
+		return lo
+	}
+
+	@pub
+	func size(_self: ref some imut self) mut u64{
+		return len(_self.slots)
+	}
+
+	/** The caller holds a `match i in self.slots` proof (e.g. `for match i in t.slots{...}`). */
+	@pub
+	@lock(match i in self.slots)
+	@inline
+	func keyAt(_self: ref some imut self, i: imut u64) mut K{
+		return _self.slots[i].key
+	}
+
+	@pub
+	@lock(match i in self.slots)
+	@inline
+	func valueAt(_self: ref some imut self, i: imut u64) mut V{
+		return _self.slots[i].value
+	}
+
+	/** Inserts `key`, or replaces its value. `@throws`: growing the array can fail (out of memory); the map is then unchanged. */
+	@pub
+	@throws
+	func set(_self: ref some mut self, key: mut K, value: mut V) void{
+		?catch(e){ throw e }
+		let n = mut len(_self.slots)
+		let pos = mut _self.lowerBound(_self, key)
+		match pos in _self.slots{
+			if _self.slots[pos].key == key{
+				_self.slots[pos].value = value
+				return
+			}
+		}
+		let entry = mut TreeMapEntry:<K, V>{key= key, value= value}
+		let grown = mut ? resize(_self.slots, mut (n + 1), entry)
+		_self.slots = grown
+		let moves = mut (n - pos)
+		for k in 0..moves{
+			let j = mut (n - k)
+			let prev = mut (j - 1)
+			match prev in _self.slots{
+				let pk = mut _self.slots[prev].key
+				let pv = mut _self.slots[prev].value
+				match j into _self.slots{
+					_self.slots[j].key = pk
+					_self.slots[j].value = pv
+				}
+			}
+		}
+		match pos into _self.slots{
+			_self.slots[pos].key = key
+			_self.slots[pos].value = value
+		}
+	}
+
+	/** `defaultValue` when `key` is absent. */
+	@pub
+	func get(_self: ref some imut self, key: mut K, defaultValue: mut V) mut V{
+		let pos = mut _self.lowerBound(_self, key)
+		match pos in _self.slots{
+			if _self.slots[pos].key == key{
+				return _self.slots[pos].value
+			}
+		}
+		return defaultValue
+	}
+
+	@pub
+	func contains(_self: ref some imut self, key: mut K) mut bool{
+		let pos = mut _self.lowerBound(_self, key)
+		match pos in _self.slots{
+			if _self.slots[pos].key == key{
+				return mut true
+			}
+		}
+		return mut false
+	}
+
+	/** Removes `key` and returns whether it was there. If shrinking the array fails the entry stays in the map and false is returned. */
+	@pub
+	func remove(_self: ref some mut self, key: mut K) mut bool{
+		?catch(e){ return mut false }
+		let n = mut len(_self.slots)
+		let pos = mut _self.lowerBound(_self, key)
+		match pos in _self.slots{
+			if _self.slots[pos].key == key{
+				let last = mut (n - 1)
+				let seedK = mut _self.slots[pos].key
+				let seedV = mut _self.slots[pos].value
+				for i in pos..last{
+					let next = mut (i + 1)
+					match next in _self.slots{
+						let nk = mut _self.slots[next].key
+						let nv = mut _self.slots[next].value
+						match i into _self.slots{
+							_self.slots[i].key = nk
+							_self.slots[i].value = nv
+						}
+					}
+				}
+				let seed = mut TreeMapEntry:<K, V>{key= seedK, value= seedV}
+				let shrunk = mut ? resize(_self.slots, last, seed)
+				_self.slots = shrunk
+				return mut true
+			}
+		}
+		return mut false
+	}
+}

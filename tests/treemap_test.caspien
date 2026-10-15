@@ -1,0 +1,75 @@
+// TreeMap: a random set/remove/contains run checked against treemap_test.py, then a sorted-iteration check and edge cases.
+import "../stdlib/libc.caspien"
+import "../stdlib/tree_map.caspien"
+import "../stdlib/gt/*"
+
+func check(name: static imut string, ok: imut bool) void{
+	unsafe extern{
+		if ok{ printf("PASS %s\n", name) }
+		else{ printf("FAIL %s\n", name) }
+	}
+}
+
+func main() void{
+	?catch(e){
+		unsafe extern{ printf("FAIL uncaught: %s\n", e.msg) }
+		return
+	}
+	let m = mut ? new TreeMap:<u64, u64>()
+	let x = mut 777
+	let removed = mut 0
+	let found = mut 0
+	for i in 0..6000{
+		x = (x * 1103515245 + 12345) % 2147483648
+		let op = mut (bits_right(x, 16) % 4)
+		let key = mut (bits_right(x, 8) % 1500)
+		if op < 2{
+			? m.set(m, key, i)
+		}
+		else{
+			if op == 2{
+				if m.remove(m, key){ removed = removed + 1 }
+			}
+			else{
+				if m.contains(m, key){ found = found + 1 }
+			}
+		}
+	}
+	let keySum = mut 0
+	let valSum = mut 0
+	let weighted = mut 0
+	let ascending = mut true
+	let prev = mut 0
+	for match i in m.slots{
+		let k = mut m.keyAt(m, i)
+		keySum = keySum + k
+		valSum = valSum + m.valueAt(m, i)
+		weighted = (weighted + (i + 1) * k) % 1000003
+		if i != 0{
+			if k <= prev{ ascending = false }
+		}
+		prev = k
+	}
+	check("random run: size", m.size(m) == 943)
+	check("random run: removes", removed == 681)
+	check("random run: contains", found == 715)
+	check("sum of keys", keySum == 711127)
+	check("sum of values", valSum == 4083601)
+	check("iteration is strictly ascending", ascending)
+	check("position-weighted checksum", weighted == 52840)
+
+	let t = mut ? new TreeMap:<s32, u8>()
+	? t.set(t, mut 5, mut 50)
+	? t.set(t, mut -3, mut 30)
+	? t.set(t, mut 9, mut 90)
+	? t.set(t, mut 5, mut 51)
+	check("replace keeps size", t.size(t) == 3)
+	check("get replaced", t.get(t, mut 5, mut 0) == 51)
+	check("negative key sorts first", t.lowerBound(t, mut -3) == 0 && t.lowerBound(t, mut 5) == 1)
+	check("lowerBound between keys", t.lowerBound(t, mut 6) == 2 && t.lowerBound(t, mut 10) == 3)
+	check("absent get", t.get(t, mut 4, mut 99) == 99)
+	check("remove absent", !t.remove(t, mut 4))
+	check("remove present", t.remove(t, mut -3) && t.size(t) == 2 && !t.contains(t, mut -3))
+	check("remove last", t.remove(t, mut 9) && t.remove(t, mut 5) && t.size(t) == 0)
+	check("remove from empty", !t.remove(t, mut 5))
+}
