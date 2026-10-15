@@ -218,4 +218,146 @@ impl String{
 			_self.chars.set(_self.chars, i, c)
 		}
 	}
+
+	/** Number of characters (the dynarray's own length). */
+	@pub
+	func length(_self: ref some imut self) mut u64{
+		return len(_self.chars.backing)
+	}
+
+	/** True when there are no characters. */
+	@pub
+	func isEmpty(_self: ref some imut self) bool{
+		return len(_self.chars.backing) == 0
+	}
+
+	/** True when `other` has exactly the same characters. `other` may be `_self` itself. */
+	@pub
+	func equals(_self: ref some imut self, other: ref some imut self) bool{
+		let n = mut len(_self.chars.backing)
+		if n != len(other.chars.backing){
+			return false
+		}
+		for i in 0..n{
+			match i in _self.chars.backing{
+				match i in other.chars.backing{
+					if _self.chars.backing[i] != other.chars.backing[i]{
+						return false
+					}
+				}
+			}
+		}
+		return true
+	}
+
+	/** True when the characters equal the literal's. Does not allocate (the literal is walked byte by byte). */
+	@pub
+	func equals(_self: ref some imut self, other: static imut string) bool{
+		return _self.matchLiteral(_self, other, false, false)
+	}
+
+	/** True when `other` is a prefix of the characters. */
+	@pub
+	func startsWith(_self: ref some imut self, other: ref some imut self) bool{
+		let n = mut len(other.chars.backing)
+		if n > len(_self.chars.backing){
+			return false
+		}
+		for i in 0..n{
+			match i in _self.chars.backing{
+				match i in other.chars.backing{
+					if _self.chars.backing[i] != other.chars.backing[i]{
+						return false
+					}
+				}
+			}
+		}
+		return true
+	}
+
+	/** True when the literal is a prefix of the characters. Does not allocate. */
+	@pub
+	func startsWith(_self: ref some imut self, other: static imut string) bool{
+		return _self.matchLiteral(_self, other, true, false)
+	}
+
+	/** True when `other` is a suffix of the characters. */
+	@pub
+	func endsWith(_self: ref some imut self, other: ref some imut self) bool{
+		let n = mut len(other.chars.backing)
+		let m = mut len(_self.chars.backing)
+		if n > m{
+			return false
+		}
+		let off = mut (m - n)
+		for i in 0..n{
+			let j = mut (off + i)
+			match j in _self.chars.backing{
+				match i in other.chars.backing{
+					if _self.chars.backing[j] != other.chars.backing[i]{
+						return false
+					}
+				}
+			}
+		}
+		return true
+	}
+
+	/** True when the literal is a suffix of the characters. Does not allocate. */
+	@pub
+	func endsWith(_self: ref some imut self, other: static imut string) bool{
+		return _self.matchLiteral(_self, other, false, true)
+	}
+
+	/**
+	 * Shared walk for the literal overloads: `prefix` = the literal may be shorter (match its length from the
+	 * start), `suffix` = match it against the end; neither = the lengths must be equal. Reads the literal one
+	 * byte at a time under `unsafe memcopy raw loop` (a non-freeing tag set, so callers' proofs survive).
+	 */
+	func matchLiteral(_self: ref some imut self, lit: static imut string, prefix: imut bool, suffix: imut bool) bool{
+		let m = mut len(_self.chars.backing)
+		let ln = mut 0
+		let:<raw mut u8> lp = null
+		unsafe memcopy raw{
+			let tmp = mut raw lit
+			memcopy(raw lp, mut 8, raw tmp)
+		}
+		unsafe memcopy raw loop{
+			let scan = mut lp
+			loop{
+				let b = mut 0
+				memcopy(raw b, mut 1, scan)
+				if b == mut 0{
+					break
+				}
+				ln = mut (ln + 1)
+				scan++
+			}
+		}
+		if ln > m{
+			return false
+		}
+		if prefix == false && suffix == false && ln != m{
+			return false
+		}
+		let off = mut 0
+		if suffix{
+			off = mut (m - ln)
+		}
+		let q = mut lp
+		for i in 0..ln{
+			let b = mut '\0'
+			unsafe memcopy raw{
+				memcopy(raw b, mut 1, q)
+			}
+			q++
+			let j = mut (off + i)
+			match j in _self.chars.backing{
+				if _self.chars.backing[j] != b{
+					return false
+				}
+			}
+		}
+		return true
+	}
 }
