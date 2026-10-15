@@ -126,7 +126,7 @@ func main() void{
 	check("struct field sum value", sv == %d)
 	check("struct field sum w", sw == %d)
 	check("struct field mixed", alt == %d)
-	let m = mut ? new HashMap:<u64>(mut 0, mut 0, mut 8)
+	let m = mut ? new HashMap:<u64, u64>(mut 0, mut 0, mut 8)
 	let ks = mut ? dyn([3, 11, 19, 27, 35, 43, 51, 59])
 	for i in 0..8{
 		match i in ks{

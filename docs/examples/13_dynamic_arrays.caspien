@@ -74,7 +74,7 @@ func main() void{
 	let idx = mut s.firstIndexOf(s, 'l')              // -1 when absent
 	unsafe extern{ printf("String: len=%llu char=%c index=%lld\n", slen, ch, idx) }
 
-	let m = mut ? new HashMap:<u64>(mut 0, mut 0, mut 16)
+	let m = mut ? new HashMap:<u64, u64>(mut 0, mut 0, mut 16)
 	m.set(m, mut 7, mut 70)
 	let hit = mut m.get(m, mut 7, mut 999)
 	let miss = mut m.get(m, mut 8, mut 999)

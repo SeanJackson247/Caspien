@@ -1996,7 +1996,7 @@ target linux                 # in ===codegen.config===, was windows_gnu
 | `print.caspien` | `print(x)` and `println(x)` for text, `u8`..`u64`, `s8`..`s64`, `f32`/`f64` (`%g`), `bool` (`true`/`false`) and `char`: each wraps one libc call, so the caller needs no `unsafe`. Output goes to stdout. |
 | `print_string.caspien` | `print(s)` / `println(s)` for a `String` (a plain `ref`; null prints `null`). A separate file because `String` allocates, so it needs the `gt_*` runtime. |
 | `dynamic_array.caspien` | `DynamicArray<T>`: `pushBack`, `popBack`, `pushFront`, `popFront`, `get`, `set`, and `...Ptr` twins for struct elements. |
-| `hash_map.caspien` | `HashMap<T>`: `set`, `get`, `contains`; open addressing, starting capacity rounded up to a power of two, grows by doubling at 70% load. |
+| `hash_map.caspien` | `HashMap<K, V>`: `set`, `get`, `contains`; open addressing, starting capacity rounded up to a power of two, grows by doubling at 70% load. |
 | `string.caspien` | `String`: a growable byte string with `concat`, `appendChar`, `sub`, `charAt`, `setCharAt`, `firstIndexOf`. |
 | `insecure_hash.caspien` | `insecure_hashOf<T>` and `insecure_fnv1a64Bytes`: FNV-1a, for hash tables only. |
 | `sha256.caspien` | SHA-256 (one-shot and streaming) on raw buffers. A real cryptographic hash, but a plain one: no constant-time or side-channel claims. |
@@ -2020,7 +2020,7 @@ The classes below wrap dynarrays, strings and hash maps. Each is in its own file
   element type use the `...Ptr` variants (`pushBackPtr(list, auto s)`), which take a pointer.
 - `String` (`new String("hello")`) has `appendChar`, `concat`, `charAt`, `setCharAt`, `sub` and
   `firstIndexOf`, which returns -1 when the character is absent.
-- `HashMap<T>` (`new HashMap:<u64>(defaultKey, defaultValue, capacity)`) has `set`, `get` and `contains`.
+- `HashMap<K, V>` (`new HashMap:<u64, u64>(defaultKey, defaultValue, capacity)`) has `set`, `get` and `contains`.
   The capacity is the starting size (rounded up to a power of two; 0 means every `set` is ignored); the table doubles when it is 70% full. There is no remove.
 - `insecure_hash.caspien` (FNV-1a, for hash tables only: it is not a security primitive, hence the name) and
   `sha256.caspien` (a real SHA-256), `process.caspien` (spawn a process and read or write its
@@ -2064,7 +2064,7 @@ let popped = mut ? list.popBack(list, mut 999)                   // 25; the argu
 let two = mut 2
 match two into list.backing{ list.set(list, two, mut 100) }      // `into` is the write proof, `in` the read proof
 
-// HashMap<u64>: key and value share one type, the capacity is only the starting size (the table grows by doubling)
+// HashMap<u64, u64> (key type, value type): the capacity is only the starting size (the table grows by doubling)
 let counts = mut ? new HashMap:<u64>(mut 0, mut 0, mut 64)       // (default key, default value, capacity)
 let seen = mut counts.get(counts, mut 3, mut 0)                  // the last argument is the answer for a missing key
 counts.set(counts, mut 3, seen + 1)

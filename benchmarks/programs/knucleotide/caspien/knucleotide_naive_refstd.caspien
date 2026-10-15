@@ -1,5 +1,5 @@
 // REF-IN-STDLIB variant of knucleotide_naive: identical program, but the stdlib HashMap is stdlib/ref/hash_map.caspien (separate chaining over self-referential `ref` nodes) instead of the open-addressing stdlib/hash_map.caspien.
-// k-nucleotide benchmark, NAIVE variant: stdlib DynamicArray<u8>/<u64> for the sequence and the query tables, and the stdlib HashMap<u64> (stdlib/hash_map.caspien, which hashes each key with its own multiply/xor-shift mix) for the k-mer counts.
+// k-nucleotide benchmark, NAIVE variant: stdlib DynamicArray<u8>/<u64> for the sequence and the query tables, and the stdlib HashMap<u64, u64> (stdlib/hash_map.caspien, which hashes each key with its own multiply/xor-shift mix) for the k-mer counts.
 // Same sequence, k-mers and output as knucleotide.c (read its header): N = KNUC_N bases from the benchmarks-game LCG, the packed 2-bit
 // k-mers for k = 1,2,3,4,6,12 are counted in a hash map, prints 18 numbers (6 distinct counts, then 12 k-mer counts).
 // The map grows by itself (the capacity is only a starting size, rounded up to a power of two); it is still created per k with capacity 2 x min(4^k, N-k+1, 139968) + 1,
@@ -187,7 +187,7 @@ func main() void{
 			let key = mut 0
 			let kmask = mut (64 - 2 * k)
 			let cap = mut (two + 1)
-			let m = mut ? new HashMap:<u64>(zw, zw, cap)
+			let m = mut ? new HashMap:<u64, u64>(zw, zw, cap)
 			for i in 0..n{
 				let sv = mut 0
 				match i in seq.backing{

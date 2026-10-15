@@ -106,7 +106,7 @@ func testHash() mut u64{
 func testHashMap() mut u64{
 	?catch(e){ return 1 }
 	let fails = mut 0
-	let m = mut ? new HashMap:<u64>(mut 0, mut 0, mut 8)
+	let m = mut ? new HashMap:<u64, u64>(mut 0, mut 0, mut 8)
 	fails = mut (fails + check("HashMap: new -> count 0", m.count == 0))
 	fails = mut (fails + check("HashMap: capacity 8", m.capacity == 8))
 	m.set(m, mut 3, mut 30)
@@ -123,7 +123,7 @@ func testHashMap() mut u64{
 	fails = mut (fails + check("HashMap: contains hit", m.contains(m, mut 11)))
 	fails = mut (fails + check("HashMap: contains miss", !m.contains(m, mut 12)))
 
-	let z = mut ? new HashMap:<u64>(mut 0, mut 0, mut 0)
+	let z = mut ? new HashMap:<u64, u64>(mut 0, mut 0, mut 0)
 	z.set(z, mut 1, mut 2)
 	fails = mut (fails + check("HashMap: zero capacity set is a no-op", z.count == 0))
 	fails = mut (fails + check("HashMap: zero capacity get -> default", z.get(z, mut 1, mut 555) == 555))

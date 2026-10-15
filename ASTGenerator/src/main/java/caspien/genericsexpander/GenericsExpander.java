@@ -339,10 +339,22 @@ public class GenericsExpander {
         }
     }
 
+    /** Next top-level ',' or TERMINATOR at or after `from`; a ',' inside a type-argument list ("Pair<K, V>") is not a separator. */
     private int findNextSeparator(List<Token> flat, int from) {
+        int angleDepth = 0;
         for (int i = from; i < flat.size(); i++) {
             Token t = flat.get(i);
-            if ((t.type == TokenType.OPERATOR && t.text.equals(",")) || t.type == TokenType.TERMINATOR) {
+            if (t.type == TokenType.TERMINATOR) {
+                return i;
+            }
+            if (t.type != TokenType.OPERATOR) {
+                continue;
+            }
+            if (t.text.equals("<")) {
+                angleDepth++;
+            } else if (t.text.equals(">") && angleDepth > 0) {
+                angleDepth--;
+            } else if (t.text.equals(",") && angleDepth == 0) {
                 return i;
             }
         }

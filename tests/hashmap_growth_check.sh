@@ -28,7 +28,7 @@ func main() void{
 		unsafe extern{ printf("CAUGHT %s\n", e.msg) }
 		return
 	}
-	let m = mut ? new HashMap:<u64>(mut 0, mut 0, mut 4)
+	let m = mut ? new HashMap:<u64, u64>(mut 0, mut 0, mut 4)
 	for i in 1..7{
 		m.set(m, i, i * 10)
 	}

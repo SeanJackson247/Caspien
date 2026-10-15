@@ -1,5 +1,5 @@
-// A general-purpose HashMap<T,T> -- key and value share one type
-// parameter. Real `impl<T> HashMap<T>` methods, `_self` a genuine
+// A general-purpose HashMap<K, V> -- K is the key type, V the value
+// type. Real `impl<K, V> HashMap<K, V>` methods, `_self` a genuine
 // `ref` -- **not** a plain (no-storage) value, corrected for the same
 // reason `DynamicArray<T>` was (see its own file-level comment for
 // the full reasoning): a plain `_self` never actually made mutations
@@ -9,7 +9,7 @@
 // `checkDot`'s liveness-proof restriction only ever fires on a value
 // with real storage. No `unsafe` anywhere in this file at all -- each
 // method's own probing walk used a bare `loop{...}` until `for` could
-// express it. Key equality uses "==" directly on T -- confirmed to
+// express it. Key equality uses "==" directly on K -- confirmed to
 // type-check for two struct values of the same type, not just
 // primitives ("checkComparison" only requires both sides share a
 // base type, no restriction to numeric/pointer types at all).
@@ -32,7 +32,7 @@
 // caller-side obligation at all -- `_self.capacity` is an ordinary
 // runtime field read, not a parameter or a literal a `match` could
 // name. A zero-capacity map is a real, if degenerate, construction
-// (`new HashMap:<T>(k, v, mut 0)` type-checks and compiles
+// (`new HashMap:<K, V>(k, v, mut 0)` type-checks and compiles
 // cleanly), so this stays a genuine, internal runtime guard -- `set`
 // silently no-ops on one, `get`/`contains` still return their own
 // caller-supplied `defaultValue`/`false`, the same fallback pattern
@@ -50,26 +50,26 @@
 // non-struct type of at most 8 bytes), not by the byte-wise FNV-1a of `insecure_hashOf`; the map's observable behaviour
 // (set/get/contains/count) does not depend on the hash.
 //
-// `HashMap` is built with its constructor, `new HashMap:<u64>(k, v, cap)`.
+// `HashMap` is built with its constructor, `new HashMap:<u64, u64>(k, v, cap)`.
 import "libc.caspien"
 
 @pub
-struct HashMapEntry<T>{@pub{
-	key: mut T
-	value: mut T
+struct HashMapEntry<K, V>{@pub{
+	key: mut K
+	value: mut V
 }}
 
 @pub
-struct HashMap<T>{@pub{
-	slots: owns some mut dynarray(mut HashMapEntry<T>)
+struct HashMap<K, V>{@pub{
+	slots: owns some mut dynarray(mut HashMapEntry<K, V>)
 	ctrl: owns some mut dynarray(mut u8)
 	capacity: mut u64
 	count: mut u64
 }}
 
 /** The slot-selection hash of `HashMap`: the key's bytes as one 64-bit word, multiplied by a odd constant (Fibonacci hashing), then the high half folded into the low half (the table index uses the LOW bits). Not collision-resistant, like `insecure_hashOf`. */
-func hashKey<T>(x: imut T) mut u64{
-	let byteCount = mut sizeof(T)
+func hashKey<K>(x: imut K) mut u64{
+	let byteCount = mut sizeof(K)
 	let:<mut u64> bits = mut 0
 	unsafe memcopy raw{
 		memcopy(raw bits, byteCount, raw x)
@@ -78,10 +78,10 @@ func hashKey<T>(x: imut T) mut u64{
 	return bits_xor(h, bits_right(h, 32))
 }
 
-/** `new HashMap:<T>(defaultKey, defaultValue, capacity)` -- `defaultKey`/`defaultValue` seed every initially-empty slot (never read as real data; the control byte of each slot starts 0). `capacity` is the STARTING size, rounded up to a power of two (0 stays 0: a degenerate map that ignores every `set`); the map grows by itself. `@throws`: the allocations (out of memory) can fail; the caught error is simply re-thrown to the caller. */
+/** `new HashMap:<K, V>(defaultKey, defaultValue, capacity)` -- `defaultKey`/`defaultValue` seed every initially-empty slot (never read as real data; the control byte of each slot starts 0). `capacity` is the STARTING size, rounded up to a power of two (0 stays 0: a degenerate map that ignores every `set`); the map grows by itself. `@throws`: the allocations (out of memory) can fail; the caught error is simply re-thrown to the caller. */
 @pub
 @throws
-impl<T> constructor for HashMap<T>(defaultKey: mut T, defaultValue: mut T, capacity: mut u64) self{
+impl<K, V> constructor for HashMap<K, V>(defaultKey: mut K, defaultValue: mut V, capacity: mut u64) self{
 	?catch(e){ throw e }
 	let cap = mut 0
 	match capacity != 0{
@@ -92,17 +92,17 @@ impl<T> constructor for HashMap<T>(defaultKey: mut T, defaultValue: mut T, capac
 			}
 		}
 	}
-	let seed = mut HashMapEntry:<T>{key= defaultKey, value= defaultValue}
-	let slots = mut ? dyn:<HashMapEntry:<T>>([])
+	let seed = mut HashMapEntry:<K, V>{key= defaultKey, value= defaultValue}
+	let slots = mut ? dyn:<HashMapEntry:<K, V>>([])
 	let grownSlots = mut ? resize(slots, cap, seed)
 	let ctrl = mut ? dyn:<u8>([])
 	let:<mut u8> unused = mut 0
 	let grownCtrl = mut ? resize(ctrl, cap, unused)
-	return HashMap:<T>{slots= grownSlots, ctrl= grownCtrl, capacity= cap, count= mut 0}
+	return HashMap:<K, V>{slots= grownSlots, ctrl= grownCtrl, capacity= cap, count= mut 0}
 }
 
 @pub
-impl<T> HashMap<T>{
+impl<K, V> HashMap<K, V>{
 	/** Doubles the capacity and re-inserts every key. `@throws` only for the allocations, which all happen before the old table is touched, so a failure leaves the map exactly as it was. */
 	@throws
 	func grow(_self: ref some mut self) void{
@@ -113,7 +113,7 @@ impl<T> HashMap<T>{
 		let:<mut u8> emptyCtrl = mut 0
 		match zero in _self.slots{
 			let seed = mut _self.slots[zero]
-			let fresh = mut ? dyn:<HashMapEntry:<T>>([])
+			let fresh = mut ? dyn:<HashMapEntry:<K, V>>([])
 			let newSlots = mut ? resize(fresh, newCap, seed)
 			let freshCtrl = mut ? dyn:<u8>([])
 			let newCtrl = mut ? resize(freshCtrl, newCap, emptyCtrl)
@@ -126,7 +126,7 @@ impl<T> HashMap<T>{
 						match i in oldSlots{
 							let k = mut oldSlots[i].key
 							let v = mut oldSlots[i].value
-							let start = mut bits_and(hashKey:<T>(imut k), mask)
+							let start = mut bits_and(hashKey:<K>(imut k), mask)
 							for steps in 0..newCap{
 								let idx = mut bits_and(start + steps, mask)
 								match idx into newCtrl{
@@ -151,11 +151,11 @@ impl<T> HashMap<T>{
 	}
 
 	/** Probe-and-store without any growth: updates `key` if present, else takes the first empty slot of its probe run (nothing at all when the table is full). */
-	func insert(_self: ref some mut self, key: mut T, value: mut T) void{
+	func insert(_self: ref some mut self, key: mut K, value: mut V) void{
 		let cap = mut _self.capacity
 		match cap != 0{
 			let mask = mut (cap - 1)
-			let startIdx = mut bits_and(hashKey:<T>(imut key), mask)
+			let startIdx = mut bits_and(hashKey:<K>(imut key), mask)
 			for steps in 0..cap{
 				let idx = mut bits_and(startIdx + steps, mask)
 				match idx into _self.ctrl{
@@ -181,7 +181,7 @@ impl<T> HashMap<T>{
 
 	/** Inserts, or updates the value if `key` is already present. `void`, so `match Some(_self){...}` with no `else` needs nothing further -- a null `_self` simply makes this a no-op. A map of capacity 0 ignores every key. The table doubles first when one more key would pass 70% load; if that growth runs out of memory the key is inserted into the old table. */
 	@pub
-	func set(_self: ref some mut self, key: mut T, value: mut T) void{
+	func set(_self: ref some mut self, key: mut K, value: mut V) void{
 		let cap = mut _self.capacity
 		match cap != 0{
 			if (_self.count + 1) * 10 > cap * 7{
@@ -196,11 +196,11 @@ impl<T> HashMap<T>{
 
 	/** `defaultValue` is returned when `key` isn't present, or when `_self.capacity` is zero (a degenerate construction, see this file's own header comment) -- there's no way to signal "not found" separately without a real option/result type, which this language doesn't have yet; use `contains` first if the distinction matters. */
 	@pub
-	func get(_self: ref some imut self, key: mut T, defaultValue: mut T) mut T{
+	func get(_self: ref some imut self, key: mut K, defaultValue: mut V) mut V{
 		let cap = mut _self.capacity
 		match cap != 0{
 			let mask = mut (cap - 1)
-			let startIdx = mut bits_and(hashKey:<T>(imut key), mask)
+			let startIdx = mut bits_and(hashKey:<K>(imut key), mask)
 			for steps in 0..cap{
 				let idx = mut bits_and(startIdx + steps, mask)
 				match idx in _self.ctrl{
@@ -220,11 +220,11 @@ impl<T> HashMap<T>{
 	}
 
 	@pub
-	func contains(_self: ref some imut self, key: mut T) mut bool{
+	func contains(_self: ref some imut self, key: mut K) mut bool{
 		let cap = mut _self.capacity
 		match cap != 0{
 			let mask = mut (cap - 1)
-			let startIdx = mut bits_and(hashKey:<T>(imut key), mask)
+			let startIdx = mut bits_and(hashKey:<K>(imut key), mask)
 			for steps in 0..cap{
 				let idx = mut bits_and(startIdx + steps, mask)
 				match idx in _self.ctrl{

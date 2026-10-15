@@ -1,4 +1,4 @@
-// REF variant of stdlib/hash_map.caspien: the same HashMap<T> API (`new HashMap:<T>(defaultKey, defaultValue, capacity)`, `set`, `get`, `contains`,
+// REF variant of stdlib/hash_map.caspien: the same HashMap<K, V> API (`new HashMap:<K, V>(defaultKey, defaultValue, capacity)`, `set`, `get`, `contains`,
 // the `count` and `capacity` fields, a capacity rounded up to a power of two, 0 = a map that ignores every `set`, growth at 70% load, as the original) but
 // built the way a C programmer would: SEPARATE CHAINING. Every entry is its own heap node `HashMapNode{key, value, next}` whose `next` is a plain
 // `ref` to another node of the same struct (a self-referential struct, which the language allows for `ref` only), the bucket array holds `ref` heads,
@@ -12,33 +12,33 @@
 import "../libc.caspien"
 
 @pub
-struct HashMapNode<T>{@pub{
-	key: mut T
-	value: mut T
-	next: ref mut HashMapNode<T>
+struct HashMapNode<K, V>{@pub{
+	key: mut K
+	value: mut V
+	next: ref mut HashMapNode<K, V>
 }}
 
 @pub
-struct HashMapOwner<T>{@pub{
-	n: owns mut HashMapNode<T>
+struct HashMapOwner<K, V>{@pub{
+	n: owns mut HashMapNode<K, V>
 }}
 
 @pub
-struct HashMapHead<T>{@pub{
-	n: ref mut HashMapNode<T>
+struct HashMapHead<K, V>{@pub{
+	n: ref mut HashMapNode<K, V>
 }}
 
 @pub
-struct HashMap<T>{@pub{
-	owners: owns some mut dynarray(mut HashMapOwner<T>)
-	heads: owns some mut dynarray(mut HashMapHead<T>)
+struct HashMap<K, V>{@pub{
+	owners: owns some mut dynarray(mut HashMapOwner<K, V>)
+	heads: owns some mut dynarray(mut HashMapHead<K, V>)
 	capacity: mut u64
 	count: mut u64
 }}
 
 /** Same hash as `hash_map.caspien`: the key's bytes as one 64-bit word times an odd constant, high half folded into the low half; the bucket index uses the LOW bits. */
-func hashKey<T>(x: imut T) mut u64{
-	let byteCount = mut sizeof(T)
+func hashKey<K>(x: imut K) mut u64{
+	let byteCount = mut sizeof(K)
 	let:<mut u64> bits = mut 0
 	unsafe memcopy raw{
 		memcopy(raw bits, byteCount, raw x)
@@ -47,10 +47,10 @@ func hashKey<T>(x: imut T) mut u64{
 	return bits_xor(h, bits_right(h, 32))
 }
 
-/** `new HashMap:<T>(defaultKey, defaultValue, capacity)` -- `defaultKey`/`defaultValue` are accepted for API compatibility (nodes are created by `set`, nothing is seeded). `capacity` is the STARTING bucket count, rounded up to a power of two (0 stays 0). `@throws` for the allocations. */
+/** `new HashMap:<K, V>(defaultKey, defaultValue, capacity)` -- `defaultKey`/`defaultValue` are accepted for API compatibility (nodes are created by `set`, nothing is seeded). `capacity` is the STARTING bucket count, rounded up to a power of two (0 stays 0). `@throws` for the allocations. */
 @pub
 @throws
-impl<T> constructor for HashMap<T>(defaultKey: mut T, defaultValue: mut T, capacity: mut u64) self{
+impl<K, V> constructor for HashMap<K, V>(defaultKey: mut K, defaultValue: mut V, capacity: mut u64) self{
 	?catch(e){ throw e }
 	let cap = mut 0
 	match capacity != 0{
@@ -61,25 +61,25 @@ impl<T> constructor for HashMap<T>(defaultKey: mut T, defaultValue: mut T, capac
 			}
 		}
 	}
-	let owners = mut ? dyn:<HashMapOwner:<T>>([])
-	let grownOwners = mut ? resize(owners, cap, HashMapOwner:<T>{n= null})
-	let heads = mut ? dyn:<HashMapHead:<T>>([])
-	let grownHeads = mut ? resize(heads, cap, HashMapHead:<T>{n= null})
-	return HashMap:<T>{owners= grownOwners, heads= grownHeads, capacity= cap, count= mut 0}
+	let owners = mut ? dyn:<HashMapOwner:<K, V>>([])
+	let grownOwners = mut ? resize(owners, cap, HashMapOwner:<K, V>{n= null})
+	let heads = mut ? dyn:<HashMapHead:<K, V>>([])
+	let grownHeads = mut ? resize(heads, cap, HashMapHead:<K, V>{n= null})
+	return HashMap:<K, V>{owners= grownOwners, heads= grownHeads, capacity= cap, count= mut 0}
 }
 
 @pub
-impl<T> HashMap<T>{
+impl<K, V> HashMap<K, V>{
 	/** Doubles the bucket count (and the owner slots) and re-links every node into the new bucket array. `@throws` only for the allocations, which all happen before anything is changed. */
 	@throws
 	func grow(_self: ref some mut self) void{
 		?catch(e){ throw e }
 		let oldCap = mut _self.capacity
 		let newCap = mut (oldCap * 2)
-		let freshHeads = mut ? dyn:<HashMapHead:<T>>([])
-		let newHeads = mut ? resize(freshHeads, newCap, HashMapHead:<T>{n= null})
+		let freshHeads = mut ? dyn:<HashMapHead:<K, V>>([])
+		let newHeads = mut ? resize(freshHeads, newCap, HashMapHead:<K, V>{n= null})
 		let oldOwners = mut _self.owners
-		let newOwners = mut ? resize(oldOwners, newCap, HashMapOwner:<T>{n= null})
+		let newOwners = mut ? resize(oldOwners, newCap, HashMapOwner:<K, V>{n= null})
 		_self.owners = newOwners
 		let mask = mut (newCap - 1)
 		let used = mut _self.count
@@ -90,7 +90,7 @@ impl<T> HashMap<T>{
 					let node = mut ref _self.owners[i].n
 					match Some(node){
 						let k = mut node.key
-						let h = mut bits_and(hashKey:<T>(imut k), mask)
+						let h = mut bits_and(hashKey:<K>(imut k), mask)
 						match Some(node){
 							match h in newHeads{
 								node.next = newHeads[h].n
@@ -111,14 +111,14 @@ impl<T> HashMap<T>{
 
 	/** Inserts, or updates the value if `key` is already present. A map of capacity 0 ignores every key; the table doubles first when one more key would pass 70% load (an out-of-memory growth is swallowed, then a full table ignores new keys). */
 	@pub
-	func set(_self: ref some mut self, key: mut T, value: mut T) void{
+	func set(_self: ref some mut self, key: mut K, value: mut V) void{
 		?catch(e){ return }
 		let cap = mut _self.capacity
 		match cap != 0{
 			let mask = mut (cap - 1)
-			let h = mut bits_and(hashKey:<T>(imut key), mask)
+			let h = mut bits_and(hashKey:<K>(imut key), mask)
 			match Some(_self){      // hashKey's `unsafe` ended the entry proof: match again
-				let nilHead = mut HashMapHead:<T>{n= null}
+				let nilHead = mut HashMapHead:<K, V>{n= null}
 				let cur = mut nilHead.n
 				let limit = mut (_self.count + 1)
 				match h in _self.heads{
@@ -143,7 +143,7 @@ impl<T> HashMap<T>{
 					match Some(_self){
 						cap = mut _self.capacity
 						mask = mut (cap - 1)
-						h = mut bits_and(hashKey:<T>(imut key), mask)
+						h = mut bits_and(hashKey:<K>(imut key), mask)
 					}
 				}
 				match Some(_self){      // so did grow
@@ -155,7 +155,7 @@ impl<T> HashMap<T>{
 					match h in _self.heads{
 						hd = _self.heads[h].n
 					}
-					let nn = mut ? new HashMapNode:<T>{key= key, value= value, next= hd}
+					let nn = mut ? new HashMapNode:<K, V>{key= key, value= value, next= hd}
 					match idx into _self.owners{
 						_self.owners[idx].n = nn
 					}
@@ -172,13 +172,13 @@ impl<T> HashMap<T>{
 
 	/** `defaultValue` is returned when `key` isn't present (or the capacity is zero). */
 	@pub
-	func get(_self: ref some imut self, key: mut T, defaultValue: mut T) mut T{
+	func get(_self: ref some imut self, key: mut K, defaultValue: mut V) mut V{
 		let cap = mut _self.capacity
 		match cap != 0{
 			let mask = mut (cap - 1)
-			let h = mut bits_and(hashKey:<T>(imut key), mask)
+			let h = mut bits_and(hashKey:<K>(imut key), mask)
 			match Some(_self){      // hashKey's `unsafe` ended the entry proof: match again
-				let nilHead = mut HashMapHead:<T>{n= null}
+				let nilHead = mut HashMapHead:<K, V>{n= null}
 				let cur = mut nilHead.n
 				let limit = mut (_self.count + 1)
 				match h in _self.heads{
@@ -203,13 +203,13 @@ impl<T> HashMap<T>{
 	}
 
 	@pub
-	func contains(_self: ref some imut self, key: mut T) mut bool{
+	func contains(_self: ref some imut self, key: mut K) mut bool{
 		let cap = mut _self.capacity
 		match cap != 0{
 			let mask = mut (cap - 1)
-			let h = mut bits_and(hashKey:<T>(imut key), mask)
+			let h = mut bits_and(hashKey:<K>(imut key), mask)
 			match Some(_self){      // hashKey's `unsafe` ended the entry proof: match again
-				let nilHead = mut HashMapHead:<T>{n= null}
+				let nilHead = mut HashMapHead:<K, V>{n= null}
 				let cur = mut nilHead.n
 				let limit = mut (_self.count + 1)
 				match h in _self.heads{
