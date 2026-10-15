@@ -478,7 +478,13 @@ final class X86Core {
      * unused high bytes is never actually observed.
      */
     static int roundUpToLoadableWidth(int size) {
-        return size <= 2 ? size : size <= 4 ? 4 : 8;
+        if (size <= 2) {
+            return size;
+        } else if (size <= 4) {
+            return 4;
+        } else {
+            return 8;
+        }
     }
 
     /** 3, 5, 6 and 7 bytes: no single x86 store has these widths. */
@@ -513,20 +519,30 @@ final class X86Core {
         if (content.length() == 1) {
             value = content.charAt(0);
         } else if (content.length() == 2 && content.charAt(0) == '\\') {
-            switch (content.charAt(1)) {
-                case '\\': value = '\\'; break;
-                case '"': value = '"'; break;
-                case 'n': value = '\n'; break;
-                case 't': value = '\t'; break;
-                case 'r': value = '\r'; break;
-                case '0': value = '\0'; break;
-                case 'b': value = '\b'; break;
-                case 'f': value = '\f'; break;
-                case 'a': value = 7; break; // bell -- no Java char-literal shorthand
-                case 'v': value = 11; break; // vertical tab -- no Java char-literal shorthand
-                default:
-                    throw new CodegenException("codegen", operandTok.file, operandTok.line,
-                            "unrecognized char-literal escape '" + operand + "'");
+            char esc = content.charAt(1);
+            if (esc == '\\') {
+                value = '\\';
+            } else if (esc == '"') {
+                value = '"';
+            } else if (esc == 'n') {
+                value = '\n';
+            } else if (esc == 't') {
+                value = '\t';
+            } else if (esc == 'r') {
+                value = '\r';
+            } else if (esc == '0') {
+                value = '\0';
+            } else if (esc == 'b') {
+                value = '\b';
+            } else if (esc == 'f') {
+                value = '\f';
+            } else if (esc == 'a') {
+                value = 7; // bell -- no Java char-literal shorthand
+            } else if (esc == 'v') {
+                value = 11; // vertical tab -- no Java char-literal shorthand
+            } else {
+                throw new CodegenException("codegen", operandTok.file, operandTok.line,
+                        "unrecognized char-literal escape '" + operand + "'");
             }
         } else {
             throw new CodegenException("codegen", operandTok.file, operandTok.line,
@@ -651,7 +667,12 @@ final class X86Core {
     static long[] divMagicSimple(long k) {
         java.math.BigInteger bk0 = new java.math.BigInteger(Long.toUnsignedString(k));
         int tz = Long.numberOfTrailingZeros(k);
-        int[] pres = tz > 0 ? new int[] {tz, 0} : new int[] {0};
+        int[] pres;
+        if (tz > 0) {
+            pres = new int[] {tz, 0};
+        } else {
+            pres = new int[] {0};
+        }
         java.math.BigInteger limit = java.math.BigInteger.ONE.shiftLeft(64);
         for (int pre : pres) {
             java.math.BigInteger kk = bk0.shiftRight(pre);
@@ -684,53 +705,79 @@ final class X86Core {
 
     /** The conditional jump taken when `a OP b` is false (unsigned and signed compares; shared by R_BRC and R_BRCM). */
     static String rfFalseJump(String op) {
-        switch (op) {
-            case "EQ": return "jne";
-            case "NEQ": return "je";
-            case "LT": return "jae";
-            case "LT_EQ": return "ja";
-            case "GT": return "jbe";
-            case "GT_EQ": return "jb";
-            case "SLT": return "jge";
-            case "SLT_EQ": return "jg";
-            case "SGT": return "jle";
-            case "SGT_EQ": return "jl";
-            default:
-                throw new IllegalStateException("unknown R_BRC operator '" + op + "'");
+        if (op.equals("EQ")) {
+            return "jne";
+        } else if (op.equals("NEQ")) {
+            return "je";
+        } else if (op.equals("LT")) {
+            return "jae";
+        } else if (op.equals("LT_EQ")) {
+            return "ja";
+        } else if (op.equals("GT")) {
+            return "jbe";
+        } else if (op.equals("GT_EQ")) {
+            return "jb";
+        } else if (op.equals("SLT")) {
+            return "jge";
+        } else if (op.equals("SLT_EQ")) {
+            return "jg";
+        } else if (op.equals("SGT")) {
+            return "jle";
+        } else if (op.equals("SGT_EQ")) {
+            return "jl";
+        } else {
+            throw new IllegalStateException("unknown R_BRC operator '" + op + "'");
         }
     }
 
     /** Jump to `label` when NOT (a op b), for an 8-byte compare; a and b are %t/%v registers, $off slots or #imm (never both #imm). */
     /** the jump condition after swapping the two compared operands (a < b is b > a) */
     static String rfMirrorJump(String cc) {
-        switch (cc) {
-            case "jae": return "jbe";
-            case "ja": return "jb";
-            case "jbe": return "jae";
-            case "jb": return "ja";
-            case "jge": return "jle";
-            case "jg": return "jl";
-            case "jle": return "jge";
-            case "jl": return "jg";
-            default: return cc; // je / jne are symmetric
+        if (cc.equals("jae")) {
+            return "jbe";
+        } else if (cc.equals("ja")) {
+            return "jb";
+        } else if (cc.equals("jbe")) {
+            return "jae";
+        } else if (cc.equals("jb")) {
+            return "ja";
+        } else if (cc.equals("jge")) {
+            return "jle";
+        } else if (cc.equals("jg")) {
+            return "jl";
+        } else if (cc.equals("jle")) {
+            return "jge";
+        } else if (cc.equals("jl")) {
+            return "jg";
+        } else {
+            return cc; // je / jne are symmetric
         }
     }
 
     /** the condition-code suffix that is TRUE exactly when the false-jump `jcc` is not taken ("jne" -> "e") */
     static String rfTrueSuffix(String falseJump) {
-        switch (falseJump) {
-            case "jne": return "e";
-            case "je": return "ne";
-            case "jae": return "b";
-            case "jb": return "ae";
-            case "ja": return "be";
-            case "jbe": return "a";
-            case "jge": return "l";
-            case "jl": return "ge";
-            case "jg": return "le";
-            case "jle": return "g";
-            default:
-                throw new IllegalStateException("unknown condition '" + falseJump + "'");
+        if (falseJump.equals("jne")) {
+            return "e";
+        } else if (falseJump.equals("je")) {
+            return "ne";
+        } else if (falseJump.equals("jae")) {
+            return "b";
+        } else if (falseJump.equals("jb")) {
+            return "ae";
+        } else if (falseJump.equals("ja")) {
+            return "be";
+        } else if (falseJump.equals("jbe")) {
+            return "a";
+        } else if (falseJump.equals("jge")) {
+            return "l";
+        } else if (falseJump.equals("jl")) {
+            return "ge";
+        } else if (falseJump.equals("jg")) {
+            return "le";
+        } else if (falseJump.equals("jle")) {
+            return "g";
+        } else {
+            throw new IllegalStateException("unknown condition '" + falseJump + "'");
         }
     }
 
@@ -739,7 +786,10 @@ final class X86Core {
             return v;
         }
         long t = rfTrunc(v, size);
-        return signed ? t : (t & ((1L << (8 * size)) - 1));
+        if (signed) {
+            return t;
+        }
+        return t & ((1L << (8 * size)) - 1);
     }
 
     // ---- register-form: memory, address, float, read-modify-write helpers ----------------------------------------
@@ -819,7 +869,12 @@ final class X86Core {
         if (s.isEmpty()) {
             return false;
         }
-        int start = s.charAt(0) == '-' ? 1 : 0;
+        int start;
+        if (s.charAt(0) == '-') {
+            start = 1;
+        } else {
+            start = 0;
+        }
         if (start == s.length()) {
             return false;
         }

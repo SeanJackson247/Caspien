@@ -38,12 +38,20 @@ final class X86Emit {
 
     /** Current sink for `raw()` -- the innermost open call's own buffer, or `out` directly when no "CC_START"/"CC_END" bracket is currently open. */
     StringBuilder currentSink() {
-        return core.callBufferStack.isEmpty() ? core.out : core.callBufferStack.peek();
+        if (core.callBufferStack.isEmpty()) {
+            return core.out;
+        }
+        return core.callBufferStack.peek();
     }
 
     /** Consumes (reads and clears) `pendingVarargsXmmCount`, defaulting to 0 (correct for a wholly non-variadic call, or an already-conservative "no floats" guess if this is somehow reached for a variadic call whose count was never set -- should not happen, but 0 is what this backend always assumed before this field existed at all). */
     int consumeVarargsXmmCount() {
-        int count = core.pendingVarargsXmmCount < 0 ? 0 : core.pendingVarargsXmmCount;
+        int count;
+        if (core.pendingVarargsXmmCount < 0) {
+            count = 0;
+        } else {
+            count = core.pendingVarargsXmmCount;
+        }
         core.pendingVarargsXmmCount = -1;
         return count;
     }
@@ -335,7 +343,12 @@ final class X86Emit {
             long words = (s + 7) / 8;
             for (long k = 0; k < words; k++) {
                 long bytes = Math.min(8, s - 8 * k);
-                long srcOff = words > 1 ? chunkBase + (words - 1 - k) * 8 : chunkBase;
+                long srcOff;
+                if (words > 1) {
+                    srcOff = chunkBase + (words - 1 - k) * 8;
+                } else {
+                    srcOff = chunkBase;
+                }
                 copyBytesR12ToR14(srcOff, dst + 8 * k, bytes);
             }
             dst += s;
@@ -412,7 +425,12 @@ final class X86Emit {
             long words = (s + 7) / 8;
             for (long k = 0; k < words; k++) {
                 long bytes = Math.min(8, s - 8 * k);
-                long srcOff = words > 1 ? chunkBase + (words - 1 - k) * 8 : chunkBase;
+                long srcOff;
+                if (words > 1) {
+                    srcOff = chunkBase + (words - 1 - k) * 8;
+                } else {
+                    srcOff = chunkBase;
+                }
                 copyBytes("r10", srcOff, "r11", dst + 8 * k, bytes);
             }
             dst += s;
@@ -425,7 +443,7 @@ final class X86Emit {
         long done = 0;
         while (done < n) {
             long left = n - done;
-            int w = left >= 8 ? 8 : left >= 4 ? 4 : left >= 2 ? 2 : 1;
+            int w = widthFor(left);
             raw("    mov" + movSuffix(w) + " " + (srcOff + done) + "(%" + srcReg + "), %" + sizedReg("rax", w));
             raw("    mov" + movSuffix(w) + " %" + sizedReg("rax", w) + ", " + (dstOff + done) + "(%" + dstReg + ")");
             
@@ -438,7 +456,7 @@ final class X86Emit {
         long done = 0;
         while (done < n) {
             long left = n - done;
-            int w = left >= 8 ? 8 : left >= 4 ? 4 : left >= 2 ? 2 : 1;
+            int w = widthFor(left);
             raw("    mov" + movSuffix(w) + " " + (srcOff + done) + "(%r12), %" + sizedReg("rax", w));
             raw("    mov" + movSuffix(w) + " %" + sizedReg("rax", w) + ", " + (dstOff + done) + "(%r14)");
             
@@ -579,14 +597,27 @@ final class X86Emit {
                 String name = line.get(1).text;
                 long size = Long.parseLong(line.get(2).text);
                 int dot = name.lastIndexOf('.');
-                String direct = dot >= 0 ? name.substring(0, dot) : null;
+                String direct;
+                if (dot >= 0) {
+                    direct = name.substring(0, dot);
+                } else {
+                    direct = null;
+                }
                 // A nested member ("b.0.x" of a static array of structs) has an already-aliased direct parent ("b.0"): it lives in the ROOT
                 // global at (parent's offset + running offset inside the parent). Before, only a plain parent was aliased, so the members of
                 // every struct element kept their own stray storage and the array itself was emitted zeroed.
                 if (direct != null && (plainGlobalNames.contains(direct) || core.globalAliasOffset.containsKey(direct)) && !core.globalAliasOffset.containsKey(name)) {
                     boolean nested = core.globalAliasOffset.containsKey(direct);
-                    String parent = nested ? core.globalAliasParent.get(direct) : direct;
-                    long offset = (nested ? core.globalAliasOffset.get(direct) : 0L) + parentRunningOffset.getOrDefault(direct, 0L);
+                    String parent;
+                    long baseOffset;
+                    if (nested) {
+                        parent = core.globalAliasParent.get(direct);
+                        baseOffset = core.globalAliasOffset.get(direct);
+                    } else {
+                        parent = direct;
+                        baseOffset = 0L;
+                    }
+                    long offset = baseOffset + parentRunningOffset.getOrDefault(direct, 0L);
                     core.globalAliasOffset.put(name, offset);
                     core.globalAliasParent.put(name, parent);
                     parentRunningOffset.put(direct, parentRunningOffset.getOrDefault(direct, 0L) + size);
@@ -629,9 +660,10 @@ final class X86Emit {
     /** A GLOBAL initialiser's bit pattern for a slot of `size` bytes: null/integer as before, a float literal as its IEEE-754 bits (4 bytes: single, otherwise double) -- previously any float initialiser was silently zero. */
     long initBits(String text, long size) {
         if (!text.equals("null") && !X86Core.isInteger(text) && X86Core.isFloatLiteral(text)) {
-            return size <= 4
-                    ? Integer.toUnsignedLong(Float.floatToRawIntBits(Float.parseFloat(text)))
-                    : Double.doubleToRawLongBits(Double.parseDouble(text));
+            if (size <= 4) {
+                return Integer.toUnsignedLong(Float.floatToRawIntBits(Float.parseFloat(text)));
+            }
+            return Double.doubleToRawLongBits(Double.parseDouble(text));
         }
         return parseInitValue(text);
     }
@@ -671,11 +703,20 @@ final class X86Emit {
                     }
                     StringBuilder bytes = new StringBuilder();
                     for (int b = 0; b < image.length; b++) {
-                        bytes.append(b == 0 ? "" : ", ").append(image[b] & 0xFF);
+                        if (b != 0) {
+                            bytes.append(", ");
+                        }
+                        bytes.append(image[b] & 0xFF);
                     }
                     raw(("    .byte ") + bytes);
                 } else {
-                    emitStorageDirective(size, hasInit ? init : 0);
+                    long storeInit;
+                    if (hasInit) {
+                        storeInit = init;
+                    } else {
+                        storeInit = 0;
+                    }
+                    emitStorageDirective(size, storeInit);
                 }
             }
         }
@@ -753,7 +794,12 @@ final class X86Emit {
     void strideKeyAfter(String text) {
         String t = text.trim();
         int sp = t.indexOf(' ');
-        String op = sp < 0 ? t : t.substring(0, sp);
+        String op;
+        if (sp < 0) {
+            op = t;
+        } else {
+            op = t.substring(0, sp);
+        }
         if (t.indexOf('\n') >= 0 || t.endsWith(":") || !X86Core.STRIDE_KEEP_OPS.contains(op)) {
             core.strideKeySink = null;
             return;
@@ -766,7 +812,19 @@ final class X86Emit {
             else if (c == ')') depth--;
             else if (c == ',' && depth == 0) cut = i;
         }
-        String dest = (cut < 0 ? t.substring(sp < 0 ? t.length() : sp) : t.substring(cut + 1)).trim();
+        String destRaw;
+        if (cut < 0) {
+            int from;
+            if (sp < 0) {
+                from = t.length();
+            } else {
+                from = sp;
+            }
+            destRaw = t.substring(from);
+        } else {
+            destRaw = t.substring(cut + 1);
+        }
+        String dest = destRaw.trim();
         if (!dest.startsWith("%")) {
             return;                       // a memory destination (a store) or an immediate-only form: no register changes
         }
@@ -853,7 +911,7 @@ final class X86Emit {
             // referencing a separate (nonexistent) label of its own.
             String parentLabel = mangleGlobalName(core.globalAliasParent.get(globalName));
             long offset = core.globalAliasOffset.get(globalName);
-            raw("    leaq " + parentLabel + (offset != 0 ? "+" + offset : "") + "(%rip), %" + reg);
+            raw("    leaq " + parentLabel + plusOffset(offset) + "(%rip), %" + reg);
             
             return;
         }
@@ -874,9 +932,9 @@ final class X86Emit {
         if (core.globalAliasOffset.containsKey(globalName)) {
             String parentLabel = mangleGlobalName(core.globalAliasParent.get(globalName));
             long offset = core.globalAliasOffset.get(globalName) + extra;
-            return parentLabel + (offset != 0 ? "+" + offset : "") + "(%rip)";
+            return parentLabel + plusOffset(offset) + "(%rip)";
         }
-        return mangleGlobalName(globalName) + (extra != 0 ? "+" + extra : "") + "(%rip)";
+        return mangleGlobalName(globalName) + plusOffset(extra) + "(%rip)";
     }
 
     void movImmToReg(String reg, long imm) {
@@ -892,18 +950,23 @@ final class X86Emit {
 
     /** al/ax/eax/rax-style sub-register name for a bare 64-bit register name and a byte width. */
     String sizedReg(String reg64, int size) {
-        switch (reg64) {
-            case "rax": return size == 1 ? "al" : size == 2 ? "ax" : size == 4 ? "eax" : "rax";
-            case "rbx": return size == 1 ? "bl" : size == 2 ? "bx" : size == 4 ? "ebx" : "rbx";
-            case "rcx": return size == 1 ? "cl" : size == 2 ? "cx" : size == 4 ? "ecx" : "rcx";
-            case "rdx": return size == 1 ? "dl" : size == 2 ? "dx" : size == 4 ? "edx" : "rdx";
-            case "rsi": return size == 1 ? "sil" : size == 2 ? "si" : size == 4 ? "esi" : "rsi";
-            case "rdi": return size == 1 ? "dil" : size == 2 ? "di" : size == 4 ? "edi" : "rdi";
-            default:
-                if (reg64.matches("r(8|9|1[0-5])") && size < 8) {
-                    return reg64 + (size == 1 ? "b" : size == 2 ? "w" : "d");
-                }
-                return reg64;
+        if (reg64.equals("rax")) {
+            return pickBySize(size, "al", "ax", "eax", "rax");
+        } else if (reg64.equals("rbx")) {
+            return pickBySize(size, "bl", "bx", "ebx", "rbx");
+        } else if (reg64.equals("rcx")) {
+            return pickBySize(size, "cl", "cx", "ecx", "rcx");
+        } else if (reg64.equals("rdx")) {
+            return pickBySize(size, "dl", "dx", "edx", "rdx");
+        } else if (reg64.equals("rsi")) {
+            return pickBySize(size, "sil", "si", "esi", "rsi");
+        } else if (reg64.equals("rdi")) {
+            return pickBySize(size, "dil", "di", "edi", "rdi");
+        } else {
+            if (reg64.matches("r(8|9|1[0-5])") && size < 8) {
+                return reg64 + pickBySize(size, "b", "w", "d", "d");
+            }
+            return reg64;
         }
     }
 
@@ -943,7 +1006,13 @@ final class X86Emit {
         if (!left) {
             zeroExtendReg(v, size);
         }
-        raw("    " + (left ? "shlq" : "shrq") + " %cl, %" + v);
+        String shiftOp;
+        if (left) {
+            shiftOp = "shlq";
+        } else {
+            shiftOp = "shrq";
+        }
+        raw("    " + shiftOp + " %cl, %" + v);
         raw("    cmpq $64, %rcx");
         raw("    sbbq %rcx, %rcx");
         raw("    andq %rcx, %" + v);
@@ -962,7 +1031,13 @@ final class X86Emit {
         if (!left) {
             zeroExtendReg(v, size);
         }
-        raw("    " + (left ? "shlxq" : "shrxq") + " %" + cnt + ", %" + v + ", %" + v);
+        String shiftOp;
+        if (left) {
+            shiftOp = "shlxq";
+        } else {
+            shiftOp = "shrxq";
+        }
+        raw("    " + shiftOp + " %" + cnt + ", %" + v + ", %" + v);
         raw("    cmpq $64, %" + cnt);
         raw("    sbbq %" + cnt + ", %" + cnt);
         raw("    andq %" + cnt + ", %" + v);
@@ -983,8 +1058,48 @@ final class X86Emit {
         }
     }
 
+    /** "+off" for a nonzero offset, otherwise "" */
+    private static String plusOffset(long off) {
+        if (off != 0) {
+            return "+" + off;
+        }
+        return "";
+    }
+
+    /** the decimal offset, or "" for zero (an AT&T displacement of 0 is omitted) */
+    private static String offsetText(long off) {
+        if (off == 0) {
+            return "";
+        }
+        return String.valueOf(off);
+    }
+
+    /** the largest natural move width (8, 4, 2 or 1) that fits in `left` bytes */
+    private static int widthFor(long left) {
+        if (left >= 8) {
+            return 8;
+        } else if (left >= 4) {
+            return 4;
+        } else if (left >= 2) {
+            return 2;
+        }
+        return 1;
+    }
+
+    /** one of four names by operand size: 1, 2, 4, anything else */
+    private static String pickBySize(int size, String s1, String s2, String s4, String other) {
+        if (size == 1) {
+            return s1;
+        } else if (size == 2) {
+            return s2;
+        } else if (size == 4) {
+            return s4;
+        }
+        return other;
+    }
+
     String movSuffix(int size) {
-        return size == 1 ? "b" : size == 2 ? "w" : size == 4 ? "l" : "q";
+        return pickBySize(size, "b", "w", "l", "q");
     }
 
     /** zero-extending load of `size` bytes at (%rbp+offset) into the full 64-bit `reg64`. */
@@ -1066,7 +1181,16 @@ final class X86Emit {
      * it is the neighbouring variable. The source register is rotated between the pieces and rotated back, so it is unchanged afterwards.
      */
     void storeOddSize(String srcReg64, String baseReg64, long off, int size) {
-        int[] widths = size == 3 ? new int[] {2, 1} : size == 5 ? new int[] {4, 1} : size == 6 ? new int[] {4, 2} : new int[] {4, 2, 1};
+        int[] widths;
+        if (size == 3) {
+            widths = new int[] {2, 1};
+        } else if (size == 5) {
+            widths = new int[] {4, 1};
+        } else if (size == 6) {
+            widths = new int[] {4, 2};
+        } else {
+            widths = new int[] {4, 2, 1};
+        }
         long at = off;
         int rot = 0;
         for (int i = 0; i < widths.length; i++) {
@@ -1083,12 +1207,17 @@ final class X86Emit {
     }
 
     void storePiece(String srcReg64, String baseReg64, long off, int width) {
-        raw("    mov" + movSuffix(width) + " %" + sizedReg(srcReg64, width) + ", " + (off == 0 ? "" : String.valueOf(off)) + "(%" + baseReg64 + ")");
+        raw("    mov" + movSuffix(width) + " %" + sizedReg(srcReg64, width) + ", " + offsetText(off) + "(%" + baseReg64 + ")");
         
     }
 
     void rotReg(String reg64, boolean right, int bits) {
-        String op = right ? "ror" : "rol";
+        String op;
+        if (right) {
+            op = "ror";
+        } else {
+            op = "rol";
+        }
         raw(("    " + op + "q $" + bits + ", %" + reg64));
     }
 
@@ -1145,7 +1274,7 @@ final class X86Emit {
         long pos = 0;
         while (pos < size) {
             long left = size - pos;
-            int w = left >= 8 ? 8 : left >= 4 ? 4 : left >= 2 ? 2 : 1;
+            int w = widthFor(left);
             loadSizedFromFrame("rax", baseOffset + pos, w);
             long dst = constructionOffset + pos;
             raw("    mov" + movSuffix(w) + " %" + sizedReg("rax", w) + ", " + dst + "(%rsp)");
@@ -1167,7 +1296,7 @@ final class X86Emit {
             long destOff = k * 8;
             long n = Math.min(8, size - destOff); // the last word of a size that is not a multiple of 8 is partial: write only its real bytes
             if (n == 8) {
-                raw("    movq %rax, " + (destOff == 0 ? "" : String.valueOf(destOff)) + "(%r15)");
+                raw("    movq %rax, " + offsetText(destOff) + "(%r15)");
                 
             } else if (X86Core.isOddSize((int) n)) {
                 storeOddSize("rax", "r15", destOff, (int) n);

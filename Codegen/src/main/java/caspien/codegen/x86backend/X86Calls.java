@@ -28,7 +28,12 @@ final class X86Calls {
         int values = 0;
         for (int back = 1; back <= 4; back++) {
             int idx = core.currentLineIndex - back;
-            BytecodeStatement l = core.allLines == null || idx < 0 ? null : core.allLines.get(idx);
+            BytecodeStatement l;
+            if (core.allLines == null || idx < 0) {
+                l = null;
+            } else {
+                l = core.allLines.get(idx);
+            }
             if (l == null || l.isEmpty()) {
                 return -1;
             }
@@ -45,7 +50,10 @@ final class X86Calls {
                     return -1;
                 }
                 long v = Long.parseLong(operand);
-                return v >= 1 && v <= 64 ? v : -1;
+                if (v >= 1 && v <= 64) {
+                    return v;
+                }
+                return -1;
             }
             values++;
             if (values > 1) {
@@ -83,7 +91,10 @@ final class X86Calls {
 
     /** "ss" (single-precision, 4-byte) vs "sd" (double-precision, 8-byte) SSE instruction suffix for a given byte size. `f32` is the only floating-point type this language has at all (checked directly, not assumed -- see FLOAT_CHECK's own doc comment below), so every real call site passes 4 here; the 8-byte ("sd") branch is kept only so this doesn't silently mishandle a size this pass has never actually seen, not because anything in the language can produce one today. */
     String sseSuffix(int size) {
-        return size <= 4 ? "ss" : "sd";
+        if (size <= 4) {
+            return "ss";
+        }
+        return "sd";
     }
 
     /** reads `size` bytes at (%addrReg64) and pushes them: a single sized load+push for size<=8, or a whole-word-at-a-time block push (lowest source offset first, highest last/top) for a larger aggregate -- the read-side counterpart of DOT/LOOKUP_ARRAY/LOOKUP_DYN's own "_LHS" (address-only) variants, generalized to structs/array elements bigger than one register. `addrReg64` is clobbered. */
@@ -109,7 +120,13 @@ final class X86Calls {
     }
 
     String argReg(int index) {
-        String[] table = hub.emit.isWinAbi() ? X86Core.WIN_ARG_REGS : X86Core.LINUX_ARG_REGS; // register choice is an ABI question, not a syntax one -- WINDOWS_GNU_X64 uses these same win64 registers, just named/referenced in AT&T syntax
+        // register choice is an ABI question, not a syntax one -- WINDOWS_GNU_X64 uses these same win64 registers, just named/referenced in AT&T syntax
+        String[] table;
+        if (hub.emit.isWinAbi()) {
+            table = X86Core.WIN_ARG_REGS;
+        } else {
+            table = X86Core.LINUX_ARG_REGS;
+        }
         if (index < table.length) {
             return table[index];
         }
@@ -121,7 +138,12 @@ final class X86Calls {
 
     /** The float-bank counterpart of `argReg` -- `ARGn`/`FARGn`'s own real per-bank index already accounts for the two conventions' different counting rules (see `AddressLoweringPass.resolveArgWordSlots`/`CompilerConfig.CallingConvention.sharedArgumentPosition` on the sibling lowering project), so this is a plain, dumb table lookup, exactly like `argReg` -- no convention-mode awareness needed here at all. */
     String argFloatReg(int index) {
-        String[] table = hub.emit.isWinAbi() ? X86Core.WIN_ARG_REGS_FLOAT : X86Core.LINUX_ARG_REGS_FLOAT;
+        String[] table;
+        if (hub.emit.isWinAbi()) {
+            table = X86Core.WIN_ARG_REGS_FLOAT;
+        } else {
+            table = X86Core.LINUX_ARG_REGS_FLOAT;
+        }
         if (index < table.length) {
             return table[index];
         }
@@ -267,7 +289,10 @@ final class X86Calls {
      * branches to match the real requirement above.
      */
     int alignPadFor(long stackArgBytes) {
-        return (stackArgBytes % 16 == 0) ? 16 : 8;
+        if (stackArgBytes % 16 == 0) {
+            return 16;
+        }
+        return 8;
     }
 
     /**
@@ -597,524 +622,515 @@ final class X86Calls {
     }
 
     boolean emitCases1(String mnemonic, BytecodeStatement line, String first, boolean wasCmp, long pendingBlockSize) {
-        switch (mnemonic) {
-case "FUNC_START": {
-                String name = line.get(1).text;
-                core.currentFuncName = name;
-                core.rfVarUsed = false;
-                core.rfVarMask = 0;
-                core.rfClobberSeen = false;
-                core.xvHome.clear();
-                core.xvWidth.clear();
-                hub.emit.raw("");
-                hub.emit.raw(".globl " + name);
-                hub.emit.raw(name + ":");
-                
-                hub.emit.pushReg("rbp");
-                hub.gen.movRegToRegRbpFromRsp();
-                core.csrFuncStart = core.out.length();
-                core.csrAllocSum = 0;
-                core.csrAllocPos = -1;
-                core.csrAllocLine = null;
+        if (mnemonic.equals("FUNC_START")) {
+            String name = line.get(1).text;
+            core.currentFuncName = name;
+            core.rfVarUsed = false;
+            core.rfVarMask = 0;
+            core.rfClobberSeen = false;
+            core.xvHome.clear();
+            core.xvWidth.clear();
+            hub.emit.raw("");
+            hub.emit.raw(".globl " + name);
+            hub.emit.raw(name + ":");
+            hub.emit.pushReg("rbp");
+            hub.gen.movRegToRegRbpFromRsp();
+            core.csrFuncStart = core.out.length();
+            core.csrAllocSum = 0;
+            core.csrAllocPos = -1;
+            core.csrAllocLine = null;
+            return true;
+        } else if (mnemonic.equals("FUNC_END")) {
+            // A void function with no explicit "return" statement
+            // never emits a "RET" line at all -- control just falls
+            // straight through into this copy of the epilogue (see
+            // RET's own doc comment for the case where a real RET
+            // line *does* run first). RET's own "size 0" branch
+            // explicitly zeroes %rax/%eax before handing off to
+            // emitFunctionEpilogue precisely so a void function's
+            // exit code is predictable rather than whatever garbage
+            // its last real instruction happened to leave there --
+            // but that zeroing lives on the RET line itself, so a
+            // function that falls off the end without ever running
+            // one skipped it entirely. Confirmed as a real, live bug
+            // this way: a bare "func main() void { printf(...) }"
+            // (no explicit return) exited with whatever count printf
+            // itself returned (6, for a 6-character format string)
+            // instead of 0, since printf's own return value was
+            // still sitting in %rax when this fell through to here.
+            // A non-void function can never reach this point live --
+            // the type-checker requires every path to return a real
+            // value -- so zeroing %rax here unconditionally is safe:
+            // it only ever actually executes for a void fall-through,
+            // and is otherwise this same harmless "dead code after an
+            // already-emitted RET" this method's own doc comment
+            // already describes.
+            hub.emit.movImmToReg("rax", 0);
+            hub.gen.emitFunctionEpilogue();
+            if (core.rfVarUsed && core.rfClobberSeen) {
+                throw new RuntimeException("codegen internal error: '" + core.currentFuncName
+                        + "' keeps variables in r13/r14 but also has an instruction that uses them as scratch");
+            }
+            hub.gen.finishCalleeSaved();
+            return true;
+        } else if (mnemonic.equals("ALLOC")) {
+            long size = Long.parseLong(line.get(1).text);
+            long aligned = (size + 15) & ~15L;
+            core.csrAllocSum += aligned;
+            if (core.csrAllocPos < 0 && core.callBufferStack.isEmpty() && core.csrFuncStart >= 0) {
+                core.csrAllocPos = core.out.length();
+                core.csrAllocBytes = aligned;
+                core.csrAllocLine = ("    subq $" + aligned + ", %rsp\n");
+            }
+            hub.emit.raw("    subq $" + aligned + ", %rsp");
+            return true;
+        } else if (mnemonic.equals("ADDR")) {
+            // "ADDR size $offset" -> push that address.
+            // "ADDR size globalName" -> push that global's address.
+            String operand = line.get(2).text;
+            if (operand.startsWith("$")) {
+                hub.emit.leaMemToReg("rax", Long.parseLong(operand.substring(1)));
+            } else {
+                hub.emit.leaGlobalToReg("rax", operand);
+            }
+            hub.emit.pushReg("rax");
+            return true;
+        } else if (mnemonic.equals("PUSH")) {
+            if (line.size() < 3) {
+                // The 2-token "PUSH <bareName>" form -- a class/type
+                // tag operand (INSTANCEOF's own right-hand side, e.g.
+                // "PUSH Circle") rather than an ordinary "PUSH size
+                // operand" value push. INSTANCEOF itself is one of
+                // this pass's honest, documented gaps (see class doc
+                // comment and CLAUDE.md) -- the lowering pipeline
+                // never resolves this name to a runtime class tag, so
+                // there is nothing safe to push here either; flagged,
+                // not guessed at (this used to crash outright --
+                // "fix that bug," confirmed directly -- now it doesn't).
+                hub.emit.comment("TODO(codegen): PUSH (2-token form) '" + String.join(" ", X86Core.textsOf(line)) + "' not yet implemented");
                 return true;
             }
-            
-case "FUNC_END": {
-                // A void function with no explicit "return" statement
-                // never emits a "RET" line at all -- control just falls
-                // straight through into this copy of the epilogue (see
-                // RET's own doc comment for the case where a real RET
-                // line *does* run first). RET's own "size 0" branch
-                // explicitly zeroes %rax/%eax before handing off to
-                // emitFunctionEpilogue precisely so a void function's
-                // exit code is predictable rather than whatever garbage
-                // its last real instruction happened to leave there --
-                // but that zeroing lives on the RET line itself, so a
-                // function that falls off the end without ever running
-                // one skipped it entirely. Confirmed as a real, live bug
-                // this way: a bare "func main() void { printf(...) }"
-                // (no explicit return) exited with whatever count printf
-                // itself returned (6, for a 6-character format string)
-                // instead of 0, since printf's own return value was
-                // still sitting in %rax when this fell through to here.
-                // A non-void function can never reach this point live --
-                // the type-checker requires every path to return a real
-                // value -- so zeroing %rax here unconditionally is safe:
-                // it only ever actually executes for a void fall-through,
-                // and is otherwise this same harmless "dead code after an
-                // already-emitted RET" this method's own doc comment
-                // already describes.
-                hub.emit.movImmToReg("rax", 0);
-                hub.gen.emitFunctionEpilogue();
-                if (core.rfVarUsed && core.rfClobberSeen) {
-                    throw new RuntimeException("codegen internal error: '" + core.currentFuncName
-                            + "' keeps variables in r13/r14 but also has an instruction that uses them as scratch");
-                }
-                hub.gen.finishCalleeSaved();
-                return true;
-            }
-            
-case "ALLOC": {
-                long size = Long.parseLong(line.get(1).text);
-                long aligned = (size + 15) & ~15L;
-                core.csrAllocSum += aligned;
-                if (core.csrAllocPos < 0 && core.callBufferStack.isEmpty() && core.csrFuncStart >= 0) {
-                    core.csrAllocPos = core.out.length();
-                    core.csrAllocBytes = aligned;
-                    core.csrAllocLine = ("    subq $" + aligned + ", %rsp\n");
-                }
-                hub.emit.raw("    subq $" + aligned + ", %rsp");
-                
-                return true;
-            }
-            
-case "ADDR": {
-                // "ADDR size $offset" -> push that address.
-                // "ADDR size globalName" -> push that global's address.
-                String operand = line.get(2).text;
-                if (operand.startsWith("$")) {
-                    hub.emit.leaMemToReg("rax", Long.parseLong(operand.substring(1)));
+            int size = (int) Long.parseLong(line.get(1).text);
+            String operand = line.get(2).text;
+            if (operand.startsWith("$") || operand.startsWith("%x")) {
+                boolean fromXvar = operand.startsWith("%x"); // a float variable promoted to an xmm register (RegVarPromotionPass)
+                long offset;
+                if (fromXvar) {
+                    offset = 0;
                 } else {
-                    hub.emit.leaGlobalToReg("rax", operand);
+                    offset = Long.parseLong(operand.substring(1));
                 }
-                hub.emit.pushReg("rax");
-                return true;
-            }
-            
-case "PUSH": {
-                if (line.size() < 3) {
-                    // The 2-token "PUSH <bareName>" form -- a class/type
-                    // tag operand (INSTANCEOF's own right-hand side, e.g.
-                    // "PUSH Circle") rather than an ordinary "PUSH size
-                    // operand" value push. INSTANCEOF itself is one of
-                    // this pass's honest, documented gaps (see class doc
-                    // comment and CLAUDE.md) -- the lowering pipeline
-                    // never resolves this name to a runtime class tag, so
-                    // there is nothing safe to push here either; flagged,
-                    // not guessed at (this used to crash outright --
-                    // "fix that bug," confirmed directly -- now it doesn't).
-                    hub.emit.comment("TODO(codegen): PUSH (2-token form) '" + String.join(" ", X86Core.textsOf(line)) + "' not yet implemented");
-                    return true;
-                }
-                int size = (int) Long.parseLong(line.get(1).text);
-                String operand = line.get(2).text;
-                if (operand.startsWith("$") || operand.startsWith("%x")) {
-                    boolean fromXvar = operand.startsWith("%x"); // a float variable promoted to an xmm register (RegVarPromotionPass)
-                    long offset = fromXvar ? 0 : Long.parseLong(operand.substring(1));
-                    if (size <= 8) {
-                        if (fromXvar) {
-                            hub.gen.rfXmmToGpr(hub.gen.xvReg(operand), "rax", size == 8 ? 8 : 4); // movd/movq: the variable's bits, zero-extended -- what the frame load gave
+                if (size <= 8) {
+                    if (fromXvar) {
+                        // movd/movq: the variable's bits, zero-extended -- what the frame load gave
+                        int xmmWidth;
+                        if (size == 8) {
+                            xmmWidth = 8;
                         } else {
-                            hub.emit.loadSizedFromFrame("rax", offset, size);
+                            xmmWidth = 4;
                         }
-                        hub.emit.storeConstructionOrPlainPush("rax", size);
-                        if (pendingBlockSize == 0 && size < 8) {
-                            // Nothing was already pending, and this value
-                            // is narrower than a full 8-byte pointer --
-                            // it can only be a whole small fixed array
-                            // (`letters: mut char[3]`, say) pushed by
-                            // value as a single, ordinary, natural-byte-
-                            // order word (a pointer is always exactly 8
-                            // bytes, never narrower), about to feed a
-                            // following LOOKUP_ARRAY. Encoded as a
-                            // *negative* size specifically so LOOKUP_ARRAY
-                            // can tell this genuinely different shape
-                            // apart from the multi-word block case just
-                            // below (whose own reversed-word layout
-                            // convention would extract the *wrong* byte
-                            // entirely if applied here -- see that case's
-                            // own doc comment). An ordinary, unrelated
-                            // narrow scalar read harmlessly carries this
-                            // same tag forward for exactly one
-                            // instruction too, but this bytecode's own
-                            // emission convention never actually follows
-                            // one with a LOOKUP_ARRAY/DOT except as part
-                            // of a real access chain, so nothing ever
-                            // misreads it.
-                            //
-                            // A real, previously-undiscovered bug found
-                            // this way: this shape used to leave
-                            // `lastValueBlockSize` at 0 like any other
-                            // ordinary scalar read, so the following
-                            // LOOKUP_ARRAY fell into its own "no block
-                            // pending" fallback -- built for an unsafe
-                            // dynarray's own bare *pointer* value -- and
-                            // treated this packed array value as if it
-                            // were itself a memory address, corrupting it
-                            // into a bogus pointer and dereferencing it.
-                            // Confirmed as a real, live segfault via
-                            // `struct_array_member_narrow_elem_cg_test`'s
-                            // own `letters: mut char[3]` member.
-                            core.lastValueBlockSize = -size;
-                        } else {
-                            // A small push right after a pushed value-block
-                            // is always the index/field-offset that a
-                            // following LOOKUP_ARRAY/PUSH_FIELDNAME+DOT
-                            // consumes *alongside* that block -- preserve
-                            // the pending block size across it rather than
-                            // treating it as unrelated.
-                            core.lastValueBlockSize = pendingBlockSize;
-                        }
+                        hub.gen.rfXmmToGpr(hub.gen.xvReg(operand), "rax", xmmWidth);
                     } else {
-                        // A multi-word (>8 byte) value pushed by plain
-                        // value -- a small struct passed/copied whole
-                        // (e.g. "PUSH 24 $-64", "PUSH 48 $-200"), or an
-                        // array pushed by its own full declared size for
-                        // a following LOOKUP_ARRAY read (confirmed
-                        // directly against array_lookup_cg_test.caspien's
-                        // own real low-order output: a read
-                        // ("PUSH 40 $-40 / PUSH idx / LOOKUP_ARRAY 8")
-                        // pushes the *whole* array by value, while a
-                        // write ("ADDR 40 $-40 / PUSH idx /
-                        // LOOKUP_ARRAY_LHS 8") pushes only its address --
-                        // two genuinely different conventions for the
-                        // same LOOKUP_ARRAY family, not a codegen choice).
-                        // Pushes ceil(size/8) whole words, lowest source
-                        // offset first, so the highest-offset word ends
-                        // up on top -- the same convention DEREF's own
-                        // multi-word case and the "POP $addr size"
-                        // block-store already share -- and remembers the
-                        // total size for LOOKUP_ARRAY/DOT to extract a
-                        // sub-range from afterward.
+                        hub.emit.loadSizedFromFrame("rax", offset, size);
+                    }
+                    hub.emit.storeConstructionOrPlainPush("rax", size);
+                    if (pendingBlockSize == 0 && size < 8) {
+                        // Nothing was already pending, and this value
+                        // is narrower than a full 8-byte pointer --
+                        // it can only be a whole small fixed array
+                        // (`letters: mut char[3]`, say) pushed by
+                        // value as a single, ordinary, natural-byte-
+                        // order word (a pointer is always exactly 8
+                        // bytes, never narrower), about to feed a
+                        // following LOOKUP_ARRAY. Encoded as a
+                        // *negative* size specifically so LOOKUP_ARRAY
+                        // can tell this genuinely different shape
+                        // apart from the multi-word block case just
+                        // below (whose own reversed-word layout
+                        // convention would extract the *wrong* byte
+                        // entirely if applied here -- see that case's
+                        // own doc comment). An ordinary, unrelated
+                        // narrow scalar read harmlessly carries this
+                        // same tag forward for exactly one
+                        // instruction too, but this bytecode's own
+                        // emission convention never actually follows
+                        // one with a LOOKUP_ARRAY/DOT except as part
+                        // of a real access chain, so nothing ever
+                        // misreads it.
                         //
-                        // UNLESS this exact line is itself a direct
-                        // member of a construction run `precomputeConstructionOffsets`
-                        // already resolved (`pushStoreOffsetByLine`) --
-                        // i.e. a whole, already-fully-built value (e.g. a
-                        // hidden RVO temp local) being fed, as one single
-                        // >8-byte entry, straight into a following "NEW"/
-                        // construction-scoped "ASSIGN". That terminator's
-                        // own straight `rep movsb` copy (see "NEW"'s own
-                        // doc comment) assumes the bytes sitting at the
-                        // top of the stack are already in the same,
-                        // natural, ascending-offset order the source
-                        // struct/array itself has -- true for an ordinary
-                        // multi-field literal (each field individually
-                        // reserves and writes only its own declared
-                        // width, via `storeConstructionOrPlainPush`,
-                        // directly at its own natural position), but
-                        // false for the reversed, "highest-offset word on
-                        // top" order this branch's own ordinary path
-                        // produces. Using the ordinary reversed path here
-                        // silently swapped a struct's own front and back
-                        // words end for end once copied into the final
-                        // buffer -- confirmed as a real, live bug via
-                        // `new` constructing a value already built by a
-                        // separate call (a struct's own constructor,
-                        // called via its stack-RVO destination pointer,
-                        // then handed to `new` as one already-complete
-                        // value) rather than via an inline literal:
-                        // `new MyClass(11,13)`'s own `y` field silently
-                        // read back as `1` (the struct's own hidden
-                        // classId, its front-most word) instead of `13`.
-                        // `pushBlockFromFrameConstructionAware` below
-                        // keeps this entry's own bytes in their real,
-                        // natural order and lands them at the exact
-                        // packed offset `populateDirectMembers` already
-                        // computed for it (0, unconditionally, whenever
-                        // this is the run's *only* entry -- a whole-value
-                        // feed like this always is one, since
-                        // `collectRunEntries` only ever splits a value
-                        // into more than one entry at real, separate
-                        // "PUSH"/"ATOMIC_PUSH"/"STACK_LOCK" lines, and a
-                        // single already-built value is always exactly
-                        // one line), so the terminator's own straight,
-                        // order-preserving copy sees exactly the bytes it
-                        // already assumes.
-                        hub.emit.pushBlockFromFrameConstructionAware(offset, size);
-                        core.lastValueBlockSize = size;
-                    }
-                    return true;
-                } else if (operand.equals("null")) {
-                    hub.emit.movImmToReg("rax", 0);
-                } else if (X86Core.isInteger(operand)) {
-                    hub.emit.movImmToReg("rax", operand.startsWith("-") ? Long.parseLong(operand) : Long.parseUnsignedLong(operand));
-                } else if (X86Core.isFloatLiteral(operand)) {
-                    // A float literal's own IEEE-754 bit pattern is just
-                    // as pushable as an int's bits through this exact
-                    // same integer-immediate/pushq mechanism -- this
-                    // instruction (and the "ASSIGN"/frame-load machinery
-                    // downstream of it) already treats every value as
-                    // opaque bytes of the declared `size`, never
-                    // interpreting them, so there is nothing SSE/xmm-
-                    // specific needed just to get a literal's own bits
-                    // to sit correctly in memory. The real xmm-register
-                    // work this doesn't touch -- float *arithmetic*
-                    // (ADD_FLOAT/SUB_FLOAT/MUL_FLOAT/DIV_FLOAT), float
-                    // *comparison* (EQ_FLOAT/NEQ_FLOAT/LT_FLOAT/...),
-                    // returning a float (RET_FLOAT), and FLOAT_CHECK
-                    // (the finite/infinite/nan classification match
-                    // lowers to) -- is all implemented elsewhere in this
-                    // same file; none of it falls through to the generic
-                    // TODO any more (verified directly: a real program
-                    // exercising all three FLOAT_CHECK categories
-                    // together -- a finite value, 1.0/0.0, and 0.0/0.0
-                    // -- compiles with zero TODOs in the generated
-                    // assembly and correctly prints "finite"/"infinite"/
-                    // "nan").
-                    long bits = size <= 4
-                            ? Integer.toUnsignedLong(Float.floatToRawIntBits(Float.parseFloat(operand)))
-                            : Double.doubleToRawLongBits(Double.parseDouble(operand));
-                    hub.emit.movImmToReg("rax", bits);
-                } else if (operand.matches("\\d+\\.(start|end)")) {
-                    // A synthesized pseudo-member push against an
-                    // *incomplete* range value ("5.start"/"5.end") --
-                    // part of the same WITHIN/incomplete-range gap this
-                    // pass already documents elsewhere (the lowering
-                    // pipeline leaves this operand as a symbolic,
-                    // non-address form even at "low order"); flagged
-                    // rather than mismangled into a bogus symbol.
-                    hub.emit.comment("TODO(codegen): PUSH of incomplete-range pseudo-member '" + operand + "' not yet implemented -- pushing 0 as a placeholder");
-                    hub.emit.movImmToReg("rax", 0);
-                } else if (operand.startsWith("ARG")) {
-                    // A calling-convention register-transfer slot read
-                    // directly as a value -- the callee side of the same
-                    // convention "POP ARGn" uses on the caller side.
-                    // Confirmed directly: every real site is the very
-                    // first instruction touching registers right after
-                    // FUNC_START/ALLOC (storing an incoming parameter to
-                    // its own local), so the argument register still
-                    // holds its true incoming value here untouched.
-                    int idx = Integer.parseInt(operand.substring(3));
-                    hub.emit.raw(("    movq %" + argReg(idx) + ", %rax"));
-                } else if (operand.startsWith("FARG")) {
-                    // The float-bank counterpart of the "ARG" branch just
-                    // above -- the incoming parameter's own real bits are
-                    // already sitting in a real xmm register at function
-                    // entry (the calling convention's own float-argument
-                    // slot), never a GPR, so this moves the raw 64 bits
-                    // out of it via the same bit-copying `movq` every
-                    // other float op in this file already uses, rather
-                    // than reading a GPR that was never written.
-                    int idx = Integer.parseInt(operand.substring(4));
-                    movXmmToReg(argFloatReg(idx), "rax");
-                } else if (core.stringLiterals.containsKey(operand)) {
-                    // A string-pool id -- always its address (a string
-                    // literal decays to a pointer to its own .rodata
-                    // bytes, exactly like a real array/struct global;
-                    // there's no separate "value" to push instead,
-                    // confirmed directly against every real string-
-                    // literal PUSH site, e.g. printf's format-string
-                    // argument and NEW_FROM_STRING's source operand).
-                    hub.emit.leaGlobalToReg("rax", operand);
-                } else if (core.globalsSizeInit.containsKey(operand) || core.globalAliasOffset.containsKey(operand)) {
-                    // A bare (possibly dotted) declared GLOBAL/
-                    // ALLOC_STATIC name -- ordinarily its *value* (the
-                    // same "read what's stored there" semantics a local
-                    // variable's own "PUSH size $offset" already has,
-                    // and the same thing ATOMIC_PUSH does explicitly,
-                    // atomically, for the identical bare-global-name
-                    // case) -- confirmed directly, the hard way: this
-                    // pass originally treated every bare global name as
-                    // "push its address" across the board, which
-                    // happened to work for the ghost-table lock (see
-                    // below) but silently broke gt_destruct's own
-                    // ghost-table *search* the first time a real test
-                    // actually exercised it (ghost_table.len's real
-                    // stored value is 0, but its *address* is some large
-                    // nonzero number, so the address reading turned an
-                    // always-skipped search loop into one that ran with
-                    // garbage bounds and eventually dereferenced garbage
-                    // -- a real, confusing segfault this pass had to
-                    // bisect down to before finding the true convention
-                    // split here). The one confirmed exception is a
-                    // global immediately feeding an ATOMIC_SWAP two
-                    // lines ahead (this pipeline's own lock-acquire
-                    // shape, "PUSH lockGlobal / PUSH newValue /
-                    // ATOMIC_SWAP" -- an in-place memory swap that
-                    // genuinely needs the address, not the value, and is
-                    // the one bare-global PUSH site this pass actually
-                    // confirmed wants that) -- everywhere else (ASSIGN,
-                    // arithmetic, comparisons, ARG passing) it's the
-                    // value.
-                    if (hub.emit.lineAtOffsetIsAtomicSwap(2)) {
-                        hub.emit.leaGlobalToReg("rax", operand);
-                    } else if (size > 8) {
-                        // A multi-word global (a static array, most often,
-                        // about to feed LOOKUP_ARRAY) is pushed as a whole
-                        // value block -- the identical shape "PUSH size
-                        // $offset" produces for a local of that size. Before,
-                        // this fell to the single-word load below, so only
-                        // the array's first 8 bytes were pushed and
-                        // LOOKUP_ARRAY indexed into (and dereferenced) that
-                        // word as if it were the array: reading any element
-                        // of a static array segfaulted.
-                        hub.emit.leaGlobalToReg("rax", operand);
-                        pushSizedOrBlockFromAddr("rax", size);
-                        core.lastValueBlockSize = size;
-                        return true;
+                        // A real, previously-undiscovered bug found
+                        // this way: this shape used to leave
+                        // `lastValueBlockSize` at 0 like any other
+                        // ordinary scalar read, so the following
+                        // LOOKUP_ARRAY fell into its own "no block
+                        // pending" fallback -- built for an unsafe
+                        // dynarray's own bare *pointer* value -- and
+                        // treated this packed array value as if it
+                        // were itself a memory address, corrupting it
+                        // into a bogus pointer and dereferencing it.
+                        // Confirmed as a real, live segfault via
+                        // `struct_array_member_narrow_elem_cg_test`'s
+                        // own `letters: mut char[3]` member.
+                        core.lastValueBlockSize = -size;
                     } else {
-                        hub.emit.leaGlobalToReg("rax", operand);
-                        hub.emit.loadSizedFromAddr("rax", "rax", size);
-                        if (pendingBlockSize == 0 && size < 8) {
-                            // Same tag as the local "PUSH size $offset" case:
-                            // a narrow value may be a whole small static array
-                            // about to feed LOOKUP_ARRAY (see that case).
-                            core.lastValueBlockSize = -size;
-                            hub.emit.storeConstructionOrPlainPush("rax", size);
-                            return true;
-                        }
+                        // A small push right after a pushed value-block
+                        // is always the index/field-offset that a
+                        // following LOOKUP_ARRAY/PUSH_FIELDNAME+DOT
+                        // consumes *alongside* that block -- preserve
+                        // the pending block size across it rather than
+                        // treating it as unrelated.
+                        core.lastValueBlockSize = pendingBlockSize;
                     }
-                } else if (core.declaredFunctionNames.contains(operand)) {
-                    // A real function's own address -- see
-                    // "declaredFunctionNames"'s own doc comment. Never
-                    // dereferenced afterward, unlike a global: the value
-                    // *is* the address.
+                } else {
+                    // A multi-word (>8 byte) value pushed by plain
+                    // value -- a small struct passed/copied whole
+                    // (e.g. "PUSH 24 $-64", "PUSH 48 $-200"), or an
+                    // array pushed by its own full declared size for
+                    // a following LOOKUP_ARRAY read (confirmed
+                    // directly against array_lookup_cg_test.caspien's
+                    // own real low-order output: a read
+                    // ("PUSH 40 $-40 / PUSH idx / LOOKUP_ARRAY 8")
+                    // pushes the *whole* array by value, while a
+                    // write ("ADDR 40 $-40 / PUSH idx /
+                    // LOOKUP_ARRAY_LHS 8") pushes only its address --
+                    // two genuinely different conventions for the
+                    // same LOOKUP_ARRAY family, not a codegen choice).
+                    // Pushes ceil(size/8) whole words, lowest source
+                    // offset first, so the highest-offset word ends
+                    // up on top -- the same convention DEREF's own
+                    // multi-word case and the "POP $addr size"
+                    // block-store already share -- and remembers the
+                    // total size for LOOKUP_ARRAY/DOT to extract a
+                    // sub-range from afterward.
+                    //
+                    // UNLESS this exact line is itself a direct
+                    // member of a construction run `precomputeConstructionOffsets`
+                    // already resolved (`pushStoreOffsetByLine`) --
+                    // i.e. a whole, already-fully-built value (e.g. a
+                    // hidden RVO temp local) being fed, as one single
+                    // >8-byte entry, straight into a following "NEW"/
+                    // construction-scoped "ASSIGN". That terminator's
+                    // own straight `rep movsb` copy (see "NEW"'s own
+                    // doc comment) assumes the bytes sitting at the
+                    // top of the stack are already in the same,
+                    // natural, ascending-offset order the source
+                    // struct/array itself has -- true for an ordinary
+                    // multi-field literal (each field individually
+                    // reserves and writes only its own declared
+                    // width, via `storeConstructionOrPlainPush`,
+                    // directly at its own natural position), but
+                    // false for the reversed, "highest-offset word on
+                    // top" order this branch's own ordinary path
+                    // produces. Using the ordinary reversed path here
+                    // silently swapped a struct's own front and back
+                    // words end for end once copied into the final
+                    // buffer -- confirmed as a real, live bug via
+                    // `new` constructing a value already built by a
+                    // separate call (a struct's own constructor,
+                    // called via its stack-RVO destination pointer,
+                    // then handed to `new` as one already-complete
+                    // value) rather than via an inline literal:
+                    // `new MyClass(11,13)`'s own `y` field silently
+                    // read back as `1` (the struct's own hidden
+                    // classId, its front-most word) instead of `13`.
+                    // `pushBlockFromFrameConstructionAware` below
+                    // keeps this entry's own bytes in their real,
+                    // natural order and lands them at the exact
+                    // packed offset `populateDirectMembers` already
+                    // computed for it (0, unconditionally, whenever
+                    // this is the run's *only* entry -- a whole-value
+                    // feed like this always is one, since
+                    // `collectRunEntries` only ever splits a value
+                    // into more than one entry at real, separate
+                    // "PUSH"/"ATOMIC_PUSH"/"STACK_LOCK" lines, and a
+                    // single already-built value is always exactly
+                    // one line), so the terminator's own straight,
+                    // order-preserving copy sees exactly the bytes it
+                    // already assumes.
+                    hub.emit.pushBlockFromFrameConstructionAware(offset, size);
+                    core.lastValueBlockSize = size;
+                }
+                return true;
+            } else if (operand.equals("null")) {
+                hub.emit.movImmToReg("rax", 0);
+            } else if (X86Core.isInteger(operand)) {
+                long intBits;
+                if (operand.startsWith("-")) {
+                    intBits = Long.parseLong(operand);
+                } else {
+                    intBits = Long.parseUnsignedLong(operand);
+                }
+                hub.emit.movImmToReg("rax", intBits);
+            } else if (X86Core.isFloatLiteral(operand)) {
+                // A float literal's own IEEE-754 bit pattern is just
+                // as pushable as an int's bits through this exact
+                // same integer-immediate/pushq mechanism -- this
+                // instruction (and the "ASSIGN"/frame-load machinery
+                // downstream of it) already treats every value as
+                // opaque bytes of the declared `size`, never
+                // interpreting them, so there is nothing SSE/xmm-
+                // specific needed just to get a literal's own bits
+                // to sit correctly in memory. The real xmm-register
+                // work this doesn't touch -- float *arithmetic*
+                // (ADD_FLOAT/SUB_FLOAT/MUL_FLOAT/DIV_FLOAT), float
+                // *comparison* (EQ_FLOAT/NEQ_FLOAT/LT_FLOAT/...),
+                // returning a float (RET_FLOAT), and FLOAT_CHECK
+                // (the finite/infinite/nan classification match
+                // lowers to) -- is all implemented elsewhere in this
+                // same file; none of it falls through to the generic
+                // TODO any more (verified directly: a real program
+                // exercising all three FLOAT_CHECK categories
+                // together -- a finite value, 1.0/0.0, and 0.0/0.0
+                // -- compiles with zero TODOs in the generated
+                // assembly and correctly prints "finite"/"infinite"/
+                // "nan").
+                long bits;
+                if (size <= 4) {
+                    bits = Integer.toUnsignedLong(Float.floatToRawIntBits(Float.parseFloat(operand)));
+                } else {
+                    bits = Double.doubleToRawLongBits(Double.parseDouble(operand));
+                }
+                hub.emit.movImmToReg("rax", bits);
+            } else if (operand.matches("\\d+\\.(start|end)")) {
+                // A synthesized pseudo-member push against an
+                // *incomplete* range value ("5.start"/"5.end") --
+                // part of the same WITHIN/incomplete-range gap this
+                // pass already documents elsewhere (the lowering
+                // pipeline leaves this operand as a symbolic,
+                // non-address form even at "low order"); flagged
+                // rather than mismangled into a bogus symbol.
+                hub.emit.comment("TODO(codegen): PUSH of incomplete-range pseudo-member '" + operand + "' not yet implemented -- pushing 0 as a placeholder");
+                hub.emit.movImmToReg("rax", 0);
+            } else if (operand.startsWith("ARG")) {
+                // A calling-convention register-transfer slot read
+                // directly as a value -- the callee side of the same
+                // convention "POP ARGn" uses on the caller side.
+                // Confirmed directly: every real site is the very
+                // first instruction touching registers right after
+                // FUNC_START/ALLOC (storing an incoming parameter to
+                // its own local), so the argument register still
+                // holds its true incoming value here untouched.
+                int idx = Integer.parseInt(operand.substring(3));
+                hub.emit.raw(("    movq %" + argReg(idx) + ", %rax"));
+            } else if (operand.startsWith("FARG")) {
+                // The float-bank counterpart of the "ARG" branch just
+                // above -- the incoming parameter's own real bits are
+                // already sitting in a real xmm register at function
+                // entry (the calling convention's own float-argument
+                // slot), never a GPR, so this moves the raw 64 bits
+                // out of it via the same bit-copying `movq` every
+                // other float op in this file already uses, rather
+                // than reading a GPR that was never written.
+                int idx = Integer.parseInt(operand.substring(4));
+                movXmmToReg(argFloatReg(idx), "rax");
+            } else if (core.stringLiterals.containsKey(operand)) {
+                // A string-pool id -- always its address (a string
+                // literal decays to a pointer to its own .rodata
+                // bytes, exactly like a real array/struct global;
+                // there's no separate "value" to push instead,
+                // confirmed directly against every real string-
+                // literal PUSH site, e.g. printf's format-string
+                // argument and NEW_FROM_STRING's source operand).
+                hub.emit.leaGlobalToReg("rax", operand);
+            } else if (core.globalsSizeInit.containsKey(operand) || core.globalAliasOffset.containsKey(operand)) {
+                // A bare (possibly dotted) declared GLOBAL/
+                // ALLOC_STATIC name -- ordinarily its *value* (the
+                // same "read what's stored there" semantics a local
+                // variable's own "PUSH size $offset" already has,
+                // and the same thing ATOMIC_PUSH does explicitly,
+                // atomically, for the identical bare-global-name
+                // case) -- confirmed directly, the hard way: this
+                // pass originally treated every bare global name as
+                // "push its address" across the board, which
+                // happened to work for the ghost-table lock (see
+                // below) but silently broke gt_destruct's own
+                // ghost-table *search* the first time a real test
+                // actually exercised it (ghost_table.len's real
+                // stored value is 0, but its *address* is some large
+                // nonzero number, so the address reading turned an
+                // always-skipped search loop into one that ran with
+                // garbage bounds and eventually dereferenced garbage
+                // -- a real, confusing segfault this pass had to
+                // bisect down to before finding the true convention
+                // split here). The one confirmed exception is a
+                // global immediately feeding an ATOMIC_SWAP two
+                // lines ahead (this pipeline's own lock-acquire
+                // shape, "PUSH lockGlobal / PUSH newValue /
+                // ATOMIC_SWAP" -- an in-place memory swap that
+                // genuinely needs the address, not the value, and is
+                // the one bare-global PUSH site this pass actually
+                // confirmed wants that) -- everywhere else (ASSIGN,
+                // arithmetic, comparisons, ARG passing) it's the
+                // value.
+                if (hub.emit.lineAtOffsetIsAtomicSwap(2)) {
                     hub.emit.leaGlobalToReg("rax", operand);
-                } else if (X86Core.isCharLiteral(operand)) {
-                    // A char literal -- "'a'", "'\n'", "'\0'", ... --
-                    // BytecodeEmitter.escapeForBytecode's own serialized
-                    // form: a single quote, one real character's worth of
-                    // content (either one printable byte, or a two-
-                    // character "\x"-style escape for anything this
-                    // language's own lexer recognizes as an escape --
-                    // "\\"/"\""/"\n"/"\t"/"\r"/"\0"/"\b"/"\f"/"\a"/"\v"),
-                    // then a closing single quote. A real, previously-
-                    // undiscovered gap: this operand shape had no branch
-                    // here at all -- every char literal anywhere in the
-                    // whole language silently fell to the generic
-                    // "not a declared global" placeholder below, pushing
-                    // 0 in place of the real character, every time,
-                    // regardless of context (a bare `let c = 'a'`, an
-                    // array-of-char literal, a match/comparison against a
-                    // char, ...). Confirmed directly, not assumed: 22
-                    // distinct example fixtures across the whole test
-                    // corpus hit this, including three that had been
-                    // separately tracked all along as unrelated,
-                    // "pre-existing baseline failures"
-                    // (array_literal_narrow_elem_cg_test,
-                    // struct_array_member_narrow_elem_cg_test,
-                    // struct_mixed_width_cg_test) -- all three were
-                    // actually this one bug the whole time. Decoded the
-                    // same way an integer/float literal already is just
-                    // above: to its real numeric byte value, immediate-
-                    // loaded into %rax, no runtime work needed (a char is
-                    // always exactly one compile-time-known byte).
-                    hub.emit.movImmToReg("rax", X86Core.decodeCharLiteral(line.get(2)));
-                } else {
-                    hub.emit.comment("TODO(codegen): PUSH of '" + operand + "' (not a declared global) not yet implemented -- pushing 0 as a placeholder");
-                    hub.emit.movImmToReg("rax", 0);
-                }
-                // Any of these forms (a literal index, "null", an ARG
-                // read, a global address) can legitimately be the
-                // index/offset half of a LOOKUP_ARRAY/DOT chain, so a
-                // pending value-block from just before is preserved
-                // through it, same as the small "$offset" branch above.
-                core.lastValueBlockSize = pendingBlockSize;
-                hub.emit.storeConstructionOrPlainPush("rax", size);
-                return true;
-            }
-            
-case "ASSIGN":
-            case "ATOMIC_ASSIGN": {
-                // Stack, top to bottom: value, address. size operands
-                // (3 of them, always equal) tell us the real width to
-                // store -- previously ignored (always did a full 8-byte
-                // store, which is wrong for anything narrower, e.g. a
-                // struct's own 'bool'/'u8'/'f32' field sitting between
-                // other fields). A plain aligned store is already atomic
-                // on x86-64, so ATOMIC_ASSIGN needs no different
-                // instruction, just the same width-aware store.
-                int size = (int) Long.parseLong(line.get(1).text);
-                if (core.constructionScopedAssign.contains(core.currentLineIndex)) {
-                    // A plain, stack-resident struct/array/primitive
-                    // literal's own top-level store -- see
-                    // `constructionScopedAssign`'s own doc comment. %rsp
-                    // already holds a real, byte-exact, tightly-packed
-                    // image of the value (every push in the run just
-                    // reserved its own declared width, never a blind
-                    // 8-byte word), exactly the same "genuinely trivial
-                    // and completely struct-agnostic" copy `case "NEW"`
-                    // already does for the identical shape -- just to an
-                    // address already sitting on the stack (below the
-                    // value block) rather than a freshly malloc'd one, so
-                    // no allocation call is needed here at all. Checked
-                    // *before* the `size <= 8` case below: a small (say,
-                    // 4-byte, four-`char`) construction is exactly as
-                    // real a construction as a large one -- its value
-                    // block was reserved byte-exact too, not as one
-                    // ordinary 8-byte word, so the plain scalar pop/pop
-                    // path below would desynchronize with it (popping 8
-                    // bytes of a 4-byte-reserved value block spills into
-                    // the address word sitting right above it).
-                    hub.emit.assignConstructionBlock(size);
-                } else if (line.size() > 4) {
-                    // A stack struct literal whose field values were not all plain pushes (an expression, a call, ...): every
-                    // field was pushed as a whole 8-byte word, so the block-copy paths below would misread the stack. The layout
-                    // descriptor LowerOrderGenerator appended tells us where each field really goes.
-                    hub.emit.emitAssignRepack(size, line);
-                } else if (size <= 8) {
-                    hub.emit.popReg("rax"); // value
-                    hub.emit.popReg("rbx"); // address
-                    hub.emit.storeSizedToAddr("rax", "rbx", size);
-                } else {
-                    // Not a recognized construction -- an ordinary
-                    // whole-value block copy (`let b = a`, passing a
-                    // struct/array by value, ...), whose own pushed image
-                    // came from `pushBlockFromFrame`'s uniform, always-
-                    // whole-8-byte-word convention instead. Handled the
-                    // old way, popping one word at a time.
-                    hub.emit.assignBlock(size);
-                }
-                return true;
-            }
-            
-case "R_MOV": {
-                // Register-form (see the LowerOrderGenerator's RegisterFormPass): "R_MOV 8 dst src".
-                hub.regForm.rfMov(line.get(2).text, line.get(3).text);
-                return true;
-            }
-            
-case "R_BIN": {
-                // "R_BIN OP size %tD a b" -- %tD = a OP b.
-                hub.gen.rfBin(line.get(1).text, (int) Long.parseLong(line.get(2).text), line.get(3).text, line.get(4).text, line.get(5).text);
-                return true;
-            }
-            
-case "R_DIVC": {
-                // "R_DIVC DIV|MOD 8 %tD a #k" -- unsigned division / remainder by a constant, by multiplying with the reciprocal.
-                hub.regForm.rfDivConst(line.get(1).text.equals("MOD"), (int) Long.parseLong(line.get(2).text), line.get(3).text, line.get(4).text, X86Core.rfImm(line.get(5).text));
-                return true;
-            }
-            
-case "R_UN": {
-                // "R_UN OP size %tD a" -- %tD = OP a.
-                hub.gen.rfUn(line.get(1).text, (int) Long.parseLong(line.get(2).text), line.get(3).text, line.get(4).text);
-                return true;
-            }
-            
-case "R_BRF": {
-                // "R_BRF %tN @label" -- jump if the temp is zero (replaces CMP + JMP).
-                String reg = hub.regForm.rfReg(line.get(1).text);
-                hub.emit.raw(("    testq %" + reg + ", %" + reg));
-                hub.emit.raw("    je " + hub.gen.mangleLabel(line.get(2).text));
-                return true;
-            }
-            
-case "R_BRC": {
-                // "R_BRC OP 8 a b @label" -- compare a with b and jump to the label when NOT (a OP b) (the fused form of
-                // R_BIN cmp + R_BRF, made by the LowerOrderGenerator's BranchFusionPass; the compare result never exists).
-                if (line.get(2).text.startsWith("F")) { // "R_BRC OP F4|F8 a b @label": float compare (ucomiss/ucomisd) + jump
-                    hub.gen.rfFloat(true, line.get(1).text, Integer.parseInt(line.get(2).text.substring(1)), null, line.get(3).text, line.get(4).text,
-                            hub.gen.mangleLabel(line.get(5).text));
+                } else if (size > 8) {
+                    // A multi-word global (a static array, most often,
+                    // about to feed LOOKUP_ARRAY) is pushed as a whole
+                    // value block -- the identical shape "PUSH size
+                    // $offset" produces for a local of that size. Before,
+                    // this fell to the single-word load below, so only
+                    // the array's first 8 bytes were pushed and
+                    // LOOKUP_ARRAY indexed into (and dereferenced) that
+                    // word as if it were the array: reading any element
+                    // of a static array segfaulted.
+                    hub.emit.leaGlobalToReg("rax", operand);
+                    pushSizedOrBlockFromAddr("rax", size);
+                    core.lastValueBlockSize = size;
                     return true;
+                } else {
+                    hub.emit.leaGlobalToReg("rax", operand);
+                    hub.emit.loadSizedFromAddr("rax", "rax", size);
+                    if (pendingBlockSize == 0 && size < 8) {
+                        // Same tag as the local "PUSH size $offset" case:
+                        // a narrow value may be a whole small static array
+                        // about to feed LOOKUP_ARRAY (see that case).
+                        core.lastValueBlockSize = -size;
+                        hub.emit.storeConstructionOrPlainPush("rax", size);
+                        return true;
+                    }
                 }
-                int brcSize = (int) Long.parseLong(line.get(2).text);
-                if (brcSize < 8) {
-                    hub.gen.rfBrcNarrow(line.get(1).text, brcSize, line.get(3).text, line.get(4).text, hub.gen.mangleLabel(line.get(5).text));
-                    return true;
-                }
-                hub.gen.rfBrc(line.get(1).text, line.get(3).text, line.get(4).text, hub.gen.mangleLabel(line.get(5).text));
+            } else if (core.declaredFunctionNames.contains(operand)) {
+                // A real function's own address -- see
+                // "declaredFunctionNames"'s own doc comment. Never
+                // dereferenced afterward, unlike a global: the value
+                // *is* the address.
+                hub.emit.leaGlobalToReg("rax", operand);
+            } else if (X86Core.isCharLiteral(operand)) {
+                // A char literal -- "'a'", "'\n'", "'\0'", ... --
+                // BytecodeEmitter.escapeForBytecode's own serialized
+                // form: a single quote, one real character's worth of
+                // content (either one printable byte, or a two-
+                // character "\x"-style escape for anything this
+                // language's own lexer recognizes as an escape --
+                // "\\"/"\""/"\n"/"\t"/"\r"/"\0"/"\b"/"\f"/"\a"/"\v"),
+                // then a closing single quote. A real, previously-
+                // undiscovered gap: this operand shape had no branch
+                // here at all -- every char literal anywhere in the
+                // whole language silently fell to the generic
+                // "not a declared global" placeholder below, pushing
+                // 0 in place of the real character, every time,
+                // regardless of context (a bare `let c = 'a'`, an
+                // array-of-char literal, a match/comparison against a
+                // char, ...). Confirmed directly, not assumed: 22
+                // distinct example fixtures across the whole test
+                // corpus hit this, including three that had been
+                // separately tracked all along as unrelated,
+                // "pre-existing baseline failures"
+                // (array_literal_narrow_elem_cg_test,
+                // struct_array_member_narrow_elem_cg_test,
+                // struct_mixed_width_cg_test) -- all three were
+                // actually this one bug the whole time. Decoded the
+                // same way an integer/float literal already is just
+                // above: to its real numeric byte value, immediate-
+                // loaded into %rax, no runtime work needed (a char is
+                // always exactly one compile-time-known byte).
+                hub.emit.movImmToReg("rax", X86Core.decodeCharLiteral(line.get(2)));
+            } else {
+                hub.emit.comment("TODO(codegen): PUSH of '" + operand + "' (not a declared global) not yet implemented -- pushing 0 as a placeholder");
+                hub.emit.movImmToReg("rax", 0);
+            }
+            // Any of these forms (a literal index, "null", an ARG
+            // read, a global address) can legitimately be the
+            // index/offset half of a LOOKUP_ARRAY/DOT chain, so a
+            // pending value-block from just before is preserved
+            // through it, same as the small "$offset" branch above.
+            core.lastValueBlockSize = pendingBlockSize;
+            hub.emit.storeConstructionOrPlainPush("rax", size);
+            return true;
+        } else if (mnemonic.equals("ASSIGN") || mnemonic.equals("ATOMIC_ASSIGN")) {
+            // Stack, top to bottom: value, address. size operands
+            // (3 of them, always equal) tell us the real width to
+            // store -- previously ignored (always did a full 8-byte
+            // store, which is wrong for anything narrower, e.g. a
+            // struct's own 'bool'/'u8'/'f32' field sitting between
+            // other fields). A plain aligned store is already atomic
+            // on x86-64, so ATOMIC_ASSIGN needs no different
+            // instruction, just the same width-aware store.
+            int size = (int) Long.parseLong(line.get(1).text);
+            if (core.constructionScopedAssign.contains(core.currentLineIndex)) {
+                // A plain, stack-resident struct/array/primitive
+                // literal's own top-level store -- see
+                // `constructionScopedAssign`'s own doc comment. %rsp
+                // already holds a real, byte-exact, tightly-packed
+                // image of the value (every push in the run just
+                // reserved its own declared width, never a blind
+                // 8-byte word), exactly the same "genuinely trivial
+                // and completely struct-agnostic" copy `case "NEW"`
+                // already does for the identical shape -- just to an
+                // address already sitting on the stack (below the
+                // value block) rather than a freshly malloc'd one, so
+                // no allocation call is needed here at all. Checked
+                // *before* the `size <= 8` case below: a small (say,
+                // 4-byte, four-`char`) construction is exactly as
+                // real a construction as a large one -- its value
+                // block was reserved byte-exact too, not as one
+                // ordinary 8-byte word, so the plain scalar pop/pop
+                // path below would desynchronize with it (popping 8
+                // bytes of a 4-byte-reserved value block spills into
+                // the address word sitting right above it).
+                hub.emit.assignConstructionBlock(size);
+            } else if (line.size() > 4) {
+                // A stack struct literal whose field values were not all plain pushes (an expression, a call, ...): every
+                // field was pushed as a whole 8-byte word, so the block-copy paths below would misread the stack. The layout
+                // descriptor LowerOrderGenerator appended tells us where each field really goes.
+                hub.emit.emitAssignRepack(size, line);
+            } else if (size <= 8) {
+                hub.emit.popReg("rax"); // value
+                hub.emit.popReg("rbx"); // address
+                hub.emit.storeSizedToAddr("rax", "rbx", size);
+            } else {
+                // Not a recognized construction -- an ordinary
+                // whole-value block copy (`let b = a`, passing a
+                // struct/array by value, ...), whose own pushed image
+                // came from `pushBlockFromFrame`'s uniform, always-
+                // whole-8-byte-word convention instead. Handled the
+                // old way, popping one word at a time.
+                hub.emit.assignBlock(size);
+            }
+            return true;
+        } else if (mnemonic.equals("R_MOV")) {
+            // Register-form (see the LowerOrderGenerator's RegisterFormPass): "R_MOV 8 dst src".
+            hub.regForm.rfMov(line.get(2).text, line.get(3).text);
+            return true;
+        } else if (mnemonic.equals("R_BIN")) {
+            // "R_BIN OP size %tD a b" -- %tD = a OP b.
+            hub.gen.rfBin(line.get(1).text, (int) Long.parseLong(line.get(2).text), line.get(3).text, line.get(4).text, line.get(5).text);
+            return true;
+        } else if (mnemonic.equals("R_DIVC")) {
+            // "R_DIVC DIV|MOD 8 %tD a #k" -- unsigned division / remainder by a constant, by multiplying with the reciprocal.
+            hub.regForm.rfDivConst(line.get(1).text.equals("MOD"), (int) Long.parseLong(line.get(2).text), line.get(3).text, line.get(4).text, X86Core.rfImm(line.get(5).text));
+            return true;
+        } else if (mnemonic.equals("R_UN")) {
+            // "R_UN OP size %tD a" -- %tD = OP a.
+            hub.gen.rfUn(line.get(1).text, (int) Long.parseLong(line.get(2).text), line.get(3).text, line.get(4).text);
+            return true;
+        } else if (mnemonic.equals("R_BRF")) {
+            // "R_BRF %tN @label" -- jump if the temp is zero (replaces CMP + JMP).
+            String reg = hub.regForm.rfReg(line.get(1).text);
+            hub.emit.raw(("    testq %" + reg + ", %" + reg));
+            hub.emit.raw("    je " + hub.gen.mangleLabel(line.get(2).text));
+            return true;
+        } else if (mnemonic.equals("R_BRC")) {
+            // "R_BRC OP 8 a b @label" -- compare a with b and jump to the label when NOT (a OP b) (the fused form of
+            // R_BIN cmp + R_BRF, made by the LowerOrderGenerator's BranchFusionPass; the compare result never exists).
+            if (line.get(2).text.startsWith("F")) { // "R_BRC OP F4|F8 a b @label": float compare (ucomiss/ucomisd) + jump
+                hub.gen.rfFloat(true, line.get(1).text, Integer.parseInt(line.get(2).text.substring(1)), null, line.get(3).text, line.get(4).text,
+                        hub.gen.mangleLabel(line.get(5).text));
                 return true;
             }
-            
-case "R_CMOV": {
-                hub.gen.rfCmov(line);
+            int brcSize = (int) Long.parseLong(line.get(2).text);
+            if (brcSize < 8) {
+                hub.gen.rfBrcNarrow(line.get(1).text, brcSize, line.get(3).text, line.get(4).text, hub.gen.mangleLabel(line.get(5).text));
                 return true;
             }
-            
-            default:
-                return false;
+            hub.gen.rfBrc(line.get(1).text, line.get(3).text, line.get(4).text, hub.gen.mangleLabel(line.get(5).text));
+            return true;
+        } else if (mnemonic.equals("R_CMOV")) {
+            hub.gen.rfCmov(line);
+            return true;
+        } else {
+            return false;
         }
     }
 }

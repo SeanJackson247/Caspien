@@ -133,7 +133,13 @@ final class X86Generator {
         if (op.equals("MUL") && size == 8 && X86Core.rfIsImm(bTok) && !X86Core.rfIsImm(aTok) && X86Core.rfFitsImm32(X86Core.rfImm(bTok)) && !X86Core.mulByConstShape(X86Core.rfImm(bTok))
                 && !(X86Core.rfIsTemp(aTok) && hub.regForm.rfReg(aTok).equals(d)) && !(X86Core.rfIsTemp(bTok) && hub.regForm.rfReg(bTok).equals(d))) {
             // d = a * imm32 in one instruction (imul r64, r/m64, imm32) instead of `mov a, d; imul imm, d`
-            hub.emit.raw("    imulq $" + X86Core.rfImm(bTok) + ", " + (X86Core.rfIsTemp(aTok) ? hub.regForm.rfRegText(hub.regForm.rfReg(aTok)) : hub.regForm.rfMemText(X86Core.rfSlot(aTok))) + ", " + hub.regForm.rfRegText(d));
+            String aSrc;
+            if (X86Core.rfIsTemp(aTok)) {
+                aSrc = hub.regForm.rfRegText(hub.regForm.rfReg(aTok));
+            } else {
+                aSrc = hub.regForm.rfMemText(X86Core.rfSlot(aTok));
+            }
+            hub.emit.raw("    imulq $" + X86Core.rfImm(bTok) + ", " + aSrc + ", " + hub.regForm.rfRegText(d));
             return;
         }
         String bText = null;
@@ -168,7 +174,16 @@ final class X86Generator {
             if (mk == 0xFFFFFFFFL) {
                 hub.emit.raw("    movl %" + hub.emit.sizedReg(hub.regForm.rfReg(aTok), 4) + ", %" + hub.emit.sizedReg(d, 4));
             } else {
-                hub.emit.raw("    movz" + (mk == 0xFFL ? "b" : "w") + "l %" + hub.emit.sizedReg(hub.regForm.rfReg(aTok), mk == 0xFFL ? 1 : 2) + ", %" + hub.emit.sizedReg(d, 4));
+                String zsfx;
+                int zsize;
+                if (mk == 0xFFL) {
+                    zsfx = "b";
+                    zsize = 1;
+                } else {
+                    zsfx = "w";
+                    zsize = 2;
+                }
+                hub.emit.raw("    movz" + zsfx + "l %" + hub.emit.sizedReg(hub.regForm.rfReg(aTok), zsize) + ", %" + hub.emit.sizedReg(d, 4));
             }
             return;
         }
@@ -192,57 +207,77 @@ final class X86Generator {
             }
         }
         String dText = hub.regForm.rfRegText(d);
-        switch (op) {
-            case "ADD":
-                hub.regForm.rfOp2("add", dText, bText);
-                return;
-            case "SUB":
-                hub.regForm.rfOp2("sub", dText, bText);
-                return;
-            case "MUL":
-                if (bText.startsWith("$") && rfMulByConst(d, Long.parseLong(bText.substring(1)))) {
-                    return;
-                }
-                hub.regForm.rfOp2("imul", dText, bText);
-                return;
-            case "BAND":
-            case "BOR":
-            case "BXOR":
-                // bitwise and / or / xor (BAND is also x % 2^n); the mask is a small immediate or a register. A narrow result is
-                // cut back to the operand width, so the temp holds the zero-extended value (the entry is marked zx by the pass).
-                hub.regForm.rfOp2(op.equals("BAND") ? "and" : op.equals("BOR") ? "or" : "xor", dText, bText);
-                hub.emit.zeroExtendReg(d, size);
-                return;
-            case "AND":
-            case "OR": {
-                String o = op.equals("AND") ? "and" : "or";
-                if (size == 1) {
-                    // Booleans: both operands are register-held 0/1 results; byte-wide, like the stack form.
-                    String bReg = X86Core.rfIsTemp(bTok) ? hub.regForm.rfReg(bTok) : d;
-                    hub.emit.raw("    " + o + "b %" + hub.emit.sizedReg(bReg, 1) + ", %" + hub.emit.sizedReg(d, 1));
-                    
-                } else {
-                    hub.regForm.rfOp2(o, dText, bText);
-                }
+        if (op.equals("ADD")) {
+            hub.regForm.rfOp2("add", dText, bText);
+            return;
+        } else if (op.equals("SUB")) {
+            hub.regForm.rfOp2("sub", dText, bText);
+            return;
+        } else if (op.equals("MUL")) {
+            if (bText.startsWith("$") && rfMulByConst(d, Long.parseLong(bText.substring(1)))) {
                 return;
             }
-            default:
-                break;
+            hub.regForm.rfOp2("imul", dText, bText);
+            return;
+        } else if (op.equals("BAND") || op.equals("BOR") || op.equals("BXOR")) {
+            // bitwise and / or / xor (BAND is also x % 2^n); the mask is a small immediate or a register. A narrow result is
+            // cut back to the operand width, so the temp holds the zero-extended value (the entry is marked zx by the pass).
+            String bitOp;
+            if (op.equals("BAND")) {
+                bitOp = "and";
+            } else if (op.equals("BOR")) {
+                bitOp = "or";
+            } else {
+                bitOp = "xor";
+            }
+            hub.regForm.rfOp2(bitOp, dText, bText);
+            hub.emit.zeroExtendReg(d, size);
+            return;
+        } else if (op.equals("AND") || op.equals("OR")) {
+            String o;
+            if (op.equals("AND")) {
+                o = "and";
+            } else {
+                o = "or";
+            }
+            if (size == 1) {
+                // Booleans: both operands are register-held 0/1 results; byte-wide, like the stack form.
+                String bReg;
+                if (X86Core.rfIsTemp(bTok)) {
+                    bReg = hub.regForm.rfReg(bTok);
+                } else {
+                    bReg = d;
+                }
+                hub.emit.raw("    " + o + "b %" + hub.emit.sizedReg(bReg, 1) + ", %" + hub.emit.sizedReg(d, 1));
+                
+            } else {
+                hub.regForm.rfOp2(o, dText, bText);
+            }
+            return;
         }
         String setcc;
-        switch (op) {
-            case "EQ": setcc = "sete"; break;
-            case "NEQ": setcc = "setne"; break;
-            case "LT": setcc = "setb"; break;
-            case "LT_EQ": setcc = "setbe"; break;
-            case "GT": setcc = "seta"; break;
-            case "GT_EQ": setcc = "setae"; break;
-            case "SLT": setcc = "setl"; break;
-            case "SLT_EQ": setcc = "setle"; break;
-            case "SGT": setcc = "setg"; break;
-            case "SGT_EQ": setcc = "setge"; break;
-            default:
-                throw new IllegalStateException("unknown R_BIN operator '" + op + "'");
+        if (op.equals("EQ")) {
+            setcc = "sete";
+        } else if (op.equals("NEQ")) {
+            setcc = "setne";
+        } else if (op.equals("LT")) {
+            setcc = "setb";
+        } else if (op.equals("LT_EQ")) {
+            setcc = "setbe";
+        } else if (op.equals("GT")) {
+            setcc = "seta";
+        } else if (op.equals("GT_EQ")) {
+            setcc = "setae";
+        } else if (op.equals("SLT")) {
+            setcc = "setl";
+        } else if (op.equals("SLT_EQ")) {
+            setcc = "setle";
+        } else if (op.equals("SGT")) {
+            setcc = "setg";
+        } else if (op.equals("SGT_EQ")) {
+            setcc = "setge";
+        } else {
+            throw new IllegalStateException("unknown R_BIN operator '" + op + "'");
         }
         hub.regForm.rfOp2("cmp", dText, bText);
         String d8 = hub.emit.sizedReg(d, 1);
@@ -264,8 +299,16 @@ final class X86Generator {
         if (!plus && Long.bitCount(k + 1) != 1) {
             return false;
         }
-        int sh = Long.numberOfTrailingZeros(plus ? k - 1 : k + 1);
-        String mn = plus ? "addq" : "subq";
+        long shBase;
+        String mn;
+        if (plus) {
+            shBase = k - 1;
+            mn = "addq";
+        } else {
+            shBase = k + 1;
+            mn = "subq";
+        }
+        int sh = Long.numberOfTrailingZeros(shBase);
         if (X86Core.rfIsTemp(aTok) && hub.regForm.rfReg(aTok).equals(d)) {
             hub.emit.raw("    movq %" + d + ", %" + X86Core.RF_SCRATCH);
             hub.emit.raw("    shlq $" + sh + ", %" + d);
@@ -304,10 +347,19 @@ final class X86Generator {
         if (!plus && Long.bitCount(k + 1) != 1) {
             return false;
         }
-        int sh = Long.numberOfTrailingZeros(plus ? k - 1 : k + 1);
+        long shBase;
+        String mn;
+        if (plus) {
+            shBase = k - 1;
+            mn = "addq";
+        } else {
+            shBase = k + 1;
+            mn = "subq";
+        }
+        int sh = Long.numberOfTrailingZeros(shBase);
         hub.emit.raw("    movq " + r + ", %" + X86Core.RF_SCRATCH);
         hub.emit.raw("    shlq $" + sh + ", " + r);
-        hub.emit.raw("    " + (plus ? "addq" : "subq") + " %" + X86Core.RF_SCRATCH + ", " + r);
+        hub.emit.raw("    " + mn + " %" + X86Core.RF_SCRATCH + ", " + r);
         return true;
     }
 
@@ -346,9 +398,21 @@ final class X86Generator {
         if (!X86Core.rfIsTemp(aTok) || !(X86Core.rfIsTemp(bTok) || X86Core.rfIsImm(bTok))) {
             throw new IllegalStateException("narrow R_BRC needs register or immediate operands: " + aTok + " " + bTok);
         }
-        String suffix = size == 1 ? "b" : size == 2 ? "w" : "l";
+        String suffix;
+        if (size == 1) {
+            suffix = "b";
+        } else if (size == 2) {
+            suffix = "w";
+        } else {
+            suffix = "l";
+        }
         String aText = "%" + hub.emit.sizedReg(hub.regForm.rfReg(aTok), size);
-        String bText = X86Core.rfIsImm(bTok) ? "$" + X86Core.rfTrunc(X86Core.rfImm(bTok), size) : "%" + hub.emit.sizedReg(hub.regForm.rfReg(bTok), size);
+        String bText;
+        if (X86Core.rfIsImm(bTok)) {
+            bText = "$" + X86Core.rfTrunc(X86Core.rfImm(bTok), size);
+        } else {
+            bText = "%" + hub.emit.sizedReg(hub.regForm.rfReg(bTok), size);
+        }
         hub.emit.raw("    cmp" + suffix + " " + bText + ", " + aText);
         if (label != null) {
             hub.emit.raw("    " + cc + " " + label);
@@ -402,9 +466,17 @@ final class X86Generator {
         String op = line.get(1).text;
         int size = (int) Long.parseLong(line.get(2).text);
         String a = line.get(3).text, b = line.get(4).text, v = line.get(5).text, x = line.get(6).text;
-        String y = line.size() > 7 ? line.get(7).text : null;
+        String y = null;
+        if (line.size() > 7) {
+            y = line.get(7).text;
+        }
         String dst = hub.regForm.rfReg(v);
-        String cc = size < 8 ? rfBrcNarrow(op, size, a, b, null) : rfBrc(op, a, b, null);
+        String cc;
+        if (size < 8) {
+            cc = rfBrcNarrow(op, size, a, b, null);
+        } else {
+            cc = rfBrc(op, a, b, null);
+        }
         if (y != null && !y.equals(v)) {
             if (X86Core.rfIsImm(y)) {
                 rfMovImmKeepFlags(dst, X86Core.rfImm(y));
@@ -435,26 +507,20 @@ final class X86Generator {
         if (!(X86Core.rfIsTemp(aTok) && hub.regForm.rfReg(aTok).equals(d))) {
             hub.regForm.rfMov(dstTok, aTok);
         }
-        switch (op) {
-            case "INC":
-                hub.emit.raw(("    incq %" + d));
-                return;
-            case "DEC":
-                hub.emit.raw(("    decq %" + d));
-                return;
-            case "NEG":
-                hub.emit.raw(("    negq %" + d));
-                return;
-            case "NOT":
-                hub.emit.raw(("    xorb $1, %" + hub.emit.sizedReg(d, 1)));
-                return;
-            case "BNOT":
-                // bitwise complement cut back to the operand width (u8: ~0 = 255)
-                hub.emit.raw(("    notq %" + d));
-                hub.emit.zeroExtendReg(d, size);
-                return;
-            default:
-                throw new IllegalStateException("unknown R_UN operator '" + op + "'");
+        if (op.equals("INC")) {
+            hub.emit.raw(("    incq %" + d));
+        } else if (op.equals("DEC")) {
+            hub.emit.raw(("    decq %" + d));
+        } else if (op.equals("NEG")) {
+            hub.emit.raw(("    negq %" + d));
+        } else if (op.equals("NOT")) {
+            hub.emit.raw(("    xorb $1, %" + hub.emit.sizedReg(d, 1)));
+        } else if (op.equals("BNOT")) {
+            // bitwise complement cut back to the operand width (u8: ~0 = 255)
+            hub.emit.raw(("    notq %" + d));
+            hub.emit.zeroExtendReg(d, size);
+        } else {
+            throw new IllegalStateException("unknown R_UN operator '" + op + "'");
         }
     }
 
@@ -495,7 +561,11 @@ final class X86Generator {
 
     /** "(disp)(%base)" memory text for a register base plus a constant displacement */
     String rfDispMem(String baseTok, long disp) {
-        return (disp != 0 ? String.valueOf(disp) : "") + "(%" + hub.regForm.rfReg(baseTok) + ")";
+        String dispText = "";
+        if (disp != 0) {
+            dispText = String.valueOf(disp);
+        }
+        return dispText + "(%" + hub.regForm.rfReg(baseTok) + ")";
     }
 
     /** %tD = n bytes (1, 2, 4 or 8) at base + disp, zero-extended */
@@ -521,11 +591,11 @@ final class X86Generator {
     }
 
     void rfLoadXDisp(String xmm, String baseTok, long disp, int n) {
-        hub.emit.raw("    " + (n == 8 ? "movsd" : "movss") + " " + rfDispMem(baseTok, disp) + ", %" + xmm);
+        hub.emit.raw("    " + fmov(n) + " " + rfDispMem(baseTok, disp) + ", %" + xmm);
     }
 
     void rfStoreXDisp(String baseTok, long disp, String xmm, int n) {
-        hub.emit.raw("    " + (n == 8 ? "movsd" : "movss") + " %" + xmm + ", " + rfDispMem(baseTok, disp));
+        hub.emit.raw("    " + fmov(n) + " %" + xmm + ", " + rfDispMem(baseTok, disp));
     }
 
     void rfStore(int n, String addrTok, String srcTok) {
@@ -542,7 +612,13 @@ final class X86Generator {
         if (X86Core.rfIsImm(srcTok)) {
             long v = X86Core.rfTrunc(X86Core.rfImm(srcTok), n);
             String mem;
-            mem = ripMem != null ? ripMem : areg == null ? (X86Core.rfSlot(addrTok) + "(%rbp)") : ("(%" + areg + ")");
+            if (ripMem != null) {
+                mem = ripMem;
+            } else if (areg == null) {
+                mem = X86Core.rfSlot(addrTok) + "(%rbp)";
+            } else {
+                mem = "(%" + areg + ")";
+            }
             hub.emit.raw("    mov" + hub.emit.movSuffix(n) + " $" + v + ", " + mem);
             
             return;
@@ -564,7 +640,11 @@ final class X86Generator {
         if (core.rfIdxReg == null) {
             return ("(%" + baseReg + ")");
         }
-        return (core.rfIdxDisp != 0 ? String.valueOf(core.rfIdxDisp) : "") + "(%" + baseReg + ",%" + core.rfIdxReg + "," + core.rfIdxScale + ")";
+        String idxDispText = "";
+        if (core.rfIdxDisp != 0) {
+            idxDispText = String.valueOf(core.rfIdxDisp);
+        }
+        return idxDispText + "(%" + baseReg + ",%" + core.rfIdxReg + "," + core.rfIdxScale + ")";
     }
 
     /**
@@ -661,7 +741,7 @@ final class X86Generator {
         rfSetIndex(baseTok, idxTok, scale);
         try {
             String mem = (rfMemOperand(b));
-            String mn = n == 8 ? "movsd" : "movss";
+            String mn = fmov(n);
             String xmm = xvReg(xTok);
             hub.emit.raw(("    " + mn + " " + mem + ", %" + xmm));
         } finally {
@@ -680,7 +760,7 @@ final class X86Generator {
         rfSetIndex(baseTok, idxTok, scale);
         try {
             String mem = (rfMemOperand(b));
-            String mn = n == 8 ? "movsd" : "movss";
+            String mn = fmov(n);
             String xmm = xvReg(xTok);
             hub.emit.raw(("    " + mn + " %" + xmm + ", " + mem));
         } finally {
@@ -704,7 +784,10 @@ final class X86Generator {
     void rfLea(String dstTok, String baseTok, String idxTok, long scale, long extra) {
         String d = hub.regForm.rfReg(dstTok);
         boolean baseIsT = X86Core.rfIsTemp(baseTok);
-        String bReg = baseIsT ? hub.regForm.rfReg(baseTok) : null;
+        String bReg = null;
+        if (baseIsT) {
+            bReg = hub.regForm.rfReg(baseTok);
+        }
         if (X86Core.rfIsImm(idxTok)) {
             long disp = X86Core.rfImm(idxTok) * scale + extra;
             if (X86Core.rfIsSlot(baseTok)) {
@@ -775,11 +858,17 @@ final class X86Generator {
 
     /** Scratch xmm registers for register-form float ops: never an argument register (SysV passes floats in xmm0-7; win64 in xmm0-3) and never a win64 non-volatile one. */
     String rfXmmA() {
-        return hub.emit.isWinAbi() ? "xmm4" : "xmm14";
+        if (hub.emit.isWinAbi()) {
+            return "xmm4";
+        }
+        return "xmm14";
     }
 
     String rfXmmB() {
-        return hub.emit.isWinAbi() ? "xmm5" : "xmm15";
+        if (hub.emit.isWinAbi()) {
+            return "xmm5";
+        }
+        return "xmm15";
     }
 
     void rfGprToXmm(String xmm, String gpr64, int n) {
@@ -805,26 +894,38 @@ final class X86Generator {
         } else if (X86Core.rfIsTemp(tok)) {
             rfGprToXmm(xmm, hub.regForm.rfReg(tok), n);
         } else if (X86Core.rfIsImm(tok)) {
-            long v = n == 4 ? (X86Core.rfImm(tok) & 0xFFFFFFFFL) : X86Core.rfImm(tok);
+            long v = maskIf4(X86Core.rfImm(tok), n);
             if (v == 0) {
                 hub.emit.raw("    xorps %" + xmm + ", %" + xmm);
             } else {
-                hub.emit.raw("    mov" + (n == 4 ? "ss" : "sd") + " " + floatPoolMem(v, n) + ", %" + xmm);
+                hub.emit.raw("    mov" + fsfx(n) + " " + floatPoolMem(v, n) + ", %" + xmm);
             }
             
         } else {
             long off = X86Core.rfSlot(tok);
-            String sfx = n == 4 ? "ss" : "sd";
+            String sfx = fsfx(n);
             hub.emit.raw(("    mov" + sfx + " " + off + "(%rbp), %" + xmm));
         }
     }
 
     String yPhys(int k) {
-        return "xmm" + ((hub.emit.isWinAbi() ? 12 : 4) + k);
+        int yBase;
+        if (hub.emit.isWinAbi()) {
+            yBase = 12;
+        } else {
+            yBase = 4;
+        }
+        return "xmm" + (yBase + k);
     }
 
     String xvPhys(int k) {
-        return "xmm" + ((hub.emit.isWinAbi() ? 6 : 8) + k);
+        int xBase;
+        if (hub.emit.isWinAbi()) {
+            xBase = 6;
+        } else {
+            xBase = 8;
+        }
+        return "xmm" + (xBase + k);
     }
 
     String xvReg(String tok) {
@@ -852,7 +953,8 @@ final class X86Generator {
             return;
         }
         for (java.util.Map.Entry<Integer, Long> e : core.xvHome.entrySet()) {
-            hub.emit.raw("    mov" + (core.xvWidth.getOrDefault(e.getKey(), 4) == 8 ? "sd" : "ss") + " %" + xvPhys(e.getKey()) + ", " + e.getValue() + "(%rbp)");
+            String wsfx = widthSfx(core.xvWidth.getOrDefault(e.getKey(), 4));
+            hub.emit.raw("    mov" + wsfx + " %" + xvPhys(e.getKey()) + ", " + e.getValue() + "(%rbp)");
         }
     }
 
@@ -861,13 +963,14 @@ final class X86Generator {
             return;
         }
         for (java.util.Map.Entry<Integer, Long> e : core.xvHome.entrySet()) {
-            hub.emit.raw("    mov" + (core.xvWidth.getOrDefault(e.getKey(), 4) == 8 ? "sd" : "ss") + " " + e.getValue() + "(%rbp), %" + xvPhys(e.getKey()));
+            String wsfx = widthSfx(core.xvWidth.getOrDefault(e.getKey(), 4));
+            hub.emit.raw("    mov" + wsfx + " " + e.getValue() + "(%rbp), %" + xvPhys(e.getKey()));
         }
     }
 
     /** The pool label for a float constant of width n (4 or 8 bytes), creating the entry on first use. */
     String floatPoolLabel(long bits, int n) {
-        long b = n == 4 ? (bits & 0xFFFFFFFFL) : bits;
+        long b = maskIf4(bits, n);
         String key = n + ":" + b;
         String label = core.floatPool.get(key);
         if (label == null) {
@@ -887,14 +990,26 @@ final class X86Generator {
         if (core.floatPool.isEmpty()) {
             return;
         }
-        hub.emit.raw(core.target == CodegenTarget.WINDOWS_GNU_X64 ? ".section .rdata,\"dr\"" : ".section .rodata");
+        if (core.target == CodegenTarget.WINDOWS_GNU_X64) {
+            hub.emit.raw(".section .rdata,\"dr\"");
+        } else {
+            hub.emit.raw(".section .rodata");
+        }
         for (Map.Entry<String, String> e : core.floatPool.entrySet()) {
             int colon = e.getKey().indexOf(':');
             int n = Integer.parseInt(e.getKey().substring(0, colon));
             long bits = Long.parseLong(e.getKey().substring(colon + 1));
-            hub.emit.raw(n == 4 ? "    .p2align 2" : "    .p2align 3");
+            if (n == 4) {
+                hub.emit.raw("    .p2align 2");
+            } else {
+                hub.emit.raw("    .p2align 3");
+            }
             hub.emit.raw(e.getValue() + ":");
-            hub.emit.raw(n == 4 ? ("    .long " + bits) : ("    .quad " + bits));
+            if (n == 4) {
+                hub.emit.raw("    .long " + bits);
+            } else {
+                hub.emit.raw("    .quad " + bits);
+            }
         }
     }
 
@@ -910,7 +1025,6 @@ final class X86Generator {
 
     /** memory operand text for a float at addr (a frame slot, a global or the pointer in a temp), n = 4 or 8 bytes wide. */
     String rfFloatMem(String addrTok, int n) {
-        String ptr = n == 8 ? "qword ptr " : "dword ptr ";
         if (X86Core.rfIsSlot(addrTok)) {
             return (X86Core.rfSlot(addrTok) + "(%rbp)");
         } else if (X86Core.rfIsGlobal(addrTok)) {
@@ -922,37 +1036,46 @@ final class X86Generator {
     /** xmm register = the float (n = 4: f32, 8: f64) at addr. */
     void rfLoadX(String xmm, String addrTok, int n) {
         String mem = rfFloatMem(addrTok, n);
-        String mn = n == 8 ? "movsd" : "movss";
+        String mn = fmov(n);
         hub.emit.raw(("    " + mn + " " + mem + ", %" + xmm));
     }
 
     /** the float in an xmm register stored at addr. */
     void rfStoreX(String addrTok, String xmm, int n) {
         String mem = rfFloatMem(addrTok, n);
-        String mn = n == 8 ? "movsd" : "movss";
+        String mn = fmov(n);
         hub.emit.raw(("    " + mn + " %" + xmm + ", " + mem));
     }
 
     /** "R_FBINX OP n %xK a b": variable K = a OP b (n is always 4). */
     /** For `a * b` where exactly one operand is the immediate 2.0 (f64 or f32 bits per n): the other operand token, else null. */
     String rfTimesTwoOperand(int n, String aTok, String bTok) {
-        long two = n == 8 ? 0x4000000000000000L : 0x40000000L;
-        if (X86Core.rfIsImm(aTok) && (n == 8 ? X86Core.rfImm(aTok) : (X86Core.rfImm(aTok) & 0xFFFFFFFFL)) == two && !X86Core.rfIsImm(bTok)) return bTok;
-        if (X86Core.rfIsImm(bTok) && (n == 8 ? X86Core.rfImm(bTok) : (X86Core.rfImm(bTok) & 0xFFFFFFFFL)) == two && !X86Core.rfIsImm(aTok)) return aTok;
+        long two;
+        if (n == 8) {
+            two = 0x4000000000000000L;
+        } else {
+            two = 0x40000000L;
+        }
+        if (X86Core.rfIsImm(aTok) && maskUnless8(X86Core.rfImm(aTok), n) == two && !X86Core.rfIsImm(bTok)) return bTok;
+        if (X86Core.rfIsImm(bTok) && maskUnless8(X86Core.rfImm(bTok), n) == two && !X86Core.rfIsImm(aTok)) return aTok;
         return null;
     }
 
     void rfFloatX(String op, int n, String dstTok, String aTok, String bTok) {
         String xd = xvReg(dstTok);
         String mn;
-        switch (op) {
-            case "ADD": mn = "add"; break;
-            case "SUB": mn = "sub"; break;
-            case "MUL": mn = "mul"; break;
-            case "DIV": mn = "div"; break;
-            default: throw new IllegalStateException("unknown R_FBINX operator '" + op + "'");
+        if (op.equals("ADD")) {
+            mn = "add";
+        } else if (op.equals("SUB")) {
+            mn = "sub";
+        } else if (op.equals("MUL")) {
+            mn = "mul";
+        } else if (op.equals("DIV")) {
+            mn = "div";
+        } else {
+            throw new IllegalStateException("unknown R_FBINX operator '" + op + "'");
         }
-        String sfx = n == 4 ? "ss" : "sd";
+        String sfx = fsfx(n);
         if (op.equals("MUL")) {
             // x * 2.0 is exactly x + x in IEEE-754 (zero sign, infinities, NaN included) and an add is shorter than a multiply on the usual critical chain
             String other = rfTimesTwoOperand(n, aTok, bTok);
@@ -972,7 +1095,11 @@ final class X86Generator {
             if (X86Core.rfIsXvar(aTok)) {
                 ra = xvReg(aTok);
             } else {
-                ra = (X86Core.rfIsXvar(bTok) && xvReg(bTok).equals(xd)) ? rfXmmA() : xd;
+                if (X86Core.rfIsXvar(bTok) && xvReg(bTok).equals(xd)) {
+                    ra = rfXmmA();
+                } else {
+                    ra = xd;
+                }
                 rfLoadXmm(aTok, ra, n);
             }
             String vb;
@@ -999,7 +1126,10 @@ final class X86Generator {
             aIsDst = true;
             bIsDst = false;
         }
-        String work = bIsDst ? rfXmmA() : xd; // b lives in the destination register: compute elsewhere, then copy
+        String work = xd;
+        if (bIsDst) {
+            work = rfXmmA(); // b lives in the destination register: compute elsewhere, then copy
+        }
         String bText;
         if (X86Core.rfIsXvar(bTok)) {
             bText = xText(xvReg(bTok));
@@ -1027,19 +1157,22 @@ final class X86Generator {
 
     /** branchLabel != null (compare only, dstTok null): jump to it when NOT (a op b) instead of producing the 0/1 value. */
     void rfFloat(boolean compare, String op, int n, String dstTok, String aTok, String bTok, String branchLabel) {
-        String d = dstTok == null ? null : hub.regForm.rfReg(dstTok);
+        String d = null;
+        if (dstTok != null) {
+            d = hub.regForm.rfReg(dstTok);
+        }
         String xa = rfXmmA();
         if (!compare && op.equals("MUL")) {
             String other = rfTimesTwoOperand(n, aTok, bTok);
             if (other != null) {
                 rfLoadXmm(other, xa, n);
-                hub.emit.raw("    add" + (n == 4 ? "ss" : "sd") + " %" + xa + ", %" + xa);
+                hub.emit.raw("    add" + fsfx(n) + " %" + xa + ", %" + xa);
                 rfXmmToGpr(xa, d, n);
                 return;
             }
         }
         String xb = rfXmmB();
-        String sfx = n == 4 ? "ss" : "sd";
+        String sfx = fsfx(n);
         boolean aDirect = compare && X86Core.rfIsXvar(aTok); // a compare never modifies a: read the variable's register in place
         if (!aDirect) {
             rfLoadXmm(aTok, xa, n);
@@ -1061,12 +1194,16 @@ final class X86Generator {
         String aText = ("%" + xa);
         if (!compare) {
             String mn;
-            switch (op) {
-                case "ADD": mn = "add"; break;
-                case "SUB": mn = "sub"; break;
-                case "MUL": mn = "mul"; break;
-                case "DIV": mn = "div"; break;
-                default: throw new IllegalStateException("unknown R_FBIN operator '" + op + "'");
+            if (op.equals("ADD")) {
+                mn = "add";
+            } else if (op.equals("SUB")) {
+                mn = "sub";
+            } else if (op.equals("MUL")) {
+                mn = "mul";
+            } else if (op.equals("DIV")) {
+                mn = "div";
+            } else {
+                throw new IllegalStateException("unknown R_FBIN operator '" + op + "'");
             }
             hub.emit.raw(("    " + mn + sfx + " " + bText + ", " + aText));
             rfXmmToGpr(xa, d, n);
@@ -1075,27 +1212,39 @@ final class X86Generator {
         hub.emit.raw(("    ucomi" + sfx + " " + bText + ", " + aText));
         if (branchLabel != null) {
             String jcc; // the jump taken when the comparison is false (same flags as the setcc below)
-            switch (op) {
-                case "EQ": jcc = "jne"; break;
-                case "NEQ": jcc = "je"; break;
-                case "LT": jcc = "jae"; break;
-                case "LT_EQ": jcc = "ja"; break;
-                case "GT_EQ": jcc = "jb"; break;
-                case "GT": jcc = "jbe"; break;
-                default: throw new IllegalStateException("unknown R_BRC float operator '" + op + "'");
+            if (op.equals("EQ")) {
+                jcc = "jne";
+            } else if (op.equals("NEQ")) {
+                jcc = "je";
+            } else if (op.equals("LT")) {
+                jcc = "jae";
+            } else if (op.equals("LT_EQ")) {
+                jcc = "ja";
+            } else if (op.equals("GT_EQ")) {
+                jcc = "jb";
+            } else if (op.equals("GT")) {
+                jcc = "jbe";
+            } else {
+                throw new IllegalStateException("unknown R_BRC float operator '" + op + "'");
             }
             hub.emit.raw("    " + jcc + " " + branchLabel);
             return;
         }
         String setcc;
-        switch (op) {
-            case "EQ": setcc = "sete"; break;
-            case "NEQ": setcc = "setne"; break;
-            case "LT": setcc = "setb"; break;
-            case "LT_EQ": setcc = "setbe"; break;
-            case "GT_EQ": setcc = "setae"; break;
-            case "GT": setcc = "seta"; break;
-            default: throw new IllegalStateException("unknown R_FCMP operator '" + op + "'");
+        if (op.equals("EQ")) {
+            setcc = "sete";
+        } else if (op.equals("NEQ")) {
+            setcc = "setne";
+        } else if (op.equals("LT")) {
+            setcc = "setb";
+        } else if (op.equals("LT_EQ")) {
+            setcc = "setbe";
+        } else if (op.equals("GT_EQ")) {
+            setcc = "setae";
+        } else if (op.equals("GT")) {
+            setcc = "seta";
+        } else {
+            throw new IllegalStateException("unknown R_FCMP operator '" + op + "'");
         }
         rfSetcc(setcc, d);
     }
@@ -1110,50 +1259,94 @@ final class X86Generator {
     void rfRmw(String op, String slotTok, String srcTok) {
         if (X86Core.rfIsVar(slotTok)) {
             String vr = hub.regForm.rfReg(slotTok);
-            switch (op) {
-                case "INC":
-                    hub.emit.raw(("    incq %" + vr));
-                    return;
-                case "DEC":
-                    hub.emit.raw(("    decq %" + vr));
-                    return;
-                case "ADD":
-                case "SUB": {
-                    String mn = op.equals("ADD") ? "add" : "sub";
-                    if (X86Core.rfIsSlot(srcTok)) {
-                        hub.emit.movMemToReg(X86Core.RF_SCRATCH, X86Core.rfSlot(srcTok));
-                        hub.regForm.rfOp2(mn, hub.regForm.rfRegText(vr), hub.regForm.rfRegText(X86Core.RF_SCRATCH));
-                    } else {
-                        hub.regForm.rfOp2(mn, hub.regForm.rfRegText(vr), hub.regForm.rfSrc(srcTok));
-                    }
-                    return;
+            if (op.equals("INC")) {
+                hub.emit.raw(("    incq %" + vr));
+                return;
+            } else if (op.equals("DEC")) {
+                hub.emit.raw(("    decq %" + vr));
+                return;
+            } else if (op.equals("ADD") || op.equals("SUB")) {
+                String mn;
+                if (op.equals("ADD")) {
+                    mn = "add";
+                } else {
+                    mn = "sub";
                 }
-                default:
-                    throw new IllegalStateException("unknown R_RMW operator '" + op + "'");
+                if (X86Core.rfIsSlot(srcTok)) {
+                    hub.emit.movMemToReg(X86Core.RF_SCRATCH, X86Core.rfSlot(srcTok));
+                    hub.regForm.rfOp2(mn, hub.regForm.rfRegText(vr), hub.regForm.rfRegText(X86Core.RF_SCRATCH));
+                } else {
+                    hub.regForm.rfOp2(mn, hub.regForm.rfRegText(vr), hub.regForm.rfSrc(srcTok));
+                }
+                return;
+            } else {
+                throw new IllegalStateException("unknown R_RMW operator '" + op + "'");
             }
         }
         String mem = hub.regForm.rfMemText(X86Core.rfSlot(slotTok));
-        switch (op) {
-            case "INC":
-                hub.emit.raw(("    incq " + mem));
-                return;
-            case "DEC":
-                hub.emit.raw(("    decq " + mem));
-                return;
-            case "ADD":
-            case "SUB": {
-                String mn = op.equals("ADD") ? "add" : "sub";
-                if (X86Core.rfIsSlot(srcTok)) {
-                    hub.emit.movMemToReg(X86Core.RF_SCRATCH, X86Core.rfSlot(srcTok));
-                    hub.regForm.rfOp2(mn, mem, hub.regForm.rfRegText(X86Core.RF_SCRATCH));
-                } else {
-                    hub.regForm.rfOp2(mn, mem, hub.regForm.rfSrc(srcTok));
-                }
-                return;
+        if (op.equals("INC")) {
+            hub.emit.raw(("    incq " + mem));
+            return;
+        } else if (op.equals("DEC")) {
+            hub.emit.raw(("    decq " + mem));
+            return;
+        } else if (op.equals("ADD") || op.equals("SUB")) {
+            String mn;
+            if (op.equals("ADD")) {
+                mn = "add";
+            } else {
+                mn = "sub";
             }
-            default:
-                throw new IllegalStateException("unknown R_RMW operator '" + op + "'");
+            if (X86Core.rfIsSlot(srcTok)) {
+                hub.emit.movMemToReg(X86Core.RF_SCRATCH, X86Core.rfSlot(srcTok));
+                hub.regForm.rfOp2(mn, mem, hub.regForm.rfRegText(X86Core.RF_SCRATCH));
+            } else {
+                hub.regForm.rfOp2(mn, mem, hub.regForm.rfSrc(srcTok));
+            }
+            return;
+        } else {
+            throw new IllegalStateException("unknown R_RMW operator '" + op + "'");
         }
+    }
+
+    /** "ss" for a 4-byte float, else "sd" */
+    private static String fsfx(int n) {
+        if (n == 4) {
+            return "ss";
+        }
+        return "sd";
+    }
+
+    /** "sd" for width 8, else "ss" */
+    private static String widthSfx(int w) {
+        if (w == 8) {
+            return "sd";
+        }
+        return "ss";
+    }
+
+    /** "movsd" for 8 bytes, else "movss" */
+    private static String fmov(int n) {
+        if (n == 8) {
+            return "movsd";
+        }
+        return "movss";
+    }
+
+    /** v cut to 32 bits when n == 4 */
+    private static long maskIf4(long v, int n) {
+        if (n == 4) {
+            return v & 0xFFFFFFFFL;
+        }
+        return v;
+    }
+
+    /** v as is when n == 8, else cut to 32 bits */
+    private static long maskUnless8(long v, int n) {
+        if (n == 8) {
+            return v;
+        }
+        return v & 0xFFFFFFFFL;
     }
 
     String mangleLabel(String text) {
@@ -1254,7 +1447,19 @@ final class X86Generator {
             }
             String beforeAlloc = core.out.substring(core.csrFuncStart, core.csrAllocPos);
             for (String[] r : regs) {
-                java.util.regex.Pattern any = java.util.regex.Pattern.compile("(?<![A-Za-z0-9_])" + (r[1].equals("xmm") ? r[0] : (r[0].equals("rbx") ? "(?:rbx|ebx|bx|bl|bh)" : r[0].equals("rdi") ? "(?:rdi|edi|di|dil)" : r[0].equals("rsi") ? "(?:rsi|esi|si|sil)" : r[0] + "[dwb]?")) + "(?![0-9A-Za-z_])");
+                String regPattern;
+                if (r[1].equals("xmm")) {
+                    regPattern = r[0];
+                } else if (r[0].equals("rbx")) {
+                    regPattern = "(?:rbx|ebx|bx|bl|bh)";
+                } else if (r[0].equals("rdi")) {
+                    regPattern = "(?:rdi|edi|di|dil)";
+                } else if (r[0].equals("rsi")) {
+                    regPattern = "(?:rsi|esi|si|sil)";
+                } else {
+                    regPattern = r[0] + "[dwb]?";
+                }
+                java.util.regex.Pattern any = java.util.regex.Pattern.compile("(?<![A-Za-z0-9_])" + regPattern + "(?![0-9A-Za-z_])");
                 if (any.matcher(beforeAlloc.replace(X86Core.CSR_MARK, "")).find()) {
                     throw new RuntimeException("codegen internal error: function '" + core.currentFuncName + "' uses " + r[0] + " before its frame is allocated");
                 }
@@ -1264,11 +1469,18 @@ final class X86Generator {
             StringBuilder restores = new StringBuilder();
             for (String[] r : regs) {
                 boolean x = r[1].equals("xmm");
-                cur += x ? 16 : 8;
+                String saveMn;
+                if (x) {
+                    cur += 16;
+                    saveMn = "movups";
+                } else {
+                    cur += 8;
+                    saveMn = "movq";
+                }
                 String st, ld;
                 String mem = "-" + cur + "(%rbp)";
-                st = "    " + (x ? "movups" : "movq") + " %" + r[0] + ", " + mem;
-                ld = "    " + (x ? "movups" : "movq") + " " + mem + ", %" + r[0];
+                st = "    " + saveMn + " %" + r[0] + ", " + mem;
+                ld = "    " + saveMn + " " + mem + ", %" + r[0];
                 
                 saves.append(st).append('\n');
                 restores.append(ld).append('\n');
@@ -1300,8 +1512,12 @@ final class X86Generator {
             from = i + restoreText.length();
         }
         String rspMarked = X86Core.RSP_MARK + "\n";
-        String rspFix = frameBytes == 0 ? ("    movq %rbp, %rsp\n")
-                : (("    leaq -" + frameBytes + "(%rbp), %rsp\n"));
+        String rspFix;
+        if (frameBytes == 0) {
+            rspFix = "    movq %rbp, %rsp\n";
+        } else {
+            rspFix = "    leaq -" + frameBytes + "(%rbp), %rsp\n";
+        }
         from = core.csrFuncStart;
         while ((i = core.out.indexOf(rspMarked, from)) >= 0) {
             core.out.replace(i, i + rspMarked.length(), rspFix);
