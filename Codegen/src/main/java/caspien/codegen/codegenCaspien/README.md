@@ -30,6 +30,7 @@ Every Java file of `../` has a `.caspien` twin here (the Java copies were remove
 - `throw` takes only a literal, so the dynamic text of Java messages is dropped (`rfFalseJump`: "unknown R_BRC operator"; `rfTrueSuffix`: "unknown condition"); number parsing throws "NumberFormatException".
 - `isInteger` accepts ASCII digits only (Java `Character.isDigit` also takes other Unicode digits).
 - `StringSet`/`StringMap`/`StringScalarMap` search linearly (Java hashes): a known performance follow-up. `ObjectList<T>` owns its items (`get` returns a `ref`, `add` moves the item in).
+- Port-only helpers: `X86Backend.wire`, `X86Core.rfVarRegName/rfTempRegName` (the register tables, indexed by if-chain), `X86Core.sliceEq`. `python3 tests/port_parity_check.py` lists any method that exists in only one of a Java class and its twin (run it after touching either side; 16 Oct: the Java `X86RegForm` gained `gtSaveLoadedArgRegs/gtRestoreLoadedArgRegs`, stubbed here).
 - Javadoc comments of the Java files are not copied; they stay in the Java originals and the README below.
 
 ---

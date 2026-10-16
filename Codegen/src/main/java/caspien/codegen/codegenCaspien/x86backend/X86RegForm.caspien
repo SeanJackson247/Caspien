@@ -19,6 +19,13 @@ impl X86RegForm{
 	func emitCases7(_self: ref some mut self, mnemonic: ref imut String, line: ref imut BytecodeStatement, first: ref imut String, wasCmp: mut bool, pendingBlockSize: mut s64) mut bool{ return false }
 
 	@pub
+	func gtSaveLoadedArgRegs(_self: ref some mut self) owns mut ObjectList<String>{ return null }
+
+	@pub
+	func gtRestoreLoadedArgRegs(_self: ref some mut self, saved: ref imut ObjectList<String>) void{
+	}
+
+	@pub
 	func storeSizedToAddr_withOffsetImm(_self: ref some mut self, baseReg64: ref imut String, offset: mut s64, value: mut s64, size: mut s32) void{
 	}
 
