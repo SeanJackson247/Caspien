@@ -1934,7 +1934,7 @@ its higher-order bytecode must equal the one from before the edit (comments chan
 The repository contains prebuilt class files for the four stages. To build the orchestrator:
 
 ```
-javac Compiler.java
+javac -sourcepath Orchestrator -d . Compiler.java
 ```
 
 To rebuild a stage after changing it, for example the optimiser:
