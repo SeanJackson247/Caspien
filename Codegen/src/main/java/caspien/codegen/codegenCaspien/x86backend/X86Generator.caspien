@@ -13,7 +13,47 @@ impl constructor for X86Generator(hub: ref some mut X86Backend) self{
 @pub
 impl X86Generator{
 	@pub
-	func generate(_self: ref some mut self, lines: ref imut ObjectList<BytecodeStatement>) owns mut String{ return null }
+	@throws
+	func generate(_self: ref some mut self, lines: ref some mut ObjectList<BytecodeStatement>) owns mut String{
+		?catch(e){ throw e }
+		let fresh = mut ? new String()
+		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.core){ _self.hub.core.out = fresh } } }
+		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.core){ ? _self.hub.core.globalsSizeInit.clear(_self.hub.core.globalsSizeInit) } } }
+		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.core){ ? _self.hub.core.globalsHasInit.clear(_self.hub.core.globalsHasInit) } } }
+		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.core){ ? _self.hub.core.stringLiterals.clear(_self.hub.core.stringLiterals) } } }
+		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.core){ ? _self.hub.core.floatPool.clear(_self.hub.core.floatPool) } } }
+		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.core){ ? _self.hub.core.globalAliasOffset.clear(_self.hub.core.globalAliasOffset) } } }
+		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.core){ ? _self.hub.core.aliasInits.clear(_self.hub.core.aliasInits) } } }
+		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.core){ ? _self.hub.core.globalAliasParent.clear(_self.hub.core.globalAliasParent) } } }
+		match Some(lines){ match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.collectDeclarations(_self.hub.emit, lines) } } } }
+		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.emitHeader(_self.hub.emit) } } }
+		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.emitDataSections(_self.hub.emit) } } }
+		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, ".text") } } }
+		match Some(lines){ match Some(_self){ match Some(_self.hub){ match Some(_self.hub.core){ _self.hub.core.allLines = lines } } } }
+		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.precomputeConstructionOffsets(_self.hub.emit) } } }
+		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.core){ ? _self.hub.core.callBufferStack.clear(_self.hub.core.callBufferStack) } } }
+		let:<mut u64> pending = mut 0
+		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.core){ pending = len(_self.hub.core.argTrackDeltaStack.backing) } } }
+		for pi in 0..pending{
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.core){ ? _self.hub.core.argTrackDeltaStack.popBack(_self.hub.core.argTrackDeltaStack, 0) } } }
+		}
+		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.core){ _self.hub.core.argTrackSuspendDepth = 0 } } }
+		let:<mut u64> total = mut 0
+		match Some(lines){ total = lines.size(lines) }
+		for li in 0..total{
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.core){ _self.hub.core.currentLineIndex = wrap:<s32>(li) } } }
+			match Some(lines){
+				let ln = lines.get(lines, li)
+				match Some(ln){ match Some(_self){ match Some(_self.hub){ match Some(_self.hub.calls){ ? _self.hub.calls.emitLine(_self.hub.calls, ln) } } } }
+			}
+		}
+		match Some(_self){ ? _self.emitFloatPool(_self) }
+		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ _self.hub.emit.emitFooter(_self.hub.emit) } } }
+		let result = mut ? new String()
+		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.core){ result = ? _self.hub.core.out.substring(_self.hub.core.out, 0) } } }
+		return result
+	}
+
 
 	/** `regForm.rfReg` as an owned String (helper of the port; no Java counterpart). */
 	@pub

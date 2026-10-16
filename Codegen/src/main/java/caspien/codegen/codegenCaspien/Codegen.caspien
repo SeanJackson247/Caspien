@@ -37,7 +37,7 @@ impl Codegen{
 			backend.avx = true
 		}
 		let:<owns mut String> asm = mut null
-		match Some(program){ asm = backend.generate(backend, program.items) }
+		match Some(program){ asm = ? backend.generate(backend, program.items) }
 		let ms = mut ? new ObjectList:<String>()
 		return ? new CodegenResult(asm, ms, false)
 	}

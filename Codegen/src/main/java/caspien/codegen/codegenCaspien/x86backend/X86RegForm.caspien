@@ -13,10 +13,720 @@ impl constructor for X86RegForm(hub: ref some mut X86Backend) self{
 @pub
 impl X86RegForm{
 	@pub
-	func emitCases6(_self: ref some mut self, mnemonic: ref imut String, line: ref imut BytecodeStatement, first: ref imut String, wasCmp: mut bool, pendingBlockSize: mut s64) mut bool{ return false }
+	@throws
+	func emitCases6(_self: ref some mut self, mnemonic: ref imut String, line: ref imut BytecodeStatement, first: ref imut String, wasCmp: mut bool, pendingBlockSize: mut s64) mut bool{
+		?catch(e){ throw e }
+		let kind = mut 0
+		match Some(mnemonic){
+			if mnemonic.equals(mnemonic, "GT_INIT"){ kind = 1 } elseif mnemonic.equals(mnemonic, "GT_REGISTER"){ kind = 2 } elseif mnemonic.equals(mnemonic, "GT_ALIVE_CHECK"){ kind = 3 } elseif mnemonic.equals(mnemonic, "GT_REF_ID"){ kind = 4 } elseif mnemonic.equals(mnemonic, "GT_REF_RESOLVE"){ kind = 5 } elseif mnemonic.equals(mnemonic, "GT_DESTRUCT"){ kind = 6 } elseif mnemonic.equals(mnemonic, "GT_DESTRUCT_ADDR"){ kind = 7 } elseif mnemonic.equals(mnemonic, "YIELD"){ kind = 8 } elseif mnemonic.equals(mnemonic, "SLEEP"){ kind = 9 } elseif mnemonic.equals(mnemonic, "EXIT"){ kind = 10 } elseif mnemonic.equals(mnemonic, "EXIT_THREAD"){ kind = 11 } elseif mnemonic.equals(mnemonic, "TRACE_CAPTURE"){ kind = 12 } elseif mnemonic.equals(mnemonic, "GT_UNWIND"){ kind = 13 } elseif mnemonic.equals(mnemonic, "THROW"){ kind = 14 } elseif mnemonic.equals(mnemonic, "RET"){ kind = 15 } elseif mnemonic.equals(mnemonic, "RET_FLOAT"){ kind = 16 }
+		}
+		if kind == 0{
+			return false
+		}
+		let RAX = mut ? String.from("rax")
+		let RCX = mut ? String.from("rcx")
+		if kind == 1{
+			let cn_1 = mut ? String.from("gt_init")
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.calls){ ? _self.hub.calls.emitAlignedCallByName(_self.hub.calls, cn_1) } } }
+			return true
+		}
+		if kind == 2{
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.popReg(_self.hub.emit, RAX) } } }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.pushReg(_self.hub.emit, RAX) } } }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.pushReg(_self.hub.emit, RAX) } } }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.popReg(_self.hub.emit, RAX) } } }
+			let a0_2 = mut ? new String()
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.calls){ 
+			let sr_a0_2 = _self.hub.calls.argReg(_self.hub.calls, 0)
+			a0_2 = ? String.from(sr_a0_2)
+			}}}
+			let rw2 = mut ? String.from("    movq %rax, %")
+			match Some(a0_2){ ? rw2.append(rw2, a0_2) }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.raw_(_self.hub.emit, rw2) } } }
+			let cn_3 = mut ? String.from("gt_register")
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.calls){ ? _self.hub.calls.emitAlignedCallByName(_self.hub.calls, cn_3) } } }
+			let lp_ok2 = mut ? String.from("gtreg_ok")
+			let ok2 = mut ? new String()
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ ok2 = ? _self.hub.regForm.newInternalLabel(_self.hub.regForm, lp_ok2) } } }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "    testb %al, %al") } } }
+			let rw4 = mut ? String.from("    jnz ")
+			match Some(ok2){ ? rw4.append(rw4, ok2) }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.raw_(_self.hub.emit, rw4) } } }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.popReg(_self.hub.emit, RAX) } } }
+			let rw5 = mut ? String.from("    movq %rax, %")
+			match Some(a0_2){ ? rw5.append(rw5, a0_2) }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.raw_(_self.hub.emit, rw5) } } }
+			let cn_6 = mut ? String.from("free")
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.calls){ ? _self.hub.calls.emitAlignedCallByName(_self.hub.calls, cn_6) } } }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "    xorq %rax, %rax") } } }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.pushReg(_self.hub.emit, RAX) } } }
+			let rw7 = mut ? String.from("")
+			match Some(ok2){ ? rw7.append(rw7, ok2) }
+			? rw7.append(rw7, ":")
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.raw_(_self.hub.emit, rw7) } } }
+			return true
+		}
+		if kind == 3{
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.popReg(_self.hub.emit, RAX) } } }
+			let ld3 = mut ? new ObjectList:<String>()
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ ld3 = ? _self.hub.regForm.gtSaveLoadedArgRegs(_self.hub.regForm) } } }
+			let a0_3 = mut ? new String()
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.calls){ 
+			let sr_a0_3 = _self.hub.calls.argReg(_self.hub.calls, 0)
+			a0_3 = ? String.from(sr_a0_3)
+			}}}
+			let rw8 = mut ? String.from("    movq %rax, %")
+			match Some(a0_3){ ? rw8.append(rw8, a0_3) }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.raw_(_self.hub.emit, rw8) } } }
+			let cn_9 = mut ? String.from("gt_alive_check")
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.calls){ ? _self.hub.calls.emitAlignedCallByName(_self.hub.calls, cn_9) } } }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ ? _self.hub.regForm.gtRestoreLoadedArgRegs(_self.hub.regForm, ld3) } } }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.pushReg(_self.hub.emit, RAX) } } }
+			return true
+		}
+		if kind == 4{
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.popReg(_self.hub.emit, RAX) } } }
+			let ld4 = mut ? new ObjectList:<String>()
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ ld4 = ? _self.hub.regForm.gtSaveLoadedArgRegs(_self.hub.regForm) } } }
+			let a0_4 = mut ? new String()
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.calls){ 
+			let sr_a0_4 = _self.hub.calls.argReg(_self.hub.calls, 0)
+			a0_4 = ? String.from(sr_a0_4)
+			}}}
+			let rw10 = mut ? String.from("    movq %rax, %")
+			match Some(a0_4){ ? rw10.append(rw10, a0_4) }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.raw_(_self.hub.emit, rw10) } } }
+			let cn_11 = mut ? String.from("gt_ref_id")
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.calls){ ? _self.hub.calls.emitAlignedCallByName(_self.hub.calls, cn_11) } } }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ ? _self.hub.regForm.gtRestoreLoadedArgRegs(_self.hub.regForm, ld4) } } }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.pushReg(_self.hub.emit, RAX) } } }
+			return true
+		}
+		if kind == 5{
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.popReg(_self.hub.emit, RAX) } } }
+			let ld5 = mut ? new ObjectList:<String>()
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ ld5 = ? _self.hub.regForm.gtSaveLoadedArgRegs(_self.hub.regForm) } } }
+			let a0_5 = mut ? new String()
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.calls){ 
+			let sr_a0_5 = _self.hub.calls.argReg(_self.hub.calls, 0)
+			a0_5 = ? String.from(sr_a0_5)
+			}}}
+			let rw12 = mut ? String.from("    movq %rax, %")
+			match Some(a0_5){ ? rw12.append(rw12, a0_5) }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.raw_(_self.hub.emit, rw12) } } }
+			let cn_13 = mut ? String.from("gt_ref_resolve")
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.calls){ ? _self.hub.calls.emitAlignedCallByName(_self.hub.calls, cn_13) } } }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ ? _self.hub.regForm.gtRestoreLoadedArgRegs(_self.hub.regForm, ld5) } } }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.pushReg(_self.hub.emit, RAX) } } }
+			return true
+		}
+		if kind == 6{
+			let op6 = mut ? new String()
+			match Some(line){ op6 = ? X86Core.lineTok(line, 1) }
+			let isLoc6 = mut false
+			match Some(op6){ isLoc6 = op6.startsWith(op6, "$") }
+			if isLoc6{
+				let ot6 = mut ? new String()
+				match Some(op6){ ot6 = ? op6.substring(op6, 1) }
+				let:<mut s64> ov6 = mut 0
+				match Some(ot6){ ov6 = ? ot6.parseS64(ot6) }
+				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.loadSizedFromFrame(_self.hub.emit, RAX, ov6, 8) } } }
+				let a0_6 = mut ? new String()
+				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.calls){ 
+				let sr_a0_6 = _self.hub.calls.argReg(_self.hub.calls, 0)
+				a0_6 = ? String.from(sr_a0_6)
+				}}}
+				let rw14 = mut ? String.from("    movq %rax, %")
+				match Some(a0_6){ ? rw14.append(rw14, a0_6) }
+				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.raw_(_self.hub.emit, rw14) } } }
+				let cn_15 = mut ? String.from("gt_destruct")
+				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.calls){ ? _self.hub.calls.emitAlignedCallByName(_self.hub.calls, cn_15) } } }
+			} else{
+				let cm16 = mut ? String.from("TODO(codegen): 'GT_DESTRUCT ")
+				match Some(op6){ ? cm16.append(cm16, op6) }
+				? cm16.append(cm16, "' (non-stack-offset operand) not yet implemented")
+				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.comment(_self.hub.emit, cm16) } } }
+			}
+			return true
+		}
+		if kind == 7{
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.popReg(_self.hub.emit, RAX) } } }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.loadSizedFromAddr(_self.hub.emit, RAX, RAX, 8) } } }
+			let a0_7 = mut ? new String()
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.calls){ 
+			let sr_a0_7 = _self.hub.calls.argReg(_self.hub.calls, 0)
+			a0_7 = ? String.from(sr_a0_7)
+			}}}
+			let rw17 = mut ? String.from("    movq %rax, %")
+			match Some(a0_7){ ? rw17.append(rw17, a0_7) }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.raw_(_self.hub.emit, rw17) } } }
+			let cn_18 = mut ? String.from("gt_destruct")
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.calls){ ? _self.hub.calls.emitAlignedCallByName(_self.hub.calls, cn_18) } } }
+			return true
+		}
+		if kind == 8{
+			let cn_19 = mut ? String.from("sched_yield")
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.calls){ ? _self.hub.calls.emitAlignedCallByName(_self.hub.calls, cn_19) } } }
+			return true
+		}
+		if kind == 9{
+			let nm8 = mut ? new String()
+			match Some(line){ nm8 = ? X86Core.lineTok(line, 1) }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.popReg(_self.hub.emit, RAX) } } }
+			let a0_8 = mut ? new String()
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.calls){ 
+			let sr_a0_8 = _self.hub.calls.argReg(_self.hub.calls, 0)
+			a0_8 = ? String.from(sr_a0_8)
+			}}}
+			let rw20 = mut ? String.from("    movq %rax, %")
+			match Some(a0_8){ ? rw20.append(rw20, a0_8) }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.raw_(_self.hub.emit, rw20) } } }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.calls){ ? _self.hub.calls.emitAlignedCallByName(_self.hub.calls, nm8) } } }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.pushReg(_self.hub.emit, RAX) } } }
+			return true
+		}
+		if kind == 10{
+			let a0_9 = mut ? new String()
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.calls){ 
+			let sr_a0_9 = _self.hub.calls.argReg(_self.hub.calls, 0)
+			a0_9 = ? String.from(sr_a0_9)
+			}}}
+			let rw21 = mut ? String.from("    movq $1, %")
+			match Some(a0_9){ ? rw21.append(rw21, a0_9) }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.raw_(_self.hub.emit, rw21) } } }
+			let cn_22 = mut ? String.from("exit")
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.calls){ ? _self.hub.calls.emitAlignedCallByName(_self.hub.calls, cn_22) } } }
+			return true
+		}
+		if kind == 11{
+			let a0_10 = mut ? new String()
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.calls){ 
+			let sr_a0_10 = _self.hub.calls.argReg(_self.hub.calls, 0)
+			a0_10 = ? String.from(sr_a0_10)
+			}}}
+			let rw23 = mut ? String.from("    movq $0, %")
+			match Some(a0_10){ ? rw23.append(rw23, a0_10) }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.raw_(_self.hub.emit, rw23) } } }
+			let cn_24 = mut ? String.from("pthread_exit")
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.calls){ ? _self.hub.calls.emitAlignedCallByName(_self.hub.calls, cn_24) } } }
+			return true
+		}
+		if kind == 12{
+			let:<mut s32> depth11 = mut 0
+			let pi_depth11 = mut ? new String()
+			match Some(line){ pi_depth11 = ? X86Core.lineTok(line, 1) }
+			match Some(pi_depth11){ depth11 = ? pi_depth11.parseS32(pi_depth11) }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "    pushq %rax") } } }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "    pushq %rcx") } } }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "    pushq %rdx") } } }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "    pushq %rsi") } } }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "    pushq %r11") } } }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "    movq %rbp, %rcx") } } }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "    xorl %edx, %edx") } } }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "1:") } } }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "    incq %rdx") } } }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "    movq -24(%rcx), %rax") } } }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "    testb $1, %al") } } }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "    jnz 2f") } } }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "    movq (%rcx), %rcx") } } }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "    jmp 1b") } } }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "2:") } } }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "    movq -32(%rcx), %rsi") } } }
+			let rw25 = mut ? String.from("    movq $")
+			? rw25.appendS64(rw25, wrap:<s64>(depth11))
+			? rw25.append(rw25, ", %rax")
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.raw_(_self.hub.emit, rw25) } } }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "    cmpq %rax, %rdx") } } }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "    cmova %rax, %rdx") } } }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "    movq %rbp, %rcx") } } }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "    xorl %eax, %eax") } } }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "3:") } } }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "    cmpq %rdx, %rax") } } }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "    jae 4f") } } }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "    movq -24(%rcx), %r11") } } }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "    shrq $1, %r11") } } }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "    movq %r11, (%rsi,%rax,8)") } } }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "    incq %rax") } } }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "    movq (%rcx), %rcx") } } }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "    jmp 3b") } } }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "4:") } } }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "    movq $0, (%rsi,%rdx,8)") } } }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "    movq %rsi, -32(%rbp)") } } }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "    popq %r11") } } }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "    popq %rsi") } } }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "    popq %rdx") } } }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "    popq %rcx") } } }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "    popq %rax") } } }
+			return true
+		}
+		if kind == 13{
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "@@CSR@@") } } }
+			let n12 = mut 0
+			match Some(line){ n12 = line.items.size(line.items) }
+			let carryMsg12 = mut false
+			if n12 > 1{
+				match Some(line){ carryMsg12 = X86Core.tokenIs(line, 1, "MSG") }
+			}
+			let carryTr12 = mut false
+			if carryMsg12 && n12 > 2{
+				match Some(line){ carryTr12 = X86Core.tokenIs(line, 2, "TRACE") }
+			}
+			if carryMsg12{
+				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.movMemToReg(_self.hub.emit, RAX, -16) } } }
+			}
+			if carryTr12{
+				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.movMemToReg(_self.hub.emit, RCX, -32) } } }
+			}
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "    movq %rbp, %rsp") } } }
+			let rbp12 = mut ? String.from("rbp")
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.popReg(_self.hub.emit, rbp12) } } }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "    addq $8, %rsp") } } }
+			if carryMsg12{
+				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.movRegToMem(_self.hub.emit, RAX, -16) } } }
+			}
+			if carryTr12{
+				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.movRegToMem(_self.hub.emit, RCX, -32) } } }
+			}
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.movMemToReg(_self.hub.emit, RAX, -8) } } }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "    jmp *%rax") } } }
+			return true
+		}
+		if kind == 14{
+			return true
+		}
+		if kind == 15{
+			let:<mut s64> size14 = mut 0
+			match Some(line){ size14 = ? X86Core.tokenS64(line, 1) }
+			if size14 > 0{
+				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.popReg(_self.hub.emit, RAX) } } }
+			} else{
+				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.movImmToReg(_self.hub.emit, RAX, 0) } } }
+			}
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.gen){ ? _self.hub.gen.emitFunctionEpilogue(_self.hub.gen) } } }
+			return true
+		}
+		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.popReg(_self.hub.emit, RAX) } } }
+		let xm15 = mut ? String.from("xmm0")
+		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.calls){ ? _self.hub.calls.movRegToXmm(_self.hub.calls, RAX, xm15) } } }
+		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.gen){ ? _self.hub.gen.emitFunctionEpilogue(_self.hub.gen) } } }
+		return true
+	}
+
 
 	@pub
-	func emitCases7(_self: ref some mut self, mnemonic: ref imut String, line: ref imut BytecodeStatement, first: ref imut String, wasCmp: mut bool, pendingBlockSize: mut s64) mut bool{ return false }
+	@throws
+	func emitCases7(_self: ref some mut self, mnemonic: ref imut String, line: ref imut BytecodeStatement, first: ref imut String, wasCmp: mut bool, pendingBlockSize: mut s64) mut bool{
+		?catch(e){ throw e }
+		let kind = mut 0
+		match Some(mnemonic){
+			if mnemonic.equals(mnemonic, "VARARGS_XMM_COUNT"){ kind = 1 } elseif mnemonic.equals(mnemonic, "CALL"){ kind = 2 } elseif mnemonic.equals(mnemonic, "INVOKE"){ kind = 3 } elseif mnemonic.equals(mnemonic, "POP"){ kind = 4 } elseif mnemonic.equals(mnemonic, "PUSH_LABEL"){ kind = 5 } elseif mnemonic.equals(mnemonic, "PUSH_RET_INT"){ kind = 6 } elseif mnemonic.equals(mnemonic, "PUSH_RET_FLOAT"){ kind = 7 } elseif mnemonic.equals(mnemonic, "ASM_START"){ kind = 8 } elseif mnemonic.equals(mnemonic, "ASM_END"){ kind = 9 } elseif mnemonic.equals(mnemonic, "FLOAT_CHECK"){ kind = 10 } elseif mnemonic.equals(mnemonic, "CC_START"){ kind = 11 } elseif mnemonic.equals(mnemonic, "CC_END"){ kind = 12 } elseif mnemonic.equals(mnemonic, "EXPORT"){ kind = 13 } elseif mnemonic.equals(mnemonic, "GLOBAL") || mnemonic.equals(mnemonic, "ALLOC_STATIC") || mnemonic.equals(mnemonic, "STRING") || mnemonic.equals(mnemonic, "EXTERN"){ kind = 14 }
+		}
+		if kind == 0{
+			return false
+		}
+		let RAX = mut ? String.from("rax")
+		let RDX = mut ? String.from("rdx")
+		let R10 = mut ? String.from("r10")
+		let R11 = mut ? String.from("r11")
+		if kind == 1{
+			let:<mut s32> v1 = mut 0
+			let pi_v1 = mut ? new String()
+			match Some(line){ pi_v1 = ? X86Core.lineTok(line, 1) }
+			match Some(pi_v1){ v1 = ? pi_v1.parseS32(pi_v1) }
+			match Some(_self){ match Some(_self.core){ _self.core.pendingVarargsXmmCount = v1 } }
+			return true
+		}
+		if kind == 2{
+			let name2 = mut ? new String()
+			match Some(line){ name2 = ? X86Core.lineTok(line, 1) }
+			let glue2 = mut false
+			match Some(name2){ glue2 = name2.startsWith(name2, "__drop_") || name2.startsWith(name2, "__clone_") }
+			let empty2 = mut false
+			match Some(_self){ match Some(_self.core){ empty2 = _self.core.callBufferStack.isEmpty(_self.core.callBufferStack) } }
+			if glue2 && empty2{
+				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ ? _self.hub.regForm.emitDropGlueCall(_self.hub.regForm, name2) } } }
+				return true
+			}
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.calls){ ? _self.hub.calls.resolveStackArgBytesAndCall(_self.hub.calls, false, name2) } } }
+			return true
+		}
+		if kind == 3{
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.popReg(_self.hub.emit, R10) } } }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.calls){ ? _self.hub.calls.resolveStackArgBytesAndCall(_self.hub.calls, true, R10) } } }
+			return true
+		}
+		if kind == 4{
+			let dest3 = mut ? new String()
+			match Some(line){ dest3 = ? X86Core.lineTok(line, 1) }
+			let:<mut s32> size3 = mut 0
+			match Some(line){ let ci_size3 = ? X86Core.tokenS64(line, 2)
+			size3 = wrap:<s32>(ci_size3) }
+			let isArg3 = mut false
+			match Some(dest3){ isArg3 = dest3.startsWith(dest3, "ARG") }
+			let isFarg3 = mut false
+			match Some(dest3){ isFarg3 = dest3.startsWith(dest3, "FARG") }
+			let isLoc3 = mut false
+			match Some(dest3){ isLoc3 = dest3.startsWith(dest3, "$") }
+			if isArg3{
+				let is3 = mut ? new String()
+				match Some(dest3){ is3 = ? dest3.substring(dest3, 3) }
+				let:<mut s32> idx3 = mut 0
+				match Some(is3){ idx3 = ? is3.parseS32(is3) }
+				let rn3 = mut ? new String()
+				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.calls){ 
+				let rs3 = _self.hub.calls.argReg(_self.hub.calls, idx3)
+				rn3 = ? String.from(rs3)
+				}}}
+				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.popReg(_self.hub.emit, rn3) } } }
+				let tag3 = mut ? String.from("i")
+				? tag3.appendS64(tag3, wrap:<s64>(idx3))
+				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.noteArgRegLoaded(_self.hub.emit, tag3) } } }
+			} elseif isFarg3{
+				let is3b = mut ? new String()
+				match Some(dest3){ is3b = ? dest3.substring(dest3, 4) }
+				let:<mut s32> idx3b = mut 0
+				match Some(is3b){ idx3b = ? is3b.parseS32(is3b) }
+				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.popReg(_self.hub.emit, RAX) } } }
+				let fn3 = mut ? new String()
+				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.calls){ 
+				let fs3 = _self.hub.calls.argFloatReg(_self.hub.calls, idx3b)
+				fn3 = ? String.from(fs3)
+				}}}
+				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.calls){ ? _self.hub.calls.movRegToXmm(_self.hub.calls, RAX, fn3) } } }
+				let tag3b = mut ? String.from("f")
+				? tag3b.appendS64(tag3b, wrap:<s64>(idx3b))
+				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.noteArgRegLoaded(_self.hub.emit, tag3b) } } }
+			} elseif isLoc3{
+				let as3 = mut ? new String()
+				match Some(dest3){ as3 = ? dest3.substring(dest3, 1) }
+				let:<mut s64> addr3 = mut 0
+				match Some(as3){ addr3 = ? as3.parseS64(as3) }
+				if size3 <= 8{
+					match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.popReg(_self.hub.emit, RAX) } } }
+					match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.storeSizedToFrame(_self.hub.emit, RAX, addr3, size3) } } }
+				} else{
+					let:<mut u64> words3 = mut wrap:<u64>((wrap:<s64>(size3) + 7) / 8)
+					for i3 in 0..words3{
+						match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.popReg(_self.hub.emit, RAX) } } }
+						let:<mut s64> ad3 = mut (addr3 + wrap:<s64>(size3) - 8 - wrap:<s64>(i3) * 8)
+						match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.storeSizedToFrame(_self.hub.emit, RAX, ad3, 8) } } }
+					}
+				}
+			} else{
+				let cm1 = mut ? String.from("TODO(codegen): 'POP ")
+				match Some(dest3){ ? cm1.append(cm1, dest3) }
+				? cm1.append(cm1, " ")
+				? cm1.appendS64(cm1, wrap:<s64>(size3))
+				? cm1.append(cm1, "' not yet implemented")
+				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.comment(_self.hub.emit, cm1) } } }
+			}
+			return true
+		}
+		if kind == 5{
+			let name4 = mut ? new String()
+			match Some(line){ name4 = ? X86Core.lineTok(line, 1) }
+			let ml4 = mut ? new String()
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.gen){ ml4 = ? _self.hub.gen.mangleLabel(_self.hub.gen, name4) } } }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.leaGlobalToReg(_self.hub.emit, RAX, ml4) } } }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.pushReg(_self.hub.emit, RAX) } } }
+			return true
+		}
+		if kind == 6{
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.pushReg(_self.hub.emit, RAX) } } }
+			return true
+		}
+		if kind == 7{
+			let inR10 = mut false
+			match Some(_self){ match Some(_self.core){ inR10 = _self.core.floatResultInR10 } }
+			if inR10{
+				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "    movq %r10, %rax") } } }
+				match Some(_self){ match Some(_self.core){ _self.core.floatResultInR10 = false } }
+			} else{
+				let xm6 = mut ? String.from("xmm0")
+				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.calls){ ? _self.hub.calls.movXmmToReg(_self.hub.calls, xm6, RAX) } } }
+			}
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.pushReg(_self.hub.emit, RAX) } } }
+			return true
+		}
+		if kind == 8{
+			let hasLines7 = mut false
+			match Some(_self){ match Some(_self.core){ hasLines7 = _self.core.allLines != null } }
+			if hasLines7 == false{
+				throw "NullPointerException"
+			}
+			let:<mut s32> cur7 = mut 0
+			match Some(_self){ match Some(_self.core){ cur7 = _self.core.currentLineIndex } }
+			let:<mut s32> end7 = mut (cur7 + 1)
+			let total7 = mut 0
+			match Some(_self){ match Some(_self.core){ 
+			match Some(_self.core.allLines){ total7 = _self.core.allLines.size(_self.core.allLines) }
+			}}
+			let go7 = mut true
+			for scan7 in 0..total7{
+				if go7{
+					if wrap:<u64>(end7) < total7{
+						let isEnd7 = mut false
+						match Some(_self){ match Some(_self.core){ 
+						match Some(_self.core.allLines){
+							let cand7 = _self.core.allLines.get(_self.core.allLines, wrap:<u64>(end7))
+							match Some(cand7){
+								if X86Core.lineLen(cand7) == 1{
+									let t7 = ? X86Core.lineTok(cand7, 0)
+									match Some(t7){ isEnd7 = t7.equals(t7, "ASM_END") }
+								}
+							}
+						}
+						}}
+						if isEnd7{
+							go7 = false
+						} else{
+							end7 = end7 + 1
+						}
+					} else{
+						go7 = false
+					}
+				}
+			}
+			let:<mut s32> i7 = mut (cur7 + 1)
+			for k7 in 0..total7{
+				if i7 < end7{
+					let txt7 = mut ? new String()
+					match Some(_self){ match Some(_self.core){ 
+					match Some(_self.core.allLines){
+						let ln7 = _self.core.allLines.get(_self.core.allLines, wrap:<u64>(i7))
+						match Some(ln7){ txt7 = ? X86Core.lineText(ln7) }
+					}
+					}}
+					match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.raw_(_self.hub.emit, txt7) } } }
+					i7 = i7 + 1
+				}
+			}
+			match Some(_self){ match Some(_self.core){ _self.core.asmSkipUntilIndex = end7 } }
+			return true
+		}
+		if kind == 9{
+			return true
+		}
+		if kind == 10{
+			let cat8 = mut ? new String()
+			match Some(line){ cat8 = ? X86Core.lineTok(line, 1) }
+			let cats8 = mut ? new ObjectList:<String>()
+			match Some(cat8){ cats8 = ? X86Core.splitBar(cat8) }
+			let n8 = mut 0
+			match Some(line){ n8 = line.items.size(line.items) }
+			let f64c8 = mut false
+			if n8 > 2{
+				match Some(line){ f64c8 = X86Core.tokenIs(line, 2, "8") }
+			}
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.popReg(_self.hub.emit, RAX) } } }
+			if f64c8{
+				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "    btrq $63, %rax") } } }
+				let:<mut s64> inf8 = mut 0
+				inf8 = wrap:<s64>(9218868437227405312)
+				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.movImmToReg(_self.hub.emit, RDX, inf8) } } }
+				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "    cmpq %rdx, %rax") } } }
+			} else{
+				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "    andl $2147483647, %eax") } } }
+				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "    cmpl $2139095040, %eax") } } }
+			}
+			let firstCat8 = mut true
+			let nc8 = mut 0
+			match Some(cats8){ nc8 = cats8.size(cats8) }
+			for ci8 in 0..nc8{
+				let isFin8 = mut false
+				let isInf8 = mut false
+				match Some(cats8){
+					let cg8 = cats8.get(cats8, ci8)
+					match Some(cg8){
+						isFin8 = cg8.equals(cg8, "finite")
+						isInf8 = cg8.equals(cg8, "infinite")
+					}
+				}
+				let setcc8 = mut ? String.from("seta")
+				if isFin8{
+					setcc8 = ? String.from("setb")
+				} elseif isInf8{
+					setcc8 = ? String.from("sete")
+				}
+				let reg8 = mut ? String.from("rdx")
+				if firstCat8{
+					reg8 = ? String.from("rax")
+				}
+				let sr8 = mut ? new String()
+				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ sr8 = ? _self.hub.emit.sizedReg(_self.hub.emit, reg8, 1) } } }
+				let rw2 = mut ? String.from("    ")
+				match Some(setcc8){ ? rw2.append(rw2, setcc8) }
+				? rw2.append(rw2, " %")
+				match Some(sr8){ ? rw2.append(rw2, sr8) }
+				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.raw_(_self.hub.emit, rw2) } } }
+				let rw3 = mut ? String.from("    movzbq %")
+				match Some(sr8){ ? rw3.append(rw3, sr8) }
+				? rw3.append(rw3, ", %")
+				match Some(reg8){ ? rw3.append(rw3, reg8) }
+				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.raw_(_self.hub.emit, rw3) } } }
+				if firstCat8 == false{
+					match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "    orq %rdx, %rax") } } }
+				}
+				firstCat8 = false
+			}
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.pushReg(_self.hub.emit, RAX) } } }
+			return true
+		}
+		if kind == 11{
+			let saved9 = mut ? new ObjectList:<String>()
+			let hasTop9 = mut false
+			match Some(_self){ match Some(_self.core){ hasTop9 = _self.core.loadedArgRegsStack.isEmpty(_self.core.loadedArgRegsStack) == false } }
+			let ntop9 = mut 0
+			if hasTop9{
+				match Some(_self){ match Some(_self.core){ 
+				let top9 = _self.core.loadedArgRegsStack.peek(_self.core.loadedArgRegsStack)
+				match Some(top9){ ntop9 = top9.size(top9) }
+				}}
+			}
+			for ti9 in 0..ntop9{
+				let item9 = mut ? new String()
+				match Some(_self){ match Some(_self.core){ 
+				let top9b = _self.core.loadedArgRegsStack.peek(_self.core.loadedArgRegsStack)
+				match Some(top9b){
+					let e9 = top9b.get(top9b, ti9)
+					match Some(e9){ item9 = ? e9.substring(e9, 0) }
+				}
+				}}
+				? saved9.add(saved9, item9)
+			}
+			let ns9 = mut saved9.size(saved9)
+			for si9 in 0..ns9{
+				let r9 = mut ? new String()
+				match Some(saved9){
+					let e9b = saved9.get(saved9, si9)
+					match Some(e9b){ r9 = ? e9b.substring(e9b, 0) }
+				}
+				let isI9 = mut false
+				match Some(r9){ isI9 = r9.charAt(r9, 0) == 'i' }
+				let numS9 = mut ? new String()
+				match Some(r9){ numS9 = ? r9.substring(r9, 1) }
+				let:<mut s32> num9 = mut 0
+				match Some(numS9){ num9 = ? numS9.parseS32(numS9) }
+				if isI9{
+					let rn9 = mut ? new String()
+					match Some(_self){ match Some(_self.hub){ match Some(_self.hub.calls){ 
+					let rs9 = _self.hub.calls.argReg(_self.hub.calls, num9)
+					rn9 = ? String.from(rs9)
+					}}}
+					match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.pushReg(_self.hub.emit, rn9) } } }
+				} else{
+					let fn9 = mut ? new String()
+					match Some(_self){ match Some(_self.hub){ match Some(_self.hub.calls){ 
+					let fs9 = _self.hub.calls.argFloatReg(_self.hub.calls, num9)
+					fn9 = ? String.from(fs9)
+					}}}
+					match Some(_self){ match Some(_self.hub){ match Some(_self.hub.calls){ ? _self.hub.calls.movXmmToReg(_self.hub.calls, fn9, R11) } } }
+					match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.pushReg(_self.hub.emit, R11) } } }
+				}
+			}
+			match Some(_self){ match Some(_self.core){ ? _self.core.savedOuterArgRegsStack.add(_self.core.savedOuterArgRegsStack, saved9) } }
+			let empty9 = mut ? new ObjectList:<String>()
+			match Some(_self){ match Some(_self.core){ ? _self.core.loadedArgRegsStack.add(_self.core.loadedArgRegsStack, empty9) } }
+			let buf9 = mut ? new String()
+			match Some(_self){ match Some(_self.core){ ? _self.core.callBufferStack.add(_self.core.callBufferStack, buf9) } }
+			match Some(_self){ match Some(_self.core){ ? _self.core.argTrackDeltaStack.pushBack(_self.core.argTrackDeltaStack, 0) } }
+			return true
+		}
+		if kind == 12{
+			let anyEmpty10 = mut false
+			match Some(_self){ match Some(_self.core){ anyEmpty10 = _self.core.callBufferStack.isEmpty(_self.core.callBufferStack) || len(_self.core.argTrackDeltaStack.backing) == 0 || _self.core.loadedArgRegsStack.isEmpty(_self.core.loadedArgRegsStack) || _self.core.savedOuterArgRegsStack.isEmpty(_self.core.savedOuterArgRegsStack) } }
+			if anyEmpty10{
+				throw "NoSuchElementException"
+			}
+			let fin10 = mut ? new String()
+			match Some(_self){ match Some(_self.core){ 
+			let topb10 = _self.core.callBufferStack.peek(_self.core.callBufferStack)
+			match Some(topb10){ fin10 = ? topb10.substring(topb10, 0) }
+			}}
+			match Some(_self){ match Some(_self.core){ ? _self.core.callBufferStack.removeLast(_self.core.callBufferStack) } }
+			let:<mut s64> dd10 = mut 0
+			match Some(_self){ match Some(_self.core){ dd10 = ? _self.core.argTrackDeltaStack.popBack(_self.core.argTrackDeltaStack, 0) } }
+			match Some(_self){ match Some(_self.core){ ? _self.core.loadedArgRegsStack.removeLast(_self.core.loadedArgRegsStack) } }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ 
+			let sink10 = _self.hub.emit.currentSink(_self.hub.emit)
+			match Some(sink10){ match Some(fin10){ ? sink10.append(sink10, fin10) } }
+			}}}
+			match Some(_self){ match Some(_self.core){ _self.core.strideKeySink = null } }
+			let saved10 = mut ? new ObjectList:<String>()
+			let ns10 = mut 0
+			match Some(_self){ match Some(_self.core){ 
+			let st10 = _self.core.savedOuterArgRegsStack.peek(_self.core.savedOuterArgRegsStack)
+			match Some(st10){ ns10 = st10.size(st10) }
+			}}
+			for ti10 in 0..ns10{
+				let item10 = mut ? new String()
+				match Some(_self){ match Some(_self.core){ 
+				let st10b = _self.core.savedOuterArgRegsStack.peek(_self.core.savedOuterArgRegsStack)
+				match Some(st10b){
+					let e10 = st10b.get(st10b, ti10)
+					match Some(e10){ item10 = ? e10.substring(e10, 0) }
+				}
+				}}
+				? saved10.add(saved10, item10)
+			}
+			match Some(_self){ match Some(_self.core){ ? _self.core.savedOuterArgRegsStack.removeLast(_self.core.savedOuterArgRegsStack) } }
+			let hasF0 = mut false
+			for fi10 in 0..ns10{
+				match Some(saved10){
+					let e10b = saved10.get(saved10, fi10)
+					match Some(e10b){
+						if e10b.equals(e10b, "f0"){
+							hasF0 = true
+						}
+					}
+				}
+			}
+			if hasF0{
+				let xm10 = mut ? String.from("xmm0")
+				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.calls){ ? _self.hub.calls.movXmmToReg(_self.hub.calls, xm10, R10) } } }
+				match Some(_self){ match Some(_self.core){ _self.core.floatResultInR10 = true } }
+			}
+			for kk10 in 0..ns10{
+				let k10 = mut (ns10 - 1 - kk10)
+				let r10s = mut ? new String()
+				match Some(saved10){
+					let e10c = saved10.get(saved10, k10)
+					match Some(e10c){ r10s = ? e10c.substring(e10c, 0) }
+				}
+				let isI10 = mut false
+				match Some(r10s){ isI10 = r10s.charAt(r10s, 0) == 'i' }
+				let numS10 = mut ? new String()
+				match Some(r10s){ numS10 = ? r10s.substring(r10s, 1) }
+				let:<mut s32> num10 = mut 0
+				match Some(numS10){ num10 = ? numS10.parseS32(numS10) }
+				if isI10{
+					let rn10 = mut ? new String()
+					match Some(_self){ match Some(_self.hub){ match Some(_self.hub.calls){ 
+					let rs10 = _self.hub.calls.argReg(_self.hub.calls, num10)
+					rn10 = ? String.from(rs10)
+					}}}
+					match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.popReg(_self.hub.emit, rn10) } } }
+				} else{
+					match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.popReg(_self.hub.emit, R11) } } }
+					let fn10 = mut ? new String()
+					match Some(_self){ match Some(_self.hub){ match Some(_self.hub.calls){ 
+					let fs10 = _self.hub.calls.argFloatReg(_self.hub.calls, num10)
+					fn10 = ? String.from(fs10)
+					}}}
+					match Some(_self){ match Some(_self.hub){ match Some(_self.hub.calls){ ? _self.hub.calls.movRegToXmm(_self.hub.calls, R11, fn10) } } }
+				}
+			}
+			return true
+		}
+		return true
+	}
+
+
+
+
+
+
+
 
 	@pub
 	@throws

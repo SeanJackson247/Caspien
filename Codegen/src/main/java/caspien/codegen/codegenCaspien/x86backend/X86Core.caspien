@@ -709,11 +709,103 @@ impl X86Core{
 	@throws
 	static func tokenS64(stmt: ref some imut BytecodeStatement, i: mut u64) mut s64{
 		?catch(e){ throw e }
+		if i >= stmt.items.size(stmt.items){
+			throw "index out of range"
+		}
 		let t = stmt.items.get(stmt.items, i)
 		let:<mut s64> r = mut 0
 		match Some(t){
 			r = ? t.text.parseS64(t.text)
 		}
 		return r
+	}
+
+	/** Token `i` of the statement as an owned copy (port helper). */
+	@pub
+	@throws
+	static func lineTok(stmt: ref some imut BytecodeStatement, i: mut u64) owns some mut String{
+		?catch(e){ throw e }
+		if i >= stmt.items.size(stmt.items){
+			throw "index out of range"
+		}
+		let out = mut ? new String()
+		let t = stmt.items.get(stmt.items, i)
+		match Some(t){ out = ? t.text.substring(t.text, 0) }
+		return out
+	}
+
+	/** Number of tokens of the statement (port helper). */
+	@pub
+	static func lineLen(stmt: ref some imut BytecodeStatement) mut u64{
+		return stmt.items.size(stmt.items)
+	}
+
+	/** The token texts of the statement joined with single spaces (Java `String.join(" ", textsOf(line))`). */
+	@pub
+	@throws
+	static func lineText(stmt: ref some imut BytecodeStatement) owns some mut String{
+		?catch(e){ throw e }
+		let out = mut ? new String()
+		let n = mut stmt.items.size(stmt.items)
+		for i in 0..n{
+			if i > 0{
+				? out.append(out, " ")
+			}
+			let t = stmt.items.get(stmt.items, i)
+			match Some(t){ ? out.append(out, t.text) }
+		}
+		return out
+	}
+
+	/** `Long.parseLong` for a leading '-', else `Long.parseUnsignedLong` (bits as s64). */
+	@pub
+	@throws
+	static func intBits(s: ref some imut String) mut s64{
+		?catch(e){ throw e }
+		if s.startsWith(s, "-"){
+			let v = mut ? s.parseS64(s)
+			return v
+		}
+		let u = mut ? s.parseU64(s)
+		return wrap:<s64>(u)
+	}
+
+	/** Java `Text.split(s, '|', 0)`: split at '|', trailing empty parts dropped; no separator gives the whole string (port helper). */
+	@pub
+	@throws
+	static func splitBar(s: ref some imut String) owns some mut ObjectList<String>{
+		?catch(e){ throw e }
+		let out = mut ? new ObjectList:<String>()
+		let n = mut s.length(s)
+		let cur = mut ? new String()
+		let seps = mut 0
+		for i in 0..n{
+			let c = mut ' '
+			match Some(s){ c = s.charAt(s, i) }
+			if c == '|'{
+				seps = seps + 1
+				? out.add(out, cur)
+				cur = ? new String()
+			} else{
+				match Some(cur){ ? cur.appendChar(cur, c) }
+			}
+		}
+		? out.add(out, cur)
+		if seps == 0{
+			return out
+		}
+		let k = mut out.size(out)
+		for z in 0..k{
+			let last = mut out.size(out)
+			if last > 0{
+				let isEmpty = mut false
+				let tail = out.get(out, last - 1)
+				match Some(tail){ isEmpty = tail.length(tail) == 0 }
+				if isEmpty{
+					? out.removeLast(out)
+				}
+			}
+		}
+		return out
 	}
 }

@@ -224,4 +224,22 @@ impl Text{
 		}
 		return false
 	}
+
+	/** `\d+\.(start|end)` (Java `Text.isDigitsDotStartOrEnd`). */
+	@pub
+	@throws
+	static func isDigitsDotStartOrEnd(s: ref some imut String) mut bool{
+		?catch(e){ throw e }
+		let dot = mut s.indexOf(s, '.')
+		if dot < 0{
+			return false
+		}
+		let head = mut ? s.sub(s, 0, wrap:<u64>(dot))
+		let tail = mut ? s.substring(s, wrap:<u64>(dot) + 1)
+		let r = mut false
+		match Some(head){ match Some(tail){
+			r = Text.isDigits(head) && (tail.equals(tail, "start") || tail.equals(tail, "end"))
+		} }
+		return r
+	}
 }

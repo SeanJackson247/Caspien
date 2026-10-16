@@ -42,5 +42,15 @@ impl X86Backend{
 	}
 
 	@pub
-	func generate(_self: ref some mut self, lines: ref imut ObjectList<BytecodeStatement>) owns mut String{ return null }
+	@throws
+	func generate(_self: ref some mut self, lines: ref some mut ObjectList<BytecodeStatement>) owns mut String{
+		?catch(e){ throw e }
+		let a = mut _self.avx
+		match Some(_self){ match Some(_self.core){ _self.core.avx = a } }
+		let:<owns mut String> result = mut null
+		match Some(_self){ match Some(_self.gen){ result = ? _self.gen.generate(_self.gen, lines) } }
+		return result
+	}
+
+
 }
