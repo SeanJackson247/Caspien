@@ -1,4 +1,4 @@
-// The java.lang.Long statics the codegen files use, called as in Java: `Long.bitCount(x)`, `Long.numberOfTrailingZeros(x)`.
+// The java.lang.Long statics the codegen files use, called as in Java: `Long.bitCount(x)`, `Long.numberOfTrailingZeros(x)`, `Long.numberOfLeadingZeros(x)`.
 struct Long{@pub{
 }}
 
@@ -30,6 +30,24 @@ impl Long{
 		let seen = mut false
 		for i in 0..64{
 			let bit = mut bits_and(bits_right(v, i), 1)
+			if bit == 1{
+				seen = true
+			}
+			if seen == false{
+				count += 1
+			}
+		}
+		return count
+	}
+
+	/** The number of zero bits above the highest one bit of `x`; 64 when `x` is 0. */
+	@pub
+	static func numberOfLeadingZeros(x: mut s64) mut s32{
+		let v = mut wrap:<u64>(x)
+		let:<mut s32> count = mut 0
+		let seen = mut false
+		for i in 0..64{
+			let bit = mut bits_and(bits_right(v, 63 - i), 1)
 			if bit == 1{
 				seen = true
 			}

@@ -570,6 +570,41 @@ impl X86Core{
 		throw "unknown condition"
 	}
 
+	/** True when the nullable String has exactly the text `want`. */
+	@pub
+	static func textIs(t: ref imut String, want: static imut string) mut bool{
+		let r = mut false
+		match Some(t){ r = t.equals(t, want) }
+		return r
+	}
+
+	@pub
+	@throws
+	static func rfTrueSuffix(falseJump: ref imut String) static imut string{
+		if X86Core.textIs(falseJump, "jne"){
+			return "e"
+		} elseif X86Core.textIs(falseJump, "je"){
+			return "ne"
+		} elseif X86Core.textIs(falseJump, "jae"){
+			return "b"
+		} elseif X86Core.textIs(falseJump, "jb"){
+			return "ae"
+		} elseif X86Core.textIs(falseJump, "ja"){
+			return "be"
+		} elseif X86Core.textIs(falseJump, "jbe"){
+			return "a"
+		} elseif X86Core.textIs(falseJump, "jge"){
+			return "l"
+		} elseif X86Core.textIs(falseJump, "jl"){
+			return "ge"
+		} elseif X86Core.textIs(falseJump, "jg"){
+			return "le"
+		} elseif X86Core.textIs(falseJump, "jle"){
+			return "g"
+		}
+		throw "unknown condition"
+	}
+
 	@pub
 	static func rfExtImm(v: mut s64, size: mut s32, signed: mut bool) mut s64{
 		if size >= 8{

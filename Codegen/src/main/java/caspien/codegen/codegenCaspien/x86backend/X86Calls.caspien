@@ -65,11 +65,25 @@ impl X86Calls{
 	}
 
 	@pub
+	@throws
 	func movRegToXmm(_self: ref some mut self, gpr64: ref imut String, xmmReg: ref imut String) void{
+		?catch(e){ throw e }
+		let ln1 = mut ? String.from("    movq %")
+		match Some(gpr64){ ? ln1.append(ln1, gpr64) }
+		? ln1.append(ln1, ", %")
+		match Some(xmmReg){ ? ln1.append(ln1, xmmReg) }
+		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.raw_(_self.hub.emit, ln1) } } }
 	}
 
 	@pub
+	@throws
 	func movXmmToReg(_self: ref some mut self, xmmReg: ref imut String, gpr64: ref imut String) void{
+		?catch(e){ throw e }
+		let ln2 = mut ? String.from("    movq %")
+		match Some(xmmReg){ ? ln2.append(ln2, xmmReg) }
+		? ln2.append(ln2, ", %")
+		match Some(gpr64){ ? ln2.append(ln2, gpr64) }
+		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.raw_(_self.hub.emit, ln2) } } }
 	}
 
 	@pub
@@ -81,7 +95,30 @@ impl X86Calls{
 	}
 
 	@pub
+	@throws
 	func pushSizedOrBlockFromAddr(_self: ref some mut self, addrReg64: ref imut String, size: mut s32) void{
+		?catch(e){ throw e }
+		let rax = mut ? String.from("rax")
+		let r11 = mut ? String.from("r11")
+		if size <= 8{
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){
+				? _self.hub.emit.loadSizedFromAddr(_self.hub.emit, rax, addrReg64, size)
+			} } }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.pushReg(_self.hub.emit, rax) } } }
+			return
+		}
+		let:<mut u64> words = mut (wrap:<u64>(size + 7) / 8)
+		for i in 0..words{
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){
+				? _self.hub.emit.loadSizedFromAddr(_self.hub.emit, r11, addrReg64, 8)
+			} } }
+			if i + 1 < words{
+				let ln10 = mut ? String.from("    addq $8, %")
+				match Some(addrReg64){ ? ln10.append(ln10, addrReg64) }
+				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.raw_(_self.hub.emit, ln10) } } }
+			}
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.pushReg(_self.hub.emit, r11) } } }
+		}
 	}
 
 	@pub
@@ -116,7 +153,13 @@ impl X86Calls{
 	}
 
 	@pub
+	@throws
 	func emitStackArgRestore(_self: ref some mut self, stackArgBytes: mut s64) void{
+		?catch(e){ throw e }
+		let ln3 = mut ? String.from("    movq ")
+		? ln3.appendS64(ln3, stackArgBytes)
+		? ln3.append(ln3, "(%rsp), %rsp")
+		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.raw_(_self.hub.emit, ln3) } } }
 	}
 
 	@pub
@@ -131,38 +174,212 @@ impl X86Calls{
 	}
 
 	@pub
+	@throws
 	func reverseStackArgWords(_self: ref some mut self, stackArgBytes: mut s64) void{
+		?catch(e){ throw e }
+		let:<mut u64> words = mut 0
+		if stackArgBytes > 0{
+			words = wrap:<u64>(stackArgBytes) / 8
+		}
+		let:<mut u64> half = mut (words / 2)
+		for i in 0..half{
+			let:<mut s64> lo = mut (wrap:<s64>(i) * 8)
+			let:<mut s64> hi = mut (wrap:<s64>(words - 1 - i) * 8)
+			let ln6 = mut ? String.from("    movq ")
+			? ln6.appendS64(ln6, lo)
+			? ln6.append(ln6, "(%rsp), %rax")
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.raw_(_self.hub.emit, ln6) } } }
+			let ln7 = mut ? String.from("    movq ")
+			? ln7.appendS64(ln7, hi)
+			? ln7.append(ln7, "(%rsp), %r11")
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.raw_(_self.hub.emit, ln7) } } }
+			let ln8 = mut ? String.from("    movq %r11, ")
+			? ln8.appendS64(ln8, lo)
+			? ln8.append(ln8, "(%rsp)")
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.raw_(_self.hub.emit, ln8) } } }
+			let ln9 = mut ? String.from("    movq %rax, ")
+			? ln9.appendS64(ln9, hi)
+			? ln9.append(ln9, "(%rsp)")
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.raw_(_self.hub.emit, ln9) } } }
+		}
 	}
 
 	@pub
+	@throws
 	func resolveStackArgBytesAndCall(_self: ref some mut self, indirect: mut bool, target: ref imut String) void{
+		let counted = mut false
+		?catch(e){
+			if counted{
+				match Some(_self){ match Some(_self.core){ _self.core.argTrackSuspendDepth = _self.core.argTrackSuspendDepth - 1 } }
+			}
+			throw e
+		}
+		let empty = mut false
+		match Some(_self){ match Some(_self.core){
+			empty = len(_self.core.argTrackDeltaStack.backing) == 0 || _self.core.callBufferStack.isEmpty(_self.core.callBufferStack)
+		} }
+		if empty{
+			match Some(_self){ ? _self.emitAlignedCall(_self, indirect, target) }
+			return
+		}
+		let:<mut s64> sab = mut 0
+		match Some(_self){ match Some(_self.core){ sab = ? _self.core.argTrackDeltaStack.popBack(_self.core.argTrackDeltaStack, 0) } }
+		match Some(_self){ match Some(_self.core){ ? _self.core.argTrackDeltaStack.pushBack(_self.core.argTrackDeltaStack, sab) } }
+		if sab <= 0{
+			match Some(_self){ ? _self.emitAlignedCall(_self, indirect, target) }
+			return
+		}
+		let nb = mut ? new String()
+		match Some(_self){ nb = ? _self.buildStackArgReservation(_self, sab) }
+		match Some(_self){ match Some(_self.core){
+			let cur = _self.core.callBufferStack.peek(_self.core.callBufferStack)
+			match Some(cur){ ? nb.append(nb, cur) }
+		} }
+		match Some(_self){ match Some(_self.core){ ? _self.core.callBufferStack.removeLast(_self.core.callBufferStack) } }
+		match Some(_self){ match Some(_self.core){ ? _self.core.callBufferStack.add(_self.core.callBufferStack, nb) } }
+		let winAbi = mut false
+		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ winAbi = _self.hub.emit.isWinAbi(_self.hub.emit) } } }
+		match Some(_self){ match Some(_self.core){ _self.core.argTrackSuspendDepth = _self.core.argTrackSuspendDepth + 1 } }
+		counted = true
+		match Some(_self){ ? _self.reverseStackArgWords(_self, sab) }
+		if winAbi{
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "    subq $32, %rsp") } } }
+		} else{
+			let:<mut s32> xmmCount = mut 0
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ xmmCount = _self.hub.emit.consumeVarargsXmmCount(_self.hub.emit) } } }
+			let ln = mut ? String.from("    movl $")
+			? ln.appendS64(ln, xmmCount as s64)
+			? ln.append(ln, ", %eax")
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.raw_(_self.hub.emit, ln) } } }
+		}
+		match Some(_self){ ? _self.emitCallTarget(_self, indirect, target) }
+		if winAbi{
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "    addq $32, %rsp") } } }
+		}
+		match Some(_self){ match Some(_self.core){ _self.core.argTrackSuspendDepth = _self.core.argTrackSuspendDepth - 1 } }
+		counted = false
+		match Some(_self){ ? _self.emitStackArgRestore(_self, sab) }
 	}
 
+	@pub
+	@throws
 	func emitCallTarget(_self: ref some mut self, indirect: mut bool, target: ref imut String) void{
+		?catch(e){ throw e }
+		if indirect{
+			match Some(_self){ ? _self.emitCallIndirect(_self, target) }
+		} else{
+			match Some(_self){ ? _self.emitCallByName(_self, target) }
+		}
 	}
 
 	@pub
+	@throws
 	func emitAlignedCallByName(_self: ref some mut self, name: ref imut String) void{
+		?catch(e){ throw e }
+		match Some(_self){ ? _self.emitAlignedCall(_self, false, name) }
 	}
 
 	@pub
+	@throws
 	func emitAlignedCall(_self: ref some mut self, indirect: mut bool, target: ref imut String) void{
+		match Some(_self){ match Some(_self.core){ _self.core.argTrackSuspendDepth = _self.core.argTrackSuspendDepth + 1 } }
+		?catch(e){
+			match Some(_self){ match Some(_self.core){ _self.core.argTrackSuspendDepth = _self.core.argTrackSuspendDepth - 1 } }
+			throw e
+		}
+		let winAbi = mut false
+		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ winAbi = _self.hub.emit.isWinAbi(_self.hub.emit) } } }
+		let ln11 = mut ? String.from("    movq %rsp, %rax")
+		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.raw_(_self.hub.emit, ln11) } } }
+		let ln12 = mut ? String.from("    andq $-16, %rsp")
+		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.raw_(_self.hub.emit, ln12) } } }
+		let ln13 = mut ? String.from("    subq $16, %rsp")
+		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.raw_(_self.hub.emit, ln13) } } }
+		let ln14 = mut ? String.from("    movq %rax, 8(%rsp)")
+		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.raw_(_self.hub.emit, ln14) } } }
+		if winAbi{
+			let ln15 = mut ? String.from("    subq $32, %rsp")
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.raw_(_self.hub.emit, ln15) } } }
+		} else{
+			let:<mut s32> xmmCount = mut 0
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ xmmCount = _self.hub.emit.consumeVarargsXmmCount(_self.hub.emit) } } }
+			let ln16 = mut ? String.from("    movl $")
+			? ln16.appendS64(ln16, xmmCount as s64)
+			? ln16.append(ln16, ", %eax")
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.raw_(_self.hub.emit, ln16) } } }
+		}
+		match Some(_self){ ? _self.emitCallTarget(_self, indirect, target) }
+		if winAbi{
+			let ln17 = mut ? String.from("    addq $32, %rsp")
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.raw_(_self.hub.emit, ln17) } } }
+		}
+		let ln18 = mut ? String.from("    movq 8(%rsp), %rsp")
+		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.raw_(_self.hub.emit, ln18) } } }
+		match Some(_self){ match Some(_self.core){ _self.core.argTrackSuspendDepth = _self.core.argTrackSuspendDepth - 1 } }
 	}
 
 	@pub
+	@throws
 	func emitCallByName(_self: ref some mut self, name: ref imut String) void{
+		?catch(e){ throw e }
+		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.gen){ ? _self.hub.gen.xvSpillAll(_self.hub.gen) } } }
+		let ln4 = mut ? String.from("    call ")
+		match Some(name){ ? ln4.append(ln4, name) }
+		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.raw_(_self.hub.emit, ln4) } } }
+		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.gen){ ? _self.hub.gen.xvReloadAll(_self.hub.gen) } } }
 	}
 
 	@pub
+	@throws
 	func emitCallIndirect(_self: ref some mut self, reg64: ref imut String) void{
+		?catch(e){ throw e }
+		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.gen){ ? _self.hub.gen.xvSpillAll(_self.hub.gen) } } }
+		let ln5 = mut ? String.from("    call *%")
+		match Some(reg64){ ? ln5.append(ln5, reg64) }
+		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.raw_(_self.hub.emit, ln5) } } }
+		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.gen){ ? _self.hub.gen.xvReloadAll(_self.hub.gen) } } }
 	}
 
 	@pub
+	@throws
 	func emitLine(_self: ref some mut self, line: ref imut BytecodeStatement) void{
+		?catch(e){ throw e }
+		let special = mut false
+		let n = mut 0
+		match Some(line){ n = line.items.size(line.items) }
+		let ok = mut false
+		match Some(_self){ match Some(_self.core){
+			ok = n >= 1 && _self.core.currentLineIndex > _self.core.asmSkipUntilIndex && _self.core.csrFuncStart >= 0
+		} }
+		if ok{
+			let isLabelOnly = mut false
+			match Some(line){
+				if n == 1{
+					let t0 = line.items.get(line.items, 0)
+					match Some(t0){ isLabelOnly = t0.text.endsWith(t0.text, ":") }
+				}
+			}
+			let user = mut false
+			match Some(line){
+				user = X86Core.tokenIs(line, 0, "NEW") || X86Core.tokenIs(line, 0, "NEW_DYN") || X86Core.tokenIs(line, 0, "NEW_UDYN") || X86Core.tokenIs(line, 0, "NEW_FROM_STRING") || X86Core.tokenIs(line, 0, "NEW_FROM_USTRING") || X86Core.tokenIs(line, 0, "CLONE") || X86Core.tokenIs(line, 0, "CLONE_DYN") || X86Core.tokenIs(line, 0, "RESIZE") || X86Core.tokenIs(line, 0, "URESIZE") || X86Core.tokenIs(line, 0, "DOT") || X86Core.tokenIs(line, 0, "LOOKUP_ARRAY")
+			}
+			special = isLabelOnly == false && user
+		}
+		if special{
+			let ln312 = mut ? String.from("@@V1314S@@")
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.raw_(_self.hub.emit, ln312) } } }
+			match Some(_self){ ? _self.emitLineInner(_self, line) }
+			let ln313 = mut ? String.from("@@V1314R@@")
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.raw_(_self.hub.emit, ln313) } } }
+			return
+		}
+		match Some(_self){ ? _self.emitLineInner(_self, line) }
 	}
 
 	@pub
+	@throws
 	func emitLineInner(_self: ref some mut self, line: ref imut BytecodeStatement) void{
+		throw "emitLineInner: not ported yet"
 	}
 
 	@pub
