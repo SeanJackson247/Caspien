@@ -1,0 +1,83 @@
+import "../../../../../../stdlib/string.caspien"
+import "../../../../../../Codegen/src/main/java/caspien/codegen/collections.caspien"
+import "BytecodeToken.caspien"
+import "BytecodeStatement.caspien"
+import "BytecodeProgram.caspien"
+
+/** HOB text -> BytecodeProgram: one statement per line, whitespace split, a quoted string or char literal kept as one token. */
+@pub
+struct BytecodeParser{@pub{
+}}
+
+impl constructor for BytecodeParser() self{
+	return BytecodeParser{}
+}
+
+@pub
+impl BytecodeParser{
+	@pub
+	@throws
+	func parse(_self: ref some imut self, rawLines: ref imut ObjectList<String>, originFile: ref some imut String) owns some mut BytecodeProgram{
+		?catch(e){ throw e }
+		let org = mut ? originFile.sub(originFile, 0, originFile.length(originFile))
+		let result = mut ? new BytecodeProgram()
+		let:<mut u64> n = mut 0
+		match Some(rawLines){ n = rawLines.size(rawLines) }
+		for lineNo in 0..n{
+			match Some(rawLines){
+				let s = mut rawLines.get(rawLines, lineNo)
+				match Some(s){
+					let st = mut ? BytecodeStatement.scanLine(s, org, wrap:<s32>(lineNo + 1))
+					? result.add(result, st)
+				}
+			}
+		}
+		return result
+	}
+
+	/** Port-only: splits whole text like Java `Files.readAllLines` (\n, \r\n or \r end a line; no empty last line), then `parse`. */
+	@pub
+	@throws
+	func parseText(_self: ref some imut self, text0: ref some imut String, originFile0: ref some imut String) owns some mut BytecodeProgram{
+		?catch(e){ throw e }
+		let originFile = mut ? originFile0.sub(originFile0, 0, originFile0.length(originFile0))
+		let text = mut ? text0.sub(text0, 0, text0.length(text0))
+		let lines = mut ? new ObjectList:<String>()
+		let n = mut text.length(text)
+		let start = mut 0
+		let i = mut 0
+		let limit = mut (n + 1)
+		for step in 0..limit{
+			if i >= n{
+				break
+			}
+			let c = mut text.charAt(text, i)
+			if c == '\n' || c == '\r'{
+				let ln = mut ? text.sub(text, start, i)
+				? lines.add(lines, ln)
+				if c == '\r' && i + 1 < n && text.charAt(text, i + 1) == '\n'{
+					i += 1
+				}
+				i += 1
+				start = i
+			} else {
+				i += 1
+			}
+		}
+		if start < n{
+			let ln = mut ? text.sub(text, start, n)
+			? lines.add(lines, ln)
+		}
+		let p = mut ? _self.parse(_self, lines, originFile)
+		return p
+	}
+
+	/** One line of text -> one statement (the scanner lives in BytecodeStatement.scanLine: imports cannot be circular). */
+	@pub
+	@throws
+	static func parseLine(rawLine: ref some imut String, originFile: ref some imut String, lineNumber: imut s32) owns some mut BytecodeStatement{
+		?catch(e){ throw e }
+		let r = mut ? BytecodeStatement.scanLine(rawLine, originFile, lineNumber)
+		return r
+	}
+}

@@ -2,7 +2,7 @@ import "../../../../../../stdlib/string.caspien"
 import "CodegenResult.caspien"
 import "CodegenConfig.caspien"
 import "x86backend/X86Backend.caspien"
-import "bytecode/BytecodeParser.caspien"
+import "../../../../../../BytecodeParser/src/main/java/caspien/bytecode/BytecodeParser.caspien"
 
 @pub
 struct Codegen{@pub{
@@ -30,7 +30,8 @@ impl Codegen{
 		let path = mut ? String.from("codegen.config")
 		let config = mut ? CodegenConfig.parse(configText, path)
 		let parser = mut ? new BytecodeParser()
-		let program = mut ? parser.parse(parser, lobText, origin)
+		let:<owns mut BytecodeProgram> program = mut null
+		match Some(lobText){ match Some(origin){ program = ? parser.parseText(parser, lobText, origin) } }
 		let backend = mut ? new X86Backend(config.target, config.bmi2)
 		? backend.wire(backend)
 		if config.avx{

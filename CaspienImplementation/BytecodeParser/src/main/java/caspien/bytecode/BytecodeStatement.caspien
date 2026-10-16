@@ -1,0 +1,298 @@
+import "../../../../../../stdlib/string.caspien"
+import "../../../../../../Codegen/src/main/java/caspien/codegen/collections.caspien"
+import "BytecodeToken.caspien"
+
+/** One line of HOB: an opcode (or label) followed by its operands. A pass that rewrites a line builds a new statement. */
+@pub
+struct BytecodeStatement{@pub{
+	items: owns some mut ObjectList<BytecodeToken>
+}}
+
+@pub
+@throws
+impl constructor for BytecodeStatement() self{
+	?catch(e){ throw e }
+	let items = mut ? new ObjectList:<BytecodeToken>()
+	return BytecodeStatement{items= items}
+}
+
+@pub
+impl BytecodeStatement{
+	/** Java copy constructor `new BytecodeStatement(other)`; the tokens are copied, not shared. */
+	@pub
+	@throws
+	static func copyOf(other: ref imut BytecodeStatement) owns some mut BytecodeStatement{
+		?catch(e){ throw e }
+		let r = mut ? new BytecodeStatement()
+		let:<mut u64> n = mut 0
+		match Some(other){ n = other.size(other) }
+		for i in 0..n{
+			match Some(other){
+				let t = mut other.get(other, i)
+				match Some(t){
+					let c = mut ? BytecodeToken.copyOf(t)
+					? r.add(r, c)
+				}
+			}
+		}
+		return r
+	}
+
+	@pub
+	func size(_self: ref some imut self) mut u64{
+		return _self.items.size(_self.items)
+	}
+
+	@pub
+	func isEmpty(_self: ref some imut self) bool{
+		return _self.items.isEmpty(_self.items)
+	}
+
+	/** A reference to token `i`, null when out of range. */
+	@pub
+	func get(_self: ref some imut self, i: imut u64) ref mut BytecodeToken{
+		return _self.items.get(_self.items, i)
+	}
+
+	/** Java `set(i, e)` (the old token is dropped, not returned). */
+	@pub
+	func set(_self: ref some mut self, i: imut u64, e: owns some mut BytecodeToken) void{
+		_self.items.setAt(_self.items, i, e)
+	}
+
+	/** Java `add(e)`. */
+	@pub
+	@throws
+	func add(_self: ref some mut self, e: owns some mut BytecodeToken) void{
+		?catch(e2){ throw e2 }
+		? _self.items.add(_self.items, e)
+	}
+
+	/** Java `add(i, e)`. */
+	@pub
+	@throws
+	func insertAt(_self: ref some mut self, i: imut u64, e: owns some mut BytecodeToken) void{
+		?catch(e2){ throw e2 }
+		? _self.items.insertAt(_self.items, i, e)
+	}
+
+	/** Java `addAll(other)`: appends copies of other's tokens. */
+	@pub
+	@throws
+	func addAll(_self: ref mut self, other: ref imut BytecodeStatement) void{
+		?catch(e){ throw e }
+		let:<mut u64> n = mut 0
+		match Some(other){ n = other.size(other) }
+		for i in 0..n{
+			match Some(other){
+				let t = mut other.get(other, i)
+				match Some(t){
+					let c = mut ? BytecodeToken.copyOf(t)
+					match Some(_self){ ? _self.add(_self, c) }
+				}
+			}
+		}
+	}
+
+	/** Java `addAll(i, other)`: inserts copies of other's tokens from index i. */
+	@pub
+	@throws
+	func addAllAt(_self: ref mut self, i: imut u64, other: ref imut BytecodeStatement) void{
+		?catch(e){ throw e }
+		let:<mut u64> n = mut 0
+		match Some(other){ n = other.size(other) }
+		let at = mut (i + 0)
+		for k in 0..n{
+			match Some(other){
+				let t = mut other.get(other, k)
+				match Some(t){
+					let c = mut ? BytecodeToken.copyOf(t)
+					match Some(_self){ ? _self.insertAt(_self, at, c) }
+					at += 1
+				}
+			}
+		}
+	}
+
+	/** Java `remove(i)` (the removed token is dropped, not returned). */
+	@pub
+	@throws
+	func removeAt(_self: ref some mut self, i: imut u64) void{
+		?catch(e){ throw e }
+		? _self.items.removeAt(_self.items, i)
+	}
+
+	@pub
+	@throws
+	func clear(_self: ref some mut self) void{
+		?catch(e){ throw e }
+		? _self.items.clear(_self.items)
+	}
+
+	/** A copy of [from, to) as a new statement (Java returns a List). */
+	@pub
+	@throws
+	func slice(_self: ref imut self, from: imut u64, to: imut u64) owns some mut BytecodeStatement{
+		?catch(e){ throw e }
+		let r = mut ? new BytecodeStatement()
+		for k in from..to{
+			match Some(_self){
+				let t = mut _self.get(_self, k)
+				match Some(t){
+					let c = mut ? BytecodeToken.copyOf(t)
+					? r.add(r, c)
+				}
+			}
+		}
+		return r
+	}
+
+	/** First token's text (mnemonic or label), or "" for an empty statement. */
+	@pub
+	@throws
+	func opcode(_self: ref some imut self) owns some mut String{
+		?catch(e){ throw e }
+		let r = mut ? _self.text(_self, 0)
+		return r
+	}
+
+	/** Text of token i, or "" when the statement is shorter. */
+	@pub
+	@throws
+	func text(_self: ref some imut self, i: imut u64) owns some mut String{
+		?catch(e){ throw e }
+		let t = mut _self.get(_self, i)
+		match Some(t){
+			let r = mut ? t.text.sub(t.text, 0, t.text.length(t.text))
+			return r
+		}
+		let empty = mut ? new String("")
+		return empty
+	}
+
+	/** Line of the HOB text this statement was read from (0 for an empty statement). */
+	@pub
+	func sourceLine(_self: ref some imut self) mut s32{
+		let t = mut _self.get(_self, 0)
+		match Some(t){
+			return t.line + 0
+		}
+		return 0
+	}
+
+	/** An instruction a pass generates, written as text ("ALLOC 16"): split by the parser's scanner. */
+	@pub
+	@throws
+	static func fromText(text: ref some imut String, origin: ref some imut String) owns some mut BytecodeStatement{
+		?catch(e){ throw e }
+		let r = mut ? BytecodeStatement.scanLine(text, origin, 1)
+		return r
+	}
+
+	/** Several generated instructions, one statement per string. */
+	@pub
+	@throws
+	static func fromTexts(texts: ref imut ObjectList<String>, origin: ref some imut String) owns some mut ObjectList<BytecodeStatement>{
+		?catch(e){ throw e }
+		let org = mut ? origin.sub(origin, 0, origin.length(origin))
+		let out = mut ? new ObjectList:<BytecodeStatement>()
+		let:<mut u64> n = mut 0
+		match Some(texts){ n = texts.size(texts) }
+		for i in 0..n{
+			match Some(texts){
+				let s = mut texts.get(texts, i)
+				match Some(s){
+					let st = mut ? BytecodeStatement.scanLine(s, org, wrap:<s32>(i + 1))
+					? out.add(out, st)
+				}
+			}
+		}
+		return out
+	}
+
+	/** Java `Character.isWhitespace` for ASCII (space, 9-13, 28-31). */
+	@pub
+	static func isWs(c: mut char) bool{
+		let v = mut String.charCode(c)
+		return v == 32 || (v >= 9 && v <= 13) || (v >= 28 && v <= 31)
+	}
+
+	/** One line of text -> one statement. The only scanner (Java `BytecodeParser.parseLine`). */
+	@pub
+	@throws
+	static func scanLine(rawLine0: ref some imut String, originFile0: ref some imut String, lineNumber: imut s32) owns some mut BytecodeStatement{
+		?catch(e){ throw e }
+		let rawLine = mut ? rawLine0.sub(rawLine0, 0, rawLine0.length(rawLine0))
+		let originFile = mut ? originFile0.sub(originFile0, 0, originFile0.length(originFile0))
+		let tokens = mut ? new BytecodeStatement()
+		let i = mut 0
+		let ln0 = mut rawLine.length(rawLine)
+		let guard = mut (ln0 + 1)
+		for step in 0..guard{
+			if i >= ln0{
+				break
+			}
+			let c = mut rawLine.charAt(rawLine, i)
+			if BytecodeStatement.isWs(c){
+				i += 1
+				continue
+			}
+			if c == '"'{
+				let start = mut i
+				i += 1
+				for k in 0..ln0{
+					if i >= ln0 || rawLine.charAt(rawLine, i) == '"'{
+						break
+					}
+					if rawLine.charAt(rawLine, i) == '\\' && i + 1 < ln0{
+						i += 1
+					}
+					i += 1
+				}
+				if i < ln0{
+					i += 1
+				}
+				let stop = mut i
+				if stop > ln0{
+					stop = ln0
+				}
+				let t = mut ? rawLine.sub(rawLine, start, stop)
+				let f = mut ? originFile.sub(originFile, 0, originFile.length(originFile))
+				let tok = mut ? new BytecodeToken(t, f, lineNumber, BytecodeTokenKind.STRING)
+				? tokens.add(tokens, tok)
+				continue
+			}
+			if c == '\''{
+				let end = mut 0
+				let found = mut false
+				if i + 3 < ln0 && rawLine.charAt(rawLine, i + 1) == '\\' && rawLine.charAt(rawLine, i + 3) == '\''{
+					end = i + 4
+					found = true
+				} else if i + 2 < ln0 && rawLine.charAt(rawLine, i + 2) == '\''{
+					end = i + 3
+					found = true
+				}
+				if found && (end == ln0 || BytecodeStatement.isWs(rawLine.charAt(rawLine, end))){
+					let t = mut ? rawLine.sub(rawLine, i, end)
+					let f = mut ? originFile.sub(originFile, 0, originFile.length(originFile))
+					let tok = mut ? new BytecodeToken(t, f, lineNumber, BytecodeTokenKind.CODE)
+					? tokens.add(tokens, tok)
+					i = end
+					continue
+				}
+			}
+			let start = mut i
+			for k in 0..ln0{
+				if i >= ln0 || BytecodeStatement.isWs(rawLine.charAt(rawLine, i)){
+					break
+				}
+				i += 1
+			}
+			let t = mut ? rawLine.sub(rawLine, start, i)
+			let f = mut ? originFile.sub(originFile, 0, originFile.length(originFile))
+			let tok = mut ? new BytecodeToken(t, f, lineNumber, BytecodeTokenKind.CODE)
+			? tokens.add(tokens, tok)
+		}
+		return tokens
+	}
+}

@@ -1,0 +1,941 @@
+import "../../../../../../stdlib/string.caspien"
+import "../../../../../../Codegen/src/main/java/caspien/codegen/collections.caspien"
+
+// Hand-written string helpers that replace regex/split/replaceAll (port of Text.java; see README "Differences" for what is ASCII-only or reshaped).
+
+/** Result of `findUnsafeUnaudited`: [start, end) of the match (Java returns int[2] or null). */
+@pub
+struct Span{@pub{
+	start: imut s64
+	end: imut s64
+}}
+
+@pub
+impl constructor for Span(start: imut s64, end: imut s64) self{
+	return Span{start= start, end= end}
+}
+
+@pub
+struct Text{@pub{
+}}
+
+impl constructor for Text() self{
+	return Text{}
+}
+
+@pub
+impl Text{
+	@pub
+	static func isDigit(c: mut char) bool{
+		return c >= '0' && c <= '9'
+	}
+
+	@pub
+	static func isWordChar(c: mut char) mut bool{
+		return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || String.isDigit(c) || c == '_'
+	}
+
+	/** \s */
+	@pub
+	static func isSpace(c: mut char) bool{
+		let v = mut String.charCode(c)
+		return v == 32 || (v >= 9 && v <= 13)
+	}
+
+	/** The characters Java treats as line terminators (ASCII only: \n and \r). */
+	@pub
+	static func isLineTerminator(c: mut char) bool{
+		return c == '\n' || c == '\r'
+	}
+
+	/** True when the literal (`ln` bytes) occurs in `s` at index `at` (in bounds). */
+	@pub
+	static func hasLit(s: ref some imut String, lit: static imut string, ln: mut u64, at: mut u64) mut bool{
+		if at + ln > s.length(s){
+			return false
+		}
+		return s.litAt(s, lit, ln, at)
+	}
+
+	/** A copy of `s` (port-only: Java Strings are immutable and shared). */
+	@pub
+	@throws
+	static func copyOf(s: ref some imut String) owns some mut String{
+		?catch(e){ throw e }
+		let r = mut ? s.sub(s, 0, s.length(s))
+		return r
+	}
+
+	/** Index of the first non-digit of `s` at or after `from` (n when none). */
+	@pub
+	static func digitRunEnd(s: ref some imut String, from: mut u64, n: mut u64) mut u64{
+		for j in from..n{
+			if String.isDigit(s.charAt(s, j)) == false{
+				return j
+			}
+		}
+		return n
+	}
+
+	/** Index of the first non-space of `s` at or after `from` (n when none). */
+	@pub
+	static func spaceRunEnd(s: ref some imut String, from: mut u64, n: mut u64) mut u64{
+		for j in from..n{
+			if Text.isSpace(s.charAt(s, j)) == false{
+				return j
+			}
+		}
+		return n
+	}
+
+	/** [0-9]+ or \d+ */
+	@pub
+	static func isDigits(s: ref some imut String) mut bool{
+		let n = mut s.length(s)
+		if n == 0{
+			return false
+		}
+		for i in 0..n{
+			if String.isDigit(s.charAt(s, i)) == false{
+				return false
+			}
+		}
+		return true
+	}
+
+	/** -?\d+ */
+	@pub
+	static func isSignedDigits(s: ref some imut String) mut bool{
+		let n = mut s.length(s)
+		let from = mut 0
+		if n > 0 && s.charAt(s, 0) == '-'{
+			from = 1
+		}
+		if from >= n{
+			return false
+		}
+		return Text.digitRunEnd(s, from, n) == n
+	}
+
+	/** -?\d+\.\d+([eE][+-]?\d+)? */
+	@pub
+	static func isDecimalNumber(s: ref some imut String) mut bool{
+		let n = mut s.length(s)
+		let i = mut 0
+		if i < n && s.charAt(s, i) == '-'{
+			i += 1
+		}
+		let start = mut i
+		i = Text.digitRunEnd(s, i, n)
+		if i == start || i >= n || s.charAt(s, i) != '.'{
+			return false
+		}
+		i += 1
+		start = i
+		i = Text.digitRunEnd(s, i, n)
+		if i == start{
+			return false
+		}
+		if i == n{
+			return true
+		}
+		let e = mut s.charAt(s, i)
+		if e != 'e' && e != 'E'{
+			return false
+		}
+		i += 1
+		if i < n && (s.charAt(s, i) == '+' || s.charAt(s, i) == '-'){
+			i += 1
+		}
+		start = i
+		i = Text.digitRunEnd(s, i, n)
+		return i > start && i == n
+	}
+
+	/** [A-Za-z0-9_]+ */
+	@pub
+	static func isWord(s: ref some imut String) mut bool{
+		let n = mut s.length(s)
+		if n == 0{
+			return false
+		}
+		for i in 0..n{
+			if Text.isWordChar(s.charAt(s, i)) == false{
+				return false
+			}
+		}
+		return true
+	}
+
+	/** [A-Za-z_][A-Za-z_0-9.]* */
+	@pub
+	static func isDottedName(s: ref some imut String) mut bool{
+		let n = mut s.length(s)
+		if n == 0{
+			return false
+		}
+		let c = mut s.charAt(s, 0)
+		if (c >= 'a' && c <= 'z') == false && (c >= 'A' && c <= 'Z') == false && c != '_'{
+			return false
+		}
+		for i in 1..n{
+			let d = mut s.charAt(s, i)
+			if Text.isWordChar(d) == false && d != '.'{
+				return false
+			}
+		}
+		return true
+	}
+
+	/** prefix followed by exactly one character from chars, e.g. "%t" + [0-3] */
+	@pub
+	static func isPrefixedChar(s: ref some imut String, prefix: ref some imut String, chars: ref some imut String) mut bool{
+		let pl = mut prefix.length(prefix)
+		if s.length(s) != pl + 1 || s.startsWith(s, prefix) == false{
+			return false
+		}
+		return chars.indexOf(chars, s.charAt(s, pl)) >= 0
+	}
+
+	/** prefix followed by one or more digits, e.g. "ARG[0-9]+" or "r\d+" */
+	@pub
+	@throws
+	static func isPrefixedDigits(s: ref some imut String, prefix: ref some imut String) mut bool{
+		?catch(e){ throw e }
+		if s.startsWith(s, prefix) == false{
+			return false
+		}
+		let rest = mut ? s.substring(s, prefix.length(prefix))
+		let r = mut false
+		match Some(rest){
+			r = Text.isDigits(rest)
+		}
+		return r
+	}
+
+	/** r(8|9|1[0-5]) */
+	@pub
+	static func isHighGpr(s: ref some imut String) mut bool{
+		let n = mut s.length(s)
+		if s.startsWith(s, "r") == false || n < 2 || n > 3{
+			return false
+		}
+		let a = mut s.charAt(s, 1)
+		if n == 2{
+			return a == '8' || a == '9'
+		}
+		let b = mut s.charAt(s, 2)
+		return a == '1' && b >= '0' && b <= '5'
+	}
+
+	/** \d+\.(start|end) */
+	@pub
+	@throws
+	static func isDigitsDotStartOrEnd(s: ref some imut String) mut bool{
+		?catch(e){ throw e }
+		let dot = mut s.indexOf(s, '.')
+		if dot < 0{
+			return false
+		}
+		let head = mut ? s.sub(s, 0, wrap:<u64>(dot))
+		let tail = mut ? s.substring(s, wrap:<u64>(dot) + 1)
+		let r = mut false
+		match Some(head){ match Some(tail){
+			r = Text.isDigits(head) && (tail.equals(tail, "start") || tail.equals(tail, "end"))
+		} }
+		return r
+	}
+
+	/** u8 u16 u32 u64 s8 s16 s32 s64 f32 f64 bool char, as the whole of `s` from index `from` on. */
+	static func isScalarNameFrom(s: ref some imut String, from: mut u64) mut bool{
+		let n = mut s.length(s)
+		let rest = mut (n - from)
+		if from > n{
+			return false
+		}
+		if rest == 2{
+			return Text.hasLit(s, "u8", 2, from) || Text.hasLit(s, "s8", 2, from)
+		}
+		if rest == 3{
+			return Text.hasLit(s, "u16", 3, from) || Text.hasLit(s, "u32", 3, from) || Text.hasLit(s, "u64", 3, from) || Text.hasLit(s, "s16", 3, from) || Text.hasLit(s, "s32", 3, from) || Text.hasLit(s, "s64", 3, from) || Text.hasLit(s, "f32", 3, from) || Text.hasLit(s, "f64", 3, from)
+		}
+		if rest == 4{
+			return Text.hasLit(s, "bool", 4, from) || Text.hasLit(s, "char", 4, from)
+		}
+		return false
+	}
+
+	/** (mut|imut)_scalar, or with allowIndeterminate (mut|imut|indeterminate)_scalar */
+	@pub
+	static func isQualifiedScalar(s: ref some imut String, allowIndeterminate: imut bool) mut bool{
+		let us = mut s.indexOf(s, '_')
+		if us < 0{
+			return false
+		}
+		let u = mut wrap:<u64>(us)
+		let ok = mut false
+		if u == 3 && Text.hasLit(s, "mut", 3, 0){
+			ok = true
+		}
+		if u == 4 && Text.hasLit(s, "imut", 4, 0){
+			ok = true
+		}
+		if allowIndeterminate && u == 13 && Text.hasLit(s, "indeterminate", 13, 0){
+			ok = true
+		}
+		if ok == false{
+			return false
+		}
+		return Text.isScalarNameFrom(s, u + 1)
+	}
+
+	/** (imut_|mut_)?range */
+	@pub
+	static func isRangeType(s: ref some imut String) bool{
+		return s.equals(s, "range") || s.equals(s, "imut_range") || s.equals(s, "mut_range")
+	}
+
+	/** ^(?:imut|mut|indeterminate)_range(?:\(.*\))?$ (matches(), no line breaks inside the parentheses) */
+	@pub
+	static func isByValueRangeType(s: ref some imut String) mut bool{
+		let n = mut s.length(s)
+		let from = mut 0
+		if n >= 10 && Text.hasLit(s, "imut_range", 10, 0){
+			from = 10
+		} else if n >= 9 && Text.hasLit(s, "mut_range", 9, 0){
+			from = 9
+		} else if n >= 19 && Text.hasLit(s, "indeterminate_range", 19, 0){
+			from = 19
+		} else {
+			return false
+		}
+		let restLen = mut (n - from)
+		if restLen == 0{
+			return true
+		}
+		if restLen < 2 || s.charAt(s, from) != '(' || s.charAt(s, n - 1) != ')'{
+			return false
+		}
+		let rlo1 = mut (from + 1)
+		let rhi2 = mut (n - 1)
+		for i in rlo1..rhi2{
+			if Text.isLineTerminator(s.charAt(s, i)){
+				return false
+			}
+		}
+		return true
+	}
+
+	/** .*[us](8|16|32) matched against the whole string (no line breaks) */
+	@pub
+	static func endsWithSmallIntType(s: ref some imut String) mut bool{
+		let n = mut s.length(s)
+		for i in 0..n{
+			if Text.isLineTerminator(s.charAt(s, i)){
+				return false
+			}
+		}
+		return s.endsWith(s, "u8") || s.endsWith(s, "s8") || s.endsWith(s, "u16") || s.endsWith(s, "s16") || s.endsWith(s, "u32") || s.endsWith(s, "s32")
+	}
+
+	/** [us]\d+ matched against the whole string */
+	@pub
+	static func isSizedIntName(s: ref some imut String) mut bool{
+		let n = mut s.length(s)
+		if n < 2{
+			return false
+		}
+		let c = mut s.charAt(s, 0)
+		if c != 'u' && c != 's'{
+			return false
+		}
+		return Text.digitRunEnd(s, 1, n) == n
+	}
+
+	/** removes one leading imut_ or mut_ */
+	@pub
+	@throws
+	static func stripMutPrefix(s: ref some imut String) owns some mut String{
+		?catch(e){ throw e }
+		let n = mut s.length(s)
+		let from = mut 0
+		if s.startsWith(s, "imut_"){
+			from = 5
+		} else if s.startsWith(s, "mut_"){
+			from = 4
+		}
+		let r = mut ? s.sub(s, from, n)
+		return r
+	}
+
+	/** removes every leading mut_ / imut_ / indeterminate_ */
+	@pub
+	@throws
+	static func stripQualifierPrefixes(s: ref some imut String) owns some mut String{
+		?catch(e){ throw e }
+		let n = mut s.length(s)
+		let from = mut 0
+		let rhi3 = mut (n + 1)
+		for step in 0..rhi3{
+			if n >= from + 5 && Text.hasLit(s, "imut_", 5, from){
+				from += 5
+			} else if n >= from + 4 && Text.hasLit(s, "mut_", 4, from){
+				from += 4
+			} else if n >= from + 14 && Text.hasLit(s, "indeterminate_", 14, from){
+				from += 14
+			} else {
+				break
+			}
+		}
+		let r = mut ? s.sub(s, from, n)
+		return r
+	}
+
+	/** Splits "name[N]" into {name, N} (see Java: mode 0 name >= 1 char, mode 1 word chars, mode 2 any). Null when s has another shape. */
+	@pub
+	@throws
+	static func splitArrayType(s: ref some imut String, mode: imut s32) owns mut ObjectList<String>{
+		?catch(e){ throw e }
+		let n = mut s.length(s)
+		if n < 3 || s.charAt(s, n - 1) != ']'{
+			return null
+		}
+		let i = mut (n - 2)
+		let stop = mut false
+		let isNeg = mut false
+		for step in 0..n{
+			if String.isDigit(s.charAt(s, i)) == false{
+				stop = true
+				break
+			}
+			if i == 0{
+				isNeg = true
+				break
+			}
+			i -= 1
+		}
+		if isNeg || i == n - 2 || s.charAt(s, i) != '['{
+			return null
+		}
+		if mode != 2 && i == 0{
+			return null
+		}
+		if mode == 1{
+			let nm = mut ? s.sub(s, 0, i)
+			let okw = mut false
+			match Some(nm){ okw = Text.isWord(nm) }
+			if okw == false{
+				return null
+			}
+		} else {
+			for k in 0..i{
+				if Text.isLineTerminator(s.charAt(s, k)){
+					return null
+				}
+			}
+		}
+		let out = mut ? new ObjectList:<String>()
+		let a = mut ? s.sub(s, 0, i)
+		let b = mut ? s.sub(s, i + 1, n - 1)
+		? out.add(out, a)
+		? out.add(out, b)
+		return out
+	}
+
+	/** Java's $ (no MULTILINE): the end of the input, or just before a line terminator that ends the input (ASCII terminators only). */
+	@pub
+	static func atDollar(s: ref some imut String, pos: mut u64) mut bool{
+		let n = mut s.length(s)
+		if pos == n{
+			return true
+		}
+		if n >= 1 && pos == n - 1{
+			let c = mut s.charAt(s, pos)
+			if c == '\n'{
+				return (pos > 0 && s.charAt(s, pos - 1) == '\r') == false
+			}
+			return c == '\r'
+		}
+		if n >= 2 && pos == n - 2{
+			return s.charAt(s, pos) == '\r' && s.charAt(s, pos + 1) == '\n'
+		}
+		return false
+	}
+
+	/** replaceAll("\\s+$", ""): the first whitespace run that ends at a $ position goes. */
+	@pub
+	@throws
+	static func stripTrailingSpace(s: ref some imut String) owns some mut String{
+		?catch(e){ throw e }
+		let n = mut s.length(s)
+		let p = mut 0
+		let rhi4 = mut (n + 1)
+		for step in 0..rhi4{
+			if p >= n{
+				break
+			}
+			if Text.isSpace(s.charAt(s, p)) == false{
+				p += 1
+				continue
+			}
+			let q = mut Text.spaceRunEnd(s, p, n)
+			let e = mut q
+			let rhi5 = mut (q - p)
+			for k in 0..rhi5{
+				if e <= p || Text.atDollar(s, e){
+					break
+				}
+				e -= 1
+			}
+			if e > p{
+				let r = mut ? s.sub(s, 0, p)
+				let tail = mut ? s.sub(s, e, n)
+				? r.append(r, tail)
+				return r
+			}
+			p = q
+		}
+		let c = mut ? Text.copyOf(s)
+		return c
+	}
+
+	/** replaceAll("\\s+", " ") */
+	@pub
+	@throws
+	static func collapseSpace(s: ref some imut String) owns some mut String{
+		?catch(e){ throw e }
+		let sb = mut ? new String()
+		let n = mut s.length(s)
+		let i = mut 0
+		let rhi6 = mut (n + 1)
+		for step in 0..rhi6{
+			if i >= n{
+				break
+			}
+			let c = mut s.charAt(s, i)
+			if Text.isSpace(c){
+				i = Text.spaceRunEnd(s, i, n)
+				? sb.appendChar(sb, ' ')
+			} else {
+				? sb.appendChar(sb, c)
+				i += 1
+			}
+		}
+		return sb
+	}
+
+	/** replaceAll("[^A-Za-z0-9_]", with) */
+	@pub
+	@throws
+	static func replaceNonWordChars(s: ref some imut String, with: ref some imut String) owns some mut String{
+		?catch(e){ throw e }
+		let sb = mut ? new String()
+		let n = mut s.length(s)
+		for i in 0..n{
+			let c = mut s.charAt(s, i)
+			if Text.isWordChar(c){
+				? sb.appendChar(sb, c)
+			} else {
+				? sb.append(sb, with)
+			}
+		}
+		return sb
+	}
+
+	/** replaceFirst("\\.caspien$", "") for a suffix (the $ may sit before a final line terminator) */
+	@pub
+	@throws
+	static func stripSuffixAtEnd(s: ref some imut String, suffix: ref some imut String) owns some mut String{
+		?catch(e){ throw e }
+		let n = mut s.length(s)
+		let sl = mut suffix.length(suffix)
+		if sl <= n{
+			let top = mut (n - sl)
+			let rhi7 = mut (top + 1)
+			for step in 0..rhi7{
+				let q = mut (top - step)
+				if s.strAt(s, suffix, q) && Text.atDollar(s, q + sl){
+					let r = mut ? s.sub(s, 0, q)
+					let tail = mut ? s.sub(s, q + sl, n)
+					? r.append(r, tail)
+					return r
+				}
+			}
+		}
+		let c = mut ? Text.copyOf(s)
+		return c
+	}
+
+	/** replaceFirst("^[#;]\\s*", "") */
+	@pub
+	@throws
+	static func stripCommentLead(s: ref some imut String) owns some mut String{
+		?catch(e){ throw e }
+		let n = mut s.length(s)
+		if n == 0 || (s.charAt(s, 0) != '#' && s.charAt(s, 0) != ';'){
+			let c = mut ? Text.copyOf(s)
+			return c
+		}
+		let i = mut Text.spaceRunEnd(s, 1, n)
+		let r = mut ? s.sub(s, i, n)
+		return r
+	}
+
+	/** replaceFirst("^0+(?=.)", ""): leading zeros go, but not the last character */
+	@pub
+	@throws
+	static func stripLeadingZeros(s: ref some imut String) owns some mut String{
+		?catch(e){ throw e }
+		let n = mut s.length(s)
+		let i = mut 0
+		let rhi8 = mut (n + 1)
+		for step in 0..rhi8{
+			if n == 0 || i >= n - 1 || s.charAt(s, i) != '0' || Text.isLineTerminator(s.charAt(s, i + 1)){
+				break
+			}
+			i += 1
+		}
+		let r = mut ? s.sub(s, i, n)
+		return r
+	}
+
+	/** replaceFirst(":\\d+\"$", "\"") */
+	@pub
+	@throws
+	static func stripLineNumberBeforeQuote(s: ref some imut String) owns some mut String{
+		?catch(e){ throw e }
+		let n = mut s.length(s)
+		for c in 0..n{
+			if s.charAt(s, c) != ':'{
+				continue
+			}
+			let i = mut Text.digitRunEnd(s, c + 1, n)
+			if i == c + 1 || i >= n || s.charAt(s, i) != '"'{
+				continue
+			}
+			if Text.atDollar(s, i + 1){
+				let r = mut ? s.sub(s, 0, c)
+				? r.appendChar(r, '"')
+				let tail = mut ? s.sub(s, i + 1, n)
+				? r.append(r, tail)
+				return r
+			}
+		}
+		let cp = mut ? Text.copyOf(s)
+		return cp
+	}
+
+	/** ^(\s*)unsafe\b[^{]*\{\s*(//.*)?$ against a whole line: {leading whitespace, trailing comment from the slashes or null}, or null for another shape. */
+	@pub
+	@throws
+	static func unsafeOpenParts(line: ref some imut String) owns mut ObjectList<String>{
+		?catch(e){ throw e }
+		let n = mut line.length(line)
+		let i = mut Text.spaceRunEnd(line, 0, n)
+		let indentEnd = mut i
+		if i + 6 > n || Text.hasLit(line, "unsafe", 6, i) == false{
+			return null
+		}
+		i += 6
+		if i < n && Text.isWordChar(line.charAt(line, i)){
+			return null
+		}
+		for k in i..n{
+			if line.charAt(line, i) == '{'{
+				break
+			}
+			i += 1
+		}
+		if i >= n{
+			return null
+		}
+		i += 1
+		i = Text.spaceRunEnd(line, i, n)
+		let hasComment = mut false
+		if i != n{
+			if i + 2 > n || line.litAt(line, "//", 2, i) == false{
+				return null
+			}
+			let rlo = mut (i + 2)
+			for k in rlo..n{
+				if Text.isLineTerminator(line.charAt(line, k)){
+					return null
+				}
+			}
+			hasComment = true
+		}
+		let indent = mut ? line.sub(line, 0, indentEnd)
+		let:<owns mut String> comment = mut null
+		if hasComment{
+			comment = mut ? line.sub(line, i, n)
+		}
+		let out = mut ? new ObjectList:<String>()
+		? out.add(out, indent)
+		? out.add(out, comment)
+		return out
+	}
+
+	/** ^\s*\}\s*(//.*)?$ against a whole line */
+	@pub
+	static func isCloseLine(line: ref some imut String) mut bool{
+		let n = mut line.length(line)
+		let i = mut Text.spaceRunEnd(line, 0, n)
+		if i >= n || line.charAt(line, i) != '}'{
+			return false
+		}
+		i = Text.spaceRunEnd(line, i + 1, n)
+		if i == n{
+			return true
+		}
+		if i + 2 > n || Text.hasLit(line, "//", 2, i) == false{
+			return false
+		}
+		let rlo10 = mut (i + 2)
+		for k in rlo10..n{
+			if Text.isLineTerminator(line.charAt(line, k)){
+				return false
+			}
+		}
+		return true
+	}
+
+	/** \bunsafe\s+unaudited\s*\{ : the [start, end) of the first match, or null */
+	@pub
+	@throws
+	static func findUnsafeUnaudited(s: ref some imut String) owns mut Span{
+		?catch(e){ throw e }
+		let n = mut s.length(s)
+		let from = mut 0
+		let fs = mut -1
+		let fe = mut -1
+		let rhi11 = mut (n + 1)
+		for step in 0..rhi11{
+			let p = mut s.indexOf(s, "unsafe", from)
+			if p < 0{
+				break
+			}
+			let pu = mut wrap:<u64>(p)
+			from = pu + 1
+			if pu > 0 && Text.isWordChar(s.charAt(s, pu - 1)){
+				continue
+			}
+			let i = mut (pu + 6)
+			let ws = mut i
+			i = Text.spaceRunEnd(s, i, n)
+			if i == ws || i + 9 > n || Text.hasLit(s, "unaudited", 9, i) == false{
+				continue
+			}
+			i += 9
+			i = Text.spaceRunEnd(s, i, n)
+			if i < n && s.charAt(s, i) == '{'{
+				fs = wrap:<s64>(pu)
+				fe = wrap:<s64>(i + 1)
+				break
+			}
+		}
+		if fs < 0{
+			return null
+		}
+		let r = mut ? new Span(fs, fe)
+		return r
+	}
+
+	/** `name` as a whole word of `text`; one optional char of `suffixChars` may follow `name` first (see Java doc). */
+	@pub
+	static func containsWord(text: ref some imut String, name: ref some imut String, suffixChars: ref some imut String, dotBlocks: imut bool) mut bool{
+		let n = mut text.length(text)
+		let from = mut 0
+		let limit = mut (n + 1)
+		for attempt in 0..limit{
+			let p = mut text.indexOf(text, name, from)
+			if p < 0{
+				return false
+			}
+			let pu = mut wrap:<u64>(p)
+			from = pu + 1
+			let blocked = mut false
+			if pu > 0{
+				let before = mut text.charAt(text, pu - 1)
+				if Text.isWordChar(before) || (dotBlocks && before == '.'){
+					blocked = true
+				}
+			}
+			if blocked == false{
+				let q = mut (pu + name.length(name))
+				if q < n && suffixChars.indexOf(suffixChars, text.charAt(text, q)) >= 0{
+					q += 1
+				}
+				if q >= n || Text.isWordChar(text.charAt(text, q)) == false{
+					return true
+				}
+			}
+		}
+		return false
+	}
+
+	/** containsWord with any of several names (an alternation) */
+	@pub
+	static func containsAnyWord(text: ref some imut String, names: ref some imut ObjectList<String>, suffixChars: ref some imut String) mut bool{
+		let m = mut names.size(names)
+		for i in 0..m{
+			let nm = mut names.get(names, i)
+			match Some(nm){
+				if Text.containsWord(text, nm, suffixChars, false){
+					return true
+				}
+			}
+		}
+		return false
+	}
+
+	// Separator kinds for the split helpers: 0 = one given char, 1 = \s+, 2 = [^A-Za-z0-9_]+, 3 = \R, 4 = \r?\n
+
+	/** Start of the next separator at or after `from`, or -1 (Java `nextSeparator`, split in two: start here, end in `sepEnd`). */
+	static func sepStart(s: ref some imut String, kind: imut s32, sep: mut char, from: mut u64) mut s64{
+		let n = mut s.length(s)
+		for i in from..n{
+			let c = mut s.charAt(s, i)
+			let v = mut String.charCode(c)
+			if kind == 0 && c == sep{
+				return wrap:<s64>(i)
+			}
+			if kind == 1 && Text.isSpace(c){
+				return wrap:<s64>(i)
+			}
+			if kind == 2 && Text.isWordChar(c) == false{
+				return wrap:<s64>(i)
+			}
+			if kind == 3 && (c == '\n' || v == 11 || v == 12 || c == '\r'){
+				return wrap:<s64>(i)
+			}
+			if kind == 4 && (c == '\n' || (c == '\r' && i + 1 < n && s.charAt(s, i + 1) == '\n')){
+				return wrap:<s64>(i)
+			}
+		}
+		return -1
+	}
+
+	/** End (exclusive) of the separator that starts at `st`. */
+	static func sepEnd(s: ref some imut String, kind: imut s32, st: mut u64) mut u64{
+		let n = mut s.length(s)
+		if kind == 1{
+			return Text.spaceRunEnd(s, st, n)
+		}
+		if kind == 2{
+			let j = mut st
+			for k in st..n{
+				if Text.isWordChar(s.charAt(s, k)){
+					break
+				}
+				j += 1
+			}
+			return j
+		}
+		if (kind == 3 || kind == 4) && s.charAt(s, st) == '\r' && st + 1 < n && s.charAt(s, st + 1) == '\n'{
+			return st + 2
+		}
+		return st + 1
+	}
+
+	/** The String.split algorithm for separators that are never empty (limit > 0 limits the parts, 0 drops trailing empties). */
+	@pub
+	@throws
+	static func splitBy(s0: ref some imut String, kind: imut s32, sep: mut char, limit: imut s64) owns some mut ObjectList<String>{
+		?catch(e){ throw e }
+		let s = mut ? Text.copyOf(s0)
+		let list = mut ? new ObjectList:<String>()
+		let n = mut s.length(s)
+		let limited = mut (limit > 0)
+		let index = mut 0
+		let pos = mut 0
+		let rhi12 = mut (n + 2)
+		for step in 0..rhi12{
+			let st = mut Text.sepStart(s, kind, sep, pos)
+			if st < 0{
+				break
+			}
+			let stu = mut wrap:<u64>(st)
+			let end = mut Text.sepEnd(s, kind, stu)
+			pos = end
+			let cnt = mut wrap:<s64>(list.size(list))
+			if limited == false || cnt < limit - 1{
+				let part = mut ? s.sub(s, index, stu)
+				? list.add(list, part)
+				index = end
+			} else if cnt == limit - 1{
+				let part = mut ? s.sub(s, index, n)
+				? list.add(list, part)
+				index = end
+			}
+		}
+		if index == 0{
+			let whole = mut ? new ObjectList:<String>()
+			let one = mut ? Text.copyOf(s)
+			? whole.add(whole, one)
+			return whole
+		}
+		let cnt2 = mut wrap:<s64>(list.size(list))
+		if limited == false || cnt2 < limit{
+			let part = mut ? s.sub(s, index, n)
+			? list.add(list, part)
+		}
+		if limit == 0{
+			let rhi13 = mut (list.size(list))
+			for k in 0..rhi13{
+				let last = mut list.peek(list)
+				let empty = mut false
+				match Some(last){ empty = last.isEmpty(last) }
+				if empty == false{
+					break
+				}
+				? list.removeLast(list)
+			}
+		}
+		return list
+	}
+
+	/** s.split(String.valueOf(sep), limit) for a single non-special character */
+	@pub
+	@throws
+	static func split(s: ref some imut String, sep: mut char, limit: imut s32) owns some mut ObjectList<String>{
+		?catch(e){ throw e }
+		let r = mut ? Text.splitBy(s, 0, sep, wrap:<s64>(limit))
+		return r
+	}
+
+	/** s.split("\\s+", limit) */
+	@pub
+	@throws
+	static func splitSpace(s: ref some imut String, limit: imut s32) owns some mut ObjectList<String>{
+		?catch(e){ throw e }
+		let r = mut ? Text.splitBy(s, 1, ' ', wrap:<s64>(limit))
+		return r
+	}
+
+	/** s.split("[^A-Za-z0-9_]+") */
+	@pub
+	@throws
+	static func splitNonWord(s: ref some imut String) owns some mut ObjectList<String>{
+		?catch(e){ throw e }
+		let r = mut ? Text.splitBy(s, 2, ' ', 0)
+		return r
+	}
+
+	/** s.split("\\R") (ASCII line breaks only) */
+	@pub
+	@throws
+	static func splitLineBreaks(s: ref some imut String) owns some mut ObjectList<String>{
+		?catch(e){ throw e }
+		let r = mut ? Text.splitBy(s, 3, ' ', 0)
+		return r
+	}
+
+	/** s.split("\r?\n", limit) */
+	@pub
+	@throws
+	static func splitNewlines(s: ref some imut String, limit: imut s32) owns some mut ObjectList<String>{
+		?catch(e){ throw e }
+		let r = mut ? Text.splitBy(s, 4, ' ', wrap:<s64>(limit))
+		return r
+	}
+}

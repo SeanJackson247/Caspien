@@ -1,0 +1,30 @@
+import "../../../../../../stdlib/string.caspien"
+import "BytecodeTokenKind.caspien"
+
+/** One token of HOB text: its text, where it came from, plain word or quoted string. Owns its Strings (Java shared immutable tokens). */
+@pub
+struct BytecodeToken{@pub{
+	text: owns some mut String
+	file: owns some mut String
+	line: imut s32
+	kind: imut BytecodeTokenKind
+}}
+
+@pub
+impl constructor for BytecodeToken(text: owns some mut String, file: owns some mut String, line: imut s32, kind: imut BytecodeTokenKind) self{
+	return BytecodeToken{text= text, file= file, line= line, kind= kind}
+}
+
+@pub
+impl BytecodeToken{
+	/** A deep copy (port-only: Java tokens are shared, owned tokens must be copied). */
+	@pub
+	@throws
+	static func copyOf(t: ref some imut BytecodeToken) owns some mut BytecodeToken{
+		?catch(e){ throw e }
+		let a = mut ? t.text.sub(t.text, 0, t.text.length(t.text))
+		let b = mut ? t.file.sub(t.file, 0, t.file.length(t.file))
+		let c = mut ? new BytecodeToken(a, b, t.line, t.kind)
+		return c
+	}
+}

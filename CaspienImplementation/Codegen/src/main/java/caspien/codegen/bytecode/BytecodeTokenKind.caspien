@@ -1,1 +1,0 @@
-enum BytecodeTokenKind{ CODE, STRING, COMMENT }

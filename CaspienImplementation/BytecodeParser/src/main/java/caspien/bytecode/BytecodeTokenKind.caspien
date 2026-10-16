@@ -1,0 +1,2 @@
+/** CODE = mnemonic or operand (including a char literal); STRING = quoted literal, quotes included; COMMENT = reserved (HOB has no comment syntax). */
+enum BytecodeTokenKind{ CODE, STRING, COMMENT }

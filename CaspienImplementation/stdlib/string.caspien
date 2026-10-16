@@ -391,6 +391,7 @@ impl String{
 	}
 
 	/** True when the literal's `ln` bytes equal the characters starting at `at` (the caller has checked `at + ln` is within bounds). */
+	@pub
 	func litAt(_self: ref some imut self, lit: static imut string, ln: imut u64, at: imut u64) bool{
 		for j in 0..ln{
 			let k = mut (at + j)
@@ -404,6 +405,7 @@ impl String{
 	}
 
 	/** True when `other` equals the characters starting at `at` (the caller has checked `at + len(other)` is within bounds). */
+	@pub
 	func strAt(_self: ref some imut self, other: ref some imut self, at: imut u64) bool{
 		let m = mut len(other.chars.backing)
 		for j in 0..m{

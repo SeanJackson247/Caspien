@@ -140,4 +140,5 @@ func c_gen(label: static imut string, tgt: mut s32, avx: mut bool, bmi2: mut boo
     T += "\nfunc main() void{\n" + "".join("\tpart%d()\n" % k for k in range(len(parts))) + "}\n"
     sys.stderr.write("%d files, %d mnemonic forms covered\n" % (len(chosen), len(covered)))
     sys.stdout.write(T)
-main()
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,142 @@
+import "../../../../../../Codegen/src/main/java/caspien/codegen/collections.caspien"
+import "BytecodeStatement.caspien"
+
+/** A whole HOB program: its statements in order. The only thing the optimizer passes read and write. */
+@pub
+struct BytecodeProgram{@pub{
+	items: owns some mut ObjectList<BytecodeStatement>
+}}
+
+@pub
+@throws
+impl constructor for BytecodeProgram() self{
+	?catch(e){ throw e }
+	let items = mut ? new ObjectList:<BytecodeStatement>()
+	return BytecodeProgram{items= items}
+}
+
+@pub
+impl BytecodeProgram{
+	/** Java copy constructor `new BytecodeProgram(other)`; the statements are deep-copied, not shared. */
+	@pub
+	@throws
+	static func copyOf(other: ref imut BytecodeProgram) owns some mut BytecodeProgram{
+		?catch(e){ throw e }
+		let r = mut ? new BytecodeProgram()
+		? r.addAll(r, other)
+		return r
+	}
+
+	@pub
+	func size(_self: ref some imut self) mut u64{
+		return _self.items.size(_self.items)
+	}
+
+	@pub
+	func isEmpty(_self: ref some imut self) bool{
+		return _self.items.isEmpty(_self.items)
+	}
+
+	/** A reference to statement `i`, null when out of range. */
+	@pub
+	func get(_self: ref some imut self, i: imut u64) ref mut BytecodeStatement{
+		return _self.items.get(_self.items, i)
+	}
+
+	/** Java `set(i, e)` (the old statement is dropped, not returned). */
+	@pub
+	func set(_self: ref some mut self, i: imut u64, e: owns some mut BytecodeStatement) void{
+		_self.items.setAt(_self.items, i, e)
+	}
+
+	@pub
+	@throws
+	func add(_self: ref some mut self, e: owns some mut BytecodeStatement) void{
+		?catch(e2){ throw e2 }
+		? _self.items.add(_self.items, e)
+	}
+
+	/** Java `add(i, e)`. */
+	@pub
+	@throws
+	func insertAt(_self: ref some mut self, i: imut u64, e: owns some mut BytecodeStatement) void{
+		?catch(e2){ throw e2 }
+		? _self.items.insertAt(_self.items, i, e)
+	}
+
+	/** Java `addAll(other)`: appends copies of other's statements. */
+	@pub
+	@throws
+	func addAll(_self: ref mut self, other: ref imut BytecodeProgram) void{
+		?catch(e){ throw e }
+		let:<mut u64> n = mut 0
+		match Some(other){ n = other.size(other) }
+		for i in 0..n{
+			match Some(other){
+				let s = mut other.get(other, i)
+				let c = mut ? BytecodeStatement.copyOf(s)
+				match Some(_self){ ? _self.add(_self, c) }
+			}
+		}
+	}
+
+	/** Java `addAll(i, other)`: inserts copies of other's statements from index i. */
+	@pub
+	@throws
+	func addAllAt(_self: ref mut self, i: imut u64, other: ref imut BytecodeProgram) void{
+		?catch(e){ throw e }
+		let:<mut u64> n = mut 0
+		match Some(other){ n = other.size(other) }
+		let at = mut (i + 0)
+		for k in 0..n{
+			match Some(other){
+				let s = mut other.get(other, k)
+				let c = mut ? BytecodeStatement.copyOf(s)
+				match Some(_self){ ? _self.insertAt(_self, at, c) }
+				at += 1
+			}
+		}
+	}
+
+	/** Removes [from, to). */
+	@pub
+	@throws
+	func removeRange(_self: ref some mut self, from: imut u64, to: imut u64) void{
+		?catch(e){ throw e }
+		let cnt = mut (to - from)
+		for k in 0..cnt{
+			? _self.items.removeAt(_self.items, from)
+		}
+	}
+
+	/** A copy of [from, to) as a new program. */
+	@pub
+	@throws
+	func slice(_self: ref imut self, from: imut u64, to: imut u64) owns some mut BytecodeProgram{
+		?catch(e){ throw e }
+		let r = mut ? new BytecodeProgram()
+		for k in from..to{
+			match Some(_self){
+				let s = mut _self.get(_self, k)
+				let c = mut ? BytecodeStatement.copyOf(s)
+				? r.add(r, c)
+			}
+		}
+		return r
+	}
+
+	/** Java `remove(i)` (the removed statement is dropped, not returned). */
+	@pub
+	@throws
+	func removeAt(_self: ref some mut self, i: imut u64) void{
+		?catch(e){ throw e }
+		? _self.items.removeAt(_self.items, i)
+	}
+
+	@pub
+	@throws
+	func clear(_self: ref some mut self) void{
+		?catch(e){ throw e }
+		? _self.items.clear(_self.items)
+	}
+}

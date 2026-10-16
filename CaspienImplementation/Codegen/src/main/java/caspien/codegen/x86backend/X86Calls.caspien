@@ -1,7 +1,7 @@
 import "../../../../../../../stdlib/string.caspien"
 import "../collections.caspien"
-import "../bytecode/BytecodeStatement.caspien"
-import "../bytecode/BytecodeToken.caspien"
+import "../../../../../../../BytecodeParser/src/main/java/caspien/bytecode/BytecodeStatement.caspien"
+import "../../../../../../../BytecodeParser/src/main/java/caspien/bytecode/BytecodeToken.caspien"
 import "X86Core.caspien"
 import "X86Structs.caspien"
 

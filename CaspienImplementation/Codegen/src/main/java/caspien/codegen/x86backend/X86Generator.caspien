@@ -1,7 +1,7 @@
 import "../../../../../../../stdlib/string.caspien"
 import "../collections.caspien"
-import "../bytecode/BytecodeStatement.caspien"
-import "../bytecode/BytecodeToken.caspien"
+import "../../../../../../../BytecodeParser/src/main/java/caspien/bytecode/BytecodeStatement.caspien"
+import "../../../../../../../BytecodeParser/src/main/java/caspien/bytecode/BytecodeToken.caspien"
 import "X86Core.caspien"
 import "X86Structs.caspien"
 
@@ -2921,45 +2921,45 @@ impl X86Generator{
 		let body = mut ? new String()
 		match Some(_self){ match Some(_self.core){ body = ? _self.core.out.substring(_self.core.out, wrap:<u64>(start)) } }
 		let regs = mut ? new ObjectList:<String>()
-		let hasRbx = mut ? Text.usesRbx(body)
+		let hasRbx = mut ? CodegenText.usesRbx(body)
 		if hasRbx{
 			let r0 = mut ? String.from("rbx")
 			? regs.add(regs, r0)
 		}
-		let h12 = mut ? Text.containsWordLit(body, "r12", "dwb", false)
+		let h12 = mut ? CodegenText.containsWordLit(body, "r12", "dwb", false)
 		if h12{
 			let r1 = mut ? String.from("r12")
 			? regs.add(regs, r1)
 		}
-		let h13 = mut ? Text.containsWordLit(body, "r13", "dwb", false)
+		let h13 = mut ? CodegenText.containsWordLit(body, "r13", "dwb", false)
 		if h13{
 			let r2 = mut ? String.from("r13")
 			? regs.add(regs, r2)
 		}
-		let h14 = mut ? Text.containsWordLit(body, "r14", "dwb", false)
+		let h14 = mut ? CodegenText.containsWordLit(body, "r14", "dwb", false)
 		if h14{
 			let r3 = mut ? String.from("r14")
 			? regs.add(regs, r3)
 		}
-		let h15 = mut ? Text.containsWordLit(body, "r15", "dwb", false)
+		let h15 = mut ? CodegenText.containsWordLit(body, "r15", "dwb", false)
 		if h15{
 			let r4 = mut ? String.from("r15")
 			? regs.add(regs, r4)
 		}
 		if win{
-			let hasRdi = mut ? Text.usesRdi(body)
+			let hasRdi = mut ? CodegenText.usesRdi(body)
 			if hasRdi{
 				let r5 = mut ? String.from("rdi")
 				? regs.add(regs, r5)
 			}
-			let hasRsi = mut ? Text.usesRsi(body)
+			let hasRsi = mut ? CodegenText.usesRsi(body)
 			if hasRsi{
 				let r6 = mut ? String.from("rsi")
 				? regs.add(regs, r6)
 			}
 			for x in 6..16{
 				let nm = ? X86Core.xmmName(wrap:<s32>(x))
-				let hx = mut ? Text.containsWordLit(body, nm, "", false)
+				let hx = mut ? CodegenText.containsWordLit(body, nm, "", false)
 				if hx{
 					let r7 = mut ? String.from(nm)
 					? regs.add(regs, r7)
@@ -3001,11 +3001,11 @@ impl X86Generator{
 					let w = mut ? new String()
 					usedEarly = Text.containsWord(early, reg, w, false)
 				} else if reg.equals(reg, "rbx"){
-					usedEarly = ? Text.usesRbx(early)
+					usedEarly = ? CodegenText.usesRbx(early)
 				} else if reg.equals(reg, "rdi"){
-					usedEarly = ? Text.usesRdi(early)
+					usedEarly = ? CodegenText.usesRdi(early)
 				} else if reg.equals(reg, "rsi"){
-					usedEarly = ? Text.usesRsi(early)
+					usedEarly = ? CodegenText.usesRsi(early)
 				} else{
 					let dwb = mut ? new String("dwb")
 					usedEarly = Text.containsWord(early, reg, dwb, false)

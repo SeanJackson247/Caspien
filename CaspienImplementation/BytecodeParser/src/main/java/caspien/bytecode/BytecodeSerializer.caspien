@@ -1,0 +1,46 @@
+import "../../../../../../stdlib/string.caspien"
+import "BytecodeProgram.caspien"
+
+/** BytecodeProgram -> HOB text: each statement's tokens joined by single spaces, one line per statement. */
+@pub
+struct BytecodeSerializer{@pub{
+}}
+
+impl constructor for BytecodeSerializer() self{
+	return BytecodeSerializer{}
+}
+
+@pub
+impl BytecodeSerializer{
+	@pub
+	@throws
+	func serialize(_self: ref some imut self, lines: ref imut BytecodeProgram) owns some mut String{
+		?catch(e){ throw e }
+		let sb = mut ? new String()
+		let:<mut u64> n = mut 0
+		match Some(lines){ n = lines.size(lines) }
+		for li in 0..n{
+			let:<mut u64> m = mut 0
+			match Some(lines){
+				let line = mut lines.get(lines, li)
+				match Some(line){ m = line.size(line) }
+			}
+			for i in 0..m{
+				if i > 0{
+					? sb.appendChar(sb, ' ')
+				}
+				match Some(lines){
+					let line = mut lines.get(lines, li)
+					match Some(line){
+						let t = mut line.get(line, i)
+						match Some(t){
+							? sb.append(sb, t.text)
+						}
+					}
+				}
+			}
+			? sb.appendChar(sb, '\n')
+		}
+		return sb
+	}
+}

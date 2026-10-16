@@ -1,0 +1,98 @@
+import "../../../../../../BytecodeParser/src/main/java/caspien/bytecode/Text.caspien"
+
+// Helpers only the Codegen port needs (Java calls containsAnyWord/String.toLowerCase with arrays and Unicode; here literal names and ASCII).
+
+@pub
+struct CodegenText{@pub{
+}}
+
+impl constructor for CodegenText() self{
+	return CodegenText{}
+}
+
+@pub
+impl CodegenText{
+	/** `containsWord` with literal name and suffix (port-only helper; allocates the two Strings). */
+	@pub
+	@throws
+	static func containsWordLit(text: ref imut String, name: static imut string, suffixChars: static imut string, dotBlocks: imut bool) mut bool{
+		?catch(e){ throw e }
+		let n = mut ? new String(name)
+		let sfx = mut ? new String(suffixChars)
+		let r = mut false
+		match Some(text){ r = Text.containsWord(text, n, sfx, dotBlocks) }
+		return r
+	}
+
+	/** containsAnyWord(text, {"rbx","ebx","bx","bl","bh"}, "") */
+	@pub
+	@throws
+	static func usesRbx(text: ref imut String) mut bool{
+		?catch(e){ throw e }
+		let w0 = mut ? CodegenText.containsWordLit(text, "rbx", "", false)
+		let w1 = mut ? CodegenText.containsWordLit(text, "ebx", "", false)
+		let w2 = mut ? CodegenText.containsWordLit(text, "bx", "", false)
+		let w3 = mut ? CodegenText.containsWordLit(text, "bl", "", false)
+		let w4 = mut ? CodegenText.containsWordLit(text, "bh", "", false)
+		let r = mut (w0 || w1 || w2 || w3 || w4)
+		return r
+	}
+
+	/** containsAnyWord(text, {"rdi","edi","di","dil"}, "") */
+	@pub
+	@throws
+	static func usesRdi(text: ref imut String) mut bool{
+		?catch(e){ throw e }
+		let w0 = mut ? CodegenText.containsWordLit(text, "rdi", "", false)
+		let w1 = mut ? CodegenText.containsWordLit(text, "edi", "", false)
+		let w2 = mut ? CodegenText.containsWordLit(text, "di", "", false)
+		let w3 = mut ? CodegenText.containsWordLit(text, "dil", "", false)
+		let r = mut (w0 || w1 || w2 || w3)
+		return r
+	}
+
+	/** containsAnyWord(text, {"rsi","esi","si","sil"}, "") */
+	@pub
+	@throws
+	static func usesRsi(text: ref imut String) mut bool{
+		?catch(e){ throw e }
+		let w0 = mut ? CodegenText.containsWordLit(text, "rsi", "", false)
+		let w1 = mut ? CodegenText.containsWordLit(text, "esi", "", false)
+		let w2 = mut ? CodegenText.containsWordLit(text, "si", "", false)
+		let w3 = mut ? CodegenText.containsWordLit(text, "sil", "", false)
+		let r = mut (w0 || w1 || w2 || w3)
+		return r
+	}
+
+	/** ASCII lower case of one char (port-only helper for the case-insensitive config words). */
+	@pub
+	static func lowerChar(c: mut char) mut char{
+		if c == 'A'{ return 'a' }
+		if c == 'B'{ return 'b' }
+		if c == 'C'{ return 'c' }
+		if c == 'D'{ return 'd' }
+		if c == 'E'{ return 'e' }
+		if c == 'F'{ return 'f' }
+		if c == 'G'{ return 'g' }
+		if c == 'H'{ return 'h' }
+		if c == 'I'{ return 'i' }
+		if c == 'J'{ return 'j' }
+		if c == 'K'{ return 'k' }
+		if c == 'L'{ return 'l' }
+		if c == 'M'{ return 'm' }
+		if c == 'N'{ return 'n' }
+		if c == 'O'{ return 'o' }
+		if c == 'P'{ return 'p' }
+		if c == 'Q'{ return 'q' }
+		if c == 'R'{ return 'r' }
+		if c == 'S'{ return 's' }
+		if c == 'T'{ return 't' }
+		if c == 'U'{ return 'u' }
+		if c == 'V'{ return 'v' }
+		if c == 'W'{ return 'w' }
+		if c == 'X'{ return 'x' }
+		if c == 'Y'{ return 'y' }
+		if c == 'Z'{ return 'z' }
+		return c
+	}
+}

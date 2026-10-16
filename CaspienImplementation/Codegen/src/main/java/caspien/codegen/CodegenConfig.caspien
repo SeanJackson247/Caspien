@@ -1,7 +1,7 @@
 import "../../../../../../stdlib/string.caspien"
 import "CodegenTarget.caspien"
 import "collections.caspien"
-import "Text.caspien"
+import "CodegenText.caspien"
 
 @pub
 struct CodegenConfig{@pub{
@@ -77,7 +77,7 @@ impl CodegenConfig{
 			let vn = mut valueText.length(valueText)
 			for k in 0..vn{
 				let ch = mut valueText.charAt(valueText, k)
-				? value.appendChar(value, Text.lowerChar(ch))
+				? value.appendChar(value, CodegenText.lowerChar(ch))
 			}
 			if key.equals(key, "target"){
 				if value.equals(value, "windows"){

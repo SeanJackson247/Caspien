@@ -95,6 +95,67 @@ impl<T> ObjectList<T>{
 		}
 	}
 
+	/** Java `add(i, x)`: inserts `item` before element `i` (moved in); throws when `i` > size. */
+	@pub
+	@throws
+	func insertAt(_self: ref some mut self, i: imut u64, item: owns mut T) void{
+		?catch(e){ throw e }
+		let n = mut len(_self.items)
+		if i > n{
+			throw "index out of range"
+		}
+		let empty = mut Slot:<T>{v= null}
+		let grown = mut ? resize(_self.items, n + 1, empty)
+		_self.items = grown
+		let k = mut n
+		let shifts = mut (n - i)
+		for step in 0..shifts{
+			let km = mut (k - 1)
+			let:<owns mut T> moved = mut null
+			match k into _self.items{
+				match km into _self.items{
+					moved = _self.items[km].v
+					_self.items[k].v = moved
+				}
+			}
+			k = km
+		}
+		match i into _self.items{
+			_self.items[i].v = item
+		}
+	}
+
+	/** Java `remove(i)` without the result: drops element `i` and closes the gap; throws when `i` is out of range. */
+	@pub
+	@throws
+	func removeAt(_self: ref some mut self, i: imut u64) void{
+		?catch(e){ throw e }
+		let n = mut len(_self.items)
+		if i >= n{
+			throw "index out of range"
+		}
+		match i into _self.items{
+			_self.items[i].v = null
+		}
+		let:<mut u64> k = mut 0
+		k = i + 0
+		let shifts = mut (n - 1 - i)
+		for step in 0..shifts{
+			let kp = mut (k + 1)
+			let:<owns mut T> moved = mut null
+			match k into _self.items{
+				match kp into _self.items{
+					moved = _self.items[kp].v
+					_self.items[k].v = moved
+				}
+			}
+			k = kp
+		}
+		let empty = mut Slot:<T>{v= null}
+		let shrunk = mut ? resize(_self.items, n - 1, empty)
+		_self.items = shrunk
+	}
+
 	/** Replaces element `i` (the old one is dropped); nothing when `i` is out of range. */
 	@pub
 	func setAt(_self: ref some mut self, i: imut u64, item: owns mut T) void{
