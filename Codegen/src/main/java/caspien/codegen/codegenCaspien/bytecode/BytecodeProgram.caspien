@@ -1,0 +1,16 @@
+// SHIM (16 Oct): placeholder for the shared BytecodeParser/ package, which is not ported yet. Remove when the real port exists.
+import "../collections.caspien"
+import "BytecodeStatement.caspien"
+
+@pub
+struct BytecodeProgram{@pub{
+	items: owns some mut ObjectList<BytecodeStatement>
+}}
+
+@pub
+@throws
+impl constructor for BytecodeProgram() self{
+	?catch(e){ throw e }
+	let items = mut ? new ObjectList:<BytecodeStatement>()
+	return BytecodeProgram{items= items}
+}
