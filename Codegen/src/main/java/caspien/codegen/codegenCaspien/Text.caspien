@@ -1,0 +1,128 @@
+// The four caspien.bytecode.Text helpers the codegen files use (no regex), called as in Java: `Text.isDigits(s)`.
+import "../../../../../../../stdlib/string.caspien"
+
+@pub
+struct Text{@pub{
+}}
+
+impl constructor for Text() self{
+	return Text{}
+}
+
+@pub
+impl Text{
+	@pub
+	static func isWordChar(c: mut char) mut bool{
+		return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || String.isDigit(c) || c == '_'
+	}
+
+	/** Index of the first non-digit of `s` at or after `from` (n when none). */
+	@pub
+	static func digitRunEnd(s: ref some imut String, from: mut u64, n: mut u64) mut u64{
+		for j in from..n{
+			if String.isDigit(s.charAt(s, j)) == false{
+				return j
+			}
+		}
+		return n
+	}
+
+	/** [0-9]+ */
+	@pub
+	static func isDigits(s: ref some imut String) mut bool{
+		let n = mut s.length(s)
+		if n == 0{
+			return false
+		}
+		for i in 0..n{
+			if String.isDigit(s.charAt(s, i)) == false{
+				return false
+			}
+		}
+		return true
+	}
+
+	/** prefix followed by one or more digits, e.g. "r\d+" */
+	@pub
+	@throws
+	static func isPrefixedDigits(s: ref some imut String, prefix: ref some imut String) mut bool{
+		?catch(e){ throw e }
+		if s.startsWith(s, prefix) == false{
+			return false
+		}
+		let rest = mut ? s.substring(s, prefix.length(prefix))
+		let r = mut false
+		match Some(rest){
+			r = Text.isDigits(rest)
+		}
+		return r
+	}
+
+	/** -?\d+\.\d+([eE][+-]?\d+)? */
+	@pub
+	static func isDecimalNumber(s: ref some imut String) mut bool{
+		let n = mut s.length(s)
+		let i = mut 0
+		if i < n && s.charAt(s, i) == '-'{
+			i += 1
+		}
+		let start = mut i
+		i = Text.digitRunEnd(s, i, n)
+		if i == start || i >= n || s.charAt(s, i) != '.'{
+			return false
+		}
+		i += 1
+		start = i
+		i = Text.digitRunEnd(s, i, n)
+		if i == start{
+			return false
+		}
+		if i == n{
+			return true
+		}
+		let e = mut s.charAt(s, i)
+		if e != 'e' && e != 'E'{
+			return false
+		}
+		i += 1
+		if i < n && (s.charAt(s, i) == '+' || s.charAt(s, i) == '-'){
+			i += 1
+		}
+		start = i
+		i = Text.digitRunEnd(s, i, n)
+		return i > start && i == n
+	}
+
+	/** `name` as a whole word of `text` (see the Java original); one optional char of `suffixChars` may follow `name`. */
+	@pub
+	static func containsWord(text: ref some imut String, name: ref some imut String, suffixChars: ref some imut String, dotBlocks: imut bool) mut bool{
+		let n = mut text.length(text)
+		let from = mut 0
+		let limit = mut (n + 1)
+		for attempt in 0..limit{
+			let p = mut text.indexOf(text, name, from)
+			if p < 0{
+				return false
+			}
+			let pu = mut wrap:<u64>(p)
+			from = pu + 1
+			let blocked = mut false
+			if pu > 0{
+				let before = mut text.charAt(text, pu - 1)
+				if Text.isWordChar(before) || (dotBlocks && before == '.'){
+					blocked = true
+				}
+			}
+			if blocked == false{
+				let q = mut (pu + name.length(name))
+				if q < n && suffixChars.indexOf(suffixChars, text.charAt(text, q)) >= 0{
+					q += 1
+				}
+				if q >= n || Text.isWordChar(text.charAt(text, q)) == false{
+					return true
+				}
+			}
+		}
+		return false
+	}
+}

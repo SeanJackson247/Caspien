@@ -24,7 +24,12 @@ impl X86Calls{
 	}
 
 	@pub
-	func sseSuffix(_self: ref some mut self, size: mut s32) owns mut String{ return null }
+	func sseSuffix(_self: ref some mut self, size: mut s32) static imut string{
+		if size <= 4{
+			return "ss"
+		}
+		return "sd"
+	}
 
 	@pub
 	func pushSizedOrBlockFromAddr(_self: ref some mut self, addrReg64: ref imut String, size: mut s32) void{

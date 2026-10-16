@@ -1,6 +1,6 @@
 # codegenCaspien: the Caspien port (skeleton)
 
-Every Java file of `../` has a `.caspien` twin here (the Java copies were removed). Method bodies are empty stubs and constructors are real, so `Main.caspien` compiles and does nothing. Compile it with a Linux-configured scratch tree, as for any program: `java Compiler -i .../codegenCaspien/Main.caspien out`. The text below the line is the Java documentation, still describing the behaviour to port.
+Every Java file of `../` has a `.caspien` twin here (the Java copies were removed). Constructors are real; method bodies are being converted leaf-first (the rest are empty stubs), so `Main.caspien` compiles and does nothing yet. Compile it with a Linux-configured scratch tree, as for any program: `java Compiler -i .../codegenCaspien/Main.caspien out`. The text below the line is the Java documentation, still describing the behaviour to port.
 
 ## Type mapping
 | Java | Caspien |
@@ -25,7 +25,11 @@ Every Java file of `../` has a `.caspien` twin here (the Java copies were remove
 - The parts' `private final hub/core` fields are public (a struct with a private member cannot be built by a constructor).
 - `X86Core.vSlots` (`new String[3]` of nulls) holds three empty Strings.
 - `raw()` of `X86Emit` is `raw_` (`raw` is a keyword).
-- `Main.run/writeFile` lose `throws IOException` (`@throws` needs a real `throw`); `main` takes the safe-args form. `Text` and the other unused Java imports are not imported.
+- `Main.run/writeFile` lose `throws IOException` (`@throws` needs a real `throw`); `main` takes the safe-args form. The four `caspien.bytecode.Text` helpers used here are in `Text.caspien` (a `suffixChars` argument is a `String`).
+- Method results: a literal-only result is `static imut string` (promote with `String.from(..)` where an owned `String` is needed), anything built at run time is `owns some mut String`; string parameters are `ref some imut String` (`static imut string` where the callee only compares or returns literals, via `String.literalsEqual`).
+- `throw` takes only a literal, so the dynamic text of Java messages is dropped (`rfFalseJump`: "unknown R_BRC operator"; `rfTrueSuffix`: "unknown condition"); number parsing throws "NumberFormatException".
+- `isInteger` accepts ASCII digits only (Java `Character.isDigit` also takes other Unicode digits).
+- `StringSet`/`StringMap`/`StringScalarMap` search linearly (Java hashes): a known performance follow-up. `ObjectList<T>` owns its items (`get` returns a `ref`, `add` moves the item in).
 - Javadoc comments of the Java files are not copied; they stay in the Java originals and the README below.
 
 ---

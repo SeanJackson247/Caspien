@@ -97,6 +97,20 @@ final class DropGlueGenerationWorker {
                     changedAnyCallSite = true;
                     continue;
                 }
+                if (!fl.isEmpty() && fl.get(0).text.equals("GT_DESTRUCT_ADDR") && fl.size() >= 2) {
+                    // "GT_DESTRUCT_ADDR ownsType": the address of an owns slot is on the stack (an old value about to be
+                    // overwritten through a pointer/index). Load the pointer into a hidden local and destruct it like an
+                    // owns member, so the members of an owns-bearing pointee are dropped too (a bare free leaked them).
+                    CanonicalType dt = CanonicalType.parse(fl.get(1).text);
+                    if (dt.isOwnsStorage() && structTable.isOwnsBearing(dt.baseType)) {
+                        String tmp = newTemp(rewritten, "dest_addr", fl.get(1).text);
+                        emit(rewritten, "DEREF " + fl.get(1).text);
+                        emit(rewritten, "POP " + tmp + " " + fl.get(1).text);
+                        emitOwnsMemberDestruct(rewritten, tmp, fl.get(1).text, dt.baseType);
+                        changedAnyCallSite = true;
+                        continue;
+                    }
+                }
                 if (!fl.isEmpty() && fl.get(0).text.equals("GT_DESTRUCT_TAIL") && fl.size() >= 4) {
                     // "GT_DESTRUCT_TAIL arrayLocal arrayType startLocal": a shrinking `resize` drops every element at
                     // index >= startLocal (the owns members of each) before the block is cut down. The line itself is

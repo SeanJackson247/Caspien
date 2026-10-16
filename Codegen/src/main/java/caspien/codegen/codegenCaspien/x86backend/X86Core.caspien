@@ -5,6 +5,7 @@ import "../../../../../../../../stdlib/hash_map.caspien"
 import "../../../../../../../../stdlib/hash_set.caspien"
 import "../../../../../../../../stdlib/tree_map.caspien"
 import "../collections.caspien"
+import "../Text.caspien"
 import "../CodegenTarget.caspien"
 import "../bytecode/BytecodeStatement.caspien"
 import "../bytecode/BytecodeToken.caspien"
@@ -140,8 +141,12 @@ impl constructor for X86Core(target: imut CodegenTarget, bmi2: imut bool) self{
 	let xvHome = mut ? new TreeMap:<s32, s64>()
 	let xvWidth = mut ? new TreeMap:<s32, s32>()
 	let vSlots = mut ? new ObjectList:<String>()
-	let blank = mut ? String()
-	vSlots.items = ? resize(vSlots.items, 3, blank)
+	let slot0 = mut ? new String()
+	let slot1 = mut ? new String()
+	let slot2 = mut ? new String()
+	? vSlots.add(vSlots, slot0)
+	? vSlots.add(vSlots, slot1)
+	? vSlots.add(vSlots, slot2)
 	return X86Core{target= target, out= out, csrFuncStart= mut -1, csrAllocPos= mut -1, csrAllocBytes= mut 0, csrAllocLine= null, csrAllocSum= mut 0, globalsSizeInit= globalsSizeInit, globalsHasInit= globalsHasInit, stringLiterals= stringLiterals, floatPool= floatPool, declaredFunctionNames= declaredFunctionNames, globalAliasOffset= globalAliasOffset, aliasInits= aliasInits, globalAliasParent= globalAliasParent, allLines= null, currentLineIndex= mut 0, asmSkipUntilIndex= mut -1, pushStoreOffsetByLine= pushStoreOffsetByLine, argTrackDeltaStack= argTrackDeltaStack, argTrackSuspendDepth= mut 0, callBufferStack= callBufferStack, loadedArgRegsStack= loadedArgRegsStack, savedOuterArgRegsStack= savedOuterArgRegsStack, floatResultInR10= false, pendingVarargsXmmCount= mut -1, constructionScopedAssign= constructionScopedAssign, packedNewLines= packedNewLines, bmi2= bmi2, avx= false, strideCseHits= mut 0, strideKeySink= null, strideKeyIdx= null, strideKeyScale= mut 0, resizeExtraStack= mut 0, lastWasCmp= false, lastValueBlockSize= mut 0, pushedWordWithTag= false, currentFuncName= null, internalLabelCounter= mut 0, rfVarUsed= false, rfVarMask= mut 0, rfClobberSeen= false, rfIdxReg= null, rfIdxScale= mut 1, rfIdxDisp= mut 0, rfMemOverride= null, xvHome= xvHome, xvWidth= xvWidth, vSlots= vSlots}
 }
 
@@ -170,28 +175,65 @@ impl X86Core{
 	static func isFloatLiteral(s: ref imut String) mut bool{ return false }
 
 	@pub
-	static func isCharLiteral(s: ref imut String) mut bool{ return false }
+	static func isCharLiteral(s: ref some imut String) mut bool{
+		let n = mut s.length(s)
+		if n < 3{
+			return false
+		}
+		let last = mut (n - 1)
+		return s.charAt(s, 0) == '\'' && s.charAt(s, last) == '\''
+	}
 
 	@pub
 	static func decodeCharLiteral(operandTok: ref imut BytecodeToken) mut s64{ return 0 }
 
 	@pub
-	static func rfIsTemp(tok: ref imut String) mut bool{ return false }
+	static func rfIsTemp(tok: ref some imut String) mut bool{
+		return tok.startsWith(tok, "%t") || tok.startsWith(tok, "%v") || tok.equals(tok, "%s")
+	}
 
 	@pub
-	static func rfIsVar(tok: ref imut String) mut bool{ return false }
+	static func rfIsVar(tok: ref some imut String) mut bool{
+		return tok.startsWith(tok, "%v")
+	}
 
 	@pub
-	static func rfIsImm(tok: ref imut String) mut bool{ return false }
+	static func rfIsImm(tok: ref some imut String) mut bool{
+		return tok.startsWith(tok, "#")
+	}
 
 	@pub
-	static func rfIsSlot(tok: ref imut String) mut bool{ return false }
+	static func rfIsSlot(tok: ref some imut String) mut bool{
+		return tok.startsWith(tok, "$")
+	}
+
+	/** Java `Long.parseLong`, then `parseUnsignedLong` when that fails; throws "NumberFormatException" when neither fits. */
+	@pub
+	@throws
+	static func rfImm(tok: ref some imut String) mut s64{
+		?catch(e){ throw e }
+		let t = mut ? tok.substring(tok, 1)
+		match Some(t){
+			let v = mut try t.parseS64(t) catch(err){
+				let u = mut ? t.parseU64(t)
+				return wrap:<s64>(u)
+			}
+			return v
+		}
+		return 0
+	}
 
 	@pub
-	static func rfImm(tok: ref imut String) mut s64{ return 0 }
-
-	@pub
-	static func rfSlot(tok: ref imut String) mut s64{ return 0 }
+	@throws
+	static func rfSlot(tok: ref some imut String) mut s64{
+		?catch(e){ throw e }
+		let t = mut ? tok.substring(tok, 1)
+		match Some(t){
+			let v = mut ? t.parseS64(t)
+			return v
+		}
+		return 0
+	}
 
 	@pub
 	static func rfFitsImm32(v: mut s64) mut bool{
@@ -256,20 +298,91 @@ impl X86Core{
 		return Long.bitCount(k) == 1 || k == 3 || k == 5 || k == 9 || Long.bitCount(k - 1) == 1 || Long.bitCount(k + 1) == 1
 	}
 
+	/** The jump taken when the comparison `op` is false. Throws "unknown R_BRC operator" for any other text (Java also named the operator). */
 	@pub
-	static func rfFalseJump(op: ref imut String) owns mut String{ return null }
+	@throws
+	static func rfFalseJump(op: ref some imut String) static imut string{
+		if op.equals(op, "EQ"){
+			return "jne"
+		} elseif op.equals(op, "NEQ"){
+			return "je"
+		} elseif op.equals(op, "LT"){
+			return "jae"
+		} elseif op.equals(op, "LT_EQ"){
+			return "ja"
+		} elseif op.equals(op, "GT"){
+			return "jbe"
+		} elseif op.equals(op, "GT_EQ"){
+			return "jb"
+		} elseif op.equals(op, "SLT"){
+			return "jge"
+		} elseif op.equals(op, "SLT_EQ"){
+			return "jg"
+		} elseif op.equals(op, "SGT"){
+			return "jle"
+		} elseif op.equals(op, "SGT_EQ"){
+			return "jl"
+		}
+		throw "unknown R_BRC operator"
+	}
 
 	@pub
-	static func rfMirrorJump(cc: ref imut String) owns mut String{ return null }
+	static func rfMirrorJump(cc: static imut string) static imut string{
+		if String.literalsEqual(cc, "jae"){
+			return "jbe"
+		} elseif String.literalsEqual(cc, "ja"){
+			return "jb"
+		} elseif String.literalsEqual(cc, "jbe"){
+			return "jae"
+		} elseif String.literalsEqual(cc, "jb"){
+			return "ja"
+		} elseif String.literalsEqual(cc, "jge"){
+			return "jle"
+		} elseif String.literalsEqual(cc, "jg"){
+			return "jl"
+		} elseif String.literalsEqual(cc, "jle"){
+			return "jge"
+		} elseif String.literalsEqual(cc, "jl"){
+			return "jg"
+		}
+		return cc
+	}
 
+	/** The condition-code suffix for the false-jump `falseJump`. Throws "unknown condition" for any other text. */
 	@pub
-	static func rfTrueSuffix(falseJump: ref imut String) owns mut String{ return null }
+	@throws
+	static func rfTrueSuffix(falseJump: static imut string) static imut string{
+		if String.literalsEqual(falseJump, "jne"){
+			return "e"
+		} elseif String.literalsEqual(falseJump, "je"){
+			return "ne"
+		} elseif String.literalsEqual(falseJump, "jae"){
+			return "b"
+		} elseif String.literalsEqual(falseJump, "jb"){
+			return "ae"
+		} elseif String.literalsEqual(falseJump, "ja"){
+			return "be"
+		} elseif String.literalsEqual(falseJump, "jbe"){
+			return "a"
+		} elseif String.literalsEqual(falseJump, "jge"){
+			return "l"
+		} elseif String.literalsEqual(falseJump, "jl"){
+			return "ge"
+		} elseif String.literalsEqual(falseJump, "jg"){
+			return "le"
+		} elseif String.literalsEqual(falseJump, "jle"){
+			return "g"
+		}
+		throw "unknown condition"
+	}
 
 	@pub
 	static func rfExtImm(v: mut s64, size: mut s32, signed: mut bool) mut s64{ return 0 }
 
 	@pub
-	static func rfIsGlobal(tok: ref imut String) mut bool{ return false }
+	static func rfIsGlobal(tok: ref some imut String) mut bool{
+		return tok.startsWith(tok, "&")
+	}
 
 	@pub
 	static func rfTrunc(v: mut s64, n: mut s32) mut s64{
@@ -287,10 +400,30 @@ impl X86Core{
 	}
 
 	@pub
-	static func rfIsXvar(tok: ref imut String) mut bool{ return false }
+	static func rfIsXvar(tok: ref some imut String) mut bool{
+		return tok.startsWith(tok, "%x") || tok.startsWith(tok, "%y") || tok.startsWith(tok, "%z")
+	}
 
 	@pub
-	static func isInteger(s: ref imut String) mut bool{ return false }
+	static func isInteger(s: ref some imut String) mut bool{
+		let n = mut s.length(s)
+		if n == 0{
+			return false
+		}
+		let start = mut 0
+		if s.charAt(s, 0) == '-'{
+			start = 1
+		}
+		if start == n{
+			return false
+		}
+		for i in start..n{
+			if String.isDigit(s.charAt(s, i)) == false{
+				return false
+			}
+		}
+		return true
+	}
 
 	@pub
 	static func textsOf(line: ref imut BytecodeStatement) owns mut ObjectList<String>{ return null }

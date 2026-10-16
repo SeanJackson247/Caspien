@@ -2,58 +2,479 @@ import "../../../../../../../stdlib/libc.caspien"
 import "../../../../../../../stdlib/string.caspien"
 
 // Stand-ins for the java.util classes the codegen files use on Strings and objects (see README.md, "Caspien port").
+// A list owns its elements one by one (`Slot<T>` holds an `owns` pointer), so an element is reached by `ref`, never copied.
+// `ObjectList<T>` methods are checked for every T, so String-only searches are the plain functions `listIndexOfText` etc.
+
+@pub
+struct Slot<T>{@pub{
+	v: owns mut T
+}}
+
 @pub
 struct ObjectList<T>{@pub{
-	items: owns some mut dynarray(mut T)
+	items: owns some mut dynarray(mut Slot<T>)
 }}
 
 @pub
 @throws
 impl<T> constructor for ObjectList<T>() self{
 	?catch(e){ throw e }
-	let items = mut ? dyn:<T>([])
+	let items = mut ? dyn:<Slot:<T>>([])
 	return ObjectList:<T>{items= items}
 }
 
 @pub
+impl<T> ObjectList<T>{
+	/** Java `size()`. */
+	@pub
+	func size(_self: ref some imut self) mut u64{
+		return len(_self.items)
+	}
+
+	@pub
+	func isEmpty(_self: ref some imut self) bool{
+		return len(_self.items) == 0
+	}
+
+	/** Java `get(i)`: a reference to element `i`, null when `i` is out of range. */
+	@pub
+	func get(_self: ref some imut self, i: imut u64) ref mut T{
+		match i in _self.items{
+			return ref _self.items[i].v
+		}
+		return null
+	}
+
+	/** Java `add(x)` / `push(x)`: appends `item` (moved in). */
+	@pub
+	@throws
+	func add(_self: ref some mut self, item: owns mut T) void{
+		?catch(e){ throw e }
+		let n = mut len(_self.items)
+		let empty = mut Slot:<T>{v= null}
+		let grown = mut ? resize(_self.items, n + 1, empty)
+		_self.items = grown
+		match n into _self.items{
+			_self.items[n].v = item
+		}
+	}
+
+	/** Java `peek()`: a reference to the last element, null when empty. */
+	@pub
+	func peek(_self: ref some imut self) ref mut T{
+		let n = mut len(_self.items)
+		if n == 0{
+			return null
+		}
+		let last = mut (n - 1)
+		return _self.get(_self, last)
+	}
+
+	/** Java `pop()` without the result: drops the last element (nothing when empty). */
+	@pub
+	@throws
+	func removeLast(_self: ref some mut self) void{
+		?catch(e){ throw e }
+		let n = mut len(_self.items)
+		if n > 0{
+			let empty = mut Slot:<T>{v= null}
+			let shrunk = mut ? resize(_self.items, n - 1, empty)
+			_self.items = shrunk
+		}
+	}
+
+	/** Java `clear()`. */
+	@pub
+	@throws
+	func clear(_self: ref some mut self) void{
+		?catch(e){ throw e }
+		if len(_self.items) > 0{
+			let empty = mut Slot:<T>{v= null}
+			let none = mut ? resize(_self.items, 0, empty)
+			_self.items = none
+		}
+	}
+
+	/** Replaces element `i` (the old one is dropped); nothing when `i` is out of range. */
+	@pub
+	func setAt(_self: ref some mut self, i: imut u64, item: owns mut T) void{
+		match i into _self.items{
+			_self.items[i].v = item
+		}
+	}
+}
+
+/** For a list of Strings: index of the first element equal to `needle`, or -1 (Java `indexOf`). A plain function because `ObjectList<T>` methods are checked for every T. */
+@pub
+func listIndexOfText(list: ref some imut ObjectList<String>, needle: ref some imut String) mut s64{
+	let n = mut list.size(list)
+	for i in 0..n{
+		let e = list.get(list, i)
+		match Some(e){
+			if e.equals(e, needle){
+				return wrap:<s64>(i)
+			}
+		}
+	}
+	return -1
+}
+
+@pub
+func listIndexOfLiteral(list: ref some imut ObjectList<String>, needle: static imut string) mut s64{
+	let n = mut list.size(list)
+	for i in 0..n{
+		let e = list.get(list, i)
+		match Some(e){
+			if e.equals(e, needle){
+				return wrap:<s64>(i)
+			}
+		}
+	}
+	return -1
+}
+
+/** Java `contains` on a list of Strings. */
+@pub
+func listContains(list: ref some imut ObjectList<String>, needle: ref some imut String) bool{
+	return listIndexOfText(list, needle) >= 0
+}
+
+@pub
+func listContainsLiteral(list: ref some imut ObjectList<String>, needle: static imut string) bool{
+	return listIndexOfLiteral(list, needle) >= 0
+}
+
+/** A set of Strings in insertion order (Java `HashSet<String>`; linear search). */
+@pub
 struct StringSet{@pub{
-	items: owns some mut dynarray(mut String)
+	items: owns some mut ObjectList<String>
 }}
 
 @pub
 @throws
 impl constructor for StringSet() self{
 	?catch(e){ throw e }
-	let items = mut ? dyn:<String>([])
+	let items = mut ? new ObjectList:<String>()
 	return StringSet{items= items}
 }
 
 @pub
+impl StringSet{
+	@pub
+	func size(_self: ref some imut self) mut u64{
+		return _self.items.size(_self.items)
+	}
+
+	@pub
+	func isEmpty(_self: ref some imut self) bool{
+		return _self.items.isEmpty(_self.items)
+	}
+
+	@pub
+	func contains(_self: ref some imut self, text: ref some imut String) bool{
+		return listContains(_self.items, text)
+	}
+
+	@pub
+	func contains(_self: ref some imut self, text: static imut string) bool{
+		return listContainsLiteral(_self.items, text)
+	}
+
+	/** Java `add`: true when `text` was not yet in the set (it is then moved in). */
+	@pub
+	@throws
+	func add(_self: ref some mut self, text: owns some mut String) bool{
+		?catch(e){ throw e }
+		if listContains(_self.items, text){
+			return false
+		}
+		? _self.items.add(_self.items, text)
+		return true
+	}
+
+	@pub
+	func at(_self: ref some imut self, i: imut u64) ref mut String{
+		return _self.items.get(_self.items, i)
+	}
+
+	@pub
+	@throws
+	func clear(_self: ref some mut self) void{
+		?catch(e){ throw e }
+		? _self.items.clear(_self.items)
+	}
+}
+
+/** One key/value pair of a `StringMap`. */
+@pub
+struct MapEntry<V>{@pub{
+	key: owns some mut String
+	value: owns mut V
+}}
+
+/** Java `LinkedHashMap<String, V>` for an owning V: pairs in insertion order (linear key search). */
+@pub
 struct StringMap<V>{@pub{
-	keys: owns some mut dynarray(mut String)
-	values: owns some mut dynarray(mut V)
+	entries: owns some mut ObjectList<MapEntry<V>>
 }}
 
 @pub
 @throws
 impl<V> constructor for StringMap<V>() self{
 	?catch(e){ throw e }
-	let keys = mut ? dyn:<String>([])
-	let values = mut ? dyn:<V>([])
-	return StringMap:<V>{keys= keys, values= values}
+	let entries = mut ? new ObjectList:<MapEntry:<V>>()
+	return StringMap:<V>{entries= entries}
 }
 
 @pub
+impl<V> StringMap<V>{
+	@pub
+	func size(_self: ref some imut self) mut u64{
+		return _self.entries.size(_self.entries)
+	}
+
+	@pub
+	func isEmpty(_self: ref some imut self) bool{
+		return _self.entries.isEmpty(_self.entries)
+	}
+
+	/** Index of the entry whose key equals `key`, or -1. */
+	func find(_self: ref some imut self, key: ref some imut String) mut s64{
+		let n = mut _self.entries.size(_self.entries)
+		for i in 0..n{
+			let e = _self.entries.get(_self.entries, i)
+			match Some(e){
+				match Some(e.key){
+					if e.key.equals(e.key, key){
+						return wrap:<s64>(i)
+					}
+				}
+			}
+		}
+		return -1
+	}
+
+	func findLit(_self: ref some imut self, key: static imut string) mut s64{
+		let n = mut _self.entries.size(_self.entries)
+		for i in 0..n{
+			let e = _self.entries.get(_self.entries, i)
+			match Some(e){
+				match Some(e.key){
+					if e.key.equals(e.key, key){
+						return wrap:<s64>(i)
+					}
+				}
+			}
+		}
+		return -1
+	}
+
+	@pub
+	func containsKey(_self: ref some imut self, key: ref some imut String) bool{
+		return _self.find(_self, key) >= 0
+	}
+
+	@pub
+	func containsKey(_self: ref some imut self, key: static imut string) bool{
+		return _self.findLit(_self, key) >= 0
+	}
+
+	/** Java `get(key)`: a reference to the value, null when the key is absent. */
+	@pub
+	func get(_self: ref some imut self, key: ref some imut String) ref mut V{
+		let at = mut _self.find(_self, key)
+		if at < 0{
+			return null
+		}
+		return _self.valueAt(_self, wrap:<u64>(at))
+	}
+
+	@pub
+	func get(_self: ref some imut self, key: static imut string) ref mut V{
+		let at = mut _self.findLit(_self, key)
+		if at < 0{
+			return null
+		}
+		return _self.valueAt(_self, wrap:<u64>(at))
+	}
+
+	@pub
+	func keyAt(_self: ref some imut self, i: imut u64) ref mut String{
+		let e = _self.entries.get(_self.entries, i)
+		match Some(e){
+			return ref e.key
+		}
+		return null
+	}
+
+	@pub
+	func valueAt(_self: ref some imut self, i: imut u64) ref mut V{
+		let e = _self.entries.get(_self.entries, i)
+		match Some(e){
+			return ref e.value
+		}
+		return null
+	}
+
+	/** Java `put`: replaces the value of an existing key (the new key is then dropped), otherwise appends the pair. */
+	@pub
+	@throws
+	func put(_self: ref some mut self, key: owns some mut String, value: owns mut V) void{
+		?catch(e){ throw e }
+		let at = mut _self.find(_self, key)
+		if at >= 0{
+			let e = _self.entries.get(_self.entries, wrap:<u64>(at))
+			match Some(e){
+				e.value = value
+			}
+		} else {
+			let entry = mut ? new MapEntry:<V>{key= key, value= value}
+			match Some(_self){
+				? _self.entries.add(_self.entries, entry)
+			}
+		}
+	}
+
+	@pub
+	@throws
+	func clear(_self: ref some mut self) void{
+		?catch(e){ throw e }
+		? _self.entries.clear(_self.entries)
+	}
+}
+
+/** One key/value pair of a `StringScalarMap`. */
+@pub
+struct ScalarEntry<V>{@pub{
+	key: owns some mut String
+	value: mut V
+}}
+
+/** Java `LinkedHashMap<String, V>` for a plain scalar V (bool, s64, ...). */
+@pub
 struct StringScalarMap<V>{@pub{
-	keys: owns some mut dynarray(mut String)
-	values: owns some mut dynarray(mut V)
+	entries: owns some mut ObjectList<ScalarEntry<V>>
 }}
 
 @pub
 @throws
 impl<V> constructor for StringScalarMap<V>() self{
 	?catch(e){ throw e }
-	let keys = mut ? dyn:<String>([])
-	let values = mut ? dyn:<V>([])
-	return StringScalarMap:<V>{keys= keys, values= values}
+	let entries = mut ? new ObjectList:<ScalarEntry:<V>>()
+	return StringScalarMap:<V>{entries= entries}
+}
+
+@pub
+impl<V> StringScalarMap<V>{
+	@pub
+	func size(_self: ref some imut self) mut u64{
+		return _self.entries.size(_self.entries)
+	}
+
+	@pub
+	func isEmpty(_self: ref some imut self) bool{
+		return _self.entries.isEmpty(_self.entries)
+	}
+
+	func find(_self: ref some imut self, key: ref some imut String) mut s64{
+		let n = mut _self.entries.size(_self.entries)
+		for i in 0..n{
+			let e = _self.entries.get(_self.entries, i)
+			match Some(e){
+				match Some(e.key){
+					if e.key.equals(e.key, key){
+						return wrap:<s64>(i)
+					}
+				}
+			}
+		}
+		return -1
+	}
+
+	func findLit(_self: ref some imut self, key: static imut string) mut s64{
+		let n = mut _self.entries.size(_self.entries)
+		for i in 0..n{
+			let e = _self.entries.get(_self.entries, i)
+			match Some(e){
+				match Some(e.key){
+					if e.key.equals(e.key, key){
+						return wrap:<s64>(i)
+					}
+				}
+			}
+		}
+		return -1
+	}
+
+	@pub
+	func containsKey(_self: ref some imut self, key: ref some imut String) bool{
+		return _self.find(_self, key) >= 0
+	}
+
+	@pub
+	func containsKey(_self: ref some imut self, key: static imut string) bool{
+		return _self.findLit(_self, key) >= 0
+	}
+
+	/** Java `getOrDefault`. */
+	@pub
+	func getOrDefault(_self: ref some imut self, key: ref some imut String, fallback: mut V) mut V{
+		let at = mut _self.find(_self, key)
+		if at < 0{
+			return fallback
+		}
+		return _self.valueAt(_self, wrap:<u64>(at), fallback)
+	}
+
+	@pub
+	func getOrDefault(_self: ref some imut self, key: static imut string, fallback: mut V) mut V{
+		let at = mut _self.findLit(_self, key)
+		if at < 0{
+			return fallback
+		}
+		return _self.valueAt(_self, wrap:<u64>(at), fallback)
+	}
+
+	@pub
+	func keyAt(_self: ref some imut self, i: imut u64) ref mut String{
+		let e = _self.entries.get(_self.entries, i)
+		match Some(e){
+			return ref e.key
+		}
+		return null
+	}
+
+	@pub
+	func valueAt(_self: ref some imut self, i: imut u64, fallback: mut V) mut V{
+		let e = _self.entries.get(_self.entries, i)
+		match Some(e){
+			return e.value
+		}
+		return fallback
+	}
+
+	@pub
+	@throws
+	func put(_self: ref some mut self, key: owns some mut String, value: mut V) void{
+		?catch(e){ throw e }
+		let at = mut _self.find(_self, key)
+		if at >= 0{
+			let e = _self.entries.get(_self.entries, wrap:<u64>(at))
+			match Some(e){
+				e.value = value
+			}
+			return
+		}
+		let entry = mut ? new ScalarEntry:<V>{key= key, value= value}
+		match Some(_self){
+			? _self.entries.add(_self.entries, entry)
+		}
+	}
+
+	@pub
+	@throws
+	func clear(_self: ref some mut self) void{
+		?catch(e){ throw e }
+		? _self.entries.clear(_self.entries)
+	}
 }

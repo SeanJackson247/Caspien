@@ -194,10 +194,21 @@ impl X86Emit{
 		return 1
 	}
 
-	static func pickBySize(size: mut s32, s1: ref imut String, s2: ref imut String, s4: ref imut String, other: ref imut String) owns mut String{ return null }
+	static func pickBySize(size: mut s32, s1: static imut string, s2: static imut string, s4: static imut string, other: static imut string) static imut string{
+		if size == 1{
+			return s1
+		} elseif size == 2{
+			return s2
+		} elseif size == 4{
+			return s4
+		}
+		return other
+	}
 
 	@pub
-	func movSuffix(_self: ref some mut self, size: mut s32) owns mut String{ return null }
+	func movSuffix(_self: ref some mut self, size: mut s32) static imut string{
+		return X86Emit.pickBySize(size, "b", "w", "l", "q")
+	}
 
 	@pub
 	func loadSizedFromFrame(_self: ref some mut self, reg64: ref imut String, offset: mut s64, size: mut s32) void{

@@ -205,11 +205,29 @@ impl X86Generator{
 	func rfRmw(_self: ref some mut self, op: ref imut String, slotTok: ref imut String, srcTok: ref imut String) void{
 	}
 
-	static func fsfx(n: mut s32) owns mut String{ return null }
+	@pub
+	static func fsfx(n: mut s32) static imut string{
+		if n == 4{
+			return "ss"
+		}
+		return "sd"
+	}
 
-	static func widthSfx(w: mut s32) owns mut String{ return null }
+	@pub
+	static func widthSfx(w: mut s32) static imut string{
+		if w == 8{
+			return "sd"
+		}
+		return "ss"
+	}
 
-	static func fmov(n: mut s32) owns mut String{ return null }
+	@pub
+	static func fmov(n: mut s32) static imut string{
+		if n == 8{
+			return "movsd"
+		}
+		return "movss"
+	}
 
 	static func maskIf4(v: mut s64, n: mut s32) mut s64{
 		if n == 4{

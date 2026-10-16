@@ -18,7 +18,30 @@ impl X86CasesA{
 	@pub
 	func emitCases3(_self: ref some mut self, mnemonic: ref imut String, line: ref imut BytecodeStatement, first: ref imut String, wasCmp: mut bool, pendingBlockSize: mut s64) mut bool{ return false }
 
-	static func optLong(line: ref imut BytecodeStatement, idx: mut s32) mut s64{ return 0 }
+	/** Operand idx as a number when the line has it, else 0; throws "NumberFormatException" on bad text. */
+	@throws
+	static func optLong(line: ref some imut BytecodeStatement, idx: mut s32) mut s64{
+		?catch(e){ throw e }
+		if line.items.size(line.items) > wrap:<u64>(idx){
+			let t = line.items.get(line.items, wrap:<u64>(idx))
+			match Some(t){
+				let v = mut ? t.text.parseS64(t.text)
+				return v
+			}
+		}
+		return 0
+	}
 
-	static func optSize(line: ref imut BytecodeStatement, idx: mut s32, dflt: mut s32) mut s32{ return 0 }
+	@throws
+	static func optSize(line: ref some imut BytecodeStatement, idx: mut s32, dflt: mut s32) mut s32{
+		?catch(e){ throw e }
+		if line.items.size(line.items) > wrap:<u64>(idx){
+			let t = line.items.get(line.items, wrap:<u64>(idx))
+			match Some(t){
+				let v = mut ? t.text.parseS64(t.text)
+				return wrap:<s32>(v)
+			}
+		}
+		return dflt
+	}
 }
