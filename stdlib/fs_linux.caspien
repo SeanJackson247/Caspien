@@ -13,6 +13,8 @@ extern fsXClose(mut s32) mut s32
 extern fsXRead(mut s32, raw mut char, mut u64) mut s64
 @link_name(write)
 extern fsXWrite(mut s32, static imut string, mut u64) mut s64
+@link_name(write)
+extern fsXWriteRaw(mut s32, raw imut char, mut u64) mut s64
 @link_name(mkdirat)
 extern fsXMkdirAt(mut s32, static imut string, mut u32) mut s32
 @link_name(unlinkat)
@@ -157,6 +159,15 @@ func fsOsRead(h: mut s64, buf: raw mut char, n: mut u64) mut s64{
 		got = fsXRead(wrap:<s32>(h), buf, n)
 	}
 	return got
+}
+
+@pub
+func fsOsWriteRaw(h: mut s64, buf: raw imut char, n: mut u64) mut s64{
+	let:<mut s64> wrote = mut 0
+	unsafe extern{
+		wrote = fsXWriteRaw(wrap:<s32>(h), buf, n)
+	}
+	return wrote
 }
 
 @pub

@@ -41,6 +41,8 @@ extern fsWNtClose(mut u64) mut s32
 @link_name(NtReadFile)
 extern fsWNtRead(mut u64, mut u64, mut u64, mut u64, raw mut FsWIosb, raw mut char, mut u32, mut u64, mut u64) mut s32
 @link_name(NtWriteFile)
+extern fsWNtWriteRaw(mut u64, mut u64, mut u64, mut u64, raw mut FsWIosb, raw imut char, mut u32, mut u64, mut u64) mut s32
+@link_name(NtWriteFile)
 extern fsWNtWrite(mut u64, mut u64, mut u64, mut u64, raw mut FsWIosb, static imut string, mut u32, mut u64, mut u64) mut s32
 @link_name(NtFlushBuffersFile)
 extern fsWNtFlush(mut u64, raw mut FsWIosb) mut s32
@@ -396,6 +398,21 @@ func fsOsRead(h: mut s64, buf: raw mut char, n: mut u64) mut s64{
 		return -1
 	}
 	return got
+}
+
+@pub
+func fsOsWriteRaw(h: mut s64, buf: raw imut char, n: mut u64) mut s64{
+	let:<mut s32> st = mut 0
+	let:<mut s64> wrote = mut 0
+	unsafe raw extern{
+		let iosb = mut FsWIosb{status= 0, info= 0}
+		st = fsWNtWriteRaw(wrap:<u64>(h), 0, 0, 0, raw iosb, buf, wrap:<u32>(n), 0, 0)
+		wrote = wrap:<s64>(iosb.info)
+	}
+	if st < 0{
+		return -1
+	}
+	return wrote
 }
 
 @pub

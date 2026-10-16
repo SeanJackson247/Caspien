@@ -463,6 +463,51 @@ impl File{
 		}
 	}
 
+	/** Writes all of the String `text` (its characters, no terminator), in chunks of 4096. */
+	@pub
+	@throws
+	static func writeString(f: ref some imut File, text: ref imut String) void{
+		let fh = mut f.h      // read first: the `unsafe` blocks end the proof that `f` is alive
+		let n = mut 0
+		match Some(text){ n = text.length(text) }
+		let:<raw mut char> buf = mut null
+		unsafe extern{
+			buf = fsMalloc(4096)
+		}
+		let:<mut u64> pos = mut 0
+		let failed = mut 0
+		let rounds = mut (n + 1)
+		for chunk in 0..rounds{
+			if pos >= n{
+				break
+			}
+			let:<mut u64> m = mut (n - pos)
+			if m > 4096{
+				m = 4096
+			}
+			for i in 0..m{
+				let c = mut ' '
+				match Some(text){ c = text.charAt(text, pos + i) }
+				unsafe assume memcopy raw{
+					assume match Some(buf + i)
+					memcopy(buf + i, mut 1, raw c)
+				}
+			}
+			let:<mut s64> wrote = mut fsOsWriteRaw(fh, buf, m)
+			if wrote < 0 || wrap:<u64>(wrote) != m{
+				failed = 1
+				break
+			}
+			pos = pos + m
+		}
+		unsafe extern{
+			fsFree(buf)
+		}
+		if failed == 1{
+			throw "fs: short write"
+		}
+	}
+
 	@pub
 	@throws
 	static func sync(f: ref some imut File) void{
