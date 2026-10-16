@@ -1,0 +1,23 @@
+// The real "@gt_alive_check" -- true when `ptr` is currently registered (exact address match). O(1) expected: one hash probe sequence.
+import "ghost_table.caspien"
+
+@gt_alive_check
+@pub
+func gt_alive_check(ptr: raw imut u8) imut bool{
+	if ptr == null{
+		return imut false
+	}
+	let found = mut false
+	match @lock ghost_table{
+		OPEN:{
+			let at = mut gtFind(ghost_table.base, ghost_table.capacity, ptr)
+			if at != ghost_table.capacity{
+				found = mut true
+			}
+		}
+		CLOSED:{
+			continue
+		}
+	}
+	return imut found
+}

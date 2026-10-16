@@ -1,0 +1,811 @@
+import "../../../../../../../stdlib/libc.caspien"
+import "../../../../../../../stdlib/string.caspien"
+import "../../../../../../../stdlib/dynamic_array.caspien"
+import "../../../../../../../stdlib/hash_map.caspien"
+import "../../../../../../../stdlib/hash_set.caspien"
+import "../../../../../../../stdlib/tree_map.caspien"
+import "../collections.caspien"
+import "../Text.caspien"
+import "../CodegenTarget.caspien"
+import "../bytecode/BytecodeStatement.caspien"
+import "../bytecode/BytecodeToken.caspien"
+import "../../../../../../../stdlib/jdk_long.caspien"
+import "../../../../../../../stdlib/bigint.caspien"
+
+@pub
+let static X86Core_CSR_MARK = imut "@@CSR@@"
+
+@pub
+let static X86Core_RSP_MARK = imut "@@RSP@@"
+
+@pub
+let static X86Core_V1314_SAVE = imut "@@V1314S@@"
+
+@pub
+let static X86Core_V1314_REST = imut "@@V1314R@@"
+
+@pub
+let static X86Core_RF_SCRATCH = imut "r15"
+
+@pub
+let static:<imut s32> X86Core_XV_COUNT = imut 6
+
+@pub
+let static:<imut s32> X86Core_YT_COUNT = imut 4
+
+@pub
+let static X86Core_LINUX_ARG_REGS = imut ["rdi", "rsi", "rdx", "rcx", "r8", "r9"]
+
+@pub
+let static X86Core_WIN_ARG_REGS = imut ["rcx", "rdx", "r8", "r9"]
+
+@pub
+let static X86Core_LINUX_ARG_REGS_FLOAT = imut ["xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7"]
+
+@pub
+let static X86Core_WIN_ARG_REGS_FLOAT = imut ["xmm0", "xmm1", "xmm2", "xmm3"]
+
+@pub
+let static X86Core_RF_TEMP_REGS = imut ["rax", "rbx", "r11", "r12"]
+
+@pub
+let static X86Core_RF_VAR_REGS = imut ["r13", "r14", "r12", "r8", "r9", "r10", "rsi", "rdi", "rdx", "rcx"]
+
+@pub
+let static X86Core_STRIDE_KEEP_OPS = imut [
+		"movq", "movl", "movw", "movb", "movzbq", "movzwq", "movzbl", "movzwl", "movslq", "movsbq", "movswq", "movsbl",
+		"movswl", "movsd", "movss", "movd", "movaps", "movapd", "addsd", "addss", "subsd", "subss", "mulsd", "mulss",
+		"divsd", "divss", "addq", "subq", "addl", "subl", "leaq", "andq", "orq", "xorq", "shlq", "shrq", "sarq",
+		"incq", "decq", "negq", "notq", "sqrtsd", "sqrtss", "ucomisd", "ucomiss", "comisd", "comiss", "cvtss2sd",
+		"cvtsd2ss", "xorps", "xorpd", "andps", "andpd"]
+
+@pub
+let static X86Core_RF_R13_R14_USERS = imut [
+		"NEW", "NEW_DYN", "NEW_UDYN", "NEW_FROM_STRING", "NEW_FROM_USTRING", "CLONE", "CLONE_DYN", "RESIZE", "URESIZE",
+		"DOT", "LOOKUP_ARRAY", "ASM_START"]
+
+@pub
+struct X86Core{@pub{
+	target: imut CodegenTarget
+	out: owns some mut String
+	csrFuncStart: mut s32
+	csrAllocPos: mut s32
+	csrAllocBytes: mut s64
+	csrAllocLine: owns mut String
+	csrAllocSum: mut s64
+	globalsSizeInit: owns some mut StringMap<DynamicArray<s64>>
+	globalsHasInit: owns some mut StringScalarMap<bool>
+	stringLiterals: owns some mut StringMap<String>
+	floatPool: owns some mut StringMap<String>
+	declaredFunctionNames: owns some mut StringSet
+	globalAliasOffset: owns some mut StringScalarMap<s64>
+	aliasInits: owns some mut StringMap<ObjectList<DynamicArray<s64>>>
+	globalAliasParent: owns some mut StringMap<String>
+	allLines: ref mut ObjectList<BytecodeStatement>
+	currentLineIndex: mut s32
+	asmSkipUntilIndex: mut s32
+	pushStoreOffsetByLine: owns some mut HashMap<s32, s64>
+	argTrackDeltaStack: owns some mut DynamicArray<s64>
+	argTrackSuspendDepth: mut s32
+	callBufferStack: owns some mut ObjectList<String>
+	loadedArgRegsStack: owns some mut ObjectList<ObjectList<String>>
+	savedOuterArgRegsStack: owns some mut ObjectList<ObjectList<String>>
+	floatResultInR10: mut bool
+	pendingVarargsXmmCount: mut s32
+	constructionScopedAssign: owns some mut HashSet<s32>
+	packedNewLines: owns some mut HashSet<s32>
+	bmi2: imut bool
+	avx: mut bool
+	strideCseHits: mut s32
+	strideKeySink: ref mut String
+	strideKeyIdx: owns mut String
+	strideKeyScale: mut s64
+	resizeExtraStack: mut s32
+	lastWasCmp: mut bool
+	lastValueBlockSize: mut s64
+	pushedWordWithTag: mut bool
+	currentFuncName: owns mut String
+	internalLabelCounter: mut s32
+	rfVarUsed: mut bool
+	rfVarMask: mut s32
+	rfClobberSeen: mut bool
+	rfIdxReg: owns mut String
+	rfIdxScale: mut s64
+	rfIdxDisp: mut s64
+	rfMemOverride: owns mut String
+	xvHome: owns some mut TreeMap<s32, s64>
+	xvWidth: owns some mut TreeMap<s32, s32>
+	vSlots: owns some mut ObjectList<String>
+}}
+
+@pub
+@throws
+impl constructor for X86Core(target: imut CodegenTarget, bmi2: imut bool) self{
+	?catch(e){ throw e }
+	let out = mut ? new String()
+	let globalsSizeInit = mut ? new StringMap:<DynamicArray:<s64>>()
+	let globalsHasInit = mut ? new StringScalarMap:<bool>()
+	let stringLiterals = mut ? new StringMap:<String>()
+	let floatPool = mut ? new StringMap:<String>()
+	let declaredFunctionNames = mut ? new StringSet()
+	let globalAliasOffset = mut ? new StringScalarMap:<s64>()
+	let aliasInits = mut ? new StringMap:<ObjectList:<DynamicArray:<s64>>>()
+	let globalAliasParent = mut ? new StringMap:<String>()
+	let pushStoreOffsetByLine = mut ? new HashMap:<s32, s64>(mut 0, mut 0, mut 16)
+	let argTrackDeltaStack = mut ? new DynamicArray:<s64>()
+	let callBufferStack = mut ? new ObjectList:<String>()
+	let loadedArgRegsStack = mut ? new ObjectList:<ObjectList:<String>>()
+	let savedOuterArgRegsStack = mut ? new ObjectList:<ObjectList:<String>>()
+	let constructionScopedAssign = mut ? new HashSet:<s32>(mut 0, mut 16)
+	let packedNewLines = mut ? new HashSet:<s32>(mut 0, mut 16)
+	let xvHome = mut ? new TreeMap:<s32, s64>()
+	let xvWidth = mut ? new TreeMap:<s32, s32>()
+	let vSlots = mut ? new ObjectList:<String>()
+	let slot0 = mut ? new String()
+	let slot1 = mut ? new String()
+	let slot2 = mut ? new String()
+	? vSlots.add(vSlots, slot0)
+	? vSlots.add(vSlots, slot1)
+	? vSlots.add(vSlots, slot2)
+	return X86Core{target= target, out= out, csrFuncStart= mut -1, csrAllocPos= mut -1, csrAllocBytes= mut 0, csrAllocLine= null, csrAllocSum= mut 0, globalsSizeInit= globalsSizeInit, globalsHasInit= globalsHasInit, stringLiterals= stringLiterals, floatPool= floatPool, declaredFunctionNames= declaredFunctionNames, globalAliasOffset= globalAliasOffset, aliasInits= aliasInits, globalAliasParent= globalAliasParent, allLines= null, currentLineIndex= mut 0, asmSkipUntilIndex= mut -1, pushStoreOffsetByLine= pushStoreOffsetByLine, argTrackDeltaStack= argTrackDeltaStack, argTrackSuspendDepth= mut 0, callBufferStack= callBufferStack, loadedArgRegsStack= loadedArgRegsStack, savedOuterArgRegsStack= savedOuterArgRegsStack, floatResultInR10= false, pendingVarargsXmmCount= mut -1, constructionScopedAssign= constructionScopedAssign, packedNewLines= packedNewLines, bmi2= bmi2, avx= false, strideCseHits= mut 0, strideKeySink= null, strideKeyIdx= null, strideKeyScale= mut 0, resizeExtraStack= mut 0, lastWasCmp= false, lastValueBlockSize= mut 0, pushedWordWithTag= false, currentFuncName= null, internalLabelCounter= mut 0, rfVarUsed= false, rfVarMask= mut 0, rfClobberSeen= false, rfIdxReg= null, rfIdxScale= mut 1, rfIdxDisp= mut 0, rfMemOverride= null, xvHome= xvHome, xvWidth= xvWidth, vSlots= vSlots}
+}
+
+@pub
+impl X86Core{
+	/** True when register name `r` is `full` or one of its sub-registers (eax/ax/al/ah, r8d/r8w/r8b ...). */
+	/** True when register name `r` is `full` or one of its sub-registers (eax/ax/al/ah, r8d/r8w/r8b ...). Compares by character, no allocation. */
+	@pub
+	static func regAliasOf(r: ref some imut String, full: ref some imut String) mut bool{
+		if r.equals(r, full){
+			return true
+		}
+		let rn = mut r.length(r)
+		let fn = mut full.length(full)
+		let high = mut false
+		if full.startsWith(full, "r") && fn > 1{
+			high = Text.digitRunEnd(full, 1, fn) == fn
+		}
+		if high{
+			if rn != fn + 1 || X86Core.sliceEq(r, 0, full, 0, fn) == false{
+				return false
+			}
+			let c = mut r.charAt(r, fn)
+			return c == 'd' || c == 'w' || c == 'b'
+		}
+		let bn = mut (fn - 1)
+		let eBase = mut (rn == fn && r.charAt(r, 0) == 'e' && X86Core.sliceEq(r, 1, full, 1, bn))
+		let plain = mut (rn == bn && X86Core.sliceEq(r, 0, full, 1, bn))
+		if full.equals(full, "rax") || full.equals(full, "rbx") || full.equals(full, "rcx") || full.equals(full, "rdx"){
+			let lead = mut full.charAt(full, 1)
+			let half = mut (rn == 2 && r.charAt(r, 0) == lead && (r.charAt(r, 1) == 'l' || r.charAt(r, 1) == 'h'))
+			return eBase || plain || half
+		}
+		let low = mut (rn == fn && X86Core.sliceEq(r, 0, full, 1, bn) && r.charAt(r, bn) == 'l')
+		return eBase || plain || low
+	}
+
+	/** True when `len` characters of `a` from `aOff` equal those of `b` from `bOff`. */
+	static func sliceEq(a: ref some imut String, aOff: mut u64, b: ref some imut String, bOff: mut u64, len: mut u64) mut bool{
+		for k in 0..len{
+			if a.charAt(a, aOff + k) != b.charAt(b, bOff + k){
+				return false
+			}
+		}
+		return true
+	}
+
+	@pub
+	static func roundUpToLoadableWidth(size: mut s32) mut s32{
+		if size <= 2{
+			return size
+		} elseif size <= 4{
+			return 4
+		} else{
+			return 8
+		}
+	}
+
+	@pub
+	static func isOddSize(size: mut s32) mut bool{
+		return size == 3 || (size >= 5 && size <= 7)
+	}
+
+	@pub
+	static func isFloatLiteral(s: ref some imut String) mut bool{
+		return Text.isDecimalNumber(s)
+	}
+
+	/** Token `k` of a text list as a copy; throws "IndexOutOfBoundsException" past the end (port-only helper). */
+	@pub
+	@throws
+	static func partCopy(parts: ref some imut ObjectList<String>, k: mut u64) owns some mut String{
+		?catch(e){ throw e }
+		if k >= parts.size(parts){
+			throw "IndexOutOfBoundsException"
+		}
+		let r = mut ? new String()
+		let p = parts.get(parts, k)
+		match Some(p){ r = ? p.substring(p, 0) }
+		return r
+	}
+
+	/** Membership in STRIDE_KEEP_OPS (a `let static` list cannot be read from safe code, so an if-chain; port-only helper). */
+	@pub
+	static func isStrideKeepOp(op: ref some imut String) mut bool{
+		if op.equals(op, "movq"){ return true }
+		if op.equals(op, "movl"){ return true }
+		if op.equals(op, "movw"){ return true }
+		if op.equals(op, "movb"){ return true }
+		if op.equals(op, "movzbq"){ return true }
+		if op.equals(op, "movzwq"){ return true }
+		if op.equals(op, "movzbl"){ return true }
+		if op.equals(op, "movzwl"){ return true }
+		if op.equals(op, "movslq"){ return true }
+		if op.equals(op, "movsbq"){ return true }
+		if op.equals(op, "movswq"){ return true }
+		if op.equals(op, "movsbl"){ return true }
+		if op.equals(op, "movswl"){ return true }
+		if op.equals(op, "movsd"){ return true }
+		if op.equals(op, "movss"){ return true }
+		if op.equals(op, "movd"){ return true }
+		if op.equals(op, "movaps"){ return true }
+		if op.equals(op, "movapd"){ return true }
+		if op.equals(op, "addsd"){ return true }
+		if op.equals(op, "addss"){ return true }
+		if op.equals(op, "subsd"){ return true }
+		if op.equals(op, "subss"){ return true }
+		if op.equals(op, "mulsd"){ return true }
+		if op.equals(op, "mulss"){ return true }
+		if op.equals(op, "divsd"){ return true }
+		if op.equals(op, "divss"){ return true }
+		if op.equals(op, "addq"){ return true }
+		if op.equals(op, "subq"){ return true }
+		if op.equals(op, "addl"){ return true }
+		if op.equals(op, "subl"){ return true }
+		if op.equals(op, "leaq"){ return true }
+		if op.equals(op, "andq"){ return true }
+		if op.equals(op, "orq"){ return true }
+		if op.equals(op, "xorq"){ return true }
+		if op.equals(op, "shlq"){ return true }
+		if op.equals(op, "shrq"){ return true }
+		if op.equals(op, "sarq"){ return true }
+		if op.equals(op, "incq"){ return true }
+		if op.equals(op, "decq"){ return true }
+		if op.equals(op, "negq"){ return true }
+		if op.equals(op, "notq"){ return true }
+		if op.equals(op, "sqrtsd"){ return true }
+		if op.equals(op, "sqrtss"){ return true }
+		if op.equals(op, "ucomisd"){ return true }
+		if op.equals(op, "ucomiss"){ return true }
+		if op.equals(op, "comisd"){ return true }
+		if op.equals(op, "comiss"){ return true }
+		if op.equals(op, "cvtss2sd"){ return true }
+		if op.equals(op, "cvtsd2ss"){ return true }
+		if op.equals(op, "xorps"){ return true }
+		if op.equals(op, "xorpd"){ return true }
+		if op.equals(op, "andps"){ return true }
+		if op.equals(op, "andpd"){ return true }
+		return false
+	}
+
+	/** "xmm" + n for 0..31 (port-only helper; the Java concatenates); throws past 31. */
+	@pub
+	@throws
+	static func xmmName(n: mut s32) static imut string{
+		if n == 0{ return "xmm0" }
+		if n == 1{ return "xmm1" }
+		if n == 2{ return "xmm2" }
+		if n == 3{ return "xmm3" }
+		if n == 4{ return "xmm4" }
+		if n == 5{ return "xmm5" }
+		if n == 6{ return "xmm6" }
+		if n == 7{ return "xmm7" }
+		if n == 8{ return "xmm8" }
+		if n == 9{ return "xmm9" }
+		if n == 10{ return "xmm10" }
+		if n == 11{ return "xmm11" }
+		if n == 12{ return "xmm12" }
+		if n == 13{ return "xmm13" }
+		if n == 14{ return "xmm14" }
+		if n == 15{ return "xmm15" }
+		if n == 16{ return "xmm16" }
+		if n == 17{ return "xmm17" }
+		if n == 18{ return "xmm18" }
+		if n == 19{ return "xmm19" }
+		if n == 20{ return "xmm20" }
+		if n == 21{ return "xmm21" }
+		if n == 22{ return "xmm22" }
+		if n == 23{ return "xmm23" }
+		if n == 24{ return "xmm24" }
+		if n == 25{ return "xmm25" }
+		if n == 26{ return "xmm26" }
+		if n == 27{ return "xmm27" }
+		if n == 28{ return "xmm28" }
+		if n == 29{ return "xmm29" }
+		if n == 30{ return "xmm30" }
+		if n == 31{ return "xmm31" }
+		throw "register index out of range"
+	}
+
+	/** RF_VAR_REGS[i]; throws "register index out of range" past the end. */
+	@pub
+	@throws
+	static func rfVarRegName(i: mut u64) static imut string{
+		if i == 0{ return "r13" } elseif i == 1{ return "r14" } elseif i == 2{ return "r12" } elseif i == 3{ return "r8" } elseif i == 4{ return "r9" }
+		elseif i == 5{ return "r10" } elseif i == 6{ return "rsi" } elseif i == 7{ return "rdi" } elseif i == 8{ return "rdx" } elseif i == 9{ return "rcx" }
+		throw "register index out of range"
+	}
+
+	/** RF_TEMP_REGS[i]; throws "register index out of range" past the end. */
+	@pub
+	@throws
+	static func rfTempRegName(i: mut u64) static imut string{
+		if i == 0{ return "rax" } elseif i == 1{ return "rbx" } elseif i == 2{ return "r11" } elseif i == 3{ return "r12" }
+		throw "register index out of range"
+	}
+
+	@pub
+	static func isCharLiteral(s: ref some imut String) mut bool{
+		let n = mut s.length(s)
+		if n < 3{
+			return false
+		}
+		let last = mut (n - 1)
+		return s.charAt(s, 0) == '\'' && s.charAt(s, last) == '\''
+	}
+
+	/** The numeric value of a char-literal operand such as 'a' or '\\n'. Throws "malformed char-literal operand" / "unrecognized char-literal escape" (Java named the operand and its line). */
+	@pub
+	@throws
+	static func decodeCharLiteral(operandTok: ref some imut BytecodeToken) mut s64{
+		let n = mut operandTok.text.length(operandTok.text)
+		if n == 3{
+			let c = mut operandTok.text.charAt(operandTok.text, 1)
+			let code = mut String.charCode(c)
+			return wrap:<s64>(code)
+		}
+		if n == 4 && operandTok.text.charAt(operandTok.text, 1) == '\\'{
+			let esc = mut operandTok.text.charAt(operandTok.text, 2)
+			if esc == '\\'{ return 92 }
+			if esc == '"'{ return 34 }
+			if esc == 'n'{ return 10 }
+			if esc == 't'{ return 9 }
+			if esc == 'r'{ return 13 }
+			if esc == '0'{ return 0 }
+			if esc == 'b'{ return 8 }
+			if esc == 'f'{ return 12 }
+			if esc == 'a'{ return 7 }
+			if esc == 'v'{ return 11 }
+			throw "unrecognized char-literal escape"
+		}
+		throw "malformed char-literal operand"
+	}
+
+	@pub
+	static func rfIsTemp(tok: ref some imut String) mut bool{
+		return tok.startsWith(tok, "%t") || tok.startsWith(tok, "%v") || tok.equals(tok, "%s")
+	}
+
+	@pub
+	static func rfIsVar(tok: ref some imut String) mut bool{
+		return tok.startsWith(tok, "%v")
+	}
+
+	@pub
+	static func rfIsImm(tok: ref some imut String) mut bool{
+		return tok.startsWith(tok, "#")
+	}
+
+	@pub
+	static func rfIsSlot(tok: ref some imut String) mut bool{
+		return tok.startsWith(tok, "$")
+	}
+
+	/** Java `Long.parseLong`, then `parseUnsignedLong` when that fails; throws "NumberFormatException" when neither fits. */
+	@pub
+	@throws
+	static func rfImm(tok: ref some imut String) mut s64{
+		?catch(e){ throw e }
+		let t = mut ? tok.substring(tok, 1)
+		match Some(t){
+			let v = mut try t.parseS64(t) catch(err){
+				let u = mut ? t.parseU64(t)
+				return wrap:<s64>(u)
+			}
+			return v
+		}
+		return 0
+	}
+
+	@pub
+	@throws
+	static func rfSlot(tok: ref some imut String) mut s64{
+		?catch(e){ throw e }
+		let t = mut ? tok.substring(tok, 1)
+		match Some(t){
+			let v = mut ? t.parseS64(t)
+			return v
+		}
+		return 0
+	}
+
+	@pub
+	static func rfFitsImm32(v: mut s64) mut bool{
+		return v >= -2147483648 && v <= 2147483647
+	}
+
+	@pub
+	@throws
+	static func divMagicSimple(k: mut s64) owns mut DynamicArray<s64>{
+		?catch(e){ throw e }
+		let bk0 = mut ? BigInt.fromU64(wrap:<u64>(k))
+		let tz = mut Long.numberOfTrailingZeros(k)
+		let one = mut ? BigInt.valueOf(1)
+		let limit = mut ? one.shiftLeft(one, 64)
+		let count = mut 1
+		if tz > 0{
+			count = 2
+		}
+		for pi in 0..count{
+			let pre = mut 0
+			if tz > 0{
+				if pi == 0{
+					pre = wrap:<u64>(tz)
+				}
+			}
+			let kk = mut ? bk0.shiftRight(bk0, pre)
+			if kk.compareTo(kk, one) <= 0{
+				continue
+			}
+			let n = mut (64 - pre)
+			let steps = mut (65 - pre)
+			for j in 0..steps{
+				let l = mut (pre + j)
+				let p = mut ? one.shiftLeft(one, n + l)
+				let pk = mut ? p.add(p, kk)
+				let pk1 = mut ? pk.subtract(pk, one)
+				let m = mut ? pk1.divide(pk1, kk)
+				if m.compareTo(m, limit) >= 0{
+					break
+				}
+				let mk = mut ? m.multiply(m, kk)
+				let err = mut ? mk.subtract(mk, p)
+				let cap = mut ? one.shiftLeft(one, l)
+				if err.compareTo(err, cap) <= 0{
+					let preWide = mut wrap:<s64>(pre)
+					let mWide = mut m.toS64(m)
+					let restWide = mut wrap:<s64>(j)
+					let arr = mut ? dyn([preWide, mWide, restWide])
+					let result = mut ? new DynamicArray:<s64>(arr)
+					return result
+				}
+			}
+		}
+		return null
+	}
+
+	@pub
+	static func mulByConstShape(k: mut s64) mut bool{
+		if k < 2 || k > 2147483648{
+			return false
+		}
+		return Long.bitCount(k) == 1 || k == 3 || k == 5 || k == 9 || Long.bitCount(k - 1) == 1 || Long.bitCount(k + 1) == 1
+	}
+
+	/** The jump taken when the comparison `op` is false. Throws "unknown R_BRC operator" for any other text (Java also named the operator). */
+	@pub
+	@throws
+	static func rfFalseJump(op: ref some imut String) static imut string{
+		if op.equals(op, "EQ"){
+			return "jne"
+		} elseif op.equals(op, "NEQ"){
+			return "je"
+		} elseif op.equals(op, "LT"){
+			return "jae"
+		} elseif op.equals(op, "LT_EQ"){
+			return "ja"
+		} elseif op.equals(op, "GT"){
+			return "jbe"
+		} elseif op.equals(op, "GT_EQ"){
+			return "jb"
+		} elseif op.equals(op, "SLT"){
+			return "jge"
+		} elseif op.equals(op, "SLT_EQ"){
+			return "jg"
+		} elseif op.equals(op, "SGT"){
+			return "jle"
+		} elseif op.equals(op, "SGT_EQ"){
+			return "jl"
+		}
+		throw "unknown R_BRC operator"
+	}
+
+	@pub
+	static func rfMirrorJump(cc: static imut string) static imut string{
+		if String.literalsEqual(cc, "jae"){
+			return "jbe"
+		} elseif String.literalsEqual(cc, "ja"){
+			return "jb"
+		} elseif String.literalsEqual(cc, "jbe"){
+			return "jae"
+		} elseif String.literalsEqual(cc, "jb"){
+			return "ja"
+		} elseif String.literalsEqual(cc, "jge"){
+			return "jle"
+		} elseif String.literalsEqual(cc, "jg"){
+			return "jl"
+		} elseif String.literalsEqual(cc, "jle"){
+			return "jge"
+		} elseif String.literalsEqual(cc, "jl"){
+			return "jg"
+		}
+		return cc
+	}
+
+	/** The condition-code suffix for the false-jump `falseJump`. Throws "unknown condition" for any other text. */
+	@pub
+	@throws
+	static func rfTrueSuffix(falseJump: static imut string) static imut string{
+		if String.literalsEqual(falseJump, "jne"){
+			return "e"
+		} elseif String.literalsEqual(falseJump, "je"){
+			return "ne"
+		} elseif String.literalsEqual(falseJump, "jae"){
+			return "b"
+		} elseif String.literalsEqual(falseJump, "jb"){
+			return "ae"
+		} elseif String.literalsEqual(falseJump, "ja"){
+			return "be"
+		} elseif String.literalsEqual(falseJump, "jbe"){
+			return "a"
+		} elseif String.literalsEqual(falseJump, "jge"){
+			return "l"
+		} elseif String.literalsEqual(falseJump, "jl"){
+			return "ge"
+		} elseif String.literalsEqual(falseJump, "jg"){
+			return "le"
+		} elseif String.literalsEqual(falseJump, "jle"){
+			return "g"
+		}
+		throw "unknown condition"
+	}
+
+	/** True when the nullable String has exactly the text `want`. */
+	@pub
+	static func textIs(t: ref imut String, want: static imut string) mut bool{
+		let r = mut false
+		match Some(t){ r = t.equals(t, want) }
+		return r
+	}
+
+	@pub
+	@throws
+	static func rfTrueSuffix(falseJump: ref imut String) static imut string{
+		if X86Core.textIs(falseJump, "jne"){
+			return "e"
+		} elseif X86Core.textIs(falseJump, "je"){
+			return "ne"
+		} elseif X86Core.textIs(falseJump, "jae"){
+			return "b"
+		} elseif X86Core.textIs(falseJump, "jb"){
+			return "ae"
+		} elseif X86Core.textIs(falseJump, "ja"){
+			return "be"
+		} elseif X86Core.textIs(falseJump, "jbe"){
+			return "a"
+		} elseif X86Core.textIs(falseJump, "jge"){
+			return "l"
+		} elseif X86Core.textIs(falseJump, "jl"){
+			return "ge"
+		} elseif X86Core.textIs(falseJump, "jg"){
+			return "le"
+		} elseif X86Core.textIs(falseJump, "jle"){
+			return "g"
+		}
+		throw "unknown condition"
+	}
+
+	@pub
+	static func rfExtImm(v: mut s64, size: mut s32, signed: mut bool) mut s64{
+		if size >= 8{
+			return v
+		}
+		let t = mut X86Core.rfTrunc(v, size)
+		if signed{
+			return t
+		}
+		let mask = mut wrap:<s64>(bits_left(1, wrap:<u64>(8 * size)) - 1)
+		return bits_and(t, mask)
+	}
+
+	@pub
+	static func rfIsGlobal(tok: ref some imut String) mut bool{
+		return tok.startsWith(tok, "&")
+	}
+
+	@pub
+	static func rfTrunc(v: mut s64, n: mut s32) mut s64{
+		if n >= 8{
+			return v
+		}
+		let sh = mut bits_and(64 - 8 * n, 63)
+		let count = mut sh as s64
+		return bits_right(bits_left(v, count), count)
+	}
+
+	@pub
+	static func rfHwScale(s: mut s64) mut bool{
+		return s == 1 || s == 2 || s == 4 || s == 8
+	}
+
+	@pub
+	static func rfIsXvar(tok: ref some imut String) mut bool{
+		return tok.startsWith(tok, "%x") || tok.startsWith(tok, "%y") || tok.startsWith(tok, "%z")
+	}
+
+	@pub
+	static func isInteger(s: ref some imut String) mut bool{
+		let n = mut s.length(s)
+		if n == 0{
+			return false
+		}
+		let start = mut 0
+		if s.charAt(s, 0) == '-'{
+			start = 1
+		}
+		if start == n{
+			return false
+		}
+		for i in start..n{
+			if String.isDigit(s.charAt(s, i)) == false{
+				return false
+			}
+		}
+		return true
+	}
+
+	/** The token texts of a statement, copied. */
+	@pub
+	@throws
+	static func textsOf(line: ref some imut BytecodeStatement) owns some mut ObjectList<String>{
+		?catch(e){ throw e }
+		let out = mut ? new ObjectList:<String>()
+		let n = mut line.items.size(line.items)
+		for i in 0..n{
+			let copy = mut ? new String()
+			let t = line.items.get(line.items, i)
+			match Some(t){
+				copy = ? t.text.substring(t.text, 0)
+			}
+			? out.add(out, copy)
+		}
+		return out
+	}
+
+	/** True when token `i` of the statement has exactly the text `want` (no allocation). */
+	@pub
+	static func tokenIs(stmt: ref some imut BytecodeStatement, i: mut u64, want: static imut string) mut bool{
+		let t = stmt.items.get(stmt.items, i)
+		let r = mut false
+		match Some(t){
+			r = t.text.equals(t.text, want)
+		}
+		return r
+	}
+
+	/** True when token `i` is all digits (no allocation). */
+	@pub
+	static func tokenIsDigits(stmt: ref some imut BytecodeStatement, i: mut u64) mut bool{
+		let t = stmt.items.get(stmt.items, i)
+		let r = mut false
+		match Some(t){
+			r = Text.isDigits(t.text)
+		}
+		return r
+	}
+
+	/** Token `i` parsed as a signed number; throws "NumberFormatException". */
+	@pub
+	@throws
+	static func tokenS64(stmt: ref some imut BytecodeStatement, i: mut u64) mut s64{
+		?catch(e){ throw e }
+		if i >= stmt.items.size(stmt.items){
+			throw "index out of range"
+		}
+		let t = stmt.items.get(stmt.items, i)
+		let:<mut s64> r = mut 0
+		match Some(t){
+			r = ? t.text.parseS64(t.text)
+		}
+		return r
+	}
+
+	/** Token `i` of the statement as an owned copy (port helper). */
+	@pub
+	@throws
+	static func lineTok(stmt: ref some imut BytecodeStatement, i: mut u64) owns some mut String{
+		?catch(e){ throw e }
+		if i >= stmt.items.size(stmt.items){
+			throw "index out of range"
+		}
+		let out = mut ? new String()
+		let t = stmt.items.get(stmt.items, i)
+		match Some(t){ out = ? t.text.substring(t.text, 0) }
+		return out
+	}
+
+	/** Number of tokens of the statement (port helper). */
+	@pub
+	static func lineLen(stmt: ref some imut BytecodeStatement) mut u64{
+		return stmt.items.size(stmt.items)
+	}
+
+	/** The token texts of the statement joined with single spaces (Java `String.join(" ", textsOf(line))`). */
+	@pub
+	@throws
+	static func lineText(stmt: ref some imut BytecodeStatement) owns some mut String{
+		?catch(e){ throw e }
+		let out = mut ? new String()
+		let n = mut stmt.items.size(stmt.items)
+		for i in 0..n{
+			if i > 0{
+				? out.append(out, " ")
+			}
+			let t = stmt.items.get(stmt.items, i)
+			match Some(t){ ? out.append(out, t.text) }
+		}
+		return out
+	}
+
+	/** `Long.parseLong` for a leading '-', else `Long.parseUnsignedLong` (bits as s64). */
+	@pub
+	@throws
+	static func intBits(s: ref some imut String) mut s64{
+		?catch(e){ throw e }
+		if s.startsWith(s, "-"){
+			let v = mut ? s.parseS64(s)
+			return v
+		}
+		let u = mut ? s.parseU64(s)
+		return wrap:<s64>(u)
+	}
+
+	/** Java `Text.split(s, '|', 0)`: split at '|', trailing empty parts dropped; no separator gives the whole string (port helper). */
+	@pub
+	@throws
+	static func splitBar(s: ref some imut String) owns some mut ObjectList<String>{
+		?catch(e){ throw e }
+		let out = mut ? new ObjectList:<String>()
+		let n = mut s.length(s)
+		let cur = mut ? new String()
+		let seps = mut 0
+		for i in 0..n{
+			let c = mut ' '
+			match Some(s){ c = s.charAt(s, i) }
+			if c == '|'{
+				seps = seps + 1
+				? out.add(out, cur)
+				cur = ? new String()
+			} else{
+				match Some(cur){ ? cur.appendChar(cur, c) }
+			}
+		}
+		? out.add(out, cur)
+		if seps == 0{
+			return out
+		}
+		let k = mut out.size(out)
+		for z in 0..k{
+			let last = mut out.size(out)
+			if last > 0{
+				let isEmpty = mut false
+				let tail = out.get(out, last - 1)
+				match Some(tail){ isEmpty = tail.length(tail) == 0 }
+				if isEmpty{
+					? out.removeLast(out)
+				}
+			}
+		}
+		return out
+	}
+}

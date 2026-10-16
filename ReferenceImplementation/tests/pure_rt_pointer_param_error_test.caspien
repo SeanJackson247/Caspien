@@ -1,0 +1,5 @@
+// a '@pure(rt)' function cannot take a pointer parameter: this must NOT compile.
+struct W{@pub{ t: mut u64 }}
+@pure(rt)
+func f(p: ref some mut W) mut u64{ return 1 }
+func main() void{ }

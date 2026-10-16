@@ -1,0 +1,9 @@
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
+
+func main() void{
+    unsafe extern{
+        printf("Hello World!\n")
+    }
+    return
+}

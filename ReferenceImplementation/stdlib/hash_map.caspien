@@ -1,0 +1,303 @@
+// A general-purpose HashMap<K, V> -- K is the key type, V the value
+// type. Real `impl<K, V> HashMap<K, V>` methods, `_self` a genuine
+// `ref` -- **not** a plain (no-storage) value, corrected for the same
+// reason `DynamicArray<T>` was (see its own file-level comment for
+// the full reasoning): a plain `_self` never actually made mutations
+// visible to the caller (that was an overclaim), and separately gave
+// every method here a silent null-dereference hole, since `owns`
+// values genuinely can be `null` in this type system and
+// `checkDot`'s liveness-proof restriction only ever fires on a value
+// with real storage. No `unsafe` anywhere in this file at all -- each
+// method's own probing walk used a bare `loop{...}` until `for` could
+// express it. Key equality uses "==" directly on K -- confirmed to
+// type-check for two struct values of the same type, not just
+// primitives ("checkComparison" only requires both sides share a
+// base type, no restriction to numeric/pointer types at all).
+//
+// REWRITTEN under the same precondition philosophy
+// `dynamic_array.caspien`/`string.caspien` were ("want me to write on
+// something or retrieve out of it? No, I pass the null check
+// responsibility to you," confirmed directly): `set`/`get`/`contains`
+// all now take `_self` as `ref some (imut|mut) self`, never a plain
+// `ref` -- the caller must already have proven non-null via
+// `match Some(_self){...}` before the call is even legal, so none of
+// these three needs its own internal `match Some(_self){...}`/
+// fallback for that case any more. **`cap != 0` is a genuinely
+// different kind of precondition, kept as an internal check, not
+// pushed onto the caller** -- unlike a null `_self` (which `some`
+// already has a caller-side proof mechanism for) or an out-of-bounds
+// index (which `@lock`/`match ... in/into ...` already has one for),
+// there is no existing precondition-proof shape in this language that
+// could express "this map's own capacity field is nonzero" as a
+// caller-side obligation at all -- `_self.capacity` is an ordinary
+// runtime field read, not a parameter or a literal a `match` could
+// name. A zero-capacity map is a real, if degenerate, construction
+// (`new HashMap:<K, V>(k, v, mut 0)` type-checks and compiles
+// cleanly), so this stays a genuine, internal runtime guard -- `set`
+// silently no-ops on one, `get`/`contains` still return their own
+// caller-supplied `defaultValue`/`false`, the same fallback pattern
+// `DynamicArray<T>::get` already established for its own "there's no
+// safe generic value to fabricate for an arbitrary T" case.
+//
+// LAYOUT (rewritten for speed, 4 Oct 2026): the capacity is always a power of two (the constructor rounds the requested one up; 0 stays 0, a
+// degenerate map whose `set` is a no-op), so a slot index is `hash & (capacity - 1)` instead of a 64-bit division. A one-byte-per-slot control
+// array `ctrl` (0 = empty, 1 = used) sits beside `slots`: a probe reads the dense control bytes and only touches a 16-byte entry (key, value)
+// when the slot is used. The map GROWS: `set` doubles the capacity and re-inserts everything when one more key would pass 70% load, so the
+// capacity given to the constructor is only a starting size. If the growth cannot allocate (out of memory) `set` carries on in the old table
+// (a full table then silently ignores new keys, as the old fixed-capacity map did). The probe is linear.
+//
+// The key is hashed by `hashKey` below (one multiply and a xor-shift of the key's bytes, taken as one 64-bit word -- a key type is a
+// non-struct type of at most 8 bytes), not by the byte-wise FNV-1a of `insecure_hashOf`; the map's observable behaviour
+// (set/get/contains/count) does not depend on the hash.
+//
+// `HashMap` is built with its constructor, `new HashMap:<u64, u64>(k, v, cap)`.
+import "libc.caspien"
+
+@pub
+struct HashMapEntry<K, V>{@pub{
+	key: mut K
+	value: mut V
+}}
+
+@pub
+struct HashMap<K, V>{@pub{
+	slots: owns some mut dynarray(mut HashMapEntry<K, V>)
+	ctrl: owns some mut dynarray(mut u8)
+	capacity: mut u64
+	count: mut u64
+}}
+
+/** The slot-selection hash of `HashMap`: the key's bytes as one 64-bit word, multiplied by a odd constant (Fibonacci hashing), then the high half folded into the low half (the table index uses the LOW bits). Not collision-resistant, like `insecure_hashOf`. */
+func hashKey<K>(x: imut K) mut u64{
+	let byteCount = mut sizeof(K)
+	let:<mut u64> bits = mut 0
+	unsafe memcopy raw{
+		memcopy(raw bits, byteCount, raw x)
+	}
+	let h = mut (bits * 0x9E3779B97F4A7C15)
+	return bits_xor(h, bits_right(h, 32))
+}
+
+/** `new HashMap:<K, V>(defaultKey, defaultValue, capacity)` -- `defaultKey`/`defaultValue` seed every initially-empty slot (never read as real data; the control byte of each slot starts 0). `capacity` is the STARTING size, rounded up to a power of two (0 stays 0: a degenerate map that ignores every `set`); the map grows by itself. `@throws`: the allocations (out of memory) can fail; the caught error is simply re-thrown to the caller. */
+@pub
+@throws
+impl<K, V> constructor for HashMap<K, V>(defaultKey: mut K, defaultValue: mut V, capacity: mut u64) self{
+	?catch(e){ throw e }
+	let cap = mut 0
+	match capacity != 0{
+		cap = 1
+		for i in 0..63{
+			if cap < capacity{
+				cap = cap * 2
+			}
+		}
+	}
+	let seed = mut HashMapEntry:<K, V>{key= defaultKey, value= defaultValue}
+	let slots = mut ? dyn:<HashMapEntry:<K, V>>([])
+	let grownSlots = mut ? resize(slots, cap, seed)
+	let ctrl = mut ? dyn:<u8>([])
+	let:<mut u8> unused = mut 0
+	let grownCtrl = mut ? resize(ctrl, cap, unused)
+	return HashMap:<K, V>{slots= grownSlots, ctrl= grownCtrl, capacity= cap, count= mut 0}
+}
+
+@pub
+impl<K, V> HashMap<K, V>{
+	/** Doubles the capacity and re-inserts every key. `@throws` only for the allocations, which all happen before the old table is touched, so a failure leaves the map exactly as it was. */
+	@throws
+	func grow(_self: ref some mut self) void{
+		?catch(e){ throw e }
+		let oldCap = mut _self.capacity
+		let newCap = mut (oldCap * 2)
+		let zero = mut 0
+		let:<mut u8> emptyCtrl = mut 0
+		match zero in _self.slots{
+			let seed = mut _self.slots[zero]
+			let fresh = mut ? dyn:<HashMapEntry:<K, V>>([])
+			let newSlots = mut ? resize(fresh, newCap, seed)
+			let freshCtrl = mut ? dyn:<u8>([])
+			let newCtrl = mut ? resize(freshCtrl, newCap, emptyCtrl)
+			let oldSlots = mut _self.slots
+			let oldCtrl = mut _self.ctrl
+			let mask = mut (newCap - 1)
+			for i in 0..oldCap{
+				match i in oldCtrl{
+					if oldCtrl[i] != 0{
+						match i in oldSlots{
+							let k = mut oldSlots[i].key
+							let v = mut oldSlots[i].value
+							let start = mut bits_and(hashKey:<K>(imut k), mask)
+							for steps in 0..newCap{
+								let idx = mut bits_and(start + steps, mask)
+								match idx into newCtrl{
+									if newCtrl[idx] == 0{
+										newCtrl[idx] = 1
+										match idx into newSlots{
+											newSlots[idx].key = k
+											newSlots[idx].value = v
+										}
+										break
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+			_self.slots = newSlots
+			_self.ctrl = newCtrl
+			_self.capacity = newCap
+		}
+	}
+
+	/** Probe-and-store without any growth: updates `key` if present, else takes the first empty slot of its probe run (nothing at all when the table is full). */
+	func insert(_self: ref some mut self, key: mut K, value: mut V) void{
+		let cap = mut _self.capacity
+		match cap != 0{
+			let mask = mut (cap - 1)
+			let startIdx = mut bits_and(hashKey:<K>(imut key), mask)
+			for steps in 0..cap{
+				let idx = mut bits_and(startIdx + steps, mask)
+				match idx into _self.ctrl{
+					if _self.ctrl[idx] == 0{
+						match idx into _self.slots{
+							_self.slots[idx].key = key
+							_self.slots[idx].value = value
+						}
+						_self.ctrl[idx] = 1
+						_self.count = mut (_self.count + 1)
+						break
+					}
+					match idx into _self.slots{
+						if _self.slots[idx].key == key{
+							_self.slots[idx].value = value
+							break
+						}
+					}
+				}
+			}
+		}
+	}
+
+	/** Inserts, or updates the value if `key` is already present. `void`, so `match Some(_self){...}` with no `else` needs nothing further -- a null `_self` simply makes this a no-op. A map of capacity 0 ignores every key. The table doubles first when one more key would pass 70% load; if that growth runs out of memory the key is inserted into the old table. */
+	@pub
+	func set(_self: ref some mut self, key: mut K, value: mut V) void{
+		let cap = mut _self.capacity
+		match cap != 0{
+			if (_self.count + 1) * 10 > cap * 7{
+				try _self.grow(_self) catch(e){
+					_self.insert(_self, key, value)
+					return
+				}
+			}
+			_self.insert(_self, key, value)
+		}
+	}
+
+	/** `defaultValue` is returned when `key` isn't present, or when `_self.capacity` is zero (a degenerate construction, see this file's own header comment) -- there's no way to signal "not found" separately without a real option/result type, which this language doesn't have yet; use `contains` first if the distinction matters. */
+	@pub
+	func get(_self: ref some imut self, key: mut K, defaultValue: mut V) mut V{
+		let cap = mut _self.capacity
+		match cap != 0{
+			let mask = mut (cap - 1)
+			let startIdx = mut bits_and(hashKey:<K>(imut key), mask)
+			for steps in 0..cap{
+				let idx = mut bits_and(startIdx + steps, mask)
+				match idx in _self.ctrl{
+					if _self.ctrl[idx] == 0{
+						return defaultValue
+					}
+					match idx in _self.slots{
+						if _self.slots[idx].key == key{
+							return _self.slots[idx].value
+						}
+					}
+				}
+			}
+			return defaultValue
+		}
+		return defaultValue
+	}
+
+	@pub
+	func contains(_self: ref some imut self, key: mut K) mut bool{
+		let cap = mut _self.capacity
+		match cap != 0{
+			let mask = mut (cap - 1)
+			let startIdx = mut bits_and(hashKey:<K>(imut key), mask)
+			for steps in 0..cap{
+				let idx = mut bits_and(startIdx + steps, mask)
+				match idx in _self.ctrl{
+					if _self.ctrl[idx] == 0{
+						return mut false
+					}
+					match idx in _self.slots{
+						if _self.slots[idx].key == key{
+							return mut true
+						}
+					}
+				}
+			}
+			return mut false
+		}
+		return mut false
+	}
+
+	/** Removes `key` if present and returns whether it was. Backward-shift deletion (no tombstones): each following entry of the probe run whose home slot lies at or before the hole moves back into it, so a lookup still stops at the first empty slot. A map of capacity 0 removes nothing. */
+	@pub
+	func remove(_self: ref some mut self, key: mut K) mut bool{
+		let cap = mut _self.capacity
+		match cap != 0{
+			let mask = mut (cap - 1)
+			let startIdx = mut bits_and(hashKey:<K>(imut key), mask)
+			let hole = mut 0
+			let found = mut false
+			for steps in 0..cap{
+				let idx = mut bits_and(startIdx + steps, mask)
+				match idx in _self.ctrl{
+					if _self.ctrl[idx] == 0{
+						break
+					}
+					match idx in _self.slots{
+						if _self.slots[idx].key == key{
+							hole = idx
+							found = true
+							break
+						}
+					}
+				}
+			}
+			if found{
+				let i = mut hole
+				for step in 1..cap{
+					let j = mut bits_and(hole + step, mask)
+					match j in _self.ctrl{
+						if _self.ctrl[j] == 0{
+							break
+						}
+						match j in _self.slots{
+							let jk = mut _self.slots[j].key
+							let jv = mut _self.slots[j].value
+							let home = mut bits_and(hashKey:<K>(imut jk), mask)
+							let dj = mut bits_and(j + cap - i, mask)
+							let dh = mut bits_and(j + cap - home, mask)
+							if dh >= dj{
+								match i into _self.slots{
+									_self.slots[i].key = jk
+									_self.slots[i].value = jv
+								}
+								i = j
+							}
+						}
+					}
+				}
+				match i into _self.ctrl{
+					_self.ctrl[i] = 0
+				}
+				_self.count = mut (_self.count - 1)
+				return mut true
+			}
+		}
+		return mut false
+	}
+}

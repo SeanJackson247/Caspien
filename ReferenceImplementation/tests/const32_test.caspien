@@ -1,0 +1,25 @@
+// Constants in 0..0xFFFFFFFF used with 64-bit values: x & 0xFFFFFFFF (`movl %eax,%eax`), and a 32-bit-range constant loaded by `movl $imm, %r32`
+// (zero-extends) instead of a 10-byte movabs. Mixes masks and operands around the sign boundary of imm32. Expected values from const32_test.py.
+import "../stdlib/libc.caspien"
+
+func main() void{
+	let x = mut 88172645463325252
+	let a = mut 0
+	let b = mut 0
+	let c = mut 0
+	let d = mut 0
+	let e2 = mut 0
+	let lo = mut 0
+	for i in 0..1000{
+		x = x * 6364136223846793005 + 1442695040888963407
+		a = a + bits_and(x, 4294967295)
+		b = b + bits_and(x, 2147483648)
+		c = c + bits_and(x, 4294967280)
+		d = bits_xor(d, x + 3000000000)
+		if bits_and(x, 4294967295) > 2147483647{ lo++ }
+		e2 = bits_or(e2, bits_and(bits_right(x, 7), 4294967295))
+	}
+	unsafe extern{
+		printf("A=%llu\nB=%llu\nC=%llu\nD=%llu\nE=%llu\nLO=%llu\n", a, b, c, d, e2, lo)
+	}
+}

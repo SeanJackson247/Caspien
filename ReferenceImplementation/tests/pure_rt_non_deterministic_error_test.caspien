@@ -1,0 +1,5 @@
+// '@pure(rt)' cannot also be '@non(deterministic)': this must NOT compile.
+@pure(rt)
+@non(deterministic)
+func f(x: mut u64) mut u64{ return x }
+func main() void{ }

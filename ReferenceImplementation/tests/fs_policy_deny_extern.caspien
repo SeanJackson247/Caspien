@@ -1,0 +1,10 @@
+import "../stdlib/libc.caspien"
+import "../stdlib/gt/*"
+import "../stdlib/fs.caspien"
+
+// Must fail with fs-deny-externs: a user extern for open.
+@link_name(open)
+extern myOpen(static imut string, mut s32) mut s32
+func main() imut s32{
+	return 0
+}

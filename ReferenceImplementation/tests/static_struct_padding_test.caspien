@@ -1,0 +1,44 @@
+// A `let static` struct whose members need padding (a bool/u8/u16 before a wider member) must read every member at its real offset.
+// (Before the fix a read by name used the running sum of the member sizes, without the padding gaps.)
+import "../stdlib/libc.caspien"
+
+struct Mix{@pub{
+	a: mut u8
+	b: mut u64
+	c: mut u16
+	d: mut u32
+	e: mut bool
+	f: mut u64
+}}
+
+let static mix = mut Mix{a= mut 7, b= mut 1000000007, c= mut 513, d= mut 70000, e= mut true, f= mut 9000000000}
+
+func check(name: static imut string, got: mut u64, want: mut u64) void{
+	if got == want{
+		unsafe extern{ printf("PASS %s\n", name) }
+	} else {
+		unsafe extern{ printf("FAIL %s: got %llu want %llu\n", name, got, want) }
+	}
+}
+
+func main() void{
+	unsafe global{
+	// initial values read back by name
+	let a = mut mix.a as u64
+	let c = mut mix.c as u64
+	let d = mut mix.d as u64
+	check("a", a, 7)
+	check("b", mix.b, 1000000007)
+	check("c", c, 513)
+	check("d", d, 70000)
+	check("f", mix.f, 9000000000)
+	// writes then reads
+	mix.b = 11
+	mix.f = 22
+	mix.d = 33
+	let d2 = mut mix.d as u64
+	check("b after write", mix.b, 11)
+	check("f after write", mix.f, 22)
+	check("d after write", d2, 33)
+	}
+}

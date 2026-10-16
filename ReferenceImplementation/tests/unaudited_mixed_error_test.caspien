@@ -1,0 +1,7 @@
+// `unaudited` stands for all the other tags, so writing it next to one is an error.
+import "../stdlib/libc.caspien"
+func main() void{
+	unsafe unaudited extern{
+		printf("x\n")
+	}
+}

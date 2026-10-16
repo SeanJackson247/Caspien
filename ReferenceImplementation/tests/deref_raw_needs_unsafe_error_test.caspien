@@ -1,0 +1,9 @@
+// Must fail to compile: dereferencing a `raw` pointer needs an `unsafe deref` block even when the pointer is proven alive
+// (`raw some` here); the proof alone is not enough.
+func read(p: raw some imut u64) imut u64{
+	return deref(p)
+}
+
+func main() void{
+	let x = mut 1
+}

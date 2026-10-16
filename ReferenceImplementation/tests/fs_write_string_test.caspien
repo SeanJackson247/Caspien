@@ -1,0 +1,72 @@
+// File.writeString (stdlib/fs.caspien), Linux. Run by fs_write_string_check.sh, which checks the files on disk against a Python model.
+// File n.txt holds n characters, character i = 'a' + i % 26.
+import "../stdlib/libc.caspien"
+import "../stdlib/gt/*"
+import "../stdlib/fs.caspien"
+
+func report(name: static imut string, ok: imut bool) void{
+	unsafe extern{
+		if ok{ printf("PASS %s\n", name) } else { printf("FAIL %s\n", name) }
+	}
+}
+
+func pattern(n: mut u64) owns mut String{
+	?catch(e){ return null }
+	let s = mut ? new String()
+	for i in 0..n{
+		let k = mut (i % 26)
+		let c = mut 'a'
+		for j in 0..k{
+			c = nextLetter(c)
+		}
+		? s.appendChar(s, c)
+	}
+	return s
+}
+
+func nextLetter(c: mut char) mut char{
+	if c == 'a'{ return 'b' } elseif c == 'b'{ return 'c' } elseif c == 'c'{ return 'd' } elseif c == 'd'{ return 'e' } elseif c == 'e'{ return 'f' }
+	elseif c == 'f'{ return 'g' } elseif c == 'g'{ return 'h' } elseif c == 'h'{ return 'i' } elseif c == 'i'{ return 'j' } elseif c == 'j'{ return 'k' }
+	elseif c == 'k'{ return 'l' } elseif c == 'l'{ return 'm' } elseif c == 'm'{ return 'n' } elseif c == 'n'{ return 'o' } elseif c == 'o'{ return 'p' }
+	elseif c == 'p'{ return 'q' } elseif c == 'q'{ return 'r' } elseif c == 'r'{ return 's' } elseif c == 's'{ return 't' } elseif c == 't'{ return 'u' }
+	elseif c == 'u'{ return 'v' } elseif c == 'v'{ return 'w' } elseif c == 'w'{ return 'x' } elseif c == 'x'{ return 'y' } elseif c == 'y'{ return 'z' }
+	return 'a'
+}
+
+/** 1 when the file was written and reads back with the same text, else 0. */
+func roundTrip(d: ref imut Dir, name: static imut string, n: mut u64) mut u64{
+	?catch(e){ return 0 }
+	let text = mut pattern(n)
+	match Some(d){
+		let f = mut ? File.open(d, name, Open.WRITE_NEW)
+		match Some(f){
+			match Some(text){ ? File.writeString(f, text) }
+		}
+	}
+	let same = mut 0
+	match Some(d){
+		let g = mut ? File.open(d, name, Open.READ)
+		match Some(g){
+			let back = mut ? File.readAll(g)
+			match Some(back){ match Some(text){ if back.equals(back, text){ same = 1 } } }
+		}
+	}
+	return same
+}
+
+func main() imut s32{
+	?catch(e){
+		unsafe extern{ printf("FAIL uncaught %s\n", e.msg) }
+		return 1
+	}
+	let d = mut ? Dir.rootRW("/tmp/caspien_fs_ws")
+	match Some(d){
+		report("empty", roundTrip(d, "0.txt", 0) == 1)
+		report("one", roundTrip(d, "1.txt", 1) == 1)
+		report("4095", roundTrip(d, "4095.txt", 4095) == 1)
+		report("4096", roundTrip(d, "4096.txt", 4096) == 1)
+		report("4097", roundTrip(d, "4097.txt", 4097) == 1)
+		report("10000", roundTrip(d, "10000.txt", 10000) == 1)
+	}
+	return 0
+}

@@ -1,0 +1,41 @@
+// `new` and `dyn([..])` under allocation failure. Run plainly it prints "start / done"; new_oom_check.sh runs it with a shim
+// that fails each malloc in turn and checks that a failure is caught and that the owns values already moved into the failed
+// allocation are freed (no live allocation left beyond the runtime's own).
+import "../stdlib/libc.caspien"
+import "../stdlib/gt/*"
+struct Pair{
+	@pub{ a: mut u64
+	b: mut u64 }
+}
+struct Outer{
+	@pub{ x: mut u64
+	inner: owns some mut Pair }
+}
+struct Top{
+	@pub{ y: mut u64
+	mid: owns some mut Outer }
+}
+func pass(p: owns some mut Pair) owns some mut Pair{ return p }
+func bump(n: imut u64) mut u64{ return n + 1 }
+func main() void{
+	unsafe extern{ printf("start\n") }
+	try{
+		?catch(e){
+			unsafe extern{ printf("CAUGHT %s\n", e.msg) }
+			return
+		}
+		let p1 = mut ?new Pair{a= 7, b= 9}
+		let o1 = mut ?new Outer{x= 5, inner= p1}      // moves p1
+		let p2 = mut ?new Pair{a= 1, b= 2}
+		let o2 = mut ?new Outer{x= 3, inner= p2}      // moves p2
+		let t = mut ?new Top{y= 4, mid= o2}           // moves o2 (a whole nested chain)
+		let p3 = mut ?new Pair{a= 2, b= 3}
+		let o3 = mut ?new Outer{x= bump(1), inner= p3}  // a call inside the fields must not lose the catch label; moves p3
+		let p4 = mut ?new Pair{a= 6, b= 7}
+		let o4 = mut ?new Outer{x= 1, inner= pass(p4)}  // a call RESULT moved in (a temporary): freed too if the new fails
+		let q1 = mut ?new Pair{a= 5, b= 6}
+		let q2 = mut ?new Pair{a= 7, b= 8}
+		let arr = mut ?dyn([q1, pass(q2)])            // moves q1 and the result of pass(q2); arr itself is not freed at scope end (plain dyn blocks are not tracked)
+		unsafe extern{ printf("done %llu %llu %llu\n", o1.x, t.y + o3.x - 2, len(arr)) }
+	}
+}

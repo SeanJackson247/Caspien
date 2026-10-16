@@ -1,0 +1,10 @@
+import "../stdlib/libc.caspien"
+import "../stdlib/gt/*"
+func main() void{
+	unsafe extern udyn{
+		let a = mut unsafe dyn([5, 6, 7])
+		printf("lit=%llu %llu %llu\n", a[0], a[1], a[2])
+		let t = mut unsafe dyn("abc")
+		printf("txt=%c%c%c len=%llu\n", t[0], t[1], t[2], len(t, '\0'))
+	}
+}

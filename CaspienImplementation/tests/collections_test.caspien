@@ -1,0 +1,685 @@
+import "../stdlib/libc.caspien"
+import "../stdlib/gt/*"
+import "../stdlib/print.caspien"
+import "../stdlib/string.caspien"
+import "../Codegen/src/main/java/caspien/codegen/collections.caspien"
+
+func report(name: static imut string, ok: imut bool) void{
+	if ok{ print("PASS ") } else { print("FAIL ") }
+	println(name)
+}
+
+@throws
+func part0(L: ref some mut ObjectList<String>, S: ref some mut StringSet, M: ref some mut StringMap<String>, N: ref some mut StringScalarMap<s64>) void{
+	?catch(e){ throw e }
+	match Some(L){ report("L.get oob", L.size(L) <= 1) }
+	match Some(M){ report("M.size", M.size(M) == 0) }
+	let k3 = mut ? new String("k.2")
+	  match Some(S){ let r3 = mut ? S.add(S, k3)
+	    report("S.add", r3 == true) }
+	match Some(L){ ? L.removeLast(L) }
+	match Some(L){ let p5 = L.peek(L)
+	  report("L.peek null", L.isEmpty(L)) }
+	match Some(N){ report("N.getOrDefault", N.getOrDefault(N, "dd", -7) == -7) }
+	match Some(M){ report("M.has", M.containsKey(M, "eee") == false) }
+	let k8 = mut ? new String("v1")
+	  match Some(L){ ? L.add(L, k8) }
+	match Some(N){ report("N.has", N.containsKey(N, "a") == false) }
+	let a10 = mut ? new String("a")
+	  match Some(N){ ? N.put(N, a10, 780440) }
+	match Some(M){ let g12 = M.get(M, "")
+	  report("M.get null", M.containsKey(M, "") == false) }
+	let a14 = mut ? new String("")
+	  let b14 = mut ? new String("long value")
+	  match Some(M){ ? M.put(M, a14, b14) }
+	match Some(S){ report("S.size", S.size(S) == 1) }
+	let a16 = mut ? new String("b")
+	  let b16 = mut ? new String("")
+	  match Some(M){ ? M.put(M, a16, b16) }
+	let a17 = mut ? new String("k_1")
+	  match Some(N){ ? N.put(N, a17, 364102) }
+	let k18 = mut ? new String("long value")
+	  match Some(L){ ? L.add(L, k18) }
+	match Some(M){ let q19 = M.valueAt(M, 0)
+	  match Some(q19){ report("M.valueAt", q19.equals(q19, "long value")) } }
+	let a20 = mut ? new String("a")
+	  match Some(N){ ? N.put(N, a20, 497997) }
+	let k21 = mut ? new String("v1")
+	  match Some(L){ L.setAt(L, 1, k21) }
+	match Some(N){ report("N.size", N.size(N) == 2) }
+	match Some(L){ report("L.get oob", L.size(L) <= 2) }
+	match Some(N){ report("N.size", N.size(N) == 2) }
+	match Some(M){ report("M.has", M.containsKey(M, "c") == false) }
+	match Some(N){ let q26 = N.keyAt(N, 0)
+	  match Some(q26){ report("N.keyAt", q26.equals(q26, "a")) } }
+	match Some(N){ report("N.valueAt", N.valueAt(N, 0, -7) == 497997) }
+	match Some(N){ let q27 = N.keyAt(N, 1)
+	  match Some(q27){ report("N.keyAt", q27.equals(q27, "k_1")) } }
+	match Some(N){ report("N.valueAt", N.valueAt(N, 1, -7) == 364102) }
+	let a28 = mut ? new String("k.2")
+	  let b28 = mut ? new String("v0")
+	  match Some(M){ ? M.put(M, a28, b28) }
+	let k29 = mut ? new String("c")
+	  match Some(S){ let r29 = mut ? S.add(S, k29)
+	    report("S.add", r29 == true) }
+	match Some(L){ let p30 = L.peek(L)
+	  match Some(p30){ report("L.peek", p30.equals(p30, "v1")) } }
+	match Some(L){ ? L.removeLast(L) }
+	match Some(N){ report("N.size", N.size(N) == 2) }
+	let k33 = mut ? new String("")
+	  match Some(S){ let r33 = mut ? S.add(S, k33)
+	    report("S.add", r33 == true) }
+	let a34 = mut ? new String("b")
+	  match Some(N){ ? N.put(N, a34, 487431) }
+	match Some(S){ report("S.contains", S.contains(S, "a") == false) }
+	match Some(L){ report("L.size", L.size(L) == 1) }
+	let k37 = mut ? new String("b")
+	  match Some(S){ let r37 = mut ? S.add(S, k37)
+	    report("S.add", r37 == true) }
+	match Some(S){ report("S.contains", S.contains(S, "b") == true) }
+	match Some(M){ report("M.size", M.size(M) == 3) }
+	match Some(L){ report("L.size", L.size(L) == 1) }
+	match Some(S){ report("S.size", S.size(S) == 4) }
+	match Some(N){ report("N.getOrDefault", N.getOrDefault(N, "b", -7) == 487431) }
+	match Some(N){ let q43 = N.keyAt(N, 0)
+	  match Some(q43){ report("N.keyAt", q43.equals(q43, "a")) } }
+	match Some(N){ report("N.valueAt", N.valueAt(N, 0, -7) == 497997) }
+	let a44 = mut ? new String("b")
+	  let b44 = mut ? new String("z")
+	  match Some(M){ ? M.put(M, a44, b44) }
+	match Some(L){ ? L.removeLast(L) }
+	let k46 = mut ? new String("dd")
+	  match Some(S){ let r46 = mut ? S.add(S, k46)
+	    report("S.add", r46 == true) }
+	let k47 = mut ? new String("")
+	  match Some(S){ let r47 = mut ? S.add(S, k47)
+	    report("S.add", r47 == false) }
+	let a48 = mut ? new String("b")
+	  let b48 = mut ? new String("v1")
+	  match Some(M){ ? M.put(M, a48, b48) }
+	match Some(M){ report("M.has", M.containsKey(M, "k.2") == true) }
+	match Some(M){ let q50 = M.valueAt(M, 1)
+	  match Some(q50){ report("M.valueAt", q50.equals(q50, "v1")) } }
+	let a52 = mut ? new String("a")
+	  match Some(N){ ? N.put(N, a52, 472359) }
+	match Some(M){ let g53 = M.get(M, "b")
+	  match Some(g53){ report("M.get", g53.equals(g53, "v1")) } }
+	match Some(S){ report("S.size", S.size(S) == 5) }
+	match Some(N){ let q55 = N.keyAt(N, 1)
+	  match Some(q55){ report("N.keyAt", q55.equals(q55, "k_1")) } }
+	match Some(N){ report("N.valueAt", N.valueAt(N, 1, -7) == 364102) }
+	let k56 = mut ? new String("z")
+	  match Some(L){ ? L.add(L, k56) }
+	let a57 = mut ? new String("eee")
+	  match Some(N){ ? N.put(N, a57, 724365) }
+	let a58 = mut ? new String("k_1")
+	  match Some(N){ ? N.put(N, a58, 960075) }
+	match Some(L){ report("L.size", L.size(L) == 1) }
+	match Some(M){ let g60 = M.get(M, "k_1")
+	  report("M.get null", M.containsKey(M, "k_1") == false) }
+}
+
+@throws
+func part1(L: ref some mut ObjectList<String>, S: ref some mut StringSet, M: ref some mut StringMap<String>, N: ref some mut StringScalarMap<s64>) void{
+	?catch(e){ throw e }
+	match Some(S){ report("S.size", S.size(S) == 5) }
+	match Some(M){ report("M.size", M.size(M) == 3) }
+	let a63 = mut ? new String("")
+	  match Some(N){ ? N.put(N, a63, 904427) }
+	match Some(N){ report("N.has", N.containsKey(N, "dd") == false) }
+	let k65 = mut ? new String("v1")
+	  match Some(L){ ? L.add(L, k65) }
+	match Some(N){ let q67 = N.keyAt(N, 2)
+	  match Some(q67){ report("N.keyAt", q67.equals(q67, "b")) } }
+	match Some(N){ report("N.valueAt", N.valueAt(N, 2, -7) == 487431) }
+	let k68 = mut ? new String("v0")
+	  match Some(L){ ? L.add(L, k68) }
+	let a69 = mut ? new String("a")
+	  let b69 = mut ? new String("v1")
+	  match Some(M){ ? M.put(M, a69, b69) }
+	match Some(M){ report("M.has", M.containsKey(M, "dd") == false) }
+	match Some(M){ let q71 = M.keyAt(M, 0)
+	  match Some(q71){ report("M.keyAt", q71.equals(q71, "")) } }
+	match Some(M){ let q72 = M.valueAt(M, 1)
+	  match Some(q72){ report("M.valueAt", q72.equals(q72, "v1")) } }
+	match Some(M){ report("M.size", M.size(M) == 4) }
+	match Some(L){ ? L.removeLast(L) }
+	let a75 = mut ? new String("eee")
+	  let b75 = mut ? new String("v1")
+	  match Some(M){ ? M.put(M, a75, b75) }
+	match Some(M){ let g76 = M.get(M, "b")
+	  match Some(g76){ report("M.get", g76.equals(g76, "v1")) } }
+	let a77 = mut ? new String("dd")
+	  match Some(N){ ? N.put(N, a77, 109500) }
+	let k78 = mut ? new String("z")
+	  match Some(L){ ? L.add(L, k78) }
+	match Some(L){ report("L.contains", listContainsLiteral(L, "z") == true) }
+	match Some(L){ report("L.indexOf", listIndexOfLiteral(L, "z") == 0) }
+	match Some(L){ ? L.removeLast(L) }
+	match Some(N){ report("N.getOrDefault", N.getOrDefault(N, "k.2", -7) == -7) }
+	match Some(L){ report("L.size", L.size(L) == 2) }
+	match Some(N){ let q83 = N.keyAt(N, 4)
+	  match Some(q83){ report("N.keyAt", q83.equals(q83, "")) } }
+	match Some(N){ report("N.valueAt", N.valueAt(N, 4, -7) == 904427) }
+	let k84 = mut ? new String("v1")
+	  match Some(L){ ? L.add(L, k84) }
+	match Some(N){ report("N.has", N.containsKey(N, "") == true) }
+	match Some(N){ report("N.getOrDefault", N.getOrDefault(N, "", -7) == 904427) }
+	let a88 = mut ? new String("dd")
+	  let b88 = mut ? new String("z")
+	  match Some(M){ ? M.put(M, a88, b88) }
+	match Some(S){ report("S.size", S.size(S) == 5) }
+	match Some(L){ let p90 = L.peek(L)
+	  match Some(p90){ report("L.peek", p90.equals(p90, "v1")) } }
+	let a91 = mut ? new String("c")
+	  match Some(N){ ? N.put(N, a91, 895367) }
+	let a92 = mut ? new String("a")
+	  match Some(N){ ? N.put(N, a92, 696968) }
+	match Some(N){ let q93 = N.keyAt(N, 0)
+	  match Some(q93){ report("N.keyAt", q93.equals(q93, "a")) } }
+	match Some(N){ report("N.valueAt", N.valueAt(N, 0, -7) == 696968) }
+	let a94 = mut ? new String("c")
+	  match Some(N){ ? N.put(N, a94, 185107) }
+	match Some(N){ let q95 = N.keyAt(N, 1)
+	  match Some(q95){ report("N.keyAt", q95.equals(q95, "k_1")) } }
+	match Some(N){ report("N.valueAt", N.valueAt(N, 1, -7) == 960075) }
+	match Some(N){ report("N.size", N.size(N) == 7) }
+	match Some(L){ report("L.contains", listContainsLiteral(L, "") == false) }
+	match Some(L){ report("L.indexOf", listIndexOfLiteral(L, "") == -1) }
+	match Some(S){ report("S.contains", S.contains(S, "") == true) }
+	let a99 = mut ? new String("")
+	  let b99 = mut ? new String("long value")
+	  match Some(M){ ? M.put(M, a99, b99) }
+	let k100 = mut ? new String("")
+	  match Some(L){ L.setAt(L, 1, k100) }
+	match Some(M){ let q101 = M.valueAt(M, 4)
+	  match Some(q101){ report("M.valueAt", q101.equals(q101, "v1")) } }
+	match Some(M){ report("M.has", M.containsKey(M, "eee") == true) }
+	match Some(S){ report("S.size", S.size(S) == 5) }
+	let a104 = mut ? new String("c")
+	  match Some(N){ ? N.put(N, a104, 436713) }
+	match Some(N){ report("N.has", N.containsKey(N, "c") == true) }
+	match Some(M){ let q106 = M.keyAt(M, 0)
+	  match Some(q106){ report("M.keyAt", q106.equals(q106, "")) } }
+	match Some(S){ report("S.size", S.size(S) == 5) }
+	match Some(M){ report("M.size", M.size(M) == 6) }
+	match Some(M){ let q109 = M.valueAt(M, 2)
+	  match Some(q109){ report("M.valueAt", q109.equals(q109, "v0")) } }
+	match Some(M){ let g110 = M.get(M, "eee")
+	  match Some(g110){ report("M.get", g110.equals(g110, "v1")) } }
+	let a111 = mut ? new String("b")
+	  let b111 = mut ? new String("xx")
+	  match Some(M){ ? M.put(M, a111, b111) }
+	match Some(M){ report("M.has", M.containsKey(M, "k.2") == true) }
+	let a113 = mut ? new String("b")
+	  let b113 = mut ? new String("long value")
+	  match Some(M){ ? M.put(M, a113, b113) }
+	match Some(M){ let q114 = M.valueAt(M, 2)
+	  match Some(q114){ report("M.valueAt", q114.equals(q114, "v0")) } }
+	match Some(M){ let g115 = M.get(M, "b")
+	  match Some(g115){ report("M.get", g115.equals(g115, "long value")) } }
+	let k116 = mut ? new String("v1")
+	  match Some(L){ ? L.add(L, k116) }
+	match Some(S){ report("S.size", S.size(S) == 5) }
+	match Some(L){ let p118 = L.peek(L)
+	  match Some(p118){ report("L.peek", p118.equals(p118, "v1")) } }
+	let k119 = mut ? new String("long value")
+	  match Some(L){ ? L.add(L, k119) }
+	match Some(N){ let q120 = N.keyAt(N, 6)
+	  match Some(q120){ report("N.keyAt", q120.equals(q120, "c")) } }
+	match Some(N){ report("N.valueAt", N.valueAt(N, 6, -7) == 436713) }
+}
+
+@throws
+func part2(L: ref some mut ObjectList<String>, S: ref some mut StringSet, M: ref some mut StringMap<String>, N: ref some mut StringScalarMap<s64>) void{
+	?catch(e){ throw e }
+	let a121 = mut ? new String("a")
+	  match Some(N){ ? N.put(N, a121, 77560) }
+	let k122 = mut ? new String("z")
+	  match Some(L){ ? L.add(L, k122) }
+	match Some(N){ report("N.getOrDefault", N.getOrDefault(N, "c", -7) == 436713) }
+	match Some(N){ report("N.size", N.size(N) == 7) }
+	let k125 = mut ? new String("")
+	  match Some(S){ let r125 = mut ? S.add(S, k125)
+	    report("S.add", r125 == false) }
+	match Some(N){ report("N.getOrDefault", N.getOrDefault(N, "k.2", -7) == -7) }
+	match Some(L){ let p127 = L.peek(L)
+	  match Some(p127){ report("L.peek", p127.equals(p127, "z")) } }
+	let k128 = mut ? new String("z")
+	  match Some(L){ L.setAt(L, 0, k128) }
+	let a129 = mut ? new String("eee")
+	  let b129 = mut ? new String("v1")
+	  match Some(M){ ? M.put(M, a129, b129) }
+	match Some(S){ report("S.contains", S.contains(S, "") == true) }
+	match Some(N){ report("N.has", N.containsKey(N, "") == true) }
+	match Some(S){ report("S.size", S.size(S) == 5) }
+	match Some(S){ report("S.size", S.size(S) == 5) }
+	let k134 = mut ? new String("xx")
+	  match Some(L){ ? L.add(L, k134) }
+	match Some(S){ report("S.contains", S.contains(S, "b") == true) }
+	match Some(M){ report("M.size", M.size(M) == 6) }
+	match Some(M){ let q137 = M.keyAt(M, 3)
+	  match Some(q137){ report("M.keyAt", q137.equals(q137, "a")) } }
+	match Some(M){ let q138 = M.valueAt(M, 3)
+	  match Some(q138){ report("M.valueAt", q138.equals(q138, "v1")) } }
+	let k139 = mut ? new String("v0")
+	  match Some(L){ ? L.add(L, k139) }
+	match Some(S){ report("S.size", S.size(S) == 5) }
+	let k141 = mut ? new String("")
+	  match Some(L){ ? L.add(L, k141) }
+	match Some(M){ let g142 = M.get(M, "dd")
+	  match Some(g142){ report("M.get", g142.equals(g142, "z")) } }
+	match Some(M){ let q143 = M.keyAt(M, 4)
+	  match Some(q143){ report("M.keyAt", q143.equals(q143, "eee")) } }
+	match Some(N){ report("N.size", N.size(N) == 7) }
+	let k145 = mut ? new String("")
+	  match Some(L){ ? L.add(L, k145) }
+	let k146 = mut ? new String("")
+	  match Some(L){ ? L.add(L, k146) }
+	match Some(S){ report("S.contains", S.contains(S, "b") == true) }
+	match Some(N){ report("N.size", N.size(N) == 7) }
+	let a149 = mut ? new String("k_1")
+	  let b149 = mut ? new String("v1")
+	  match Some(M){ ? M.put(M, a149, b149) }
+	match Some(L){ report("L.contains", listContainsLiteral(L, "") == true) }
+	match Some(L){ report("L.indexOf", listIndexOfLiteral(L, "") == 1) }
+	match Some(L){ report("L.get oob", L.size(L) <= 12) }
+	let k152 = mut ? new String("c")
+	  match Some(S){ let r152 = mut ? S.add(S, k152)
+	    report("S.add", r152 == false) }
+	let a153 = mut ? new String("eee")
+	  match Some(N){ ? N.put(N, a153, 68385) }
+	match Some(L){ ? L.removeLast(L) }
+	match Some(N){ report("N.getOrDefault", N.getOrDefault(N, "k_1", -7) == 960075) }
+	let a156 = mut ? new String("eee")
+	  let b156 = mut ? new String("xx")
+	  match Some(M){ ? M.put(M, a156, b156) }
+	match Some(N){ report("N.size", N.size(N) == 7) }
+	match Some(L){ ? L.removeLast(L) }
+	let a159 = mut ? new String("dd")
+	  match Some(N){ ? N.put(N, a159, 540526) }
+	match Some(N){ let q160 = N.keyAt(N, 2)
+	  match Some(q160){ report("N.keyAt", q160.equals(q160, "b")) } }
+	match Some(N){ report("N.valueAt", N.valueAt(N, 2, -7) == 487431) }
+	match Some(M){ report("M.has", M.containsKey(M, "c") == false) }
+	match Some(M){ report("M.has", M.containsKey(M, "dd") == true) }
+	match Some(S){ report("S.size", S.size(S) == 5) }
+	match Some(N){ report("N.has", N.containsKey(N, "a") == true) }
+	match Some(L){ report("L.size", L.size(L) == 9) }
+	match Some(L){ ? L.removeLast(L) }
+	match Some(N){ report("N.getOrDefault", N.getOrDefault(N, "k_1", -7) == 960075) }
+	match Some(M){ let q168 = M.valueAt(M, 3)
+	  match Some(q168){ report("M.valueAt", q168.equals(q168, "v1")) } }
+	match Some(L){ ? L.removeLast(L) }
+	match Some(M){ report("M.has", M.containsKey(M, "eee") == true) }
+	match Some(M){ report("M.size", M.size(M) == 7) }
+	match Some(M){ let g172 = M.get(M, "")
+	  match Some(g172){ report("M.get", g172.equals(g172, "long value")) } }
+	let k173 = mut ? new String("k_1")
+	  match Some(S){ let r173 = mut ? S.add(S, k173)
+	    report("S.add", r173 == true) }
+	let k174 = mut ? new String("c")
+	  match Some(S){ let r174 = mut ? S.add(S, k174)
+	    report("S.add", r174 == false) }
+	match Some(N){ let q175 = N.keyAt(N, 0)
+	  match Some(q175){ report("N.keyAt", q175.equals(q175, "a")) } }
+	match Some(N){ report("N.valueAt", N.valueAt(N, 0, -7) == 77560) }
+	match Some(S){ report("S.contains", S.contains(S, "c") == true) }
+	match Some(N){ report("N.has", N.containsKey(N, "a") == true) }
+	let k178 = mut ? new String("")
+	  match Some(S){ let r178 = mut ? S.add(S, k178)
+	    report("S.add", r178 == false) }
+	match Some(S){ report("S.contains", S.contains(S, "b") == true) }
+	let a180 = mut ? new String("k_1")
+	  match Some(N){ ? N.put(N, a180, 692574) }
+}
+
+@throws
+func part3(L: ref some mut ObjectList<String>, S: ref some mut StringSet, M: ref some mut StringMap<String>, N: ref some mut StringScalarMap<s64>) void{
+	?catch(e){ throw e }
+	let a181 = mut ? new String("c")
+	  let b181 = mut ? new String("v0")
+	  match Some(M){ ? M.put(M, a181, b181) }
+	match Some(M){ report("M.has", M.containsKey(M, "c") == true) }
+	let k183 = mut ? new String("long value")
+	  match Some(L){ ? L.add(L, k183) }
+	let k184 = mut ? new String("")
+	  match Some(L){ ? L.add(L, k184) }
+	match Some(L){ let g185 = L.get(L, 1)
+	  match Some(g185){ report("L.get", g185.equals(g185, "")) } }
+	match Some(N){ report("N.size", N.size(N) == 7) }
+	match Some(N){ report("N.size", N.size(N) == 7) }
+	match Some(S){ report("S.size", S.size(S) == 6) }
+	match Some(M){ let g189 = M.get(M, "b")
+	  match Some(g189){ report("M.get", g189.equals(g189, "long value")) } }
+	let k190 = mut ? new String("xx")
+	  match Some(L){ ? L.add(L, k190) }
+	match Some(N){ report("N.size", N.size(N) == 7) }
+	let a192 = mut ? new String("eee")
+	  match Some(N){ ? N.put(N, a192, 567162) }
+	match Some(L){ ? L.removeLast(L) }
+	let a194 = mut ? new String("eee")
+	  match Some(N){ ? N.put(N, a194, 814214) }
+	match Some(L){ report("L.contains", listContainsLiteral(L, "v1") == true) }
+	match Some(L){ report("L.indexOf", listIndexOfLiteral(L, "v1") == 2) }
+	let k197 = mut ? new String("xx")
+	  match Some(L){ L.setAt(L, 7, k197) }
+	let a198 = mut ? new String("dd")
+	  let b198 = mut ? new String("v0")
+	  match Some(M){ ? M.put(M, a198, b198) }
+	let a199 = mut ? new String("k_1")
+	  let b199 = mut ? new String("v0")
+	  match Some(M){ ? M.put(M, a199, b199) }
+	let a200 = mut ? new String("c")
+	  let b200 = mut ? new String("long value")
+	  match Some(M){ ? M.put(M, a200, b200) }
+	match Some(M){ report("M.size", M.size(M) == 8) }
+	match Some(N){ report("N.getOrDefault", N.getOrDefault(N, "", -7) == 904427) }
+	match Some(M){ let g203 = M.get(M, "k.2")
+	  match Some(g203){ report("M.get", g203.equals(g203, "v0")) } }
+	let k204 = mut ? new String("c")
+	  match Some(S){ let r204 = mut ? S.add(S, k204)
+	    report("S.add", r204 == false) }
+	let k205 = mut ? new String("")
+	  match Some(L){ ? L.add(L, k205) }
+	let k206 = mut ? new String("k.2")
+	  match Some(S){ let r206 = mut ? S.add(S, k206)
+	    report("S.add", r206 == false) }
+	let k207 = mut ? new String("dd")
+	  match Some(S){ let r207 = mut ? S.add(S, k207)
+	    report("S.add", r207 == false) }
+	let a208 = mut ? new String("dd")
+	  match Some(N){ ? N.put(N, a208, 413602) }
+	let k209 = mut ? new String("z")
+	  match Some(L){ L.setAt(L, 3, k209) }
+	match Some(L){ report("L.contains", listContainsLiteral(L, "xx") == true) }
+	match Some(L){ report("L.indexOf", listIndexOfLiteral(L, "xx") == 6) }
+	let a211 = mut ? new String("c")
+	  let b211 = mut ? new String("v0")
+	  match Some(M){ ? M.put(M, a211, b211) }
+	match Some(S){ report("S.size", S.size(S) == 6) }
+	let a213 = mut ? new String("dd")
+	  let b213 = mut ? new String("long value")
+	  match Some(M){ ? M.put(M, a213, b213) }
+	let k214 = mut ? new String("a")
+	  match Some(S){ let r214 = mut ? S.add(S, k214)
+	    report("S.add", r214 == true) }
+	let k215 = mut ? new String("v1")
+	  match Some(L){ ? L.add(L, k215) }
+	match Some(L){ report("L.contains", listContainsLiteral(L, "z") == true) }
+	match Some(L){ report("L.indexOf", listIndexOfLiteral(L, "z") == 0) }
+	match Some(N){ let q217 = N.keyAt(N, 3)
+	  match Some(q217){ report("N.keyAt", q217.equals(q217, "eee")) } }
+	match Some(N){ report("N.valueAt", N.valueAt(N, 3, -7) == 814214) }
+	match Some(L){ report("L.contains", listContainsLiteral(L, "v0") == false) }
+	match Some(L){ report("L.indexOf", listIndexOfLiteral(L, "v0") == -1) }
+	match Some(M){ let q220 = M.keyAt(M, 6)
+	  match Some(q220){ report("M.keyAt", q220.equals(q220, "k_1")) } }
+	match Some(M){ report("M.size", M.size(M) == 8) }
+	match Some(L){ report("L.contains", listContainsLiteral(L, "long value") == true) }
+	match Some(L){ report("L.indexOf", listIndexOfLiteral(L, "long value") == 4) }
+	match Some(N){ report("N.size", N.size(N) == 7) }
+	let k224 = mut ? new String("v1")
+	  match Some(L){ L.setAt(L, 5, k224) }
+	match Some(S){ report("S.contains", S.contains(S, "k.2") == true) }
+	match Some(L){ let p226 = L.peek(L)
+	  match Some(p226){ report("L.peek", p226.equals(p226, "v1")) } }
+	match Some(N){ report("N.has", N.containsKey(N, "") == true) }
+	let k228 = mut ? new String("v1")
+	  match Some(L){ L.setAt(L, 0, k228) }
+	match Some(M){ report("M.has", M.containsKey(M, "b") == true) }
+	match Some(L){ let p230 = L.peek(L)
+	  match Some(p230){ report("L.peek", p230.equals(p230, "v1")) } }
+	match Some(L){ report("L.contains", listContainsLiteral(L, "v0") == false) }
+	match Some(L){ report("L.indexOf", listIndexOfLiteral(L, "v0") == -1) }
+	let a232 = mut ? new String("dd")
+	  match Some(N){ ? N.put(N, a232, 486444) }
+	match Some(N){ report("N.getOrDefault", N.getOrDefault(N, "k_1", -7) == 692574) }
+	match Some(L){ report("L.contains", listContainsLiteral(L, "z") == true) }
+	match Some(L){ report("L.indexOf", listIndexOfLiteral(L, "z") == 3) }
+	match Some(L){ report("L.size", L.size(L) == 11) }
+	match Some(L){ ? L.removeLast(L) }
+	match Some(M){ report("M.has", M.containsKey(M, "a") == true) }
+	let a239 = mut ? new String("a")
+	  let b239 = mut ? new String("v0")
+	  match Some(M){ ? M.put(M, a239, b239) }
+	match Some(S){ report("S.contains", S.contains(S, "b") == true) }
+}
+
+@throws
+func part4(L: ref some mut ObjectList<String>, S: ref some mut StringSet, M: ref some mut StringMap<String>, N: ref some mut StringScalarMap<s64>) void{
+	?catch(e){ throw e }
+	match Some(L){ report("L.size", L.size(L) == 10) }
+	match Some(N){ let q243 = N.keyAt(N, 4)
+	  match Some(q243){ report("N.keyAt", q243.equals(q243, "")) } }
+	match Some(N){ report("N.valueAt", N.valueAt(N, 4, -7) == 904427) }
+	match Some(L){ ? L.removeLast(L) }
+	match Some(N){ report("N.getOrDefault", N.getOrDefault(N, "eee", -7) == 814214) }
+	let a246 = mut ? new String("b")
+	  let b246 = mut ? new String("z")
+	  match Some(M){ ? M.put(M, a246, b246) }
+	let k247 = mut ? new String("dd")
+	  match Some(S){ let r247 = mut ? S.add(S, k247)
+	    report("S.add", r247 == false) }
+	let k248 = mut ? new String("xx")
+	  match Some(L){ L.setAt(L, 4, k248) }
+	match Some(L){ let g249 = L.get(L, 5)
+	  match Some(g249){ report("L.get", g249.equals(g249, "v1")) } }
+	match Some(L){ report("L.contains", listContainsLiteral(L, "long value") == false) }
+	match Some(L){ report("L.indexOf", listIndexOfLiteral(L, "long value") == -1) }
+	let a251 = mut ? new String("eee")
+	  match Some(N){ ? N.put(N, a251, 328891) }
+	match Some(S){ report("S.contains", S.contains(S, "eee") == false) }
+	match Some(L){ let p253 = L.peek(L)
+	  match Some(p253){ report("L.peek", p253.equals(p253, "")) } }
+	match Some(S){ report("S.contains", S.contains(S, "c") == true) }
+	match Some(N){ report("N.size", N.size(N) == 7) }
+	let k256 = mut ? new String("v0")
+	  match Some(L){ ? L.add(L, k256) }
+	match Some(M){ let q257 = M.valueAt(M, 6)
+	  match Some(q257){ report("M.valueAt", q257.equals(q257, "v0")) } }
+	let k259 = mut ? new String("c")
+	  match Some(S){ let r259 = mut ? S.add(S, k259)
+	    report("S.add", r259 == false) }
+	match Some(L){ let g260 = L.get(L, 3)
+	  match Some(g260){ report("L.get", g260.equals(g260, "z")) } }
+	match Some(M){ report("M.has", M.containsKey(M, "b") == true) }
+	let k262 = mut ? new String("long value")
+	  match Some(L){ ? L.add(L, k262) }
+	let k263 = mut ? new String("xx")
+	  match Some(L){ L.setAt(L, 6, k263) }
+	let a264 = mut ? new String("k.2")
+	  let b264 = mut ? new String("v0")
+	  match Some(M){ ? M.put(M, a264, b264) }
+	match Some(L){ ? L.removeLast(L) }
+	match Some(M){ let q266 = M.valueAt(M, 2)
+	  match Some(q266){ report("M.valueAt", q266.equals(q266, "v0")) } }
+	let a267 = mut ? new String("k.2")
+	  match Some(N){ ? N.put(N, a267, 43853) }
+	let k268 = mut ? new String("eee")
+	  match Some(S){ let r268 = mut ? S.add(S, k268)
+	    report("S.add", r268 == true) }
+	let a270 = mut ? new String("a")
+	  let b270 = mut ? new String("z")
+	  match Some(M){ ? M.put(M, a270, b270) }
+	match Some(N){ report("N.has", N.containsKey(N, "eee") == true) }
+	match Some(M){ let g272 = M.get(M, "a")
+	  match Some(g272){ report("M.get", g272.equals(g272, "z")) } }
+	match Some(S){ report("S.contains", S.contains(S, "b") == true) }
+	match Some(S){ report("S.contains", S.contains(S, "b") == true) }
+	match Some(M){ let g275 = M.get(M, "b")
+	  match Some(g275){ report("M.get", g275.equals(g275, "z")) } }
+	let k276 = mut ? new String("v0")
+	  match Some(L){ L.setAt(L, 8, k276) }
+	match Some(L){ let g277 = L.get(L, 1)
+	  match Some(g277){ report("L.get", g277.equals(g277, "")) } }
+	match Some(M){ let q278 = M.valueAt(M, 2)
+	  match Some(q278){ report("M.valueAt", q278.equals(q278, "v0")) } }
+	let a279 = mut ? new String("eee")
+	  match Some(N){ ? N.put(N, a279, 847860) }
+	match Some(L){ report("L.size", L.size(L) == 10) }
+	match Some(L){ let g281 = L.get(L, 9)
+	  match Some(g281){ report("L.get", g281.equals(g281, "v0")) } }
+	match Some(M){ let q282 = M.keyAt(M, 5)
+	  match Some(q282){ report("M.keyAt", q282.equals(q282, "dd")) } }
+	match Some(M){ report("M.size", M.size(M) == 8) }
+	let k284 = mut ? new String("")
+	  match Some(L){ ? L.add(L, k284) }
+	let a285 = mut ? new String("c")
+	  match Some(N){ ? N.put(N, a285, 271728) }
+	match Some(L){ ? L.removeLast(L) }
+	match Some(N){ let q287 = N.keyAt(N, 6)
+	  match Some(q287){ report("N.keyAt", q287.equals(q287, "c")) } }
+	match Some(N){ report("N.valueAt", N.valueAt(N, 6, -7) == 271728) }
+	let a288 = mut ? new String("dd")
+	  match Some(N){ ? N.put(N, a288, 600647) }
+	let k289 = mut ? new String("xx")
+	  match Some(L){ L.setAt(L, 4, k289) }
+	let k290 = mut ? new String("")
+	  match Some(L){ ? L.add(L, k290) }
+	match Some(M){ report("M.size", M.size(M) == 8) }
+	match Some(M){ report("M.has", M.containsKey(M, "k_1") == true) }
+	match Some(L){ report("L.contains", listContainsLiteral(L, "z") == true) }
+	match Some(L){ report("L.indexOf", listIndexOfLiteral(L, "z") == 3) }
+	match Some(M){ report("M.size", M.size(M) == 8) }
+	match Some(L){ let g295 = L.get(L, 7)
+	  match Some(g295){ report("L.get", g295.equals(g295, "xx")) } }
+	let a296 = mut ? new String("eee")
+	  let b296 = mut ? new String("xx")
+	  match Some(M){ ? M.put(M, a296, b296) }
+	match Some(M){ report("M.size", M.size(M) == 8) }
+	let a298 = mut ? new String("k.2")
+	  let b298 = mut ? new String("z")
+	  match Some(M){ ? M.put(M, a298, b298) }
+	let a299 = mut ? new String("eee")
+	  match Some(N){ ? N.put(N, a299, 161547) }
+	match Some(N){ let q300 = N.keyAt(N, 1)
+	  match Some(q300){ report("N.keyAt", q300.equals(q300, "k_1")) } }
+	match Some(N){ report("N.valueAt", N.valueAt(N, 1, -7) == 692574) }
+}
+
+@throws
+func part5(L: ref some mut ObjectList<String>, S: ref some mut StringSet, M: ref some mut StringMap<String>, N: ref some mut StringScalarMap<s64>) void{
+	?catch(e){ throw e }
+	let k301 = mut ? new String("xx")
+	  match Some(L){ ? L.add(L, k301) }
+	let a302 = mut ? new String("k_1")
+	  let b302 = mut ? new String("long value")
+	  match Some(M){ ? M.put(M, a302, b302) }
+	match Some(M){ let g303 = M.get(M, "b")
+	  match Some(g303){ report("M.get", g303.equals(g303, "z")) } }
+	match Some(S){ report("S.contains", S.contains(S, "eee") == true) }
+	match Some(N){ report("N.size", N.size(N) == 8) }
+	let a306 = mut ? new String("")
+	  match Some(N){ ? N.put(N, a306, 328769) }
+	let k307 = mut ? new String("xx")
+	  match Some(L){ L.setAt(L, 8, k307) }
+	match Some(M){ let q308 = M.keyAt(M, 6)
+	  match Some(q308){ report("M.keyAt", q308.equals(q308, "k_1")) } }
+	let a309 = mut ? new String("eee")
+	  match Some(N){ ? N.put(N, a309, 448383) }
+	match Some(M){ let q310 = M.valueAt(M, 4)
+	  match Some(q310){ report("M.valueAt", q310.equals(q310, "xx")) } }
+	match Some(M){ report("M.has", M.containsKey(M, "k_1") == true) }
+	let a312 = mut ? new String("k_1")
+	  match Some(N){ ? N.put(N, a312, 709070) }
+	let k313 = mut ? new String("xx")
+	  match Some(L){ ? L.add(L, k313) }
+	match Some(L){ ? L.removeLast(L) }
+	match Some(M){ let q315 = M.keyAt(M, 4)
+	  match Some(q315){ report("M.keyAt", q315.equals(q315, "eee")) } }
+	match Some(L){ let p316 = L.peek(L)
+	  match Some(p316){ report("L.peek", p316.equals(p316, "xx")) } }
+	match Some(L){ let g317 = L.get(L, 3)
+	  match Some(g317){ report("L.get", g317.equals(g317, "z")) } }
+	match Some(M){ let g318 = M.get(M, "b")
+	  match Some(g318){ report("M.get", g318.equals(g318, "z")) } }
+	match Some(N){ report("N.has", N.containsKey(N, "") == true) }
+	let a320 = mut ? new String("k.2")
+	  let b320 = mut ? new String("v1")
+	  match Some(M){ ? M.put(M, a320, b320) }
+	match Some(M){ let q321 = M.valueAt(M, 4)
+	  match Some(q321){ report("M.valueAt", q321.equals(q321, "xx")) } }
+	match Some(M){ report("M.size", M.size(M) == 8) }
+	match Some(S){ report("S.contains", S.contains(S, "dd") == true) }
+	let a324 = mut ? new String("dd")
+	  match Some(N){ ? N.put(N, a324, 904921) }
+	match Some(N){ let q325 = N.keyAt(N, 0)
+	  match Some(q325){ report("N.keyAt", q325.equals(q325, "a")) } }
+	match Some(N){ report("N.valueAt", N.valueAt(N, 0, -7) == 77560) }
+	let k327 = mut ? new String("b")
+	  match Some(S){ let r327 = mut ? S.add(S, k327)
+	    report("S.add", r327 == false) }
+	match Some(L){ let p328 = L.peek(L)
+	  match Some(p328){ report("L.peek", p328.equals(p328, "xx")) } }
+	let a329 = mut ? new String("dd")
+	  match Some(N){ ? N.put(N, a329, 380504) }
+	match Some(M){ let q330 = M.keyAt(M, 6)
+	  match Some(q330){ report("M.keyAt", q330.equals(q330, "k_1")) } }
+	match Some(M){ let g331 = M.get(M, "k_1")
+	  match Some(g331){ report("M.get", g331.equals(g331, "long value")) } }
+	let k332 = mut ? new String("a")
+	  match Some(S){ let r332 = mut ? S.add(S, k332)
+	    report("S.add", r332 == false) }
+	match Some(N){ report("N.has", N.containsKey(N, "a") == true) }
+	match Some(M){ let q334 = M.valueAt(M, 2)
+	  match Some(q334){ report("M.valueAt", q334.equals(q334, "v1")) } }
+	match Some(L){ let g335 = L.get(L, 0)
+	  match Some(g335){ report("L.get", g335.equals(g335, "v1")) } }
+	let k336 = mut ? new String("a")
+	  match Some(S){ let r336 = mut ? S.add(S, k336)
+	    report("S.add", r336 == false) }
+	match Some(M){ report("M.has", M.containsKey(M, "k_1") == true) }
+	match Some(L){ report("L.contains", listContainsLiteral(L, "v1") == true) }
+	match Some(L){ report("L.indexOf", listIndexOfLiteral(L, "v1") == 0) }
+	match Some(L){ report("L.get oob", L.size(L) <= 12) }
+	match Some(L){ report("L.size", L.size(L) == 12) }
+	match Some(M){ report("M.has", M.containsKey(M, "a") == true) }
+	let k342 = mut ? new String("xx")
+	  match Some(L){ L.setAt(L, 0, k342) }
+	match Some(L){ let p343 = L.peek(L)
+	  match Some(p343){ report("L.peek", p343.equals(p343, "xx")) } }
+	match Some(M){ let q344 = M.keyAt(M, 2)
+	  match Some(q344){ report("M.keyAt", q344.equals(q344, "k.2")) } }
+	match Some(L){ ? L.clear(L) }
+	let k346 = mut ? new String("")
+	  match Some(L){ ? L.add(L, k346) }
+	match Some(S){ report("S.contains", S.contains(S, "dd") == true) }
+	let a348 = mut ? new String("dd")
+	  let b348 = mut ? new String("long value")
+	  match Some(M){ ? M.put(M, a348, b348) }
+	match Some(M){ report("M.size", M.size(M) == 8) }
+	let k350 = mut ? new String("z")
+	  match Some(L){ ? L.add(L, k350) }
+	match Some(M){ let q351 = M.keyAt(M, 4)
+	  match Some(q351){ report("M.keyAt", q351.equals(q351, "eee")) } }
+	match Some(L){ let p352 = L.peek(L)
+	  match Some(p352){ report("L.peek", p352.equals(p352, "z")) } }
+	match Some(L){ report("L.size", L.size(L) == 2) }
+	let k354 = mut ? new String("")
+	  match Some(L){ ? L.add(L, k354) }
+	let a355 = mut ? new String("dd")
+	  match Some(N){ ? N.put(N, a355, 21035) }
+	let a356 = mut ? new String("c")
+	  match Some(N){ ? N.put(N, a356, 166563) }
+	match Some(N){ report("N.getOrDefault", N.getOrDefault(N, "a", -7) == 77560) }
+	match Some(N){ report("N.size", N.size(N) == 8) }
+	let k359 = mut ? new String("c")
+	  match Some(S){ let r359 = mut ? S.add(S, k359)
+	    report("S.add", r359 == false) }
+	match Some(N){ report("N.size", N.size(N) == 8) }
+}
+
+func main() void{
+	?catch(e){ return }
+	let L = mut ? new ObjectList:<String>()
+	let S = mut ? new StringSet()
+	let M = mut ? new StringMap:<String>()
+	let N = mut ? new StringScalarMap:<s64>()
+	match Some(L){ match Some(S){ match Some(M){ match Some(N){ ? part0(L, S, M, N) } } } }
+	match Some(L){ match Some(S){ match Some(M){ match Some(N){ ? part1(L, S, M, N) } } } }
+	match Some(L){ match Some(S){ match Some(M){ match Some(N){ ? part2(L, S, M, N) } } } }
+	match Some(L){ match Some(S){ match Some(M){ match Some(N){ ? part3(L, S, M, N) } } } }
+	match Some(L){ match Some(S){ match Some(M){ match Some(N){ ? part4(L, S, M, N) } } } }
+	match Some(L){ match Some(S){ match Some(M){ match Some(N){ ? part5(L, S, M, N) } } } }
+}

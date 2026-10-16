@@ -1,0 +1,19 @@
+{"program":"swaplock",
+ "title":"Swap lock contention",
+ "n":500000,
+ "mode":null,
+ "runs":3,
+ "builds":2,
+ "cutoff_s":null,
+ "results":[
+  {"label":"C -O0","group":"bare","lang":"C","compile_s":0.070004,"size_bytes":16360,"time_s":1.100647,"times":[1.191236,1.100647,1.209024],"rss_kb":1812,"output":["count=16000000","sum=295999808"],"ok":true,"key":"c"},
+  {"label":"C -O2","group":"bare","lang":"C","compile_s":0.057322,"size_bytes":16368,"time_s":1.13295,"times":[1.135656,1.13295,1.140511],"rss_kb":1992,"output":["count=16000000","sum=295999808"],"ok":true,"key":"c"},
+  {"label":"C++ -O2","group":"bare","lang":"C++","compile_s":0.234517,"size_bytes":17992,"time_s":1.146775,"times":[1.163598,1.146775,1.152932],"rss_kb":3948,"output":["count=16000000","sum=295999808"],"ok":true,"key":"cpp"},
+  {"label":"Rust -O","group":"bare","lang":"Rust","compile_s":0.352103,"size_bytes":4404048,"time_s":1.536359,"times":[1.536359,1.536978,1.594778],"rss_kb":2600,"output":["count=16000000","sum=295999808"],"ok":true,"key":"rust"},
+  {"label":"Go","group":"bare","lang":"Go","compile_s":2.964904,"size_bytes":2243631,"time_s":0.569392,"times":[0.576517,0.569392,0.601183],"rss_kb":2444,"output":["count=16000000","sum=295999808"],"ok":true,"key":"go"},
+  {"label":"Java","group":"vm","lang":"Java","note":"size = bin/java + lib/ + conf/ of the JRE plus the class file","compile_s":0.760056,"size_bytes":212890824,"time_s":0.446814,"times":[0.490346,0.452523,0.446814],"rss_kb":44736,"output":["count=16000000","sum=295999808"],"ok":true,"key":"java"},
+  {"label":"Caspien naive · off","group":"caspien","lang":"Caspien","note":"a CLOSED lock is retried at once (pure spinning); optimisations off","compile_s":1.101007,"size_bytes":48800,"time_s":20.334537,"times":[20.334537,20.448132,20.9978],"rss_kb":2080,"output":["count=16000000","sum=295999808"],"ok":true,"key":"caspien","mode":"off","variant":"Caspien naive"},
+  {"label":"Caspien naive · full","group":"caspien","lang":"Caspien","note":"a CLOSED lock is retried at once (pure spinning); optimisations full","compile_s":1.495007,"size_bytes":50528,"time_s":19.457244,"times":[19.457244,19.548656,21.354676],"rss_kb":2144,"output":["count=16000000","sum=295999808"],"ok":true,"key":"caspien","mode":"full","variant":"Caspien naive"},
+  {"label":"Caspien optimized · off","group":"caspien","lang":"Caspien","note":"a backoff policy yields the time slice every 16th failed attempt; optimisations off","compile_s":1.157959,"size_bytes":48880,"time_s":0.69172,"times":[0.805174,0.69172,0.709234],"rss_kb":2144,"output":["count=16000000","sum=295999808"],"ok":true,"key":"caspien","mode":"off","variant":"Caspien optimized"},
+  {"label":"Caspien optimized · full","group":"caspien","lang":"Caspien","note":"a backoff policy yields the time slice every 16th failed attempt; optimisations full","compile_s":1.577029,"size_bytes":54984,"time_s":0.527738,"times":[0.556174,0.527738,0.577767],"rss_kb":1964,"output":["count=16000000","sum=295999808"],"ok":true,"key":"caspien","mode":"full","variant":"Caspien optimized"}
+ ]}

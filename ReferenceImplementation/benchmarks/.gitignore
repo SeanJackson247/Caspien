@@ -1,0 +1,5 @@
+.build_cache/
+.leaks.log
+__pycache__/
+*.quick.json
+img-quick/

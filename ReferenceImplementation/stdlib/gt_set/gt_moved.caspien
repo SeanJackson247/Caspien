@@ -1,0 +1,22 @@
+// The real "@gt_moved" -- unregisters `ptr` WITHOUT freeing it (the block lives on at a new address, see `resize`). It never shrinks the table,
+// so the gt_register(new) that follows it can not need to grow: this removal freed the slot that registration takes.
+import "ghost_table.caspien"
+
+@gt_moved
+@pub
+func gt_moved(ptr: raw imut u8) void{
+	if ptr != null{
+		match @lock ghost_table{
+			OPEN:{
+				let at = mut gtFind(ghost_table.base, ghost_table.capacity, ptr)
+				if at != ghost_table.capacity{
+					gtRemoveAt(ghost_table.base, ghost_table.capacity, at)
+					ghost_table.len = mut (ghost_table.len - 1)
+				}
+			}
+			CLOSED:{
+				continue
+			}
+		}
+	}
+}

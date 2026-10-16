@@ -1,0 +1,945 @@
+// A new, owned, growable/mutable String type -- distinct from the
+// built-in `string` primitive, which is fixed, read-only, and used
+// for literals and C interop.
+//
+// REWRITTEN under the same precondition philosophy
+// `dynamic_array.caspien` was ("want me to write on something or
+// retrieve out of it? No, I pass the null check responsibility to
+// you," confirmed directly): every method takes `_self`/`other` as
+// `ref some (imut|mut) self`, never a plain `ref` -- the caller must
+// already have proven non-null via `match Some(...)` before the call
+// is even legal, so no method here needs its own internal
+// `match Some(_self){...}`/fallback at all. `length` is gone as a
+// field entirely -- "length isnt needed in String or DynamicArray,
+// its built into a dyn," confirmed directly; every read of the
+// character count now reads `len(_self.chars.backing)` directly.
+//
+// **Zero `unsafe`/`raw` anywhere in this file's own public API, or
+// internally, at all.** `String`'s from-text construction used to walk a `malloc`'d
+// buffer one byte at a time via `strlen`/`memcopy`; `concat` (its `string` overload)
+// had an identical internal walk. Both are now built directly on the
+// extended `dyn(...)` builtin, which accepts a `static imut string`
+// argument and returns a real, runtime-populated `dynarray(char)` with
+// no memory access exposed to Caspien code at all (see CLAUDE.md's own
+// "Dynarrays" section, and `dynamic_array_from_string_test.caspien`).
+// `new String(text)` in particular is built from
+// `new DynamicArray:<char>(dyn(text))`.
+//
+// `String` is built with its constructors, `new String()` (empty) and
+// `new String(text)` (from a string literal), not with static methods:
+// once a struct declares a constructor, its struct-literal form
+// `String{...}` is legal only inside those constructors.
+import "dynamic_array.caspien"
+import "libc.caspien"
+
+@pub
+struct String{@pub{
+	chars: owns some mut DynamicArray<char>
+}}
+
+/** `new String()` -- a genuinely empty String, zero characters. `@throws`: the nested `new DynamicArray:<char>()` (and its `dyn`) can fail (out of memory); the caught error is simply re-thrown to the caller. */
+@pub
+@throws
+impl constructor for String() self{
+	?catch(e){ throw e }
+	let chars = mut ? new DynamicArray:<char>()
+	return String{chars= chars}
+}
+
+/** `new String(text)` -- a String holding a copy of the string literal `text`. "Have dyn also take a static imut string, returning a dyn of chars," confirmed directly: `String` is a thin wrapper over a safe dynarray of chars, so nothing here needs `unsafe`. `@throws`: the `dyn` and the nested `new DynamicArray` can fail (out of memory); the caught error is simply re-thrown to the caller. */
+@pub
+@throws
+impl constructor for String(text: static imut string) self{
+	?catch(e){ throw e }
+	let arr = mut ? dyn(text)
+	let chars = mut ? new DynamicArray:<char>(arr)
+	return String{chars= chars}
+}
+
+/** The value of the decimal digit `c` (0-9), or 99 when `c` is not one. */
+func stringDigitValue(c: mut char) mut u64{
+	if c == '0'{ return 0 }
+	if c == '1'{ return 1 }
+	if c == '2'{ return 2 }
+	if c == '3'{ return 3 }
+	if c == '4'{ return 4 }
+	if c == '5'{ return 5 }
+	if c == '6'{ return 6 }
+	if c == '7'{ return 7 }
+	if c == '8'{ return 8 }
+	if c == '9'{ return 9 }
+	return 99
+}
+
+/** The character for digit value `d` (0-9); '?' when larger. */
+func stringDigitChar(d: mut u64) mut char{
+	if d == 0{ return '0' }
+	if d == 1{ return '1' }
+	if d == 2{ return '2' }
+	if d == 3{ return '3' }
+	if d == 4{ return '4' }
+	if d == 5{ return '5' }
+	if d == 6{ return '6' }
+	if d == 7{ return '7' }
+	if d == 8{ return '8' }
+	if d == 9{ return '9' }
+	return '?'
+}
+
+/** Number of bytes before the terminating NUL of a literal. Reads under non-freeing unsafe tags, so callers' proofs survive. */
+func stringLiteralLength(lit: static imut string) mut u64{
+	let:<raw mut u8> lp = null
+	unsafe memcopy raw{
+		let tmp = mut raw lit
+		memcopy(raw lp, mut 8, raw tmp)
+	}
+	let ln = mut 0
+	unsafe memcopy raw loop{
+		let scan = mut lp
+		loop{
+			let b = mut 0
+			memcopy(raw b, mut 1, scan)
+			if b == mut 0{
+				break
+			}
+			ln = mut (ln + 1)
+			scan++
+		}
+	}
+	return ln
+}
+
+/** Byte `i` of a literal as a char (the caller keeps `i` below the literal's length). */
+func stringLiteralByte(lit: static imut string, i: mut u64) mut char{
+	let:<raw mut u8> lp = null
+	unsafe memcopy raw{
+		let tmp = mut raw lit
+		memcopy(raw lp, mut 8, raw tmp)
+	}
+	let q = mut (lp + i)
+	let b = mut '\0'
+	unsafe memcopy raw{
+		memcopy(raw b, mut 1, q)
+	}
+	return b
+}
+
+@pub
+impl String{
+	/**
+	 * `myString.concat(myString, other)` -- appends another String's own
+	 * characters (`other` may be `myString` itself, which doubles it -- this
+	 * replaces the old `concatRef`, whose signature differed from this one only
+	 * in mutability and so could not be an overload). Indexes `other.chars.backing` directly (never through
+	 * `charAt`) so the per-character bounds proof is a genuine
+	 * `match i in other.chars.backing{...}`, not a second, redundant
+	 * internal check.
+	 *
+	 * `chars` is declared `owns some`, so `ref some` on `_self`/`other`
+	 * is enough to reach `_self.chars.backing` directly: the type itself
+	 * says `chars` is always present (every constructor sets it), and no
+	 * method here needs a `match Some(...)` of its own.
+	 */
+	/** Now `@throws`: `appendChar` is itself `@throws` now (its own `pushBack` can fail -- see `appendChar`'s own doc comment), so this method must wrap every call to it and propagate the caught error to its own caller in turn. */
+	@pub
+	@throws
+	func concat(_self: ref some mut self, other: ref some imut self) void{
+		?catch(e){ throw e }
+		let n = mut len(other.chars.backing)
+		let zero = mut 0
+		match zero in other.chars.backing{
+			let fillc = mut other.chars.backing[zero]
+			let old = mut len(_self.chars.backing)
+			let grown = mut ? resize(_self.chars.backing, mut (old + n), fillc)
+			_self.chars.backing = grown
+			for i in 0..n{
+				match i in other.chars.backing{
+					let ch = mut other.chars.backing[i]
+					let j = mut (old + i)
+					match j into _self.chars.backing{
+						_self.chars.backing[j] = ch
+					}
+				}
+			}
+		}
+	}
+
+	/** `myString.concat(myString, "literal text")` -- the overload of `concat` taking a plain Caspien string value instead of another `String` (chosen by argument type at the call site; formerly a separate method named `concatLiteral`). Appends via `dyn(other)` (a fresh, throwaway dynarray(char) populated from `other`'s own characters) rather than any raw memory walk. */
+	/** Now `@throws`: its own `dyn(other)` and `appendChar` are both `@throws`-capable now (see their own doc comments), each wrapped here and its caught error propagated to this method's own caller in turn. */
+	@pub
+	@throws
+	func concat(_self: ref some mut self, other: static imut string) void{
+		?catch(e){ throw e }
+		let otherChars = mut ? dyn(other)
+		let n = mut len(otherChars)
+		let zero = mut 0
+		match zero in otherChars{
+			let fillc = mut otherChars[zero]
+			let old = mut len(_self.chars.backing)
+			let grown = mut ? resize(_self.chars.backing, mut (old + n), fillc)
+			_self.chars.backing = grown
+			for i in 0..n{
+				match i in otherChars{
+					let ch = mut otherChars[i]
+					let j = mut (old + i)
+					match j into _self.chars.backing{
+						_self.chars.backing[j] = ch
+					}
+				}
+			}
+		}
+	}
+
+	/** Now `@throws`: `DynamicArray::pushBack` is itself `@throws` now (its own `resize` can fail -- "new throws, but dyn and resize dont, they need to use the same pattern as new," confirmed directly), so this method must wrap that call and propagate the caught error to its own caller in turn -- the same cascade `sub` below already documents for `new String()`. */
+	@pub
+	@throws
+	func appendChar(_self: ref some mut self, c: mut char) void{
+		?catch(e){ throw e }
+		? _self.chars.pushBack(_self.chars, c)
+	}
+
+	/** The substring from `start` (inclusive) to `end` (exclusive) -- two separate arguments, not one "0..12" range value: a bare `range` used as an ordinary (non-storage) parameter type is an "incomplete type" in this language. Now `@throws`: its own internal call to `new String()` is itself `@throws` now (see the `String()` constructor's own doc comment), so this method must wrap that call and propagate the caught error to its own caller in turn. */
+	@pub
+	@throws
+	func sub(_self: ref some imut self, start: imut u64, end: imut u64) owns some mut String{
+		?catch(e){ throw e }
+		let result = mut ? new String()
+		let stop = mut (end + 0)
+		let n = mut len(_self.chars.backing)
+		if stop > n{
+			stop = n
+		}
+		if stop > start{
+			let count = mut (stop - start)
+			match start in _self.chars.backing{
+				let fillc = mut _self.chars.backing[start]
+				let grown = mut ? resize(result.chars.backing, count, fillc)
+				result.chars.backing = grown
+				for k in 0..count{
+					let src = mut (start + k)
+					match src in _self.chars.backing{
+						let ch = mut _self.chars.backing[src]
+						match k into result.chars.backing{
+							result.chars.backing[k] = ch
+						}
+					}
+				}
+			}
+		}
+		return result
+	}
+
+	/** Returns the index of the first occurrence of `target`, or `-1` when `target` isn't present -- there's no option/result type yet to signal that separately, so a negative `s64` is the sentinel (an index itself is never negative). Unlike the earlier version of this method, there is no internal null check on `_self` at all -- `ref some` already requires the caller to have proven that before the call was even legal. */
+	@pub
+	func firstIndexOf(_self: ref some imut self, target: mut char) mut s64{
+		let n = mut len(_self.chars.backing)
+		let position = mut -1
+		for i in 0..n{
+			position++
+			match i in _self.chars.backing{
+				if _self.chars.backing[i] == target{
+					return position
+				}
+			}
+		}
+		return -1
+	}
+
+	/**
+	 * Bounds-safe: out-of-range returns '\0'. `_self` needs no internal
+	 * null check any more (`ref some`, proven by the caller), but this
+	 * method still needs an ordinary
+	 * `match i in _self.chars.backing{...}` for the index itself, rather
+	 * than through a `@lock(match i in self.chars.backing)` precondition
+	 * the way `DynamicArray<T>::get` now does. This is a real, narrower
+	 * scope limitation, not an oversight: `@lock(match ...)`'s own
+	 * grammar (`Parser.parseLockInQualifier`) only ever accepts a
+	 * single-level `self.field`, never a nested chain like
+	 * `self.chars.backing` -- there is currently no way to make
+	 * bounds-proof through a nested struct member a caller-side
+	 * precondition at all. Once that grammar is extended, this can
+	 * become `@lock`-qualified exactly like `get`.
+	 */
+	@pub
+	@inline
+	func charAt(_self: ref some imut self, i: mut u64) mut char{
+		match i in _self.chars.backing{
+			return _self.chars.backing[i]
+		}
+		return mut '\0'
+	}
+
+	/**
+	 * Overwrites the character at index `i` with `c`, by composition: it
+	 * hands the write straight to `DynamicArray::set` on the underlying
+	 * `chars` (the same way `appendChar` hands off to `pushBack`), rather
+	 * than writing into `backing` itself. `DynamicArray::set` is
+	 * `@lock(match i into self.backing)` -- the caller must hold a write
+	 * authorization for `i` -- so this method takes that proof itself with
+	 * `match i into _self.chars.backing{...}` and out-of-range `i` is
+	 * simply a no-op (mirroring `charAt`, which returns '\0' out of range).
+	 */
+	@pub
+	@inline
+	func setCharAt(_self: ref some mut self, i: mut u64, c: mut char) void{
+		match i into _self.chars.backing{
+			_self.chars.set(_self.chars, i, c)
+		}
+	}
+
+	/** Number of characters (the dynarray's own length). */
+	@pub
+	func length(_self: ref some imut self) mut u64{
+		return len(_self.chars.backing)
+	}
+
+	/** True when there are no characters. */
+	@pub
+	func isEmpty(_self: ref some imut self) bool{
+		return len(_self.chars.backing) == 0
+	}
+
+	/** True when `other` has exactly the same characters. `other` may be `_self` itself. */
+	@pub
+	func equals(_self: ref some imut self, other: ref some imut self) bool{
+		let n = mut len(_self.chars.backing)
+		if n != len(other.chars.backing){
+			return false
+		}
+		for i in 0..n{
+			match i in _self.chars.backing{
+				match i in other.chars.backing{
+					if _self.chars.backing[i] != other.chars.backing[i]{
+						return false
+					}
+				}
+			}
+		}
+		return true
+	}
+
+	/** True when the characters equal the literal's. Does not allocate (the literal is walked byte by byte). */
+	@pub
+	func equals(_self: ref some imut self, other: static imut string) bool{
+		let ln = mut stringLiteralLength(other)
+		if ln != len(_self.chars.backing){
+			return false
+		}
+		return _self.litAt(_self, other, ln, 0)
+	}
+
+	/** True when `other` is a prefix of the characters. */
+	@pub
+	func startsWith(_self: ref some imut self, other: ref some imut self) bool{
+		let n = mut len(other.chars.backing)
+		if n > len(_self.chars.backing){
+			return false
+		}
+		for i in 0..n{
+			match i in _self.chars.backing{
+				match i in other.chars.backing{
+					if _self.chars.backing[i] != other.chars.backing[i]{
+						return false
+					}
+				}
+			}
+		}
+		return true
+	}
+
+	/** True when the literal is a prefix of the characters. Does not allocate. */
+	@pub
+	func startsWith(_self: ref some imut self, other: static imut string) bool{
+		let ln = mut stringLiteralLength(other)
+		if ln > len(_self.chars.backing){
+			return false
+		}
+		return _self.litAt(_self, other, ln, 0)
+	}
+
+	/** True when `other` is a suffix of the characters. */
+	@pub
+	func endsWith(_self: ref some imut self, other: ref some imut self) bool{
+		let n = mut len(other.chars.backing)
+		let m = mut len(_self.chars.backing)
+		if n > m{
+			return false
+		}
+		let off = mut (m - n)
+		for i in 0..n{
+			let j = mut (off + i)
+			match j in _self.chars.backing{
+				match i in other.chars.backing{
+					if _self.chars.backing[j] != other.chars.backing[i]{
+						return false
+					}
+				}
+			}
+		}
+		return true
+	}
+
+	/** True when the literal is a suffix of the characters. Does not allocate. */
+	@pub
+	func endsWith(_self: ref some imut self, other: static imut string) bool{
+		let ln = mut stringLiteralLength(other)
+		let m = mut len(_self.chars.backing)
+		if ln > m{
+			return false
+		}
+		return _self.litAt(_self, other, ln, m - ln)
+	}
+
+	/** True when the literal's `ln` bytes equal the characters starting at `at` (the caller has checked `at + ln` is within bounds). */
+	func litAt(_self: ref some imut self, lit: static imut string, ln: imut u64, at: imut u64) bool{
+		for j in 0..ln{
+			let k = mut (at + j)
+			match k in _self.chars.backing{
+				if _self.chars.backing[k] != stringLiteralByte(lit, j){
+					return false
+				}
+			}
+		}
+		return true
+	}
+
+	/** True when `other` equals the characters starting at `at` (the caller has checked `at + len(other)` is within bounds). */
+	func strAt(_self: ref some imut self, other: ref some imut self, at: imut u64) bool{
+		let m = mut len(other.chars.backing)
+		for j in 0..m{
+			let k = mut (at + j)
+			match k in _self.chars.backing{
+				match j in other.chars.backing{
+					if _self.chars.backing[k] != other.chars.backing[j]{
+						return false
+					}
+				}
+			}
+		}
+		return true
+	}
+
+	/** Index of the first `c` at or after `from`, or -1. */
+	@pub
+	func indexOf(_self: ref some imut self, c: mut char, from: imut u64) mut s64{
+		let n = mut len(_self.chars.backing)
+		for i in 0..n{
+			if i >= from{
+				match i in _self.chars.backing{
+					if _self.chars.backing[i] == c{
+						return wrap:<s64>(i)
+					}
+				}
+			}
+		}
+		return -1
+	}
+
+	/** Index of the first `c`, or -1 (same as `firstIndexOf`). */
+	@pub
+	func indexOf(_self: ref some imut self, c: mut char) mut s64{
+		return _self.indexOf(_self, c, 0)
+	}
+
+	/** Index of the first occurrence of `needle` at or after `from`, or -1. An empty `needle` is found at `min(from, length)`. */
+	@pub
+	func indexOf(_self: ref some imut self, needle: ref some imut self, from: imut u64) mut s64{
+		let n = mut len(_self.chars.backing)
+		let m = mut len(needle.chars.backing)
+		if m == 0{
+			if from < n{
+				return wrap:<s64>(from)
+			}
+			return wrap:<s64>(n)
+		}
+		if m > n{
+			return -1
+		}
+		let last = mut (n - m + 1)
+		for i in 0..last{
+			if i >= from{
+				if _self.strAt(_self, needle, i){
+					return wrap:<s64>(i)
+				}
+			}
+		}
+		return -1
+	}
+
+	@pub
+	func indexOf(_self: ref some imut self, needle: ref some imut self) mut s64{
+		return _self.indexOf(_self, needle, 0)
+	}
+
+	/** Same, for a literal needle. */
+	@pub
+	func indexOf(_self: ref some imut self, needle: static imut string, from: imut u64) mut s64{
+		let n = mut len(_self.chars.backing)
+		let m = mut stringLiteralLength(needle)
+		if m == 0{
+			if from < n{
+				return wrap:<s64>(from)
+			}
+			return wrap:<s64>(n)
+		}
+		if m > n{
+			return -1
+		}
+		let last = mut (n - m + 1)
+		for i in 0..last{
+			if i >= from{
+				if _self.litAt(_self, needle, m, i){
+					return wrap:<s64>(i)
+				}
+			}
+		}
+		return -1
+	}
+
+	@pub
+	func indexOf(_self: ref some imut self, needle: static imut string) mut s64{
+		return _self.indexOf(_self, needle, 0)
+	}
+
+	@pub
+	func contains(_self: ref some imut self, needle: ref some imut self) bool{
+		return _self.indexOf(_self, needle, 0) >= 0
+	}
+
+	@pub
+	func contains(_self: ref some imut self, needle: static imut string) bool{
+		return _self.indexOf(_self, needle, 0) >= 0
+	}
+
+	/** The characters from `start` to the end (empty when `start` is past the end). */
+	@pub
+	@throws
+	func substring(_self: ref some imut self, start: imut u64) owns some mut String{
+		?catch(e){ throw e }
+		let r = mut ? _self.sub(_self, start, len(_self.chars.backing))
+		return r
+	}
+
+	/** Same as `sub` (the Java name). */
+	@pub
+	@throws
+	func substring(_self: ref some imut self, start: imut u64, end: imut u64) owns some mut String{
+		?catch(e){ throw e }
+		let r = mut ? _self.sub(_self, start, end)
+		return r
+	}
+
+	/** A copy without leading and trailing characters <= ' ' (Java `trim`). */
+	@pub
+	@throws
+	func trim(_self: ref some imut self) owns some mut String{
+		?catch(e){ throw e }
+		let n = mut len(_self.chars.backing)
+		let start = mut n
+		for i in 0..n{
+			match i in _self.chars.backing{
+				if _self.chars.backing[i] > ' '{
+					start = i
+					break
+				}
+			}
+		}
+		let stop = mut start
+		for k in 0..n{
+			let i = mut (n - 1 - k)
+			match i in _self.chars.backing{
+				if _self.chars.backing[i] > ' '{
+					stop = mut (i + 1)
+					break
+				}
+			}
+		}
+		let r = mut ? _self.sub(_self, start, stop)
+		return r
+	}
+
+	/** A copy with every `from` replaced by `to`. */
+	@pub
+	@throws
+	func replace(_self: ref some imut self, from: mut char, to: mut char) owns some mut String{
+		?catch(e){ throw e }
+		let r = mut ? new String()
+		let n = mut len(_self.chars.backing)
+		for i in 0..n{
+			match i in _self.chars.backing{
+				let c = mut _self.chars.backing[i]
+				if c == from{
+					? r.appendChar(r, to)
+				} else {
+					? r.appendChar(r, c)
+				}
+			}
+		}
+		return r
+	}
+
+	/** A copy with every non-overlapping `target` replaced by `repl` (left to right). An empty `target` leaves the text unchanged (Java would insert between every character). */
+	@pub
+	@throws
+	func replace(_self: ref some imut self, target: ref some imut self, repl: ref some imut self) owns some mut String{
+		?catch(e){ throw e }
+		let r = mut ? new String()
+		let n = mut len(_self.chars.backing)
+		let m = mut len(target.chars.backing)
+		let skip = mut 0
+		for i in 0..n{
+			if skip > 0{
+				skip = mut (skip - 1)
+				continue
+			}
+			let hit = mut false
+			if m > 0{
+				if i + m <= n{
+					hit = _self.strAt(_self, target, i)
+				}
+			}
+			if hit{
+				? r.concat(r, repl)
+				skip = mut (m - 1)
+			} else {
+				match i in _self.chars.backing{
+					? r.appendChar(r, _self.chars.backing[i])
+				}
+			}
+		}
+		return r
+	}
+
+	/** Same, with literal `target` and `repl`. */
+	@pub
+	@throws
+	func replace(_self: ref some imut self, target: static imut string, repl: static imut string) owns some mut String{
+		?catch(e){ throw e }
+		let r = mut ? new String()
+		let n = mut len(_self.chars.backing)
+		let m = mut stringLiteralLength(target)
+		let skip = mut 0
+		for i in 0..n{
+			if skip > 0{
+				skip = mut (skip - 1)
+				continue
+			}
+			let hit = mut false
+			if m > 0{
+				if i + m <= n{
+					hit = _self.litAt(_self, target, m, i)
+				}
+			}
+			if hit{
+				? r.concat(r, repl)
+				skip = mut (m - 1)
+			} else {
+				match i in _self.chars.backing{
+					? r.appendChar(r, _self.chars.backing[i])
+				}
+			}
+		}
+		return r
+	}
+
+	/** Replaces the characters `start..end` (clamped to the length, `end` >= `start`) by `repl`, in place (Java `StringBuilder.replace(start, end, str)`). */
+	@pub
+	@throws
+	func replaceRange(_self: ref some mut self, start: imut u64, end: imut u64, repl: ref some imut self) void{
+		?catch(e){ throw e }
+		let n = mut len(_self.chars.backing)
+		let a = mut (start + 0)
+		if a > n{
+			a = n
+		}
+		let b = mut (end + 0)
+		if b > n{
+			b = n
+		}
+		if b < a{
+			b = a
+		}
+		let m = mut len(repl.chars.backing)
+		let tail = mut (n - b)
+		let newLen = mut (a + m + tail)
+		if newLen > n{
+			let grown = mut ? resize(_self.chars.backing, newLen, mut '\0')
+			_self.chars.backing = grown
+			// move the tail right, last character first
+			for k in 0..tail{
+				let src = mut (n - 1 - k)
+				let dst = mut (newLen - 1 - k)
+				match src in _self.chars.backing{
+					let ch = mut _self.chars.backing[src]
+					match dst into _self.chars.backing{
+						_self.chars.backing[dst] = ch
+					}
+				}
+			}
+		} else {
+			// move the tail left (or not at all), first character first
+			for k in 0..tail{
+				let src = mut (b + k)
+				let dst = mut (a + m + k)
+				match src in _self.chars.backing{
+					let ch = mut _self.chars.backing[src]
+					match dst into _self.chars.backing{
+						_self.chars.backing[dst] = ch
+					}
+				}
+			}
+		}
+		for j in 0..m{
+			let dst = mut (a + j)
+			match j in repl.chars.backing{
+				let ch = mut repl.chars.backing[j]
+				match dst into _self.chars.backing{
+					_self.chars.backing[dst] = ch
+				}
+			}
+		}
+		if newLen < n{
+			let shrunk = mut ? resize(_self.chars.backing, newLen, mut '\0')
+			_self.chars.backing = shrunk
+		}
+	}
+
+	/** Java `StringBuilder.append(String)`. */
+	@pub
+	@throws
+	func append(_self: ref some mut self, other: ref some imut self) void{
+		?catch(e){ throw e }
+		? _self.concat(_self, other)
+	}
+
+	@pub
+	@throws
+	func append(_self: ref some mut self, other: static imut string) void{
+		?catch(e){ throw e }
+		? _self.concat(_self, other)
+	}
+
+	@pub
+	@throws
+	func append(_self: ref some mut self, c: mut char) void{
+		?catch(e){ throw e }
+		? _self.appendChar(_self, c)
+	}
+
+	/** Appends the decimal text of `v`. */
+	@pub
+	@throws
+	func appendS64(_self: ref some mut self, v: imut s64) void{
+		?catch(e){ throw e }
+		let t = mut ? String.fromS64(v)
+		match Some(t){
+			? _self.concat(_self, t)
+		}
+	}
+
+	@pub
+	@throws
+	func appendU64(_self: ref some mut self, v: imut u64) void{
+		?catch(e){ throw e }
+		let t = mut ? String.fromU64(v)
+		match Some(t){
+			? _self.concat(_self, t)
+		}
+	}
+
+	/** Decimal text of an unsigned number (Java `String.valueOf(long)` for non-negative values, `Long.toUnsignedString`). */
+	@pub
+	@throws
+	static func fromU64(v: imut u64) owns some mut String{
+		?catch(e){ throw e }
+		let r = mut ? new String()
+		let mag = mut (v + 0)
+		if mag == 0{
+			? r.appendChar(r, '0')
+			return r
+		}
+		for k in 0..20{
+			if mag == 0{
+				break
+			}
+			let d = mut (mag % 10)
+			? r.appendChar(r, stringDigitChar(d))
+			mag = mut (mag / 10)
+		}
+		r.reverseInPlace(r)
+		return r
+	}
+
+	/** Decimal text of a signed number (Java `String.valueOf(long)` / `Long.toString`). */
+	@pub
+	@throws
+	static func fromS64(v: imut s64) owns some mut String{
+		?catch(e){ throw e }
+		if v >= 0{
+			let nonNeg = mut wrap:<u64>(v)
+			let t = mut ? String.fromU64(nonNeg)
+			return t
+		}
+		let mag = mut (bits_not(wrap:<u64>(v)) + 1)
+		let r = mut ? new String()
+		for k in 0..20{
+			if mag == 0{
+				break
+			}
+			let d = mut (mag % 10)
+			? r.appendChar(r, stringDigitChar(d))
+			mag = mut (mag / 10)
+		}
+		? r.appendChar(r, '-')
+		r.reverseInPlace(r)
+		return r
+	}
+
+	func reverseInPlace(_self: ref some mut self) void{
+		let n = mut len(_self.chars.backing)
+		let half = mut (n / 2)
+		for i in 0..half{
+			let j = mut (n - 1 - i)
+			let ci = mut _self.charAt(_self, i)
+			let cj = mut _self.charAt(_self, j)
+			_self.setCharAt(_self, i, cj)
+			_self.setCharAt(_self, j, ci)
+		}
+	}
+
+	/** The byte value of a char (Java `(long) c` for chars below 256). */
+	@pub
+	static func charCode(c: mut char) mut u64{
+		let:<mut u8> b = mut 0
+		unsafe memcopy raw{
+			memcopy(raw b, mut 1, raw c)
+		}
+		let r = mut b as u64
+		return r
+	}
+
+	/** Java `Character.isDigit` for ASCII: '0'..'9'. */
+	@pub
+	static func isDigit(c: mut char) bool{
+		return stringDigitValue(c) < 10
+	}
+
+	/** The unsigned magnitude of the digits from `from` on; throws when there are no digits, a non-digit, or the value exceeds 2^64 - 1. */
+	@throws
+	func parseDigits(_self: ref some imut self, from: imut u64) mut u64{
+		let n = mut len(_self.chars.backing)
+		if from >= n{
+			throw "NumberFormatException"
+		}
+		let mag = mut 0
+		for i in from..n{
+			match i in _self.chars.backing{
+				let d = mut stringDigitValue(_self.chars.backing[i])
+				if d > 9{
+					throw "NumberFormatException"
+				}
+				if mag > (18446744073709551615 - d) / 10{
+					throw "NumberFormatException"
+				}
+				mag = mut (mag * 10 + d)
+			}
+		}
+		return mag
+	}
+
+	/** Java `Long.parseLong(text)`: optional '+'/'-', then decimal digits; throws "NumberFormatException" on anything else or on overflow. */
+	@pub
+	@throws
+	func parseS64(_self: ref some imut self) mut s64{
+		?catch(e){ throw e }
+		let n = mut len(_self.chars.backing)
+		if n == 0{
+			throw "NumberFormatException"
+		}
+		let neg = mut false
+		let from = mut 0
+		match 0 in _self.chars.backing{
+			let first = mut _self.chars.backing[0]
+			if first == '-'{
+				neg = true
+				from = 1
+			} else {
+				if first == '+'{
+					from = 1
+				}
+			}
+		}
+		let mag = mut ? _self.parseDigits(_self, from)
+		if neg{
+			if mag > 9223372036854775808{
+				throw "NumberFormatException"
+			}
+			if mag == 0{
+				return 0
+			}
+			return wrap:<s64>(bits_not(mag) + 1)
+		}
+		if mag > 9223372036854775807{
+			throw "NumberFormatException"
+		}
+		return wrap:<s64>(mag)
+	}
+
+	/** Java `Long.parseUnsignedLong(text)`: optional '+', then decimal digits; no '-'. */
+	@pub
+	@throws
+	func parseU64(_self: ref some imut self) mut u64{
+		?catch(e){ throw e }
+		let n = mut len(_self.chars.backing)
+		if n == 0{
+			throw "NumberFormatException"
+		}
+		let from = mut 0
+		match 0 in _self.chars.backing{
+			if _self.chars.backing[0] == '+'{
+				from = 1
+			}
+		}
+		let mag = mut ? _self.parseDigits(_self, from)
+		return mag
+	}
+
+	/** Java `Integer.parseInt(text)`: like `parseS64` but the value must fit 32 bits. */
+	@pub
+	@throws
+	func parseS32(_self: ref some imut self) mut s32{
+		?catch(e){ throw e }
+		let v = mut ? _self.parseS64(_self)
+		if v < -2147483648{
+			throw "NumberFormatException"
+		}
+		if v > 2147483647{
+			throw "NumberFormatException"
+		}
+		return wrap:<s32>(v)
+	}
+
+	/** A new String holding a copy of the literal `text` (same as `new String(text)`; use it to turn a `static imut string` result into a String). */
+	@pub
+	@throws
+	static func from(text: static imut string) owns some mut String{
+		?catch(e){ throw e }
+		let r = mut ? new String(text)
+		return r
+	}
+
+	/** True when two literals have the same bytes (no allocation). */
+	@pub
+	static func literalsEqual(a: static imut string, b: static imut string) bool{
+		let n = mut stringLiteralLength(a)
+		if n != stringLiteralLength(b){
+			return false
+		}
+		for i in 0..n{
+			if stringLiteralByte(a, i) != stringLiteralByte(b, i){
+				return false
+			}
+		}
+		return true
+	}
+}

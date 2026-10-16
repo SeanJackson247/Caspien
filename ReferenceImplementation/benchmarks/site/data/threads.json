@@ -1,0 +1,19 @@
+{"program":"threads",
+ "title":"Thread spawn",
+ "n":1024,
+ "mode":null,
+ "runs":3,
+ "builds":2,
+ "cutoff_s":null,
+ "results":[
+  {"label":"C -O0","group":"bare","lang":"C","compile_s":0.08382,"size_bytes":16184,"time_s":4.168662,"times":[4.205533,4.203131,4.168662],"rss_kb":2176,"output":["tasks=1024","checksum=130561855306"],"ok":true,"key":"c"},
+  {"label":"C -O2","group":"bare","lang":"C","compile_s":0.057904,"size_bytes":16192,"time_s":1.234002,"times":[1.234002,1.244915,1.23615],"rss_kb":2176,"output":["tasks=1024","checksum=130561855306"],"ok":true,"key":"c"},
+  {"label":"C++ -O2","group":"bare","lang":"C++","compile_s":0.245899,"size_bytes":17720,"time_s":1.220938,"times":[1.220938,1.236787,1.223528],"rss_kb":4072,"output":["tasks=1024","checksum=130561855306"],"ok":true,"key":"cpp"},
+  {"label":"Rust -O","group":"bare","lang":"Rust","compile_s":0.456302,"size_bytes":4396776,"time_s":1.225843,"times":[1.225843,1.250298,1.255419],"rss_kb":2816,"output":["tasks=1024","checksum=130561855306"],"ok":true,"key":"rust"},
+  {"label":"Go","group":"bare","lang":"Go","compile_s":3.037623,"size_bytes":2243863,"time_s":1.226612,"times":[1.226612,1.236977,1.23198],"rss_kb":6668,"output":["tasks=1024","checksum=130561855306"],"ok":true,"key":"go"},
+  {"label":"Java","group":"vm","lang":"Java","note":"size = bin/java + lib/ + conf/ of the JRE plus the class file","compile_s":0.642814,"size_bytes":212890068,"time_s":1.393929,"times":[1.413565,1.493179,1.393929],"rss_kb":46272,"output":["tasks=1024","checksum=130561855306"],"ok":true,"key":"java"},
+  {"label":"Caspien naive · off","group":"caspien","lang":"Caspien","note":"the kernel step is a function call; optimisations off","compile_s":2.1889,"size_bytes":416192,"time_s":6.339756,"times":[6.350576,6.339756,6.451711],"rss_kb":2992,"output":["tasks=1024","checksum=130561855306"],"ok":true,"key":"caspien","mode":"off","variant":"Caspien naive"},
+  {"label":"Caspien naive · full","group":"caspien","lang":"Caspien","note":"the kernel step is a function call; optimisations full","compile_s":4.798943,"size_bytes":477832,"time_s":1.488355,"times":[1.554289,1.488355,1.589922],"rss_kb":2928,"output":["tasks=1024","checksum=130561855306"],"ok":true,"key":"caspien","mode":"full","variant":"Caspien naive"},
+  {"label":"Caspien optimized · off","group":"caspien","lang":"Caspien","note":"kernel inlined by hand and unrolled four times; optimisations off","compile_s":2.168258,"size_bytes":416016,"time_s":4.153623,"times":[4.265352,4.153623,4.194036],"rss_kb":2860,"output":["tasks=1024","checksum=130561855306"],"ok":true,"key":"caspien","mode":"off","variant":"Caspien optimized"},
+  {"label":"Caspien optimized · full","group":"caspien","lang":"Caspien","note":"kernel inlined by hand and unrolled four times; optimisations full","compile_s":4.724973,"size_bytes":481784,"time_s":1.484062,"times":[1.49185,1.484062,1.515812],"rss_kb":2672,"output":["tasks=1024","checksum=130561855306"],"ok":true,"key":"caspien","mode":"full","variant":"Caspien optimized"}
+ ]}

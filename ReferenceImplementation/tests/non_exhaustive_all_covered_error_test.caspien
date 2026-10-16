@@ -1,0 +1,13 @@
+// Must fail: every variant is named, so `default` is unreachable.
+import "../stdlib/libc.caspien"
+@non_exhaustive
+enum Level{ LOW, MID, default }
+func level(l: imut Level) mut u64{
+	match l{
+		LOW:{ return 1 }
+		MID:{ return 2 }
+		default:{ return 3 }
+	}
+	return 0
+}
+func main() void{ let x = mut level(Level.LOW) }

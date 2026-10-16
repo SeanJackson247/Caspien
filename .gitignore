@@ -9,3 +9,12 @@ __pycache__/
 /.cache/
 /benchmarks/.build_cache/
 .leaks.log
+# Same scratch paths inside the two implementation folders
+/ReferenceImplementation/output/
+/CaspienImplementation/output/
+/ReferenceImplementation/benchmarks/.build_cache/
+/CaspienImplementation/benchmarks/.build_cache/
+/ReferenceImplementation/ASTGenerator/fs.config
+/ReferenceImplementation/ASTGenerator/platform.config
+/CaspienImplementation/ASTGenerator/fs.config
+/CaspienImplementation/ASTGenerator/platform.config

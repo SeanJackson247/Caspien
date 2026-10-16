@@ -1,0 +1,9 @@
+import "../stdlib/print.caspien"
+import "../stdlib/gt/*"
+import "../stdlib/gt/gt_init.caspien"
+
+func main() void{
+	let a = mut 1
+	println(a)
+	return
+}

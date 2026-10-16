@@ -1,0 +1,13 @@
+// A method cannot return an `auto` either.
+import "../stdlib/libc.caspien"
+import "../stdlib/gt/*"
+struct Counter{@pub{ n: mut u64 }}
+impl Counter{
+	@pub
+	func me(_self: ref some mut self) auto mut Counter{
+		let k = mut Counter{n= 1}
+		return auto k
+	}
+}
+func main() void{
+}

@@ -1,0 +1,38 @@
+// The real "@gt_alive_check" -- called with a raw pointer to answer
+// "is this still alive." 'null' is always dead; anything else is
+// alive exactly when it's currently registered in the ghost table.
+//
+// Uses 'match @lock ghost_table{...}' instead of the '@guard'-based
+// 'lock ghost_table{...}' this file used to need -- see
+// ghost_table.caspien's own file-level comment. This function makes no
+// extern calls at all, so -- unlike the other three gt-functions --
+// it needs no 'unsafe' anywhere in its own body now: referencing
+// 'ghost_table' itself no longer requires it (a swap-lock-struct-typed
+// global is exempt), and neither does anything else here.
+import "ghost_table.caspien"
+
+@gt_alive_check
+@pub
+func gt_alive_check(ptr: raw imut u8) imut bool{
+	if ptr == null{
+		return imut false
+	}
+	let found = mut false
+	match @lock ghost_table{
+		OPEN:{
+			let n = mut ghost_table.len
+			for idx in 0..n{
+				let slot = gtSlotAt(ghost_table.base, idx)
+				let val = gtReadSlot(slot)
+				if val == ptr{
+					found = mut true
+					break
+				}
+			}
+		}
+		CLOSED:{
+			continue
+		}
+	}
+	return imut found
+}

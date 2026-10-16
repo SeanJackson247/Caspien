@@ -1,0 +1,7 @@
+// Tiny helper, used only by line_filename_import_style_test.caspien --
+// exists purely to hold one __FILENAME reference from inside an
+// imported file.
+@pub
+func helperFilename() static imut string{
+	return __FILENAME
+}

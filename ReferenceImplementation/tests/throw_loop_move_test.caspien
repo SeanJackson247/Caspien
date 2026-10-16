@@ -1,0 +1,49 @@
+// A throw (or other exit) inside a loop that also moves an owns local must still destruct that local: the loop pre-scan used to mark it
+// moved from the start of the loop, so a throw before the move leaked it (found by the leak check: GT_LEN stayed 1).
+import "../stdlib/libc.caspien"
+import "../stdlib/gt/*"
+
+func check(name: static imut string, ok: imut bool) void{
+	unsafe extern{
+		if ok{ printf("PASS %s\n", name) }
+		else{ printf("FAIL %s\n", name) }
+	}
+}
+
+func id(d: owns some mut dynarray(imut u32)) owns some mut dynarray(imut u32){
+	return d
+}
+
+// counts the '9's; a move-and-reassign of `limbs` inside the loop, a throw before it
+@throws
+func countNines(text: static imut string) mut u64{
+	?catch(e){ throw e }
+	let a = mut ? dyn(text)
+	let limbs = mut ? dyn:<u32>([])
+	let nines = mut 0
+	let n = mut len(a)
+	for i in 0..n{
+		match i in a{
+			let c = mut a[i]
+			if c == 'x'{ throw "bad" }
+			if c == '9'{
+				limbs = id(limbs)
+				nines = nines + 1
+			}
+		}
+	}
+	return nines
+}
+
+// 1000 = it threw
+func runCount(text: static imut string) mut u64{
+	let r = mut try countNines(text) catch(e){ return 1000 }
+	return r
+}
+
+func main() void{
+	check("no throw: counts the nines", runCount("1294") == 1)
+	check("two nines, moved twice", runCount("9919") == 3)
+	check("throw before the move", runCount("12x4") == 1000)
+	check("throw after a move and reassign", runCount("99x") == 1000)
+}

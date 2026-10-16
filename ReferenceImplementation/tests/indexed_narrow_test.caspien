@@ -1,0 +1,124 @@
+// Indexed access to global arrays of 1-, 2- and 4-byte elements through a variable index (R_LEA + R_LD/R_ST fused to R_LDI/R_STI by
+// IndexedAccessPass with scale 1, 2 and 4): copies, sums (zero- and sign-extension of the loaded element) and stores of constants.
+// Expected values come from a Python model of the same arrays. The output must be identical with every switch combination.
+extern printf(static imut string,...) void
+
+let static:<mut u8[5]> a8 = mut [200, 7, 255, 0, 33]
+let static:<mut u8[5]> d8 = mut [0, 0, 0, 0, 0]
+let static:<mut u8[5]> e8 = mut [0, 0, 0, 0, 0]
+let static:<mut u16[5]> a16 = mut [65535, 1, 40000, 12345, 7]
+let static:<mut u16[5]> d16 = mut [0, 0, 0, 0, 0]
+let static:<mut u16[5]> e16 = mut [0, 0, 0, 0, 0]
+let static:<mut u32[5]> a32 = mut [4000000000, 5, 3000000000, 1, 99]
+let static:<mut u32[5]> d32 = mut [0, 0, 0, 0, 0]
+let static:<mut u32[5]> e32 = mut [0, 0, 0, 0, 0]
+let static:<mut s32[5]> as32 = mut [-5, 7, -2000000000, 100, -1]
+let static:<mut s32[5]> ds32 = mut [0, 0, 0, 0, 0]
+let static:<mut s32[5]> es32 = mut [0, 0, 0, 0, 0]
+
+func check(name: static imut string, ok: mut bool) void{
+	unsafe extern{
+		if ok{
+			printf("PASS %s\n", name)
+		}else{
+			printf("FAIL %s\n", name)
+		}
+	}
+	return
+}
+
+func main() void{
+	let ok = mut false
+	let s8 = mut 0
+	let s16 = mut 0
+	let s32u = mut 0
+	let s32s = mut -1
+	s32s = 0
+	let t8 = mut 0
+	let t16 = mut 0
+	let t32 = mut 0
+	let ts32 = mut -1
+	ts32 = 0
+	unsafe global{
+		for i in a8{
+			match i into a8{
+				match i into d8{
+					d8[i] = a8[i]
+				}
+			}
+		}
+		for i in a16{
+			match i into a16{
+				match i into d16{
+					d16[i] = a16[i]
+				}
+			}
+		}
+		for i in a32{
+			match i into a32{
+				match i into d32{
+					d32[i] = a32[i]
+				}
+			}
+		}
+		for i in as32{
+			match i into as32{
+				match i into ds32{
+					ds32[i] = as32[i]
+				}
+			}
+		}
+	}
+	unsafe global{
+		for j in d8{
+			match j in d8{ s8 += d8[j] as u64 }
+		}
+		for j in d16{
+			match j in d16{ s16 += d16[j] as u64 }
+		}
+		for j in d32{
+			match j in d32{ s32u += d32[j] as u64 }
+		}
+		for j in ds32{
+			match j in ds32{ s32s += ds32[j] as s64 }
+		}
+	}
+	check("u8 copy and sum", s8 == 495)
+	check("u16 copy and sum", s16 == 117888)
+	check("u32 copy and sum", s32u == 7000000105)
+	check("s32 copy and sum (sign extension)", s32s == -1999999899)
+	unsafe global{
+		ok = d8[2] == 255 && d16[0] == 65535 && d32[0] == 4000000000 && ds32[2] == -2000000000
+	}
+	check("single elements read back exactly", ok)
+	unsafe global{
+		for i in e8{
+			match i into e8{ e8[i] = 77 }
+		}
+		for i in e16{
+			match i into e16{ e16[i] = 60000 }
+		}
+		for i in e32{
+			match i into e32{ e32[i] = 3000000000 }
+		}
+		for i in es32{
+			match i into es32{ es32[i] = -123456 }
+		}
+		for j in e8{
+			match j in e8{ t8 += e8[j] as u64 }
+		}
+		for j in e16{
+			match j in e16{ t16 += e16[j] as u64 }
+		}
+		for j in e32{
+			match j in e32{ t32 += e32[j] as u64 }
+		}
+		for j in es32{
+			match j in es32{ ts32 += es32[j] as s64 }
+		}
+	}
+	check("u8 constant stores", t8 == 385)
+	check("u16 constant stores", t16 == 300000)
+	check("u32 constant stores", t32 == 15000000000)
+	check("s32 constant stores", ts32 == -617280)
+}

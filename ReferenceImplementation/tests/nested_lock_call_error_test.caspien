@@ -1,0 +1,31 @@
+// Must NOT compile: a function that takes a lock is called (two calls down) while another lock is held.
+import "../stdlib/libc.caspien"
+
+enum Gate{ OPEN, CLOSED }
+
+@lock(match self.gate : OPEN)
+struct Counter{@pub{
+	swap gate: atomic mut Gate
+	n: mut u64
+}}
+
+let static a = mut Counter{gate= Gate.OPEN, n= mut 0}
+let static b = mut Counter{gate= Gate.OPEN, n= mut 0}
+
+func bumpB() void{
+	match @lock b{
+		OPEN:{ b.n += 1 }
+		CLOSED:{ break }
+	}
+}
+
+func middle() void{
+	bumpB()
+}
+
+func main() void{
+	match @lock a{
+		OPEN:{ middle() }
+		CLOSED:{ break }
+	}
+}

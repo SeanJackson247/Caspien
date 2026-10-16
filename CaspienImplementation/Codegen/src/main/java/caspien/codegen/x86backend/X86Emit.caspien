@@ -1,0 +1,1924 @@
+import "../../../../../../../stdlib/string.caspien"
+import "../collections.caspien"
+import "../bytecode/BytecodeStatement.caspien"
+import "../bytecode/BytecodeToken.caspien"
+import "X86Core.caspien"
+import "X86Structs.caspien"
+import "../FloatText.caspien"
+import "X86RunEntries.caspien"
+import "../../../../../../../stdlib/dynamic_array.caspien"
+import "../CodegenTarget.caspien"
+
+@pub
+impl constructor for X86Emit(hub: ref some mut X86Backend) self{
+	return X86Emit{hub= hub, core= ref hub.core}
+}
+
+@pub
+impl X86Emit{
+	@pub
+	func lineAtOffsetIsAtomicSwap(_self: ref some mut self, offset: mut s32) mut bool{
+		let r = mut false
+		match Some(_self.core){ match Some(_self.core.allLines){
+			let idx = mut (_self.core.currentLineIndex + offset)
+			if idx >= 0 && wrap:<u64>(idx) < _self.core.allLines.size(_self.core.allLines){
+				let l = _self.core.allLines.get(_self.core.allLines, wrap:<u64>(idx))
+				match Some(l){
+					r = l.items.size(l.items) > 0 && X86Core.tokenIs(l, 0, "ATOMIC_SWAP")
+				}
+			}
+		} }
+		return r
+	}
+
+	@pub
+	@throws
+	func noteArgRegLoaded(_self: ref some mut self, tag: ref imut String) void{
+		?catch(e){ throw e }
+		let copy = mut ? new String()
+		match Some(tag){
+			copy = ? tag.substring(tag, 0)
+		}
+		match Some(_self.core){
+			if _self.core.loadedArgRegsStack.isEmpty(_self.core.loadedArgRegsStack) == false{
+				let top = _self.core.loadedArgRegsStack.peek(_self.core.loadedArgRegsStack)
+				match Some(top){
+					if listContains(top, copy) == false{
+						? top.add(top, copy)
+					}
+				}
+			}
+		}
+	}
+
+	/** The innermost call buffer, or the main output when no call bracket is open. */
+	@pub
+	func currentSink(_self: ref some mut self) ref mut String{
+		match Some(_self.core){
+			if _self.core.callBufferStack.isEmpty(_self.core.callBufferStack){
+				return ref _self.core.out
+			}
+			return _self.core.callBufferStack.peek(_self.core.callBufferStack)
+		}
+		return null
+	}
+
+	@pub
+	func consumeVarargsXmmCount(_self: ref some mut self) mut s32{
+		let:<mut s32> count = mut 0
+		match Some(_self.core){
+			if _self.core.pendingVarargsXmmCount < 0{
+				count = 0
+			} else{
+				count = _self.core.pendingVarargsXmmCount
+			}
+			_self.core.pendingVarargsXmmCount = -1
+		}
+		return count
+	}
+
+	@pub
+	@throws
+	func findRunStart(_self: ref some mut self, endExclusive: mut s32, targetSize: mut s64) mut s32{
+		?catch(e){ throw e }
+		let:<mut s32> result = mut -1
+		let saved = mut ? new DynamicArray:<s64>()
+		let:<mut s64> total = mut 0
+		let:<mut s64> target = mut targetSize
+		let:<mut s32> idx = mut endExclusive
+		let bound = mut wrap:<u64>(endExclusive * 2 + 4)
+		for step in 0..bound{
+			let:<mut s32> kind = mut 0
+			let:<mut s64> val = mut 0
+			if total < target && idx > 0{
+				kind = 3
+				match Some(_self.core){ match Some(_self.core.allLines){
+					let prev = _self.core.allLines.get(_self.core.allLines, wrap:<u64>(idx - 1))
+					match Some(prev){
+						if prev.items.size(prev.items) >= 2{
+							if X86Core.tokenIs(prev, 0, "PUSH") || X86Core.tokenIs(prev, 0, "ATOMIC_PUSH") || X86Core.tokenIs(prev, 0, "STACK_LOCK"){
+								kind = 1
+								val = ? X86Core.tokenS64(prev, 1)
+							} else if X86Core.tokenIs(prev, 0, "NEW"){
+								kind = 2
+								val = ? X86Core.tokenS64(prev, 1)
+							}
+						}
+					}
+				} }
+			}
+			if kind == 3{
+				result = -1
+				break
+			}
+			if kind == 1{
+				total = total + val
+				idx = idx - 1
+			} else if kind == 2{
+				? saved.pushBack(saved, total)
+				? saved.pushBack(saved, target)
+				target = val
+				total = 0
+				idx = idx - 1
+			} else{
+				if total != target{
+					result = -1
+					break
+				}
+				if len(saved.backing) == 0{
+					result = idx
+					break
+				}
+				target = ? saved.popBack(saved, 0)
+				let outer = mut ? saved.popBack(saved, 0)
+				total = outer + 8
+			}
+		}
+		return result
+	}
+
+	@pub
+	@throws
+	func populateDirectMembers(_self: ref some mut self, start: mut s32, endExclusive: mut s32, runTotal: mut s64) void{
+		?catch(e){ throw e }
+		let entries = mut ? _self.collectRunEntries(_self, start, endExclusive)
+		let:<mut s64> before = mut 0
+		let:<mut s64> after = mut runTotal
+		let cnt = mut len(entries.sizes.backing)
+		for i in 0..cnt{
+			match i in entries.sizes.backing{ match i in entries.storeLines.backing{
+				let sz = mut entries.sizes.backing[i]
+				after = after - sz
+				let lineIdx = mut entries.storeLines.backing[i]
+				if lineIdx >= 0{
+					match Some(_self.core){
+						_self.core.pushStoreOffsetByLine.set(_self.core.pushStoreOffsetByLine, lineIdx, before - after)
+					}
+				}
+				before = before + sz
+			} }
+		}
+	}
+
+	@pub
+	@throws
+	func storeConstructionOrPlainPush(_self: ref some mut self, regName: ref imut String, size: mut s32) void{
+		?catch(e){ throw e }
+		let has = mut false
+		let:<mut s64> coff = mut 0
+		match Some(_self){ match Some(_self.core){
+			has = _self.core.pushStoreOffsetByLine.contains(_self.core.pushStoreOffsetByLine, _self.core.currentLineIndex)
+			coff = _self.core.pushStoreOffsetByLine.get(_self.core.pushStoreOffsetByLine, _self.core.currentLineIndex, 0)
+		} }
+		if has == false{
+			match Some(_self){ ? _self.pushReg(_self, regName) }
+			return
+		}
+		let ln401 = mut ? String.from("    subq $")
+		? ln401.appendS64(ln401, size as s64)
+		? ln401.append(ln401, ", %rsp")
+		match Some(_self){ ? _self.raw_(_self, ln401) }
+		if coff == 0{
+			let rsp = mut ? String.from("rsp")
+			match Some(_self){ ? _self.storeSizedToAddr(_self, regName, rsp, size) }
+		} elseif X86Core.isOddSize(size){
+			let rsp2 = mut ? String.from("rsp")
+			match Some(_self){ ? _self.storeOddSize(_self, regName, rsp2, coff, size) }
+		} else{
+			let ln402 = mut ? String.from("    mov")
+			match Some(_self){ ? ln402.append(ln402, _self.movSuffix(_self, size)) }
+			? ln402.append(ln402, " %")
+			let t1 = mut ? new String()
+			match Some(_self){ match Some(regName){ t1 = ? _self.sizedReg(_self, regName, size) } }
+			? ln402.append(ln402, t1)
+			? ln402.append(ln402, ", ")
+			? ln402.appendS64(ln402, coff)
+			? ln402.append(ln402, "(%rsp)")
+			match Some(_self){ ? _self.raw_(_self, ln402) }
+		}
+	}
+
+	@pub
+	@throws
+	func collectRunEntries(_self: ref some mut self, start: mut s32, endExclusive: mut s32) owns some mut X86RunEntries{
+		?catch(e){ throw e }
+		let entries = mut ? new X86RunEntries()
+		let:<mut s32> idx = mut start
+		let:<mut u64> bound = mut 0
+		if endExclusive > start{
+			bound = wrap:<u64>(endExclusive - start)
+		}
+		for step in 0..bound{
+			let:<mut s32> kind = mut 0
+			let:<mut s64> val = mut 0
+			match Some(_self.core){ match Some(_self.core.allLines){
+				let l = _self.core.allLines.get(_self.core.allLines, wrap:<u64>(idx))
+				match Some(l){
+					if l.items.size(l.items) >= 2{
+						if X86Core.tokenIs(l, 0, "PUSH") || X86Core.tokenIs(l, 0, "ATOMIC_PUSH"){
+							kind = 1
+							val = ? X86Core.tokenS64(l, 1)
+						} else if X86Core.tokenIs(l, 0, "STACK_LOCK"){
+							kind = 2
+							val = ? X86Core.tokenS64(l, 1)
+						} else if X86Core.tokenIs(l, 0, "NEW"){
+							kind = 3
+							val = ? X86Core.tokenS64(l, 1)
+						}
+					}
+				}
+			} }
+			if kind == 0{
+				break
+			}
+			if kind == 1 || kind == 2{
+				? entries.sizes.pushBack(entries.sizes, val)
+				if kind == 1{
+					? entries.storeLines.pushBack(entries.storeLines, idx)
+				} else{
+					? entries.storeLines.pushBack(entries.storeLines, -1)
+				}
+			} else{
+				let:<mut s64> sum = mut 0
+				let:<mut u64> popCount = mut 0
+				let cnt = mut len(entries.sizes.backing)
+				for jj in 0..cnt{
+					let j = mut (cnt - 1 - jj)
+					match j in entries.sizes.backing{
+						sum = sum + entries.sizes.backing[j]
+					}
+					popCount = popCount + 1
+					if sum >= val{
+						break
+					}
+				}
+				if sum == val{
+					for k in 0..popCount{
+						let a = mut ? entries.sizes.popBack(entries.sizes, 0)
+						let b = mut ? entries.storeLines.popBack(entries.storeLines, 0)
+					}
+				}
+				? entries.sizes.pushBack(entries.sizes, 8)
+				? entries.storeLines.pushBack(entries.storeLines, -1)
+			}
+			idx = idx + 1
+		}
+		return entries
+	}
+
+	/** One number of a layout token `m<n>` / `p<n>` / `a<elem>x<count>`: 0 = bytes on the stack, 1 = real bytes (0 for padding), 2 = element size, 3 = element count (helper of the port). */
+	@pub
+	@throws
+	static func repackInfo(tok: ref some imut String, which: mut s32) mut s64{
+		?catch(e){ throw e }
+		let kind = mut tok.charAt(tok, 0)
+		if kind == 'a'{
+			let x = mut tok.indexOf(tok, 'x')
+			let es = mut ? tok.sub(tok, 1, wrap:<u64>(x))
+			let cs = mut ? tok.sub(tok, wrap:<u64>(x + 1), tok.length(tok))
+			let:<mut s64> e = mut 0
+			let:<mut s64> cnt = mut 0
+			match Some(es){ e = ? es.parseS64(es) }
+			match Some(cs){ cnt = ? cs.parseS64(cs) }
+			if which == 0{
+				return cnt * 8
+			}
+			if which == 1{
+				return e * cnt
+			}
+			if which == 2{
+				return e
+			}
+			return cnt
+		}
+		let ns = mut ? tok.sub(tok, 1, tok.length(tok))
+		let:<mut s64> n = mut 0
+		match Some(ns){ n = ? ns.parseS64(ns) }
+		if which == 0{
+			if kind == 'm'{
+				return ((n + 7) / 8) * 8
+			}
+			return n
+		}
+		if which == 1{
+			if kind == 'm'{
+				return n
+			}
+			return 0
+		}
+		return 0
+	}
+
+	/** The token text of `line` at `i` as an owned String (helper of the port). */
+	@pub
+	@throws
+	func repackTokenText(_self: ref some mut self, line: ref imut BytecodeStatement, i: mut u64) owns some mut String{
+		?catch(e){ throw e }
+		let tok = mut ? new String()
+		match Some(line){
+			let t = line.items.get(line.items, i)
+			match Some(t){ tok = ? t.text.substring(t.text, 0) }
+		}
+		return tok
+	}
+
+	/** Sum of the stack bytes of the layout tokens from `start` on (helper of the port). */
+	@pub
+	@throws
+	func repackTotal(_self: ref some mut self, line: ref imut BytecodeStatement, start: mut u64) mut s64{
+		?catch(e){ throw e }
+		let:<mut u64> n = mut 0
+		match Some(line){ n = line.items.size(line.items) }
+		let:<mut s64> total = mut 0
+		for i in start..n{
+			let tok = mut ? new String()
+			match Some(_self){ tok = ? _self.repackTokenText(_self, line, i) }
+			match Some(tok){ total = total + ? X86Emit.repackInfo(tok, 0) }
+		}
+		return total
+	}
+
+	/** The copy loop shared by `emitNewRepack` (r12 -> r14) and `emitAssignRepack` (r10 -> r11); a helper of the port. */
+	@pub
+	@throws
+	func repackLoop(_self: ref some mut self, line: ref imut BytecodeStatement, start: mut u64, total: mut s64, newForm: mut bool) void{
+		?catch(e){ throw e }
+		let:<mut u64> n = mut 0
+		match Some(line){ n = line.items.size(line.items) }
+		let:<mut s64> dst = mut 0
+		let:<mut s64> consumed = mut 0
+		let r10 = mut ? String.from("r10")
+		let r11 = mut ? String.from("r11")
+		for i in start..n{
+			let tok = mut ? new String()
+			match Some(_self){ tok = ? _self.repackTokenText(_self, line, i) }
+			let:<mut s64> chunk = mut 0
+			let:<mut s64> s = mut 0
+			let:<mut s64> esz = mut 0
+			let:<mut s64> ecnt = mut 0
+			match Some(tok){
+				chunk = ? X86Emit.repackInfo(tok, 0)
+				s = ? X86Emit.repackInfo(tok, 1)
+				esz = ? X86Emit.repackInfo(tok, 2)
+				ecnt = ? X86Emit.repackInfo(tok, 3)
+			}
+			consumed = consumed + chunk
+			let:<mut s64> chunkBase = mut (total - consumed)
+			if s == 0{
+				dst = dst + chunk
+				continue
+			}
+			if esz > 0{
+				let:<mut u64> ecU = mut wrap:<u64>(ecnt)
+				for k in 0..ecU{
+					let:<mut s64> kk = mut wrap:<s64>(k)
+					let:<mut s64> so = mut (chunkBase + (ecnt - 1 - kk) * 8)
+					let:<mut s64> dof = mut (dst + kk * esz)
+					if newForm{
+						match Some(_self){ ? _self.copyBytesR12ToR14(_self, so, dof, esz) }
+					} else{
+						match Some(_self){ ? _self.copyBytes(_self, r10, so, r11, dof, esz) }
+					}
+				}
+				dst = dst + s
+				continue
+			}
+			let:<mut s64> words = mut ((s + 7) / 8)
+			let:<mut u64> wU = mut wrap:<u64>(words)
+			for k in 0..wU{
+				let:<mut s64> kk = mut wrap:<s64>(k)
+				let:<mut s64> bytes = mut (s - 8 * kk)
+				if bytes > 8{
+					bytes = 8
+				}
+				let:<mut s64> so = mut chunkBase
+				if words > 1{
+					so = chunkBase + (words - 1 - kk) * 8
+				}
+				if newForm{
+					match Some(_self){ ? _self.copyBytesR12ToR14(_self, so, dst + 8 * kk, bytes) }
+				} else{
+					match Some(_self){ ? _self.copyBytes(_self, r10, so, r11, dst + 8 * kk, bytes) }
+				}
+			}
+			dst = dst + s
+		}
+	}
+
+	@pub
+	@throws
+	func emitNewRepack(_self: ref some mut self, size: mut s64, line: ref imut BytecodeStatement) void{
+		?catch(e){ throw e }
+		let:<mut s64> total = mut 0
+		match Some(_self){ total = ? _self.repackTotal(_self, line, 2) }
+		match Some(_self){ ? _self.rawLit(_self, "    movq %rsp, %r12") }
+		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ ? _self.hub.regForm.emitMallocCall(_self.hub.regForm, size) } } }
+		match Some(_self){ ? _self.rawLit(_self, "    movq %rax, %r14") }
+		let pre = mut ? String.from("new_done")
+		let done = mut ? new String()
+		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ done = ? _self.hub.regForm.newInternalLabel(_self.hub.regForm, pre) } } }
+		match Some(_self){ ? _self.rawLit(_self, "    testq %r14, %r14") }
+		let jz = mut ? String.from("    jz ")
+		match Some(done){ ? jz.append(jz, done) }
+		match Some(_self){ ? _self.raw_(_self, jz) }
+		match Some(_self){ ? _self.repackLoop(_self, line, 2, total, true) }
+		let lb = mut ? new String()
+		match Some(done){ lb = ? done.substring(done, 0) }
+		? lb.append(lb, ":")
+		match Some(_self){ ? _self.raw_(_self, lb) }
+		let ad = mut ? String.from("    addq $")
+		? ad.appendS64(ad, total)
+		? ad.append(ad, ", %rsp")
+		match Some(_self){ ? _self.raw_(_self, ad) }
+		let r14 = mut ? String.from("r14")
+		match Some(_self){ ? _self.pushReg(_self, r14) }
+	}
+
+	@pub
+	@throws
+	func emitAssignRepack(_self: ref some mut self, size: mut s64, line: ref imut BytecodeStatement) void{
+		?catch(e){ throw e }
+		let:<mut s64> total = mut 0
+		match Some(_self){ total = ? _self.repackTotal(_self, line, 4) }
+		match Some(_self){ ? _self.rawLit(_self, "    movq %rsp, %r10") }
+		let l2 = mut ? String.from("    movq ")
+		? l2.appendS64(l2, total)
+		? l2.append(l2, "(%rsp), %r11")
+		match Some(_self){ ? _self.raw_(_self, l2) }
+		match Some(_self){ ? _self.repackLoop(_self, line, 4, total, false) }
+		let l3 = mut ? String.from("    addq $")
+		? l3.appendS64(l3, total + 8)
+		? l3.append(l3, ", %rsp")
+		match Some(_self){ ? _self.raw_(_self, l3) }
+	}
+
+	@pub
+	@throws
+	func copyBytes(_self: ref some mut self, srcReg: ref imut String, srcOff: mut s64, dstReg: ref imut String, dstOff: mut s64, n: mut s64) void{
+		?catch(e){ throw e }
+		let rax = mut ? String.from("rax")
+		let:<mut s64> done = mut 0
+		let:<mut u64> rounds = mut 0
+		if n > 0{
+			rounds = wrap:<u64>(n)
+		}
+		for step in 0..rounds{
+			if done >= n{
+				break
+			}
+			let:<mut s64> left = mut (n - done)
+			let:<mut s32> w = mut X86Emit.widthFor(left)
+			let:<mut s64> so = mut (srcOff + done)
+			let:<mut s64> dof = mut (dstOff + done)
+			let ln403 = mut ? String.from("    mov")
+			match Some(_self){ ? ln403.append(ln403, _self.movSuffix(_self, w)) }
+			? ln403.append(ln403, " ")
+			? ln403.appendS64(ln403, so)
+			? ln403.append(ln403, "(%")
+			match Some(srcReg){ ? ln403.append(ln403, srcReg) }
+			? ln403.append(ln403, "), %")
+			let t2 = mut ? new String()
+			match Some(_self){ match Some(rax){ t2 = ? _self.sizedReg(_self, rax, w) } }
+			? ln403.append(ln403, t2)
+			match Some(_self){ ? _self.raw_(_self, ln403) }
+			let ln404 = mut ? String.from("    mov")
+			match Some(_self){ ? ln404.append(ln404, _self.movSuffix(_self, w)) }
+			? ln404.append(ln404, " %")
+			let t3 = mut ? new String()
+			match Some(_self){ match Some(rax){ t3 = ? _self.sizedReg(_self, rax, w) } }
+			? ln404.append(ln404, t3)
+			? ln404.append(ln404, ", ")
+			? ln404.appendS64(ln404, dof)
+			? ln404.append(ln404, "(%")
+			match Some(dstReg){ ? ln404.append(ln404, dstReg) }
+			? ln404.append(ln404, ")")
+			match Some(_self){ ? _self.raw_(_self, ln404) }
+			done = done + (w as s64)
+		}
+	}
+
+	@pub
+	@throws
+	func copyBytesR12ToR14(_self: ref some mut self, srcOff: mut s64, dstOff: mut s64, n: mut s64) void{
+		?catch(e){ throw e }
+		let rax = mut ? String.from("rax")
+		let:<mut s64> done = mut 0
+		let:<mut u64> rounds = mut 0
+		if n > 0{
+			rounds = wrap:<u64>(n)
+		}
+		for step in 0..rounds{
+			if done >= n{
+				break
+			}
+			let:<mut s64> left = mut (n - done)
+			let:<mut s32> w = mut X86Emit.widthFor(left)
+			let:<mut s64> so = mut (srcOff + done)
+			let:<mut s64> dof = mut (dstOff + done)
+			let ln405 = mut ? String.from("    mov")
+			match Some(_self){ ? ln405.append(ln405, _self.movSuffix(_self, w)) }
+			? ln405.append(ln405, " ")
+			? ln405.appendS64(ln405, so)
+			? ln405.append(ln405, "(%")
+			? ln405.append(ln405, "r12), %")
+			let t4 = mut ? new String()
+			match Some(_self){ match Some(rax){ t4 = ? _self.sizedReg(_self, rax, w) } }
+			? ln405.append(ln405, t4)
+			match Some(_self){ ? _self.raw_(_self, ln405) }
+			let ln406 = mut ? String.from("    mov")
+			match Some(_self){ ? ln406.append(ln406, _self.movSuffix(_self, w)) }
+			? ln406.append(ln406, " %")
+			let t5 = mut ? new String()
+			match Some(_self){ match Some(rax){ t5 = ? _self.sizedReg(_self, rax, w) } }
+			? ln406.append(ln406, t5)
+			? ln406.append(ln406, ", ")
+			? ln406.appendS64(ln406, dof)
+			? ln406.append(ln406, "(%")
+			? ln406.append(ln406, "r14)")
+			match Some(_self){ ? _self.raw_(_self, ln406) }
+			done = done + (w as s64)
+		}
+	}
+
+	@pub
+	@throws
+	func precomputeConstructionOffsets(_self: ref some mut self) void{
+		?catch(e){ throw e }
+		let h1 = mut ? new HashMap:<s32, s64>(mut 0, mut 0, mut 16)
+		match Some(_self){ match Some(_self.core){ _self.core.pushStoreOffsetByLine = h1 } }
+		let h2 = mut ? new HashSet:<s32>(mut 0, mut 16)
+		match Some(_self){ match Some(_self.core){ _self.core.constructionScopedAssign = h2 } }
+		let h3 = mut ? new HashSet:<s32>(mut 0, mut 16)
+		match Some(_self){ match Some(_self.core){ _self.core.packedNewLines = h3 } }
+		let:<mut u64> n = mut 0
+		match Some(_self){ match Some(_self.core){ match Some(_self.core.allLines){ n = _self.core.allLines.size(_self.core.allLines) } } }
+		for i in 0..n{
+			let sz = mut 0
+			let m = mut ? new String()
+			let t1 = mut ? new String()
+			let t2 = mut ? new String()
+			let t3 = mut ? new String()
+			match Some(_self){ match Some(_self.core){ match Some(_self.core.allLines){
+				let l = _self.core.allLines.get(_self.core.allLines, i)
+				match Some(l){ sz = l.items.size(l.items) }
+			} } }
+			if sz == 0{
+				continue
+			}
+			match Some(_self){ m = ? _self.lineTokenText(_self, i, 0) }
+			if sz >= 2{
+				match Some(_self){ t1 = ? _self.lineTokenText(_self, i, 1) }
+			}
+			if sz >= 4{
+				match Some(_self){ t2 = ? _self.lineTokenText(_self, i, 2) }
+				match Some(_self){ t3 = ? _self.lineTokenText(_self, i, 3) }
+			}
+			let isNew = mut false
+			let isBlockAssign = mut false
+			match Some(m){
+				isNew = m.equals(m, "NEW") && sz >= 2
+				if (m.equals(m, "ASSIGN") || m.equals(m, "ATOMIC_ASSIGN")) && sz >= 4{
+					isBlockAssign = t1.equals(t1, t2) && t2.equals(t2, t3)
+				}
+			}
+			if isNew == false && isBlockAssign == false{
+				continue
+			}
+			let:<mut s64> declaredSize = mut 0
+			match Some(t1){ declaredSize = ? t1.parseS64(t1) }
+			let:<mut s32> ii = mut wrap:<s32>(i)
+			let:<mut s32> runStart = mut 0
+			match Some(_self){ runStart = ? _self.findRunStart(_self, ii, declaredSize) }
+			if runStart < 0{
+				continue
+			}
+			if isBlockAssign{
+				let:<mut u64> cnt = mut 0
+				let ents = mut ? new X86RunEntries()
+				match Some(_self){ ents = ? _self.collectRunEntries(_self, runStart, ii) }
+				match Some(ents){ cnt = len(ents.sizes.backing) }
+				if cnt <= 1{
+					continue
+				}
+			}
+			match Some(_self){ ? _self.populateDirectMembers(_self, runStart, ii, declaredSize) }
+			if isBlockAssign{
+				match Some(_self){ match Some(_self.core){ _self.core.constructionScopedAssign.add(_self.core.constructionScopedAssign, ii) } }
+			} else{
+				match Some(_self){ match Some(_self.core){ _self.core.packedNewLines.add(_self.core.packedNewLines, ii) } }
+			}
+		}
+	}
+
+	/** The text of token `t` of line `i` of `core.allLines` as an owned String (helper of the port). */
+	@pub
+	@throws
+	func lineTokenText(_self: ref some mut self, i: mut u64, t: mut u64) owns some mut String{
+		?catch(e){ throw e }
+		let r = mut ? new String()
+		match Some(_self){ match Some(_self.core){ match Some(_self.core.allLines){
+			let l = _self.core.allLines.get(_self.core.allLines, i)
+			match Some(l){
+				let tk = l.items.get(l.items, t)
+				match Some(tk){ r = ? tk.text.substring(tk.text, 0) }
+			}
+		} } }
+		return r
+	}
+
+	@pub
+	func isWinAbi(_self: ref some mut self) mut bool{
+		let result = mut false
+		match Some(_self.core){
+			result = _self.core.target == CodegenTarget.WINDOWS_GNU_X64
+		}
+		return result
+	}
+
+	@pub
+	@throws
+	func collectDeclarations(_self: ref some mut self, lines: ref imut ObjectList<BytecodeStatement>) void{
+		?catch(e){ throw e }
+		let plain = mut ? new StringSet()
+		let running = mut ? new StringScalarMap:<s64>()
+		let total = mut 0
+		match Some(lines){ total = lines.size(lines) }
+		for li in 0..total{
+			let parts = mut ? new ObjectList:<String>()
+			match Some(lines){
+				let l = lines.get(lines, li)
+				match Some(l){ parts = ? X86Core.textsOf(l) }
+			}
+			let cnt = mut parts.size(parts)
+			if cnt == 0{
+				continue
+			}
+			let mn = mut ? X86Core.partCopy(parts, 0)
+			if (mn.equals(mn, "GLOBAL") || mn.equals(mn, "ALLOC_STATIC")) && cnt >= 3{
+				let name = mut ? X86Core.partCopy(parts, 1)
+				if name.firstIndexOf(name, '.') < 0{
+					let added = mut ? plain.add(plain, name)
+				}
+			}
+			if mn.equals(mn, "FUNC_START") && cnt >= 2{
+				let fname = mut ? X86Core.partCopy(parts, 1)
+				match Some(_self){ match Some(_self.core){
+					let added2 = mut ? _self.core.declaredFunctionNames.add(_self.core.declaredFunctionNames, fname)
+				} }
+			}
+		}
+		for li2 in 0..total{
+			let parts = mut ? new ObjectList:<String>()
+			match Some(lines){
+				let l = lines.get(lines, li2)
+				match Some(l){ parts = ? X86Core.textsOf(l) }
+			}
+			let cnt = mut parts.size(parts)
+			if cnt == 0{
+				continue
+			}
+			let mn = mut ? X86Core.partCopy(parts, 0)
+			if mn.equals(mn, "GLOBAL") || mn.equals(mn, "ALLOC_STATIC"){
+				let name = mut ? X86Core.partCopy(parts, 1)
+				let sizeText = mut ? X86Core.partCopy(parts, 2)
+				let size = mut ? sizeText.parseS64(sizeText)
+				let dot = mut -1
+				let nn = mut name.length(name)
+				for k in 0..nn{
+					if name.charAt(name, k) == '.'{
+						dot = wrap:<s64>(k)
+					}
+				}
+				let direct = mut ? new String()
+				if dot >= 0{
+					direct = ? name.substring(name, 0, wrap:<u64>(dot))
+				}
+				let known = mut false
+				let isAlias = mut false
+				let nested = mut false
+				match Some(_self){ match Some(_self.core){
+					known = _self.core.globalAliasOffset.containsKey(_self.core.globalAliasOffset, name)
+					nested = _self.core.globalAliasOffset.containsKey(_self.core.globalAliasOffset, direct)
+				} }
+				if dot >= 0 && (plain.contains(plain, direct) || nested) && known == false{
+					isAlias = true
+				}
+				if isAlias{
+					let parent = mut ? new String()
+					let:<mut s64> baseOffset = mut 0
+					if nested{
+						match Some(_self){ match Some(_self.core){
+							baseOffset = _self.core.globalAliasOffset.getOrDefault(_self.core.globalAliasOffset, direct, 0)
+						} }
+						match Some(_self){ match Some(_self.core){
+							let pp = _self.core.globalAliasParent.get(_self.core.globalAliasParent, direct)
+							match Some(pp){ parent = ? pp.substring(pp, 0) }
+						} }
+					} else{
+						parent = ? direct.substring(direct, 0)
+					}
+					let prev = mut running.getOrDefault(running, direct, 0)
+					let offset = mut (baseOffset + prev)
+					let nameCopy1 = mut ? name.substring(name, 0)
+					let nameCopy2 = mut ? name.substring(name, 0)
+					let parentCopy = mut ? parent.substring(parent, 0)
+					match Some(_self){ match Some(_self.core){ ? _self.core.globalAliasOffset.put(_self.core.globalAliasOffset, nameCopy1, offset) } }
+					match Some(_self){ match Some(_self.core){ ? _self.core.globalAliasParent.put(_self.core.globalAliasParent, nameCopy2, parentCopy) } }
+					let directCopy = mut ? direct.substring(direct, 0)
+					? running.put(running, directCopy, prev + size)
+					if cnt >= 4{
+						let initText = mut ? X86Core.partCopy(parts, 3)
+						let:<mut s64> bits = mut 0
+						match Some(_self){ bits = ? _self.initBits(_self, initText, size) }
+						let entry = mut ? new DynamicArray:<s64>()
+						? entry.pushBack(entry, offset)
+						? entry.pushBack(entry, size)
+						? entry.pushBack(entry, bits)
+						let have = mut false
+						match Some(_self){ match Some(_self.core){ have = _self.core.aliasInits.containsKey(_self.core.aliasInits, parent) } }
+						if have == false{
+							let fresh = mut ? new ObjectList:<DynamicArray:<s64>>()
+							let parentKey = mut ? parent.substring(parent, 0)
+							match Some(_self){ match Some(_self.core){ ? _self.core.aliasInits.put(_self.core.aliasInits, parentKey, fresh) } }
+						}
+						match Some(_self){ match Some(_self.core){
+							let inits = _self.core.aliasInits.get(_self.core.aliasInits, parent)
+							match Some(inits){ ? inits.add(inits, entry) }
+						} }
+					}
+					continue
+				}
+				if cnt >= 4{
+					let initText2 = mut ? X86Core.partCopy(parts, 3)
+					let:<mut s64> init = mut 0
+					match Some(_self){ init = ? _self.initBits(_self, initText2, size) }
+					let pair = mut ? new DynamicArray:<s64>()
+					? pair.pushBack(pair, size)
+					? pair.pushBack(pair, init)
+					let key1 = mut ? name.substring(name, 0)
+					let key2 = mut ? name.substring(name, 0)
+					match Some(_self){ match Some(_self.core){ ? _self.core.globalsSizeInit.put(_self.core.globalsSizeInit, key1, pair) } }
+					match Some(_self){ match Some(_self.core){ ? _self.core.globalsHasInit.put(_self.core.globalsHasInit, key2, true) } }
+				} else{
+					let present = mut false
+					match Some(_self){ match Some(_self.core){ present = _self.core.globalsSizeInit.containsKey(_self.core.globalsSizeInit, name) } }
+					if present == false{
+						let pair2 = mut ? new DynamicArray:<s64>()
+						? pair2.pushBack(pair2, size)
+						? pair2.pushBack(pair2, 0)
+						let key3 = mut ? name.substring(name, 0)
+						let key4 = mut ? name.substring(name, 0)
+						match Some(_self){ match Some(_self.core){ ? _self.core.globalsSizeInit.put(_self.core.globalsSizeInit, key3, pair2) } }
+						match Some(_self){ match Some(_self.core){ ? _self.core.globalsHasInit.put(_self.core.globalsHasInit, key4, false) } }
+					}
+				}
+			} else if mn.equals(mn, "STRING") && cnt >= 3{
+				let id = mut ? X86Core.partCopy(parts, 1)
+				let text = mut ? X86Core.partCopy(parts, 2)
+				let tn = mut text.length(text)
+				if tn >= 2 && text.startsWith(text, "\"") && text.endsWith(text, "\""){
+					text = ? text.substring(text, 1, tn - 1)
+				}
+				match Some(_self){ match Some(_self.core){ ? _self.core.stringLiterals.put(_self.core.stringLiterals, id, text) } }
+			}
+		}
+	}
+
+	/** The initial value of a global as bits: a float/double literal as IEEE bits (size <= 4: float), else the integer value. */
+	@pub
+	@throws
+	func initBits(_self: ref some mut self, text: ref imut String, size: mut s64) mut s64{
+		?catch(e){ throw e }
+		let isNull = mut false
+		let isInt = mut false
+		let isFloat = mut false
+		match Some(text){
+			isNull = text.equals(text, "null")
+			isInt = X86Core.isInteger(text)
+			isFloat = X86Core.isFloatLiteral(text)
+		}
+		if isNull == false && isInt == false && isFloat{
+			let:<mut s64> fb = mut 0
+			match Some(text){
+				let b = mut ? FloatText.bits(text, size > 4)
+				fb = wrap:<s64>(b)
+			}
+			return fb
+		}
+		let:<mut s64> v = mut 0
+		match Some(_self){ match Some(text){
+			v = ? _self.parseInitValue(_self, text)
+		} }
+		return v
+	}
+
+	/** "null" is 0, an integer is itself, anything else 0; throws "NumberFormatException" for an integer that does not fit. */
+	@pub
+	@throws
+	func parseInitValue(_self: ref some mut self, text: ref some imut String) mut s64{
+		?catch(e){ throw e }
+		if text.equals(text, "null"){
+			return 0
+		}
+		let:<mut s64> v = mut 0
+		if X86Core.isInteger(text){
+			v = ? text.parseS64(text)
+		}
+		return v
+	}
+
+	@pub
+	@throws
+	func emitDataSections(_self: ref some mut self) void{
+		?catch(e){ throw e }
+		let:<mut u64> ng = mut 0
+		match Some(_self){ match Some(_self.core){ ng = _self.core.globalsSizeInit.size(_self.core.globalsSizeInit) } }
+		if ng > 0{
+			match Some(_self){ ? _self.rawLit(_self, ".data") }
+			for gi in 0..ng{
+				let key = mut ? new String()
+				match Some(_self){ match Some(_self.core){
+					let k0 = _self.core.globalsSizeInit.keyAt(_self.core.globalsSizeInit, gi)
+					match Some(k0){ key = ? k0.substring(k0, 0) }
+				} }
+				let:<mut s64> size = mut 0
+				let:<mut s64> init = mut 0
+				match Some(_self){ match Some(_self.core){
+					let v0 = _self.core.globalsSizeInit.valueAt(_self.core.globalsSizeInit, gi)
+					match Some(v0){
+						match 0 in v0.backing{ size = v0.get(v0, 0) }
+						match 1 in v0.backing{ init = v0.get(v0, 1) }
+					}
+				} }
+				let hasInit = mut false
+				match Some(_self){ match Some(_self.core){ match Some(key){ hasInit = _self.core.globalsHasInit.getOrDefault(_self.core.globalsHasInit, key, false) } } }
+				let label = mut ? new String()
+				match Some(_self){ match Some(key){ label = ? _self.mangleGlobalName(_self, key) } }
+				let gl = mut ? String.from(".globl ")
+				match Some(label){ ? gl.append(gl, label) }
+				match Some(_self){ ? _self.raw_(_self, gl) }
+				let lb = mut ? new String()
+				match Some(label){ lb = ? label.substring(label, 0) }
+				? lb.append(lb, ":")
+				match Some(_self){ ? _self.raw_(_self, lb) }
+				let:<mut u64> np = mut 0
+				let hasParts = mut false
+				match Some(_self){ match Some(_self.core){ match Some(key){
+					let parts = _self.core.aliasInits.get(_self.core.aliasInits, key)
+					match Some(parts){
+						hasParts = true
+						np = parts.size(parts)
+					}
+				} } }
+				if hasParts{
+					let bytes = mut ? String.from("    .byte ")
+					let:<mut u64> total = mut wrap:<u64>(size)
+					for b in 0..total{
+						let:<mut s64> bv = mut 0
+						let:<mut s64> bs = mut wrap:<s64>(b)
+						for pi in 0..np{
+							let:<mut s64> p0 = mut 0
+							let:<mut s64> p1 = mut 0
+							let:<mut s64> p2 = mut 0
+							match Some(_self){ match Some(_self.core){ match Some(key){
+								let parts2 = _self.core.aliasInits.get(_self.core.aliasInits, key)
+								match Some(parts2){
+									let pt = parts2.get(parts2, pi)
+									match Some(pt){
+										match 0 in pt.backing{ p0 = pt.get(pt, 0) }
+										match 1 in pt.backing{ p1 = pt.get(pt, 1) }
+										match 2 in pt.backing{ p2 = pt.get(pt, 2) }
+									}
+								}
+							} } }
+							let:<mut s64> b2 = mut (bs - p0)
+							if b2 >= 0 && b2 < p1{
+								let:<mut u64> sh = mut wrap:<u64>(bits_and(8 * b2, 63))
+								bv = wrap:<s64>(bits_and(bits_right(wrap:<u64>(p2), sh), 255))
+							}
+						}
+						if b != 0{
+							? bytes.append(bytes, ", ")
+						}
+						? bytes.appendS64(bytes, bv)
+					}
+					match Some(_self){ ? _self.raw_(_self, bytes) }
+				} else{
+					let:<mut s64> storeInit = mut 0
+					if hasInit{
+						storeInit = init
+					}
+					match Some(_self){ ? _self.emitStorageDirective(_self, size, storeInit) }
+				}
+			}
+		}
+		let:<mut u64> ns = mut 0
+		match Some(_self){ match Some(_self.core){ ns = _self.core.stringLiterals.size(_self.core.stringLiterals) } }
+		if ns > 0{
+			match Some(_self){ ? _self.rawLit(_self, ".section .rodata") }
+			for si in 0..ns{
+				let kl = mut ? new String()
+				let vl = mut ? new String()
+				match Some(_self){ match Some(_self.core){
+					let k1 = _self.core.stringLiterals.keyAt(_self.core.stringLiterals, si)
+					match Some(k1){ kl = ? k1.substring(k1, 0) }
+				} }
+				match Some(_self){ match Some(_self.core){
+					let v1 = _self.core.stringLiterals.valueAt(_self.core.stringLiterals, si)
+					match Some(v1){ vl = ? v1.substring(v1, 0) }
+				} }
+				? kl.append(kl, ":")
+				match Some(_self){ ? _self.raw_(_self, kl) }
+				let ac = mut ? String.from("    .asciz \"")
+				match Some(vl){ ? ac.append(ac, vl) }
+				? ac.append(ac, "\"")
+				match Some(_self){ ? _self.raw_(_self, ac) }
+			}
+		}
+	}
+
+	@pub
+	@throws
+	func emitStorageDirective(_self: ref some mut self, size: mut s64, init: mut s64) void{
+		?catch(e){ throw e }
+		if size == 8{
+			let ln407 = mut ? String.from("    .quad ")
+			? ln407.appendS64(ln407, init)
+			match Some(_self){ ? _self.raw_(_self, ln407) }
+		} elseif size == 4{
+			let ln408 = mut ? String.from("    .long ")
+			? ln408.appendS64(ln408, init)
+			match Some(_self){ ? _self.raw_(_self, ln408) }
+		} elseif size == 2{
+			let ln409 = mut ? String.from("    .word ")
+			? ln409.appendS64(ln409, init)
+			match Some(_self){ ? _self.raw_(_self, ln409) }
+		} elseif size == 1{
+			let ln410 = mut ? String.from("    .byte ")
+			? ln410.appendS64(ln410, init)
+			match Some(_self){ ? _self.raw_(_self, ln410) }
+		} else{
+			let ln411 = mut ? String.from("    .zero ")
+			? ln411.appendS64(ln411, size)
+			match Some(_self){ ? _self.raw_(_self, ln411) }
+		}
+	}
+
+	@pub
+	@throws
+	func mangleGlobalName(_self: ref some mut self, name: ref some imut String) owns some mut String{
+		?catch(e){ throw e }
+		let r = mut ? name.replace(name, '.', '_')
+		return r
+	}
+
+	@pub
+	@throws
+	func emitHeader(_self: ref some mut self) void{
+		?catch(e){ throw e }
+		let win = mut false
+		match Some(_self){ match Some(_self.core){ win = _self.core.target == CodegenTarget.WINDOWS_GNU_X64 } }
+		if win{
+			match Some(_self){ match Some(_self.core){ ? _self.core.out.append(_self.core.out, "# Generated by caspien-codegen (target: windows_gnu x86-64, mingw-w64/GNU as)\n") } }
+			match Some(_self){ match Some(_self.core){ ? _self.core.out.append(_self.core.out, "# GAS AT&T syntax, win64 ABI -- assemble/link with x86_64-w64-mingw32-gcc.\n") } }
+		} else{
+			match Some(_self){ match Some(_self.core){ ? _self.core.out.append(_self.core.out, "# Generated by caspien-codegen (target: linux x86-64)\n") } }
+			match Some(_self){ match Some(_self.core){ ? _self.core.out.append(_self.core.out, "# GAS AT&T syntax -- assemblable/runnable directly with as/ld/gcc.\n") } }
+		}
+	}
+
+	@pub
+	func emitFooter(_self: ref some mut self) void{
+	}
+
+	@pub
+	@throws
+	func comment(_self: ref some mut self, text: ref imut String) void{
+		?catch(e){ throw e }
+		match Some(_self){ match Some(_self.core){ ? _self.core.out.append(_self.core.out, "# ") } }
+		match Some(_self){ match Some(_self.core){ match Some(text){ ? _self.core.out.append(_self.core.out, text) } } }
+		match Some(_self){ match Some(_self.core){ ? _self.core.out.append(_self.core.out, '\n') } }
+	}
+
+	@pub
+	@throws
+	func raw_(_self: ref some mut self, text: ref imut String) void{
+		?catch(e){ throw e }
+		match Some(_self){
+			let sink = _self.currentSink(_self)
+			match Some(sink){ match Some(text){ ? sink.append(sink, text) } }
+		}
+		match Some(_self){
+			let sink2 = _self.currentSink(_self)
+			match Some(sink2){ ? sink2.append(sink2, '\n') }
+		}
+		match Some(_self){ match Some(text){ ? _self.trackStackDelta(_self, text) } }
+		let active = mut false
+		match Some(_self){ match Some(_self.core){ active = _self.core.strideKeySink != null } }
+		if active{
+			match Some(_self){ match Some(text){ ? _self.strideKeyAfter(_self, text) } }
+		}
+	}
+
+	@pub
+	@throws
+	func strideKeyAfter(_self: ref some mut self, text: ref imut String) void{
+		?catch(e){ throw e }
+		let t = mut ? new String()
+		match Some(text){ t = ? text.trim(text) }
+		let sp = mut t.firstIndexOf(t, ' ')
+		let op = mut ? new String()
+		if sp < 0{
+			op = ? t.substring(t, 0)
+		} else{
+			op = ? t.substring(t, 0, wrap:<u64>(sp))
+		}
+		let keep = mut X86Core.isStrideKeepOp(op)
+		if t.firstIndexOf(t, '\n') >= 0 || t.endsWith(t, ":") || keep == false{
+			match Some(_self){ match Some(_self.core){ _self.core.strideKeySink = null } }
+			return
+		}
+		let:<mut s64> depth = mut 0
+		let:<mut s64> cut = mut -1
+		let tn = mut t.length(t)
+		for i in 0..tn{
+			let c = mut t.charAt(t, i)
+			if c == '('{
+				depth = depth + 1
+			} else if c == ')'{
+				depth = depth - 1
+			} else if c == ',' && depth == 0{
+				cut = wrap:<s64>(i)
+			}
+		}
+		let destRaw = mut ? new String()
+		if cut < 0{
+			let from = mut tn
+			if sp >= 0{
+				from = wrap:<u64>(sp)
+			}
+			destRaw = ? t.substring(t, from)
+		} else{
+			destRaw = ? t.substring(t, wrap:<u64>(cut + 1))
+		}
+		let dest = mut ? destRaw.trim(destRaw)
+		if dest.startsWith(dest, "%") == false{
+			return
+		}
+		if dest.startsWith(dest, "%xmm"){
+			return
+		}
+		let reg = mut ? dest.substring(dest, 1)
+		let scratch = mut ? new String("r15")
+		let hit = mut X86Core.regAliasOf(reg, scratch)
+		if hit == false{
+			match Some(_self){ match Some(_self.core){ match Some(_self.core.strideKeyIdx){ hit = X86Core.regAliasOf(reg, _self.core.strideKeyIdx) } } }
+		}
+		if hit{
+			match Some(_self){ match Some(_self.core){ _self.core.strideKeySink = null } }
+		}
+	}
+
+	@pub
+	@throws
+	func trackStackDelta(_self: ref some mut self, rawText: ref imut String) void{
+		?catch(e){ throw e }
+		let skip = mut true
+		match Some(_self.core){
+			skip = _self.core.argTrackSuspendDepth > 0 || len(_self.core.argTrackDeltaStack.backing) == 0
+		}
+		if skip{
+			return
+		}
+		let t = mut ? new String()
+		match Some(rawText){ t = ? rawText.trim(rawText) }
+		let:<mut s64> delta = mut 0
+		let tn = mut t.length(t)
+		if t.startsWith(t, "pushq %") || t.startsWith(t, "push "){
+			delta = 8
+		} else if t.startsWith(t, "popq %") || t.startsWith(t, "pop "){
+			delta = -8
+		} else if t.startsWith(t, "subq $") && t.endsWith(t, ", %rsp"){
+			let p1 = mut ? new String("subq $")
+			let p2 = mut ? new String(", %rsp")
+			match Some(_self){ delta = ? _self.parseRspDelta(_self, t, p1, p2) }
+		} else if t.startsWith(t, "addq $") && t.endsWith(t, ", %rsp"){
+			let p1 = mut ? new String("addq $")
+			let p2 = mut ? new String(", %rsp")
+			let:<mut s64> d = mut 0
+			match Some(_self){ d = ? _self.parseRspDelta(_self, t, p1, p2) }
+			delta = 0 - d
+		} else if t.startsWith(t, "sub rsp, "){
+			let rest = mut ? t.substring(t, 9)
+			let trimmed = mut ? rest.trim(rest)
+			delta = ? trimmed.parseS64(trimmed)
+		} else if t.startsWith(t, "add rsp, "){
+			let rest = mut ? t.substring(t, 9)
+			let trimmed = mut ? rest.trim(rest)
+			let d = mut ? trimmed.parseS64(trimmed)
+			delta = 0 - d
+		}
+		if delta != 0{
+			let:<mut s64> top = mut 0
+			match Some(_self){ match Some(_self.core){ top = ? _self.core.argTrackDeltaStack.popBack(_self.core.argTrackDeltaStack, 0) } }
+			match Some(_self){ match Some(_self.core){ ? _self.core.argTrackDeltaStack.pushBack(_self.core.argTrackDeltaStack, top + delta) } }
+		}
+	}
+
+	/** The number between `prefix` and `suffix` in `t` (trimmed); throws "NumberFormatException". */
+	@pub
+	@throws
+	func parseRspDelta(_self: ref some mut self, t: ref some imut String, prefix: ref some imut String, suffix: ref some imut String) mut s64{
+		?catch(e){ throw e }
+		let a = mut prefix.length(prefix)
+		let b = mut (t.length(t) - suffix.length(suffix))
+		let mid = mut ? t.substring(t, a, b)
+		let trimmed = mut ? mid.trim(mid)
+		let:<mut s64> v = mut 0
+		match Some(trimmed){
+			v = ? trimmed.parseS64(trimmed)
+		}
+		return v
+	}
+
+	@pub
+	@throws
+	func pushReg(_self: ref some mut self, reg: ref imut String) void{
+		?catch(e){ throw e }
+		let line = mut ? String.from("    pushq %")
+		match Some(reg){ ? line.append(line, reg) }
+		match Some(_self){ ? _self.raw_(_self, line) }
+	}
+
+	@pub
+	@throws
+	func popReg(_self: ref some mut self, reg: ref imut String) void{
+		?catch(e){ throw e }
+		let line = mut ? String.from("    popq %")
+		match Some(reg){ ? line.append(line, reg) }
+		match Some(_self){ ? _self.raw_(_self, line) }
+	}
+
+	@pub
+	@throws
+	func movMemToReg(_self: ref some mut self, reg: ref imut String, offset: mut s64) void{
+		?catch(e){ throw e }
+		let line = mut ? String.from("    movq ")
+		? line.appendS64(line, offset)
+		? line.append(line, "(%rbp), %")
+		match Some(reg){ ? line.append(line, reg) }
+		match Some(_self){ ? _self.raw_(_self, line) }
+	}
+
+	@pub
+	@throws
+	func movRegToMem(_self: ref some mut self, reg: ref imut String, offset: mut s64) void{
+		?catch(e){ throw e }
+		let line = mut ? String.from("    movq %")
+		match Some(reg){ ? line.append(line, reg) }
+		? line.append(line, ", ")
+		? line.appendS64(line, offset)
+		? line.append(line, "(%rbp)")
+		match Some(_self){ ? _self.raw_(_self, line) }
+	}
+
+	@pub
+	@throws
+	func leaMemToReg(_self: ref some mut self, reg: ref imut String, offset: mut s64) void{
+		?catch(e){ throw e }
+		let line = mut ? String.from("    leaq ")
+		? line.appendS64(line, offset)
+		? line.append(line, "(%rbp), %")
+		match Some(reg){ ? line.append(line, reg) }
+		match Some(_self){ ? _self.raw_(_self, line) }
+	}
+
+	@pub
+	@throws
+	func leaGlobalToReg(_self: ref some mut self, reg: ref imut String, globalName: ref imut String) void{
+		?catch(e){ throw e }
+		let line = mut ? String.from("    leaq ")
+		let isAlias = mut false
+		match Some(_self){ match Some(_self.core){ match Some(globalName){
+			isAlias = _self.core.globalAliasOffset.containsKey(_self.core.globalAliasOffset, globalName)
+		} } }
+		if isAlias{
+			let:<mut s64> offset = mut 0
+			let parentLabel = mut ? new String()
+			match Some(_self){ match Some(_self.core){ match Some(globalName){
+				offset = _self.core.globalAliasOffset.getOrDefault(_self.core.globalAliasOffset, globalName, 0)
+				let parent = _self.core.globalAliasParent.get(_self.core.globalAliasParent, globalName)
+				match Some(parent){ parentLabel = ? _self.mangleGlobalName(_self, parent) }
+			} } }
+			? line.append(line, parentLabel)
+			let plus = mut ? X86Emit.plusOffset(offset)
+			? line.append(line, plus)
+		} else {
+			let label = mut ? new String()
+			match Some(_self){ match Some(globalName){ label = ? _self.mangleGlobalName(_self, globalName) } }
+			? line.append(line, label)
+		}
+		? line.append(line, "(%rip), %")
+		match Some(reg){ ? line.append(line, reg) }
+		match Some(_self){ ? _self.raw_(_self, line) }
+	}
+
+	/** `name(%rip)` for a global; `sym+N` adds N bytes, an alias global is addressed through its parent. */
+	@pub
+	@throws
+	func globalRipOperand(_self: ref some mut self, globalName: ref some imut String) owns some mut String{
+		?catch(e){ throw e }
+		let plus = mut globalName.indexOf(globalName, '+')
+		let base = mut ? globalName.substring(globalName, 0)
+		let:<mut s64> extra = mut 0
+		if plus > 0{
+			let tail = mut ? globalName.substring(globalName, wrap:<u64>(plus) + 1)
+			let head = mut ? globalName.substring(globalName, 0, wrap:<u64>(plus))
+			extra = ? tail.parseS64(tail)
+			base = head
+		}
+		let isAlias = mut false
+		match Some(_self){ match Some(_self.core){
+			isAlias = _self.core.globalAliasOffset.containsKey(_self.core.globalAliasOffset, base)
+		} }
+		let label = mut ? new String()
+		let:<mut s64> off = mut extra
+		if isAlias{
+			match Some(_self){ match Some(_self.core){
+				off = _self.core.globalAliasOffset.getOrDefault(_self.core.globalAliasOffset, base, 0) + extra
+			} }
+			match Some(_self){ match Some(_self.core){
+				let parent = _self.core.globalAliasParent.get(_self.core.globalAliasParent, base)
+				match Some(parent){
+					label = ? _self.mangleGlobalName(_self, parent)
+				}
+			} }
+		} else{
+			label = ? _self.mangleGlobalName(_self, base)
+		}
+		let po = mut ? X86Emit.plusOffset(off)
+		? label.append(label, po)
+		? label.append(label, "(%rip)")
+		return label
+	}
+
+	@pub
+	@throws
+	func movImmToReg(_self: ref some mut self, reg: ref imut String, imm: mut s64) void{
+		?catch(e){ throw e }
+		if imm >= 0 && imm <= 0xFFFFFFFF{
+			let narrow = mut ? new String()
+			match Some(_self){ match Some(reg){ narrow = ? _self.sizedReg(_self, reg, 4) } }
+			let same = mut false
+			match Some(reg){ same = narrow.equals(narrow, reg) }
+			if same == false{
+				let line = mut ? String.from("    movl $")
+				? line.appendS64(line, imm)
+				? line.append(line, ", %")
+				match Some(narrow){ ? line.append(line, narrow) }
+				match Some(_self){ ? _self.raw_(_self, line) }
+				return
+			}
+		}
+		let line = mut ? String.from("    movq $")
+		? line.appendS64(line, imm)
+		? line.append(line, ", %")
+		match Some(reg){ ? line.append(line, reg) }
+		match Some(_self){ ? _self.raw_(_self, line) }
+	}
+
+	/** The register name for the low `size` bytes of `reg64` (al/ax/eax/rax, r8b/r8w/r8d/r8 ...). */
+	/** The register name for the low `size` bytes of `reg64` (al/ax/eax/rax, r8b/r8w/r8d/r8 ...). */
+	@pub
+	@throws
+	func sizedReg(_self: ref some mut self, reg64: ref some imut String, size: mut s32) owns some mut String{
+		?catch(e){ throw e }
+		let lit = X86Emit.sizedRegLiteral(reg64, size)
+		let special = mut (reg64.equals(reg64, "rax") || reg64.equals(reg64, "rbx") || reg64.equals(reg64, "rcx") || reg64.equals(reg64, "rdx") || reg64.equals(reg64, "rsi") || reg64.equals(reg64, "rdi"))
+		let high = mut (Text.isHighGpr(reg64) && size < 8)
+		let out = mut ? reg64.substring(reg64, 0)
+		if special{
+			out = ? String.from(lit)
+			return out
+		}
+		if high{
+			? out.append(out, X86Emit.pickBySize(size, "b", "w", "d", "d"))
+		}
+		return out
+	}
+
+	/** The literal register name for the six legacy registers ("" for any other). */
+	@pub
+	static func sizedRegLiteral(reg64: ref some imut String, size: mut s32) static imut string{
+		if reg64.equals(reg64, "rax"){
+			return X86Emit.pickBySize(size, "al", "ax", "eax", "rax")
+		} elseif reg64.equals(reg64, "rbx"){
+			return X86Emit.pickBySize(size, "bl", "bx", "ebx", "rbx")
+		} elseif reg64.equals(reg64, "rcx"){
+			return X86Emit.pickBySize(size, "cl", "cx", "ecx", "rcx")
+		} elseif reg64.equals(reg64, "rdx"){
+			return X86Emit.pickBySize(size, "dl", "dx", "edx", "rdx")
+		} elseif reg64.equals(reg64, "rsi"){
+			return X86Emit.pickBySize(size, "sil", "si", "esi", "rsi")
+		} elseif reg64.equals(reg64, "rdi"){
+			return X86Emit.pickBySize(size, "dil", "di", "edi", "rdi")
+		}
+		return ""
+	}
+
+	@pub
+	@throws
+	func signExtendReg(_self: ref some mut self, reg: ref imut String, size: mut s32) void{
+		?catch(e){ throw e }
+		if size >= 8{
+			return
+		}
+		if size == 4{
+			let line = mut ? String.from("    movslq %")
+			let t9 = mut ? new String()
+			match Some(_self){ match Some(reg){ t9 = ? _self.sizedReg(_self, reg, 4) } }
+			? line.append(line, t9)
+			? line.append(line, ", %")
+			match Some(reg){ ? line.append(line, reg) }
+			match Some(_self){ ? _self.raw_(_self, line) }
+		} else{
+			let line = mut ? String.from("    movs")
+			match Some(_self){ ? line.append(line, _self.movSuffix(_self, size)) }
+			? line.append(line, "q %")
+			let t10 = mut ? new String()
+			match Some(_self){ match Some(reg){ t10 = ? _self.sizedReg(_self, reg, size) } }
+			? line.append(line, t10)
+			? line.append(line, ", %")
+			match Some(reg){ ? line.append(line, reg) }
+			match Some(_self){ ? _self.raw_(_self, line) }
+		}
+	}
+
+	/** `raw` for a fixed line (helper of the port; no Java counterpart). */
+	@pub
+	@throws
+	func rawLit(_self: ref some mut self, text: static imut string) void{
+		?catch(e){ throw e }
+		let t = mut ? String.from(text)
+		match Some(_self){ ? _self.raw_(_self, t) }
+	}
+
+	@pub
+	@throws
+	func emitShiftCore(_self: ref some mut self, op: ref imut String, size: mut s32, v: ref imut String) void{
+		?catch(e){ throw e }
+		let isSar = mut false
+		let left = mut false
+		match Some(op){
+			isSar = op.equals(op, "SAR")
+			left = op.equals(op, "SHL")
+		}
+		if isSar{
+			match Some(_self){ ? _self.signExtendReg(_self, v, size) }
+			let sc = mut ? String.from("r15")
+			match Some(_self){ ? _self.movImmToReg(_self, sc, 63) }
+			let l1 = mut ? String.from("    cmpq %r15, %rcx")
+			match Some(_self){ ? _self.raw_(_self, l1) }
+			let l2 = mut ? String.from("    cmovaq %r15, %rcx")
+			match Some(_self){ ? _self.raw_(_self, l2) }
+			let l3 = mut ? String.from("    sarq %cl, %")
+			match Some(v){ ? l3.append(l3, v) }
+			match Some(_self){ ? _self.raw_(_self, l3) }
+			match Some(_self){ ? _self.zeroExtendReg(_self, v, size) }
+			return
+		}
+		if left == false{
+			match Some(_self){ ? _self.zeroExtendReg(_self, v, size) }
+		}
+		let l4 = mut ? String.from("    shrq %cl, %")
+		if left{
+			l4 = ? String.from("    shlq %cl, %")
+		}
+		match Some(v){ ? l4.append(l4, v) }
+		match Some(_self){ ? _self.raw_(_self, l4) }
+		match Some(_self){ ? _self.rawLit(_self, "    cmpq $64, %rcx") }
+		match Some(_self){ ? _self.rawLit(_self, "    sbbq %rcx, %rcx") }
+		let l5 = mut ? String.from("    andq %rcx, %")
+		match Some(v){ ? l5.append(l5, v) }
+		match Some(_self){ ? _self.raw_(_self, l5) }
+		if left{
+			match Some(_self){ ? _self.zeroExtendReg(_self, v, size) }
+		}
+	}
+
+	@pub
+	@throws
+	func emitShiftBmi2(_self: ref some mut self, op: ref imut String, size: mut s32, v: ref imut String, cnt: ref imut String) void{
+		?catch(e){ throw e }
+		let left = mut false
+		match Some(op){ left = op.equals(op, "SHL") }
+		if left == false{
+			match Some(_self){ ? _self.zeroExtendReg(_self, v, size) }
+		}
+		let shiftOp = mut ? new String()
+		if left{
+			shiftOp = ? String.from("shlxq")
+		} else{
+			shiftOp = ? String.from("shrxq")
+		}
+		let ln412 = mut ? String.from("    ")
+		match Some(shiftOp){ ? ln412.append(ln412, shiftOp) }
+		? ln412.append(ln412, " %")
+		match Some(cnt){ ? ln412.append(ln412, cnt) }
+		? ln412.append(ln412, ", %")
+		match Some(v){ ? ln412.append(ln412, v) }
+		? ln412.append(ln412, ", %")
+		match Some(v){ ? ln412.append(ln412, v) }
+		match Some(_self){ ? _self.raw_(_self, ln412) }
+		let ln413 = mut ? String.from("    cmpq $64, %")
+		match Some(cnt){ ? ln413.append(ln413, cnt) }
+		match Some(_self){ ? _self.raw_(_self, ln413) }
+		let ln414 = mut ? String.from("    sbbq %")
+		match Some(cnt){ ? ln414.append(ln414, cnt) }
+		? ln414.append(ln414, ", %")
+		match Some(cnt){ ? ln414.append(ln414, cnt) }
+		match Some(_self){ ? _self.raw_(_self, ln414) }
+		let ln415 = mut ? String.from("    andq %")
+		match Some(cnt){ ? ln415.append(ln415, cnt) }
+		? ln415.append(ln415, ", %")
+		match Some(v){ ? ln415.append(ln415, v) }
+		match Some(_self){ ? _self.raw_(_self, ln415) }
+		if left{
+			match Some(_self){ ? _self.zeroExtendReg(_self, v, size) }
+		}
+	}
+
+	@pub
+	@throws
+	func zeroExtendReg(_self: ref some mut self, reg: ref imut String, size: mut s32) void{
+		?catch(e){ throw e }
+		if size != 1 && size != 2 && size != 4{
+			return
+		}
+		if size == 4{
+			let line = mut ? String.from("    movl %")
+			let t11 = mut ? new String()
+			match Some(_self){ match Some(reg){ t11 = ? _self.sizedReg(_self, reg, 4) } }
+			? line.append(line, t11)
+			? line.append(line, ", %")
+			let t12 = mut ? new String()
+			match Some(_self){ match Some(reg){ t12 = ? _self.sizedReg(_self, reg, 4) } }
+			? line.append(line, t12)
+			match Some(_self){ ? _self.raw_(_self, line) }
+		} else{
+			let line = mut ? String.from("    movz")
+			match Some(_self){ ? line.append(line, _self.movSuffix(_self, size)) }
+			? line.append(line, "q %")
+			let t13 = mut ? new String()
+			match Some(_self){ match Some(reg){ t13 = ? _self.sizedReg(_self, reg, size) } }
+			? line.append(line, t13)
+			? line.append(line, ", %")
+			match Some(reg){ ? line.append(line, reg) }
+			match Some(_self){ ? _self.raw_(_self, line) }
+		}
+	}
+
+	@pub
+	@throws
+	static func plusOffset(off: mut s64) owns some mut String{
+		?catch(e){ throw e }
+		if off != 0{
+			let r = mut ? String.from("+")
+			? r.appendS64(r, off)
+			return r
+		}
+		let z = mut ? String.from("")
+		return z
+	}
+
+	@pub
+	@throws
+	static func offsetText(off: mut s64) owns some mut String{
+		?catch(e){ throw e }
+		if off == 0{
+			let z = mut ? String.from("")
+			return z
+		}
+		let r = mut ? String.fromS64(off)
+		return r
+	}
+
+	static func widthFor(left: mut s64) mut s32{
+		if left >= 8{
+			return 8
+		} elseif left >= 4{
+			return 4
+		} elseif left >= 2{
+			return 2
+		}
+		return 1
+	}
+
+	static func pickBySize(size: mut s32, s1: static imut string, s2: static imut string, s4: static imut string, other: static imut string) static imut string{
+		if size == 1{
+			return s1
+		} elseif size == 2{
+			return s2
+		} elseif size == 4{
+			return s4
+		}
+		return other
+	}
+
+	@pub
+	func movSuffix(_self: ref some mut self, size: mut s32) static imut string{
+		return X86Emit.pickBySize(size, "b", "w", "l", "q")
+	}
+
+	@pub
+	@throws
+	func loadSizedFromFrame(_self: ref some mut self, reg64: ref imut String, offset: mut s64, size: mut s32) void{
+		?catch(e){ throw e }
+		let loadSize = mut X86Core.roundUpToLoadableWidth(size)
+		if loadSize == 8{
+			let line = mut ? String.from("    movq ")
+			? line.appendS64(line, offset)
+			? line.append(line, "(%rbp), %")
+			match Some(reg64){ ? line.append(line, reg64) }
+			match Some(_self){ ? _self.raw_(_self, line) }
+		} elseif loadSize == 4{
+			let line = mut ? String.from("    movl ")
+			? line.appendS64(line, offset)
+			? line.append(line, "(%rbp), %")
+			let t1 = mut ? new String()
+			match Some(_self){ match Some(reg64){ t1 = ? _self.sizedReg(_self, reg64, 4) } }
+			? line.append(line, t1)
+			match Some(_self){ ? _self.raw_(_self, line) }
+		} else{
+			let line = mut ? String.from("    movz")
+			match Some(_self){ ? line.append(line, _self.movSuffix(_self, loadSize)) }
+			? line.append(line, "q ")
+			? line.appendS64(line, offset)
+			? line.append(line, "(%rbp), %")
+			match Some(reg64){ ? line.append(line, reg64) }
+			match Some(_self){ ? _self.raw_(_self, line) }
+		}
+	}
+
+	@pub
+	@throws
+	func storeSizedToFrame(_self: ref some mut self, reg64: ref imut String, offset: mut s64, size: mut s32) void{
+		?catch(e){ throw e }
+		if X86Core.isOddSize(size){
+			let rbp = mut ? String.from("rbp")
+			match Some(_self){ ? _self.storeOddSize(_self, reg64, rbp, offset, size) }
+			return
+		}
+		let line = mut ? String.from("    mov")
+		match Some(_self){ ? line.append(line, _self.movSuffix(_self, size)) }
+		? line.append(line, " %")
+		let t2 = mut ? new String()
+		match Some(_self){ match Some(reg64){ t2 = ? _self.sizedReg(_self, reg64, size) } }
+		? line.append(line, t2)
+		? line.append(line, ", ")
+		? line.appendS64(line, offset)
+		? line.append(line, "(%rbp)")
+		match Some(_self){ ? _self.raw_(_self, line) }
+	}
+
+	@pub
+	@throws
+	func loadSizedFromAddr(_self: ref some mut self, destReg64: ref imut String, addrReg64: ref imut String, size: mut s32) void{
+		?catch(e){ throw e }
+		let loadSize = mut X86Core.roundUpToLoadableWidth(size)
+		if loadSize == 8{
+			let line = mut ? String.from("    movq ")
+			let t3 = mut ? new String()
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.gen){ t3 = ? _self.hub.gen.rfMemOperand(_self.hub.gen, addrReg64) } } }
+			? line.append(line, t3)
+			? line.append(line, ", %")
+			match Some(destReg64){ ? line.append(line, destReg64) }
+			match Some(_self){ ? _self.raw_(_self, line) }
+		} elseif loadSize == 4{
+			let line = mut ? String.from("    movl ")
+			let t4 = mut ? new String()
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.gen){ t4 = ? _self.hub.gen.rfMemOperand(_self.hub.gen, addrReg64) } } }
+			? line.append(line, t4)
+			? line.append(line, ", %")
+			let t5 = mut ? new String()
+			match Some(_self){ match Some(destReg64){ t5 = ? _self.sizedReg(_self, destReg64, 4) } }
+			? line.append(line, t5)
+			match Some(_self){ ? _self.raw_(_self, line) }
+		} else{
+			let line = mut ? String.from("    movz")
+			match Some(_self){ ? line.append(line, _self.movSuffix(_self, loadSize)) }
+			? line.append(line, "q ")
+			let t6 = mut ? new String()
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.gen){ t6 = ? _self.hub.gen.rfMemOperand(_self.hub.gen, addrReg64) } } }
+			? line.append(line, t6)
+			? line.append(line, ", %")
+			match Some(destReg64){ ? line.append(line, destReg64) }
+			match Some(_self){ ? _self.raw_(_self, line) }
+		}
+	}
+
+	@pub
+	@throws
+	func extractWordsFromReversedBlock(_self: ref some mut self, totalWords: mut s64, size: mut s32) void{
+		?catch(e){ throw e }
+		let:<mut s64> elemWords = mut (wrap:<s64>(size + 7) / 8)
+		let ln421 = mut ? String.from("    movq %rax, %r11")
+		match Some(_self){ ? _self.raw_(_self, ln421) }
+		let ln422 = mut ? String.from("    subq %r14, %r11")
+		match Some(_self){ ? _self.raw_(_self, ln422) }
+		let ln423 = mut ? String.from("    shlq $3, %r14")
+		match Some(_self){ ? _self.raw_(_self, ln423) }
+		let ln424 = mut ? String.from("    movq %rcx, %r13")
+		match Some(_self){ ? _self.raw_(_self, ln424) }
+		let ln425 = mut ? String.from("    movq %r14, %rcx")
+		match Some(_self){ ? _self.raw_(_self, ln425) }
+		let:<mut u64> ew = mut 0
+		if elemWords > 0{
+			ew = wrap:<u64>(elemWords)
+		}
+		for j in 0..ew{
+			let:<mut s64> jj = mut wrap:<s64>(j)
+			let:<mut s64> lo = mut (0 - jj * 8)
+			let:<mut s64> hi = mut (0 - (jj * 8 + 8))
+			let:<mut s64> dst = mut ((totalWords - 1 - jj) * 8)
+			let ln426 = mut ? String.from("    movq ")
+			? ln426.appendS64(ln426, lo)
+			? ln426.append(ln426, "(%r11), %rax")
+			match Some(_self){ ? _self.raw_(_self, ln426) }
+			let ln427 = mut ? String.from("    movq ")
+			? ln427.appendS64(ln427, hi)
+			? ln427.append(ln427, "(%r11), %r14")
+			match Some(_self){ ? _self.raw_(_self, ln427) }
+			let ln428 = mut ? String.from("    shrdq %cl, %r14, %rax")
+			match Some(_self){ ? _self.raw_(_self, ln428) }
+			let ln429 = mut ? String.from("    movq %rax, ")
+			? ln429.appendS64(ln429, dst)
+			? ln429.append(ln429, "(%rsp)")
+			match Some(_self){ ? _self.raw_(_self, ln429) }
+		}
+		let ln430 = mut ? String.from("    movq %r13, %rcx")
+		match Some(_self){ ? _self.raw_(_self, ln430) }
+		if totalWords > elemWords{
+			let:<mut s64> drop = mut ((totalWords - elemWords) * 8)
+			let ln431 = mut ? String.from("    addq $")
+			? ln431.appendS64(ln431, drop)
+			? ln431.append(ln431, ", %rsp")
+			match Some(_self){ ? _self.raw_(_self, ln431) }
+		}
+	}
+
+	@pub
+	@throws
+	func storeOddSize(_self: ref some mut self, srcReg64: ref imut String, baseReg64: ref imut String, off: mut s64, size: mut s32) void{
+		?catch(e){ throw e }
+		let:<mut s32> w0 = mut 4
+		let:<mut s32> w1 = mut 2
+		let:<mut s32> w2 = mut 1
+		let count = mut 3
+		if size == 3{
+			w0 = 2
+			w1 = 1
+			count = 2
+		} elseif size == 5{
+			w0 = 4
+			w1 = 1
+			count = 2
+		} elseif size == 6{
+			w0 = 4
+			w1 = 2
+			count = 2
+		}
+		let at = mut off
+		let:<mut s32> rot = mut 0
+		for i in 0..count{
+			let:<mut s32> w = mut w0
+			if i == 1{ w = w1 }
+			if i == 2{ w = w2 }
+			match Some(_self){ ? _self.storePiece(_self, srcReg64, baseReg64, at, w) }
+			at = at + (w as s64)
+			if i + 1 < count{
+				match Some(_self){ ? _self.rotReg(_self, srcReg64, true, w * 8) }
+				rot = rot + w * 8
+			}
+		}
+		if rot > 0{
+			match Some(_self){ ? _self.rotReg(_self, srcReg64, false, rot) }
+		}
+	}
+
+	@pub
+	@throws
+	func storePiece(_self: ref some mut self, srcReg64: ref imut String, baseReg64: ref imut String, off: mut s64, width: mut s32) void{
+		?catch(e){ throw e }
+		let line = mut ? String.from("    mov")
+		match Some(_self){ ? line.append(line, _self.movSuffix(_self, width)) }
+		? line.append(line, " %")
+		let sized = mut ? new String()
+		match Some(_self){ match Some(srcReg64){ sized = ? _self.sizedReg(_self, srcReg64, width) } }
+		? line.append(line, sized)
+		? line.append(line, ", ")
+		let ot = mut ? X86Emit.offsetText(off)
+		? line.append(line, ot)
+		? line.append(line, "(%")
+		match Some(baseReg64){ ? line.append(line, baseReg64) }
+		? line.append(line, ")")
+		match Some(_self){ ? _self.raw_(_self, line) }
+	}
+
+	@pub
+	@throws
+	func rotReg(_self: ref some mut self, reg64: ref imut String, right: mut bool, bits: mut s32) void{
+		?catch(e){ throw e }
+		if right{
+			let line = mut ? String.from("    rorq $")
+			? line.appendS64(line, bits as s64)
+			? line.append(line, ", %")
+			match Some(reg64){ ? line.append(line, reg64) }
+			match Some(_self){ ? _self.raw_(_self, line) }
+		} else{
+			let line = mut ? String.from("    rolq $")
+			? line.appendS64(line, bits as s64)
+			? line.append(line, ", %")
+			match Some(reg64){ ? line.append(line, reg64) }
+			match Some(_self){ ? _self.raw_(_self, line) }
+		}
+	}
+
+	@pub
+	@throws
+	func storeSizedToAddr(_self: ref some mut self, srcReg64: ref imut String, addrReg64: ref imut String, size: mut s32) void{
+		?catch(e){ throw e }
+		if X86Core.isOddSize(size){
+			match Some(_self){ ? _self.storeOddSize(_self, srcReg64, addrReg64, 0, size) }
+			return
+		}
+		let line = mut ? String.from("    mov")
+		match Some(_self){ ? line.append(line, _self.movSuffix(_self, size)) }
+		? line.append(line, " %")
+		let t7 = mut ? new String()
+		match Some(_self){ match Some(srcReg64){ t7 = ? _self.sizedReg(_self, srcReg64, size) } }
+		? line.append(line, t7)
+		? line.append(line, ", ")
+		let t8 = mut ? new String()
+		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.gen){ t8 = ? _self.hub.gen.rfMemOperand(_self.hub.gen, addrReg64) } } }
+		? line.append(line, t8)
+		match Some(_self){ ? _self.raw_(_self, line) }
+	}
+
+	@pub
+	@throws
+	func pushBlockFromFrame(_self: ref some mut self, baseOffset: mut s64, size: mut s64) void{
+		?catch(e){ throw e }
+		let rax = mut ? String.from("rax")
+		let:<mut u64> words = mut 0
+		if size > 0{
+			words = wrap:<u64>(size + 7) / 8
+		}
+		for i in 0..words{
+			let:<mut s64> at = mut (baseOffset + wrap:<s64>(i) * 8)
+			match Some(_self){ ? _self.loadSizedFromFrame(_self, rax, at, 8) }
+			match Some(_self){ ? _self.pushReg(_self, rax) }
+		}
+	}
+
+	@pub
+	@throws
+	func pushBlockFromFrameConstructionAware(_self: ref some mut self, baseOffset: mut s64, size: mut s64) void{
+		?catch(e){ throw e }
+		let rax = mut ? String.from("rax")
+		let has = mut false
+		let:<mut s64> coff = mut 0
+		match Some(_self){ match Some(_self.core){
+			has = _self.core.pushStoreOffsetByLine.contains(_self.core.pushStoreOffsetByLine, _self.core.currentLineIndex)
+			coff = _self.core.pushStoreOffsetByLine.get(_self.core.pushStoreOffsetByLine, _self.core.currentLineIndex, 0)
+		} }
+		if has == false{
+			match Some(_self){ ? _self.pushBlockFromFrame(_self, baseOffset, size) }
+			return
+		}
+		let ln416 = mut ? String.from("    subq $")
+		? ln416.appendS64(ln416, size)
+		? ln416.append(ln416, ", %rsp")
+		match Some(_self){ ? _self.raw_(_self, ln416) }
+		let:<mut s64> pos = mut 0
+		let:<mut u64> rounds = mut 0
+		if size > 0{
+			rounds = wrap:<u64>(size)
+		}
+		for step in 0..rounds{
+			if pos >= size{
+				break
+			}
+			let:<mut s64> left = mut (size - pos)
+			let:<mut s32> w = mut X86Emit.widthFor(left)
+			let:<mut s64> from = mut (baseOffset + pos)
+			match Some(_self){ ? _self.loadSizedFromFrame(_self, rax, from, w) }
+			let:<mut s64> dst = mut (coff + pos)
+			let ln417 = mut ? String.from("    mov")
+			match Some(_self){ ? ln417.append(ln417, _self.movSuffix(_self, w)) }
+			? ln417.append(ln417, " %")
+			let t6 = mut ? new String()
+			match Some(_self){ match Some(rax){ t6 = ? _self.sizedReg(_self, rax, w) } }
+			? ln417.append(ln417, t6)
+			? ln417.append(ln417, ", ")
+			? ln417.appendS64(ln417, dst)
+			? ln417.append(ln417, "(%rsp)")
+			match Some(_self){ ? _self.raw_(_self, ln417) }
+			pos = pos + (w as s64)
+		}
+	}
+
+	@pub
+	@throws
+	func assignBlock(_self: ref some mut self, size: mut s64) void{
+		?catch(e){ throw e }
+		let:<mut s64> words = mut ((size + 7) / 8)
+		let:<mut s64> span = mut (words * 8)
+		let ln418 = mut ? String.from("    movq ")
+		? ln418.appendS64(ln418, span)
+		? ln418.append(ln418, "(%rsp), %r15")
+		match Some(_self){ ? _self.raw_(_self, ln418) }
+		let rax = mut ? String.from("rax")
+		let r15 = mut ? String.from("r15")
+		let:<mut u64> cnt = mut 0
+		if words > 0{
+			cnt = wrap:<u64>(words)
+		}
+		for i in 0..cnt{
+			match Some(_self){ ? _self.popReg(_self, rax) }
+			let:<mut s64> k = mut (words - 1 - wrap:<s64>(i))
+			let:<mut s64> destOff = mut (k * 8)
+			let:<mut s64> n = mut (size - destOff)
+			if n > 8{
+				n = 8
+			}
+			if n == 8{
+				let ot = mut ? X86Emit.offsetText(destOff)
+				let ln419 = mut ? String.from("    movq %rax, ")
+				match Some(ot){ ? ln419.append(ln419, ot) }
+				? ln419.append(ln419, "(%r15)")
+				match Some(_self){ ? _self.raw_(_self, ln419) }
+			} elseif X86Core.isOddSize(wrap:<s32>(n)){
+				match Some(_self){ ? _self.storeOddSize(_self, rax, r15, destOff, wrap:<s32>(n)) }
+			} else{
+				match Some(_self){ ? _self.storePiece(_self, rax, r15, destOff, wrap:<s32>(n)) }
+			}
+		}
+		let ln420 = mut ? String.from("    addq $8, %rsp")
+		match Some(_self){ ? _self.raw_(_self, ln420) }
+	}
+
+	@pub
+	@throws
+	func assignConstructionBlock(_self: ref some mut self, size: mut s64) void{
+		?catch(e){ throw e }
+		if size > 0 && size % 8 == 0 && size <= 64{
+			let ln432 = mut ? String.from("    movq ")
+			? ln432.appendS64(ln432, size)
+			? ln432.append(ln432, "(%rsp), %r15")
+			match Some(_self){ ? _self.raw_(_self, ln432) }
+			let:<mut u64> nw = mut wrap:<u64>(size / 8)
+			for w in 0..nw{
+				let:<mut s64> o = mut (wrap:<s64>(w) * 8)
+				let ln433 = mut ? String.from("    movq ")
+				? ln433.appendS64(ln433, o)
+				? ln433.append(ln433, "(%rsp), %rdi")
+				match Some(_self){ ? _self.raw_(_self, ln433) }
+				let ln434 = mut ? String.from("    movq %rdi, ")
+				? ln434.appendS64(ln434, o)
+				? ln434.append(ln434, "(%r15)")
+				match Some(_self){ ? _self.raw_(_self, ln434) }
+			}
+			let:<mut s64> fin = mut (size + 8)
+			let ln435 = mut ? String.from("    addq $")
+			? ln435.appendS64(ln435, fin)
+			? ln435.append(ln435, ", %rsp")
+			match Some(_self){ ? _self.raw_(_self, ln435) }
+			return
+		}
+		let ln436 = mut ? String.from("    movq ")
+		? ln436.appendS64(ln436, size)
+		? ln436.append(ln436, "(%rsp), %r15")
+		match Some(_self){ ? _self.raw_(_self, ln436) }
+		let ln437 = mut ? String.from("    movq %r15, %rdi")
+		match Some(_self){ ? _self.raw_(_self, ln437) }
+		let ln438 = mut ? String.from("    movq %rsp, %rsi")
+		match Some(_self){ ? _self.raw_(_self, ln438) }
+		let ln439 = mut ? String.from("    pushq %rcx")
+		match Some(_self){ ? _self.raw_(_self, ln439) }
+		let ln440 = mut ? String.from("    movq $")
+		? ln440.appendS64(ln440, size)
+		? ln440.append(ln440, ", %rcx")
+		match Some(_self){ ? _self.raw_(_self, ln440) }
+		let ln441 = mut ? String.from("    rep movsb")
+		match Some(_self){ ? _self.raw_(_self, ln441) }
+		let ln442 = mut ? String.from("    popq %rcx")
+		match Some(_self){ ? _self.raw_(_self, ln442) }
+		let ln443 = mut ? String.from("    addq $")
+		? ln443.appendS64(ln443, size)
+		? ln443.append(ln443, ", %rsp")
+		match Some(_self){ ? _self.raw_(_self, ln443) }
+		let ln444 = mut ? String.from("    addq $8, %rsp")
+		match Some(_self){ ? _self.raw_(_self, ln444) }
+	}
+}

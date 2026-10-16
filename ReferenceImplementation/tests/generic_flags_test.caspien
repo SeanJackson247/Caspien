@@ -1,0 +1,23 @@
+// A block-form `assume match cond{ ... }` inside a GENERIC function: GenericsExpander.deepClone used to drop `Token.hasBlock`, so the block's
+// statements were silently never emitted in the monomorphized copy. Expected output: generic_flags_test.py.
+import "../stdlib/libc.caspien"
+func pick<T>(x: mut T, n: mut u64) mut u64{
+	let q = mut 1
+	unsafe assume{
+		assume match n != 0{
+			q = n + 100
+			match n fits u8{
+				q = q + 1
+			}
+		}
+	}
+	return q
+}
+func report(name: static imut string, got: mut u64) void{
+	unsafe extern{ printf("PASS %s %llu\n", name, got) }
+}
+func main() void{
+	report("u8 instance", pick:<u8>(1, 5))
+	report("u64 instance", pick:<u64>(1, 300))
+	report("assumed, not tested", pick:<u8>(1, 0))
+}

@@ -1,0 +1,37 @@
+// `--fix unsafe-split` input: big `unsafe unaudited{}` blocks that the fixer rewrites into minimal tagged blocks (tests/unsafe_split_check.sh).
+// The program must print the same thing before and after the rewrite.
+import "../stdlib/libc.caspien"
+import "../stdlib/gt/*"
+
+let static counter = mut 0
+
+func inc(x: mut u64) mut u64{ return x + 1 }
+
+func main() void{
+	?catch(e){ return }
+	let base = mut 10
+	/*! justify: the whole demo is deliberately unsafe */
+	unsafe unaudited{
+		// plain arithmetic, needs nothing
+		let a = mut (base + 1)
+		let b = mut (a * 2)
+		// a C call
+		printf("a=%llu b=%llu\n", a, b)
+		putchar(10)
+		// a mutable static
+		counter = mut (counter + b)
+		let c = mut counter
+		let fp = imut inc
+		let r = mut call(fp, mut c)
+		printf("c=%llu r=%llu\n", c, r)
+		for i in 0..3{
+			counter += i
+		}
+		let arr = mut unsafe dyn([5, 6, 7])
+		let v = mut (arr[0] + arr[2])
+		printf("v=%llu\n", v)
+		let w = mut (v + 1)
+	}
+	let t = mut (base + 5)
+	unsafe unaudited{ printf("t=%llu\n", t) }
+}

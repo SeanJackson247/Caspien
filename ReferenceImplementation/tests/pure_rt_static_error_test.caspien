@@ -1,0 +1,5 @@
+// a "@pure(rt)" function cannot read a global/static (even imut; reading one also needs `unsafe global`, which `@pure` bans too): this must NOT compile.
+let static LIMIT = imut 10
+@pure(rt)
+func f(x: mut u64) mut u64{ unsafe global{ return x + LIMIT } }
+func main() void{ }

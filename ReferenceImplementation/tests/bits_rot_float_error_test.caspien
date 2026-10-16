@@ -1,0 +1,6 @@
+// bits_rotl on a float must not compile (integers only, like bits_left).
+import "../stdlib/libc.caspien"
+func main() void{
+	let:<mut f64> x = mut 1.5
+	let:<mut f64> y = mut bits_rotl(x, 3)
+}

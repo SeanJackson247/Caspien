@@ -1,0 +1,123 @@
+import "../../../../../../stdlib/string.caspien"
+import "CodegenTarget.caspien"
+import "collections.caspien"
+import "Text.caspien"
+
+@pub
+struct CodegenConfig{@pub{
+	target: imut CodegenTarget
+	bmi2: imut bool
+	avx: imut bool
+}}
+
+impl constructor for CodegenConfig(target: imut CodegenTarget, bmi2: imut bool, avx: imut bool) self{
+	return CodegenConfig{target= target, bmi2= bmi2, avx= avx}
+}
+
+@pub
+impl CodegenConfig{
+	@pub
+	@throws
+	static func parse(text: ref imut String, path: ref imut String) owns some mut CodegenConfig{
+		?catch(e){ throw e }
+		let lines = mut ? new ObjectList:<String>()
+		let cur = mut ? new String()
+		let skipLf = mut false
+		let n = mut 0
+		match Some(text){ n = text.length(text) }
+		for i in 0..n{
+			let c = mut ' '
+			match Some(text){ c = text.charAt(text, i) }
+			if c == '\n'{
+				if skipLf{
+					skipLf = false
+				} else{
+					? lines.add(lines, cur)
+					cur = ? new String()
+				}
+			} else if c == '\r'{
+				? lines.add(lines, cur)
+				cur = ? new String()
+				skipLf = true
+			} else{
+				skipLf = false
+				? cur.appendChar(cur, c)
+			}
+		}
+		if cur.length(cur) > 0{
+			? lines.add(lines, cur)
+		}
+		let:<mut s32> target = mut 0
+		let bmi2 = mut false
+		let avx = mut false
+		let count = mut lines.size(lines)
+		for li in 0..count{
+			let rawLine = mut ? new String()
+			let l = lines.get(lines, li)
+			match Some(l){ rawLine = ? l.trim(l) }
+			if rawLine.length(rawLine) == 0 || rawLine.startsWith(rawLine, "#"){
+				continue
+			}
+			let len = mut rawLine.length(rawLine)
+			let split = mut len
+			for k in 0..len{
+				let code = mut String.charCode(rawLine.charAt(rawLine, k))
+				if code == 32 || (code >= 9 && code <= 13){
+					split = k
+					break
+				}
+			}
+			if split == len{
+				throw "config: expected 'key value'"
+			}
+			let key = mut ? rawLine.substring(rawLine, 0, split)
+			let rest = mut ? rawLine.substring(rawLine, split + 1)
+			let valueText = mut ? rest.trim(rest)
+			let value = mut ? new String()
+			let vn = mut valueText.length(valueText)
+			for k in 0..vn{
+				let ch = mut valueText.charAt(valueText, k)
+				? value.appendChar(value, Text.lowerChar(ch))
+			}
+			if key.equals(key, "target"){
+				if value.equals(value, "windows"){
+					throw "config: target 'windows' (MASM/Intel syntax) is no longer supported -- use 'windows_gnu' (gcc/mingw-w64)"
+				} else if value.equals(value, "windows_gnu") || value.equals(value, "windows-gnu") || value.equals(value, "mingw"){
+					target = 1
+				} else if value.equals(value, "linux"){
+					target = 2
+				} else{
+					throw "config: unknown target -- expected 'windows_gnu' or 'linux'"
+				}
+			} else if key.equals(key, "bmi2"){
+				if value.equals(value, "on"){
+					bmi2 = true
+				} else if value.equals(value, "off"){
+					bmi2 = false
+				} else{
+					throw "config: bmi2 must be 'on' or 'off'"
+				}
+			} else if key.equals(key, "avx"){
+				if value.equals(value, "on") == false && value.equals(value, "off") == false{
+					throw "config: avx must be 'on' or 'off'"
+				}
+				avx = value.equals(value, "on")
+			} else if key.equals(key, "jcc-padding"){
+				if value.equals(value, "on") == false && value.equals(value, "off") == false{
+					throw "config: jcc-padding must be 'on' or 'off'"
+				}
+			} else{
+				throw "config: unknown config key"
+			}
+		}
+		if target == 0{
+			throw "config: missing required 'target' key"
+		}
+		if target == 1{
+			let w = mut ? new CodegenConfig(CodegenTarget.WINDOWS_GNU_X64, bmi2, avx)
+			return w
+		}
+		let l = mut ? new CodegenConfig(CodegenTarget.LINUX_X64, bmi2, avx)
+		return l
+	}
+}

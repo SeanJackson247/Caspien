@@ -1,0 +1,14 @@
+// Must fail: struct literal outside the constructors of a struct that declares one.
+import "../stdlib/libc.caspien"
+enum ResultState{ OK, FAIL }
+@lock(match self.state : OK)
+struct Result<T>{@pub{
+	state: imut ResultState
+	payload: mut T
+}}
+impl<T> constructor for Result<T>() self{
+	return Result:<T>{state= ResultState.FAIL}
+}
+func main() void{
+	let a = mut Result:<u64>{state= ResultState.FAIL}
+}

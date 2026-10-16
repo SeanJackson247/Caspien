@@ -1,0 +1,216 @@
+// print / println: output without writing `unsafe` at the call site. Each overload wraps one `printf`/`putchar` in its own
+// `unsafe extern{}` block, so callers stay in safe code. `print(x)` writes x; `println(x)` writes x and a newline (stdout).
+// Overloads are picked by the argument's type: static imut string, u8..u64, s8..s64, f32, f64, bool, char.
+// Integers print in decimal; f32/f64 with `%g` (6 significant digits, no trailing zeros); bool as true/false; char as the character.
+// `print(String)` / `println(String)` are in print_string.caspien, kept apart because String needs the whole `gt_*` runtime (it allocates).
+// Not for the error path: stdout is buffered, and the buffer is allocated on first use (see stack_trace.md, 3.8).
+import "libc.caspien"
+
+// putchar taking a char: C converts its argument to unsigned char, so only the low byte matters (a char cannot be widened to u64 with `as`).
+@link_name(putchar)
+extern put_char(imut char) mut u64
+
+@pub
+func print(s: static imut string) void{
+	unsafe extern{
+		printf("%s", s)
+	}
+	return
+}
+
+@pub
+func print(x: imut u8) void{
+	unsafe extern{
+		printf("%llu", x as u64)
+	}
+	return
+}
+
+@pub
+func print(x: imut u16) void{
+	unsafe extern{
+		printf("%llu", x as u64)
+	}
+	return
+}
+
+@pub
+func print(x: imut u32) void{
+	unsafe extern{
+		printf("%llu", x as u64)
+	}
+	return
+}
+
+@pub
+func print(x: imut u64) void{
+	unsafe extern{
+		printf("%llu", x)
+	}
+	return
+}
+
+@pub
+func print(x: imut s8) void{
+	unsafe extern{
+		printf("%lld", x as s64)
+	}
+	return
+}
+
+@pub
+func print(x: imut s16) void{
+	unsafe extern{
+		printf("%lld", x as s64)
+	}
+	return
+}
+
+@pub
+func print(x: imut s32) void{
+	unsafe extern{
+		printf("%lld", x as s64)
+	}
+	return
+}
+
+@pub
+func print(x: imut s64) void{
+	unsafe extern{
+		printf("%lld", x)
+	}
+	return
+}
+
+@pub
+func print(x: imut f32) void{
+	unsafe extern{
+		printf("%g", x as f64)
+	}
+	return
+}
+
+@pub
+func print(x: imut f64) void{
+	unsafe extern{
+		printf("%g", x)
+	}
+	return
+}
+
+@pub
+func print(x: imut bool) void{
+	if x{
+		print("true")
+	}else{
+		print("false")
+	}
+	return
+}
+
+@pub
+func print(x: imut char) void{
+	unsafe extern{
+		put_char(x)
+	}
+	return
+}
+
+@pub
+func printNewline() void{
+	unsafe extern{
+		putchar(10)
+	}
+	return
+}
+
+@pub
+func println(x: static imut string) void{
+	print(x)
+	printNewline()
+	return
+}
+
+@pub
+func println(x: imut u8) void{
+	print(x)
+	printNewline()
+	return
+}
+
+@pub
+func println(x: imut u16) void{
+	print(x)
+	printNewline()
+	return
+}
+
+@pub
+func println(x: imut u32) void{
+	print(x)
+	printNewline()
+	return
+}
+
+@pub
+func println(x: imut u64) void{
+	print(x)
+	printNewline()
+	return
+}
+
+@pub
+func println(x: imut s8) void{
+	print(x)
+	printNewline()
+	return
+}
+
+@pub
+func println(x: imut s16) void{
+	print(x)
+	printNewline()
+	return
+}
+
+@pub
+func println(x: imut s32) void{
+	print(x)
+	printNewline()
+	return
+}
+
+@pub
+func println(x: imut s64) void{
+	print(x)
+	printNewline()
+	return
+}
+
+@pub
+func println(x: imut f32) void{
+	print(x)
+	printNewline()
+	return
+}
+
+@pub
+func println(x: imut f64) void{
+	print(x)
+	printNewline()
+	return
+}
+
+@pub
+func println(x: imut bool) void{
+	print(x)
+	printNewline()
+	return
+}
+
+@pub
+func println(x: imut char) void{
+	print(x)
+	printNewline()
+	return
+}

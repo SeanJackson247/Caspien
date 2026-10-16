@@ -1,0 +1,4 @@
+// a '@pure(rt)' function cannot call insecure_rand(): this must NOT compile.
+@pure(rt)
+func f() mut u64{ return insecure_rand() }
+func main() void{ }

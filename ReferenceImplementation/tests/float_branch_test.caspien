@@ -1,0 +1,99 @@
+// Float compare + branch fused into `ucomis{s,d}` + one conditional jump (no setcc / movzbq / test). Every operator (> < >= <= == !=) at f64 and f32,
+// if/else, and a `loop` exit, counted into numbers that float_branch_test.py (an independent model) reproduces.
+import "../stdlib/libc.caspien"
+
+func main() void{
+	unsafe assume extern loop{
+		let:<mut f64> xd = mut 0.0
+		let:<mut f64> yd = mut 0.0
+		let:<mut f32> xf = mut 0.0
+		let:<mut f32> yf = mut 0.0
+		let cnt = mut 0
+		let w = mut 0
+		for i in 0..40{
+			assume match xd : finite
+			assume match yd : finite
+			if xd > yd{
+				cnt += 1
+			}
+			if xd < yd{
+				cnt += 2
+			}
+			if xd >= yd{
+				cnt += 4
+			}
+			if xd <= yd{
+				cnt += 8
+			}
+			if xd == yd{
+				cnt += 16
+			}
+			if xd != yd{
+				cnt += 32
+			}
+			if xd > 2.5{
+				w += 3
+			} else {
+				w += 1
+			}
+			xd += 0.25
+			if i % 3 == 0{
+				yd = xd
+			} else {
+				yd += 0.125
+			}
+		}
+		let kd = mut 0
+		loop{
+			assume match xd : finite
+			if xd <= 0.0{
+				break
+			}
+			xd -= 0.5
+			kd++
+		}
+		for i in 0..40{
+			assume match xf : finite
+			assume match yf : finite
+			if xf > yf{
+				cnt += 1
+			}
+			if xf < yf{
+				cnt += 2
+			}
+			if xf >= yf{
+				cnt += 4
+			}
+			if xf <= yf{
+				cnt += 8
+			}
+			if xf == yf{
+				cnt += 16
+			}
+			if xf != yf{
+				cnt += 32
+			}
+			if xf > 2.5{
+				w += 3
+			} else {
+				w += 1
+			}
+			xf += 0.25
+			if i % 3 == 0{
+				yf = xf
+			} else {
+				yf += 0.125
+			}
+		}
+		let kf = mut 0
+		loop{
+			assume match xf : finite
+			if xf <= 0.0{
+				break
+			}
+			xf -= 0.5
+			kf++
+		}
+		printf("%llu %llu %llu %llu\n", cnt, w, kd, kf)
+	}
+}

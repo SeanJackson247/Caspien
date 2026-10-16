@@ -1,0 +1,21 @@
+// Must fail to compile: the spin loop `match @lock` lowers to is not a user loop, so `continue` directly in the OPEN case
+// (where the lock is held) is rejected; only CLOSED may `continue` (retry).
+import "../stdlib/libc.caspien"
+
+enum St{ OPEN, CLOSED }
+
+struct Mtx{@pub{
+	swap lockState: atomic mut St
+	n: mut u64
+}}
+
+func main() void{
+	let m = mut Mtx{lockState= St.OPEN, n= mut 0}
+	match @lock m{
+		OPEN:{
+			m.n += 1
+			continue
+		}
+		CLOSED:{ continue }
+	}
+}

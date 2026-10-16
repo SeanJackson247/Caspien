@@ -1,0 +1,11 @@
+// Must fail: `default` on an enum not marked @non_exhaustive.
+import "../stdlib/libc.caspien"
+enum Level{ LOW, MID }
+func level(l: imut Level) mut u64{
+	match l{
+		LOW:{ return 1 }
+		default:{ return 2 }
+	}
+	return 0
+}
+func main() void{ let x = mut level(Level.LOW) }

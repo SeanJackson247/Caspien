@@ -1,0 +1,2 @@
+# Programs allowed to leave blocks registered in the ghost table at exit (tests/run_tests.py leak check).
+# Format: <program name>  <max blocks>   # reason.   Empty on purpose: every program is expected to free what it allocates.

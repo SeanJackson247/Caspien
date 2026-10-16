@@ -1,0 +1,65 @@
+// The id of the object at `ptr`: the first call for a registered object creates its id (1, 2, 3, ... never reused) and tags it in T1; later
+// calls return the same id. 0 = null, an unregistered (dead) address, or the table could not grow (out of memory; nothing was changed).
+// This is what storing a `ref some` (an address) into a nullable `ref` slot (and `ref x` of a nullable owner) calls (`GT_REF_ID`).
+import "ghost_table.caspien"
+
+@gt_ref_id
+@pub
+func gt_ref_id(ptr: raw imut u8) mut u64{
+	if ptr == null{
+		return mut 0
+	}
+	let result = mut 0
+	match @lock ghost_table{
+		OPEN:{
+			let addr = mut gtAddrOf(ptr)
+			let at = mut gtT1Find(ghost_table.base, ghost_table.capacity, addr)
+			if at != ghost_table.capacity{
+				let stored = mut gtLoad(ghost_table.base, at)
+				if bits_and(stored, 1) == 1{
+					let ia = mut gtT16Find(ghost_table.refBase, ghost_table.refCap, addr, 0)
+					if ia != ghost_table.refCap{
+						result = mut gtLoad(ghost_table.refBase, ia * 2 + 1)
+					}
+				}
+				else{
+					let ok = mut true
+					if (ghost_table.refLen + 1) * 2 > ghost_table.refCap{
+						let nb = mut gtGrown16(ghost_table.refBase, ghost_table.refCap, 0)
+						if nb == null{
+							ok = mut false
+						}
+						else{
+							ghost_table.refBase = mut nb
+							ghost_table.refCap = mut gtNewCap16(ghost_table.refCap)
+						}
+					}
+					if ok && (ghost_table.idLen + 1) * 2 > ghost_table.idCap{
+						let nb2 = mut gtGrown16(ghost_table.idBase, ghost_table.idCap, 1)
+						if nb2 == null{
+							ok = mut false
+						}
+						else{
+							ghost_table.idBase = mut nb2
+							ghost_table.idCap = mut gtNewCap16(ghost_table.idCap)
+						}
+					}
+					if ok{
+						let id = mut (ghost_table.nextId + 1)
+						ghost_table.nextId = mut id
+						gtT16Insert(ghost_table.refBase, ghost_table.refCap, addr, id, 0)
+						gtT16Insert(ghost_table.idBase, ghost_table.idCap, id, addr, 1)
+						ghost_table.refLen = mut (ghost_table.refLen + 1)
+						ghost_table.idLen = mut (ghost_table.idLen + 1)
+						gtStore(ghost_table.base, at, bits_or(stored, 1))
+						result = mut id
+					}
+				}
+			}
+		}
+		CLOSED:{
+			continue
+		}
+	}
+	return result
+}

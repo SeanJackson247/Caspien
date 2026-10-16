@@ -1,0 +1,11 @@
+// Must fail: MID is uncovered and there is no `default`.
+import "../stdlib/libc.caspien"
+@non_exhaustive
+enum Level{ LOW, MID, default }
+func level(l: imut Level) mut u64{
+	match l{
+		LOW:{ return 1 }
+	}
+	return 0
+}
+func main() void{ let x = mut level(Level.LOW) }

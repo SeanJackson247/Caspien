@@ -1,0 +1,36 @@
+// `unsafe unaudited{}` stands for every unsafe tag: the block is accepted whatever it needs (here assume + deref, and extern + raw), and it
+// is accepted even when it needs nothing at all. The exact-tags rule is still enforced for every other block.
+import "../stdlib/libc.caspien"
+
+func check(name: static imut string, ok: mut bool) void{
+	unsafe extern{
+		if ok{
+			printf("PASS %s\n", name)
+		}else{
+			printf("FAIL %s\n", name)
+		}
+	}
+	return
+}
+
+func rd(p: raw imut u64) imut u64{
+	unsafe unaudited{
+		assume match Some(p)
+		return deref(p)
+	}
+}
+
+func idle() mut u64{
+	unsafe unaudited{
+		return 5
+	}
+}
+
+func main() void{
+	let v = mut 7
+	unsafe unaudited{
+		let p = imut raw v
+		check("unaudited block needing extern, raw, assume, deref", rd(p) == 7)
+	}
+	check("unaudited block that needs nothing", idle() == 5)
+}

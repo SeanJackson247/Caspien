@@ -1,0 +1,113 @@
+// Variable shifts compiled with the BMI2 instructions (`bmi2 on`: shlx/shrx, no %rcx save, a count >= 64 gives 0) must mean exactly what the generic
+// sequence means: the count is an unsigned number of the operand's own width, a count >= the width gives 0 (SHL/SHR). Every width (u8..u64), counts
+// 0..255 around every boundary, results checksummed. Output is compared with shift_bmi2_test.py (an independent model) by shift_bmi2_check.sh,
+// which builds this with `bmi2 on` and with `off` and requires the same numbers.
+import "../stdlib/libc.caspien"
+
+func shl_u8(x: mut u8, c: mut u8) mut u8{ return bits_left(x, c) }
+func shr_u8(x: mut u8, c: mut u8) mut u8{ return bits_right(x, c) }
+func shl_u16(x: mut u16, c: mut u16) mut u16{ return bits_left(x, c) }
+func shr_u16(x: mut u16, c: mut u16) mut u16{ return bits_right(x, c) }
+func shl_u32(x: mut u32, c: mut u32) mut u32{ return bits_left(x, c) }
+func shr_u32(x: mut u32, c: mut u32) mut u32{ return bits_right(x, c) }
+func shl_u64(x: mut u64, c: mut u64) mut u64{ return bits_left(x, c) }
+func shr_u64(x: mut u64, c: mut u64) mut u64{ return bits_right(x, c) }
+
+func main() void{
+	let cs = mut [0, 1, 3, 7, 8, 9, 15, 16, 17, 31, 32, 33, 40, 63, 64, 65, 100, 127, 128, 200, 255]
+	let vals = mut [1, 255, 43690, 3735928559, 12297829382473034410, 18446744073709551615]
+	let hl_u8 = mut 0
+	let hr_u8 = mut 0
+	for i in 0..21{
+		let cc = mut 0
+		match i in cs{
+			cc = cs[i]
+		}
+		if cc < 256{
+			let:<mut u8> c = mut wrap:<u8>(cc)
+			for j in 0..6{
+				let vv = mut 0
+				match j in vals{
+					vv = vals[j]
+				}
+				let:<mut u8> v = mut wrap:<u8>(vv)
+				let:<mut u8> l = mut shl_u8(v, c)
+				let:<mut u8> r = mut shr_u8(v, c)
+				hl_u8 = hl_u8 * 31 + (l as u64) + 1
+				hr_u8 = hr_u8 * 31 + (r as u64) + 1
+			}
+		}
+	}
+	let hl_u16 = mut 0
+	let hr_u16 = mut 0
+	for i in 0..21{
+		let cc = mut 0
+		match i in cs{
+			cc = cs[i]
+		}
+		if cc < 65536{
+			let:<mut u16> c = mut wrap:<u16>(cc)
+			for j in 0..6{
+				let vv = mut 0
+				match j in vals{
+					vv = vals[j]
+				}
+				let:<mut u16> v = mut wrap:<u16>(vv)
+				let:<mut u16> l = mut shl_u16(v, c)
+				let:<mut u16> r = mut shr_u16(v, c)
+				hl_u16 = hl_u16 * 31 + (l as u64) + 1
+				hr_u16 = hr_u16 * 31 + (r as u64) + 1
+			}
+		}
+	}
+	let hl_u32 = mut 0
+	let hr_u32 = mut 0
+	for i in 0..21{
+		let cc = mut 0
+		match i in cs{
+			cc = cs[i]
+		}
+		if cc < 4294967296{
+			let:<mut u32> c = mut wrap:<u32>(cc)
+			for j in 0..6{
+				let vv = mut 0
+				match j in vals{
+					vv = vals[j]
+				}
+				let:<mut u32> v = mut wrap:<u32>(vv)
+				let:<mut u32> l = mut shl_u32(v, c)
+				let:<mut u32> r = mut shr_u32(v, c)
+				hl_u32 = hl_u32 * 31 + (l as u64) + 1
+				hr_u32 = hr_u32 * 31 + (r as u64) + 1
+			}
+		}
+	}
+	let hl_u64 = mut 0
+	let hr_u64 = mut 0
+	for i in 0..21{
+		let cc = mut 0
+		match i in cs{
+			cc = cs[i]
+		}
+		if cc < 256{
+			let:<mut u64> c = mut wrap:<u64>(cc)
+			for j in 0..6{
+				let vv = mut 0
+				match j in vals{
+					vv = vals[j]
+				}
+				let:<mut u64> v = mut wrap:<u64>(vv)
+				let:<mut u64> l = mut shl_u64(v, c)
+				let:<mut u64> r = mut shr_u64(v, c)
+				hl_u64 = hl_u64 * 31 + l + 1
+				hr_u64 = hr_u64 * 31 + r + 1
+			}
+		}
+	}
+	unsafe extern{
+		printf("u8 %llu %llu\n", hl_u8, hr_u8)
+		printf("u16 %llu %llu\n", hl_u16, hr_u16)
+		printf("u32 %llu %llu\n", hl_u32, hr_u32)
+		printf("u64 %llu %llu\n", hl_u64, hr_u64)
+	}
+}

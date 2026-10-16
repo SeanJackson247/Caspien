@@ -1,0 +1,14 @@
+// An `unsafe` block is a permission marker, not a lexical scope: a name declared inside it lives in the enclosing scope,
+// so declaring the same name in a second `unsafe` block of the same function is a redeclaration and must not compile.
+import "../stdlib/libc.caspien"
+import "../stdlib/gt/*"
+func main() void{
+	unsafe extern{
+		let sum = mut 1
+		printf("%llu\n", sum)
+	}
+	unsafe extern{
+		let sum = mut 2
+		printf("%llu\n", sum)
+	}
+}
