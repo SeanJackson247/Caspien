@@ -30,7 +30,11 @@ Every Java file of `../` has a `.caspien` twin here (the Java copies were remove
 - `throw` takes only a literal, so the dynamic text of Java messages is dropped (`rfFalseJump`: "unknown R_BRC operator"; `rfTrueSuffix`: "unknown condition"); number parsing throws "NumberFormatException".
 - `isInteger` accepts ASCII digits only (Java `Character.isDigit` also takes other Unicode digits).
 - `StringSet`/`StringMap`/`StringScalarMap` search linearly (Java hashes): a known performance follow-up. `ObjectList<T>` owns its items (`get` returns a `ref`, `add` moves the item in).
-- Port-only helpers: `X86Backend.wire`, `X86Core.rfVarRegName/rfTempRegName` (the register tables, indexed by if-chain), `X86Core.sliceEq`. `python3 tests/port_parity_check.py` lists any method that exists in only one of a Java class and its twin (run it after touching either side; 16 Oct: the Java `X86RegForm` gained `gtSaveLoadedArgRegs/gtRestoreLoadedArgRegs`, stubbed here).
+- Port-only helpers: `X86Backend.wire`, `X86Core.rfVarRegName/rfTempRegName/xmmName` (register tables, indexed by if-chain), `X86Core.sliceEq/tokenIs/tokenIsDigits/tokenS64/partCopy` (token tests without copying), `X86Core.isStrideKeepOp` (a `let static` list cannot be read from safe code), `X86Emit.sizedRegLiteral`, `Text.containsWordLit/usesRbx/usesRdi/usesRsi/lowerChar`.
+- `FloatText.bits` (exact decimal -> IEEE bits through `BigInt`) replaces `Float/Double.parseFloat` in `initBits`; `String.charCode` (stdlib) gives a char's byte value.
+- Messages of thrown errors lose their dynamic part and the `CodegenException` path/line (`CodegenConfig.parse`: "config: unknown config key" etc.).
+- Negative register indexes: Java `argReg(-1)` throws ArrayIndexOutOfBounds; the port returns the fallback ("rax"/"xmm0"), no caller passes one.
+- `Main.writeFile` is still a stub: `stdlib/fs.caspien` writes only literal text to a single-component name, the Java writes a dynamic String to a path. `python3 tests/port_parity_check.py` lists any method that exists in only one of a Java class and its twin (run it after touching either side; 16 Oct: the Java `X86RegForm` gained `gtSaveLoadedArgRegs/gtRestoreLoadedArgRegs`, stubbed here).
 - Javadoc comments of the Java files are not copied; they stay in the Java originals and the README below.
 
 ---

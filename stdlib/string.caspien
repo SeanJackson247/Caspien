@@ -807,6 +807,17 @@ impl String{
 		}
 	}
 
+	/** The byte value of a char (Java `(long) c` for chars below 256). */
+	@pub
+	static func charCode(c: mut char) mut u64{
+		let:<mut u8> b = mut 0
+		unsafe memcopy raw{
+			memcopy(raw b, mut 1, raw c)
+		}
+		let r = mut b as u64
+		return r
+	}
+
 	/** Java `Character.isDigit` for ASCII: '0'..'9'. */
 	@pub
 	static func isDigit(c: mut char) bool{

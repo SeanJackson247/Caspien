@@ -16,7 +16,7 @@ def java_methods(path):
 def port_methods(path):
     return set(re.findall(r"\bfunc\s+(\w+)\s*\(", open(path, encoding="utf-8").read()))
 # port-only helpers (documented in the port README) and Java files that have no twin on purpose
-PORT_ONLY = {"wire", "rfTempRegName", "rfVarRegName", "sliceEq"}
+PORT_ONLY = {"wire", "rfTempRegName", "rfVarRegName", "sliceEq", "tokenIs", "tokenIsDigits", "tokenS64", "partCopy", "isStrideKeepOp", "xmmName", "sizedRegLiteral"}
 NO_TWIN = {"CodegenException.java"}
 bad = 0
 for root, _, files in os.walk(J):

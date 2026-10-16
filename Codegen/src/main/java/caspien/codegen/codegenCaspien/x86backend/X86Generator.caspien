@@ -56,14 +56,39 @@ impl X86Generator{
 	}
 
 	@pub
-	func rfArgReg(_self: ref some mut self, idx: mut s32) owns mut String{ return null }
+	@throws
+	func rfArgReg(_self: ref some mut self, idx: mut s32) static imut string{
+		?catch(e){ throw e }
+		match Some(_self.hub){ match Some(_self.hub.calls){
+			let reg = _self.hub.calls.argReg(_self.hub.calls, idx)
+			if String.literalsEqual(reg, "rax"){
+				throw "R_ARG index is beyond the register-passed arguments"
+			}
+			return reg
+		} }
+		return "rax"
+	}
 
 	@pub
 	func rfLoad(_self: ref some mut self, n: mut s32, dstTok: ref imut String, srcTok: ref imut String) void{
 	}
 
 	@pub
-	func rfDispMem(_self: ref some mut self, baseTok: ref imut String, disp: mut s64) owns mut String{ return null }
+	@throws
+	func rfDispMem(_self: ref some mut self, baseTok: ref imut String, disp: mut s64) owns some mut String{
+		?catch(e){ throw e }
+		let r = mut ? new String()
+		if disp != 0{
+			? r.appendS64(r, disp)
+		}
+		? r.append(r, "(%")
+		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ match Some(baseTok){
+			let reg = ? _self.hub.regForm.rfReg(_self.hub.regForm, baseTok)
+			? r.append(r, reg)
+		} } } }
+		? r.append(r, ")")
+		return r
+	}
 
 	@pub
 	func rfLoadDisp(_self: ref some mut self, n: mut s32, dstTok: ref imut String, baseTok: ref imut String, disp: mut s64) void{
@@ -161,10 +186,24 @@ impl X86Generator{
 	}
 
 	@pub
-	func rfXmmA(_self: ref some mut self) owns mut String{ return null }
+	func rfXmmA(_self: ref some mut self) static imut string{
+		let win = mut false
+		match Some(_self.core){ win = _self.core.target == CodegenTarget.WINDOWS_GNU_X64 }
+		if win{
+			return "xmm4"
+		}
+		return "xmm14"
+	}
 
 	@pub
-	func rfXmmB(_self: ref some mut self) owns mut String{ return null }
+	func rfXmmB(_self: ref some mut self) static imut string{
+		let win = mut false
+		match Some(_self.core){ win = _self.core.target == CodegenTarget.WINDOWS_GNU_X64 }
+		if win{
+			return "xmm5"
+		}
+		return "xmm15"
+	}
 
 	@pub
 	func rfGprToXmm(_self: ref some mut self, xmm: ref imut String, gpr64: ref imut String, n: mut s32) void{
@@ -179,13 +218,68 @@ impl X86Generator{
 	}
 
 	@pub
-	func yPhys(_self: ref some mut self, k: mut s32) owns mut String{ return null }
+	@throws
+	func yPhys(_self: ref some mut self, k: mut s32) static imut string{
+		?catch(e){ throw e }
+		let win = mut false
+		match Some(_self.core){ win = _self.core.target == CodegenTarget.WINDOWS_GNU_X64 }
+		let:<mut s32> base = mut 4
+		if win{
+			base = 12
+		}
+		let r = ? X86Core.xmmName(base + k)
+		return r
+	}
 
 	@pub
-	func xvPhys(_self: ref some mut self, k: mut s32) owns mut String{ return null }
+	@throws
+	func xvPhys(_self: ref some mut self, k: mut s32) static imut string{
+		?catch(e){ throw e }
+		let win = mut false
+		match Some(_self.core){ win = _self.core.target == CodegenTarget.WINDOWS_GNU_X64 }
+		let:<mut s32> base = mut 8
+		if win{
+			base = 6
+		}
+		let r = ? X86Core.xmmName(base + k)
+		return r
+	}
 
 	@pub
-	func xvReg(_self: ref some mut self, tok: ref imut String) owns mut String{ return null }
+	@throws
+	func xvReg(_self: ref some mut self, tok: ref imut String) static imut string{
+		?catch(e){ throw e }
+		let:<mut s64> k = mut 0
+		let isZ = mut false
+		let isY = mut false
+		match Some(tok){
+			isZ = tok.startsWith(tok, "%z")
+			isY = tok.startsWith(tok, "%y")
+		}
+		match Some(tok){
+			let digits = mut ? tok.substring(tok, 2)
+			k = ? digits.parseS64(digits)
+		}
+		if isZ{
+			if k < 0 || k >= 4{
+				throw "float cache register out of range"
+			}
+			let z = ? X86Core.xmmName(wrap:<s32>(k))
+			return z
+		}
+		if isY{
+			if k < 0 || k >= 4{
+				throw "float temporary register out of range"
+			}
+			let y = ? _self.yPhys(_self, wrap:<s32>(k))
+			return y
+		}
+		if k < 0 || k >= 6{
+			throw "float variable register out of range"
+		}
+		let v = ? _self.xvPhys(_self, wrap:<s32>(k))
+		return v
+	}
 
 	@pub
 	func xvSpillAll(_self: ref some mut self) void{
@@ -196,10 +290,40 @@ impl X86Generator{
 	}
 
 	@pub
-	func floatPoolLabel(_self: ref some mut self, bits: mut s64, n: mut s32) owns mut String{ return null }
+	@throws
+	func floatPoolLabel(_self: ref some mut self, bits: mut s64, n: mut s32) owns some mut String{
+		?catch(e){ throw e }
+		let b = mut X86Generator.maskIf4(bits, n)
+		let key = mut ? String.fromS64(wrap:<s64>(n))
+		? key.append(key, ":")
+		? key.appendS64(key, b)
+		let found = mut ? new String()
+		let present = mut false
+		match Some(_self){ match Some(_self.core){
+			let hit = _self.core.floatPool.get(_self.core.floatPool, key)
+			match Some(hit){
+				present = true
+				found = ? hit.substring(hit, 0)
+			}
+		} }
+		if present{
+			return found
+		}
+		let label = mut ? String.from(".LFC")
+		match Some(_self){ match Some(_self.core){ ? label.appendU64(label, _self.core.floatPool.size(_self.core.floatPool)) } }
+		let stored = mut ? label.substring(label, 0)
+		match Some(_self){ match Some(_self.core){ ? _self.core.floatPool.put(_self.core.floatPool, key, stored) } }
+		return label
+	}
 
 	@pub
-	func floatPoolMem(_self: ref some mut self, bits: mut s64, n: mut s32) owns mut String{ return null }
+	@throws
+	func floatPoolMem(_self: ref some mut self, bits: mut s64, n: mut s32) owns some mut String{
+		?catch(e){ throw e }
+		let r = mut ? _self.floatPoolLabel(_self, bits, n)
+		? r.append(r, "(%rip)")
+		return r
+	}
 
 	@pub
 	func emitFloatPool(_self: ref some mut self) void{
@@ -219,7 +343,35 @@ impl X86Generator{
 	}
 
 	@pub
-	func rfFloatMem(_self: ref some mut self, addrTok: ref imut String, n: mut s32) owns mut String{ return null }
+	@throws
+	func rfFloatMem(_self: ref some mut self, addrTok: ref imut String, n: mut s32) owns some mut String{
+		?catch(e){ throw e }
+		let out = mut ? new String()
+		let isSlot = mut false
+		let isGlobal = mut false
+		match Some(addrTok){
+			isSlot = X86Core.rfIsSlot(addrTok)
+			isGlobal = X86Core.rfIsGlobal(addrTok)
+		}
+		if isSlot{
+			let:<mut s64> off = mut 0
+			match Some(addrTok){ off = ? X86Core.rfSlot(addrTok) }
+			? out.appendS64(out, off)
+			? out.append(out, "(%rbp)")
+		} else if isGlobal{
+			let name = mut ? new String()
+			match Some(addrTok){ name = ? addrTok.substring(addrTok, 1) }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ out = ? _self.hub.emit.globalRipOperand(_self.hub.emit, name) } } }
+		} else{
+			? out.append(out, "(%")
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ match Some(addrTok){
+				let reg = ? _self.hub.regForm.rfReg(_self.hub.regForm, addrTok)
+				? out.append(out, reg)
+			} } } }
+			? out.append(out, ")")
+		}
+		return out
+	}
 
 	@pub
 	func rfLoadX(_self: ref some mut self, xmm: ref imut String, addrTok: ref imut String, n: mut s32) void{
@@ -230,7 +382,37 @@ impl X86Generator{
 	}
 
 	@pub
-	func rfTimesTwoOperand(_self: ref some mut self, n: mut s32, aTok: ref imut String, bTok: ref imut String) owns mut String{ return null }
+	@throws
+	func rfTimesTwoOperand(_self: ref some mut self, n: mut s32, aTok: ref imut String, bTok: ref imut String) owns mut String{
+		?catch(e){ throw e }
+		let:<mut s64> two = mut 0x40000000
+		if n == 8{
+			two = 0x4000000000000000
+		}
+		let aImm = mut false
+		let bImm = mut false
+		let:<mut s64> aVal = mut 0
+		let:<mut s64> bVal = mut 0
+		match Some(aTok){
+			aImm = X86Core.rfIsImm(aTok)
+			if aImm{ aVal = ? X86Core.rfImm(aTok) }
+		}
+		match Some(bTok){
+			bImm = X86Core.rfIsImm(bTok)
+			if bImm{ bVal = ? X86Core.rfImm(bTok) }
+		}
+		if aImm && X86Generator.maskUnless8(aVal, n) == two && bImm == false{
+			let r = mut ? new String()
+			match Some(bTok){ r = ? bTok.substring(bTok, 0) }
+			return r
+		}
+		if bImm && X86Generator.maskUnless8(bVal, n) == two && aImm == false{
+			let r2 = mut ? new String()
+			match Some(aTok){ r2 = ? aTok.substring(aTok, 0) }
+			return r2
+		}
+		return null
+	}
 
 	@pub
 	func rfFloatX(_self: ref some mut self, op: ref imut String, n: mut s32, dstTok: ref imut String, aTok: ref imut String, bTok: ref imut String) void{
@@ -303,14 +485,332 @@ impl X86Generator{
 	}
 
 	@pub
-	func varMarksNeeded(_self: ref some mut self, start: mut s32) mut s32{ return 0 }
-
-	@pub
-	func expandVarMarks(_self: ref some mut self, start: mut s32) void{
+	@throws
+	func varMarksNeeded(_self: ref some mut self, start: mut s32) mut s32{
+		?catch(e){ throw e }
+		let:<mut s32> mask = mut 0
+		let:<mut u64> from = mut 0
+		if start > 0{
+			from = wrap:<u64>(start)
+		}
+		let r13 = mut ? new String("r13")
+		let r14 = mut ? new String("r14")
+		let r12 = mut ? new String("r12")
+		let dwb = mut ? new String("dwb")
+		let bound = mut 0
+		match Some(_self){ match Some(_self.core){ bound = _self.core.out.length(_self.core.out) + 1 } }
+		for step in 0..bound{
+			let:<mut s64> i = mut -1
+			let:<mut s64> j = mut -1
+			match Some(_self){ match Some(_self.core){ i = _self.core.out.indexOf(_self.core.out, "@@V1314S@@\n", from) } }
+			if i < 0{
+				break
+			}
+			let segStart = mut wrap:<u64>(i + 11)
+			match Some(_self){ match Some(_self.core){ j = _self.core.out.indexOf(_self.core.out, "@@V1314R@@\n", segStart) } }
+			if j < 0{
+				break
+			}
+			let seg = mut ? new String()
+			match Some(_self){ match Some(_self.core){ seg = ? _self.core.out.sub(_self.core.out, segStart, wrap:<u64>(j)) } }
+			if Text.containsWord(seg, r13, dwb, false){
+				mask = bits_or(mask, 1)
+			}
+			if Text.containsWord(seg, r14, dwb, false){
+				mask = bits_or(mask, 2)
+			}
+			if Text.containsWord(seg, r12, dwb, false){
+				mask = bits_or(mask, 4)
+			}
+			from = wrap:<u64>(j + 11)
+		}
+		return mask
 	}
 
 	@pub
+	@throws
+	func expandVarMarks(_self: ref some mut self, start: mut s32) void{
+		?catch(e){ throw e }
+		let:<mut u64> from = mut 0
+		if start > 0{
+			from = wrap:<u64>(start)
+		}
+		let names = mut ? new ObjectList:<String>()
+		let n13 = mut ? new String("r13")
+		let n14 = mut ? new String("r14")
+		let n12 = mut ? new String("r12")
+		? names.add(names, n13)
+		? names.add(names, n14)
+		? names.add(names, n12)
+		let dwb = mut ? new String("dwb")
+		let bound = mut 0
+		match Some(_self){ match Some(_self.core){ bound = _self.core.out.length(_self.core.out) + 1 } }
+		for step in 0..bound{
+			let:<mut s64> i = mut -1
+			let:<mut s64> j = mut -1
+			match Some(_self){ match Some(_self.core){ i = _self.core.out.indexOf(_self.core.out, "@@V1314S@@\n", from) } }
+			if i < 0{
+				break
+			}
+			let segStart = mut wrap:<u64>(i + 11)
+			match Some(_self){ match Some(_self.core){ j = _self.core.out.indexOf(_self.core.out, "@@V1314R@@\n", segStart) } }
+			if j < 0{
+				throw "codegen internal error: unbalanced register-save marks"
+			}
+			let seg = mut ? new String()
+			match Some(_self){ match Some(_self.core){ seg = ? _self.core.out.sub(_self.core.out, segStart, wrap:<u64>(j)) } }
+			let sv = mut ? new String()
+			let rs = mut ? new String()
+			for vi in 0..3{
+				let slot = mut ? new String()
+				match Some(_self){ match Some(_self.core){
+					let s = _self.core.vSlots.get(_self.core.vSlots, vi)
+					match Some(s){ slot = ? s.substring(s, 0) }
+				} }
+				let nm = mut ? new String()
+				let nmSrc = names.get(names, vi)
+				match Some(nmSrc){ nm = ? nmSrc.substring(nmSrc, 0) }
+				if slot.length(slot) > 0 && Text.containsWord(seg, nm, dwb, false){
+					? sv.append(sv, "    movq %")
+					? sv.append(sv, nm)
+					? sv.append(sv, ", ")
+					? sv.append(sv, slot)
+					? sv.append(sv, "\n")
+					? rs.append(rs, "    movq ")
+					? rs.append(rs, slot)
+					? rs.append(rs, ", %")
+					? rs.append(rs, nm)
+					? rs.append(rs, "\n")
+				}
+			}
+			match Some(_self){ match Some(_self.core){ ? _self.core.out.replaceRange(_self.core.out, wrap:<u64>(j), wrap:<u64>(j + 11), rs) } }
+			match Some(_self){ match Some(_self.core){ ? _self.core.out.replaceRange(_self.core.out, wrap:<u64>(i), wrap:<u64>(i + 11), sv) } }
+			from = wrap:<u64>(i) + sv.length(sv)
+		}
+	}
+
+	@pub
+	@throws
 	func finishCalleeSaved(_self: ref some mut self) void{
+		?catch(e){ throw e }
+		let:<mut s32> start = mut -1
+		let:<mut s64> frameBytes = mut 0
+		let win = mut false
+		match Some(_self){ match Some(_self.core){
+			start = _self.core.csrFuncStart
+			frameBytes = _self.core.csrAllocSum
+			win = _self.core.target == CodegenTarget.WINDOWS_GNU_X64
+		} }
+		if start < 0{
+			return
+		}
+		let body = mut ? new String()
+		match Some(_self){ match Some(_self.core){ body = ? _self.core.out.substring(_self.core.out, wrap:<u64>(start)) } }
+		let regs = mut ? new ObjectList:<String>()
+		let hasRbx = mut ? Text.usesRbx(body)
+		if hasRbx{
+			let r0 = mut ? String.from("rbx")
+			? regs.add(regs, r0)
+		}
+		let h12 = mut ? Text.containsWordLit(body, "r12", "dwb", false)
+		if h12{
+			let r1 = mut ? String.from("r12")
+			? regs.add(regs, r1)
+		}
+		let h13 = mut ? Text.containsWordLit(body, "r13", "dwb", false)
+		if h13{
+			let r2 = mut ? String.from("r13")
+			? regs.add(regs, r2)
+		}
+		let h14 = mut ? Text.containsWordLit(body, "r14", "dwb", false)
+		if h14{
+			let r3 = mut ? String.from("r14")
+			? regs.add(regs, r3)
+		}
+		let h15 = mut ? Text.containsWordLit(body, "r15", "dwb", false)
+		if h15{
+			let r4 = mut ? String.from("r15")
+			? regs.add(regs, r4)
+		}
+		if win{
+			let hasRdi = mut ? Text.usesRdi(body)
+			if hasRdi{
+				let r5 = mut ? String.from("rdi")
+				? regs.add(regs, r5)
+			}
+			let hasRsi = mut ? Text.usesRsi(body)
+			if hasRsi{
+				let r6 = mut ? String.from("rsi")
+				? regs.add(regs, r6)
+			}
+			for x in 6..16{
+				let nm = ? X86Core.xmmName(wrap:<s32>(x))
+				let hx = mut ? Text.containsWordLit(body, nm, "", false)
+				if hx{
+					let r7 = mut ? String.from(nm)
+					? regs.add(regs, r7)
+				}
+			}
+		}
+		let restoreText = mut ? new String()
+		for z in 0..3{
+			let blank = mut ? new String()
+			match Some(_self){ match Some(_self.core){ _self.core.vSlots.setAt(_self.core.vSlots, z, blank) } }
+		}
+		if regs.isEmpty(regs) == false{
+			let noAlloc = mut false
+			match Some(_self){ match Some(_self.core){ noAlloc = _self.core.csrAllocPos < 0 } }
+			if noAlloc{
+				let blankLine = mut ? new String()
+				match Some(_self){ match Some(_self.core){
+					_self.core.csrAllocPos = _self.core.csrFuncStart
+					_self.core.csrAllocBytes = 0
+					_self.core.csrAllocLine = blankLine
+				} }
+			}
+			let:<mut s32> allocPos = mut 0
+			let:<mut s64> allocBytes = mut 0
+			match Some(_self){ match Some(_self.core){
+				allocPos = _self.core.csrAllocPos
+				allocBytes = _self.core.csrAllocBytes
+			} }
+			let beforeAlloc = mut ? new String()
+			match Some(_self){ match Some(_self.core){ beforeAlloc = ? _self.core.out.substring(_self.core.out, wrap:<u64>(start), wrap:<u64>(allocPos)) } }
+			let early = mut ? beforeAlloc.replace(beforeAlloc, "@@CSR@@", "")
+			let nregs = mut regs.size(regs)
+			for k in 0..nregs{
+				let reg = mut ? new String()
+				let rr = regs.get(regs, k)
+				match Some(rr){ reg = ? rr.substring(rr, 0) }
+				let usedEarly = mut false
+				if reg.startsWith(reg, "xmm"){
+					let w = mut ? new String()
+					usedEarly = Text.containsWord(early, reg, w, false)
+				} else if reg.equals(reg, "rbx"){
+					usedEarly = ? Text.usesRbx(early)
+				} else if reg.equals(reg, "rdi"){
+					usedEarly = ? Text.usesRdi(early)
+				} else if reg.equals(reg, "rsi"){
+					usedEarly = ? Text.usesRsi(early)
+				} else{
+					let dwb = mut ? new String("dwb")
+					usedEarly = Text.containsWord(early, reg, dwb, false)
+				}
+				if usedEarly{
+					throw "codegen internal error: a function uses a callee-saved register before its frame is allocated"
+				}
+			}
+			let:<mut s64> cur = mut allocBytes
+			let saves = mut ? new String()
+			let restores = mut ? new String()
+			for k2 in 0..nregs{
+				let reg2 = mut ? new String()
+				let rr2 = regs.get(regs, k2)
+				match Some(rr2){ reg2 = ? rr2.substring(rr2, 0) }
+				let isX = mut reg2.startsWith(reg2, "xmm")
+				let mem = mut ? new String("-")
+				if isX{
+					cur = cur + 16
+				} else{
+					cur = cur + 8
+				}
+				? mem.appendS64(mem, cur)
+				? mem.append(mem, "(%rbp)")
+				? saves.append(saves, "    ")
+				? restores.append(restores, "    ")
+				if isX{
+					? saves.append(saves, "movups %")
+					? restores.append(restores, "movups ")
+				} else{
+					? saves.append(saves, "movq %")
+					? restores.append(restores, "movq ")
+				}
+				? saves.append(saves, reg2)
+				? saves.append(saves, ", ")
+				? saves.append(saves, mem)
+				? saves.append(saves, "\n")
+				? restores.append(restores, mem)
+				? restores.append(restores, ", %")
+				? restores.append(restores, reg2)
+				? restores.append(restores, "\n")
+			}
+			for z2 in 0..3{
+				let blank2 = mut ? new String()
+				match Some(_self){ match Some(_self.core){ _self.core.vSlots.setAt(_self.core.vSlots, z2, blank2) } }
+			}
+			let:<mut s32> needMask = mut 0
+			match Some(_self){ needMask = ? _self.varMarksNeeded(_self, start) }
+			for vi in 0..3{
+				let:<mut s32> varMask = mut 0
+				match Some(_self){ match Some(_self.core){ varMask = _self.core.rfVarMask } }
+				let:<mut s32> bit = mut 1
+				if vi == 1{ bit = 2 }
+				if vi == 2{ bit = 4 }
+				if bits_and(bits_and(varMask, needMask), bit) != 0{
+					cur = cur + 8
+					let slot = mut ? String.from("-")
+					? slot.appendS64(slot, cur)
+					? slot.append(slot, "(%rbp)")
+					match Some(_self){ match Some(_self.core){ _self.core.vSlots.setAt(_self.core.vSlots, vi, slot) } }
+				}
+			}
+			let total = mut bits_and(cur + 15, -16)
+			let:<mut s64> allocSum = mut 0
+			match Some(_self){ match Some(_self.core){ allocSum = _self.core.csrAllocSum } }
+			frameBytes = allocSum - allocBytes + total
+			let newSub = mut ? String.from("    subq $")
+			? newSub.appendS64(newSub, total)
+			? newSub.append(newSub, ", %rsp\n")
+			let:<mut u64> allocLen = mut 0
+			let same = mut false
+			let current = mut ? new String()
+			match Some(_self){ match Some(_self.core){
+				match Some(_self.core.csrAllocLine){ allocLen = _self.core.csrAllocLine.length(_self.core.csrAllocLine) }
+			} }
+			match Some(_self){ match Some(_self.core){ current = ? _self.core.out.substring(_self.core.out, wrap:<u64>(allocPos), wrap:<u64>(allocPos) + allocLen) } }
+			match Some(_self){ match Some(_self.core){
+				match Some(_self.core.csrAllocLine){ same = current.equals(current, _self.core.csrAllocLine) }
+			} }
+			if same == false{
+				throw "codegen internal error: ALLOC line moved"
+			}
+			? newSub.append(newSub, saves)
+			match Some(_self){ match Some(_self.core){ ? _self.core.out.replaceRange(_self.core.out, wrap:<u64>(allocPos), wrap:<u64>(allocPos) + allocLen, newSub) } }
+			restoreText = ? restores.substring(restores, 0)
+		}
+		match Some(_self){ ? _self.expandVarMarks(_self, start) }
+		let:<mut u64> from = mut wrap:<u64>(start)
+		let bound = mut 0
+		match Some(_self){ match Some(_self.core){ bound = _self.core.out.length(_self.core.out) + 1 } }
+		for step in 0..bound{
+			let:<mut s64> i = mut -1
+			match Some(_self){ match Some(_self.core){ i = _self.core.out.indexOf(_self.core.out, "@@CSR@@\n", from) } }
+			if i < 0{
+				break
+			}
+			match Some(_self){ match Some(_self.core){ ? _self.core.out.replaceRange(_self.core.out, wrap:<u64>(i), wrap:<u64>(i + 8), restoreText) } }
+			from = wrap:<u64>(i) + restoreText.length(restoreText)
+		}
+		let rspFix = mut ? new String()
+		if frameBytes == 0{
+			? rspFix.append(rspFix, "    movq %rbp, %rsp\n")
+		} else{
+			? rspFix.append(rspFix, "    leaq -")
+			? rspFix.appendS64(rspFix, frameBytes)
+			? rspFix.append(rspFix, "(%rbp), %rsp\n")
+		}
+		from = wrap:<u64>(start)
+		match Some(_self){ match Some(_self.core){ bound = _self.core.out.length(_self.core.out) + 1 } }
+		for step2 in 0..bound{
+			let:<mut s64> j = mut -1
+			match Some(_self){ match Some(_self.core){ j = _self.core.out.indexOf(_self.core.out, "@@RSP@@\n", from) } }
+			if j < 0{
+				break
+			}
+			match Some(_self){ match Some(_self.core){ ? _self.core.out.replaceRange(_self.core.out, wrap:<u64>(j), wrap:<u64>(j + 8), rspFix) } }
+			from = wrap:<u64>(j) + rspFix.length(rspFix)
+		}
+		match Some(_self){ match Some(_self.core){ _self.core.csrFuncStart = -1 } }
 	}
 
 	@pub

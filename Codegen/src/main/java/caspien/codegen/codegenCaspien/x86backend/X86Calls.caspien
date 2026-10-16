@@ -12,8 +12,57 @@ impl constructor for X86Calls(hub: ref some mut X86Backend) self{
 
 @pub
 impl X86Calls{
+	/** The constant byte count (1..64) of the MEMCOPY being emitted, found among the previous lines, or -1. */
 	@pub
-	func memcopyConstantSize(_self: ref some mut self) mut s64{ return 0 }
+	@throws
+	func memcopyConstantSize(_self: ref some mut self) mut s64{
+		?catch(e){ throw e }
+		let values = mut 0
+		for back in 1..5{
+			let present = mut false
+			let:<mut s32> idx = mut 0
+			match Some(_self.core){
+				idx = _self.core.currentLineIndex - wrap:<s32>(back)
+			}
+			if idx < 0{
+				return -1
+			}
+			match Some(_self.core){ match Some(_self.core.allLines){
+				let l = _self.core.allLines.get(_self.core.allLines, wrap:<u64>(idx))
+				match Some(l){
+					present = true
+					let n = mut l.items.size(l.items)
+					if n == 0{
+						return -1
+					}
+					if X86Core.tokenIs(l, 0, "ADDR_OF"){
+						continue
+					}
+					if X86Core.tokenIs(l, 0, "PUSH") == false || n < 3{
+						return -1
+					}
+					if X86Core.tokenIsDigits(l, 2) && X86Core.tokenIs(l, 1, "8"){
+						if values != 1{
+							return -1
+						}
+						let v = mut ? X86Core.tokenS64(l, 2)
+						if v >= 1 && v <= 64{
+							return v
+						}
+						return -1
+					}
+					values += 1
+					if values > 1{
+						return -1
+					}
+				}
+			} }
+			if present == false{
+				return -1
+			}
+		}
+		return -1
+	}
 
 	@pub
 	func movRegToXmm(_self: ref some mut self, gpr64: ref imut String, xmmReg: ref imut String) void{
@@ -36,10 +85,27 @@ impl X86Calls{
 	}
 
 	@pub
-	func argReg(_self: ref some mut self, index: mut s32) owns mut String{ return null }
+	func argReg(_self: ref some mut self, index: mut s32) static imut string{
+		let win = mut false
+		match Some(_self.core){ win = _self.core.target == CodegenTarget.WINDOWS_GNU_X64 }
+		if win{
+			if index == 0{ return "rcx" } elseif index == 1{ return "rdx" } elseif index == 2{ return "r8" } elseif index == 3{ return "r9" }
+		} else{
+			if index == 0{ return "rdi" } elseif index == 1{ return "rsi" } elseif index == 2{ return "rdx" } elseif index == 3{ return "rcx" } elseif index == 4{ return "r8" } elseif index == 5{ return "r9" }
+		}
+		return "rax"
+	}
 
 	@pub
-	func argFloatReg(_self: ref some mut self, index: mut s32) owns mut String{ return null }
+	func argFloatReg(_self: ref some mut self, index: mut s32) static imut string{
+		let win = mut false
+		match Some(_self.core){ win = _self.core.target == CodegenTarget.WINDOWS_GNU_X64 }
+		if index == 0{ return "xmm0" } elseif index == 1{ return "xmm1" } elseif index == 2{ return "xmm2" } elseif index == 3{ return "xmm3" }
+		if win == false{
+			if index == 4{ return "xmm4" } elseif index == 5{ return "xmm5" } elseif index == 6{ return "xmm6" } elseif index == 7{ return "xmm7" }
+		}
+		return "xmm0"
+	}
 
 	@pub
 	func alignPadFor(_self: ref some mut self, stackArgBytes: mut s64) mut s32{
@@ -54,7 +120,15 @@ impl X86Calls{
 	}
 
 	@pub
-	func buildStackArgReservation(_self: ref some mut self, stackArgBytes: mut s64) owns mut String{ return null }
+	@throws
+	func buildStackArgReservation(_self: ref some mut self, stackArgBytes: mut s64) owns some mut String{
+		?catch(e){ throw e }
+		let pad = mut _self.alignPadFor(_self, stackArgBytes)
+		let r = mut ? String.from("    movq %rsp, %rax\n    andq $-16, %rsp\n    subq $")
+		? r.appendS64(r, wrap:<s64>(pad))
+		? r.append(r, ", %rsp\n    movq %rax, (%rsp)\n")
+		return r
+	}
 
 	@pub
 	func reverseStackArgWords(_self: ref some mut self, stackArgBytes: mut s64) void{

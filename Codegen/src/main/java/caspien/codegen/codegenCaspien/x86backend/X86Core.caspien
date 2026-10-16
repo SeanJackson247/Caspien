@@ -215,6 +215,118 @@ impl X86Core{
 		return Text.isDecimalNumber(s)
 	}
 
+	/** Token `k` of a text list as a copy; throws "IndexOutOfBoundsException" past the end (port-only helper). */
+	@pub
+	@throws
+	static func partCopy(parts: ref some imut ObjectList<String>, k: mut u64) owns some mut String{
+		?catch(e){ throw e }
+		if k >= parts.size(parts){
+			throw "IndexOutOfBoundsException"
+		}
+		let r = mut ? new String()
+		let p = parts.get(parts, k)
+		match Some(p){ r = ? p.substring(p, 0) }
+		return r
+	}
+
+	/** Membership in STRIDE_KEEP_OPS (a `let static` list cannot be read from safe code, so an if-chain; port-only helper). */
+	@pub
+	static func isStrideKeepOp(op: ref some imut String) mut bool{
+		if op.equals(op, "movq"){ return true }
+		if op.equals(op, "movl"){ return true }
+		if op.equals(op, "movw"){ return true }
+		if op.equals(op, "movb"){ return true }
+		if op.equals(op, "movzbq"){ return true }
+		if op.equals(op, "movzwq"){ return true }
+		if op.equals(op, "movzbl"){ return true }
+		if op.equals(op, "movzwl"){ return true }
+		if op.equals(op, "movslq"){ return true }
+		if op.equals(op, "movsbq"){ return true }
+		if op.equals(op, "movswq"){ return true }
+		if op.equals(op, "movsbl"){ return true }
+		if op.equals(op, "movswl"){ return true }
+		if op.equals(op, "movsd"){ return true }
+		if op.equals(op, "movss"){ return true }
+		if op.equals(op, "movd"){ return true }
+		if op.equals(op, "movaps"){ return true }
+		if op.equals(op, "movapd"){ return true }
+		if op.equals(op, "addsd"){ return true }
+		if op.equals(op, "addss"){ return true }
+		if op.equals(op, "subsd"){ return true }
+		if op.equals(op, "subss"){ return true }
+		if op.equals(op, "mulsd"){ return true }
+		if op.equals(op, "mulss"){ return true }
+		if op.equals(op, "divsd"){ return true }
+		if op.equals(op, "divss"){ return true }
+		if op.equals(op, "addq"){ return true }
+		if op.equals(op, "subq"){ return true }
+		if op.equals(op, "addl"){ return true }
+		if op.equals(op, "subl"){ return true }
+		if op.equals(op, "leaq"){ return true }
+		if op.equals(op, "andq"){ return true }
+		if op.equals(op, "orq"){ return true }
+		if op.equals(op, "xorq"){ return true }
+		if op.equals(op, "shlq"){ return true }
+		if op.equals(op, "shrq"){ return true }
+		if op.equals(op, "sarq"){ return true }
+		if op.equals(op, "incq"){ return true }
+		if op.equals(op, "decq"){ return true }
+		if op.equals(op, "negq"){ return true }
+		if op.equals(op, "notq"){ return true }
+		if op.equals(op, "sqrtsd"){ return true }
+		if op.equals(op, "sqrtss"){ return true }
+		if op.equals(op, "ucomisd"){ return true }
+		if op.equals(op, "ucomiss"){ return true }
+		if op.equals(op, "comisd"){ return true }
+		if op.equals(op, "comiss"){ return true }
+		if op.equals(op, "cvtss2sd"){ return true }
+		if op.equals(op, "cvtsd2ss"){ return true }
+		if op.equals(op, "xorps"){ return true }
+		if op.equals(op, "xorpd"){ return true }
+		if op.equals(op, "andps"){ return true }
+		if op.equals(op, "andpd"){ return true }
+		return false
+	}
+
+	/** "xmm" + n for 0..31 (port-only helper; the Java concatenates); throws past 31. */
+	@pub
+	@throws
+	static func xmmName(n: mut s32) static imut string{
+		if n == 0{ return "xmm0" }
+		if n == 1{ return "xmm1" }
+		if n == 2{ return "xmm2" }
+		if n == 3{ return "xmm3" }
+		if n == 4{ return "xmm4" }
+		if n == 5{ return "xmm5" }
+		if n == 6{ return "xmm6" }
+		if n == 7{ return "xmm7" }
+		if n == 8{ return "xmm8" }
+		if n == 9{ return "xmm9" }
+		if n == 10{ return "xmm10" }
+		if n == 11{ return "xmm11" }
+		if n == 12{ return "xmm12" }
+		if n == 13{ return "xmm13" }
+		if n == 14{ return "xmm14" }
+		if n == 15{ return "xmm15" }
+		if n == 16{ return "xmm16" }
+		if n == 17{ return "xmm17" }
+		if n == 18{ return "xmm18" }
+		if n == 19{ return "xmm19" }
+		if n == 20{ return "xmm20" }
+		if n == 21{ return "xmm21" }
+		if n == 22{ return "xmm22" }
+		if n == 23{ return "xmm23" }
+		if n == 24{ return "xmm24" }
+		if n == 25{ return "xmm25" }
+		if n == 26{ return "xmm26" }
+		if n == 27{ return "xmm27" }
+		if n == 28{ return "xmm28" }
+		if n == 29{ return "xmm29" }
+		if n == 30{ return "xmm30" }
+		if n == 31{ return "xmm31" }
+		throw "register index out of range"
+	}
+
 	/** RF_VAR_REGS[i]; throws "register index out of range" past the end. */
 	@pub
 	@throws
@@ -242,8 +354,32 @@ impl X86Core{
 		return s.charAt(s, 0) == '\'' && s.charAt(s, last) == '\''
 	}
 
+	/** The numeric value of a char-literal operand such as 'a' or '\\n'. Throws "malformed char-literal operand" / "unrecognized char-literal escape" (Java named the operand and its line). */
 	@pub
-	static func decodeCharLiteral(operandTok: ref imut BytecodeToken) mut s64{ return 0 }
+	@throws
+	static func decodeCharLiteral(operandTok: ref some imut BytecodeToken) mut s64{
+		let n = mut operandTok.text.length(operandTok.text)
+		if n == 3{
+			let c = mut operandTok.text.charAt(operandTok.text, 1)
+			let code = mut String.charCode(c)
+			return wrap:<s64>(code)
+		}
+		if n == 4 && operandTok.text.charAt(operandTok.text, 1) == '\\'{
+			let esc = mut operandTok.text.charAt(operandTok.text, 2)
+			if esc == '\\'{ return 92 }
+			if esc == '"'{ return 34 }
+			if esc == 'n'{ return 10 }
+			if esc == 't'{ return 9 }
+			if esc == 'r'{ return 13 }
+			if esc == '0'{ return 0 }
+			if esc == 'b'{ return 8 }
+			if esc == 'f'{ return 12 }
+			if esc == 'a'{ return 7 }
+			if esc == 'v'{ return 11 }
+			throw "unrecognized char-literal escape"
+		}
+		throw "malformed char-literal operand"
+	}
 
 	@pub
 	static func rfIsTemp(tok: ref some imut String) mut bool{
@@ -435,7 +571,17 @@ impl X86Core{
 	}
 
 	@pub
-	static func rfExtImm(v: mut s64, size: mut s32, signed: mut bool) mut s64{ return 0 }
+	static func rfExtImm(v: mut s64, size: mut s32, signed: mut bool) mut s64{
+		if size >= 8{
+			return v
+		}
+		let t = mut X86Core.rfTrunc(v, size)
+		if signed{
+			return t
+		}
+		let mask = mut wrap:<s64>(bits_left(1, wrap:<u64>(8 * size)) - 1)
+		return bits_and(t, mask)
+	}
 
 	@pub
 	static func rfIsGlobal(tok: ref some imut String) mut bool{
@@ -483,6 +629,56 @@ impl X86Core{
 		return true
 	}
 
+	/** The token texts of a statement, copied. */
 	@pub
-	static func textsOf(line: ref imut BytecodeStatement) owns mut ObjectList<String>{ return null }
+	@throws
+	static func textsOf(line: ref some imut BytecodeStatement) owns some mut ObjectList<String>{
+		?catch(e){ throw e }
+		let out = mut ? new ObjectList:<String>()
+		let n = mut line.items.size(line.items)
+		for i in 0..n{
+			let copy = mut ? new String()
+			let t = line.items.get(line.items, i)
+			match Some(t){
+				copy = ? t.text.substring(t.text, 0)
+			}
+			? out.add(out, copy)
+		}
+		return out
+	}
+
+	/** True when token `i` of the statement has exactly the text `want` (no allocation). */
+	@pub
+	static func tokenIs(stmt: ref some imut BytecodeStatement, i: mut u64, want: static imut string) mut bool{
+		let t = stmt.items.get(stmt.items, i)
+		let r = mut false
+		match Some(t){
+			r = t.text.equals(t.text, want)
+		}
+		return r
+	}
+
+	/** True when token `i` is all digits (no allocation). */
+	@pub
+	static func tokenIsDigits(stmt: ref some imut BytecodeStatement, i: mut u64) mut bool{
+		let t = stmt.items.get(stmt.items, i)
+		let r = mut false
+		match Some(t){
+			r = Text.isDigits(t.text)
+		}
+		return r
+	}
+
+	/** Token `i` parsed as a signed number; throws "NumberFormatException". */
+	@pub
+	@throws
+	static func tokenS64(stmt: ref some imut BytecodeStatement, i: mut u64) mut s64{
+		?catch(e){ throw e }
+		let t = stmt.items.get(stmt.items, i)
+		let:<mut s64> r = mut 0
+		match Some(t){
+			r = ? t.text.parseS64(t.text)
+		}
+		return r
+	}
 }
