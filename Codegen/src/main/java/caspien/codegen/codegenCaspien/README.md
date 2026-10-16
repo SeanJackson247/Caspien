@@ -25,7 +25,7 @@ Every Java file of `../` has a `.caspien` twin here (the Java copies were remove
 - The parts' `private final hub/core` fields are public (a struct with a private member cannot be built by a constructor).
 - `X86Core.vSlots` (`new String[3]` of nulls) holds three empty Strings.
 - `raw()` of `X86Emit` is `raw_` (`raw` is a keyword).
-- `Main.run/writeFile` lose `throws IOException` (`@throws` needs a real `throw`); `main` takes the safe-args form. The four `caspien.bytecode.Text` helpers used here are in `Text.caspien` (a `suffixChars` argument is a `String`).
+- `Main.run/writeFile` lose `throws IOException` (`@throws` needs a real `throw`); `writeFile(dir, name, content)` and `readFile(dir, name)` take an open `Dir` (compile-time `fs-roots` whitelist, so the port reads/writes only inside the directories it was built for; the Java used any path) and a file name, with no `unsafe` in the port (`CName.from` in `stdlib/fs.caspien` makes the NUL-terminated name; an embedded NUL truncates it); `main` takes the safe-args form. The four `caspien.bytecode.Text` helpers used here are in `Text.caspien` (a `suffixChars` argument is a `String`).
 - Method results: a literal-only result is `static imut string` (promote with `String.from(..)` where an owned `String` is needed), anything built at run time is `owns some mut String`; string parameters are `ref some imut String` (`static imut string` where the callee only compares or returns literals, via `String.literalsEqual`).
 - `throw` takes only a literal, so the dynamic text of Java messages is dropped (`rfFalseJump`: "unknown R_BRC operator"; `rfTrueSuffix`: "unknown condition"); number parsing throws "NumberFormatException".
 - `isInteger` accepts ASCII digits only (Java `Character.isDigit` also takes other Unicode digits).
@@ -34,7 +34,7 @@ Every Java file of `../` has a `.caspien` twin here (the Java copies were remove
 - `FloatText.bits` (exact decimal -> IEEE bits through `BigInt`) replaces `Float/Double.parseFloat` in `initBits`; `String.charCode` (stdlib) gives a char's byte value.
 - Messages of thrown errors lose their dynamic part and the `CodegenException` path/line (`CodegenConfig.parse`: "config: unknown config key" etc.).
 - Negative register indexes: Java `argReg(-1)` throws ArrayIndexOutOfBounds; the port returns the fallback ("rax"/"xmm0"), no caller passes one.
-- `Main.writeFile` is still a stub: `stdlib/fs.caspien` writes only literal text to a single-component name, the Java writes a dynamic String to a path. `python3 tests/port_parity_check.py` lists any method that exists in only one of a Java class and its twin (run it after touching either side; 16 Oct: the Java `X86RegForm` gained `gtSaveLoadedArgRegs/gtRestoreLoadedArgRegs`, stubbed here).
+- `Main.writeFile/readFile` are ported (test `codegen_main_io_check.sh`; Linux only, Windows/Wine not run); `Main.run`, `main` and `Codegen.generate` are still stubs. `python3 tests/port_parity_check.py` lists any method that exists in only one of a Java class and its twin (run it after touching either side; 16 Oct: the Java `X86RegForm` gained `gtSaveLoadedArgRegs/gtRestoreLoadedArgRegs`, stubbed here).
 - Javadoc comments of the Java files are not copied; they stay in the Java originals and the README below.
 
 ---

@@ -31,6 +31,8 @@ extern fsStrncmpRaw(raw imut char, static imut string, mut u64) mut s32
 extern fsStrncmp(static imut string, static imut string, mut u64) mut s32
 @link_name(strstr)
 extern fsStrstr(static imut string, static imut string) mut u64
+@link_name(strstr)
+extern fsView(raw mut char, static imut string) static imut string
 @link_name(strchr)
 extern fsStrchr(static imut string, mut s32) mut u64
 @link_name(strcmp)
@@ -61,6 +63,21 @@ struct File{@pub{
 	tmp: raw mut char
 	finalName: static imut string
 }}
+
+/** A NUL-terminated copy of a `String`, readable as the `static imut string` the fs functions take (`File.open(d, n.text, mode)`). Keep it alive as long as anything made from `text` is (a `tempFile` remembers its final name). An embedded NUL cuts the name short, in the check and in the open alike. */
+@pub
+struct CName{@pub{
+	buf: raw mut char
+	text: static imut string
+}}
+
+@drop
+func cnameClose(c: ref some mut CName) void{
+	let b = mut c.buf
+	unsafe extern{
+		fsFree(b)
+	}
+}
 
 @drop
 func dirClose(d: ref some mut Dir) void{
@@ -227,6 +244,40 @@ func fsOpenRoot(path: static imut string, writable: mut u64) owns some mut Dir{
 		throw "fs: cannot open directory (missing, not a directory, or a symlink on the way)"
 	}
 	return holder
+}
+
+@pub
+impl CName{
+	/** Copies `s` into a fresh NUL-terminated buffer. */
+	@pub
+	@throws
+	static func from(s: ref imut String) owns some mut CName{
+		?catch(e){ throw e }
+		let n = mut 0
+		match Some(s){ n = s.length(s) }
+		let:<raw mut char> buf = mut null
+		unsafe extern{
+			buf = fsMalloc(n + 1)
+		}
+		for i in 0..n{
+			let c = mut ' '
+			match Some(s){ c = s.charAt(s, i) }
+			unsafe assume memcopy raw{
+				assume match Some(buf + i)
+				memcopy(buf + i, mut 1, raw c)
+			}
+		}
+		let zero = mut '\0'
+		unsafe assume memcopy raw{
+			assume match Some(buf + n)
+			memcopy(buf + n, mut 1, raw zero)
+		}
+		unsafe extern{
+			let:<static imut string> view = fsView(buf, "")   // strstr(buf, "") is buf itself
+		}
+		let r = mut ? new CName{buf= buf, text= view}
+		return r
+	}
 }
 
 @pub

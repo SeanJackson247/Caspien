@@ -2,16 +2,60 @@ import "../../../../../../../stdlib/libc.caspien"
 import "../../../../../../../stdlib/gt/*"
 import "../../../../../../../stdlib/make_safe_args.caspien"
 import "../../../../../../../stdlib/string.caspien"
+import "../../../../../../../stdlib/fs.caspien"
 import "Codegen.caspien"
 
 struct Main{@pub{
 }}
 
+@pub
 impl Main{
 	static func run(args: owns some mut dynarray(imut dynarray(imut char))) void{
 	}
 
-	static func writeFile(path: ref imut String, content: ref imut String) void{
+	/** Writes `content` to the file `name` of the open directory `dir`, replacing it. The directory comes from the build's `fs-roots`, so the port writes only where it was compiled to (the Java wrote to any path). */
+	@pub
+	@throws
+	static func writeFile(dir: ref imut Dir, name: ref imut String, content: ref imut String) void{
+		?catch(e){ throw e }
+		let done = mut false
+		match Some(name){
+			let cn = mut ? CName.from(name)
+			match Some(dir){
+				let f = mut ? File.open(dir, cn.text, Open.WRITE_TRUNC)
+				match Some(f){
+					match Some(content){ ? File.writeString(f, content) }
+					? File.sync(f)
+					done = true
+				}
+			}
+		}
+		if done == false{
+			throw "[io error] cannot write file"
+		}
+	}
+
+	/** Reads the whole file `name` of the open directory `dir` (Java `Files.readString`). */
+	@pub
+	@throws
+	static func readFile(dir: ref imut Dir, name: ref imut String) owns some mut String{
+		?catch(e){ throw e }
+		let out = mut ? new String()
+		let done = mut false
+		match Some(name){
+			let cn = mut ? CName.from(name)
+			match Some(dir){
+				let f = mut ? File.open(dir, cn.text, Open.READ)
+				match Some(f){
+					out = ? File.readAll(f)
+					done = true
+				}
+			}
+		}
+		if done == false{
+			throw "[io error] cannot read file"
+		}
+		return out
 	}
 }
 
