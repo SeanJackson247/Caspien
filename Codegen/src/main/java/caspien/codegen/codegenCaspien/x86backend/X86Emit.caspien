@@ -100,7 +100,12 @@ impl X86Emit{
 	}
 
 	@pub
-	func mangleGlobalName(_self: ref some mut self, name: ref imut String) owns mut String{ return null }
+	@throws
+	func mangleGlobalName(_self: ref some mut self, name: ref some imut String) owns some mut String{
+		?catch(e){ throw e }
+		let r = mut ? name.replace(name, '.', '_')
+		return r
+	}
 
 	@pub
 	func emitHeader(_self: ref some mut self) void{
@@ -179,9 +184,30 @@ impl X86Emit{
 	func zeroExtendReg(_self: ref some mut self, reg: ref imut String, size: mut s32) void{
 	}
 
-	static func plusOffset(off: mut s64) owns mut String{ return null }
+	@pub
+	@throws
+	static func plusOffset(off: mut s64) owns some mut String{
+		?catch(e){ throw e }
+		if off != 0{
+			let r = mut ? String.from("+")
+			? r.appendS64(r, off)
+			return r
+		}
+		let z = mut ? String.from("")
+		return z
+	}
 
-	static func offsetText(off: mut s64) owns mut String{ return null }
+	@pub
+	@throws
+	static func offsetText(off: mut s64) owns some mut String{
+		?catch(e){ throw e }
+		if off == 0{
+			let z = mut ? String.from("")
+			return z
+		}
+		let r = mut ? String.fromS64(off)
+		return r
+	}
 
 	static func widthFor(left: mut s64) mut s32{
 		if left >= 8{

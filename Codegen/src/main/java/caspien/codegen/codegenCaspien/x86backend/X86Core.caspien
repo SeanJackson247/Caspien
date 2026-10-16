@@ -152,8 +152,47 @@ impl constructor for X86Core(target: imut CodegenTarget, bmi2: imut bool) self{
 
 @pub
 impl X86Core{
+	/** True when register name `r` is `full` or one of its sub-registers (eax/ax/al/ah, r8d/r8w/r8b ...). */
+	/** True when register name `r` is `full` or one of its sub-registers (eax/ax/al/ah, r8d/r8w/r8b ...). Compares by character, no allocation. */
 	@pub
-	static func regAliasOf(r: ref imut String, full: ref imut String) mut bool{ return false }
+	static func regAliasOf(r: ref some imut String, full: ref some imut String) mut bool{
+		if r.equals(r, full){
+			return true
+		}
+		let rn = mut r.length(r)
+		let fn = mut full.length(full)
+		let high = mut false
+		if full.startsWith(full, "r") && fn > 1{
+			high = Text.digitRunEnd(full, 1, fn) == fn
+		}
+		if high{
+			if rn != fn + 1 || X86Core.sliceEq(r, 0, full, 0, fn) == false{
+				return false
+			}
+			let c = mut r.charAt(r, fn)
+			return c == 'd' || c == 'w' || c == 'b'
+		}
+		let bn = mut (fn - 1)
+		let eBase = mut (rn == fn && r.charAt(r, 0) == 'e' && X86Core.sliceEq(r, 1, full, 1, bn))
+		let plain = mut (rn == bn && X86Core.sliceEq(r, 0, full, 1, bn))
+		if full.equals(full, "rax") || full.equals(full, "rbx") || full.equals(full, "rcx") || full.equals(full, "rdx"){
+			let lead = mut full.charAt(full, 1)
+			let half = mut (rn == 2 && r.charAt(r, 0) == lead && (r.charAt(r, 1) == 'l' || r.charAt(r, 1) == 'h'))
+			return eBase || plain || half
+		}
+		let low = mut (rn == fn && X86Core.sliceEq(r, 0, full, 1, bn) && r.charAt(r, bn) == 'l')
+		return eBase || plain || low
+	}
+
+	/** True when `len` characters of `a` from `aOff` equal those of `b` from `bOff`. */
+	static func sliceEq(a: ref some imut String, aOff: mut u64, b: ref some imut String, bOff: mut u64, len: mut u64) mut bool{
+		for k in 0..len{
+			if a.charAt(a, aOff + k) != b.charAt(b, bOff + k){
+				return false
+			}
+		}
+		return true
+	}
 
 	@pub
 	static func roundUpToLoadableWidth(size: mut s32) mut s32{
@@ -172,7 +211,26 @@ impl X86Core{
 	}
 
 	@pub
-	static func isFloatLiteral(s: ref imut String) mut bool{ return false }
+	static func isFloatLiteral(s: ref some imut String) mut bool{
+		return Text.isDecimalNumber(s)
+	}
+
+	/** RF_VAR_REGS[i]; throws "register index out of range" past the end. */
+	@pub
+	@throws
+	static func rfVarRegName(i: mut u64) static imut string{
+		if i == 0{ return "r13" } elseif i == 1{ return "r14" } elseif i == 2{ return "r12" } elseif i == 3{ return "r8" } elseif i == 4{ return "r9" }
+		elseif i == 5{ return "r10" } elseif i == 6{ return "rsi" } elseif i == 7{ return "rdi" } elseif i == 8{ return "rdx" } elseif i == 9{ return "rcx" }
+		throw "register index out of range"
+	}
+
+	/** RF_TEMP_REGS[i]; throws "register index out of range" past the end. */
+	@pub
+	@throws
+	static func rfTempRegName(i: mut u64) static imut string{
+		if i == 0{ return "rax" } elseif i == 1{ return "rbx" } elseif i == 2{ return "r11" } elseif i == 3{ return "r12" }
+		throw "register index out of range"
+	}
 
 	@pub
 	static func isCharLiteral(s: ref some imut String) mut bool{

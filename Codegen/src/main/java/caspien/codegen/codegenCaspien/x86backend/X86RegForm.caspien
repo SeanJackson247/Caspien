@@ -47,16 +47,76 @@ impl X86RegForm{
 	}
 
 	@pub
-	func newInternalLabel(_self: ref some mut self, prefix: ref imut String) owns mut String{ return null }
+	@throws
+	func newInternalLabel(_self: ref some mut self, prefix: ref imut String) owns some mut String{
+		?catch(e){ throw e }
+		let:<mut s32> n = mut 0
+		match Some(_self.core){
+			n = _self.core.internalLabelCounter
+			_self.core.internalLabelCounter = n + 1
+		}
+		let r = mut ? String.from("L_cg_")
+		match Some(prefix){
+			? r.append(r, prefix)
+		}
+		? r.append(r, "_")
+		? r.appendS64(r, wrap:<s64>(n))
+		return r
+	}
+
+	/** The physical register name of a `%tN`/`%vN`/`%s` token; marks the r12-r14 variable registers as used. */
+	@pub
+	@throws
+	func rfReg(_self: ref some mut self, tok: ref some imut String) static imut string{
+		?catch(e){ throw e }
+		if tok.equals(tok, "%s"){
+			return "r15"
+		}
+		let isVar = mut tok.startsWith(tok, "%v")
+		let numText = mut ? tok.substring(tok, 2)
+		let idx = mut 0
+		match Some(numText){
+			idx = ? numText.parseU64(numText)
+		}
+		if isVar{
+			if idx < 3{
+				let:<mut s32> bit = mut 1
+				if idx == 1{
+					bit = 2
+				} elseif idx == 2{
+					bit = 4
+				}
+				match Some(_self){
+					match Some(_self.core){
+						_self.core.rfVarMask = bits_or(_self.core.rfVarMask, bit)
+						_self.core.rfVarUsed = true
+					}
+				}
+			}
+			let v = ? X86Core.rfVarRegName(idx)
+			return v
+		}
+		let t = ? X86Core.rfTempRegName(idx)
+		return t
+	}
 
 	@pub
-	func rfReg(_self: ref some mut self, tok: ref imut String) owns mut String{ return null }
+	@throws
+	func rfRegText(_self: ref some mut self, reg: static imut string) owns some mut String{
+		?catch(e){ throw e }
+		let r = mut ? String.from("%")
+		? r.append(r, reg)
+		return r
+	}
 
 	@pub
-	func rfRegText(_self: ref some mut self, reg: ref imut String) owns mut String{ return null }
-
-	@pub
-	func rfMemText(_self: ref some mut self, off: mut s64) owns mut String{ return null }
+	@throws
+	func rfMemText(_self: ref some mut self, off: mut s64) owns some mut String{
+		?catch(e){ throw e }
+		let r = mut ? String.fromS64(off)
+		? r.append(r, "(%rbp)")
+		return r
+	}
 
 	@pub
 	func rfSrc(_self: ref some mut self, tok: ref imut String) owns mut String{ return null }

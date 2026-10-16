@@ -39,21 +39,27 @@ final class X86RegForm {
             hub.emit.raw(regOk + ":");
             return true;
         } else if (mnemonic.equals("GT_ALIVE_CHECK")) {
-            hub.emit.popReg("rax"); // the pointer being checked
+            hub.emit.popReg("rax");
+            List<String> loaded = gtSaveLoadedArgRegs(); // the pointer being checked
             hub.emit.raw(("    movq %rax, %" + hub.calls.argReg(0)));
             hub.calls.emitAlignedCallByName("gt_alive_check");
+            gtRestoreLoadedArgRegs(loaded);
             hub.emit.pushReg("rax"); // its bool result
             return true;
         } else if (mnemonic.equals("GT_REF_ID")) {
-            hub.emit.popReg("rax"); // an address (ref some / owns) being stored into a nullable ref
+            hub.emit.popReg("rax");
+            List<String> loaded = gtSaveLoadedArgRegs(); // an address (ref some / owns) being stored into a nullable ref
             hub.emit.raw(("    movq %rax, %" + hub.calls.argReg(0)));
             hub.calls.emitAlignedCallByName("gt_ref_id");
+            gtRestoreLoadedArgRegs(loaded);
             hub.emit.pushReg("rax"); // its 64-bit id (0 for null / dead)
             return true;
         } else if (mnemonic.equals("GT_REF_RESOLVE")) {
-            hub.emit.popReg("rax"); // an id
+            hub.emit.popReg("rax");
+            List<String> loaded = gtSaveLoadedArgRegs(); // an id
             hub.emit.raw(("    movq %rax, %" + hub.calls.argReg(0)));
             hub.calls.emitAlignedCallByName("gt_ref_resolve");
+            gtRestoreLoadedArgRegs(loaded);
             hub.emit.pushReg("rax"); // the object's address, null when it is no longer registered
             return true;
         } else if (mnemonic.equals("GT_DESTRUCT")) {
@@ -349,6 +355,35 @@ final class X86RegForm {
             return true;
         } else {
             return false;
+        }
+    }
+
+    // A ghost-table call in the middle of an argument list must keep the argument registers already loaded.
+    private List<String> gtSaveLoadedArgRegs() {
+        List<String> saved = new ArrayList<>();
+        if (!core.loadedArgRegsStack.isEmpty()) {
+            saved.addAll(core.loadedArgRegsStack.peek());
+        }
+        for (String r : saved) {
+            if (r.charAt(0) == 'i') {
+                hub.emit.pushReg(hub.calls.argReg(Integer.parseInt(r.substring(1))));
+            } else {
+                hub.calls.movXmmToReg(hub.calls.argFloatReg(Integer.parseInt(r.substring(1))), "r11");
+                hub.emit.pushReg("r11");
+            }
+        }
+        return saved;
+    }
+
+    private void gtRestoreLoadedArgRegs(List<String> saved) {
+        for (int k = saved.size() - 1; k >= 0; k--) {
+            String r = saved.get(k);
+            if (r.charAt(0) == 'i') {
+                hub.emit.popReg(hub.calls.argReg(Integer.parseInt(r.substring(1))));
+            } else {
+                hub.emit.popReg("r11");
+                hub.calls.movRegToXmm("r11", hub.calls.argFloatReg(Integer.parseInt(r.substring(1))));
+            }
         }
     }
 

@@ -86,7 +86,48 @@ impl X86Generator{
 	}
 
 	@pub
-	func rfMemOperand(_self: ref some mut self, baseReg: ref imut String) owns mut String{ return null }
+	@throws
+	func rfMemOperand(_self: ref some mut self, baseReg: static imut string) owns some mut String{
+		?catch(e){ throw e }
+		let out = mut ? new String()
+		match Some(_self.core){
+			match Some(_self.core.rfMemOverride){
+				? out.append(out, _self.core.rfMemOverride)
+				return out
+			}
+		}
+		let indexed = mut false
+		match Some(_self.core){
+			match Some(_self.core.rfIdxReg){
+				indexed = true
+			}
+		}
+		if indexed == false{
+			? out.append(out, "(%")
+			? out.append(out, baseReg)
+			? out.append(out, ")")
+			return out
+		}
+		match Some(_self.core){
+			if _self.core.rfIdxDisp != 0{
+				? out.appendS64(out, _self.core.rfIdxDisp)
+			}
+		}
+		? out.append(out, "(%")
+		? out.append(out, baseReg)
+		? out.append(out, ",%")
+		match Some(_self.core){
+			match Some(_self.core.rfIdxReg){
+				? out.append(out, _self.core.rfIdxReg)
+			}
+		}
+		? out.append(out, ",")
+		match Some(_self.core){
+			? out.appendS64(out, _self.core.rfIdxScale)
+		}
+		? out.append(out, ")")
+		return out
+	}
 
 	@pub
 	func rfIndexedBase(_self: ref some mut self, baseTok: ref imut String, scratch: ref imut String) owns mut String{ return null }
@@ -165,7 +206,13 @@ impl X86Generator{
 	}
 
 	@pub
-	func xText(_self: ref some mut self, xmm: ref imut String) owns mut String{ return null }
+	@throws
+	func xText(_self: ref some mut self, xmm: static imut string) owns some mut String{
+		?catch(e){ throw e }
+		let r = mut ? String.from("%")
+		? r.append(r, xmm)
+		return r
+	}
 
 	@pub
 	func rfMovaps(_self: ref some mut self, dst: ref imut String, src: ref imut String) void{
@@ -244,7 +291,12 @@ impl X86Generator{
 	}
 
 	@pub
-	func mangleLabel(_self: ref some mut self, text: ref imut String) owns mut String{ return null }
+	@throws
+	func mangleLabel(_self: ref some mut self, text: ref some imut String) owns some mut String{
+		?catch(e){ throw e }
+		let r = mut ? text.replace(text, "@", "L_")
+		return r
+	}
 
 	@pub
 	func movRegToRegRbpFromRsp(_self: ref some mut self) void{
