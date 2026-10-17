@@ -66,7 +66,12 @@ impl Main{
 				}
 			}
 		}
-		let result = mut ? Codegen.generate(input, inputPath, config)
+		// Java never frees its parsed program: it is built here and, with everything else, left to the process exit below (the drop of every token cost a tenth of the run)
+		let parser = mut ? new BytecodeParser()
+		let:<owns mut BytecodeProgram> program = mut null
+		match Some(input){ match Some(inputPath){ program = ? parser.parseText(parser, input, inputPath) } }
+		let:<owns mut CodegenResult> result = mut null
+		match Some(program){ match Some(config){ result = Codegen.generate(program, config) } }
 		let failed = mut true
 		match Some(result){
 			if result.failed{
@@ -135,6 +140,7 @@ impl Main{
 		? info.appendU64(info, lines)
 		? info.append(info, " lines)\n")
 		Main.eprint(info)
+		unsafe extern{ exit(0) } // skip the destructors: the process is done, the OS reclaims everything
 	}
 
 	/** Index of the last '/' in `p`, or -1 (helper of the port). */

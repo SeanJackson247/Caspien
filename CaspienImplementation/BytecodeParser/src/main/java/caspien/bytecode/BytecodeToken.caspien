@@ -1,17 +1,17 @@
 import "stdlib/string.caspien"
 import "BytecodeTokenKind.caspien"
 
-/** One token of HOB text: its text, where it came from, plain word or quoted string. Owns its Strings (Java shared immutable tokens). */
+/** One token of HOB text: its text, where it came from, plain word or quoted string. Owns its Strings (Java shared immutable tokens). `file` is only filled on the first token of a scanned line (every token of a line shares one origin file, and nothing reads it per token); it is null on the others -- read it through BytecodeStatement.fileOf. */
 @pub
 struct BytecodeToken{@pub{
 	text: owns some mut String
-	file: owns some mut String
+	file: owns mut String
 	line: imut s32
 	kind: imut BytecodeTokenKind
 }}
 
 @pub
-impl constructor for BytecodeToken(text: owns some mut String, file: owns some mut String, line: imut s32, kind: imut BytecodeTokenKind) self{
+impl constructor for BytecodeToken(text: owns some mut String, file: owns mut String, line: imut s32, kind: imut BytecodeTokenKind) self{
 	return BytecodeToken{text= text, file= file, line= line, kind= kind}
 }
 
@@ -23,7 +23,8 @@ impl BytecodeToken{
 	static func copyOf(t: ref some imut BytecodeToken) owns some mut BytecodeToken{
 		?catch(e){ throw e }
 		let a = mut ? t.text.sub(t.text, 0, t.text.length(t.text))
-		let b = mut ? t.file.sub(t.file, 0, t.file.length(t.file))
+		let:<owns mut String> b = mut null
+		match Some(t.file){ b = mut ? t.file.sub(t.file, 0, t.file.length(t.file)) }
 		let c = mut ? new BytecodeToken(a, b, t.line, t.kind)
 		return c
 	}

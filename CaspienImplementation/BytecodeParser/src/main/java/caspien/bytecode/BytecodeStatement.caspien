@@ -48,6 +48,14 @@ impl BytecodeStatement{
 		return _self.items.isEmpty(_self.items)
 	}
 
+	/** The origin file of this line: held by token 0 (null for an empty statement or a statement a pass rebuilt without it). */
+	@pub
+	func fileOf(_self: ref some imut self) ref mut String{
+		let t = mut _self.items.get(_self.items, 0)
+		match Some(t){ return t.file }
+		return null
+	}
+
 	/** A reference to token `i`, null when out of range. */
 	@pub
 	func get(_self: ref some imut self, i: imut u64) ref mut BytecodeToken{
@@ -284,7 +292,8 @@ impl BytecodeStatement{
 					stop = len
 				}
 				match Some(originFile){
-					let file = mut ? originFile.sub(originFile, 0, originFile.length(originFile)) // owned tokens: the file name is copied per token
+					let:<owns mut String> file = mut null
+					if tokens.size(tokens) == 0{ file = mut ? originFile.sub(originFile, 0, originFile.length(originFile)) } // owned tokens: the file name is copied onto the first token of the line only
 					match Some(rawLine){
 						let text = mut ? rawLine.sub(rawLine, start, stop)
 						let tok = mut ? new BytecodeToken(text, file, lineNumber, BytecodeTokenKind.STRING)
@@ -317,7 +326,8 @@ impl BytecodeStatement{
 				}
 				if accept{
 					match Some(originFile){
-						let file = mut ? originFile.sub(originFile, 0, originFile.length(originFile)) // owned tokens: the file name is copied per token
+						let:<owns mut String> file = mut null
+						if tokens.size(tokens) == 0{ file = mut ? originFile.sub(originFile, 0, originFile.length(originFile)) } // first token of the line only
 						match Some(rawLine){
 							let text = mut ? rawLine.sub(rawLine, i, end)
 							let tok = mut ? new BytecodeToken(text, file, lineNumber, BytecodeTokenKind.CODE)
@@ -341,7 +351,8 @@ impl BytecodeStatement{
 				}
 			}
 			match Some(originFile){
-				let file = mut ? originFile.sub(originFile, 0, originFile.length(originFile)) // owned tokens: the file name is copied per token
+				let:<owns mut String> file = mut null
+				if tokens.size(tokens) == 0{ file = mut ? originFile.sub(originFile, 0, originFile.length(originFile)) } // first token of the line only
 				match Some(rawLine){
 					let text = mut ? rawLine.sub(rawLine, start, i)
 					let tok = mut ? new BytecodeToken(text, file, lineNumber, BytecodeTokenKind.CODE)

@@ -96,8 +96,8 @@ func putStm(o: ref some mut String, st: ref imut BytecodeStatement) void{
 			}
 		}
 		match Some(st){
-			let t = mut st.get(st, i)
-			match Some(t){ ? file.append(file, t.file) }
+			let f = mut st.fileOf(st) // the origin file is kept on the line's first token
+			match Some(f){ ? file.append(file, f) }
 		}
 		match Some(st){
 			let t = mut st.get(st, i)
