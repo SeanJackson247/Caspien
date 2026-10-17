@@ -25,7 +25,7 @@ its history.
 
 ## Build
 
-    javac Compiler.java
+    javac -sourcepath Orchestrator -d . Compiler.java
 
 (Plain `javac`, no build tool. The four component folders already contain
 their own prebuilt `out/*.class` files -- you don't need to rebuild those

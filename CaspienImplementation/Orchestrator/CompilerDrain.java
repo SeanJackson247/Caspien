@@ -4,8 +4,12 @@ import java.io.InputStream;
 public class CompilerDrain implements Runnable {
     private final InputStream in;
 
-    CompilerDrain(InputStream in) { }
+    CompilerDrain(InputStream in) {
+        this.in = in;
+    }
 
     @Override
-    public void run() { }
+    public void run() {
+        Compiler.drain(in);
+    }
 }
