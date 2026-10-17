@@ -241,14 +241,17 @@ public class Compiler {
         Path optimizerDir = root.resolve("Optimizer");
         Path lowerOrderDir = root.resolve("LowerOrderGenerator");
         Path codegenDir = root.resolve("Codegen");
-        for (Path p : new Path[]{astGenDir, optimizerDir, lowerOrderDir, codegenDir}) {
+        // The stages' Java is the reference implementation's: classes are loaded from its out/ folders (CODE_ROOT). The stage folders here only hold the
+        // generated config files, so a run never writes into the reference tree.
+        codeRoot = root.resolve(CODE_ROOT).normalize();
+        for (Path p : new Path[]{astGenDir, optimizerDir, lowerOrderDir, codegenDir, codeDir(astGenDir), codeDir(optimizerDir), codeDir(lowerOrderDir), codeDir(codegenDir)}) {
             if (!Files.isDirectory(p)) {
                 throw new IOException("expected component folder not found: " + p
                         + " -- this orchestrator must be run from the directory it lives in, "
                         + "with ASTGenerator/, Optimizer/, LowerOrderGenerator/, and Codegen/ alongside it");
             }
         }
-        sharedLoader = new CompilerSharedLoader(astGenDir.resolve("out").toUri().toURL());
+        sharedLoader = new CompilerSharedLoader(codeDir(astGenDir).resolve("out").toUri().toURL());
 
         Files.createDirectories(output.getParent() != null ? output.getParent() : root);
 
@@ -274,7 +277,7 @@ public class Compiler {
 
         // ---- Stage 1: ASTGenerator (.caspien -> higher-order bytecode), run in this JVM as a library ----
         Path hobOut = stopHob ? output : (buildDir = ensureBuildDir(buildDir, output)).resolve("1_ast_generator.hob.txt");
-        String key1 = fsReport ? null : CompilerCache.sha("S1\n" + cache.classesHash(astGenDir) + "\n"
+        String key1 = fsReport ? null : CompilerCache.sha("S1\n" + cache.classesHash(codeDir(astGenDir)) + "\n"
                 + CompilerCache.configView(compilerCfg, CompilerCache.OPT_KEYS, CompilerCache.REG_KEYS) + "\n--fs--\n" + fsCfg + "\n--target--\n" + target + "\n--trace-depth--\n" + traceDepth
                 + "\n--input--\n" + input);
         Map<String, String> feConfigs = new java.util.HashMap<>();
@@ -415,8 +418,8 @@ public class Compiler {
         // ---- Stage 2: Optimizer (bytecode -> bytecode, shallow passes) ----
         buildDir = ensureBuildDir(buildDir, output);
         Path optOut = buildDir.resolve("2_optimizer.hob.txt");
-        String sharedBytecode = cache.bytecodeClassesHash(astGenDir);   // stages 1-3 run with this one copy of the program classes
-        String key2 = CompilerCache.sha("S2\n" + cache.classesHash(optimizerDir) + "\n" + sharedBytecode + "\n" + CompilerCache.configView(compilerCfg, CompilerCache.REG_KEYS)
+        String sharedBytecode = cache.bytecodeClassesHash(codeDir(astGenDir));   // stages 1-3 run with this one copy of the program classes
+        String key2 = CompilerCache.sha("S2\n" + cache.classesHash(codeDir(optimizerDir)) + "\n" + sharedBytecode + "\n" + CompilerCache.configView(compilerCfg, CompilerCache.REG_KEYS)
                 + "\n--in--\n" + CompilerCache.fileHash(hobOut));
         // Every stage runs inside this JVM as a library (see runProgramStage / runLibraryStage / runFrontend); only the assembler and linker are separate programs.
         // Stages 1-3 hand the BytecodeProgram itself on; its text (files, cache) is parsed back only when a stage has to run on a cache hit's output.
@@ -426,7 +429,7 @@ public class Compiler {
 
         // ---- Stage 3: LowerOrderGenerator (bytecode -> low-order bytecode) ----
         Path lobOut = stopLob ? output : buildDir.resolve("3_lower_order_generator.lob.txt");
-        String key3 = CompilerCache.sha("S3\n" + cache.classesHash(lowerOrderDir) + "\n" + sharedBytecode + "\n" + CompilerCache.configView(compilerCfg, CompilerCache.OPT_KEYS)
+        String key3 = CompilerCache.sha("S3\n" + cache.classesHash(codeDir(lowerOrderDir)) + "\n" + sharedBytecode + "\n" + CompilerCache.configView(compilerCfg, CompilerCache.OPT_KEYS)
                 + "\n--in--\n" + CompilerCache.fileHash(optOut));
         CompilerOut lob = runProgramStage(cache, "s3", key3, lowerOrderDir, "caspien.lowerorder.LowerOrder", "generate", "lob", "compiler.config",
                 opt.program, optOut, lobOut, diag, "LowerOrderGenerator");   // the Optimizer's program goes straight in; the LOB comes out as text
@@ -438,7 +441,7 @@ public class Compiler {
 
         // ---- Stage 4: Codegen (low-order bytecode -> assembly) ----
         Path asmOut = stopAsm ? output : buildDir.resolve("4_codegen.s");
-        String key4 = CompilerCache.sha("S4\n" + cache.classesHash(codegenDir) + "\n" + codegenCfg + "\n--in--\n" + CompilerCache.fileHash(lobOut));
+        String key4 = CompilerCache.sha("S4\n" + cache.classesHash(codeDir(codegenDir)) + "\n" + codegenCfg + "\n--in--\n" + CompilerCache.fileHash(lobOut));
         runLibraryStage(cache, "s4", key4, codegenDir, "caspien.codegen.Codegen", "generate", "asm", "codegen.config",
                 lob.text, lobOut.toString(), asmOut, diag, "Codegen");   // the one text handover left: LOB in, assembly out
         if (diag.hasFatalError()) return diag.exitCode();
@@ -511,7 +514,7 @@ public class Compiler {
     private static CompilerOut callLibrary(ClassLoader parent, Path componentDir, String className, String method, String resultField, Class<?>[] paramTypes, Object... args)
             throws IOException {
         CompilerOut out = new CompilerOut();
-        URL classes = componentDir.resolve("out").toUri().toURL();
+        URL classes = codeDir(componentDir).resolve("out").toUri().toURL();
         try (URLClassLoader loader = new URLClassLoader(new URL[]{classes}, parent)) {
             Object result = Class.forName(className, true, loader).getMethod(method, paramTypes).invoke(null, args);
             Class<?> rc = result.getClass();
@@ -560,6 +563,15 @@ public class Compiler {
         }
         diag.addWarnings(log.warnings.size());
         cache.note(stage, true);
+    }
+
+    /** Where the stages' Java lives, relative to this folder: the reference implementation next to it. */
+    private static final String CODE_ROOT = "../ReferenceImplementation";
+    private static Path codeRoot;
+
+    /** The folder holding the classes (out/) of the stage whose config folder is `componentDir`. */
+    private static Path codeDir(Path componentDir) {
+        return codeRoot.resolve(componentDir.getFileName());
     }
 
     /** Serves the one copy of the caspien.bytecode classes that stages 1-3 share (taken from the ASTGenerator's out/); set at the start of a run. */
