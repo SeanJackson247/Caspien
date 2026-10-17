@@ -1,5 +1,5 @@
 // Must fail: payload omitted while state satisfies the lock.
-import "../stdlib/libc.caspien"
+import "stdlib/libc.caspien"
 enum ResultState{ OK, FAIL }
 @lock(match self.state : OK)
 struct Result<T>{@pub{

@@ -50,12 +50,13 @@ happen; a one-line `[info] done -- wrote ...` summary prints at the end.
 
 ### Test files and `stdlib`
 
-A `stdlib/` folder is included at this project's root. Caspien source
-files resolve `import "stdlib/..."` relative to *the importing file's own
-directory*, so keep your `.caspien` test files here at the root (next to
-`Compiler.java`) alongside this `stdlib/` folder, the same way the
-included `hello.caspien` sample does -- or copy `stdlib/` next to wherever
-you keep your own test files instead.
+There is ONE `stdlib/` folder, in the repository root next to the implementation
+folders. An import starting with `stdlib/` (`import "stdlib/libc.caspien"`) always
+names that folder, wherever the importing file lives; every other import is
+relative to the importing file. The orchestrator passes the folder to the front
+end (`<implementation>/../stdlib`; the environment variable `CASPIEN_STDLIB`
+overrides it, which scratch copies of the tree use), so no implementation holds
+its own copy.
 
 ### Hashing in the standard library: `insecure_hash.caspien`, `sha256.caspien`
 

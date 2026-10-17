@@ -1,7 +1,7 @@
 // A throw (or other exit) inside a loop that also moves an owns local must still destruct that local: the loop pre-scan used to mark it
 // moved from the start of the loop, so a throw before the move leaked it (found by the leak check: GT_LEN stayed 1).
-import "../stdlib/libc.caspien"
-import "../stdlib/gt/*"
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
 
 func check(name: static imut string, ok: imut bool) void{
 	unsafe extern{

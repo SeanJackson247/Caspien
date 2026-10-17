@@ -3,6 +3,7 @@
 # independent Python model tests/print_model.py; also checks the file contains no `unsafe` (the program calls print/println from safe code)
 # and that the leak shim sees no registered blocks at exit.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 export JAVA_TOOL_OPTIONS=
 tar -C "$ROOT" --exclude=.git --exclude=.cache -cf - . | tar -C "$W" -xf -

@@ -1,7 +1,7 @@
 // Globals (`let static`) of every width are read and written as one RIP-relative instruction (`mov sym(%rip), %r` / `mov %r, sym(%rip)`), no
 // `leaq sym(%rip), %r15` first. Integer results are PASS/FAIL lines (expected values from global_access_test.py); the two float results are printed
 // as `F32=` / `F64=` lines that global_access_check.sh compares with the same model; the check also counts the `leaq ...(%rip), %r15` left in the assembly.
-import "../stdlib/libc.caspien"
+import "stdlib/libc.caspien"
 
 let static:<mut u8> g8 = mut 200
 let static:<mut u16> g16 = mut 60000

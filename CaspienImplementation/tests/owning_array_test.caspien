@@ -2,8 +2,8 @@
 // element at scope end, moved as a whole by a copy (the source can not be used afterwards), its elements moved in by a literal,
 // and an element written with `arr[i] = h` drops the old element first. Reading an element out by value is an error (use clone).
 // Checked through the ghost table's entry count (owning_array_check.sh runs this under valgrind).
-import "../stdlib/libc.caspien"
-import "../stdlib/gt/*"
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
 struct World{@pub{
 	ticks: mut u64
 }}

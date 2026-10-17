@@ -4,6 +4,7 @@
 # peak of live heap bytes (the ghost table's own blocks and libc's are not counted; a realloc counts as old + new live together). The audit figure of the
 # function must equal the measured peak (for these shapes the analysis follows every free).
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 export JAVA_TOOL_OPTIONS=
 tar -C "$ROOT" --exclude=.git --exclude=.cache -cf - . | tar -C "$W" -xf -

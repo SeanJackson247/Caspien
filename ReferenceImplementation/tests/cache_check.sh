@@ -1,6 +1,7 @@
 #!/bin/bash
 # Build cache (CompilerCache): hits, misses and what invalidates what. Needs Linux, java, gcc. Runs in a scratch copy of the tree.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 export JAVA_TOOL_OPTIONS=
 tar -C "$ROOT" --exclude=.git --exclude=.cache -cf - . | tar -C "$W" -xf -
@@ -14,7 +15,7 @@ expect(){ [ "$1" = "$2" ] || fail "$3: expected '$2' got '$1'"; }
 ALLMISS="s1:miss s2:miss s3:miss s4:miss s5:miss "; ALLHIT="s1:hit s2:hit s3:hit s4:hit s5:hit "
 printf '@pub\nfunc helper() mut u64{\n\treturn 7\n}\n' > t/imp.caspien
 cat > t/main.caspien <<'P'
-import "../stdlib/libc.caspien"
+import "stdlib/libc.caspien"
 import "imp.caspien"
 
 func main() void{
@@ -41,7 +42,7 @@ java Compiler -i t/bad.caspien t/q >/dev/null 2>&1 && fail "broken program compi
 java Compiler -i t/bad.caspien t/q >/dev/null 2>&1 && fail "broken program compiled (second time)"
 expect "$(build t/bad.caspien t/q 2>/dev/null)" "s1:miss " "a failed build is never cached"
 # warnings are replayed on a hit, and --no-warnings still silences them
-cp tests/instanceof_warn_test.caspien t/w.caspien; sed -i 's#\.\./stdlib#../stdlib#' t/w.caspien
+cp tests/instanceof_warn_test.caspien t/w.caspien
 java Compiler -i t/w.caspien t/w >/dev/null 2>t/w1.log || fail "warning program"
 java Compiler -i t/w.caspien t/w >/dev/null 2>t/w2.log || fail "warning program, cached"
 [ "$(grep -c 'can never be true' t/w1.log)" = 2 ] && [ "$(grep -c 'can never be true' t/w2.log)" = 2 ] || fail "warnings not replayed on a hit"

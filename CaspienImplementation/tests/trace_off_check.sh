@@ -4,6 +4,7 @@
 # `--trace-depth 3` / `1024`. (Needs Linux, java, gcc.) Also checks the flag's range errors.
 # Optional: BASE_TREE=<a checkout of the compiler from before the feature> additionally compares every sample's HOB and binary with that tree.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 export JAVA_TOOL_OPTIONS=
 tar -C "$ROOT" --exclude=.git --exclude=.cache -cf - . | tar -C "$W" -xf -

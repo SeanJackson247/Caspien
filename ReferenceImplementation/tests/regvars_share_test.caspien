@@ -4,8 +4,8 @@
 // loops that run one after another, with a long-lived variable carried across later loops, calls between loops, a throw caught inside a
 // loop, a variable written only on one path, and f32 next to f64 (different widths never share). Expected values are worked out by hand
 // (everything is exactly representable); the output must be identical with variables-in-registers / float-variables-in-registers on and off.
-import "../stdlib/libc.caspien"
-import "../stdlib/gt/*"
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
 
 func check(name: static imut string, ok: mut bool) void{
 	unsafe extern{

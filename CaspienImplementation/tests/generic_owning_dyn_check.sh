@@ -3,6 +3,7 @@
 # resize, clone, shrinking resize, drop) in a Linux scratch copy under everything on / shipped / everything off; output must equal
 # tests/generic_owning_dyn_test.py, valgrind: no error, no leak (shipped). Regression for the `Slot_u64` element name being split at its underscore.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 export JAVA_TOOL_OPTIONS=
 tar -C "$ROOT" --exclude=.git --exclude=.cache -cf - . | tar -C "$W" -xf -

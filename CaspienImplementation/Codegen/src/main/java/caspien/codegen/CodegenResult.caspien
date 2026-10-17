@@ -1,4 +1,4 @@
-import "../../../../../../stdlib/string.caspien"
+import "stdlib/string.caspien"
 import "collections.caspien"
 
 @pub

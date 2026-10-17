@@ -2,7 +2,7 @@
 // `c_apply` lives in helper.c and calls back into the exported Caspien function `add`.
 // Build and run with `bash build_and_run.sh`. Expected output:
 //   84
-import "../../stdlib/libc.caspien"
+import "stdlib/libc.caspien"
 
 extern c_apply(mut u64, mut u64) mut u64
 

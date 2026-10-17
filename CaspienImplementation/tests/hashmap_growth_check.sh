@@ -4,6 +4,7 @@
 # FAILREALLOC=<size> FAILREALLOC_STICKY=1 fails the realloc of the new slot array, or of the new control array): `set` must carry on in the
 # old table (the first keys stay readable, a full table ignores the rest), nothing may crash, and no allocation may be left over compared with the clean run.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 export JAVA_TOOL_OPTIONS=
 tar -C "$ROOT" --exclude=.git --exclude=.cache -cf - . | tar -C "$W" -xf -
@@ -20,9 +21,9 @@ for pair in hashmap_growth_test:10 string_bulk_test:13; do
 done
 cp tests/alloc_shim.c shim.c && gcc -shared -fPIC -o shim.so shim.c -ldl || { echo "FAIL: cannot build shim"; exit 1; }
 cat > tests/hm_oom.caspien <<'EOF'
-import "../stdlib/libc.caspien"
-import "../stdlib/hash_map.caspien"
-import "../stdlib/gt/*"
+import "stdlib/libc.caspien"
+import "stdlib/hash_map.caspien"
+import "stdlib/gt/*"
 func main() void{
 	?catch(e){
 		unsafe extern{ printf("CAUGHT %s\n", e.msg) }

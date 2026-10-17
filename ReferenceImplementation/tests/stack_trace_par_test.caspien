@@ -1,9 +1,9 @@
 // A throw caught inside an @async thread: the trace ends at the thread trampoline (its root); checked by stack_trace_check.sh.
-import "../stdlib/print.caspien"
-import "../stdlib/funcname.caspien"
-import "../stdlib/gt/*"
-import "../stdlib/par_call.caspien"
-import "../stdlib/await_call.caspien"
+import "stdlib/print.caspien"
+import "stdlib/funcname.caspien"
+import "stdlib/gt/*"
+import "stdlib/par_call.caspien"
+import "stdlib/await_call.caspien"
 
 @throws
 func leaf(x: mut u64) mut u64{

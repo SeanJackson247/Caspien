@@ -4,6 +4,7 @@
 # compiled at `function-inlining: aggressive` in a scratch copy with a Linux target. Output must equal the model (inline_multi_callee_test.py) in every
 # case; the optimised HOB must still call `big` when the limit is below its size, never call `once` or `small`, and call nothing when the rule is off (0).
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 export JAVA_TOOL_OPTIONS=
 tar -C "$ROOT" --exclude=.git --exclude=.cache -cf - . | tar -C "$W" -xf -

@@ -2,8 +2,8 @@
 // Every function has a hand-computed expected value, so a wrong copy, a wrong evaluation order, a name clash between an inlined
 // local and a caller local, or a broken multi-return shows up as a FAIL. The output must be identical with inlining off and on
 // (at every preset, and together with the other optimizer switches).
-import "../stdlib/libc.caspien"
-import "../stdlib/gt/*"
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
 
 let static tickCount = mut 0
 

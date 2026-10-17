@@ -139,7 +139,7 @@ func main() void{
 ```
 
 - A file is a list of declarations: `import`, `func`, `struct`, `enum`, `interface`, `impl`, `extern`,
-  `let static`. Imports are resolved relative to the importing file. `import "dir/*"` imports every `.caspien` file directly in that folder (sorted by name, subfolders not included).
+  `let static`. Imports are resolved relative to the importing file, except `import "stdlib/..."`, which always names the one shared `stdlib/` folder (see below). `import "dir/*"` imports every `.caspien` file directly in that folder (sorted by name, subfolders not included).
 - Every program that uses `new`, `owns` or `ref` requires the `gt_*` decorated functions (`@gt_init`,
   `@gt_register`, `@gt_alive_check`, `@gt_destruct`, `@gt_moved`, and for a nullable `ref` also `@gt_ref_id` and `@gt_ref_resolve`, which `gt_alive_check.caspien` imports) to be defined in the final compilation unit. Basic
   defaults are available in `stdlib/`, and the examples import them. They implement the runtime registry
@@ -822,13 +822,13 @@ what to free. The table is five small files, and a program that allocates import
 `libc.caspien`:
 
 ```rust
-import "../stdlib/libc.caspien"
-import "../stdlib/gt/*"
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
 ```
 
 The table is an open-addressing hash set (expected O(1)) that also issues lazy 64-bit ids for nullable `ref`s;
 `stdlib/gt_set/` is the same set without ids and `stdlib/gt_linear/` the older linear-scan version
-(import one folder with `import "../stdlib/gt/*"`, `gt_set/*` or `gt_linear/*`, never mix; only the default folder supports a nullable `ref`).
+(import one folder with `import "stdlib/gt/*"`, `gt_set/*` or `gt_linear/*`, never mix; only the default folder supports a nullable `ref`).
 
 #### Dynamic arrays
 
@@ -1951,8 +1951,8 @@ java Compiler -i hello.caspien output/hello
 ```
 
 `-i` is the input file; the output path may be in a folder that does not exist yet. Imports are resolved
-relative to the *importing file's* directory, so keep programs next to `stdlib/` or use relative paths
-like `import "../stdlib/libc.caspien"`.
+relative to the *importing file's* directory, except an import starting with `stdlib/` (for example
+`import "stdlib/libc.caspien"`), which names the single standard library folder in the repository root, wherever the program lives.
 
 | Flag | Effect |
 |---|---|
@@ -1988,7 +1988,7 @@ target linux                 # in ===codegen.config===, was windows_gnu
 
 #### The standard library
 
-`stdlib/` is ordinary Caspien source, imported by relative path. There is no prelude: a program imports exactly the files it uses (or a whole folder with `import "stdlib/gt/*"`).
+`stdlib/` is ordinary Caspien source (one folder in the repository root, shared by every implementation), imported as `stdlib/<file>`. There is no prelude: a program imports exactly the files it uses (or a whole folder with `import "stdlib/gt/*"`).
 
 | File | What it gives you |
 |---|---|
@@ -2161,7 +2161,7 @@ name is one path component (`..`, `/` and empty names are errors) and symlinks a
 `File` close themselves when their owner goes out of scope (a `@drop` function on the struct does the close).
 
 ```
-import "../stdlib/fs.caspien"
+import "stdlib/fs.caspien"
 
 func main() imut s32{
 	?catch(e){ return 1 }

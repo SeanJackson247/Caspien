@@ -3,7 +3,7 @@
 // Expected output:
 //   asm: 6 105
 //   assume: total=107 q=20
-import "../../stdlib/libc.caspien"
+import "stdlib/libc.caspien"
 
 enum Sensor{ LIVE, DEAD }
 

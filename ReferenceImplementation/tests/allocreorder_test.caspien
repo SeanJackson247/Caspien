@@ -2,8 +2,8 @@
 // must compute the same results with the slots reordered: mixed widths written and read back in a loop, an array and a struct among them, parameters
 // (which stay ahead of the locals), a function with owns/throw (whose gt_routine_address / gt_error_message slots stay first) and a catch that reads
 // its own locals. Run with the switch off and on: the output must be identical, and the frame of `mixed` smaller with it on.
-import "../stdlib/libc.caspien"
-import "../stdlib/gt/*"
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
 
 struct Pair{
 	@pub{

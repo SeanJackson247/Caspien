@@ -3,6 +3,7 @@
 # valgrind must be clean, and the realloc calls counted by tests/alloc_shim.c must stay amortised (the test makes 101000 pushes and 99990
 # pops; one realloc per push would be over 100000 calls, doubling needs about 40).
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 export JAVA_TOOL_OPTIONS=
 tar -C "$ROOT" --exclude=.git --exclude=.cache -cf - . | tar -C "$W" -xf -

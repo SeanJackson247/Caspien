@@ -4,6 +4,7 @@
 # everything-on style: constant folding + variable elision + dead-control-flow) and requires: PASS output (sum from a Python model),
 # a folded program (no leftover `PUSH true/false ; CMP` pairs) and a compile under 25 s (the quadratic version took about 27 s).
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 export JAVA_TOOL_OPTIONS=
 tar -C "$ROOT" --exclude=.git --exclude=.cache -cf - . | tar -C "$W" -xf -
@@ -11,7 +12,7 @@ cd "$W" || exit 1
 sed -i 's/^target .*/target linux/; s/^\( *\)default: win64/\1default: sysv_x64/; s/^constant-folding: .*/constant-folding: on/; s/^variable-elision: .*/variable-elision: on/; s/^dead-control-flow-removal: .*/dead-control-flow-removal: on/' toolchain.config
 python3 - <<'P'
 K = 2400
-s = 'import "../stdlib/libc.caspien"\nfunc main() void{\n\tlet x = mut 0\n'
+s = 'import "stdlib/libc.caspien"\nfunc main() void{\n\tlet x = mut 0\n'
 x = 0
 for i in range(K):
     if i % 3 == 0:

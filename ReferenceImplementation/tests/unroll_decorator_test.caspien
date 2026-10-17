@@ -1,8 +1,8 @@
 // `@unroll` / `@unroll(N)` / `@dont(unroll)` on a `for` statement. Each function computes a value that the PASS line compares with a result from an
 // independent Python model (sum of i*i for 0..8 = 140, and so on). The values must be right whether or not the compiler honoured the decorator;
 // tests/unroll_decorator_check.sh checks what the compiler said about each one (applied / kept rolled / not honoured).
-import "../stdlib/libc.caspien"
-import "../stdlib/gt/*"
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
 
 func check(name: static imut string, ok: mut bool) void{
 	unsafe extern{

@@ -90,9 +90,7 @@ public final class FixTool {
     }
 
     private static String show(String file) {
-        Path abs = Paths.get(file).toAbsolutePath().normalize();
-        Path base = ProjectRoot.root();
-        return abs.startsWith(base) ? base.relativize(abs).toString() : abs.toString();
+        return ProjectRoot.shown(Paths.get(file));
     }
 
 

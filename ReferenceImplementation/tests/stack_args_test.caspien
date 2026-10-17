@@ -1,6 +1,6 @@
 // Regression test: arguments passed on the stack (past the 6th integer argument on Linux/SysV) must arrive
 // in order, both for Caspien callees and for C (printf). Prints one PASS/FAIL line per case.
-import "../stdlib/libc.caspien"
+import "stdlib/libc.caspien"
 
 func two(a: mut u64, b: mut u64) mut u64{
 	return a + b

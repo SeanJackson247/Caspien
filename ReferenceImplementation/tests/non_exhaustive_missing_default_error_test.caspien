@@ -1,5 +1,5 @@
 // Must fail: MID is uncovered and there is no `default`.
-import "../stdlib/libc.caspien"
+import "stdlib/libc.caspien"
 @non_exhaustive
 enum Level{ LOW, MID, default }
 func level(l: imut Level) mut u64{

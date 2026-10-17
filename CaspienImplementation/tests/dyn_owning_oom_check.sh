@@ -4,6 +4,7 @@
 # makes the Nth malloc return NULL, for every N after the setup ("built" printed), and then fails the grow realloc inside the owns-pointer clone. Every run must exit 0 and print the normal result or "CAUGHT out of memory", and after a caught failure the
 # number of live allocations at exit must equal the clean run's (no leak).
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 export JAVA_TOOL_OPTIONS=
 tar -C "$ROOT" --exclude=.git --exclude=.cache -cf - . | tar -C "$W" -xf -

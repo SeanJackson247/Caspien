@@ -2,6 +2,7 @@
 # Compiles tests/fs_write_string_test.caspien (Linux, java, gcc) in a scratch copy, runs it, requires 6 PASS and no FAIL, then checks the
 # bytes on disk against a Python model (file n.txt = n chars, char i = 'a' + i % 26). Linux only; Windows/Wine not run.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 export JAVA_TOOL_OPTIONS=
 tar -C "$ROOT" --exclude=.git --exclude=.cache -cf - . | tar -C "$W" -xf -

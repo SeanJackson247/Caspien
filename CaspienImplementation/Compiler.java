@@ -67,15 +67,11 @@ import java.util.Map;
  * afterward -- they're real artifacts, not scratch, and worth being
  * able to inspect.
  *
- * A test .caspien file that imports stdlib paths (e.g.
- * "stdlib/libc.caspien") needs a real "stdlib" folder reachable by
- * that same relative path from wherever the file itself lives --
- * ASTGenerator's own import resolution works that way, independent of
- * this orchestrator or any component's working directory. A "stdlib"
- * folder is provided at this project's own root for exactly this
- * reason: keep test .caspien files there too, next to this file, for
- * now (matches "relativistic addressing" -- everything here assumes it
- * is being run from the directory it lives in).
+ * An import starting with "stdlib/" (e.g. "stdlib/libc.caspien") names
+ * the ONE stdlib folder shared by every implementation: the repository's
+ * "stdlib/" next to this folder (CASPIEN_STDLIB overrides it), passed to
+ * the front end as its "stdlib" option. Everything else here assumes it
+ * is being run from the directory it lives in.
  */
 public class Compiler {
 
@@ -289,6 +285,7 @@ public class Compiler {
         feConfigs.put("trace.config", "trace-depth: " + traceDepth + "\n");
         Map<String, String> feOptions = new java.util.HashMap<>();
         feOptions.put("root", root.toString());
+        feOptions.put("stdlib", stdlibDir(root).toString());
         if (viz) {
             // --viz builds nothing, like --audit: the page goes to vizHtml
             feOptions.put("viz", "1");
@@ -572,6 +569,12 @@ public class Compiler {
     /** The folder holding the classes (out/) of the stage whose config folder is `componentDir`. */
     private static Path codeDir(Path componentDir) {
         return codeRoot.resolve(componentDir.getFileName());
+    }
+
+    /** The one stdlib folder (`stdlib/` next to the implementation folders); the environment variable CASPIEN_STDLIB overrides it (scratch trees). */
+    private static Path stdlibDir(Path root) {
+        String env = System.getenv("CASPIEN_STDLIB");
+        return (env != null && !env.isEmpty() ? Paths.get(env) : root.resolve("..").resolve("stdlib")).toAbsolutePath().normalize();
     }
 
     /** Serves the one copy of the caspien.bytecode classes that stages 1-3 share (taken from the ASTGenerator's out/); set at the start of a run. */

@@ -2,6 +2,7 @@
 # (needs Linux, java, gcc, python3) tests/mul_big_const_test.caspien under everything on, shipped and everything off: output equals tests/mul_big_const_test.py;
 # with register form on the big constants 2^n+-1 are `shlq` + add/sub.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 export JAVA_TOOL_OPTIONS=
 tar -C "$ROOT" --exclude=.git --exclude=.cache -cf - . | tar -C "$W" -xf -

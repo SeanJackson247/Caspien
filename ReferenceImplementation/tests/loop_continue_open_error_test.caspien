@@ -1,6 +1,6 @@
 // Must fail to compile: the spin loop `match @lock` lowers to is not a user loop, so `continue` directly in the OPEN case
 // (where the lock is held) is rejected; only CLOSED may `continue` (retry).
-import "../stdlib/libc.caspien"
+import "stdlib/libc.caspien"
 
 enum St{ OPEN, CLOSED }
 

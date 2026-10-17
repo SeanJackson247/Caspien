@@ -20,7 +20,7 @@ FULL = {
 }
 
 # Where a program is placed in the scratch tree: four directories deep, like programs/<name>/caspien/ in the repository, so the programs' own
-# `import "../../../../stdlib/..."` lines resolve unchanged.
+# `import "stdlib/..."` lines resolve unchanged.
 SRC_DIR = os.path.join("bench", "p", "q", "c")
 SRC_NAME = "_bp.caspien"
 
@@ -64,7 +64,7 @@ class Tree:
     def __init__(self, root=None):
         root = root or paths.REPO
         self.dir = tempfile.mkdtemp(prefix="caspien_tree_")
-        for d in ("ASTGenerator", "Optimizer", "LowerOrderGenerator", "Codegen", "stdlib"):
+        for d in ("ASTGenerator", "Optimizer", "LowerOrderGenerator", "Codegen"):
             shutil.copytree(os.path.join(root, d), os.path.join(self.dir, d))
         for f in os.listdir(root):
             if f.startswith("Compiler"):
@@ -89,7 +89,7 @@ class Tree:
         return rel
 
     def compile_command(self, source_rel, exe):
-        return {"cmd": ["java", "Compiler", "-i", source_rel, exe, "--no-cache"], "cwd": self.dir, "env": dict(os.environ, JAVA_TOOL_OPTIONS="")}
+        return {"cmd": ["java", "Compiler", "-i", source_rel, exe, "--no-cache"], "cwd": self.dir, "env": dict(os.environ, JAVA_TOOL_OPTIONS="", CASPIEN_STDLIB=os.path.normpath(os.path.join(paths.REPO, "..", "stdlib")))}
 
     def close(self):
         shutil.rmtree(self.dir, ignore_errors=True)

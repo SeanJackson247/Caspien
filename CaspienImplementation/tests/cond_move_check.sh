@@ -4,6 +4,7 @@
 # moved on that path) and valgrind must report no definite leak and no invalid access. Valgrind alone cannot catch the bug this
 # guards: the ghost table keeps every registered block reachable, so an unfreed block is "still reachable", never "definitely lost".
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 export JAVA_TOOL_OPTIONS=
 tar -C "$ROOT" --exclude=.git --exclude=.cache -cf - . | tar -C "$W" -xf -

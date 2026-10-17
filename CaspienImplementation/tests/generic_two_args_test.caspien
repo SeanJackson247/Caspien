@@ -1,7 +1,7 @@
 // A generic type with two type arguments (`Node<K, V>`) as a struct member type, a `ref` member, a function parameter and a return type: the comma
 // inside the angle brackets must not split the member/parameter list.
-import "../stdlib/libc.caspien"
-import "../stdlib/gt/*"
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
 
 struct Node<K, V>{@pub{
 	key: mut K

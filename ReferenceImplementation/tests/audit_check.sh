@@ -2,6 +2,7 @@
 # `--audit` lists every use of `unsafe` (file, line, tags, the text in the braces) of the input and everything it imports, without building.
 # Checked on docs/examples/19_unsafe_tags.caspien (one block per tag plus one `unsafe unaudited`). Needs Linux, java.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 export JAVA_TOOL_OPTIONS=
 tar -C "$ROOT" --exclude=.git --exclude=.cache -cf - . | tar -C "$W" -xf -

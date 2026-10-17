@@ -1,6 +1,6 @@
 // The same owns variable twice in one fixed array literal would give two owners of one block: an error.
-import "../stdlib/libc.caspien"
-import "../stdlib/gt/*"
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
 struct World{@pub{
 	ticks: mut u64
 }}

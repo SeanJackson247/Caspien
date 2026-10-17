@@ -6,6 +6,7 @@
 # the dynarray-grow realloc inside a deep dynarray clone. Failures of the ghost table's own reallocs and of `new`/`dyn([..])`
 # during setup are not part of this check.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 export JAVA_TOOL_OPTIONS=
 tar -C "$ROOT" --exclude=.git --exclude=.cache -cf - . | tar -C "$W" -xf -

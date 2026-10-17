@@ -3,6 +3,7 @@
 # the STRUCT declarations (members + STRUCT_PADDING), and constant folding (when on) then folds the PUSH. Hand-made HOB files go through the prebuilt Optimizer.
 #   tests/sizeof_hob_check.sh        (needs Optimizer/out, i.e. the shipped prebuilt classes)
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 W=$(mktemp -d); cd "$W" || exit 1
 export JAVA_TOOL_OPTIONS=
 bad=0

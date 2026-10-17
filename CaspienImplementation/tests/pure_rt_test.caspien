@@ -2,8 +2,8 @@
 // function may allocate and use insecure_rand() (non-deterministic, not a side effect), and a @pure function may be marked @non(deterministic), which
 // a @pure(rt) function may not call (pure_rt_calls_* error tests). Values are compared with pure_rt_test.py by pure_rt_check.sh; the output must be
 // the same in every optimizer configuration.
-import "../stdlib/libc.caspien"
-import "../stdlib/gt/*"
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
 
 @pure(rt)
 func poly(x: mut u64) mut u64{

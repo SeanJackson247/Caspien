@@ -8,10 +8,10 @@ HEAD = """// swaplock: 32 OS threads all update one shared struct (count, sum) u
 // Each update: count += 1; sum += id + (i % 7). The result does not depend on the order of the updates.
 // The lock is a `swap` field (an atomic exchange): `match @lock shared` runs OPEN when it took the lock and CLOSED when someone holds it.
 %s
-import "../../../../stdlib/libc.caspien"
-import "../../../../stdlib/gt/*"
-import "../../../../stdlib/par_call.caspien"
-import "../../../../stdlib/await_call.caspien"
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
+import "stdlib/par_call.caspien"
+import "stdlib/await_call.caspien"
 extern getenv(static imut string) static imut string
 extern atol(static imut string) mut u64
 

@@ -1,6 +1,6 @@
 // Regression test for the deferred-operand (register-form) pass. Each case checks a result against a value
 // worked out by hand; the output must be identical with `deferred-operands: on` and `off`.
-import "../stdlib/libc.caspien"
+import "stdlib/libc.caspien"
 
 func id(a: mut u64) mut u64{
 	return a

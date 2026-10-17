@@ -3,6 +3,7 @@ import caspien.parser.SourceParser;
 import caspien.config.CompilerException;
 import caspien.config.DepsLog;
 import caspien.config.FsPolicy;
+import caspien.config.ProjectRoot;
 import caspien.token.Token;
 import caspien.token.TokenType;
 
@@ -126,7 +127,7 @@ public class ImportResolver {
         if (dirPart.isEmpty()) {
             dirPart = "/";
         }
-        Path dir = (importerDir != null ? importerDir : Paths.get(".")).resolve(dirPart).normalize();
+        Path dir = resolveImport(importerDir, dirPart);
         if (!Files.isDirectory(dir)) {
             throw new CompilerException("import", currentFilePath, importTok.line,
                     "wildcard import '" + importPath + "': '" + dir + "' is not a folder");
@@ -157,14 +158,21 @@ public class ImportResolver {
         return jobs;
     }
 
+    /** An import path as a file: `stdlib/...` is the shared stdlib folder (ProjectRoot), anything else is relative to the importing file. */
+    private static Path resolveImport(Path importerDir, String importPath) {
+        if (importPath.startsWith("stdlib/")) {
+            return ProjectRoot.stdlib().resolve(importPath.substring("stdlib/".length())).normalize();
+        }
+        return (importerDir != null ? importerDir : Paths.get(".")).resolve(importPath).normalize();
+    }
+
     /** One file import: null when the file is already resolved elsewhere (dropped), else a new frame for its lines. */
     private ImportFrame startFile(ImportJob job) {
         Token importTok = job.importTok;
         String currentFilePath = job.currentFilePath;
         String importPath = job.importPath;
         Path importerDir = job.importerDir;
-        Path resolvedPath = (importerDir != null ? importerDir : Paths.get("."))
-                .resolve(importPath).normalize();
+        Path resolvedPath = resolveImport(importerDir, importPath);
         String resolvedPathStr = resolvedPath.toString();
         String canonical = canonicalize(resolvedPathStr);
 

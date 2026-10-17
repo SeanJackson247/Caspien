@@ -8,10 +8,10 @@ def unesc(s): return s.replace("\\n", "\n")
 B = lambda x: 'true' if x else 'false'
 out = []
 w = out.append
-w('import "../stdlib/libc.caspien"')
-w('import "../stdlib/gt/*"')
-w('import "../stdlib/print.caspien"')
-w('import "../stdlib/string.caspien"')
+w('import "stdlib/libc.caspien"')
+w('import "stdlib/gt/*"')
+w('import "stdlib/print.caspien"')
+w('import "stdlib/string.caspien"')
 w('')
 w('func report(name: static imut string, ok: imut bool) void{')
 w('\tif ok{ print("PASS ") } else { print("FAIL ") }')

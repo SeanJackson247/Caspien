@@ -6,8 +6,8 @@
 // PASS count 5
 // PASS inner owns local 21
 // PASS handle usable after the lock 55
-import "../stdlib/libc.caspien"
-import "../stdlib/gt/*"
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
 
 enum Gate{ OPEN, CLOSED }
 

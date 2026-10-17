@@ -2,6 +2,7 @@
 # Compiles tests/instanceof_warn_test.caspien and requires exactly the two "can never be true" warnings for `instanceof Other` and
 # `Other implements Shape` (and none for the legitimate tests), then runs it (needs Linux, java, gcc): every line must be PASS.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 export JAVA_TOOL_OPTIONS=
 tar -C "$ROOT" --exclude=.git --exclude=.cache -cf - . | tar -C "$W" -xf -

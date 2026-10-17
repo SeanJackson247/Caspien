@@ -3,6 +3,7 @@
 Runs in a scratch copy of the tree (Linux, java, gcc), once per optimisation preset (shipped, everything on). Skips 07/08/09 (arguments, endless loop)."""
 import glob, os, re, subprocess, sys, tempfile
 ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+os.environ["CASPIEN_STDLIB"] = os.path.join(os.path.dirname(ROOT), "stdlib")   # the one stdlib
 sys.path.insert(0, os.path.join(ROOT, "benchmarks"))
 from harness import caspien as B   # noqa: E402
 SKIP = ("07_", "08_", "09_")

@@ -2,6 +2,7 @@
 # A `par` handle is freed only after its thread ended (needs Linux, java, gcc, valgrind): runs tests/par_lock_test.caspien under valgrind
 # and requires the right results, no invalid access (a handle freed under a running thread) and no lost blocks.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 export JAVA_TOOL_OPTIONS=
 tar -C "$ROOT" --exclude=.git --exclude=.cache -cf - . | tar -C "$W" -xf -

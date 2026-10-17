@@ -32,9 +32,9 @@ from harness import caspien as B   # noqa: E402  (OFF / FULL switch sets, patch_
 CACHE = os.path.join(ROOT, ".cache")
 SCRATCH = os.path.join(CACHE, "scratch")
 VERDICTS = os.path.join(CACHE, "tests")
-COPY = ["ASTGenerator", "Optimizer", "LowerOrderGenerator", "Codegen", "stdlib", "tests", "docs/examples", "docs/c_interop"]
+COPY = ["ASTGenerator", "Optimizer", "LowerOrderGenerator", "Codegen", "tests", "docs/examples", "docs/c_interop"]
 SKIP = re.compile(r"^(fs_test|fs_write_string_test|codegen_main_io_test|codegen_emit\d+_test|codegen_generate_test|fs_policy_.*|09_event_loop|event_loop_.*_throw_test|non_exhaustive_.*)$")
-ENV = dict(os.environ, JAVA_TOOL_OPTIONS="", CASPIEN_CACHE=os.path.join(CACHE, "stages"))
+ENV = dict(os.environ, JAVA_TOOL_OPTIONS="", CASPIEN_CACHE=os.path.join(CACHE, "stages"), CASPIEN_STDLIB=os.path.join(os.path.dirname(ROOT), "stdlib"))
 ENV.pop("JAVA_TOOL_OPTIONS")
 
 

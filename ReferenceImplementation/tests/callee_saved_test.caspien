@@ -2,7 +2,7 @@
 // loads rbx, r12-r15 with sentinel values, calls the function through the C ABI and checks the sentinels afterwards -- including
 // when a throw unwinds through several frames (GT_UNWIND must restore each frame's saved registers on the way out).
 // Run on its own it just prints the values the driver expects.
-import "../stdlib/libc.caspien"
+import "stdlib/libc.caspien"
 @throws
 func h(x: mut u64) mut u64{
 	if x == 0{

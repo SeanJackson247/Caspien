@@ -2,6 +2,7 @@
 # (needs Linux, java, gcc, python3) tests/static_cache_test.caspien under everything on, shipped and everything off: output equals tests/static_cache_test.py;
 # with everything on the loops get their statics pre-loaded into xmm0-3 / spare variable registers, with float variables off they do not.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 export JAVA_TOOL_OPTIONS=
 tar -C "$ROOT" --exclude=.git --exclude=.cache -cf - . | tar -C "$W" -xf -

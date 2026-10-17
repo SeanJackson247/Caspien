@@ -1,0 +1,205 @@
+// The README's examples of loops, `match @lock` and functions, with their `/*! termination: */` markers. The markers are checked by the compiler
+// (a wrong class is a compile error), so the README text cannot drift from what `--audit` reports. Prints PASS/FAIL lines.
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
+import "stdlib/par_call.caspien"
+import "stdlib/await_call.caspien"
+
+enum Gate{ OPEN, CLOSED }
+
+@lock(match self.gate : OPEN)
+struct Counter{@pub{
+	swap gate: atomic mut Gate
+	n: mut u64
+}}
+
+let static counter = mut Counter{gate= Gate.OPEN, n= mut 0}
+
+/*! termination: bound */
+func bump() void{
+	/*! termination: bound */
+	match @lock counter{
+		OPEN:{ counter.n += 1 }
+		CLOSED:default(1000000)
+	}
+}
+
+/*! termination: bound */
+func bumpTry() void{
+	/*! termination: bound */
+	match @lock counter{
+		OPEN:{ counter.n += 1 }
+		CLOSED:{ break }
+	}
+}
+
+/*! termination: finite */
+func bumpRuntime(n: mut u64) void{
+	/*! termination: finite */
+	match @lock counter{
+		OPEN:{ counter.n += 1 }
+		CLOSED:default(n)
+	}
+}
+
+/*! termination: bound */
+@pure
+func sq(x: mut u64) mut u64{ return x * x }
+
+/*! termination: bound */
+@pure
+func hyp(a: mut u64, b: mut u64) mut u64{
+	let s = mut sq(a)
+	let t = mut sq(b)
+	return s + t
+}
+
+/*! termination: finite */
+@recursive
+func fact(acc: mut u64, r: imut range) mut u64{
+	match r is base{ return acc }
+	let lo = mut (r.start + 1)
+	let hi = mut r.end
+	let r2 = imut (lo..hi)
+	match r2 within r{ return fact(acc * r.start, r2) }
+	else{ return acc }
+}
+
+/*! termination: finite */
+func factLoop(n: mut u64) mut u64{
+	let acc = mut 1
+	let hi = mut (n + 1)
+	/*! termination: finite */
+	for i in 1..hi{ acc *= i }
+	return acc
+}
+
+/*! termination: bound */
+@pure(rt)
+func poly(x: mut u64) mut u64{
+	let s = mut 7
+	/*! termination: bound */
+	for i in 0..8{ s = s * 31 + x + i }
+	return s
+}
+
+/*! termination: unbound */
+func loops() mut u64{
+	let total = mut 0
+	let n = mut 5
+	/*! termination: bound */
+	for i in 0..n{
+		n += 100
+		total += 1
+	}
+	/*! termination: finite */
+	for i in 0..3{
+		/*! termination: finite */
+		for j in i..3{ total += 1 }
+	}
+	let m = mut 0
+	unsafe loop{
+		/*! termination: unbound */
+		loop{
+			m += 1
+			if m == 5{ break }
+		}
+	}
+	/*! termination: bound */
+	for i in 0..6{
+		if i == 4{ break }
+		total += 1
+	}
+	let odd = mut 0
+	/*! termination: bound */
+	for i in 0..10{
+		if i % 2 == 0{ continue }
+		odd += i
+	}
+	return total * 1000 + odd + m * 100000
+}
+
+/*! termination: finite */
+func arrLoops() mut u64{
+	?catch(e){ return 0 }
+	let a = mut [1, 2, 3]
+	let s = mut 0
+	/*! termination: bound */
+	for i in a{ s += 1 }
+	/*! termination: bound */
+	for match i in a{ s += a[i] }
+	let d = mut ? dyn([1, 2, 3])
+	/*! termination: finite */
+	for i in d{ s += 1 }
+	/*! termination: finite */
+	for match i in d{ s += d[i] }
+	/*! termination: finite */
+	for match i into d{ d[i] = d[i] * 2 }
+	/*! termination: finite */
+	for match i in d{ s += d[i] }
+	return s
+}
+
+/*! termination: bound */
+func check(name: static imut string, ok: mut bool) void{
+	unsafe extern{
+		if ok{
+			printf("PASS %s\n", name)
+		} else {
+			printf("FAIL %s\n", name)
+		}
+	}
+}
+
+/*! termination: bound */
+@async
+func triple(x: mut u64) mut u64{ return x * 3 }
+
+/*! termination: bound */
+func parPoll() mut u64{
+	?catch(e){ return 0 }
+	let answer = mut ? await triple(mut 14)
+	let h = mut ? par triple(mut 14)
+	let r = mut 0
+	/*! termination: bound */
+	for i in 0..100000000{
+		let ready = mut false
+		/*! termination: bound */
+		match @lock h{
+			OPEN:{
+				match h.state{
+					READY:{
+						ready = true
+						r = h:resolve()
+					}
+					default:{ ready = false }
+				}
+			}
+			CLOSED:default(1000)
+		}
+		if ready{ break }
+		yield
+	}
+	return r + answer
+}
+
+/*! termination: unbound */
+func main() void{
+	bump()
+	bumpTry()
+	bumpRuntime(3)
+	let c = mut 0
+	/*! termination: bound */
+	match @lock counter{
+		OPEN:{ c = counter.n }
+		CLOSED:default(10)
+	}
+	check("three bumps", c == 3)
+	check("par poll", parPoll() == 84)
+	check("hyp", hyp(3, 4) == 25)
+	check("fact", fact(1, 1..11) == 3628800)
+	check("factLoop", factLoop(10) == 3628800)
+	check("poly", poly(2) == 6028044321291)
+	check("loops", loops() == 515025)
+	check("arrLoops", arrLoops() == 30)
+}

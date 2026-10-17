@@ -23,9 +23,10 @@ have python3 && t Python python3 nbody.py $N
 # Caspien: the shipped toolchain.config targets windows_gnu. On Linux, build in a scratch copy of the tree with `target linux` + `default: sysv_x64`
 # (the shipped config is left untouched); elsewhere use the tree as it is.
 export JAVA_TOOL_OPTIONS=
+export CASPIEN_STDLIB="$ROOT/../stdlib"   # the one stdlib, next to the implementation folders
 CT="$ROOT"
 if [ "$(uname -s)" = Linux ] && grep -q '^target windows_gnu' "$ROOT/toolchain.config"; then
-  CT=$(mktemp -d); cp -r "$ROOT"/ASTGenerator "$ROOT"/Optimizer "$ROOT"/LowerOrderGenerator "$ROOT"/Codegen "$ROOT"/stdlib "$ROOT"/Compiler*.class "$ROOT"/Compiler.java "$CT"/
+  CT=$(mktemp -d); cp -r "$ROOT"/ASTGenerator "$ROOT"/Optimizer "$ROOT"/LowerOrderGenerator "$ROOT"/Codegen "$ROOT"/Compiler*.class "$ROOT"/Compiler.java "$CT"/
   sed -e 's/^target windows_gnu/target linux/' -e 's/^    default: win64/    default: sysv_x64/' "$ROOT/toolchain.config" > "$CT/toolchain.config"
 fi
 cd "$CT"

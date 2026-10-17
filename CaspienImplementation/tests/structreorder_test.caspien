@@ -3,8 +3,8 @@
 // RVO return, `new`, array literal, static literal) and every member read must still give the hand-computed value, and sizeof must follow
 // the new layout. `Pinned` has a `let static n = sizeof(Pinned)` folded by the front end, so it must be left alone (sizeof stays 32). The last line prints sizeof(Mixed): 32 with the switch off, 24 with it on.
 // `Holder` (raw pointer to it) must be left alone too. Output is identical with the switch on and off except the last line.
-import "../stdlib/libc.caspien"
-import "../stdlib/gt/*"
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
 
 struct Mixed{
 	@pub{

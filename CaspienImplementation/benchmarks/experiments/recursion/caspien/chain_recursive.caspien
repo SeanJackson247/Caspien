@@ -1,6 +1,6 @@
 // Linear tail recursion written with @recursive (the compiler lowers it to a bounded `for` loop): acc = acc*31 ^ i, depth D, R times.
 // Same work as chain.c. Environment: REC_DEPTH, REC_REPS.
-import "../../../../stdlib/libc.caspien"
+import "stdlib/libc.caspien"
 
 extern getenv(static imut string) static imut string
 extern atol(static imut string) mut u64

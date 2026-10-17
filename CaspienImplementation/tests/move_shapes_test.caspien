@@ -2,8 +2,8 @@
 // iterations, a throwing callee that received the value, `match @lock`, a `match cond{}` with no else, a try block. After every call the
 // ghost table's entry count must be back to its starting value, whichever way the call went (a leaked block stays registered; valgrind cannot
 // see that, see move_shapes_check.sh and tests/cond_move_test for the plain if/else shapes).
-import "../stdlib/libc.caspien"
-import "../stdlib/gt/*"
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
 
 enum St{ OPEN, CLOSED }
 

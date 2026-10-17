@@ -188,9 +188,7 @@ final class BytecodeEmitterCore {
     public final Map<String, String> sourcePos = new java.util.LinkedHashMap<>();
 
     public static String shownPos(Token t) {
-        java.nio.file.Path abs = java.nio.file.Paths.get(t.file).toAbsolutePath().normalize();
-        java.nio.file.Path base = caspien.config.ProjectRoot.root();
-        return (abs.startsWith(base) ? base.relativize(abs).toString() : abs.toString()) + ":" + t.line;
+        return caspien.config.ProjectRoot.shown(java.nio.file.Paths.get(t.file)) + ":" + t.line;
     }
 
     /** Proof key -> hidden local holding the address a `match Some(<nullable ref>)` resolved (valid for the function being emitted). */

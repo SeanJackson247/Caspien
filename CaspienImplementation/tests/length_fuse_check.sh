@@ -3,6 +3,7 @@
 # which has fuse-length-compare on), the same with it off, and everything off (bench.py OFF). Output must equal tests/length_fuse_test.py each time; with the
 # switch on the low-order bytecode must contain R_BRCM compares (>= 10) and the assembly a `cmpq (%reg), %reg` memory compare, with it off none.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 export JAVA_TOOL_OPTIONS=
 tar -C "$ROOT" --exclude=.git --exclude=.cache -cf - . | tar -C "$W" -xf -

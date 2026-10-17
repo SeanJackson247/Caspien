@@ -4,6 +4,7 @@
 # `main` must be bound in all four sections; its peak live heap must equal what the real allocator measures (tests/alloc_shim.c). The program runs and prints PASS lines.
 # tests/audit_args_unknown_test.caspien: arguments the analysis cannot know (a call result, a variable changed in a loop) must keep `main` finite (not bound), with the reason.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 export JAVA_TOOL_OPTIONS=
 tar -C "$ROOT" --exclude=.git --exclude=.cache -cf - . | tar -C "$W" -xf -

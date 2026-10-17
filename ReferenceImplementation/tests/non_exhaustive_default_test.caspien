@@ -1,5 +1,5 @@
 // @non_exhaustive: `default` is required when a variant is uncovered (and rejected when none is: see non_exhaustive_*_error_test).
-import "../stdlib/libc.caspien"
+import "stdlib/libc.caspien"
 
 @non_exhaustive
 enum Level{ LOW, MID, HIGH, default }

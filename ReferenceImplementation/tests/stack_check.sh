@@ -4,6 +4,7 @@
 # with the prologue (`subq`, callee-saved pushes). Function inlining is off in both: it merges callee frames into the caller, which the estimate (a
 # call-graph sum over the source functions) does not model; the report says so. The depth sums come from the same frame figures (compared with tests/gas_model.py in gas_check.sh).
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 export JAVA_TOOL_OPTIONS=
 tar -C "$ROOT" --exclude=.git --exclude=.cache -cf - . | tar -C "$W" -xf -

@@ -4,6 +4,7 @@
 # is then inert). The output must equal tests/loop_hoist_test.py each time; with the switch on the low-order bytecode must show hoisted
 # length loads (`R_LD 8 %t %v`, the pointer lives in a variable register) and with it off none.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 export JAVA_TOOL_OPTIONS=
 tar -C "$ROOT" --exclude=.git --exclude=.cache -cf - . | tar -C "$W" -xf -

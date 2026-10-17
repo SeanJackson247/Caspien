@@ -4,6 +4,7 @@
 # counterpart prints, under everything on (FULL) and the shipped config, at sizes small enough to run fast but large enough to exercise eviction/growth.
 # valgrind (shipped): no error and no leak on the ref safe variants and on the refstd lru.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 export JAVA_TOOL_OPTIONS=
 tar -C "$ROOT" --exclude=.git --exclude=.cache -cf - . | tar -C "$W" -xf -

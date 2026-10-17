@@ -2,6 +2,7 @@
 # Finished `par` threads must be reclaimed (needs Linux, java, gcc, valgrind): runs tests/par_detach_test.caspien under valgrind
 # and requires the right results and no lost blocks (an undetached, never-joined thread leaves its thread block behind).
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 export JAVA_TOOL_OPTIONS=
 tar -C "$ROOT" --exclude=.git --exclude=.cache -cf - . | tar -C "$W" -xf -

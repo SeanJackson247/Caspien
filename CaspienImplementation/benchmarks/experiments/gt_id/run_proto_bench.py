@@ -14,7 +14,7 @@ try:
         best = {}
         for v in ("a", "z", "e"):
             rel = tree.prepare(os.path.join(HERE, "gt_proto_%s.caspien" % v), kv)
-            # the prototypes import "../../stdlib/..." (two levels below the tree root): put them there
+            # the prototypes import "stdlib/..." (two levels below the tree root): put them there
             two = os.path.join(tree.dir, "x", "y"); os.makedirs(two, exist_ok=True)
             shutil.copy(os.path.join(HERE, "gt_proto_%s.caspien" % v), os.path.join(two, "_gp.caspien"))
             exe = os.path.join(tree.dir, "gtp_%s_%s" % (v, cfg))

@@ -5,7 +5,8 @@
 # forms that must still COMPILE. Each negative case asserts a non-zero exit AND a substring of the message. The runtime behaviour is covered by
 # tests/bits_ops_test.caspien.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; export JAVA_TOOL_OPTIONS=
-T=$(mktemp -d); cp -r "$ROOT"/ASTGenerator "$ROOT"/Optimizer "$ROOT"/LowerOrderGenerator "$ROOT"/Codegen "$ROOT"/stdlib "$ROOT"/Compiler*.class "$ROOT"/Compiler.java "$T"/
+export CASPIEN_STDLIB="$ROOT/../stdlib"
+T=$(mktemp -d); cp -r "$ROOT"/ASTGenerator "$ROOT"/Optimizer "$ROOT"/LowerOrderGenerator "$ROOT"/Codegen "$ROOT"/Compiler*.class "$ROOT"/Compiler.java "$T"/
 sed -e 's/^target windows_gnu/target linux/' -e 's/^    default: win64/    default: sysv_x64/' "$ROOT/toolchain.config" > "$T/toolchain.config"
 mkdir -p "$T/tests"; cd "$T"
 pass=0; fail=0

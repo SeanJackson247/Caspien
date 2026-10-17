@@ -1,0 +1,68 @@
+// A proven ref passed to a nullable-ref parameter becomes an id (GT_REF_ID, a runtime call) while the argument list is built: the argument registers already loaded must survive it.
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
+import "stdlib/string.caspien"
+
+struct Core{@pub{
+	cnt: mut s32
+}}
+impl constructor for Core() self{
+	return Core{cnt= mut 0}
+}
+
+struct Hub{@pub{
+	core: owns some mut Core
+	part: owns mut Part
+}}
+struct Part{@pub{
+	core: ref mut Core
+}}
+impl constructor for Part(h: ref some mut Hub) self{
+	return Part{core= ref h.core}
+}
+
+@pub
+impl Part{
+	@pub
+	func bump(_self: ref some mut self, prefix: ref imut String) void{
+		match Some(_self.core){
+			_self.core.cnt = _self.core.cnt + 1
+		}
+	}
+
+	@pub
+	func bump3(_self: ref some mut self, by: mut s32, a: ref imut String, b: ref imut String) void{
+		match Some(_self.core){
+			_self.core.cnt = _self.core.cnt + by
+		}
+	}
+}
+
+func check(name: static imut string, ok: imut bool) void{
+	unsafe extern{
+		if ok{ printf("PASS %s\n", name) }
+		else{ printf("FAIL %s\n", name) }
+	}
+}
+
+func run() mut s32{
+	?catch(e){ return -1 }
+	let c = mut ? new Core()
+	let h = mut ? new Hub{core= c, part= null}
+	match Some(h){ h.part = ? new Part(h) }
+	let p = mut ? new String("q")
+	let q = mut ? new String("r")
+	match Some(h){ match Some(h.part){ match Some(p){
+		h.part.bump(h.part, p)
+	} } }
+	match Some(h){ match Some(h.part){ match Some(p){ match Some(q){
+		h.part.bump3(h.part, 10, p, q)
+	} } } }
+	let:<mut s32> r = mut 0
+	match Some(h){ r = h.core.cnt }
+	return r
+}
+
+func main() void{
+	check("self survives GT_REF_ID in argument 1", run() == 11)
+}

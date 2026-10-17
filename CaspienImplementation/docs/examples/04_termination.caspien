@@ -1,8 +1,8 @@
 // Loops are bounded and recursion is a bounded loop.
 // Expected output:
 //   iterations=5 bound=505 recursive=45
-import "../../stdlib/libc.caspien"
-import "../../stdlib/gt/*"
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
 
 // The range of a `for` loop is fixed when the loop starts. Changing `n` inside the body
 // does not extend the loop: this is the guarantee the LOOP language is built on.

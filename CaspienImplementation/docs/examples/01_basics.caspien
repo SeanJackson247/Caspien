@@ -2,8 +2,8 @@
 // Expected output:
 //   balance=150 sides=4
 //   total=45 fits=200 wrapped=44
-import "../../stdlib/libc.caspien"
-import "../../stdlib/gt/*"
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
 
 enum Shape{ CIRCLE, SQUARE, TRIANGLE }
 

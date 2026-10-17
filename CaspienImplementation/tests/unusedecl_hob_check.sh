@@ -5,6 +5,7 @@
 # and compares the surviving declarations with what the pass is specified to keep. Run from anywhere:
 #   tests/unusedecl_hob_check.sh        (needs Optimizer/out, i.e. the shipped prebuilt classes)
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 W=$(mktemp -d); cd "$W" || exit 1
 export JAVA_TOOL_OPTIONS=
 printf 'unused-declaration-removal: on\n' > compiler.config

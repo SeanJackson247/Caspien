@@ -4,6 +4,7 @@
 # and program-wide budgets it must compile quickly, print PASS, and keep the optimized HOB under a size bound. Also checks that
 # the inline-max-growth key still tightens it (the factor keys have floors of 2000 / 50000 lines, so tiny test programs never reach them).
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 export JAVA_TOOL_OPTIONS=
 tar -C "$ROOT" --exclude=.git --exclude=.cache -cf - . | tar -C "$W" -xf -

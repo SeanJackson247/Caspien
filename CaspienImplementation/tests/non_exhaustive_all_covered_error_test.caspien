@@ -1,5 +1,5 @@
 // Must fail: every variant is named, so `default` is unreachable.
-import "../stdlib/libc.caspien"
+import "stdlib/libc.caspien"
 @non_exhaustive
 enum Level{ LOW, MID, default }
 func level(l: imut Level) mut u64{

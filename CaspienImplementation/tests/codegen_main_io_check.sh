@@ -3,6 +3,7 @@
 # /tmp/caspien_cg_io whitelisted :rw in fs-roots), needs 4 PASS and no FAIL, checks bytes on disk vs a Python model, then valgrind.
 # Linux only; Windows/Wine not run.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 W=$(mktemp -d); D=/tmp/caspien_cg_io; trap 'rm -rf "$W" "$D"' EXIT
 export JAVA_TOOL_OPTIONS=
 tar -C "$ROOT" --exclude=.git --exclude=.cache -cf - . | tar -C "$W" -xf -

@@ -4,7 +4,7 @@
 //   proofs=5 0 | fits=200 333 7
 //   bounds=30 99 777 | for_match=10
 //   loops=5 505 0 6 6 | fact=3628800 3628800 | steps=5 4 0
-import "../../stdlib/libc.caspien"
+import "stdlib/libc.caspien"
 
 enum Color{ RED, GREEN, BLUE }
 @non_exhaustive

@@ -1,0 +1,29 @@
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
+extern fflush(mut u64) mut s32
+func say(s: static imut string) void{
+	unsafe extern{ printf("%s\n", s) }
+	unsafe extern{ fflush(0) }
+}
+struct Leaf2{@pub{
+	v: mut u64
+}}
+struct Owner{@pub{
+	p: owns mut Leaf2
+}}
+struct Holder{@pub{
+	items: owns some mut dynarray(mut Owner)
+}}
+struct V8{@pub{
+	s: owns mut Leaf2
+	r: ref mut Holder
+}}
+func t8() void{
+	?catch(e){ return }
+	let m = mut ? new V8{s= null, r= null}
+	say("PASS drop_ref_member_owning_target")
+}
+func main() void{
+	t8()
+	say("PASS done")
+}

@@ -2,8 +2,8 @@
 // pointers. Regression: `x in d` where `d` was a `ref` dynarray dereferenced the block pointer once too often (segfault).
 // Expected values come from an independent Python model of the same arithmetic.
 // Prints one PASS/FAIL line per check and `ALL DYN FOR FORMS TESTS PASSED`.
-import "../stdlib/libc.caspien"
-import "../stdlib/gt/*"
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
 
 struct Pair{@pub{
 	a: mut u64

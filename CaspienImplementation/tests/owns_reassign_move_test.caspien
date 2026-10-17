@@ -1,7 +1,7 @@
 // `s = f(s)` moves the old value into f; it must not be destructed before the call.
 // Expected output: moved=6 replaced=9 grown=3
-import "../stdlib/libc.caspien"
-import "../stdlib/gt/*"
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
 struct World{@pub{
 	ticks: mut u64
 }}

@@ -4,8 +4,8 @@
 // computed element (`let a: u16[3] = [c, c + 1, c + 7]`), which used to store the pushed words as if they were packed and crash; (4) an array literal that
 // mixes a typed variable with plain literals (`[c, 2, c + 7]` with `c: u16` is a `u16[3]`).
 // Run with every optimizer switch off and on: identical output.
-import "../stdlib/libc.caspien"
-import "../stdlib/gt/*"
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
 
 struct Cell{
 	@pub{

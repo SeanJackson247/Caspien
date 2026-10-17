@@ -5,6 +5,7 @@
 # allocation shim failing each malloc in turn, viaNew must report 1024 or, when the `new` fails, exactly 16 (the value the float variable
 # held when the failure jumped into the catch); at least one run must fail the `new`.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 export JAVA_TOOL_OPTIONS=
 tar -C "$ROOT" --exclude=.git --exclude=.cache -cf - . | tar -C "$W" -xf -

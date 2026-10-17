@@ -1,4 +1,4 @@
-import "../../../../../../../stdlib/dynamic_array.caspien"
+import "stdlib/dynamic_array.caspien"
 
 @pub
 struct X86RunEntries{@pub{

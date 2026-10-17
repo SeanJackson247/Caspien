@@ -1,5 +1,5 @@
 // Must fail: payload read with no match on state.
-import "../stdlib/libc.caspien"
+import "stdlib/libc.caspien"
 enum ResultState{ OK, FAIL }
 @lock(match self.state : OK)
 struct Result<T>{@pub{

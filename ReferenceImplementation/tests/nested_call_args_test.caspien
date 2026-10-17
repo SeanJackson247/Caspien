@@ -1,6 +1,6 @@
 // Regression test: a call used as an argument of another call must not disturb the arguments
 // already loaded for the outer call (or the ones loaded afterwards). Prints one PASS/FAIL line per case.
-import "../stdlib/libc.caspien"
+import "stdlib/libc.caspien"
 
 func two(a: mut u64, b: mut u64) mut u64{
 	return a + b

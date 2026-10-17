@@ -5,12 +5,13 @@
 # twins and `get` compile, and the by-value-struct-parameter rule is untouched for ordinary code (also a user-written generic impl).
 # The runtime behaviour is covered by tests/dynarray_struct_generic_test.caspien.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; export JAVA_TOOL_OPTIONS=
-T=$(mktemp -d); cp -r "$ROOT"/ASTGenerator "$ROOT"/Optimizer "$ROOT"/LowerOrderGenerator "$ROOT"/Codegen "$ROOT"/stdlib "$ROOT"/Compiler*.class "$ROOT"/Compiler.java "$T"/
+export CASPIEN_STDLIB="$ROOT/../stdlib"
+T=$(mktemp -d); cp -r "$ROOT"/ASTGenerator "$ROOT"/Optimizer "$ROOT"/LowerOrderGenerator "$ROOT"/Codegen "$ROOT"/Compiler*.class "$ROOT"/Compiler.java "$T"/
 sed -e 's/^target windows_gnu/target linux/' -e 's/^    default: win64/    default: sysv_x64/' "$ROOT/toolchain.config" > "$T/toolchain.config"
 mkdir -p "$T/tests"; cd "$T"
-HDR='import "../stdlib/libc.caspien"
-import "../stdlib/dynamic_array.caspien"
-import "../stdlib/gt/*"
+HDR='import "stdlib/libc.caspien"
+import "stdlib/dynamic_array.caspien"
+import "stdlib/gt/*"
 struct Edge{
 	@pub{ to: mut u64 }
 	@pub{ w: mut u64 }

@@ -1,0 +1,99 @@
+// Composition, interfaces with default methods, `instanceof`/`implements`, and the two ways calls are dispatched.
+// Expected output:
+//   composed=4 7 3
+//   default=10 7
+//   rect=1 sq=0 Rect implements Shape=1
+//   dispatch=43 27
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
+
+// There is no struct inheritance: share members by composition.
+struct Legs{@pub{
+	count: mut u64
+}}
+struct Dog{@pub{
+	legs: mut Legs
+	name: mut u64
+}}
+
+interface Greeter{
+	id(_self: ref some imut self) imut u64;
+	@default
+	func twice(n: mut u64) imut u64{ return 2 * n }
+}
+struct A{@pub{ x: mut u64 }}
+struct B{@pub{ x: mut u64 }}
+impl Greeter for A{
+	@pub
+	@realizes
+	func id(_self: ref some imut self) imut u64{ return 1 }
+}
+impl Greeter for B{
+	@pub
+	@realizes
+	func id(_self: ref some imut self) imut u64{ return 2 }
+	@pub
+	@overrides
+	func twice(n: mut u64) imut u64{ return 7 }
+}
+
+interface Shape{
+	area(_self: ref some imut self) imut u64;
+	tag(_self: ref some imut self) imut u64;
+}
+struct Rect{@pub{
+	w: mut u64
+	h: mut u64
+}}
+struct Sq{@pub{ s: mut u64 }}
+impl Shape for Rect{
+	@pub
+	@realizes
+	func area(_self: ref some imut self) imut u64{ return _self.w * _self.h }
+	@pub
+	@realizes
+	func tag(_self: ref some imut self) imut u64{ return 1 }
+}
+impl Shape for Sq{
+	@pub
+	@realizes
+	func area(_self: ref some imut self) imut u64{ return _self.s * _self.s }
+	@pub
+	@realizes
+	func tag(_self: ref some imut self) imut u64{ return 2 }
+}
+// A call through an interface-typed pointer is dispatched at run time on the object's class id.
+func total(s: ref some imut Shape) imut u64{
+	let a = imut s.area(s)
+	let t = imut s.tag(s)
+	return a + t
+}
+
+// `instanceof` takes an interface-typed value and a struct name: one class-id comparison.
+func isRect(s: ref some imut Shape) imut bool{
+	let r = imut s instanceof Rect
+	return r
+}
+
+func main() void{
+	?catch(e){ return }
+	let dog = mut Dog{legs= Legs{count= 4}, name= 7}
+	unsafe extern{ printf("composed=%llu %llu ", dog.legs.count, dog.name) }
+	unsafe extern{ printf("%llu\n", mut 3) }
+
+	let a = mut ? new A{x= 1}
+	let b = mut ? new B{x= 1}
+	let da = imut a.twice(mut 5)
+	let db = imut b.twice(mut 5)
+	unsafe extern{ printf("default=%llu %llu\n", da, db) }
+
+	let r = mut ? new Rect{w= 6, h= 7}
+	let s = mut ? new Sq{s= 5}
+	let tr = imut total(r)
+	let ts = imut total(s)
+	let isShape = imut r implements Shape
+	let yes = imut isRect(r)
+	let no = imut isRect(s)
+	unsafe extern{ printf("rect=%llu sq=%llu Rect implements Shape=%llu\n", yes, no, isShape) }
+	unsafe extern{ printf("dispatch=%llu %llu\n", tr, ts) }
+}

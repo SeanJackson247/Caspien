@@ -1,7 +1,7 @@
 // sizeof(Struct) must equal the real stride of an array of that struct, and `raw Struct` pointer steps must move by it.
 // Before sizeof was resolved by the Optimizer against the laid-out struct, sizeof(P) gave 9 (members only) for a struct whose
 // array stride is 16, and p++ stepped 9 bytes. Each check reads the real layout out of an array's bytes (memcopy into a u8 buffer).
-import "../stdlib/libc.caspien"
+import "stdlib/libc.caspien"
 struct P{
 	@pub{
 		a: mut u8

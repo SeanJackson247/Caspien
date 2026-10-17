@@ -17,8 +17,8 @@
 // PASS dead after shrink 0
 // PASS raw conversion 1
 // PASS leak 0
-import "../stdlib/libc.caspien"
-import "../stdlib/gt/*"
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
 struct Node{@pub{
 	value: mut u64
 	next: ref mut Node

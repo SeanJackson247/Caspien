@@ -115,7 +115,7 @@ extern sqrt(mut f64) mut f64
 extern getenv(static imut string) static imut string
 extern atol(static imut string) mut u64
 """
-GT = "\n".join('import "../../../../stdlib/%s.caspien"' % n for n in ("libc", "gt_init", "gt_register", "gt_alive_check", "gt_destruct", "gt_moved")) + "\n"
+GT = "\n".join('import "stdlib/%s.caspien"' % n for n in ("libc", "gt_init", "gt_register", "gt_alive_check", "gt_destruct", "gt_moved")) + "\n"
 STRUCT = """
 @untyped
 struct Body{@pub{

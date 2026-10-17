@@ -2,6 +2,7 @@
 # (needs Linux, java, gcc, python3) tests/float_direct_test.caspien with everything on (benchmarks/harness/caspien.py FULL switches), Linux target:
 # output equals tests/float_direct_test.py, and the unrolled loop has far fewer `movaps` (3203 before the change, 1203 after; 1603 since `2.0*x` became `movaps x,t; addsd t,t` instead of a constant load + mulsd: same count of instructions, no memory load).
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 export JAVA_TOOL_OPTIONS=
 tar -C "$ROOT" --exclude=.git --exclude=.cache -cf - . | tar -C "$W" -xf -

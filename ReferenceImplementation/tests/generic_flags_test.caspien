@@ -1,6 +1,6 @@
 // A block-form `assume match cond{ ... }` inside a GENERIC function: GenericsExpander.deepClone used to drop `Token.hasBlock`, so the block's
 // statements were silently never emitted in the monomorphized copy. Expected output: generic_flags_test.py.
-import "../stdlib/libc.caspien"
+import "stdlib/libc.caspien"
 func pick<T>(x: mut T, n: mut u64) mut u64{
 	let q = mut 1
 	unsafe assume{

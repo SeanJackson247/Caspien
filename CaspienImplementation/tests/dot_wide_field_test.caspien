@@ -2,7 +2,7 @@
 // arrived as a pushed value (an element of an array of structs: `arr[i].t`). The extraction shrank the pushed block by (total*8 - size) bytes
 // and addressed it as if the field started on a word boundary; a field at byte offset 12 of size 12 (a `Tri` after a `u8` tag) came out
 // shifted by 4 bytes. It is now cut out word by word with shrd, like an array row wider than a word.
-import "../stdlib/libc.caspien"
+import "stdlib/libc.caspien"
 
 struct Tri{
 	@pub{

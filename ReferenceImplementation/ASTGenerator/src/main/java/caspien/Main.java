@@ -65,6 +65,7 @@ public class Main {
 
         Map<String, String> options = new HashMap<>();
         options.put("root", Paths.get("..").toAbsolutePath().normalize().toString());
+        put(options, "stdlib", System.getenv("CASPIEN_STDLIB"));   // else the front end uses <root>/../stdlib
         options.put("debug", "1");
         boolean audit = false;
         boolean viz = false;

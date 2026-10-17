@@ -1,0 +1,5 @@
+// '@non' takes exactly 'deterministic': this must NOT compile.
+@pure
+@non(random)
+func f(x: mut u64) mut u64{ return x }
+func main() void{ }

@@ -1,0 +1,123 @@
+// Atomics, `swap`, spin locks, a backoff policy, and threads with `par` and `await`.
+// Expected output:
+//   swap: old=0 again=5 cur=7 now=9
+//   backoff: closed, try 1 / closed, try 2 / closed, try 3 / n=1
+//   threads: n=200000 triple=42
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
+import "stdlib/par_call.caspien"
+import "stdlib/await_call.caspien"
+
+// An atomic lives in a global or a `let static`. Reads and plain writes are single instructions.
+// `swap` exchanges and returns the old value. `+=`, `++` and computed right-hand sides are rejected,
+// because a read-modify-write is not one atomic step. (`swap` is an exchange, not a compare-and-swap.)
+// Every use of an atomic outside a lock is `unsafe atomic{...}`: the compiler cannot check that a program built
+// from separate atomic steps is correct, so each use is marked for review. Shared state that is not a bare flag
+// belongs in a lock struct (below), touched through `match @lock`.
+let static flag = mut atomic 0
+let static doneA = mut atomic false
+let static doneB = mut atomic false
+
+// A lock is a `swap` field of an enum with exactly the variants OPEN and CLOSED. It must be the
+// struct's first member. @lock makes every other member reachable only after the lock is held.
+enum Gate{ OPEN, CLOSED }
+
+@lock(match self.gate : OPEN)
+struct Counter{@pub{
+	swap gate: atomic mut Gate
+	n: mut u64
+}}
+
+let static counter = mut Counter{gate= Gate.OPEN, n= mut 0}
+
+func bump() void{
+	match @lock counter{
+		OPEN:{ counter.n += 1 }          // the lock is released when this block ends, or on return/break/throw
+		CLOSED:default(1000000000)       // retry, at most a billion times, then give up. `break`, `return` and `throw` leave at once.
+	}
+}
+
+// A backoff policy is declared once for a lock type and replaces the CLOSED body of every `CLOSED:default(n)` on it. `tries` counts attempts from 1.
+// (The compiler also stops any retry at its limit.) This one belongs to its own lock type so the busy counter above stays silent.
+struct Probe{@pub{
+	swap gate: atomic mut Gate
+	n: mut u64
+}}
+let static probe = mut Probe{gate= Gate.OPEN, n= mut 0}
+
+impl default match @lock Probe{
+	CLOSED:(tries:imut u64, limit:imut u64)=>{
+		unsafe extern{ printf("closed, try %llu / ", tries) }
+		if tries >= limit{ break }
+		continue
+	}
+}
+
+@async
+func workerA() void{
+	for i in 0..100000{ bump() }
+	unsafe atomic{ doneA = true }
+}
+@async
+func workerB() void{
+	for i in 0..100000{ bump() }
+	unsafe atomic{ doneB = true }
+}
+@async
+func triple(x: mut u64) mut u64{ return x * 3 }
+
+func main() void{
+	?catch(e){ return }
+	let old = mut 0
+	let again = mut 0
+	let cur = mut 0
+	let now = mut 0
+	unsafe atomic{
+		old = mut (flag swap 5)
+		again = mut (flag swap 7)
+		cur = mut flag
+		flag = 9
+		now = mut flag
+	}
+	unsafe extern{ printf("swap: old=%llu again=%llu cur=%llu now=%llu\n", old, again, cur, now) }
+
+	unsafe extern{ printf("backoff: ") }
+	// Nothing may wait while it holds a lock, so a lock cannot be kept closed by a waiting thread. Here the gate is closed by hand (`unsafe atomic`)
+	// to stand for a holder that has not let go yet, and opened again afterwards.
+	unsafe atomic{ probe.gate = Gate.CLOSED }
+	match @lock probe{
+		OPEN:{ probe.n += 100 }
+		CLOSED:default(3)                        // closed: run the policy, limit 3
+	}
+	unsafe atomic{ probe.gate = Gate.OPEN }
+	match @lock counter{
+		OPEN:{ counter.n += 1 }
+		CLOSED:default(1000000000)
+	}
+	match @lock counter{
+		OPEN:{
+			unsafe extern{ printf("n=%llu\n", counter.n) }
+			counter.n = 0
+		}
+		CLOSED:default(1000000000)
+	}
+
+	// `par` starts an OS thread and returns at once; `await` blocks for the result.
+	? par workerA()
+	? par workerB()
+	for i in 0..100000000{
+		let a = mut false
+		let b = mut false
+		unsafe atomic{
+			a = mut doneA
+			b = mut doneB
+		}
+		if a && b{ break }
+		yield
+	}
+	let answer = mut ? await triple(mut 14)
+	match @lock counter{
+		OPEN:{ unsafe extern{ printf("threads: n=%llu triple=%llu\n", counter.n, answer) } }
+		CLOSED:default(1000000000)
+	}
+}

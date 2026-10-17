@@ -2,8 +2,8 @@
 // R_LEA + R_LD/R_ST (and the float R_LDX/R_STX) into R_LDI/R_STI/R_LDXI/R_STXI whatever the base is. Local u64/u8/u32/f32/f64 arrays and a
 // headerless unsafe dynarray (plain base + i*size), read and written in loops. Expected values come from a Python model.
 // The output must be identical with every switch combination. Prints one PASS/FAIL line per check.
-import "../stdlib/libc.caspien"
-import "../stdlib/gt/*"
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
 
 func check(name: static imut string, ok: mut bool) void{
 	unsafe extern{

@@ -2,8 +2,8 @@
 // small, sub-8-byte array such as u8[5] or u16[3]) used to clobber a finished earlier argument of the call being assembled (%rcx is the 4th
 // SysV argument register and the 1st win64 one, so on windows_gnu even the format string of a printf call). Each call below has such an
 // expression as a later argument. Output must be identical with every optimizer switch on and off.
-import "../stdlib/libc.caspien"
-import "../stdlib/gt/*"
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
 
 func check(name: static imut string, ok: mut bool) void{
 	unsafe extern{

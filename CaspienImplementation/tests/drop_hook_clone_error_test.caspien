@@ -1,6 +1,6 @@
 // Must fail to compile: `clone` of a type with a `@drop` hook.
-import "../stdlib/libc.caspien"
-import "../stdlib/gt/*"
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
 
 struct Res{@pub{
 	id: mut u64

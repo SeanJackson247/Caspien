@@ -1,8 +1,8 @@
 // A struct of at most 8 bytes read by value through an unsafe dynarray element (`d[i].a0`: a DOT on a one-word value) and a small value pushed
 // ahead of a pointer lookup (`z + d[i].a`): both used to compile to wrong code (0 / a stale sum) when the register-form passes were off.
 // Expected values: independent Python model (sums over i in 0..9; f32 sums rounded to f32 at every step).
-import "../stdlib/libc.caspien"
-import "../stdlib/gt/*"
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
 
 @untyped
 struct Tri8{@pub{

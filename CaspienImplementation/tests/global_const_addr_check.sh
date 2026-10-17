@@ -2,6 +2,7 @@
 # (needs Linux, java, gcc, python3) tests/global_const_addr_test.caspien under everything on, shipped and everything off: output equals tests/global_const_addr_test.py;
 # with register form on the constant-index element accesses are `sym+N(%rip)` operands, without it there are none.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 export JAVA_TOOL_OPTIONS=
 tar -C "$ROOT" --exclude=.git --exclude=.cache -cf - . | tar -C "$W" -xf -

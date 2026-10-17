@@ -1,8 +1,8 @@
 // REF HashMap.remove: backward-shift deletion keeps every other key reachable. A long run of random set/remove/contains calls on a small key range (many
 // collisions, growth on the way) is checked against a Python model (hashmap_remove_test.py); edge cases follow.
-import "../stdlib/libc.caspien"
-import "../stdlib/ref/hash_map.caspien"
-import "../stdlib/gt/*"
+import "stdlib/libc.caspien"
+import "stdlib/ref/hash_map.caspien"
+import "stdlib/gt/*"
 
 func check(name: static imut string, ok: imut bool) void{
 	unsafe extern{

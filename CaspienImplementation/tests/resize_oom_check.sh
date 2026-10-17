@@ -4,6 +4,7 @@
 # allocation left over compared with the clean run. Cases: growing and shrinking arrays of plain u64, of inline owning structs
 # and of owns pointers, and a temporary (`resize(mut dyn([..]), ..)`) as the source. tests/alloc_shim.c: FAILREALLOC=<size> FAILREALLOC_STICKY=1 fails the realloc of that size.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 export JAVA_TOOL_OPTIONS=
 tar -C "$ROOT" --exclude=.git --exclude=.cache -cf - . | tar -C "$W" -xf -
@@ -11,8 +12,8 @@ cd "$W" || exit 1
 sed -i 's/^target .*/target linux/; s/^\( *\)default: win64/\1default: sysv_x64/' toolchain.config
 cp "$ROOT/tests/alloc_shim.c" shim.c
 gcc -shared -fPIC -o shim.so shim.c -ldl || { echo "FAIL: cannot build shim"; exit 1; }
-HEAD='import "../stdlib/libc.caspien"
-import "../stdlib/gt/*"
+HEAD='import "stdlib/libc.caspien"
+import "stdlib/gt/*"
 struct World{@pub{
 	ticks: mut u64
 }}

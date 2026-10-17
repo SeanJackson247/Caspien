@@ -73,7 +73,7 @@ def program(kind):
                  "let stack = mut ? new DynamicArray:<u64>(rs)",
                  "let rr = mut ? dyn([QRef{n= null}])", "rr = ? resize(rr, 128, QRef{n= null})",
                  "let rstack = mut ? new DynamicArray:<QRef>(rr)"]
-        imp = 'import "../../../../stdlib/dynamic_array.caspien"\n'
+        imp = 'import "stdlib/dynamic_array.caspien"\n'
     setup = "\n\t\t".join(lines) + "\n\t\t"
     return f"""// Binary trees (BINARYTREES_N = max depth), REF {DESC[kind]}
 // Prints one line: stretch-tree check, then for d = 4,6,..,N the summed check of 2^(N-d+4) trees of depth d, then the long-lived tree check
@@ -84,8 +84,8 @@ def program(kind):
 // Holder{{n: owns}} slots; a tree is built node by node (children linked with `ref pool[i].n`), walked through the refs with an explicit
 // stack of refs (each deref under a `match Some` alive proof, no recursion), and freed by dropping its pool slots (`pool[i].n = null`).
 // The pool is filled by a bump index that is reset after each tree is freed (the long-lived tree keeps its slots).
-import "../../../../stdlib/libc.caspien"
-{imp}import "../../../../stdlib/gt/*"
+import "stdlib/libc.caspien"
+{imp}import "stdlib/gt/*"
 
 extern getenv(static imut string) static imut string
 extern atol(static imut string) mut u64

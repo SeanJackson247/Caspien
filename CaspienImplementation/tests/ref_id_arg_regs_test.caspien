@@ -1,7 +1,7 @@
 // A proven ref passed to a nullable-ref parameter becomes an id (GT_REF_ID, a runtime call) while the argument list is built: the argument registers already loaded must survive it.
-import "../stdlib/libc.caspien"
-import "../stdlib/gt/*"
-import "../stdlib/string.caspien"
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
+import "stdlib/string.caspien"
 
 struct Core{@pub{
 	cnt: mut s32

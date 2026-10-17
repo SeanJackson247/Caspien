@@ -4,10 +4,10 @@ import itertools
 pool = ["", "a", "ab", "abc", "abcabc", "hello", "hello world", "world", "lo", "x_y.z", "ABC", "aBc"]
 out = []
 w = out.append
-w('import "../stdlib/libc.caspien"')
-w('import "../stdlib/gt/*"')
-w('import "../stdlib/print.caspien"')
-w('import "../stdlib/string.caspien"')
+w('import "stdlib/libc.caspien"')
+w('import "stdlib/gt/*"')
+w('import "stdlib/print.caspien"')
+w('import "stdlib/string.caspien"')
 w('')
 w('func report(name: static imut string, ok: imut bool) void{')
 w('\tif ok{ print("PASS ") } else { print("FAIL ") }')

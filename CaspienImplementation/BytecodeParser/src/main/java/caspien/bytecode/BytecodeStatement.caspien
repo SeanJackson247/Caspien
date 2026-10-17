@@ -1,4 +1,4 @@
-import "../../../../../../stdlib/string.caspien"
+import "stdlib/string.caspien"
 import "../../../../../../Codegen/src/main/java/caspien/codegen/collections.caspien"
 import "BytecodeToken.caspien"
 

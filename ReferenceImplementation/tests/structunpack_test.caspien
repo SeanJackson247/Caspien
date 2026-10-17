@@ -2,8 +2,8 @@
 // expected result. Structs that are only constructed and accessed member by member are split into one variable per member; structs that are
 // copied, passed by address or reconstructed from their own members must be left alone and still give the right answer.
 // The output must be identical with the switch on and off (and with elision/shifting/folding on too).
-import "../stdlib/libc.caspien"
-import "../stdlib/gt/*"
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
 
 struct V{
 	@pub{

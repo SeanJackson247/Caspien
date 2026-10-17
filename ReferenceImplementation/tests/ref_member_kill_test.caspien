@@ -3,8 +3,8 @@
 // PASS read then free 111
 // PASS member re-pointed 5
 // PASS dead member skipped 0
-import "../stdlib/libc.caspien"
-import "../stdlib/gt/*"
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
 struct Node{@pub{ value: mut u64 }}
 struct Hold{@pub{ p: ref mut Node }}
 func consume(n: owns mut Node) void{ }

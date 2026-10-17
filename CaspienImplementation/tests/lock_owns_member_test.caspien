@@ -4,8 +4,8 @@
 // PASS moved in and out 7
 // PASS slot empty again 0
 // PASS fresh new inside 9
-import "../stdlib/libc.caspien"
-import "../stdlib/gt/*"
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
 enum Gate{ OPEN, CLOSED }
 struct Counter{@pub{ n: mut u64 }}
 @lock(match self.gate : OPEN)

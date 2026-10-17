@@ -1,5 +1,5 @@
 // Must NOT compile: writing an atomic in safe code.
-import "../stdlib/libc.caspien"
+import "stdlib/libc.caspien"
 
 let static flag = mut atomic 0
 

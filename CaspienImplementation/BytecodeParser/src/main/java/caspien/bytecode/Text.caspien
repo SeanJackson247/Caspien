@@ -1,4 +1,4 @@
-import "../../../../../../stdlib/string.caspien"
+import "stdlib/string.caspien"
 import "../../../../../../Codegen/src/main/java/caspien/codegen/collections.caspien"
 
 // Hand-written string helpers that replace regex/split/replaceAll (port of Text.java; see README "Differences" for what is ASCII-only or reshaped).

@@ -6,9 +6,9 @@
 // functions got the hidden destination pointer. Struct sizes 16, 24, 40 and 56 bytes, a struct of mixed field widths, a struct containing a
 // struct, an adopted dynarray of structs, loops, growth/shrink from both ends, and a plain DynamicArray<u64> (unchanged behaviour). Expected
 // values are hand-computed. The output must be identical with every optimisation on and off.
-import "../stdlib/libc.caspien"
-import "../stdlib/dynamic_array.caspien"
-import "../stdlib/gt/*"
+import "stdlib/libc.caspien"
+import "stdlib/dynamic_array.caspien"
+import "stdlib/gt/*"
 
 func check(name: static imut string, ok: mut bool) void{
 	unsafe extern{

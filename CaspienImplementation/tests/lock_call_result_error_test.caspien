@@ -1,6 +1,6 @@
 // A call result may be a pre-existing object: only new/dyn/clone/null go into a swap-lock struct.
-import "../stdlib/libc.caspien"
-import "../stdlib/gt/*"
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
 enum Gate{ OPEN, CLOSED }
 struct Counter{@pub{ n: mut u64 }}
 struct Wrap{@pub{ c: owns mut Counter }}

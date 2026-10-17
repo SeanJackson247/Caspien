@@ -1,8 +1,8 @@
 // Regression test for constant folding (`constant-folding: on|off`, the Optimizer's ConstantFoldingPass). Every check compares an
 // expression made only of literals (which the pass may fold) against the same operation done at runtime through variables
 // (which it cannot fold), so a wrong folded value shows up as a FAIL. The output must be identical with folding on and off.
-import "../stdlib/libc.caspien"
-import "../stdlib/gt/*"
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
 
 func check(name: static imut string, ok: mut bool) void{
 	unsafe extern{

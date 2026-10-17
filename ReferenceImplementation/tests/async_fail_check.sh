@@ -4,6 +4,7 @@
 # (FAILPTHREAD=1). Every run must exit 0 and print the normal result or "CAUGHT ..."; after a caught failure no allocation may be
 # left alive beyond what a run failing at the very first user allocation leaves.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 export JAVA_TOOL_OPTIONS=
 tar -C "$ROOT" --exclude=.git --exclude=.cache -cf - . | tar -C "$W" -xf -

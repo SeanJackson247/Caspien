@@ -1,5 +1,5 @@
 // Must fail: `default` on an enum not marked @non_exhaustive.
-import "../stdlib/libc.caspien"
+import "stdlib/libc.caspien"
 enum Level{ LOW, MID }
 func level(l: imut Level) mut u64{
 	match l{

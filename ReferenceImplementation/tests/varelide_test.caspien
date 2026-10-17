@@ -1,8 +1,8 @@
 // Regression test for variable elision and variable shifting (`variable-elision: on|off`, `variable-shifting: on|off`).
 // Each function has hand-computed expected results, so a wrong propagation or a wrong split shows up as a FAIL.
 // The output must be identical with both switches on and off.
-import "../stdlib/libc.caspien"
-import "../stdlib/gt/*"
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
 
 func check(name: static imut string, ok: mut bool) void{
 	unsafe extern{

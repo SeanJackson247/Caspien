@@ -1,6 +1,6 @@
 // `--audit` terminology: every function must be classed bound / finite / unbound / conditional / none / indirect (tests/audit_class_check.sh
 // holds the expected class of each function, written from the source below, not from the report). The program is only built to be audited (its `a == 12345` branch is never taken).
-import "../stdlib/libc.caspien"
+import "stdlib/libc.caspien"
 
 func inc(x: mut u64) mut u64{ return x + 1 }
 

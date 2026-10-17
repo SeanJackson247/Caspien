@@ -290,5 +290,5 @@ def provenance():
         except (OSError, subprocess.SubprocessError):
             return ""
     return {"date": datetime.datetime.now().astimezone().isoformat(timespec="minutes"), "compiler_commit": git("rev-parse", "--short", "HEAD") or None,
-            "compiler_dirty": bool(git("status", "--porcelain", "--", "ASTGenerator", "Optimizer", "LowerOrderGenerator", "Codegen", "stdlib")),
+            "compiler_dirty": bool(git("status", "--porcelain", "--", "ASTGenerator", "Optimizer", "LowerOrderGenerator", "Codegen", "../stdlib")),
             "machine": "%s, %d cores, %s" % (platform.machine(), os.cpu_count() or 0, platform.system())}

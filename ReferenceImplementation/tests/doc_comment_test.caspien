@@ -1,6 +1,6 @@
 // Doc comments: `/*! justify: .. */` before unsafe blocks, `/*! termination: .. */` / `//! termination: ..` before func, for and loop (checked, exact; tests/doc_comment_check.sh breaks them one by one). Same functions as audit_class_test. Original note: every function must be classed bound / finite / unbound / conditional / none / unknown (tests/audit_class_check.sh
 // holds the expected class of each function, written from the source below, not from the report). The program is only built to be audited (its `a == 12345` branch is never taken).
-import "../stdlib/libc.caspien"
+import "stdlib/libc.caspien"
 
 func inc(x: mut u64) mut u64{ return x + 1 }
 

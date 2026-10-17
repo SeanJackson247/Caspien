@@ -1,0 +1,73 @@
+// HashMap.remove: backward-shift deletion keeps every other key reachable. A long run of random set/remove/contains calls on a small key range (many
+// collisions, growth on the way) is checked against a Python model (hashmap_remove_test.py); edge cases follow.
+import "stdlib/libc.caspien"
+import "stdlib/hash_map.caspien"
+import "stdlib/gt/*"
+
+func check(name: static imut string, ok: imut bool) void{
+	unsafe extern{
+		if ok{ printf("PASS %s\n", name) }
+		else{ printf("FAIL %s\n", name) }
+	}
+}
+
+func main() void{
+	?catch(e){
+		unsafe extern{ printf("FAIL uncaught: %s\n", e.msg) }
+		return
+	}
+	let m = mut ? new HashMap:<u64, u64>(mut 0, mut 0, mut 16)
+	let x = mut 12345
+	let removed = mut 0
+	let found = mut 0
+	for i in 0..20000{
+		x = (x * 1103515245 + 12345) % 2147483648
+		let op = mut (bits_right(x, 16) % 4)
+		let key = mut (bits_right(x, 8) % 5000)
+		if op < 2{
+			m.set(m, key, i)
+		}
+		else{
+			if op == 2{
+				if m.remove(m, key){
+					removed = removed + 1
+				}
+			}
+			else{
+				if m.contains(m, key){
+					found = found + 1
+				}
+			}
+		}
+	}
+	let total = mut 0
+	let present = mut 0
+	for k in 0..5000{
+		let key = mut k
+		total = total + m.get(m, key, mut 0)
+		if m.contains(m, key){
+			present = present + 1
+		}
+	}
+	check("random run: count", m.count == 3131)
+	check("random run: successful removes", removed == 2278)
+	check("random run: successful contains", found == 2251)
+	check("random run: sum of values", total == 45419362)
+	check("random run: present keys", present == 3131)
+
+	let small = mut ? new HashMap:<u64, u64>(mut 0, mut 0, mut 8)
+	small.set(small, mut 5, mut 50)
+	small.set(small, mut 13, mut 130)
+	check("remove absent key", !small.remove(small, mut 99))
+	check("remove present key", small.remove(small, mut 5))
+	check("removed key is gone", !small.contains(small, mut 5))
+	check("other key survives", small.get(small, mut 13, mut 0) == 130)
+	check("second remove of the same key", !small.remove(small, mut 5))
+	check("count after remove", small.count == 1)
+	small.set(small, mut 5, mut 7)
+	check("re-added key", small.get(small, mut 5, mut 0) == 7 && small.count == 2)
+	check("remove last key", small.remove(small, mut 13) && small.remove(small, mut 5) && small.count == 0)
+
+	let zero = mut ? new HashMap:<u64, u64>(mut 0, mut 0, mut 0)
+	check("capacity 0 removes nothing", !zero.remove(zero, mut 1))
+}

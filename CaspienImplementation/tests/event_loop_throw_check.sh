@@ -2,6 +2,7 @@
 # An event loop ends when 'main' or the '@tick' function throws: stderr gets "event loop stopped: <message>", exit status 1, stdout shows how
 # many ticks ran, and nothing is left registered at exit (live allocations 0 under tests/alloc_shim.c). Needs Linux, java, gcc.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 export JAVA_TOOL_OPTIONS=
 tar -C "$ROOT" --exclude=.git --exclude=.cache -cf - . | tar -C "$W" -xf -

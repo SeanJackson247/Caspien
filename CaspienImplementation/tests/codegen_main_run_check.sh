@@ -2,6 +2,7 @@
 # Main.run/main of the Codegen port: builds the port in a scratch copy (Linux target), then checks usage error, missing config,
 # nested output path and the info line. Output text is empty while the parser shim is in place. Linux only; Windows/Wine not run.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 export JAVA_TOOL_OPTIONS=
 tar -C "$ROOT" --exclude=.git --exclude=.cache -cf - . | tar -C "$W" -xf -

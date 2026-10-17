@@ -5,6 +5,7 @@
 # error and no leak on the shipped build. The six tests/ref_recursive_*_error_test.caspien files must still fail to compile (ref some, owns, raw, auto,
 # plain, and a cycle through owns).
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 export JAVA_TOOL_OPTIONS=
 tar -C "$ROOT" --exclude=.git --exclude=.cache -cf - . | tar -C "$W" -xf -

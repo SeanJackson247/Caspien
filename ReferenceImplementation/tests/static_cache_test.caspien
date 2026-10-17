@@ -3,7 +3,7 @@
 // called function (the loop has a call: must see the new value), nested loops, a libm sqrt loop (the intrinsic keeps it call-free),
 // two loops after one another reusing the registers, and an early return out of a cached loop.
 // Output compared with static_cache_test.py by static_cache_check.sh (which also checks in the everything-on build that the pass fired).
-import "../stdlib/libc.caspien"
+import "stdlib/libc.caspien"
 
 extern sqrt(mut f64) mut f64
 

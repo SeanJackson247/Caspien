@@ -2,6 +2,7 @@
 # File-system policy (fs.config in toolchain.config): compile-time root checks, the `file` unsafe tag, fs-deny-externs, --fs-report,
 # and (run) the RootPath run-time check, read-only directories and symlink refusal. Needs Linux, java, gcc.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 W=$(mktemp -d); trap 'rm -rf "$W" /tmp/caspien_fs_pol' EXIT
 export JAVA_TOOL_OPTIONS=
 tar -C "$ROOT" --exclude=.git --exclude=.cache -cf - . | tar -C "$W" -xf -

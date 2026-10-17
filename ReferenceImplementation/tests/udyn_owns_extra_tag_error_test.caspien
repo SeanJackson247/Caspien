@@ -1,6 +1,6 @@
 // `udyn:owns` on an unsafe dynarray of plain data is an extra tag.
-import "../stdlib/libc.caspien"
-import "../stdlib/gt/*"
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
 struct World{@pub{
 	ticks: mut u64
 }}

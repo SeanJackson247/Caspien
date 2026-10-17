@@ -1,5 +1,5 @@
-import "../stdlib/libc.caspien"
-import "../stdlib/gt/*"
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
 extern fflush(mut u64) mut s32
 func say(s: static imut string) void{
 	unsafe extern{ printf("%s\n", s) }

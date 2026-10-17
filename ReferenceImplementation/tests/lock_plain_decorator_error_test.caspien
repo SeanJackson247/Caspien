@@ -1,5 +1,5 @@
 // A bare `@lock` / `@unlock` method decorator existed only for `@guard` impls; `@lock(match ...)` is the only form left.
-import "../stdlib/libc.caspien"
+import "stdlib/libc.caspien"
 
 struct Gate{@pub{
 	n: mut u64

@@ -3,6 +3,7 @@
 # only the assembler/linker are separate processes. Also checks that each library is still the same program as its stand-alone Main. Needs Linux, java, gcc.
 # Runs in a scratch copy of the tree.   tests/library_stage_check.sh
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 unset JAVA_TOOL_OPTIONS
 tar -C "$ROOT" --exclude=.git --exclude=.cache -cf - . | tar -C "$W" -xf -
@@ -20,7 +21,7 @@ grep -q 'lob.text, lobOut.toString(), asmOut' Compiler.java && ok "the LOB goes 
 
 # 2. a real build: no child JVM at all (the one `java` is the orchestrator itself)
 cat > t/p.caspien <<'P'
-import "../stdlib/libc.caspien"
+import "stdlib/libc.caspien"
 func main() void{
 	unsafe extern{
 		printf("%llu\n", mut 41 + mut 1)
@@ -53,7 +54,7 @@ cmp -s t/asm_standalone.s t/.build/4_codegen.s && ok "Codegen library == stand-a
 
 # 4. notes from a library stage reach the user, on a miss and replayed from the cache
 cat > t/n.caspien <<'P'
-import "../stdlib/libc.caspien"
+import "stdlib/libc.caspien"
 func f() mut u64{
 	let s = mut 0
 	@unroll

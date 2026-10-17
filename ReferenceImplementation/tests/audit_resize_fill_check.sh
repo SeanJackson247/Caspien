@@ -2,6 +2,7 @@
 # audit_resize_fill_test: the heap figures never fall below the real use (100 Holder slots + 100 nodes = at least 1616 + 100*32 bytes... measured with
 # the allocator shim), whether the audit calls the figure bound or only a lower bound (">=" / finite).
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 export JAVA_TOOL_OPTIONS=
 tar -C "$ROOT" --exclude=.git --exclude=.cache -cf - . | tar -C "$W" -xf -

@@ -1,7 +1,7 @@
 // A literal of an '@untyped' struct (no hidden class id) whose fields are computed values narrower than 8 bytes. Before the fix the
 // literal was stored through the blind 8-byte-word path (LowerOrderGenerator never recognised it as a struct literal) and crashed.
 // Expected values come from an independent Python model (big = 70000: big & 0xFFFF, (big+3) & 0xFFFF, (big>>3) & 0xFF, big*3).
-import "../stdlib/libc.caspien"
+import "stdlib/libc.caspien"
 
 @untyped
 struct Mixed{@pub{

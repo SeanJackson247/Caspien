@@ -3,6 +3,7 @@
 # reachable function is compared with tests/gas_model.py (exhaustive path search over the emitted bytecode). Functions that contain a `loop{}`
 # (or call one) are only checked for being flagged not bound (stack depth is still compared); a function with a non-literal `for` bound must show ">=" and the reason.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 export JAVA_TOOL_OPTIONS=
 tar -C "$ROOT" --exclude=.git --exclude=.cache -cf - . | tar -C "$W" -xf -

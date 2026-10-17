@@ -1,5 +1,5 @@
 // Must NOT compile: a lock taken while another lock is held (here the same lock; nested locks are banned).
-import "../stdlib/libc.caspien"
+import "stdlib/libc.caspien"
 
 enum Gate{ OPEN, CLOSED }
 

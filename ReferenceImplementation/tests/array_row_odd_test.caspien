@@ -3,7 +3,7 @@
 // overwrote the low bytes of the destination address (segfault) and a first row's junk landed in the image; (2) a row that starts in one
 // 8-byte word of the pushed block and ends in the next was read with a plain load (the block's words are in reverse order in memory, so the
 // bytes above the block were read instead of the second word); (3) a row taken out of an array that fits in one word was cut to one byte.
-import "../stdlib/libc.caspien"
+import "stdlib/libc.caspien"
 
 struct Holder{
 	@pub{

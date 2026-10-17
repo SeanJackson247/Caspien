@@ -1,6 +1,6 @@
 // A throw out of the OPEN case of 'match @lock' must release the lock.
 // Expected: PASS. holdAndThrow() throws from OPEN; main catches it; reacquire() retries the lock.
-import "../stdlib/libc.caspien"
+import "stdlib/libc.caspien"
 
 enum St{ OPEN, CLOSED }
 

@@ -1,6 +1,6 @@
 // An unsafe dynarray whose elements own memory needs the qualified tag `udyn:owns`; plain `udyn` is an error.
-import "../stdlib/libc.caspien"
-import "../stdlib/gt/*"
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
 struct World{@pub{
 	ticks: mut u64
 }}

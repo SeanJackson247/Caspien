@@ -4,8 +4,8 @@
 // and gives the expected counts printed in the EXPECT line below.
 // Prints one PASS/FAIL line per check and `ALL GT HASH TESTS PASSED`.
 // EXPECT hits=5974 live=1557
-import "../stdlib/libc.caspien"
-import "../stdlib/gt/*"
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
 
 struct Pair{@pub{
 	a: mut u64

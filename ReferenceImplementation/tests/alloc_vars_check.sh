@@ -4,6 +4,7 @@
 # with the switch on the assembly must contain the save of r12/r13/r14 to frame slots around the scratch-using instructions (>= 10 such stores),
 # with it off or without register variables none.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 export JAVA_TOOL_OPTIONS=
 tar -C "$ROOT" --exclude=.git --exclude=.cache -cf - . | tar -C "$W" -xf -

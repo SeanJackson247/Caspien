@@ -2,6 +2,7 @@
 # (needs Linux, java, gcc, python3) tests/udyn_read_test.caspien with everything on (benchmarks/harness/caspien.py FULL switches), Linux target:
 # output equals tests/udyn_read_test.py and no stack-form `LOOKUP_ARRAY` is left in the low-order bytecode (every unsafe dynarray read is register form).
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 export JAVA_TOOL_OPTIONS=
 tar -C "$ROOT" --exclude=.git --exclude=.cache -cf - . | tar -C "$W" -xf -

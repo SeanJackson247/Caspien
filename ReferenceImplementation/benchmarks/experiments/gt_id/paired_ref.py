@@ -33,7 +33,7 @@ def build(tree, prog, src, out):
     cfg_path = os.path.join(tree, "toolchain.config")
     saved = open(cfg_path).read()
     caspien.patch_config(cfg_path, caspien.FULL)
-    text = open(os.path.join(paths.PROGRAMS, prog, "caspien", src + ".caspien")).read().replace("../../../../stdlib/", "stdlib/")
+    text = open(os.path.join(paths.PROGRAMS, prog, "caspien", src + ".caspien")).read()
     open(os.path.join(tree, "_bp.caspien"), "w").write(text)
     r = subprocess.run(["java", "-cp", ".", "Compiler", "-i", "_bp.caspien", out, "--no-cache"], cwd=tree, env=dict(os.environ, JAVA_TOOL_OPTIONS=""), capture_output=True, text=True)
     open(cfg_path, "w").write(saved)

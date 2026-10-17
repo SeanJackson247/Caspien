@@ -52,9 +52,9 @@ w('''// Tests for stdlib/sha256.caspien: SHA-256 (FIPS 180-4) written in Caspien
 // benchmark uses (a 16-byte leaf message in one block, a 64-byte node message in two blocks, the second one pure padding) and on padded
 // single-block messages; `sha256Init` / `sha256Digest`.
 // Prints PASS/FAIL per check and a summary; the output must be identical with every optimisation switch off and on.
-import "../stdlib/libc.caspien"
-import "../stdlib/sha256.caspien"
-import "../stdlib/gt/*"
+import "stdlib/libc.caspien"
+import "stdlib/sha256.caspien"
+import "stdlib/gt/*"
 
 let static passed = mut 0
 let static failed = mut 0

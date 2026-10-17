@@ -2,7 +2,7 @@
 // sequence means: the count is an unsigned number of the operand's own width, a count >= the width gives 0 (SHL/SHR). Every width (u8..u64), counts
 // 0..255 around every boundary, results checksummed. Output is compared with shift_bmi2_test.py (an independent model) by shift_bmi2_check.sh,
 // which builds this with `bmi2 on` and with `off` and requires the same numbers.
-import "../stdlib/libc.caspien"
+import "stdlib/libc.caspien"
 
 func shl_u8(x: mut u8, c: mut u8) mut u8{ return bits_left(x, c) }
 func shr_u8(x: mut u8, c: mut u8) mut u8{ return bits_right(x, c) }

@@ -3,6 +3,7 @@
 # every line must be PASS, and valgrind must report no definitely-lost block and no invalid read/write/free (a missed drop or a
 # second owner of a moved struct would show up here).
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 export JAVA_TOOL_OPTIONS=
 tar -C "$ROOT" --exclude=.git --exclude=.cache -cf - . | tar -C "$W" -xf -

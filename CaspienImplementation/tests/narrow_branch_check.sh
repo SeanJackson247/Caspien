@@ -3,6 +3,7 @@
 # everything off (bench.py OFF). Output must equal tests/narrow_branch_test.py each time. With register form on, the low-order bytecode must contain narrow
 # `R_BRC <op> 1|2|4` lines (>= 100) and the assembly sized `cmpb/cmpw/cmpl` compares; without register form none.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 export JAVA_TOOL_OPTIONS=
 tar -C "$ROOT" --exclude=.git --exclude=.cache -cf - . | tar -C "$W" -xf -

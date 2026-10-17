@@ -5,7 +5,7 @@
 // (The helpers bind the call first, `let v = mut ?f(x)`: a `?` directly inside a `return` statement is currently not wrapped in its catch at all,
 // a separate front-end gap noted in CLAUDE.md.)
 // Output must be identical with inlining off and at every preset.
-import "../stdlib/libc.caspien"
+import "stdlib/libc.caspien"
 
 extern strcmp(static imut string, static imut string) mut s32
 

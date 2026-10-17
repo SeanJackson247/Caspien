@@ -3,6 +3,7 @@
 # Each case prints the declaration of struct S (members only) and the body of main, compared with the hand-written expectation.
 #   tests/structreorder_hob_check.sh        (needs Optimizer/out, i.e. the shipped prebuilt classes)
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 W=$(mktemp -d); cd "$W" || exit 1
 export JAVA_TOOL_OPTIONS=
 bad=0

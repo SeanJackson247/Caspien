@@ -1,6 +1,6 @@
 // `--audit` with argument values, the cases that must STAY unbound: the callee's argument is a function result (unknown to the analysis), or a variable
 // changed inside a loop. tests/audit_args_check.sh requires `main` to be UNBOUNDED with the reason, and no figure above the model's.
-import "../stdlib/libc.caspien"
+import "stdlib/libc.caspien"
 
 func sumTo(n: imut u64) mut u64{
 	let s = mut 0

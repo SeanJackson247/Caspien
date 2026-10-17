@@ -4,7 +4,7 @@
 // Expected output:
 //   halve: 10 -> ok 5 / 7 -> fail / 0 -> ok 0
 //   readings: live=7 dead=none
-import "../../stdlib/libc.caspien"
+import "stdlib/libc.caspien"
 
 enum ResultState{ OK, FAIL }
 

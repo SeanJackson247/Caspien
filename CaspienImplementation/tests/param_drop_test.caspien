@@ -3,8 +3,8 @@
 // ALLOC lines and a parameter was still an `ARG` line at that point. Only the outer block was freed; the inner blocks stayed in the
 // ghost table (every `main(args)` program leaked its argv copies). Checked through the ghost table's entry count, which returns to
 // its starting value after each call (valgrind cannot see this: the table keeps the blocks reachable, see param_drop_check.sh).
-import "../stdlib/libc.caspien"
-import "../stdlib/gt/*"
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
 
 struct Node{@pub{
 	value: mut u64

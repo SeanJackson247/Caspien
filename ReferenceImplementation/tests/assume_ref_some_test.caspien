@@ -7,8 +7,8 @@
 // PASS assume bounds 4950
 // PASS assume element 21
 // PASS match equals assume 1
-import "../stdlib/libc.caspien"
-import "../stdlib/gt/*"
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
 struct Node{@pub{
 	value: mut u64
 	next: ref mut Node

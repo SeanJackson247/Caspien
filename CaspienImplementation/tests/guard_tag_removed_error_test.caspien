@@ -1,5 +1,5 @@
 // The `guard` unsafe tag was removed together with `@guard`.
-import "../stdlib/libc.caspien"
+import "stdlib/libc.caspien"
 
 let static n = mut 0
 

@@ -3,6 +3,7 @@
 # toolchain.config (Linux target) and everything off (bench.py OFF). Output must equal tests/field_disp_test.py each time. FieldDisplacementPass is always on but
 # needs register form: with it the low-order bytecode must contain R_LDD/R_STD/R_LDXD/R_STXD of every width (1, 2, 4, 8; floats 4, 8), with everything off none.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 export JAVA_TOOL_OPTIONS=
 tar -C "$ROOT" --exclude=.git --exclude=.cache -cf - . | tar -C "$W" -xf -

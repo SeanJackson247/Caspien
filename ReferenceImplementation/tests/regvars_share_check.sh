@@ -4,6 +4,7 @@
 # Each variable has one marker store "... #<tag>"; the check reads which register that store was renamed to (or "mem" if the slot stayed).
 export JAVA_TOOL_OPTIONS=
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 T=$(mktemp -d)
 mkdir -p $T/caspien/lowerorder
 cat > $T/caspien/lowerorder/Drv2.java <<'EOF'

@@ -1,6 +1,6 @@
-import "../stdlib/libc.caspien"
-import "../stdlib/gt/*"
-import "../stdlib/fs.caspien"
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
+import "stdlib/fs.caspien"
 
 // Must fail with fs-roots: literal path with ..
 func main() imut s32{

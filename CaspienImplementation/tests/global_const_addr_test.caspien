@@ -2,7 +2,7 @@
 // f32/f64 global arrays: constant-index reads, writes (also of constants and of computed values), reads of just-written elements, the first and last element,
 // a mix with variable-index accesses of the same array, and elements read at runtime-dependent loop counts (so the optimiser cannot fold them away).
 // Output compared with global_const_addr_test.py by global_const_addr_check.sh (which also requires `sym+N(%rip)` operands in the assembly).
-import "../stdlib/libc.caspien"
+import "stdlib/libc.caspien"
 
 let static:<mut u8[8]> a8 = mut [3, 250, 17, 99, 128, 1, 0, 77]
 let static:<mut u16[8]> a16 = mut [65000, 2, 300, 4000, 5, 60000, 7, 8]

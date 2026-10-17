@@ -2,6 +2,7 @@
 # (needs Linux, java, gcc, python3) tests/udyn_field_read_test.caspien under everything on, shipped and everything off: output equals tests/udyn_field_read_test.py;
 # with everything on the register-form LOB has no `LOOKUP_ARRAY` left (every scalar field read of an element behind a pointer is fused).
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 export JAVA_TOOL_OPTIONS=
 tar -C "$ROOT" --exclude=.git --exclude=.cache -cf - . | tar -C "$W" -xf -

@@ -1,0 +1,6 @@
+// a '@pure(rt)' function can only call '@pure(rt)' functions (a plain '@pure' callee may be non-deterministic): this must NOT compile.
+@pure
+func g(x: mut u64) mut u64{ return x + 1 }
+@pure(rt)
+func f(x: mut u64) mut u64{ return g(x) }
+func main() void{ }

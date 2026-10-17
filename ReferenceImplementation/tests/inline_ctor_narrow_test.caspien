@@ -1,5 +1,5 @@
-import "../stdlib/libc.caspien"
-import "../stdlib/gt/*"
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
 
 // Aggressive inlining of a constructor that builds a heap struct with an owns member and members narrower than 8 bytes.
 struct Num{@pub{

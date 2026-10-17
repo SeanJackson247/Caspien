@@ -1,9 +1,9 @@
 // print / println from stdlib/print.caspien: every overload, called from safe code (no `unsafe` in this file).
 // The program prints lines that a Python model (print_model.py) compares with; run by print_check.sh.
-import "../stdlib/libc.caspien"
-import "../stdlib/gt/*"
-import "../stdlib/print.caspien"
-import "../stdlib/print_string.caspien"
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
+import "stdlib/print.caspien"
+import "stdlib/print_string.caspien"
 
 func w_u8(x: imut u8) void{
 	println(x)

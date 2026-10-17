@@ -1,8 +1,8 @@
 // clone under allocation failure. Run plainly it just prints "start / built / cloned 5 4 2"; clone_oom_check.sh runs it with a
 // malloc shim that fails each allocation in turn and checks that every failure inside a clone is caught ("out of memory"),
 // never crashes, and leaves no extra live allocation.
-import "../stdlib/libc.caspien"
-import "../stdlib/gt/*"
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
 struct Pair{
 	@pub{ a: mut u64
 	b: mut u64 }

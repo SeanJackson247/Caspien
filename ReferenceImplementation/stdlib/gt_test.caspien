@@ -1,6 +1,0 @@
-import "gt/*"
-
-func main() void{
-	let alive = gt_alive_check(null)
-	return
-}

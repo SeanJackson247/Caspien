@@ -1,6 +1,6 @@
 // `self` is a `ref some` parameter too: an `unsafe` block ends its entry proof.
-import "../stdlib/libc.caspien"
-import "../stdlib/gt/*"
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
 struct Counter{@pub{ n: mut u64 }}
 @pub
 impl Counter{

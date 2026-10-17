@@ -2,8 +2,8 @@
 // the protected members can be touched, and every CLOSED path must say what happens next.
 // Expected output:
 //   counter=3
-import "../../stdlib/libc.caspien"
-import "../../stdlib/gt/*"
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
 
 enum State{ OPEN, CLOSED }
 

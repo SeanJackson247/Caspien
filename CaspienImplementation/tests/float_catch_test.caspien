@@ -2,8 +2,8 @@
 // between): a throwing callee that was inlined, and a failed `new`. Each case doubles an f32 accumulator, fails on a known trip and
 // checks the accumulator in the catch. Prints PASS/FAIL lines (same output with float-variables-in-registers and inlining on or off).
 // float_catch_check.sh also fails the allocation of the second case with an LD_PRELOAD shim.
-import "../stdlib/libc.caspien"
-import "../stdlib/gt/*"
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
 
 struct Cell{@pub{ v: mut u64 }}
 

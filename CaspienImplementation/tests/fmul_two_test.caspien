@@ -1,7 +1,7 @@
 // x * 2.0 and 2.0 * x are emitted as x + x (exact in IEEE-754). Covers f64 and f32, both operand orders, destination = operand and a different
 // destination, operands in float variables (registers) and in frame slots/statics, negative values and tiny/huge-but-finite magnitudes.
 // Output compared with fmul_two_test.py by fmul_two_check.sh (which also checks that no `mulsd`/`mulss` by the constant 2.0 is left).
-import "../stdlib/libc.caspien"
+import "stdlib/libc.caspien"
 
 let static:<mut f64> gd = mut 0.3
 let static:<mut f32> gf = mut 0.3

@@ -1,5 +1,5 @@
-import "../stdlib/libc.caspien"
-import "../stdlib/gt/*"
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
 struct Box{
 	@pub{ v: mut u64 }
 }

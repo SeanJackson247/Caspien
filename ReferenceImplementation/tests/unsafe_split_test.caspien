@@ -1,7 +1,7 @@
 // `--fix unsafe-split` input: big `unsafe unaudited{}` blocks that the fixer rewrites into minimal tagged blocks (tests/unsafe_split_check.sh).
 // The program must print the same thing before and after the rewrite.
-import "../stdlib/libc.caspien"
-import "../stdlib/gt/*"
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
 
 let static counter = mut 0
 

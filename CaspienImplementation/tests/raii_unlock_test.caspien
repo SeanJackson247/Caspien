@@ -1,8 +1,8 @@
 // Scoped unlock without `lock x{}`: an owned guard value whose `@drop` hook unlocks. The hook runs on every way out of the
 // scope that owns it (end of block, `return`, `break`, `continue`, a throw). `depth` goes up in `enter` and down in the hook, so it is 0
 // whenever no scope is open. This is the replacement idiom for the removed `@guard` / `lock x{}`.
-import "../stdlib/libc.caspien"
-import "../stdlib/gt/*"
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
 
 struct Held{@pub{
 	id: mut u64

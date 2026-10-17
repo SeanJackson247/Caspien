@@ -2,7 +2,7 @@
 // BranchFusionPass (a compare that only feeds a jump compares and jumps). Every case checks the optimised form against the
 // same operation written so that it cannot be optimised (a divisor held in a variable goes through a real `div`; a compare
 // stored into a variable is materialised with setcc), and some against a value worked out by hand.
-import "../stdlib/libc.caspien"
+import "stdlib/libc.caspien"
 
 let static:<mut u64> passes = mut 0
 let static:<mut u64> fails = mut 0

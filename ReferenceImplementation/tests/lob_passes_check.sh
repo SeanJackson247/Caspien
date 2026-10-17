@@ -3,6 +3,7 @@
 # Run from the project root:  bash tests/lob_passes_check.sh      (prints one PASS/FAIL line per case)
 export JAVA_TOOL_OPTIONS=
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 T=$(mktemp -d)
 mkdir -p $T/caspien/lowerorder
 cat > $T/caspien/lowerorder/Drv.java <<'EOF'

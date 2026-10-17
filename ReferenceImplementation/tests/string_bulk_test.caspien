@@ -1,10 +1,10 @@
 // String.concat and String.sub copy in bulk (one resize, then a copy loop) instead of one appendChar per character. Checks the edges the
 // per-character version handled implicitly: an empty argument, a `sub` whose end runs past the string (clamped), whose start is not before
 // its end, or whose start is at the end, and a long string built from many pieces. Expected values from a Python model (string_bulk_test.py).
-import "../stdlib/libc.caspien"
-import "../stdlib/dynamic_array.caspien"
-import "../stdlib/string.caspien"
-import "../stdlib/gt/*"
+import "stdlib/libc.caspien"
+import "stdlib/dynamic_array.caspien"
+import "stdlib/string.caspien"
+import "stdlib/gt/*"
 
 func check(name: static imut string, ok: imut bool) void{
 	unsafe extern{

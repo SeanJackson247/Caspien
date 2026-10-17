@@ -4,6 +4,7 @@
 # main used to run early with garbage arguments (safe-args programs crashed under Wine). Compiles examples 08 and 09 to assembly and
 # checks no `__main` symbol is defined or called.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 export JAVA_TOOL_OPTIONS=
 tar -C "$ROOT" --exclude=.git --exclude=.cache -cf - . | tar -C "$W" -xf -

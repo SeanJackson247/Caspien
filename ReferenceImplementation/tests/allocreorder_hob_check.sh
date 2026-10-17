@@ -4,6 +4,7 @@
 # and compares the ALLOC names, function by function, with what the pass is specified to produce. Run from anywhere:
 #   tests/allocreorder_hob_check.sh        (needs Optimizer/out, i.e. the shipped prebuilt classes)
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 W=$(mktemp -d); cd "$W" || exit 1
 export JAVA_TOOL_OPTIONS=
 bad=0

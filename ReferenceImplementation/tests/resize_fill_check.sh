@@ -2,6 +2,7 @@
 # (needs Linux, java, gcc, python3) tests/resize_fill_test.caspien with everything on (benchmarks/harness/caspien.py FULL switches), Linux target:
 # output equals tests/resize_fill_test.py and the zero fill of a big `resize` is a `rep stosb`.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 export JAVA_TOOL_OPTIONS=
 tar -C "$ROOT" --exclude=.git --exclude=.cache -cf - . | tar -C "$W" -xf -

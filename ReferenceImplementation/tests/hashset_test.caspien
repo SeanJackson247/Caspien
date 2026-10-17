@@ -1,7 +1,7 @@
 // HashSet<T> over HashMap: the same random run as hashmap_remove_test, checked against hashset_test.py.
-import "../stdlib/libc.caspien"
-import "../stdlib/hash_set.caspien"
-import "../stdlib/gt/*"
+import "stdlib/libc.caspien"
+import "stdlib/hash_set.caspien"
+import "stdlib/gt/*"
 
 func check(name: static imut string, ok: imut bool) void{
 	unsafe extern{

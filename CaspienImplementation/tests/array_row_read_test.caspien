@@ -3,7 +3,7 @@
 // value is stored (`let v = mut grid[1][2]`) rather than passed straight to a call. LOOKUP_ARRAY used to shrink the array block by
 // (total - elemSize) instead of whole words, leaving rsp 4 bytes off and writing 4 bytes past the old block over the pending store address:
 // segfault. Found when function inlining turned `check("..", g[0][0] == 1)` (register argument) into a store.
-import "../stdlib/libc.caspien"
+import "stdlib/libc.caspien"
 
 struct Grid{
 	@pub{

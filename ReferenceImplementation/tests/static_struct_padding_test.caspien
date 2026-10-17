@@ -1,6 +1,6 @@
 // A `let static` struct whose members need padding (a bool/u8/u16 before a wider member) must read every member at its real offset.
 // (Before the fix a read by name used the running sum of the member sizes, without the padding gaps.)
-import "../stdlib/libc.caspien"
+import "stdlib/libc.caspien"
 
 struct Mix{@pub{
 	a: mut u8

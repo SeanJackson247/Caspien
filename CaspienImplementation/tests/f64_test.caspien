@@ -4,8 +4,8 @@
 // and arrays, float literals adapting to f64 slots (including negated literal products and literal arrays), and the float-scratch clobber
 // `g(a, 0.0 - f(x))`. Every expected value is exactly what IEEE double arithmetic gives. Prints one PASS/FAIL line per check, then one printf line.
 // The output must be identical with float-variables-in-registers / float-temporaries-in-registers on and off.
-import "../stdlib/libc.caspien"
-import "../stdlib/gt/*"
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
 
 extern sqrt(mut f64) mut f64
 

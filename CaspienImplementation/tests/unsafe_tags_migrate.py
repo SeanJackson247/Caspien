@@ -11,7 +11,7 @@ tree, progs = sys.argv[1], sys.argv[2:]
 report = os.path.join(tree, "unsafe_report.txt")
 if os.path.exists(report):
     os.remove(report)
-env = dict(os.environ, CASPIEN_UNSAFE_REPORT=report, JAVA_TOOL_OPTIONS="")
+env = dict(os.environ, CASPIEN_UNSAFE_REPORT=report, JAVA_TOOL_OPTIONS="", CASPIEN_STDLIB=os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "stdlib"))
 for p in progs:
     r = subprocess.run(["java", "-cp", ".", "Compiler", "--hob", "-i", p, "output/mig"], cwd=tree, env=env,
                        capture_output=True, text=True)

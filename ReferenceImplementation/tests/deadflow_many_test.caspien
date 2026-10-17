@@ -1,5 +1,5 @@
 // 300 constant branches (some nested) in one function: dead-control-flow-removal folds them all; the sum is checked against a Python model.
-import "../stdlib/libc.caspien"
+import "stdlib/libc.caspien"
 func main() void{
 	let x = mut 0
 	if 0 < 5{

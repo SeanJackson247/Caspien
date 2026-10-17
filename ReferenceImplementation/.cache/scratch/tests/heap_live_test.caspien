@@ -1,0 +1,295 @@
+// `--audit` peak live heap (credited frees). Every scenario allocates, uses and frees; tests/heap_live_check.sh compiles one variant of this file per
+// scenario (its `main` calls only that one), runs it under tests/alloc_shim.c, which measures the real peak of live heap bytes (a `resize` counts as a
+// moving realloc), and requires the audit's figure for the scenario to equal it (`==` where the analysis can follow every free, `>=` where it cannot).
+// Run as it stands (all scenarios in a row) it just prints PASS.
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
+
+struct Node{@pub{
+	value: mut u64
+}}
+
+struct Box{@pub{
+	n: owns mut Node
+}}
+
+func take(n: owns some mut Node) mut u64{
+	return n.value
+}
+
+@throws
+func make(v: mut u64) owns some mut Node{
+	?catch(e){ throw e }
+	let n = mut ?new Node{value= v}
+	return n
+}
+
+@throws
+func thrower(n: owns some mut Node, c: mut u64) mut u64{
+	if c > 3{
+		throw "boom"
+	}
+	return n.value
+}
+
+// exact 16
+func sc_one() mut u64{
+	?catch(e){ return 0 }
+	let n = mut ?new Node{value= 7}
+	return n.value
+}
+
+// exact 16: a block is made and freed in every iteration
+func sc_loop() mut u64{
+	?catch(e){ return 0 }
+	let t = mut 0
+	for i in 0..6{
+		let n = mut ?new Node{value= i}
+		t += n.value
+	}
+	return t
+}
+
+// exact 48: three live at once
+func sc_three() mut u64{
+	?catch(e){ return 0 }
+	let a = mut ?new Node{value= 1}
+	let b = mut ?new Node{value= 2}
+	let c = mut ?new Node{value= 3}
+	return a.value + b.value + c.value
+}
+
+// exact 32 on the dearer branch (run with 5)
+func sc_branch(x: mut u64) mut u64{
+	?catch(e){ return 0 }
+	let r = mut 0
+	if x > 3{
+		let a = mut ?new Node{value= 1}
+		let b = mut ?new Node{value= 2}
+		r = a.value + b.value
+	} else{
+		let a = mut ?new Node{value= 3}
+		r = a.value
+	}
+	return r
+}
+
+// exact 16: one live while the callee's single block is made and freed: 16 + 16
+func sc_callee() mut u64{
+	?catch(e){ return 0 }
+	let a = mut ?new Node{value= 1}
+	let b = mut sc_one()
+	return a.value + b
+}
+
+// exact 16: the block is passed to `take`, which frees it
+func sc_move_param() mut u64{
+	?catch(e){ return 0 }
+	let a = mut ?new Node{value= 4}
+	let r = mut take(a)
+	let c = mut ?new Node{value= 5}
+	return r + c.value
+}
+
+// exact 16: an owned block handed back by `make` is freed by the caller
+func sc_returned() mut u64{
+	?catch(e){ return 0 }
+	let a = mut ?make(3)
+	let b = mut ?make(4)
+	return a.value + b.value
+}
+
+// exact 104: dyn of 3 u64 = 16 + 24, resized to 6 = 16 + 48, the old block lives while the new one is made
+func sc_resize() mut u64{
+	?catch(e){ return 0 }
+	let d = mut ?dyn([1, 2, 3])
+	d = ?resize(d, 6, 0)
+	return 3
+}
+
+// exact 32: a struct that owns a node; freeing the box frees both (the audit only credits the box itself, so it leaves 16 live: `>=` for the net, the peak is exact)
+func sc_box() mut u64{
+	?catch(e){ return 0 }
+	let inner = mut ?new Node{value= 9}
+	let b = mut ?new Box{n= inner}
+	return 1
+}
+
+// exact 16: moved on one path only; the join must not credit (run with 0 and 5: the audit is an upper bound for both)
+func sc_cond_move(c: mut u64) mut u64{
+	?catch(e){ return 0 }
+	let n = mut ?new Node{value= 7}
+	let r = mut 0
+	if c > 3{
+		r = take(n)
+	}
+	return r
+}
+
+// exact 16: the callee may throw; the block is freed whichever way it goes
+func sc_throwing(c: mut u64) mut u64{
+	?catch(e){ return 0 }
+	let n = mut ?new Node{value= 7}
+	let r = mut ?thrower(n, c)
+	return r
+}
+
+// exact 32: a loop of calls that each make and free a block, while one block stays live
+func sc_calls_in_loop() mut u64{
+	?catch(e){ return 0 }
+	let keep = mut ?new Node{value= 1}
+	let t = mut 0
+	for i in 0..5{
+		t += sc_one()
+	}
+	return t + keep.value
+}
+
+struct Outer{@pub{
+	bx: owns mut Box
+}}
+
+// ---- blocks owned through struct members: the owner's free releases them too -------------------------------------------------------------------------
+
+// leaves nothing: Node 16 + Box 16 peak, both freed at the end
+func sc_box_once() mut u64{
+	?catch(e){ return 0 }
+	let inner = mut ?new Node{value= 9}
+	let b = mut ?new Box{n= inner}
+	return 1
+}
+
+// exact 32: the member block is credited with its owner, so the second round reuses what the first freed
+func sc_mem_seq() mut u64{
+	let t = mut 0
+	t += sc_box_once()
+	t += sc_box_once()
+	return t
+}
+
+// a Box held directly in a variable: dropping it frees the Node moved into it
+func sc_inline_once() mut u64{
+	?catch(e){ return 0 }
+	let inner = mut ?new Node{value= 9}
+	let b = mut Box{n= inner}
+	return 1
+}
+
+// exact 16
+func sc_mem_inline_seq() mut u64{
+	let t = mut 0
+	t += sc_inline_once()
+	t += sc_inline_once()
+	return t
+}
+
+// three levels: Node 16 + Box 16 + Outer 16
+func sc_three_once() mut u64{
+	?catch(e){ return 0 }
+	let inner = mut ?new Node{value= 9}
+	let b = mut ?new Box{n= inner}
+	let o = mut ?new Outer{bx= b}
+	return 1
+}
+
+// exact 48
+func sc_mem_three_seq() mut u64{
+	let t = mut 0
+	t += sc_three_once()
+	t += sc_three_once()
+	return t
+}
+
+func eatBox(b: owns some mut Box) mut u64{
+	return 1
+}
+
+// exact 32: the callee frees the Box and with it the Node
+func sc_mem_param() mut u64{
+	?catch(e){ return 0 }
+	let t = mut 0
+	let i1 = mut ?new Node{value= 1}
+	let b1 = mut ?new Box{n= i1}
+	t += eatBox(b1)
+	let i2 = mut ?new Node{value= 2}
+	let b2 = mut ?new Box{n= i2}
+	t += eatBox(b2)
+	return t
+}
+
+@throws
+func makeBox() owns some mut Box{
+	?catch(e){ throw e }
+	let inner = mut ?new Node{value= 9}
+	let b = mut ?new Box{n= inner}
+	return b
+}
+
+func returned_once() mut u64{
+	?catch(e){ return 0 }
+	let b = mut ?makeBox()
+	return 1
+}
+
+// exact 32: the returned Box carries its Node; freed by the caller
+func sc_mem_returned_seq() mut u64{
+	let t = mut 0
+	t += returned_once()
+	t += returned_once()
+	return t
+}
+
+// the member is moved out: the free of the Box no longer releases it, so nothing may be credited for it (the audit is an upper bound: >=)
+func sc_mem_moved_out() mut u64{
+	?catch(e){ return 0 }
+	let t = mut 0
+	for i in 0..2{
+		let inner = mut ?new Node{value= 9}
+		let b = mut ?new Box{n= inner}
+		let z = mut b.n
+		t += 1
+	}
+	return t
+}
+
+// the member is replaced through the pointer (the old Node is freed, a new one is stored): upper bound again
+func sc_mem_replaced() mut u64{
+	?catch(e){ return 0 }
+	let t = mut 0
+	for i in 0..2{
+		let inner = mut ?new Node{value= 9}
+		let b = mut ?new Box{n= inner}
+		let n2 = mut ?new Node{value= 1}
+		b.n = n2
+		t += 1
+	}
+	return t
+}
+
+func main() void{
+	let r = mut 0
+	r += sc_one()
+	r += sc_loop()
+	r += sc_three()
+	r += sc_branch(5)
+	r += sc_callee()
+	r += sc_move_param()
+	r += sc_returned()
+	r += sc_resize()
+	r += sc_box()
+	r += sc_cond_move(0)
+	r += sc_cond_move(5)
+	r += sc_throwing(1)
+	r += sc_throwing(9)
+	r += sc_calls_in_loop()
+	r += sc_mem_seq()
+	r += sc_mem_inline_seq()
+	r += sc_mem_three_seq()
+	r += sc_mem_param()
+	r += sc_mem_returned_seq()
+	r += sc_mem_moved_out()
+	r += sc_mem_replaced()
+	unsafe extern{
+		if r > 0{ printf("PASS heap_live_test\n") } else{ printf("FAIL heap_live_test\n") }
+	}
+}

@@ -1,5 +1,5 @@
 // Must NOT compile: a function that takes a lock is called (two calls down) while another lock is held.
-import "../stdlib/libc.caspien"
+import "stdlib/libc.caspien"
 
 enum Gate{ OPEN, CLOSED }
 

@@ -1,9 +1,9 @@
 // String manipulation benchmark, NAIVE variant: the stdlib String class (appendChar / charAt / setCharAt), one method call per
 // character. Same steps and output as strings.c. N (characters) comes from STRINGS_N.
 // A char cannot be cast to or from an integer, so code()/chr() move one byte with memcopy.
-import "../../../../stdlib/libc.caspien"
-import "../../../../stdlib/string.caspien"
-import "../../../../stdlib/gt/*"
+import "stdlib/libc.caspien"
+import "stdlib/string.caspien"
+import "stdlib/gt/*"
 extern getenv(static imut string) static imut string
 extern atol(static imut string) mut u64
 

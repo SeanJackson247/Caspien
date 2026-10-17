@@ -5,7 +5,8 @@
 # every sentinel survived. Also runs tests/check_callee_saved.py over the generated assembly.
 set -e
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; export JAVA_TOOL_OPTIONS=
-T=$(mktemp -d); cp -r "$ROOT"/ASTGenerator "$ROOT"/Optimizer "$ROOT"/LowerOrderGenerator "$ROOT"/Codegen "$ROOT"/stdlib "$ROOT"/tests "$ROOT"/Compiler*.class "$ROOT"/Compiler.java "$T"/
+export CASPIEN_STDLIB="$ROOT/../stdlib"
+T=$(mktemp -d); cp -r "$ROOT"/ASTGenerator "$ROOT"/Optimizer "$ROOT"/LowerOrderGenerator "$ROOT"/Codegen "$ROOT"/tests "$ROOT"/Compiler*.class "$ROOT"/Compiler.java "$T"/
 sed -e 's/^target windows_gnu/target linux/' -e 's/^    default: win64/    default: sysv_x64/' -e '/^variables-in-registers:/d' -e 's/^CallingConventions:/variables-in-registers: on\nCallingConventions:/' "$ROOT/toolchain.config" > "$T/toolchain.config"
 cd "$T"; java Compiler -i tests/callee_saved_test.caspien output/cs >/dev/null 2>&1
 echo "expected program output: $(./output/cs)"

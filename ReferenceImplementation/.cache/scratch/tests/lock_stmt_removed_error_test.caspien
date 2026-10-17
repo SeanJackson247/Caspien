@@ -1,0 +1,15 @@
+// The `lock x{...}` statement was removed together with `@guard`: this must not compile (use `match @lock`, or an owned value whose `@drop` hook unlocks).
+import "stdlib/libc.caspien"
+
+struct Gate{@pub{
+	n: mut u64
+}}
+let static gate = mut Gate{n= 0}
+
+func main() void{
+	unsafe global{
+		lock gate{
+			gate.n += 1
+		}
+	}
+}

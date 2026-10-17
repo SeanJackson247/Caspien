@@ -6,6 +6,7 @@
 #  3. through the stage cache: on -> off -> on gives a different binary for off and the identical binary again for on (the flag is part of stage 5's key);
 #  4. `jcc-padding maybe` is a config error.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 export JAVA_TOOL_OPTIONS=
 tar -C "$ROOT" --exclude=.git --exclude=.cache -cf - . | tar -C "$W" -xf -

@@ -3,6 +3,7 @@
 # everything-off and an aggressive config, and (shipped config) the generated assembly uses the fused form `disp(%base,%r15,1)` after
 # `imulq $stride, %idx, %r15` instead of separate address arithmetic, with fewer multiplies than accesses (Codegen reuses r15 while the index and r15 are untouched). Needs Linux, java, gcc.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 export JAVA_TOOL_OPTIONS=
 tar -C "$ROOT" --exclude=.git --exclude=.cache -cf - . | tar -C "$W" -xf -

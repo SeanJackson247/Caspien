@@ -3,6 +3,7 @@
 # ([note] applied / kept rolled), warns when a request cannot be met ([warning]), honours the decorator even with `loop-unrolling: off`, and the
 # messages are replayed from the build cache. Needs Linux, java, gcc.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 export JAVA_TOOL_OPTIONS=
 tar -C "$ROOT" --exclude=.git --exclude=.cache -cf - . | tar -C "$W" -xf -

@@ -4,6 +4,7 @@
 # each with only that switch on, and compares the surviving function names with what the pass is specified to keep. Run from anywhere:
 #   tests/deadfunc_hob_check.sh        (needs Optimizer/out, i.e. the shipped prebuilt classes)
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 W=$(mktemp -d); cd "$W" || exit 1
 export JAVA_TOOL_OPTIONS=
 printf 'dead-function-removal: on\n' > compiler.config

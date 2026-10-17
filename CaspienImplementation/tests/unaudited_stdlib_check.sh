@@ -1,14 +1,16 @@
 #!/bin/bash
 # `unsafe unaudited` is the catch-all unsafe tag and the standard library may never use it: (1) no stdlib file mentions it in code,
-# (2) the compiler refuses it inside the stdlib folder (a scratch copy gets a stdlib file that uses it). Needs Linux, java.
+# (2) the compiler refuses it inside the stdlib folder (a scratch copy of the stdlib gets a file that uses it). Needs Linux, java.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-if grep -rn "unsafe[^/]*unaudited" "$ROOT"/stdlib --include=*.caspien | grep -v "^[^:]*:[0-9]*: *//"; then echo "FAIL: the stdlib uses 'unsafe unaudited'"; exit 1; fi
+export CASPIEN_STDLIB="$ROOT/../stdlib"
+if grep -rn "unsafe[^/]*unaudited" "$ROOT"/../stdlib --include=*.caspien | grep -v "^[^:]*:[0-9]*: *//"; then echo "FAIL: the stdlib uses 'unsafe unaudited'"; exit 1; fi
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 export JAVA_TOOL_OPTIONS=
-tar -C "$ROOT" --exclude=.git --exclude=.cache -cf - . | tar -C "$W" -xf -
-cd "$W" || exit 1
+mkdir "$W/impl" && tar -C "$ROOT" --exclude=.git --exclude=.cache -cf - . | tar -C "$W/impl" -xf -
+cp -r "$ROOT/../stdlib" "$W/stdlib"; export CASPIEN_STDLIB="$W/stdlib"   # a scratch copy of the one stdlib gets the offending file
+cd "$W/impl" || exit 1
 sed -i 's/^target .*/target linux/; s/^\( *\)default: win64/\1default: sysv_x64/' toolchain.config
-cat > stdlib/zz_unaudited.caspien <<'P'
+cat > ../stdlib/zz_unaudited.caspien <<'P'
 import "libc.caspien"
 @pub
 func zz() void{

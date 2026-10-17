@@ -77,7 +77,7 @@ def program(kind):
                  "let zn = mut Node{l= 0, r= 0}",
                  "let rn = mut ? dyn:<Node>([])", "rn = ? resize(rn, cap, zn)", "let nodes = mut ? new DynamicArray:<Node>(rn)",
                  "let rs = mut ? dyn:<u64>([])", "rs = ? resize(rs, 128, zero)", "let stack = mut ? new DynamicArray:<u64>(rs)"]
-        imp = 'import "../../../../stdlib/dynamic_array.caspien"\n'
+        imp = 'import "stdlib/dynamic_array.caspien"\n'
         head = "?catch(e){ return }\n\t"
     setup = "\n\t\t".join(lines) + "\n\t\t"
     extra = ""
@@ -90,8 +90,8 @@ def program(kind):
 // indices, 0 = null), allocated from a free list (a freed node is chained through its `l` field) or by bumping `top`. make/check/free are
 // iterative with an explicit work stack (entries pack node*64 + depth for the build). Allocation and freeing are real: every tree is
 // built node by node, walked, then every node is returned to the free list. The pool never grows (capacity 2^(N+2)+2 covers the stretch tree).{extra}
-import "../../../../stdlib/libc.caspien"
-{imp}import "../../../../stdlib/gt/*"
+import "stdlib/libc.caspien"
+{imp}import "stdlib/gt/*"
 
 extern getenv(static imut string) static imut string
 extern atol(static imut string) mut u64

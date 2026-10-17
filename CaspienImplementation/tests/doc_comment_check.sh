@@ -2,6 +2,7 @@
 # Doc comments (`/*! key: text */`, `//! key: text`): the labelled test program compiles and runs; every wrong label, misplaced comment, bad key or
 # bad value is a compile error with the expected message; --audit prints the justify text and counts unjustified blocks.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 export JAVA_TOOL_OPTIONS=
 tar -C "$ROOT" --exclude=.git --exclude=.cache --exclude=benchmarks -cf - . | tar -C "$W" -xf -

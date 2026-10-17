@@ -2,6 +2,7 @@
 # (needs Linux, java, gcc, python3) tests/float_branch_test.caspien with everything on (benchmarks/harness/caspien.py FULL switches), Linux target:
 # output equals tests/float_branch_test.py and the assembly has no `seta/setb/...` + `movzbq` + `testq` left behind a ucomis.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 export JAVA_TOOL_OPTIONS=
 tar -C "$ROOT" --exclude=.git --exclude=.cache -cf - . | tar -C "$W" -xf -

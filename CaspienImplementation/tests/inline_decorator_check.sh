@@ -3,6 +3,7 @@
 # `function-inlining: off` and past a preset's callee-size limit, `@dont(inline)` keeps the call under every preset, the optimizer says what it did,
 # and an `@inline` call that cannot be inlined (inside another call's argument list) is a warning. Needs Linux, java, gcc.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 export JAVA_TOOL_OPTIONS=
 tar -C "$ROOT" --exclude=.git --exclude=.cache -cf - . | tar -C "$W" -xf -

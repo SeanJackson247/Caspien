@@ -1,7 +1,7 @@
 // Multiplication by a constant above 2^31 of the form 2^n + 1 / 2^n - 1 (Codegen's rfMulByBigConst: mov, shl, add|sub instead of movabs + imul), a
 // constant on the left of a product (swapped by rfBin), and the destination being the operand (x = x * K). u64 wrapping products. Expected
 // output: mul_big_const_test.py (independent Python model); mul_big_const_check.sh compares it in three configs.
-import "../stdlib/libc.caspien"
+import "stdlib/libc.caspien"
 
 @dont(inline)
 func run() void{

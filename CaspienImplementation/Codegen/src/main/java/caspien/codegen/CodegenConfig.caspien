@@ -1,4 +1,4 @@
-import "../../../../../../stdlib/string.caspien"
+import "stdlib/string.caspien"
 import "CodegenTarget.caspien"
 import "collections.caspien"
 import "CodegenText.caspien"

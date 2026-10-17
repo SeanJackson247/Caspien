@@ -1,5 +1,5 @@
 // The `lock x{...}` statement was removed together with `@guard`: this must not compile (use `match @lock`, or an owned value whose `@drop` hook unlocks).
-import "../stdlib/libc.caspien"
+import "stdlib/libc.caspien"
 
 struct Gate{@pub{
 	n: mut u64

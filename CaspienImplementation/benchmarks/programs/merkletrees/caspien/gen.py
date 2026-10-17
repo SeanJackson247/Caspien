@@ -163,8 +163,8 @@ HEADERS = {
 
 def program():
     nv = KIND
-    imports = '''import "../../../../stdlib/libc.caspien"
-''' + ('import "../../../../stdlib/dynamic_array.caspien"\n' if nv == "naive" else "") + '''import "../../../../stdlib/gt/*"
+    imports = '''import "stdlib/libc.caspien"
+''' + ('import "stdlib/dynamic_array.caspien"\n' if nv == "naive" else "") + '''import "stdlib/gt/*"
 '''
     # allocation
     if nv == "unsafe":

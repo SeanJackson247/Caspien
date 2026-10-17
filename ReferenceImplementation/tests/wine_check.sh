@@ -3,6 +3,7 @@
 # the output with the expected text. Skips (exit 0, says so) when x86_64-w64-mingw32-gcc or wine64 is not installed.
 # (Linux sandbox setup used so far: apt install gcc-mingw-w64-x86-64 wine64; the binary is /usr/lib/wine/wine64; WINEPREFIX=/tmp/wpfx.)
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 WINE=$(command -v wine64 || ls /usr/lib/wine/wine64 2>/dev/null)
 command -v x86_64-w64-mingw32-gcc >/dev/null && [ -n "$WINE" ] || { echo "SKIP wine_check: needs x86_64-w64-mingw32-gcc and wine64"; exit 0; }
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT

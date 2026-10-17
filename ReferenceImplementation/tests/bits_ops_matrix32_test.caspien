@@ -12,8 +12,8 @@
 // limit constants as the typed operand) and a RUNTIME form (values arriving as function arguments, atol() results or loop
 // variables, which nothing can fold). Prints `PASS name` / `FAIL name expected E got G` per check and a summary line. The output
 // must be identical with every optimisation switch off and on (and on both register models).
-import "../stdlib/libc.caspien"
-import "../stdlib/gt/*"
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
 
 extern atol(static imut string) mut u64
 

@@ -3,6 +3,7 @@
 # include `bmi2 on`) and again with `bmi2 off`: both outputs equal tests/shift_bmi2_test.py; the first binary has shlx/shrx and no `shl/shr %cl`,
 # the second the reverse.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 export JAVA_TOOL_OPTIONS=
 tar -C "$ROOT" --exclude=.git --exclude=.cache -cf - . | tar -C "$W" -xf -

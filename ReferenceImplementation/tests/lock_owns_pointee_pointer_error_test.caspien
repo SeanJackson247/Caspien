@@ -1,6 +1,6 @@
 // A lock struct may not own a struct that holds a ref.
-import "../stdlib/libc.caspien"
-import "../stdlib/gt/*"
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
 enum Gate{ OPEN, CLOSED }
 struct Counter{@pub{ n: mut u64 }}
 struct Holder{@pub{ p: ref mut Counter }}

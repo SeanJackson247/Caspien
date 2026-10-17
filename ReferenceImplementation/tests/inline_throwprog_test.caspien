@@ -1,7 +1,7 @@
 // Regression test: in a program that uses throw, every function carries the routing/message slots (gt_routine_address, gt_error_message).
 // Leaf functions that never touch them are inlined anyway (the slots are dropped); functions that throw, or call something, are not.
 // Checks that inlined leaves, thrown messages and catches all still give the same answers. Identical with inlining off and at every preset.
-import "../stdlib/libc.caspien"
+import "stdlib/libc.caspien"
 
 extern strcmp(static imut string, static imut string) mut s32
 

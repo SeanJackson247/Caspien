@@ -2,6 +2,7 @@
 # assume_ref_some_test: output equals the Python model, valgrind clean, (the 4-config sweep of run_tests.py covers the other configs); and `assume match Some(r)` on a
 # nullable ref resolves the id once (fiveUses has exactly one GT_REF_RESOLVE in its higher-order bytecode, like the real-match twin viaMatch).
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 export JAVA_TOOL_OPTIONS=
 tar -C "$ROOT" --exclude=.git --exclude=.cache -cf - . | tar -C "$W" -xf -

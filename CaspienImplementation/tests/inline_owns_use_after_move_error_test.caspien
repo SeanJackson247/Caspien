@@ -1,6 +1,6 @@
 // Using an inline struct that owns memory after it was copied (moved) is an error.
-import "../stdlib/libc.caspien"
-import "../stdlib/gt/*"
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
 struct World{@pub{
 	ticks: mut u64
 }}

@@ -1,4 +1,4 @@
-import "../../../../../../stdlib/string.caspien"
+import "stdlib/string.caspien"
 import "BytecodeProgram.caspien"
 
 /** BytecodeProgram -> HOB text: each statement's tokens joined by single spaces, one line per statement. */

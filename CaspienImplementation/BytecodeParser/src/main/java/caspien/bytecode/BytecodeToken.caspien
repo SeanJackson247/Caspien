@@ -1,4 +1,4 @@
-import "../../../../../../stdlib/string.caspien"
+import "stdlib/string.caspien"
 import "BytecodeTokenKind.caspien"
 
 /** One token of HOB text: its text, where it came from, plain word or quoted string. Owns its Strings (Java shared immutable tokens). */

@@ -5,6 +5,7 @@
 #   2. the parser/serializer round trip is exact (strings with spaces and escaped quotes, char literals, blank lines)
 #   tests/bytecode_phases_check.sh        (needs Optimizer/out, which holds the compiled HOB classes)
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 HOB="$ROOT/BytecodeParser/src/main/java/caspien/bytecode"
 unset JAVA_TOOL_OPTIONS
 bad=0

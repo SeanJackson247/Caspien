@@ -1,6 +1,6 @@
 // 'match @lock': every non-target (CLOSED) path must end in 'continue' (retry the acquire, which safe code writes as CLOSED:default(n)),
 // 'break' (give up without the lock), 'return' or 'throw'. Falling off the end is a compile error.
-import "../stdlib/libc.caspien"
+import "stdlib/libc.caspien"
 
 enum St{ OPEN, CLOSED }
 

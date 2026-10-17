@@ -1,8 +1,8 @@
 // `--fix unsafe-split` fallback input: two big `unsafe unaudited{}` blocks. The first splits cleanly. In the second, a statement that needs no tag
 // follows a C call: an `extern` block ends the alive proof of `r` when it closes, so once the call sits in a block of its own the later read
 // `r.value` is outside it and is refused. That rewrite cannot be verified, so that block must stay exactly as written (tests/unsafe_split_check.sh).
-import "../stdlib/libc.caspien"
-import "../stdlib/gt/*"
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
 
 struct Node{@pub{ value: mut u64 }}
 

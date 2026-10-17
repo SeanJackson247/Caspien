@@ -1,6 +1,6 @@
 // Constants in 0..0xFFFFFFFF used with 64-bit values: x & 0xFFFFFFFF (`movl %eax,%eax`), and a 32-bit-range constant loaded by `movl $imm, %r32`
 // (zero-extends) instead of a 10-byte movabs. Mixes masks and operands around the sign boundary of imm32. Expected values from const32_test.py.
-import "../stdlib/libc.caspien"
+import "stdlib/libc.caspien"
 
 func main() void{
 	let x = mut 88172645463325252

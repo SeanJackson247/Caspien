@@ -2,8 +2,8 @@
 // scenario (its `main` calls only that one), runs it under tests/alloc_shim.c, which measures the real peak of live heap bytes (a `resize` counts as a
 // moving realloc), and requires the audit's figure for the scenario to equal it (`==` where the analysis can follow every free, `>=` where it cannot).
 // Run as it stands (all scenarios in a row) it just prints PASS.
-import "../stdlib/libc.caspien"
-import "../stdlib/gt/*"
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
 
 struct Node{@pub{
 	value: mut u64

@@ -2,6 +2,7 @@
 # Stack traces end to end (Linux, java, gcc): builds tests/stack_trace_test.caspien in a Linux copy of the tree, runs it and compares the
 # printed function chains (file:line stripped) with the expected ones; then --trace-depth 2 must cut the chain to the 2 innermost frames.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 export JAVA_TOOL_OPTIONS=
 tar -C "$ROOT" --exclude=.git --exclude=.cache -cf - . | tar -C "$W" -xf -

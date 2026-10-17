@@ -3,7 +3,7 @@
 //   span=5 sum=105 third=21 bytes=40
 //   abs=42 strlen=12 atoi=123 sum=165
 //   OK
-import "../../stdlib/libc.caspien"
+import "stdlib/libc.caspien"
 
 // `@link_name` gives a C function a different Caspien name.
 @link_name(labs)

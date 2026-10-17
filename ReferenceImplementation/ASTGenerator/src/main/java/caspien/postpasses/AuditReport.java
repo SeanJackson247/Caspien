@@ -172,6 +172,9 @@ public final class AuditReport {
 
     private static String show(Path p, Path base) {
         Path abs = p.toAbsolutePath().normalize();
+        if (abs.startsWith(ProjectRoot.stdlib())) {
+            return ProjectRoot.shown(abs);
+        }
         if (abs.startsWith(ProjectRoot.root())) {
             return base.relativize(abs).toString();
         }

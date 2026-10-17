@@ -1,6 +1,6 @@
 // clone(p): the source must be proven alive (auto / some / match Some); the copy is a fresh registered 'owns some'.
-import "../stdlib/libc.caspien"
-import "../stdlib/gt/*"
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
 struct Pair{
 	@pub{ a: mut u64
 	b: mut u64 }

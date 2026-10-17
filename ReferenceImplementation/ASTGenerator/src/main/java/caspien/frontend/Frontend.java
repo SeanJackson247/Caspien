@@ -52,7 +52,7 @@ public final class Frontend {
     /**
      * @param inputPath absolute path of the main .caspien file
      * @param configs   texts by file name: "compiler.config" (required), "fs.config", "platform.config", "trace.config" (optional)
-     * @param options   "root" (the project folder holding stdlib/, required); "fs-report", "audit", "audit-no-stdlib", "viz", "debug" = "1";
+     * @param options   "root" (the project folder, required); "stdlib" (the shared stdlib folder; default `<root>/../stdlib`); "fs-report", "audit", "audit-no-stdlib", "viz", "debug" = "1";
      *                  "fix-mode" (comma list; with "fix-write", "fix-stdlib" = "1", "fix-backup" = backup folder, "fix-only" = "file:line");
      *                  "fix-verify" = the expected hash of the HOB (fail when the HOB differs)
      */
@@ -100,7 +100,7 @@ public final class Frontend {
 
     private static Compiled run(String inputPath, Map<String, String> configs, Map<String, String> options, List<String> messages,
                               Map<String, String> reports) throws IOException {
-        ProjectRoot.set(Paths.get(options.get("root")));
+        ProjectRoot.set(Paths.get(options.get("root")), options.get("stdlib") == null ? null : Paths.get(options.get("stdlib")));
         FsPolicy.current = FsPolicy.parse(configs.get("fs.config"), "fs.config");
         FsPolicy.parsePlatform(configs.get("platform.config"));
         TraceConfig.parse(configs.get("trace.config"));

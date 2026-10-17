@@ -3,6 +3,7 @@
 # every line must be PASS, and valgrind must report no definitely-lost block and no invalid free (a resize that left a stale
 # ghost-table entry, or freed a block twice, or left the new block unregistered would show up here).
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 export JAVA_TOOL_OPTIONS=
 tar -C "$ROOT" --exclude=.git --exclude=.cache -cf - . | tar -C "$W" -xf -

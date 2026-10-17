@@ -1,0 +1,36 @@
+// A generic type with two type arguments (`Node<K, V>`) as a struct member type, a `ref` member, a function parameter and a return type: the comma
+// inside the angle brackets must not split the member/parameter list.
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
+
+struct Node<K, V>{@pub{
+	key: mut K
+	value: mut V
+}}
+
+struct Holder<K, V>{@pub{
+	first: mut Node<K, V>
+	other: ref mut Node<K, V>
+	tag: mut u8
+}}
+
+func valueOf(n: auto imut Node<u8, u64>, extra: imut u64) mut u64{
+	return n.value + extra
+}
+
+func check(name: static imut string, ok: imut bool) void{
+	unsafe extern{
+		if ok{ printf("PASS %s\n", name) }
+		else{ printf("FAIL %s\n", name) }
+	}
+}
+
+func main() void{
+	let n = mut Node:<u8, u64>{key= mut 3, value= mut 40}
+	let h = mut Holder:<u8, u64>{first= n, other= null, tag= mut 7}
+	check("member of two-argument generic type", h.first.value == 40 && h.tag == 7)
+	check("parameter of two-argument generic type", valueOf(auto n, 2) == 42)
+	let m = mut Node:<u64, u8>{key= mut 9, value= mut 250}
+	let g = mut Holder:<u64, u8>{first= m, other= null, tag= mut 1}
+	check("second instantiation with swapped argument types", g.first.key == 9 && g.first.value == 250)
+}

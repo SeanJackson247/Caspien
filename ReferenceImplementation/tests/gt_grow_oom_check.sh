@@ -4,6 +4,7 @@
 # registration the one that must grow it; tests/alloc_shim.c (FAILREALLOC=128, the doubled bucket array) fails that first growth. Every case must exit 0, print
 # "CAUGHT out of memory" and end with the same number of live allocations as its clean run (no leak, no crash).
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 export JAVA_TOOL_OPTIONS=
 tar -C "$ROOT" --exclude=.git --exclude=.cache -cf - . | tar -C "$W" -xf -
@@ -11,8 +12,8 @@ cd "$W" || exit 1
 sed -i 's/^target .*/target linux/; s/^\( *\)default: win64/\1default: sysv_x64/' toolchain.config
 cp "$ROOT/tests/alloc_shim.c" shim.c
 gcc -shared -fPIC -o shim.so shim.c -ldl || { echo "FAIL: cannot build shim"; exit 1; }
-HEAD='import "../stdlib/libc.caspien"
-import "../stdlib/gt/*"
+HEAD='import "stdlib/libc.caspien"
+import "stdlib/gt/*"
 struct Pair{
 	@pub{ a: mut u64
 	b: mut u64 }

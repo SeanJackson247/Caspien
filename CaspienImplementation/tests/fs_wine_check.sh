@@ -5,6 +5,7 @@
 # NOT covered, because Wine here neither creates nor reports real symlinks/junctions: the symlink-refusal checks (the two lines are
 # removed from the Windows variants). Real Windows has never run this code. Skips when mingw-w64 or wine64 is missing.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 WINE=$(command -v wine64 || ls /usr/lib/wine/wine64 2>/dev/null)
 command -v x86_64-w64-mingw32-gcc >/dev/null && [ -n "$WINE" ] || { echo "SKIP fs_wine_check: needs x86_64-w64-mingw32-gcc and wine64"; exit 0; }
 W=$(mktemp -d); trap 'rm -rf "$W" /tmp/caspien_fs_test /tmp/caspien_fs_pol' EXIT
@@ -73,9 +74,9 @@ N=$(echo "$OUT" | grep -c '^PASS'); [ "$N" = 20 ] || { echo "FAIL policy run: ex
 [ -e $P/data/x.txt ] && [ -e $P/data/sub/x.txt ] && [ ! -e $P/ro/x.txt ] && [ ! -e $P/ro/nd ] || { echo "FAIL policy disk state"; fail=1; }
 # 3. names that Windows forbids (device names, trailing dot/space, stream syntax) are refused by the name check
 cat > tests/fs_names_w.caspien <<'SRC'
-import "../stdlib/libc.caspien"
-import "../stdlib/gt/*"
-import "../stdlib/fs.caspien"
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
+import "stdlib/fs.caspien"
 func bad(name: static imut string) mut u64{
 	?catch(e){ return 1 }
 	? fsCheckName(name)
@@ -108,8 +109,8 @@ echo "$OUT" | grep -c '^FAIL' | grep -qx 0 || { echo "$OUT" | grep FAIL; fail=1;
 N=$(echo "$OUT" | grep -c '^PASS'); [ "$N" = 12 ] || { echo "FAIL names: expected 12 PASS, got $N"; fail=1; }
 # 4. the reparse query: Wine reports its Z: drive root as a mount point
 cat > tests/fs_reparse_w.caspien <<'SRC'
-import "../stdlib/libc.caspien"
-import "../stdlib/fs_windows_gnu.caspien"
+import "stdlib/libc.caspien"
+import "stdlib/fs_windows_gnu.caspien"
 func main() imut s32{
 	let:<mut s64> h = mut fsOsStart("Z:/tmp")
 	let:<mut u64> r = mut 0

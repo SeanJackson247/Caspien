@@ -1,7 +1,7 @@
 // inline-max-multi-callee-lines: `big` (long body, two call sites) must stay a call when the limit is below its size, `once` (equally long,
 // one call site) is still inlined, `small` (two call sites, short) is inlined. Values come from tests/inline_multi_callee_test.py;
 // tests/inline_multi_callee_check.sh compares them and looks at the optimised HOB for the CALL lines under several limits.
-import "../stdlib/libc.caspien"
+import "stdlib/libc.caspien"
 
 func out(name: static imut string, v: imut u64) void{
 	unsafe extern{ printf("%s %llu\n", name, v) }

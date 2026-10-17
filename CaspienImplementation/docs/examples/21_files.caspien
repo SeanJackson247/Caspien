@@ -8,9 +8,9 @@
 //   after atomic replace: 4 bytes
 //   escape refused: 1
 //   cleaned up
-import "../../stdlib/libc.caspien"
-import "../../stdlib/gt/*"
-import "../../stdlib/fs.caspien"
+import "stdlib/libc.caspien"
+import "stdlib/gt/*"
+import "stdlib/fs.caspien"
 
 /** The size of a file, by reading it whole. */
 func sizeOf(d: ref some imut Dir, name: static imut string) mut u64{

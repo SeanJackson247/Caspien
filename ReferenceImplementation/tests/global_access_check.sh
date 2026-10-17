@@ -3,6 +3,7 @@
 # every integer line PASS, the two float lines equal the Python model, and the assembly has no `leaq sym(%rip), %r15` left for a
 # global load or store (they are single `mov sym(%rip)` instructions now).
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 export JAVA_TOOL_OPTIONS=
 tar -C "$ROOT" --exclude=.git --exclude=.cache -cf - . | tar -C "$W" -xf -

@@ -1,6 +1,6 @@
 // Java `Float.parseFloat` / `Double.parseDouble` for the decimal forms the codegen sees (-?\d+\.\d+([eE][+-]?\d+)?), exactly rounded, as IEEE bits.
-import "../../../../../../stdlib/string.caspien"
-import "../../../../../../stdlib/bigint.caspien"
+import "stdlib/string.caspien"
+import "stdlib/bigint.caspien"
 
 @pub
 struct FloatText{@pub{

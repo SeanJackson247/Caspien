@@ -5,6 +5,7 @@
 # result or "CAUGHT out of memory"; after a caught failure the live allocations at exit must equal those of a run that fails at
 # the very first user allocation (nothing of the program left behind: values moved into the failed allocation are freed).
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 export JAVA_TOOL_OPTIONS=
 tar -C "$ROOT" --exclude=.git --exclude=.cache -cf - . | tar -C "$W" -xf -

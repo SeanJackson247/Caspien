@@ -4,6 +4,7 @@
 # arguments, which never reached the inner argument arrays; `outer[oi] = mut inner` in make_safe_args used to free each inner
 # array at the end of its loop trip because the `mut` wrapper hid the move.)
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 export JAVA_TOOL_OPTIONS=
 tar -C "$ROOT" --exclude=.git --exclude=.cache -cf - . | tar -C "$W" -xf -

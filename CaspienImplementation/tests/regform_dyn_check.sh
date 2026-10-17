@@ -4,6 +4,7 @@
 # Run from the project root:  bash tests/regform_dyn_check.sh        (env LOB_CP = run against a mutant classpath)
 export JAVA_TOOL_OPTIONS=
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 T=$(mktemp -d)
 mkdir -p $T/caspien/lowerorder
 cat > $T/caspien/lowerorder/Drv9.java <<'EOT'

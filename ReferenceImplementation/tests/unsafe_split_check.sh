@@ -3,6 +3,7 @@
 # program compiles (so the tags are exact), prints what it printed before, a second run changes nothing, a rewrite that cannot be verified is left
 # as written while the others go through, and `unsafe-split,justify` does not scaffold a block twice.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export CASPIEN_STDLIB="$ROOT/../stdlib"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 export JAVA_TOOL_OPTIONS=
 tar -C "$ROOT" --exclude=.git --exclude=.cache --exclude=benchmarks -cf - . | tar -C "$W" -xf -
