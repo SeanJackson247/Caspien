@@ -256,7 +256,7 @@ impl X86Calls{
 			match topIdx in _self.core.argTrackDeltaStack.backing{ stackArgBytes = _self.core.argTrackDeltaStack.get(_self.core.argTrackDeltaStack, topIdx) }
 		} }
 		if stackArgBytes > 0{
-			let reservation = mut ? new String()
+			let:<owns mut String> reservation = mut null
 			match Some(_self){ reservation = ? _self.buildStackArgReservation(_self, stackArgBytes) }
 			// callBufferStack.peek().insert(0, reservation)
 			match Some(_self){ match Some(_self.core){
@@ -437,7 +437,7 @@ impl X86Calls{
 			}
 		}
 		if isLabel{
-			let name = mut ? new String()
+			let:<owns mut String> name = mut null
 			match Some(first){ name = ? first.sub(first, 0, first.length(first) - 1) }
 			let mangled = mut ? new String()
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.gen){ match Some(name){ mangled = ? _self.hub.gen.mangleLabel(_self.hub.gen, name) } } } }
@@ -553,7 +553,7 @@ impl X86Calls{
 			if mnemonic.equals(mnemonic, "FUNC_START"){
 				let fsName = ? X86Core.tokRef(line, 1)
 				// forced: currentFuncName is an owning field (the name moves in), so it gets its own copy of the name
-				let fsName2 = mut ? new String()
+				let:<owns mut String> fsName2 = mut null
 				match Some(fsName){ fsName2 = ? fsName.substring(fsName, 0) }
 				match Some(_self){ match Some(_self.core){ _self.core.currentFuncName = fsName2 } }
 				match Some(_self){ match Some(_self.core){ _self.core.rfVarUsed = false } }
@@ -625,12 +625,12 @@ impl X86Calls{
 		match Some(mnemonic){
 			if mnemonic.equals(mnemonic, "ADDR"){
 				let RAX = mut ? String.from("rax")
-				let operand4 = mut ? new String()
+				let:<owns mut String> operand4 = mut null
 				match Some(line){ operand4 = ? X86Core.lineTok(line, 2) }
 				let isLocal = mut false
 				match Some(operand4){ isLocal = operand4.startsWith(operand4, "$") }
 				if isLocal{
-					let offText = mut ? new String()
+					let:<owns mut String> offText = mut null
 					match Some(operand4){ offText = ? operand4.substring(operand4, 1) }
 					let:<mut s64> off4 = mut 0
 					match Some(offText){ off4 = ? offText.parseS64(offText) }
@@ -648,7 +648,7 @@ impl X86Calls{
 				let n5 = mut 0
 				match Some(line){ n5 = line.items.size(line.items) }
 				if n5 < 3{
-					let txt5 = mut ? new String()
+					let:<owns mut String> txt5 = mut null
 					match Some(line){ txt5 = ? X86Core.lineText(line) }
 					let cm4 = mut ? String.from("TODO(codegen): PUSH (2-token form) '")
 					match Some(txt5){ ? cm4.append(cm4, txt5) }
@@ -668,7 +668,7 @@ impl X86Calls{
 				if opDollar || opX{
 					let:<mut s64> offset = mut 0
 					if opX == false{
-						let offText5 = mut ? new String()
+						let:<owns mut String> offText5 = mut null
 						match Some(operand){ offText5 = ? operand.substring(operand, 1) }
 						match Some(offText5){ offset = ? offText5.parseS64(offText5) }
 					}
@@ -730,7 +730,7 @@ impl X86Calls{
 								let isArg = mut false
 								match Some(operand){ isArg = operand.startsWith(operand, "ARG") }
 								if isArg{
-									let aidx = mut ? new String()
+									let:<owns mut String> aidx = mut null
 									match Some(operand){ aidx = ? operand.substring(operand, 3) }
 									let:<mut s32> ai = mut 0
 									match Some(aidx){ ai = ? aidx.parseS32(aidx) }
@@ -746,7 +746,7 @@ impl X86Calls{
 									let isFarg = mut false
 									match Some(operand){ isFarg = operand.startsWith(operand, "FARG") }
 									if isFarg{
-										let fidx = mut ? new String()
+										let:<owns mut String> fidx = mut null
 										match Some(operand){ fidx = ? operand.substring(operand, 4) }
 										let:<mut s32> fi = mut 0
 										match Some(fidx){ fi = ? fidx.parseS32(fidx) }
@@ -916,19 +916,19 @@ impl X86Calls{
 		}
 		match Some(mnemonic){
 			if mnemonic.equals(mnemonic, "R_BRC"){
-				let op12 = mut ? new String()
+				let:<owns mut String> op12 = mut null
 				match Some(line){ op12 = ? X86Core.lineTok(line, 1) }
 				let sz12 = ? X86Core.tokRef(line, 2)
-				let a12 = mut ? new String()
+				let:<owns mut String> a12 = mut null
 				match Some(line){ a12 = ? X86Core.lineTok(line, 3) }
-				let b12 = mut ? new String()
+				let:<owns mut String> b12 = mut null
 				match Some(line){ b12 = ? X86Core.lineTok(line, 4) }
 				let l12 = mut ? new String()
 				match Some(line){ l12 = ? X86Core.lineTok(line, 5) }
 				let isF = mut false
 				match Some(sz12){ isF = sz12.startsWith(sz12, "F") }
 				if isF{
-					let fs = mut ? new String()
+					let:<owns mut String> fs = mut null
 					match Some(sz12){ fs = ? sz12.substring(sz12, 1) }
 					let:<mut s32> fn12 = mut 0
 					match Some(fs){ fn12 = ? fs.parseS32(fs) }

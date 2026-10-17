@@ -30,14 +30,14 @@ impl X86CasesA{
 		let R10 = mut ? String.from("r10")
 		let R15 = mut ? X86Core_rfScratch()
 		if kind == 1{
-			let op1 = mut ? new String()
+			let:<owns mut String> op1 = mut null
 			match Some(line){ op1 = ? X86Core.lineTok(line, 1) }
-			let a1 = mut ? new String()
+			let:<owns mut String> a1 = mut null
 			match Some(line){ a1 = ? X86Core.lineTok(line, 3) }
-			let b1 = mut ? new String()
+			let:<owns mut String> b1 = mut null
 			match Some(line){ b1 = ? X86Core.lineTok(line, 4) }
 			let l1 = ? X86Core.tokRef(line, 5)
-			let lab1 = mut ? new String()
+			let:<owns mut String> lab1 = mut null
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.gen){ lab1 = ? _self.hub.gen.mangleLabel(_self.hub.gen, l1) } } }
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.gen){ ? _self.hub.gen.rfBrcMem(_self.hub.gen, op1, a1, b1, lab1) } } }
 			return true
@@ -225,9 +225,9 @@ impl X86CasesA{
 			let:<mut s32> n13 = mut 0
 			let pi_n13 = ? X86Core.tokRef(line, 1)
 			match Some(pi_n13){ n13 = ? pi_n13.parseS32(pi_n13) }
-			let a13 = mut ? new String()
+			let:<owns mut String> a13 = mut null
 			match Some(line){ a13 = ? X86Core.lineTok(line, 2) }
-			let b13 = mut ? new String()
+			let:<owns mut String> b13 = mut null
 			match Some(line){ b13 = ? X86Core.lineTok(line, 3) }
 			let:<mut s64> d13 = mut 0
 			match Some(line){ d13 = ? X86Core.tokenS64(line, 4) }
@@ -243,7 +243,7 @@ impl X86CasesA{
 			let:<mut s32> n14 = mut 0
 			let pi_n14 = ? X86Core.tokRef(line, 1)
 			match Some(pi_n14){ n14 = ? pi_n14.parseS32(pi_n14) }
-			let a14 = mut ? new String()
+			let:<owns mut String> a14 = mut null
 			match Some(line){ a14 = ? X86Core.lineTok(line, 2) }
 			let:<mut s64> d14 = mut 0
 			match Some(line){ d14 = ? X86Core.tokenS64(line, 3) }
@@ -282,7 +282,7 @@ impl X86CasesA{
 		}
 		if kind == 17{
 			let xt17 = ? X86Core.tokRef(line, 1)
-			let xks17 = mut ? new String()
+			let:<owns mut String> xks17 = mut null
 			match Some(xt17){ xks17 = ? xt17.substring(xt17, 2) }
 			let:<mut s32> xk17 = mut 0
 			match Some(xks17){ xk17 = ? xks17.parseS32(xks17) }
@@ -303,9 +303,9 @@ impl X86CasesA{
 			return true
 		}
 		if kind == 18{
-			let a18 = mut ? new String()
+			let:<owns mut String> a18 = mut null
 			match Some(line){ a18 = ? X86Core.lineTok(line, 1) }
-			let b18 = mut ? new String()
+			let:<owns mut String> b18 = mut null
 			match Some(line){ b18 = ? X86Core.lineTok(line, 2) }
 			let x18a = mut ? new String()
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.gen){ 
@@ -351,7 +351,7 @@ impl X86CasesA{
 			let:<mut s32> n20 = mut 0
 			let pi_n20 = ? X86Core.tokRef(line, 1)
 			match Some(pi_n20){ n20 = ? pi_n20.parseS32(pi_n20) }
-			let a20 = mut ? new String()
+			let:<owns mut String> a20 = mut null
 			match Some(line){ a20 = ? X86Core.lineTok(line, 2) }
 			let src20 = mut ? new String()
 			match Some(line){ src20 = ? X86Core.lineTok(line, 3) }
@@ -377,9 +377,9 @@ impl X86CasesA{
 			let:<mut s32> n21 = mut 0
 			let pi_n21 = ? X86Core.tokRef(line, 1)
 			match Some(pi_n21){ n21 = ? pi_n21.parseS32(pi_n21) }
-			let a21 = mut ? new String()
+			let:<owns mut String> a21 = mut null
 			match Some(line){ a21 = ? X86Core.lineTok(line, 2) }
-			let b21 = mut ? new String()
+			let:<owns mut String> b21 = mut null
 			match Some(line){ b21 = ? X86Core.lineTok(line, 3) }
 			let x21 = mut ? new String()
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.gen){ 
@@ -393,7 +393,7 @@ impl X86CasesA{
 			let:<mut s32> n22 = mut 0
 			let pi_n22 = ? X86Core.tokRef(line, 1)
 			match Some(pi_n22){ n22 = ? pi_n22.parseS32(pi_n22) }
-			let a22 = mut ? new String()
+			let:<owns mut String> a22 = mut null
 			match Some(line){ a22 = ? X86Core.lineTok(line, 2) }
 			let b22 = ? X86Core.tokRef(line, 3)
 			let x22 = mut ? new String()
@@ -419,9 +419,9 @@ impl X86CasesA{
 			let:<mut s32> n24 = mut 0
 			match Some(line){ let ci_n24 = ? X86Core.tokenS64(line, 1)
 			n24 = wrap:<s32>(ci_n24) }
-			let a24 = mut ? new String()
+			let:<owns mut String> a24 = mut null
 			match Some(line){ a24 = ? X86Core.lineTok(line, 2) }
-			let b24 = mut ? new String()
+			let:<owns mut String> b24 = mut null
 			match Some(line){ b24 = ? X86Core.lineTok(line, 3) }
 			let xd24 = mut ? new String()
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.gen){ 
@@ -488,7 +488,7 @@ impl X86CasesA{
 			let:<mut s32> n27 = mut 0
 			let pi_n27 = ? X86Core.tokRef(line, 1)
 			match Some(pi_n27){ n27 = ? pi_n27.parseS32(pi_n27) }
-			let a27 = mut ? new String()
+			let:<owns mut String> a27 = mut null
 			match Some(line){ a27 = ? X86Core.lineTok(line, 2) }
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.popReg(_self.hub.emit, RAX) } } }
 			let x27 = mut ? new String()
@@ -519,9 +519,9 @@ impl X86CasesA{
 			return true
 		}
 		if kind == 31{
-			let op29 = mut ? new String()
+			let:<owns mut String> op29 = mut null
 			match Some(line){ op29 = ? X86Core.lineTok(line, 1) }
-			let a29 = mut ? new String()
+			let:<owns mut String> a29 = mut null
 			match Some(line){ a29 = ? X86Core.lineTok(line, 3) }
 			let:<owns mut String> b29 = mut null
 			let n29 = mut 0
@@ -586,7 +586,7 @@ impl X86CasesA{
 			let:<mut s32> n31 = mut 0
 			let pi_n31 = ? X86Core.tokRef(line, 1)
 			match Some(pi_n31){ n31 = ? pi_n31.parseS32(pi_n31) }
-			let a31 = mut ? new String()
+			let:<owns mut String> a31 = mut null
 			match Some(line){ a31 = ? X86Core.lineTok(line, 2) }
 			let reg31 = mut ? new String()
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.gen){ 
@@ -864,7 +864,7 @@ impl X86CasesA{
 			let sr_sf39 = _self.hub.emit.movSuffix(_self.hub.emit, rs39)
 			sf39 = ? String.from(sr_sf39)
 			}}}
-			let sz39 = mut ? new String()
+			let:<owns mut String> sz39 = mut null
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ sz39 = ? _self.hub.emit.sizedReg(_self.hub.emit, RAX, rs39) } } }
 			let rw14 = mut ? String.from("    ")
 			match Some(rop39){ ? rw14.append(rw14, rop39) }
@@ -1171,7 +1171,7 @@ impl X86CasesA{
 		}
 		if kind == 11{
 			let l11 = ? X86Core.tokRef(line, 1)
-			let lab11 = mut ? new String()
+			let:<owns mut String> lab11 = mut null
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.gen){ lab11 = ? _self.hub.gen.mangleLabel(_self.hub.gen, l11) } } }
 			if wasCmp{
 				let rw8 = mut ? String.from("    je ")
@@ -1197,7 +1197,7 @@ impl X86CasesA{
 				let sr_sf12 = _self.hub.emit.movSuffix(_self.hub.emit, ss12)
 				sf12 = ? String.from(sr_sf12)
 				}}}
-				let sr12 = mut ? new String()
+				let:<owns mut String> sr12 = mut null
 				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ sr12 = ? _self.hub.emit.sizedReg(_self.hub.emit, RAX, ss12) } } }
 				let rw10 = mut ? String.from("    movs")
 				match Some(sf12){ ? rw10.append(rw10, sf12) }
@@ -1221,7 +1221,7 @@ impl X86CasesA{
 						let sr_sf12b = _self.hub.emit.movSuffix(_self.hub.emit, sd12)
 						sf12b = ? String.from(sr_sf12b)
 						}}}
-						let sr12b = mut ? new String()
+						let:<owns mut String> sr12b = mut null
 						match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ sr12b = ? _self.hub.emit.sizedReg(_self.hub.emit, RAX, sd12) } } }
 						let rw11 = mut ? String.from("    movz")
 						match Some(sf12b){ ? rw11.append(rw11, sf12b) }
@@ -1249,7 +1249,7 @@ impl X86CasesA{
 					let sr_sf13 = _self.hub.emit.movSuffix(_self.hub.emit, ds13)
 					sf13 = ? String.from(sr_sf13)
 					}}}
-					let sr13 = mut ? new String()
+					let:<owns mut String> sr13 = mut null
 					match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ sr13 = ? _self.hub.emit.sizedReg(_self.hub.emit, RAX, ds13) } } }
 					let rw12 = mut ? String.from("    movz")
 					match Some(sf13){ ? rw12.append(rw12, sf13) }
@@ -1275,7 +1275,7 @@ impl X86CasesA{
 				let sr_sf14 = _self.hub.emit.movSuffix(_self.hub.emit, ss14)
 				sf14 = ? String.from(sr_sf14)
 				}}}
-				let sr14 = mut ? new String()
+				let:<owns mut String> sr14 = mut null
 				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ sr14 = ? _self.hub.emit.sizedReg(_self.hub.emit, RAX, ss14) } } }
 				let rw13 = mut ? String.from("    movz")
 				match Some(sf14){ ? rw13.append(rw13, sf14) }

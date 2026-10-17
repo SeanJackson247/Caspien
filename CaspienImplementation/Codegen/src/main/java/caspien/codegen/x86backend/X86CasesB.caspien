@@ -338,7 +338,7 @@ impl X86CasesB{
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ ? _self.hub.regForm.emitMallocCall(_self.hub.regForm, size6) } } }
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "    movq %rax, %r14") } } }
 			let lp_nd6 = mut ? String.from("new_done")
-			let nd6 = mut ? new String()
+			let:<owns mut String> nd6 = mut null
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ nd6 = ? _self.hub.regForm.newInternalLabel(_self.hub.regForm, lp_nd6) } } }
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "    testq %r14, %r14") } } }
 			let rw19 = mut ? String.from("    jz ")
@@ -383,7 +383,7 @@ impl X86CasesB{
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.calls){ ? _self.hub.calls.emitAlignedCallByName(_self.hub.calls, mal7) } } }
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "    movq %rax, %r14") } } }
 			let lp_cd7 = mut ? String.from("clone_dyn_done")
-			let cd7 = mut ? new String()
+			let:<owns mut String> cd7 = mut null
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ cd7 = ? _self.hub.regForm.newInternalLabel(_self.hub.regForm, lp_cd7) } } }
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "    testq %r14, %r14") } } }
 			let rw25 = mut ? String.from("    jz ")
@@ -431,7 +431,7 @@ impl X86CasesB{
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ ? _self.hub.regForm.emitMallocCall(_self.hub.regForm, size1) } } }
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "    movq %rax, %r14") } } }
 			let lp_cd1 = mut ? String.from("clone_done")
-			let cd1 = mut ? new String()
+			let:<owns mut String> cd1 = mut null
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ cd1 = ? _self.hub.regForm.newInternalLabel(_self.hub.regForm, lp_cd1) } } }
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "    testq %r14, %r14") } } }
 			let rw1 = mut ? String.from("    jz ")
@@ -481,7 +481,7 @@ impl X86CasesB{
 						let sr_sf2 = _self.hub.emit.movSuffix(_self.hub.emit, w2)
 						sf2 = ? String.from(sr_sf2)
 						}}}
-						let sz2 = mut ? new String()
+						let:<owns mut String> sz2 = mut null
 						match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ sz2 = ? _self.hub.emit.sizedReg(_self.hub.emit, RAX, w2) } } }
 						let rw4 = mut ? String.from("    mov")
 						match Some(sf2){ ? rw4.append(rw4, sf2) }
@@ -549,14 +549,14 @@ impl X86CasesB{
 			let isLoc4 = mut false
 			match Some(op4){ isLoc4 = op4.startsWith(op4, "$") }
 			if rawOrAuto4 && isLoc4{
-				let ot4 = mut ? new String()
+				let:<owns mut String> ot4 = mut null
 				match Some(op4){ ot4 = ? op4.substring(op4, 1) }
 				let:<mut s64> ov4 = mut 0
 				match Some(ot4){ ov4 = ? ot4.parseS64(ot4) }
 				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.leaMemToReg(_self.hub.emit, RAX, ov4) } } }
 				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.pushReg(_self.hub.emit, RAX) } } }
 			} else{
-				let txt4 = mut ? new String()
+				let:<owns mut String> txt4 = mut null
 				match Some(line){ txt4 = ? X86Core.lineText(line) }
 				let cm7 = mut ? String.from("TODO(codegen): '")
 				match Some(txt4){ ? cm7.append(cm7, txt4) }
@@ -589,10 +589,10 @@ impl X86CasesB{
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ ? _self.hub.regForm.emitMallocCall(_self.hub.regForm, mb5) } } }
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "    movq %rax, %r12") } } }
 			let lp_nn5 = mut ? String.from("newdyn_null")
-			let nn5 = mut ? new String()
+			let:<owns mut String> nn5 = mut null
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ nn5 = ? _self.hub.regForm.newInternalLabel(_self.hub.regForm, lp_nn5) } } }
 			let lp_nd5 = mut ? String.from("newdyn_done")
-			let nd5 = mut ? new String()
+			let:<owns mut String> nd5 = mut null
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ nd5 = ? _self.hub.regForm.newInternalLabel(_self.hub.regForm, lp_nd5) } } }
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "    testq %r12, %r12") } } }
 			let rw8 = mut ? String.from("    jz ")
@@ -648,10 +648,10 @@ impl X86CasesB{
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ ? _self.hub.regForm.emitMallocCall(_self.hub.regForm, mz6) } } }
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "    movq %rax, %r12") } } }
 			let lp_nn6 = mut ? String.from("newudyn_null")
-			let nn6 = mut ? new String()
+			let:<owns mut String> nn6 = mut null
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ nn6 = ? _self.hub.regForm.newInternalLabel(_self.hub.regForm, lp_nn6) } } }
 			let lp_nd6 = mut ? String.from("newudyn_done")
-			let nd6 = mut ? new String()
+			let:<owns mut String> nd6 = mut null
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ nd6 = ? _self.hub.regForm.newInternalLabel(_self.hub.regForm, lp_nd6) } } }
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "    testq %r12, %r12") } } }
 			let rw14 = mut ? String.from("    jz ")
@@ -726,7 +726,7 @@ impl X86CasesB{
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "    movq %rax, %r14") } } }
 			if ustr7{
 				let lp_ud7 = mut ? String.from("newustr_done")
-				let ud7 = mut ? new String()
+				let:<owns mut String> ud7 = mut null
 				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ ud7 = ? _self.hub.regForm.newInternalLabel(_self.hub.regForm, lp_ud7) } } }
 				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "    testq %r14, %r14") } } }
 				let rw23 = mut ? String.from("    jz ")
@@ -789,16 +789,16 @@ impl X86CasesB{
 				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.loadSizedFromAddr(_self.hub.emit, RBX, RAX, 8) } } }
 			}
 			let lp_rg = mut ? String.from("resize_grow")
-			let rg = mut ? new String()
+			let:<owns mut String> rg = mut null
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ rg = ? _self.hub.regForm.newInternalLabel(_self.hub.regForm, lp_rg) } } }
 			let lp_rh = mut ? String.from("resize_hdr")
-			let rh = mut ? new String()
+			let:<owns mut String> rh = mut null
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ rh = ? _self.hub.regForm.newInternalLabel(_self.hub.regForm, lp_rh) } } }
 			let lp_rs = mut ? String.from("resize_shrink")
-			let rs = mut ? new String()
+			let:<owns mut String> rs = mut null
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ rs = ? _self.hub.regForm.newInternalLabel(_self.hub.regForm, lp_rs) } } }
 			let lp_rc = mut ? String.from("resize_call")
-			let rc = mut ? new String()
+			let:<owns mut String> rc = mut null
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ rc = ? _self.hub.regForm.newInternalLabel(_self.hub.regForm, lp_rc) } } }
 			if hasFill{
 				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "    movq 8(%rax), %rcx") } } }
@@ -869,7 +869,7 @@ impl X86CasesB{
 				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.raw_(_self.hub.emit, rw37) } } }
 			} else{
 				let lp_nz8 = mut ? String.from("uresize_nz")
-				let nz8 = mut ? new String()
+				let:<owns mut String> nz8 = mut null
 				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ nz8 = ? _self.hub.regForm.newInternalLabel(_self.hub.regForm, lp_nz8) } } }
 				let rw38 = mut ? String.from("    testq %")
 				match Some(a1_8){ ? rw38.append(rw38, a1_8) }
@@ -894,7 +894,7 @@ impl X86CasesB{
 			}
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "    movq %rax, %r15") } } }
 			let lp_re8 = mut ? String.from("resize_end")
-			let re8 = mut ? new String()
+			let:<owns mut String> re8 = mut null
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ re8 = ? _self.hub.regForm.newInternalLabel(_self.hub.regForm, lp_re8) } } }
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "    testq %r15, %r15") } } }
 			let rw42 = mut ? String.from("    jz ")
@@ -917,7 +917,7 @@ impl X86CasesB{
 			}
 			if hasFill{
 				let lp_lp8 = mut ? String.from("resize_fill")
-				let lp8 = mut ? new String()
+				let:<owns mut String> lp8 = mut null
 				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ lp8 = ? _self.hub.regForm.newInternalLabel(_self.hub.regForm, lp_lp8) } } }
 				let simple8 = mut false
 				if wide == false && (es8 == 1 || es8 == 2 || es8 == 4 || es8 == 8){
@@ -925,7 +925,7 @@ impl X86CasesB{
 				}
 				if simple8{
 					let lp_gn8 = mut ? String.from("resize_fill_loop")
-					let gn8 = mut ? new String()
+					let:<owns mut String> gn8 = mut null
 					match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ gn8 = ? _self.hub.regForm.newInternalLabel(_self.hub.regForm, lp_gn8) } } }
 					match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "    cmpq %r12, %rbx") } } }
 					let rw45 = mut ? String.from("    jge ")
@@ -952,7 +952,7 @@ impl X86CasesB{
 							let sr_sfx8 = _self.hub.emit.movSuffix(_self.hub.emit, es8)
 							sfx8 = ? String.from(sr_sfx8)
 							}}}
-							let r14s8 = mut ? new String()
+							let:<owns mut String> r14s8 = mut null
 							match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ r14s8 = ? _self.hub.emit.sizedReg(_self.hub.emit, R14, es8) } } }
 							let rw48 = mut ? String.from("    test")
 							match Some(sfx8){ ? rw48.append(rw48, sfx8) }
@@ -1075,7 +1075,7 @@ impl X86CasesB{
 			let sr_sf10 = _self.hub.emit.movSuffix(_self.hub.emit, size10)
 			sf10 = ? String.from(sr_sf10)
 			}}}
-			let sr10 = mut ? new String()
+			let:<owns mut String> sr10 = mut null
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ sr10 = ? _self.hub.emit.sizedReg(_self.hub.emit, RAX, size10) } } }
 			let rw64 = mut ? String.from("    xchg")
 			match Some(sf10){ ? rw64.append(rw64, sf10) }

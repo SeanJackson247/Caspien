@@ -326,7 +326,7 @@ impl X86Emit{
 		match Some(_self){ ? _self.rawLit(_self, "    movq %rax, %r14") } // r14: the fresh buffer
 		// A failed malloc leaves r14 null: skip every copy into it; the null is pushed and the bytecode's own check throws.
 		let pre = mut ? String.from("new_done")
-		let newRepackDone = mut ? new String()
+		let:<owns mut String> newRepackDone = mut null
 		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ newRepackDone = ? _self.hub.regForm.newInternalLabel(_self.hub.regForm, pre) } } }
 		match Some(_self){ ? _self.rawLit(_self, "    testq %r14, %r14") }
 		let jz = mut ? String.from("    jz ")
@@ -881,7 +881,7 @@ impl X86Emit{
 						match 1 in v0.backing{ init = v0.get(v0, 1) }
 					}
 				} }
-				let label = mut ? new String()
+				let:<owns mut String> label = mut null
 				match Some(_self){ match Some(key){ label = ? _self.mangleGlobalName(_self, key) } }
 				let hasInit = mut false
 				match Some(_self){ match Some(_self.core){ match Some(key){ hasInit = _self.core.globalsHasInit.getOrDefault(_self.core.globalsHasInit, key, false) } } }

@@ -40,7 +40,7 @@ impl X86RegForm{
 				let cn_3 = mut ? String.from("gt_register")
 				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.calls){ ? _self.hub.calls.emitAlignedCallByName(_self.hub.calls, cn_3) } } }
 				let lp_ok2 = mut ? String.from("gtreg_ok")
-				let ok2 = mut ? new String()
+				let:<owns mut String> ok2 = mut null
 				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ ok2 = ? _self.hub.regForm.newInternalLabel(_self.hub.regForm, lp_ok2) } } }
 				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "    testb %al, %al") } } }
 				let rw4 = mut ? String.from("    jnz ")
@@ -128,7 +128,7 @@ impl X86RegForm{
 				let isLoc6 = mut false
 				match Some(op6){ isLoc6 = op6.startsWith(op6, "$") }
 				if isLoc6{
-					let ot6 = mut ? new String()
+					let:<owns mut String> ot6 = mut null
 					match Some(op6){ ot6 = ? op6.substring(op6, 1) }
 					let:<mut s64> ov6 = mut 0
 					match Some(ot6){ ov6 = ? ot6.parseS64(ot6) }
@@ -178,7 +178,7 @@ impl X86RegForm{
 		match Some(mnemonic){
 			if mnemonic.equals(mnemonic, "SLEEP"){
 				let RAX = mut ? String.from("rax")
-				let nm8 = mut ? new String()
+				let:<owns mut String> nm8 = mut null
 				match Some(line){ nm8 = ? X86Core.lineTok(line, 1) }
 				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.popReg(_self.hub.emit, RAX) } } }
 				let a0_8 = mut ? new String()
@@ -355,7 +355,7 @@ impl X86RegForm{
 		}
 		match Some(mnemonic){
 			if mnemonic.equals(mnemonic, "CALL"){
-				let name2 = mut ? new String()
+				let:<owns mut String> name2 = mut null
 				match Some(line){ name2 = ? X86Core.lineTok(line, 1) }
 				let glue2 = mut false
 				match Some(name2){ glue2 = name2.startsWith(name2, "__drop_") || name2.startsWith(name2, "__clone_") }
@@ -391,7 +391,7 @@ impl X86RegForm{
 				let isLoc3 = mut false
 				match Some(dest3){ isLoc3 = dest3.startsWith(dest3, "$") }
 				if isArg3{
-					let is3 = mut ? new String()
+					let:<owns mut String> is3 = mut null
 					match Some(dest3){ is3 = ? dest3.substring(dest3, 3) }
 					let:<mut s32> idx3 = mut 0
 					match Some(is3){ idx3 = ? is3.parseS32(is3) }
@@ -404,7 +404,7 @@ impl X86RegForm{
 					? tag3.appendS64(tag3, wrap:<s64>(idx3))
 					match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.noteArgRegLoaded(_self.hub.emit, tag3) } } }
 				} elseif isFarg3{
-					let is3b = mut ? new String()
+					let:<owns mut String> is3b = mut null
 					match Some(dest3){ is3b = ? dest3.substring(dest3, 4) }
 					let:<mut s32> idx3b = mut 0
 					match Some(is3b){ idx3b = ? is3b.parseS32(is3b) }
@@ -418,7 +418,7 @@ impl X86RegForm{
 					? tag3b.appendS64(tag3b, wrap:<s64>(idx3b))
 					match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.noteArgRegLoaded(_self.hub.emit, tag3b) } } }
 				} elseif isLoc3{
-					let as3 = mut ? new String()
+					let:<owns mut String> as3 = mut null
 					match Some(dest3){ as3 = ? dest3.substring(dest3, 1) }
 					let:<mut s64> addr3 = mut 0
 					match Some(as3){ addr3 = ? as3.parseS64(as3) }
@@ -448,7 +448,7 @@ impl X86RegForm{
 			if mnemonic.equals(mnemonic, "PUSH_LABEL"){
 				let RAX = mut ? String.from("rax")
 				let name4 = ? X86Core.tokRef(line, 1)
-				let ml4 = mut ? new String()
+				let:<owns mut String> ml4 = mut null
 				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.gen){ ml4 = ? _self.hub.gen.mangleLabel(_self.hub.gen, name4) } } }
 				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.leaGlobalToReg(_self.hub.emit, RAX, ml4) } } }
 				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.pushReg(_self.hub.emit, RAX) } } }
@@ -587,7 +587,7 @@ impl X86RegForm{
 					if firstCat8{
 						reg8 = ? String.from("rax")
 					}
-					let sr8 = mut ? new String()
+					let:<owns mut String> sr8 = mut null
 					match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ sr8 = ? _self.hub.emit.sizedReg(_self.hub.emit, reg8, 1) } } }
 					let rw2 = mut ? String.from("    ")
 					match Some(setcc8){ ? rw2.append(rw2, setcc8) }
@@ -642,7 +642,7 @@ impl X86RegForm{
 					}
 					let isI9 = mut false
 					match Some(r9){ isI9 = r9.charAt(r9, 0) == 'i' }
-					let numS9 = mut ? new String()
+					let:<owns mut String> numS9 = mut null
 					match Some(r9){ numS9 = ? r9.substring(r9, 1) }
 					let:<mut s32> num9 = mut 0
 					match Some(numS9){ num9 = ? numS9.parseS32(numS9) }
@@ -750,7 +750,7 @@ impl X86RegForm{
 					}
 					let isI10 = mut false
 					match Some(r10s){ isI10 = r10s.charAt(r10s, 0) == 'i' }
-					let numS10 = mut ? new String()
+					let:<owns mut String> numS10 = mut null
 					match Some(r10s){ numS10 = ? r10s.substring(r10s, 1) }
 					let:<mut s32> num10 = mut 0
 					match Some(numS10){ num10 = ? numS10.parseS32(numS10) }
@@ -819,7 +819,7 @@ impl X86RegForm{
 			}
 			let first = mut ' '
 			match Some(r){ first = r.charAt(r, 0) }
-			let num = mut ? new String()
+			let:<owns mut String> num = mut null
 			match Some(r){ num = ? r.substring(r, 1) }
 			let:<mut s64> idx = mut 0
 			match Some(num){ idx = ? num.parseS64(num) }
@@ -856,7 +856,7 @@ impl X86RegForm{
 			}
 			let first = mut ' '
 			match Some(r){ first = r.charAt(r, 0) }
-			let num = mut ? new String()
+			let:<owns mut String> num = mut null
 			match Some(r){ num = ? r.substring(r, 1) }
 			let:<mut s64> idx = mut 0
 			match Some(num){ idx = ? num.parseS64(num) }
@@ -970,7 +970,7 @@ impl X86RegForm{
 		let r15 = mut ? X86Core_rfScratch()
 		let pfx = mut ? String.from("resize_gt_skip")
 		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.popReg(_self.hub.emit, rbx) } } }
-		let skip = mut ? new String()
+		let:<owns mut String> skip = mut null
 		match Some(_self){ match Some(pfx){ skip = ? _self.newInternalLabel(_self, pfx) } }
 		let ln207 = mut ? String.from("    testq %r15, %r15")
 		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.raw_(_self.hub.emit, ln207) } } }
@@ -1098,11 +1098,16 @@ impl X86RegForm{
 		?catch(e){ throw e }
 		let isScratch = mut tok.equals(tok, "%s")
 		let isVar = mut tok.startsWith(tok, "%v")
-		let numText = mut ? tok.substring(tok, 2)
 		let idx = mut 0
 		if isScratch == false{
-			match Some(numText){
-				idx = ? numText.parseU64(numText)
+			let fd = mut X86Core.fastDec(tok, 2)
+			if fd >= 0{
+				idx = wrap:<u64>(fd)
+			} else{
+				let numText = mut ? tok.substring(tok, 2)
+				match Some(numText){
+					idx = ? numText.parseU64(numText)
+				}
 			}
 		}
 		if isVar && idx < 3{
@@ -1167,7 +1172,7 @@ impl X86RegForm{
 		}
 		if isTemp{
 			let out = mut ? new String()
-			let rg = mut ? new String()
+			let:<owns mut String> rg = mut null
 			match Some(_self){ match Some(tok){ rg = ? _self.rfReg(_self, tok) } }
 			match Some(_self){ out = ? _self.rfRegTextOf(_self, rg) }
 			return out
@@ -1310,7 +1315,7 @@ impl X86RegForm{
 		match Some(op){ if op.equals(op, "ROTL"){ mn = ? String.from("rol") } }
 		let bImm = mut false
 		match Some(bTok){ bImm = X86Core.rfIsImm(bTok) }
-		let szd = mut ? new String()
+		let:<owns mut String> szd = mut null
 		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ match Some(d){ szd = ? _self.hub.emit.sizedReg(_self.hub.emit, d, size) } } } }
 		if bImm{
 			let:<mut s64> c = mut 0
@@ -1402,7 +1407,7 @@ impl X86RegForm{
 				match Some(_self){ ? _self.rfMov(_self, dstTok, aTok) }
 			}
 			if wide && isSar == false{
-				let d4 = mut ? new String()
+				let:<owns mut String> d4 = mut null
 				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ match Some(d){ d4 = ? _self.hub.emit.sizedReg(_self.hub.emit, d, 4) } } } }
 				let ln = mut ? String.from("    xorl %")
 				match Some(d4){ ? ln.append(ln, d4) }

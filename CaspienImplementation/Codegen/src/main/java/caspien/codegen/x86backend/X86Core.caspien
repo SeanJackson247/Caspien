@@ -1156,10 +1156,35 @@ impl X86Core{
 	}
 
 	/** Java `Long.parseLong`, then `parseUnsignedLong` when that fails; throws "NumberFormatException" when neither fits. */
+	/** Port helper: the value of `tok[from..]` when that is 1..18 plain decimal digits, else -1 (callers fall back to the full parse, so errors and big values behave as before). No String is made. */
+	@pub
+	static func fastDec(tok: ref some imut String, from: mut u64) mut s64{
+		let n = mut tok.length(tok)
+		if from >= n{
+			return -1
+		}
+		if n - from > 18{
+			return -1
+		}
+		let:<mut s64> v = mut 0
+		for i in from..n{
+			let code = mut String.charCode(tok.charAt(tok, i))
+			if code < 48 || code > 57{
+				return -1
+			}
+			v = v * 10 + wrap:<s64>(code - 48)
+		}
+		return v
+	}
+
 	@pub
 	@throws
 	static func rfImm(tok: ref some imut String) mut s64{
 		?catch(e){ throw e }
+		let fd = mut X86Core.fastDec(tok, 1)
+		if fd >= 0{
+			return fd
+		}
 		let t = mut ? tok.substring(tok, 1)
 		match Some(t){
 			let v = mut try t.parseS64(t) catch(err){
@@ -1175,6 +1200,10 @@ impl X86Core{
 	@throws
 	static func rfSlot(tok: ref some imut String) mut s64{
 		?catch(e){ throw e }
+		let fd = mut X86Core.fastDec(tok, 1)
+		if fd >= 0{
+			return fd
+		}
 		let t = mut ? tok.substring(tok, 1)
 		match Some(t){
 			let v = mut ? t.parseS64(t)
