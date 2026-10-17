@@ -14,8 +14,9 @@ ok(){ echo "PASS $*"; }
 
 # 1. the orchestrator launches no stage as a program
 if grep -q '\.Main"' Compiler.java; then fail "Compiler.java still names a stage Main class"; else ok "Compiler.java launches no stage Main"; fi
-grep -q 'runLibraryStage(cache, "s2"' Compiler.java && grep -q 'runLibraryStage(cache, "s3"' Compiler.java && grep -q 'runLibraryStage(cache, "s4"' Compiler.java && grep -q 'caspien.frontend.Frontend' Compiler.java && ok "all four stages go through library calls" || fail "a stage is not a library call"
-grep -q 'optText, optOut.toString(), lobOut' Compiler.java && ok "the Optimizer's text is passed straight to the LowerOrderGenerator" || fail "stage 3 does not take the in-memory Optimizer text"
+grep -q 'runProgramStage(cache, "s2"' Compiler.java && grep -q 'runProgramStage(cache, "s3"' Compiler.java && grep -q 'runLibraryStage(cache, "s4"' Compiler.java && grep -q 'caspien.frontend.Frontend' Compiler.java && ok "all four stages go through library calls" || fail "a stage is not a library call"
+grep -q 'hobProgram, hobOut, optOut' Compiler.java && grep -q 'opt.program, optOut, lobOut' Compiler.java && ok "stages 1-3 hand the BytecodeProgram on (not its text)" || fail "a stage 1-3 handover is not the program object"
+grep -q 'lob.text, lobOut.toString(), asmOut' Compiler.java && ok "the LOB goes to Codegen as text" || fail "Codegen does not take the LOB text"
 
 # 2. a real build: no child JVM at all (the one `java` is the orchestrator itself)
 cat > t/p.caspien <<'P'
@@ -69,6 +70,19 @@ func main() void{
 P
 java Compiler -i t/n.caspien t/n --no-cache 2>&1 | grep -q '\[note\].*@unroll' && ok "[note] from the Optimizer library is shown" || fail "no [note] from the Optimizer library"
 java Compiler -i t/n.caspien t/n >/dev/null 2>&1; java Compiler -i t/n.caspien t/n 2>&1 | grep -q '\[note\].*@unroll' && ok "[note] is replayed from the cache" || fail "[note] not replayed on a cache hit"
+
+# 6. the program object goes from stage to stage; after a cache hit the next stage that has to run parses the stored text back.
+#    Each mix of hits and misses must give the assembly a build without the cache gives.
+mixed(){ # $1 = label, then the cached build, then the same build with --no-cache
+  java Compiler -i t/n.caspien t/$1.s --asm >/dev/null 2>&1; java Compiler -i t/n.caspien t/$1_ref.s --asm --no-cache >/dev/null 2>&1
+  if [ -s t/$1.s ] && cmp -s t/$1.s t/$1_ref.s; then ok "cache mix '$2' == uncached build"; else fail "cache mix '$2' differs from the uncached build"; fi
+}
+java Compiler -i t/n.caspien t/warm.s --asm >/dev/null 2>&1                                   # everything cached
+sed -i 's/^constant-folding: .*/constant-folding: on/' toolchain.config
+mixed m1 "front end hit, Optimizer parses the cached HOB, LowerOrder gets the program"
+sed -i 's/^loop-rotation: .*/loop-rotation: on/' toolchain.config
+mixed m2 "front end and Optimizer hit, LowerOrder parses the cached optimised HOB"
+java Compiler -i t/n.caspien t/m3.s --asm --cache-report 2>&1 | grep -q 'hit' && ok "a repeated build is all cache hits" || fail "no cache hit reported"
 
 # 5. a crash inside a library stage is reported like a crashed process (stack trace, nonzero exit)
 sed -i 's/^constant-folding: .*/constant-folding: maybe/' toolchain.config

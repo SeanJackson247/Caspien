@@ -59,11 +59,11 @@ public final class Frontend {
     public static FrontendResult compile(String inputPath, Map<String, String> configs, Map<String, String> options) {
         List<String> messages = new ArrayList<>();
         Map<String, String> reports = new LinkedHashMap<>();
-        String hobText = null;
+        Compiled compiled = null;
         boolean failed = false;
         TypeCheckerModel.WARNINGS.clear();
         try {
-            hobText = run(inputPath, configs, options, messages, reports);
+            compiled = run(inputPath, configs, options, messages, reports);
         } catch (CompilerException ce) {
             messages.addAll(TypeCheckerModel.WARNINGS);
             TypeCheckerModel.WARNINGS.clear();
@@ -80,14 +80,25 @@ public final class Frontend {
             messages.add("[io error] " + ioe.getMessage());
             failed = true;
         }
-        return new FrontendResult(failed ? null : hobText, messages, failed, DepsLog.files(), reports);
+        return new FrontendResult(failed ? null : compiled.text, failed ? null : compiled.program, messages, failed, DepsLog.files(), reports);
     }
 
     private static boolean on(Map<String, String> options, String key) {
         return "1".equals(options.get(key));
     }
 
-    private static String run(String inputPath, Map<String, String> configs, Map<String, String> options, List<String> messages,
+    /** The emitted program and its text (serialized once, after emit() has finished). */
+    private static final class Compiled {
+        final String text;
+        final BytecodeProgram program;
+
+        Compiled(String text, BytecodeProgram program) {
+            this.text = text;
+            this.program = program;
+        }
+    }
+
+    private static Compiled run(String inputPath, Map<String, String> configs, Map<String, String> options, List<String> messages,
                               Map<String, String> reports) throws IOException {
         ProjectRoot.set(Paths.get(options.get("root")));
         FsPolicy.current = FsPolicy.parse(configs.get("fs.config"), "fs.config");
@@ -177,6 +188,6 @@ public final class Frontend {
             TreeDump.dumpLines(debug, expanded, 0);
             reports.put("debug", debug.toString());
         }
-        return bytecode;
+        return new Compiled(bytecode, hob);
     }
 }

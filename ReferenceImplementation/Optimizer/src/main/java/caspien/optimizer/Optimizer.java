@@ -8,9 +8,9 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * The Optimizer as a library: HOB text in, optimised HOB text out, no files, no process state. The
- * orchestrator calls this in its own JVM; `Main` is the same thing as a stand-alone program.
- * Phases: parse the whole text into a BytecodeProgram, run every pass on it, serialize.
+ * The Optimizer as a library: a HOB program in (as text or as a BytecodeProgram), the optimised HOB out (text and program), no files, no
+ * process state. The orchestrator calls this in its own JVM; `Main` is the same thing as a stand-alone program.
+ * Phases: parse the text into a BytecodeProgram (skipped for a program), run every pass on it, serialize.
  */
 public final class Optimizer {
 
@@ -23,8 +23,11 @@ public final class Optimizer {
      * @param configText the contents of `compiler.config`, or null for "every switch off"
      */
     public static OptimizerResult optimize(String hobText, String origin, String configText) {
-        BytecodeProgram program = new BytecodeParser().parse(hobText.lines().toList(), origin);
+        return optimize(new BytecodeParser().parse(hobText.lines().toList(), origin), configText);
+    }
 
+    /** The same stage on the front end's in-memory program (the orchestrator's path; the program is consumed). */
+    public static OptimizerResult optimize(BytecodeProgram program, String configText) {
         List<String> cfg = configText == null ? new ArrayList<>() : configText.lines().toList();
         String cfgName = "compiler.config";
         UnrollConfig unrollConfig = UnrollConfig.parse(cfg, cfgName);
@@ -36,6 +39,6 @@ public final class Optimizer {
         messages.add("[info] optimizer: " + unrollConfig + "; " + foldConfig + "; " + variableConfig + "; " + inlineConfig);
         BytecodeProgram optimized = new BytecodeOptimizer(unrollConfig, foldConfig, variableConfig, inlineConfig, messages).optimize(program);
 
-        return new OptimizerResult(new BytecodeSerializer().serialize(optimized), messages.lines());
+        return new OptimizerResult(new BytecodeSerializer().serialize(optimized), optimized, messages.lines());
     }
 }

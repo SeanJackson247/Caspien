@@ -136,15 +136,24 @@ final class CompilerCache {
 
     /** Hash of every class file under componentDir/out (names and contents, sorted). */
     String classesHash(Path componentDir) throws IOException {
-        String k = componentDir.toString();
+        return hashClasses(componentDir, "");
+    }
+
+    /** Hash of the class files of the shared caspien/bytecode package under componentDir/out: the copy every stage that gets the program object runs with. */
+    String bytecodeClassesHash(Path componentDir) throws IOException {
+        return hashClasses(componentDir, "caspien/bytecode");
+    }
+
+    private String hashClasses(Path componentDir, String subTree) throws IOException {
+        String k = componentDir.toString() + "|" + subTree;
         String m = memo.get(k);
         if (m != null) {
             return m;
         }
         List<Path> files = new ArrayList<>();
         Path out = componentDir.resolve("out");
-        if (Files.isDirectory(out)) {
-            for (Path p : walkAll(out)) {
+        if (Files.isDirectory(out.resolve(subTree))) {
+            for (Path p : walkAll(out.resolve(subTree))) {
                 if (p.toString().endsWith(".class")) {
                     files.add(p);
                 }
