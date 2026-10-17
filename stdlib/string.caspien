@@ -644,7 +644,31 @@ impl String{
 		return r
 	}
 
-	/** Replaces the characters `start..end` (clamped to the length, `end` >= `start`) by `repl`, in place (Java `StringBuilder.replace(start, end, str)`). */
+	/** The two block moves of `replaceRange`, in one unsafe block (it ends the caller's proofs): the tail `b..b+tail` goes to index `a + m`, then the first `m` bytes of `repl` go to index `a` (libc `memmove`). The caller keeps every range inside the array. */
+	func spliceBytes(_self: ref some mut self, a: imut u64, b: imut u64, tail: imut u64, repl: ref some imut self, m: imut u64) void{
+		let:<raw mut u8> base = null
+		let:<raw mut u8> from = null
+		let selfBk = mut ref _self.chars.backing
+		let replBk = mut ref repl.chars.backing
+		match Some(selfBk){ match Some(replBk){
+			unsafe memcopy raw{
+				memcopy(raw base, mut 8, raw selfBk)
+				memcopy(raw from, mut 8, raw replBk)
+			}
+		} }
+		let tailDst = mut (base + 16 + a + m)
+		let tailSrc = mut (base + 16 + b)
+		let tailCount = mut (tail + 0)
+		let replDst = mut (base + 16 + a)
+		let replSrc = mut (from + 16)
+		let replCount = mut (m + 0)
+		unsafe extern{
+			memmove(tailDst, tailSrc, tailCount)
+			memmove(replDst, replSrc, replCount)
+		}
+	}
+
+	/** Replaces the characters `start..end` (clamped to the length, `end` >= `start`) by `repl`, in place (Java `StringBuilder.replace(start, end, str)`). The tail moves with one `memmove`. */
 	@pub
 	@throws
 	func replaceRange(_self: ref some mut self, start: imut u64, end: imut u64, repl: ref some imut self) void{
@@ -667,42 +691,13 @@ impl String{
 		if newLen > n{
 			let grown = mut ? resize(_self.chars.backing, newLen, mut '\0')
 			_self.chars.backing = grown
-			// move the tail right, last character first
-			for k in 0..tail{
-				let src = mut (n - 1 - k)
-				let dst = mut (newLen - 1 - k)
-				match src in _self.chars.backing{
-					let ch = mut _self.chars.backing[src]
-					match dst into _self.chars.backing{
-						_self.chars.backing[dst] = ch
-					}
-				}
-			}
-		} else {
-			// move the tail left (or not at all), first character first
-			for k in 0..tail{
-				let src = mut (b + k)
-				let dst = mut (a + m + k)
-				match src in _self.chars.backing{
-					let ch = mut _self.chars.backing[src]
-					match dst into _self.chars.backing{
-						_self.chars.backing[dst] = ch
-					}
-				}
-			}
 		}
-		for j in 0..m{
-			let dst = mut (a + j)
-			match j in repl.chars.backing{
-				let ch = mut repl.chars.backing[j]
-				match dst into _self.chars.backing{
-					_self.chars.backing[dst] = ch
-				}
-			}
-		}
+		_self.spliceBytes(_self, a, b, tail, repl, m)
 		if newLen < n{
-			let shrunk = mut ? resize(_self.chars.backing, newLen, mut '\0')
-			_self.chars.backing = shrunk
+			match Some(_self){
+				let shrunk = mut ? resize(_self.chars.backing, newLen, mut '\0')
+				_self.chars.backing = shrunk
+			}
 		}
 	}
 
@@ -807,6 +802,30 @@ impl String{
 			_self.setCharAt(_self, i, cj)
 			_self.setCharAt(_self, j, ci)
 		}
+	}
+
+	/** FNV-1a over the bytes, folded so the low bits are well mixed (the index of a hash table uses them). Equal contents give equal hashes (also `hashLiteral`). */
+	@pub
+	func hashCode(_self: ref some imut self) mut u64{
+		let h = mut 0xcbf29ce484222325
+		let n = mut len(_self.chars.backing)
+		for i in 0..n{
+			let c = mut _self.charAt(_self, i)
+			h = bits_xor(h, String.charCode(c)) * 0x100000001b3
+		}
+		return bits_xor(h, bits_right(h, 32))
+	}
+
+	/** `hashCode` of the String that holds the literal `lit`. */
+	@pub
+	static func hashLiteral(lit: static imut string) mut u64{
+		let h = mut 0xcbf29ce484222325
+		let n = mut stringLiteralLength(lit)
+		for i in 0..n{
+			let c = mut stringLiteralByte(lit, i)
+			h = bits_xor(h, String.charCode(c)) * 0x100000001b3
+		}
+		return bits_xor(h, bits_right(h, 32))
 	}
 
 	/** The byte value of a char (Java `(long) c` for chars below 256). */

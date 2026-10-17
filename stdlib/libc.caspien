@@ -73,6 +73,7 @@ extern malloc(mut u64) raw mut u8
 extern realloc(raw mut u8, mut u64) raw mut u8
 extern free(raw imut u8) void
 extern abort() void
+extern memmove(raw mut u8, raw imut u8, mut u64) raw mut u8
 extern clock() mut u64
 // "c_sleep," not "sleep" -- "sleep" itself is now a reserved language
 // keyword (see "sleep(...)" in caspien-compiler's own CLAUDE.md), so

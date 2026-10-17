@@ -205,10 +205,72 @@ func listContainsLiteral(list: ref some imut ObjectList<String>, needle: static 
 	return listIndexOfLiteral(list, needle) >= 0
 }
 
-/** A set of Strings in insertion order (Java `HashSet<String>`; linear search). */
+/** An open-addressing hash index over the entries of a set or map: slot = entry number + 1 (0 = empty); the capacity is a power of two and the table at most half full, so a probe always meets an empty slot. */
+@pub
+struct HashIndex{@pub{
+	slots: owns some mut dynarray(mut s64)
+	cap: mut u64
+}}
+
+@pub
+@throws
+impl constructor for HashIndex(cap: mut u64) self{
+	?catch(e){ throw e }
+	let slots = mut ? dyn:<s64>([])
+	let:<mut s64> zero = mut 0
+	let grown = mut ? resize(slots, cap, zero)
+	return HashIndex{slots= grown, cap= cap}
+}
+
+@pub
+impl HashIndex{
+	@pub
+	/** The entry number + 1 stored in slot `pos` (0 when empty). */
+	func slotAt(_self: ref some imut self, pos: imut u64) mut s64{
+		match pos in _self.slots{
+			return _self.slots[pos]
+		}
+		return 0
+	}
+
+	@pub
+	/** Stores `entry1` (entry number + 1) in the first empty slot of the probe sequence of hash `h`. */
+	func place(_self: ref some mut self, h: imut u64, entry1: imut s64) void{
+		let cap = mut _self.cap
+		if cap == 0{
+			return
+		}
+		let mask = mut (cap - 1)
+		let pos = mut bits_and(h, mask)
+		for step in 0..cap{
+			if _self.slotAt(_self, pos) == 0{
+				let v = mut (entry1 + 0)
+				match pos into _self.slots{
+					_self.slots[pos] = v
+				}
+				return
+			}
+			pos = bits_and(pos + 1, mask)
+		}
+	}
+}
+
+/** The capacity (a power of two, at least 16) that keeps `count` entries at most half of the table. */
+func hashIndexCapacityFor(count: imut u64) mut u64{
+	let cap = mut 16
+	for step in 0..60{
+		if cap < count * 2{
+			cap = cap * 2
+		}
+	}
+	return cap
+}
+
+/** A set of Strings in insertion order (Java `HashSet<String>`; hash-indexed). */
 @pub
 struct StringSet{@pub{
 	items: owns some mut ObjectList<String>
+	index: owns some mut HashIndex
 }}
 
 @pub
@@ -216,7 +278,8 @@ struct StringSet{@pub{
 impl constructor for StringSet() self{
 	?catch(e){ throw e }
 	let items = mut ? new ObjectList:<String>()
-	return StringSet{items= items}
+	let index = mut ? new HashIndex(16)
+	return StringSet{items= items, index= index}
 }
 
 @pub
@@ -231,14 +294,79 @@ impl StringSet{
 		return _self.items.isEmpty(_self.items)
 	}
 
+	/** Index of the element equal to `text`, or -1; `h` is the hash of `text`. */
+	func findHashed(_self: ref some imut self, text: ref some imut String, h: imut u64) mut s64{
+		let cap = mut _self.index.cap
+		if cap == 0{
+			return -1
+		}
+		let mask = mut (cap - 1)
+		let pos = mut bits_and(h, mask)
+		for step in 0..cap{
+			let slot = mut _self.index.slotAt(_self.index, pos)
+			if slot == 0{
+				return -1
+			}
+			let e = _self.items.get(_self.items, wrap:<u64>(slot - 1))
+			match Some(e){
+				if e.equals(e, text){
+					return slot - 1
+				}
+			}
+			pos = bits_and(pos + 1, mask)
+		}
+		return -1
+	}
+
+	func findHashedLit(_self: ref some imut self, text: static imut string, h: imut u64) mut s64{
+		let cap = mut _self.index.cap
+		if cap == 0{
+			return -1
+		}
+		let mask = mut (cap - 1)
+		let pos = mut bits_and(h, mask)
+		for step in 0..cap{
+			let slot = mut _self.index.slotAt(_self.index, pos)
+			if slot == 0{
+				return -1
+			}
+			let e = _self.items.get(_self.items, wrap:<u64>(slot - 1))
+			match Some(e){
+				if e.equals(e, text){
+					return slot - 1
+				}
+			}
+			pos = bits_and(pos + 1, mask)
+		}
+		return -1
+	}
+
 	@pub
 	func contains(_self: ref some imut self, text: ref some imut String) bool{
-		return listContains(_self.items, text)
+		let h = mut text.hashCode(text)
+		return _self.findHashed(_self, text, h) >= 0
 	}
 
 	@pub
 	func contains(_self: ref some imut self, text: static imut string) bool{
-		return listContainsLiteral(_self.items, text)
+		let h = mut String.hashLiteral(text)
+		return _self.findHashedLit(_self, text, h) >= 0
+	}
+
+	/** Rebuilds the index for `cap` slots from the elements. */
+	@throws
+	func rebuild(_self: ref some mut self, cap: mut u64) void{
+		?catch(e){ throw e }
+		let fresh = mut ? new HashIndex(cap)
+		let n = mut _self.items.size(_self.items)
+		for i in 0..n{
+			let e = _self.items.get(_self.items, i)
+			match Some(e){
+				let h = mut e.hashCode(e)
+				fresh.place(fresh, h, wrap:<s64>(i + 1))
+			}
+		}
+		_self.index = fresh
 	}
 
 	/** Java `add`: true when `text` was not yet in the set (it is then moved in). */
@@ -246,10 +374,20 @@ impl StringSet{
 	@throws
 	func add(_self: ref some mut self, text: owns some mut String) bool{
 		?catch(e){ throw e }
-		if listContains(_self.items, text){
+		let h = mut text.hashCode(text)
+		if _self.findHashed(_self, text, h) >= 0{
 			return false
 		}
+		let n = mut _self.items.size(_self.items)
 		? _self.items.add(_self.items, text)
+		match Some(_self){
+			if (n + 1) * 2 > _self.index.cap{
+				let cap = mut hashIndexCapacityFor(n + 1)
+				? _self.rebuild(_self, cap)
+			} else {
+				_self.index.place(_self.index, h, wrap:<s64>(n + 1))
+			}
+		}
 		return true
 	}
 
@@ -263,6 +401,8 @@ impl StringSet{
 	func clear(_self: ref some mut self) void{
 		?catch(e){ throw e }
 		? _self.items.clear(_self.items)
+		let fresh = mut ? new HashIndex(16)
+		_self.index = fresh
 	}
 }
 
@@ -273,10 +413,11 @@ struct MapEntry<V>{@pub{
 	value: owns mut V
 }}
 
-/** Java `LinkedHashMap<String, V>` for an owning V: pairs in insertion order (linear key search). */
+/** Java `LinkedHashMap<String, V>` for an owning V: pairs in insertion order (hash-indexed). */
 @pub
 struct StringMap<V>{@pub{
 	entries: owns some mut ObjectList<MapEntry<V>>
+	index: owns some mut HashIndex
 }}
 
 @pub
@@ -284,7 +425,8 @@ struct StringMap<V>{@pub{
 impl<V> constructor for StringMap<V>() self{
 	?catch(e){ throw e }
 	let entries = mut ? new ObjectList:<MapEntry:<V>>()
-	return StringMap:<V>{entries= entries}
+	let index = mut ? new HashIndex(16)
+	return StringMap:<V>{entries= entries, index= index}
 }
 
 @pub
@@ -299,35 +441,66 @@ impl<V> StringMap<V>{
 		return _self.entries.isEmpty(_self.entries)
 	}
 
-	/** Index of the entry whose key equals `key`, or -1. */
-	func find(_self: ref some imut self, key: ref some imut String) mut s64{
-		let n = mut _self.entries.size(_self.entries)
-		for i in 0..n{
-			let e = _self.entries.get(_self.entries, i)
+	/** Index of the entry whose key equals `key` (hash `h`), or -1. */
+	func findHashed(_self: ref some imut self, key: ref some imut String, h: imut u64) mut s64{
+		let cap = mut _self.index.cap
+		if cap == 0{
+			return -1
+		}
+		let mask = mut (cap - 1)
+		let pos = mut bits_and(h, mask)
+		for step in 0..cap{
+			let slot = mut _self.index.slotAt(_self.index, pos)
+			if slot == 0{
+				return -1
+			}
+			let e = _self.entries.get(_self.entries, wrap:<u64>(slot - 1))
 			match Some(e){
 				match Some(e.key){
 					if e.key.equals(e.key, key){
-						return wrap:<s64>(i)
+						return slot - 1
 					}
 				}
 			}
+			pos = bits_and(pos + 1, mask)
 		}
 		return -1
 	}
 
-	func findLit(_self: ref some imut self, key: static imut string) mut s64{
-		let n = mut _self.entries.size(_self.entries)
-		for i in 0..n{
-			let e = _self.entries.get(_self.entries, i)
+	func findHashedLit(_self: ref some imut self, key: static imut string, h: imut u64) mut s64{
+		let cap = mut _self.index.cap
+		if cap == 0{
+			return -1
+		}
+		let mask = mut (cap - 1)
+		let pos = mut bits_and(h, mask)
+		for step in 0..cap{
+			let slot = mut _self.index.slotAt(_self.index, pos)
+			if slot == 0{
+				return -1
+			}
+			let e = _self.entries.get(_self.entries, wrap:<u64>(slot - 1))
 			match Some(e){
 				match Some(e.key){
 					if e.key.equals(e.key, key){
-						return wrap:<s64>(i)
+						return slot - 1
 					}
 				}
 			}
+			pos = bits_and(pos + 1, mask)
 		}
 		return -1
+	}
+
+	/** Index of the entry whose key equals `key`, or -1. */
+	func find(_self: ref some imut self, key: ref some imut String) mut s64{
+		let h = mut key.hashCode(key)
+		return _self.findHashed(_self, key, h)
+	}
+
+	func findLit(_self: ref some imut self, key: static imut string) mut s64{
+		let h = mut String.hashLiteral(key)
+		return _self.findHashedLit(_self, key, h)
 	}
 
 	@pub
@@ -338,6 +511,40 @@ impl<V> StringMap<V>{
 	@pub
 	func containsKey(_self: ref some imut self, key: static imut string) bool{
 		return _self.findLit(_self, key) >= 0
+	}
+
+	/** Rebuilds the index for `cap` slots from the entries. */
+	@throws
+	func rebuild(_self: ref some mut self, cap: mut u64) void{
+		?catch(e){ throw e }
+		let fresh = mut ? new HashIndex(cap)
+		let n = mut _self.entries.size(_self.entries)
+		for i in 0..n{
+			let e = _self.entries.get(_self.entries, i)
+			match Some(e){
+				match Some(e.key){
+					let h = mut e.key.hashCode(e.key)
+					fresh.place(fresh, h, wrap:<s64>(i + 1))
+				}
+			}
+		}
+		_self.index = fresh
+	}
+
+	/** Appends `entry` (moved in; its key has hash `h`) and keeps the index in step. */
+	@throws
+	func append(_self: ref some mut self, entry: owns some mut MapEntry<V>, h: imut u64) void{
+		?catch(e){ throw e }
+		let n = mut _self.entries.size(_self.entries)
+		? _self.entries.add(_self.entries, entry)
+		match Some(_self){
+			if (n + 1) * 2 > _self.index.cap{
+				let cap = mut hashIndexCapacityFor(n + 1)
+				? _self.rebuild(_self, cap)
+			} else {
+				_self.index.place(_self.index, h, wrap:<s64>(n + 1))
+			}
+		}
 	}
 
 	/** Java `get(key)`: a reference to the value, null when the key is absent. */
@@ -382,7 +589,8 @@ impl<V> StringMap<V>{
 	@throws
 	func put(_self: ref some mut self, key: owns some mut String, value: owns mut V) void{
 		?catch(e){ throw e }
-		let at = mut _self.find(_self, key)
+		let h = mut key.hashCode(key)
+		let at = mut _self.findHashed(_self, key, h)
 		if at >= 0{
 			let e = _self.entries.get(_self.entries, wrap:<u64>(at))
 			match Some(e){
@@ -391,7 +599,7 @@ impl<V> StringMap<V>{
 		} else {
 			let entry = mut ? new MapEntry:<V>{key= key, value= value}
 			match Some(_self){
-				? _self.entries.add(_self.entries, entry)
+				? _self.append(_self, entry, h)
 			}
 		}
 	}
@@ -401,6 +609,8 @@ impl<V> StringMap<V>{
 	func clear(_self: ref some mut self) void{
 		?catch(e){ throw e }
 		? _self.entries.clear(_self.entries)
+		let fresh = mut ? new HashIndex(16)
+		_self.index = fresh
 	}
 }
 
@@ -411,10 +621,11 @@ struct ScalarEntry<V>{@pub{
 	value: mut V
 }}
 
-/** Java `LinkedHashMap<String, V>` for a plain scalar V (bool, s64, ...). */
+/** Java `LinkedHashMap<String, V>` for a plain scalar V (bool, s64, ...). Hash-indexed. */
 @pub
 struct StringScalarMap<V>{@pub{
 	entries: owns some mut ObjectList<ScalarEntry<V>>
+	index: owns some mut HashIndex
 }}
 
 @pub
@@ -422,7 +633,8 @@ struct StringScalarMap<V>{@pub{
 impl<V> constructor for StringScalarMap<V>() self{
 	?catch(e){ throw e }
 	let entries = mut ? new ObjectList:<ScalarEntry:<V>>()
-	return StringScalarMap:<V>{entries= entries}
+	let index = mut ? new HashIndex(16)
+	return StringScalarMap:<V>{entries= entries, index= index}
 }
 
 @pub
@@ -437,34 +649,66 @@ impl<V> StringScalarMap<V>{
 		return _self.entries.isEmpty(_self.entries)
 	}
 
-	func find(_self: ref some imut self, key: ref some imut String) mut s64{
-		let n = mut _self.entries.size(_self.entries)
-		for i in 0..n{
-			let e = _self.entries.get(_self.entries, i)
+	/** Index of the entry whose key equals `key` (hash `h`), or -1. */
+	func findHashed(_self: ref some imut self, key: ref some imut String, h: imut u64) mut s64{
+		let cap = mut _self.index.cap
+		if cap == 0{
+			return -1
+		}
+		let mask = mut (cap - 1)
+		let pos = mut bits_and(h, mask)
+		for step in 0..cap{
+			let slot = mut _self.index.slotAt(_self.index, pos)
+			if slot == 0{
+				return -1
+			}
+			let e = _self.entries.get(_self.entries, wrap:<u64>(slot - 1))
 			match Some(e){
 				match Some(e.key){
 					if e.key.equals(e.key, key){
-						return wrap:<s64>(i)
+						return slot - 1
 					}
 				}
 			}
+			pos = bits_and(pos + 1, mask)
 		}
 		return -1
 	}
 
-	func findLit(_self: ref some imut self, key: static imut string) mut s64{
-		let n = mut _self.entries.size(_self.entries)
-		for i in 0..n{
-			let e = _self.entries.get(_self.entries, i)
+	func findHashedLit(_self: ref some imut self, key: static imut string, h: imut u64) mut s64{
+		let cap = mut _self.index.cap
+		if cap == 0{
+			return -1
+		}
+		let mask = mut (cap - 1)
+		let pos = mut bits_and(h, mask)
+		for step in 0..cap{
+			let slot = mut _self.index.slotAt(_self.index, pos)
+			if slot == 0{
+				return -1
+			}
+			let e = _self.entries.get(_self.entries, wrap:<u64>(slot - 1))
 			match Some(e){
 				match Some(e.key){
 					if e.key.equals(e.key, key){
-						return wrap:<s64>(i)
+						return slot - 1
 					}
 				}
 			}
+			pos = bits_and(pos + 1, mask)
 		}
 		return -1
+	}
+
+	/** Index of the entry whose key equals `key`, or -1. */
+	func find(_self: ref some imut self, key: ref some imut String) mut s64{
+		let h = mut key.hashCode(key)
+		return _self.findHashed(_self, key, h)
+	}
+
+	func findLit(_self: ref some imut self, key: static imut string) mut s64{
+		let h = mut String.hashLiteral(key)
+		return _self.findHashedLit(_self, key, h)
 	}
 
 	@pub
@@ -475,6 +719,40 @@ impl<V> StringScalarMap<V>{
 	@pub
 	func containsKey(_self: ref some imut self, key: static imut string) bool{
 		return _self.findLit(_self, key) >= 0
+	}
+
+	/** Rebuilds the index for `cap` slots from the entries. */
+	@throws
+	func rebuild(_self: ref some mut self, cap: mut u64) void{
+		?catch(e){ throw e }
+		let fresh = mut ? new HashIndex(cap)
+		let n = mut _self.entries.size(_self.entries)
+		for i in 0..n{
+			let e = _self.entries.get(_self.entries, i)
+			match Some(e){
+				match Some(e.key){
+					let h = mut e.key.hashCode(e.key)
+					fresh.place(fresh, h, wrap:<s64>(i + 1))
+				}
+			}
+		}
+		_self.index = fresh
+	}
+
+	/** Appends `entry` (moved in; its key has hash `h`) and keeps the index in step. */
+	@throws
+	func append(_self: ref some mut self, entry: owns some mut ScalarEntry<V>, h: imut u64) void{
+		?catch(e){ throw e }
+		let n = mut _self.entries.size(_self.entries)
+		? _self.entries.add(_self.entries, entry)
+		match Some(_self){
+			if (n + 1) * 2 > _self.index.cap{
+				let cap = mut hashIndexCapacityFor(n + 1)
+				? _self.rebuild(_self, cap)
+			} else {
+				_self.index.place(_self.index, h, wrap:<s64>(n + 1))
+			}
+		}
 	}
 
 	/** Java `getOrDefault`. */
@@ -518,7 +796,8 @@ impl<V> StringScalarMap<V>{
 	@throws
 	func put(_self: ref some mut self, key: owns some mut String, value: mut V) void{
 		?catch(e){ throw e }
-		let at = mut _self.find(_self, key)
+		let h = mut key.hashCode(key)
+		let at = mut _self.findHashed(_self, key, h)
 		if at >= 0{
 			let e = _self.entries.get(_self.entries, wrap:<u64>(at))
 			match Some(e){
@@ -528,7 +807,7 @@ impl<V> StringScalarMap<V>{
 		}
 		let entry = mut ? new ScalarEntry:<V>{key= key, value= value}
 		match Some(_self){
-			? _self.entries.add(_self.entries, entry)
+			? _self.append(_self, entry, h)
 		}
 	}
 
@@ -537,5 +816,8 @@ impl<V> StringScalarMap<V>{
 	func clear(_self: ref some mut self) void{
 		?catch(e){ throw e }
 		? _self.entries.clear(_self.entries)
+		let fresh = mut ? new HashIndex(16)
+		_self.index = fresh
 	}
 }
+
