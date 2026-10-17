@@ -124,8 +124,7 @@ impl X86RegForm{
 		match Some(mnemonic){
 			if mnemonic.equals(mnemonic, "GT_DESTRUCT"){
 				let RAX = mut ? String.from("rax")
-				let op6 = mut ? new String()
-				match Some(line){ op6 = ? X86Core.lineTok(line, 1) }
+				let op6 = ? X86Core.tokRef(line, 1)
 				let isLoc6 = mut false
 				match Some(op6){ isLoc6 = op6.startsWith(op6, "$") }
 				if isLoc6{
@@ -225,8 +224,7 @@ impl X86RegForm{
 		match Some(mnemonic){
 			if mnemonic.equals(mnemonic, "TRACE_CAPTURE"){
 				let:<mut s32> depth11 = mut 0
-				let pi_depth11 = mut ? new String()
-				match Some(line){ pi_depth11 = ? X86Core.lineTok(line, 1) }
+				let pi_depth11 = ? X86Core.tokRef(line, 1)
 				match Some(pi_depth11){ depth11 = ? pi_depth11.parseS32(pi_depth11) }
 				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "    pushq %rax") } } }
 				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "    pushq %rcx") } } }
@@ -349,8 +347,7 @@ impl X86RegForm{
 		match Some(mnemonic){
 			if mnemonic.equals(mnemonic, "VARARGS_XMM_COUNT"){
 				let:<mut s32> v1 = mut 0
-				let pi_v1 = mut ? new String()
-				match Some(line){ pi_v1 = ? X86Core.lineTok(line, 1) }
+				let pi_v1 = ? X86Core.tokRef(line, 1)
 				match Some(pi_v1){ v1 = ? pi_v1.parseS32(pi_v1) }
 				match Some(_self){ match Some(_self.core){ _self.core.pendingVarargsXmmCount = v1 } }
 				return true
@@ -383,8 +380,7 @@ impl X86RegForm{
 		match Some(mnemonic){
 			if mnemonic.equals(mnemonic, "POP"){
 				let RAX = mut ? String.from("rax")
-				let dest3 = mut ? new String()
-				match Some(line){ dest3 = ? X86Core.lineTok(line, 1) }
+				let dest3 = ? X86Core.tokRef(line, 1)
 				let:<mut s32> size3 = mut 0
 				match Some(line){ let ci_size3 = ? X86Core.tokenS64(line, 2)
 				size3 = wrap:<s32>(ci_size3) }
@@ -451,8 +447,7 @@ impl X86RegForm{
 		match Some(mnemonic){
 			if mnemonic.equals(mnemonic, "PUSH_LABEL"){
 				let RAX = mut ? String.from("rax")
-				let name4 = mut ? new String()
-				match Some(line){ name4 = ? X86Core.lineTok(line, 1) }
+				let name4 = ? X86Core.tokRef(line, 1)
 				let ml4 = mut ? new String()
 				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.gen){ ml4 = ? _self.hub.gen.mangleLabel(_self.hub.gen, name4) } } }
 				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.leaGlobalToReg(_self.hub.emit, RAX, ml4) } } }
@@ -549,8 +544,7 @@ impl X86RegForm{
 			if mnemonic.equals(mnemonic, "FLOAT_CHECK"){
 				let RAX = mut ? String.from("rax")
 				let RDX = mut ? String.from("rdx")
-				let cat8 = mut ? new String()
-				match Some(line){ cat8 = ? X86Core.lineTok(line, 1) }
+				let cat8 = ? X86Core.tokRef(line, 1)
 				let cats8 = mut ? new ObjectList:<String>()
 				match Some(cat8){ cats8 = ? Text.split(cat8, '|', 0) }
 				let n8 = mut 0

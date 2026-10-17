@@ -536,12 +536,13 @@ impl File{
 			if m > 4096{
 				m = 4096
 			}
-			for i in 0..m{
-				let c = mut ' '
-				match Some(text){ c = text.charAt(text, pos + i) }
-				unsafe assume memcopy raw{
-					assume match Some(buf + i)
-					memcopy(buf + i, mut 1, raw c)
+			match Some(text){
+				for i in 0..m{
+					let c = mut text.charAt(text, pos + i)
+					unsafe assume memcopy raw{
+						assume match Some(buf + i)
+						memcopy(buf + i, mut 1, raw c)
+					}
 				}
 			}
 			let:<mut s64> wrote = mut fsOsWriteRaw(fh, buf, m)

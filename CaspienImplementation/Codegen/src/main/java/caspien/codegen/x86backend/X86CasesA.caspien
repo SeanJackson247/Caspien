@@ -36,8 +36,7 @@ impl X86CasesA{
 			match Some(line){ a1 = ? X86Core.lineTok(line, 3) }
 			let b1 = mut ? new String()
 			match Some(line){ b1 = ? X86Core.lineTok(line, 4) }
-			let l1 = mut ? new String()
-			match Some(line){ l1 = ? X86Core.lineTok(line, 5) }
+			let l1 = ? X86Core.tokRef(line, 5)
 			let lab1 = mut ? new String()
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.gen){ lab1 = ? _self.hub.gen.mangleLabel(_self.hub.gen, l1) } } }
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.gen){ ? _self.hub.gen.rfBrcMem(_self.hub.gen, op1, a1, b1, lab1) } } }
@@ -62,8 +61,7 @@ impl X86CasesA{
 			return true
 		}
 		if kind == 3{
-			let src3 = mut ? new String()
-			match Some(line){ src3 = ? X86Core.lineTok(line, 2) }
+			let src3 = ? X86Core.tokRef(line, 2)
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.gen){ ? _self.hub.gen.rfAddrToReg(_self.hub.gen, R15, src3) } } }
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.pushReg(_self.hub.emit, R15) } } }
 			return true
@@ -72,8 +70,7 @@ impl X86CasesA{
 			let:<mut s32> n4 = mut 0
 			match Some(line){ let ci_n4 = ? X86Core.tokenS64(line, 1)
 			n4 = wrap:<s32>(ci_n4) }
-			let vt4 = mut ? new String()
-			match Some(line){ vt4 = ? X86Core.lineTok(line, 2) }
+			let vt4 = ? X86Core.tokRef(line, 2)
 			let vr4 = mut ? new String()
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ 
 			vr4 = ? _self.hub.regForm.rfReg(_self.hub.regForm, vt4)
@@ -132,10 +129,8 @@ impl X86CasesA{
 			let:<mut s32> n5 = mut 0
 			match Some(line){ let ci_n5 = ? X86Core.tokenS64(line, 1)
 			n5 = wrap:<s32>(ci_n5) }
-			let a5 = mut ? new String()
-			match Some(line){ a5 = ? X86Core.lineTok(line, 2) }
-			let b5 = mut ? new String()
-			match Some(line){ b5 = ? X86Core.lineTok(line, 3) }
+			let a5 = ? X86Core.tokRef(line, 2)
+			let b5 = ? X86Core.tokRef(line, 3)
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.gen){ ? _self.hub.gen.rfLoad(_self.hub.gen, n5, a5, b5) } } }
 			return true
 		}
@@ -143,10 +138,8 @@ impl X86CasesA{
 			let:<mut s32> n6 = mut 0
 			match Some(line){ let ci_n6 = ? X86Core.tokenS64(line, 1)
 			n6 = wrap:<s32>(ci_n6) }
-			let a6 = mut ? new String()
-			match Some(line){ a6 = ? X86Core.lineTok(line, 2) }
-			let b6 = mut ? new String()
-			match Some(line){ b6 = ? X86Core.lineTok(line, 3) }
+			let a6 = ? X86Core.tokRef(line, 2)
+			let b6 = ? X86Core.tokRef(line, 3)
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.gen){ ? _self.hub.gen.rfStore(_self.hub.gen, n6, a6, b6) } } }
 			return true
 		}
@@ -154,12 +147,9 @@ impl X86CasesA{
 			let:<mut s32> n7 = mut 0
 			match Some(line){ let ci_n7 = ? X86Core.tokenS64(line, 1)
 			n7 = wrap:<s32>(ci_n7) }
-			let a7 = mut ? new String()
-			match Some(line){ a7 = ? X86Core.lineTok(line, 2) }
-			let b7 = mut ? new String()
-			match Some(line){ b7 = ? X86Core.lineTok(line, 3) }
-			let c7 = mut ? new String()
-			match Some(line){ c7 = ? X86Core.lineTok(line, 4) }
+			let a7 = ? X86Core.tokRef(line, 2)
+			let b7 = ? X86Core.tokRef(line, 3)
+			let c7 = ? X86Core.tokRef(line, 4)
 			let:<mut s64> sc7 = mut 0
 			match Some(line){ sc7 = ? X86Core.tokenS64(line, 5) }
 			let:<mut s64> d7 = mut 0
@@ -171,14 +161,11 @@ impl X86CasesA{
 			let:<mut s32> n8 = mut 0
 			match Some(line){ let ci_n8 = ? X86Core.tokenS64(line, 1)
 			n8 = wrap:<s32>(ci_n8) }
-			let a8 = mut ? new String()
-			match Some(line){ a8 = ? X86Core.lineTok(line, 2) }
-			let b8 = mut ? new String()
-			match Some(line){ b8 = ? X86Core.lineTok(line, 3) }
+			let a8 = ? X86Core.tokRef(line, 2)
+			let b8 = ? X86Core.tokRef(line, 3)
 			let:<mut s64> sc8 = mut 0
 			match Some(line){ sc8 = ? X86Core.tokenS64(line, 4) }
-			let s8 = mut ? new String()
-			match Some(line){ s8 = ? X86Core.lineTok(line, 5) }
+			let s8 = ? X86Core.tokRef(line, 5)
 			let:<mut s64> d8 = mut 0
 			match Some(line){ d8 = ? X86CasesA.optLong(line, 6) }
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.gen){ ? _self.hub.gen.rfStoreIndexed(_self.hub.gen, n8, a8, b8, sc8, s8, d8) } } }
@@ -186,15 +173,11 @@ impl X86CasesA{
 		}
 		if kind == 9{
 			let:<mut s32> n9 = mut 0
-			let pi_n9 = mut ? new String()
-			match Some(line){ pi_n9 = ? X86Core.lineTok(line, 1) }
+			let pi_n9 = ? X86Core.tokRef(line, 1)
 			match Some(pi_n9){ n9 = ? pi_n9.parseS32(pi_n9) }
-			let a9 = mut ? new String()
-			match Some(line){ a9 = ? X86Core.lineTok(line, 2) }
-			let b9 = mut ? new String()
-			match Some(line){ b9 = ? X86Core.lineTok(line, 3) }
-			let c9 = mut ? new String()
-			match Some(line){ c9 = ? X86Core.lineTok(line, 4) }
+			let a9 = ? X86Core.tokRef(line, 2)
+			let b9 = ? X86Core.tokRef(line, 3)
+			let c9 = ? X86Core.tokRef(line, 4)
 			let:<mut s64> sc9 = mut 0
 			match Some(line){ sc9 = ? X86Core.tokenS64(line, 5) }
 			let:<mut s64> d9 = mut 0
@@ -204,17 +187,13 @@ impl X86CasesA{
 		}
 		if kind == 10{
 			let:<mut s32> n10 = mut 0
-			let pi_n10 = mut ? new String()
-			match Some(line){ pi_n10 = ? X86Core.lineTok(line, 1) }
+			let pi_n10 = ? X86Core.tokRef(line, 1)
 			match Some(pi_n10){ n10 = ? pi_n10.parseS32(pi_n10) }
-			let a10 = mut ? new String()
-			match Some(line){ a10 = ? X86Core.lineTok(line, 2) }
-			let b10 = mut ? new String()
-			match Some(line){ b10 = ? X86Core.lineTok(line, 3) }
+			let a10 = ? X86Core.tokRef(line, 2)
+			let b10 = ? X86Core.tokRef(line, 3)
 			let:<mut s64> sc10 = mut 0
 			match Some(line){ sc10 = ? X86Core.tokenS64(line, 4) }
-			let s10 = mut ? new String()
-			match Some(line){ s10 = ? X86Core.lineTok(line, 5) }
+			let s10 = ? X86Core.tokRef(line, 5)
 			let:<mut s64> d10 = mut 0
 			match Some(line){ d10 = ? X86CasesA.optLong(line, 6) }
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.gen){ ? _self.hub.gen.rfStoreXIndexed(_self.hub.gen, n10, a10, b10, sc10, s10, d10) } } }
@@ -224,10 +203,8 @@ impl X86CasesA{
 			let:<mut s32> n11 = mut 0
 			match Some(line){ let ci_n11 = ? X86Core.tokenS64(line, 1)
 			n11 = wrap:<s32>(ci_n11) }
-			let a11 = mut ? new String()
-			match Some(line){ a11 = ? X86Core.lineTok(line, 2) }
-			let b11 = mut ? new String()
-			match Some(line){ b11 = ? X86Core.lineTok(line, 3) }
+			let a11 = ? X86Core.tokRef(line, 2)
+			let b11 = ? X86Core.tokRef(line, 3)
 			let:<mut s64> d11 = mut 0
 			match Some(line){ d11 = ? X86Core.tokenS64(line, 4) }
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.gen){ ? _self.hub.gen.rfLoadDisp(_self.hub.gen, n11, a11, b11, d11) } } }
@@ -237,19 +214,16 @@ impl X86CasesA{
 			let:<mut s32> n12 = mut 0
 			match Some(line){ let ci_n12 = ? X86Core.tokenS64(line, 1)
 			n12 = wrap:<s32>(ci_n12) }
-			let a12 = mut ? new String()
-			match Some(line){ a12 = ? X86Core.lineTok(line, 2) }
+			let a12 = ? X86Core.tokRef(line, 2)
 			let:<mut s64> d12 = mut 0
 			match Some(line){ d12 = ? X86Core.tokenS64(line, 3) }
-			let s12 = mut ? new String()
-			match Some(line){ s12 = ? X86Core.lineTok(line, 4) }
+			let s12 = ? X86Core.tokRef(line, 4)
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.gen){ ? _self.hub.gen.rfStoreDisp(_self.hub.gen, n12, a12, d12, s12) } } }
 			return true
 		}
 		if kind == 13{
 			let:<mut s32> n13 = mut 0
-			let pi_n13 = mut ? new String()
-			match Some(line){ pi_n13 = ? X86Core.lineTok(line, 1) }
+			let pi_n13 = ? X86Core.tokRef(line, 1)
 			match Some(pi_n13){ n13 = ? pi_n13.parseS32(pi_n13) }
 			let a13 = mut ? new String()
 			match Some(line){ a13 = ? X86Core.lineTok(line, 2) }
@@ -267,15 +241,13 @@ impl X86CasesA{
 		}
 		if kind == 14{
 			let:<mut s32> n14 = mut 0
-			let pi_n14 = mut ? new String()
-			match Some(line){ pi_n14 = ? X86Core.lineTok(line, 1) }
+			let pi_n14 = ? X86Core.tokRef(line, 1)
 			match Some(pi_n14){ n14 = ? pi_n14.parseS32(pi_n14) }
 			let a14 = mut ? new String()
 			match Some(line){ a14 = ? X86Core.lineTok(line, 2) }
 			let:<mut s64> d14 = mut 0
 			match Some(line){ d14 = ? X86Core.tokenS64(line, 3) }
-			let b14 = mut ? new String()
-			match Some(line){ b14 = ? X86Core.lineTok(line, 4) }
+			let b14 = ? X86Core.tokRef(line, 4)
 			let x14 = mut ? new String()
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.gen){ 
 			let sr_x14 = ? _self.hub.gen.xvReg(_self.hub.gen, b14)
@@ -285,12 +257,9 @@ impl X86CasesA{
 			return true
 		}
 		if kind == 15{
-			let a15 = mut ? new String()
-			match Some(line){ a15 = ? X86Core.lineTok(line, 1) }
-			let b15 = mut ? new String()
-			match Some(line){ b15 = ? X86Core.lineTok(line, 2) }
-			let c15 = mut ? new String()
-			match Some(line){ c15 = ? X86Core.lineTok(line, 3) }
+			let a15 = ? X86Core.tokRef(line, 1)
+			let b15 = ? X86Core.tokRef(line, 2)
+			let c15 = ? X86Core.tokRef(line, 3)
 			let:<mut s64> sc15 = mut 0
 			match Some(line){ sc15 = ? X86Core.tokenS64(line, 4) }
 			let:<mut s64> d15 = mut 0
@@ -301,29 +270,23 @@ impl X86CasesA{
 		if kind == 16{
 			let isCmp16 = mut false
 			match Some(mnemonic){ isCmp16 = mnemonic.equals(mnemonic, "R_FCMP") }
-			let op16 = mut ? new String()
-			match Some(line){ op16 = ? X86Core.lineTok(line, 1) }
+			let op16 = ? X86Core.tokRef(line, 1)
 			let:<mut s32> n16 = mut 0
 			match Some(line){ let ci_n16 = ? X86Core.tokenS64(line, 2)
 			n16 = wrap:<s32>(ci_n16) }
-			let a16 = mut ? new String()
-			match Some(line){ a16 = ? X86Core.lineTok(line, 3) }
-			let b16 = mut ? new String()
-			match Some(line){ b16 = ? X86Core.lineTok(line, 4) }
-			let c16 = mut ? new String()
-			match Some(line){ c16 = ? X86Core.lineTok(line, 5) }
+			let a16 = ? X86Core.tokRef(line, 3)
+			let b16 = ? X86Core.tokRef(line, 4)
+			let c16 = ? X86Core.tokRef(line, 5)
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.gen){ ? _self.hub.gen.rfFloat(_self.hub.gen, isCmp16, op16, n16, a16, b16, c16) } } }
 			return true
 		}
 		if kind == 17{
-			let xt17 = mut ? new String()
-			match Some(line){ xt17 = ? X86Core.lineTok(line, 1) }
+			let xt17 = ? X86Core.tokRef(line, 1)
 			let xks17 = mut ? new String()
 			match Some(xt17){ xks17 = ? xt17.substring(xt17, 2) }
 			let:<mut s32> xk17 = mut 0
 			match Some(xks17){ xk17 = ? xks17.parseS32(xks17) }
-			let st17 = mut ? new String()
-			match Some(line){ st17 = ? X86Core.lineTok(line, 2) }
+			let st17 = ? X86Core.tokRef(line, 2)
 			let:<mut s64> sl17 = mut 0
 			match Some(st17){ sl17 = ? X86Core.rfSlot(st17) }
 			match Some(_self){ match Some(_self.core){ ? _self.core.xvHome.set(_self.core.xvHome, xk17, sl17) } }
@@ -332,8 +295,7 @@ impl X86CasesA{
 			match Some(line){ n17 = line.items.size(line.items) }
 			if n17 > 3{
 				let:<mut s32> w17 = mut 0
-				let pi_w17 = mut ? new String()
-				match Some(line){ pi_w17 = ? X86Core.lineTok(line, 3) }
+				let pi_w17 = ? X86Core.tokRef(line, 3)
 				match Some(pi_w17){ w17 = ? pi_w17.parseS32(pi_w17) }
 				xw17 = w17
 			}
@@ -368,13 +330,11 @@ impl X86CasesA{
 		}
 		if kind == 21{
 			let:<mut s32> n19 = mut 0
-			let pi_n19 = mut ? new String()
-			match Some(line){ pi_n19 = ? X86Core.lineTok(line, 1) }
+			let pi_n19 = ? X86Core.tokRef(line, 1)
 			match Some(pi_n19){ n19 = ? pi_n19.parseS32(pi_n19) }
 			let a19 = mut ? new String()
 			match Some(line){ a19 = ? X86Core.lineTok(line, 2) }
-			let b19 = mut ? new String()
-			match Some(line){ b19 = ? X86Core.lineTok(line, 3) }
+			let b19 = ? X86Core.tokRef(line, 3)
 			let x19 = mut ? new String()
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.gen){ 
 			let sr_x19 = ? _self.hub.gen.xvReg(_self.hub.gen, b19)
@@ -389,8 +349,7 @@ impl X86CasesA{
 		}
 		if kind == 22{
 			let:<mut s32> n20 = mut 0
-			let pi_n20 = mut ? new String()
-			match Some(line){ pi_n20 = ? X86Core.lineTok(line, 1) }
+			let pi_n20 = ? X86Core.tokRef(line, 1)
 			match Some(pi_n20){ n20 = ? pi_n20.parseS32(pi_n20) }
 			let a20 = mut ? new String()
 			match Some(line){ a20 = ? X86Core.lineTok(line, 2) }
@@ -416,8 +375,7 @@ impl X86CasesA{
 		}
 		if kind == 23{
 			let:<mut s32> n21 = mut 0
-			let pi_n21 = mut ? new String()
-			match Some(line){ pi_n21 = ? X86Core.lineTok(line, 1) }
+			let pi_n21 = ? X86Core.tokRef(line, 1)
 			match Some(pi_n21){ n21 = ? pi_n21.parseS32(pi_n21) }
 			let a21 = mut ? new String()
 			match Some(line){ a21 = ? X86Core.lineTok(line, 2) }
@@ -433,13 +391,11 @@ impl X86CasesA{
 		}
 		if kind == 24{
 			let:<mut s32> n22 = mut 0
-			let pi_n22 = mut ? new String()
-			match Some(line){ pi_n22 = ? X86Core.lineTok(line, 1) }
+			let pi_n22 = ? X86Core.tokRef(line, 1)
 			match Some(pi_n22){ n22 = ? pi_n22.parseS32(pi_n22) }
 			let a22 = mut ? new String()
 			match Some(line){ a22 = ? X86Core.lineTok(line, 2) }
-			let b22 = mut ? new String()
-			match Some(line){ b22 = ? X86Core.lineTok(line, 3) }
+			let b22 = ? X86Core.tokRef(line, 3)
 			let x22 = mut ? new String()
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.gen){ 
 			let sr_x22 = ? _self.hub.gen.xvReg(_self.hub.gen, b22)
@@ -449,17 +405,13 @@ impl X86CasesA{
 			return true
 		}
 		if kind == 25{
-			let op23 = mut ? new String()
-			match Some(line){ op23 = ? X86Core.lineTok(line, 1) }
+			let op23 = ? X86Core.tokRef(line, 1)
 			let:<mut s32> n23 = mut 0
 			match Some(line){ let ci_n23 = ? X86Core.tokenS64(line, 2)
 			n23 = wrap:<s32>(ci_n23) }
-			let a23 = mut ? new String()
-			match Some(line){ a23 = ? X86Core.lineTok(line, 3) }
-			let b23 = mut ? new String()
-			match Some(line){ b23 = ? X86Core.lineTok(line, 4) }
-			let c23 = mut ? new String()
-			match Some(line){ c23 = ? X86Core.lineTok(line, 5) }
+			let a23 = ? X86Core.tokRef(line, 3)
+			let b23 = ? X86Core.tokRef(line, 4)
+			let c23 = ? X86Core.tokRef(line, 5)
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.gen){ ? _self.hub.gen.rfFloatX(_self.hub.gen, op23, n23, a23, b23, c23) } } }
 			return true
 		}
@@ -505,8 +457,7 @@ impl X86CasesA{
 		}
 		if kind == 27{
 			let:<mut s32> n25 = mut 0
-			let pi_n25 = mut ? new String()
-			match Some(line){ pi_n25 = ? X86Core.lineTok(line, 1) }
+			let pi_n25 = ? X86Core.tokRef(line, 1)
 			match Some(pi_n25){ n25 = ? pi_n25.parseS32(pi_n25) }
 			let a25 = mut ? new String()
 			match Some(line){ a25 = ? X86Core.lineTok(line, 2) }
@@ -521,8 +472,7 @@ impl X86CasesA{
 		}
 		if kind == 28{
 			let:<mut s32> n26 = mut 0
-			let pi_n26 = mut ? new String()
-			match Some(line){ pi_n26 = ? X86Core.lineTok(line, 1) }
+			let pi_n26 = ? X86Core.tokRef(line, 1)
 			match Some(pi_n26){ n26 = ? pi_n26.parseS32(pi_n26) }
 			let a26 = mut ? new String()
 			match Some(line){ a26 = ? X86Core.lineTok(line, 2) }
@@ -536,8 +486,7 @@ impl X86CasesA{
 		}
 		if kind == 29{
 			let:<mut s32> n27 = mut 0
-			let pi_n27 = mut ? new String()
-			match Some(line){ pi_n27 = ? X86Core.lineTok(line, 1) }
+			let pi_n27 = ? X86Core.tokRef(line, 1)
 			match Some(pi_n27){ n27 = ? pi_n27.parseS32(pi_n27) }
 			let a27 = mut ? new String()
 			match Some(line){ a27 = ? X86Core.lineTok(line, 2) }
@@ -551,8 +500,7 @@ impl X86CasesA{
 			return true
 		}
 		if kind == 30{
-			let a28 = mut ? new String()
-			match Some(line){ a28 = ? X86Core.lineTok(line, 2) }
+			let a28 = ? X86Core.tokRef(line, 2)
 			let xk28 = mut ? new String()
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.gen){ 
 			let sr_xk28 = ? _self.hub.gen.xvReg(_self.hub.gen, a28)
@@ -586,8 +534,7 @@ impl X86CasesA{
 		}
 		if kind == 32{
 			let:<mut s32> n30 = mut 0
-			let pi_n30 = mut ? new String()
-			match Some(line){ pi_n30 = ? X86Core.lineTok(line, 1) }
+			let pi_n30 = ? X86Core.tokRef(line, 1)
 			match Some(pi_n30){ n30 = ? pi_n30.parseS32(pi_n30) }
 			let:<mut s32> sz30 = mut 0
 			match Some(line){ let ci_sz30 = ? X86Core.tokenS64(line, 2)
@@ -637,8 +584,7 @@ impl X86CasesA{
 		}
 		if kind == 33{
 			let:<mut s32> n31 = mut 0
-			let pi_n31 = mut ? new String()
-			match Some(line){ pi_n31 = ? X86Core.lineTok(line, 1) }
+			let pi_n31 = ? X86Core.tokRef(line, 1)
 			match Some(pi_n31){ n31 = ? pi_n31.parseS32(pi_n31) }
 			let a31 = mut ? new String()
 			match Some(line){ a31 = ? X86Core.lineTok(line, 2) }
@@ -654,8 +600,7 @@ impl X86CasesA{
 		}
 		if kind == 34{
 			let:<mut s32> n32 = mut 0
-			let pi_n32 = mut ? new String()
-			match Some(line){ pi_n32 = ? X86Core.lineTok(line, 1) }
+			let pi_n32 = ? X86Core.tokRef(line, 1)
 			match Some(pi_n32){ n32 = ? pi_n32.parseS32(pi_n32) }
 			let:<mut s32> sz32 = mut 0
 			match Some(line){ let ci_sz32 = ? X86Core.tokenS64(line, 2)
@@ -1225,8 +1170,7 @@ impl X86CasesA{
 			return true
 		}
 		if kind == 11{
-			let l11 = mut ? new String()
-			match Some(line){ l11 = ? X86Core.lineTok(line, 1) }
+			let l11 = ? X86Core.tokRef(line, 1)
 			let lab11 = mut ? new String()
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.gen){ lab11 = ? _self.hub.gen.mangleLabel(_self.hub.gen, l11) } } }
 			if wasCmp{

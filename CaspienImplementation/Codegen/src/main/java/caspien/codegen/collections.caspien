@@ -45,6 +45,19 @@ impl<T> ObjectList<T>{
 		return null
 	}
 
+	/** Java `get(i)` for an element that must exist: a non-null reference (no ghost-table id is made); throws when `i` is out of range or the slot is empty. */
+	@pub
+	@throws
+	func getSome(_self: ref some imut self, i: imut u64) ref some mut T{
+		match i in _self.items{
+			let r = mut ref _self.items[i].v
+			match Some(r){
+				return r
+			}
+		}
+		throw "index out of range"
+	}
+
 	/** Java `add(x)` / `push(x)`: appends `item` (moved in). */
 	@pub
 	@throws

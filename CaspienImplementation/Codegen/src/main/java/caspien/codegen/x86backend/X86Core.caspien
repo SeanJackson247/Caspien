@@ -1439,22 +1439,18 @@ impl X86Core{
 	/** True when token `i` of the statement has exactly the text `want` (no allocation). */
 	@pub
 	static func tokenIs(stmt: ref some imut BytecodeStatement, i: mut u64, want: static imut string) mut bool{
-		let t = stmt.items.get(stmt.items, i)
-		let r = mut false
-		match Some(t){
-			r = t.text.equals(t.text, want)
-		}
+		?catch(e){ return false }
+		let t = ? stmt.items.getSome(stmt.items, i)
+		let r = mut t.text.equals(t.text, want)
 		return r
 	}
 
 	/** True when token `i` is all digits (no allocation). */
 	@pub
 	static func tokenIsDigits(stmt: ref some imut BytecodeStatement, i: mut u64) mut bool{
-		let t = stmt.items.get(stmt.items, i)
-		let r = mut false
-		match Some(t){
-			r = Text.isDigits(t.text)
-		}
+		?catch(e){ return false }
+		let t = ? stmt.items.getSome(stmt.items, i)
+		let r = mut Text.isDigits(t.text)
 		return r
 	}
 
@@ -1486,6 +1482,24 @@ impl X86Core{
 		let t = stmt.items.get(stmt.items, i)
 		match Some(t){ out = ? t.text.substring(t.text, 0) }
 		return out
+	}
+
+	/** Token `i` of the statement as a borrowed reference (port helper; no copy). Throws like `lineTok` past the end. */
+	@pub
+	@throws
+	static func tokRef(stmt: ref imut BytecodeStatement, i: mut u64) ref some mut String{
+		?catch(e){ throw e }
+		match Some(stmt){
+			if i < stmt.items.size(stmt.items){
+				let t = stmt.items.get(stmt.items, i)
+				match Some(t){
+					match Some(t.text){
+						return ref t.text
+					}
+				}
+			}
+		}
+		throw "index out of range"
 	}
 
 	/** Number of tokens of the statement (port helper). */

@@ -18,15 +18,47 @@ func print(s: ref imut String) void{
 		print("null")
 		return
 	}
-	for k in 0..n{
-		match Some(s){
-			match k in s.chars.backing{
-				let c = mut s.chars.backing[k]
-				unsafe extern{
-					put_char(c)
+	// The characters are copied into a scratch buffer first (no extern call in that loop, so `s` stays proven alive), then written from it.
+	let:<raw mut u8> buf = null
+	unsafe extern{
+		buf = malloc(n + 1)
+	}
+	if buf == null{
+		for k in 0..n{
+			match Some(s){
+				match k in s.chars.backing{
+					let c = mut s.chars.backing[k]
+					unsafe extern{
+						put_char(c)
+					}
 				}
 			}
 		}
+		return
+	}
+	match Some(s){
+		for k in 0..n{
+			match k in s.chars.backing{
+				let c = mut s.chars.backing[k]
+				let q = mut (buf + k)
+				unsafe memcopy raw{
+					memcopy(q, mut 1, raw c)
+				}
+			}
+		}
+	}
+	for k in 0..n{
+		let q = mut (buf + k)
+		let c = mut ' '
+		unsafe memcopy raw{
+			memcopy(raw c, mut 1, q)
+		}
+		unsafe extern{
+			put_char(c)
+		}
+	}
+	unsafe extern{
+		free(buf)
 	}
 	return
 }

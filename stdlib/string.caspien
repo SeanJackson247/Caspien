@@ -487,8 +487,21 @@ impl String{
 			return -1
 		}
 		let last = mut (n - m + 1)
-		for i in 0..last{
-			if i >= from{
+		if from >= last{
+			return -1
+		}
+		let count = mut (last - from)
+		let c0 = mut '\0'
+		match 0 in needle.chars.backing{
+			c0 = needle.chars.backing[0]
+		}
+		for k in 0..count{
+			let i = mut (from + k)
+			let first = mut false
+			match i in _self.chars.backing{
+				first = _self.chars.backing[i] == c0
+			}
+			if first{
 				if _self.strAt(_self, needle, i){
 					return wrap:<s64>(i)
 				}
@@ -517,9 +530,19 @@ impl String{
 			return -1
 		}
 		let last = mut (n - m + 1)
-		for i in 0..last{
-			if i >= from{
-				if _self.litAt(_self, needle, m, i){
+		if from >= last{
+			return -1
+		}
+		let count = mut (last - from)
+		let c0 = mut stringLiteralByte(needle, 0)
+		for k in 0..count{
+			let i = mut (from + k)
+			let first = mut false
+			match i in _self.chars.backing{
+				first = _self.chars.backing[i] == c0
+			}
+			if first{
+				if _self.litWalk(_self, needle, i, false){
 					return wrap:<s64>(i)
 				}
 			}

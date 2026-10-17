@@ -534,10 +534,8 @@ impl X86CasesB{
 			return true
 		}
 		if kind == 4{
-			let kd4 = mut ? new String()
-			match Some(line){ kd4 = ? X86Core.lineTok(line, 1) }
-			let op4 = mut ? new String()
-			match Some(line){ op4 = ? X86Core.lineTok(line, 2) }
+			let kd4 = ? X86Core.tokRef(line, 1)
+			let op4 = ? X86Core.tokRef(line, 2)
 			let:<mut s64> disc4 = mut 8
 			if pendingBlockSize > 8{
 				disc4 = ((pendingBlockSize + 7) / 8) * 8
@@ -1060,8 +1058,7 @@ impl X86CasesB{
 			let:<mut s32> size9 = mut 0
 			match Some(line){ let ci_size9 = ? X86Core.tokenS64(line, 1)
 			size9 = wrap:<s32>(ci_size9) }
-			let name9 = mut ? new String()
-			match Some(line){ name9 = ? X86Core.lineTok(line, 2) }
+			let name9 = ? X86Core.tokRef(line, 2)
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.leaGlobalToReg(_self.hub.emit, RBX, name9) } } }
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.loadSizedFromAddr(_self.hub.emit, RAX, RBX, size9) } } }
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.pushReg(_self.hub.emit, RAX) } } }
