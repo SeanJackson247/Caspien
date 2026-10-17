@@ -321,11 +321,7 @@ impl String{
 	/** True when the characters equal the literal's. Does not allocate (the literal is walked byte by byte). */
 	@pub
 	func equals(_self: ref some imut self, other: static imut string) bool{
-		let ln = mut stringLiteralLength(other)
-		if ln != len(_self.chars.backing){
-			return false
-		}
-		return _self.litAt(_self, other, ln, 0)
+		return _self.litWalk(_self, other, 0, true)
 	}
 
 	/** True when `other` is a prefix of the characters. */
@@ -350,11 +346,7 @@ impl String{
 	/** True when the literal is a prefix of the characters. Does not allocate. */
 	@pub
 	func startsWith(_self: ref some imut self, other: static imut string) bool{
-		let ln = mut stringLiteralLength(other)
-		if ln > len(_self.chars.backing){
-			return false
-		}
-		return _self.litAt(_self, other, ln, 0)
+		return _self.litWalk(_self, other, 0, false)
 	}
 
 	/** True when `other` is a suffix of the characters. */
@@ -387,7 +379,44 @@ impl String{
 		if ln > m{
 			return false
 		}
-		return _self.litAt(_self, other, ln, m - ln)
+		return _self.litWalk(_self, other, m - ln, true)
+	}
+
+	/** Compares the literal with the characters from index `at` in ONE pass over the raw bytes (no separate length scan): false at the first mismatch or when the characters run out first; when `exact`, the characters must also end exactly where the literal does. */
+	func litWalk(_self: ref some imut self, lit: static imut string, at: imut u64, exact: imut bool) bool{
+		let n = mut len(_self.chars.backing)
+		let:<raw mut u8> lp = null
+		unsafe memcopy raw{
+			let tmp = mut raw lit
+			memcopy(raw lp, mut 8, raw tmp)
+		}
+		let pos = mut (at + 0)
+		let bound = mut (n + 1)
+		for step in 0..bound{
+			let q = mut (lp + (pos - at))
+			let lc = mut '\0'
+			unsafe memcopy raw{
+				memcopy(raw lc, mut 1, q)
+			}
+			if lc == '\0'{
+				if exact{
+					return pos == n
+				}
+				return true
+			}
+			if pos >= n{
+				return false
+			}
+			let same = mut false
+			match pos in _self.chars.backing{
+				same = _self.chars.backing[pos] == lc
+			}
+			if same == false{
+				return false
+			}
+			pos = pos + 1
+		}
+		return false
 	}
 
 	/** True when the literal's `ln` bytes equal the characters starting at `at` (the caller has checked `at + ln` is within bounds). */
