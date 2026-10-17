@@ -16,8 +16,9 @@ impl X86Generator{
 	@throws
 	func generate(_self: ref some mut self, lines: ref some mut ObjectList<BytecodeStatement>) owns mut String{
 		?catch(e){ throw e }
-		let fresh = mut ? new String()
-		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.core){ _self.hub.core.out = fresh } } }
+		let empty0 = mut ? new String()
+		// forced: String has no setLength; replaceRange over the whole text with "" empties the same object in place
+		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.core){ ? _self.hub.core.out.replaceRange(_self.hub.core.out, 0, _self.hub.core.out.length(_self.hub.core.out), empty0) } } }
 		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.core){ ? _self.hub.core.globalsSizeInit.clear(_self.hub.core.globalsSizeInit) } } }
 		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.core){ ? _self.hub.core.globalsHasInit.clear(_self.hub.core.globalsHasInit) } } }
 		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.core){ ? _self.hub.core.stringLiterals.clear(_self.hub.core.stringLiterals) } } }
@@ -32,6 +33,7 @@ impl X86Generator{
 		match Some(lines){ match Some(_self){ match Some(_self.hub){ match Some(_self.hub.core){ _self.hub.core.allLines = lines } } } }
 		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.precomputeConstructionOffsets(_self.hub.emit) } } }
 		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.core){ ? _self.hub.core.callBufferStack.clear(_self.hub.core.callBufferStack) } } }
+		// forced: DynamicArray has no clear(); popBack until empty
 		let:<mut u64> pending = mut 0
 		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.core){ pending = len(_self.hub.core.argTrackDeltaStack.backing) } } }
 		for pi in 0..pending{
@@ -62,8 +64,7 @@ impl X86Generator{
 		?catch(e){ throw e }
 		let r = mut ? new String()
 		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ match Some(tok){
-			let r0 = ? _self.hub.regForm.rfReg(_self.hub.regForm, tok)
-			r = ? String.from(r0)
+			r = ? _self.hub.regForm.rfReg(_self.hub.regForm, tok)
 		} } } }
 		return r
 	}
@@ -227,7 +228,7 @@ impl X86Generator{
 				match Some(bT){ aT = ? bT.substring(bT, 0) }
 				bT = t
 			} else{
-				let r15 = mut ? String.from("r15")
+				let r15 = mut ? X86Core_rfScratch()
 				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ ? _self.hub.regForm.rfRegToReg(_self.hub.regForm, r15, d) } } }
 				bText = ? String.from("%r15")
 				hasBText = true
@@ -316,7 +317,7 @@ impl X86Generator{
 		if narrowCmp{
 			match Some(_self){ ? _self.rfExtend(_self, d, size, signedCmp) }
 			if bText.equals(bText, "%r15"){
-				let r15b = mut ? String.from("r15")
+				let r15b = mut ? X86Core_rfScratch()
 				match Some(_self){ ? _self.rfExtend(_self, r15b, size, signedCmp) }
 			} else{
 				let bTemp = mut false
@@ -473,8 +474,7 @@ impl X86Generator{
 		if aTemp{
 			let ar0 = mut ? new String()
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ match Some(aTok){
-				let ar00 = ? _self.hub.regForm.rfReg(_self.hub.regForm, aTok)
-				ar0 = ? String.from(ar00)
+				ar0 = ? _self.hub.regForm.rfReg(_self.hub.regForm, aTok)
 			} } } }
 			match Some(ar0){ ar = ? ar0.substring(ar0, 0) }
 			match Some(ar){ match Some(d){ same = ar.equals(ar, d) } }
@@ -603,18 +603,19 @@ impl X86Generator{
 		if isSlot{
 			let sc = mut ? String.from("%s")
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ ? _self.hub.regForm.rfMov(_self.hub.regForm, sc, aTok) } } }
-			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ aText = ? _self.hub.regForm.rfRegText(_self.hub.regForm, "r15") } } }
+			let scx1 = mut ? X86Core_rfScratch()
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ aText = ? _self.hub.regForm.rfRegTextOf(_self.hub.regForm, scx1) } } }
 		} else{
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ match Some(aTok){
 				let r0 = ? _self.hub.regForm.rfReg(_self.hub.regForm, aTok)
-				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ aText = ? _self.hub.regForm.rfRegText(_self.hub.regForm, r0) } } }
+				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ aText = ? _self.hub.regForm.rfRegTextOf(_self.hub.regForm, r0) } } }
 			} } } }
 		}
 		let bText = mut ? String.from("(")
 		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ match Some(baseTok){
 			let r1 = ? _self.hub.regForm.rfReg(_self.hub.regForm, baseTok)
 			let t1 = mut ? new String()
-			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ t1 = ? _self.hub.regForm.rfRegText(_self.hub.regForm, r1) } } }
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ t1 = ? _self.hub.regForm.rfRegTextOf(_self.hub.regForm, r1) } } }
 			? bText.append(bText, t1)
 		} } } }
 		? bText.append(bText, ")")
@@ -679,8 +680,7 @@ impl X86Generator{
 		}
 		let ar = mut ? new String()
 		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ match Some(at){
-			let ar0 = ? _self.hub.regForm.rfReg(_self.hub.regForm, at)
-			ar = ? String.from(ar0)
+			ar = ? _self.hub.regForm.rfReg(_self.hub.regForm, at)
 		} } } }
 		let aText = mut ? String.from("%")
 		let as0 = mut ? new String()
@@ -696,8 +696,7 @@ impl X86Generator{
 		} else{
 			let br = mut ? new String()
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ match Some(bt){
-				let br0 = ? _self.hub.regForm.rfReg(_self.hub.regForm, bt)
-				br = ? String.from(br0)
+				br = ? _self.hub.regForm.rfReg(_self.hub.regForm, bt)
 			} } } }
 			bText = ? String.from("%")
 			let bs0 = mut ? new String()
@@ -766,7 +765,7 @@ impl X86Generator{
 		if aTemp{
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ match Some(at){
 				let q0 = ? _self.hub.regForm.rfReg(_self.hub.regForm, at)
-				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ aText = ? _self.hub.regForm.rfRegText(_self.hub.regForm, q0) } } }
+				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ aText = ? _self.hub.regForm.rfRegTextOf(_self.hub.regForm, q0) } } }
 			} } } }
 		} elseif aSlot && bSlot == false{
 			let:<mut s64> off = mut 0
@@ -775,7 +774,8 @@ impl X86Generator{
 		} else{
 			let sc = mut ? String.from("%s")
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ ? _self.hub.regForm.rfMov(_self.hub.regForm, sc, at) } } }
-			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ aText = ? _self.hub.regForm.rfRegText(_self.hub.regForm, "r15") } } }
+			let scx2 = mut ? X86Core_rfScratch()
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ aText = ? _self.hub.regForm.rfRegTextOf(_self.hub.regForm, scx2) } } }
 		}
 		let bText = mut ? new String()
 		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ bText = ? _self.hub.regForm.rfSrc(_self.hub.regForm, bt) } } }
@@ -870,8 +870,7 @@ impl X86Generator{
 		let:<mut s32> size = mut wrap:<s32>(size64)
 		let dst = mut ? new String()
 		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ match Some(v){
-			let dst0 = ? _self.hub.regForm.rfReg(_self.hub.regForm, v)
-			dst = ? String.from(dst0)
+			dst = ? _self.hub.regForm.rfReg(_self.hub.regForm, v)
 		} } } }
 		let cc = mut ? new String()
 		let nolabel = mut ? new String()
@@ -895,8 +894,7 @@ impl X86Generator{
 			} else{
 				let yr = mut ? new String()
 				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ match Some(y){
-					let yr0 = ? _self.hub.regForm.rfReg(_self.hub.regForm, y)
-					yr = ? String.from(yr0)
+					yr = ? _self.hub.regForm.rfReg(_self.hub.regForm, y)
 				} } } }
 				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ ? _self.hub.regForm.rfRegToReg(_self.hub.regForm, dst, yr) } } }
 			}
@@ -907,14 +905,13 @@ impl X86Generator{
 		if xImm{
 			let:<mut s64> xv = mut 0
 			match Some(x){ xv = ? X86Core.rfImm(x) }
-			let r15 = mut ? String.from("r15")
+			let r15 = mut ? X86Core_rfScratch()
 			match Some(_self){ ? _self.rfMovImmKeepFlags(_self, r15, xv) }
-			xr = ? String.from("r15")
+			xr = ? X86Core_rfScratch()
 		} else{
 			let xr0 = mut ? new String()
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ match Some(x){
-				let xr00 = ? _self.hub.regForm.rfReg(_self.hub.regForm, x)
-				xr0 = ? String.from(xr00)
+				xr0 = ? _self.hub.regForm.rfReg(_self.hub.regForm, x)
 			} } } }
 			match Some(xr0){ xr = ? xr0.substring(xr0, 0) }
 		}
@@ -949,8 +946,7 @@ impl X86Generator{
 		?catch(e){ throw e }
 		let d = mut ? new String()
 		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ match Some(dstTok){
-			let d0 = ? _self.hub.regForm.rfReg(_self.hub.regForm, dstTok)
-			d = ? String.from(d0)
+			d = ? _self.hub.regForm.rfReg(_self.hub.regForm, dstTok)
 		} } } }
 		let aTemp = mut false
 		match Some(aTok){ aTemp = X86Core.rfIsTemp(aTok) }
@@ -958,8 +954,7 @@ impl X86Generator{
 		if aTemp{
 			let ar = mut ? new String()
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ match Some(aTok){
-				let ar0 = ? _self.hub.regForm.rfReg(_self.hub.regForm, aTok)
-				ar = ? String.from(ar0)
+				ar = ? _self.hub.regForm.rfReg(_self.hub.regForm, aTok)
 			} } } }
 			match Some(d){ match Some(ar){ same = ar.equals(ar, d) } }
 		}
@@ -1025,16 +1020,17 @@ impl X86Generator{
 
 	@pub
 	@throws
-	func rfArgReg(_self: ref some mut self, idx: mut s32) static imut string{
+	func rfArgReg(_self: ref some mut self, idx: mut s32) owns some mut String{
 		?catch(e){ throw e }
 		match Some(_self.hub){ match Some(_self.hub.calls){
-			let reg = _self.hub.calls.argReg(_self.hub.calls, idx)
-			if String.literalsEqual(reg, "rax"){
+			let reg = mut ? _self.hub.calls.argReg(_self.hub.calls, idx)
+			if reg.equals(reg, "rax"){
 				throw "R_ARG index is beyond the register-passed arguments"
 			}
 			return reg
 		} }
-		return "rax"
+		let rax = mut ? String.from("rax")
+		return rax
 	}
 
 	@pub
@@ -1043,8 +1039,7 @@ impl X86Generator{
 		?catch(e){ throw e }
 		let d = mut ? new String()
 		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ match Some(dstTok){
-			let d0 = ? _self.hub.regForm.rfReg(_self.hub.regForm, dstTok)
-			d = ? String.from(d0)
+			d = ? _self.hub.regForm.rfReg(_self.hub.regForm, dstTok)
 		} } } }
 		let isSlot = mut false
 		let isGlobal = mut false
@@ -1070,8 +1065,7 @@ impl X86Generator{
 		} else{
 			let sr = mut ? new String()
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ match Some(srcTok){
-				let sr0 = ? _self.hub.regForm.rfReg(_self.hub.regForm, srcTok)
-				sr = ? String.from(sr0)
+				sr = ? _self.hub.regForm.rfReg(_self.hub.regForm, srcTok)
 			} } } }
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.loadSizedFromAddr(_self.hub.emit, d, sr, n) } } }
 		}
@@ -1100,15 +1094,21 @@ impl X86Generator{
 		?catch(e){ throw e }
 		let d = mut ? new String()
 		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ match Some(dstTok){
-			let r0 = ? _self.hub.regForm.rfReg(_self.hub.regForm, dstTok)
-			d = ? String.from(r0)
+			d = ? _self.hub.regForm.rfReg(_self.hub.regForm, dstTok)
 		} } } }
 		let newMem = mut ? new String()
 		match Some(_self){ match Some(baseTok){ newMem = ? _self.rfDispMem(_self, baseTok, disp) } }
 		let:<owns mut String> prev = mut null
 		match Some(_self){ match Some(_self.core){ prev = _self.core.rfMemOverride } }
 		match Some(_self){ match Some(_self.core){ _self.core.rfMemOverride = newMem } }
-		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.loadSizedFromAddr(_self.hub.emit, d, d, n) } } }
+		// try/finally: restore on the throw path as well
+		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ try _self.hub.emit.loadSizedFromAddr(_self.hub.emit, d, d, n) catch(e2){
+			// forced: prev cannot be moved on both the throw path and the normal path, so the throw path restores a copy
+			let:<owns mut String> prevCopy = mut null
+			match Some(prev){ prevCopy = ? prev.substring(prev, 0) }
+			match Some(_self){ match Some(_self.core){ _self.core.rfMemOverride = prevCopy } }
+			throw e2
+		} } } }
 		match Some(_self){ match Some(_self.core){ _self.core.rfMemOverride = prev } }
 	}
 
@@ -1135,8 +1135,7 @@ impl X86Generator{
 		}
 		let rg = mut ? new String()
 		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ match Some(srcTok){
-			let r0 = ? _self.hub.regForm.rfReg(_self.hub.regForm, srcTok)
-			rg = ? String.from(r0)
+			rg = ? _self.hub.regForm.rfReg(_self.hub.regForm, srcTok)
 		} } } }
 		let sized = mut ? new String()
 		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ match Some(rg){ sized = ? _self.hub.emit.sizedReg(_self.hub.emit, rg, n) } } } }
@@ -1204,13 +1203,12 @@ impl X86Generator{
 		} elseif isGlobal{
 			let nm = mut ? new String()
 			match Some(addrTok){ nm = ? addrTok.substring(addrTok, 1) }
-			areg = ? String.from("r15")
+			areg = ? X86Core_rfScratch()
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ match Some(areg){ match Some(nm){ ? _self.hub.emit.leaGlobalToReg(_self.hub.emit, areg, nm) } } } } }
 			hasAreg = true
 		} elseif isSlot == false{
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ match Some(addrTok){
-				let a0 = ? _self.hub.regForm.rfReg(_self.hub.regForm, addrTok)
-				areg = ? String.from(a0)
+				areg = ? _self.hub.regForm.rfReg(_self.hub.regForm, addrTok)
 			} } } }
 			hasAreg = true
 		}
@@ -1243,8 +1241,7 @@ impl X86Generator{
 		}
 		let reg = mut ? new String()
 		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ match Some(srcTok){
-			let r0 = ? _self.hub.regForm.rfReg(_self.hub.regForm, srcTok)
-			reg = ? String.from(r0)
+			reg = ? _self.hub.regForm.rfReg(_self.hub.regForm, srcTok)
 		} } } }
 		if hasRip{
 			let sz = mut ? new String()
@@ -1350,8 +1347,7 @@ impl X86Generator{
 		if isT{
 			let rr = mut ? new String()
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ match Some(baseTok){
-				let rr0 = ? _self.hub.regForm.rfReg(_self.hub.regForm, baseTok)
-				rr = ? String.from(rr0)
+				rr = ? _self.hub.regForm.rfReg(_self.hub.regForm, baseTok)
 			} } } }
 			return rr
 		}
@@ -1365,8 +1361,7 @@ impl X86Generator{
 		if X86Core.rfHwScale(scale){
 			let ix = mut ? new String()
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ match Some(idxTok){
-				let ix0 = ? _self.hub.regForm.rfReg(_self.hub.regForm, idxTok)
-				ix = ? String.from(ix0)
+				ix = ? _self.hub.regForm.rfReg(_self.hub.regForm, idxTok)
 			} } } }
 			match Some(_self){ match Some(_self.core){ _self.core.rfIdxReg = ix } }
 			match Some(_self){ match Some(_self.core){
@@ -1381,8 +1376,7 @@ impl X86Generator{
 		}
 		let ir = mut ? new String()
 		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ match Some(idxTok){
-			let ir0 = ? _self.hub.regForm.rfReg(_self.hub.regForm, idxTok)
-			ir = ? String.from(ir0)
+			ir = ? _self.hub.regForm.rfReg(_self.hub.regForm, idxTok)
 		} } } }
 		let miss = mut false
 		match Some(_self){ match Some(_self.core){
@@ -1429,7 +1423,7 @@ impl X86Generator{
 		} else{
 			match Some(_self){ match Some(_self.core){ _self.core.strideCseHits = _self.core.strideCseHits + 1 } }
 		}
-		let r15 = mut ? String.from("r15")
+		let r15 = mut ? X86Core_rfScratch()
 		match Some(_self){ match Some(_self.core){ _self.core.rfIdxReg = r15 } }
 		match Some(_self){ match Some(_self.core){ _self.core.rfIdxScale = 1 } }
 	}
@@ -1445,8 +1439,7 @@ impl X86Generator{
 		}
 		let d = mut ? new String()
 		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ match Some(dstTok){
-			let d0 = ? _self.hub.regForm.rfReg(_self.hub.regForm, dstTok)
-			d = ? String.from(d0)
+			d = ? _self.hub.regForm.rfReg(_self.hub.regForm, dstTok)
 		} } } }
 		let b = mut ? new String()
 		match Some(_self){ b = ? _self.rfIndexedBase(_self, baseTok, d) }
@@ -1470,7 +1463,7 @@ impl X86Generator{
 		if (n == 1 || n == 2 || n == 4 || n == 8) == false || isVar == false{
 			throw "malformed R_STI"
 		}
-		let r15 = mut ? String.from("r15")
+		let r15 = mut ? X86Core_rfScratch()
 		let b = mut ? new String()
 		match Some(_self){ b = ? _self.rfIndexedBase(_self, baseTok, r15) }
 		match Some(_self){ match Some(_self.core){ _self.core.rfIdxDisp = _self.core.rfIdxDisp + disp } }
@@ -1493,8 +1486,7 @@ impl X86Generator{
 		} else{
 			let sr = mut ? new String()
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ match Some(srcTok){
-				let sr0 = ? _self.hub.regForm.rfReg(_self.hub.regForm, srcTok)
-				sr = ? String.from(sr0)
+				sr = ? _self.hub.regForm.rfReg(_self.hub.regForm, srcTok)
 			} } } }
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ try _self.hub.emit.storeSizedToAddr(_self.hub.emit, sr, b, n) catch(e2){
 				match Some(_self){ match Some(_self.core){ _self.core.rfIdxReg = null } }
@@ -1515,7 +1507,7 @@ impl X86Generator{
 		if (n == 4 || n == 8) == false || (X86Core.rfHwScale(scale) && scale != (n as s64)) || isVar == false{
 			throw "malformed R_LDXI"
 		}
-		let r15 = mut ? String.from("r15")
+		let r15 = mut ? X86Core_rfScratch()
 		let b = mut ? new String()
 		match Some(_self){ b = ? _self.rfIndexedBase(_self, baseTok, r15) }
 		match Some(_self){ match Some(_self.core){ _self.core.rfIdxDisp = _self.core.rfIdxDisp + disp } }
@@ -1548,7 +1540,7 @@ impl X86Generator{
 		if (n == 4 || n == 8) == false || (X86Core.rfHwScale(scale) && scale != (n as s64)) || isVar == false{
 			throw "malformed R_STXI"
 		}
-		let r15 = mut ? String.from("r15")
+		let r15 = mut ? X86Core_rfScratch()
 		let b = mut ? new String()
 		match Some(_self){ b = ? _self.rfIndexedBase(_self, baseTok, r15) }
 		match Some(_self){ match Some(_self.core){ _self.core.rfIdxDisp = _self.core.rfIdxDisp + disp } }
@@ -1586,7 +1578,7 @@ impl X86Generator{
 			match Some(reg){ ? ln303.append(ln303, reg) }
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.raw_(_self.hub.emit, ln303) } } }
 		} else{
-			let r15 = mut ? String.from("r15")
+			let r15 = mut ? X86Core_rfScratch()
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.movImmToReg(_self.hub.emit, r15, v) } } }
 			let ln304 = mut ? String.from("    addq %r15, %")
 			match Some(reg){ ? ln304.append(ln304, reg) }
@@ -1600,8 +1592,7 @@ impl X86Generator{
 		?catch(e){ throw e }
 		let d = mut ? new String()
 		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ match Some(dstTok){
-			let d0 = ? _self.hub.regForm.rfReg(_self.hub.regForm, dstTok)
-			d = ? String.from(d0)
+			d = ? _self.hub.regForm.rfReg(_self.hub.regForm, dstTok)
 		} } } }
 		let baseIsT = mut false
 		let baseSlot = mut false
@@ -1622,13 +1613,12 @@ impl X86Generator{
 		let bReg = mut ? new String()
 		if baseIsT{
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ match Some(baseTok){
-				let b0 = ? _self.hub.regForm.rfReg(_self.hub.regForm, baseTok)
-				bReg = ? String.from(b0)
+				bReg = ? _self.hub.regForm.rfReg(_self.hub.regForm, baseTok)
 			} } } }
 		} else{
 			bReg = ? String.from("null")
 		}
-		let r15 = mut ? String.from("r15")
+		let r15 = mut ? X86Core_rfScratch()
 		let gname = mut ? new String()
 		if baseGlobal{
 			match Some(baseTok){ gname = ? baseTok.substring(baseTok, 1) }
@@ -1663,8 +1653,7 @@ impl X86Generator{
 		let pow = mut (scale == 1 || scale == 2 || scale == 4 || scale == 8)
 		if idxTemp{
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ match Some(idxTok){
-				let x0 = ? _self.hub.regForm.rfReg(_self.hub.regForm, idxTok)
-				x = ? String.from(x0)
+				x = ? _self.hub.regForm.rfReg(_self.hub.regForm, idxTok)
 			} } } }
 			if pow == false && X86Core.rfFitsImm32(scale){
 				let ln = mut ? String.from("    imulq $")
@@ -1673,11 +1662,11 @@ impl X86Generator{
 				match Some(x){ ? ln.append(ln, x) }
 				? ln.append(ln, ", %r15")
 				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.raw_(_self.hub.emit, ln) } } }
-				x = ? String.from("r15")
+				x = ? X86Core_rfScratch()
 				prescaled = true
 			} elseif idxVar && pow == false{
 				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ match Some(r15){ match Some(x){ ? _self.hub.regForm.rfRegToReg(_self.hub.regForm, r15, x) } } } } }
-				x = ? String.from("r15")
+				x = ? X86Core_rfScratch()
 			}
 			let xEqD = mut false
 			match Some(x){ match Some(d){ xEqD = x.equals(x, d) } }
@@ -1687,13 +1676,13 @@ impl X86Generator{
 			}
 			if xEqD && bEqD == false{
 				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ match Some(r15){ match Some(x){ ? _self.hub.regForm.rfRegToReg(_self.hub.regForm, r15, x) } } } } }
-				x = ? String.from("r15")
+				x = ? X86Core_rfScratch()
 			}
 		} else{
 			let:<mut s64> io = mut 0
 			match Some(idxTok){ io = ? X86Core.rfSlot(idxTok) }
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ match Some(r15){ ? _self.hub.emit.movMemToReg(_self.hub.emit, r15, io) } } } }
-			x = ? String.from("r15")
+			x = ? X86Core_rfScratch()
 		}
 		if baseSlot{
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ match Some(d){ ? _self.hub.emit.leaMemToReg(_self.hub.emit, d, bo) } } } }
@@ -1835,8 +1824,7 @@ impl X86Generator{
 		} elseif isT{
 			let gr = mut ? new String()
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ match Some(tok){
-				let gr0 = ? _self.hub.regForm.rfReg(_self.hub.regForm, tok)
-				gr = ? String.from(gr0)
+				gr = ? _self.hub.regForm.rfReg(_self.hub.regForm, tok)
 			} } } }
 			match Some(_self){ ? _self.rfGprToXmm(_self, xmm, gr, n) }
 		} elseif isI{
@@ -1924,13 +1912,15 @@ impl X86Generator{
 			return z
 		}
 		if isY{
-			if k < 0 || k >= 4{
+			let ytc = X86Core_ytCount()
+			if k < 0 || k >= wrap:<s64>(ytc){
 				throw "float temporary register out of range"
 			}
 			let y = ? _self.yPhys(_self, wrap:<s32>(k))
 			return y
 		}
-		if k < 0 || k >= 6{
+		let xvc = X86Core_xvCount()
+		if k < 0 || k >= wrap:<s64>(xvc){
 			throw "float variable register out of range"
 		}
 		let v = ? _self.xvPhys(_self, wrap:<s32>(k))
@@ -1952,11 +1942,12 @@ impl X86Generator{
 			let:<mut s32> key = mut 0
 			let:<mut s64> value = mut 0
 			let:<mut s32> width = mut 4
+			// forced: TreeMap has no keySet(); the keys are walked by index (keyAt), the value is then looked up by key as in Java
 			match Some(_self){ match Some(_self.core){
 				match i in _self.core.xvHome.slots{
 					key = _self.core.xvHome.keyAt(_self.core.xvHome, i)
-					value = _self.core.xvHome.valueAt(_self.core.xvHome, i)
 				}
+				value = _self.core.xvHome.get(_self.core.xvHome, key, 0)
 				width = _self.core.xvWidth.get(_self.core.xvWidth, key, 4)
 			} }
 			let wsfx = X86Generator.widthSfx(width)
@@ -1991,11 +1982,12 @@ impl X86Generator{
 			let:<mut s32> key = mut 0
 			let:<mut s64> value = mut 0
 			let:<mut s32> width = mut 4
+			// forced: TreeMap has no keySet(); the keys are walked by index (keyAt), the value is then looked up by key as in Java
 			match Some(_self){ match Some(_self.core){
 				match i in _self.core.xvHome.slots{
 					key = _self.core.xvHome.keyAt(_self.core.xvHome, i)
-					value = _self.core.xvHome.valueAt(_self.core.xvHome, i)
 				}
+				value = _self.core.xvHome.get(_self.core.xvHome, key, 0)
 				width = _self.core.xvWidth.get(_self.core.xvWidth, key, 4)
 			} }
 			let wsfx = X86Generator.widthSfx(width)
@@ -2072,30 +2064,26 @@ impl X86Generator{
 		}
 		let cnt = mut 0
 		match Some(_self){ match Some(_self.core){ cnt = _self.core.floatPool.size(_self.core.floatPool) } }
+		// forced: StringMap has no keySet(); the keys are walked by index (keyAt), the value is then looked up by key as in Java
 		for i in 0..cnt{
 			let key = mut ? new String()
 			let value = mut ? new String()
-			match Some(_self){ match Some(_self.core){ match Some(_self.core.floatPool.entries){
-				let en = _self.core.floatPool.entries.get(_self.core.floatPool.entries, i)
-				match Some(en){ match Some(en.key){ key = ? en.key.substring(en.key, 0) } }
-			} } }
-			match Some(_self){ match Some(_self.core){ match Some(_self.core.floatPool.entries){
-				let en2 = _self.core.floatPool.entries.get(_self.core.floatPool.entries, i)
-				match Some(en2){ match Some(en2.value){ value = ? en2.value.substring(en2.value, 0) } }
-			} } }
+			match Some(_self){ match Some(_self.core){
+				let k0 = _self.core.floatPool.keyAt(_self.core.floatPool, i)
+				match Some(k0){ key = ? k0.substring(k0, 0) }
+			} }
+			match Some(_self){ match Some(_self.core){
+				let v0 = _self.core.floatPool.get(_self.core.floatPool, key)
+				match Some(v0){ value = ? v0.substring(v0, 0) }
+			} }
 			let:<mut s64> colon = mut 0
-			match Some(key){ colon = key.indexOf(key, ':') }
+			colon = key.indexOf(key, ':')
 			let:<mut s64> n = mut 0
 			let:<mut s64> bits = mut 0
-			match Some(key){
-				let ns = ? key.substring(key, 0)
-				let head = ? ns.sub(ns, 0, wrap:<u64>(colon))
-				n = ? head.parseS64(head)
-			}
-			match Some(key){
-				let tail = ? key.sub(key, wrap:<u64>(colon + 1), key.length(key))
-				bits = ? tail.parseS64(tail)
-			}
+			let head = mut ? key.substring(key, 0, wrap:<u64>(colon))
+			n = ? head.parseS64(head)
+			let tail = mut ? key.substring(key, wrap:<u64>(colon + 1))
+			bits = ? tail.parseS64(tail)
 			if n == 4{
 				let lt = mut ? String.from("    .p2align 2")
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.raw_(_self.hub.emit, lt) } } }
@@ -2689,20 +2677,6 @@ impl X86Generator{
 		?catch(e){ throw e }
 		let isVar = mut false
 		match Some(slotTok){ isVar = X86Core.rfIsVar(slotTok) }
-		let dst = mut ? new String()
-		if isVar{
-			let vr = mut ? new String()
-			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ match Some(slotTok){
-				let vr0 = ? _self.hub.regForm.rfReg(_self.hub.regForm, slotTok)
-				vr = ? String.from(vr0)
-			} } } }
-			dst = ? String.from("%")
-			match Some(vr){ ? dst.append(dst, vr) }
-		} else{
-			let:<mut s64> off = mut 0
-			match Some(slotTok){ off = ? X86Core.rfSlot(slotTok) }
-			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ dst = ? _self.hub.regForm.rfMemText(_self.hub.regForm, off) } } }
-		}
 		let isInc = mut false
 		let isDec = mut false
 		let isAdd = mut false
@@ -2713,35 +2687,88 @@ impl X86Generator{
 			isAdd = op.equals(op, "ADD")
 			isSub = op.equals(op, "SUB")
 		}
-		if isInc || isDec{
-			let ln = mut ? String.from("    incq ")
-			if isDec{
-				ln = ? String.from("    decq ")
-			}
-			match Some(dst){ ? ln.append(ln, dst) }
-			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.raw_(_self.hub.emit, ln) } } }
-			return
-		}
-		if isAdd == false && isSub == false{
-			throw "unknown R_RMW operator"
-		}
-		let mn = mut ? String.from("add")
-		if isSub{
-			mn = ? String.from("sub")
-		}
 		let srcSlot = mut false
 		match Some(srcTok){ srcSlot = X86Core.rfIsSlot(srcTok) }
-		let src = mut ? new String()
-		if srcSlot{
-			let r15 = mut ? String.from("r15")
-			let:<mut s64> so = mut 0
-			match Some(srcTok){ so = ? X86Core.rfSlot(srcTok) }
-			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ match Some(r15){ ? _self.hub.emit.movMemToReg(_self.hub.emit, r15, so) } } } }
-			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ src = ? _self.hub.regForm.rfRegText(_self.hub.regForm, "r15") } } }
-		} else{
-			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ match Some(srcTok){ src = ? _self.hub.regForm.rfSrc(_self.hub.regForm, srcTok) } } } }
+		if isVar{
+			let vr = mut ? new String()
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ match Some(slotTok){
+				vr = ? _self.hub.regForm.rfReg(_self.hub.regForm, slotTok)
+			} } } }
+			if isInc{
+				let ln = mut ? String.from("    incq %")
+				? ln.append(ln, vr)
+				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.raw_(_self.hub.emit, ln) } } }
+				return
+			} elseif isDec{
+				let ln = mut ? String.from("    decq %")
+				? ln.append(ln, vr)
+				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.raw_(_self.hub.emit, ln) } } }
+				return
+			} elseif isAdd || isSub{
+				let mn = mut ? String.from("add")
+				if isAdd == false{
+					mn = ? String.from("sub")
+				}
+				// forced: rfRegText takes only a literal register name; rfRegText(vr) is "%" + vr
+				let vrText = mut ? String.from("%")
+				? vrText.append(vrText, vr)
+				if srcSlot{
+					let scratch = mut ? X86Core_rfScratch()
+					let:<mut s64> so = mut 0
+					match Some(srcTok){ so = ? X86Core.rfSlot(srcTok) }
+					match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.movMemToReg(_self.hub.emit, scratch, so) } } }
+					let scratchText = mut ? new String()
+					let scx3 = mut ? X86Core_rfScratch()
+					match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ scratchText = ? _self.hub.regForm.rfRegTextOf(_self.hub.regForm, scx3) } } }
+					match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ ? _self.hub.regForm.rfOp2(_self.hub.regForm, mn, vrText, scratchText) } } }
+				} else{
+					let src = mut ? new String()
+					match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ match Some(srcTok){ src = ? _self.hub.regForm.rfSrc(_self.hub.regForm, srcTok) } } } }
+					match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ ? _self.hub.regForm.rfOp2(_self.hub.regForm, mn, vrText, src) } } }
+				}
+				return
+			} else{
+				throw "unknown R_RMW operator"
+			}
 		}
-		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ match Some(mn){ match Some(dst){ match Some(src){ ? _self.hub.regForm.rfOp2(_self.hub.regForm, mn, dst, src) } } } } } }
+		let mem = mut ? new String()
+		match Some(slotTok){
+			let off = mut ? X86Core.rfSlot(slotTok)
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ mem = ? _self.hub.regForm.rfMemText(_self.hub.regForm, off) } } }
+		}
+		if isInc{
+			let ln = mut ? String.from("    incq ")
+			? ln.append(ln, mem)
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.raw_(_self.hub.emit, ln) } } }
+			return
+		} elseif isDec{
+			let ln = mut ? String.from("    decq ")
+			? ln.append(ln, mem)
+			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.raw_(_self.hub.emit, ln) } } }
+			return
+		} elseif isAdd || isSub{
+			let mn = mut ? String.from("add")
+			if isAdd == false{
+				mn = ? String.from("sub")
+			}
+			if srcSlot{
+				let scratch = mut ? X86Core_rfScratch()
+				let:<mut s64> so = mut 0
+				match Some(srcTok){ so = ? X86Core.rfSlot(srcTok) }
+				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.movMemToReg(_self.hub.emit, scratch, so) } } }
+				let scratchText = mut ? new String()
+				let scx4 = mut ? X86Core_rfScratch()
+				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ scratchText = ? _self.hub.regForm.rfRegTextOf(_self.hub.regForm, scx4) } } }
+				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ ? _self.hub.regForm.rfOp2(_self.hub.regForm, mn, mem, scratchText) } } }
+			} else{
+				let src = mut ? new String()
+				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ match Some(srcTok){ src = ? _self.hub.regForm.rfSrc(_self.hub.regForm, srcTok) } } } }
+				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ ? _self.hub.regForm.rfOp2(_self.hub.regForm, mn, mem, src) } } }
+			}
+			return
+		} else{
+			throw "unknown R_RMW operator"
+		}
 	}
 
 	@pub
@@ -2802,41 +2829,51 @@ impl X86Generator{
 	@throws
 	func varMarksNeeded(_self: ref some mut self, start: mut s32) mut s32{
 		?catch(e){ throw e }
+		let regs = mut ? new ObjectList:<String>()
+		let rn0 = mut ? new String("r13")
+		let rn1 = mut ? new String("r14")
+		let rn2 = mut ? new String("r12")
+		? regs.add(regs, rn0)
+		? regs.add(regs, rn1)
+		? regs.add(regs, rn2)
+		let sm = mut ? X86Core_v1314Save()
+		? sm.append(sm, "\n")
+		let rm = mut ? X86Core_v1314Rest()
+		? rm.append(rm, "\n")
+		let dwb = mut ? new String("dwb")
 		let:<mut s32> mask = mut 0
 		let:<mut u64> from = mut 0
 		if start > 0{
 			from = wrap:<u64>(start)
 		}
-		let r13 = mut ? new String("r13")
-		let r14 = mut ? new String("r14")
-		let r12 = mut ? new String("r12")
-		let dwb = mut ? new String("dwb")
-		let bound = mut 0
-		match Some(_self){ match Some(_self.core){ bound = _self.core.out.length(_self.core.out) + 1 } }
-		for step in 0..bound{
-			let:<mut s64> i = mut -1
-			let:<mut s64> j = mut -1
-			match Some(_self){ match Some(_self.core){ i = _self.core.out.indexOf(_self.core.out, "@@V1314S@@\n", from) } }
+		let:<mut s64> i = mut -1
+		// forced: `loop` is unsafe-only and a while needs no bound in Java; a for over length()+1 (never reached, each pass advances `from`) with a break at the Java loop condition
+		let bound0 = mut 0
+		match Some(_self){ match Some(_self.core){ bound0 = _self.core.out.length(_self.core.out) + 1 } }
+		for step0 in 0..bound0{
+			match Some(_self){ match Some(_self.core){ i = _self.core.out.indexOf(_self.core.out, sm, from) } }
 			if i < 0{
 				break
 			}
-			let segStart = mut wrap:<u64>(i + 11)
-			match Some(_self){ match Some(_self.core){ j = _self.core.out.indexOf(_self.core.out, "@@V1314R@@\n", segStart) } }
+			let:<mut u64> segStart = mut wrap:<u64>(i)
+			segStart = segStart + sm.length(sm)
+			let:<mut s64> j = mut -1
+			match Some(_self){ match Some(_self.core){ j = _self.core.out.indexOf(_self.core.out, rm, segStart) } }
 			if j < 0{
 				break
 			}
 			let seg = mut ? new String()
-			match Some(_self){ match Some(_self.core){ seg = ? _self.core.out.sub(_self.core.out, segStart, wrap:<u64>(j)) } }
-			if Text.containsWord(seg, r13, dwb, false){
-				mask = bits_or(mask, 1)
+			match Some(_self){ match Some(_self.core){ seg = ? _self.core.out.substring(_self.core.out, segStart, wrap:<u64>(j)) } }
+			for vi in 0..3{
+				let hit = mut false
+				let nm = regs.get(regs, vi)
+				match Some(nm){ hit = Text.containsWord(seg, nm, dwb, false) }
+				if hit{
+					let:<mut s32> one = mut 1
+					mask = bits_or(mask, bits_left(one, wrap:<s32>(vi)))
+				}
 			}
-			if Text.containsWord(seg, r14, dwb, false){
-				mask = bits_or(mask, 2)
-			}
-			if Text.containsWord(seg, r12, dwb, false){
-				mask = bits_or(mask, 4)
-			}
-			from = wrap:<u64>(j + 11)
+			from = wrap:<u64>(j) + rm.length(rm)
 		}
 		return mask
 	}
@@ -2845,46 +2882,57 @@ impl X86Generator{
 	@throws
 	func expandVarMarks(_self: ref some mut self, start: mut s32) void{
 		?catch(e){ throw e }
+		let regs = mut ? new ObjectList:<String>()
+		let rn0 = mut ? new String("r13")
+		let rn1 = mut ? new String("r14")
+		let rn2 = mut ? new String("r12")
+		? regs.add(regs, rn0)
+		? regs.add(regs, rn1)
+		? regs.add(regs, rn2)
+		let sm = mut ? X86Core_v1314Save()
+		? sm.append(sm, "\n")
+		let rm = mut ? X86Core_v1314Rest()
+		? rm.append(rm, "\n")
+		let dwb = mut ? new String("dwb")
 		let:<mut u64> from = mut 0
 		if start > 0{
 			from = wrap:<u64>(start)
 		}
-		let names = mut ? new ObjectList:<String>()
-		let n13 = mut ? new String("r13")
-		let n14 = mut ? new String("r14")
-		let n12 = mut ? new String("r12")
-		? names.add(names, n13)
-		? names.add(names, n14)
-		? names.add(names, n12)
-		let dwb = mut ? new String("dwb")
-		let bound = mut 0
-		match Some(_self){ match Some(_self.core){ bound = _self.core.out.length(_self.core.out) + 1 } }
-		for step in 0..bound{
-			let:<mut s64> i = mut -1
-			let:<mut s64> j = mut -1
-			match Some(_self){ match Some(_self.core){ i = _self.core.out.indexOf(_self.core.out, "@@V1314S@@\n", from) } }
+		let:<mut s64> i = mut -1
+		// forced: `loop` is unsafe-only and a while needs no bound in Java; a for over length()+1 (never reached, each pass advances `from`) with a break at the Java loop condition
+		let bound1 = mut 0
+		match Some(_self){ match Some(_self.core){ bound1 = _self.core.out.length(_self.core.out) + 1 } }
+		for step1 in 0..bound1{
+			match Some(_self){ match Some(_self.core){ i = _self.core.out.indexOf(_self.core.out, sm, from) } }
 			if i < 0{
 				break
 			}
-			let segStart = mut wrap:<u64>(i + 11)
-			match Some(_self){ match Some(_self.core){ j = _self.core.out.indexOf(_self.core.out, "@@V1314R@@\n", segStart) } }
+			let:<mut u64> segStart = mut wrap:<u64>(i)
+			segStart = segStart + sm.length(sm)
+			let:<mut s64> j = mut -1
+			match Some(_self){ match Some(_self.core){ j = _self.core.out.indexOf(_self.core.out, rm, segStart) } }
 			if j < 0{
+				// forced: a thrown message must be a literal, so the function name cannot be appended
 				throw "codegen internal error: unbalanced register-save marks"
 			}
 			let seg = mut ? new String()
-			match Some(_self){ match Some(_self.core){ seg = ? _self.core.out.sub(_self.core.out, segStart, wrap:<u64>(j)) } }
+			match Some(_self){ match Some(_self.core){ seg = ? _self.core.out.substring(_self.core.out, segStart, wrap:<u64>(j)) } }
 			let sv = mut ? new String()
 			let rs = mut ? new String()
 			for vi in 0..3{
+				let have = mut false
 				let slot = mut ? new String()
 				match Some(_self){ match Some(_self.core){
 					let s = _self.core.vSlots.get(_self.core.vSlots, vi)
-					match Some(s){ slot = ? s.substring(s, 0) }
+					match Some(s){
+						have = true
+						slot = ? s.substring(s, 0)
+					}
 				} }
 				let nm = mut ? new String()
-				let nmSrc = names.get(names, vi)
+				let nmSrc = regs.get(regs, vi)
 				match Some(nmSrc){ nm = ? nmSrc.substring(nmSrc, 0) }
-				if slot.length(slot) > 0 && Text.containsWord(seg, nm, dwb, false){
+				if have && Text.containsWord(seg, nm, dwb, false){
 					? sv.append(sv, "    movq %")
 					? sv.append(sv, nm)
 					? sv.append(sv, ", ")
@@ -2897,8 +2945,8 @@ impl X86Generator{
 					? rs.append(rs, "\n")
 				}
 			}
-			match Some(_self){ match Some(_self.core){ ? _self.core.out.replaceRange(_self.core.out, wrap:<u64>(j), wrap:<u64>(j + 11), rs) } }
-			match Some(_self){ match Some(_self.core){ ? _self.core.out.replaceRange(_self.core.out, wrap:<u64>(i), wrap:<u64>(i + 11), sv) } }
+			match Some(_self){ match Some(_self.core){ ? _self.core.out.replaceRange(_self.core.out, wrap:<u64>(j), wrap:<u64>(j) + rm.length(rm), rs) } }
+			match Some(_self){ match Some(_self.core){ ? _self.core.out.replaceRange(_self.core.out, wrap:<u64>(i), wrap:<u64>(i) + sm.length(sm), sv) } }
 			from = wrap:<u64>(i) + sv.length(sv)
 		}
 	}
@@ -2913,69 +2961,80 @@ impl X86Generator{
 		match Some(_self){ match Some(_self.core){
 			start = _self.core.csrFuncStart
 			frameBytes = _self.core.csrAllocSum
-			win = _self.core.target == CodegenTarget.WINDOWS_GNU_X64
 		} }
 		if start < 0{
 			return
 		}
+		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ win = _self.hub.emit.isWinAbi(_self.hub.emit) } } }
 		let body = mut ? new String()
 		match Some(_self){ match Some(_self.core){ body = ? _self.core.out.substring(_self.core.out, wrap:<u64>(start)) } }
-		let regs = mut ? new ObjectList:<String>()
-		let hasRbx = mut ? CodegenText.usesRbx(body)
-		if hasRbx{
-			let r0 = mut ? String.from("rbx")
-			? regs.add(regs, r0)
+		let none = mut ? new String()
+		let dwb = mut ? new String("dwb")
+		let regs = mut ? new ObjectList:<ObjectList:<String>>() // {name, kind gpr|xmm}
+		let rbxNames = mut ? CodegenText.rbxNames()
+		if Text.containsAnyWord(body, rbxNames, none){
+			let pr = mut ? new ObjectList:<String>()
+			let pn = mut ? new String("rbx")
+			let pk = mut ? new String("gpr")
+			? pr.add(pr, pn)
+			? pr.add(pr, pk)
+			? regs.add(regs, pr)
 		}
-		let h12 = mut ? CodegenText.containsWordLit(body, "r12", "dwb", false)
-		if h12{
-			let r1 = mut ? String.from("r12")
-			? regs.add(regs, r1)
-		}
-		let h13 = mut ? CodegenText.containsWordLit(body, "r13", "dwb", false)
-		if h13{
-			let r2 = mut ? String.from("r13")
-			? regs.add(regs, r2)
-		}
-		let h14 = mut ? CodegenText.containsWordLit(body, "r14", "dwb", false)
-		if h14{
-			let r3 = mut ? String.from("r14")
-			? regs.add(regs, r3)
-		}
-		let h15 = mut ? CodegenText.containsWordLit(body, "r15", "dwb", false)
-		if h15{
-			let r4 = mut ? String.from("r15")
-			? regs.add(regs, r4)
+		for r in 12..16{
+			let rname = mut ? String.from("r")
+			? rname.appendS64(rname, wrap:<s64>(r))
+			if Text.containsWord(body, rname, dwb, false){
+				let pr = mut ? new ObjectList:<String>()
+				let pk = mut ? new String("gpr")
+				? pr.add(pr, rname)
+				? pr.add(pr, pk)
+				? regs.add(regs, pr)
+			}
 		}
 		if win{
-			let hasRdi = mut ? CodegenText.usesRdi(body)
-			if hasRdi{
-				let r5 = mut ? String.from("rdi")
-				? regs.add(regs, r5)
+			let rdiNames = mut ? CodegenText.rdiNames()
+			if Text.containsAnyWord(body, rdiNames, none){
+				let pr = mut ? new ObjectList:<String>()
+				let pn = mut ? new String("rdi")
+				let pk = mut ? new String("gpr")
+				? pr.add(pr, pn)
+				? pr.add(pr, pk)
+				? regs.add(regs, pr)
 			}
-			let hasRsi = mut ? CodegenText.usesRsi(body)
-			if hasRsi{
-				let r6 = mut ? String.from("rsi")
-				? regs.add(regs, r6)
+			let rsiNames = mut ? CodegenText.rsiNames()
+			if Text.containsAnyWord(body, rsiNames, none){
+				let pr = mut ? new ObjectList:<String>()
+				let pn = mut ? new String("rsi")
+				let pk = mut ? new String("gpr")
+				? pr.add(pr, pn)
+				? pr.add(pr, pk)
+				? regs.add(regs, pr)
 			}
 			for x in 6..16{
-				let nm = ? X86Core.xmmName(wrap:<s32>(x))
-				let hx = mut ? CodegenText.containsWordLit(body, nm, "", false)
-				if hx{
-					let r7 = mut ? String.from(nm)
-					? regs.add(regs, r7)
+				let xname = mut ? String.from("xmm")
+				? xname.appendS64(xname, wrap:<s64>(x))
+				if Text.containsWord(body, xname, none, false){
+					let pr = mut ? new ObjectList:<String>()
+					let pk = mut ? new String("xmm")
+					? pr.add(pr, xname)
+					? pr.add(pr, pk)
+					? regs.add(regs, pr)
 				}
 			}
 		}
-		let restoreText = mut ? new String()
-		for z in 0..3{
-			let blank = mut ? new String()
-			match Some(_self){ match Some(_self.core){ _self.core.vSlots.setAt(_self.core.vSlots, z, blank) } }
+		let restoreText = mut ? String.from("")
+		// forced: Arrays.fill(vSlots, null) as a loop of setAt(i, null)
+		let:<mut u64> nSlots = mut 0
+		match Some(_self){ match Some(_self.core){ nSlots = _self.core.vSlots.size(_self.core.vSlots) } }
+		for z in 0..nSlots{
+			match Some(_self){ match Some(_self.core){ _self.core.vSlots.setAt(_self.core.vSlots, z, null) } }
 		}
 		if regs.isEmpty(regs) == false{
 			let noAlloc = mut false
 			match Some(_self){ match Some(_self.core){ noAlloc = _self.core.csrAllocPos < 0 } }
 			if noAlloc{
-				let blankLine = mut ? new String()
+				// no locals at all (no ALLOC line): make the frame ourselves, right after the prologue
+				let blankLine = mut ? String.from("")
 				match Some(_self){ match Some(_self.core){
 					_self.core.csrAllocPos = _self.core.csrFuncStart
 					_self.core.csrAllocBytes = 0
@@ -2983,84 +3042,102 @@ impl X86Generator{
 				} }
 			}
 			let:<mut s32> allocPos = mut 0
-			let:<mut s64> allocBytes = mut 0
-			match Some(_self){ match Some(_self.core){
-				allocPos = _self.core.csrAllocPos
-				allocBytes = _self.core.csrAllocBytes
-			} }
+			match Some(_self){ match Some(_self.core){ allocPos = _self.core.csrAllocPos } }
 			let beforeAlloc = mut ? new String()
 			match Some(_self){ match Some(_self.core){ beforeAlloc = ? _self.core.out.substring(_self.core.out, wrap:<u64>(start), wrap:<u64>(allocPos)) } }
-			let early = mut ? beforeAlloc.replace(beforeAlloc, "@@CSR@@", "")
 			let nregs = mut regs.size(regs)
 			for k in 0..nregs{
-				let reg = mut ? new String()
+				let csrMk = mut ? X86Core_csrMark()
+				let emptyRepl = mut ? new String()
+				let early = mut ? beforeAlloc.replace(beforeAlloc, csrMk, emptyRepl)
+				let r0 = mut ? new String()
+				let r1 = mut ? new String()
 				let rr = regs.get(regs, k)
-				match Some(rr){ reg = ? rr.substring(rr, 0) }
+				match Some(rr){
+					let a0 = rr.get(rr, 0)
+					match Some(a0){ r0 = ? a0.substring(a0, 0) }
+				}
+				match Some(rr){
+					let a1 = rr.get(rr, 1)
+					match Some(a1){ r1 = ? a1.substring(a1, 0) }
+				}
 				let usedEarly = mut false
-				if reg.startsWith(reg, "xmm"){
-					let w = mut ? new String()
-					usedEarly = Text.containsWord(early, reg, w, false)
-				} else if reg.equals(reg, "rbx"){
-					usedEarly = ? CodegenText.usesRbx(early)
-				} else if reg.equals(reg, "rdi"){
-					usedEarly = ? CodegenText.usesRdi(early)
-				} else if reg.equals(reg, "rsi"){
-					usedEarly = ? CodegenText.usesRsi(early)
+				if r1.equals(r1, "xmm"){
+					usedEarly = Text.containsWord(early, r0, none, false)
+				} else if r0.equals(r0, "rbx"){
+					let nm = mut ? CodegenText.rbxNames()
+					usedEarly = Text.containsAnyWord(early, nm, none)
+				} else if r0.equals(r0, "rdi"){
+					let nm = mut ? CodegenText.rdiNames()
+					usedEarly = Text.containsAnyWord(early, nm, none)
+				} else if r0.equals(r0, "rsi"){
+					let nm = mut ? CodegenText.rsiNames()
+					usedEarly = Text.containsAnyWord(early, nm, none)
 				} else{
-					let dwb = mut ? new String("dwb")
-					usedEarly = Text.containsWord(early, reg, dwb, false)
+					usedEarly = Text.containsWord(early, r0, dwb, false)
 				}
 				if usedEarly{
+					// forced: a thrown message must be a literal, so the function and register names cannot be appended
 					throw "codegen internal error: a function uses a callee-saved register before its frame is allocated"
 				}
 			}
-			let:<mut s64> cur = mut allocBytes
+			let:<mut s64> cur = mut 0
+			match Some(_self){ match Some(_self.core){ cur = _self.core.csrAllocBytes } }
 			let saves = mut ? new String()
 			let restores = mut ? new String()
 			for k2 in 0..nregs{
-				let reg2 = mut ? new String()
-				let rr2 = regs.get(regs, k2)
-				match Some(rr2){ reg2 = ? rr2.substring(rr2, 0) }
-				let isX = mut reg2.startsWith(reg2, "xmm")
-				let mem = mut ? new String("-")
-				if isX{
+				let r0 = mut ? new String()
+				let r1 = mut ? new String()
+				let rr = regs.get(regs, k2)
+				match Some(rr){
+					let a0 = rr.get(rr, 0)
+					match Some(a0){ r0 = ? a0.substring(a0, 0) }
+				}
+				match Some(rr){
+					let a1 = rr.get(rr, 1)
+					match Some(a1){ r1 = ? a1.substring(a1, 0) }
+				}
+				let x = mut r1.equals(r1, "xmm")
+				let saveMn = mut ? new String()
+				if x{
 					cur = cur + 16
+					saveMn = ? String.from("movups")
 				} else{
 					cur = cur + 8
+					saveMn = ? String.from("movq")
 				}
+				let mem = mut ? String.from("-")
 				? mem.appendS64(mem, cur)
 				? mem.append(mem, "(%rbp)")
-				? saves.append(saves, "    ")
-				? restores.append(restores, "    ")
-				if isX{
-					? saves.append(saves, "movups %")
-					? restores.append(restores, "movups ")
-				} else{
-					? saves.append(saves, "movq %")
-					? restores.append(restores, "movq ")
-				}
-				? saves.append(saves, reg2)
-				? saves.append(saves, ", ")
-				? saves.append(saves, mem)
-				? saves.append(saves, "\n")
-				? restores.append(restores, mem)
-				? restores.append(restores, ", %")
-				? restores.append(restores, reg2)
-				? restores.append(restores, "\n")
+				let st = mut ? String.from("    ")
+				? st.append(st, saveMn)
+				? st.append(st, " %")
+				? st.append(st, r0)
+				? st.append(st, ", ")
+				? st.append(st, mem)
+				let ld = mut ? String.from("    ")
+				? ld.append(ld, saveMn)
+				? ld.append(ld, " ")
+				? ld.append(ld, mem)
+				? ld.append(ld, ", %")
+				? ld.append(ld, r0)
+				? saves.append(saves, st)
+				? saves.append(saves, '\n')
+				? restores.append(restores, ld)
+				? restores.append(restores, '\n')
 			}
-			for z2 in 0..3{
-				let blank2 = mut ? new String()
-				match Some(_self){ match Some(_self.core){ _self.core.vSlots.setAt(_self.core.vSlots, z2, blank2) } }
+			// r13/r14/r12 variables are saved to frame slots around the scratch users (see V1314_SAVE)
+			// forced: Arrays.fill(vSlots, null) as a loop of setAt(i, null)
+			for z2 in 0..nSlots{
+				match Some(_self){ match Some(_self.core){ _self.core.vSlots.setAt(_self.core.vSlots, z2, null) } }
 			}
 			let:<mut s32> needMask = mut 0
 			match Some(_self){ needMask = ? _self.varMarksNeeded(_self, start) }
 			for vi in 0..3{
 				let:<mut s32> varMask = mut 0
 				match Some(_self){ match Some(_self.core){ varMask = _self.core.rfVarMask } }
-				let:<mut s32> bit = mut 1
-				if vi == 1{ bit = 2 }
-				if vi == 2{ bit = 4 }
-				if bits_and(bits_and(varMask, needMask), bit) != 0{
+				let:<mut s32> one = mut 1
+				if bits_and(bits_and(varMask, needMask), bits_left(one, wrap:<s32>(vi))) != 0{
 					cur = cur + 8
 					let slot = mut ? String.from("-")
 					? slot.appendS64(slot, cur)
@@ -3068,9 +3145,15 @@ impl X86Generator{
 					match Some(_self){ match Some(_self.core){ _self.core.vSlots.setAt(_self.core.vSlots, vi, slot) } }
 				}
 			}
-			let total = mut bits_and(cur + 15, -16)
+			let:<mut s64> fifteen = mut 15
+			let:<mut s64> notMask = mut bits_not(fifteen)
+			let total = mut bits_and(cur + 15, notMask)
 			let:<mut s64> allocSum = mut 0
-			match Some(_self){ match Some(_self.core){ allocSum = _self.core.csrAllocSum } }
+			let:<mut s64> allocBytes = mut 0
+			match Some(_self){ match Some(_self.core){
+				allocSum = _self.core.csrAllocSum
+				allocBytes = _self.core.csrAllocBytes
+			} }
 			frameBytes = allocSum - allocBytes + total
 			let newSub = mut ? String.from("    subq $")
 			? newSub.appendS64(newSub, total)
@@ -3086,43 +3169,51 @@ impl X86Generator{
 				match Some(_self.core.csrAllocLine){ same = current.equals(current, _self.core.csrAllocLine) }
 			} }
 			if same == false{
+				// forced: a thrown message must be a literal, so the function name cannot be appended
 				throw "codegen internal error: ALLOC line moved"
 			}
-			? newSub.append(newSub, saves)
-			match Some(_self){ match Some(_self.core){ ? _self.core.out.replaceRange(_self.core.out, wrap:<u64>(allocPos), wrap:<u64>(allocPos) + allocLen, newSub) } }
+			let replacement = mut ? String.from("")
+			? replacement.append(replacement, newSub)
+			? replacement.append(replacement, saves)
+			match Some(_self){ match Some(_self.core){ ? _self.core.out.replaceRange(_self.core.out, wrap:<u64>(allocPos), wrap:<u64>(allocPos) + allocLen, replacement) } }
 			restoreText = ? restores.substring(restores, 0)
 		}
 		match Some(_self){ ? _self.expandVarMarks(_self, start) }
 		let:<mut u64> from = mut wrap:<u64>(start)
-		let bound = mut 0
-		match Some(_self){ match Some(_self.core){ bound = _self.core.out.length(_self.core.out) + 1 } }
-		for step in 0..bound{
-			let:<mut s64> i = mut -1
-			match Some(_self){ match Some(_self.core){ i = _self.core.out.indexOf(_self.core.out, "@@CSR@@\n", from) } }
+		let marked = mut ? X86Core_csrMark()
+		? marked.append(marked, "\n")
+		let:<mut s64> i = mut -1
+		// forced: `loop` is unsafe-only and a while needs no bound in Java; a for over length()+1 (never reached, each pass advances `from`) with a break at the Java loop condition
+		let bound2 = mut 0
+		match Some(_self){ match Some(_self.core){ bound2 = _self.core.out.length(_self.core.out) + 1 } }
+		for step2 in 0..bound2{
+			match Some(_self){ match Some(_self.core){ i = _self.core.out.indexOf(_self.core.out, marked, from) } }
 			if i < 0{
 				break
 			}
-			match Some(_self){ match Some(_self.core){ ? _self.core.out.replaceRange(_self.core.out, wrap:<u64>(i), wrap:<u64>(i + 8), restoreText) } }
+			match Some(_self){ match Some(_self.core){ ? _self.core.out.replaceRange(_self.core.out, wrap:<u64>(i), wrap:<u64>(i) + marked.length(marked), restoreText) } }
 			from = wrap:<u64>(i) + restoreText.length(restoreText)
 		}
+		let rspMarked = mut ? X86Core_rspMark()
+		? rspMarked.append(rspMarked, "\n")
 		let rspFix = mut ? new String()
 		if frameBytes == 0{
-			? rspFix.append(rspFix, "    movq %rbp, %rsp\n")
+			rspFix = ? String.from("    movq %rbp, %rsp\n")
 		} else{
-			? rspFix.append(rspFix, "    leaq -")
+			rspFix = ? String.from("    leaq -")
 			? rspFix.appendS64(rspFix, frameBytes)
 			? rspFix.append(rspFix, "(%rbp), %rsp\n")
 		}
 		from = wrap:<u64>(start)
-		match Some(_self){ match Some(_self.core){ bound = _self.core.out.length(_self.core.out) + 1 } }
-		for step2 in 0..bound{
-			let:<mut s64> j = mut -1
-			match Some(_self){ match Some(_self.core){ j = _self.core.out.indexOf(_self.core.out, "@@RSP@@\n", from) } }
-			if j < 0{
+		// forced: same bounded for as above
+		match Some(_self){ match Some(_self.core){ bound2 = _self.core.out.length(_self.core.out) + 1 } }
+		for step9 in 0..bound2{
+			match Some(_self){ match Some(_self.core){ i = _self.core.out.indexOf(_self.core.out, rspMarked, from) } }
+			if i < 0{
 				break
 			}
-			match Some(_self){ match Some(_self.core){ ? _self.core.out.replaceRange(_self.core.out, wrap:<u64>(j), wrap:<u64>(j + 8), rspFix) } }
-			from = wrap:<u64>(j) + rspFix.length(rspFix)
+			match Some(_self){ match Some(_self.core){ ? _self.core.out.replaceRange(_self.core.out, wrap:<u64>(i), wrap:<u64>(i) + rspMarked.length(rspMarked), rspFix) } }
+			from = wrap:<u64>(i) + rspFix.length(rspFix)
 		}
 		match Some(_self){ match Some(_self.core){ _self.core.csrFuncStart = -1 } }
 	}
@@ -3131,7 +3222,7 @@ impl X86Generator{
 	@throws
 	func emitFunctionEpilogue(_self: ref some mut self) void{
 		?catch(e){ throw e }
-		let ln309 = mut ? String.from("@@CSR@@")
+		let ln309 = mut ? X86Core_csrMark()
 		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.raw_(_self.hub.emit, ln309) } } }
 		let ln310 = mut ? String.from("    movq %rbp, %rsp")
 		match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.raw_(_self.hub.emit, ln310) } } }

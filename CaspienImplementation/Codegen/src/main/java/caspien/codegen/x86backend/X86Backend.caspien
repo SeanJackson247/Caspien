@@ -15,6 +15,7 @@ import "X86Generator.caspien"
 @throws
 impl constructor for X86Backend(target: imut CodegenTarget) self{
 	?catch(e){ throw e }
+	// forced: this(target, false) is not expressible (a constructor must return the struct value itself), so the body of the two-argument constructor is repeated
 	let core = mut ? new X86Core(target, imut false)
 	return X86Backend{core= core, emit= null, calls= null, casesA= null, casesB= null, regForm= null, gen= null, avx= false}
 }
@@ -23,12 +24,14 @@ impl constructor for X86Backend(target: imut CodegenTarget) self{
 @throws
 impl constructor for X86Backend(target: imut CodegenTarget, bmi2: imut bool) self{
 	?catch(e){ throw e }
+	// forced: the six parts need a reference to the finished backend, which a constructor cannot hand out; wire() below creates them
 	let core = mut ? new X86Core(target, bmi2)
 	return X86Backend{core= core, emit= null, calls= null, casesA= null, casesB= null, regForm= null, gen= null, avx= false}
 }
 
 @pub
 impl X86Backend{
+	/** The six parts of the Java two-argument constructor, in the same order (forced split, see the constructor). */
 	@pub
 	@throws
 	func wire(_self: ref some mut self) void{

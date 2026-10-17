@@ -28,7 +28,7 @@ impl X86CasesB{
 		let RCX = mut ? String.from("rcx")
 		let R12 = mut ? String.from("r12")
 		let R14 = mut ? String.from("r14")
-		let R15 = mut ? String.from("r15")
+		let R15 = mut ? X86Core_rfScratch()
 		let n0 = mut 0
 		match Some(line){ n0 = line.items.size(line.items) }
 		if kind == 1{
@@ -374,8 +374,7 @@ impl X86CasesB{
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.rawLit(_self.hub.emit, "    addq $16, %r15") } } }
 			let a0_7 = mut ? new String()
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.calls){ 
-			let sr_a0_7 = _self.hub.calls.argReg(_self.hub.calls, 0)
-			a0_7 = ? String.from(sr_a0_7)
+			a0_7 = ? _self.hub.calls.argReg(_self.hub.calls, 0)
 			}}}
 			let rw24 = mut ? String.from("    movq %r15, %")
 			match Some(a0_7){ ? rw24.append(rw24, a0_7) }
@@ -424,7 +423,7 @@ impl X86CasesB{
 		let RCX = mut ? String.from("rcx")
 		let R12 = mut ? String.from("r12")
 		let R14 = mut ? String.from("r14")
-		let R15 = mut ? String.from("r15")
+		let R15 = mut ? X86Core_rfScratch()
 		if kind == 1{
 			let:<mut s64> size1 = mut 0
 			match Some(line){ size1 = ? X86Core.tokenS64(line, 1) }
@@ -462,8 +461,12 @@ impl X86CasesB{
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.popReg(_self.hub.emit, RDI) } } }
 			if cs2 >= 0{
 				let:<mut s64> pos2 = mut 0
-				for it2 in 0..64{
-					if pos2 < cs2{
+				// Java: while (pos < constSize); safe code has no while, so the unbounded loop is an unsafe `loop`
+				unsafe loop{
+					loop{
+						if pos2 >= cs2{
+							break
+						}
 						let:<mut s64> left2 = mut (cs2 - pos2)
 						let:<mut s32> w2 = mut 1
 						if left2 >= 8{
@@ -697,8 +700,7 @@ impl X86CasesB{
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.popReg(_self.hub.emit, R12) } } }
 			let a0_7 = mut ? new String()
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.calls){ 
-			let sr_a0_7 = _self.hub.calls.argReg(_self.hub.calls, 0)
-			a0_7 = ? String.from(sr_a0_7)
+			a0_7 = ? _self.hub.calls.argReg(_self.hub.calls, 0)
 			}}}
 			let rw20 = mut ? String.from("    movq %r12, %")
 			match Some(a0_7){ ? rw20.append(rw20, a0_7) }
@@ -716,8 +718,7 @@ impl X86CasesB{
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.raw_(_self.hub.emit, rw21) } } }
 			let a0_7b = mut ? new String()
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.calls){ 
-			let sr_a0_7b = _self.hub.calls.argReg(_self.hub.calls, 0)
-			a0_7b = ? String.from(sr_a0_7b)
+			a0_7b = ? _self.hub.calls.argReg(_self.hub.calls, 0)
 			}}}
 			let rw22 = mut ? String.from("    movq %rax, %")
 			match Some(a0_7b){ ? rw22.append(rw22, a0_7b) }
@@ -839,20 +840,18 @@ impl X86CasesB{
 			}
 			let a0_8 = mut ? new String()
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.calls){ 
-			let sr_a0_8 = _self.hub.calls.argReg(_self.hub.calls, 0)
-			a0_8 = ? String.from(sr_a0_8)
+			a0_8 = ? _self.hub.calls.argReg(_self.hub.calls, 0)
 			}}}
 			let a1_8 = mut ? new String()
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.calls){ 
-			let sr_a1_8 = _self.hub.calls.argReg(_self.hub.calls, 1)
-			a1_8 = ? String.from(sr_a1_8)
+			a1_8 = ? _self.hub.calls.argReg(_self.hub.calls, 1)
 			}}}
 			let rw34 = mut ? String.from("    movq %rax, %")
 			match Some(a0_8){ ? rw34.append(rw34, a0_8) }
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.raw_(_self.hub.emit, rw34) } } }
 			let frg8 = mut ? String.from("r12")
 			if hasFill{
-				frg8 = ? String.from("r15")
+				frg8 = ? X86Core_rfScratch()
 			}
 			let rw35 = mut ? String.from("    movq %")
 			match Some(frg8){ ? rw35.append(rw35, frg8) }

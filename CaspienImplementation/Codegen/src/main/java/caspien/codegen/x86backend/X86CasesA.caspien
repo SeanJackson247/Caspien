@@ -28,7 +28,7 @@ impl X86CasesA{
 		let RCX = mut ? String.from("rcx")
 		let RDX = mut ? String.from("rdx")
 		let R10 = mut ? String.from("r10")
-		let R15 = mut ? String.from("r15")
+		let R15 = mut ? X86Core_rfScratch()
 		if kind == 1{
 			let op1 = mut ? new String()
 			match Some(line){ op1 = ? X86Core.lineTok(line, 1) }
@@ -51,8 +51,7 @@ impl X86CasesA{
 			if isT2{
 				let rg2 = mut ? new String()
 				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ 
-				let sr_rg2 = ? _self.hub.regForm.rfReg(_self.hub.regForm, src2)
-				rg2 = ? String.from(sr_rg2)
+				rg2 = ? _self.hub.regForm.rfReg(_self.hub.regForm, src2)
 				}}}
 				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.pushReg(_self.hub.emit, rg2) } } }
 			} else{
@@ -77,8 +76,7 @@ impl X86CasesA{
 			match Some(line){ vt4 = ? X86Core.lineTok(line, 2) }
 			let vr4 = mut ? new String()
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ 
-			let sr_vr4 = ? _self.hub.regForm.rfReg(_self.hub.regForm, vt4)
-			vr4 = ? String.from(sr_vr4)
+			vr4 = ? _self.hub.regForm.rfReg(_self.hub.regForm, vt4)
 			}}}
 			let src4 = mut ? new String()
 			match Some(line){ src4 = ? X86Core.lineTok(line, 3) }
@@ -93,8 +91,7 @@ impl X86CasesA{
 			} elseif n4 == 4 || n4 == 2 || n4 == 1{
 				let sr4 = mut ? new String()
 				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ 
-				let sr_sr4 = ? _self.hub.regForm.rfReg(_self.hub.regForm, src4)
-				sr4 = ? String.from(sr_sr4)
+				sr4 = ? _self.hub.regForm.rfReg(_self.hub.regForm, src4)
 				}}}
 				let s4a = mut ? new String()
 				let s4b = mut ? new String()
@@ -125,8 +122,7 @@ impl X86CasesA{
 			} else{
 				let sr4b = mut ? new String()
 				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ 
-				let sr_sr4b = ? _self.hub.regForm.rfReg(_self.hub.regForm, src4)
-				sr4b = ? String.from(sr_sr4b)
+				sr4b = ? _self.hub.regForm.rfReg(_self.hub.regForm, src4)
 				}}}
 				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ ? _self.hub.regForm.rfRegToReg(_self.hub.regForm, vr4, sr4b) } } }
 			}
@@ -386,8 +382,7 @@ impl X86CasesA{
 			}}}
 			let g19 = mut ? new String()
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ 
-			let sr_g19 = ? _self.hub.regForm.rfReg(_self.hub.regForm, a19)
-			g19 = ? String.from(sr_g19)
+			g19 = ? _self.hub.regForm.rfReg(_self.hub.regForm, a19)
 			}}}
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.gen){ ? _self.hub.gen.rfXmmToGpr(_self.hub.gen, x19, g19, n19) } } }
 			return true
@@ -413,8 +408,7 @@ impl X86CasesA{
 			} else{
 				let g20 = mut ? new String()
 				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ 
-				let sr_g20 = ? _self.hub.regForm.rfReg(_self.hub.regForm, src20)
-				g20 = ? String.from(sr_g20)
+				g20 = ? _self.hub.regForm.rfReg(_self.hub.regForm, src20)
 				}}}
 				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.gen){ ? _self.hub.gen.rfGprToXmm(_self.hub.gen, x20, g20, n20) } } }
 			}
@@ -520,8 +514,7 @@ impl X86CasesA{
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.zeroExtendReg(_self.hub.emit, RAX, n25) } } }
 			let r25 = mut ? new String()
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ 
-			let sr_r25 = ? _self.hub.regForm.rfReg(_self.hub.regForm, a25)
-			r25 = ? String.from(sr_r25)
+			r25 = ? _self.hub.regForm.rfReg(_self.hub.regForm, a25)
 			}}}
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ ? _self.hub.regForm.rfRegToReg(_self.hub.regForm, r25, RAX) } } }
 			return true
@@ -536,8 +529,7 @@ impl X86CasesA{
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.emit){ ? _self.hub.emit.zeroExtendReg(_self.hub.emit, RAX, n26) } } }
 			let r26 = mut ? new String()
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ 
-			let sr_r26 = ? _self.hub.regForm.rfReg(_self.hub.regForm, a26)
-			r26 = ? String.from(sr_r26)
+			r26 = ? _self.hub.regForm.rfReg(_self.hub.regForm, a26)
 			}}}
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ ? _self.hub.regForm.rfRegToReg(_self.hub.regForm, r26, RAX) } } }
 			return true
@@ -604,8 +596,7 @@ impl X86CasesA{
 			match Some(line){ src30 = ? X86Core.lineTok(line, 3) }
 			let reg30 = mut ? new String()
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.gen){ 
-			let sr_reg30 = ? _self.hub.gen.rfArgReg(_self.hub.gen, n30)
-			reg30 = ? String.from(sr_reg30)
+			reg30 = ? _self.hub.gen.rfArgReg(_self.hub.gen, n30)
 			}}}
 			let isX30 = mut false
 			match Some(src30){ isX30 = X86Core.rfIsXvar(src30) }
@@ -627,8 +618,7 @@ impl X86CasesA{
 			} elseif isT30{
 				let t30 = mut ? new String()
 				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ 
-				let sr_t30 = ? _self.hub.regForm.rfReg(_self.hub.regForm, src30)
-				t30 = ? String.from(sr_t30)
+				t30 = ? _self.hub.regForm.rfReg(_self.hub.regForm, src30)
 				}}}
 				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ ? _self.hub.regForm.rfRegToReg(_self.hub.regForm, reg30, t30) } } }
 			} elseif isI30{
@@ -654,8 +644,7 @@ impl X86CasesA{
 			match Some(line){ a31 = ? X86Core.lineTok(line, 2) }
 			let reg31 = mut ? new String()
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.gen){ 
-			let sr_reg31 = ? _self.hub.gen.rfArgReg(_self.hub.gen, n31)
-			reg31 = ? String.from(sr_reg31)
+			reg31 = ? _self.hub.gen.rfArgReg(_self.hub.gen, n31)
 			}}}
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.gen){ ? _self.hub.gen.rfAddrToReg(_self.hub.gen, reg31, a31) } } }
 			let tag31 = mut ? String.from("i")
@@ -675,8 +664,7 @@ impl X86CasesA{
 			match Some(line){ src32 = ? X86Core.lineTok(line, 3) }
 			let xr32 = mut ? new String()
 			match Some(_self){ match Some(_self.hub){ match Some(_self.hub.calls){ 
-			let xrs32 = _self.hub.calls.argFloatReg(_self.hub.calls, n32)
-			xr32 = ? String.from(xrs32)
+			xr32 = ? _self.hub.calls.argFloatReg(_self.hub.calls, n32)
 			}}}
 			let isX32 = mut false
 			match Some(src32){ isX32 = X86Core.rfIsXvar(src32) }
@@ -698,8 +686,7 @@ impl X86CasesA{
 			} elseif isT32{
 				let t32 = mut ? new String()
 				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ 
-				let sr_t32 = ? _self.hub.regForm.rfReg(_self.hub.regForm, src32)
-				t32 = ? String.from(sr_t32)
+				t32 = ? _self.hub.regForm.rfReg(_self.hub.regForm, src32)
 				}}}
 				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.calls){ ? _self.hub.calls.movRegToXmm(_self.hub.calls, t32, xr32) } } }
 			} else{
@@ -735,8 +722,7 @@ impl X86CasesA{
 				if isT33{
 					let t33 = mut ? new String()
 					match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ 
-					let sr_t33 = ? _self.hub.regForm.rfReg(_self.hub.regForm, src33)
-					t33 = ? String.from(sr_t33)
+					t33 = ? _self.hub.regForm.rfReg(_self.hub.regForm, src33)
 					}}}
 					match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ ? _self.hub.regForm.rfRegToReg(_self.hub.regForm, RAX, t33) } } }
 				} elseif isI33{
@@ -761,8 +747,7 @@ impl X86CasesA{
 			} elseif isT33{
 				let t33b = mut ? new String()
 				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.regForm){ 
-				let sr_t33b = ? _self.hub.regForm.rfReg(_self.hub.regForm, src33)
-				t33b = ? String.from(sr_t33b)
+				t33b = ? _self.hub.regForm.rfReg(_self.hub.regForm, src33)
 				}}}
 				match Some(_self){ match Some(_self.hub){ match Some(_self.hub.calls){ ? _self.hub.calls.movRegToXmm(_self.hub.calls, t33b, XMM0) } } }
 			} else{

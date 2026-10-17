@@ -64,7 +64,7 @@ impl BytecodeProgram{
 		? _self.items.insertAt(_self.items, i, e)
 	}
 
-	/** Java `addAll(other)`: appends copies of other's statements. */
+	/** Java `addAll(other)`: appends copies of other's statements. forced: ObjectList has no addAll, so one `add` per statement (and the statements are deep-copied: the list owns them). */
 	@pub
 	@throws
 	func addAll(_self: ref mut self, other: ref imut BytecodeProgram) void{
@@ -80,7 +80,7 @@ impl BytecodeProgram{
 		}
 	}
 
-	/** Java `addAll(i, other)`: inserts copies of other's statements from index i. */
+	/** Java `addAll(i, other)`: inserts copies of other's statements from index i. forced: ObjectList has no insertAll(i, other) (one shift of the tail); it is one `insertAt` per statement, O(m*(n-i)) instead of O(n-i+m). */
 	@pub
 	@throws
 	func addAllAt(_self: ref mut self, i: imut u64, other: ref imut BytecodeProgram) void{
@@ -98,22 +98,36 @@ impl BytecodeProgram{
 		}
 	}
 
-	/** Removes [from, to). */
+	/** Removes [from, to) (Java `items.subList(from, to).clear()`). forced: ObjectList has no removeRange (one shift of the tail); it is one `removeAt` per element, O(cnt*(n-from)) instead of O(n-to+cnt). */
 	@pub
 	@throws
 	func removeRange(_self: ref some mut self, from: imut u64, to: imut u64) void{
 		?catch(e){ throw e }
+		if from > to{
+			throw "fromIndex > toIndex"
+		}
+		if to > _self.items.size(_self.items){
+			throw "index out of range"
+		}
 		let cnt = mut (to - from)
 		for k in 0..cnt{
 			? _self.items.removeAt(_self.items, from)
 		}
 	}
 
-	/** A copy of [from, to) as a new program. */
+	/** A copy of [from, to) as a new program. forced: ObjectList has no subList/copy-range, so one `add` per statement. */
 	@pub
 	@throws
 	func slice(_self: ref imut self, from: imut u64, to: imut u64) owns some mut BytecodeProgram{
 		?catch(e){ throw e }
+		let:<mut u64> size = mut 0
+		match Some(_self){ size = _self.size(_self) }
+		if from > to{
+			throw "fromIndex > toIndex"
+		}
+		if to > size{
+			throw "index out of range"
+		}
 		let r = mut ? new BytecodeProgram()
 		for k in from..to{
 			match Some(_self){
@@ -131,6 +145,12 @@ impl BytecodeProgram{
 	func removeAt(_self: ref some mut self, i: imut u64) void{
 		?catch(e){ throw e }
 		? _self.items.removeAt(_self.items, i)
+	}
+
+	/** Java `asList()`: the contents as a live list (a reference to the list this program owns; writes go through). */
+	@pub
+	func asList(_self: ref some imut self) ref mut ObjectList<BytecodeStatement>{
+		return ref _self.items
 	}
 
 	@pub

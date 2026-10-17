@@ -406,7 +406,8 @@ func t39() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("-12")
 	let o = mut ? new String()
-	? putB(o, Text.isSignedDigits(a0))
+	let r = mut ? Text.isSignedDigits(a0)
+	? putB(o, r)
 	return chk("isSignedDigits#39", o, "T")
 }
 @throws
@@ -414,7 +415,8 @@ func t40() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("-")
 	let o = mut ? new String()
-	? putB(o, Text.isSignedDigits(a0))
+	let r = mut ? Text.isSignedDigits(a0)
+	? putB(o, r)
 	return chk("isSignedDigits#40", o, "F")
 }
 @throws
@@ -422,7 +424,8 @@ func t41() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("5")
 	let o = mut ? new String()
-	? putB(o, Text.isSignedDigits(a0))
+	let r = mut ? Text.isSignedDigits(a0)
+	? putB(o, r)
 	return chk("isSignedDigits#41", o, "T")
 }
 @throws
@@ -430,7 +433,8 @@ func t42() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("--1")
 	let o = mut ? new String()
-	? putB(o, Text.isSignedDigits(a0))
+	let r = mut ? Text.isSignedDigits(a0)
+	? putB(o, r)
 	return chk("isSignedDigits#42", o, "F")
 }
 @throws
@@ -438,7 +442,8 @@ func t43() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("")
 	let o = mut ? new String()
-	? putB(o, Text.isSignedDigits(a0))
+	let r = mut ? Text.isSignedDigits(a0)
+	? putB(o, r)
 	return chk("isSignedDigits#43", o, "F")
 }
 @throws
@@ -446,7 +451,8 @@ func t44() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("\\ebool[\\charrangerbx")
 	let o = mut ? new String()
-	? putB(o, Text.isSignedDigits(a0))
+	let r = mut ? Text.isSignedDigits(a0)
+	? putB(o, r)
 	return chk("isSignedDigits#44", o, "F")
 }
 @throws
@@ -454,7 +460,8 @@ func t45() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("")
 	let o = mut ? new String()
-	? putB(o, Text.isSignedDigits(a0))
+	let r = mut ? Text.isSignedDigits(a0)
+	? putB(o, r)
 	return chk("isSignedDigits#45", o, "F")
 }
 @throws
@@ -462,7 +469,8 @@ func t46() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String(".\\")
 	let o = mut ? new String()
-	? putB(o, Text.isSignedDigits(a0))
+	let r = mut ? Text.isSignedDigits(a0)
+	? putB(o, r)
 	return chk("isSignedDigits#46", o, "F")
 }
 @throws
@@ -470,7 +478,8 @@ func t47() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("")
 	let o = mut ? new String()
-	? putB(o, Text.isSignedDigits(a0))
+	let r = mut ? Text.isSignedDigits(a0)
+	? putB(o, r)
 	return chk("isSignedDigits#47", o, "F")
 }
 @throws
@@ -478,7 +487,8 @@ func t48() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("#")
 	let o = mut ? new String()
-	? putB(o, Text.isSignedDigits(a0))
+	let r = mut ? Text.isSignedDigits(a0)
+	? putB(o, r)
 	return chk("isSignedDigits#48", o, "F")
 }
 @throws
@@ -486,7 +496,8 @@ func t49() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("#")
 	let o = mut ? new String()
-	? putB(o, Text.isSignedDigits(a0))
+	let r = mut ? Text.isSignedDigits(a0)
+	? putB(o, r)
 	return chk("isSignedDigits#49", o, "F")
 }
 @throws
@@ -494,7 +505,8 @@ func t50() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("\x0c\r(xstart)007r15")
 	let o = mut ? new String()
-	? putB(o, Text.isSignedDigits(a0))
+	let r = mut ? Text.isSignedDigits(a0)
+	? putB(o, r)
 	return chk("isSignedDigits#50", o, "F")
 }
 @throws
@@ -502,7 +514,8 @@ func t51() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String(" 1200.)be{")
 	let o = mut ? new String()
-	? putB(o, Text.isSignedDigits(a0))
+	let r = mut ? Text.isSignedDigits(a0)
+	? putB(o, r)
 	return chk("isSignedDigits#51", o, "F")
 }
 @throws
@@ -510,7 +523,8 @@ func t52() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("\\%t\tu32unsafe")
 	let o = mut ? new String()
-	? putB(o, Text.isSignedDigits(a0))
+	let r = mut ? Text.isSignedDigits(a0)
+	? putB(o, r)
 	return chk("isSignedDigits#52", o, "F")
 }
 @throws
@@ -518,7 +532,8 @@ func t53() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("// c}\r\nua.b  AZ")
 	let o = mut ? new String()
-	? putB(o, Text.isSignedDigits(a0))
+	let r = mut ? Text.isSignedDigits(a0)
+	? putB(o, r)
 	return chk("isSignedDigits#53", o, "F")
 }
 @throws
@@ -526,7 +541,8 @@ func t54() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String(" #12A")
 	let o = mut ? new String()
-	? putB(o, Text.isSignedDigits(a0))
+	let r = mut ? Text.isSignedDigits(a0)
+	? putB(o, r)
 	return chk("isSignedDigits#54", o, "F")
 }
 @throws
@@ -534,7 +550,8 @@ func t55() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("%t  007007")
 	let o = mut ? new String()
-	? putB(o, Text.isSignedDigits(a0))
+	let r = mut ? Text.isSignedDigits(a0)
+	? putB(o, r)
 	return chk("isSignedDigits#55", o, "F")
 }
 @throws
@@ -542,7 +559,8 @@ func t56() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("endstart")
 	let o = mut ? new String()
-	? putB(o, Text.isSignedDigits(a0))
+	let r = mut ? Text.isSignedDigits(a0)
+	? putB(o, r)
 	return chk("isSignedDigits#56", o, "F")
 }
 @throws
@@ -550,7 +568,8 @@ func t57() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("u8bool")
 	let o = mut ? new String()
-	? putB(o, Text.isSignedDigits(a0))
+	let r = mut ? Text.isSignedDigits(a0)
+	? putB(o, r)
 	return chk("isSignedDigits#57", o, "F")
 }
 @throws
@@ -558,7 +577,8 @@ func t58() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("\r\nZ9E]")
 	let o = mut ? new String()
-	? putB(o, Text.isSignedDigits(a0))
+	let r = mut ? Text.isSignedDigits(a0)
+	? putB(o, r)
 	return chk("isSignedDigits#58", o, "F")
 }
 @throws
@@ -566,7 +586,8 @@ func t59() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("\x0c")
 	let o = mut ? new String()
-	? putB(o, Text.isSignedDigits(a0))
+	let r = mut ? Text.isSignedDigits(a0)
+	? putB(o, r)
 	return chk("isSignedDigits#59", o, "F")
 }
 @throws
@@ -574,7 +595,8 @@ func t60() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("rbx")
 	let o = mut ? new String()
-	? putB(o, Text.isSignedDigits(a0))
+	let r = mut ? Text.isSignedDigits(a0)
+	? putB(o, r)
 	return chk("isSignedDigits#60", o, "F")
 }
 @throws
@@ -582,7 +604,8 @@ func t61() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("\\]_#:start{007")
 	let o = mut ? new String()
-	? putB(o, Text.isSignedDigits(a0))
+	let r = mut ? Text.isSignedDigits(a0)
+	? putB(o, r)
 	return chk("isSignedDigits#61", o, "F")
 }
 @throws
@@ -590,7 +613,8 @@ func t62() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("];abchar\r\ne9;")
 	let o = mut ? new String()
-	? putB(o, Text.isSignedDigits(a0))
+	let r = mut ? Text.isSignedDigits(a0)
+	? putB(o, r)
 	return chk("isSignedDigits#62", o, "F")
 }
 @throws
@@ -598,7 +622,8 @@ func t63() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("indeterminate_%t")
 	let o = mut ? new String()
-	? putB(o, Text.isSignedDigits(a0))
+	let r = mut ? Text.isSignedDigits(a0)
+	? putB(o, r)
 	return chk("isSignedDigits#63", o, "F")
 }
 @throws
@@ -606,7 +631,8 @@ func t64() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("+\rbl(")
 	let o = mut ? new String()
-	? putB(o, Text.isSignedDigits(a0))
+	let r = mut ? Text.isSignedDigits(a0)
+	? putB(o, r)
 	return chk("isSignedDigits#64", o, "F")
 }
 @throws
@@ -614,7 +640,8 @@ func t65() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("007\r%")
 	let o = mut ? new String()
-	? putB(o, Text.isSignedDigits(a0))
+	let r = mut ? Text.isSignedDigits(a0)
+	? putB(o, r)
 	return chk("isSignedDigits#65", o, "F")
 }
 @throws
@@ -622,7 +649,8 @@ func t66() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("unauditedstart")
 	let o = mut ? new String()
-	? putB(o, Text.isSignedDigits(a0))
+	let r = mut ? Text.isSignedDigits(a0)
+	? putB(o, r)
 	return chk("isSignedDigits#66", o, "F")
 }
 @throws
@@ -630,7 +658,8 @@ func t67() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("r15 :r8xrbx{indeterminate_")
 	let o = mut ? new String()
-	? putB(o, Text.isSignedDigits(a0))
+	let r = mut ? Text.isSignedDigits(a0)
+	? putB(o, r)
 	return chk("isSignedDigits#67", o, "F")
 }
 @throws
@@ -638,7 +667,8 @@ func t68() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("}")
 	let o = mut ? new String()
-	? putB(o, Text.isSignedDigits(a0))
+	let r = mut ? Text.isSignedDigits(a0)
+	? putB(o, r)
 	return chk("isSignedDigits#68", o, "F")
 }
 @throws
@@ -646,7 +676,8 @@ func t69() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("[")
 	let o = mut ? new String()
-	? putB(o, Text.isSignedDigits(a0))
+	let r = mut ? Text.isSignedDigits(a0)
+	? putB(o, r)
 	return chk("isSignedDigits#69", o, "F")
 }
 @throws
@@ -654,7 +685,8 @@ func t70() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("]bl")
 	let o = mut ? new String()
-	? putB(o, Text.isSignedDigits(a0))
+	let r = mut ? Text.isSignedDigits(a0)
+	? putB(o, r)
 	return chk("isSignedDigits#70", o, "F")
 }
 @throws
@@ -662,7 +694,8 @@ func t71() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("u320\t.caspien")
 	let o = mut ? new String()
-	? putB(o, Text.isSignedDigits(a0))
+	let r = mut ? Text.isSignedDigits(a0)
+	? putB(o, r)
 	return chk("isSignedDigits#71", o, "F")
 }
 @throws
@@ -670,7 +703,8 @@ func t72() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("boolrbx-start")
 	let o = mut ? new String()
-	? putB(o, Text.isSignedDigits(a0))
+	let r = mut ? Text.isSignedDigits(a0)
+	? putB(o, r)
 	return chk("isSignedDigits#72", o, "F")
 }
 @throws
@@ -678,7 +712,8 @@ func t73() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("\x0c%tu64\$+x")
 	let o = mut ? new String()
-	? putB(o, Text.isSignedDigits(a0))
+	let r = mut ? Text.isSignedDigits(a0)
+	? putB(o, r)
 	return chk("isSignedDigits#73", o, "F")
 }
 @throws
@@ -686,7 +721,8 @@ func t74() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("")
 	let o = mut ? new String()
-	? putB(o, Text.isSignedDigits(a0))
+	let r = mut ? Text.isSignedDigits(a0)
+	? putB(o, r)
 	return chk("isSignedDigits#74", o, "F")
 }
 @throws
@@ -694,7 +730,8 @@ func t75() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String(".imut_0imut_:")
 	let o = mut ? new String()
-	? putB(o, Text.isSignedDigits(a0))
+	let r = mut ? Text.isSignedDigits(a0)
+	? putB(o, r)
 	return chk("isSignedDigits#75", o, "F")
 }
 @throws
@@ -702,7 +739,8 @@ func t76() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("")
 	let o = mut ? new String()
-	? putB(o, Text.isSignedDigits(a0))
+	let r = mut ? Text.isSignedDigits(a0)
+	? putB(o, r)
 	return chk("isSignedDigits#76", o, "F")
 }
 @throws
@@ -710,7 +748,8 @@ func t77() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("%ta.b(\"x}u32{")
 	let o = mut ? new String()
-	? putB(o, Text.isSignedDigits(a0))
+	let r = mut ? Text.isSignedDigits(a0)
+	? putB(o, r)
 	return chk("isSignedDigits#77", o, "F")
 }
 @throws
@@ -3278,7 +3317,8 @@ func t393() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("u8")
 	let o = mut ? new String()
-	? putB(o, Text.isSizedIntName(a0))
+	let r = mut ? Text.isSizedIntName(a0)
+	? putB(o, r)
 	return chk("isSizedIntName#393", o, "T")
 }
 @throws
@@ -3286,7 +3326,8 @@ func t394() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("s64")
 	let o = mut ? new String()
-	? putB(o, Text.isSizedIntName(a0))
+	let r = mut ? Text.isSizedIntName(a0)
+	? putB(o, r)
 	return chk("isSizedIntName#394", o, "T")
 }
 @throws
@@ -3294,7 +3335,8 @@ func t395() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("u")
 	let o = mut ? new String()
-	? putB(o, Text.isSizedIntName(a0))
+	let r = mut ? Text.isSizedIntName(a0)
+	? putB(o, r)
 	return chk("isSizedIntName#395", o, "F")
 }
 @throws
@@ -3302,7 +3344,8 @@ func t396() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("x8")
 	let o = mut ? new String()
-	? putB(o, Text.isSizedIntName(a0))
+	let r = mut ? Text.isSizedIntName(a0)
+	? putB(o, r)
 	return chk("isSizedIntName#396", o, "F")
 }
 @throws
@@ -3310,7 +3353,8 @@ func t397() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("u08")
 	let o = mut ? new String()
-	? putB(o, Text.isSizedIntName(a0))
+	let r = mut ? Text.isSizedIntName(a0)
+	? putB(o, r)
 	return chk("isSizedIntName#397", o, "T")
 }
 @throws
@@ -3318,7 +3362,8 @@ func t398() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("s1x")
 	let o = mut ? new String()
-	? putB(o, Text.isSizedIntName(a0))
+	let r = mut ? Text.isSizedIntName(a0)
+	? putB(o, r)
 	return chk("isSizedIntName#398", o, "F")
 }
 @throws
@@ -3326,7 +3371,8 @@ func t399() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("  \\imut_range00  ")
 	let o = mut ? new String()
-	? putB(o, Text.isSizedIntName(a0))
+	let r = mut ? Text.isSizedIntName(a0)
+	? putB(o, r)
 	return chk("isSizedIntName#399", o, "F")
 }
 @throws
@@ -3334,7 +3380,8 @@ func t400() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String(")mut_// cr8[-] ")
 	let o = mut ? new String()
-	? putB(o, Text.isSizedIntName(a0))
+	let r = mut ? Text.isSizedIntName(a0)
+	? putB(o, r)
 	return chk("isSizedIntName#400", o, "F")
 }
 @throws
@@ -3342,7 +3389,8 @@ func t401() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("12Z9blu")
 	let o = mut ? new String()
-	? putB(o, Text.isSizedIntName(a0))
+	let r = mut ? Text.isSizedIntName(a0)
+	? putB(o, r)
 	return chk("isSizedIntName#401", o, "F")
 }
 @throws
@@ -3350,7 +3398,8 @@ func t402() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("")
 	let o = mut ? new String()
-	? putB(o, Text.isSizedIntName(a0))
+	let r = mut ? Text.isSizedIntName(a0)
+	? putB(o, r)
 	return chk("isSizedIntName#402", o, "F")
 }
 @throws
@@ -3358,7 +3407,8 @@ func t403() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("\x0c/E(")
 	let o = mut ? new String()
-	? putB(o, Text.isSizedIntName(a0))
+	let r = mut ? Text.isSizedIntName(a0)
+	? putB(o, r)
 	return chk("isSizedIntName#403", o, "F")
 }
 @throws
@@ -3366,7 +3416,8 @@ func t404() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("")
 	let o = mut ? new String()
-	? putB(o, Text.isSizedIntName(a0))
+	let r = mut ? Text.isSizedIntName(a0)
+	? putB(o, r)
 	return chk("isSizedIntName#404", o, "F")
 }
 @throws
@@ -3374,7 +3425,8 @@ func t405() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("")
 	let o = mut ? new String()
-	? putB(o, Text.isSizedIntName(a0))
+	let r = mut ? Text.isSizedIntName(a0)
+	? putB(o, r)
 	return chk("isSizedIntName#405", o, "F")
 }
 @throws
@@ -3382,7 +3434,8 @@ func t406() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("")
 	let o = mut ? new String()
-	? putB(o, Text.isSizedIntName(a0))
+	let r = mut ? Text.isSizedIntName(a0)
+	? putB(o, r)
 	return chk("isSizedIntName#406", o, "F")
 }
 @throws
@@ -3390,7 +3443,8 @@ func t407() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("/range\r\n00 -")
 	let o = mut ? new String()
-	? putB(o, Text.isSizedIntName(a0))
+	let r = mut ? Text.isSizedIntName(a0)
+	? putB(o, r)
 	return chk("isSizedIntName#407", o, "F")
 }
 @throws
@@ -3398,7 +3452,8 @@ func t408() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("12+ __")
 	let o = mut ? new String()
-	? putB(o, Text.isSizedIntName(a0))
+	let r = mut ? Text.isSizedIntName(a0)
+	? putB(o, r)
 	return chk("isSizedIntName#408", o, "F")
 }
 @throws
@@ -3406,7 +3461,8 @@ func t409() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String(".a.b")
 	let o = mut ? new String()
-	? putB(o, Text.isSizedIntName(a0))
+	let r = mut ? Text.isSizedIntName(a0)
+	? putB(o, r)
 	return chk("isSizedIntName#409", o, "F")
 }
 @throws
@@ -3414,7 +3470,8 @@ func t410() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("")
 	let o = mut ? new String()
-	? putB(o, Text.isSizedIntName(a0))
+	let r = mut ? Text.isSizedIntName(a0)
+	? putB(o, r)
 	return chk("isSizedIntName#410", o, "F")
 }
 @throws
@@ -3422,7 +3479,8 @@ func t411() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("r15a.b.caspienu32(")
 	let o = mut ? new String()
-	? putB(o, Text.isSizedIntName(a0))
+	let r = mut ? Text.isSizedIntName(a0)
+	? putB(o, r)
 	return chk("isSizedIntName#411", o, "F")
 }
 @throws
@@ -3430,7 +3488,8 @@ func t412() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("_")
 	let o = mut ? new String()
-	? putB(o, Text.isSizedIntName(a0))
+	let r = mut ? Text.isSizedIntName(a0)
+	? putB(o, r)
 	return chk("isSizedIntName#412", o, "F")
 }
 @throws
@@ -3438,7 +3497,8 @@ func t413() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String(":end")
 	let o = mut ? new String()
-	? putB(o, Text.isSizedIntName(a0))
+	let r = mut ? Text.isSizedIntName(a0)
+	? putB(o, r)
 	return chk("isSizedIntName#413", o, "F")
 }
 @throws
@@ -3446,7 +3506,8 @@ func t414() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("A+")
 	let o = mut ? new String()
-	? putB(o, Text.isSizedIntName(a0))
+	let r = mut ? Text.isSizedIntName(a0)
+	? putB(o, r)
 	return chk("isSizedIntName#414", o, "F")
 }
 @throws
@@ -3454,7 +3515,8 @@ func t415() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("// ce_")
 	let o = mut ? new String()
-	? putB(o, Text.isSizedIntName(a0))
+	let r = mut ? Text.isSizedIntName(a0)
+	? putB(o, r)
 	return chk("isSizedIntName#415", o, "F")
 }
 @throws
@@ -3462,7 +3524,8 @@ func t416() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("0070()// cchar")
 	let o = mut ? new String()
-	? putB(o, Text.isSizedIntName(a0))
+	let r = mut ? Text.isSizedIntName(a0)
+	? putB(o, r)
 	return chk("isSizedIntName#416", o, "F")
 }
 @throws
@@ -3470,7 +3533,8 @@ func t417() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("\r\n0\r\nA")
 	let o = mut ? new String()
-	? putB(o, Text.isSizedIntName(a0))
+	let r = mut ? Text.isSizedIntName(a0)
+	? putB(o, r)
 	return chk("isSizedIntName#417", o, "F")
 }
 @throws
@@ -3478,7 +3542,8 @@ func t418() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("._Z9indeterminate_start;00:")
 	let o = mut ? new String()
-	? putB(o, Text.isSizedIntName(a0))
+	let r = mut ? Text.isSizedIntName(a0)
+	? putB(o, r)
 	return chk("isSizedIntName#418", o, "F")
 }
 @throws
@@ -3486,7 +3551,8 @@ func t419() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("-indeterminate_")
 	let o = mut ? new String()
-	? putB(o, Text.isSizedIntName(a0))
+	let r = mut ? Text.isSizedIntName(a0)
+	? putB(o, r)
 	return chk("isSizedIntName#419", o, "F")
 }
 @throws
@@ -3494,7 +3560,8 @@ func t420() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String(" s16u32\nu32f32")
 	let o = mut ? new String()
-	? putB(o, Text.isSizedIntName(a0))
+	let r = mut ? Text.isSizedIntName(a0)
+	? putB(o, r)
 	return chk("isSizedIntName#420", o, "F")
 }
 @throws
@@ -3502,7 +3569,8 @@ func t421() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("}char-[#\r")
 	let o = mut ? new String()
-	? putB(o, Text.isSizedIntName(a0))
+	let r = mut ? Text.isSizedIntName(a0)
+	? putB(o, r)
 	return chk("isSizedIntName#421", o, "F")
 }
 @throws
@@ -3510,7 +3578,8 @@ func t422() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("\$")
 	let o = mut ? new String()
-	? putB(o, Text.isSizedIntName(a0))
+	let r = mut ? Text.isSizedIntName(a0)
+	? putB(o, r)
 	return chk("isSizedIntName#422", o, "F")
 }
 @throws
@@ -3518,7 +3587,8 @@ func t423() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("a.bbool")
 	let o = mut ? new String()
-	? putB(o, Text.isSizedIntName(a0))
+	let r = mut ? Text.isSizedIntName(a0)
+	? putB(o, r)
 	return chk("isSizedIntName#423", o, "F")
 }
 @throws
@@ -3526,7 +3596,8 @@ func t424() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("00\"9\x0c// cmut_12\\")
 	let o = mut ? new String()
-	? putB(o, Text.isSizedIntName(a0))
+	let r = mut ? Text.isSizedIntName(a0)
+	? putB(o, r)
 	return chk("isSizedIntName#424", o, "F")
 }
 @throws
@@ -3534,7 +3605,8 @@ func t425() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("Z9\runsafe")
 	let o = mut ? new String()
-	? putB(o, Text.isSizedIntName(a0))
+	let r = mut ? Text.isSizedIntName(a0)
+	? putB(o, r)
 	return chk("isSizedIntName#425", o, "F")
 }
 @throws
@@ -3542,7 +3614,8 @@ func t426() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("//;/%rbxr8unauditeds16")
 	let o = mut ? new String()
-	? putB(o, Text.isSizedIntName(a0))
+	let r = mut ? Text.isSizedIntName(a0)
+	? putB(o, r)
 	return chk("isSizedIntName#426", o, "F")
 }
 @throws
@@ -3550,7 +3623,8 @@ func t427() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("charrangeabZ9r15007")
 	let o = mut ? new String()
-	? putB(o, Text.isSizedIntName(a0))
+	let r = mut ? Text.isSizedIntName(a0)
+	? putB(o, r)
 	return chk("isSizedIntName#427", o, "F")
 }
 @throws
@@ -3558,7 +3632,8 @@ func t428() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("-))unsafe\x0c\$//  ")
 	let o = mut ? new String()
-	? putB(o, Text.isSizedIntName(a0))
+	let r = mut ? Text.isSizedIntName(a0)
+	? putB(o, r)
 	return chk("isSizedIntName#428", o, "F")
 }
 @throws
@@ -3566,7 +3641,8 @@ func t429() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("")
 	let o = mut ? new String()
-	? putB(o, Text.isSizedIntName(a0))
+	let r = mut ? Text.isSizedIntName(a0)
+	? putB(o, r)
 	return chk("isSizedIntName#429", o, "F")
 }
 @throws
@@ -3574,7 +3650,8 @@ func t430() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("bl\rmut_")
 	let o = mut ? new String()
-	? putB(o, Text.isSizedIntName(a0))
+	let r = mut ? Text.isSizedIntName(a0)
+	? putB(o, r)
 	return chk("isSizedIntName#430", o, "F")
 }
 @throws
@@ -3582,7 +3659,8 @@ func t431() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("Eb")
 	let o = mut ? new String()
-	? putB(o, Text.isSizedIntName(a0))
+	let r = mut ? Text.isSizedIntName(a0)
+	? putB(o, r)
 	return chk("isSizedIntName#431", o, "F")
 }
 @throws
@@ -3590,7 +3668,8 @@ func t432() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("u8}}9")
 	let o = mut ? new String()
-	? putB(o, Text.isSizedIntName(a0))
+	let r = mut ? Text.isSizedIntName(a0)
+	? putB(o, r)
 	return chk("isSizedIntName#432", o, "F")
 }
 @throws
@@ -4606,7 +4685,8 @@ func t542() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("mut_u8")
 	let o = mut ? new String()
-	? putB(o, Text.isQualifiedScalar(a0, false))
+	let r = mut ? Text.isQualifiedScalar(a0, false)
+	? putB(o, r)
 	return chk("isQualifiedScalar#542", o, "T")
 }
 @throws
@@ -4614,7 +4694,8 @@ func t543() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("imut_f64")
 	let o = mut ? new String()
-	? putB(o, Text.isQualifiedScalar(a0, true))
+	let r = mut ? Text.isQualifiedScalar(a0, true)
+	? putB(o, r)
 	return chk("isQualifiedScalar#543", o, "T")
 }
 @throws
@@ -4622,7 +4703,8 @@ func t544() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("indeterminate_bool")
 	let o = mut ? new String()
-	? putB(o, Text.isQualifiedScalar(a0, false))
+	let r = mut ? Text.isQualifiedScalar(a0, false)
+	? putB(o, r)
 	return chk("isQualifiedScalar#544", o, "F")
 }
 @throws
@@ -4630,7 +4712,8 @@ func t545() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("mut_char")
 	let o = mut ? new String()
-	? putB(o, Text.isQualifiedScalar(a0, true))
+	let r = mut ? Text.isQualifiedScalar(a0, true)
+	? putB(o, r)
 	return chk("isQualifiedScalar#545", o, "T")
 }
 @throws
@@ -4638,7 +4721,8 @@ func t546() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("mut_u128")
 	let o = mut ? new String()
-	? putB(o, Text.isQualifiedScalar(a0, false))
+	let r = mut ? Text.isQualifiedScalar(a0, false)
+	? putB(o, r)
 	return chk("isQualifiedScalar#546", o, "F")
 }
 @throws
@@ -4646,7 +4730,8 @@ func t547() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("x_u8")
 	let o = mut ? new String()
-	? putB(o, Text.isQualifiedScalar(a0, true))
+	let r = mut ? Text.isQualifiedScalar(a0, true)
+	? putB(o, r)
 	return chk("isQualifiedScalar#547", o, "F")
 }
 @throws
@@ -4654,7 +4739,8 @@ func t548() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("mut_")
 	let o = mut ? new String()
-	? putB(o, Text.isQualifiedScalar(a0, true))
+	let r = mut ? Text.isQualifiedScalar(a0, true)
+	? putB(o, r)
 	return chk("isQualifiedScalar#548", o, "F")
 }
 @throws
@@ -4662,7 +4748,8 @@ func t549() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("mut")
 	let o = mut ? new String()
-	? putB(o, Text.isQualifiedScalar(a0, true))
+	let r = mut ? Text.isQualifiedScalar(a0, true)
+	? putB(o, r)
 	return chk("isQualifiedScalar#549", o, "F")
 }
 @throws
@@ -4670,7 +4757,8 @@ func t550() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("")
 	let o = mut ? new String()
-	? putB(o, Text.isQualifiedScalar(a0, false))
+	let r = mut ? Text.isQualifiedScalar(a0, false)
+	? putB(o, r)
 	return chk("isQualifiedScalar#550", o, "F")
 }
 @throws
@@ -4678,7 +4766,8 @@ func t551() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("(.caspien\x0b\x0cstart")
 	let o = mut ? new String()
-	? putB(o, Text.isQualifiedScalar(a0, false))
+	let r = mut ? Text.isQualifiedScalar(a0, false)
+	? putB(o, r)
 	return chk("isQualifiedScalar#551", o, "F")
 }
 @throws
@@ -4686,7 +4775,8 @@ func t552() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("]u32]")
 	let o = mut ? new String()
-	? putB(o, Text.isQualifiedScalar(a0, false))
+	let r = mut ? Text.isQualifiedScalar(a0, false)
+	? putB(o, r)
 	return chk("isQualifiedScalar#552", o, "F")
 }
 @throws
@@ -4694,7 +4784,8 @@ func t553() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String(".caspienA\x0c")
 	let o = mut ? new String()
-	? putB(o, Text.isQualifiedScalar(a0, true))
+	let r = mut ? Text.isQualifiedScalar(a0, true)
+	? putB(o, r)
 	return chk("isQualifiedScalar#553", o, "F")
 }
 @throws
@@ -4702,7 +4793,8 @@ func t554() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("{s16\\unsafe}")
 	let o = mut ? new String()
-	? putB(o, Text.isQualifiedScalar(a0, true))
+	let r = mut ? Text.isQualifiedScalar(a0, true)
+	? putB(o, r)
 	return chk("isQualifiedScalar#554", o, "F")
 }
 @throws
@@ -4710,7 +4802,8 @@ func t555() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("")
 	let o = mut ? new String()
-	? putB(o, Text.isQualifiedScalar(a0, true))
+	let r = mut ? Text.isQualifiedScalar(a0, true)
+	? putB(o, r)
 	return chk("isQualifiedScalar#555", o, "F")
 }
 @throws
@@ -4718,7 +4811,8 @@ func t556() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("(")
 	let o = mut ? new String()
-	? putB(o, Text.isQualifiedScalar(a0, false))
+	let r = mut ? Text.isQualifiedScalar(a0, false)
+	? putB(o, r)
 	return chk("isQualifiedScalar#556", o, "F")
 }
 @throws
@@ -4726,7 +4820,8 @@ func t557() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("0\r")
 	let o = mut ? new String()
-	? putB(o, Text.isQualifiedScalar(a0, true))
+	let r = mut ? Text.isQualifiedScalar(a0, true)
+	? putB(o, r)
 	return chk("isQualifiedScalar#557", o, "F")
 }
 @throws
@@ -4734,7 +4829,8 @@ func t558() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("r15+")
 	let o = mut ? new String()
-	? putB(o, Text.isQualifiedScalar(a0, false))
+	let r = mut ? Text.isQualifiedScalar(a0, false)
+	? putB(o, r)
 	return chk("isQualifiedScalar#558", o, "F")
 }
 @throws
@@ -4742,7 +4838,8 @@ func t559() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String(" \$\"unaudited\$")
 	let o = mut ? new String()
-	? putB(o, Text.isQualifiedScalar(a0, true))
+	let r = mut ? Text.isQualifiedScalar(a0, true)
+	? putB(o, r)
 	return chk("isQualifiedScalar#559", o, "F")
 }
 @throws
@@ -4750,7 +4847,8 @@ func t560() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("Z9\x0c-")
 	let o = mut ? new String()
-	? putB(o, Text.isQualifiedScalar(a0, false))
+	let r = mut ? Text.isQualifiedScalar(a0, false)
+	? putB(o, r)
 	return chk("isQualifiedScalar#560", o, "F")
 }
 @throws
@@ -4758,7 +4856,8 @@ func t561() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("s16start.)+  ")
 	let o = mut ? new String()
-	? putB(o, Text.isQualifiedScalar(a0, true))
+	let r = mut ? Text.isQualifiedScalar(a0, true)
+	? putB(o, r)
 	return chk("isQualifiedScalar#561", o, "F")
 }
 @throws
@@ -4766,7 +4865,8 @@ func t562() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("  xunaudited")
 	let o = mut ? new String()
-	? putB(o, Text.isQualifiedScalar(a0, false))
+	let r = mut ? Text.isQualifiedScalar(a0, false)
+	? putB(o, r)
 	return chk("isQualifiedScalar#562", o, "F")
 }
 @throws
@@ -4774,7 +4874,8 @@ func t563() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("rbx)_e(\x0b")
 	let o = mut ? new String()
-	? putB(o, Text.isQualifiedScalar(a0, false))
+	let r = mut ? Text.isQualifiedScalar(a0, false)
+	? putB(o, r)
 	return chk("isQualifiedScalar#563", o, "F")
 }
 @throws
@@ -4782,7 +4883,8 @@ func t564() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("blunauditedrange")
 	let o = mut ? new String()
-	? putB(o, Text.isQualifiedScalar(a0, false))
+	let r = mut ? Text.isQualifiedScalar(a0, false)
+	? putB(o, r)
 	return chk("isQualifiedScalar#564", o, "F")
 }
 @throws
@@ -4790,7 +4892,8 @@ func t565() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("\ru32mut_imut_")
 	let o = mut ? new String()
-	? putB(o, Text.isQualifiedScalar(a0, false))
+	let r = mut ? Text.isQualifiedScalar(a0, false)
+	? putB(o, r)
 	return chk("isQualifiedScalar#565", o, "F")
 }
 @throws
@@ -4798,7 +4901,8 @@ func t566() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String(":bool#007\r")
 	let o = mut ? new String()
-	? putB(o, Text.isQualifiedScalar(a0, true))
+	let r = mut ? Text.isQualifiedScalar(a0, true)
+	? putB(o, r)
 	return chk("isQualifiedScalar#566", o, "F")
 }
 @throws
@@ -4806,7 +4910,8 @@ func t567() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("")
 	let o = mut ? new String()
-	? putB(o, Text.isQualifiedScalar(a0, false))
+	let r = mut ? Text.isQualifiedScalar(a0, false)
+	? putB(o, r)
 	return chk("isQualifiedScalar#567", o, "F")
 }
 @throws
@@ -4814,7 +4919,8 @@ func t568() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("Z+u32_ end")
 	let o = mut ? new String()
-	? putB(o, Text.isQualifiedScalar(a0, true))
+	let r = mut ? Text.isQualifiedScalar(a0, true)
+	? putB(o, r)
 	return chk("isQualifiedScalar#568", o, "F")
 }
 @throws
@@ -4822,7 +4928,8 @@ func t569() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("r15\"(\n\r\n")
 	let o = mut ? new String()
-	? putB(o, Text.isQualifiedScalar(a0, true))
+	let r = mut ? Text.isQualifiedScalar(a0, true)
+	? putB(o, r)
 	return chk("isQualifiedScalar#569", o, "F")
 }
 @throws
@@ -4830,7 +4937,8 @@ func t570() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("r8E// c;\x0br15mut_\$")
 	let o = mut ? new String()
-	? putB(o, Text.isQualifiedScalar(a0, true))
+	let r = mut ? Text.isQualifiedScalar(a0, true)
+	? putB(o, r)
 	return chk("isQualifiedScalar#570", o, "F")
 }
 @throws
@@ -4838,7 +4946,8 @@ func t571() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("(/]")
 	let o = mut ? new String()
-	? putB(o, Text.isQualifiedScalar(a0, false))
+	let r = mut ? Text.isQualifiedScalar(a0, false)
+	? putB(o, r)
 	return chk("isQualifiedScalar#571", o, "F")
 }
 @throws
@@ -4846,7 +4955,8 @@ func t572() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("bool\$bool\x0b)")
 	let o = mut ? new String()
-	? putB(o, Text.isQualifiedScalar(a0, false))
+	let r = mut ? Text.isQualifiedScalar(a0, false)
+	? putB(o, r)
 	return chk("isQualifiedScalar#572", o, "F")
 }
 @throws
@@ -4854,7 +4964,8 @@ func t573() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("")
 	let o = mut ? new String()
-	? putB(o, Text.isQualifiedScalar(a0, false))
+	let r = mut ? Text.isQualifiedScalar(a0, false)
+	? putB(o, r)
 	return chk("isQualifiedScalar#573", o, "F")
 }
 @throws
@@ -4862,7 +4973,8 @@ func t574() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("r8 00")
 	let o = mut ? new String()
-	? putB(o, Text.isQualifiedScalar(a0, true))
+	let r = mut ? Text.isQualifiedScalar(a0, true)
+	? putB(o, r)
 	return chk("isQualifiedScalar#574", o, "F")
 }
 @throws
@@ -4870,7 +4982,8 @@ func t575() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("r15{u32%t")
 	let o = mut ? new String()
-	? putB(o, Text.isQualifiedScalar(a0, true))
+	let r = mut ? Text.isQualifiedScalar(a0, true)
+	? putB(o, r)
 	return chk("isQualifiedScalar#575", o, "F")
 }
 @throws
@@ -4878,7 +4991,8 @@ func t576() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("Z9\x0c")
 	let o = mut ? new String()
-	? putB(o, Text.isQualifiedScalar(a0, false))
+	let r = mut ? Text.isQualifiedScalar(a0, false)
+	? putB(o, r)
 	return chk("isQualifiedScalar#576", o, "F")
 }
 @throws
@@ -4886,7 +5000,8 @@ func t577() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String(")12")
 	let o = mut ? new String()
-	? putB(o, Text.isQualifiedScalar(a0, true))
+	let r = mut ? Text.isQualifiedScalar(a0, true)
+	? putB(o, r)
 	return chk("isQualifiedScalar#577", o, "F")
 }
 @throws
@@ -4894,7 +5009,8 @@ func t578() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("x\runaudited\nr15")
 	let o = mut ? new String()
-	? putB(o, Text.isQualifiedScalar(a0, true))
+	let r = mut ? Text.isQualifiedScalar(a0, true)
+	? putB(o, r)
 	return chk("isQualifiedScalar#578", o, "F")
 }
 @throws
@@ -4902,7 +5018,8 @@ func t579() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("bool")
 	let o = mut ? new String()
-	? putB(o, Text.isQualifiedScalar(a0, false))
+	let r = mut ? Text.isQualifiedScalar(a0, false)
+	? putB(o, r)
 	return chk("isQualifiedScalar#579", o, "F")
 }
 @throws
@@ -4910,7 +5027,8 @@ func t580() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("(Z9]+")
 	let o = mut ? new String()
-	? putB(o, Text.isQualifiedScalar(a0, false))
+	let r = mut ? Text.isQualifiedScalar(a0, false)
+	? putB(o, r)
 	return chk("isQualifiedScalar#580", o, "F")
 }
 @throws
@@ -4918,7 +5036,8 @@ func t581() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String(")%t\t\r_12.caspien]")
 	let o = mut ? new String()
-	? putB(o, Text.isQualifiedScalar(a0, true))
+	let r = mut ? Text.isQualifiedScalar(a0, true)
+	? putB(o, r)
 	return chk("isQualifiedScalar#581", o, "F")
 }
 @throws
@@ -4926,7 +5045,8 @@ func t582() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("s16\t;:")
 	let o = mut ? new String()
-	? putB(o, Text.isQualifiedScalar(a0, true))
+	let r = mut ? Text.isQualifiedScalar(a0, true)
+	? putB(o, r)
 	return chk("isQualifiedScalar#582", o, "F")
 }
 @throws
@@ -4934,7 +5054,8 @@ func t583() mut u64{
 	?catch(e){ throw e }
 	let a0 = mut ? new String("char\r[char(x")
 	let o = mut ? new String()
-	? putB(o, Text.isQualifiedScalar(a0, false))
+	let r = mut ? Text.isQualifiedScalar(a0, false)
+	? putB(o, r)
 	return chk("isQualifiedScalar#583", o, "F")
 }
 @throws

@@ -13,57 +13,873 @@ import "../../../../../../../BytecodeParser/src/main/java/caspien/bytecode/Bytec
 import "stdlib/jdk_long.caspien"
 import "stdlib/bigint.caspien"
 
-@pub
-let static X86Core_CSR_MARK = imut "@@CSR@@"
+/*
+ * The Java `static final` constants. Caspien's idiom for shared constants is a lock-protected `let static` (safe code may not read a bare static):
+ * each is a struct with a `swap` gate and is read through `match @lock`. A `let static` initialiser cannot hold a string literal (it is emitted as
+ * null), so the strings and tables start empty and are filled once, under the lock, on first use; reads return a copy (strings) or answer a question (tables).
+ */
+enum ConstGate{ OPEN, CLOSED }
 
 @pub
-let static X86Core_RSP_MARK = imut "@@RSP@@"
+@lock(match self.gate : OPEN)
+struct ConstString{@pub{
+	swap gate: atomic mut ConstGate
+	value: owns mut String
+}}
 
 @pub
-let static X86Core_V1314_SAVE = imut "@@V1314S@@"
+@lock(match self.gate : OPEN)
+struct ConstInt{@pub{
+	swap gate: atomic mut ConstGate
+	value: mut s32
+}}
 
 @pub
-let static X86Core_V1314_REST = imut "@@V1314R@@"
+@lock(match self.gate : OPEN)
+struct ConstList{@pub{
+	swap gate: atomic mut ConstGate
+	value: owns mut ObjectList<String>
+}}
 
 @pub
-let static X86Core_RF_SCRATCH = imut "r15"
+@lock(match self.gate : OPEN)
+struct ConstSet{@pub{
+	swap gate: atomic mut ConstGate
+	value: owns mut StringSet
+}}
 
-@pub
-let static:<imut s32> X86Core_XV_COUNT = imut 6
 
-@pub
-let static:<imut s32> X86Core_YT_COUNT = imut 4
+let static X86Core_CSR_MARK = mut ConstString{gate= ConstGate.OPEN, value= null}
 
+/** Java `CSR_MARK` = "@@CSR@@": a fresh copy of the constant. */
 @pub
-let static X86Core_LINUX_ARG_REGS = imut ["rdi", "rsi", "rdx", "rcx", "r8", "r9"]
+@throws
+func X86Core_csrMark() owns some mut String{
+	?catch(e){ throw e }
+	let out = mut ? new String()
+	/*! termination: finite */
+	match @lock X86Core_CSR_MARK{
+		OPEN:{
+			let have = mut false
+			match Some(X86Core_CSR_MARK.value){ have = true }
+			if !have{
+				X86Core_CSR_MARK.value = ? new String()
+				match Some(X86Core_CSR_MARK.value){ ? X86Core_CSR_MARK.value.append(X86Core_CSR_MARK.value, "@@CSR@@") }
+			}
+			match Some(X86Core_CSR_MARK.value){ out = ? X86Core_CSR_MARK.value.substring(X86Core_CSR_MARK.value, 0) }
+		}
+		CLOSED:default(1000000)
+	}
+	return out
+}
 
-@pub
-let static X86Core_WIN_ARG_REGS = imut ["rcx", "rdx", "r8", "r9"]
 
-@pub
-let static X86Core_LINUX_ARG_REGS_FLOAT = imut ["xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7"]
+let static X86Core_RSP_MARK = mut ConstString{gate= ConstGate.OPEN, value= null}
 
+/** Java `RSP_MARK` = "@@RSP@@": a fresh copy of the constant. */
 @pub
-let static X86Core_WIN_ARG_REGS_FLOAT = imut ["xmm0", "xmm1", "xmm2", "xmm3"]
+@throws
+func X86Core_rspMark() owns some mut String{
+	?catch(e){ throw e }
+	let out = mut ? new String()
+	/*! termination: finite */
+	match @lock X86Core_RSP_MARK{
+		OPEN:{
+			let have = mut false
+			match Some(X86Core_RSP_MARK.value){ have = true }
+			if !have{
+				X86Core_RSP_MARK.value = ? new String()
+				match Some(X86Core_RSP_MARK.value){ ? X86Core_RSP_MARK.value.append(X86Core_RSP_MARK.value, "@@RSP@@") }
+			}
+			match Some(X86Core_RSP_MARK.value){ out = ? X86Core_RSP_MARK.value.substring(X86Core_RSP_MARK.value, 0) }
+		}
+		CLOSED:default(1000000)
+	}
+	return out
+}
 
-@pub
-let static X86Core_RF_TEMP_REGS = imut ["rax", "rbx", "r11", "r12"]
 
-@pub
-let static X86Core_RF_VAR_REGS = imut ["r13", "r14", "r12", "r8", "r9", "r10", "rsi", "rdi", "rdx", "rcx"]
+let static X86Core_V1314_SAVE = mut ConstString{gate= ConstGate.OPEN, value= null}
 
+/** Java `V1314_SAVE` = "@@V1314S@@": a fresh copy of the constant. */
 @pub
-let static X86Core_STRIDE_KEEP_OPS = imut [
-		"movq", "movl", "movw", "movb", "movzbq", "movzwq", "movzbl", "movzwl", "movslq", "movsbq", "movswq", "movsbl",
-		"movswl", "movsd", "movss", "movd", "movaps", "movapd", "addsd", "addss", "subsd", "subss", "mulsd", "mulss",
-		"divsd", "divss", "addq", "subq", "addl", "subl", "leaq", "andq", "orq", "xorq", "shlq", "shrq", "sarq",
-		"incq", "decq", "negq", "notq", "sqrtsd", "sqrtss", "ucomisd", "ucomiss", "comisd", "comiss", "cvtss2sd",
-		"cvtsd2ss", "xorps", "xorpd", "andps", "andpd"]
+@throws
+func X86Core_v1314Save() owns some mut String{
+	?catch(e){ throw e }
+	let out = mut ? new String()
+	/*! termination: finite */
+	match @lock X86Core_V1314_SAVE{
+		OPEN:{
+			let have = mut false
+			match Some(X86Core_V1314_SAVE.value){ have = true }
+			if !have{
+				X86Core_V1314_SAVE.value = ? new String()
+				match Some(X86Core_V1314_SAVE.value){ ? X86Core_V1314_SAVE.value.append(X86Core_V1314_SAVE.value, "@@V1314S@@") }
+			}
+			match Some(X86Core_V1314_SAVE.value){ out = ? X86Core_V1314_SAVE.value.substring(X86Core_V1314_SAVE.value, 0) }
+		}
+		CLOSED:default(1000000)
+	}
+	return out
+}
 
+
+let static X86Core_V1314_REST = mut ConstString{gate= ConstGate.OPEN, value= null}
+
+/** Java `V1314_REST` = "@@V1314R@@": a fresh copy of the constant. */
 @pub
-let static X86Core_RF_R13_R14_USERS = imut [
-		"NEW", "NEW_DYN", "NEW_UDYN", "NEW_FROM_STRING", "NEW_FROM_USTRING", "CLONE", "CLONE_DYN", "RESIZE", "URESIZE",
-		"DOT", "LOOKUP_ARRAY", "ASM_START"]
+@throws
+func X86Core_v1314Rest() owns some mut String{
+	?catch(e){ throw e }
+	let out = mut ? new String()
+	/*! termination: finite */
+	match @lock X86Core_V1314_REST{
+		OPEN:{
+			let have = mut false
+			match Some(X86Core_V1314_REST.value){ have = true }
+			if !have{
+				X86Core_V1314_REST.value = ? new String()
+				match Some(X86Core_V1314_REST.value){ ? X86Core_V1314_REST.value.append(X86Core_V1314_REST.value, "@@V1314R@@") }
+			}
+			match Some(X86Core_V1314_REST.value){ out = ? X86Core_V1314_REST.value.substring(X86Core_V1314_REST.value, 0) }
+		}
+		CLOSED:default(1000000)
+	}
+	return out
+}
+
+
+let static X86Core_RF_SCRATCH = mut ConstString{gate= ConstGate.OPEN, value= null}
+
+/** Java `RF_SCRATCH` = "r15": a fresh copy of the constant. */
+@pub
+@throws
+func X86Core_rfScratch() owns some mut String{
+	?catch(e){ throw e }
+	let out = mut ? new String()
+	/*! termination: finite */
+	match @lock X86Core_RF_SCRATCH{
+		OPEN:{
+			let have = mut false
+			match Some(X86Core_RF_SCRATCH.value){ have = true }
+			if !have{
+				X86Core_RF_SCRATCH.value = ? new String()
+				match Some(X86Core_RF_SCRATCH.value){ ? X86Core_RF_SCRATCH.value.append(X86Core_RF_SCRATCH.value, "r15") }
+			}
+			match Some(X86Core_RF_SCRATCH.value){ out = ? X86Core_RF_SCRATCH.value.substring(X86Core_RF_SCRATCH.value, 0) }
+		}
+		CLOSED:default(1000000)
+	}
+	return out
+}
+
+
+let static X86Core_XV_COUNT = mut ConstInt{gate= ConstGate.OPEN, value= mut 6}
+
+/** Java `XV_COUNT` = 6. */
+@pub
+func X86Core_xvCount() mut s32{
+	let:<mut s32> out = mut 0
+	/*! termination: bound */
+	match @lock X86Core_XV_COUNT{
+		OPEN:{ out = X86Core_XV_COUNT.value }
+		CLOSED:default(1000000)
+	}
+	return out
+}
+
+
+let static X86Core_YT_COUNT = mut ConstInt{gate= ConstGate.OPEN, value= mut 4}
+
+/** Java `YT_COUNT` = 4. */
+@pub
+func X86Core_ytCount() mut s32{
+	let:<mut s32> out = mut 0
+	/*! termination: bound */
+	match @lock X86Core_YT_COUNT{
+		OPEN:{ out = X86Core_YT_COUNT.value }
+		CLOSED:default(1000000)
+	}
+	return out
+}
+
+
+let static X86Core_LINUX_ARG_REGS = mut ConstList{gate= ConstGate.OPEN, value= null}
+
+/** Fills Java `LINUX_ARG_REGS` (6 entries) on first use. */
+@throws
+func X86Core_linuxArgRegs_ensure() void{
+	?catch(e){ throw e }
+	/*! termination: bound */
+	match @lock X86Core_LINUX_ARG_REGS{
+		OPEN:{
+			let have = mut false
+			match Some(X86Core_LINUX_ARG_REGS.value){ have = true }
+			if !have{
+				X86Core_LINUX_ARG_REGS.value = ? new ObjectList:<String>()
+				let e0 = mut ? String.from("rdi")
+				match Some(X86Core_LINUX_ARG_REGS.value){ ? X86Core_LINUX_ARG_REGS.value.add(X86Core_LINUX_ARG_REGS.value, e0) }
+				let e1 = mut ? String.from("rsi")
+				match Some(X86Core_LINUX_ARG_REGS.value){ ? X86Core_LINUX_ARG_REGS.value.add(X86Core_LINUX_ARG_REGS.value, e1) }
+				let e2 = mut ? String.from("rdx")
+				match Some(X86Core_LINUX_ARG_REGS.value){ ? X86Core_LINUX_ARG_REGS.value.add(X86Core_LINUX_ARG_REGS.value, e2) }
+				let e3 = mut ? String.from("rcx")
+				match Some(X86Core_LINUX_ARG_REGS.value){ ? X86Core_LINUX_ARG_REGS.value.add(X86Core_LINUX_ARG_REGS.value, e3) }
+				let e4 = mut ? String.from("r8")
+				match Some(X86Core_LINUX_ARG_REGS.value){ ? X86Core_LINUX_ARG_REGS.value.add(X86Core_LINUX_ARG_REGS.value, e4) }
+				let e5 = mut ? String.from("r9")
+				match Some(X86Core_LINUX_ARG_REGS.value){ ? X86Core_LINUX_ARG_REGS.value.add(X86Core_LINUX_ARG_REGS.value, e5) }
+			}
+		}
+		CLOSED:default(1000000)
+	}
+}
+
+/** `LINUX_ARG_REGS.length` / `.size()`. */
+@pub
+@throws
+func X86Core_linuxArgRegs_size() mut u64{
+	?catch(e){ throw e }
+	? X86Core_linuxArgRegs_ensure()
+	let n = mut 0
+	/*! termination: bound */
+	match @lock X86Core_LINUX_ARG_REGS{
+		OPEN:{ match Some(X86Core_LINUX_ARG_REGS.value){ n = X86Core_LINUX_ARG_REGS.value.size(X86Core_LINUX_ARG_REGS.value) } }
+		CLOSED:default(1000000)
+	}
+	return n
+}
+
+/** `LINUX_ARG_REGS[i]`: a fresh copy of the entry; throws past the end. */
+@pub
+@throws
+func X86Core_linuxArgRegs_at(i: imut u64) owns some mut String{
+	?catch(e){ throw e }
+	? X86Core_linuxArgRegs_ensure()
+	let out = mut ? new String()
+	let found = mut false
+	/*! termination: finite */
+	match @lock X86Core_LINUX_ARG_REGS{
+		OPEN:{
+			match Some(X86Core_LINUX_ARG_REGS.value){
+				if i < X86Core_LINUX_ARG_REGS.value.size(X86Core_LINUX_ARG_REGS.value){
+					let e = X86Core_LINUX_ARG_REGS.value.get(X86Core_LINUX_ARG_REGS.value, i)
+					match Some(e){ out = ? e.substring(e, 0) }
+					found = true
+				}
+			}
+		}
+		CLOSED:default(1000000)
+	}
+	if !found{
+		throw "array index out of range"
+	}
+	return out
+}
+
+
+let static X86Core_WIN_ARG_REGS = mut ConstList{gate= ConstGate.OPEN, value= null}
+
+/** Fills Java `WIN_ARG_REGS` (4 entries) on first use. */
+@throws
+func X86Core_winArgRegs_ensure() void{
+	?catch(e){ throw e }
+	/*! termination: bound */
+	match @lock X86Core_WIN_ARG_REGS{
+		OPEN:{
+			let have = mut false
+			match Some(X86Core_WIN_ARG_REGS.value){ have = true }
+			if !have{
+				X86Core_WIN_ARG_REGS.value = ? new ObjectList:<String>()
+				let e0 = mut ? String.from("rcx")
+				match Some(X86Core_WIN_ARG_REGS.value){ ? X86Core_WIN_ARG_REGS.value.add(X86Core_WIN_ARG_REGS.value, e0) }
+				let e1 = mut ? String.from("rdx")
+				match Some(X86Core_WIN_ARG_REGS.value){ ? X86Core_WIN_ARG_REGS.value.add(X86Core_WIN_ARG_REGS.value, e1) }
+				let e2 = mut ? String.from("r8")
+				match Some(X86Core_WIN_ARG_REGS.value){ ? X86Core_WIN_ARG_REGS.value.add(X86Core_WIN_ARG_REGS.value, e2) }
+				let e3 = mut ? String.from("r9")
+				match Some(X86Core_WIN_ARG_REGS.value){ ? X86Core_WIN_ARG_REGS.value.add(X86Core_WIN_ARG_REGS.value, e3) }
+			}
+		}
+		CLOSED:default(1000000)
+	}
+}
+
+/** `WIN_ARG_REGS.length` / `.size()`. */
+@pub
+@throws
+func X86Core_winArgRegs_size() mut u64{
+	?catch(e){ throw e }
+	? X86Core_winArgRegs_ensure()
+	let n = mut 0
+	/*! termination: bound */
+	match @lock X86Core_WIN_ARG_REGS{
+		OPEN:{ match Some(X86Core_WIN_ARG_REGS.value){ n = X86Core_WIN_ARG_REGS.value.size(X86Core_WIN_ARG_REGS.value) } }
+		CLOSED:default(1000000)
+	}
+	return n
+}
+
+/** `WIN_ARG_REGS[i]`: a fresh copy of the entry; throws past the end. */
+@pub
+@throws
+func X86Core_winArgRegs_at(i: imut u64) owns some mut String{
+	?catch(e){ throw e }
+	? X86Core_winArgRegs_ensure()
+	let out = mut ? new String()
+	let found = mut false
+	/*! termination: finite */
+	match @lock X86Core_WIN_ARG_REGS{
+		OPEN:{
+			match Some(X86Core_WIN_ARG_REGS.value){
+				if i < X86Core_WIN_ARG_REGS.value.size(X86Core_WIN_ARG_REGS.value){
+					let e = X86Core_WIN_ARG_REGS.value.get(X86Core_WIN_ARG_REGS.value, i)
+					match Some(e){ out = ? e.substring(e, 0) }
+					found = true
+				}
+			}
+		}
+		CLOSED:default(1000000)
+	}
+	if !found{
+		throw "array index out of range"
+	}
+	return out
+}
+
+
+let static X86Core_LINUX_ARG_REGS_FLOAT = mut ConstList{gate= ConstGate.OPEN, value= null}
+
+/** Fills Java `LINUX_ARG_REGS_FLOAT` (8 entries) on first use. */
+@throws
+func X86Core_linuxArgRegsFloat_ensure() void{
+	?catch(e){ throw e }
+	/*! termination: bound */
+	match @lock X86Core_LINUX_ARG_REGS_FLOAT{
+		OPEN:{
+			let have = mut false
+			match Some(X86Core_LINUX_ARG_REGS_FLOAT.value){ have = true }
+			if !have{
+				X86Core_LINUX_ARG_REGS_FLOAT.value = ? new ObjectList:<String>()
+				let e0 = mut ? String.from("xmm0")
+				match Some(X86Core_LINUX_ARG_REGS_FLOAT.value){ ? X86Core_LINUX_ARG_REGS_FLOAT.value.add(X86Core_LINUX_ARG_REGS_FLOAT.value, e0) }
+				let e1 = mut ? String.from("xmm1")
+				match Some(X86Core_LINUX_ARG_REGS_FLOAT.value){ ? X86Core_LINUX_ARG_REGS_FLOAT.value.add(X86Core_LINUX_ARG_REGS_FLOAT.value, e1) }
+				let e2 = mut ? String.from("xmm2")
+				match Some(X86Core_LINUX_ARG_REGS_FLOAT.value){ ? X86Core_LINUX_ARG_REGS_FLOAT.value.add(X86Core_LINUX_ARG_REGS_FLOAT.value, e2) }
+				let e3 = mut ? String.from("xmm3")
+				match Some(X86Core_LINUX_ARG_REGS_FLOAT.value){ ? X86Core_LINUX_ARG_REGS_FLOAT.value.add(X86Core_LINUX_ARG_REGS_FLOAT.value, e3) }
+				let e4 = mut ? String.from("xmm4")
+				match Some(X86Core_LINUX_ARG_REGS_FLOAT.value){ ? X86Core_LINUX_ARG_REGS_FLOAT.value.add(X86Core_LINUX_ARG_REGS_FLOAT.value, e4) }
+				let e5 = mut ? String.from("xmm5")
+				match Some(X86Core_LINUX_ARG_REGS_FLOAT.value){ ? X86Core_LINUX_ARG_REGS_FLOAT.value.add(X86Core_LINUX_ARG_REGS_FLOAT.value, e5) }
+				let e6 = mut ? String.from("xmm6")
+				match Some(X86Core_LINUX_ARG_REGS_FLOAT.value){ ? X86Core_LINUX_ARG_REGS_FLOAT.value.add(X86Core_LINUX_ARG_REGS_FLOAT.value, e6) }
+				let e7 = mut ? String.from("xmm7")
+				match Some(X86Core_LINUX_ARG_REGS_FLOAT.value){ ? X86Core_LINUX_ARG_REGS_FLOAT.value.add(X86Core_LINUX_ARG_REGS_FLOAT.value, e7) }
+			}
+		}
+		CLOSED:default(1000000)
+	}
+}
+
+/** `LINUX_ARG_REGS_FLOAT.length` / `.size()`. */
+@pub
+@throws
+func X86Core_linuxArgRegsFloat_size() mut u64{
+	?catch(e){ throw e }
+	? X86Core_linuxArgRegsFloat_ensure()
+	let n = mut 0
+	/*! termination: bound */
+	match @lock X86Core_LINUX_ARG_REGS_FLOAT{
+		OPEN:{ match Some(X86Core_LINUX_ARG_REGS_FLOAT.value){ n = X86Core_LINUX_ARG_REGS_FLOAT.value.size(X86Core_LINUX_ARG_REGS_FLOAT.value) } }
+		CLOSED:default(1000000)
+	}
+	return n
+}
+
+/** `LINUX_ARG_REGS_FLOAT[i]`: a fresh copy of the entry; throws past the end. */
+@pub
+@throws
+func X86Core_linuxArgRegsFloat_at(i: imut u64) owns some mut String{
+	?catch(e){ throw e }
+	? X86Core_linuxArgRegsFloat_ensure()
+	let out = mut ? new String()
+	let found = mut false
+	/*! termination: finite */
+	match @lock X86Core_LINUX_ARG_REGS_FLOAT{
+		OPEN:{
+			match Some(X86Core_LINUX_ARG_REGS_FLOAT.value){
+				if i < X86Core_LINUX_ARG_REGS_FLOAT.value.size(X86Core_LINUX_ARG_REGS_FLOAT.value){
+					let e = X86Core_LINUX_ARG_REGS_FLOAT.value.get(X86Core_LINUX_ARG_REGS_FLOAT.value, i)
+					match Some(e){ out = ? e.substring(e, 0) }
+					found = true
+				}
+			}
+		}
+		CLOSED:default(1000000)
+	}
+	if !found{
+		throw "array index out of range"
+	}
+	return out
+}
+
+
+let static X86Core_WIN_ARG_REGS_FLOAT = mut ConstList{gate= ConstGate.OPEN, value= null}
+
+/** Fills Java `WIN_ARG_REGS_FLOAT` (4 entries) on first use. */
+@throws
+func X86Core_winArgRegsFloat_ensure() void{
+	?catch(e){ throw e }
+	/*! termination: bound */
+	match @lock X86Core_WIN_ARG_REGS_FLOAT{
+		OPEN:{
+			let have = mut false
+			match Some(X86Core_WIN_ARG_REGS_FLOAT.value){ have = true }
+			if !have{
+				X86Core_WIN_ARG_REGS_FLOAT.value = ? new ObjectList:<String>()
+				let e0 = mut ? String.from("xmm0")
+				match Some(X86Core_WIN_ARG_REGS_FLOAT.value){ ? X86Core_WIN_ARG_REGS_FLOAT.value.add(X86Core_WIN_ARG_REGS_FLOAT.value, e0) }
+				let e1 = mut ? String.from("xmm1")
+				match Some(X86Core_WIN_ARG_REGS_FLOAT.value){ ? X86Core_WIN_ARG_REGS_FLOAT.value.add(X86Core_WIN_ARG_REGS_FLOAT.value, e1) }
+				let e2 = mut ? String.from("xmm2")
+				match Some(X86Core_WIN_ARG_REGS_FLOAT.value){ ? X86Core_WIN_ARG_REGS_FLOAT.value.add(X86Core_WIN_ARG_REGS_FLOAT.value, e2) }
+				let e3 = mut ? String.from("xmm3")
+				match Some(X86Core_WIN_ARG_REGS_FLOAT.value){ ? X86Core_WIN_ARG_REGS_FLOAT.value.add(X86Core_WIN_ARG_REGS_FLOAT.value, e3) }
+			}
+		}
+		CLOSED:default(1000000)
+	}
+}
+
+/** `WIN_ARG_REGS_FLOAT.length` / `.size()`. */
+@pub
+@throws
+func X86Core_winArgRegsFloat_size() mut u64{
+	?catch(e){ throw e }
+	? X86Core_winArgRegsFloat_ensure()
+	let n = mut 0
+	/*! termination: bound */
+	match @lock X86Core_WIN_ARG_REGS_FLOAT{
+		OPEN:{ match Some(X86Core_WIN_ARG_REGS_FLOAT.value){ n = X86Core_WIN_ARG_REGS_FLOAT.value.size(X86Core_WIN_ARG_REGS_FLOAT.value) } }
+		CLOSED:default(1000000)
+	}
+	return n
+}
+
+/** `WIN_ARG_REGS_FLOAT[i]`: a fresh copy of the entry; throws past the end. */
+@pub
+@throws
+func X86Core_winArgRegsFloat_at(i: imut u64) owns some mut String{
+	?catch(e){ throw e }
+	? X86Core_winArgRegsFloat_ensure()
+	let out = mut ? new String()
+	let found = mut false
+	/*! termination: finite */
+	match @lock X86Core_WIN_ARG_REGS_FLOAT{
+		OPEN:{
+			match Some(X86Core_WIN_ARG_REGS_FLOAT.value){
+				if i < X86Core_WIN_ARG_REGS_FLOAT.value.size(X86Core_WIN_ARG_REGS_FLOAT.value){
+					let e = X86Core_WIN_ARG_REGS_FLOAT.value.get(X86Core_WIN_ARG_REGS_FLOAT.value, i)
+					match Some(e){ out = ? e.substring(e, 0) }
+					found = true
+				}
+			}
+		}
+		CLOSED:default(1000000)
+	}
+	if !found{
+		throw "array index out of range"
+	}
+	return out
+}
+
+
+let static X86Core_RF_TEMP_REGS = mut ConstList{gate= ConstGate.OPEN, value= null}
+
+/** Fills Java `RF_TEMP_REGS` (4 entries) on first use. */
+@throws
+func X86Core_rfTempRegs_ensure() void{
+	?catch(e){ throw e }
+	/*! termination: bound */
+	match @lock X86Core_RF_TEMP_REGS{
+		OPEN:{
+			let have = mut false
+			match Some(X86Core_RF_TEMP_REGS.value){ have = true }
+			if !have{
+				X86Core_RF_TEMP_REGS.value = ? new ObjectList:<String>()
+				let e0 = mut ? String.from("rax")
+				match Some(X86Core_RF_TEMP_REGS.value){ ? X86Core_RF_TEMP_REGS.value.add(X86Core_RF_TEMP_REGS.value, e0) }
+				let e1 = mut ? String.from("rbx")
+				match Some(X86Core_RF_TEMP_REGS.value){ ? X86Core_RF_TEMP_REGS.value.add(X86Core_RF_TEMP_REGS.value, e1) }
+				let e2 = mut ? String.from("r11")
+				match Some(X86Core_RF_TEMP_REGS.value){ ? X86Core_RF_TEMP_REGS.value.add(X86Core_RF_TEMP_REGS.value, e2) }
+				let e3 = mut ? String.from("r12")
+				match Some(X86Core_RF_TEMP_REGS.value){ ? X86Core_RF_TEMP_REGS.value.add(X86Core_RF_TEMP_REGS.value, e3) }
+			}
+		}
+		CLOSED:default(1000000)
+	}
+}
+
+/** `RF_TEMP_REGS.length` / `.size()`. */
+@pub
+@throws
+func X86Core_rfTempRegs_size() mut u64{
+	?catch(e){ throw e }
+	? X86Core_rfTempRegs_ensure()
+	let n = mut 0
+	/*! termination: bound */
+	match @lock X86Core_RF_TEMP_REGS{
+		OPEN:{ match Some(X86Core_RF_TEMP_REGS.value){ n = X86Core_RF_TEMP_REGS.value.size(X86Core_RF_TEMP_REGS.value) } }
+		CLOSED:default(1000000)
+	}
+	return n
+}
+
+/** `RF_TEMP_REGS[i]`: a fresh copy of the entry; throws past the end. */
+@pub
+@throws
+func X86Core_rfTempRegs_at(i: imut u64) owns some mut String{
+	?catch(e){ throw e }
+	? X86Core_rfTempRegs_ensure()
+	let out = mut ? new String()
+	let found = mut false
+	/*! termination: finite */
+	match @lock X86Core_RF_TEMP_REGS{
+		OPEN:{
+			match Some(X86Core_RF_TEMP_REGS.value){
+				if i < X86Core_RF_TEMP_REGS.value.size(X86Core_RF_TEMP_REGS.value){
+					let e = X86Core_RF_TEMP_REGS.value.get(X86Core_RF_TEMP_REGS.value, i)
+					match Some(e){ out = ? e.substring(e, 0) }
+					found = true
+				}
+			}
+		}
+		CLOSED:default(1000000)
+	}
+	if !found{
+		throw "array index out of range"
+	}
+	return out
+}
+
+
+let static X86Core_RF_VAR_REGS = mut ConstList{gate= ConstGate.OPEN, value= null}
+
+/** Fills Java `RF_VAR_REGS` (10 entries) on first use. */
+@throws
+func X86Core_rfVarRegs_ensure() void{
+	?catch(e){ throw e }
+	/*! termination: bound */
+	match @lock X86Core_RF_VAR_REGS{
+		OPEN:{
+			let have = mut false
+			match Some(X86Core_RF_VAR_REGS.value){ have = true }
+			if !have{
+				X86Core_RF_VAR_REGS.value = ? new ObjectList:<String>()
+				let e0 = mut ? String.from("r13")
+				match Some(X86Core_RF_VAR_REGS.value){ ? X86Core_RF_VAR_REGS.value.add(X86Core_RF_VAR_REGS.value, e0) }
+				let e1 = mut ? String.from("r14")
+				match Some(X86Core_RF_VAR_REGS.value){ ? X86Core_RF_VAR_REGS.value.add(X86Core_RF_VAR_REGS.value, e1) }
+				let e2 = mut ? String.from("r12")
+				match Some(X86Core_RF_VAR_REGS.value){ ? X86Core_RF_VAR_REGS.value.add(X86Core_RF_VAR_REGS.value, e2) }
+				let e3 = mut ? String.from("r8")
+				match Some(X86Core_RF_VAR_REGS.value){ ? X86Core_RF_VAR_REGS.value.add(X86Core_RF_VAR_REGS.value, e3) }
+				let e4 = mut ? String.from("r9")
+				match Some(X86Core_RF_VAR_REGS.value){ ? X86Core_RF_VAR_REGS.value.add(X86Core_RF_VAR_REGS.value, e4) }
+				let e5 = mut ? String.from("r10")
+				match Some(X86Core_RF_VAR_REGS.value){ ? X86Core_RF_VAR_REGS.value.add(X86Core_RF_VAR_REGS.value, e5) }
+				let e6 = mut ? String.from("rsi")
+				match Some(X86Core_RF_VAR_REGS.value){ ? X86Core_RF_VAR_REGS.value.add(X86Core_RF_VAR_REGS.value, e6) }
+				let e7 = mut ? String.from("rdi")
+				match Some(X86Core_RF_VAR_REGS.value){ ? X86Core_RF_VAR_REGS.value.add(X86Core_RF_VAR_REGS.value, e7) }
+				let e8 = mut ? String.from("rdx")
+				match Some(X86Core_RF_VAR_REGS.value){ ? X86Core_RF_VAR_REGS.value.add(X86Core_RF_VAR_REGS.value, e8) }
+				let e9 = mut ? String.from("rcx")
+				match Some(X86Core_RF_VAR_REGS.value){ ? X86Core_RF_VAR_REGS.value.add(X86Core_RF_VAR_REGS.value, e9) }
+			}
+		}
+		CLOSED:default(1000000)
+	}
+}
+
+/** `RF_VAR_REGS.length` / `.size()`. */
+@pub
+@throws
+func X86Core_rfVarRegs_size() mut u64{
+	?catch(e){ throw e }
+	? X86Core_rfVarRegs_ensure()
+	let n = mut 0
+	/*! termination: bound */
+	match @lock X86Core_RF_VAR_REGS{
+		OPEN:{ match Some(X86Core_RF_VAR_REGS.value){ n = X86Core_RF_VAR_REGS.value.size(X86Core_RF_VAR_REGS.value) } }
+		CLOSED:default(1000000)
+	}
+	return n
+}
+
+/** `RF_VAR_REGS[i]`: a fresh copy of the entry; throws past the end. */
+@pub
+@throws
+func X86Core_rfVarRegs_at(i: imut u64) owns some mut String{
+	?catch(e){ throw e }
+	? X86Core_rfVarRegs_ensure()
+	let out = mut ? new String()
+	let found = mut false
+	/*! termination: finite */
+	match @lock X86Core_RF_VAR_REGS{
+		OPEN:{
+			match Some(X86Core_RF_VAR_REGS.value){
+				if i < X86Core_RF_VAR_REGS.value.size(X86Core_RF_VAR_REGS.value){
+					let e = X86Core_RF_VAR_REGS.value.get(X86Core_RF_VAR_REGS.value, i)
+					match Some(e){ out = ? e.substring(e, 0) }
+					found = true
+				}
+			}
+		}
+		CLOSED:default(1000000)
+	}
+	if !found{
+		throw "array index out of range"
+	}
+	return out
+}
+
+
+let static X86Core_STRIDE_KEEP_OPS = mut ConstSet{gate= ConstGate.OPEN, value= null}
+
+/** Fills Java `STRIDE_KEEP_OPS` (53 entries) on first use. */
+@throws
+func X86Core_strideKeepOps_ensure() void{
+	?catch(e){ throw e }
+	/*! termination: finite */
+	match @lock X86Core_STRIDE_KEEP_OPS{
+		OPEN:{
+			let have = mut false
+			match Some(X86Core_STRIDE_KEEP_OPS.value){ have = true }
+			if !have{
+				X86Core_STRIDE_KEEP_OPS.value = ? new StringSet()
+				let e0 = mut ? String.from("movq")
+				match Some(X86Core_STRIDE_KEEP_OPS.value){ ? X86Core_STRIDE_KEEP_OPS.value.add(X86Core_STRIDE_KEEP_OPS.value, e0) }
+				let e1 = mut ? String.from("movl")
+				match Some(X86Core_STRIDE_KEEP_OPS.value){ ? X86Core_STRIDE_KEEP_OPS.value.add(X86Core_STRIDE_KEEP_OPS.value, e1) }
+				let e2 = mut ? String.from("movw")
+				match Some(X86Core_STRIDE_KEEP_OPS.value){ ? X86Core_STRIDE_KEEP_OPS.value.add(X86Core_STRIDE_KEEP_OPS.value, e2) }
+				let e3 = mut ? String.from("movb")
+				match Some(X86Core_STRIDE_KEEP_OPS.value){ ? X86Core_STRIDE_KEEP_OPS.value.add(X86Core_STRIDE_KEEP_OPS.value, e3) }
+				let e4 = mut ? String.from("movzbq")
+				match Some(X86Core_STRIDE_KEEP_OPS.value){ ? X86Core_STRIDE_KEEP_OPS.value.add(X86Core_STRIDE_KEEP_OPS.value, e4) }
+				let e5 = mut ? String.from("movzwq")
+				match Some(X86Core_STRIDE_KEEP_OPS.value){ ? X86Core_STRIDE_KEEP_OPS.value.add(X86Core_STRIDE_KEEP_OPS.value, e5) }
+				let e6 = mut ? String.from("movzbl")
+				match Some(X86Core_STRIDE_KEEP_OPS.value){ ? X86Core_STRIDE_KEEP_OPS.value.add(X86Core_STRIDE_KEEP_OPS.value, e6) }
+				let e7 = mut ? String.from("movzwl")
+				match Some(X86Core_STRIDE_KEEP_OPS.value){ ? X86Core_STRIDE_KEEP_OPS.value.add(X86Core_STRIDE_KEEP_OPS.value, e7) }
+				let e8 = mut ? String.from("movslq")
+				match Some(X86Core_STRIDE_KEEP_OPS.value){ ? X86Core_STRIDE_KEEP_OPS.value.add(X86Core_STRIDE_KEEP_OPS.value, e8) }
+				let e9 = mut ? String.from("movsbq")
+				match Some(X86Core_STRIDE_KEEP_OPS.value){ ? X86Core_STRIDE_KEEP_OPS.value.add(X86Core_STRIDE_KEEP_OPS.value, e9) }
+				let e10 = mut ? String.from("movswq")
+				match Some(X86Core_STRIDE_KEEP_OPS.value){ ? X86Core_STRIDE_KEEP_OPS.value.add(X86Core_STRIDE_KEEP_OPS.value, e10) }
+				let e11 = mut ? String.from("movsbl")
+				match Some(X86Core_STRIDE_KEEP_OPS.value){ ? X86Core_STRIDE_KEEP_OPS.value.add(X86Core_STRIDE_KEEP_OPS.value, e11) }
+				let e12 = mut ? String.from("movswl")
+				match Some(X86Core_STRIDE_KEEP_OPS.value){ ? X86Core_STRIDE_KEEP_OPS.value.add(X86Core_STRIDE_KEEP_OPS.value, e12) }
+				let e13 = mut ? String.from("movsd")
+				match Some(X86Core_STRIDE_KEEP_OPS.value){ ? X86Core_STRIDE_KEEP_OPS.value.add(X86Core_STRIDE_KEEP_OPS.value, e13) }
+				let e14 = mut ? String.from("movss")
+				match Some(X86Core_STRIDE_KEEP_OPS.value){ ? X86Core_STRIDE_KEEP_OPS.value.add(X86Core_STRIDE_KEEP_OPS.value, e14) }
+				let e15 = mut ? String.from("movd")
+				match Some(X86Core_STRIDE_KEEP_OPS.value){ ? X86Core_STRIDE_KEEP_OPS.value.add(X86Core_STRIDE_KEEP_OPS.value, e15) }
+				let e16 = mut ? String.from("movaps")
+				match Some(X86Core_STRIDE_KEEP_OPS.value){ ? X86Core_STRIDE_KEEP_OPS.value.add(X86Core_STRIDE_KEEP_OPS.value, e16) }
+				let e17 = mut ? String.from("movapd")
+				match Some(X86Core_STRIDE_KEEP_OPS.value){ ? X86Core_STRIDE_KEEP_OPS.value.add(X86Core_STRIDE_KEEP_OPS.value, e17) }
+				let e18 = mut ? String.from("addsd")
+				match Some(X86Core_STRIDE_KEEP_OPS.value){ ? X86Core_STRIDE_KEEP_OPS.value.add(X86Core_STRIDE_KEEP_OPS.value, e18) }
+				let e19 = mut ? String.from("addss")
+				match Some(X86Core_STRIDE_KEEP_OPS.value){ ? X86Core_STRIDE_KEEP_OPS.value.add(X86Core_STRIDE_KEEP_OPS.value, e19) }
+				let e20 = mut ? String.from("subsd")
+				match Some(X86Core_STRIDE_KEEP_OPS.value){ ? X86Core_STRIDE_KEEP_OPS.value.add(X86Core_STRIDE_KEEP_OPS.value, e20) }
+				let e21 = mut ? String.from("subss")
+				match Some(X86Core_STRIDE_KEEP_OPS.value){ ? X86Core_STRIDE_KEEP_OPS.value.add(X86Core_STRIDE_KEEP_OPS.value, e21) }
+				let e22 = mut ? String.from("mulsd")
+				match Some(X86Core_STRIDE_KEEP_OPS.value){ ? X86Core_STRIDE_KEEP_OPS.value.add(X86Core_STRIDE_KEEP_OPS.value, e22) }
+				let e23 = mut ? String.from("mulss")
+				match Some(X86Core_STRIDE_KEEP_OPS.value){ ? X86Core_STRIDE_KEEP_OPS.value.add(X86Core_STRIDE_KEEP_OPS.value, e23) }
+				let e24 = mut ? String.from("divsd")
+				match Some(X86Core_STRIDE_KEEP_OPS.value){ ? X86Core_STRIDE_KEEP_OPS.value.add(X86Core_STRIDE_KEEP_OPS.value, e24) }
+				let e25 = mut ? String.from("divss")
+				match Some(X86Core_STRIDE_KEEP_OPS.value){ ? X86Core_STRIDE_KEEP_OPS.value.add(X86Core_STRIDE_KEEP_OPS.value, e25) }
+				let e26 = mut ? String.from("addq")
+				match Some(X86Core_STRIDE_KEEP_OPS.value){ ? X86Core_STRIDE_KEEP_OPS.value.add(X86Core_STRIDE_KEEP_OPS.value, e26) }
+				let e27 = mut ? String.from("subq")
+				match Some(X86Core_STRIDE_KEEP_OPS.value){ ? X86Core_STRIDE_KEEP_OPS.value.add(X86Core_STRIDE_KEEP_OPS.value, e27) }
+				let e28 = mut ? String.from("addl")
+				match Some(X86Core_STRIDE_KEEP_OPS.value){ ? X86Core_STRIDE_KEEP_OPS.value.add(X86Core_STRIDE_KEEP_OPS.value, e28) }
+				let e29 = mut ? String.from("subl")
+				match Some(X86Core_STRIDE_KEEP_OPS.value){ ? X86Core_STRIDE_KEEP_OPS.value.add(X86Core_STRIDE_KEEP_OPS.value, e29) }
+				let e30 = mut ? String.from("leaq")
+				match Some(X86Core_STRIDE_KEEP_OPS.value){ ? X86Core_STRIDE_KEEP_OPS.value.add(X86Core_STRIDE_KEEP_OPS.value, e30) }
+				let e31 = mut ? String.from("andq")
+				match Some(X86Core_STRIDE_KEEP_OPS.value){ ? X86Core_STRIDE_KEEP_OPS.value.add(X86Core_STRIDE_KEEP_OPS.value, e31) }
+				let e32 = mut ? String.from("orq")
+				match Some(X86Core_STRIDE_KEEP_OPS.value){ ? X86Core_STRIDE_KEEP_OPS.value.add(X86Core_STRIDE_KEEP_OPS.value, e32) }
+				let e33 = mut ? String.from("xorq")
+				match Some(X86Core_STRIDE_KEEP_OPS.value){ ? X86Core_STRIDE_KEEP_OPS.value.add(X86Core_STRIDE_KEEP_OPS.value, e33) }
+				let e34 = mut ? String.from("shlq")
+				match Some(X86Core_STRIDE_KEEP_OPS.value){ ? X86Core_STRIDE_KEEP_OPS.value.add(X86Core_STRIDE_KEEP_OPS.value, e34) }
+				let e35 = mut ? String.from("shrq")
+				match Some(X86Core_STRIDE_KEEP_OPS.value){ ? X86Core_STRIDE_KEEP_OPS.value.add(X86Core_STRIDE_KEEP_OPS.value, e35) }
+				let e36 = mut ? String.from("sarq")
+				match Some(X86Core_STRIDE_KEEP_OPS.value){ ? X86Core_STRIDE_KEEP_OPS.value.add(X86Core_STRIDE_KEEP_OPS.value, e36) }
+				let e37 = mut ? String.from("incq")
+				match Some(X86Core_STRIDE_KEEP_OPS.value){ ? X86Core_STRIDE_KEEP_OPS.value.add(X86Core_STRIDE_KEEP_OPS.value, e37) }
+				let e38 = mut ? String.from("decq")
+				match Some(X86Core_STRIDE_KEEP_OPS.value){ ? X86Core_STRIDE_KEEP_OPS.value.add(X86Core_STRIDE_KEEP_OPS.value, e38) }
+				let e39 = mut ? String.from("negq")
+				match Some(X86Core_STRIDE_KEEP_OPS.value){ ? X86Core_STRIDE_KEEP_OPS.value.add(X86Core_STRIDE_KEEP_OPS.value, e39) }
+				let e40 = mut ? String.from("notq")
+				match Some(X86Core_STRIDE_KEEP_OPS.value){ ? X86Core_STRIDE_KEEP_OPS.value.add(X86Core_STRIDE_KEEP_OPS.value, e40) }
+				let e41 = mut ? String.from("sqrtsd")
+				match Some(X86Core_STRIDE_KEEP_OPS.value){ ? X86Core_STRIDE_KEEP_OPS.value.add(X86Core_STRIDE_KEEP_OPS.value, e41) }
+				let e42 = mut ? String.from("sqrtss")
+				match Some(X86Core_STRIDE_KEEP_OPS.value){ ? X86Core_STRIDE_KEEP_OPS.value.add(X86Core_STRIDE_KEEP_OPS.value, e42) }
+				let e43 = mut ? String.from("ucomisd")
+				match Some(X86Core_STRIDE_KEEP_OPS.value){ ? X86Core_STRIDE_KEEP_OPS.value.add(X86Core_STRIDE_KEEP_OPS.value, e43) }
+				let e44 = mut ? String.from("ucomiss")
+				match Some(X86Core_STRIDE_KEEP_OPS.value){ ? X86Core_STRIDE_KEEP_OPS.value.add(X86Core_STRIDE_KEEP_OPS.value, e44) }
+				let e45 = mut ? String.from("comisd")
+				match Some(X86Core_STRIDE_KEEP_OPS.value){ ? X86Core_STRIDE_KEEP_OPS.value.add(X86Core_STRIDE_KEEP_OPS.value, e45) }
+				let e46 = mut ? String.from("comiss")
+				match Some(X86Core_STRIDE_KEEP_OPS.value){ ? X86Core_STRIDE_KEEP_OPS.value.add(X86Core_STRIDE_KEEP_OPS.value, e46) }
+				let e47 = mut ? String.from("cvtss2sd")
+				match Some(X86Core_STRIDE_KEEP_OPS.value){ ? X86Core_STRIDE_KEEP_OPS.value.add(X86Core_STRIDE_KEEP_OPS.value, e47) }
+				let e48 = mut ? String.from("cvtsd2ss")
+				match Some(X86Core_STRIDE_KEEP_OPS.value){ ? X86Core_STRIDE_KEEP_OPS.value.add(X86Core_STRIDE_KEEP_OPS.value, e48) }
+				let e49 = mut ? String.from("xorps")
+				match Some(X86Core_STRIDE_KEEP_OPS.value){ ? X86Core_STRIDE_KEEP_OPS.value.add(X86Core_STRIDE_KEEP_OPS.value, e49) }
+				let e50 = mut ? String.from("xorpd")
+				match Some(X86Core_STRIDE_KEEP_OPS.value){ ? X86Core_STRIDE_KEEP_OPS.value.add(X86Core_STRIDE_KEEP_OPS.value, e50) }
+				let e51 = mut ? String.from("andps")
+				match Some(X86Core_STRIDE_KEEP_OPS.value){ ? X86Core_STRIDE_KEEP_OPS.value.add(X86Core_STRIDE_KEEP_OPS.value, e51) }
+				let e52 = mut ? String.from("andpd")
+				match Some(X86Core_STRIDE_KEEP_OPS.value){ ? X86Core_STRIDE_KEEP_OPS.value.add(X86Core_STRIDE_KEEP_OPS.value, e52) }
+			}
+		}
+		CLOSED:default(1000000)
+	}
+}
+
+/** `STRIDE_KEEP_OPS.length` / `.size()`. */
+@pub
+@throws
+func X86Core_strideKeepOps_size() mut u64{
+	?catch(e){ throw e }
+	? X86Core_strideKeepOps_ensure()
+	let n = mut 0
+	/*! termination: bound */
+	match @lock X86Core_STRIDE_KEEP_OPS{
+		OPEN:{ match Some(X86Core_STRIDE_KEEP_OPS.value){ n = X86Core_STRIDE_KEEP_OPS.value.size(X86Core_STRIDE_KEEP_OPS.value) } }
+		CLOSED:default(1000000)
+	}
+	return n
+}
+
+/** `STRIDE_KEEP_OPS.contains(text)`. */
+@pub
+@throws
+func X86Core_strideKeepOps_contains(text: ref imut String) mut bool{
+	?catch(e){ throw e }
+	? X86Core_strideKeepOps_ensure()
+	let found = mut false
+	/*! termination: finite */
+	match @lock X86Core_STRIDE_KEEP_OPS{
+		OPEN:{
+			match Some(X86Core_STRIDE_KEEP_OPS.value){ match Some(text){ found = X86Core_STRIDE_KEEP_OPS.value.contains(X86Core_STRIDE_KEEP_OPS.value, text) } }
+		}
+		CLOSED:default(1000000)
+	}
+	return found
+}
+
+
+let static X86Core_RF_R13_R14_USERS = mut ConstSet{gate= ConstGate.OPEN, value= null}
+
+/** Fills Java `RF_R13_R14_USERS` (12 entries) on first use. */
+@throws
+func X86Core_rfR13R14Users_ensure() void{
+	?catch(e){ throw e }
+	/*! termination: finite */
+	match @lock X86Core_RF_R13_R14_USERS{
+		OPEN:{
+			let have = mut false
+			match Some(X86Core_RF_R13_R14_USERS.value){ have = true }
+			if !have{
+				X86Core_RF_R13_R14_USERS.value = ? new StringSet()
+				let e0 = mut ? String.from("NEW")
+				match Some(X86Core_RF_R13_R14_USERS.value){ ? X86Core_RF_R13_R14_USERS.value.add(X86Core_RF_R13_R14_USERS.value, e0) }
+				let e1 = mut ? String.from("NEW_DYN")
+				match Some(X86Core_RF_R13_R14_USERS.value){ ? X86Core_RF_R13_R14_USERS.value.add(X86Core_RF_R13_R14_USERS.value, e1) }
+				let e2 = mut ? String.from("NEW_UDYN")
+				match Some(X86Core_RF_R13_R14_USERS.value){ ? X86Core_RF_R13_R14_USERS.value.add(X86Core_RF_R13_R14_USERS.value, e2) }
+				let e3 = mut ? String.from("NEW_FROM_STRING")
+				match Some(X86Core_RF_R13_R14_USERS.value){ ? X86Core_RF_R13_R14_USERS.value.add(X86Core_RF_R13_R14_USERS.value, e3) }
+				let e4 = mut ? String.from("NEW_FROM_USTRING")
+				match Some(X86Core_RF_R13_R14_USERS.value){ ? X86Core_RF_R13_R14_USERS.value.add(X86Core_RF_R13_R14_USERS.value, e4) }
+				let e5 = mut ? String.from("CLONE")
+				match Some(X86Core_RF_R13_R14_USERS.value){ ? X86Core_RF_R13_R14_USERS.value.add(X86Core_RF_R13_R14_USERS.value, e5) }
+				let e6 = mut ? String.from("CLONE_DYN")
+				match Some(X86Core_RF_R13_R14_USERS.value){ ? X86Core_RF_R13_R14_USERS.value.add(X86Core_RF_R13_R14_USERS.value, e6) }
+				let e7 = mut ? String.from("RESIZE")
+				match Some(X86Core_RF_R13_R14_USERS.value){ ? X86Core_RF_R13_R14_USERS.value.add(X86Core_RF_R13_R14_USERS.value, e7) }
+				let e8 = mut ? String.from("URESIZE")
+				match Some(X86Core_RF_R13_R14_USERS.value){ ? X86Core_RF_R13_R14_USERS.value.add(X86Core_RF_R13_R14_USERS.value, e8) }
+				let e9 = mut ? String.from("DOT")
+				match Some(X86Core_RF_R13_R14_USERS.value){ ? X86Core_RF_R13_R14_USERS.value.add(X86Core_RF_R13_R14_USERS.value, e9) }
+				let e10 = mut ? String.from("LOOKUP_ARRAY")
+				match Some(X86Core_RF_R13_R14_USERS.value){ ? X86Core_RF_R13_R14_USERS.value.add(X86Core_RF_R13_R14_USERS.value, e10) }
+				let e11 = mut ? String.from("ASM_START")
+				match Some(X86Core_RF_R13_R14_USERS.value){ ? X86Core_RF_R13_R14_USERS.value.add(X86Core_RF_R13_R14_USERS.value, e11) }
+			}
+		}
+		CLOSED:default(1000000)
+	}
+}
+
+/** `RF_R13_R14_USERS.length` / `.size()`. */
+@pub
+@throws
+func X86Core_rfR13R14Users_size() mut u64{
+	?catch(e){ throw e }
+	? X86Core_rfR13R14Users_ensure()
+	let n = mut 0
+	/*! termination: bound */
+	match @lock X86Core_RF_R13_R14_USERS{
+		OPEN:{ match Some(X86Core_RF_R13_R14_USERS.value){ n = X86Core_RF_R13_R14_USERS.value.size(X86Core_RF_R13_R14_USERS.value) } }
+		CLOSED:default(1000000)
+	}
+	return n
+}
+
+/** `RF_R13_R14_USERS.contains(text)`. */
+@pub
+@throws
+func X86Core_rfR13R14Users_contains(text: ref imut String) mut bool{
+	?catch(e){ throw e }
+	? X86Core_rfR13R14Users_ensure()
+	let found = mut false
+	/*! termination: finite */
+	match @lock X86Core_RF_R13_R14_USERS{
+		OPEN:{
+			match Some(X86Core_RF_R13_R14_USERS.value){ match Some(text){ found = X86Core_RF_R13_R14_USERS.value.contains(X86Core_RF_R13_R14_USERS.value, text) } }
+		}
+		CLOSED:default(1000000)
+	}
+	return found
+}
 
 @pub
 struct X86Core{@pub{
@@ -153,46 +969,73 @@ impl constructor for X86Core(target: imut CodegenTarget, bmi2: imut bool) self{
 
 @pub
 impl X86Core{
-	/** True when register name `r` is `full` or one of its sub-registers (eax/ax/al/ah, r8d/r8w/r8b ...). */
-	/** True when register name `r` is `full` or one of its sub-registers (eax/ax/al/ah, r8d/r8w/r8b ...). Compares by character, no allocation. */
+	/** True when register name `r` is `full` or one of its sub-registers (eax/ax/al/ah, r8d/r8w/r8b ...). The parameters are re-matched after each allocation (an allocation ends the alive proof of a `ref`). */
 	@pub
-	static func regAliasOf(r: ref some imut String, full: ref some imut String) mut bool{
-		if r.equals(r, full){
+	@throws
+	static func regAliasOf(r: ref imut String, full: ref imut String) mut bool{
+		?catch(e){ throw e }
+		let res = mut false
+		match Some(r){ match Some(full){ res = r.equals(r, full) } }
+		if res{
 			return true
 		}
-		let rn = mut r.length(r)
-		let fn = mut full.length(full)
-		let high = mut false
-		if full.startsWith(full, "r") && fn > 1{
-			high = Text.digitRunEnd(full, 1, fn) == fn
-		}
-		if high{
-			if rn != fn + 1 || X86Core.sliceEq(r, 0, full, 0, fn) == false{
-				return false
+		let rPrefix = mut ? String.from("r")
+		let isR = mut false
+		match Some(full){ isR = ? Text.isPrefixedDigits(full, rPrefix) }
+		if isR{
+			let c1 = mut ? new String()
+			match Some(full){ c1 = ? full.substring(full, 0) }
+			? c1.append(c1, "d")
+			match Some(r){ res = r.equals(r, c1) }
+			if res{
+				return true
 			}
-			let c = mut r.charAt(r, fn)
-			return c == 'd' || c == 'w' || c == 'b'
-		}
-		let bn = mut (fn - 1)
-		let eBase = mut (rn == fn && r.charAt(r, 0) == 'e' && X86Core.sliceEq(r, 1, full, 1, bn))
-		let plain = mut (rn == bn && X86Core.sliceEq(r, 0, full, 1, bn))
-		if full.equals(full, "rax") || full.equals(full, "rbx") || full.equals(full, "rcx") || full.equals(full, "rdx"){
-			let lead = mut full.charAt(full, 1)
-			let half = mut (rn == 2 && r.charAt(r, 0) == lead && (r.charAt(r, 1) == 'l' || r.charAt(r, 1) == 'h'))
-			return eBase || plain || half
-		}
-		let low = mut (rn == fn && X86Core.sliceEq(r, 0, full, 1, bn) && r.charAt(r, bn) == 'l')
-		return eBase || plain || low
-	}
-
-	/** True when `len` characters of `a` from `aOff` equal those of `b` from `bOff`. */
-	static func sliceEq(a: ref some imut String, aOff: mut u64, b: ref some imut String, bOff: mut u64, len: mut u64) mut bool{
-		for k in 0..len{
-			if a.charAt(a, aOff + k) != b.charAt(b, bOff + k){
-				return false
+			let c2 = mut ? new String()
+			match Some(full){ c2 = ? full.substring(full, 0) }
+			? c2.append(c2, "w")
+			match Some(r){ res = r.equals(r, c2) }
+			if res{
+				return true
 			}
+			let c3 = mut ? new String()
+			match Some(full){ c3 = ? full.substring(full, 0) }
+			? c3.append(c3, "b")
+			match Some(r){ res = r.equals(r, c3) }
+			return res
 		}
-		return true
+		let base = mut ? new String()     // rax -> ax, rsi -> si
+		match Some(full){ base = ? full.substring(full, 1) }
+		let legacy = mut false
+		match Some(full){ legacy = full.equals(full, "rax") || full.equals(full, "rbx") || full.equals(full, "rcx") || full.equals(full, "rdx") }
+		if legacy{
+			let l = mut ? base.substring(base, 0, 1)
+			let eb = mut ? String.from("e")
+			? eb.append(eb, base)
+			match Some(r){ res = r.equals(r, eb) || r.equals(r, base) }
+			if res{
+				return true
+			}
+			let ll = mut ? l.substring(l, 0)
+			? ll.append(ll, "l")
+			match Some(r){ res = r.equals(r, ll) }
+			if res{
+				return true
+			}
+			let lh = mut ? l.substring(l, 0)
+			? lh.append(lh, "h")
+			match Some(r){ res = r.equals(r, lh) }
+			return res
+		}
+		let eb2 = mut ? String.from("e")
+		? eb2.append(eb2, base)
+		match Some(r){ res = r.equals(r, eb2) || r.equals(r, base) }
+		if res{
+			return true
+		}
+		let bl = mut ? base.substring(base, 0)
+		? bl.append(bl, "l")
+		match Some(r){ res = r.equals(r, bl) }
+		return res
 	}
 
 	@pub
@@ -214,79 +1057,6 @@ impl X86Core{
 	@pub
 	static func isFloatLiteral(s: ref some imut String) mut bool{
 		return Text.isDecimalNumber(s)
-	}
-
-	/** Token `k` of a text list as a copy; throws "IndexOutOfBoundsException" past the end (port-only helper). */
-	@pub
-	@throws
-	static func partCopy(parts: ref some imut ObjectList<String>, k: mut u64) owns some mut String{
-		?catch(e){ throw e }
-		if k >= parts.size(parts){
-			throw "IndexOutOfBoundsException"
-		}
-		let r = mut ? new String()
-		let p = parts.get(parts, k)
-		match Some(p){ r = ? p.substring(p, 0) }
-		return r
-	}
-
-	/** Membership in STRIDE_KEEP_OPS (a `let static` list cannot be read from safe code, so an if-chain; port-only helper). */
-	@pub
-	static func isStrideKeepOp(op: ref some imut String) mut bool{
-		if op.equals(op, "movq"){ return true }
-		if op.equals(op, "movl"){ return true }
-		if op.equals(op, "movw"){ return true }
-		if op.equals(op, "movb"){ return true }
-		if op.equals(op, "movzbq"){ return true }
-		if op.equals(op, "movzwq"){ return true }
-		if op.equals(op, "movzbl"){ return true }
-		if op.equals(op, "movzwl"){ return true }
-		if op.equals(op, "movslq"){ return true }
-		if op.equals(op, "movsbq"){ return true }
-		if op.equals(op, "movswq"){ return true }
-		if op.equals(op, "movsbl"){ return true }
-		if op.equals(op, "movswl"){ return true }
-		if op.equals(op, "movsd"){ return true }
-		if op.equals(op, "movss"){ return true }
-		if op.equals(op, "movd"){ return true }
-		if op.equals(op, "movaps"){ return true }
-		if op.equals(op, "movapd"){ return true }
-		if op.equals(op, "addsd"){ return true }
-		if op.equals(op, "addss"){ return true }
-		if op.equals(op, "subsd"){ return true }
-		if op.equals(op, "subss"){ return true }
-		if op.equals(op, "mulsd"){ return true }
-		if op.equals(op, "mulss"){ return true }
-		if op.equals(op, "divsd"){ return true }
-		if op.equals(op, "divss"){ return true }
-		if op.equals(op, "addq"){ return true }
-		if op.equals(op, "subq"){ return true }
-		if op.equals(op, "addl"){ return true }
-		if op.equals(op, "subl"){ return true }
-		if op.equals(op, "leaq"){ return true }
-		if op.equals(op, "andq"){ return true }
-		if op.equals(op, "orq"){ return true }
-		if op.equals(op, "xorq"){ return true }
-		if op.equals(op, "shlq"){ return true }
-		if op.equals(op, "shrq"){ return true }
-		if op.equals(op, "sarq"){ return true }
-		if op.equals(op, "incq"){ return true }
-		if op.equals(op, "decq"){ return true }
-		if op.equals(op, "negq"){ return true }
-		if op.equals(op, "notq"){ return true }
-		if op.equals(op, "sqrtsd"){ return true }
-		if op.equals(op, "sqrtss"){ return true }
-		if op.equals(op, "ucomisd"){ return true }
-		if op.equals(op, "ucomiss"){ return true }
-		if op.equals(op, "comisd"){ return true }
-		if op.equals(op, "comiss"){ return true }
-		if op.equals(op, "cvtss2sd"){ return true }
-		if op.equals(op, "cvtsd2ss"){ return true }
-		if op.equals(op, "xorps"){ return true }
-		if op.equals(op, "xorpd"){ return true }
-		if op.equals(op, "andps"){ return true }
-		if op.equals(op, "andpd"){ return true }
-		return false
 	}
 
 	/** "xmm" + n for 0..31 (port-only helper; the Java concatenates); throws past 31. */
@@ -325,23 +1095,6 @@ impl X86Core{
 		if n == 29{ return "xmm29" }
 		if n == 30{ return "xmm30" }
 		if n == 31{ return "xmm31" }
-		throw "register index out of range"
-	}
-
-	/** RF_VAR_REGS[i]; throws "register index out of range" past the end. */
-	@pub
-	@throws
-	static func rfVarRegName(i: mut u64) static imut string{
-		if i == 0{ return "r13" } elseif i == 1{ return "r14" } elseif i == 2{ return "r12" } elseif i == 3{ return "r8" } elseif i == 4{ return "r9" }
-		elseif i == 5{ return "r10" } elseif i == 6{ return "rsi" } elseif i == 7{ return "rdi" } elseif i == 8{ return "rdx" } elseif i == 9{ return "rcx" }
-		throw "register index out of range"
-	}
-
-	/** RF_TEMP_REGS[i]; throws "register index out of range" past the end. */
-	@pub
-	@throws
-	static func rfTempRegName(i: mut u64) static imut string{
-		if i == 0{ return "rax" } elseif i == 1{ return "rbx" } elseif i == 2{ return "r11" } elseif i == 3{ return "r12" }
 		throw "register index out of range"
 	}
 

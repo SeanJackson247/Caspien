@@ -17,19 +17,18 @@ impl constructor for BytecodeParser() self{
 impl BytecodeParser{
 	@pub
 	@throws
-	func parse(_self: ref some imut self, rawLines: ref imut ObjectList<String>, originFile: ref some imut String) owns some mut BytecodeProgram{
+	func parse(_self: ref some imut self, rawLines: ref imut ObjectList<String>, originFile: ref imut String) owns some mut BytecodeProgram{
 		?catch(e){ throw e }
-		let org = mut ? originFile.sub(originFile, 0, originFile.length(originFile))
 		let result = mut ? new BytecodeProgram()
 		let:<mut u64> n = mut 0
 		match Some(rawLines){ n = rawLines.size(rawLines) }
 		for lineNo in 0..n{
 			match Some(rawLines){
 				let s = mut rawLines.get(rawLines, lineNo)
-				match Some(s){
-					let st = mut ? BytecodeStatement.scanLine(s, org, wrap:<s32>(lineNo + 1))
+				match Some(s){ match Some(originFile){
+					let st = mut ? BytecodeParser.parseLine(s, originFile, wrap:<s32>(lineNo + 1))
 					? result.add(result, st)
-				}
+				} }
 			}
 		}
 		return result
@@ -72,10 +71,10 @@ impl BytecodeParser{
 		return p
 	}
 
-	/** One line of text -> one statement (the scanner lives in BytecodeStatement.scanLine: imports cannot be circular). */
+	/** One line of text -> one statement (the scanner itself is BytecodeStatement.scanLine: a Caspien import cycle is an error, and BytecodeStatement.fromText needs it too). */
 	@pub
 	@throws
-	static func parseLine(rawLine: ref some imut String, originFile: ref some imut String, lineNumber: imut s32) owns some mut BytecodeStatement{
+	static func parseLine(rawLine: ref imut String, originFile: ref imut String, lineNumber: imut s32) owns some mut BytecodeStatement{
 		?catch(e){ throw e }
 		let r = mut ? BytecodeStatement.scanLine(rawLine, originFile, lineNumber)
 		return r

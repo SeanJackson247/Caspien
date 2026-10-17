@@ -2,6 +2,7 @@ import "stdlib/string.caspien"
 import "CodegenTarget.caspien"
 import "collections.caspien"
 import "CodegenText.caspien"
+import "../../../../../../BytecodeParser/src/main/java/caspien/bytecode/Text.caspien"
 
 @pub
 struct CodegenConfig{@pub{
@@ -20,59 +21,35 @@ impl CodegenConfig{
 	@throws
 	static func parse(text: ref imut String, path: ref imut String) owns some mut CodegenConfig{
 		?catch(e){ throw e }
+		// text.lines().toList(): the Text line-break split (it drops trailing blank lines, which the loop below skips anyway)
 		let lines = mut ? new ObjectList:<String>()
-		let cur = mut ? new String()
-		let skipLf = mut false
-		let n = mut 0
-		match Some(text){ n = text.length(text) }
-		for i in 0..n{
-			let c = mut ' '
-			match Some(text){ c = text.charAt(text, i) }
-			if c == '\n'{
-				if skipLf{
-					skipLf = false
-				} else{
-					? lines.add(lines, cur)
-					cur = ? new String()
-				}
-			} else if c == '\r'{
-				? lines.add(lines, cur)
-				cur = ? new String()
-				skipLf = true
-			} else{
-				skipLf = false
-				? cur.appendChar(cur, c)
-			}
-		}
-		if cur.length(cur) > 0{
-			? lines.add(lines, cur)
-		}
+		match Some(text){ lines = ? Text.splitLineBreaks(text) }
+		// forced: no nullable enum local, 0 = Java's `null`, 1 = WINDOWS_GNU_X64, 2 = LINUX_X64
 		let:<mut s32> target = mut 0
 		let bmi2 = mut false
 		let avx = mut false
-		let count = mut lines.size(lines)
+		let count = mut 0
+		match Some(lines){ count = lines.size(lines) }
 		for li in 0..count{
 			let rawLine = mut ? new String()
-			let l = lines.get(lines, li)
-			match Some(l){ rawLine = ? l.trim(l) }
+			match Some(lines){
+				let l = lines.get(lines, li)
+				match Some(l){ rawLine = ? l.trim(l) }
+			}
 			if rawLine.length(rawLine) == 0 || rawLine.startsWith(rawLine, "#"){
 				continue
 			}
-			let len = mut rawLine.length(rawLine)
-			let split = mut len
-			for k in 0..len{
-				let code = mut String.charCode(rawLine.charAt(rawLine, k))
-				if code == 32 || (code >= 9 && code <= 13){
-					split = k
-					break
-				}
-			}
-			if split == len{
+			let parts = mut ? Text.splitSpace(rawLine, 2)
+			if parts.size(parts) != 2{
 				throw "config: expected 'key value'"
 			}
-			let key = mut ? rawLine.substring(rawLine, 0, split)
-			let rest = mut ? rawLine.substring(rawLine, split + 1)
-			let valueText = mut ? rest.trim(rest)
+			let key = mut ? new String()
+			let valueText = mut ? new String()
+			let p0 = parts.get(parts, 0)
+			match Some(p0){ key = ? p0.substring(p0, 0) }
+			let p1 = parts.get(parts, 1)
+			match Some(p1){ valueText = ? p1.trim(p1) }
+			// forced: no equalsIgnoreCase in the String library, so the value is lower-cased once (ASCII) and compared with equals
 			let value = mut ? new String()
 			let vn = mut valueText.length(valueText)
 			for k in 0..vn{

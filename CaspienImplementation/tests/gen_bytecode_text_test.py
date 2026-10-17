@@ -48,10 +48,10 @@ def clit(s):
 # name: (arg kinds, result kind, throws in Caspien, extra targeted inputs)
 # arg kinds: s string, S second string, c chars string, b bool, m mode 0..2, l limit, p separator char, n names list
 SPEC = {
- "isDigits": ("s", "B", False), "isSignedDigits": ("s", "B", False), "isDecimalNumber": ("s", "B", False), "isWord": ("s", "B", False),
+ "isDigits": ("s", "B", False), "isSignedDigits": ("s", "B", True), "isDecimalNumber": ("s", "B", False), "isWord": ("s", "B", False),
  "isDottedName": ("s", "B", False), "isHighGpr": ("s", "B", False), "isDigitsDotStartOrEnd": ("s", "B", True), "isRangeType": ("s", "B", False),
- "isByValueRangeType": ("s", "B", False), "endsWithSmallIntType": ("s", "B", False), "isSizedIntName": ("s", "B", False), "isCloseLine": ("s", "B", False),
- "isPrefixedDigits": ("sS", "B", True), "isPrefixedChar": ("sSc", "B", False), "isQualifiedScalar": ("sb", "B", False),
+ "isByValueRangeType": ("s", "B", False), "endsWithSmallIntType": ("s", "B", False), "isSizedIntName": ("s", "B", True), "isCloseLine": ("s", "B", False),
+ "isPrefixedDigits": ("sS", "B", True), "isPrefixedChar": ("sSc", "B", False), "isQualifiedScalar": ("sb", "B", True),
  "stripMutPrefix": ("s", "S", True), "stripQualifierPrefixes": ("s", "S", True), "stripTrailingSpace": ("s", "S", True), "collapseSpace": ("s", "S", True),
  "stripCommentLead": ("s", "S", True), "stripLeadingZeros": ("s", "S", True), "stripLineNumberBeforeQuote": ("s", "S", True),
  "replaceNonWordChars": ("sS", "S", True), "stripSuffixAtEnd": ("sS", "S", True),

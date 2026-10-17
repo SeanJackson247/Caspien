@@ -66,7 +66,7 @@ impl Main{
 				}
 			}
 		}
-		let result = mut Codegen.generate(input, inputPath, config)
+		let result = mut ? Codegen.generate(input, inputPath, config)
 		let failed = mut true
 		match Some(result){
 			if result.failed{
@@ -84,7 +84,8 @@ impl Main{
 			}
 		}
 		if failed{
-			throw "codegen failed"
+			unsafe extern{ exit(1) }
+			return
 		}
 		let asm = mut ? new String()
 		match Some(result){ match Some(result.asm){ asm = ? result.asm.substring(result.asm, 0) } }
@@ -102,13 +103,31 @@ impl Main{
 			}
 		}
 		let lines = mut 0
+		let pendingLine = mut false
+		let skipLf = mut false
 		match Some(asm){
 			let tl = asm.length(asm)
 			for ci in 0..tl{
-				if asm.charAt(asm, ci) == '\n'{
+				let ch = mut asm.charAt(asm, ci)
+				if ch == '\n'{
+					if skipLf{
+						skipLf = false
+					} else{
+						lines = lines + 1
+						pendingLine = false
+					}
+				} else if ch == '\r'{
 					lines = lines + 1
+					pendingLine = false
+					skipLf = true
+				} else{
+					skipLf = false
+					pendingLine = true
 				}
 			}
+		}
+		if pendingLine{
+			lines = lines + 1
 		}
 		let info = mut ? String.from("\n[info] wrote assembly to ")
 		match Some(outputPath){ ? info.append(info, outputPath) }
@@ -201,7 +220,6 @@ impl Main{
 				let f = mut ? File.open(dir, cn.text, Open.WRITE_TRUNC)
 				match Some(f){
 					match Some(content){ ? File.writeString(f, content) }
-					? File.sync(f)
 					done = true
 				}
 			}

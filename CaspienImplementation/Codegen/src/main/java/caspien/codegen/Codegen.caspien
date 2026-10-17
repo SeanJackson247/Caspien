@@ -25,19 +25,33 @@ impl Codegen{
 	}
 
 	@pub
+	@throws
 	static func generate(lobText: ref imut String, origin: ref imut String, configText: ref imut String) owns mut CodegenResult{
-		?catch(e){ return Codegen.failure(e.msg) }
-		let path = mut ? String.from("codegen.config")
-		let config = mut ? CodegenConfig.parse(configText, path)
+		?catch(e){ throw e }
 		let parser = mut ? new BytecodeParser()
 		let:<owns mut BytecodeProgram> program = mut null
 		match Some(lobText){ match Some(origin){ program = ? parser.parseText(parser, lobText, origin) } }
+		match Some(program){
+			let r = mut Codegen.generate(program, configText)
+			return r
+		}
+		return null
+	}
+
+	/** The same stage on the LowerOrderGenerator's in-memory program (the orchestrator's path; the program is consumed). */
+	@pub
+	static func generate(program: ref mut BytecodeProgram, configText: ref imut String) owns mut CodegenResult{
+		?catch(e){ return Codegen.failure(e.msg) }
+		let path = mut ? String.from("codegen.config")
+		let config = mut ? CodegenConfig.parse(configText, path)
 		let backend = mut ? new X86Backend(config.target, config.bmi2)
 		? backend.wire(backend)
+		// forced: config.avx is imut, backend.avx is mut (no imut->mut copy)
 		if config.avx{
 			backend.avx = true
 		}
 		let:<owns mut String> asm = mut null
+		// forced: the proof on `program` ends at the allocations above, so it is matched again here
 		match Some(program){ asm = ? backend.generate(backend, program.items) }
 		let ms = mut ? new ObjectList:<String>()
 		return ? new CodegenResult(asm, ms, false)

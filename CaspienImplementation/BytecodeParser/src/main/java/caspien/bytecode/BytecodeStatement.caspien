@@ -76,7 +76,7 @@ impl BytecodeStatement{
 		? _self.items.insertAt(_self.items, i, e)
 	}
 
-	/** Java `addAll(other)`: appends copies of other's tokens. */
+	/** Java `addAll(other)`: appends copies of other's tokens. forced: ObjectList has no addAll, so it is one `add` per token (and the tokens are copied: the list owns them). */
 	@pub
 	@throws
 	func addAll(_self: ref mut self, other: ref imut BytecodeStatement) void{
@@ -94,7 +94,7 @@ impl BytecodeStatement{
 		}
 	}
 
-	/** Java `addAll(i, other)`: inserts copies of other's tokens from index i. */
+	/** Java `addAll(i, other)`: inserts copies of other's tokens from index i. forced: ObjectList has no insertAll(i, other) (one shift of the tail); it is one `insertAt` per token, O(m*(n-i)) instead of O(n-i+m). */
 	@pub
 	@throws
 	func addAllAt(_self: ref mut self, i: imut u64, other: ref imut BytecodeStatement) void{
@@ -129,11 +129,19 @@ impl BytecodeStatement{
 		? _self.items.clear(_self.items)
 	}
 
-	/** A copy of [from, to) as a new statement (Java returns a List). */
+	/** A copy of [from, to) as a new statement (Java returns a List). forced: ObjectList has no subList/copy-range, so one `add` per token. */
 	@pub
 	@throws
 	func slice(_self: ref imut self, from: imut u64, to: imut u64) owns some mut BytecodeStatement{
 		?catch(e){ throw e }
+		let:<mut u64> size = mut 0
+		match Some(_self){ size = _self.size(_self) }
+		if from > to{
+			throw "fromIndex > toIndex"
+		}
+		if to > size{
+			throw "index out of range"
+		}
 		let r = mut ? new BytecodeStatement()
 		for k in from..to{
 			match Some(_self){
@@ -152,8 +160,15 @@ impl BytecodeStatement{
 	@throws
 	func opcode(_self: ref some imut self) owns some mut String{
 		?catch(e){ throw e }
-		let r = mut ? _self.text(_self, 0)
-		return r
+		if _self.isEmpty(_self) == false{ // Java: isEmpty() ? "" : get(0).text
+			let t = mut _self.get(_self, 0)
+			match Some(t){
+				let r = mut ? t.text.sub(t.text, 0, t.text.length(t.text))
+				return r
+			}
+		}
+		let e1 = mut ? new String("")
+		return e1
 	}
 
 	/** Text of token i, or "" when the statement is shorter. */
@@ -161,10 +176,12 @@ impl BytecodeStatement{
 	@throws
 	func text(_self: ref some imut self, i: imut u64) owns some mut String{
 		?catch(e){ throw e }
-		let t = mut _self.get(_self, i)
-		match Some(t){
-			let r = mut ? t.text.sub(t.text, 0, t.text.length(t.text))
-			return r
+		if i < _self.size(_self){
+			let t = mut _self.get(_self, i)
+			match Some(t){
+				let r = mut ? t.text.sub(t.text, 0, t.text.length(t.text))
+				return r
+			}
 		}
 		let empty = mut ? new String("")
 		return empty
@@ -173,6 +190,9 @@ impl BytecodeStatement{
 	/** Line of the HOB text this statement was read from (0 for an empty statement). */
 	@pub
 	func sourceLine(_self: ref some imut self) mut s32{
+		if _self.isEmpty(_self){
+			return 0
+		}
 		let t = mut _self.get(_self, 0)
 		match Some(t){
 			return t.line + 0
@@ -180,7 +200,10 @@ impl BytecodeStatement{
 		return 0
 	}
 
-	/** An instruction a pass generates, written as text ("ALLOC 16"): split by the parser's scanner. */
+	/**
+	 * An instruction a pass generates, written as text ("ALLOC 16"): split by the same scanner as program text.
+	 * For building new lines inside a pass, never for reading a program (that is BytecodeParser, once, up front).
+	 */
 	@pub
 	@throws
 	static func fromText(text: ref some imut String, origin: ref some imut String) owns some mut BytecodeStatement{
@@ -192,47 +215,46 @@ impl BytecodeStatement{
 	/** Several generated instructions, one statement per string. */
 	@pub
 	@throws
-	static func fromTexts(texts: ref imut ObjectList<String>, origin: ref some imut String) owns some mut ObjectList<BytecodeStatement>{
+	static func fromTexts(texts: ref imut ObjectList<String>, origin: ref imut String) owns some mut ObjectList<BytecodeStatement>{
 		?catch(e){ throw e }
-		let org = mut ? origin.sub(origin, 0, origin.length(origin))
 		let out = mut ? new ObjectList:<BytecodeStatement>()
 		let:<mut u64> n = mut 0
 		match Some(texts){ n = texts.size(texts) }
 		for i in 0..n{
 			match Some(texts){
 				let s = mut texts.get(texts, i)
-				match Some(s){
-					let st = mut ? BytecodeStatement.scanLine(s, org, wrap:<s32>(i + 1))
+				match Some(s){ match Some(origin){
+					let st = mut ? BytecodeStatement.scanLine(s, origin, wrap:<s32>(i + 1))
 					? out.add(out, st)
-				}
+				} }
 			}
 		}
 		return out
 	}
 
-	/** Java `Character.isWhitespace` for ASCII (space, 9-13, 28-31). */
+	/** Java `Character.isWhitespace` for the chars a one-byte char can hold (space, 9-13, 28-31). forced: a char here is ONE BYTE, so the multi-byte Unicode spaces (U+1680, U+2000-U+2006, U+2008-U+200A, U+2028, U+2029, U+205F, U+3000) cannot be tested; bytes >= 128 count as non-whitespace. */
 	@pub
 	static func isWs(c: mut char) bool{
 		let v = mut String.charCode(c)
 		return v == 32 || (v >= 9 && v <= 13) || (v >= 28 && v <= 31)
 	}
 
-	/** One line of text -> one statement. The only scanner (Java `BytecodeParser.parseLine`). */
+	/** One line of text -> one statement. The scanner; BytecodeParser.parseLine and fromText call it (forced here: a Caspien import cycle is an error). */
 	@pub
 	@throws
-	static func scanLine(rawLine0: ref some imut String, originFile0: ref some imut String, lineNumber: imut s32) owns some mut BytecodeStatement{
+	static func scanLine(rawLine: ref imut String, originFile: ref imut String, lineNumber: imut s32) owns some mut BytecodeStatement{
 		?catch(e){ throw e }
-		let rawLine = mut ? rawLine0.sub(rawLine0, 0, rawLine0.length(rawLine0))
-		let originFile = mut ? originFile0.sub(originFile0, 0, originFile0.length(originFile0))
 		let tokens = mut ? new BytecodeStatement()
 		let i = mut 0
-		let ln0 = mut rawLine.length(rawLine)
-		let guard = mut (ln0 + 1)
-		for step in 0..guard{
-			if i >= ln0{
+		let:<mut u64> len = mut 0
+		match Some(rawLine){ len = rawLine.length(rawLine) }
+		let guard = mut (len + 1)
+		for step in 0..guard{ // forced: while (i < len) -> bounded for (every pass advances i by at least 1)
+			if i >= len{
 				break
 			}
-			let c = mut rawLine.charAt(rawLine, i)
+			let c = mut '\0'
+			match Some(rawLine){ c = rawLine.charAt(rawLine, i) }
 			if BytecodeStatement.isWs(c){
 				i += 1
 				continue
@@ -240,58 +262,92 @@ impl BytecodeStatement{
 			if c == '"'{
 				let start = mut i
 				i += 1
-				for k in 0..ln0{
-					if i >= ln0 || rawLine.charAt(rawLine, i) == '"'{
-						break
-					}
-					if rawLine.charAt(rawLine, i) == '\\' && i + 1 < ln0{
+				match Some(rawLine){
+					for k in 0..len{ // forced: while -> bounded for (every pass advances i)
+						if i >= len{
+							break
+						}
+						if rawLine.charAt(rawLine, i) == '"'{
+							break
+						}
+						if rawLine.charAt(rawLine, i) == '\\' &&then i + 1 < len{
+							i += 1
+						}
 						i += 1
 					}
-					i += 1
 				}
-				if i < ln0{
-					i += 1
+				if i < len{
+					i += 1 // consume closing quote
 				}
 				let stop = mut i
-				if stop > ln0{
-					stop = ln0
+				if stop > len{
+					stop = len
 				}
-				let t = mut ? rawLine.sub(rawLine, start, stop)
-				let f = mut ? originFile.sub(originFile, 0, originFile.length(originFile))
-				let tok = mut ? new BytecodeToken(t, f, lineNumber, BytecodeTokenKind.STRING)
-				? tokens.add(tokens, tok)
+				match Some(originFile){
+					let file = mut ? originFile.sub(originFile, 0, originFile.length(originFile)) // owned tokens: the file name is copied per token
+					match Some(rawLine){
+						let text = mut ? rawLine.sub(rawLine, start, stop)
+						let tok = mut ? new BytecodeToken(text, file, lineNumber, BytecodeTokenKind.STRING)
+						? tokens.add(tokens, tok)
+					}
+				}
 				continue
 			}
 			if c == '\''{
+				// A char-literal operand ("'a'", "'\n'", and -- the case a plain whitespace split gets wrong -- "' '"): kept as ONE token,
+				// the same way a quoted string is (shape fixed by BytecodeEmitter.escapeForBytecode).
 				let end = mut 0
-				let found = mut false
-				if i + 3 < ln0 && rawLine.charAt(rawLine, i + 1) == '\\' && rawLine.charAt(rawLine, i + 3) == '\''{
-					end = i + 4
-					found = true
-				} else if i + 2 < ln0 && rawLine.charAt(rawLine, i + 2) == '\''{
-					end = i + 3
-					found = true
+				let found = mut false // Java: end != -1
+				match Some(rawLine){
+					if i + 3 < len &&then rawLine.charAt(rawLine, i + 1) == '\\' &&then rawLine.charAt(rawLine, i + 3) == '\''{
+						end = i + 4
+						found = true
+					} else if i + 2 < len &&then rawLine.charAt(rawLine, i + 2) == '\''{
+						end = i + 3
+						found = true
+					}
 				}
-				if found && (end == ln0 || BytecodeStatement.isWs(rawLine.charAt(rawLine, end))){
-					let t = mut ? rawLine.sub(rawLine, i, end)
-					let f = mut ? originFile.sub(originFile, 0, originFile.length(originFile))
-					let tok = mut ? new BytecodeToken(t, f, lineNumber, BytecodeTokenKind.CODE)
-					? tokens.add(tokens, tok)
+				let accept = mut false
+				if found{
+					if end == len{
+						accept = true
+					} else {
+						match Some(rawLine){ accept = BytecodeStatement.isWs(rawLine.charAt(rawLine, end)) }
+					}
+				}
+				if accept{
+					match Some(originFile){
+						let file = mut ? originFile.sub(originFile, 0, originFile.length(originFile)) // owned tokens: the file name is copied per token
+						match Some(rawLine){
+							let text = mut ? rawLine.sub(rawLine, i, end)
+							let tok = mut ? new BytecodeToken(text, file, lineNumber, BytecodeTokenKind.CODE)
+							? tokens.add(tokens, tok)
+						}
+					}
 					i = end
 					continue
 				}
 			}
 			let start = mut i
-			for k in 0..ln0{
-				if i >= ln0 || BytecodeStatement.isWs(rawLine.charAt(rawLine, i)){
-					break
+			match Some(rawLine){
+				for k in 0..len{ // forced: while -> bounded for (every pass advances i)
+					if i >= len{
+						break
+					}
+					if BytecodeStatement.isWs(rawLine.charAt(rawLine, i)){
+						break
+					}
+					i += 1
 				}
-				i += 1
 			}
-			let t = mut ? rawLine.sub(rawLine, start, i)
-			let f = mut ? originFile.sub(originFile, 0, originFile.length(originFile))
-			let tok = mut ? new BytecodeToken(t, f, lineNumber, BytecodeTokenKind.CODE)
-			? tokens.add(tokens, tok)
+			match Some(originFile){
+				let file = mut ? originFile.sub(originFile, 0, originFile.length(originFile)) // owned tokens: the file name is copied per token
+				match Some(rawLine){
+					let text = mut ? rawLine.sub(rawLine, start, i)
+					let tok = mut ? new BytecodeToken(text, file, lineNumber, BytecodeTokenKind.CODE)
+					? tokens.add(tokens, tok)
+				}
+			}
 		}
 		return tokens
 	}
