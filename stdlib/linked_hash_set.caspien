@@ -1,0 +1,52 @@
+// LinkedHashSet<T>: a thin wrapper over LinkedHashMap<T, bool> (the value is always true), so it iterates in insertion order.
+// Iterate with `for match i in s.map.slots{ if s.map.isLive(s.map, i){ ... s.map.keyAt(s.map, i) ... } }` (the proof contract of `isLive`/`keyAt` needs the slots to be the map's own). Same limits as the map: T is a non-struct type of at most 8 bytes.
+import "linked_hash_map.caspien"
+
+@pub
+struct LinkedHashSet<T>{@pub{
+	map: owns some mut LinkedHashMap<T, bool>
+}}
+
+/** `new LinkedHashSet:<u64>(defaultElement, capacity)` -- an empty set; `capacity` is only the starting size of the index (it grows). `@throws`: the allocations can fail. */
+@pub
+@throws
+impl<T> constructor for LinkedHashSet<T>(defaultElement: mut T, capacity: mut u64) self{
+	?catch(e){ throw e }
+	let map = mut ? new LinkedHashMap:<T, bool>(defaultElement, capacity)
+	return LinkedHashSet:<T>{map= map}
+}
+
+@pub
+impl<T> LinkedHashSet<T>{
+	/** Adds `x` at the end; returns true if it was not in the set yet (a present element keeps its position). `@throws`: out of memory; the set is then unchanged. */
+	@pub
+	@throws
+	func add(_self: ref some mut self, x: mut T) mut bool{
+		?catch(e){ throw e }
+		let had = mut _self.map.contains(_self.map, x)
+		? _self.map.set(_self.map, x, true)
+		return !had
+	}
+
+	@pub
+	func contains(_self: ref some imut self, x: mut T) mut bool{
+		return _self.map.contains(_self.map, x)
+	}
+
+	/** Removes `x`; returns whether it was there. */
+	@pub
+	func remove(_self: ref some mut self, x: mut T) mut bool{
+		return _self.map.remove(_self.map, x)
+	}
+
+	@pub
+	func size(_self: ref some imut self) mut u64{
+		return _self.map.count
+	}
+
+	/** Number of positions to walk, live or dead (test each with the map's `isLive`). */
+	@pub
+	func slotCount(_self: ref some imut self) mut u64{
+		return len(_self.map.slots)
+	}
+}

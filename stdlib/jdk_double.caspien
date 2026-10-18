@@ -1,0 +1,572 @@
+// The java.lang.Double / java.lang.Float statics the compiler's Java uses to print and inspect floating-point constants, called as in Java:
+// `Double.toString(v)`, `Float.toString(v)`, `Double.doubleToRawLongBits(v)`, `Double.longBitsToDouble(b)`, `Float.floatToRawIntBits(v)`,
+// `Float.intBitsToFloat(b)`, `Double.isNaN(v)`, `Double.isInfinite(v)` (same for Float), plus `BigDecimalText.toPlainString(text)`
+// = `new BigDecimal(text).toPlainString()`. Parsing is not here (the LowerOrderGenerator's FloatText does it).
+//
+// `toString` follows the JDK 19+ specification exactly (shortest decimal that rounds back to the value, JDK 21 is the oracle): R = the decimals that
+// round to the value under round-to-nearest-even (the two boundaries count only when the significand is even); m = the fewest digits any decimal in R
+// needs; when m is 1 the decimals of length 2 are used instead; of those the one closest to the value wins, a tie goes to the even last digit.
+// It is computed with exact BigInt arithmetic (no tables, no 128-bit tricks), so it is slow (tens of microseconds) but cannot round wrongly.
+// Layout: 10^-3 <= |v| < 10^7 plain with at least one fraction digit, otherwise `d.dddE<exp>`. Test: tests/jdk_double_test + jdk_double_check.sh.
+import "stdlib/string.caspien"
+import "stdlib/bigint.caspien"
+
+@pub
+struct JdkDecimal{@pub{
+}}
+
+impl constructor for JdkDecimal() self{
+	return JdkDecimal{}
+}
+
+@pub
+impl JdkDecimal{
+	/** `x` if positive, else 0 (an exponent for `mk`). */
+	@pub
+	static func pos(x: mut s64) mut u64{
+		if x > 0{
+			return wrap:<u64>(x)
+		}
+		return 0
+	}
+
+	/** 10^t10 * 2^t2. */
+	@pub
+	@throws
+	static func mk(t10: mut u64, t2: mut u64) owns some mut BigInt{
+		?catch(e){ throw e }
+		let ten = mut ? BigInt.valueOf(10)
+		let a = mut ? ten.pow(ten, t10)
+		let one = mut ? BigInt.valueOf(1)
+		let b = mut ? one.shiftLeft(one, t2)
+		let r = mut ? a.multiply(a, b)
+		return r
+	}
+
+	/** Sign of (x vs 10^p) for x = nx * 2^(q-2): the candidate D*10^p is D*M/T in units of 2^(q-2) (M, T from `mk`). */
+	@pub
+	@throws
+	static func cmpPow10(nx: mut u64, q: mut s64, p: mut s64) mut s64{
+		?catch(e){ throw e }
+		let a = mut (2 - q)
+		let mm = mut ? JdkDecimal.mk(JdkDecimal.pos(p), JdkDecimal.pos(a))
+		let tt = mut ? JdkDecimal.mk(JdkDecimal.pos(0 - p), JdkDecimal.pos(0 - a))
+		let bx = mut ? BigInt.fromU64(nx)
+		let xs = mut ? bx.multiply(bx, tt)
+		return xs.compareTo(xs, mm)
+	}
+
+	/**
+	 * The decimal D*10^p with exactly n digits (10^(n-1) <= D < 10^n) that lies in the rounding interval [nlo, nhi] (units of 2^(q-2); `incl` = the two
+	 * ends belong to it) and is closest to nx (ties: even D); 0 when there is none.
+	 */
+	@pub
+	@throws
+	static func cand(nx: mut u64, nlo: mut u64, nhi: mut u64, q: mut s64, incl: mut bool, n: mut u64, p: mut s64) mut u64{
+		?catch(e){ throw e }
+		let a = mut (2 - q)
+		let mm = mut ? JdkDecimal.mk(JdkDecimal.pos(p), JdkDecimal.pos(a))
+		let tt = mut ? JdkDecimal.mk(JdkDecimal.pos(0 - p), JdkDecimal.pos(0 - a))
+		let one = mut ? BigInt.valueOf(1)
+		let zero = mut ? BigInt.valueOf(0)
+		let bx = mut ? BigInt.fromU64(nx)
+		let xs = mut ? bx.multiply(bx, tt)
+		let bl = mut ? BigInt.fromU64(nlo)
+		let los = mut ? bl.multiply(bl, tt)
+		let bh = mut ? BigInt.fromU64(nhi)
+		let his = mut ? bh.multiply(bh, tt)
+		// smallest D with D*M above (or at) the low end, largest D with D*M below (or at) the high end
+		let lq = mut ? los.divide(los, mm)
+		let lr = mut ? los.remainder(los, mm)
+		let dlo = mut ? lq.add(lq, one)
+		if incl && lr.isZero(lr){
+			dlo = ? lq.add(lq, zero)
+		}
+		let hq = mut ? his.divide(his, mm)
+		let hr = mut ? his.remainder(his, mm)
+		let dhi = mut ? hq.add(hq, zero)
+		if incl == false && hr.isZero(hr){
+			dhi = ? hq.subtract(hq, one)
+		}
+		// clip to the n-digit range
+		let lowB = mut ? JdkDecimal.mk(n - 1, 0)
+		let upB0 = mut ? JdkDecimal.mk(n, 0)
+		let upB = mut ? upB0.subtract(upB0, one)
+		if dlo.compareTo(dlo, lowB) < 0{
+			dlo = ? lowB.add(lowB, zero)
+		}
+		if dhi.compareTo(dhi, upB) > 0{
+			dhi = ? upB.add(upB, zero)
+		}
+		if dlo.compareTo(dlo, dhi) > 0{
+			return 0
+		}
+		// the n-digit integer nearest to x / 10^p, then pulled into [dlo, dhi]
+		let dx = mut ? xs.divide(xs, mm)
+		let rx = mut ? xs.remainder(xs, mm)
+		let twice = mut ? rx.shiftLeft(rx, 1)
+		let cmp = mut twice.compareTo(twice, mm)
+		let odd = mut dx.testBit(dx, 0)
+		if cmp > 0 || (cmp == 0 && odd){
+			dx = ? dx.add(dx, one)
+		}
+		if dx.compareTo(dx, dlo) < 0{
+			dx = ? dlo.add(dlo, zero)
+		}
+		if dx.compareTo(dx, dhi) > 0{
+			dx = ? dhi.add(dhi, zero)
+		}
+		return dx.toU64(dx)
+	}
+
+	/** True when B = d2*10^(p1+1) is closer to x than A = d1*10^p1 (a tie goes to the even last digit); p1 is the exponent of A. */
+	@pub
+	@throws
+	static func secondCloser(nx: mut u64, q: mut s64, p1: mut s64, d1: mut u64, d2: mut u64) mut bool{
+		?catch(e){ throw e }
+		let a = mut (2 - q)
+		let mm = mut ? JdkDecimal.mk(JdkDecimal.pos(p1), JdkDecimal.pos(a))
+		let tt = mut ? JdkDecimal.mk(JdkDecimal.pos(0 - p1), JdkDecimal.pos(0 - a))
+		let bx = mut ? BigInt.fromU64(nx)
+		let xs = mut ? bx.multiply(bx, tt)
+		let ba = mut ? BigInt.fromU64(d1)
+		let av = mut ? ba.multiply(ba, mm)
+		let bb = mut ? BigInt.fromU64(d2 * 10)
+		let bv = mut ? bb.multiply(bb, mm)
+		let da0 = mut ? av.subtract(av, xs)
+		let da = mut ? da0.abs(da0)
+		let db0 = mut ? bv.subtract(bv, xs)
+		let db = mut ? db0.abs(db0)
+		let c = mut db.compareTo(db, da)
+		if c < 0{
+			return true
+		}
+		if c > 0{
+			return false
+		}
+		let d1Odd = mut (bits_and(d1, 1) == 1)
+		let d2Odd = mut (bits_and(d2, 1) == 1)
+		return d1Odd && d2Odd == false
+	}
+
+	/** Java's text for the finite non-zero value (-1)^neg * c * 2^q; `pow2` = the lower rounding gap is half as wide (c is a power of two, not the smallest exponent). */
+	@pub
+	@throws
+	static func formatBits(neg: mut bool, c: mut u64, q: mut s64, pow2: mut bool) owns some mut String{
+		?catch(e){ throw e }
+		let nx = mut (c * 4)
+		let nhi = mut (nx + 2)
+		let nlo = mut (nx - 2)
+		if pow2{
+			nlo = nx - 1
+		}
+		let incl = mut (bits_and(c, 1) == 0)
+		let out = mut ? JdkDecimal.digitsToText(neg, nx, nlo, nhi, q, incl, c)
+		return out
+	}
+
+	/** Digit search and layout; see the header. `c` is only used for the decimal exponent estimate. */
+	@pub
+	@throws
+	static func digitsToText(neg: mut bool, nx: mut u64, nlo: mut u64, nhi: mut u64, q: mut s64, incl: mut bool, c: mut u64) owns some mut String{
+		?catch(e){ throw e }
+		// k = floor(log10(x)), from a float estimate fixed up by exact comparisons
+		let bl = mut 0
+		for i in 0..64{
+			if bits_and(bits_right(c, i), 1) == 1{
+				bl = i + 1
+			}
+		}
+		let e2 = mut (q + wrap:<s64>(bl) - 1)
+		let k = mut ((e2 * 78913) / 262144)
+		for a1 in 0..4{
+			let cm = mut ? JdkDecimal.cmpPow10(nx, q, k)
+			if cm < 0{
+				k = k - 1
+			}
+		}
+		for a2 in 0..4{
+			let cm2 = mut ? JdkDecimal.cmpPow10(nx, q, k + 1)
+			if cm2 >= 0{
+				k = k + 1
+			}
+		}
+		// fewest digits m with a decimal in the interval; m = 1 widens to 2
+		let found = mut 0
+		for n in 1..20{
+			if found == 0{
+				let p1 = mut (k - wrap:<s64>(n) + 1)
+				let t1 = mut ? JdkDecimal.cand(nx, nlo, nhi, q, incl, n, p1)
+				let t2 = mut ? JdkDecimal.cand(nx, nlo, nhi, q, incl, n, p1 + 1)
+				if t1 != 0 || t2 != 0{
+					found = n
+				}
+			}
+		}
+		if found == 0{
+			throw "no decimal found"
+		}
+		let nn = mut found
+		if nn == 1{
+			nn = 2
+		}
+		let pA = mut (k - wrap:<s64>(nn) + 1)
+		let dA = mut ? JdkDecimal.cand(nx, nlo, nhi, q, incl, nn, pA)
+		let dB = mut ? JdkDecimal.cand(nx, nlo, nhi, q, incl, nn, pA + 1)
+		let dChosen = mut dA
+		let pChosen = mut pA
+		if dA == 0{
+			dChosen = dB
+			pChosen = pA + 1
+		} elseif dB != 0{
+			let second = mut ? JdkDecimal.secondCloser(nx, q, pA, dA, dB)
+			if second{
+				dChosen = dB
+				pChosen = pA + 1
+			}
+		}
+		// digits without trailing zeros; E = decimal exponent of the first digit
+		let ds = mut ? String.fromU64(dChosen)
+		let len = mut ds.length(ds)
+		let sl = mut len
+		for t in 0..len{
+			if sl > 1{
+				if ds.charAt(ds, sl - 1) == '0'{
+					sl = sl - 1
+				}
+			}
+		}
+		let ee = mut (pChosen + wrap:<s64>(len) - 1)
+		let out = mut ? new String()
+		if neg{
+			? out.appendChar(out, '-')
+		}
+		if ee >= -3 && ee < 7{
+			if ee >= 0{
+				let intLen = mut wrap:<u64>(ee + 1)
+				for i1 in 0..intLen{
+					if i1 < sl{
+						? out.appendChar(out, ds.charAt(ds, i1))
+					} else{
+						? out.appendChar(out, '0')
+					}
+				}
+				? out.appendChar(out, '.')
+				if sl > intLen{
+					for i2 in intLen..sl{
+						? out.appendChar(out, ds.charAt(ds, i2))
+					}
+				} else{
+					? out.appendChar(out, '0')
+				}
+			} else{
+				? out.appendChar(out, '0')
+				? out.appendChar(out, '.')
+				let zeros = mut wrap:<u64>(0 - ee - 1)
+				for z in 0..zeros{
+					? out.appendChar(out, '0')
+				}
+				for i3 in 0..sl{
+					? out.appendChar(out, ds.charAt(ds, i3))
+				}
+			}
+		} else{
+			? out.appendChar(out, ds.charAt(ds, 0))
+			? out.appendChar(out, '.')
+			if sl > 1{
+				for i4 in 1..sl{
+					? out.appendChar(out, ds.charAt(ds, i4))
+				}
+			} else{
+				? out.appendChar(out, '0')
+			}
+			? out.appendChar(out, 'E')
+			? out.appendS64(out, ee)
+		}
+		return out
+	}
+}
+
+@pub
+struct Double{@pub{
+}}
+
+impl constructor for Double() self{
+	return Double{}
+}
+
+@pub
+impl Double{
+	/** The IEEE-754 bits of `v`. */
+	@pub
+	static func doubleToRawLongBits(v: mut f64) mut u64{
+		let:<mut u64> bits = mut 0
+		let x = mut v
+		unsafe memcopy raw{
+			memcopy(raw bits, mut 8, raw x)
+		}
+		return bits
+	}
+
+	@pub
+	static func longBitsToDouble(b: mut u64) mut f64{
+		let:<mut f64> d = mut 0.0
+		let x = mut b
+		unsafe memcopy raw{
+			memcopy(raw d, mut 8, raw x)
+		}
+		return d
+	}
+
+	@pub
+	static func isNaN(v: mut f64) mut bool{
+		let b = mut Double.doubleToRawLongBits(v)
+		return bits_and(bits_right(b, 52), 2047) == 2047 && bits_and(b, 4503599627370495) != 0
+	}
+
+	@pub
+	static func isInfinite(v: mut f64) mut bool{
+		let b = mut Double.doubleToRawLongBits(v)
+		return bits_and(bits_right(b, 52), 2047) == 2047 && bits_and(b, 4503599627370495) == 0
+	}
+
+	/** Java `Double.toString(v)`. */
+	@pub
+	@throws
+	static func toString(v: mut f64) owns some mut String{
+		?catch(e){ throw e }
+		let b = mut Double.doubleToRawLongBits(v)
+		let neg = mut (bits_right(b, 63) == 1)
+		let ex = mut bits_and(bits_right(b, 52), 2047)
+		let fr = mut bits_and(b, 4503599627370495)
+		if ex == 2047{
+			if fr != 0{
+				let nan = mut ? String.from("NaN")
+				return nan
+			}
+			if neg{
+				let ninf = mut ? String.from("-Infinity")
+				return ninf
+			}
+			let inf = mut ? String.from("Infinity")
+			return inf
+		}
+		if ex == 0 && fr == 0{
+			if neg{
+				let nz = mut ? String.from("-0.0")
+				return nz
+			}
+			let pz = mut ? String.from("0.0")
+			return pz
+		}
+		let:<mut u64> c = mut fr
+		let:<mut s64> q = mut -1074
+		if ex != 0{
+			c = bits_or(fr, 4503599627370496)
+			q = wrap:<s64>(ex) - 1075
+		}
+		let pow2 = mut (fr == 0 && ex > 1)
+		let out = mut ? JdkDecimal.formatBits(neg, c, q, pow2)
+		return out
+	}
+}
+
+@pub
+struct Float{@pub{
+}}
+
+impl constructor for Float() self{
+	return Float{}
+}
+
+@pub
+impl Float{
+	/** The IEEE-754 bits of `v`. */
+	@pub
+	static func floatToRawIntBits(v: mut f32) mut u32{
+		let:<mut u32> bits = mut 0
+		let x = mut v
+		unsafe memcopy raw{
+			memcopy(raw bits, mut 4, raw x)
+		}
+		return bits
+	}
+
+	@pub
+	static func intBitsToFloat(b: mut u32) mut f32{
+		let:<mut f32> d = mut 0.0
+		let x = mut b
+		unsafe memcopy raw{
+			memcopy(raw d, mut 4, raw x)
+		}
+		return d
+	}
+
+	@pub
+	static func isNaN(v: mut f32) mut bool{
+		let b = mut Float.floatToRawIntBits(v)
+		return bits_and(bits_right(b, 23), 255) == 255 && bits_and(b, 8388607) != 0
+	}
+
+	@pub
+	static func isInfinite(v: mut f32) mut bool{
+		let b = mut Float.floatToRawIntBits(v)
+		return bits_and(bits_right(b, 23), 255) == 255 && bits_and(b, 8388607) == 0
+	}
+
+	/** Java `Float.toString(v)`. */
+	@pub
+	@throws
+	static func toString(v: mut f32) owns some mut String{
+		?catch(e){ throw e }
+		let b = mut Float.floatToRawIntBits(v)
+		let neg = mut (bits_right(b, 31) == 1)
+		let ex = mut bits_and(bits_right(b, 23), 255)
+		let fr = mut bits_and(b, 8388607)
+		if ex == 255{
+			if fr != 0{
+				let nan = mut ? String.from("NaN")
+				return nan
+			}
+			if neg{
+				let ninf = mut ? String.from("-Infinity")
+				return ninf
+			}
+			let inf = mut ? String.from("Infinity")
+			return inf
+		}
+		if ex == 0 && fr == 0{
+			if neg{
+				let nz = mut ? String.from("-0.0")
+				return nz
+			}
+			let pz = mut ? String.from("0.0")
+			return pz
+		}
+		let:<mut u64> c = mut fr as u64
+		let:<mut s64> q = mut -149
+		if ex != 0{
+			c = bits_or(fr as u64, 8388608)
+			q = wrap:<s64>(ex as u64) - 150
+		}
+		let pow2 = mut (fr == 0 && ex > 1)
+		let out = mut ? JdkDecimal.formatBits(neg, c, q, pow2)
+		return out
+	}
+}
+
+/** `new BigDecimal(text).toPlainString()` for the decimal / E-notation texts `Double.toString` writes. */
+@pub
+struct BigDecimalText{@pub{
+}}
+
+impl constructor for BigDecimalText() self{
+	return BigDecimalText{}
+}
+
+@pub
+impl BigDecimalText{
+	@pub
+	@throws
+	static func toPlainString(s: ref some imut String) owns some mut String{
+		?catch(e){ throw e }
+		let n = mut s.length(s)
+		let neg = mut false
+		let digits = mut ? new String()
+		let:<mut s64> fracLen = mut 0
+		let:<mut s64> expVal = mut 0
+		let expNeg = mut false
+		let phase = mut 0
+		let expSeen = mut false
+		let start = mut 0
+		if n > 0 && s.charAt(s, 0) == '-'{
+			neg = true
+			start = 1
+		}
+		for k in start..n{
+			let ch = mut s.charAt(s, k)
+			if phase < 2 && ch == '.'{
+				phase = 1
+			} elseif phase < 2 && (ch == 'E' || ch == 'e'){
+				phase = 2
+			} elseif phase == 2 && expSeen == false && (ch == '+' || ch == '-'){
+				expSeen = true
+				expNeg = ch == '-'
+			} else{
+				if String.isDigit(ch) == false{
+					throw "NumberFormatException"
+				}
+				if phase < 2{
+					? digits.appendChar(digits, ch)
+					if phase == 1{
+						fracLen += 1
+					}
+				} else{
+					expSeen = true
+					expVal = expVal * 10 + (wrap:<s64>(String.charCode(ch)) - 48)
+				}
+			}
+		}
+		let:<mut s64> scale = mut fracLen
+		if expNeg{
+			scale = scale + expVal
+		} else{
+			scale = scale - expVal
+		}
+		// unscaled value: the digits without leading zeros ("0" when there are none)
+		let dl = mut digits.length(digits)
+		let nz = mut dl
+		let seenNz = mut false
+		for i in 0..dl{
+			if seenNz == false{
+				if digits.charAt(digits, i) != '0'{
+					nz = i
+					seenNz = true
+				}
+			}
+		}
+		let out = mut ? new String()
+		if neg && seenNz{
+			? out.appendChar(out, '-')
+		}
+		let ulen = mut (dl - nz)
+		if seenNz == false{
+			nz = dl - 1
+			ulen = 1
+		}
+		if scale <= 0{
+			for i1 in 0..ulen{
+				? out.appendChar(out, digits.charAt(digits, nz + i1))
+			}
+			if seenNz{
+				let pad = mut wrap:<u64>(0 - scale)
+				for z1 in 0..pad{
+					? out.appendChar(out, '0')
+				}
+			}
+		} else{
+			let sc = mut wrap:<u64>(scale)
+			if ulen > sc{
+				let ip = mut (ulen - sc)
+				for i2 in 0..ip{
+					? out.appendChar(out, digits.charAt(digits, nz + i2))
+				}
+				? out.appendChar(out, '.')
+				for i3 in ip..ulen{
+					? out.appendChar(out, digits.charAt(digits, nz + i3))
+				}
+			} else{
+				? out.appendChar(out, '0')
+				? out.appendChar(out, '.')
+				let lead = mut (sc - ulen)
+				for z2 in 0..lead{
+					? out.appendChar(out, '0')
+				}
+				for i4 in 0..ulen{
+					? out.appendChar(out, digits.charAt(digits, nz + i4))
+				}
+			}
+		}
+		return out
+	}
+}
